@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: cxg4zugevd6l
+Fork run: x3ipdc44uskp
 PR URL:
 PR Status:
 Started: 2026-06-12T16:54:23.580Z
@@ -245,3 +245,8 @@ Completed:
 ## Task workflow update - 2026-06-12T22:33:18.036Z
 - Summary: Issue #122 scout investigation complete. Report: footer bugs are (1) context/tokens drop to 0% during Working because UsageProjection::resetTurn() zeros latestInputTokens on TurnStarted until AssistantMessageCompleted arrives; (2) cost remains $0.00 because LlmPlatformAdapter::extractUsage() emits token counts but never a cost field, while UsageProjection::accumulate() only increments cost if usage['cost']/['total_cost'] exists. Pricing AiCost exists in model config but is not bridged into usage events. Resume usage replay appears already fixed by prior work; current live path and cost pipeline remain.
 - Scouts recommended minimal token fix: preserve latestInputTokens across resetTurn so footer shows last-known context while streaming. Cost fix options: compute from AiCost/model pricing in runtime/adapter pipeline (preferred) or in TUI projection layer; thinking tokens likely billed as output tokens unless model config gains a separate rate. Required validation: unit tests for UsageProjection/reset/cost, adapter or pipeline cost test, TmuxHarness E2E footer proof for non-zero context during Working and cost display where possible, full castor check.
+
+## Task workflow update - 2026-06-12T22:44:13.628Z
+- Recorded fork run: x3ipdc44uskp
+- Validation: Per fork handoff: castor test passed all 2,667 tests.; Per fork handoff: castor test --filter=UsageProjectionTest passed 10 tests/47 assertions.; Per fork handoff: castor test --filter=AiCostCalculatorTest passed 7 tests/7 assertions.; Per fork handoff: castor deptrac passed, castor phpstan passed 0 errors, castor cs-check passed.; Per fork handoff: LLM_MODE=true castor check passed all 14 steps: deptrac, unit shards, test-tui-suite, test-platform, test:controller, test:llm-real, test:tui-1, test:tui-2, phpstan, cs-check all OK.
+- Summary: Fork x3ipdc44uskp implemented GitHub issue #122 in commits 02da0162 and de4074d8, pushed to origin/task/backlog-open-issues-cleanup. Fixes: UsageProjection::resetTurn() preserves latestInputTokens so footer context % does not flicker to 0 during Working; added AgentCore CostCalculatorInterface and CodingAgent AiCostCalculator wired into LlmPlatformAdapter so usage events include computed cost from AiCost model pricing; UsageProjection already accumulates usage['cost']. Assumptions: thinking tokens billed as output, cached_tokens treated as cache-read, zero/unpriced models remain $0.00. No dedicated TUI E2E proof due test model pricing/streaming constraints; user said they will manually check.
