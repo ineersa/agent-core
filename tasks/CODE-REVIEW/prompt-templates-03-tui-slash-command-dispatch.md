@@ -21,12 +21,12 @@ Can run in parallel with PT-02 after PT-01 lands.
 - Because this touches TUI/runtime flow, `LLM_MODE=true castor check` must pass before moving this task to CODE-REVIEW; if prerequisites are unavailable, keep the task IN-PROGRESS and record the blocker.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/prompt-templates-03-tui-slash-command-dispatch
 Worktree: /home/ineersa/projects/agent-core-worktrees/prompt-templates-03-tui-slash-command-dispatch
 Fork run: i9u6u4tch52o
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/138
+PR Status: open
 Started: 2026-06-12T18:08:24.597Z
 Completed:
 
@@ -64,3 +64,18 @@ Completed:
 - Recorded fork run: i9u6u4tch52o
 - Validation: LLM_MODE=true castor test:tui --filter=PromptTemplateSlashCommandE2ETest — OK (1 test, 1 assertion); castor cs-check — OK (0 fixes); castor deptrac — OK (0 violations, 0 errors); castor phpstan — OK (0 errors, 0 file_errors)
 - Summary: Per user instruction, skipped reviewer step and launched merge fork `i9u6u4tch52o`. Fork merged current `origin/main` (`a0566611`) into PT-03 branch with `--no-ff`, creating clean merge commit `ed200677` with zero conflicts. PT-03 feature diff remains 7 files, +1089/-127. Worktree clean and ready for CODE-REVIEW retry.
+Castor Check Status: passed
+Castor Check Commit: ed20067708b44ec8b6525ffb40996216848d6dda
+Castor Check Command: LLM_MODE=true castor check
+Castor Check Timeout: 900s
+Castor Check Completed: 2026-06-12T21:51:41.129Z
+Castor Check Output SHA256: 009333342cce68707db7b67d9fd09db478bbad5bf7307ad46c1a800ebe841a8d
+
+## Task workflow update - 2026-06-12T21:51:44.227Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: ed20067708b4.
+- Pushed task/prompt-templates-03-tui-slash-command-dispatch to origin.
+- branch 'task/prompt-templates-03-tui-slash-command-dispatch' set up to track 'origin/task/prompt-templates-03-tui-slash-command-dispatch'.
+- Created PR: https://github.com/ineersa/agent-core/pull/138
+- Validation: merge fork i9u6u4tch52o: `git merge --no-ff origin/main` clean; HEAD `ed200677`; LLM_MODE=true castor test:tui --filter=PromptTemplateSlashCommandE2ETest — OK (1 test, 1 assertion); castor cs-check — OK (0 fixes); castor deptrac — OK (0 violations, 0 errors); castor phpstan — OK (0 errors, 0 file_errors)
+- Summary: Moving PT-03 to CODE-REVIEW per user instruction, with no additional reviewer step. Branch was merge-updated from current origin/main by fork `i9u6u4tch52o` at merge commit `ed200677` (clean merge, zero conflicts). Focused validation passed after merge; move_task will run the full `LLM_MODE=true castor check` quality gate before pushing/opening PR.
