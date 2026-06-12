@@ -24,7 +24,7 @@ Can run in parallel with PT-02 after PT-01 lands.
 Status: IN-PROGRESS
 Branch: task/prompt-templates-03-tui-slash-command-dispatch
 Worktree: /home/ineersa/projects/agent-core-worktrees/prompt-templates-03-tui-slash-command-dispatch
-Fork run: 67zr7nu1f2ms, ogehkokb3cag
+Fork run: oswftse07w4a
 PR URL: https://github.com/ineersa/agent-core/pull/138
 PR Status: open
 Started: 2026-06-12T18:08:24.597Z
@@ -88,3 +88,8 @@ Castor Check Output SHA256: 009333342cce68707db7b67d9fd09db478bbad5bf7307ad46c1a
 ## Task workflow update - 2026-06-12T22:08:10.333Z
 - Moved CODE-REVIEW → IN-PROGRESS.
 - Summary: Reopening PT-03 for a small prompt-template refinement requested by user: remove gist/upload attachment guidance from `.hatfield/prompts/report.md` and instruct the model to provide absolute local paths to sanitized snapshot/log artifacts instead. PR #138 remains open; no reviewer step required for this prompt-only tweak unless requested.
+
+## Task workflow update - 2026-06-12T22:09:22.355Z
+- Recorded fork run: oswftse07w4a
+- Validation: castor cs-check — OK (0 fixes); manual file inspection: section 5 is now `Include Diagnostic Artifacts` and lists absolute local snapshot/log paths; `$ARGUMENTS` fenced block remains unchanged at top; git push --force-with-lease origin task/prompt-templates-03-tui-slash-command-dispatch — OK (forced update 8f012b46...9621e8ae)
+- Summary: Refined `.hatfield/prompts/report.md` per user feedback: removed gist/upload workaround guidance and now instructs the model to include absolute paths to sanitized local diagnostic artifacts directly in the issue body/final response. Fork amended report-template commit to `9621e8ae`; branch was force-pushed with lease to update PR #138 from prior `8f012b46` to `9621e8ae`. Worktree clean.
