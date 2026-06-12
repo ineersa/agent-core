@@ -153,3 +153,6 @@ Completed:
 
 ## Task workflow update - 2026-06-12T19:40:15.307Z
 - User clarified root-owned pid 3334 belongs to a different Docker/project context and is not the cause. User authorized direct main-agent investigation/implementation of recent-main castor check hang with bounded 120s timeout runs.
+
+## Task workflow update - 2026-06-12T19:55:03.511Z
+- Identified castor test:tui hang is environmental/preflight failure: llama.cpp port 9052 responds to /health and /v1/models, but generation endpoints (/v1/chat/completions, /v1/completions, /completion) time out after 10s with zero bytes. Current tests do not fail fast on generation readiness; they proceed into controller/TUI waits and time out later. Dispatching fork to add deterministic generation preflight/fail-fast behavior for LLM-backed Castor test tasks.
