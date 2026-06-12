@@ -100,7 +100,7 @@ B) **Leaf event** — Append a `run.leaf_set` event to `events.jsonl` each time 
 Status: IN-PROGRESS
 Branch: task/session-05-turn-tree-model-and-replay
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-05-turn-tree-model-and-replay
-Fork run: 5rowk3bcy2hb
+Fork run: jgrpy9ac0ebu
 PR URL: https://github.com/ineersa/agent-core/pull/128
 PR Status: open
 Started: 2026-06-12T01:41:43.505Z
@@ -212,3 +212,7 @@ Castor Check Output SHA256: 15f51d5cf4aba80de58ef1fa97d43f52f7a114c15d218958d910
 ## Task workflow update - 2026-06-12T03:51:12.510Z
 - Recorded fork run: 5rowk3bcy2hb
 - Summary: Launched follow-up fork `5rowk3bcy2hb` to address reviewer actionable findings after `2588049b`: use `TurnTreeProjector::truncate()` for `promptPreview` to keep Unicode ellipsis consistent, add dangling parent detection in `walkActivePath()`, and add/update focused projector tests. Fork instructed to run focused Castor validation and commit.
+
+## Task workflow update - 2026-06-12T03:54:33.420Z
+- Recorded fork run: jgrpy9ac0ebu
+- Summary: Verified fork `5rowk3bcy2hb` output at commit `2572525c` (2 expected files changed). Noted fork's own handoff risk: public `TurnTreeProjector::build()` PHPDoc still mentioned only cycle exceptions even though `walkActivePath()` now also throws for missing parent references. Launched micro fork `jgrpy9ac0ebu` to update that stale docblock only, preserving the project rule to update comments when behavior changes.
