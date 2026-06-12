@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Process;
 
+use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
@@ -93,6 +94,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
     public function __construct(
         private readonly RuntimeProcessConfig $runtimeConfig,
+        private readonly PromptTemplatesRuntimeConfig $promptTemplatesConfig,
     ) {
         $this->eventBuffer = new \SplQueue();
     }
@@ -444,6 +446,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             [
                 ...$this->runtimeConfig->executableCommand(),
                 'agent', '--controller', '--cwd='.$runtimeCwd,
+                ...$this->promptTemplatesConfig->controllerArgs(),
             ],
             $descriptors,
             $pipes,
