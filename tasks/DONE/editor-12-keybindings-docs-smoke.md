@@ -32,14 +32,14 @@ Parallelizable with: none after dependencies.
 - `castor check` passes.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/editor-12-keybindings-docs-smoke
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-12-keybindings-docs-smoke
 Fork run: xj15ax4myylt
 PR URL: https://github.com/ineersa/agent-core/pull/114
-PR Status: open
+PR Status: merged
 Started: 2026-06-10T19:50:55.944Z
-Completed:
+Completed: 2026-06-12T01:28:38.040Z
 
 ## Work log
 - Created: 2026-05-18T00:16:39.944Z
@@ -257,3 +257,46 @@ Castor Check Output SHA256: df4162fb518372e56d6637b1f3f085766bd9fa79443ef8c7c92e
 - PR already exists: https://github.com/ineersa/agent-core/pull/114
 - Validation: Fork validation at 3d09e743: castor test:tui --filter=TuiStartupSnapshot OK; Fork validation at 3d09e743: castor test:tui OK (16 tests, 51 assertions); Fork validation at 3d09e743: castor test:llm-real --filter=OutputCapReadFileControllerTest x3 OK; Fork validation at 3d09e743: castor test:llm-real OK (5 tests, 51 assertions); Fork validation at 3d09e743: castor deptrac OK; castor phpstan OK; castor cs-check OK; Fork validation at 3d09e743: LLM_MODE=true castor check OK, all 13 steps green in ~73s; User-approved follow-up at 40168e0c: .castor/tasks.php test:tui step timeout 75s -> 90s
 - Summary: Moved back to CODE-REVIEW after fixing test hang/flakiness blockers. Final HEAD `40168e0c`: TmuxHarness uses low-overhead direct `proc_open()` with explicit per-call deadlines; startup snapshot pane keeper remains bounded at `exec sleep 10`; OutputCapReadFileControllerTest stability verified; user-approved Castor `test:tui` check step timeout increased from 75s to 90s to account for successful ~70s TUI PHPUnit runtime plus process startup/teardown overhead while keeping the step bounded.
+
+## Task workflow update - 2026-06-12T01:28:38.040Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/editor-12-keybindings-docs-smoke into integration checkout.
+- Merge made by the 'ort' strategy.
+ .castor/tasks.php                                  |   2 +-
+ AGENTS.md                                          |   2 +
+ docs/tui-architecture.md                           |  31 +-
+ docs/tui-testing.md                                |  12 +-
+ src/Tui/Application/InteractiveMode.php            |   8 +
+ src/Tui/Command/Hotkey/HotkeyBindingDTO.php        |  42 +++
+ src/Tui/Command/Hotkey/HotkeyRegistry.php          | 106 +++++++
+ src/Tui/Command/Hotkey/HotkeyTableData.php         |  37 +++
+ src/Tui/Command/SlashCommandRegistry.php           |  23 +-
+ src/Tui/Editor/PromptEditor.php                    |  18 ++
+ src/Tui/Listener/AppHotkeyRegistrar.php            | 125 ++++++++
+ src/Tui/Listener/EditorHotkeyRegistrar.php         | 167 +++++++++++
+ src/Tui/Listener/SubmitListener.php                |  50 ++++
+ src/Tui/Transcript/HotkeyTableRenderer.php         | 297 +++++++++++++++++++
+ tests/Tui/Command/Hotkey/HotkeyRegistryTest.php    | 256 +++++++++++++++++
+ tests/Tui/Command/SlashCommandRegistryTest.php     |  94 +++++-
+ .../SlashCommandCompletionProviderTest.php         |   4 +-
+ tests/Tui/E2E/HotkeySmokeTest.php                  | 297 +++++++++++++++++++
+ tests/Tui/E2E/ShellPrefixSmokeTest.php             |   2 +-
+ tests/Tui/E2E/TmuxHarness.php                      | 315 ++++++++++++++++-----
+ tests/Tui/E2E/TuiStartupSnapshotTest.php           |   2 +-
+ tests/Tui/Listener/CompletionListenerTest.php      |   8 +-
+ tests/Tui/Snapshots/startup-120x40.txt             |   6 +-
+ tests/Tui/Transcript/HotkeyTableRendererTest.php   | 182 ++++++++++++
+ 24 files changed, 1988 insertions(+), 98 deletions(-)
+ create mode 100644 src/Tui/Command/Hotkey/HotkeyBindingDTO.php
+ create mode 100644 src/Tui/Command/Hotkey/HotkeyRegistry.php
+ create mode 100644 src/Tui/Command/Hotkey/HotkeyTableData.php
+ create mode 100644 src/Tui/Listener/AppHotkeyRegistrar.php
+ create mode 100644 src/Tui/Listener/EditorHotkeyRegistrar.php
+ create mode 100644 src/Tui/Transcript/HotkeyTableRenderer.php
+ create mode 100644 tests/Tui/Command/Hotkey/HotkeyRegistryTest.php
+ create mode 100644 tests/Tui/E2E/HotkeySmokeTest.php
+ create mode 100644 tests/Tui/Transcript/HotkeyTableRendererTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/editor-12-keybindings-docs-smoke.
+- Pulled integration checkout: Already up to date..
+- Validation: Pre-merge PR check: PR #114 open, base main, head task/editor-12-keybindings-docs-smoke, mergeStateStatus CLEAN; Pre-merge quality gate from CODE-REVIEW move passed at 40168e0c with Castor gate green; Local unrelated .pi/settings.json change stashed before merge to satisfy clean integration checkout
+- Summary: Completing reviewed EDITOR-12 task after PR #114 was updated and quality gate passed at `40168e0c`. User approved proceeding to merge. Note: integration checkout had an unrelated local `.pi/settings.json` change; stashed it before merge as `pre-editor-12-done-local-pi-settings` to keep the integration checkout clean.
