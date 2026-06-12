@@ -190,3 +190,7 @@ Completed:
 
 ## Task workflow update - 2026-06-12T20:52:38.350Z
 - User reported remaining #120/#117 model-switch reasoning issue: when current reasoning is xhigh for a model like deepseek, Ctrl+P switching to a model such as z.ai that supports high but not xhigh should clamp/swap effective reasoning to high. Current behavior apparently leaves xhigh or otherwise does not clamp correctly. Dispatching scout to investigate exact model selection/reasoning persistence path before implementation.
+
+## Task workflow update - 2026-06-12T20:55:16.605Z
+- Validation: User castor check with llama.cpp generation ok: deptrac/unit/controller/llm-real/test:tui-2/phpstan/cs-check all OK; test:tui-1 FAIL exit code 1 after 44s.
+- Summary: Scout report for remaining reasoning clamp bug completed. Root cause: getDisplayReasoning() only checks whether selected model supports any thinking, not whether persisted reasoning (e.g. xhigh) is supported by the model's thinkingLevelMap; z.ai high-only models therefore display/use xhigh. ReasoningOptionsResolver also silently drops unsupported xhigh, so API request may disable thinking instead of clamping to high. Affected paths: Ctrl+P, /model, picker, startup/reopen, API invocation; Shift+Tab only clamps through supported-level cycling but falls to off if persisted xhigh not found. User also ran castor check with llama.cpp healthy; all passed except test:tui-1 failed exit 1 in 44s, so implementation fork must inspect/fix that failure and run full castor check.
