@@ -86,6 +86,10 @@ final class ModelSelectionService
     /**
      * Change the model for the current session.
      *
+     * Also clamps the persisted reasoning level to the new model's
+     * supported levels so that a stale xhigh from a previous model
+     * does not survive the switch for a high-only model.
+     *
      * @throws \RuntimeException If the model is not available
      */
     public function changeModel(AiModelReference $model, string $sessionId): void
@@ -99,6 +103,16 @@ final class ModelSelectionService
         }
 
         $this->persister->persistModel($model->toString(), $model->providerId, $model->modelName, $sessionId);
+
+        // Clamp reasoning to the new model's supported levels.
+        // Without this, a previously-persisted xhigh survives for a model
+        // that only supports up to high, causing the footer/API to show
+        // xhigh with no enable_thinking effect.
+        $currentReasoning = $this->getCurrentReasoning($sessionId);
+        $clamped = $this->clampReasoningLevel($currentReasoning, $model);
+        if ($clamped !== $currentReasoning) {
+            $this->changeReasoning($clamped, $sessionId);
+        }
 
         // Sync in-memory AppConfig (and its catalog) so current-process
         // consumers — footer state initializer, model resolver, Ctrl+P
@@ -338,10 +352,24 @@ final class ModelSelectionService
 
     /**
      * Get the effective reasoning level for display.
+     *
+     * Clamps to the model's supported levels so that a persisted xhigh
+     * becomes high when the active model only supports up to high.
      */
     public function getDisplayReasoning(string $sessionId): string
     {
         return $this->resolver->getDisplayReasoning($sessionId);
+    }
+
+    /**
+     * Clamp a reasoning level to the model's supported levels.
+     *
+     * When the given level is not in the model's thinking_level_map,
+     * returns the highest supported level instead.
+     */
+    public function clampReasoningLevel(string $level, AiModelReference $model): string
+    {
+        return $this->resolver->clampReasoningLevel($level, $model);
     }
 
     /**

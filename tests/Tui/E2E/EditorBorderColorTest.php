@@ -89,12 +89,15 @@ final class EditorBorderColorTest extends TestCase
         // Save initial ANSI snapshot for manual inspection.
         $this->saveAnsiSnapshot($pane, 'border-off');
 
-        // Extract the editor border ANSI colour after boot (reasoning = off).
+        // Collect all border-line colours after boot (reasoning = off).
+        // The editor frame border ─-rows are full-width; collecting colours
+        // from those rows creates a fingerprint that changes when the
+        // reasoning-level colour is applied to the editor frame.
         $offAnsi = $this->tmux->captureAnsi($pane);
-        $offBorderColor = $this->extractBorderColor($offAnsi);
-        self::assertNotNull(
-            $offBorderColor,
-            'Could not extract editor border ANSI colour from initial capture',
+        $offBorderColors = $this->extractBorderColors($offAnsi);
+        self::assertNotEmpty(
+            $offBorderColors,
+            'Could not extract any border-line ANSI colours from initial capture',
         );
 
         $this->saveAnsiSnapshot($pane, 'border-off');
@@ -113,21 +116,21 @@ final class EditorBorderColorTest extends TestCase
             history: 500,
         );
 
-        // Capture ANSI after first reasoning change and extract border colour.
+        // Capture ANSI after first reasoning change.
         $minimalAnsi = $this->tmux->captureAnsi($pane);
-        $minimalBorderColor = $this->extractBorderColor($minimalAnsi);
-        self::assertNotNull(
-            $minimalBorderColor,
-            'Could not extract editor border ANSI colour after Shift+Tab to minimal',
+        $minimalBorderColors = $this->extractBorderColors($minimalAnsi);
+        self::assertNotEmpty(
+            $minimalBorderColors,
+            'Could not extract border-line ANSI colours after Shift+Tab to minimal',
         );
 
         $this->saveAnsiSnapshot($pane, 'border-minimal');
 
-        // Assert the border colour differs from 'off'.
+        // Assert the border-line colour fingerprint differs from 'off'.
         self::assertNotSame(
-            $offBorderColor,
-            $minimalBorderColor,
-            'Editor border ANSI colour should change when reasoning cycles from off → minimal',
+            $offBorderColors,
+            $minimalBorderColors,
+            'Editor border colours should change when reasoning cycles from off → minimal',
         );
 
         // ── Send second Shift+Tab: minimal → low ──
@@ -145,19 +148,19 @@ final class EditorBorderColorTest extends TestCase
 
         // Capture ANSI after second reasoning change.
         $lowAnsi = $this->tmux->captureAnsi($pane);
-        $lowBorderColor = $this->extractBorderColor($lowAnsi);
-        self::assertNotNull(
-            $lowBorderColor,
-            'Could not extract editor border ANSI colour after Shift+Tab to low',
+        $lowBorderColors = $this->extractBorderColors($lowAnsi);
+        self::assertNotEmpty(
+            $lowBorderColors,
+            'Could not extract border-line ANSI colours after Shift+Tab to low',
         );
 
         $this->saveAnsiSnapshot($pane, 'border-low');
 
-        // Assert the border colour differs from 'minimal'.
+        // Assert the border-line colour fingerprint differs from 'minimal'.
         self::assertNotSame(
-            $minimalBorderColor,
-            $lowBorderColor,
-            'Editor border ANSI colour should change when reasoning cycles from minimal → low',
+            $minimalBorderColors,
+            $lowBorderColors,
+            'Editor border colours should change when reasoning cycles from minimal → low',
         );
 
         // Send Ctrl+D to exit cleanly
@@ -167,39 +170,59 @@ final class EditorBorderColorTest extends TestCase
     // ── Helpers ───────────────────────────────────────────────
 
     /**
-     * Extract the ANSI true-color sequence from the first editor border line.
+     * Collect unique ANSI true-colour sequences from full-width border
+     * rows (lines containing many ─ characters).
      *
-     * The editor frame border consists of '─' characters rendered with
-     * the thinking-level colour. This helper finds the first line
-     * containing '─' preceded by an ANSI SGR sequence (e.g.
-     * "\e[38;2;62;68;82m") and returns the colour portion
-     * "38;2;R;G;B" or the full SGR sequence.
+     * The editor frame borders are full-width ─-rows at the bottom of
+     * the pane; collecting colours from ALL such rows creates a
+     * fingerprint that changes when the reasoning-level colour is
+     * applied to the editor frame (even when other separators use
+     * constant colours).
      *
-     * Returns null if no border line with ANSI colour is found.
+     * Returns a sorted list of unique colour strings like
+     * ["38;2;62;68;82", "38;2;92;99;112"].
+     * Returns an empty list if no qualifying border line is found.
+     *
+     * @return list<string>
      */
-    private function extractBorderColor(string $ansi): ?string
+    private function extractBorderColors(string $ansi): array
     {
         $lines = explode("\n", $ansi);
+        $colors = [];
+        $dashCounts = [];
 
-        foreach ($lines as $line) {
-            // Look for lines containing border characters (─) with ANSI colour.
-            // Strip trailing ANSI reset sequences for cleaner comparison.
-            if (!str_contains($line, '─')) {
+        // First pass: count ─ chars per line to find the widest border rows.
+        foreach ($lines as $idx => $line) {
+            $dashCounts[$idx] = mb_substr_count($line, '─');
+        }
+
+        // Heuristic: full-width border rows have significantly more ─
+        // chars than incidental dashes in logo lines or status text.
+        // Use ≥ half the max dash count as the threshold (e.g. 60 of 120).
+        $maxDashes = !empty($dashCounts) ? max($dashCounts) : 0;
+        $threshold = (int) max(floor($maxDashes * 0.5), 1);
+
+        foreach ($lines as $idx => $line) {
+            if ($dashCounts[$idx] < $threshold) {
                 continue;
             }
 
             // Extract ANSI true-colour SGR: \e[38;2;R;G;Bm
             if (preg_match('/\e\[(38;2;\d+;\d+;\d+)m/', $line, $matches)) {
-                return $matches[1];
+                $colors[$matches[1]] = true;
+                continue;
             }
 
             // Also match 256-colour: \e[38;5;Nm
             if (preg_match('/\e\[(38;5;\d+)m/', $line, $matches)) {
-                return $matches[1];
+                $colors[$matches[1]] = true;
             }
         }
 
-        return null;
+        $result = array_keys($colors);
+        sort($result);
+
+        return $result;
     }
 
     /**
