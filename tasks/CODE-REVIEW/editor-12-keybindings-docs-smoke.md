@@ -32,7 +32,7 @@ Parallelizable with: none after dependencies.
 - `castor check` passes.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/editor-12-keybindings-docs-smoke
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-12-keybindings-docs-smoke
 Fork run: xj15ax4myylt
@@ -125,11 +125,11 @@ Completed:
 - Summary: Final reviewer re-review at HEAD 2d69fb29 returned APPROVE. Reviewer confirmed prior suggestions addressed, no critical issues or blockers, deptrac layering clean, HotkeyRegistry dedup handles session-switch re-registration, `/hotkeys` rendering is theme-aware through TuiTranscript renderer, and TUI E2E proof is deterministic/purely visual: Ctrl+J test uses real tmux editor state with no events.jsonl, sleeps, shell-prefix, or LLM/session artifacts; `/hotkeys` test asserts visible themed box-drawing table. Local validation run by orchestrator in worktree passed; worktree status clean.
 - task-to-pr: inspected worktree state and full diff stat; ran reviewer on HEAD 664e809b, addressed REQUEST CHANGES via fork uu1qo3b48z9q; re-reviewed HEAD 4e7a02d0 and got APPROVE WITH SUGGESTIONS; addressed sensible suggestions via fork b6a2ywizqtru; final re-review on HEAD 2d69fb29 returned APPROVE; local Castor validation passed.
 Castor Check Status: passed
-Castor Check Commit: 40639634f163476b155a727a240b713630abe299
+Castor Check Commit: 40168e0c9cd841b6374dd66e4c6608f4f7dc36a5
 Castor Check Command: LLM_MODE=true castor check
 Castor Check Timeout: 900s
-Castor Check Completed: 2026-06-11T18:02:20.991Z
-Castor Check Output SHA256: 74ff0433812203034ac7cb3d7dabc8d42f969bb957b60dccac60dd1129f8aaed
+Castor Check Completed: 2026-06-12T01:19:59.037Z
+Castor Check Output SHA256: df4162fb518372e56d6637b1f3f085766bd9fa79443ef8c7c92e0fa092832b58
 
 ## Task workflow update - 2026-06-10T22:01:24.364Z
 - Moved IN-PROGRESS → CODE-REVIEW.
@@ -248,3 +248,12 @@ Castor Check Output SHA256: 74ff0433812203034ac7cb3d7dabc8d42f969bb957b60dccac60
 ## Task workflow update - 2026-06-12T01:18:31.466Z
 - Recorded fork run: xj15ax4myylt
 - Summary: Fork xj15ax4myylt completed at commit `40168e0c`; worktree verified clean. User explicitly approved moving Castor `test:tui` check step timeout from 75s to 90s. Change is one line in `.castor/tasks.php`: `test:tui` timeout `75` -> `90`. Rationale: PHPUnit TUI suite completed successfully around 70s, but the 75s OS wrapper was too tight once startup/teardown overhead is included; 90s provides headroom while keeping the step bounded. Previous TmuxHarness bounded `proc_open()` timeout helper and OutputCap stability fixes remain intact.
+
+## Task workflow update - 2026-06-12T01:20:00.836Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: 40168e0c9cd8.
+- Pushed task/editor-12-keybindings-docs-smoke to origin.
+- branch 'task/editor-12-keybindings-docs-smoke' set up to track 'origin/task/editor-12-keybindings-docs-smoke'.
+- PR already exists: https://github.com/ineersa/agent-core/pull/114
+- Validation: Fork validation at 3d09e743: castor test:tui --filter=TuiStartupSnapshot OK; Fork validation at 3d09e743: castor test:tui OK (16 tests, 51 assertions); Fork validation at 3d09e743: castor test:llm-real --filter=OutputCapReadFileControllerTest x3 OK; Fork validation at 3d09e743: castor test:llm-real OK (5 tests, 51 assertions); Fork validation at 3d09e743: castor deptrac OK; castor phpstan OK; castor cs-check OK; Fork validation at 3d09e743: LLM_MODE=true castor check OK, all 13 steps green in ~73s; User-approved follow-up at 40168e0c: .castor/tasks.php test:tui step timeout 75s -> 90s
+- Summary: Moved back to CODE-REVIEW after fixing test hang/flakiness blockers. Final HEAD `40168e0c`: TmuxHarness uses low-overhead direct `proc_open()` with explicit per-call deadlines; startup snapshot pane keeper remains bounded at `exec sleep 10`; OutputCapReadFileControllerTest stability verified; user-approved Castor `test:tui` check step timeout increased from 75s to 90s to account for successful ~70s TUI PHPUnit runtime plus process startup/teardown overhead while keeping the step bounded.
