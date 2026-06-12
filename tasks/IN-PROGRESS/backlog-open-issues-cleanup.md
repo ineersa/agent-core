@@ -140,3 +140,8 @@ Completed:
 ## Task workflow update - 2026-06-12T19:32:35.520Z
 - Recorded fork run: bd30wksz3kbs
 - User reported castor check hangs and requested a mandatory AGENTS.md rule requiring agents/forks to read the testing skill and tests/AGENTS.md before doing anything test-related. Dispatched documentation-hardening fork bd30wksz3kbs to update root AGENTS.md only.
+
+## Task workflow update - 2026-06-12T19:34:22.104Z
+- Validation: Docs-only commit 6200e89e on task/backlog-open-issues-cleanup; no Castor validation needed for docs-only change.; Both integration checkout and worktree reported clean by fork.
+- Summary: Docs hardening fork bd30wksz3kbs completed commit 6200e89e adding a mandatory AGENTS.md rule: agents/forks/scouts must load the testing skill and read tests/AGENTS.md before test-related work or QA, must mention both in handoff, and must clean stale E2E workers before rerunning Castor checks.
+- Treating prior #120 implementation handoff as not fully acceptable for test-related work until a follow-up audit confirms tests obey testing skill + tests/AGENTS.md conventions and hanging Castor processes are understood/cleaned.
