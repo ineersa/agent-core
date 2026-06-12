@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: mbbwe3j3zxwm
+Fork run: wd4oos7mrjgf
 PR URL:
 PR Status:
 Started: 2026-06-12T16:54:23.580Z
@@ -194,3 +194,8 @@ Completed:
 ## Task workflow update - 2026-06-12T20:55:16.605Z
 - Validation: User castor check with llama.cpp generation ok: deptrac/unit/controller/llm-real/test:tui-2/phpstan/cs-check all OK; test:tui-1 FAIL exit code 1 after 44s.
 - Summary: Scout report for remaining reasoning clamp bug completed. Root cause: getDisplayReasoning() only checks whether selected model supports any thinking, not whether persisted reasoning (e.g. xhigh) is supported by the model's thinkingLevelMap; z.ai high-only models therefore display/use xhigh. ReasoningOptionsResolver also silently drops unsupported xhigh, so API request may disable thinking instead of clamping to high. Affected paths: Ctrl+P, /model, picker, startup/reopen, API invocation; Shift+Tab only clamps through supported-level cycling but falls to off if persisted xhigh not found. User also ran castor check with llama.cpp healthy; all passed except test:tui-1 failed exit 1 in 44s, so implementation fork must inspect/fix that failure and run full castor check.
+
+## Task workflow update - 2026-06-12T21:04:52.690Z
+- Recorded fork run: wd4oos7mrjgf
+- Validation: castor test --filter=ModelResolverTest: PASS (36 tests, 64 assertions) per fork handoff.; castor test --filter=ModelSelectionServiceTest: PASS (28 tests, 78 assertions) per fork handoff.; castor test: PASS (2,472 tests, 7,189 assertions) per fork handoff.; castor phpstan: PASS (0 errors) per fork handoff.; castor cs-check: PASS per fork handoff.; LLM_MODE=true castor check: attempted but blocked by llama.cpp generation preflight; server intermittently returns curl exit 52 empty reply. Full E2E validation pending stable llama.cpp.
+- Summary: Fork wd4oos7mrjgf completed remaining reasoning clamp fix and current test:tui-1 failure fix. Commit 37b56385 pushed to origin/task/backlog-open-issues-cleanup. Reasoning is now clamped to model-supported levels: xhigh persists/works on xhigh-capable models, but explicit model switch to a high-only thinking model clamps to high and persists the clamped value so footer/editor/API/next Shift+Tab use high. SessionAwareModelResolver also clamps before provider request. EditorBorderColorTest ANSI parser was fixed to collect color sets from full-width border rows instead of the first dash line/header separator.
