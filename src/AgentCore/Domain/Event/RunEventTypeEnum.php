@@ -39,6 +39,10 @@ enum RunEventTypeEnum: string
     case ToolCallResultReceived = 'tool_call_result_received';
     case ToolBatchCommitted = 'tool_batch_committed';
 
+    // ── Turn tree metadata (append-only canonical) ───────────────────────
+    case TurnBranched = 'turn_branched';
+    case LeafSet = 'leaf_set';
+
     /**
      * Whether the given event type string belongs to the ordered lifecycle stream
      * (the 10 core cases: AgentStart through AgentEnd).
