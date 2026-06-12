@@ -6,6 +6,7 @@ use Castor\Attribute\AsTask;
 
 use function Castor\run;
 use function CastorTasks\build_idea_run_config_xml;
+use function CastorTasks\check_llm_generation_ready;
 use function CastorTasks\is_llm_mode;
 use function CastorTasks\persist_process_output;
 use function CastorTasks\relative_report_path;
@@ -105,13 +106,16 @@ function check(): void
                 60,
             ),
         ],
-        'test:tui' => [
+        'test:tui-1' => [
             'cmd' => timeout_check_command(
-                'APP_ENV=test '.$pharEnv.$phpBin.' vendor/bin/phpunit'
-                    .' --group tui-e2e'
-                    .' '.$strictFlags.$llmFlags
-                    .(is_llm_mode() ? ' --log-junit='.report_path('phpunit-tui.junit.xml') : ''),
-                90,
+                build_tui_e2e_worker_command(1, $pharEnv),
+                60,
+            ),
+        ],
+        'test:tui-2' => [
+            'cmd' => timeout_check_command(
+                build_tui_e2e_worker_command(2, $pharEnv),
+                60,
             ),
         ],
         'phpstan' => [
@@ -139,6 +143,12 @@ function check(): void
     if (0 !== $migrate->getExitCode()) {
         fail_quality('test database migration failed: '.$migrate->getErrorOutput());
     }
+
+    // Fail-fast: verify llama.cpp can actually generate before burning
+    // time on controller / llm-real / TUI E2E steps.  Health-only checks
+    // are insufficient — the server can respond to /health and /v1/models
+    // while generation is stuck (corrupted model load, slots busy).
+    check_llm_generation_ready();
 
     $failures = [];
     $timings = [];
@@ -570,6 +580,111 @@ function coding_agent_shard_groups(int $numShards = 4): array
     }
 
     return $result;
+}
+
+/**
+ * Split TUI E2E test files into timing-balanced shards.
+ *
+ * Discovers all *Test.php files under tests/Tui/E2E/, sorts them
+ * strategically so the heaviest files land in different round-robin
+ * shards, then distributes them.  New files are picked up
+ * automatically and round-robined after the known-heavy seed.
+ *
+ * Verified balances (8 files, Jan 2026): Shard 1 ~37s, Shard 2 ~48s
+ * (vs monolithic ~78s).
+ *
+ * @param int $numShards number of shards
+ *
+ * @return array<string, list<string>>
+ */
+function tui_e2e_shard_groups(int $numShards = 2): array
+{
+    $testDir = 'tests/Tui/E2E';
+    $files = [];
+
+    $iter = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($testDir, FilesystemIterator::SKIP_DOTS)
+    );
+    foreach ($iter as $file) {
+        if ($file->isFile() && str_ends_with($file->getFilename(), 'Test.php')) {
+            $files[] = $file->getPathname();
+        }
+    }
+
+    // Strategic seed order so the two heaviest classes land in
+    // different round-robin shards.  Unknown files append at the end
+    // in alphabetical order and get round-robined automatically.
+    $seedOrder = [
+        'tests/Tui/E2E/TuiAgentSmokeTest.php',
+        'tests/Tui/E2E/ShellPrefixSmokeTest.php',
+        'tests/Tui/E2E/SessionRenameE2ETest.php',
+        'tests/Tui/E2E/ImmediateSubmitFeedbackTest.php',
+    ];
+
+    $seeded = [];
+    $rest = [];
+    foreach ($files as $f) {
+        if (in_array($f, $seedOrder, true)) {
+            $seeded[] = $f;
+        } else {
+            $rest[] = $f;
+        }
+    }
+
+    // Stabilize: sort seed files by their position in $seedOrder,
+    // sort remaining files alphabetically.
+    usort($seeded, static function (string $a, string $b) use ($seedOrder): int {
+        return array_search($a, $seedOrder, true) <=> array_search($b, $seedOrder, true);
+    });
+    sort($rest);
+
+    $ordered = array_merge($seeded, $rest);
+
+    $shards = array_fill(1, $numShards, []);
+    foreach ($ordered as $i => $f) {
+        $shardIdx = ($i % $numShards) + 1;
+        $shards[$shardIdx][] = $f;
+    }
+
+    $result = [];
+    for ($i = 1; $i <= $numShards; ++$i) {
+        $result['tui-e2e-'.$i] = $shards[$i];
+    }
+
+    return $result;
+}
+
+/**
+ * Build the PHPUnit invocation for one TUI E2E shard in castor check().
+ *
+ * Unlike standalone test:tui which uses --group tui-e2e, check() splits
+ * TUI E2E into parallel shards.  Each shard receives its own set of test
+ * file paths so only its portion of the suite runs, with its own DB,
+ * cache directory, JUnit, and log files.
+ */
+function build_tui_e2e_worker_command(int $shardNum, string $pharEnv): string
+{
+    $worker = 'tui-e2e-'.$shardNum;
+    $dbEnv = 'HATFIELD_TEST_DATABASE_PATH='.escapeshellarg('app_test-tui-e2e-'.$shardNum.'.sqlite');
+    $phpBin = \PHP_BINARY;
+    $cacheDirEnv = 'HATFIELD_CACHE_DIR=.hatfield/cache-'.$worker;
+    $cacheDir = 'var/cache/.phpunit-'.$worker;
+    $junitFlag = is_llm_mode() ? ' --log-junit='.report_path('phpunit-'.$worker.'.junit.xml') : '';
+    $strictFlags = phpunit_strict_issue_flags();
+    $llmFlags = is_llm_mode() ? ' --colors=never --no-progress' : '';
+
+    $dirs = tui_e2e_shard_groups()[$worker] ?? [];
+    if ([] === $dirs) {
+        throw new RuntimeException("Unknown TUI E2E shard: {$worker}");
+    }
+    $phpunitArgs = implode(' ', array_map('escapeshellarg', $dirs));
+
+    return 'APP_ENV=test '.$cacheDirEnv.' '.$dbEnv.' '.$phpBin.' bin/console'
+        .' doctrine:migrations:migrate --no-interaction --allow-no-migration'
+        .' && APP_ENV=test '.$cacheDirEnv.' '.$dbEnv.' '.$pharEnv.$phpBin.' vendor/bin/phpunit'
+        .' '.$phpunitArgs
+        .' --cache-directory '.escapeshellarg($cacheDir)
+        .' '.$strictFlags.$llmFlags.$junitFlag;
 }
 
 /**
@@ -1198,6 +1313,8 @@ function phar_clean(): void
 #[AsTask(name: 'test:tui', description: 'Run TUI e2e snapshot tests (requires tmux), using the built PHAR')]
 function test_tui(string $filter = ''): void
 {
+    check_llm_generation_ready();
+
     $pharPath = phar_path_for_test_task();
     $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
 
@@ -1227,6 +1344,8 @@ function test_tui(string $filter = ''): void
 #[AsTask(name: 'test:llm-real', description: 'Run opt-in real llama.cpp smoke test against configured llama_cpp provider')]
 function test_llm_real(string $filter = ''): void
 {
+    check_llm_generation_ready();
+
     $pharPath = phar_path_for_test_task();
     $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
 
@@ -1255,6 +1374,8 @@ function test_llm_real(string $filter = ''): void
 #[AsTask(name: 'test:controller', description: 'Run controller E2E smoke test (spawns --controller, sends JSONL)')]
 function test_controller(string $filter = ''): void
 {
+    check_llm_generation_ready();
+
     $pharPath = phar_path_for_test_task();
     $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
 
@@ -1272,6 +1393,8 @@ function test_controller(string $filter = ''): void
 #[AsTask(name: 'test:tui-update', description: 'Run TUI e2e tests and update golden snapshots')]
 function test_tui_update(string $filter = ''): void
 {
+    check_llm_generation_ready();
+
     $pharPath = phar_path_for_test_task();
     $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
 
@@ -1741,7 +1864,7 @@ function phpunit_risky_summary(string $logPath): string
  */
 function phpunit_strict_issue_flags(): string
 {
-    return '--fail-on-all-issues --display-all-issues';
+    return '--stop-on-error --stop-on-failure --fail-on-all-issues --display-all-issues';
 }
 
 function run_quality_step(string $stepName, string $command, string $junitFilename, string $logFilename): void

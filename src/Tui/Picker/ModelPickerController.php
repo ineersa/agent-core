@@ -291,6 +291,9 @@ final class ModelPickerController
         $this->state->footerReasoning = $this->modelService->getDisplayReasoning($this->state->sessionId);
         $this->state->contextWindow = FooterStateInitializer::resolveContextWindowForRef($this->appConfig, $ref);
 
+        // Apply editor border colour matching the new reasoning level.
+        $this->screen->applyEditorBorderColor($this->state->footerReasoning);
+
         $this->screen->refresh();
     }
 

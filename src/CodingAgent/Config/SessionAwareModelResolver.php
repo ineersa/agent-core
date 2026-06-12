@@ -51,6 +51,11 @@ final class SessionAwareModelResolver implements ModelResolverInterface
         );
 
         if (null !== $modelRef) {
+            // Clamp the reasoning level to the model's supported levels.
+            // A persisted xhigh for a model that only supports up to high
+            // must be resolved to high so enable_thinking is honoured.
+            $reasoning = $this->selectionService->clampReasoningLevel($reasoning, $modelRef);
+
             return new ResolvedModel(
                 model: $modelRef->toString(),
                 providerId: $modelRef->providerId,

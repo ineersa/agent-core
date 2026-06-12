@@ -161,7 +161,8 @@ final class ModelResolver
      * Get the effective reasoning level for display (footer color, UI indicator).
      *
      * Returns 'off' when the current model does not support thinking levels;
-     * otherwise returns the persisted current reasoning.
+     * otherwise returns the current reasoning clamped to the model's supported
+     * levels (e.g. xhigh → high when the model only supports up to high).
      */
     public function getDisplayReasoning(string $sessionId): string
     {
@@ -169,7 +170,14 @@ final class ModelResolver
             return 'off';
         }
 
-        return $this->getCurrentReasoning($sessionId);
+        $level = $this->getCurrentReasoning($sessionId);
+        $model = $this->getCurrentModel($sessionId);
+
+        if (null === $model) {
+            return $level;
+        }
+
+        return $this->clampReasoningLevel($level, $model);
     }
 
     /**
@@ -229,6 +237,42 @@ final class ModelResolver
     // ──────────────────────────────────────────────
     //  Cycling helpers
     // ──────────────────────────────────────────────
+
+    /**
+     * Clamp a reasoning level to the model's supported levels.
+     *
+     * When the given level is not in the model's thinking_level_map,
+     * this returns the highest supported level instead.  Example:
+     * xhigh on a z.ai high-only model → high.
+     *
+     * Non-"off" levels that are not supported fall to the highest
+     * key in the map.  "off" is always returned as-is.
+     */
+    public function clampReasoningLevel(string $level, AiModelReference $model): string
+    {
+        if ('off' === $level) {
+            return 'off';
+        }
+
+        $catalog = $this->appConfig->catalog;
+        if (null === $catalog) {
+            return $level;
+        }
+
+        $def = $catalog->getModel($model);
+        if (null === $def || [] === $def->thinkingLevelMap) {
+            return $level;
+        }
+
+        if (\array_key_exists($level, $def->thinkingLevelMap)) {
+            return $level;
+        }
+
+        // Not supported — clamp to the highest level in the map.
+        $mapKeys = array_keys($def->thinkingLevelMap);
+
+        return end($mapKeys);
+    }
 
     /**
      * Cycle to the next reasoning level.

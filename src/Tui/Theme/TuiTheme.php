@@ -43,4 +43,12 @@ interface TuiTheme
     public function warning(string $text): string;
 
     public function error(string $text): string;
+
+    /**
+     * Get the underlying palette for introspection and direct color resolution.
+     *
+     * Used by callers that need a raw color spec (e.g. for constructing
+     * Symfony TUI Style objects) rather than ANSI-wrapped text.
+     */
+    public function getPalette(): ThemePalette;
 }

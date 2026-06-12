@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Config;
 
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
+use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
@@ -330,6 +331,115 @@ class ModelResolverTest extends TestCase
         $resolver = $this->createResolver(['default_model' => 'unknown/model']);
 
         self::assertSame('off', $resolver->getDisplayReasoning(''));
+    }
+
+    // ──────────────────────────────────────────────
+    //  Clamp reasoning level
+    // ──────────────────────────────────────────────
+
+    public function testClampReasoningLevelReturnsLevelWhenSupported(): void
+    {
+        $resolver = $this->createResolver($this->standardAiData());
+        $model = new AiModelReference('deepseek', 'deepseek-v4-pro');
+
+        self::assertSame('xhigh', $resolver->clampReasoningLevel('xhigh', $model));
+        self::assertSame('off', $resolver->clampReasoningLevel('off', $model));
+    }
+
+    public function testClampReasoningLevelReturnsHighestSupportedWhenNotInMap(): void
+    {
+        // Build a z.ai-style model that supports high but not xhigh
+        $aiData = [
+            'providers' => [
+                'zai' => [
+                    'type' => 'generic',
+                    'enabled' => true,
+                    'base_url' => 'https://api.z.ai',
+                    'models' => [
+                        'glm-5.1' => [
+                            'id' => 'glm-5.1',
+                            'name' => 'GLM 5.1',
+                            'context_window' => 131072,
+                            'max_tokens' => 131072,
+                            'input' => ['text'],
+                            'reasoning' => true,
+                            'thinking_level_map' => [
+                                'minimal' => 'minimal',
+                                'low' => 'low',
+                                'medium' => 'medium',
+                                'high' => 'high',
+                                // No xhigh entry — model does not support it
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+        $resolver = $this->createResolver($aiData);
+        $model = new AiModelReference('zai', 'glm-5.1');
+
+        // xhigh not in map → clamp to highest = high
+        self::assertSame('high', $resolver->clampReasoningLevel('xhigh', $model));
+        // off is always preserved
+        self::assertSame('off', $resolver->clampReasoningLevel('off', $model));
+        // supported levels are preserved
+        self::assertSame('low', $resolver->clampReasoningLevel('low', $model));
+    }
+
+    public function testClampReasoningLevelReturnsLevelWhenNoMap(): void
+    {
+        $resolver = $this->createResolver($this->standardAiData());
+        $model = new AiModelReference('llama_cpp', 'flash');
+
+        // llama_cpp/flash has no thinking_level_map — level passes through
+        self::assertSame('xhigh', $resolver->clampReasoningLevel('xhigh', $model));
+    }
+
+    public function testClampReasoningLevelReturnsLevelWhenNoCatalog(): void
+    {
+        $resolver = $this->createResolver([]);
+        $model = new AiModelReference('unknown', 'unknown');
+
+        self::assertSame('xhigh', $resolver->clampReasoningLevel('xhigh', $model));
+    }
+
+    public function testGetDisplayReasoningClampsXhighToHighForZaiStyleModel(): void
+    {
+        // Setup: z.ai is default.  default_reasoning is xhigh but
+        // the z.ai model's thinking_level_map only goes up to high.
+        // getDisplayReasoning must clamp xhigh → high.
+        $aiData = [
+            'default_model' => 'zai/glm-5.1',
+            'default_reasoning' => 'xhigh',
+            'providers' => [
+                'zai' => [
+                    'type' => 'generic',
+                    'enabled' => true,
+                    'base_url' => 'https://api.z.ai',
+                    'models' => [
+                        'glm-5.1' => [
+                            'id' => 'glm-5.1',
+                            'name' => 'GLM 5.1',
+                            'context_window' => 131072,
+                            'max_tokens' => 131072,
+                            'input' => ['text'],
+                            'reasoning' => true,
+                            'thinking_level_map' => [
+                                'minimal' => 'minimal',
+                                'low' => 'low',
+                                'medium' => 'medium',
+                                'high' => 'high',
+                                // No xhigh entry
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+        $resolver = $this->createResolver($aiData);
+
+        // default_reasoning is xhigh, model only supports up to high → clamp
+        self::assertSame('high', $resolver->getDisplayReasoning(''));
     }
 
     // ──────────────────────────────────────────────
