@@ -27,7 +27,7 @@ Enables parallel follow-up: PT-02 and PT-03 can start after this lands.
 Status: IN-PROGRESS
 Branch: task/prompt-templates-01-core-config-loader
 Worktree: /home/ineersa/projects/agent-core-worktrees/prompt-templates-01-core-config-loader
-Fork run: dxxpp2hl1jgb
+Fork run: lrh416qv4ipw
 PR URL:
 PR Status:
 Started: 2026-06-12T01:42:36.569Z
@@ -60,3 +60,8 @@ Completed:
 
 ## Task workflow update - 2026-06-12T02:15:47.195Z
 - Reviewer subagent returned `APPROVE WITH SUGGESTIONS`: no critical issues; actionable suggestions were to remove the public `PromptTemplateService::loadResult()` test-only API and document/test `${@}` substitution behavior. Launched fix fork `lrh416qv4ipw` in the task worktree with those exact changes and focused Castor validation instructions.
+
+## Task workflow update - 2026-06-12T02:18:43.258Z
+- Recorded fork run: lrh416qv4ipw
+- Validation: Fork reported: `castor test --filter=PromptTemplateServiceTest` OK (10 tests, 16 assertions, 0 failures).; Fork reported: `castor test --filter=PromptTemplateSubstitutorTest` OK (24 tests, 25 assertions, 0 failures).; Fork reported: `castor phpstan` OK (0 errors).; Fork reported: `castor cs-check` OK (0 fixes).; Orchestrator verification: `git status --short --branch` clean on `task/prompt-templates-01-core-config-loader`.; Orchestrator verification: `git log --oneline --decorate -5` shows HEAD `ce058dd6` followed by implementation commit `24aedbf7`.
+- Summary: Review-fix fork completed and committed `ce058dd6` (`PT-01 review: remove loadResult() public API, add ${@} edge-behavior docblock + test`). Changes remove public `PromptTemplateService::loadResult()` and update cache test to use public API only; document/test actual `${@}` passthrough behavior. Worktree verified clean at `ce058dd6`.
