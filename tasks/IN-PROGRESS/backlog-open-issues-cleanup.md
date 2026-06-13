@@ -303,3 +303,6 @@ Completed:
 ## Task workflow update - 2026-06-13T02:51:25.883Z
 - Validation: Parent verified commits on local branch: 94b1c640 adds structured runtime/TUI logging; 010f447f cs-fix; branch rebased on origin/main at b475c9c4.; Parent inspected reports: test:tui-2 passed in 53.6s; test:tui-1 log lacks summary consistent with timeout.
 - Summary: Continuation fork qnj74i0fyaig committed local rebased branch changes but did not push because rebase rewrote origin/task history and push requires --force-with-lease. Parent inspected state: branch is rebased onto origin/main (origin/main...HEAD 0 behind/8 ahead), ahead origin/task by 24/behind 6 due history rewrite; untracked php.php remains. Full castor check is not green yet: test:tui-1 times out due new CostFooterE2ETest adding a full LLM turn to the heavier shard. Sequential TUI E2E reportedly passes all 22 tests in 92.7s. Need fix TUI E2E shard balance/timeout, rerun full check, then force-with-lease push.
+
+## Task workflow update - 2026-06-13T02:51:52.990Z
+- User clarified final validation fix should both optimize CostFooterE2ETest itself and optimize TUI E2E shard balance; not just increase timeout or move files around.
