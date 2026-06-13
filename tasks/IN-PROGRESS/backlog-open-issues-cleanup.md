@@ -275,3 +275,7 @@ Completed:
 
 ## Task workflow update - 2026-06-13T00:26:52.514Z
 - User validated #122 cost calculation works, but Hatfield unexpectedly closed/crashed while user was typing with no visible errors. User asked to launch scout to inspect the last session/logs before merging #122.
+
+## Task workflow update - 2026-06-13T00:29:45.118Z
+- Validation: Scout checked .hatfield/sessions, .hatfield/logs, var/tmp/phar and identified exact log stack trace and timestamps.; Scout confirmed current var/tmp/phar/hatfield.phar contains TuiSessionLifecycleEndReasonEnum.php and `php hatfield.phar --version` boots.
+- Summary: Scout investigated user's unexpected Hatfield closure during #122 manual validation. Root cause found with high confidence in .hatfield/logs/agent-2026-06-12.log: stale PHAR crashed on TUI exit path with fatal Error `Class Ineersa\Tui\Runtime\TuiSessionLifecycleEndReasonEnum not found` at phar://.../src/Tui/Application/InteractiveMode.php:219 around 2026-06-12T20:24:35.832. Controller/workers then shut down. Current PHAR built moments later contains the enum and boots; dirty .hatfield/settings.yaml pricing is unrelated. Recommended no fix unless it reproduces with current PHAR; then investigate fresh logs.
