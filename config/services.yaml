@@ -222,6 +222,14 @@ services:
     arguments:
       $executor: '@Ineersa\CodingAgent\Migrations\ApplicationMigrationExecutor'
 
+  # HatfieldModelCatalog — build from AppConfig.ai so all consumers share the
+  # same catalog populated from settings, not an auto-wired empty default.
+  # AiCostCalculator, CodingAgentImageCapabilityChecker, and any future
+  # catalog consumer must use this definition instead of autowiring.
+  Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog:
+    arguments:
+      $config: '@=service("Ineersa\\CodingAgent\\Config\\AppConfig").ai'
+
   # CodingAgentImageCapabilityChecker — wraps HatfieldModelCatalog from AppConfig.
   Ineersa\CodingAgent\Tool\ImageProcessing\CodingAgentImageCapabilityChecker:
     factory: ['Ineersa\CodingAgent\Tool\ImageProcessing\CodingAgentImageCapabilityChecker', 'fromAppConfig']
