@@ -268,7 +268,7 @@ ai:
                     input: [text, image]
                     tool_calling: true
                     reasoning: false
-                    cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 }
+                    cost: { input: 1000.0, output: 100000.0, cache_read: 0, cache_write: 0 }
 
         zai:
             type: generic
