@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: tunnaig5sx9x
+Fork run: cfwu5q8ei2ei
 PR URL:
 PR Status:
 Started: 2026-06-12T16:54:23.580Z
@@ -279,3 +279,8 @@ Completed:
 ## Task workflow update - 2026-06-13T00:29:45.118Z
 - Validation: Scout checked .hatfield/sessions, .hatfield/logs, var/tmp/phar and identified exact log stack trace and timestamps.; Scout confirmed current var/tmp/phar/hatfield.phar contains TuiSessionLifecycleEndReasonEnum.php and `php hatfield.phar --version` boots.
 - Summary: Scout investigated user's unexpected Hatfield closure during #122 manual validation. Root cause found with high confidence in .hatfield/logs/agent-2026-06-12.log: stale PHAR crashed on TUI exit path with fatal Error `Class Ineersa\Tui\Runtime\TuiSessionLifecycleEndReasonEnum not found` at phar://.../src/Tui/Application/InteractiveMode.php:219 around 2026-06-12T20:24:35.832. Controller/workers then shut down. Current PHAR built moments later contains the enum and boots; dirty .hatfield/settings.yaml pricing is unrelated. Recommended no fix unless it reproduces with current PHAR; then investigate fresh logs.
+
+## Task workflow update - 2026-06-13T00:38:30.689Z
+- Recorded fork run: cfwu5q8ei2ei
+- Validation: Per fork: castor cs-check passed (0 fixes).; Per fork: castor test:tui --filter=CostFooterE2ETest passed (1 test, 1 assertion).; Parent verified git status: branch matches origin/task/backlog-open-issues-cleanup and only untracked file is php.php.
+- Summary: Fork cfwu5q8ei2ei completed config follow-up in commit 0f113db9: `.hatfield/settings.yaml` now uses the same high llama_cpp_test/test pricing as CostFooterE2ETest (`input: 1000.0`, `output: 100000.0`, with explicit cache_read/cache_write 0). Dirty pricing diff is now committed. Parent verified branch at 0f113db9. Worktree has unrelated untracked `php.php` remaining; not committed.
