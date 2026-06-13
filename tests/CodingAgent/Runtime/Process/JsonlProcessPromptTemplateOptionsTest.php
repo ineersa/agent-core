@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Process;
 
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator;
@@ -165,6 +166,7 @@ PHP);
         $client = new JsonlProcessAgentSessionClient(
             runtimeConfig: $runtimeConfig,
             promptTemplatesConfig: $promptConfig,
+            logger: new TestLogger(),
         );
 
         $handle = $client->start(new StartRunRequest(

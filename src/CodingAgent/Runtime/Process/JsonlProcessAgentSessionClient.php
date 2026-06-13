@@ -12,6 +12,7 @@ use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Psr\Log\LoggerInterface;
 
 /**
  * Process-isolated implementation of AgentSessionClient.
@@ -95,6 +96,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
     public function __construct(
         private readonly RuntimeProcessConfig $runtimeConfig,
         private readonly PromptTemplatesRuntimeConfig $promptTemplatesConfig,
+        private readonly LoggerInterface $logger,
     ) {
         $this->eventBuffer = new \SplQueue();
     }
@@ -207,13 +209,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             runId: $runId,
         );
 
-        try {
-            $this->writeCommand($cmd);
-        } catch (\RuntimeException) {
-            // Pipe may have broken — restart and retry once.
-            $this->ensureProcessRunning();
-            $this->writeCommand($cmd);
-        }
+        $this->writeCommandWithRetry($cmd);
 
         return new RunHandle(runId: $runId, status: 'running');
     }
@@ -251,13 +247,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             payload: $payload,
         );
 
-        try {
-            $this->writeCommand($cmd);
-        } catch (\RuntimeException) {
-            // Pipe may have broken — restart and retry once.
-            $this->ensureProcessRunning();
-            $this->writeCommand($cmd);
-        }
+        $this->writeCommandWithRetry($cmd);
     }
 
     public function events(string $runId): iterable
@@ -294,13 +284,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             runId: $runId,
         );
 
-        try {
-            $this->writeCommand($cmd);
-        } catch (\RuntimeException) {
-            // Pipe may have broken — restart and retry once.
-            $this->ensureProcessRunning();
-            $this->writeCommand($cmd);
-        }
+        $this->writeCommandWithRetry($cmd);
     }
 
     public function shellExecute(string $command, string $sessionId, string $cwd): RunHandle
@@ -321,13 +305,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             ],
         );
 
-        try {
-            $this->writeCommand($cmd);
-        } catch (\RuntimeException) {
-            // Pipe may have broken — restart and retry once.
-            $this->ensureProcessRunning();
-            $this->writeCommand($cmd);
-        }
+        $this->writeCommandWithRetry($cmd);
 
         return new RunHandle(runId: $sessionId, status: 'running');
     }
@@ -342,13 +320,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             runId: $runId,
         );
 
-        try {
-            $this->writeCommand($cmd);
-        } catch (\RuntimeException) {
-            // Pipe may have broken — restart and retry once.
-            $this->ensureProcessRunning();
-            $this->writeCommand($cmd);
-        }
+        $this->writeCommandWithRetry($cmd);
     }
 
     private function ensureProcessRunning(): void
@@ -542,6 +514,28 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         }
 
         fflush($this->pipes[0]);
+    }
+
+    /**
+     * Write a command to the controller, restarting and retrying once on
+     * pipe failure with structured logging.
+     */
+    private function writeCommandWithRetry(RuntimeCommand $command): void
+    {
+        try {
+            $this->writeCommand($command);
+        } catch (\RuntimeException $e) {
+            // Pipe may have broken — restart and retry once.
+            $this->logger->warning('Controller pipe broken, restarting and retrying', [
+                'component' => 'JsonlProcessAgentSessionClient',
+                'session_id' => $this->sessionId ?? '',
+                'command_type' => $command->type,
+                'command_id' => $command->id,
+                'exception' => $e,
+            ]);
+            $this->ensureProcessRunning();
+            $this->writeCommand($command);
+        }
     }
 
     /**

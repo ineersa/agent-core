@@ -104,6 +104,25 @@ final class HeadlessController
         // a living controller instance.
         $this->killOrphanedConsumers();
 
+        // Wire the consumer abandonment callback so the TUI sees a
+        // protocol error when a consumer is permanently lost instead of
+        // sitting on "Working..." indefinitely.
+        $this->consumerSupervisor->onConsumerAbandoned(function (string $key, string $transportName): void {
+            $this->emitter->emit(new RuntimeEvent(
+                type: RuntimeEventTypeEnum::ProtocolError->value,
+                runId: '',
+                seq: 0,
+                payload: [
+                    'error' => \sprintf(
+                        'Consumer abandoned after restart limit: transport=%s key=%s. Some agent capabilities may be unavailable.',
+                        $transportName,
+                        $key,
+                    ),
+                    'transport' => $transportName,
+                ],
+            ));
+        });
+
         $this->emitter->emit(new RuntimeEvent(
             type: RuntimeEventTypeEnum::RuntimeReady->value,
             runId: '',
@@ -137,8 +156,18 @@ final class HeadlessController
 
             $line = fgets($stream);
             if (false === $line) {
-                // EOF or error — close stdin watcher.
+                // EOF or error — the parent TUI process has disconnected
+                // (crash, SIGKILL, terminal close).  If we only cancel the
+                // watcher, the event loop and consumer subprocesses will
+                // continue running as orphans consuming resources silently.
+                $this->logger->warning('Controller stdin EOF — parent process disconnected, shutting down', [
+                    'component' => 'HeadlessController',
+                    'event_type' => 'stdin_eof',
+                    'session_id' => $this->sessionId,
+                ]);
                 EventLoop::cancel($watcherId);
+                $this->shutdown();
+                EventLoop::getDriver()->stop();
 
                 return;
             }

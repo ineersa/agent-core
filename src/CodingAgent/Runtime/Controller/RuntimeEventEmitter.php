@@ -204,10 +204,15 @@ final class RuntimeEventEmitter
 
         if (false === $written || 0 === $written) {
             $error = $writeError;
-            $this->logger->error('Controller stdout write failed, initiating shutdown', [
+            $logContext = [
+                'component' => 'RuntimeEventEmitter',
                 'event_type' => $event->type,
                 'error' => $error['message'] ?? 'unknown',
-            ]);
+            ];
+            if ('' !== $event->runId) {
+                $logContext['run_id'] = $event->runId;
+            }
+            $this->logger->error('Controller stdout write failed, initiating shutdown', $logContext);
             $this->shuttingDown = true;
 
             // Delegate full shutdown (consumer supervision, bg process cleanup)
