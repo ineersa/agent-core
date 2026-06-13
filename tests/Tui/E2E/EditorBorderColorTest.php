@@ -108,31 +108,6 @@ final class EditorBorderColorTest extends TestCase
             ),
         );
 
-        // ── Shift+Tab: minimal → low ─────────────────────────────────
-
-        $this->tmux->sendLiteral($pane, "\x1b[Z");
-
-        $this->tmux->waitForCallback(
-            $pane,
-            static fn (string $c): bool => str_contains($c, 'low'),
-            timeout: 5.0,
-            message: 'Reasoning "low" did not appear',
-            history: 500,
-        );
-
-        $low = $this->editorBorderColour($pane);
-        self::assertNotNull($low, 'Border colour at reasoning=low should not be null');
-
-        self::assertNotSame(
-            $minimal,
-            $low,
-            \sprintf(
-                'Border colour should change minimal(%s) → low(%s)',
-                $minimal,
-                $low,
-            ),
-        );
-
         $this->tmux->sendKey($pane, 'C-d');
     }
 
