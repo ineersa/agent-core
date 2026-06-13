@@ -1456,6 +1456,7 @@ function _find_child_pids(int $ppid): array
 function test_timeout_hardstop(string $cmdOverride = ''): void
 {
     echo "=== Castor timeout hard-stop + normal-exit cleanup smoke proof ===\n\n";
+    $root = (false !== ($_rp = realpath(__DIR__.'/..')) ? $_rp : __DIR__.'/..');
     $ok = true;
 
     // ── Test A: Timeout leak (original proof) ──────────────────
@@ -1579,8 +1580,79 @@ function test_timeout_hardstop(string $cmdOverride = ''): void
         echo "PASS: no orphan processes after normal exit (pre={$preCountB}, post={$postCountB})\n";
     }
 
+    // ── Test C: Startup stale-worker cleanup ─────────────────
+    echo "\n── Test C: Startup cleanup_stale_check_workers kills stale PHAR workers ──\n\n";
+
+    // Spawn a fake stale process whose ps output looks like a leaked
+    // messenger consumer.  Use array-form proc_open (no intermediate
+    // sh -c escaping) with bash + exec -a (dash does not support it).
+    // tail -f /dev/null blocks forever; extra args after -- are treated
+    // as filenames (harmless; only /dev/null produces output).
+    //
+    // ps output: <pharPath> -f /dev/null -- messenger:consume fake --time-limit=3600
+    $pharPath = $root.'/var/tmp/phar/hatfield.phar';
+    $fakeArgs = ['bash', '-c', 'exec -a '.$pharPath
+        .' tail -f /dev/null -- messenger:consume fake --time-limit=3600'];
+
+    echo "Fake stale worker args:\n  ".implode(' ', $fakeArgs)."\n\n";
+
+    $fakeProc = @proc_open($fakeArgs, [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $fakePipes);
+    if (!is_resource($fakeProc)) {
+        echo "FAIL: could not start fake stale worker\n";
+        $ok = false;
+    } else {
+        fclose($fakePipes[0]);
+        $fakePid = proc_get_status($fakeProc)['pid'];
+        echo "Fake stale worker PID: {$fakePid}\n";
+
+        // Give the child a moment to exec.
+        usleep(500_000);
+
+        // Verify ps shows the expected shape.
+        $psLine = '';
+        @exec('ps -p '.$fakePid.' -o args= 2>/dev/null', $psLines);
+        if ([] !== $psLines) {
+            $psLine = trim($psLines[0]);
+        }
+        echo "ps args: {$psLine}\n";
+
+        $preCountC = count_alive_descendants();
+        echo "Pre-cleanup descendants: {$preCountC}\n";
+
+        // Run the startup cleanup helper.
+        cleanup_stale_check_workers($root);
+        usleep(1_000_000); // 1 s settle
+
+        $postCountC = count_alive_descendants();
+        echo "Post-cleanup descendants: {$postCountC}\n";
+
+        // Reap the proc handle first so zombies are cleaned up.
+        // kill -9 leaves a zombie until the parent wait()s; posix_kill
+        // returns true for zombies, so close the handle before checking.
+        @fclose($fakePipes[1]);
+        @fclose($fakePipes[2]);
+        @proc_close($fakeProc);
+        usleep(200_000);
+
+        // Now check if the PID is truly gone.
+        $fakeAlive = @posix_kill($fakePid, 0);
+        if ($fakeAlive) {
+            // Double-check: maybe it's a zombie adopted elsewhere.
+            $psState = (string) @shell_exec('ps -p '.$fakePid.' -o state= 2>/dev/null');
+            $isZombie = str_contains($psState, 'Z');
+            if ($isZombie) {
+                echo "PASS: fake stale PID {$fakePid} is zombie (cleaned); will be reaped by init\n";
+            } else {
+                echo "FAIL: fake stale PID {$fakePid} still alive after cleanup (state={$psState})\n";
+                $ok = false;
+            }
+        } else {
+            echo "PASS: fake stale PID {$fakePid} killed by startup cleanup\n";
+        }
+    }
+
     if ($ok) {
-        echo "\n✅ All timeout + normal-exit assertions passed.\n";
+        echo "\n✅ All timeout + normal-exit + startup-cleanup assertions passed.\n";
     } else {
         echo "\n❌ Some assertions FAILED.\n";
         exit(1);
@@ -1613,12 +1685,13 @@ function count_alive_descendants(): int
 }
 
 /**
- * Kill stale messenger:consume / agent --controller PHAR workers from
- * previous castor check runs in this checkout.
+ * Kill stale workers from previous castor check runs in this checkout.
  *
- * Safe: scoped to the current project root's PHAR binary only.  Does
- * not touch sibling worktrees, the llama.cpp server, or the current
- * castor process.  Silent when no stale workers exist.
+ * Matches leaked PHAR messenger:consume / agent --controller children,
+ * stale vendor/bin/phpunit processes, and orphaned castor check runs
+ * rooted in the current checkout.  Safe: scoped to current project root
+ * only.  Does not touch sibling worktrees, the llama.cpp server, or the
+ * current castor process.  Silent when no stale workers exist.
  */
 function cleanup_stale_check_workers(string $root): void
 {
@@ -1632,6 +1705,7 @@ function cleanup_stale_check_workers(string $root): void
     $pharGlob = $root.'/var/tmp/phar/hatfield.phar';
     $pharPat = preg_quote($pharGlob, '/');
 
+    $rootPat = preg_quote($root, '/');
     $pidsToKill = [];
     foreach ($output as $raw) {
         $line = trim($raw);
@@ -1649,18 +1723,35 @@ function cleanup_stale_check_workers(string $root): void
         }
         $cmdline = $m[2];
 
-        // Only kill processes running the current checkout's PHAR as a
-        // messenger consumer or agent controller.  These are the leaked
-        // children from E2E tests (--time-limit=3600 survivors).
-        if (!preg_match("/{$pharPat}/", $cmdline)) {
-            continue;
-        }
-        if (!str_contains($cmdline, 'messenger:consume')
-            && !str_contains($cmdline, 'agent --controller')) {
+        // Skip processes not rooted in this checkout.
+        if (!preg_match("/{$rootPat}/", $cmdline)) {
             continue;
         }
 
-        $pidsToKill[] = $pid;
+        // ── Leaked messenger consumers / agent controllers ──
+        // PHAR-based E2E tests spawn messenger:consume and
+        // agent --controller children with --time-limit=3600 that
+        // can survive the test process.  Match by the checkout's
+        // own PHAR binary path.
+        if (preg_match("/{$pharPat}/", $cmdline)
+            && (str_contains($cmdline, 'messenger:consume')
+                || str_contains($cmdline, 'agent --controller'))) {
+            $pidsToKill[] = $pid;
+            continue;
+        }
+
+        // ── Stale vendor/bin/phpunit with this checkout's root ──
+        if (str_contains($cmdline, 'vendor/bin/phpunit')) {
+            $pidsToKill[] = $pid;
+            continue;
+        }
+
+        // ── Stale castor check with this checkout's root ──
+        // (The self-PID guard above prevents killing ourselves.)
+        if (str_contains($cmdline, 'castor check')) {
+            $pidsToKill[] = $pid;
+            continue;
+        }
     }
 
     if ([] === $pidsToKill) {
