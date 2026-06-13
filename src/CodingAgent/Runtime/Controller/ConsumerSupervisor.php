@@ -67,7 +67,7 @@ final class ConsumerSupervisor
      *
      * @var (callable(string, string): void)|null
      */
-    private $onConsumerAbandoned = null;
+    private $onConsumerAbandoned;
 
     public function __construct(
         private readonly LoggerInterface $logger,
@@ -243,6 +243,18 @@ final class ConsumerSupervisor
     }
 
     /**
+     * Set a callback that is invoked when a consumer is abandoned after the
+     * restart limit is reached.  The callback receives the consumer key and
+     * transport name so the controller can emit a diagnostic runtime event.
+     *
+     * @param callable(string, string): void $callback
+     */
+    public function onConsumerAbandoned(callable $callback): void
+    {
+        $this->onConsumerAbandoned = $callback;
+    }
+
+    /**
      * Try to restart a crashed consumer, respecting the restart policy.
      *
      * Uses Revolt EventLoop::delay() instead of usleep() so the event loop
@@ -327,18 +339,6 @@ final class ConsumerSupervisor
         }
 
         return \sprintf('%s#%d', $transportName, $instanceId);
-    }
-
-    /**
-     * Set a callback that is invoked when a consumer is abandoned after the
-     * restart limit is reached.  The callback receives the consumer key and
-     * transport name so the controller can emit a diagnostic runtime event.
-     *
-     * @param callable(string, string): void $callback
-     */
-    public function onConsumerAbandoned(callable $callback): void
-    {
-        $this->onConsumerAbandoned = $callback;
     }
 
     /**
