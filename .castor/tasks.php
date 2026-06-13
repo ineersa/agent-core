@@ -33,6 +33,12 @@ require_once __DIR__.'/helpers.php';
 #[AsTask(description: 'Run full QA (deptrac, phpunit, controller E2E, real LLM E2E, TUI E2E, phpstan, cs-fixer)')]
 function check(): void
 {
+    $root = (false !== ($_rp = realpath(__DIR__.'/..')) ? $_rp : __DIR__.'/..');
+    // Belt-and-suspenders: kill stale messenger/controller workers from
+    // previous castor check runs that may have leaked through per-step
+    // timeouts.  Scoped to this checkout only.
+    cleanup_stale_check_workers($root);
+
     $pharStart = hrtime(true);
     $pharPath = '';
     try {
@@ -1206,20 +1212,18 @@ function rmtree(string $dir): void
 /**
  * Run multiple shell commands concurrently via proc_open.
  *
- * Each command is spawned as an independent PHP subprocess — no
- * shared memory, safe inside the Castor PHAR.  stdout and stderr
- * are captured to the per-command log file.
+ * Each command is spawned in an isolated process group via setsid -w
+ * so Castor can cleanly reap the entire tree — including escaped
+ * grandchildren like messenger:consume — after both timeout AND
+ * normal completion.
  *
- * Pipe I/O is non-blocking and incremental: output is read during
- * the poll loop so that surviving grandchildren (e.g. messenger:consume
- * processes that escaped a shell-timeout wrapper) never cause a
- * blocking stream_get_contents hang after the direct child exits.
+ * Pipe I/O is non-blocking and incremental: output is read during the
+ * poll loop so that surviving grandchildren never cause a blocking
+ * stream_get_contents hang after the direct child exits.
  *
  * @param array<string,array{cmd:string,log:string}> $commands
  * @param array<string,int>                          $timeouts Optional per-step timeout in seconds.
  *                                                             Defaults to empty (no Castor-enforced timeout).
- *                                                             The caller typically bakes a shell-timeout into
- *                                                             cmd; this is a belt-and-suspenders safety net.
  *
  * @return array<string,array{exitCode:int,output:string,duration:float}>
  */
@@ -1237,7 +1241,17 @@ function run_commands_parallel(array $commands, array $timeouts = []): array
             2 => ['pipe', 'w'],  // stderr
         ];
 
-        $process = @proc_open($info['cmd'], $descriptors, $pipes, $cwd);
+        // Spawn inside an isolated process group via setsid -w.
+        // setsid -w does NOT fork: it calls setsid() in-process then
+        // execs sh -lc <cmd>.  The process-group id equals the setsid
+        // PID, so kill(-PGID) reaps the entire tree including escaped
+        // grandchildren that outlive timeout/shell/phpunit exit.
+        $process = @proc_open(
+            ['setsid', '-w', 'sh', '-lc', $info['cmd']],
+            $descriptors,
+            $pipes,
+            $cwd,
+        );
 
         if (!is_resource($process)) {
             $results[$step] = [
@@ -1256,6 +1270,11 @@ function run_commands_parallel(array $commands, array $timeouts = []): array
         stream_set_blocking($pipes[1], false);
         stream_set_blocking($pipes[2], false);
 
+        // Record the process-group id (= setsid PID) so we can reap the
+        // whole tree on completion.  setsid -w does not fork, so the
+        // proc_open child *is* the session/process-group leader.
+        $pgid = proc_get_status($process)['pid'];
+
         $processes[$step] = [
             'handle' => $process,
             'pipes' => [$pipes[1], $pipes[2]],
@@ -1264,6 +1283,7 @@ function run_commands_parallel(array $commands, array $timeouts = []): array
             'outBuf' => '',
             'errBuf' => '',
             'timedOut' => false,
+            'pgid' => $pgid > 0 ? $pgid : null,
         ];
     }
 
@@ -1274,9 +1294,6 @@ function run_commands_parallel(array $commands, array $timeouts = []): array
 
         foreach ($processes as $step => $pInfo) {
             // ── Non-blocking incremental output capture ──
-            // Read whatever is available on each tick so the final
-            // output buffer is already populated when the process
-            // exits.  No blocking stream_get_contents after exit.
             $chunk = @fread($pInfo['pipes'][0], 65536);
             if (false !== $chunk && '' !== $chunk) {
                 $processes[$step]['outBuf'] .= $chunk;
@@ -1290,11 +1307,6 @@ function run_commands_parallel(array $commands, array $timeouts = []): array
             $elapsed = ($now - $pInfo['start']) / 1e9;
             $stepTimeout = $timeouts[$step] ?? null;
 
-            // ── Castor hard-timeout enforcement ──
-            // Shell `timeout` wrappers in the step command are the
-            // primary enforcement, but they may not kill the full
-            // descendant tree.  Castor tracks elapsed in-process and
-            // kills the entire process tree as a safety net.
             if (!$status['running']) {
                 $finished[] = $step;
             } elseif (null !== $stepTimeout && $elapsed >= $stepTimeout) {
@@ -1308,27 +1320,14 @@ function run_commands_parallel(array $commands, array $timeouts = []): array
             $elapsed = (hrtime(true) - $pInfo['start']) / 1e9;
 
             // ── Close our pipe ends FIRST ──
-            // This prevents any blocking on the final read.  Surviving
-            // grandchildren (messenger consumers, controller, etc.) may
-            // still hold the write end of the pipe open even after the
-            // shell-timeout wrapper killed the direct child.  Closing our
-            // read end breaks the pipe and guarantees we do not hang.
             @fclose($pInfo['pipes'][0]);
             @fclose($pInfo['pipes'][1]);
 
             if ($pInfo['timedOut']) {
                 // ── Kill the full process tree ──
-                // The proc_open child (timeout/sh) may have already been
-                // killed by its own timeout wrapper, but its grandchildren
-                // could have escaped to init/systemd.  Walk the process
-                // subtree starting from the direct child and kill every
-                // descendant so no orphans remain.
-                $status = proc_get_status($pInfo['handle']);
-                if ($status['running']) {
-                    _kill_descendant_tree($status['pid'], \SIGTERM);
-                    usleep(2_000_000); // 2 s grace
-                    _kill_descendant_tree($status['pid'], \SIGKILL);
-                }
+                // Primary: kill the process group (setsid -w isolates it).
+                // Fallback: recursive descendant-kill if setsid PG unavailable.
+                _reap_process_group($pInfo['pgid']);
                 @proc_close($pInfo['handle']);
                 $exitCode = 124; // matches GNU timeout convention
                 $stepTimeout = $timeouts[$step] ?? 0;
@@ -1337,6 +1336,13 @@ function run_commands_parallel(array $commands, array $timeouts = []): array
             } else {
                 $exitCode = proc_close($pInfo['handle']);
                 $output = $pInfo['outBuf'].$pInfo['errBuf'];
+
+                // ── Reap escaped grandchildren after normal exit ──
+                // Even on success, messenger:consume (--time-limit=3600),
+                // controller children, and tmux agents can outlive the
+                // shell/timeout/phpunit process.  Kill the isolated process
+                // group so no orphans remain after a green check.
+                _reap_process_group($pInfo['pgid']);
             }
 
             if (null !== $pInfo['log']) {
@@ -1359,6 +1365,35 @@ function run_commands_parallel(array $commands, array $timeouts = []): array
     }
 
     return $results;
+}
+
+/**
+ * Reap all processes in a process group.
+ *
+ * Sends SIGTERM to the group, waits a short grace period, then sends
+ * SIGKILL.  Surviving grandchildren (e.g. messenger:consume with
+ * --time-limit=3600) that escaped shell/timeout/phpunit exit are
+ * killed even though their original parent has already terminated.
+ *
+ * Falls back to _kill_descendant_tree when no PGID is available.
+ */
+function _reap_process_group(?int $pgid): void
+{
+    if (null === $pgid || $pgid <= 1) {
+        return;
+    }
+
+    // Best-effort SIGTERM to the process group.
+    // kill(-pgid) targets all processes with that PGID even after
+    // the original leader (setsid) has exited and children have been
+    // reparented to init/systemd.
+    @posix_kill(-$pgid, \SIGTERM);
+    usleep(500_000); // 0.5 s grace
+    @posix_kill(-$pgid, \SIGKILL);
+
+    // Belt: also walk descendants of the direct proc_open child as a
+    // safety net for systems where setsid or PG kill behave differently.
+    _kill_descendant_tree($pgid, \SIGKILL);
 }
 
 /**
@@ -1408,20 +1443,23 @@ function _find_child_pids(int $ppid): array
 // ── Timeout hard-stop smoke proof task ──────────────────────
 
 /**
- * Smoke-proof that the Castor parallel runner does not hang when a
- * child process spawns grandchildren that hold stdout/stderr pipes
- * open after the timeout fires.
+ * Smoke-proof that the Castor parallel runner:
  *
- * The proof command spawns a shell that backgrounds a long-running
- * child (sleep 120) while keeping stdout/stderr inherited.  The
- * Castor runner is given a 3 s hard timeout and must return within
- * ~5 s with exit code 124.  After the runner returns, the proof
- * asserts no orphan sleep or sh processes remain.
+ * 1. Does not hang when a child process spawns grandchildren that
+ *    hold stdout/stderr pipes open after the timeout fires.
+ *
+ * 2. Reaps escaped grandchildren on NORMAL exit, not only timeout.
+ *    Even if the step exits 0, leaked messenger:consume / controller /
+ *    tmux-agent grandchildren must be killed.
  */
-#[AsTask(name: 'test:timeout-hardstop', description: 'Verify Castor hard timeout kills process trees without hanging')]
+#[AsTask(name: 'test:timeout-hardstop', description: 'Verify Castor hard timeout kills process trees without hanging and normal-exit cleanup')]
 function test_timeout_hardstop(string $cmdOverride = ''): void
 {
-    echo "=== Castor timeout hard-stop smoke proof ===\n\n";
+    echo "=== Castor timeout hard-stop + normal-exit cleanup smoke proof ===\n\n";
+    $ok = true;
+
+    // ── Test A: Timeout leak (original proof) ──────────────────
+    echo "── Test A: Hard timeout kills leaked children ──\n\n";
 
     // Build a command that spawns a background grandchild holding
     // stdout/stderr open.  The shell `timeout` wraps a 30s timeout
@@ -1458,9 +1496,6 @@ function test_timeout_hardstop(string $cmdOverride = ''): void
     echo sprintf("  duration: %.2fs\n", $result['duration']);
     echo "  output: {$result['output']}\n\n";
 
-    // Assertions
-    $ok = true;
-
     // 1. Must return fast (< 8 s, generous buffer above the 3 s timeout + 2 s grace + kill)
     if ($duration > 8.0) {
         echo "FAIL: runner took {$duration}s > 8s — likely hung\n";
@@ -1470,9 +1505,6 @@ function test_timeout_hardstop(string $cmdOverride = ''): void
     }
 
     // 2. Should be timeout exit code (124) or killed-by-termination (143).
-    // Castor hard-timeout explicitly sets 124 in the result, but if the
-    // shell timeout fires first and Castor sees the process already
-    // exited, the exit code may be 124 (timeout) or 143 (SIGTERM).
     $exitOk = in_array($result['exitCode'], [124, 143], true);
     if (!$exitOk) {
         echo "FAIL: expected exit code 124 (timeout) or 143 (SIGTERM), got {$result['exitCode']}\n";
@@ -1491,8 +1523,64 @@ function test_timeout_hardstop(string $cmdOverride = ''): void
         echo "PASS: no orphan processes (pre={$preCount}, post={$postCount})\n";
     }
 
+    // ── Test B: Normal-exit leak ──────────────────────────────
+    echo "\n── Test B: Normal-exit cleanup kills leaked children ──\n\n";
+
+    // Command exits 0 immediately while leaving sleep 120 in the
+    // background.  The _reap_process_group() call after proc_close
+    // must kill that sleep via kill(-PGID, SIGTERM/SIGKILL).
+    $exitLeakCmd = 'sh -lc \'sleep 120 & echo "exit-ok"; exit 0\'';
+
+    echo "Command under test:\n  {$exitLeakCmd}\n\n";
+
+    $commandsB = [
+        'exit-leak-test' => [
+            'cmd' => $exitLeakCmd,
+            'log' => report_path('check-test-exit-leak.log'),
+        ],
+    ];
+
+    $preCountB = count_alive_descendants();
+
+    $startB = hrtime(true);
+    $resultsB = run_commands_parallel($commandsB, []);
+    $durationB = (hrtime(true) - $startB) / 1e9;
+
+    $resultB = $resultsB['exit-leak-test'] ?? ['exitCode' => -1, 'output' => 'no result', 'duration' => 0];
+
+    echo "Result:\n";
+    echo "  exitCode: {$resultB['exitCode']}\n";
+    echo sprintf("  duration: %.2fs\n", $resultB['duration']);
+    echo "  output: {$resultB['output']}\n\n";
+
+    // 1. Exit code must be 0 (normal success).
+    if (0 !== $resultB['exitCode']) {
+        echo "FAIL: expected exit code 0 (normal), got {$resultB['exitCode']}\n";
+        $ok = false;
+    } else {
+        echo "PASS: exit code 0 (normal)\n";
+    }
+
+    // 2. Runner must return fast (< 5 s).
+    if ($durationB > 5.0) {
+        echo "FAIL: runner took {$durationB}s > 5s\n";
+        $ok = false;
+    } else {
+        echo "PASS: runner returned in {$durationB}s (< 5s)\n";
+    }
+
+    // 3. No orphan sleep must survive the normal-exit cleanup.
+    usleep(1_000_000); // 1s settle
+    $postCountB = count_alive_descendants();
+    if ($postCountB > $preCountB) {
+        echo "FAIL: {$postCountB} orphan processes remain after normal exit (pre={$preCountB})\n";
+        $ok = false;
+    } else {
+        echo "PASS: no orphan processes after normal exit (pre={$preCountB}, post={$postCountB})\n";
+    }
+
     if ($ok) {
-        echo "\n✅ All timeout hard-stop assertions passed.\n";
+        echo "\n✅ All timeout + normal-exit assertions passed.\n";
     } else {
         echo "\n❌ Some assertions FAILED.\n";
         exit(1);
@@ -1522,6 +1610,76 @@ function count_alive_descendants(): int
     }
 
     return $count;
+}
+
+/**
+ * Kill stale messenger:consume / agent --controller PHAR workers from
+ * previous castor check runs in this checkout.
+ *
+ * Safe: scoped to the current project root's PHAR binary only.  Does
+ * not touch sibling worktrees, the llama.cpp server, or the current
+ * castor process.  Silent when no stale workers exist.
+ */
+function cleanup_stale_check_workers(string $root): void
+{
+    $output = [];
+    @exec('ps -eo pid=,args= 2>/dev/null', $output);
+    if ([] === $output) {
+        return;
+    }
+
+    $myPid = getmypid();
+    $pharGlob = $root.'/var/tmp/phar/hatfield.phar';
+    $pharPat = preg_quote($pharGlob, '/');
+
+    $pidsToKill = [];
+    foreach ($output as $raw) {
+        $line = trim($raw);
+        if ('' === $line) {
+            continue;
+        }
+        // Parse leading pid then command.  `ps -eo pid=,args=` produces
+        // padded columns: "  1234 /usr/bin/php ..."
+        if (!preg_match('/^\s*(\d+)\s+(.+)$/s', $line, $m)) {
+            continue;
+        }
+        $pid = (int) $m[1];
+        if ($pid === $myPid || $pid <= 1) {
+            continue;
+        }
+        $cmdline = $m[2];
+
+        // Only kill processes running the current checkout's PHAR as a
+        // messenger consumer or agent controller.  These are the leaked
+        // children from E2E tests (--time-limit=3600 survivors).
+        if (!preg_match("/{$pharPat}/", $cmdline)) {
+            continue;
+        }
+        if (!str_contains($cmdline, 'messenger:consume')
+            && !str_contains($cmdline, 'agent --controller')) {
+            continue;
+        }
+
+        $pidsToKill[] = $pid;
+    }
+
+    if ([] === $pidsToKill) {
+        return;
+    }
+
+    $pidList = implode(' ', $pidsToKill);
+    echo "Killing stale check worker PIDs: {$pidList}\n";
+
+    // SIGTERM first, short grace, then SIGKILL survivors.
+    foreach ($pidsToKill as $pid) {
+        @posix_kill($pid, \SIGTERM);
+    }
+    usleep(1_000_000);
+    foreach ($pidsToKill as $pid) {
+        if (@posix_kill($pid, 0)) {
+            @posix_kill($pid, \SIGKILL);
+        }
+    }
 }
 
 /**
@@ -1626,7 +1784,11 @@ function run_check_commands_sequential(array $steps, array &$failures, array &$t
         $start = hrtime(true);
 
         $descriptors = [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
-        $process = @proc_open($info['cmd'], $descriptors, $pipes);
+        $process = @proc_open(
+            ['setsid', '-w', 'sh', '-lc', $info['cmd']],
+            $descriptors,
+            $pipes,
+        );
 
         if (!is_resource($process)) {
             $duration = (hrtime(true) - $start) / 1e9;
@@ -1636,6 +1798,8 @@ function run_check_commands_sequential(array $steps, array &$failures, array &$t
 ', $duration);
             continue;
         }
+
+        $pgid = proc_get_status($process)['pid'];
 
         // Non-blocking incremental read to prevent hanging when
         // grandchildren survive and hold pipe write ends open.
@@ -1661,10 +1825,7 @@ function run_check_commands_sequential(array $steps, array &$failures, array &$t
                 break;
             }
             if ((hrtime(true) / 1e9) >= $deadline) {
-                $pid = $status['pid'];
-                _kill_descendant_tree($pid, \SIGTERM);
-                usleep(2_000_000);
-                _kill_descendant_tree($pid, \SIGKILL);
+                _reap_process_group($pgid > 0 ? $pgid : null);
                 $outBuf .= "\n[Castor sequential hard timeout after 75s]";
                 break;
             }
@@ -1674,6 +1835,10 @@ function run_check_commands_sequential(array $steps, array &$failures, array &$t
         @fclose($pipes[1]);
         @fclose($pipes[2]);
         $exitCode = proc_close($process);
+
+        // Reap escaped grandchildren (messenger:consume --time-limit=3600, etc.)
+        _reap_process_group($pgid > 0 ? $pgid : null);
+
         $duration = (hrtime(true) - $start) / 1e9;
         $timings[$step] = $duration;
 
