@@ -284,3 +284,6 @@ Completed:
 - Recorded fork run: cfwu5q8ei2ei
 - Validation: Per fork: castor cs-check passed (0 fixes).; Per fork: castor test:tui --filter=CostFooterE2ETest passed (1 test, 1 assertion).; Parent verified git status: branch matches origin/task/backlog-open-issues-cleanup and only untracked file is php.php.
 - Summary: Fork cfwu5q8ei2ei completed config follow-up in commit 0f113db9: `.hatfield/settings.yaml` now uses the same high llama_cpp_test/test pricing as CostFooterE2ETest (`input: 1000.0`, `output: 100000.0`, with explicit cache_read/cache_write 0). Dirty pricing diff is now committed. Parent verified branch at 0f113db9. Worktree has unrelated untracked `php.php` remaining; not committed.
+
+## Task workflow update - 2026-06-13T00:38:44.491Z
+- User reported this is not the first time Hatfield unexpectedly exits/throws them out, suspects paths halt/exit without proper logging or visible exception/error. User asked to launch scouts to find exits without proper logging.
