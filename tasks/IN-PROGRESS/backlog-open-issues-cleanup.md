@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: f9foxnua8l8a
+Fork run: gyuci2m2bz99
 PR URL:
 PR Status:
 Started: 2026-06-12T16:54:23.580Z
@@ -262,3 +262,8 @@ Completed:
 - Recorded fork run: f9foxnua8l8a
 - Validation: Per fork: castor phpstan OK, deptrac OK, cs-check OK, castor test --filter=AiCostCalculatorTest OK, PlatformIntegrationTest OK, TraceReplayTest OK.; Per fork: LLM_MODE=true castor check failed 13/14; test:tui-1 failed. Parent inspected var/reports/check-test:tui-1.log: EditorBorderColorTest failed because minimal and low border colors were both 38;2;113;128;150 at tests/Tui/E2E/EditorBorderColorTest.php:126.; Parent inspected worktree: .hatfield/settings.yaml dirty with llama_cpp_test cost changed from 0/0 to 10.0/100.0; do not discard user/manual test change without approval.
 - Summary: Fork f9foxnua8l8a pushed commit b86e4aba to fix #122 cost path by resolving the effective model in LlmPlatformAdapter via ModelResolverInterface before calling consumeStream/extractUsage. However handoff is not merge-ready: full castor check failed 13/14 with test:tui-1 EditorBorderColorTest failure; fork did not add a regression test proving request model empty + resolved priced model computes cost despite instructions; worktree has dirty .hatfield/settings.yaml pricing change (llama_cpp_test cost 10/100) used for manual testing and not committed.
+
+## Task workflow update - 2026-06-13T00:07:39.881Z
+- Recorded fork run: gyuci2m2bz99
+- Validation: Per fork: castor test --filter=PlatformIntegrationTest passed 4 tests/24 assertions.; Per fork: castor test:tui --filter=EditorBorderColorTest passed 5/5 consecutive runs.; Per fork: LLM_MODE=true castor check passed all 14 steps: deptrac OK, unit shards OK, test-tui-suite OK, test-platform OK, test:controller OK, test:llm-real OK, test:tui-1 OK 12 tests, test:tui-2 OK 9 tests, phpstan OK, cs-check OK.; Parent verified worktree status: only dirty file is .hatfield/settings.yaml cost change from 0/0 to 10.0/100.0, uncommitted.
+- Summary: Fork gyuci2m2bz99 completed #122 follow-up in commit f6b49577. Added regression test proving cost is calculated when request model is empty but ModelResolver resolves a priced model; stabilized EditorBorderColorTest by polling actual ANSI border color changes instead of relying on text status then immediate capture. Full LLM_MODE=true castor check passed all 14 steps. Worktree still has dirty .hatfield/settings.yaml with user's manual llama_cpp_test pricing 10/100; preserved uncommitted pending user decision/revert before merge.
