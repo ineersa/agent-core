@@ -31,12 +31,6 @@ parameters:
 			path: .castor/tasks.php
 
 		-
-			message: '#^Function check_tmux not found\.$#'
-			identifier: function.notFound
-			count: 4
-			path: .castor/tasks.php
-
-		-
 			message: '#^Function format_step_failures\(\) has parameter \$failures with no value type specified in iterable type array\.$#'
 			identifier: missingType.iterableValue
 			count: 1

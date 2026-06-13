@@ -273,33 +273,52 @@ function cleanup(): void
 // ─── Testing ──────────────────────────────────────────────────────
 
 /**
+ * Discover all *Test.php files under tests/CodingAgent/ recursively
+ * and distribute them across 4 file-level round-robin shards for
+ * balanced parallel execution under the 75s per-step timeout.
+ *
+ * File-level round-robin avoids the imbalance of top-level directory
+ * grouping (e.g. 29 files in Auth+Extension+Phar+Skills+Tool vs 6 in
+ * EventListener+Path+Session+TestCase).  New Test.php files are
+ * picked up automatically by RecursiveDirectoryIterator and
+ * round-robined after the sorted list.
+ *
+ * Verified balances (Jun 2026): 28 / 27 / 27 / 27 files across
+ * shards 1-4 with 109 total Test.php files.
+ *
  * @return array<string, list<string>> file paths grouping
  */
 function coding_agent_shard_groups(): array
 {
     $root = (false !== ($_rp = realpath(__DIR__.'/..')) ? $_rp : __DIR__.'/..');
-    // Keep the shard ratio close to 1:1:1:1 for parallel test-step
-    // balance.  When adding new test directories, add them to the
-    // lightest shard.
-    $shards = [
-        'coding-agent-1' => [],
-        'coding-agent-2' => [],
-        'coding-agent-3' => [],
-        'coding-agent-4' => [],
-    ];
-    $i = 0;
-    $dirs = glob($root.'/tests/CodingAgent/*', \GLOB_ONLYDIR);
-    if (false === $dirs) {
-        return $shards;
+    $testDir = $root.'/tests/CodingAgent';
+    $files = [];
+
+    if (is_dir($testDir)) {
+        $iter = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($testDir, FilesystemIterator::SKIP_DOTS)
+        );
+        foreach ($iter as $file) {
+            if ($file->isFile() && str_ends_with($file->getFilename(), 'Test.php')) {
+                $files[] = $file->getPathname();
+            }
+        }
     }
-    sort($dirs, \SORT_STRING);
-    foreach ($dirs as $dir) {
-        $key = 'coding-agent-'.(($i % 4) + 1);
-        $shards[$key][] = $dir;
-        ++$i;
+    sort($files, \SORT_STRING);
+
+    $numShards = 4;
+    $shards = array_fill(1, $numShards, []);
+    foreach ($files as $i => $f) {
+        $shardIdx = ($i % $numShards) + 1;
+        $shards[$shardIdx][] = $f;
     }
 
-    return $shards;
+    $result = [];
+    for ($i = 1; $i <= $numShards; ++$i) {
+        $result['coding-agent-'.$i] = $shards[$i];
+    }
+
+    return $result;
 }
 
 /**
@@ -930,6 +949,22 @@ function project_relative_path(string $absolute): string
     }
 
     return $absolute;
+}
+
+/**
+ * Assert tmux is installed.
+ *
+ * Several Castor tasks (test:tui, test:tui-update, run:agent,
+ * run:agent-test) require tmux for TUI E2E snapshots or interactive
+ * agent sessions.  Call this at the top of those tasks to fail early
+ * with a clear diagnostic instead of a cryptic proc_open error.
+ */
+function check_tmux(): void
+{
+    $which = trim(shell_exec('which tmux 2>/dev/null') ?? '');
+    if ('' === $which) {
+        throw new RuntimeException('tmux is not installed. Install it with your package manager before using run:* tasks.');
+    }
 }
 
 /**
