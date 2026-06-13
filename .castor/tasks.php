@@ -303,51 +303,65 @@ function coding_agent_shard_groups(): array
 }
 
 /**
+ * Return TUI E2E test files split across two shards for parallel
+ * execution under the 60s per-step timeout.
+ *
+ * Only files ending in Test.php are included; harness/support files
+ * (TmuxHarness.php, TmuxPane.php) are excluded so PHPUnit does not
+ * attempt to load them as test classes.
+ *
+ * Known files (Jun 2026) balance:
+ *   shard 1: TuiAgentSmokeTest (heaviest), EditorBorderColorTest,
+ *            HotkeySmokeTest, ImmediateSubmitFeedbackTest
+ *   shard 2: PromptTemplateSlashCommandE2ETest, ReasoningCycleTest,
+ *            SessionRenameE2ETest, ShellPrefixSmokeTest,
+ *            TuiStartupSnapshotTest
+ *
+ * New Test.php files are round-robined starting on the lighter shard.
+ *
  * @return array<string, list<string>> file paths grouping
  */
 function tui_e2e_shard_groups(): array
 {
     $root = (false !== ($_rp = realpath(__DIR__.'/..')) ? $_rp : __DIR__.'/..');
-    // Balance the known large TUI E2E tests across two shards for
-    // roughly equal per-step runtime under the 60s step timeout.
-    // File counts:
-    //   shard 1: PromptTemplateSlashCommandE2ETest, ReasoningCycleTest,
-    //            SessionRenameE2ETest, EditorBorderColorTest
-    //   shard 2: TuiAgentSmokeTest (heaviest), HotkeyHelpDialogE2ETest,
-    //            HelpDialogTest, PatchToolViewSelectionTest,
-    //            ReasoningE2EToggleTest, SessionResumeE2ETest
     $tuiE2eDir = $root.'/tests/Tui/E2E';
     if (!is_dir($tuiE2eDir)) {
         return ['tui-e2e-1' => [], 'tui-e2e-2' => []];
     }
-    $files = glob($tuiE2eDir.'/*.php');
-    if (false === $files) {
-        $files = [];
+    $allFiles = glob($tuiE2eDir.'/*.php');
+    if (false === $allFiles) {
+        $allFiles = [];
     }
+    // Only include PHPUnit test files; skip harness/support files.
+    $files = array_values(array_filter($allFiles, static fn (string $f): bool => str_ends_with(basename($f), 'Test.php')));
     sort($files, \SORT_STRING);
     $shard1 = [];
     $shard2 = [];
     foreach ($files as $file) {
         $basename = basename($file);
         if (in_array($basename, [
-            'PromptTemplateSlashCommandE2ETest.php',
-            'ReasoningCycleTest.php',
-            'SessionRenameE2ETest.php',
+            'TuiAgentSmokeTest.php',
             'EditorBorderColorTest.php',
+            'HotkeySmokeTest.php',
+            'ImmediateSubmitFeedbackTest.php',
         ], true)) {
             $shard1[] = $file;
         } elseif (in_array($basename, [
-            'TuiAgentSmokeTest.php',
-            'HotkeyHelpDialogE2ETest.php',
-            'HelpDialogTest.php',
-            'PatchToolViewSelectionTest.php',
-            'ReasoningE2EToggleTest.php',
-            'SessionResumeE2ETest.php',
+            'PromptTemplateSlashCommandE2ETest.php',
+            'ReasoningCycleTest.php',
+            'SessionRenameE2ETest.php',
+            'ShellPrefixSmokeTest.php',
+            'TuiStartupSnapshotTest.php',
         ], true)) {
             $shard2[] = $file;
         } else {
-            // New/unknown E2E test file — add to the lighter shard.
-            $shard1[] = $file;
+            // New/unknown E2E Test.php file — round-robin to the
+            // currently lighter shard.
+            if (count($shard1) <= count($shard2)) {
+                $shard1[] = $file;
+            } else {
+                $shard2[] = $file;
+            }
         }
     }
 
