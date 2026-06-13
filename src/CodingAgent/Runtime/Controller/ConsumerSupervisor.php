@@ -60,6 +60,15 @@ final class ConsumerSupervisor
     /** Set by shutdown() to prevent pending delay callbacks from launching new consumers. */
     private bool $shuttingDown = false;
 
+    /**
+     * Optional callback invoked when a consumer is abandoned after the restart
+     * limit is reached. Receives the consumer key and transport name so the
+     * controller can surface a diagnostic to the TUI.
+     *
+     * @var (callable(string, string): void)|null
+     */
+    private $onConsumerAbandoned;
+
     public function __construct(
         private readonly LoggerInterface $logger,
         private readonly RuntimeProcessConfig $runtimeConfig,
@@ -234,6 +243,18 @@ final class ConsumerSupervisor
     }
 
     /**
+     * Set a callback that is invoked when a consumer is abandoned after the
+     * restart limit is reached.  The callback receives the consumer key and
+     * transport name so the controller can emit a diagnostic runtime event.
+     *
+     * @param callable(string, string): void $callback
+     */
+    public function onConsumerAbandoned(callable $callback): void
+    {
+        $this->onConsumerAbandoned = $callback;
+    }
+
+    /**
      * Try to restart a crashed consumer, respecting the restart policy.
      *
      * Uses Revolt EventLoop::delay() instead of usleep() so the event loop
@@ -265,6 +286,12 @@ final class ConsumerSupervisor
                 'max_restarts' => self::MAX_RESTARTS,
                 'window_seconds' => self::RESTART_WINDOW_SECONDS,
             ]);
+
+            // Notify controller so it can surface a diagnostic to the TUI
+            // instead of leaving the user staring at "Working..." forever.
+            if (null !== $this->onConsumerAbandoned) {
+                ($this->onConsumerAbandoned)($key, $transportName);
+            }
 
             return;
         }

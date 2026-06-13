@@ -159,6 +159,8 @@ final class TraceReplayTest extends KernelTestCase
             transformContextHooks: [],
             convertToLlmHooks: [],
             streamObserver: null,
+            costCalculator: null,
+            modelResolver: null,
             logger: new NullLogger(),
         );
 
@@ -368,6 +370,8 @@ final class TraceReplayTest extends KernelTestCase
             transformContextHooks: [],
             convertToLlmHooks: [],
             streamObserver: null,
+            costCalculator: null,
+            modelResolver: null,
             logger: new NullLogger(),
         );
 

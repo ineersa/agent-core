@@ -188,7 +188,9 @@ final class RuntimeEventPollerTest extends TestCase
         // Per-turn fields should be reset
         self::assertSame(0, $this->state->usage->turnOutputTokens);
         self::assertSame(0.0, $this->state->usage->llmEndTime);
-        self::assertSame(0, $this->state->usage->latestInputTokens);
+        // latestInputTokens must be preserved across turns so the context
+        // window % footer does not flicker to 0% during Working/streaming.
+        self::assertSame(200, $this->state->usage->latestInputTokens);
     }
 
     public function testAssistantMessageCompletedAccumulatesUsage(): void

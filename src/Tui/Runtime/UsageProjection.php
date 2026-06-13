@@ -52,7 +52,10 @@ final class UsageProjection
         $this->turnOutputTokens = 0;
         $this->turnStartTime = microtime(true);
         $this->llmEndTime = 0.0;
-        $this->latestInputTokens = 0;
+        // Preserve latestInputTokens from the previous turn so the context
+        // window percentage footer does not flicker to 0% during Working...
+        // between TurnStarted and the first AssistantMessageCompleted.
+        // Fresh turn usage will overwrite this when it arrives.
     }
 
     /**

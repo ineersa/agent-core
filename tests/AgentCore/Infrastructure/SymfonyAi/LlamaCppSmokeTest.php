@@ -221,6 +221,8 @@ final class LlamaCppSmokeTest extends KernelTestCase
             transformContextHooks: [],
             convertToLlmHooks: [],
             streamObserver: null,
+            costCalculator: null,
+            modelResolver: null,
             logger: new NullLogger(),
         );
 

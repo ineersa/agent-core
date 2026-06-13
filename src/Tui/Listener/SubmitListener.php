@@ -222,6 +222,11 @@ final class SubmitListener implements TuiListenerRegistrar
         } catch (\Throwable $e) {
             // Non-fatal: render may fail if the terminal is in a
             // transient state.  The next tick will render normally.
+            $logger->debug('SubmitListener: immediate render failed (non-fatal)', [
+                'component' => 'SubmitListener',
+                'exception' => $e,
+                'session_id' => $state->sessionId,
+            ]);
         }
 
         try {
@@ -332,6 +337,13 @@ final class SubmitListener implements TuiListenerRegistrar
             );
             $screen->setWorkingMessage('');
             $screen->setTranscriptBlocks($state->transcript);
+
+            $logger->error('SubmitListener: message dispatch failed', [
+                'component' => 'SubmitListener',
+                'event_type' => 'submit_dispatch_failed',
+                'session_id' => $state->sessionId,
+                'exception' => $e,
+            ]);
 
             return;
         }
@@ -448,6 +460,13 @@ final class SubmitListener implements TuiListenerRegistrar
             );
             $screen->setWorkingMessage('');
             $screen->setTranscriptBlocks($state->transcript);
+
+            $logger->error('SubmitListener: shell command dispatch failed', [
+                'component' => 'SubmitListener',
+                'event_type' => 'shell_dispatch_failed',
+                'session_id' => $state->sessionId,
+                'exception' => $e,
+            ]);
         }
     }
 

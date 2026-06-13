@@ -173,6 +173,8 @@ final class PlatformIntegrationTest extends TestCase
             transformContextHooks: [$transformHook],
             convertToLlmHooks: [$convertHook],
             streamObserver: null,
+            costCalculator: null,
+            modelResolver: null,
             logger: new NullLogger(),
         );
 
@@ -299,6 +301,114 @@ final class PlatformIntegrationTest extends TestCase
         $this->assertNotNull($result);
     }
 
+    /**
+     * Regression test for GitHub issue #122 cost path.
+     *
+     * The bug: when ModelInvocationRequest->model is empty string (the
+     * legacy app.default_model container parameter) and the real model
+     * is resolved later via ModelResolverInterface, cost calculation
+     * was skipped because extractUsage received the empty model name.
+     *
+     * After the fix (b86e4aba), LlmPlatformAdapter resolves the model
+     * via ModelResolverInterface BEFORE consuming the stream, so
+     * extractUsage receives the real model ref and computes cost.
+     */
+    public function testCostIsCalculatedWhenRequestModelIsEmptyButResolverReturnsPricedModel(): void
+    {
+        $runStore = new InMemoryRunStore();
+        $runStore->compareAndSwap(new RunState(
+            runId: 'run-cost-01',
+            status: RunStatus::Running,
+            version: 1,
+            turnNo: 1,
+            lastSeq: 0,
+            isStreaming: false,
+            streamingMessage: null,
+            pendingToolCalls: [],
+            errorMessage: null,
+            messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'ping']])],
+            activeStepId: 'turn-1-llm-1',
+        ), 0);
+
+        $costCalculator = new class implements \Ineersa\AgentCore\Domain\Model\CostCalculatorInterface {
+            public ?string $capturedModel = null;
+
+            /** @var array<string, mixed> */
+            public array $capturedUsage = [];
+
+            public function calculateCost(string $modelRef, array $usage): float
+            {
+                $this->capturedModel = $modelRef;
+                $this->capturedUsage = $usage;
+
+                return 42.0;
+            }
+        };
+
+        $modelResolver = new class implements ModelResolverInterface {
+            public function resolve(
+                string $defaultModel,
+                \Symfony\AI\Platform\Message\MessageBag $messages,
+                ModelInvocationInput $input,
+                ModelResolutionOptions $options,
+            ): ResolvedModel {
+                unset($defaultModel, $messages, $input, $options);
+
+                return new ResolvedModel(model: 'test/priced-model');
+            }
+        };
+
+        $modelClient = new FakeSymfonyModelClient(new FakeTokenUsage(
+            promptTokens: 1000,
+            completionTokens: 500,
+            totalTokens: 1500,
+        ));
+
+        $platform = $this->createSymfonyPlatform(
+            modelClient: $modelClient,
+            streamFactory: static fn (): iterable => [new TextDelta('response')],
+            modelResolver: $modelResolver,
+        );
+
+        $adapter = new LlmPlatformAdapter(
+            runStore: $runStore,
+            messageConverter: new AgentMessageConverter(),
+            toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
+            platform: $platform,
+            transformContextHooks: [],
+            convertToLlmHooks: [],
+            streamObserver: null,
+            costCalculator: $costCalculator,
+            modelResolver: $modelResolver,
+            logger: new NullLogger(),
+        );
+
+        $response = $adapter->invoke(new ModelInvocationRequest(
+            model: '', // empty — the legacy app.default_model
+            input: new ModelInvocationInput(
+                runId: 'run-cost-01',
+                turnNo: 1,
+                stepId: 'turn-1-llm-1',
+            ),
+        ));
+
+        // The cost calculator must have been called with the resolved model ref,
+        // NOT the empty request model.  This was the root cause: empty model
+        // skipped cost calculation at the '' !== $modelName guard.
+        self::assertSame('test/priced-model', $costCalculator->capturedModel, 'Cost calculator should receive the resolved model, not the empty request model.');
+        self::assertSame(1000, $costCalculator->capturedUsage['input_tokens'] ?? null);
+        self::assertSame(500, $costCalculator->capturedUsage['output_tokens'] ?? null);
+
+        // The usage array must contain the computed cost.
+        self::assertArrayHasKey('cost', $response->usage, 'Usage should contain a cost key.');
+        self::assertSame(42.0, $response->usage['cost']);
+
+        // Token counts still flow through independently.
+        self::assertSame(1000, $response->usage['input_tokens']);
+        self::assertSame(500, $response->usage['output_tokens']);
+        self::assertSame(1500, $response->usage['total_tokens']);
+    }
+
     public function testStreamingCancellationReturnsAbortedWithPartialOutput(): void
     {
         $platform = $this->createSymfonyPlatform(
@@ -318,6 +428,8 @@ final class PlatformIntegrationTest extends TestCase
             transformContextHooks: [],
             convertToLlmHooks: [],
             streamObserver: null,
+            costCalculator: null,
+            modelResolver: null,
             logger: new NullLogger(),
         );
 
