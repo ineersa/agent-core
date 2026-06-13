@@ -87,17 +87,11 @@ final class EditorBorderColorTest extends TestCase
 
         $this->tmux->sendLiteral($pane, "\x1b[Z");
 
-        $this->tmux->waitForCallback(
-            $pane,
-            static fn (string $c): bool => str_contains($c, 'minimal'),
-            timeout: 5.0,
-            message: 'Reasoning "minimal" did not appear',
-            history: 500,
-        );
-
-        $minimal = $this->editorBorderColour($pane);
+        // Wait for the editor border colour itself to change, not just
+        // the status text.  The status panel may update before the TUI
+        // repaints the editor frame; polling ANSI avoids the race.
+        $minimal = $this->waitForBorderColorChange($pane, $off, 5.0);
         self::assertNotNull($minimal, 'Border colour at reasoning=minimal should not be null');
-
         self::assertNotSame(
             $off,
             $minimal,
@@ -108,10 +102,52 @@ final class EditorBorderColorTest extends TestCase
             ),
         );
 
+        // ── Shift+Tab: minimal → low ─────────────────────────────────
+
+        $this->tmux->sendLiteral($pane, "\x1b[Z");
+
+        $low = $this->waitForBorderColorChange($pane, $minimal, 5.0);
+        self::assertNotNull($low, 'Border colour at reasoning=low should not be null');
+        self::assertNotSame(
+            $minimal,
+            $low,
+            \sprintf(
+                'Border colour should change minimal(%s) → low(%s)',
+                $minimal,
+                $low,
+            ),
+        );
         $this->tmux->sendKey($pane, 'C-d');
     }
 
     // ── Helpers ───────────────────────────────────────────────
+
+    /**
+     * Wait until the editor border colour differs from a known previous
+     * colour, polling ANSI captures at 100ms intervals.
+     *
+     * The TUI status panel updates before the editor frame is repainted,
+     * so waiting for the reasoning status text alone races with the
+     * stylesheet → invalidate → requestRender → tmux paint cycle.
+     * Polling the ANSI border colour itself eliminates that race.
+     *
+     * Returns the new colour string, or null on timeout.
+     */
+    private function waitForBorderColorChange(TmuxPane $pane, string $previous, float $timeout = 5.0): ?string
+    {
+        $deadline = \microtime(true) + $timeout;
+
+        while (\microtime(true) < $deadline) {
+            $colour = $this->editorBorderColour($pane);
+            if (null !== $colour && $colour !== $previous) {
+                return $colour;
+            }
+            \usleep(100_000); // 100ms
+        }
+
+        // One last attempt; return the current colour (for assertions).
+        return $this->editorBorderColour($pane);
+    }
 
     /**
      * Extract the ANSI colour of the editor BOTTOM border.
