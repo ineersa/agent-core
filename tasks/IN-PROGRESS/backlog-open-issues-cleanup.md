@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: 7pm15pcv9frk
+Fork run: fx2rd5v9j1js
 PR URL:
 PR Status:
 Started: 2026-06-12T16:54:23.580Z
@@ -306,3 +306,8 @@ Completed:
 
 ## Task workflow update - 2026-06-13T02:51:52.990Z
 - User clarified final validation fix should both optimize CostFooterE2ETest itself and optimize TUI E2E shard balance; not just increase timeout or move files around.
+
+## Task workflow update - 2026-06-13T03:01:04.851Z
+- Recorded fork run: fx2rd5v9j1js
+- Validation: Per fork: LLM_MODE=true castor check passed all 14 steps: deptrac OK, unit shards OK, test-tui-suite OK, test-platform OK, test:controller OK, test:llm-real OK, test:tui-1 OK 55.5s 10 tests/48 assertions, test:tui-2 OK 52.8s 11 tests/18 assertions, phpstan OK, cs-check OK.; Per fork: branch force-with-lease pushed successfully to origin/task/backlog-open-issues-cleanup at 10527dd5.; Parent verified worktree branch matches origin/task/backlog-open-issues-cleanup at 10527dd5; only untracked file is php.php.
+- Summary: Fork fx2rd5v9j1js completed final validation optimization and pushed rebased branch origin/task/backlog-open-issues-cleanup at 10527dd5. It merged #122 cost footer assertion into existing TuiAgentSmokeTest to avoid an extra LLM turn, deleted standalone CostFooterE2ETest, kept 75s TUI shard timeout/headroom in .castor/tasks.php, and included silent-exit logging commits. Full LLM_MODE=true castor check passed all 14 steps (351.1s).
