@@ -186,7 +186,17 @@ final class TuiAgentSmokeTest extends TestCase
                 );
             }
 
-            // Step 6: Save ANSI snapshot artifact.
+            // Step 6: Assert footer cost is non-zero.
+            // With the high per-token pricing (input=$1000/M, output=$100000/M),
+            // any successful LLM turn must produce a visible non-$0.00 cost.
+            self::assertStringNotContainsString(
+                '$0.00',
+                $capture,
+                'Footer cost must NOT be $0.00 after a turn '
+                . 'with the priced test model configured.',
+            );
+
+            // Step 7: Save ANSI snapshot artifact.
             $this->saveAnsiSnapshot($pane, 'agent-flow-smoke');
 
             // Clean exit
@@ -806,7 +816,9 @@ final class TuiAgentSmokeTest extends TestCase
                                 'max_tokens' => 32768,
                                 'input' => ['text', 'image'],
                                 'tool_calling' => true,
-                                'cost' => ['input' => 0, 'output' => 0],
+                                // High pricing so any successful turn produces
+                                // a visible non-$0.00 cost in the footer.
+                                'cost' => ['input' => 1000.0, 'output' => 100000.0],
                             ],
                         ],
                     ],

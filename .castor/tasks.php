@@ -113,13 +113,13 @@ function check(): void
         'test:tui-1' => [
             'cmd' => timeout_check_command(
                 build_tui_e2e_worker_command(1, $pharEnv),
-                75,
+                60,
             ),
         ],
         'test:tui-2' => [
             'cmd' => timeout_check_command(
                 build_tui_e2e_worker_command(2, $pharEnv),
-                75,
+                60,
             ),
         ],
         'phpstan' => [
@@ -329,7 +329,7 @@ function coding_agent_shard_groups(): array
 
 /**
  * Return TUI E2E test files split across two shards for parallel
- * execution under the 75s per-step timeout.
+ * execution under the 60s per-step timeout.
  *
  * Only files ending in Test.php are included; harness/support files
  * (TmuxHarness.php, TmuxPane.php) are excluded so PHPUnit does not
@@ -340,7 +340,7 @@ function coding_agent_shard_groups(): array
  *            HotkeySmokeTest, ImmediateSubmitFeedbackTest
  *   shard 2: PromptTemplateSlashCommandE2ETest, ReasoningCycleTest,
  *            SessionRenameE2ETest, ShellPrefixSmokeTest,
- *            TuiStartupSnapshotTest, CostFooterE2ETest
+ *            TuiStartupSnapshotTest
  *
  * New Test.php files are round-robined starting on the lighter shard.
  *
@@ -377,7 +377,6 @@ function tui_e2e_shard_groups(): array
             'SessionRenameE2ETest.php',
             'ShellPrefixSmokeTest.php',
             'TuiStartupSnapshotTest.php',
-            'CostFooterE2ETest.php',
         ], true)) {
             $shard2[] = $file;
         } else {
