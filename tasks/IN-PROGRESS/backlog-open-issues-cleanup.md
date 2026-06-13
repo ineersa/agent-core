@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: x3ipdc44uskp
+Fork run: f9foxnua8l8a
 PR URL:
 PR Status:
 Started: 2026-06-12T16:54:23.580Z
@@ -257,3 +257,8 @@ Completed:
 ## Task workflow update - 2026-06-12T22:59:58.271Z
 - Summary: Cost bug follow-up scout found root cause: LlmPlatformAdapter cost fix passes `$request->model` into extractUsage(), but ExecuteLlmStepWorker default model is empty string and Symfony AI resolves the real model later via ModelRoutingEvent/ModelResolverRoutingSubscriber. The resolved model (e.g. llama_cpp_test/test) is used for provider invocation but is not propagated back to LlmPlatformAdapter; DeferredResult has no model accessor. Therefore extractUsage sees modelName='' and skips costCalculator. llama_cpp_test already has pricing in .hatfield/settings.yaml per scout, but cost calculation is never reached.
 - Need iterate #122: pass the resolved model into cost calculation. Minimal robust options: capture resolved model around ModelRoutingEvent/PlatformInvocationMetadata, resolve model in adapter using existing resolver/session context before invoking, or otherwise make LlmPlatformAdapter know the effective model used. User suggested high llama_cpp_test pricing for visible testing; include this in test strategy if appropriate.
+
+## Task workflow update - 2026-06-13T00:01:08.261Z
+- Recorded fork run: f9foxnua8l8a
+- Validation: Per fork: castor phpstan OK, deptrac OK, cs-check OK, castor test --filter=AiCostCalculatorTest OK, PlatformIntegrationTest OK, TraceReplayTest OK.; Per fork: LLM_MODE=true castor check failed 13/14; test:tui-1 failed. Parent inspected var/reports/check-test:tui-1.log: EditorBorderColorTest failed because minimal and low border colors were both 38;2;113;128;150 at tests/Tui/E2E/EditorBorderColorTest.php:126.; Parent inspected worktree: .hatfield/settings.yaml dirty with llama_cpp_test cost changed from 0/0 to 10.0/100.0; do not discard user/manual test change without approval.
+- Summary: Fork f9foxnua8l8a pushed commit b86e4aba to fix #122 cost path by resolving the effective model in LlmPlatformAdapter via ModelResolverInterface before calling consumeStream/extractUsage. However handoff is not merge-ready: full castor check failed 13/14 with test:tui-1 EditorBorderColorTest failure; fork did not add a regression test proving request model empty + resolved priced model computes cost despite instructions; worktree has dirty .hatfield/settings.yaml pricing change (llama_cpp_test cost 10/100) used for manual testing and not committed.
