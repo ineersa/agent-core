@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: gyuci2m2bz99
+Fork run: tunnaig5sx9x
 PR URL:
 PR Status:
 Started: 2026-06-12T16:54:23.580Z
@@ -267,3 +267,8 @@ Completed:
 - Recorded fork run: gyuci2m2bz99
 - Validation: Per fork: castor test --filter=PlatformIntegrationTest passed 4 tests/24 assertions.; Per fork: castor test:tui --filter=EditorBorderColorTest passed 5/5 consecutive runs.; Per fork: LLM_MODE=true castor check passed all 14 steps: deptrac OK, unit shards OK, test-tui-suite OK, test-platform OK, test:controller OK, test:llm-real OK, test:tui-1 OK 12 tests, test:tui-2 OK 9 tests, phpstan OK, cs-check OK.; Parent verified worktree status: only dirty file is .hatfield/settings.yaml cost change from 0/0 to 10.0/100.0, uncommitted.
 - Summary: Fork gyuci2m2bz99 completed #122 follow-up in commit f6b49577. Added regression test proving cost is calculated when request model is empty but ModelResolver resolves a priced model; stabilized EditorBorderColorTest by polling actual ANSI border color changes instead of relying on text status then immediate capture. Full LLM_MODE=true castor check passed all 14 steps. Worktree still has dirty .hatfield/settings.yaml with user's manual llama_cpp_test pricing 10/100; preserved uncommitted pending user decision/revert before merge.
+
+## Task workflow update - 2026-06-13T00:22:57.777Z
+- Recorded fork run: tunnaig5sx9x
+- Validation: Per fork: castor test:tui --filter=CostFooterE2ETest passed (1 test, 1 assertion).; Per fork: events.jsonl contained usage cost 5.867 and footer showed about $5.87 with high isolated pricing.; Per fork: castor test --filter=AiCostCalculatorTest passed 7 tests/7 assertions.; Per fork: castor test --filter=PlatformIntegrationTest passed 4 tests/24 assertions.; Per fork: LLM_MODE=true castor check passed all 14 steps including test:tui-1 with CostFooterE2ETest and test:tui-2.; Parent verified branch at 741d7da2 and only dirty worktree file is .hatfield/settings.yaml manual test pricing, not committed.
+- Summary: Fork tunnaig5sx9x completed #122 real TUI cost proof in commit 741d7da2. It discovered and fixed the remaining runtime root cause: AiCostCalculator was getting an autowired HatfieldModelCatalog backed by a default/empty AiConfig instead of the real AppConfig.ai catalog, so catalog lookup for llama_cpp_test/test failed even after effective model resolution. Fixed config/services.yaml to wire HatfieldModelCatalog from AppConfig.ai. Added tests/Tui/E2E/CostFooterE2ETest.php with isolated high-priced llama_cpp_test settings and real TmuxHarness flow asserting footer cost becomes non-$0.00. Worktree still has dirty .hatfield/settings.yaml manual pricing 10/100 preserved uncommitted.
