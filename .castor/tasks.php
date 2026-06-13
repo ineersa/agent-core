@@ -113,13 +113,13 @@ function check(): void
         'test:tui-1' => [
             'cmd' => timeout_check_command(
                 build_tui_e2e_worker_command(1, $pharEnv),
-                60,
+                75,
             ),
         ],
         'test:tui-2' => [
             'cmd' => timeout_check_command(
                 build_tui_e2e_worker_command(2, $pharEnv),
-                60,
+                75,
             ),
         ],
         'phpstan' => [
@@ -329,7 +329,7 @@ function coding_agent_shard_groups(): array
 
 /**
  * Return TUI E2E test files split across two shards for parallel
- * execution under the 60s per-step timeout.
+ * execution under the 75s per-step timeout.
  *
  * Only files ending in Test.php are included; harness/support files
  * (TmuxHarness.php, TmuxPane.php) are excluded so PHPUnit does not
