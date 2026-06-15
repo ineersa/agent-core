@@ -99,3 +99,7 @@ Completed:
 - Supersedes earlier PR-base notes in this task: do NOT use `prBaseBranch="task/maint-05-cardinal-qa-test-rework"`. If/when creating a PR for MAINT-05A, target `main` (the default base).
 - Sequential execution policy: finish/manual-review/merge this stage into `main` before starting MAINT-05B unless the user explicitly says otherwise.
 - Validation/review policy remains: skip reviewer subagent and skip full `LLM_MODE=true castor check` for MAINT-05A; user reviews manually and MAINT-05G owns final full-gate validation.
+
+## Task workflow update - 2026-06-15T21:36:14.714Z
+- Validation: Parent action: `git -C /home/ineersa/projects/agent-core-worktrees/maint-05a-castor-command-matrix-modular-foundation rebase main` — succeeded.; Parent verification: MAINT-05A worktree clean after rebase.; Parent verification: `git diff --stat main...HEAD` still shows the same 13 implementation files changed: `.castor/{cleanup,e2e,env,logs,phar,phpunit,process,run,shared,tasks,tools}.php`, `castor.php`, `phpstan-baseline.neon`.
+- Summary: Rebased MAINT-05A implementation branch onto current `main` after policy change that main is the MAINT-05 integration branch. Implementation commit is now `a65d30bb` (rebased from original `0c075525`). Diff against main remains the Castor modular split only.
