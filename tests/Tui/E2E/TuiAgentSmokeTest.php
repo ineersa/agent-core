@@ -86,11 +86,7 @@ final class TuiAgentSmokeTest extends TestCase
 
         try {
             // Step 1: Wait for TUI to render
-            $this->tmux->waitForCaptureContains(
-                pane: $pane,
-                needle: '█',   // Hatfield logo
-                timeout: 5.0,
-            );
+            $this->waitForTuiStartup($pane);
             // Step 2: Type a prompt
             $prompt = 'Respond with exactly one word: hello.';
             $this->tmux->sendLiteral($pane, $prompt);
@@ -239,7 +235,7 @@ final class TuiAgentSmokeTest extends TestCase
 
         try {
             // Wait for TUI startup
-            $this->tmux->waitForCaptureContains($pane, '█', 5.0);
+            $this->waitForTuiStartup($pane);
 
             // Send prompt
             $this->tmux->sendLiteral($pane, 'hello');
@@ -299,7 +295,7 @@ final class TuiAgentSmokeTest extends TestCase
 
         try {
             // ── Start first turn ──
-            $this->tmux->waitForCaptureContains($pane, '█', 5.0);
+            $this->waitForTuiStartup($pane);
 
             // Chat-only prompt: multi-turn ordering test, not a tools test.
             $prompt1 = 'Respond with exactly "One". Do not use tools.';
@@ -480,7 +476,7 @@ final class TuiAgentSmokeTest extends TestCase
 
         try {
             // ── First run (auto-submit via --prompt) ──
-            $this->tmux->waitForCaptureContains($pane, '█', 5.0);
+            $this->waitForTuiStartup($pane);
 
             // The first run MUST produce an assistant block.  No ✕ fallback.
             $this->tmux->waitForCaptureContains($pane, '◇', 5.0);
@@ -494,7 +490,7 @@ final class TuiAgentSmokeTest extends TestCase
             // After the switch the terminal is cleared and the TUI
             // rebuilds.  Wait for the Hatfield logo to confirm the
             // new draft session has rendered.
-            $this->tmux->waitForCaptureContains($pane, '█', 5.0);
+            $this->waitForTuiStartup($pane);
 
             // Record baseline counts BEFORE submitting the /new prompt.
             // The tmux scrollback retains pre-clear content, so using
@@ -587,7 +583,7 @@ final class TuiAgentSmokeTest extends TestCase
 
         try {
             // ── First run (auto-submit via --prompt) creates session 1 ──
-            $this->tmux->waitForCaptureContains($pane, '█', 5.0);
+            $this->waitForTuiStartup($pane);
 
             // The first run MUST produce an assistant block.  No ✕ fallback.
             $this->tmux->waitForCaptureContains($pane, '◇', 5.0);
@@ -609,7 +605,7 @@ final class TuiAgentSmokeTest extends TestCase
             $this->tmux->sendKey($pane, 'Enter');
 
             // After session switch the terminal clears and logo reappears
-            $this->tmux->waitForCaptureContains($pane, '█', 5.0);
+            $this->waitForTuiStartup($pane);
 
             // The replayed transcript should show the old user prompt
             $this->tmux->waitForCaptureContains($pane, 'alpha', 5.0);
@@ -684,6 +680,28 @@ final class TuiAgentSmokeTest extends TestCase
     }
 
     // ── helpers ────────────────────────────────────────────
+
+    /**
+     * Wait for the TUI to finish startup and render the Hatfield
+     * logo, using a callback poll with scrollback history and a
+     * generous timeout for parallel-gate/Xdebug environments.
+     *
+     * Uses waitForCallback (capturePlainWithHistory) instead of
+     * waitForCaptureContains (capturePlain) so the logo is found
+     * even if it has scrolled above the visible area after rapid
+     * auto-submit output — common in the /new and /resume rebuild
+     * paths where the first-run assistant response pushes the
+     * logo out of the visible pane.
+     */
+    private function waitForTuiStartup(TmuxPane $pane, float $timeout = 10.0): void
+    {
+        $this->tmux->waitForCallback(
+            pane: $pane,
+            callback: static fn (string $capture): bool => \str_contains($capture, '█'),
+            timeout: $timeout,
+            message: 'TUI did not render the Hatfield logo within '.$timeout.'s — pane may be blank or agent failed to start.',
+        );
+    }
 
     /**
      * Verify events.jsonl for a resumed session: follow_up must be
