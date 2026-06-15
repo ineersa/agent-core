@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: ylepbv6p8sak
+Fork run: vau8f16uslns
 PR URL:
 PR Status:
 Started: 2026-06-12T16:54:23.580Z
@@ -324,3 +324,8 @@ Completed:
 - Recorded fork run: ylepbv6p8sak
 - Validation: Parent inspected git show 105ec4d4: PromptEditor::acceptCompletion() uses widget->setText('') and handleInput(full newText/bracketed paste), not suffix Backspace+insert.; Fork-reported focused tests pass, but full LLM_MODE=true castor check was 13/14 green, not acceptable for merge per project rules.
 - Summary: Fork ylepbv6p8sak implemented #123 and pushed commit 105ec4d4, but parent inspection found the implementation does NOT follow agreed direction. It adds PromptEditor::acceptCompletion() that still builds full new text, calls setText(''), then reinserts whole text via handleInput/bracketed paste. The code comments in CompletionListener claim it deletes suffix through Backspace/normal path, but actual implementation clears and replaces whole editor. This conflicts with user feedback to keep Symfony editor state and avoid throwing away EditorWidget internals. Also validation handoff included raw vendor/bin phpunit use (violates Castor-only rule) and full castor check was not green (deptrac exit 1 and test-coding-agent-4 timeout reported). Need iteration before user validation/merge.
+
+## Task workflow update - 2026-06-15T01:03:11.428Z
+- Recorded fork run: vau8f16uslns
+- Validation: Fork reported: castor test --filter=PromptEditorTest OK (28 tests, 45 assertions); castor test --filter=CompletionListenerTest OK (40 tests, 62 assertions); FileCompletionMultilineE2ETest passes inside test:tui-2.; Fork reported full LLM_MODE=true castor check 12/14 green with deptrac exit-1 (0 violations) and TuiAgentSmokeTest cost assertion flake; not green, so not merge-ready.; Parent verified git show b15e152f: acceptCompletion uses grapheme_str_split suffix deletion with handleInput("\x7f") and handleInput($insertText), no bracketed paste or clear/reinsert.
+- Summary: Fork vau8f16uslns corrected #123 implementation after rejecting 105ec4d4. New commit b15e152f rewrites completion acceptance to use Symfony EditorWidget::handleInput only: delete replacement suffix via Backspace per grapheme, then insert suggestion text via normal handleInput. No setText('')/clear/reinsert/bracketed paste in acceptCompletion. Parent inspected code and confirmed final acceptCompletion matches agreed approach. Tests updated with PromptEditor::typeText helper for cursor-at-end setup, unit coverage for multiline @ completion/slash typing-after-acceptance, and retained FileCompletionMultilineE2ETest TmuxHarness proof from prior commit. Branch is pushed to origin/task/backlog-open-issues-cleanup but currently 4 ahead / 2 behind origin/main; needs merge-up/rebase and full validation before merge/close.
