@@ -42,3 +42,8 @@ Completed:
 
 ## Work log
 - Created: 2026-06-15T21:09:07.755Z
+
+## Task workflow update - 2026-06-15T21:13:54.382Z
+- Summary: MAINT-05 stage policy: this task belongs to umbrella branch `task/maint-05-cardinal-qa-test-rework`. When started and later moved to CODE-REVIEW, open the PR against that branch rather than `main`. Unlike MAINT-05A-F, this final cutover task owns the full deterministic QA gate, final review readiness, docs, and metrics.
+- PR base: use `prBaseBranch="task/maint-05-cardinal-qa-test-rework"` when moving this task to CODE-REVIEW.
+- Review/validation policy: MAINT-05G is the stage where full deterministic validation, final `castor check` semantics, docs, and metrics are expected. Earlier MAINT-05A-F stages may skip reviewer subagent/full `LLM_MODE=true castor check`; MAINT-05G should reconcile final validation and review readiness before the umbrella branch is merged back toward main.
