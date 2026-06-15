@@ -169,3 +169,15 @@ Completed:
 ## Task workflow update - 2026-06-15T21:08:22.204Z
 - Summary: Umbrella task retained by user request. Do not delete MAINT-05; use it as the parent/epic record for the staged rework tasks rather than as a single implementation task.
 - User explicitly said: "Don't delete 05". Keep `maint-05-cardinal-qa-test-rework.md` in TODO as the umbrella/epic task. Implementation should happen through smaller staged tasks: MAINT-05A Castor command matrix/modular foundation, MAINT-05B ParaTest unit/integration runner, MAINT-05C LLM replay/recording foundation, MAINT-05D controller replay E2E/process ownership, MAINT-05E TUI replay-backed journey E2E, MAINT-05F CodingAgent test diet/sequential speed, plus final integration/docs/cleanup if created.
+
+## Task workflow update - 2026-06-15T21:09:17.183Z
+- Summary: Umbrella/epic task for the staged cardinal QA/test rework. Do not implement MAINT-05 directly and do not delete it. Execute the linked MAINT-05A-G tasks in order/as dependencies allow, then use MAINT-05 to track overall completion and cross-task decisions.
+- Umbrella links/stages:
+- `tasks/TODO/maint-05a-castor-command-matrix-modular-foundation.md` — Castor command matrix and modular QA foundation.
+- `tasks/TODO/maint-05b-paratest-unit-integration-runner.md` — Replace custom PHPUnit sharding with ParaTest.
+- `tasks/TODO/maint-05c-llm-replay-recording-foundation.md` — LLM replay and fixture re-recording foundation.
+- `tasks/TODO/maint-05d-controller-replay-e2e-process-ownership.md` — Controller replay E2E and explicit process ownership.
+- `tasks/TODO/maint-05e-tui-journey-e2e-rework.md` — Rework TUI E2E into replay-backed journey tests.
+- `tasks/TODO/maint-05f-codingagent-test-diet-sequential-speed.md` — CodingAgent test diet and sequential speed target.
+- `tasks/TODO/maint-05g-deterministic-qa-cutover-docs-metrics.md` — Deterministic QA cutover, docs, and metrics.
+- Execution intent: MAINT-05 remains the parent narrative and acceptance umbrella. A-F build the new pieces; G performs the final cutover/docs/metrics and updates this umbrella with final status.
