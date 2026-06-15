@@ -36,7 +36,7 @@ Known entrypoints:
 Status: IN-PROGRESS
 Branch: task/maint-05d-controller-replay-e2e-process-ownership
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05d-controller-replay-e2e-process-ownership
-Fork run: es8l1fx2p88s
+Fork run: lcn5ct5erqxi
 PR URL: https://github.com/ineersa/agent-core/pull/145
 PR Status: open
 Started: 2026-06-15T23:32:27.282Z
@@ -86,3 +86,8 @@ Completed:
 - Moved CODE-REVIEW → IN-PROGRESS.
 - Validation: Read PR #145 review comments via `gh pr view` and `gh api repos/ineersa/agent-core/pulls/145/comments`.; Actionable comments: (1) no test code in real layer; set proper client in `services_test` container and use existing injected `$httpClient` path in `SymfonyAiProviderFactory`; (2) `ReplayHttpClientFactory` must live under tests if testing-related code.
 - Summary: Moved MAINT-05D back to IN-PROGRESS to address PR #145 review feedback. Comments require removing test/replay code from production `src/` layer and wiring replay HTTP client through the test container/services_test injection path instead of env-var branching inside `SymfonyAiProviderFactory`.
+
+## Task workflow update - 2026-06-15T23:54:47.574Z
+- Recorded fork run: lcn5ct5erqxi
+- Validation: Read PR #145 review comments: production `SymfonyAiProviderFactory` must not contain replay/test branching; `ReplayHttpClientFactory` must live under tests if it is testing-related.; Fork `lcn5ct5erqxi` pending. Expected focused validation: `castor list`, `castor test:controller-replay`, `castor test --filter=ControllerReplaySmokeTest`, relevant small replay/service wiring check if applicable, `castor test` if feasible, `castor deptrac`, `castor phpstan`, `castor cs-check`; no full `LLM_MODE=true castor check`; no reviewer; no push.
+- Summary: Launched review-iteration fork to address PR #145 comments. Required fix: remove replay/test code from production `src/` layer, remove the replay env-var branch from `SymfonyAiProviderFactory`, move replay HTTP client factory under `tests/`, wire it through `config/services_test.yaml` so the existing injected `$httpClient` path is used, and make controller replay subprocess use `APP_ENV=test`/test DI rather than production factory branching. Fork must preserve deterministic `castor test:controller-replay`, explicit process ownership/teardown, and opt-in live controller smoke.
