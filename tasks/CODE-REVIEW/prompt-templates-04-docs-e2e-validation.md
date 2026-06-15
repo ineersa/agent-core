@@ -20,7 +20,7 @@ This is intentionally last; docs can be drafted earlier, but final smoke/validat
 - Task metadata records final validation results and any deferred follow-ups discovered during smoke testing.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/prompt-templates-04-docs-e2e-validation
 Worktree: /home/ineersa/projects/agent-core-worktrees/prompt-templates-04-docs-e2e-validation
 Fork run: ep1bvr5s2nxu
@@ -73,11 +73,11 @@ Completed:
 - Validation: Loaded testing skill, task-workflow skill, and tests/AGENTS.md before QA/review workflow.; Reviewer subagent final pass at HEAD 756e370a: APPROVED; no blockers; TUI proof satisfied.; castor test: OK (151.4s; agent-core 293/1271, coding-agent shards OK, tui 689/1759, platform 54/221).; castor deptrac: OK (0 violations, 0 errors).; castor phpstan: OK (No errors).; castor cs-check: OK (0 files fixed).; LLM_MODE=true castor test:tui first local run failed once on TuiStartupSnapshotTest blank pane waiting 5s for logo; no PT-04 stale PHAR workers remained; fork o228a40asx8d reran focused startup tests and found no code change needed.; Cleared stale PHAR messenger consumers before retry per AGENTS.md; LLM_MODE=true castor test:tui retry: OK (21 tests, 66 assertions, 101.8s).
 - Summary: PT-04 final review fixes completed at commit 756e370a. Reviewer final pass returned APPROVED with no blockers and TUI proof satisfied. Review-fix commits addressed docs quote parsing, single-pass placeholder wording, description fallback wording, Castor timeout-hardstop Test E false-positive removal/commenting, test:llm-real timeout comment, and TuiAgentSmokeTest pre-settle success flag comment. TuiStartupSnapshotTest blank-pane failure was investigated by fork o228a40asx8d and classified as one-off environmental anomaly; no code change needed; focused startup test passed in fork. Branch worktree clean and ready for CODE-REVIEW gate.
 Castor Check Status: passed
-Castor Check Commit: 756e370a640cd91520f3eb239b0350526c17a3c2
+Castor Check Commit: cbe5f3436326f1968af89f9acf63167bebcc38c9
 Castor Check Command: LLM_MODE=true castor check
 Castor Check Timeout: 600s
-Castor Check Completed: 2026-06-15T01:57:12.003Z
-Castor Check Output SHA256: 8bcc69f1599fe89f21903d661be076044838dd11bed6f30376a4319e355bd333
+Castor Check Completed: 2026-06-15T02:11:41.055Z
+Castor Check Output SHA256: 43baea5d7eaeb4bf8050e617aafeadb8617a63cc64e52f9392d3efb14620f250
 
 ## Task workflow update - 2026-06-15T01:57:15.565Z
 - Moved IN-PROGRESS → CODE-REVIEW.
@@ -94,3 +94,10 @@ Castor Check Output SHA256: 8bcc69f1599fe89f21903d661be076044838dd11bed6f30376a4
 - Recorded fork run: ep1bvr5s2nxu
 - Validation: Fork ep1bvr5s2nxu loaded testing skill and tests/AGENTS.md before QA.; castor test:timeout-hardstop: OK (4/4 proofs).; castor test: OK (7 suites, 205.9s; test-tui-suite 689 tests/1759 assertions).; castor deptrac: OK (0 violations, 0 errors).; castor phpstan: OK (0 errors).; castor cs-check: OK (0 fixes).; Stale worker scan: zero PT-04 worktree PHAR consumers; unrelated backlog worktree consumers observed and left untouched by fork.
 - Summary: Addressed PR #139 owner comments at commit cbe5f343: deleted PromptTemplateControllerE2eTest.php, restored TuiAgentSmokeTest.php to origin/main exactly, and reverted the test:llm-real timeout bump/comment from 120s back to 60s. Final PR diff is now 4 files only: .castor/tasks.php, .hatfield/settings.yaml, docs/prompt-templates.md, docs/settings.md.
+
+## Task workflow update - 2026-06-15T02:11:42.956Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (600s timeout). Commit: cbe5f3436326.
+- Pushed task/prompt-templates-04-docs-e2e-validation to origin.
+- branch 'task/prompt-templates-04-docs-e2e-validation' set up to track 'origin/task/prompt-templates-04-docs-e2e-validation'.
+- PR already exists: https://github.com/ineersa/agent-core/pull/139
