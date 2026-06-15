@@ -138,13 +138,13 @@ Known scout entrypoints:
 - Before/after metrics are recorded in the task: default QA wall time, CodingAgent sequential time, TUI harness launch count, live LLM calls in default QA, and known remaining flakes/risks.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/maint-05-cardinal-qa-test-rework
+Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05-cardinal-qa-test-rework
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-15T21:12:17.664Z
 Completed:
 
 ## Work log
@@ -181,3 +181,11 @@ Completed:
 - `tasks/TODO/maint-05f-codingagent-test-diet-sequential-speed.md` — CodingAgent test diet and sequential speed target.
 - `tasks/TODO/maint-05g-deterministic-qa-cutover-docs-metrics.md` — Deterministic QA cutover, docs, and metrics.
 - Execution intent: MAINT-05 remains the parent narrative and acceptance umbrella. A-F build the new pieces; G performs the final cutover/docs/metrics and updates this umbrella with final status.
+
+## Task workflow update - 2026-06-15T21:12:17.664Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/maint-05-cardinal-qa-test-rework.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/maint-05-cardinal-qa-test-rework.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/maint-05-cardinal-qa-test-rework.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/maint-05-cardinal-qa-test-rework.
+- Summary: Started umbrella/epic branch for the MAINT-05 staged QA/test rework. This branch is intended to serve as the integration/base branch for MAINT-05A-G PRs rather than a direct all-in-one implementation task. User requested PRs for staged tasks target this MAINT-05 branch instead of main.
