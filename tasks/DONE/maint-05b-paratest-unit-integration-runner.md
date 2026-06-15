@@ -36,14 +36,14 @@ Important direction:
 - Task handoff records sequential vs ParaTest timings and any tests that remain unsafe for ParaTest.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/maint-05b-paratest-unit-integration-runner
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05b-paratest-unit-integration-runner
 Fork run: 53azgrzs7ng7
 PR URL: https://github.com/ineersa/agent-core/pull/142
-PR Status: open
+PR Status: merged
 Started: 2026-06-15T22:05:20.925Z
-Completed:
+Completed: 2026-06-15T22:50:15.917Z
 
 ## Work log
 - Created: 2026-06-15T21:07:14.103Z
@@ -107,3 +107,12 @@ Completed:
 - PR already exists: https://github.com/ineersa/agent-core/pull/142
 - Validation: Pre-move inspection: task worktree clean on `task/maint-05b-paratest-unit-integration-runner` at `c5a3b5bd`.; Fork validation: `castor list` passed and `test:parallel` no longer appears.; Fork validation: grep for `test:parallel` / `test_parallel` in `.castor/`, `.agents/`, and `tests/AGENTS.md` found no matches.; Fork validation: `castor test` passed via ParaTest: 2514 tests, 7318 assertions, 34.1s, 16 processes.; Fork validation: `castor test --filter=ResultConverterTest` passed: 23 tests, 86 assertions, 0.6s.; Fork validation: `castor deptrac` passed with 0 violations.; Fork validation: `castor phpstan` passed with 0 errors.; Fork validation: `castor cs-check` passed after `castor cs-fix`.; Skipped reviewer subagent per user MAINT-05A-F policy.; Skipped full `LLM_MODE=true castor check` per user MAINT-05A-F policy / MAINT-05G owns final full-gate validation.
 - Summary: Moved MAINT-05B back to CODE-REVIEW after applying review feedback. Branch now includes follow-up commit `c5a3b5bd` making ParaTest the default `castor test` path and removing public `castor test:parallel`. Existing PR #142 was updated by pushing the branch. Automated reviewer and full `castor check` were skipped per MAINT-05 stage policy/user instruction.
+
+## Task workflow update - 2026-06-15T22:50:15.917Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/maint-05b-paratest-unit-integration-runner into integration checkout.
+- Already up to date.
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/maint-05b-paratest-unit-integration-runner.
+- Pulled integration checkout: Already up to date..
+- Validation: Synced integration checkout with `git pull --ff-only`; main fast-forwarded to merge commit `9b43bf6b` for PR #142.; Focused validation recorded before review: `castor list`, `castor test` (ParaTest default: 2514 tests, 7318 assertions, 34.1s), `castor test --filter=ResultConverterTest` (23 tests, 86 assertions, 0.6s), `castor deptrac`, `castor phpstan`, and `castor cs-check` passed.; No post-merge full `LLM_MODE=true castor check` run per MAINT-05A-F policy/user instruction; MAINT-05G owns final full-gate validation.
+- Summary: PR #142 was merged by the user. Moved MAINT-05B to DONE after syncing `main` from GitHub. Per MAINT-05 stage policy, skipped post-merge full `LLM_MODE=true castor check`; MAINT-05G remains responsible for final full-gate validation/metrics.
