@@ -20,14 +20,21 @@ This is intentionally last; docs can be drafted earlier, but final smoke/validat
 - Task metadata records final validation results and any deferred follow-ups discovered during smoke testing.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/prompt-templates-04-docs-e2e-validation
+Worktree: /home/ineersa/projects/agent-core-worktrees/prompt-templates-04-docs-e2e-validation
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-15T00:19:50.699Z
 Completed:
 
 ## Work log
 - Created: 2026-06-09T00:10:20.146Z
+
+## Task workflow update - 2026-06-15T00:19:50.699Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/prompt-templates-04-docs-e2e-validation.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/prompt-templates-04-docs-e2e-validation.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/prompt-templates-04-docs-e2e-validation.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/prompt-templates-04-docs-e2e-validation.
