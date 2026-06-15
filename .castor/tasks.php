@@ -1593,8 +1593,9 @@ function _reap_session(?int $sid): void
  *    grandchildren (e.g. messenger:consume workers that get their own
  *    process group via job control).
  *
- * 4. Descendant-tree cleanup catches separate-SID separate-PGID
- *    grandchildren (e.g. setsid'd sub-processes).
+ * 4. Separate-SID grandchildren (e.g. setsid'd sub-processes that
+ *    create their own session) are NOT supported once reparented to
+ *    init/systemd after the parent exits — see the NOTE below.
  */
 #[AsTask(name: 'test:timeout-hardstop', description: 'Verify Castor hard timeout + normal-exit session cleanup (4 smoke proofs) without hangs')]
 function test_timeout_hardstop(string $cmdOverride = ''): void

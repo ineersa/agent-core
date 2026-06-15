@@ -132,9 +132,10 @@ interference:
 4. `$@`
 
 Substitution is **single-pass** — argument values containing
-`$1` or `$@` remain literal after insertion. Avoid passing
-slice-like `${@:N}` text as an argument value because it can be
-re-interpreted by the subsequent slice-substitution pass.
+`$1` remain literal after insertion (positional substitution is
+already complete). Avoid passing `$@`, `$ARGUMENTS`, or
+`${@:N}` text as argument values: they can be re-interpreted by
+subsequent `$ARGUMENTS` / `$@` / slice substitution passes.
 Templates that expand to text starting with `/other` are **not**
 expanded again.
 
