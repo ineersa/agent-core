@@ -23,7 +23,7 @@ This is intentionally last; docs can be drafted earlier, but final smoke/validat
 Status: IN-PROGRESS
 Branch: task/prompt-templates-04-docs-e2e-validation
 Worktree: /home/ineersa/projects/agent-core-worktrees/prompt-templates-04-docs-e2e-validation
-Fork run: t5r3zxymllu0
+Fork run: rxxv7dukf4rj
 PR URL:
 PR Status:
 Started: 2026-06-15T00:19:50.699Z
@@ -63,3 +63,7 @@ Completed:
 - Summary: Stabilization fork completed successfully. Verified worktree clean at HEAD 4bbee309 (`fix: session-scoped process cleanup for Castor runner, fix TUI cost assertion race`). Diff origin/main...HEAD now includes 6 files changed, 856 insertions, 57 deletions. New stabilization changes add session-scoped Castor cleanup helpers `_collect_session_pids()` and `_reap_session()` and integrate SID cleanup into Castor step lifecycle so separate-PGID grandchildren in the same session are reaped; existing PGID/descendant cleanup remains as belt-and-suspenders. TuiAgentSmokeTest::testTypePromptAndVerifyTranscriptBlocks now waits for settled state (Working/Processing gone) before asserting footer cost and skips cost assertion for error-block paths. Post-fork scan found zero scoped stale PHAR messenger workers alive.
 - Accepted fork handoff as valid for stabilization: fork explicitly read testing skill and tests/AGENTS.md and used Castor for QA.
 - Noted remaining known limitation from fork: tmux-spawned agent processes are children of tmux server/session rather than Castor/PHPUnit session, so session/PG cleanup cannot reap them at per-step completion; startup cleanup remains the safety net for stale current-root workers.
+
+## Task workflow update - 2026-06-15T01:16:31.460Z
+- Recorded fork run: rxxv7dukf4rj
+- Summary: Reviewer subagent returned APPROVE WITH SUGGESTIONS for PT-04 at HEAD 4bbee309. No blockers; reviewer explicitly confirmed TUI proof requirement is satisfied. Actionable findings: fix false shell-style quote parsing docs example; correct single-pass docs caveat for slice-like `${@:N}` argument values; remove/fix false-positive Castor Test E for separate-SID detached children; clarify description fallback ellipsis wording; add comment for test:llm-real 120s timeout bump; comment why TuiAgentSmokeTest success flag is based on pre-settle capture. Launched fork rxxv7dukf4rj to address these suggestions, run focused Castor validation, scan for stale workers, and commit locally without push/task move.
