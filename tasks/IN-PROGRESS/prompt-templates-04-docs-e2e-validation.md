@@ -23,7 +23,7 @@ This is intentionally last; docs can be drafted earlier, but final smoke/validat
 Status: IN-PROGRESS
 Branch: task/prompt-templates-04-docs-e2e-validation
 Worktree: /home/ineersa/projects/agent-core-worktrees/prompt-templates-04-docs-e2e-validation
-Fork run:
+Fork run: a4we25kl1nqt
 PR URL:
 PR Status:
 Started: 2026-06-15T00:19:50.699Z
@@ -38,3 +38,7 @@ Completed:
 - Created worktree /home/ineersa/projects/agent-core-worktrees/prompt-templates-04-docs-e2e-validation.
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/prompt-templates-04-docs-e2e-validation.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/prompt-templates-04-docs-e2e-validation.
+
+## Task workflow update - 2026-06-15T00:25:55.591Z
+- Recorded fork run: a4we25kl1nqt
+- Summary: Started PT-04 implementation on worktree /home/ineersa/projects/agent-core-worktrees/prompt-templates-04-docs-e2e-validation. Loaded task-workflow/testing docs, read PT-04 task, plan sections, current settings docs, .hatfield prompt comments, existing PromptTemplateSlashCommandE2ETest, and controller E2E base. Launched implementation fork to create docs/prompt-templates.md, update settings docs/comments, add/strengthen product-level prompt-template E2E coverage, run Castor validation, and commit locally without pushing or moving to code review.
