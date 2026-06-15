@@ -4,37 +4,37 @@ parameters:
 			message: '#^Call to static method boot\(\) on an unknown class App\\Kernel\.$#'
 			identifier: class.notFound
 			count: 2
-			path: .castor/tasks.php
+			path: .castor/env.php
 
 		-
 			message: '#^Call to static method env\(\) on an unknown class App\\Kernel\.$#'
 			identifier: class.notFound
 			count: 1
-			path: .castor/tasks.php
+			path: .castor/env.php
 
 		-
 			message: '#^Call to static method hatfieldConfigPaths\(\) on an unknown class App\\Kernel\.$#'
 			identifier: class.notFound
 			count: 1
-			path: .castor/tasks.php
+			path: .castor/env.php
 
 		-
 			message: '#^Call to static method resolveGlobalHatfieldDir\(\) on an unknown class App\\Kernel\.$#'
 			identifier: class.notFound
 			count: 1
-			path: .castor/tasks.php
+			path: .castor/env.php
 
 		-
 			message: '#^Function CastorTasks\\build_idea_run_config_xml invoked with 0 parameters, 2 required\.$#'
 			identifier: arguments.count
 			count: 1
-			path: .castor/tasks.php
+			path: .castor/env.php
 
 		-
 			message: '#^Function format_step_failures\(\) has parameter \$failures with no value type specified in iterable type array\.$#'
 			identifier: missingType.iterableValue
 			count: 1
-			path: .castor/tasks.php
+			path: .castor/shared.php
 
 		-
 			message: '#^Method Ineersa\\CodingAgent\\Auth\\CodexOAuthProvider\:\:getAccessTokenRequest\(\) has parameter \$params with no value type specified in iterable type array\.$#'
