@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: df6hc6gj1ts1
+Fork run: hzxnva51ywl0
 PR URL:
 PR Status:
 Started: 2026-06-12T16:54:23.580Z
@@ -351,3 +351,8 @@ Completed:
 ## Task workflow update - 2026-06-15T01:46:16.835Z
 - Validation: move_task CODE-REVIEW Castor gate failed; PR was not created.; Gate summary: deptrac OK; test-agent-core OK; test-coding-agent-1 OK; test-coding-agent-2 OK; test-coding-agent-3 OK; test-coding-agent-4 FAIL exit 124 after 75s; test-tui-suite OK; test-platform OK; test:controller OK; test:llm-real OK; test:tui-1 FAIL exit 2 after 44.5s; test:tui-2 OK; phpstan OK; cs-check OK.; TUI failure log: var/reports/check-test:tui-1.log shows TuiAgentSmokeTest::testWorkingStatusTransitionsAfterSubmit timed out waiting for ✕ after not seeing ◇ within 5s, but final capture includes ◇ assistant block and ● idle, indicating wait/assertion flake rather than product failure.
 - Summary: Attempted to create PR via move_task to CODE-REVIEW for #123 + Castor launcher fixes, but Castor quality gate failed and task remained IN-PROGRESS. Gate failures: test-coding-agent-4 timeout exit 124 at 75s with empty/partial JUnit; test:tui-1 exit 2 due TuiAgentSmokeTest::testWorkingStatusTransitionsAfterSubmit timing out waiting for ✕ after initial wait for ◇ failed, while final diagnostic capture clearly contained a ◇ assistant response and idle state. All other gate steps passed: deptrac, test-agent-core, coding-agent shards 1-3, test-tui-suite, test-platform, controller, llm-real, tui-2, phpstan, cs-check.
+
+## Task workflow update - 2026-06-15T02:04:40.774Z
+- Recorded fork run: hzxnva51ywl0
+- Validation: Fork confirmed it read testing skill, tests/AGENTS.md, and castor skill.; castor test:tui --filter=testWorkingStatusTransitionsAfterSubmit: OK, all 22 TUI E2E passed in 92.1s.; Standalone coding-agent-4 shard: OK, 435 tests / 1062 assertions in 74.0s.; LLM_MODE=true castor check: OK, all 14 steps passed in 342.1s. Step times: deptrac 1.7s, test-agent-core 2.3s, test-coding-agent-1 29.6s, test-coding-agent-2 20.3s, test-coding-agent-3 42.9s, test-coding-agent-4 68.7s, test-tui-suite 22.9s, test-platform 1.1s, test:controller 6.6s, test:llm-real 30.3s, test:tui-1 55.5s, test:tui-2 51.9s, phpstan 5.4s, cs-check 2.8s.
+- Summary: Fork hzxnva51ywl0 fixed the Castor quality gate blockers with commit 1fef466a. It changed TuiAgentSmokeTest::testWorkingStatusTransitionsAfterSubmit to use TmuxHarness::waitForCallback with a single 8s combined wait for assistant/error output, eliminating the previous chained 5s ◇ then 2s ✕ race where final capture already showed a ◇. It also bumped coding-agent unit shard timeout from 75s to 90s in .castor/tasks.php because coding-agent-4 measured ~74s standalone with Xdebug and exceeded 75s under parallel contention. No product/runtime behavior changed and user-validated run:agent behavior was untouched.
