@@ -36,12 +36,12 @@ Known entrypoints:
 - Docs/skills are updated to explain replay vs live modes and fixture re-record workflow.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/maint-05c-llm-replay-recording-foundation
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05c-llm-replay-recording-foundation
 Fork run: oye8a3xqq7qd
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/144
+PR Status: open
 Started: 2026-06-15T22:50:40.122Z
 Completed:
 
@@ -76,3 +76,11 @@ Completed:
 - Recorded fork run: oye8a3xqq7qd
 - Validation: Fork guard passed: cwd/root `/home/ineersa/projects/agent-core-worktrees/maint-05c-llm-replay-recording-foundation`, branch `task/maint-05c-llm-replay-recording-foundation`.; Fork read mandatory docs: `.agents/skills/testing/SKILL.md`, `tests/AGENTS.md`, `.agents/skills/task-workflow/SKILL.md`, `.agents/skills/castor/SKILL.md`.; Fork validation: `php -l` on all 8 new + 5 edited PHP files passed.; Fork validation: `castor list` passed and shows `llm:fixtures:record` / `llm:fixtures:info`.; Fork validation: `castor test --filter=ReplayTest` passed: 17 tests, 100 assertions, 0.8s.; Fork validation: `castor test` passed: 2520 tests, 7359 assertions, 26.9s, 0 skipped.; Fork validation: `castor deptrac` passed with 0 violations.; Fork validation: `castor phpstan` passed with 0 errors.; Fork validation: `castor cs-check` passed: 0 of 534 files can be fixed.; Skipped full `LLM_MODE=true castor check` per MAINT-05A-F policy/user instruction.
 - Summary: Implementation fork completed MAINT-05C. Added deterministic LLM replay/recording foundation with documented fixture format (`docs/llm-replay.md`), reusable test-only replay helpers, stream recorder observer, tool-call fixture, replay tests, opt-in recording test scaffold, and Castor commands `llm:fixtures:record` / `llm:fixtures:info`. Extracted replay classes from `TraceReplayTest` and updated testing docs. Commit: `6a4e265a` (`MAINT-05C: LLM replay recording foundation`). Parent verified worktree is clean and diff against `origin/main` shows expected 13 files.
+
+## Task workflow update - 2026-06-15T23:30:05.034Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/maint-05c-llm-replay-recording-foundation to origin.
+- branch 'task/maint-05c-llm-replay-recording-foundation' set up to track 'origin/task/maint-05c-llm-replay-recording-foundation'.
+- Created PR: https://github.com/ineersa/agent-core/pull/144
+- Validation: Pre-move inspection: task worktree clean on `task/maint-05c-llm-replay-recording-foundation` at `6a4e265a`.; Parent diff inspection: `git -C /home/ineersa/projects/agent-core-worktrees/maint-05c-llm-replay-recording-foundation diff --stat origin/main...HEAD` showed expected 13 files for replay/recording foundation.; Fork validation: `php -l` on all 8 new + 5 edited PHP files passed.; Fork validation: `castor list` passed and shows `llm:fixtures:record` / `llm:fixtures:info`.; Fork validation: `castor test --filter=ReplayTest` passed: 17 tests, 100 assertions, 0.8s.; Fork validation: `castor test` passed: 2520 tests, 7359 assertions, 26.9s, 0 skipped.; Fork validation: `castor deptrac` passed with 0 violations.; Fork validation: `castor phpstan` passed with 0 errors.; Fork validation: `castor cs-check` passed: 0 of 534 files can be fixed.; Skipped reviewer subagent per user MAINT-05A-F policy.; Skipped full `LLM_MODE=true castor check` per user MAINT-05A-F policy / MAINT-05G owns final full-gate validation.
+- Summary: Moved MAINT-05C to CODE-REVIEW. Branch contains implementation commit `6a4e265a` with replay/recording foundation, fixture docs, test-only replay helpers, opt-in Castor record/info commands, and focused replay validation. Automated reviewer and full `castor check` were skipped per MAINT-05 stage policy/user instruction.
