@@ -20,7 +20,7 @@ This is intentionally last; docs can be drafted earlier, but final smoke/validat
 - Task metadata records final validation results and any deferred follow-ups discovered during smoke testing.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/prompt-templates-04-docs-e2e-validation
 Worktree: /home/ineersa/projects/agent-core-worktrees/prompt-templates-04-docs-e2e-validation
 Fork run: zcxj1b81hgpo
@@ -85,3 +85,7 @@ Castor Check Output SHA256: 8bcc69f1599fe89f21903d661be076044838dd11bed6f30376a4
 - Pushed task/prompt-templates-04-docs-e2e-validation to origin.
 - branch 'task/prompt-templates-04-docs-e2e-validation' set up to track 'origin/task/prompt-templates-04-docs-e2e-validation'.
 - Created PR: https://github.com/ineersa/agent-core/pull/139
+
+## Task workflow update - 2026-06-15T02:03:50.254Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Summary: PR #139 review comments from owner: delete PromptTemplateControllerE2eTest because it does not justify the long test timeout increase; rollback out-of-scope TuiAgentSmokeTest changes. Reopening task for review iteration.
