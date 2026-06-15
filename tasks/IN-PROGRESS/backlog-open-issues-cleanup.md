@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: 9il1svyfa56b
+Fork run: df6hc6gj1ts1
 PR URL:
 PR Status:
 Started: 2026-06-12T16:54:23.580Z
@@ -342,3 +342,8 @@ Completed:
 ## Task workflow update - 2026-06-15T01:31:17.105Z
 - Validation: Manual user validation: castor run:agent behavior looks fine after robust tmux launcher + Datadog auto-enable fix.
 - Summary: User manually validated Castor launcher fix after b9fd928e/2b0f3b71: `castor run:agent` now looks fine. Remaining known blocker before #123 merge/full validation is deptrac violation from completion implementation: PromptEditor depends on CompletionSuggestion.
+
+## Task workflow update - 2026-06-15T01:43:15.592Z
+- Recorded fork run: df6hc6gj1ts1
+- Validation: Fork confirmed it read testing skill, tests/AGENTS.md, and castor skill.; castor deptrac: OK, 0 violations.; castor test --filter=PromptEditorTest: OK, 28 tests / 45 assertions.; castor test --filter=CompletionListenerTest: OK, 40 tests / 62 assertions.; castor test:tui --filter=FileCompletionMultilineE2ETest: OK, 22 tests / 70 assertions reported by Castor shard output.; castor cs-check: OK, files_fixed=0.; castor phpstan: OK, errors=0, file_errors=0.; Full LLM_MODE=true castor check still pending parent validation before merge.
+- Summary: Fork df6hc6gj1ts1 resolved the #123 deptrac blocker with commit 85518e6c. It removed the illegal TuiEditor -> TuiCompletion dependency by changing PromptEditor::acceptCompletion() to accept primitives (replacementStart, replacementLength, insertText) instead of CompletionSuggestion; CompletionListener now unpacks CompletionSuggestion at the listener boundary. #123 behavior is preserved: Backspace per grapheme via handleInput, then normal handleInput insert; no setText clear/reinsert, no bracketed paste, no private EditorDocument/reflection. Castor run:agent fix untouched.
