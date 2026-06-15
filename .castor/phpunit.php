@@ -5,21 +5,21 @@ declare(strict_types=1);
 /**
  * PHPUnit / unit-test task definitions, configuration, and workers.
  *
- * Contains the deterministic sequential `test` command, the optional
- * ParaTest-powered `test:parallel` command, and TUI E2E worker helpers
- * (the TUI E2E shard/worker logic remains for now; MAINT-05E will
- * refactor it into journey-based tests).
+ * Contains the `test` command (ParaTest-powered parallel by default,
+ * sequential fallback for --filter and when ParaTest is unavailable)
+ * and TUI E2E worker helpers (the TUI E2E shard/worker logic remains
+ * for now; MAINT-05E will refactor it into journey-based tests).
  *
  * =========================================================================
- * MAINT-05B: Replaced custom file-shard fan-out with a deterministic
- * sequential PHPUnit baseline (`castor test`) and ParaTest for
- * optional parallel acceleration (`castor test:parallel`).  The old
- * `coding_agent_shard_groups`, `build_test_worker_command`, and
- * `build_test_variants_commands` helpers have been removed.
+ * MAINT-05B: Replaced custom file-shard fan-out with ParaTest as the
+ * default `castor test` path.  The old `coding_agent_shard_groups`,
+ * `build_test_worker_command`, and `build_test_variants_commands`
+ * helpers have been removed.  Sequential PHPUnit is kept as an
+ * internal fallback for --filter and when ParaTest is unavailable.
  * =========================================================================
  * MAINT-05E (future): TUI E2E shard/worker helpers will move into a
  * journey-based TUI harness and the remaining custom shard builders
- * will be removed or replaced by test:parallel with --processes=1.
+ * will be removed.
  * =========================================================================
  */
 
@@ -153,19 +153,26 @@ function build_sequential_phpunit_command(string $pharEnv): string
         .' '.$strictFlags.$llmFlags.$junitFlag;
 }
 
-// ─── Full test suite task (sequential baseline) ──────────────────
+// ─── Full test suite task (ParaTest parallel by default) ─────────
 
 /**
- * Run the full unit/integration test suite — DETERMINISTIC SEQUENTIAL.
+ * Run the full unit/integration test suite — ParaTest PARALLEL by default.
  *
- * Runs ALL suites (agent-core, coding-agent, tui, platform) in a
- * single PHPUnit process.  This is the reliable baseline for local
- * development and CI gates.  No parallel fan-out, no custom sharding.
+ * Defaults to ParaTest for fast multi-core execution (excludes TUI E2E,
+ * live LLM, and controller/messenger E2E groups).  Falls back to
+ * deterministic sequential PHPUnit when ParaTest is unavailable or when
+ * --filter is used (ParaTest --filter can be unreliable with path/namespace
+ * overlap).
  *
- * MAINT-05B: This command is now a deterministic sequential run.
- * Use `castor test:parallel` for ParaTest-powered acceleration.
+ * Each ParaTest worker gets its own compiled Symfony cache directory
+ * (via TEST_TOKEN in tests/paratest-bootstrap.php).  The SQLite test DB
+ * is shared — DAMA/DoctrineTestBundle provides per-test transaction
+ * isolation in WAL mode.
+ *
+ * MAINT-05B: ParaTest is now the default.  Sequential PHPUnit is an
+ * internal fallback only.
  */
-#[AsTask(name: 'test', description: 'Run unit/integration test suite sequentially (deterministic baseline)')]
+#[AsTask(name: 'test', description: 'Run unit/integration tests (ParaTest parallel by default)')]
 function test(?string $filter = null): void
 {
     // Prevent Xdebug overhead from hitting unit tests.
@@ -193,12 +200,44 @@ function test(?string $filter = null): void
     $start = hrtime(true);
 
     if (null !== $filter) {
-        // Filtered runs use a single sequential PHPUnit invocation
+        // Filtered runs use a single sequential PHPUnit invocation —
+        // ParaTest --filter can be unreliable with path/namespace overlap.
         passthru('APP_ENV=test '.$pharEnv.\PHP_BINARY.' vendor/bin/phpunit --filter='.escapeshellarg($filter).' '.phpunit_strict_issue_flags(), $exitCode);
-        exit($exitCode);
+        $duration = (hrtime(true) - $start) / 1e9;
+        if (0 !== $exitCode) {
+            echo sprintf("\nTests FAILED (%.1fs)\n", $duration);
+            exit($exitCode);
+        }
+        echo sprintf("\nTests OK (%.1fs)\n", $duration);
+        exit(0);
     }
 
-    $cmd = build_sequential_phpunit_command($pharEnv);
+    // Default: ParaTest parallel acceleration for unit/integration suites.
+    // Falls back to sequential PHPUnit when ParaTest is not installed.
+    if (!class_exists(ParaTest\ParaTestCommand::class)) {
+        echo "ParaTest not installed — falling back to sequential PHPUnit.\n";
+        $cmd = build_sequential_phpunit_command($pharEnv);
+        passthru($cmd, $exitCode);
+        $duration = (hrtime(true) - $start) / 1e9;
+        if (0 !== $exitCode) {
+            echo sprintf("\nTests FAILED (%.1fs)\n", $duration);
+            exit($exitCode);
+        }
+        echo sprintf("\nTests OK (%.1fs)\n", $duration);
+        exit(0);
+    }
+
+    $bootstrap = paratest_bootstrap_path();
+    $strictFlags = phpunit_strict_issue_flags();
+    $llmFlags = is_llm_mode() ? ' --colors=never --no-progress' : '';
+    $junitFlag = is_llm_mode() ? ' --log-junit='.report_path('phpunit-parallel.junit.xml') : '';
+
+    $cmd = 'APP_ENV=test '.$pharEnv.\PHP_BINARY.' vendor/bin/paratest'
+        .' --configuration=phpunit.xml.dist'
+        .' --bootstrap='.escapeshellarg($bootstrap)
+        .' --exclude-group=tui-e2e --exclude-group=llm-real'
+        .' '.$strictFlags.$llmFlags.$junitFlag;
+
     passthru($cmd, $exitCode);
 
     $duration = (hrtime(true) - $start) / 1e9;
@@ -210,7 +249,7 @@ function test(?string $filter = null): void
     exit(0);
 }
 
-// ─── ParaTest-powered parallel acceleration ───────────────────────
+// ─── ParaTest internal helpers ────────────────────────────────
 
 /**
  * ParaTest per-worker bootstrap path relative to the project root.
@@ -220,95 +259,4 @@ function paratest_bootstrap_path(): string
     $root = (false !== ($_rp = realpath(__DIR__.'/..')) ? $_rp : __DIR__.'/..');
 
     return $root.'/tests/paratest-bootstrap.php';
-}
-
-/**
- * Build the base ParaTest command for unit/integration suites.
- *
- * ParaTest spawns N worker processes (default: auto = CPU count).
- * Each worker gets a unique TEST_TOKEN env var; the per-worker
- * bootstrap (`tests/paratest-bootstrap.php`) uses the token to
- * isolate each worker's compiled Symfony cache directory.
- *
- * The SQLite test DB is shared across workers — DAMA/DoctrineTestBundle
- * wraps every test in a transaction that is rolled back, so there is
- * no cross-test data contamination.  WAL journal mode handles concurrent
- * read/write access safely.
- *
- * Excludes TUI E2E, live LLM, and controller/messenger E2E groups.
- */
-function build_paratest_command(string $pharEnv, ?string $filter = null): string
-{
-    $phpBin = \PHP_BINARY;
-    $bootstrap = paratest_bootstrap_path();
-    $strictFlags = '--stop-on-error --stop-on-failure --fail-on-all-issues --display-all-issues';
-    $llmFlags = is_llm_mode() ? ' --colors=never --no-progress' : '';
-    $junitFlag = is_llm_mode() ? ' --log-junit='.report_path('phpunit-parallel.junit.xml') : '';
-
-    $filterArg = null !== $filter ? ' --filter='.escapeshellarg($filter) : '';
-
-    return 'APP_ENV=test '.$pharEnv.$phpBin.' vendor/bin/paratest'
-        .' --configuration=phpunit.xml.dist'
-        .' --bootstrap='.escapeshellarg($bootstrap)
-        .' --exclude-group=tui-e2e --exclude-group=llm-real'
-        .' '.$strictFlags.$llmFlags.$junitFlag
-        .$filterArg;
-}
-
-/**
- * Run the unit/integration test suite with ParaTest PARALLEL acceleration.
- *
- * Spawns N PHPUnit worker processes (default: auto = CPU count) for
- * faster execution.  Each worker gets its own compiled Symfony cache
- * directory (per TEST_TOKEN) but shares the SQLite test DB (safe
- * because DAMA/DoctrineTestBundle provides per-test transaction
- * isolation).
- *
- * Use `castor test` for the deterministic sequential baseline when
- * stability and reproducible ordering matter.  Use `castor test:parallel`
- * for fast feedback on a machine with spare cores.
- */
-#[AsTask(name: 'test:parallel', description: 'Run unit/integration tests with ParaTest parallel acceleration')]
-function test_parallel(?string $filter = null): void
-{
-    if (!class_exists(ParaTest\ParaTestCommand::class)) {
-        fail_quality(
-            "ParaTest is not installed.\n".
-            'Run: composer require --dev brianium/paratest'
-        );
-    }
-
-    if (extension_loaded('xdebug')) {
-        echo "Xdebug is loaded — tests may be significantly slower.\n";
-    }
-
-    // Test DB schema readiness — migrate once for the shared DB.
-    @mkdir('var/test', 0755, true);
-    $migrate = run_quiet_command(
-        'APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
-    );
-    if (0 !== $migrate->getExitCode()) {
-        fail_quality('test database migration failed: '.$migrate->getErrorOutput());
-    }
-
-    $pharPath = '';
-    try {
-        $pharPath = phar_ensure();
-    } catch (Throwable $e) {
-        echo "PHAR ensure skipped: {$e->getMessage()}\n";
-    }
-    $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
-
-    $start = hrtime(true);
-
-    $cmd = build_paratest_command($pharEnv, $filter);
-    passthru($cmd, $exitCode);
-
-    $duration = (hrtime(true) - $start) / 1e9;
-    if (0 !== $exitCode) {
-        echo sprintf("\nTests FAILED (%.1fs)\n", $duration);
-        exit($exitCode);
-    }
-    echo sprintf("\nTests OK (%.1fs)\n", $duration);
-    exit(0);
 }

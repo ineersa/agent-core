@@ -92,12 +92,12 @@ function check(): void
     // directly — not through a Castor task closure — to stay safe
     // inside the Castor PHAR (no pcntl_fork shared-memory issues).
     //
-    // MAINT-05B: The PHPUnit lane is now a single deterministic
-    // sequential run instead of 7 custom shard workers.  This
-    // simplifies the parallel topology, removes stale-worker risk
-    // from per-shard timeouts, and keeps the check output readable.
-    // Use `castor check:parallel` (future) or `castor test:parallel`
-    // for ParaTest-powered unit acceleration if needed.
+    // MAINT-05B: The PHPUnit lane uses a single sequential run
+    // (build_sequential_phpunit_command) instead of 7 custom shard
+    // workers.  This simplifies the parallel topology, removes
+    // stale-worker risk from per-shard timeouts, and keeps the check
+    // output readable.  Use `castor test` for ParaTest-powered unit
+    // acceleration (the default path).
     $allCheckCommands = [
         'deptrac' => [
             'cmd' => timeout_check_command(

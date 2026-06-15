@@ -75,8 +75,7 @@ All QA commands MUST go through Castor. Never run raw `vendor/bin/*` directly, e
 All PHPUnit invocations include `--stop-on-error --stop-on-failure --fail-on-all-issues --display-all-issues`.
 
 Key commands:
-- `castor test` — full unit/integration deterministic sequential baseline (single PHPUnit process)
-- `castor test:parallel` — unit/integration with ParaTest parallel acceleration
+- `castor test` — unit/integration tests (ParaTest parallel by default, sequential fallback for --filter)
 - `castor test --filter=XxxTest` — filter to specific tests (sequential; single DB)
 - `castor test:tui` — TUI E2E tests (`#[Group('tui-e2e')]`)
 - `castor test:llm-real` — real-LLM controller E2E tests (`#[Group('llm-real')]`)
@@ -114,9 +113,9 @@ TUI implementation is NOT complete without an automated test using the real test
 
 DB-touching tests must boot the Symfony kernel via `IsolatedKernelTestCase` (or equivalent) and use the test container. Each test method gets a transaction rollback via DAMA DoctrineTestBundle, so no manual cleanup is needed.
 
-### Parallel suite DB isolation
+### ParaTest DB isolation
 
-`castor test` (deterministic sequential baseline) uses a single shared SQLite DB. `castor test:parallel` (ParaTest) spawns worker processes that share the same SQLite test DB — DAMA/DoctrineTestBundle wraps each test in a transaction that is rolled back, so there is no cross-test data contamination. WAL journal mode handles concurrent read/write access safely.
+`castor test` uses ParaTest by default, spawning worker processes that share the same SQLite test DB — DAMA/DoctrineTestBundle wraps each test in a transaction that is rolled back, so there is no cross-test data contamination. WAL journal mode handles concurrent read/write access safely. When ParaTest is unavailable or `--filter` is used, the suite falls back to deterministic sequential PHPUnit.
 
 Each ParaTest worker gets a unique compiled Symfony cache directory (via `TEST_TOKEN` in `tests/paratest-bootstrap.php`) because the compiled container bakes env vars like `HATFIELD_TEST_DATABASE_PATH` into cached files.
 
