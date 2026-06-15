@@ -23,7 +23,7 @@ This is intentionally last; docs can be drafted earlier, but final smoke/validat
 Status: IN-PROGRESS
 Branch: task/prompt-templates-04-docs-e2e-validation
 Worktree: /home/ineersa/projects/agent-core-worktrees/prompt-templates-04-docs-e2e-validation
-Fork run: zcxj1b81hgpo
+Fork run: ep1bvr5s2nxu
 PR URL: https://github.com/ineersa/agent-core/pull/139
 PR Status: open
 Started: 2026-06-15T00:19:50.699Z
@@ -89,3 +89,8 @@ Castor Check Output SHA256: 8bcc69f1599fe89f21903d661be076044838dd11bed6f30376a4
 ## Task workflow update - 2026-06-15T02:03:50.254Z
 - Moved CODE-REVIEW → IN-PROGRESS.
 - Summary: PR #139 review comments from owner: delete PromptTemplateControllerE2eTest because it does not justify the long test timeout increase; rollback out-of-scope TuiAgentSmokeTest changes. Reopening task for review iteration.
+
+## Task workflow update - 2026-06-15T02:08:17.236Z
+- Recorded fork run: ep1bvr5s2nxu
+- Validation: Fork ep1bvr5s2nxu loaded testing skill and tests/AGENTS.md before QA.; castor test:timeout-hardstop: OK (4/4 proofs).; castor test: OK (7 suites, 205.9s; test-tui-suite 689 tests/1759 assertions).; castor deptrac: OK (0 violations, 0 errors).; castor phpstan: OK (0 errors).; castor cs-check: OK (0 fixes).; Stale worker scan: zero PT-04 worktree PHAR consumers; unrelated backlog worktree consumers observed and left untouched by fork.
+- Summary: Addressed PR #139 owner comments at commit cbe5f343: deleted PromptTemplateControllerE2eTest.php, restored TuiAgentSmokeTest.php to origin/main exactly, and reverted the test:llm-real timeout bump/comment from 120s back to 60s. Final PR diff is now 4 files only: .castor/tasks.php, .hatfield/settings.yaml, docs/prompt-templates.md, docs/settings.md.
