@@ -33,7 +33,7 @@ Known entrypoints:
 - Task handoff records process tree behavior, cleanup proof, and before/after live LLM usage in controller tests.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/maint-05d-controller-replay-e2e-process-ownership
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05d-controller-replay-e2e-process-ownership
 Fork run: es8l1fx2p88s
@@ -81,3 +81,8 @@ Completed:
 - Created PR: https://github.com/ineersa/agent-core/pull/145
 - Validation: Pre-move inspection: task worktree clean on `task/maint-05d-controller-replay-e2e-process-ownership` at `4f563397`.; Parent diff inspection: `git -C /home/ineersa/projects/agent-core-worktrees/maint-05d-controller-replay-e2e-process-ownership diff --stat origin/main...HEAD` showed expected 10 files for controller replay/process ownership foundation.; Fork validation: `php -l` on new PHP files passed.; Fork validation: `castor list` passed and shows `test:controller-replay` plus live opt-in `test:controller`.; Fork validation: `castor test:controller-replay` passed: 1 test, 14 assertions, 7.7s.; Fork validation: `castor test --filter=ControllerReplaySmokeTest` passed: 1 test, 14 assertions, 9.3s.; Fork validation: `castor test` passed: 2520 tests, 7359 assertions, 36.7s.; Fork validation: `castor deptrac` passed with 0 violations.; Fork validation: `castor phpstan` passed with 0 errors.; Fork validation: `castor cs-check` passed with 0 fixable files.; Skipped reviewer subagent per user MAINT-05A-F policy.; Skipped full `LLM_MODE=true castor check` per MAINT-05A-F policy / MAINT-05G owns final full-gate validation.; Live LLM smoke not run; llama.cpp unavailable and live smoke remains opt-in.
 - Summary: Moved MAINT-05D to CODE-REVIEW. Branch contains implementation commit `4f563397` with deterministic controller replay E2E, replay HTTP seam, explicit process ownership/teardown, tool-call replay proof, `test:controller-replay` Castor command, and docs updates. Automated reviewer and full `castor check` were skipped per MAINT-05 stage policy/user instruction.
+
+## Task workflow update - 2026-06-15T23:53:23.151Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Validation: Read PR #145 review comments via `gh pr view` and `gh api repos/ineersa/agent-core/pulls/145/comments`.; Actionable comments: (1) no test code in real layer; set proper client in `services_test` container and use existing injected `$httpClient` path in `SymfonyAiProviderFactory`; (2) `ReplayHttpClientFactory` must live under tests if testing-related code.
+- Summary: Moved MAINT-05D back to IN-PROGRESS to address PR #145 review feedback. Comments require removing test/replay code from production `src/` layer and wiring replay HTTP client through the test container/services_test injection path instead of env-var branching inside `SymfonyAiProviderFactory`.
