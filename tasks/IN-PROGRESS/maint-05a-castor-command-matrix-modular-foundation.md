@@ -63,7 +63,7 @@ If PHP classes/namespaces make this safer than function files, introduce them un
 Status: IN-PROGRESS
 Branch: task/maint-05a-castor-command-matrix-modular-foundation
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05a-castor-command-matrix-modular-foundation
-Fork run: biw2mxyude82
+Fork run: srs4zqemqavs
 PR URL:
 PR Status:
 Started: 2026-06-15T21:12:40.642Z
@@ -103,3 +103,8 @@ Completed:
 ## Task workflow update - 2026-06-15T21:36:14.714Z
 - Validation: Parent action: `git -C /home/ineersa/projects/agent-core-worktrees/maint-05a-castor-command-matrix-modular-foundation rebase main` — succeeded.; Parent verification: MAINT-05A worktree clean after rebase.; Parent verification: `git diff --stat main...HEAD` still shows the same 13 implementation files changed: `.castor/{cleanup,e2e,env,logs,phar,phpunit,process,run,shared,tasks,tools}.php`, `castor.php`, `phpstan-baseline.neon`.
 - Summary: Rebased MAINT-05A implementation branch onto current `main` after policy change that main is the MAINT-05 integration branch. Implementation commit is now `a65d30bb` (rebased from original `0c075525`). Diff against main remains the Castor modular split only.
+
+## Task workflow update - 2026-06-15T21:41:23.735Z
+- Recorded fork run: srs4zqemqavs
+- Validation: Pending fork run `srs4zqemqavs`. Expected focused validation: `castor phpstan`, `castor cs-check`, optionally `castor list`; no full `LLM_MODE=true castor check`.
+- Summary: Launched follow-up fork for MAINT-05A after user reported full `castor check` works except PHPStan. Fork instructed to reproduce/fix PHPStan via `castor phpstan`, and to disable the repo-local pi task workflow's automatic `LLM_MODE=true castor check` during `move_task(to="CODE-REVIEW")` by updating `.pi/extensions/task-workflow.ts` plus current workflow docs. Fork must not push/PR, must not run full `LLM_MODE=true castor check`, and must commit locally with clean worktree.
