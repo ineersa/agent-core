@@ -39,7 +39,7 @@ Important direction:
 Status: IN-PROGRESS
 Branch: task/maint-05b-paratest-unit-integration-runner
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05b-paratest-unit-integration-runner
-Fork run: ete4maha1b30
+Fork run: 638zseoevsq9
 PR URL:
 PR Status:
 Started: 2026-06-15T22:05:20.925Z
@@ -71,3 +71,8 @@ Completed:
 - Recorded fork run: ete4maha1b30
 - Validation: Pending fork run `ete4maha1b30`. Expected validation if implementation succeeds: `castor list`, `castor test`, `castor test:parallel`, `castor deptrac`, `castor phpstan`, `castor cs-check`; no full `LLM_MODE=true castor check`.
 - Summary: Launched implementation fork for MAINT-05B in `/home/ineersa/projects/agent-core-worktrees/maint-05b-paratest-unit-integration-runner`. Fork instructed to add/configure ParaTest if compatible, make `castor test` deterministic sequential baseline, add separate `castor test:parallel`, remove/bypass custom PHPUnit shard fan-out, update testing docs, validate with focused Castor commands only, skip reviewer and full `castor check`, commit locally, and not push/PR.
+
+## Task workflow update - 2026-06-15T22:25:32.846Z
+- Recorded fork run: 638zseoevsq9
+- Validation: Parent verification after repair: `git -C /home/ineersa/projects/agent-core status --short --branch` shows `main...origin/main` with only untracked `.pi/plans/agents-subagents-implementation-plan.md`.; Parent verification after repair: task worktree is clean at `b79c4adc` on `task/maint-05b-paratest-unit-integration-runner`.; Parent verification after repair: `git -C /home/ineersa/projects/agent-core-worktrees/maint-05b-paratest-unit-integration-runner diff --stat origin/main...HEAD` shows the expected 7 MAINT-05B implementation files: `.agents/skills/testing/SKILL.md`, `.castor/phpunit.php`, `.castor/tasks.php`, `composer.json`, `composer.lock`, `tests/AGENTS.md`, `tests/paratest-bootstrap.php`.; No `git reset --hard` used. No `git clean` used. No implementation push performed. No full `castor check` run.
+- Summary: Repaired misplaced MAINT-05B implementation commit. The original implementation commit `389bd08e` had landed on local `main` instead of the task worktree. Parent verified the first repair fork handoff did not match actual repository state, then performed the non-destructive repair directly: cherry-picked `389bd08e` onto `task/maint-05b-paratest-unit-integration-runner` as `b79c4adc`, reverted the misplaced local-main commit as `bfeb1a33`, preserved backup refs, and moved local `main` back to `origin/main` via `update-ref` after confirming the tree matched. No `reset --hard`, no push of implementation, no `castor check`. Current task branch contains the MAINT-05B implementation; local main is back at `origin/main` with only an unrelated untracked `.pi/plans/agents-subagents-implementation-plan.md` file present.
