@@ -92,26 +92,13 @@ function check(): void
     // directly — not through a Castor task closure — to stay safe
     // inside the Castor PHAR (no pcntl_fork shared-memory issues).
     //
-    // The PHPUnit lane is expanded into the same workers used by
-    // `castor test` instead of spawning a nested Castor process or a
-    // monolithic PHPUnit run.  This keeps check() parallel at the top
-    // level while preserving per-worker DB/cache/JUnit isolation.
-    $testCheckCommands = [];
-    foreach (array_merge(['agent-core'], array_keys(coding_agent_shard_groups()), ['tui', 'platform']) as $worker) {
-        $step = match ($worker) {
-            'tui' => 'test-tui-suite',
-            default => 'test-'.$worker,
-        };
-
-        $testCheckCommands[$step] = [
-            'cmd' => timeout_check_command(
-                build_test_worker_command($worker, $pharEnv, 'app_test-'.$worker.'.sqlite', $step),
-                90,
-            ),
-        ];
-    }
-
-    $allCheckCommands = array_merge([
+    // MAINT-05B: The PHPUnit lane is now a single deterministic
+    // sequential run instead of 7 custom shard workers.  This
+    // simplifies the parallel topology, removes stale-worker risk
+    // from per-shard timeouts, and keeps the check output readable.
+    // Use `castor check:parallel` (future) or `castor test:parallel`
+    // for ParaTest-powered unit acceleration if needed.
+    $allCheckCommands = [
         'deptrac' => [
             'cmd' => timeout_check_command(
                 $phpBin.' vendor/bin/deptrac --config-file=depfile.yaml --no-progress --no-ansi'
@@ -119,7 +106,12 @@ function check(): void
                 30,
             ),
         ],
-    ], $testCheckCommands, [
+        'test' => [
+            'cmd' => timeout_check_command(
+                build_sequential_phpunit_command($pharEnv),
+                300,
+            ),
+        ],
         'test:controller' => [
             'cmd' => timeout_check_command(
                 'APP_ENV=test '.$pharEnv.'LLAMA_CPP_SMOKE_TEST=1 '.$phpBin.' vendor/bin/phpunit'
@@ -164,7 +156,7 @@ function check(): void
                 30,
             ),
         ],
-    ]);
+    ];
 
     // DB schema must be ready before the test / controller / llm-real
     // steps start.  Migrate once (fast, idempotent).
