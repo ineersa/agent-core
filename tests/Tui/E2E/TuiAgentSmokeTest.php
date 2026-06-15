@@ -150,35 +150,58 @@ final class TuiAgentSmokeTest extends TestCase
                 }
             }
 
-            // Step 5: Assert expected transcript structure.
-            // The user block was already verified in the early capture (step 3).
-            // Now verify the assistant or error block appeared.
+            // Step 5: Wait for run to settle before post-turn assertions.
+            //
+            // After the first assistant/error block appears, the run may
+            // still be in-flight: footer usage is not projected yet and
+            // "Working..." / "Processing..." may still be visible.
+            // Poll full history until both indicators are absent, then
+            // assert the final state.
+            //
+            // Exception: if the LLM returned an error block (✕), there
+            // is no guaranteed usage projection — skip cost assertion.
+            $runCompletedSuccessfully = \str_contains($capture, '◇');
 
-            // Processing... placeholder MIGHT be gone by now (first runtime
-            // event triggers its removal).  But allow a brief grace period.
-            // We don't assert absence of "Processing..." because on very slow
-            // models the block removal race condition could fail spuriously.
-            // Instead, assert the transcript has at least 2 blocks:
-            // user block (❯) + either assistant (◇) or error (✕).
-            $hasAssistant = \str_contains($capture, '◇');
-            $hasError = \str_contains($capture, '✕');
+            // Wait for the working/processing status to disappear.
+            // Both must be absent from the full scrollback history.
+            try {
+                $settledCapture = $this->tmux->waitForCallback(
+                    pane: $pane,
+                    callback: static fn (string $cap): bool =>
+                        !\str_contains($cap, 'Working...')
+                        && !\str_contains($cap, 'Processing...'),
+                    timeout: 5.0,
+                    message: 'Run did not settle (Working... or Processing... still visible) after response block appeared.',
+                );
+            } catch (\RuntimeException $e) {
+                // The run might have timed out; dump diagnostics but
+                // don't fail yet — the snapshot artifact still helps.
+                $this->dumpArtifacts($pane, $e->getMessage());
+                // Fall back to the existing capture for assertions.
+                $settledCapture = $this->tmux->capturePlainWithHistory($pane);
+            }
+
+            // The user block was already verified in the early capture (step 3).
+            // Now verify the assistant or error block remained in settled state.
+            $hasAssistant = \str_contains($settledCapture, '◇');
+            $hasError = \str_contains($settledCapture, '✕');
             self::assertTrue(
                 $hasAssistant || $hasError,
                 'Transcript must display either an assistant block (◇) '
-                    . 'or an error block (✕) after prompt submission. '
+                    . 'or an error block (✕) in settled state. '
                     . \sprintf(
                         'Current capture (%d lines):%s%s',
-                        \substr_count($capture, "\n") + 1,
+                        \substr_count($settledCapture, "\n") + 1,
                         "\n",
-                        $capture,
+                        $settledCapture,
                     ),
             );
 
             // If the assistant block appeared, verify it's not empty.
-            if (\str_contains($capture, '◇')) {
+            if ($hasAssistant) {
                 // The assistant prefix should be followed by content.
-                $prefixPos = \strpos($capture, '◇');
-                $afterPrefix = \substr($capture, $prefixPos + \strlen('◇ '));
+                $prefixPos = \strpos($settledCapture, '◇');
+                $afterPrefix = \substr($settledCapture, $prefixPos + \strlen('◇ '));
                 $firstLineAfter = \explode("\n", $afterPrefix, 2)[0] ?? '';
                 self::assertNotEmpty(
                     \trim($firstLineAfter),
@@ -186,15 +209,20 @@ final class TuiAgentSmokeTest extends TestCase
                 );
             }
 
-            // Step 6: Assert footer cost is non-zero.
+            // Step 6: Assert footer cost is non-zero (successful runs only).
             // With the high per-token pricing (input=$1000/M, output=$100000/M),
             // any successful LLM turn must produce a visible non-$0.00 cost.
-            self::assertStringNotContainsString(
-                '$0.00',
-                $capture,
-                'Footer cost must NOT be $0.00 after a turn '
-                . 'with the priced test model configured.',
-            );
+            // Only assert when the run completed normally with an assistant
+            // block — error blocks may not project usage.
+            if ($runCompletedSuccessfully) {
+                self::assertStringNotContainsString(
+                    '$0.00',
+                    $settledCapture,
+                    'Footer cost must NOT be $0.00 after a successful turn '
+                    . 'with the priced test model configured. '
+                    . '(The run may have completed but usage was not projected yet.)',
+                );
+            }
 
             // Step 7: Save ANSI snapshot artifact.
             $this->saveAnsiSnapshot($pane, 'agent-flow-smoke');
