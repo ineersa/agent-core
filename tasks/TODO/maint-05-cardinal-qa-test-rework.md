@@ -165,3 +165,7 @@ Completed:
 - Remove obsolete Castor code as part of the rework: manual PHPUnit shard discovery/round-robin, old per-shard worker builders, unused hardening workarounds, stale compatibility paths, dead helper functions, and legacy commands that no longer fit the deterministic/replay command matrix.
 - Model-editability is an explicit goal: keep files small, functions/classes single-purpose, and command behavior declarative enough that future agents do not need to understand a 2000+ line task runner before making a safe change.
 - Refactor should preserve Castor as the single QA/tooling entrypoint, but Castor should become a thin orchestrator over well-named components rather than a monolithic procedural script.
+
+## Task workflow update - 2026-06-15T21:08:22.204Z
+- Summary: Umbrella task retained by user request. Do not delete MAINT-05; use it as the parent/epic record for the staged rework tasks rather than as a single implementation task.
+- User explicitly said: "Don't delete 05". Keep `maint-05-cardinal-qa-test-rework.md` in TODO as the umbrella/epic task. Implementation should happen through smaller staged tasks: MAINT-05A Castor command matrix/modular foundation, MAINT-05B ParaTest unit/integration runner, MAINT-05C LLM replay/recording foundation, MAINT-05D controller replay E2E/process ownership, MAINT-05E TUI replay-backed journey E2E, MAINT-05F CodingAgent test diet/sequential speed, plus final integration/docs/cleanup if created.
