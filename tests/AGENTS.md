@@ -75,7 +75,7 @@ All QA commands MUST go through Castor. Never run raw `vendor/bin/*` directly, e
 All PHPUnit invocations include `--stop-on-error --stop-on-failure --fail-on-all-issues --display-all-issues`.
 
 Key commands:
-- `castor test` — full unit/integration suite (runs 7 PHPUnit workers in parallel: `agent-core`, `coding-agent-1..4`, `tui`, `platform`; each has its own isolated SQLite DB/cache/JUnit/log files; sequential fallback when proc_open unavailable)
+- `castor test` — unit/integration tests (ParaTest parallel by default, sequential fallback for --filter)
 - `castor test --filter=XxxTest` — filter to specific tests (sequential; single DB)
 - `castor test:tui` — TUI E2E tests (`#[Group('tui-e2e')]`)
 - `castor test:llm-real` — real-LLM controller E2E tests (`#[Group('llm-real')]`)
@@ -83,7 +83,7 @@ Key commands:
 - `castor deptrac` — layer dependency validation
 - `castor phpstan` — static analysis
 - `castor cs-check` / `castor cs-fix` — code style
-- `LLM_MODE=true castor check` — full quality gate. It runs PHAR ensure, then 13 first-class parallel steps: deptrac, 7 unit shards, controller E2E, llm-real E2E, TUI E2E, phpstan, and cs-check. Unit shards are direct check steps, not a nested `castor test` subprocess.
+- `LLM_MODE=true castor check` — full quality gate. It runs PHAR ensure, then parallel steps: deptrac, unit/integration (sequential), controller E2E, llm-real E2E, TUI E2E, phpstan, and cs-check.
 - `castor cleanup` — remove all temp/test artifacts
 
 ## Snapshots and cleanup
@@ -113,15 +113,15 @@ TUI implementation is NOT complete without an automated test using the real test
 
 DB-touching tests must boot the Symfony kernel via `IsolatedKernelTestCase` (or equivalent) and use the test container. Each test method gets a transaction rollback via DAMA DoctrineTestBundle, so no manual cleanup is needed.
 
-### Parallel suite DB isolation
+### ParaTest DB isolation
 
-`castor test` and the unit-test shard steps inside `castor check` run PHPUnit workers in parallel, each with its own SQLite DB file to prevent contention:
+`castor test` uses ParaTest by default, spawning worker processes that share the same SQLite test DB — DAMA/DoctrineTestBundle wraps each test in a transaction that is rolled back, so there is no cross-test data contamination. WAL journal mode handles concurrent read/write access safely. When ParaTest is unavailable or `--filter` is used, the suite falls back to deterministic sequential PHPUnit.
+
+Each ParaTest worker gets a unique compiled Symfony cache directory (via `TEST_TOKEN` in `tests/paratest-bootstrap.php`) because the compiled container bakes env vars like `HATFIELD_TEST_DATABASE_PATH` into cached files.
+
 - DB path is driven by `HATFIELD_TEST_DATABASE_PATH` env var (defaults to `app_test.sqlite`).
-- Castor sets `HATFIELD_TEST_DATABASE_PATH=app_test-<worker>.sqlite` per worker.
-- Castor sets unique `HATFIELD_CACHE_DIR`, PHPUnit cache directory, JUnit XML, and log file paths per worker.
-- Castor runs `doctrine:migrations:migrate` once per worker on its own DB before PHPUnit.
 - For standalone `vendor/bin/phpunit` runs without Castor, export `HATFIELD_TEST_DATABASE_PATH=app_test.sqlite` to pick up the default DB.
-- Filtered runs (`castor test --filter=...`) use a single sequential PHPUnit invocation with the default DB.
+- ParaTest paths: `HATFIELD_TEST_DATABASE_PATH=app_test.sqlite` (shared), `HATFIELD_CACHE_DIR=.hatfield/cache-paraT{token}` (per-worker).
 
 ## One test class per production class
 

@@ -10,8 +10,8 @@ description: "E2E and validation testing strategy. Load this skill when: writing
 All PHPUnit invocations include `--stop-on-error --stop-on-failure --fail-on-all-issues --display-all-issues`.
 
 ```bash
-castor check                # Full validation: PHAR ensure + 13 top-level parallel steps (deptrac, 7 unit shards, controller, llm-real, tui, phpstan, cs-check); per-step timeouts + logs at var/reports/check-*.log
-castor test                 # unit/integration only; excludes tui-e2e and llm-real; runs 7 parallel workers (agent-core, coding-agent-1..4, tui, platform), each with isolated DB/cache/reports
+castor check                # Full validation: PHAR ensure + parallel steps (deptrac, unit/integration sequential, controller E2E, llm-real E2E, TUI E2E, phpstan, cs-check); per-step timeouts + logs at var/reports/check-*.log
+castor test                 # unit/integration tests (ParaTest parallel by default); excludes tui-e2e and llm-real
 castor test --filter=X      # filter tests by name (sequential, single DB)
 castor test:tui [--filter=X]    # tmux TUI e2e snapshots (filter optional)
 castor test:tui-update [--filter=X]  # update TUI snapshot baselines (filter optional)
@@ -80,11 +80,19 @@ All E2E tests must use `var/tmp/test-{uuid}` isolation. They must NOT read or wr
 
 ### Per-suite DB isolation
 
-`castor test` and the unit-test shard steps inside `castor check` run PHPUnit workers in parallel, each with its own SQLite DB:
-- `HATFIELD_TEST_DATABASE_PATH` env var controls the DB filename (defaults to `app_test.sqlite`).
-- Parallel workers get `HATFIELD_TEST_DATABASE_PATH=app_test-<worker>.sqlite`.
-- `HATFIELD_CACHE_DIR`, PHPUnit cache directory, JUnit XML, and log files are unique per worker.
-- `doctrine:migrations:migrate` runs once per worker on its isolated DB.
+`castor test` runs unit/integration tests with ParaTest by default (parallel
+workers share the SQLite test DB safely via DAMA/DoctrineTestBundle
+transaction isolation in WAL mode).  Each ParaTest worker gets its own
+compiled Symfony cache directory (via `TEST_TOKEN` in
+`tests/paratest-bootstrap.php`).  Filtered runs and non-ParaTest fallback
+use a single shared DB sequentially.
+
+`castor check` uses the deterministic sequential PHPUnit helper for the
+unit/integration lane.
+
+- DB path: `HATFIELD_TEST_DATABASE_PATH` (defaults to `app_test.sqlite`).
+- ParaTest cache dir: `HATFIELD_CACHE_DIR=.hatfield/cache-paraT{token}` (per-worker).
+- `doctrine:migrations:migrate` runs once before the suite.
 - Standalone `vendor/bin/phpunit` runs without Castor must export `HATFIELD_TEST_DATABASE_PATH=app_test.sqlite`.
 - Filtered runs (`castor test --filter=...`) use a single shared DB sequentially.
 
@@ -92,8 +100,8 @@ All E2E tests must use `var/tmp/test-{uuid}` isolation. They must NOT read or wr
 
 | Command | What it tests | Requires |
 |---|---|---|
-| `castor check` | Full validation: PHAR ensure plus 13 top-level parallel steps: deptrac, 7 unit shards, controller E2E, llm-real E2E, TUI E2E, phpstan, cs-check. Unit shards are direct check steps, not a nested `castor test` subprocess. | tmux, llama.cpp on port 9052 |
-| `castor test` | Unit/integration tests (runs 7 workers in parallel: agent-core, coding-agent-1..4, tui, platform; each has isolated DB/cache/reports; sequential fallback) | Nothing (pure PHP) |
+| `castor check` | Full validation: PHAR ensure plus parallel steps: deptrac, unit/integration (sequential), controller E2E, llm-real E2E, TUI E2E, phpstan, cs-check. The unit/integration step is a single deterministic sequential PHPUnit run. | tmux, llama.cpp on port 9052 |
+| `castor test` | Unit/integration tests (ParaTest parallel by default, sequential fallback for --filter) | Nothing (pure PHP) |
 | `castor test:llm-real` | Real LLM smoke: `ControllerSmokeTest`, `LlamaCppSmokeTest` | llama.cpp on port 9052 |
 | `castor test:controller` | Controller E2E: spawns `--controller`, JSONL protocol | llama.cpp on port 9052 |
 | `castor test:tui` | Tmux TUI E2E snapshot tests | tmux, llama.cpp on port 9052 |

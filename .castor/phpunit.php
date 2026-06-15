@@ -3,17 +3,23 @@
 declare(strict_types=1);
 
 /**
- * PHPUnit / unit-test task definitions and configuration.
+ * PHPUnit / unit-test task definitions, configuration, and workers.
  *
- * Contains the `test` command, worker command builders, shard-group
- * discovery, and TU/E2E worker helpers.
+ * Contains the `test` command (ParaTest-powered parallel by default,
+ * sequential fallback for --filter and when ParaTest is unavailable)
+ * and TUI E2E worker helpers (the TUI E2E shard/worker logic remains
+ * for now; MAINT-05E will refactor it into journey-based tests).
  *
  * =========================================================================
- * FUTURE (MAINT-05B): ParaTest will replace the custom shard-group
- * discovery (`coding_agent_shard_groups`, `tui_e2e_shard_groups`)
- * and the `build_test_worker_command` / `build_tui_e2e_worker_command`
- * machinery.  Keep these functions intact for now so the existing
- * commands continue to work; ParaTest integration will bypass them.
+ * MAINT-05B: Replaced custom file-shard fan-out with ParaTest as the
+ * default `castor test` path.  The old `coding_agent_shard_groups`,
+ * `build_test_worker_command`, and `build_test_variants_commands`
+ * helpers have been removed.  Sequential PHPUnit is kept as an
+ * internal fallback for --filter and when ParaTest is unavailable.
+ * =========================================================================
+ * MAINT-05E (future): TUI E2E shard/worker helpers will move into a
+ * journey-based TUI harness and the remaining custom shard builders
+ * will be removed.
  * =========================================================================
  */
 
@@ -28,56 +34,9 @@ require_once __DIR__.'/../vendor/autoload.php';
 require_once __DIR__.'/helpers.php';
 require_once __DIR__.'/shared.php';
 
-// ─── Shard-group discovery ───────────────────────────────────────
-
-/**
- * Discover all *Test.php files under tests/CodingAgent/ recursively
- * and distribute them across 4 file-level round-robin shards for
- * balanced parallel execution under the 75s per-step timeout.
- *
- * File-level round-robin avoids the imbalance of top-level directory
- * grouping (e.g. 29 files in Auth+Extension+Phar+Skills+Tool vs 6 in
- * EventListener+Path+Session+TestCase).  New Test.php files are
- * picked up automatically by RecursiveDirectoryIterator and
- * round-robined after the sorted list.
- *
- * Verified balances (Jun 2026): 28 / 27 / 27 / 27 files across
- * shards 1-4 with 109 total Test.php files.
- *
- * @return array<string, list<string>> file paths grouping
- */
-function coding_agent_shard_groups(): array
-{
-    $root = (false !== ($_rp = realpath(__DIR__.'/..')) ? $_rp : __DIR__.'/..');
-    $testDir = $root.'/tests/CodingAgent';
-    $files = [];
-
-    if (is_dir($testDir)) {
-        $iter = new RecursiveIteratorIterator(
-            new RecursiveDirectoryIterator($testDir, FilesystemIterator::SKIP_DOTS)
-        );
-        foreach ($iter as $file) {
-            if ($file->isFile() && str_ends_with($file->getFilename(), 'Test.php')) {
-                $files[] = $file->getPathname();
-            }
-        }
-    }
-    sort($files, \SORT_STRING);
-
-    $numShards = 4;
-    $shards = array_fill(1, $numShards, []);
-    foreach ($files as $i => $f) {
-        $shardIdx = ($i % $numShards) + 1;
-        $shards[$shardIdx][] = $f;
-    }
-
-    $result = [];
-    for ($i = 1; $i <= $numShards; ++$i) {
-        $result['coding-agent-'.$i] = $shards[$i];
-    }
-
-    return $result;
-}
+// ─── TUI E2E shard helpers (retained for check() TUI steps) ─────
+// These will be refactored or removed in MAINT-05E when TUI tests
+// become journey-based.
 
 /**
  * Return TUI E2E test files split across two shards for parallel
@@ -145,56 +104,6 @@ function tui_e2e_shard_groups(): array
     return ['tui-e2e-1' => $shard1, 'tui-e2e-2' => $shard2];
 }
 
-// ─── Worker command builders ─────────────────────────────────────
-
-/**
- * Build the PHPUnit invocation for one test worker.
- *
- * For phpunit.xml.dist suites (agent-core, tui, platform) uses
- * --testsuite.  For coding-agent-N shards uses directory paths so
- * only the shard's portion of the suite is executed.
- */
-function build_test_worker_command(
-    string $worker,
-    string $pharEnv,
-    string $dbFilename,
-    ?string $reportWorker = null,
-): string {
-    $dbEnv = 'HATFIELD_TEST_DATABASE_PATH='.escapeshellarg($dbFilename);
-    $phpBin = \PHP_BINARY;
-    // Each shard needs its own Symfony cache dir because %env(...)%
-    // resolution in container compilation bakes HATFIELD_TEST_DATABASE_PATH
-    // into the compiled container.  Sharing .hatfield/cache/test/ across
-    // parallel workers causes stale-container reuse with a foreign DB
-    // path → SQLite "database is locked" / wrong-schema errors.
-    $cacheDirEnv = 'HATFIELD_CACHE_DIR=.hatfield/cache-'.$worker;
-    $cacheDir = 'var/cache/.phpunit-'.$worker;
-    $junitFilename = 'phpunit-'.($reportWorker ?? $worker).'.junit.xml';
-    $junitFlag = is_llm_mode() ? ' --log-junit='.report_path($junitFilename) : '';
-    $strictFlags = phpunit_strict_issue_flags();
-    $llmFlags = is_llm_mode() ? ' --colors=never --no-progress' : '';
-
-    $phpunitArgs = '';
-    if (str_starts_with($worker, 'coding-agent-')) {
-        // Shard: pass directory paths directly (not --testsuite).
-        $dirs = coding_agent_shard_groups()[$worker] ?? [];
-        if ([] === $dirs) {
-            throw new RuntimeException("Unknown coding-agent shard: {$worker}");
-        }
-        $phpunitArgs = implode(' ', array_map('escapeshellarg', $dirs));
-    } else {
-        $phpunitArgs = '--testsuite '.escapeshellarg($worker);
-    }
-
-    return 'APP_ENV=test '.$cacheDirEnv.' '.$dbEnv.' '.$phpBin.' bin/console'
-        .' doctrine:migrations:migrate --no-interaction --allow-no-migration'
-        .' && APP_ENV=test '.$cacheDirEnv.' '.$dbEnv.' '.$pharEnv.$phpBin.' vendor/bin/phpunit'
-        .' '.$phpunitArgs
-        .' --exclude-group tui-e2e --exclude-group llm-real'
-        .' --cache-directory '.escapeshellarg($cacheDir)
-        .' '.$strictFlags.$llmFlags.$junitFlag;
-}
-
 /**
  * Build a TUI E2E worker command for the given shard number.
  */
@@ -223,50 +132,52 @@ function build_tui_e2e_worker_command(int $shardNum, string $pharEnv): string
         .' '.$strictFlags.$llmFlags.$junitFlag;
 }
 
-/**
- * @return array<string, array{cmd: string}>
- */
-function build_test_variants_commands(string $pharEnv): array
-{
-    $commands = [];
-    foreach (array_merge(['agent-core'], array_keys(coding_agent_shard_groups()), ['tui', 'platform']) as $worker) {
-        $step = match ($worker) {
-            'tui' => 'test-tui-suite',
-            default => 'test-'.$worker,
-        };
-        $commands[$step] = [
-            'cmd' => timeout_check_command(
-                build_test_worker_command($worker, $pharEnv, 'app_test-'.$worker.'.sqlite', $step),
-                90,
-            ),
-        ];
-    }
+// ─── Sequential baseline (deterministic, default) ────────────────
 
-    return $commands;
+/**
+ * Build the sequential PHPUnit command for the unit/integration
+ * test suite (all suites, excluding E2E and real-LLM groups).
+ *
+ * This is used by both `castor test` (deterministic baseline) and
+ * the unit/integration lane inside `castor check`.
+ */
+function build_sequential_phpunit_command(string $pharEnv): string
+{
+    $phpBin = \PHP_BINARY;
+    $strictFlags = phpunit_strict_issue_flags();
+    $llmFlags = is_llm_mode() ? ' --colors=never --no-progress' : '';
+    $junitFlag = is_llm_mode() ? ' --log-junit='.report_path('phpunit-sequential.junit.xml') : '';
+
+    return 'APP_ENV=test '.$pharEnv.$phpBin.' vendor/bin/phpunit'
+        .' --exclude-group tui-e2e --exclude-group llm-real'
+        .' '.$strictFlags.$llmFlags.$junitFlag;
 }
 
-// ─── Full test suite task ─────────────────────────────────────────
+// ─── Full test suite task (ParaTest parallel by default) ─────────
 
 /**
- * Run the full unit/integration test suite.
+ * Run the full unit/integration test suite — ParaTest PARALLEL by default.
  *
- * Runs all suites (agent-core, coding-agent-1..4, tui, platform) in
- * parallel via proc_open subprocesses.  Each worker gets an isolated
- * DB, cache dir, and JUnit log.
+ * Defaults to ParaTest for fast multi-core execution (excludes TUI E2E,
+ * live LLM, and controller/messenger E2E groups).  Falls back to
+ * deterministic sequential PHPUnit when ParaTest is unavailable or when
+ * --filter is used (ParaTest --filter can be unreliable with path/namespace
+ * overlap).
  *
- * =========================================================================
- * FUTURE (MAINT-05B): A `test:parallel` command will use ParaTest for
- * the PHPUnit-level parallelism.  This sequential baseline path remains
- * as `castor test` for deterministic local validation.
- * =========================================================================
+ * Each ParaTest worker gets its own compiled Symfony cache directory
+ * (via TEST_TOKEN in tests/paratest-bootstrap.php).  The SQLite test DB
+ * is shared — DAMA/DoctrineTestBundle provides per-test transaction
+ * isolation in WAL mode.
+ *
+ * MAINT-05B: ParaTest is now the default.  Sequential PHPUnit is an
+ * internal fallback only.
  */
-#[AsTask(name: 'test', description: 'Run full test suite (runs all suites in parallel via proc_open subprocesses)')]
+#[AsTask(name: 'test', description: 'Run unit/integration tests (ParaTest parallel by default)')]
 function test(?string $filter = null): void
 {
     // Prevent Xdebug overhead from hitting unit tests.
     if (extension_loaded('xdebug')) {
-        echo 'Xdebug is loaded — tests may be significantly slower.
-';
+        echo "Xdebug is loaded — tests may be significantly slower.\n";
     }
 
     // Test DB schema readiness.
@@ -282,45 +193,70 @@ function test(?string $filter = null): void
     try {
         $pharPath = phar_ensure();
     } catch (Throwable $e) {
-        echo "PHAR ensure skipped: {$e->getMessage()}
-";
-    }
-    if ('' !== $pharPath) {
-        $GLOBALS['CASTOR_PHAR_READY'] = $pharPath;
+        echo "PHAR ensure skipped: {$e->getMessage()}\n";
     }
     $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
 
+    $start = hrtime(true);
+
     if (null !== $filter) {
-        // filtered runs use a single sequential PHPUnit invocation
-        echo 'Running filtered PHPUnit tests...
-';
+        // Filtered runs use a single sequential PHPUnit invocation —
+        // ParaTest --filter can be unreliable with path/namespace overlap.
         passthru('APP_ENV=test '.$pharEnv.\PHP_BINARY.' vendor/bin/phpunit --filter='.escapeshellarg($filter).' '.phpunit_strict_issue_flags(), $exitCode);
+        $duration = (hrtime(true) - $start) / 1e9;
+        if (0 !== $exitCode) {
+            echo sprintf("\nTests FAILED (%.1fs)\n", $duration);
+            exit($exitCode);
+        }
+        echo sprintf("\nTests OK (%.1fs)\n", $duration);
+        exit(0);
+    }
+
+    // Default: ParaTest parallel acceleration for unit/integration suites.
+    // Falls back to sequential PHPUnit when ParaTest is not installed.
+    if (!class_exists(ParaTest\ParaTestCommand::class)) {
+        echo "ParaTest not installed — falling back to sequential PHPUnit.\n";
+        $cmd = build_sequential_phpunit_command($pharEnv);
+        passthru($cmd, $exitCode);
+        $duration = (hrtime(true) - $start) / 1e9;
+        if (0 !== $exitCode) {
+            echo sprintf("\nTests FAILED (%.1fs)\n", $duration);
+            exit($exitCode);
+        }
+        echo sprintf("\nTests OK (%.1fs)\n", $duration);
+        exit(0);
+    }
+
+    $bootstrap = paratest_bootstrap_path();
+    $strictFlags = phpunit_strict_issue_flags();
+    $llmFlags = is_llm_mode() ? ' --colors=never --no-progress' : '';
+    $junitFlag = is_llm_mode() ? ' --log-junit='.report_path('phpunit-parallel.junit.xml') : '';
+
+    $cmd = 'APP_ENV=test '.$pharEnv.\PHP_BINARY.' vendor/bin/paratest'
+        .' --configuration=phpunit.xml.dist'
+        .' --bootstrap='.escapeshellarg($bootstrap)
+        .' --exclude-group=tui-e2e --exclude-group=llm-real'
+        .' '.$strictFlags.$llmFlags.$junitFlag;
+
+    passthru($cmd, $exitCode);
+
+    $duration = (hrtime(true) - $start) / 1e9;
+    if (0 !== $exitCode) {
+        echo sprintf("\nTests FAILED (%.1fs)\n", $duration);
         exit($exitCode);
     }
+    echo sprintf("\nTests OK (%.1fs)\n", $duration);
+    exit(0);
+}
 
-    $useParallel = \PHP_SAPI === 'cli' && function_exists('proc_open');
+// ─── ParaTest internal helpers ────────────────────────────────
 
-    $failures = [];
-    $timings = [];
+/**
+ * ParaTest per-worker bootstrap path relative to the project root.
+ */
+function paratest_bootstrap_path(): string
+{
+    $root = (false !== ($_rp = realpath(__DIR__.'/..')) ? $_rp : __DIR__.'/..');
 
-    $GLOBALS['CASTOR_CHECK_AGGREGATING'] = true;
-    try {
-        if ($useParallel) {
-            run_check_commands_parallel(build_test_variants_commands($pharEnv), $failures, $timings);
-        } else {
-            run_check_commands_sequential(build_test_variants_commands($pharEnv), $failures, $timings);
-        }
-    } finally {
-        unset($GLOBALS['CASTOR_CHECK_AGGREGATING']);
-        unset($GLOBALS['CASTOR_PHAR_READY']);
-    }
-
-    if ([] !== $failures) {
-        fail_quality(format_step_failures($failures));
-    }
-
-    echo sprintf('
-
-All suites OK (%.1fs)
-', array_sum($timings));
+    return $root.'/tests/paratest-bootstrap.php';
 }
