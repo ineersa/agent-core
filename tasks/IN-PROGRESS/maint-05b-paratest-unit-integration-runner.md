@@ -36,7 +36,7 @@ Important direction:
 - Task handoff records sequential vs ParaTest timings and any tests that remain unsafe for ParaTest.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/maint-05b-paratest-unit-integration-runner
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05b-paratest-unit-integration-runner
 Fork run: 638zseoevsq9
@@ -84,3 +84,8 @@ Completed:
 - Created PR: https://github.com/ineersa/agent-core/pull/142
 - Validation: Pre-move inspection: task worktree clean on `task/maint-05b-paratest-unit-integration-runner` at `b79c4adc`.; Pre-move diff: `git -C /home/ineersa/projects/agent-core-worktrees/maint-05b-paratest-unit-integration-runner diff --stat origin/main...HEAD` showed 7 MAINT-05B implementation files (`.agents/skills/testing/SKILL.md`, `.castor/phpunit.php`, `.castor/tasks.php`, `composer.json`, `composer.lock`, `tests/AGENTS.md`, `tests/paratest-bootstrap.php`).; Skipped reviewer subagent per user MAINT-05A-F policy.; Skipped full `LLM_MODE=true castor check` per user MAINT-05A-F policy / MAINT-05G owns final full-gate validation.; Focused Castor validation (`castor list`, `castor test`, `castor test:parallel`, `castor deptrac`, `castor phpstan`, `castor cs-check`) was not run by the parent before this move; moving per explicit user request.
 - Summary: Moved MAINT-05B to CODE-REVIEW per user request. Branch contains implementation commit `b79c4adc` and targets `main`. Automated reviewer and full `castor check` were skipped per MAINT-05 stage policy/user instruction. Note: focused validation was not run by the parent before this move; user explicitly requested moving now.
+
+## Task workflow update - 2026-06-15T22:40:00.667Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Validation: No validation run for this status change. User requested behavior change before review continues.
+- Summary: Reopened MAINT-05B for user-requested PR feedback: `castor test:parallel` should not remain a separate maintained command; the ParaTest-powered path should become the default `castor test` behavior instead. Implementation PR #142 remains open and will be updated with a follow-up commit.
