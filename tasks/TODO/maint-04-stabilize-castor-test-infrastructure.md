@@ -74,3 +74,7 @@ Completed:
 
 ## Work log
 - Created: 2026-06-15T20:47:35.742Z
+
+## Task workflow update - 2026-06-15T20:58:22.253Z
+- Summary: Scope correction from user: the earlier stabilization wording is too incremental. This task is superseded by a cardinal rewrite task: replace the current unreliable QA/test architecture rather than hardening it further. Do not start implementation from this task as written.
+- User clarified they do not want partial measures, quick wins, or more hardening/workarounds. Desired direction: full rework of test and Castor infrastructure; single-session TUI journey tests instead of repeated tmux harness launches; no llama.cpp calls during normal tests/checks; deterministic pre-recorded LLM replay with a command to re-record chains; CodingAgent unit/integration tests should finish under ~30s sequentially; Castor parallel process management should be simplified/redesigned because current process cleanup has proven unreliable.
