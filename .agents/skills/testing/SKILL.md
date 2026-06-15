@@ -17,6 +17,8 @@ castor test:tui [--filter=X]    # tmux TUI e2e snapshots (filter optional)
 castor test:tui-update [--filter=X]  # update TUI snapshot baselines (filter optional)
 castor test:llm-real [--filter=X]   # real llama.cpp smoke (filter optional)
 castor test:controller [--filter=X] # controller E2E smoke test (filter optional, defaults to ControllerSmokeTest)
+castor llm:fixtures:record         # Re-record LLM replay fixtures from live LLM
+castor llm:fixtures:info           # List available LLM replay fixtures
 castor deptrac              # architecture boundary validation
 castor phpstan [path]       # static analysis (optionally scoped to a path)
 castor phpstan:baseline     # regenerate phpstan baseline
@@ -49,6 +51,21 @@ Restart or fix the llama.cpp server. Health-only checks are insufficient.
 ### HTTP timeout fallback
 
 `SymfonyAiProviderFactory` injects a default 30s `HttpClient` timeout for all LLM requests when no explicit timeout is configured, preventing infinite hangs. The test environment (`config/services_test.yaml`) overrides this to 5s. The `HATFIELD_LLM_HTTP_TIMEOUT` env var allows per-environment override.
+
+## LLM Replay (deterministic, no live LLM)
+
+Most tests that would otherwise hit a live LLM endpoint use instead
+pre-recorded fixture files under `tests/AgentCore/Fixtures/traces/`.
+
+- **Replay mode** is the default for `castor test`. No live LLM calls.
+- **Live mode** is opt-in: `castor test:llm-real`, `castor test:tui`,
+  `castor test:controller`, and `castor check` still use live LLM.
+  MAINT-05D/E will port controller/TUI E2E to replay-backed journeys.
+- **Re-record fixtures** when provider behavior, prompts, or tool schemas
+  change: `castor llm:fixtures:record`.
+- Fixture format and recording/replay architecture described in
+  `docs/llm-replay.md`.  Replay test helpers live in
+  `tests/AgentCore/Infrastructure/SymfonyAi/Replay/`.
 
 ## Test groups
 
@@ -107,6 +124,8 @@ unit/integration lane.
 | `castor test:tui` | Tmux TUI E2E snapshot tests | tmux, llama.cpp on port 9052 |
 | `castor run:agent-test` | Interactive tmux session for manual inspection | tmux, llama.cpp on port 9052 |
 | `castor run:agent` | Launch agent in tmux | tmux, LLM provider |
+| `castor llm:fixtures:record` | Re-record replay fixtures from live LLM | llama.cpp on port 9052 |
+| `castor llm:fixtures:info` | List available replay fixtures and metadata | Nothing (pure PHP) |
 
 ## Controller E2E testing
 

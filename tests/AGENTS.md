@@ -80,6 +80,8 @@ Key commands:
 - `castor test:tui` — TUI E2E tests (`#[Group('tui-e2e')]`)
 - `castor test:llm-real` — real-LLM controller E2E tests (`#[Group('llm-real')]`)
 - `castor test:controller` — controller smoke test
+- `castor llm:fixtures:record` — re-record LLM replay fixtures from live LLM
+- `castor llm:fixtures:info` — list available LLM replay fixtures
 - `castor deptrac` — layer dependency validation
 - `castor phpstan` — static analysis
 - `castor cs-check` / `castor cs-fix` — code style
@@ -124,5 +126,20 @@ Each ParaTest worker gets a unique compiled Symfony cache directory (via `TEST_T
 - ParaTest paths: `HATFIELD_TEST_DATABASE_PATH=app_test.sqlite` (shared), `HATFIELD_CACHE_DIR=.hatfield/cache-paraT{token}` (per-worker).
 
 ## One test class per production class
+
+## LLM Replay (deterministic, no live LLM)
+
+Most tests that would otherwise hit a live LLM endpoint use pre-recorded
+fixture files under `tests/AgentCore/Fixtures/traces/`.  Replay tests
+exercise the full `LlmPlatformAdapter` path with fixture-driven deltas.
+
+The replay infrastructure lives in `tests/AgentCore/Infrastructure/SymfonyAi/Replay/`:
+- `FixtureReplayModelClient` — replaces HTTP transport with fixture data
+- `FixtureReplayResultConverter` — converts fixture deltas to Symfony AI objects
+- `StreamRecorderObserver` — recording path capturing live deltas to fixtures
+- `ReplayTest` — automated replay tests (no live LLM)
+- `ReplayRecordingTest` — recording from live LLM (opt-in)
+
+Fixture format: `docs/llm-replay.md`.  Re-record with `castor llm:fixtures:record`.
 
 Group test methods for a single production class in one test file. Avoid "many small test files for one class" patterns. Helper/test-double classes that serve multiple test files should live in shared `tests/*/Support/` directories.

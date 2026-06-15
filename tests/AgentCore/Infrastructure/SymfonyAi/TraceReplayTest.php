@@ -27,26 +27,14 @@ use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\AgentCore\Tests\Infrastructure\SymfonyAi\Replay\FixtureReplayModelClient;
+use Ineersa\AgentCore\Tests\Infrastructure\SymfonyAi\Replay\FixtureReplayResultConverter;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Psr\Log\NullLogger;
-use Symfony\AI\Platform\Message\Content\Text;
-use Symfony\AI\Platform\Message\Message;
-use Symfony\AI\Platform\Model;
 use Symfony\AI\Platform\ModelCatalog\FallbackModelCatalog;
-use Symfony\AI\Platform\ModelClientInterface;
 use Symfony\AI\Platform\Platform;
 use Symfony\AI\Platform\PlatformInterface as SymfonyPlatformInterface;
 use Symfony\AI\Platform\Provider;
-use Symfony\AI\Platform\Result\DeferredResult;
-use Symfony\AI\Platform\Result\InMemoryRawResult;
-use Symfony\AI\Platform\Result\RawResultInterface;
-use Symfony\AI\Platform\Result\ResultInterface;
-use Symfony\AI\Platform\Result\Stream\Delta\DeltaInterface;
-use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
-use Symfony\AI\Platform\Result\StreamResult;
-use Symfony\AI\Platform\ResultConverterInterface;
-use Symfony\AI\Platform\TokenUsage\TokenUsageExtractorInterface;
-use Symfony\AI\Platform\TokenUsage\TokenUsageInterface;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 
 /**
@@ -581,192 +569,11 @@ final class TraceReplayTest extends KernelTestCase
             providers: [new Provider(
                 name: 'replay',
                 modelClients: [$modelClient],
-                resultConverters: [new FixtureReplayResultConverter($fixture)],
+                resultConverters: [new \Ineersa\AgentCore\Tests\Infrastructure\SymfonyAi\Replay\FixtureReplayResultConverter($fixture)],
                 modelCatalog: new FallbackModelCatalog(),
                 eventDispatcher: $eventDispatcher,
             )],
             eventDispatcher: $eventDispatcher,
         );
-    }
-}
-
-// ──────────────────────────────────────────────
-//  Fixture replay helper classes (test-only)
-// ──────────────────────────────────────────────
-
-/**
- * ModelClient that records the model name and returns fixture usage data.
- *
- * The real HTTP call to the provider API is replaced by this stub;
- * the DeferredResult's stream is produced by FixtureReplayResultConverter.
- */
-final class FixtureReplayModelClient implements ModelClientInterface
-{
-    public ?string $capturedModel = null;
-
-    /** @var array<string, mixed> */
-    public array $capturedOptions = [];
-
-    /** @var array<string, mixed> */
-    private array $fixture;
-
-    /**
-     * @param array<string, mixed> $fixture
-     */
-    public function __construct(array $fixture)
-    {
-        $this->fixture = $fixture;
-    }
-
-    public function supports(Model $model): bool
-    {
-        return true;
-    }
-
-    public function request(Model $model, array|string $payload, array $options = []): RawResultInterface
-    {
-        $this->capturedModel = $model->getName();
-        $this->capturedOptions = $options;
-
-        return new InMemoryRawResult([
-            'token_usage' => new FixtureTokenUsage(
-                promptTokens: $this->fixture['usage']['input_tokens'] ?? null,
-                completionTokens: $this->fixture['usage']['output_tokens'] ?? null,
-                totalTokens: $this->fixture['usage']['total_tokens'] ?? null,
-            ),
-        ]);
-    }
-}
-
-/**
- * Stream result converter that produces deltas from fixture data.
- *
- * Converts fixture delta entries (type: text, thinking, etc.) into
- * the corresponding Symfony AI DeltaInterface objects so they can
- * be consumed by LlmPlatformAdapter::consumeStream().
- */
-final class FixtureReplayResultConverter implements ResultConverterInterface
-{
-    /** @var array<string, mixed> */
-    private array $fixture;
-
-    /**
-     * @param array<string, mixed> $fixture
-     */
-    public function __construct(array $fixture)
-    {
-        $this->fixture = $fixture;
-    }
-
-    public function supports(Model $model): bool
-    {
-        return true;
-    }
-
-    public function convert(RawResultInterface $result, array $options = []): ResultInterface
-    {
-        unset($result, $options);
-
-        return new StreamResult((function (): \Generator {
-            foreach ($this->fixture['deltas'] ?? [] as $delta) {
-                $type = $delta['type'] ?? 'text';
-                $content = $delta['content'] ?? '';
-
-                yield match ($type) {
-                    'text' => new TextDelta($content),
-                    'thinking' => new \Symfony\AI\Platform\Result\Stream\Delta\ThinkingDelta($content),
-                    'thinking_delta' => new \Symfony\AI\Platform\Result\Stream\Delta\ThinkingDelta($content),
-                    default => new TextDelta($content),
-                };
-            }
-        })());
-    }
-
-    public function getTokenUsageExtractor(): ?TokenUsageExtractorInterface
-    {
-        return new class($this->fixture) implements TokenUsageExtractorInterface {
-            /** @param array<string, mixed> $fixture */
-            public function __construct(private array $fixture)
-            {
-            }
-
-            public function extract(RawResultInterface $rawResult, array $options = []): ?TokenUsageInterface
-            {
-                unset($options);
-
-                $data = $rawResult->getData();
-                $tokenUsage = $data['token_usage'] ?? null;
-
-                return $tokenUsage instanceof TokenUsageInterface ? $tokenUsage : null;
-            }
-        };
-    }
-}
-
-/**
- * Token usage DTO that returns fixture usage values.
- */
-final readonly class FixtureTokenUsage implements TokenUsageInterface
-{
-    public function __construct(
-        private ?int $promptTokens = null,
-        private ?int $completionTokens = null,
-        private ?int $totalTokens = null,
-    ) {
-    }
-
-    public function getPromptTokens(): ?int
-    {
-        return $this->promptTokens;
-    }
-
-    public function getCompletionTokens(): ?int
-    {
-        return $this->completionTokens;
-    }
-
-    public function getThinkingTokens(): ?int
-    {
-        return null;
-    }
-
-    public function getToolTokens(): ?int
-    {
-        return null;
-    }
-
-    public function getCachedTokens(): ?int
-    {
-        return null;
-    }
-
-    public function getCacheCreationTokens(): ?int
-    {
-        return null;
-    }
-
-    public function getCacheReadTokens(): ?int
-    {
-        return null;
-    }
-
-    public function getRemainingTokens(): ?int
-    {
-        return null;
-    }
-
-    public function getRemainingTokensMinute(): ?int
-    {
-        return null;
-    }
-
-    public function getRemainingTokensMonth(): ?int
-    {
-        return null;
-    }
-
-    public function getTotalTokens(): ?int
-    {
-        return $this->totalTokens;
     }
 }
