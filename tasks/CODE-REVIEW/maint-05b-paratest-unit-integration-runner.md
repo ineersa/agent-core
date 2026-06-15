@@ -36,12 +36,12 @@ Important direction:
 - Task handoff records sequential vs ParaTest timings and any tests that remain unsafe for ParaTest.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/maint-05b-paratest-unit-integration-runner
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05b-paratest-unit-integration-runner
 Fork run: 638zseoevsq9
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/142
+PR Status: open
 Started: 2026-06-15T22:05:20.925Z
 Completed:
 
@@ -76,3 +76,11 @@ Completed:
 - Recorded fork run: 638zseoevsq9
 - Validation: Parent verification after repair: `git -C /home/ineersa/projects/agent-core status --short --branch` shows `main...origin/main` with only untracked `.pi/plans/agents-subagents-implementation-plan.md`.; Parent verification after repair: task worktree is clean at `b79c4adc` on `task/maint-05b-paratest-unit-integration-runner`.; Parent verification after repair: `git -C /home/ineersa/projects/agent-core-worktrees/maint-05b-paratest-unit-integration-runner diff --stat origin/main...HEAD` shows the expected 7 MAINT-05B implementation files: `.agents/skills/testing/SKILL.md`, `.castor/phpunit.php`, `.castor/tasks.php`, `composer.json`, `composer.lock`, `tests/AGENTS.md`, `tests/paratest-bootstrap.php`.; No `git reset --hard` used. No `git clean` used. No implementation push performed. No full `castor check` run.
 - Summary: Repaired misplaced MAINT-05B implementation commit. The original implementation commit `389bd08e` had landed on local `main` instead of the task worktree. Parent verified the first repair fork handoff did not match actual repository state, then performed the non-destructive repair directly: cherry-picked `389bd08e` onto `task/maint-05b-paratest-unit-integration-runner` as `b79c4adc`, reverted the misplaced local-main commit as `bfeb1a33`, preserved backup refs, and moved local `main` back to `origin/main` via `update-ref` after confirming the tree matched. No `reset --hard`, no push of implementation, no `castor check`. Current task branch contains the MAINT-05B implementation; local main is back at `origin/main` with only an unrelated untracked `.pi/plans/agents-subagents-implementation-plan.md` file present.
+
+## Task workflow update - 2026-06-15T22:33:53.865Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/maint-05b-paratest-unit-integration-runner to origin.
+- branch 'task/maint-05b-paratest-unit-integration-runner' set up to track 'origin/task/maint-05b-paratest-unit-integration-runner'.
+- Created PR: https://github.com/ineersa/agent-core/pull/142
+- Validation: Pre-move inspection: task worktree clean on `task/maint-05b-paratest-unit-integration-runner` at `b79c4adc`.; Pre-move diff: `git -C /home/ineersa/projects/agent-core-worktrees/maint-05b-paratest-unit-integration-runner diff --stat origin/main...HEAD` showed 7 MAINT-05B implementation files (`.agents/skills/testing/SKILL.md`, `.castor/phpunit.php`, `.castor/tasks.php`, `composer.json`, `composer.lock`, `tests/AGENTS.md`, `tests/paratest-bootstrap.php`).; Skipped reviewer subagent per user MAINT-05A-F policy.; Skipped full `LLM_MODE=true castor check` per user MAINT-05A-F policy / MAINT-05G owns final full-gate validation.; Focused Castor validation (`castor list`, `castor test`, `castor test:parallel`, `castor deptrac`, `castor phpstan`, `castor cs-check`) was not run by the parent before this move; moving per explicit user request.
+- Summary: Moved MAINT-05B to CODE-REVIEW per user request. Branch contains implementation commit `b79c4adc` and targets `main`. Automated reviewer and full `castor check` were skipped per MAINT-05 stage policy/user instruction. Note: focused validation was not run by the parent before this move; user explicitly requested moving now.
