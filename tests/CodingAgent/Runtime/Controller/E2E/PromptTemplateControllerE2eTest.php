@@ -72,9 +72,12 @@ final class PromptTemplateControllerE2eTest extends ControllerE2eTestCase
             ],
         ]);
 
-        // Narrowest proof point: run.started carries user_messages with
-        // the expanded prompt text.  We do not wait for the assistant.
-        $events = $this->collectEventsUntil('run.started', 10.0);
+        // Collect all events for a reasonable duration.  The controller first
+        // emits a synthetic run.started from StartRunHandler, then the domain
+        // event drain produces the enriched run.started with user_messages.
+        // collectEvents returns when run.completed/run.failed/run.cancelled
+        // arrives or the timeout expires.
+        $events = $this->collectEvents(15.0);
         $byType = $this->indexByType($events);
 
         $this->assertStartRunAcked($events, $startCmdId);
@@ -86,18 +89,28 @@ final class PromptTemplateControllerE2eTest extends ControllerE2eTestCase
             .$this->collectDiagnostics($events),
         );
 
-        $payload = $byType['run.started'][0]['payload'] ?? [];
-        self::assertIsArray($payload, 'run.started payload must be an array');
-
-        // Extract runId for session artifact checks.
-        $this->runId = (string) ($byType['run.started'][0]['runId'] ?? '');
-
-        $userMessages = $payload['user_messages'] ?? [];
-        self::assertNotEmpty(
-            $userMessages,
-            'run.started must contain user_messages with the expanded prompt.'."\n"
+        // Find the run.started that carries user_messages (from RuntimeEventTranslator).
+        // The synthetic one from StartRunHandler has only status, no user_messages.
+        $richRunStarted = null;
+        foreach ($byType['run.started'] as $rs) {
+            if (!empty($rs['payload']['user_messages'] ?? null)) {
+                $richRunStarted = $rs;
+                break;
+            }
+        }
+        self::assertNotNull(
+            $richRunStarted,
+            'No run.started event with user_messages found. '
+            .'Available run.started events: '
+            .json_encode(
+                array_map(static fn (array $e): array => array_keys($e['payload'] ?? []), $byType['run.started']),
+                \JSON_THROW_ON_ERROR,
+            )."\n"
             .$this->collectDiagnostics($events),
         );
+
+        $this->runId = (string) ($richRunStarted['runId'] ?? '');
+        $userMessages = $richRunStarted['payload']['user_messages'];
 
         $userTexts = array_map(
             static fn (array $m): string => (string) ($m['text'] ?? ''),
@@ -157,7 +170,8 @@ final class PromptTemplateControllerE2eTest extends ControllerE2eTestCase
             ],
         ]);
 
-        $events = $this->collectEventsUntil('run.started', 10.0);
+        // Same pattern: collectAll because the first run.started is synthetic.
+        $events = $this->collectEvents(15.0);
         $byType = $this->indexByType($events);
 
         $this->assertStartRunAcked($events, $startCmdId);
@@ -169,17 +183,22 @@ final class PromptTemplateControllerE2eTest extends ControllerE2eTestCase
             .$this->collectDiagnostics($events),
         );
 
-        $payload = $byType['run.started'][0]['payload'] ?? [];
-
-        // Extract runId for session artifact checks.
-        $this->runId = (string) ($byType['run.started'][0]['runId'] ?? '');
-
-        $userMessages = $payload['user_messages'] ?? [];
-        self::assertNotEmpty(
-            $userMessages,
-            'run.started must contain user_messages with the raw prompt.'."\n"
+        // Find the rich run.started with user_messages.
+        $richRunStarted = null;
+        foreach ($byType['run.started'] as $rs) {
+            if (!empty($rs['payload']['user_messages'] ?? null)) {
+                $richRunStarted = $rs;
+                break;
+            }
+        }
+        self::assertNotNull(
+            $richRunStarted,
+            'No run.started event with user_messages found.'."\n"
             .$this->collectDiagnostics($events),
         );
+
+        $this->runId = (string) ($richRunStarted['runId'] ?? '');
+        $userMessages = $richRunStarted['payload']['user_messages'];
 
         $userTexts = array_map(
             static fn (array $m): string => (string) ($m['text'] ?? ''),
