@@ -36,13 +36,13 @@ Known entrypoints:
 - Docs/skills are updated to explain replay vs live modes and fixture re-record workflow.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/maint-05c-llm-replay-recording-foundation
+Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05c-llm-replay-recording-foundation
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-15T22:50:40.122Z
 Completed:
 
 ## Work log
@@ -58,3 +58,11 @@ Completed:
 - Supersedes earlier PR-base notes in this task: do NOT use `prBaseBranch="task/maint-05-cardinal-qa-test-rework"`. Target `main` for MAINT-05C.
 - Sequential execution policy: do not start MAINT-05C until prior MAINT-05 stages that it depends on are manually reviewed/merged to `main`, unless the user explicitly says otherwise.
 - Validation/review policy remains: skip reviewer subagent and skip full `LLM_MODE=true castor check` for MAINT-05C; user reviews manually and MAINT-05G owns final full-gate validation.
+
+## Task workflow update - 2026-06-15T22:50:40.122Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/maint-05c-llm-replay-recording-foundation.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/maint-05c-llm-replay-recording-foundation.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/maint-05c-llm-replay-recording-foundation.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/maint-05c-llm-replay-recording-foundation.
+- Summary: Started MAINT-05C after MAINT-05B was merged/done. Main remains the MAINT-05 integration branch and eventual PR targets main. Per MAINT-05A-F policy, skip automated reviewer and full `LLM_MODE=true castor check`; run focused replay/recording validation and keep live LLM calls explicit opt-in only.
