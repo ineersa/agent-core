@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: vau8f16uslns
+Fork run: 9il1svyfa56b
 PR URL:
 PR Status:
 Started: 2026-06-12T16:54:23.580Z
@@ -333,3 +333,8 @@ Completed:
 ## Task workflow update - 2026-06-15T01:18:34.368Z
 - Validation: git rebase origin/main succeeded.; git push --force-with-lease origin task/backlog-open-issues-cleanup succeeded.; git rev-list --left-right --count origin/main...HEAD => 0 2.
 - Summary: Synced #123 task branch with latest origin/main by rebasing task/backlog-open-issues-cleanup onto origin/main (no reset --hard). Rebased commits are d36dab2a (original 105ec4d4 bad/initial multiline completion test commit) and a31c078c (original b15e152f corrected Backspace-grapheme implementation). Force-with-lease pushed origin/task/backlog-open-issues-cleanup. Branch is now 0 behind / 2 ahead of origin/main.
+
+## Task workflow update - 2026-06-15T01:26:44.550Z
+- Recorded fork run: 9il1svyfa56b
+- Validation: Fork confirmed it read testing skill, tests/AGENTS.md, and castor skill.; Fork validation: castor cs-check OK; castor phpstan OK; castor list shows run:agent/run:agent-test/datadog tasks; castor datadog:smoke OK; castor deptrac reports 1 violation from #123 PromptEditor -> CompletionSuggestion, unrelated to Castor launcher but now a merge blocker for full validation.; Parent verification: git rev-list --left-right --count origin/main...HEAD => 0 3; git diff --stat shows expected .castor/tasks.php/docs changes plus existing #123 completion files.
+- Summary: Fork 9il1svyfa56b completed Castor launcher regression fix on task/backlog-open-issues-cleanup with commit b9fd928e. Restored robust run:agent tmux handling: stable hatfield-agent session/window name, inside-tmux uses tmux new-window and returns cleanly, outside-tmux uses tmux new-session -A attach/create, removed PID-only orphan sessions and 2>&1 leak pattern. Restored Datadog auto-enable helpers and moved prior run:agent-datadog behavior into run:agent (no separate run:agent-datadog task): HATFIELD_DATADOG=1/0, DD_TRACE_ENABLED=0, ddtrace detection, trace endpoint detection, DD_SERVICE/DD_ENV/DD_VERSION/log-injection env prefix. run:agent-test now uses same robust tmux wrapper with Datadog disabled. docs/datadog.md updated to remove run:agent-datadog and stale datadog:status references. Parent verified branch currently 0 behind / 3 ahead before metadata update.
