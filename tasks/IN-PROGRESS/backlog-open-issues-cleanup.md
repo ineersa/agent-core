@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: 5gtauj6zgf9e
+Fork run: 4ic1cpvbvucd
 PR URL:
 PR Status:
 Started: 2026-06-12T16:54:23.580Z
@@ -365,3 +365,8 @@ Completed:
 - Recorded fork run: 5gtauj6zgf9e
 - Validation: Fork 5gtauj6zgf9e failed with pid_died before handoff.; Parent check: git status shows task/backlog-open-issues-cleanup tracking origin/task/backlog-open-issues-cleanup with no listed file changes; HEAD d5661e54; origin/main...HEAD = 1 behind / 5 ahead.
 - Summary: Fork 5gtauj6zgf9e, launched to harden remaining TuiAgentSmokeTest startup wait flake, failed before producing result.json (pid_died). Parent inspected worktree afterward: no committed changes from the fork; worktree appears clean and still at d5661e54; branch is now 1 behind origin/main due task metadata commit and 5 ahead with feature commits. Need relaunch continuation fork after rebasing onto origin/main.
+
+## Task workflow update - 2026-06-15T02:22:16.508Z
+- Recorded fork run: 4ic1cpvbvucd
+- Validation: ps -o pid,user,state,etime,args -p 2685 shows root-owned llama-server on port 9052 with expected test model args.; Direct generation probe to http://127.0.0.1:9052/v1/chat/completions with max_tokens=64 timed out after 8.02s, confirming /health is insufficient and generation path is stuck.; No code changes from fork 4ic1cpvbvucd were recorded in parent; validation blocked by external llama.cpp server state.
+- Summary: Fork 4ic1cpvbvucd could not continue validation because llama.cpp server on port 9052 is stuck/unresponsive for generation. Parent verified PID 2685 is root-owned llama-server with health alive but /v1/chat/completions times out after 8s. Because the process is root-owned, assistant cannot restart it without sudo. Need user to kill/restart llama-server before rerunning Castor gate/PR creation.
