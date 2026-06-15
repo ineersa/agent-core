@@ -79,3 +79,8 @@ Completed:
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/maint-05a-castor-command-matrix-modular-foundation.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/maint-05a-castor-command-matrix-modular-foundation.
 - Summary: Started MAINT-05A implementation stage. This task is part of the MAINT-05 umbrella/epic branch strategy. When ready for PR, target/base the PR against `task/maint-05-cardinal-qa-test-rework` instead of `main`. Per user direction for the staged MAINT-05 series: skip reviewer subagent and skip full `LLM_MODE=true castor check` until MAINT-05G; user will review manually. Use focused Castor validation appropriate to this stage.
+
+## Task workflow update - 2026-06-15T21:13:14.549Z
+- Summary: MAINT-05 stage policy: this task belongs to umbrella branch `task/maint-05-cardinal-qa-test-rework`. When ready, open the PR against that branch rather than `main`. Skip reviewer subagent and full `LLM_MODE=true castor check`; user will review manually and MAINT-05G owns final full-gate validation.
+- PR base: use `prBaseBranch="task/maint-05-cardinal-qa-test-rework"` when moving this task to CODE-REVIEW.
+- Review/validation exception for MAINT-05A-F: skip reviewer subagent; user reviews manually. Skip full `LLM_MODE=true castor check` until MAINT-05G. Run focused Castor validation for this stage only, e.g. `castor list` and the relevant deterministic/static commands that remain safe after the Castor refactor.
