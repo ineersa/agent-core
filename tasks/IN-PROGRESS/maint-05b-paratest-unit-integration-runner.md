@@ -39,7 +39,7 @@ Important direction:
 Status: IN-PROGRESS
 Branch: task/maint-05b-paratest-unit-integration-runner
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05b-paratest-unit-integration-runner
-Fork run: 638zseoevsq9
+Fork run: 53azgrzs7ng7
 PR URL: https://github.com/ineersa/agent-core/pull/142
 PR Status: open
 Started: 2026-06-15T22:05:20.925Z
@@ -89,3 +89,8 @@ Completed:
 - Moved CODE-REVIEW → IN-PROGRESS.
 - Validation: No validation run for this status change. User requested behavior change before review continues.
 - Summary: Reopened MAINT-05B for user-requested PR feedback: `castor test:parallel` should not remain a separate maintained command; the ParaTest-powered path should become the default `castor test` behavior instead. Implementation PR #142 remains open and will be updated with a follow-up commit.
+
+## Task workflow update - 2026-06-15T22:40:37.596Z
+- Recorded fork run: 53azgrzs7ng7
+- Validation: Pending fork run `53azgrzs7ng7`. Expected focused validation: `castor list` (confirm no `test:parallel` command), `castor test` if feasible, `castor phpstan`, `castor cs-check`; no full `LLM_MODE=true castor check`.
+- Summary: Launched follow-up implementation fork for user feedback: remove separate `castor test:parallel` public command and make its ParaTest-powered behavior the default `castor test`. Fork has strict cwd/branch guard for the MAINT-05B worktree to avoid another accidental main commit, must not push, must not use `reset --hard`, and must not run full `castor check`.
