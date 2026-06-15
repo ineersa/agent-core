@@ -36,7 +36,7 @@ Known entrypoints:
 Status: IN-PROGRESS
 Branch: task/maint-05d-controller-replay-e2e-process-ownership
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05d-controller-replay-e2e-process-ownership
-Fork run:
+Fork run: es8l1fx2p88s
 PR URL:
 PR Status:
 Started: 2026-06-15T23:32:27.282Z
@@ -63,3 +63,8 @@ Completed:
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/maint-05d-controller-replay-e2e-process-ownership.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/maint-05d-controller-replay-e2e-process-ownership.
 - Summary: Started MAINT-05D after MAINT-05C was merged/done. Main remains the MAINT-05 integration branch and eventual PR targets main. Per MAINT-05A-F policy, skip automated reviewer and full `LLM_MODE=true castor check`; run focused deterministic controller replay/process-ownership validation and keep live controller/LLM smoke explicit opt-in only.
+
+## Task workflow update - 2026-06-15T23:33:21.128Z
+- Recorded fork run: es8l1fx2p88s
+- Validation: Pending fork run `es8l1fx2p88s`. Expected focused validation: `castor list`, deterministic controller replay E2E Castor command/test (no live LLM), focused process ownership/cleanup test(s), `castor deptrac`, `castor phpstan`, `castor cs-check`; no full `LLM_MODE=true castor check`; live smoke only if explicit/prereqs available.
+- Summary: Launched implementation fork for MAINT-05D in `/home/ineersa/projects/agent-core-worktrees/maint-05d-controller-replay-e2e-process-ownership`. Fork instructed to port controller/runtime E2E default path to deterministic replay using MAINT-05C fixtures/replay seams, keep live controller smoke opt-in, design explicit process ownership/teardown for controller and messenger consumers, add cleanup proof/diagnostics, update Castor/docs, and run focused validation only. Fork has strict cwd/branch guard to avoid committing to main, must not push, must not use destructive git operations, and must not run full `LLM_MODE=true castor check`.
