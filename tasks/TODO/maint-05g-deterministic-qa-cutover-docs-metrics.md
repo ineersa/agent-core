@@ -1,0 +1,44 @@
+# MAINT-05G Deterministic QA cutover, docs, and metrics
+
+## Goal
+## Context
+
+Final stage of the MAINT-05 cardinal QA/test rework. After MAINT-05A-F establish the modular Castor foundation, ParaTest runner, LLM replay, controller process ownership, TUI journeys, and CodingAgent test diet, this task performs the integration/cutover work.
+
+Goal:
+- Make the new deterministic QA architecture the default developer and task-workflow path.
+- Remove or archive obsolete old commands and documentation.
+- Prove the new system is faster, deterministic, and easier to maintain.
+
+Dependencies:
+- MAINT-05A Castor command matrix and modular QA foundation
+- MAINT-05B ParaTest unit/integration runner
+- MAINT-05C LLM replay and fixture re-recording foundation
+- MAINT-05D Controller replay E2E and explicit process ownership
+- MAINT-05E TUI replay-backed journey E2E
+- MAINT-05F CodingAgent test diet and sequential speed target
+
+This task should not start until enough of A-F are complete that default QA can be cut over safely.
+
+## Acceptance criteria
+- `castor check` uses the new deterministic default gate: no live llama.cpp/OpenAI-compatible dependency, no fragile custom PHPUnit shard fan-out, and no obsolete many-step process-tree layout.
+- The documented Castor command matrix is final and matches actual commands: deterministic default validation, ParaTest acceleration, replay E2E, TUI journeys, opt-in live LLM smoke, and optional stress/parallel mode if retained.
+- Obsolete Castor commands/helpers/docs from the old QA system are removed or clearly marked deprecated with a removal path; no dead shard/process hardening code remains in default paths.
+- Task workflow documentation, `.agents/skills/testing/SKILL.md`, `tests/AGENTS.md`, and any relevant docs are updated so future agents know which command to run for each kind of change.
+- Default task workflow quality gate uses the deterministic commands. Opt-in live LLM smoke is documented as provider compatibility validation, not routine QA.
+- Before/after metrics are recorded: default `castor check` wall time, `castor test` sequential time, ParaTest time, CodingAgent sequential time, TUI harness launch count, live LLM calls in default QA, and known remaining flakes/risks.
+- The final system is validated only through Castor: deterministic `castor check`, ParaTest command, replay E2E, TUI journey E2E, `castor deptrac`, `castor phpstan`, `castor cs-check`, and opt-in live smoke if prerequisites are available.
+- MAINT-05 umbrella task is updated with final status and links/results for MAINT-05A-G.
+
+## Workflow metadata
+Status: TODO
+Branch:
+Worktree:
+Fork run:
+PR URL:
+PR Status:
+Started:
+Completed:
+
+## Work log
+- Created: 2026-06-15T21:09:07.755Z
