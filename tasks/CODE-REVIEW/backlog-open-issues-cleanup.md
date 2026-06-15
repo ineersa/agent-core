@@ -29,12 +29,12 @@ Connected open issues as of 2026-06-12:
 - Task remains IN-PROGRESS during one-by-one cleanup until user explicitly asks to move forward.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
 Fork run: zmqo2dry2bg3
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/140
+PR Status: open
 Started: 2026-06-12T16:54:23.580Z
 Completed:
 
@@ -379,3 +379,17 @@ Completed:
 - Recorded fork run: zmqo2dry2bg3
 - Validation: Fork confirmed it read testing skill, tests/AGENTS.md, and castor skill.; castor cs-check: OK, files_fixed=0.; castor phpstan: OK, errors=0, file_errors=0.; castor test:tui --filter=testTypePromptAndVerifyTranscriptBlocks: OK, 22 tests / 70 assertions in 85s.; LLM_MODE=true castor check: OK, all 14 steps passed in 300.3s. Step times: deptrac 2.0s, test-agent-core 3.1s, test-coding-agent-1 25.3s, test-coding-agent-2 17.4s, test-coding-agent-3 39.1s, test-coding-agent-4 59.8s, test-tui-suite 18.6s, test-platform 0.9s, test:controller 6.5s, test:llm-real 26.5s, test:tui-1 46.9s, test:tui-2 44.7s, phpstan 4.2s, cs-check 5.3s.
 - Summary: Fork zmqo2dry2bg3 fixed the latest TUI cost assertion race with commit 3a01c859. TuiAgentSmokeTest::testTypePromptAndVerifyTranscriptBlocks now waits for turn completion before checking footer cost: uses waitForCallback for assistant block present and '◐ Working...' absent, then asserts footer no longer contains $0.00. This preserves the visible cost E2E proof while avoiding streaming-start race. No product behavior changed.
+Castor Check Status: passed
+Castor Check Commit: 25f63bd4393856c1c35a58b217a46971918f4a1b
+Castor Check Command: LLM_MODE=true castor check
+Castor Check Timeout: 900s
+Castor Check Completed: 2026-06-15T02:34:00.817Z
+Castor Check Output SHA256: 8402952e60f19af97d70af3c9bd816e632c7b0adb64c7eea53f553d4a41ef158
+
+## Task workflow update - 2026-06-15T02:34:04.095Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: 25f63bd43938.
+- Pushed task/backlog-open-issues-cleanup to origin.
+- branch 'task/backlog-open-issues-cleanup' set up to track 'origin/task/backlog-open-issues-cleanup'.
+- Created PR: https://github.com/ineersa/agent-core/pull/140
+- Validation: Fork zmqo2dry2bg3: LLM_MODE=true castor check OK, all 14 steps passed in 300.3s.; Branch rebased onto origin/main after metadata update; origin/main...HEAD = 0 behind / 7 ahead.; move_task CODE-REVIEW requested with 900s Castor gate timeout.
