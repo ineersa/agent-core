@@ -107,11 +107,7 @@ function check(): void
                     .' --group llm-real'
                     .' '.$strictFlags.$llmFlags
                     .(is_llm_mode() ? ' --log-junit='.report_path('phpunit-llm-real.junit.xml') : ''),
-                // Bumped from 60s to 120s because the llm-real group
-                // grew from ~8 to ~10 tests with prompt-template
-                // controller E2E cases (PT-04) and can legitimately
-                // exceed the prior 60s cap.
-                120,
+                60,
             ),
         ],
         'test:tui-1' => [
