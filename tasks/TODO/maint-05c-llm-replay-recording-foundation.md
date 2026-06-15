@@ -47,3 +47,8 @@ Completed:
 
 ## Work log
 - Created: 2026-06-15T21:07:27.923Z
+
+## Task workflow update - 2026-06-15T21:13:28.067Z
+- Summary: MAINT-05 stage policy: this task belongs to umbrella branch `task/maint-05-cardinal-qa-test-rework`. When started and later moved to CODE-REVIEW, open the PR against that branch rather than `main`. Skip reviewer subagent and full `LLM_MODE=true castor check`; user will review manually and MAINT-05G owns final full-gate validation.
+- PR base: use `prBaseBranch="task/maint-05-cardinal-qa-test-rework"` when moving this task to CODE-REVIEW.
+- Review/validation exception for MAINT-05A-F: skip reviewer subagent; user reviews manually. Skip full `LLM_MODE=true castor check` until MAINT-05G. Run focused Castor validation for this stage only, especially replay-unit tests and fixture recording/replay commands; live LLM calls remain explicit opt-in only.
