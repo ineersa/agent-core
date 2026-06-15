@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Editor;
 
+use Symfony\Component\String\UnicodeString;
 use Symfony\Component\Tui\Input\Keybindings;
 use Symfony\Component\Tui\Widget\EditorWidget;
 
@@ -74,9 +75,119 @@ final class PromptEditor
         return $this->widget->getText();
     }
 
+    /**
+     * Set editor text with cursor at (0,0).
+     *
+     * Prefer {@see typeText()} when the editor should behave as
+     * if the user typed the content — it places the cursor at the
+     * end of the text, which is the state assumed by completion
+     * providers (cursor-at-end).
+     */
     public function setText(string $text): void
     {
         $this->widget->setText($text);
+    }
+
+    /**
+     * Set editor text with the cursor at the end — the state
+     * assumed by completion providers (cursor-at-end).
+     *
+     * Uses {@see setText()} to set the content, then navigates
+     * to the end of the text using normal keyboard operations
+     * (DOWN for each line, then END).  No clearing, reinserting,
+     * or bracketed paste is involved.
+     */
+    public function typeText(string $text): void
+    {
+        $this->widget->setText($text);
+
+        // Navigate cursor to end of text.
+        $newlineCount = substr_count($text, "\n");
+        for ($i = 0; $i < $newlineCount; ++$i) {
+            $this->widget->handleInput("\x1b[B");
+        }
+        $this->widget->handleInput("\x1b[F");
+    }
+
+    /**
+     * Accept a completion by replacing the identified range
+     * using only normal editor editing operations
+     * ({@see EditorWidget::handleInput()}).
+     *
+     * Does NOT clear the editor, does NOT use {@see setText()},
+     * and does NOT use bracketed paste — this keeps the editor's
+     * internal state (lines, cursor, undo/kill ring, viewport)
+     * fully intact through the completion edit.
+     *
+     * @param int    $replacementStart  byte offset where replacement begins
+     * @param int    $replacementLength number of bytes to replace
+     * @param string $insertText        Text to insert at replacement start.
+     *
+     * How it works:
+     * 1. Identify the suffix from $replacementStart to end-of-text
+     *    — this is the text we must delete before inserting.
+     * 2. Delete that suffix one grapheme at a time by sending
+     *    {@see EditorWidget::handleInput("\x7f")} (Backspace),
+     *    matching the editor's grapheme-aware
+     *    {@see EditorDocument::deleteCharBackward()} path.
+     * 3. Insert $insertText via the normal character-input path.
+     * 4. If the replacement range is not a suffix (carries trailing
+     *    text), re-insert that trailing text after the suggestion.
+     *
+     * The replacement range SHOULD be a suffix ending at the editor
+     * cursor — this is always true for all current completion
+     * providers (slash, @ file mention, session ID) which assume
+     * cursor-at-end.  Non-suffix ranges are handled correctly but
+     * are not expected from current providers.
+     *
+     * Because we delete via the editor's normal Backspace path,
+     * preceding multi-line content is preserved — fixing GitHub
+     * issue #123 where "Hello\n\n@" → Tab cleared the editor.
+     */
+    public function acceptCompletion(
+        int $replacementStart,
+        int $replacementLength,
+        string $insertText,
+    ): void {
+        $current = $this->widget->getText();
+        $currentLen = \strlen($current);
+
+        // Extract the suffix we need to delete: everything from
+        // replacementStart to the end of the current editor text.
+        // We use Symfony UnicodeString for UTF-8 safe substring
+        // operations — replacement offsets are byte-level.
+        $suffixToDelete = (new UnicodeString($current))
+            ->slice($replacementStart)
+            ->toString();
+
+        // Delete the suffix one grapheme at a time through the
+        // editor's normal Backspace path.  Symfony TUI's
+        // EditorDocument::deleteCharBackward() is grapheme-aware
+        // (uses grapheme_str_split), so one Backspace = one
+        // grapheme — matching our count exactly.
+        $graphemes = grapheme_str_split($suffixToDelete);
+        for ($i = 0, $n = \count($graphemes); $i < $n; ++$i) {
+            $this->widget->handleInput("\x7f");
+        }
+
+        // Build the text to insert: the suggestion plus any trailing
+        // content that was not part of the replaced range.
+        $replacementEnd = $replacementStart + $replacementLength;
+        $finalInsertText = $insertText;
+
+        if ($replacementEnd < $currentLen) {
+            $trailing = (new UnicodeString($current))
+                ->slice($replacementEnd)
+                ->toString();
+            $finalInsertText .= $trailing;
+        }
+
+        // Insert via the normal character-input path.  The cursor
+        // advances past every typed character, so the cursor lands
+        // after the inserted text — ready for further typing.
+        if ('' !== $finalInsertText) {
+            $this->widget->handleInput($finalInsertText);
+        }
     }
 
     /**
@@ -89,15 +200,11 @@ final class PromptEditor
      * avoid cursor management entirely: insertText() advances the
      * cursor past every typed character.
      *
-     * This method is safe for printable single-line text without
-     * terminal control characters — the current use case is
-     * slash-completion acceptance at replacementStart 0 where the
-     * insert text is a single-line ASCII command with trailing space.
-     *
-     * Open question: Symfony TUI has no public cursor setter on
-     * EditorWidget, so any future feature needing arbitrary cursor
-     * positioning after setText() will need the same constraint
-     * awareness or a contribution upstream.
+     * Prefer {@see acceptCompletion()} for completion acceptance —
+     * it preserves multi-line content and respects the editor's
+     * undo/line-structure invariants.  This method remains for
+     * full-editor replacement callers (e.g. single-line command
+     * insertion at replacementStart 0).
      */
     public function replaceText(string $text): void
     {

@@ -86,11 +86,7 @@ final class TuiAgentSmokeTest extends TestCase
 
         try {
             // Step 1: Wait for TUI to render
-            $this->tmux->waitForCaptureContains(
-                pane: $pane,
-                needle: '█',   // Hatfield logo
-                timeout: 5.0,
-            );
+            $this->waitForTuiStartup($pane);
             // Step 2: Type a prompt
             $prompt = 'Respond with exactly one word: hello.';
             $this->tmux->sendLiteral($pane, $prompt);
@@ -186,17 +182,32 @@ final class TuiAgentSmokeTest extends TestCase
                 );
             }
 
-            // Step 6: Assert footer cost is non-zero.
+            // Step 6: Wait for the turn to complete before checking
+            // the footer.  $capture is from the moment ◇ first appeared
+            // (streaming starts), but cost projection only updates after
+            // the turn finishes.  Poll scrollback history for a frame
+            // where the assistant block is present and the Working
+            // spinner is gone — that means the turn completed and the
+            // idle state was restored.
+            $finalCapture = $this->tmux->waitForCallback(
+                pane: $pane,
+                callback: static fn (string $cap): bool => \str_contains($cap, '◇')
+                    && !\str_contains($cap, '◐ Working...'),
+                timeout: 10.0,
+                message: 'Turn did not complete — Working spinner never disappeared after assistant block appeared.',
+            );
+
+            // Step 7: Assert footer cost is non-zero.
             // With the high per-token pricing (input=$1000/M, output=$100000/M),
             // any successful LLM turn must produce a visible non-$0.00 cost.
             self::assertStringNotContainsString(
                 '$0.00',
-                $capture,
+                $finalCapture,
                 'Footer cost must NOT be $0.00 after a turn '
                 . 'with the priced test model configured.',
             );
 
-            // Step 7: Save ANSI snapshot artifact.
+            // Step 8: Save ANSI snapshot artifact.
             $this->saveAnsiSnapshot($pane, 'agent-flow-smoke');
 
             // Clean exit
@@ -239,7 +250,7 @@ final class TuiAgentSmokeTest extends TestCase
 
         try {
             // Wait for TUI startup
-            $this->tmux->waitForCaptureContains($pane, '█', 5.0);
+            $this->waitForTuiStartup($pane);
 
             // Send prompt
             $this->tmux->sendLiteral($pane, 'hello');
@@ -247,13 +258,16 @@ final class TuiAgentSmokeTest extends TestCase
 
             // Wait for either an assistant block or error block.
             // This proves the working status didn't stay stuck.
-            try {
-                $this->tmux->waitForCaptureContains($pane, '◇', 5.0);
-            } catch (\RuntimeException) {
-                $this->tmux->waitForCaptureContains($pane, '✕', 2.0);
-            }
-
-            $capture = $this->tmux->capturePlain($pane);
+            // Use a combined callback poll so we don't race on
+            // narrow per-needle timeouts — the smoke model can
+            // sometimes respond between 5 and 7 seconds, and
+            // chained try-catch with 5s+2s is too brittle.
+            $capture = $this->tmux->waitForCallback(
+                pane: $pane,
+                callback: fn(string $cap) => \str_contains($cap, '◇') || \str_contains($cap, '✕'),
+                timeout: 8.0,
+                message: 'TUI did not show assistant block (◇) or error block (✕) within 8s — "Working..." status may be stuck.',
+            );
 
             // The "Working..." indicator should NOT be stuck.
             // After the LLM pipeline completes (or errors), the
@@ -296,7 +310,7 @@ final class TuiAgentSmokeTest extends TestCase
 
         try {
             // ── Start first turn ──
-            $this->tmux->waitForCaptureContains($pane, '█', 5.0);
+            $this->waitForTuiStartup($pane);
 
             // Chat-only prompt: multi-turn ordering test, not a tools test.
             $prompt1 = 'Respond with exactly "One". Do not use tools.';
@@ -477,7 +491,7 @@ final class TuiAgentSmokeTest extends TestCase
 
         try {
             // ── First run (auto-submit via --prompt) ──
-            $this->tmux->waitForCaptureContains($pane, '█', 5.0);
+            $this->waitForTuiStartup($pane);
 
             // The first run MUST produce an assistant block.  No ✕ fallback.
             $this->tmux->waitForCaptureContains($pane, '◇', 5.0);
@@ -491,7 +505,7 @@ final class TuiAgentSmokeTest extends TestCase
             // After the switch the terminal is cleared and the TUI
             // rebuilds.  Wait for the Hatfield logo to confirm the
             // new draft session has rendered.
-            $this->tmux->waitForCaptureContains($pane, '█', 5.0);
+            $this->waitForTuiStartup($pane);
 
             // Record baseline counts BEFORE submitting the /new prompt.
             // The tmux scrollback retains pre-clear content, so using
@@ -584,7 +598,7 @@ final class TuiAgentSmokeTest extends TestCase
 
         try {
             // ── First run (auto-submit via --prompt) creates session 1 ──
-            $this->tmux->waitForCaptureContains($pane, '█', 5.0);
+            $this->waitForTuiStartup($pane);
 
             // The first run MUST produce an assistant block.  No ✕ fallback.
             $this->tmux->waitForCaptureContains($pane, '◇', 5.0);
@@ -606,7 +620,7 @@ final class TuiAgentSmokeTest extends TestCase
             $this->tmux->sendKey($pane, 'Enter');
 
             // After session switch the terminal clears and logo reappears
-            $this->tmux->waitForCaptureContains($pane, '█', 5.0);
+            $this->waitForTuiStartup($pane);
 
             // The replayed transcript should show the old user prompt
             $this->tmux->waitForCaptureContains($pane, 'alpha', 5.0);
@@ -681,6 +695,28 @@ final class TuiAgentSmokeTest extends TestCase
     }
 
     // ── helpers ────────────────────────────────────────────
+
+    /**
+     * Wait for the TUI to finish startup and render the Hatfield
+     * logo, using a callback poll with scrollback history and a
+     * generous timeout for parallel-gate/Xdebug environments.
+     *
+     * Uses waitForCallback (capturePlainWithHistory) instead of
+     * waitForCaptureContains (capturePlain) so the logo is found
+     * even if it has scrolled above the visible area after rapid
+     * auto-submit output — common in the /new and /resume rebuild
+     * paths where the first-run assistant response pushes the
+     * logo out of the visible pane.
+     */
+    private function waitForTuiStartup(TmuxPane $pane, float $timeout = 10.0): void
+    {
+        $this->tmux->waitForCallback(
+            pane: $pane,
+            callback: static fn (string $capture): bool => \str_contains($capture, '█'),
+            timeout: $timeout,
+            message: 'TUI did not render the Hatfield logo within '.$timeout.'s — pane may be blank or agent failed to start.',
+        );
+    }
 
     /**
      * Verify events.jsonl for a resumed session: follow_up must be

@@ -68,12 +68,6 @@ HATFIELD_DATADOG=1 castor run:agent   # force-enable if ddtrace is loaded
 HATFIELD_DATADOG=0 castor run:agent   # force-disable
 ```
 
-Use the explicit Datadog launcher when you always want traces for an agent run:
-
-```bash
-castor run:agent-datadog
-```
-
 When enabled, the launcher sets:
 
 - `DD_TRACE_ENABLED=1`
@@ -88,7 +82,7 @@ When enabled, the launcher sets:
 ## Local checks
 
 ```bash
-castor datadog:status
+castor datadog:smoke
 php --ri ddtrace | grep -E 'enabled_cli|agent_url|service|env|append_trace_ids'
 ```
 

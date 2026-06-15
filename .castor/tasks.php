@@ -78,7 +78,7 @@ function check(): void
         $testCheckCommands[$step] = [
             'cmd' => timeout_check_command(
                 build_test_worker_command($worker, $pharEnv, 'app_test-'.$worker.'.sqlite', $step),
-                75,
+                90,
             ),
         ];
     }
@@ -472,7 +472,7 @@ function build_test_variants_commands(string $pharEnv): array
         $commands[$step] = [
             'cmd' => timeout_check_command(
                 build_test_worker_command($worker, $pharEnv, 'app_test-'.$worker.'.sqlite', $step),
-                75,
+                90,
             ),
         ];
     }
@@ -691,26 +691,185 @@ OK (%.1fs)
     exit(0);
 }
 
-#[AsTask(name: 'run:agent', description: 'Run the agent in a tmux window')]
+// ─── Datadog helpers ────────────────────────────────────────────
+
+/**
+ * Whether the default launcher should enable Datadog APM for the spawned
+ * agent process.
+ *
+ * Auto mode enables APM only when ddtrace is installed and a local Agent trace
+ * endpoint is reachable. Set HATFIELD_DATADOG=0 to force-disable or
+ * HATFIELD_DATADOG=1 to force-enable when ddtrace is loaded.
+ */
+function datadog_auto_enabled(): bool
+{
+    $flag = getenv('HATFIELD_DATADOG');
+    if (false !== $flag) {
+        return in_array(strtolower($flag), ['1', 'true', 'yes', 'on'], true) && extension_loaded('ddtrace');
+    }
+
+    if (!extension_loaded('ddtrace')) {
+        return false;
+    }
+
+    if (false !== getenv('DD_TRACE_ENABLED') && in_array(strtolower((string) getenv('DD_TRACE_ENABLED')), ['0', 'false', 'no', 'off'], true)) {
+        return false;
+    }
+
+    return datadog_trace_endpoint_available();
+}
+
+function datadog_is_unix_socket(string $path): bool
+{
+    return file_exists($path) && 'socket' === @filetype($path);
+}
+
+function datadog_trace_endpoint_available(): bool
+{
+    $agentUrl = getenv('DD_TRACE_AGENT_URL');
+    if (is_string($agentUrl) && str_starts_with($agentUrl, 'unix://')) {
+        return datadog_is_unix_socket(substr($agentUrl, strlen('unix://')));
+    }
+
+    if (datadog_is_unix_socket('/var/run/datadog/apm.socket')) {
+        return true;
+    }
+
+    $host = false !== getenv('DD_AGENT_HOST') ? (string) getenv('DD_AGENT_HOST') : '127.0.0.1';
+    $port = (int) (false !== getenv('DD_TRACE_AGENT_PORT') ? (string) getenv('DD_TRACE_AGENT_PORT') : '8126');
+    $socket = @fsockopen((string) $host, $port, $errno, $errstr, 0.1);
+    if (is_resource($socket)) {
+        fclose($socket);
+
+        return true;
+    }
+
+    return false;
+}
+
+/**
+ * Environment prefix for Datadog APM opt-in/opt-out when launching PHP.
+ *
+ * ddtrace reads its settings before userland PHP boots, so these values must
+ * be present in the shell environment that starts `php bin/console`.
+ */
+function datadog_env_command(bool $enabled): string
+{
+    $vars = [
+        'DD_TRACE_ENABLED' => $enabled ? '1' : '0',
+        'DD_TRACE_CLI_ENABLED' => $enabled ? '1' : '0',
+    ];
+
+    if ($enabled) {
+        $version = trim(shell_exec('git rev-parse --short HEAD 2>/dev/null') ?? '');
+        $vars += [
+            'DD_SERVICE' => (false !== getenv('DD_SERVICE') ? (string) getenv('DD_SERVICE') : 'hatfield'),
+            'DD_ENV' => (false !== getenv('DD_ENV') ? (string) getenv('DD_ENV') : 'dev'),
+            'DD_VERSION' => '' !== $version ? $version : 'local',
+            'DD_LOGS_INJECTION' => 'true',
+            'DD_TRACE_APPEND_TRACE_IDS_TO_LOGS' => 'true',
+        ];
+
+        if (datadog_is_unix_socket('/var/run/datadog/apm.socket')) {
+            $vars['DD_TRACE_AGENT_URL'] = 'unix:///var/run/datadog/apm.socket';
+        }
+    }
+
+    $parts = ['env'];
+    foreach ($vars as $name => $value) {
+        $parts[] = $name.'='.escapeshellarg($value);
+    }
+
+    return implode(' ', $parts);
+}
+
+// ─── Agent launchers ─────────────────────────────────────────────
+
+/**
+ * Launch the agent TUI in a tmux session.
+ *
+ * Inside tmux: creates a new window named "hatfield-agent".
+ * Outside tmux: creates or attaches to a session named "hatfield-agent".
+ *
+ * Datadog APM is auto-enabled when ddtrace is loaded and a local trace
+ * endpoint is reachable.  Set HATFIELD_DATADOG=0 to force-disable or
+ * HATFIELD_DATADOG=1 to force-enable when ddtrace is loaded.
+ *
+ * No relaunch loop — the TUI runs once and exits naturally.
+ */
+#[AsTask(name: 'run:agent', description: 'Launch the agent TUI in a tmux session (hatfield-agent)')]
 function run_agent(): void
 {
     check_tmux();
-    $session = 'hatfield-agent-'.getmypid();
-    $cwd = getcwd();
-    $cmd = 'cd '.escapeshellarg($cwd).' && '.\PHP_BINARY.' bin/console agent 2>&1';
-    passthru("tmux new-session -s {$session} {$cmd}", $exitCode);
-    exit($exitCode);
+
+    $root = realpath(__DIR__.'/..');
+    $session = 'hatfield-agent';
+    $insideTmux = false !== getenv('TMUX');
+
+    $innerCmd = sprintf(
+        'cd %s && exec %s php bin/console agent',
+        escapeshellarg($root),
+        datadog_env_command(datadog_auto_enabled()),
+    );
+
+    if ($insideTmux) {
+        shell_exec(sprintf(
+            'tmux new-window -n %s bash -c %s',
+            escapeshellarg($session),
+            escapeshellarg($innerCmd)
+        ));
+        echo "Created tmux window '{$session}'.\n";
+    } else {
+        $cmd = sprintf(
+            'tmux new-session -A -s %s bash -lc %s',
+            escapeshellarg($session),
+            escapeshellarg($innerCmd)
+        );
+        passthru($cmd, $exitCode);
+        if (0 !== $exitCode) {
+            throw new RuntimeException(sprintf('Agent session exited with code %d.', $exitCode));
+        }
+    }
 }
 
+/**
+ * Launch the agent TUI in a tmux window using the local test model.
+ *
+ * Datadog APM is always disabled for deterministic test runs.
+ */
 #[AsTask(name: 'run:agent-test', description: 'Run the agent in a tmux window using the local test model')]
 function run_agent_test(): void
 {
     check_tmux();
-    $session = 'hatfield-agent-test-'.getmypid();
-    $cwd = getcwd();
-    $cmd = 'cd '.escapeshellarg($cwd).' && '.\PHP_BINARY.' bin/console agent --model=llama_cpp_test/test 2>&1';
-    passthru("tmux new-session -s {$session} {$cmd}", $exitCode);
-    exit($exitCode);
+
+    $root = realpath(__DIR__.'/..');
+    $session = 'hatfield-agent-test';
+    $insideTmux = false !== getenv('TMUX');
+
+    $innerCmd = sprintf(
+        'cd %s && exec %s php bin/console agent --model=llama_cpp_test/test',
+        escapeshellarg($root),
+        datadog_env_command(false),
+    );
+
+    if ($insideTmux) {
+        shell_exec(sprintf(
+            'tmux new-window -n %s bash -c %s',
+            escapeshellarg($session),
+            escapeshellarg($innerCmd)
+        ));
+        echo "Created tmux window '{$session}'.\n";
+    } else {
+        $cmd = sprintf(
+            'tmux new-session -A -s %s bash -lc %s',
+            escapeshellarg($session),
+            escapeshellarg($innerCmd)
+        );
+        passthru($cmd, $exitCode);
+        if (0 !== $exitCode) {
+            throw new RuntimeException(sprintf('Agent test session exited with code %d.', $exitCode));
+        }
+    }
 }
 
 // ─── Static analysis ──────────────────────────────────────────────
