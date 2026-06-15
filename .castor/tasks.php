@@ -1383,6 +1383,12 @@ function _reap_process_group(?int $pgid): void
         return;
     }
 
+    // Collect the full descendant tree BEFORE sending any signals.
+    // Once intermediate parents exit (from kill(-PGID)), grandchild
+    // pids are reparented to init/systemd and pgrep -P can no longer
+    // find them.  Snapshot first, then kill everything we captured.
+    $descendantPids = _collect_descendant_pids($pgid);
+
     // Best-effort SIGTERM to the process group.
     // kill(-pgid) targets all processes with that PGID even after
     // the original leader (setsid) has exited and children have been
@@ -1391,9 +1397,36 @@ function _reap_process_group(?int $pgid): void
     usleep(500_000); // 0.5 s grace
     @posix_kill(-$pgid, \SIGKILL);
 
-    // Belt: also walk descendants of the direct proc_open child as a
-    // safety net for systems where setsid or PG kill behave differently.
-    _kill_descendant_tree($pgid, \SIGKILL);
+    // Kill every captured descendant individually so grandchildren in
+    // separate process groups (e.g. messenger:consume workers spawned
+    // by the controller with their own PGID) are also reaped.
+    foreach ($descendantPids as $pid) {
+        @posix_kill($pid, \SIGKILL);
+    }
+}
+
+/**
+ * Recursively collect ALL descendant PIDs of a process.
+ *
+ * Walks pgrep -P depth-first to build a complete snapshot of the
+ * process tree before intermediate parents exit.  The result includes
+ * grandchildren in separate process groups (setsid, new PGID).
+ *
+ * @return list<int>
+ */
+function _collect_descendant_pids(int $pid): array
+{
+    if ($pid <= 1) {
+        return [];
+    }
+    $children = _find_child_pids($pid);
+    $pids = [];
+    foreach ($children as $child) {
+        $pids[] = $child;
+        $pids = array_merge($pids, _collect_descendant_pids($child));
+    }
+
+    return $pids;
 }
 
 /**
@@ -1651,8 +1684,62 @@ function test_timeout_hardstop(string $cmdOverride = ''): void
         }
     }
 
+    // ── Test D: Separate-PGID grandchild cleanup ────────────
+    echo "\n── Test D: Normal-exit cleanup kills grandchild in separate PGID ──\n\n";
+
+    // Spawn a command that creates a grandchild in its own process
+    // group via setsid (simulating messenger:consume workers that
+    // escape kill(-PGID)).  The command exits normally; the step
+    // cleanup must still kill the setsid'd grandchild.
+    $separatePgidCmd = "bash -lc 'setsid sleep 120 & echo \"pgid-exit\"; exit 0'";
+
+    echo "Command under test:\n  {$separatePgidCmd}\n\n";
+
+    $commandsD = [
+        'pgid-leak-test' => [
+            'cmd' => $separatePgidCmd,
+            'log' => report_path('check-test-pgid-leak.log'),
+        ],
+    ];
+
+    $preCountD = count_alive_descendants();
+
+    $startD = hrtime(true);
+    $resultsD = run_commands_parallel($commandsD, []);
+    $durationD = (hrtime(true) - $startD) / 1e9;
+
+    $resultD = $resultsD['pgid-leak-test'] ?? ['exitCode' => -1, 'output' => 'no result', 'duration' => 0];
+
+    echo "Result:\n";
+    echo "  exitCode: {$resultD['exitCode']}\n";
+    echo sprintf("  duration: %.2fs\n", $resultD['duration']);
+    echo "  output: {$resultD['output']}\n\n";
+
+    if (0 !== $resultD['exitCode']) {
+        echo "FAIL: expected exit code 0 (normal), got {$resultD['exitCode']}\n";
+        $ok = false;
+    } else {
+        echo "PASS: exit code 0 (normal)\n";
+    }
+
+    if ($durationD > 5.0) {
+        echo "FAIL: runner took {$durationD}s > 5s\n";
+        $ok = false;
+    } else {
+        echo "PASS: runner returned in {$durationD}s (< 5s)\n";
+    }
+
+    usleep(1_000_000); // 1s settle
+    $postCountD = count_alive_descendants();
+    if ($postCountD > $preCountD) {
+        echo "FAIL: {$postCountD} orphan processes remain after separate-PGID cleanup (pre={$preCountD})\n";
+        $ok = false;
+    } else {
+        echo "PASS: no orphans after separate-PGID cleanup (pre={$preCountD}, post={$postCountD})\n";
+    }
+
     if ($ok) {
-        echo "\n✅ All timeout + normal-exit + startup-cleanup assertions passed.\n";
+        echo "\n✅ All timeout + normal-exit + startup-cleanup + separate-PGID assertions passed.\n";
     } else {
         echo "\n❌ Some assertions FAILED.\n";
         exit(1);
