@@ -222,12 +222,33 @@ final class PromptEditorTest extends TestCase
         $this->assertSame('via prompt editor', $this->editor->getWidget()->getText());
     }
 
+    // ─── typeText ────────────────────────────────────────────────
+
+    #[Test]
+    public function typeTextSingleLine(): void
+    {
+        $this->editor->typeText('/help');
+
+        $this->assertSame('/help', $this->editor->getText());
+    }
+
+    #[Test]
+    public function typeTextMultiline(): void
+    {
+        $this->editor->typeText("Hello\n\n@");
+
+        $this->assertSame("Hello\n\n@", $this->editor->getText());
+    }
+
     // ─── acceptCompletion ────────────────────────────────────────
 
     #[Test]
     public function acceptCompletionReplacesSuffix(): void
     {
-        $this->editor->setText('/he');
+        // Use typeText so the cursor is at end — this matches the
+        // real TUI flow where the user types text character-by-character
+        // before triggering completion.
+        $this->editor->typeText('/he');
 
         $suggestion = new \Ineersa\Tui\Completion\CompletionSuggestion(
             display: '/help',
@@ -242,10 +263,35 @@ final class PromptEditorTest extends TestCase
     }
 
     #[Test]
+    public function typingAfterSlashAcceptanceGoesAfterCommand(): void
+    {
+        // Accept a slash completion, then type additional arguments.
+        // The cursor must land after the inserted command so that
+        // further typing appends naturally.
+        $this->editor->typeText('/he');
+
+        $suggestion = new \Ineersa\Tui\Completion\CompletionSuggestion(
+            display: '/help',
+            insertText: '/help ',
+            description: '',
+            replacementStart: 0,
+            replacementLength: 3, // /he
+        );
+        $this->editor->acceptCompletion($suggestion);
+
+        // Simulate the user typing more text after acceptance.
+        $this->editor->getWidget()->handleInput('f');
+        $this->editor->getWidget()->handleInput('o');
+        $this->editor->getWidget()->handleInput('o');
+
+        $this->assertSame('/help foo', $this->editor->getText());
+    }
+
+    #[Test]
     public function acceptCompletionPreservesMultilinePrefix(): void
     {
         // Reproduces GitHub issue #123: multiline @ completion clears editor.
-        $this->editor->setText("Hello\n\n@");
+        $this->editor->typeText("Hello\n\n@");
 
         $suggestion = new \Ineersa\Tui\Completion\CompletionSuggestion(
             display: '@src/file',
@@ -265,7 +311,7 @@ final class PromptEditorTest extends TestCase
     public function acceptCompletionHandlesEmptySuffix(): void
     {
         // replacementLength=0 means nothing to delete, only insert.
-        $this->editor->setText('/rename ');
+        $this->editor->typeText('/rename ');
 
         $suggestion = new \Ineersa\Tui\Completion\CompletionSuggestion(
             display: '#42',
@@ -283,7 +329,9 @@ final class PromptEditorTest extends TestCase
     public function acceptCompletionMultiByteSuffix(): void
     {
         // Suffix containing a multi-byte emoji.
-        $this->editor->setText('/he😀');
+        // Must use typeText so cursor is at end and the grapheme-aware
+        // Backspace correctly deletes the emoji (4 bytes, 1 grapheme).
+        $this->editor->typeText('/he😀');
 
         $suggestion = new \Ineersa\Tui\Completion\CompletionSuggestion(
             display: '/help',
@@ -301,7 +349,8 @@ final class PromptEditorTest extends TestCase
     public function acceptCompletionCarriesTrailingTextForNonSuffix(): void
     {
         // Non-suffix replacement: carry over text after replaced range.
-        $this->editor->setText('abc_def');
+        // Must use typeText so cursor is at end.
+        $this->editor->typeText('abc_def');
 
         $suggestion = new \Ineersa\Tui\Completion\CompletionSuggestion(
             display: 'x',

@@ -58,7 +58,7 @@ final class CompletionListenerTest extends TestCase
     #[Test]
     public function tabOpensSlashCompletionWhenSlashContextDetected(): void
     {
-        $this->editor->setText('/he');
+        $this->editor->typeText('/he');
 
         // Tab dispatches InputEvent; listener opens completion and stops propagation
         $this->tui->handleInput("\t");
@@ -70,7 +70,7 @@ final class CompletionListenerTest extends TestCase
     #[Test]
     public function tabDoesNothingWhenNoSlashContext(): void
     {
-        $this->editor->setText('hello');
+        $this->editor->typeText('hello');
 
         $this->tui->handleInput("\t");
 
@@ -83,7 +83,7 @@ final class CompletionListenerTest extends TestCase
     #[Test]
     public function tabAcceptsFirstSuggestionWhenMenuOpen(): void
     {
-        $this->editor->setText('/he');
+        $this->editor->typeText('/he');
 
         // First Tab: open menu
         $this->tui->handleInput("\t");
@@ -97,7 +97,7 @@ final class CompletionListenerTest extends TestCase
     #[Test]
     public function tabAcceptsCorrectSuggestionAfterNavigation(): void
     {
-        $this->editor->setText('/');
+        $this->editor->typeText('/');
 
         // Open menu
         $this->tui->handleInput("\t");
@@ -116,7 +116,7 @@ final class CompletionListenerTest extends TestCase
     #[Test]
     public function tabAcceptsAfterUpNavigation(): void
     {
-        $this->editor->setText('/');
+        $this->editor->typeText('/');
 
         // Open menu (index 0: /clear)
         $this->tui->handleInput("\t");
@@ -137,7 +137,7 @@ final class CompletionListenerTest extends TestCase
     {
         // Per MVP: slash completion only triggers when the full
         // text starts with "/", not when "/" appears after a newline.
-        $this->editor->setText("previous line\n/");
+        $this->editor->typeText("previous line\n/");
 
         // Tab does not open the completion menu.
         $this->tui->handleInput("\t");
@@ -155,7 +155,7 @@ final class CompletionListenerTest extends TestCase
         // Text starting with "/" then a newline then "/ex" — the
         // full text starts with "/" but the prefix after the first
         // "/" is "help\n/ex", which matches no command.
-        $this->editor->setText("/help\n/ex");
+        $this->editor->typeText("/help\n/ex");
 
         $this->tui->handleInput("\t");
 
@@ -168,7 +168,7 @@ final class CompletionListenerTest extends TestCase
     #[Test]
     public function escapeClosesCompletionWithoutClearingEditor(): void
     {
-        $this->editor->setText('/he');
+        $this->editor->typeText('/he');
 
         // Open menu
         $this->tui->handleInput("\t");
@@ -183,7 +183,7 @@ final class CompletionListenerTest extends TestCase
     #[Test]
     public function escapeWithNoCompletionOpenPassesThrough(): void
     {
-        $this->editor->setText('/he');
+        $this->editor->typeText('/he');
 
         // No Tab first — Escape has nothing to close
         $this->tui->handleInput("\x1b");
@@ -197,7 +197,7 @@ final class CompletionListenerTest extends TestCase
     #[Test]
     public function upAndDownNavigateSuggestionsWhenMenuOpen(): void
     {
-        $this->editor->setText('/');
+        $this->editor->typeText('/');
 
         // Open menu
         $this->tui->handleInput("\t");
@@ -215,7 +215,7 @@ final class CompletionListenerTest extends TestCase
     #[Test]
     public function alternateUpSequenceWorks(): void
     {
-        $this->editor->setText('/');
+        $this->editor->typeText('/');
 
         // Open menu
         $this->tui->handleInput("\t");
@@ -232,7 +232,7 @@ final class CompletionListenerTest extends TestCase
     #[Test]
     public function alternateDownSequenceWorks(): void
     {
-        $this->editor->setText('/');
+        $this->editor->typeText('/');
 
         // Open menu
         $this->tui->handleInput("\t");
@@ -251,7 +251,7 @@ final class CompletionListenerTest extends TestCase
     #[Test]
     public function upPassesThroughWhenCompletionClosed(): void
     {
-        $this->editor->setText('/he');
+        $this->editor->typeText('/he');
 
         // No Tab — menu closed
         // Up should NOT be consumed by completion; it passes through to editor
@@ -264,7 +264,7 @@ final class CompletionListenerTest extends TestCase
     #[Test]
     public function downPassesThroughWhenCompletionClosed(): void
     {
-        $this->editor->setText('/he');
+        $this->editor->typeText('/he');
 
         $this->tui->handleInput("\x1b[B");
 
@@ -277,7 +277,7 @@ final class CompletionListenerTest extends TestCase
     #[Test]
     public function shiftTabIsNotConsumedByCompletion(): void
     {
-        $this->editor->setText('/');
+        $this->editor->typeText('/');
 
         // Open menu
         $this->tui->handleInput("\t");
@@ -285,7 +285,7 @@ final class CompletionListenerTest extends TestCase
         // Shift+Tab should pass through (not consumed by completion)
         // Close menu first to avoid complexity
         $this->tui->handleInput("\x1b"); // closes menu
-        $this->editor->setText('/');     // reset
+        $this->editor->typeText('/');     // reset
 
         // Shift+Tab without menu
         $this->tui->handleInput("\x1b[Z");
@@ -469,7 +469,7 @@ final class CompletionListenerTest extends TestCase
     public function aliasPrefixAcceptedInsertsCanonicalCommand(): void
     {
         // "/q" matches /exit alias "q"
-        $this->editor->setText('/q');
+        $this->editor->typeText('/q');
 
         // Open menu
         $this->tui->handleInput("\t");
@@ -495,7 +495,7 @@ final class CompletionListenerTest extends TestCase
             },
         );
 
-        $this->editor->setText('/he');
+        $this->editor->typeText('/he');
 
         // Tab: open menu
         $this->tui->handleInput("\t");
@@ -526,7 +526,7 @@ final class CompletionListenerTest extends TestCase
             },
         );
 
-        $this->editor->setText('/');
+        $this->editor->typeText('/');
 
         // Tab: open menu
         $this->tui->handleInput("\t");
@@ -548,7 +548,7 @@ final class CompletionListenerTest extends TestCase
         $this->tui->setFocus($this->screen->editorWidget());
 
         // No slash context — completion stays closed for Enter.
-        $this->editor->setText('hello');
+        $this->editor->typeText('hello');
 
         $submittedText = null;
         $this->screen->editorWidget()->onSubmit(
@@ -571,7 +571,7 @@ final class CompletionListenerTest extends TestCase
     {
         $this->tui->setFocus($this->screen->editorWidget());
 
-        $this->editor->setText('/');
+        $this->editor->typeText('/');
 
         // Navigate to /help (index 2 of built-ins: clear, exit, help)
         $this->tui->handleInput("\t");   // open
@@ -594,7 +594,7 @@ final class CompletionListenerTest extends TestCase
     {
         $this->tui->setFocus($this->screen->editorWidget());
 
-        $this->editor->setText('/ex');
+        $this->editor->typeText('/ex');
 
         // Tab: open (only /exit matches /ex)
         $this->tui->handleInput("\t");
@@ -674,7 +674,7 @@ final class CompletionListenerTest extends TestCase
         );
         $listener->register($isolatedContext);
 
-        $isolatedEditor->setText('/test');
+        $isolatedEditor->typeText('/test');
 
         // Tab opens completion, Tab accepts
         $isolatedTui->handleInput("\t");
@@ -689,7 +689,7 @@ final class CompletionListenerTest extends TestCase
     #[Test]
     public function ctrlCClearsCompletionOverlay(): void
     {
-        $this->editor->setText('/');
+        $this->editor->typeText('/');
 
         // Open menu
         $this->tui->handleInput("\t");
@@ -709,7 +709,7 @@ final class CompletionListenerTest extends TestCase
         $this->assertNull($exception, 'Ctrl+C must not throw when completion overlay closes.');
 
         // Re-open and accept to verify state machine is still healthy.
-        $this->editor->setText('/');
+        $this->editor->typeText('/');
         $this->tui->handleInput("\t");
         $this->tui->handleInput("\t");
         // First alphabetical suggestion is /clear
@@ -719,7 +719,7 @@ final class CompletionListenerTest extends TestCase
     #[Test]
     public function ctrlDClearsCompletionOverlay(): void
     {
-        $this->editor->setText('/');
+        $this->editor->typeText('/');
 
         // Open menu
         $this->tui->handleInput("\t");
@@ -737,7 +737,7 @@ final class CompletionListenerTest extends TestCase
         $this->assertNull($exception, 'Ctrl+D must not throw when completion overlay closes.');
 
         // Re-open and accept to verify state machine is still healthy.
-        $this->editor->setText('/');
+        $this->editor->typeText('/');
         $this->tui->handleInput("\t");
         $this->tui->handleInput("\t");
         // First alphabetical suggestion is /clear
@@ -747,7 +747,7 @@ final class CompletionListenerTest extends TestCase
     #[Test]
     public function ctrlCDoesNothingWhenCompletionClosed(): void
     {
-        $this->editor->setText('hello');
+        $this->editor->typeText('hello');
 
         // No menu open — Ctrl+C should not crash.
         // Without CtrlCInputInterceptor registered in this isolated
@@ -768,7 +768,7 @@ final class CompletionListenerTest extends TestCase
     #[Test]
     public function repeatedOpenCloseDoesNotThrowOrCorruptState(): void
     {
-        $this->editor->setText('/');
+        $this->editor->typeText('/');
 
         // Open
         $this->tui->handleInput("\t");
@@ -777,7 +777,7 @@ final class CompletionListenerTest extends TestCase
         $this->tui->handleInput("\x1b");
 
         // Open again (on different text)
-        $this->editor->setText('/he');
+        $this->editor->typeText('/he');
         $this->tui->handleInput("\t");
 
         // Accept: should still work and insert /help
@@ -787,7 +787,7 @@ final class CompletionListenerTest extends TestCase
 
         // Close should still work after acceptance
         // (no-op since already closed, but shouldn't throw)
-        $this->editor->setText('/');
+        $this->editor->typeText('/');
         $this->tui->handleInput("\t");
         $this->tui->handleInput("\x1b");
 
@@ -849,7 +849,7 @@ final class CompletionListenerTest extends TestCase
             $listener->register($context);
 
             // Tab on @ should open completion.
-            $isolatedEditor->setText('@');
+            $isolatedEditor->typeText('@');
             $isolatedTui->handleInput("\t");
 
             // Tab again should accept the first suggestion.
@@ -910,7 +910,7 @@ final class CompletionListenerTest extends TestCase
             $listener->register($context);
 
             // Typing @ should open completion live.
-            $isolatedEditor->setText('');
+            $isolatedEditor->typeText('');
             // handleInput("@") both inserts @ and triggers live completion.
             $isolatedTui->handleInput("@");
 
@@ -966,7 +966,7 @@ final class CompletionListenerTest extends TestCase
             );
             $listener->register($context);
 
-            $isolatedEditor->setText('@');
+            $isolatedEditor->typeText('@');
             // Open via Tab.
             $isolatedTui->handleInput("\t");
 
@@ -1029,7 +1029,7 @@ final class CompletionListenerTest extends TestCase
             $listener->register($context);
 
             // Set multiline editor text: "Hello", blank line, "@"
-            $isolatedEditor->setText("Hello\n\n@");
+            $isolatedEditor->typeText("Hello\n\n@");
 
             // First Tab: open completion menu
             $isolatedTui->handleInput("\t");

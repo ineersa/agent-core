@@ -276,13 +276,14 @@ final class CompletionListener implements TuiListenerRegistrar
     /**
      * Apply a completion suggestion to the editor.
      *
-     * Uses {@see PromptEditor::acceptCompletion()} which deletes the
-     * replacement suffix through the editor's normal Backspace path
-     * and inserts the suggestion through the editor's normal
-     * character-input path.  This preserves multi-line content,
-     * cursor state, and the editor's undo/line-structure invariants
-     * — unlike the previous full-text replaceText() approach which
-     * was only safe for single-line, cursor-at-start scenarios.
+     * Uses {@see PromptEditor::acceptCompletion()} which edits only
+     * the replacement suffix — it deletes the suffix one grapheme
+     * at a time through the editor's normal Backspace path and
+     * inserts the suggestion through the normal character-input
+     * path.  This keeps the editor's internal state (lines, cursor,
+     * undo/kill ring, viewport) intact, unlike the previous
+     * replaceText() approach which cleared and re-inserted the
+     * entire buffer.
      */
     private static function applySuggestion(
         PromptEditor $editor,

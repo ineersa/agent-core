@@ -76,73 +76,113 @@ final class PromptEditor
         return $this->widget->getText();
     }
 
+    /**
+     * Set editor text with cursor at (0,0).
+     *
+     * Prefer {@see typeText()} when the editor should behave as
+     * if the user typed the content — it places the cursor at the
+     * end of the text, which is the state assumed by completion
+     * providers (cursor-at-end).
+     */
     public function setText(string $text): void
     {
         $this->widget->setText($text);
     }
 
     /**
-     * Accept a completion suggestion by replacing the full editor
-     * text and placing the cursor at the end of the inserted text.
+     * Set editor text with the cursor at the end — the state
+     * assumed by completion providers (cursor-at-end).
      *
-     * Uses the same clear-and-reinsert pattern as
-     * {@see replaceText()} — {@see EditorWidget::setText('')} then
-     * {@see EditorWidget::handleInput()} — but wraps multi-line
-     * replacement text in bracketed paste markers so the editor's
-     * {@see EditorDocument::handlePaste()} preserves newline
-     * structure and places the cursor at the end of the last line.
+     * Uses {@see setText()} to set the content, then navigates
+     * to the end of the text using normal keyboard operations
+     * (DOWN for each line, then END).  No clearing, reinserting,
+     * or bracketed paste is involved.
+     */
+    public function typeText(string $text): void
+    {
+        $this->widget->setText($text);
+
+        // Navigate cursor to end of text.
+        $newlineCount = substr_count($text, "\n");
+        for ($i = 0; $i < $newlineCount; ++$i) {
+            $this->widget->handleInput("\x1b[B");
+        }
+        $this->widget->handleInput("\x1b[F");
+    }
+
+    /**
+     * Accept a completion suggestion using only normal editor
+     * editing operations ({@see EditorWidget::handleInput()}).
      *
-     * Single-line replacement text goes through the normal
-     * character-input path which advances the cursor past every
-     * typed character.
+     * Does NOT clear the editor, does NOT use {@see setText()},
+     * and does NOT use bracketed paste — this keeps the editor's
+     * internal state (lines, cursor, undo/kill ring, viewport)
+     * fully intact through the completion edit.
      *
-     * The replacement range MUST be a suffix ending at the editor
+     * How it works:
+     * 1. Identify the suffix from {@see CompletionSuggestion::$replacementStart}
+     *    to end-of-text — this is the text we must delete before
+     *    inserting the suggestion.
+     * 2. Delete that suffix one grapheme at a time by sending
+     *    {@see EditorWidget::handleInput("\x7f")} (Backspace),
+     *    matching the editor's grapheme-aware
+     *    {@see EditorDocument::deleteCharBackward()} path.
+     * 3. Insert the suggestion text via the normal
+     *    character-input path.
+     * 4. If the replacement range is not a suffix (carries trailing
+     *    text), re-insert that trailing text after the suggestion.
+     *
+     * The replacement range SHOULD be a suffix ending at the editor
      * cursor — this is always true for all current completion
      * providers (slash, @ file mention, session ID) which assume
-     * cursor-at-end.  If the range is not a suffix, trailing text
-     * is carried over.
+     * cursor-at-end.  Non-suffix ranges are handled correctly but
+     * are not expected from current providers.
+     *
+     * Because we delete via the editor's normal Backspace path,
+     * preceding multi-line content is preserved — fixing GitHub
+     * issue #123 where "Hello\n\n@" → Tab cleared the editor.
      */
     public function acceptCompletion(CompletionSuggestion $suggestion): void
     {
         $current = $this->widget->getText();
         $currentLen = \strlen($current);
 
-        // Build the new text: everything before the replacement range
-        // plus the inserted suggestion text.  Use Symfony UnicodeString
-        // for UTF-8 safe substring operations — replacement offsets are
-        // byte-level but we want grapheme-aware slicing.
-        $prefix = (new UnicodeString($current))
-            ->slice(0, $suggestion->replacementStart)
+        // Extract the suffix we need to delete: everything from
+        // replacementStart to the end of the current editor text.
+        // We use Symfony UnicodeString for UTF-8 safe substring
+        // operations — replacement offsets are byte-level.
+        $suffixToDelete = (new UnicodeString($current))
+            ->slice($suggestion->replacementStart)
             ->toString();
-        $newText = $prefix.$suggestion->insertText;
 
-        // For non-suffix ranges (should not happen with current
-        // providers), carry over any trailing text that was not
-        // part of the replaced range.
+        // Delete the suffix one grapheme at a time through the
+        // editor's normal Backspace path.  Symfony TUI's
+        // EditorDocument::deleteCharBackward() is grapheme-aware
+        // (uses grapheme_str_split), so one Backspace = one
+        // grapheme — matching our count exactly.
+        $graphemes = grapheme_str_split($suffixToDelete);
+        for ($i = 0, $n = \count($graphemes); $i < $n; ++$i) {
+            $this->widget->handleInput("\x7f");
+        }
+
+        // Build the text to insert: the suggestion plus any trailing
+        // content that was not part of the replaced range.
         $replacementEnd = $suggestion->replacementStart
             + $suggestion->replacementLength;
+        $insertText = $suggestion->insertText;
 
         if ($replacementEnd < $currentLen) {
             $trailing = (new UnicodeString($current))
                 ->slice($replacementEnd)
                 ->toString();
-            $newText .= $trailing;
+            $insertText .= $trailing;
         }
 
-        // Clear the editor; cursor lands at (0,0).
-        $this->widget->setText('');
-
-        if (str_contains($newText, "\n")) {
-            // Multi-line: wrap in bracketed paste so the editor's
-            // handlePaste() preserves newlines and places the cursor
-            // at the end of the last inserted line.
-            $this->widget->handleInput(
-                "\x1b[200~".$newText."\x1b[201~",
-            );
-        } else {
-            // Single-line: normal character-input path advances the
-            // cursor past every typed character.
-            $this->widget->handleInput($newText);
+        // Insert via the normal character-input path.  The cursor
+        // advances past every typed character, so the cursor lands
+        // after the inserted text — ready for further typing.
+        if ('' !== $insertText) {
+            $this->widget->handleInput($insertText);
         }
     }
 
