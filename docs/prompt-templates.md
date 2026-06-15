@@ -77,7 +77,7 @@ Focus on:
 
 | Field | Required | Behavior |
 |---|---|---|
-| `description` | No | Used in autocomplete and `/help`. If absent or empty, the first non-empty body line truncated to 60 characters is used as the description. Unknown frontmatter keys (including `argument-hint`) are **ignored** in the current version. |
+| `description` | No | Used in autocomplete and `/help`. If absent or empty, the first non-empty body line truncated to 60 characters with an ellipsis is used as the description. Unknown frontmatter keys (including `argument-hint`) are **ignored** in the current version. |
 | Body | Effectively yes | Text after the closing `---` delimiter. It is the template body that is expanded and sent to the model. An empty body is valid but rarely useful. |
 
 Frontmatter YAML parsing failures produce a diagnostic and the
@@ -132,9 +132,11 @@ interference:
 4. `$@`
 
 Substitution is **single-pass** — argument values containing
-`$1`, `$@`, or `${@:2}` remain literal after insertion. Templates
-that expand to text starting with `/other` are **not** expanded
-again.
+`$1` or `$@` remain literal after insertion. Avoid passing
+slice-like `${@:N}` text as an argument value because it can be
+re-interpreted by the subsequent slice-substitution pass.
+Templates that expand to text starting with `/other` are **not**
+expanded again.
 
 ### Edge behavior
 
@@ -154,7 +156,7 @@ quote character.
 
 ```
 /review "file name" simple   → args: ["file name", "simple"]
-/review 'it'\''s broken'     → args: ["it", "s broken"]
+/review "it's broken"        → args: ["it's broken"]
 ```
 
 ### Examples

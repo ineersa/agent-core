@@ -160,6 +160,10 @@ final class TuiAgentSmokeTest extends TestCase
             //
             // Exception: if the LLM returned an error block (✕), there
             // is no guaranteed usage projection — skip cost assertion.
+            // $capture is from the pre-settle response-block check above
+            // (waitForCaptureContains('◇') or '✕').  The block remains
+            // visible in history; we poll settled state separately so
+            // footer usage / working-status projection can catch up.
             $runCompletedSuccessfully = \str_contains($capture, '◇');
 
             // Wait for the working/processing status to disappear.
