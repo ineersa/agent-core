@@ -33,12 +33,12 @@ Known entrypoints:
 - Task handoff records process tree behavior, cleanup proof, and before/after live LLM usage in controller tests.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/maint-05d-controller-replay-e2e-process-ownership
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05d-controller-replay-e2e-process-ownership
 Fork run: es8l1fx2p88s
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/145
+PR Status: open
 Started: 2026-06-15T23:32:27.282Z
 Completed:
 
@@ -73,3 +73,11 @@ Completed:
 - Recorded fork run: es8l1fx2p88s
 - Validation: Fork guard passed: cwd/root `/home/ineersa/projects/agent-core-worktrees/maint-05d-controller-replay-e2e-process-ownership`, branch `task/maint-05d-controller-replay-e2e-process-ownership`.; Fork read mandatory docs: `.agents/skills/testing/SKILL.md`, `tests/AGENTS.md`, `.agents/skills/task-workflow/SKILL.md`, `.agents/skills/castor/SKILL.md`, and `docs/llm-replay.md`.; Fork validation: `php -l` on new PHP files passed.; Fork validation: `castor list` passed and shows `test:controller-replay` plus live opt-in `test:controller`.; Fork validation: `castor test:controller-replay` passed: 1 test, 14 assertions, 7.7s.; Fork validation: `castor test --filter=ControllerReplaySmokeTest` passed: 1 test, 14 assertions, 9.3s.; Fork validation: `castor test` passed: 2520 tests, 7359 assertions, 36.7s.; Fork validation: `castor deptrac` passed with 0 violations.; Fork validation: `castor phpstan` passed with 0 errors.; Fork validation: `castor cs-check` passed with 0 fixable files.; Skipped full `LLM_MODE=true castor check` per MAINT-05A-F policy/user instruction.; Live LLM smoke not run; llama.cpp unavailable and live smoke remains opt-in.
 - Summary: Implementation fork completed MAINT-05D. Added deterministic controller replay E2E and explicit process ownership/teardown. New replay HTTP seam is activated by `HATFIELD_LLM_REPLAY_FIXTURE_PATH`, converting MAINT-05C fixture deltas to OpenAI-compatible SSE so controller subprocesses exercise the real Symfony AI provider/parser path without live llama.cpp. Added `test:controller-replay` Castor command, replay controller test base, tool-call replay proof test/fixture, process ownership PID tracking/teardown diagnostics, and docs updates. Commit: `4f563397` (`MAINT-05D: Controller replay E2E and explicit process ownership`). Parent verified worktree is clean and diff against `origin/main` shows expected 10 files.
+
+## Task workflow update - 2026-06-15T23:50:04.587Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/maint-05d-controller-replay-e2e-process-ownership to origin.
+- branch 'task/maint-05d-controller-replay-e2e-process-ownership' set up to track 'origin/task/maint-05d-controller-replay-e2e-process-ownership'.
+- Created PR: https://github.com/ineersa/agent-core/pull/145
+- Validation: Pre-move inspection: task worktree clean on `task/maint-05d-controller-replay-e2e-process-ownership` at `4f563397`.; Parent diff inspection: `git -C /home/ineersa/projects/agent-core-worktrees/maint-05d-controller-replay-e2e-process-ownership diff --stat origin/main...HEAD` showed expected 10 files for controller replay/process ownership foundation.; Fork validation: `php -l` on new PHP files passed.; Fork validation: `castor list` passed and shows `test:controller-replay` plus live opt-in `test:controller`.; Fork validation: `castor test:controller-replay` passed: 1 test, 14 assertions, 7.7s.; Fork validation: `castor test --filter=ControllerReplaySmokeTest` passed: 1 test, 14 assertions, 9.3s.; Fork validation: `castor test` passed: 2520 tests, 7359 assertions, 36.7s.; Fork validation: `castor deptrac` passed with 0 violations.; Fork validation: `castor phpstan` passed with 0 errors.; Fork validation: `castor cs-check` passed with 0 fixable files.; Skipped reviewer subagent per user MAINT-05A-F policy.; Skipped full `LLM_MODE=true castor check` per MAINT-05A-F policy / MAINT-05G owns final full-gate validation.; Live LLM smoke not run; llama.cpp unavailable and live smoke remains opt-in.
+- Summary: Moved MAINT-05D to CODE-REVIEW. Branch contains implementation commit `4f563397` with deterministic controller replay E2E, replay HTTP seam, explicit process ownership/teardown, tool-call replay proof, `test:controller-replay` Castor command, and docs updates. Automated reviewer and full `castor check` were skipped per MAINT-05 stage policy/user instruction.
