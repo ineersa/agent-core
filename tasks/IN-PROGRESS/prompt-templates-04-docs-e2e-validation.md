@@ -23,7 +23,7 @@ This is intentionally last; docs can be drafted earlier, but final smoke/validat
 Status: IN-PROGRESS
 Branch: task/prompt-templates-04-docs-e2e-validation
 Worktree: /home/ineersa/projects/agent-core-worktrees/prompt-templates-04-docs-e2e-validation
-Fork run: a4we25kl1nqt
+Fork run: t5r3zxymllu0
 PR URL:
 PR Status:
 Started: 2026-06-15T00:19:50.699Z
@@ -50,3 +50,9 @@ Completed:
 - Verified docs/prompt-templates.md exists and prompt-template controller E2E exists.
 - Verified existing TmuxHarness prompt-template TUI E2E remains present with tui-e2e group.
 - Checked docs for forbidden positive claims around prompts.paths/prompts.enabled/-np/argument-hint/package/extension support; only found correct no -np shortcut wording.
+
+## Task workflow update - 2026-06-15T00:50:52.793Z
+- Recorded fork run: t5r3zxymllu0
+- Validation: Loaded testing skill and tests/AGENTS.md before test/process debugging.; Killed scoped stale PHAR messenger consumers via SIGTERM/SIGKILL; post-kill scan found zero remaining scoped PHAR messenger:consume workers.; Read latest PT-04 var/reports/check-test:tui-1.log: TuiAgentSmokeTest::testTypePromptAndVerifyTranscriptBlocks failed at footer cost assertion while UI still showed Working.
+- Summary: Urgent stabilization started after user reported recurring test failures and orphaned processes. Parent investigation found and killed 10 scoped orphaned PHAR messenger:consume workers with deleted CWDs: 5 from PT-04 controller E2E and 5 from backlog worktree. Latest PT-04 failure is TuiAgentSmokeTest::testTypePromptAndVerifyTranscriptBlocks asserting non-zero footer cost while the capture still showed `◐ Working...`, i.e. a test race before runtime usage/cost projection settled. Process analysis showed Castor step subprocess uses setsid, but GNU timeout/controller children can run in a different PGID under the same SID; existing cleanup that kills only the original PGID can miss those workers. Launched fork t5r3zxymllu0 to fix Castor session-wide per-step cleanup and harden the TUI smoke cost assertion wait, then validate and commit locally.
+- Fork t5r3zxymllu0 instructed to read testing docs, implement session-wide Castor cleanup (same SID, not only original PGID), add/extend timeout-hardstop smoke proof, fix TuiAgentSmokeTest race by waiting for settled state before cost assertion, run Castor validation, scan for stale workers, and commit locally without push/task move.
