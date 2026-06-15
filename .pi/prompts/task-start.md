@@ -51,5 +51,5 @@ If you catch yourself about to open an editor, write a file, or run a code chang
    - Your responsibility ends with implementation and recording the fork result.
    - Do NOT run `castor check`, `move_task(to="CODE-REVIEW")`, `gh pr create`, `git push`, or any review/gate step.
    - Do NOT run the reviewer subagent.
-   - PR preparation, Castor quality gate, review, and push are handled by the `task-to-pr` prompt — not this one.
+   - PR preparation, review, and push are handled by the `task-to-pr` prompt — not this one.
    - Inform the user the implementation is done and they should run `task-to-pr` when ready.

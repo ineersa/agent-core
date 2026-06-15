@@ -63,10 +63,9 @@ Read-only planning. No status changes, no file edits, no forks.
 3. Run focused local validation on worktree:
    - `castor test`, `castor deptrac`, `castor phpstan`, `castor cs-check`.
    - For TUI tasks: also run `castor test:tui` as part of local validation.
-   - Do NOT run `LLM_MODE=true castor check` — `move_task(to="CODE-REVIEW")` runs the full gate automatically.
+   - The orchestrator/user is responsible for focused validation before moving to CODE-REVIEW. `move_task(to="CODE-REVIEW")` does not auto-run a quality gate — it only verifies the worktree is clean, pushes the branch, and creates the PR.
 4. Record reviewer decision, commit sha, validation results via `update_task`.
-5. `move_task(to="CODE-REVIEW")` — runs Castor quality gate, pushes branch, creates PR.
-   - If gate fails → task stays IN-PROGRESS. Fork fixes, retry.
+5. `move_task(to="CODE-REVIEW")` — verifies worktree is clean, pushes branch, creates PR.
 
 ### task-review-iterate: Address PR feedback (CODE-REVIEW → IN-PROGRESS → CODE-REVIEW)
 
@@ -75,7 +74,7 @@ Read-only planning. No status changes, no file edits, no forks.
 3. Prepare exact fork instructions covering each actionable comment.
 4. Fork fixes on worktree. Verify output, run focused Castor validation.
 5. Re-review with reviewer subagent. If REQUEST CHANGES → repeat from step 3.
-6. When APPROVED → `move_task(to="CODE-REVIEW")` (reruns full Castor gate before push).
+6. When APPROVED → `move_task(to="CODE-REVIEW")` (pushes branch, creates/updates PR).
 7. Record decisions, commit sha, reviewer result via `update_task`.
 
 ### task-done: Merge approved PR (CODE-REVIEW → DONE)
@@ -95,7 +94,7 @@ Read-only planning. No status changes, no file edits, no forks.
 - Tests must exercise the real TUI interaction flow, not just mocked services, DTO assembly, or service-only unit tests.
 - Tests must use the project TUI E2E infrastructure (`TmuxHarness`, `#[Group('tui-e2e')]`), the real test LLM endpoint (`llama_cpp_test/test` on port 9052), and isolated `var/tmp/test-{uuid}` directories.
 - The following are NOT acceptable substitutes: custom PHP smoke scripts, mocked `AgentSessionClient` passing through a mock runtime, checking only picker visibility or footer text, or manual-run reports from forks.
-- For the task workflow: do **not** move a TUI task to CODE-REVIEW or DONE unless a real TmuxHarness E2E proof exists and passes `castor test:tui` as well as `LLM_MODE=true castor check`. If prerequisites (tmux, llama.cpp on port 9052) are unavailable, or no such test has been written, the task MUST stay IN-PROGRESS with that blocker recorded.
+- For the task workflow: do **not** move a TUI task to CODE-REVIEW or DONE unless a real TmuxHarness E2E proof exists and passes `castor test:tui`. The orchestrator/user must run `LLM_MODE=true castor check` on the integration checkout after DONE merge (or run focused TUI E2E validation before CODE-REVIEW move). If prerequisites (tmux, llama.cpp on port 9052) are unavailable, or no such test has been written, the task MUST stay IN-PROGRESS with that blocker recorded.
 - Fork instructions for TUI tasks must always require adding or updating the real E2E test for each user-visible feature path touched by the implementation.
 - Reviewers reviewing TUI work must explicitly check for the presence and validity of the TmuxHarness E2E proof and reject work that lacks it or substitutes mocks.
 

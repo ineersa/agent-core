@@ -59,7 +59,7 @@ If you catch yourself about to open an editor, write a file, or run a code chang
    - Run the reviewer subagent again on the worktree at the new HEAD.
    - **For TUI tasks: instruct the reviewer to verify a real TmuxHarness + test LLM E2E proof exists and covers the user-visible feature path.** Reject the iteration if it lacks this proof or substitutes mocks.
    - If REQUEST CHANGES again, repeat from step 4 with the new feedback.
-   - If APPROVED, move the task back to CODE-REVIEW with `move_task`. This reruns the full Castor gate before pushing.
+   - If APPROVED, move the task back to CODE-REVIEW with `move_task`. This pushes the branch and creates/updates the PR.
 
 8. **Update task**
    - Use `update_task` to record decisions, commit sha, reviewer result, and validation.

@@ -13,7 +13,7 @@ You are an **orchestrator**, not an implementor. Your job is to dispatch work to
 
 - **Reviewer subagent** — for code review of the worktree changes.
 - **Researcher subagents** — for web searches, documentation lookups, changelog checks.
-- **Fork (tool)** — for ALL implementation fixes: editing files, fixing review blockers, resolving Castor gate failures. You MUST use a fork for any file modification. Never edit files directly.
+- **Fork (tool)** — for ALL implementation fixes: editing files and fixing review blockers. You MUST use a fork for any file modification. Never edit files directly.
 - **Main agent (you)** — reads diffs, launches reviewers, analyzes feedback, prepares fork instructions, records results, moves task state.
 
 If you catch yourself about to open an editor, write a file, or run a code change — stop and launch a fork instead.
@@ -37,8 +37,7 @@ If you catch yourself about to open an editor, write a file, or run a code chang
      `castor test`, `castor deptrac`, `castor phpstan`, `castor cs-check`.
    - **For TUI tasks: also run `castor test:tui` as part of local validation.** The TUI E2E proof test must pass before moving to CODE-REVIEW.
    - Optionally run `castor test --filter=...` for targeted coverage.
-   - Do NOT run `LLM_MODE=true castor check` here — `move_task(to="CODE-REVIEW")`
-     runs the full Castor quality gate automatically.
+   - `move_task(to="CODE-REVIEW")` verifies the worktree is clean, pushes the branch, and creates the PR. It does not auto-run a quality gate. The orchestrator/user is responsible for focused validation before moving.
    - Report exact validation results.
 
 4. **Update task metadata**
@@ -46,10 +45,5 @@ If you catch yourself about to open an editor, write a file, or run a code chang
    - Append a work log entry summarizing the fork commits and reviewer outcome.
 
 5. **Move to CODE-REVIEW**
-   - Call `move_task` with the task slug from `$ARGUMENTS` and `to="CODE-REVIEW"`. This runs the
-     Castor quality gate (`LLM_MODE=true castor check`) on the task branch at its
-     current HEAD before pushing and creating or updating the PR.
+   - Call `move_task` with the task slug from `$ARGUMENTS` and `to="CODE-REVIEW"`. This verifies the worktree is clean, pushes the branch, and creates or updates the PR.
    - Record the PR URL returned in the notes.
-   - If the Castor gate fails, the task remains IN-PROGRESS. Analyze the failure,
-     prepare exact implementation details, and pass them to a fork to fix it.
-     Retry only after the full gate can pass. There is no bypass.

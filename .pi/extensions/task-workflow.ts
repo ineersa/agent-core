@@ -7,15 +7,9 @@ import { Type } from "typebox";
 import { existsSync } from "node:fs";
 import { cp, mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
-import { createHash } from "node:crypto";
-
 const TASK_ROOT = "tasks";
 const STATUSES = ["TODO", "IN-PROGRESS", "CODE-REVIEW", "DONE"] as const;
 type TaskStatus = (typeof STATUSES)[number];
-
-const CASTOR_CHECK_TIMEOUT_DEFAULT = 240;
-const CASTOR_CHECK_TIMEOUT_MIN = 60;
-const CASTOR_CHECK_TIMEOUT_MAX = 900;
 
 type ExecResult = {
 	stdout: string;
@@ -63,7 +57,6 @@ const MoveTaskParams = Type.Object({
 	prBody: Type.Optional(Type.String({ description: "Body for GitHub PR when moving to CODE-REVIEW." })),
 	prBaseBranch: Type.Optional(Type.String({ description: "Base branch for PR. Defaults to repository default branch." })),
 	pushOnly: Type.Optional(Type.Boolean({ description: "Push branch but skip PR creation. Default false." })),
-	castorCheckTimeoutSeconds: Type.Optional(Type.Number({ description: "Timeout in seconds for the Castor quality gate (full castor check soft timeout). The OS-level `timeout` command sends SIGTERM after this duration, with a 15s SIGKILL grace period (--kill-after). Min " + CASTOR_CHECK_TIMEOUT_MIN + ", max " + CASTOR_CHECK_TIMEOUT_MAX + ", default " + CASTOR_CHECK_TIMEOUT_DEFAULT + "." })),
 });
 
 const UpdateTaskParams = Type.Object({
@@ -117,98 +110,6 @@ async function gitOk(pi: ExtensionAPI, repoRoot: string, args: string[], signal?
 		throw new Error(`git ${args.join(" ")} failed\n${result.stderr || result.stdout}`.trim());
 	}
 	return result;
-}
-
-// ── Quality gate helpers ─────────────────────────────────────────────────────
-
-async function currentHead(pi: ExtensionAPI, cwd: string, signal?: AbortSignal): Promise<string> {
-	const result = await gitOk(pi, cwd, ["rev-parse", "HEAD"], signal);
-	return result.stdout.trim();
-}
-
-function sha256Hex(data: string): string {
-	return createHash("sha256").update(data, "utf8").digest("hex");
-}
-
-function tailForError(output: string, maxLines: number = 30): string {
-	const lines = output.trimEnd().split("\n");
-	if (lines.length <= maxLines) return output;
-	return "... (truncated, showing last " + maxLines + " lines) ...\n" + lines.slice(-maxLines).join("\n");
-}
-
-function validateCastorTimeout(seconds: number): number {
-	if (typeof seconds !== "number" || isNaN(seconds) || !isFinite(seconds)) {
-		throw new Error(`castorCheckTimeoutSeconds must be a valid number, got ${JSON.stringify(seconds)}`);
-	}
-	if (seconds < CASTOR_CHECK_TIMEOUT_MIN) {
-		throw new Error(`castorCheckTimeoutSeconds must be at least ${CASTOR_CHECK_TIMEOUT_MIN}s, got ${seconds}s`);
-	}
-	if (seconds > CASTOR_CHECK_TIMEOUT_MAX) {
-		throw new Error(`castorCheckTimeoutSeconds must be at most ${CASTOR_CHECK_TIMEOUT_MAX}s, got ${seconds}s`);
-	}
-	return Math.floor(seconds);
-}
-
-/*
- * Run the Castor quality gate in the given directory.
- *
- * Timeout semantics:
- *   timeout --kill-after=15s ${timeout}s env LLM_MODE=true castor check
- *   - Soft timeout: the `timeout` command sends SIGTERM after `timeout` seconds.
- *   - Kill escalation: SIGKILL follows after the `--kill-after` grace period (15s).
- *   - pi.exec timeout is set slightly above both (30s buffer) so OS timeout fires first.
- *   - Default timeout is 240s, which means the LLM suite has 240s to complete
- *     before the gate is killed.
- *
- * Returns { passed, output, code, label } where label is one of
- * "timed out", "aborted", "failed", or "passed".
- */
-async function runCastorCheckGate(
-	pi: ExtensionAPI,
-	gateDir: string,
-	timeoutSeconds: number,
-	signal?: AbortSignal,
-): Promise<{ passed: boolean; output: string; code: number; label: string }> {
-	const timeout = validateCastorTimeout(timeoutSeconds);
-	const killAfter = 15;
-	// pi.exec timeout = soft (timeout) + kill grace (killAfter) + 30s buffer
-	const execTimeoutMs = (timeout + killAfter + 30) * 1000;
-
-	// Check for required commands
-	for (const cmd of ["timeout", "castor"]) {
-		const which = await run(pi, "which", [cmd], gateDir, signal);
-		if (which.code !== 0) {
-			return {
-				passed: false,
-				output: `Required command not found: ${cmd}`,
-				code: 127,
-				label: "failed",
-			};
-		}
-	}
-
-	const result = await run(pi, "timeout", [`--kill-after=${killAfter}s`, `${timeout}s`, "env", "LLM_MODE=true", "castor", "check"], gateDir, signal, execTimeoutMs);
-
-	const isTimeout = result.code === 124 || result.code === 137;
-	const killed = result.killed ?? false;
-
-	let label: string;
-	if (isTimeout) {
-		label = "timed out";
-	} else if (killed) {
-		label = "aborted";
-	} else if (result.code !== 0) {
-		label = "failed";
-	} else {
-		label = "passed";
-	}
-
-	return {
-		passed: !killed && !isTimeout && result.code === 0,
-		output: result.stdout + "\n" + result.stderr,
-		code: result.code,
-		label,
-	};
 }
 
 // ── Task file commit helpers ─────────────────────────────────────────────────
@@ -710,7 +611,7 @@ This project uses a repo-local lightweight issue tracker under tasks/TODO, tasks
 - Use update_task to update task metadata or append work log entries without moving the task file.
 - Use move_task to change task status instead of moving task files manually.
 - When claiming a task, call move_task with to="IN-PROGRESS". This requires a clean integration checkout (commit/stash first). It creates a task/<slug> git branch and sibling worktree at ../<repo>-worktrees/<slug>, copies vendor/ and .vera/ into the worktree when they exist, then records metadata in the task file.
-- When implementation is complete and committed, the parent/orchestrator/user calls move_task with to="CODE-REVIEW". This runs the Castor quality gate (LLM_MODE=true castor check) at the task branch HEAD, then pushes the branch and creates a GitHub PR via the gh CLI. The gate status and commit-bound receipt are recorded in the task metadata. The PR URL is stored in the task metadata.
+- When implementation is complete and committed, the parent/orchestrator/user calls move_task with to="CODE-REVIEW". This verifies the worktree is clean, pushes the branch, and creates a GitHub PR via the gh CLI. The PR URL is stored in the task metadata. The orchestrator/user is responsible for running focused validation (castor test, castor deptrac, castor phpstan, castor cs-check, etc.) before moving — the move_task tool does not auto-run a quality gate.
 - After code review and PR approval, the parent/orchestrator/user calls move_task with to="DONE". It attempts a git merge back into the integration checkout and reports conflicts without moving the task to DONE if the merge fails. After a successful merge, it runs git pull to sync with remote changes from GitHub PR merges.
 - move_task with to="DONE" requires a clean integration checkout by default. If it reports stale AD entries from staged additions deleted in the worktree, retry with cleanupStaleIndexEntries=true; do not commit unrelated staged changes just to satisfy the task workflow.
 - IDE tools are scoped to the current checkout and may not index sibling worktrees. move_task copies .vera when available so semantic-search can work in the worktree, but prefer absolute-path read/edit/bash operations or open a separate pi session rooted at the worktree when IDE indexes are unavailable.
@@ -775,7 +676,7 @@ export default function (pi: ExtensionAPI) {
 		promptGuidelines: [
 			"Use move_task instead of manual mv/git worktree commands for tracked task workflow transitions.",
 			"Use move_task with to=\"IN-PROGRESS\" before launching a worker/fork for a tracked task.",
-			"Use move_task with to=\"CODE-REVIEW\" after the worktree branch is committed and ready for review; this pushes and creates a PR.",
+			"Use move_task with to=\"CODE-REVIEW\" after the worktree branch is committed and ready for review; this verifies clean worktree, pushes the branch and creates a PR. Run focused Castor validation (castor test, castor deptrac, castor phpstan, castor cs-check) yourself before moving.",
 			"Use move_task with to=\"DONE\" only after PR review is approved and the user/parent decides to merge; move_task reports merge conflicts and leaves the task in CODE-REVIEW on failure.",
 		],
 		parameters: MoveTaskParams,
@@ -822,7 +723,7 @@ export default function (pi: ExtensionAPI) {
 					const worktree = task.worktree;
 					if (!worktree || !existsSync(worktree)) {
 						throw new Error(
-							`Task worktree is missing or does not exist. Cannot run quality gate or push without a worktree.\n` +
+							`Task worktree is missing or does not exist. Cannot push without a worktree.\n` +
 							`Worktree: ${worktree || "(not set)"}\n` +
 							`Claim the task with move_task(to="IN-PROGRESS") to create a worktree first.`,
 						);
@@ -834,53 +735,12 @@ export default function (pi: ExtensionAPI) {
 						throw new Error(`Worktree has uncommitted changes; commit them before moving to CODE-REVIEW.\n${worktree}\n${wtStatus.stdout}`);
 					}
 
-					// Step 2: Castor quality gate
-					const castorTimeout = params.castorCheckTimeoutSeconds ?? CASTOR_CHECK_TIMEOUT_DEFAULT;
-					const preHead = await currentHead(pi, worktree, signal);
-
-					const gateResult = await runCastorCheckGate(pi, worktree, castorTimeout, signal);
-
-					if (!gateResult.passed) {
-						throw new Error(
-							`Castor quality gate ${gateResult.label} (exit code ${gateResult.code}). Task remains IN-PROGRESS.\n\n` +
-							tailForError(gateResult.output, 40),
-						);
-					}
-
-					// Verify no changes during gate execution
-					const postHead = await currentHead(pi, worktree, signal);
-					if (preHead !== postHead) {
-						throw new Error(
-							`Castor quality gate passed but HEAD changed during execution (${preHead.slice(0, 12)} → ${postHead.slice(0, 12)}).\n` +
-							`Aborting CODE-REVIEW transition. Commit before validating.`,
-						);
-					}
-
-					const postStatus = await gitOk(pi, worktree, ["status", "--porcelain"], signal);
-					if (postStatus.stdout.trim() !== "") {
-						throw new Error(
-							`Castor quality gate passed but worktree became dirty during execution.\n` +
-							`Aborting CODE-REVIEW transition.\n${worktree}\n${postStatus.stdout}`,
-						);
-					}
-
-					// Record commit-bound receipt
-					const outputHash = sha256Hex(gateResult.output);
-					const completedAt = new Date().toISOString();
-					text = updateField(text, "Castor Check Status", "passed");
-					text = updateField(text, "Castor Check Commit", preHead);
-					text = updateField(text, "Castor Check Command", "LLM_MODE=true castor check");
-					text = updateField(text, "Castor Check Timeout", `${castorTimeout}s`);
-					text = updateField(text, "Castor Check Completed", completedAt);
-					text = updateField(text, "Castor Check Output SHA256", outputHash);
-					notes.push(`Castor quality gate passed (${castorTimeout}s timeout). Commit: ${preHead.slice(0, 12)}.`);
-
-					// Step 3: push branch
+					// Step 2: push branch
 					const pushResult = await pushTaskBranch(pi, root, branch, signal);
 					notes.push(`Pushed ${branch} to origin.`);
 					notes.push(pushResult.trim());
 
-					// Step 4: create/update PR (unless pushOnly)
+					// Step 3: create/update PR (unless pushOnly)
 					if (!params.pushOnly) {
 						const ghStatus = await ghAvailable(pi, root, signal);
 						if (!ghStatus.available) {
