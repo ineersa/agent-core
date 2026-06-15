@@ -60,14 +60,14 @@ If PHP classes/namespaces make this safer than function files, introduce them un
 - Task handoff records the new Castor file map and which later MAINT-05 tasks own remaining TODOs.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/maint-05a-castor-command-matrix-modular-foundation
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05a-castor-command-matrix-modular-foundation
 Fork run: srs4zqemqavs
 PR URL: https://github.com/ineersa/agent-core/pull/141
-PR Status: open
+PR Status: merged
 Started: 2026-06-15T21:12:40.642Z
-Completed:
+Completed: 2026-06-15T22:04:39.092Z
 
 ## Work log
 - Created: 2026-06-15T21:07:01.196Z
@@ -125,3 +125,12 @@ Completed:
 - Created PR: https://github.com/ineersa/agent-core/pull/141
 - Validation: Implementation branch head: `59388173` (`MAINT-05A: Split Castor monolith into modular responsibility files`).; Workflow gate-removal commit already on `main`: `f58f73cc`.; Fork validation: `castor phpstan` — 0 errors, 0 file errors.; Fork validation: `castor cs-check` — 0 files with issues.; Fork validation: `castor deptrac` — 0 violations.; Fork validation: `castor list` — all Castor tasks discovered.; User reported `castor check` works; only prior PHPStan failure was resolved/verified passing.; Not run by design for MAINT-05A-F: automated reviewer subagent and full `LLM_MODE=true castor check` as a CODE-REVIEW gate.
 - Summary: Moved MAINT-05A to manual code review. Branch targets `main` as the MAINT-05 integration branch. Automated reviewer and full `LLM_MODE=true castor check` remain intentionally skipped per MAINT-05 policy; user manually reviewed enough to request CODE-REVIEW. The automatic Castor gate has been removed from the task workflow on `main`, so this transition should only verify clean worktree, push the branch, and create/update the PR.
+
+## Task workflow update - 2026-06-15T22:04:39.092Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/maint-05a-castor-command-matrix-modular-foundation into integration checkout.
+- Already up to date.
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/maint-05a-castor-command-matrix-modular-foundation.
+- Pulled integration checkout: Already up to date..
+- Validation: Synced integration checkout with `git pull --ff-only`; main fast-forwarded to merge commit `bfd0159a` for PR #141.; No post-merge `castor check` run per user instruction: "no need for castor check".; Pre-review validation already recorded: `castor list`, `castor deptrac`, `castor phpstan`, and `castor cs-check` passed for MAINT-05A.
+- Summary: PR #141 was merged by the user. Moved MAINT-05A to DONE after syncing `main` from GitHub. Per user instruction, skipped post-merge `castor check`; MAINT-05G remains responsible for final full-gate validation/metrics.
