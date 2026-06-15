@@ -1319,14 +1319,18 @@ function run_commands_parallel(array $commands, array $timeouts = []): array
             $pInfo = $processes[$step];
             $elapsed = (hrtime(true) - $pInfo['start']) / 1e9;
 
+            // ── Snapshot descendant tree BEFORE intermediate parents exit ──
+            // Once proc_close() returns, intermediate parents are dead and
+            // grandchildren are reparented to systemd — pgrep -P can no
+            // longer find them.  Collect the full tree first, then reap.
+            $descendantPids = _collect_descendant_pids($pInfo['pgid'] ?? 0);
+
             // ── Close our pipe ends FIRST ──
             @fclose($pInfo['pipes'][0]);
             @fclose($pInfo['pipes'][1]);
 
             if ($pInfo['timedOut']) {
                 // ── Kill the full process tree ──
-                // Primary: kill the process group (setsid -w isolates it).
-                // Fallback: recursive descendant-kill if setsid PG unavailable.
                 _reap_process_group($pInfo['pgid']);
                 @proc_close($pInfo['handle']);
                 $exitCode = 124; // matches GNU timeout convention
@@ -1337,12 +1341,16 @@ function run_commands_parallel(array $commands, array $timeouts = []): array
                 $exitCode = proc_close($pInfo['handle']);
                 $output = $pInfo['outBuf'].$pInfo['errBuf'];
 
-                // ── Reap escaped grandchildren after normal exit ──
-                // Even on success, messenger:consume (--time-limit=3600),
-                // controller children, and tmux agents can outlive the
-                // shell/timeout/phpunit process.  Kill the isolated process
-                // group so no orphans remain after a green check.
+                // Reap the process group (kills survivors in the step's PG).
                 _reap_process_group($pInfo['pgid']);
+            }
+
+            // ── Kill any descendant that survived the step's PG kill ──
+            // Grandchildren in separate process groups (messenger:consume
+            // workers spawned by the controller with their own PGID) are
+            // not reachable via kill(-PGID).  Kill them by PID.
+            foreach ($descendantPids as $pid) {
+                @posix_kill($pid, \SIGKILL);
             }
 
             if (null !== $pInfo['log']) {
