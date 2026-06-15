@@ -979,6 +979,74 @@ final class CompletionListenerTest extends TestCase
         }
     }
 
+    #[Test]
+    public function tabAcceptsFileCompletionInMultilineEditor(): void
+    {
+        // Reproduces GitHub issue #123: typing "Hello\n\n@" then
+        // Tab/Tab accepts a file completion without clearing the
+        // preceding multiline content.
+        $tmpDir = sys_get_temp_dir().'/editor09-multiline-'.getmypid().'-'.hrtime(true);
+        mkdir($tmpDir, 0755, true);
+        $indexPath = $tmpDir.'/index.jsonl';
+
+        try {
+            file_put_contents($indexPath, implode("\n", [
+                '{"path":"src/file.php","dir":false}',
+                '{"path":"src/other.php","dir":false}',
+            ]));
+
+            $reader = new \Ineersa\Tui\Completion\FileMentionIndexReader($indexPath);
+            $fileProvider = new \Ineersa\Tui\Completion\FileMentionCompletionProvider($reader);
+
+            $isolatedTui = new \Symfony\Component\Tui\Tui();
+            $isolatedEditor = new PromptEditor();
+            $theme = new DefaultTheme(new ThemePalette('default'));
+            $isolatedScreen = new ChatScreen($theme, 'test-session', $isolatedEditor);
+            $isolatedScreen->mount($isolatedTui);
+            $isolatedTui->setFocus($isolatedScreen->editorWidget());
+
+            $listener = new CompletionListener($fileProvider);
+
+            $appConfig = new AppConfig(
+                tui: new TuiConfig(theme: 'default'),
+                logging: new LoggingConfig(),
+                cwd: sys_get_temp_dir(),
+            );
+            $sessionStore = new HatfieldSessionStore(
+                appConfig: $appConfig,
+                entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+            );
+            $context = new TuiRuntimeContext(
+                tui: $isolatedTui,
+                client: $this->createStub(AgentSessionClient::class),
+                state: new TuiSessionState('test-session'),
+                screen: $isolatedScreen,
+                sessionStore: $sessionStore,
+                ticks: new \Ineersa\Tui\Runtime\TuiTickDispatcher(),
+                switch: $this->createStub(\Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface::class),
+                lifecycle: new \Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher(),
+            );
+            $listener->register($context);
+
+            // Set multiline editor text: "Hello", blank line, "@"
+            $isolatedEditor->setText("Hello\n\n@");
+
+            // First Tab: open completion menu
+            $isolatedTui->handleInput("\t");
+            // Second Tab: accept first suggestion
+            $isolatedTui->handleInput("\t");
+
+            // Editor must retain the preceding multiline content.
+            $this->assertStringContainsString('Hello', $isolatedEditor->getText());
+            $this->assertStringContainsString('@src/', $isolatedEditor->getText());
+            // The editor must NOT be empty or collapsed to a single line.
+            $this->assertStringNotContainsString("Hello@", $isolatedEditor->getText());
+        } finally {
+            @unlink($indexPath);
+            @rmdir($tmpDir);
+        }
+    }
+
     // ─── Helpers ────────────────────────────────────────────────────
 
     private function registerListener(): void

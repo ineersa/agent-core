@@ -221,4 +221,98 @@ final class PromptEditorTest extends TestCase
         $this->assertSame('via prompt editor', $this->editor->getText());
         $this->assertSame('via prompt editor', $this->editor->getWidget()->getText());
     }
+
+    // ─── acceptCompletion ────────────────────────────────────────
+
+    #[Test]
+    public function acceptCompletionReplacesSuffix(): void
+    {
+        $this->editor->setText('/he');
+
+        $suggestion = new \Ineersa\Tui\Completion\CompletionSuggestion(
+            display: '/help',
+            insertText: '/help ',
+            description: '',
+            replacementStart: 0,
+            replacementLength: 3, // /he = 3 bytes
+        );
+        $this->editor->acceptCompletion($suggestion);
+
+        $this->assertSame('/help ', $this->editor->getText());
+    }
+
+    #[Test]
+    public function acceptCompletionPreservesMultilinePrefix(): void
+    {
+        // Reproduces GitHub issue #123: multiline @ completion clears editor.
+        $this->editor->setText("Hello\n\n@");
+
+        $suggestion = new \Ineersa\Tui\Completion\CompletionSuggestion(
+            display: '@src/file',
+            insertText: '@src/file.php ',
+            description: '',
+            replacementStart: 7,   // "Hello\n\n" is 7 bytes (H e l l o \n \n)
+            replacementLength: 1,  // "@" = 1 byte
+        );
+        $this->editor->acceptCompletion($suggestion);
+
+        $this->assertSame("Hello\n\n@src/file.php ", $this->editor->getText());
+        $this->assertStringContainsString('Hello', $this->editor->getText());
+        $this->assertStringContainsString('@src/file.php', $this->editor->getText());
+    }
+
+    #[Test]
+    public function acceptCompletionHandlesEmptySuffix(): void
+    {
+        // replacementLength=0 means nothing to delete, only insert.
+        $this->editor->setText('/rename ');
+
+        $suggestion = new \Ineersa\Tui\Completion\CompletionSuggestion(
+            display: '#42',
+            insertText: '42 ',
+            description: '',
+            replacementStart: 8,  // strlen("/rename ")
+            replacementLength: 0, // empty prefix
+        );
+        $this->editor->acceptCompletion($suggestion);
+
+        $this->assertSame('/rename 42 ', $this->editor->getText());
+    }
+
+    #[Test]
+    public function acceptCompletionMultiByteSuffix(): void
+    {
+        // Suffix containing a multi-byte emoji.
+        $this->editor->setText('/he😀');
+
+        $suggestion = new \Ineersa\Tui\Completion\CompletionSuggestion(
+            display: '/help',
+            insertText: '/help ',
+            description: '',
+            replacementStart: 0,
+            replacementLength: 7, // / (1) + h (1) + e (1) + 😀 (4) = 7 bytes
+        );
+        $this->editor->acceptCompletion($suggestion);
+
+        $this->assertSame('/help ', $this->editor->getText());
+    }
+
+    #[Test]
+    public function acceptCompletionCarriesTrailingTextForNonSuffix(): void
+    {
+        // Non-suffix replacement: carry over text after replaced range.
+        $this->editor->setText('abc_def');
+
+        $suggestion = new \Ineersa\Tui\Completion\CompletionSuggestion(
+            display: 'x',
+            insertText: 'X',
+            description: '',
+            replacementStart: 3,  // "_"
+            replacementLength: 1, // "_" = 1 byte
+        );
+        $this->editor->acceptCompletion($suggestion);
+
+        // "abc" + "X" + "def"
+        $this->assertSame('abcXdef', $this->editor->getText());
+    }
 }

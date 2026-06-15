@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Editor;
 
+use Ineersa\Tui\Completion\CompletionSuggestion;
+use Symfony\Component\String\UnicodeString;
 use Symfony\Component\Tui\Input\Keybindings;
 use Symfony\Component\Tui\Widget\EditorWidget;
 
@@ -80,6 +82,71 @@ final class PromptEditor
     }
 
     /**
+     * Accept a completion suggestion by replacing the full editor
+     * text and placing the cursor at the end of the inserted text.
+     *
+     * Uses the same clear-and-reinsert pattern as
+     * {@see replaceText()} — {@see EditorWidget::setText('')} then
+     * {@see EditorWidget::handleInput()} — but wraps multi-line
+     * replacement text in bracketed paste markers so the editor's
+     * {@see EditorDocument::handlePaste()} preserves newline
+     * structure and places the cursor at the end of the last line.
+     *
+     * Single-line replacement text goes through the normal
+     * character-input path which advances the cursor past every
+     * typed character.
+     *
+     * The replacement range MUST be a suffix ending at the editor
+     * cursor — this is always true for all current completion
+     * providers (slash, @ file mention, session ID) which assume
+     * cursor-at-end.  If the range is not a suffix, trailing text
+     * is carried over.
+     */
+    public function acceptCompletion(CompletionSuggestion $suggestion): void
+    {
+        $current = $this->widget->getText();
+        $currentLen = \strlen($current);
+
+        // Build the new text: everything before the replacement range
+        // plus the inserted suggestion text.  Use Symfony UnicodeString
+        // for UTF-8 safe substring operations — replacement offsets are
+        // byte-level but we want grapheme-aware slicing.
+        $prefix = (new UnicodeString($current))
+            ->slice(0, $suggestion->replacementStart)
+            ->toString();
+        $newText = $prefix.$suggestion->insertText;
+
+        // For non-suffix ranges (should not happen with current
+        // providers), carry over any trailing text that was not
+        // part of the replaced range.
+        $replacementEnd = $suggestion->replacementStart
+            + $suggestion->replacementLength;
+
+        if ($replacementEnd < $currentLen) {
+            $trailing = (new UnicodeString($current))
+                ->slice($replacementEnd)
+                ->toString();
+            $newText .= $trailing;
+        }
+
+        // Clear the editor; cursor lands at (0,0).
+        $this->widget->setText('');
+
+        if (str_contains($newText, "\n")) {
+            // Multi-line: wrap in bracketed paste so the editor's
+            // handlePaste() preserves newlines and places the cursor
+            // at the end of the last inserted line.
+            $this->widget->handleInput(
+                "\x1b[200~".$newText."\x1b[201~",
+            );
+        } else {
+            // Single-line: normal character-input path advances the
+            // cursor past every typed character.
+            $this->widget->handleInput($newText);
+        }
+    }
+
+    /**
      * Replace all editor text and leave the cursor at the end.
      *
      * Clears the editor, then inserts the replacement text through
@@ -89,15 +156,11 @@ final class PromptEditor
      * avoid cursor management entirely: insertText() advances the
      * cursor past every typed character.
      *
-     * This method is safe for printable single-line text without
-     * terminal control characters — the current use case is
-     * slash-completion acceptance at replacementStart 0 where the
-     * insert text is a single-line ASCII command with trailing space.
-     *
-     * Open question: Symfony TUI has no public cursor setter on
-     * EditorWidget, so any future feature needing arbitrary cursor
-     * positioning after setText() will need the same constraint
-     * awareness or a contribution upstream.
+     * Prefer {@see acceptCompletion()} for completion acceptance —
+     * it preserves multi-line content and respects the editor's
+     * undo/line-structure invariants.  This method remains for
+     * full-editor replacement callers (e.g. single-line command
+     * insertion at replacementStart 0).
      */
     public function replaceText(string $text): void
     {
