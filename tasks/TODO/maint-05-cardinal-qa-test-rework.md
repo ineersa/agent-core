@@ -149,3 +149,12 @@ Completed:
 
 ## Work log
 - Created: 2026-06-15T20:59:06.144Z
+
+## Task workflow update - 2026-06-15T21:04:20.587Z
+- Summary: Scope update: ParaTest should replace custom Castor PHPUnit sharding, but not replace the broader test architecture rework. Castor may still orchestrate top-level independent lanes in parallel (unit/integration via ParaTest, serial TUI journeys, serial replay E2E, static analysis), while ParaTest owns PHPUnit-level parallelization for suites that are safe to parallelize.
+- Decision: adopt ParaTest as the replacement for custom Castor PHPUnit sharding (`coding-agent-1..4`, manual file round-robin, worker command builders) after the suite is simplified. ParaTest should use `TEST_TOKEN` / `UNIQUE_TEST_TOKEN` for per-worker SQLite DB, Symfony cache, PHPUnit cache, reports, and logs.
+- Command matrix refinement: keep Castor as the top-level orchestrator. It can still run independent lanes concurrently when safe, e.g. unit/integration lane, deterministic replay E2E lane, journey-based TUI lane, deptrac/phpstan/cs-check. But the unit/integration lane should invoke ParaTest instead of hand-rolled Castor shards.
+- Safety boundary: do not use ParaTest for TUI journey tests by default. TUI E2E should remain mostly serial and long-lived-session based, with separate sessions only where start/end/resume isolation is the feature under test.
+- Safety boundary: do not use ParaTest for controller/messenger E2E by default unless the new replay/process ownership model proves safe. Replay E2E should prioritize determinism and cleanup over max parallelism.
+- Design target remains: CodingAgent tests should become fast and understandable enough to run sequentially in roughly under 30s. ParaTest is allowed as optional acceleration, not as a way to hide slow, overcomplicated tests.
+- Acceptance refinement: Castor's fragile many-step custom PHPUnit fan-out must be removed or bypassed from the default quality gate. Any remaining Castor-level parallelization should operate on coarse, independent lanes with explicit process ownership and incremental logs.
