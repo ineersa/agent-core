@@ -182,17 +182,32 @@ final class TuiAgentSmokeTest extends TestCase
                 );
             }
 
-            // Step 6: Assert footer cost is non-zero.
+            // Step 6: Wait for the turn to complete before checking
+            // the footer.  $capture is from the moment ◇ first appeared
+            // (streaming starts), but cost projection only updates after
+            // the turn finishes.  Poll scrollback history for a frame
+            // where the assistant block is present and the Working
+            // spinner is gone — that means the turn completed and the
+            // idle state was restored.
+            $finalCapture = $this->tmux->waitForCallback(
+                pane: $pane,
+                callback: static fn (string $cap): bool => \str_contains($cap, '◇')
+                    && !\str_contains($cap, '◐ Working...'),
+                timeout: 10.0,
+                message: 'Turn did not complete — Working spinner never disappeared after assistant block appeared.',
+            );
+
+            // Step 7: Assert footer cost is non-zero.
             // With the high per-token pricing (input=$1000/M, output=$100000/M),
             // any successful LLM turn must produce a visible non-$0.00 cost.
             self::assertStringNotContainsString(
                 '$0.00',
-                $capture,
+                $finalCapture,
                 'Footer cost must NOT be $0.00 after a turn '
                 . 'with the priced test model configured.',
             );
 
-            // Step 7: Save ANSI snapshot artifact.
+            // Step 8: Save ANSI snapshot artifact.
             $this->saveAnsiSnapshot($pane, 'agent-flow-smoke');
 
             // Clean exit
