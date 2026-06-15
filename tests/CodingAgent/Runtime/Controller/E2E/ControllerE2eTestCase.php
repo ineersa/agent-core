@@ -275,7 +275,7 @@ abstract class ControllerE2eTestCase extends TestCase
         return $events;
     }
 
-    private function drainStderr(): void
+    protected function drainStderr(): void
     {
         if (!isset($this->pipes[2]) || !\is_resource($this->pipes[2])) {
             return;
@@ -529,7 +529,7 @@ abstract class ControllerE2eTestCase extends TestCase
         return "\n\n".implode("\n", $chunks)."\n\n";
     }
 
-    private function dumpSessionDir(string $sessionsDir): string
+    protected function dumpSessionDir(string $sessionsDir): string
     {
         if (!is_dir($sessionsDir)) {
             return 'Session dir: missing';

@@ -88,6 +88,21 @@ class SymfonyAiProviderFactory
             return $this->httpClient;
         }
 
+        // ── Replay mode: deterministic fixture-driven LLM responses ──
+        // When HATFIELD_LLM_REPLAY_FIXTURE_PATH is set the HttpClient
+        // serves pre-recorded SSE chunks from fixture files instead of
+        // making real HTTP calls to the provider API.  This is the replay
+        // seam for controller/TUI E2E tests (MAINT-05D/E).
+        //
+        // Uses the production-neutral ReplayHttpClientFactory which
+        // depends only on Symfony vendor components (MockHttpClient,
+        // MockResponse) — no test helpers needed.  Safe for use in
+        // subprocesses (PHP source, PHAR).
+        $replayClient = ReplayHttpClientFactory::createIfActive();
+        if (null !== $replayClient) {
+            return $replayClient;
+        }
+
         // No explicit timeout configured — use a generous default
         // (30s) that still prevents infinite hangs.  For the local
         // llama_cpp_test/test smoke model this is still too long, but

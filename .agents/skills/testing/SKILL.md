@@ -16,7 +16,8 @@ castor test --filter=X      # filter tests by name (sequential, single DB)
 castor test:tui [--filter=X]    # tmux TUI e2e snapshots (filter optional)
 castor test:tui-update [--filter=X]  # update TUI snapshot baselines (filter optional)
 castor test:llm-real [--filter=X]   # real llama.cpp smoke (filter optional)
-castor test:controller [--filter=X] # controller E2E smoke test (filter optional, defaults to ControllerSmokeTest)
+castor test:controller [--filter=X] # controller E2E smoke test (live LLM, opt-in)
+castor test:controller-replay      # controller E2E smoke tests with replay fixtures (no live LLM, default controller validation)
 castor llm:fixtures:record         # Re-record LLM replay fixtures from live LLM
 castor llm:fixtures:info           # List available LLM replay fixtures
 castor deptrac              # architecture boundary validation
@@ -120,7 +121,8 @@ unit/integration lane.
 | `castor check` | Full validation: PHAR ensure plus parallel steps: deptrac, unit/integration (sequential), controller E2E, llm-real E2E, TUI E2E, phpstan, cs-check. The unit/integration step is a single deterministic sequential PHPUnit run. | tmux, llama.cpp on port 9052 |
 | `castor test` | Unit/integration tests (ParaTest parallel by default, sequential fallback for --filter) | Nothing (pure PHP) |
 | `castor test:llm-real` | Real LLM smoke: `ControllerSmokeTest`, `LlamaCppSmokeTest` | llama.cpp on port 9052 |
-| `castor test:controller` | Controller E2E: spawns `--controller`, JSONL protocol | llama.cpp on port 9052 |
+| `castor test:controller-replay` | Controller replay E2E: spawns `--controller`, JSONL protocol, replay fixtures (no live LLM) | Nothing (pure PHP) |
+| `castor test:controller` | Controller E2E: spawns `--controller`, JSONL protocol (live LLM, opt-in) | llama.cpp on port 9052 |
 | `castor test:tui` | Tmux TUI E2E snapshot tests | tmux, llama.cpp on port 9052 |
 | `castor run:agent-test` | Interactive tmux session for manual inspection | tmux, llama.cpp on port 9052 |
 | `castor run:agent` | Launch agent in tmux | tmux, LLM provider |
@@ -128,6 +130,29 @@ unit/integration lane.
 | `castor llm:fixtures:info` | List available replay fixtures and metadata | Nothing (pure PHP) |
 
 ## Controller E2E testing
+
+### Controller replay E2E (default, deterministic)
+
+`ControllerReplaySmokeTest` (`tests/CodingAgent/Runtime/Controller/E2E/`):
+
+Run with `castor test:controller-replay`. Does NOT require live LLM.
+
+Extends `ControllerReplayE2eTestCase`, which:
+- Spawns `bin/console agent --controller` with `HATFIELD_LLM_REPLAY_FIXTURE_PATH`
+- The test DI wiring replaces `HttpClientInterface` with a replay client
+- Uses pre-recorded fixture files (committed to repo) for deterministic responses
+- Tracks process group PIDs and terminates the entire tree on teardown
+- Does NOT require `LLAMA_CPP_SMOKE_TEST` or any live AI provider
+
+Fixture format: same as `docs/llm-replay.md`.
+Fixtures live in `tests/CodingAgent/Runtime/Controller/E2E/fixtures/`.
+
+Process ownership:
+- Controller + Messenger consumers tracked via /proc PID scanning
+- Teardown: SIGTERM → 3s grace → SIGKILL for all tracked PIDs
+- Diagnostics on failure: tracked PIDs, fixture count, process state
+
+### Controller live E2E (opt-in)
 
 `ControllerSmokeTest` (`tests/CodingAgent/Runtime/Controller/E2E/`):
 
