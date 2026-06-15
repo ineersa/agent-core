@@ -60,14 +60,22 @@ If PHP classes/namespaces make this safer than function files, introduce them un
 - Task handoff records the new Castor file map and which later MAINT-05 tasks own remaining TODOs.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/maint-05a-castor-command-matrix-modular-foundation
+Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05a-castor-command-matrix-modular-foundation
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-15T21:12:40.642Z
 Completed:
 
 ## Work log
 - Created: 2026-06-15T21:07:01.196Z
+
+## Task workflow update - 2026-06-15T21:12:40.642Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/maint-05a-castor-command-matrix-modular-foundation.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/maint-05a-castor-command-matrix-modular-foundation.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/maint-05a-castor-command-matrix-modular-foundation.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/maint-05a-castor-command-matrix-modular-foundation.
+- Summary: Started MAINT-05A implementation stage. This task is part of the MAINT-05 umbrella/epic branch strategy. When ready for PR, target/base the PR against `task/maint-05-cardinal-qa-test-rework` instead of `main`. Per user direction for the staged MAINT-05 series: skip reviewer subagent and skip full `LLM_MODE=true castor check` until MAINT-05G; user will review manually. Use focused Castor validation appropriate to this stage.
