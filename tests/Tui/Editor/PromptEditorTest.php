@@ -250,14 +250,11 @@ final class PromptEditorTest extends TestCase
         // before triggering completion.
         $this->editor->typeText('/he');
 
-        $suggestion = new \Ineersa\Tui\Completion\CompletionSuggestion(
-            display: '/help',
-            insertText: '/help ',
-            description: '',
+        $this->editor->acceptCompletion(
             replacementStart: 0,
-            replacementLength: 3, // /he = 3 bytes
+            replacementLength: 3,
+            insertText: '/help ',
         );
-        $this->editor->acceptCompletion($suggestion);
 
         $this->assertSame('/help ', $this->editor->getText());
     }
@@ -270,14 +267,11 @@ final class PromptEditorTest extends TestCase
         // further typing appends naturally.
         $this->editor->typeText('/he');
 
-        $suggestion = new \Ineersa\Tui\Completion\CompletionSuggestion(
-            display: '/help',
-            insertText: '/help ',
-            description: '',
+        $this->editor->acceptCompletion(
             replacementStart: 0,
-            replacementLength: 3, // /he
+            replacementLength: 3,
+            insertText: '/help ',
         );
-        $this->editor->acceptCompletion($suggestion);
 
         // Simulate the user typing more text after acceptance.
         $this->editor->getWidget()->handleInput('f');
@@ -293,14 +287,11 @@ final class PromptEditorTest extends TestCase
         // Reproduces GitHub issue #123: multiline @ completion clears editor.
         $this->editor->typeText("Hello\n\n@");
 
-        $suggestion = new \Ineersa\Tui\Completion\CompletionSuggestion(
-            display: '@src/file',
+        $this->editor->acceptCompletion(
+            replacementStart: 7,
+            replacementLength: 1,
             insertText: '@src/file.php ',
-            description: '',
-            replacementStart: 7,   // "Hello\n\n" is 7 bytes (H e l l o \n \n)
-            replacementLength: 1,  // "@" = 1 byte
         );
-        $this->editor->acceptCompletion($suggestion);
 
         $this->assertSame("Hello\n\n@src/file.php ", $this->editor->getText());
         $this->assertStringContainsString('Hello', $this->editor->getText());
@@ -313,14 +304,11 @@ final class PromptEditorTest extends TestCase
         // replacementLength=0 means nothing to delete, only insert.
         $this->editor->typeText('/rename ');
 
-        $suggestion = new \Ineersa\Tui\Completion\CompletionSuggestion(
-            display: '#42',
+        $this->editor->acceptCompletion(
+            replacementStart: 8,
+            replacementLength: 0,
             insertText: '42 ',
-            description: '',
-            replacementStart: 8,  // strlen("/rename ")
-            replacementLength: 0, // empty prefix
         );
-        $this->editor->acceptCompletion($suggestion);
 
         $this->assertSame('/rename 42 ', $this->editor->getText());
     }
@@ -333,14 +321,11 @@ final class PromptEditorTest extends TestCase
         // Backspace correctly deletes the emoji (4 bytes, 1 grapheme).
         $this->editor->typeText('/he😀');
 
-        $suggestion = new \Ineersa\Tui\Completion\CompletionSuggestion(
-            display: '/help',
-            insertText: '/help ',
-            description: '',
+        $this->editor->acceptCompletion(
             replacementStart: 0,
-            replacementLength: 7, // / (1) + h (1) + e (1) + 😀 (4) = 7 bytes
+            replacementLength: 7,
+            insertText: '/help ',
         );
-        $this->editor->acceptCompletion($suggestion);
 
         $this->assertSame('/help ', $this->editor->getText());
     }
@@ -352,14 +337,11 @@ final class PromptEditorTest extends TestCase
         // Must use typeText so cursor is at end.
         $this->editor->typeText('abc_def');
 
-        $suggestion = new \Ineersa\Tui\Completion\CompletionSuggestion(
-            display: 'x',
+        $this->editor->acceptCompletion(
+            replacementStart: 3,
+            replacementLength: 1,
             insertText: 'X',
-            description: '',
-            replacementStart: 3,  // "_"
-            replacementLength: 1, // "_" = 1 byte
         );
-        $this->editor->acceptCompletion($suggestion);
 
         // "abc" + "X" + "def"
         $this->assertSame('abcXdef', $this->editor->getText());

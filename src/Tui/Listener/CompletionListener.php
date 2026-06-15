@@ -289,6 +289,10 @@ final class CompletionListener implements TuiListenerRegistrar
         PromptEditor $editor,
         CompletionSuggestion $suggestion,
     ): void {
-        $editor->acceptCompletion($suggestion);
+        $editor->acceptCompletion(
+            $suggestion->replacementStart,
+            $suggestion->replacementLength,
+            $suggestion->insertText,
+        );
     }
 }

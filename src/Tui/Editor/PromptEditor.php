@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Editor;
 
-use Ineersa\Tui\Completion\CompletionSuggestion;
 use Symfony\Component\String\UnicodeString;
 use Symfony\Component\Tui\Input\Keybindings;
 use Symfony\Component\Tui\Widget\EditorWidget;
@@ -111,24 +110,27 @@ final class PromptEditor
     }
 
     /**
-     * Accept a completion suggestion using only normal editor
-     * editing operations ({@see EditorWidget::handleInput()}).
+     * Accept a completion by replacing the identified range
+     * using only normal editor editing operations
+     * ({@see EditorWidget::handleInput()}).
      *
      * Does NOT clear the editor, does NOT use {@see setText()},
      * and does NOT use bracketed paste — this keeps the editor's
      * internal state (lines, cursor, undo/kill ring, viewport)
      * fully intact through the completion edit.
      *
+     * @param int    $replacementStart  byte offset where replacement begins
+     * @param int    $replacementLength number of bytes to replace
+     * @param string $insertText        Text to insert at replacement start.
+     *
      * How it works:
-     * 1. Identify the suffix from {@see CompletionSuggestion::$replacementStart}
-     *    to end-of-text — this is the text we must delete before
-     *    inserting the suggestion.
+     * 1. Identify the suffix from $replacementStart to end-of-text
+     *    — this is the text we must delete before inserting.
      * 2. Delete that suffix one grapheme at a time by sending
      *    {@see EditorWidget::handleInput("\x7f")} (Backspace),
      *    matching the editor's grapheme-aware
      *    {@see EditorDocument::deleteCharBackward()} path.
-     * 3. Insert the suggestion text via the normal
-     *    character-input path.
+     * 3. Insert $insertText via the normal character-input path.
      * 4. If the replacement range is not a suffix (carries trailing
      *    text), re-insert that trailing text after the suggestion.
      *
@@ -142,8 +144,11 @@ final class PromptEditor
      * preceding multi-line content is preserved — fixing GitHub
      * issue #123 where "Hello\n\n@" → Tab cleared the editor.
      */
-    public function acceptCompletion(CompletionSuggestion $suggestion): void
-    {
+    public function acceptCompletion(
+        int $replacementStart,
+        int $replacementLength,
+        string $insertText,
+    ): void {
         $current = $this->widget->getText();
         $currentLen = \strlen($current);
 
@@ -152,7 +157,7 @@ final class PromptEditor
         // We use Symfony UnicodeString for UTF-8 safe substring
         // operations — replacement offsets are byte-level.
         $suffixToDelete = (new UnicodeString($current))
-            ->slice($suggestion->replacementStart)
+            ->slice($replacementStart)
             ->toString();
 
         // Delete the suffix one grapheme at a time through the
@@ -167,22 +172,21 @@ final class PromptEditor
 
         // Build the text to insert: the suggestion plus any trailing
         // content that was not part of the replaced range.
-        $replacementEnd = $suggestion->replacementStart
-            + $suggestion->replacementLength;
-        $insertText = $suggestion->insertText;
+        $replacementEnd = $replacementStart + $replacementLength;
+        $finalInsertText = $insertText;
 
         if ($replacementEnd < $currentLen) {
             $trailing = (new UnicodeString($current))
                 ->slice($replacementEnd)
                 ->toString();
-            $insertText .= $trailing;
+            $finalInsertText .= $trailing;
         }
 
         // Insert via the normal character-input path.  The cursor
         // advances past every typed character, so the cursor lands
         // after the inserted text — ready for further typing.
-        if ('' !== $insertText) {
-            $this->widget->handleInput($insertText);
+        if ('' !== $finalInsertText) {
+            $this->widget->handleInput($finalInsertText);
         }
     }
 
