@@ -33,13 +33,13 @@ Known entrypoints:
 - Task handoff records process tree behavior, cleanup proof, and before/after live LLM usage in controller tests.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/maint-05d-controller-replay-e2e-process-ownership
+Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05d-controller-replay-e2e-process-ownership
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-15T23:32:27.282Z
 Completed:
 
 ## Work log
@@ -55,3 +55,11 @@ Completed:
 - Supersedes earlier PR-base notes in this task: do NOT use `prBaseBranch="task/maint-05-cardinal-qa-test-rework"`. Target `main` for MAINT-05D.
 - Sequential execution policy: do not start MAINT-05D until prior MAINT-05 stages that it depends on are manually reviewed/merged to `main`, unless the user explicitly says otherwise.
 - Validation/review policy remains: skip reviewer subagent and skip full `LLM_MODE=true castor check` for MAINT-05D; user reviews manually and MAINT-05G owns final full-gate validation.
+
+## Task workflow update - 2026-06-15T23:32:27.282Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/maint-05d-controller-replay-e2e-process-ownership.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/maint-05d-controller-replay-e2e-process-ownership.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/maint-05d-controller-replay-e2e-process-ownership.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/maint-05d-controller-replay-e2e-process-ownership.
+- Summary: Started MAINT-05D after MAINT-05C was merged/done. Main remains the MAINT-05 integration branch and eventual PR targets main. Per MAINT-05A-F policy, skip automated reviewer and full `LLM_MODE=true castor check`; run focused deterministic controller replay/process-ownership validation and keep live controller/LLM smoke explicit opt-in only.
