@@ -36,13 +36,13 @@ Important direction:
 - Task handoff records sequential vs ParaTest timings and any tests that remain unsafe for ParaTest.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/maint-05b-paratest-unit-integration-runner
+Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05b-paratest-unit-integration-runner
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-15T22:05:20.925Z
 Completed:
 
 ## Work log
@@ -58,3 +58,11 @@ Completed:
 - Supersedes earlier PR-base notes in this task: do NOT use `prBaseBranch="task/maint-05-cardinal-qa-test-rework"`. Target `main` for MAINT-05B.
 - Sequential execution policy: do not start MAINT-05B until MAINT-05A is manually reviewed/merged to `main`, unless the user explicitly says otherwise.
 - Validation/review policy remains: skip reviewer subagent and skip full `LLM_MODE=true castor check` for MAINT-05B; user reviews manually and MAINT-05G owns final full-gate validation.
+
+## Task workflow update - 2026-06-15T22:05:20.925Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/maint-05b-paratest-unit-integration-runner.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/maint-05b-paratest-unit-integration-runner.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/maint-05b-paratest-unit-integration-runner.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/maint-05b-paratest-unit-integration-runner.
+- Summary: Started MAINT-05B after MAINT-05A was merged/done. Main is the MAINT-05 integration branch and PRs target main. Per user instruction for this sequence, do not run full `castor check`; use focused Castor validation for sequential unit/integration, ParaTest, deptrac, phpstan, and cs-check. Automated reviewer remains skipped; user reviews manually.
