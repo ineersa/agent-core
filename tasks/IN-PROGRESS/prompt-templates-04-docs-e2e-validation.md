@@ -23,7 +23,7 @@ This is intentionally last; docs can be drafted earlier, but final smoke/validat
 Status: IN-PROGRESS
 Branch: task/prompt-templates-04-docs-e2e-validation
 Worktree: /home/ineersa/projects/agent-core-worktrees/prompt-templates-04-docs-e2e-validation
-Fork run: rxxv7dukf4rj
+Fork run: zcxj1b81hgpo
 PR URL:
 PR Status:
 Started: 2026-06-15T00:19:50.699Z
@@ -67,3 +67,8 @@ Completed:
 ## Task workflow update - 2026-06-15T01:16:31.460Z
 - Recorded fork run: rxxv7dukf4rj
 - Summary: Reviewer subagent returned APPROVE WITH SUGGESTIONS for PT-04 at HEAD 4bbee309. No blockers; reviewer explicitly confirmed TUI proof requirement is satisfied. Actionable findings: fix false shell-style quote parsing docs example; correct single-pass docs caveat for slice-like `${@:N}` argument values; remove/fix false-positive Castor Test E for separate-SID detached children; clarify description fallback ellipsis wording; add comment for test:llm-real 120s timeout bump; comment why TuiAgentSmokeTest success flag is based on pre-settle capture. Launched fork rxxv7dukf4rj to address these suggestions, run focused Castor validation, scan for stale workers, and commit locally without push/task move.
+
+## Task workflow update - 2026-06-15T01:55:49.724Z
+- Recorded fork run: zcxj1b81hgpo
+- Validation: Loaded testing skill, task-workflow skill, and tests/AGENTS.md before QA/review workflow.; Reviewer subagent final pass at HEAD 756e370a: APPROVED; no blockers; TUI proof satisfied.; castor test: OK (151.4s; agent-core 293/1271, coding-agent shards OK, tui 689/1759, platform 54/221).; castor deptrac: OK (0 violations, 0 errors).; castor phpstan: OK (No errors).; castor cs-check: OK (0 files fixed).; LLM_MODE=true castor test:tui first local run failed once on TuiStartupSnapshotTest blank pane waiting 5s for logo; no PT-04 stale PHAR workers remained; fork o228a40asx8d reran focused startup tests and found no code change needed.; Cleared stale PHAR messenger consumers before retry per AGENTS.md; LLM_MODE=true castor test:tui retry: OK (21 tests, 66 assertions, 101.8s).
+- Summary: PT-04 final review fixes completed at commit 756e370a. Reviewer final pass returned APPROVED with no blockers and TUI proof satisfied. Review-fix commits addressed docs quote parsing, single-pass placeholder wording, description fallback wording, Castor timeout-hardstop Test E false-positive removal/commenting, test:llm-real timeout comment, and TuiAgentSmokeTest pre-settle success flag comment. TuiStartupSnapshotTest blank-pane failure was investigated by fork o228a40asx8d and classified as one-off environmental anomaly; no code change needed; focused startup test passed in fork. Branch worktree clean and ready for CODE-REVIEW gate.
