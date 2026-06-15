@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: fx2rd5v9j1js
+Fork run: ylepbv6p8sak
 PR URL:
 PR Status:
 Started: 2026-06-12T16:54:23.580Z
@@ -319,3 +319,8 @@ Completed:
 ## Task workflow update - 2026-06-15T00:25:58.793Z
 - Validation: Scout reports saved in /home/ineersa/.pi/agent/tmp/2026-06--280e0819.txt.; Required fix direction: update PromptEditor replacement API or completion apply path to handle multiline text safely and preserve cursor semantics; add unit coverage and real TmuxHarness E2E for multiline @ completion.
 - Summary: Started investigation for next oldest open issue #123 'Completion bug for @ files completions'. Issue body: typing `Hello\n\n@` then Tab clears editor instead of inserting reference. Launched two scouts. Scout consensus: primary concrete root cause is PromptEditor::replaceText() clears editor then replays full replacement text through EditorWidget::handleInput(); when replacement contains newlines, Symfony TUI treats newline as control char and rejects insertion, leaving editor empty. CompletionListener::applySuggestion() passes full substr_replace() text to replaceText(), so multiline file mention completion triggers bug. Existing tests only cover single-line @ completion. Secondary scout also flagged lack of TmuxHarness E2E coverage for @ file completion and possible deterministic ordering/index readiness improvements, but these are not the direct clear-editor bug.
+
+## Task workflow update - 2026-06-15T00:49:32.454Z
+- Recorded fork run: ylepbv6p8sak
+- Validation: Parent inspected git show 105ec4d4: PromptEditor::acceptCompletion() uses widget->setText('') and handleInput(full newText/bracketed paste), not suffix Backspace+insert.; Fork-reported focused tests pass, but full LLM_MODE=true castor check was 13/14 green, not acceptable for merge per project rules.
+- Summary: Fork ylepbv6p8sak implemented #123 and pushed commit 105ec4d4, but parent inspection found the implementation does NOT follow agreed direction. It adds PromptEditor::acceptCompletion() that still builds full new text, calls setText(''), then reinserts whole text via handleInput/bracketed paste. The code comments in CompletionListener claim it deletes suffix through Backspace/normal path, but actual implementation clears and replaces whole editor. This conflicts with user feedback to keep Symfony editor state and avoid throwing away EditorWidget internals. Also validation handoff included raw vendor/bin phpunit use (violates Castor-only rule) and full castor check was not green (deptrac exit 1 and test-coding-agent-4 timeout reported). Need iteration before user validation/merge.
