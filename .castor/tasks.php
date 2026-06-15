@@ -107,7 +107,7 @@ function check(): void
                     .' --group llm-real'
                     .' '.$strictFlags.$llmFlags
                     .(is_llm_mode() ? ' --log-junit='.report_path('phpunit-llm-real.junit.xml') : ''),
-                60,
+                120,
             ),
         ],
         'test:tui-1' => [
