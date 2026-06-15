@@ -63,7 +63,7 @@ If PHP classes/namespaces make this safer than function files, introduce them un
 Status: IN-PROGRESS
 Branch: task/maint-05a-castor-command-matrix-modular-foundation
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05a-castor-command-matrix-modular-foundation
-Fork run:
+Fork run: biw2mxyude82
 PR URL:
 PR Status:
 Started: 2026-06-15T21:12:40.642Z
@@ -84,3 +84,7 @@ Completed:
 - Summary: MAINT-05 stage policy: this task belongs to umbrella branch `task/maint-05-cardinal-qa-test-rework`. When ready, open the PR against that branch rather than `main`. Skip reviewer subagent and full `LLM_MODE=true castor check`; user will review manually and MAINT-05G owns final full-gate validation.
 - PR base: use `prBaseBranch="task/maint-05-cardinal-qa-test-rework"` when moving this task to CODE-REVIEW.
 - Review/validation exception for MAINT-05A-F: skip reviewer subagent; user reviews manually. Skip full `LLM_MODE=true castor check` until MAINT-05G. Run focused Castor validation for this stage only, e.g. `castor list` and the relevant deterministic/static commands that remain safe after the Castor refactor.
+
+## Task workflow update - 2026-06-15T21:14:53.772Z
+- Recorded fork run: biw2mxyude82
+- Summary: Launched implementation fork for MAINT-05A on `/home/ineersa/projects/agent-core-worktrees/maint-05a-castor-command-matrix-modular-foundation`. Fork instructed to implement only the Castor command matrix/modular foundation stage, commit changes locally, not push/PR, skip reviewer and full `LLM_MODE=true castor check`, and use focused Castor validation only.
