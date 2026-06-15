@@ -60,12 +60,12 @@ If PHP classes/namespaces make this safer than function files, introduce them un
 - Task handoff records the new Castor file map and which later MAINT-05 tasks own remaining TODOs.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/maint-05a-castor-command-matrix-modular-foundation
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05a-castor-command-matrix-modular-foundation
 Fork run: srs4zqemqavs
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/141
+PR Status: open
 Started: 2026-06-15T21:12:40.642Z
 Completed:
 
@@ -117,3 +117,11 @@ Completed:
 - Recorded fork run: srs4zqemqavs
 - Validation: Fork mandatory reads completed: `.agents/skills/testing/SKILL.md`, `tests/AGENTS.md`, `.agents/skills/task-workflow/SKILL.md`, `.agents/skills/castor/SKILL.md`.; Fork validation in MAINT-05A worktree: `castor phpstan` — 0 errors, 0 file errors.; Fork validation in MAINT-05A worktree: `castor cs-check` — 0 files with issues.; Fork validation in MAINT-05A worktree: `castor deptrac` — 0 violations.; Fork validation in MAINT-05A worktree: `castor list` — all tasks discovered.; Fork/parent did not run full `LLM_MODE=true castor check` per MAINT-05 policy.; Parent verification: main is clean at `01fc8e00` and contains workflow gate-removal commit `f58f73cc`.; Parent verification: MAINT-05A worktree is clean at `59388173`; `git diff --stat main...HEAD` shows the expected 13 Castor split files only.
 - Summary: Follow-up fork completed. `castor phpstan` passes in the MAINT-05A worktree; no additional PHPStan code fix was needed because the regenerated baseline from the earlier Castor split is already correct. Fork also removed the automatic `LLM_MODE=true castor check` gate from `.pi/extensions/task-workflow.ts` for `move_task(to="CODE-REVIEW")` and updated current workflow prompts/docs/skill text. The workflow change is committed on `main` as `f58f73cc`; MAINT-05A Castor split branch head is `59388173`. Important operational note: the running pi session must reload/restart before the changed `move_task` behavior is active; this current session may still have the old loaded tool implementation.
+
+## Task workflow update - 2026-06-15T21:55:10.835Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/maint-05a-castor-command-matrix-modular-foundation to origin.
+- branch 'task/maint-05a-castor-command-matrix-modular-foundation' set up to track 'origin/task/maint-05a-castor-command-matrix-modular-foundation'.
+- Created PR: https://github.com/ineersa/agent-core/pull/141
+- Validation: Implementation branch head: `59388173` (`MAINT-05A: Split Castor monolith into modular responsibility files`).; Workflow gate-removal commit already on `main`: `f58f73cc`.; Fork validation: `castor phpstan` — 0 errors, 0 file errors.; Fork validation: `castor cs-check` — 0 files with issues.; Fork validation: `castor deptrac` — 0 violations.; Fork validation: `castor list` — all Castor tasks discovered.; User reported `castor check` works; only prior PHPStan failure was resolved/verified passing.; Not run by design for MAINT-05A-F: automated reviewer subagent and full `LLM_MODE=true castor check` as a CODE-REVIEW gate.
+- Summary: Moved MAINT-05A to manual code review. Branch targets `main` as the MAINT-05 integration branch. Automated reviewer and full `LLM_MODE=true castor check` remain intentionally skipped per MAINT-05 policy; user manually reviewed enough to request CODE-REVIEW. The automatic Castor gate has been removed from the task workflow on `main`, so this transition should only verify clean worktree, push the branch, and create/update the PR.
