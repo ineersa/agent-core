@@ -39,7 +39,7 @@ Important direction:
 Status: IN-PROGRESS
 Branch: task/maint-05b-paratest-unit-integration-runner
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05b-paratest-unit-integration-runner
-Fork run:
+Fork run: ete4maha1b30
 PR URL:
 PR Status:
 Started: 2026-06-15T22:05:20.925Z
@@ -66,3 +66,8 @@ Completed:
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/maint-05b-paratest-unit-integration-runner.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/maint-05b-paratest-unit-integration-runner.
 - Summary: Started MAINT-05B after MAINT-05A was merged/done. Main is the MAINT-05 integration branch and PRs target main. Per user instruction for this sequence, do not run full `castor check`; use focused Castor validation for sequential unit/integration, ParaTest, deptrac, phpstan, and cs-check. Automated reviewer remains skipped; user reviews manually.
+
+## Task workflow update - 2026-06-15T22:06:00.650Z
+- Recorded fork run: ete4maha1b30
+- Validation: Pending fork run `ete4maha1b30`. Expected validation if implementation succeeds: `castor list`, `castor test`, `castor test:parallel`, `castor deptrac`, `castor phpstan`, `castor cs-check`; no full `LLM_MODE=true castor check`.
+- Summary: Launched implementation fork for MAINT-05B in `/home/ineersa/projects/agent-core-worktrees/maint-05b-paratest-unit-integration-runner`. Fork instructed to add/configure ParaTest if compatible, make `castor test` deterministic sequential baseline, add separate `castor test:parallel`, remove/bypass custom PHPUnit shard fan-out, update testing docs, validate with focused Castor commands only, skip reviewer and full `castor check`, commit locally, and not push/PR.
