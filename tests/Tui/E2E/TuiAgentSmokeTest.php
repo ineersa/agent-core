@@ -247,13 +247,16 @@ final class TuiAgentSmokeTest extends TestCase
 
             // Wait for either an assistant block or error block.
             // This proves the working status didn't stay stuck.
-            try {
-                $this->tmux->waitForCaptureContains($pane, '◇', 5.0);
-            } catch (\RuntimeException) {
-                $this->tmux->waitForCaptureContains($pane, '✕', 2.0);
-            }
-
-            $capture = $this->tmux->capturePlain($pane);
+            // Use a combined callback poll so we don't race on
+            // narrow per-needle timeouts — the smoke model can
+            // sometimes respond between 5 and 7 seconds, and
+            // chained try-catch with 5s+2s is too brittle.
+            $capture = $this->tmux->waitForCallback(
+                pane: $pane,
+                callback: fn(string $cap) => \str_contains($cap, '◇') || \str_contains($cap, '✕'),
+                timeout: 8.0,
+                message: 'TUI did not show assistant block (◇) or error block (✕) within 8s — "Working..." status may be stuck.',
+            );
 
             // The "Working..." indicator should NOT be stuck.
             // After the LLM pipeline completes (or errors), the

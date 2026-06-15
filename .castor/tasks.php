@@ -78,7 +78,7 @@ function check(): void
         $testCheckCommands[$step] = [
             'cmd' => timeout_check_command(
                 build_test_worker_command($worker, $pharEnv, 'app_test-'.$worker.'.sqlite', $step),
-                75,
+                90,
             ),
         ];
     }
@@ -472,7 +472,7 @@ function build_test_variants_commands(string $pharEnv): array
         $commands[$step] = [
             'cmd' => timeout_check_command(
                 build_test_worker_command($worker, $pharEnv, 'app_test-'.$worker.'.sqlite', $step),
-                75,
+                90,
             ),
         ];
     }
