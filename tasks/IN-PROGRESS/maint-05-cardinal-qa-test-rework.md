@@ -189,3 +189,8 @@ Completed:
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/maint-05-cardinal-qa-test-rework.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/maint-05-cardinal-qa-test-rework.
 - Summary: Started umbrella/epic branch for the MAINT-05 staged QA/test rework. This branch is intended to serve as the integration/base branch for MAINT-05A-G PRs rather than a direct all-in-one implementation task. User requested PRs for staged tasks target this MAINT-05 branch instead of main.
+
+## Task workflow update - 2026-06-15T21:13:07.275Z
+- Summary: Epic/base-branch policy established for the staged MAINT-05 series: keep `task/maint-05-cardinal-qa-test-rework` as the integration branch for MAINT-05A-G. Stage PRs should target this branch, not `main`. Full `LLM_MODE=true castor check` and reviewer-subagent workflow are deferred until MAINT-05G; user will perform manual reviews for stage PRs.
+- Branch/base policy: `task/maint-05-cardinal-qa-test-rework` is the MAINT-05 epic branch. When moving MAINT-05A-G tasks to CODE-REVIEW, pass `prBaseBranch="task/maint-05-cardinal-qa-test-rework"` to `move_task`. Do not target `main` for staged PRs.
+- Validation/review policy: for MAINT-05A-F, run focused Castor validation appropriate to the stage, but skip the full `LLM_MODE=true castor check` gate until MAINT-05G. Skip reviewer subagent until MAINT-05G; user will review stage PRs manually. MAINT-05G owns final deterministic cutover validation, docs, metrics, and final full gate strategy.
