@@ -39,7 +39,7 @@ Known entrypoints:
 Status: IN-PROGRESS
 Branch: task/maint-05c-llm-replay-recording-foundation
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05c-llm-replay-recording-foundation
-Fork run:
+Fork run: oye8a3xqq7qd
 PR URL:
 PR Status:
 Started: 2026-06-15T22:50:40.122Z
@@ -66,3 +66,8 @@ Completed:
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/maint-05c-llm-replay-recording-foundation.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/maint-05c-llm-replay-recording-foundation.
 - Summary: Started MAINT-05C after MAINT-05B was merged/done. Main remains the MAINT-05 integration branch and eventual PR targets main. Per MAINT-05A-F policy, skip automated reviewer and full `LLM_MODE=true castor check`; run focused replay/recording validation and keep live LLM calls explicit opt-in only.
+
+## Task workflow update - 2026-06-15T22:52:21.908Z
+- Recorded fork run: oye8a3xqq7qd
+- Validation: Pending fork run `oye8a3xqq7qd`. Expected focused validation: `castor list`, focused replay test via `castor test --filter=...`, `castor test` if feasible, `castor deptrac`, `castor phpstan`, `castor cs-check`; no full `LLM_MODE=true castor check`; live fixture recording only if explicitly available and safe.
+- Summary: Launched implementation fork for MAINT-05C in `/home/ineersa/projects/agent-core-worktrees/maint-05c-llm-replay-recording-foundation`. Fork instructed to build the deterministic LLM replay/fixture re-recording foundation, including documented fixture format, test-only replay implementation through existing Symfony AI/AgentCore seams, opt-in recording path, explicit Castor re-record command, replay tests with checked-in fixture, and testing docs updates. Fork has strict cwd/branch guard to avoid committing to main, must not push, must not use destructive git operations, and must not run full `LLM_MODE=true castor check`.
