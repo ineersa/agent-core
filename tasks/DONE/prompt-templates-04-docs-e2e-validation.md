@@ -20,14 +20,14 @@ This is intentionally last; docs can be drafted earlier, but final smoke/validat
 - Task metadata records final validation results and any deferred follow-ups discovered during smoke testing.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/prompt-templates-04-docs-e2e-validation
 Worktree: /home/ineersa/projects/agent-core-worktrees/prompt-templates-04-docs-e2e-validation
 Fork run: ep1bvr5s2nxu
 PR URL: https://github.com/ineersa/agent-core/pull/139
-PR Status: open
+PR Status: merged
 Started: 2026-06-15T00:19:50.699Z
-Completed:
+Completed: 2026-06-15T02:13:04.915Z
 
 ## Work log
 - Created: 2026-06-09T00:10:20.146Z
@@ -101,3 +101,17 @@ Castor Check Output SHA256: 43baea5d7eaeb4bf8050e617aafeadb8617a63cc64e52f9392d3
 - Pushed task/prompt-templates-04-docs-e2e-validation to origin.
 - branch 'task/prompt-templates-04-docs-e2e-validation' set up to track 'origin/task/prompt-templates-04-docs-e2e-validation'.
 - PR already exists: https://github.com/ineersa/agent-core/pull/139
+
+## Task workflow update - 2026-06-15T02:13:04.915Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/prompt-templates-04-docs-e2e-validation into integration checkout.
+- Merge made by the 'ort' strategy.
+ .castor/tasks.php        | 261 +++++++++++++++++++++++++++++++++++++++-----
+ .hatfield/settings.yaml  |  13 ++-
+ docs/prompt-templates.md | 274 +++++++++++++++++++++++++++++++++++++++++++++++
+ docs/settings.md         |  10 +-
+ 4 files changed, 526 insertions(+), 32 deletions(-)
+ create mode 100644 docs/prompt-templates.md
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/prompt-templates-04-docs-e2e-validation.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Summary: PR #139 was already merged on GitHub at 2026-06-15T02:12:19Z with merge commit e7b4e051061b001a5e3aae4d586f2851da96dda3. Moving PT-04 to DONE and syncing integration checkout.
