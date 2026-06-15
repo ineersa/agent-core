@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: hzxnva51ywl0
+Fork run: 5gtauj6zgf9e
 PR URL:
 PR Status:
 Started: 2026-06-12T16:54:23.580Z
@@ -360,3 +360,8 @@ Completed:
 ## Task workflow update - 2026-06-15T02:06:59.159Z
 - Validation: Second move_task CODE-REVIEW Castor gate failed; PR was not created.; Gate summary: 13/14 OK; test:tui-1 FAIL exit 2 after 49.4s.; test-coding-agent-4 now OK in 77.7s after timeout bump.; Failure log: var/reports/check-test:tui-1.log -> TuiAgentSmokeTest::testNewSessionCommandAndGetAssistantResponse timed out waiting for '█' after 5s with blank capture; logs only migrations, no runtime events.
 - Summary: Second move_task CODE-REVIEW attempt after hzxnva51ywl0 still failed Castor gate; no PR created. This time only test:tui-1 failed. All other 13 steps passed, including coding-agent-4 now OK in 77.7s. New failure: TuiAgentSmokeTest::testNewSessionCommandAndGetAssistantResponse timed out after 5s waiting for startup/logo needle '█' in pane %644; last capture blank. Failure test CWD var/tmp/tui-e2e-9d1ee5e2b071; logs show migrations completed but no prompt/run events and events/state files are 0 bytes. This looks like another TUI E2E startup timing/blank-pane flake under parallel gate load, not a #123 product regression.
+
+## Task workflow update - 2026-06-15T02:07:42.538Z
+- Recorded fork run: 5gtauj6zgf9e
+- Validation: Fork 5gtauj6zgf9e failed with pid_died before handoff.; Parent check: git status shows task/backlog-open-issues-cleanup tracking origin/task/backlog-open-issues-cleanup with no listed file changes; HEAD d5661e54; origin/main...HEAD = 1 behind / 5 ahead.
+- Summary: Fork 5gtauj6zgf9e, launched to harden remaining TuiAgentSmokeTest startup wait flake, failed before producing result.json (pid_died). Parent inspected worktree afterward: no committed changes from the fork; worktree appears clean and still at d5661e54; branch is now 1 behind origin/main due task metadata commit and 5 ahead with feature commits. Need relaunch continuation fork after rebasing onto origin/main.
