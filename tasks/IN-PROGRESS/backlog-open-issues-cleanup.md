@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: 4ic1cpvbvucd
+Fork run: zmqo2dry2bg3
 PR URL:
 PR Status:
 Started: 2026-06-12T16:54:23.580Z
@@ -374,3 +374,8 @@ Completed:
 ## Task workflow update - 2026-06-15T02:26:03.235Z
 - Validation: llama.cpp generation probe: HTTP 200 in 0.33s after service restart.; Branch rebased before retry; origin/main...HEAD = 0 6 at that time.; Third move_task CODE-REVIEW gate failed; no PR created.; Gate summary: 13/14 OK; test:tui-1 FAIL exit 1 after 22.6s; failure in TuiAgentSmokeTest::testTypePromptAndVerifyTranscriptBlocks cost assertion while capture still showed ◐ Working and footer $0.00.
 - Summary: After user restarted llama-test.service, parent verified generation endpoint recovered (HTTP 200 in 0.33s), rebased branch onto origin/main, and retried move_task CODE-REVIEW. Gate still failed with only test:tui-1 exit 1. New failure: TuiAgentSmokeTest::testTypePromptAndVerifyTranscriptBlocks cost assertion captured while assistant text was streaming and footer still showed '0/0 $0.00' with '◐ Working...'. All other 13 gate steps passed; coding-agent-4 OK in 58.5s. This indicates the cost E2E assertion is racing before turn completion/usage projection, not a product failure.
+
+## Task workflow update - 2026-06-15T02:32:04.096Z
+- Recorded fork run: zmqo2dry2bg3
+- Validation: Fork confirmed it read testing skill, tests/AGENTS.md, and castor skill.; castor cs-check: OK, files_fixed=0.; castor phpstan: OK, errors=0, file_errors=0.; castor test:tui --filter=testTypePromptAndVerifyTranscriptBlocks: OK, 22 tests / 70 assertions in 85s.; LLM_MODE=true castor check: OK, all 14 steps passed in 300.3s. Step times: deptrac 2.0s, test-agent-core 3.1s, test-coding-agent-1 25.3s, test-coding-agent-2 17.4s, test-coding-agent-3 39.1s, test-coding-agent-4 59.8s, test-tui-suite 18.6s, test-platform 0.9s, test:controller 6.5s, test:llm-real 26.5s, test:tui-1 46.9s, test:tui-2 44.7s, phpstan 4.2s, cs-check 5.3s.
+- Summary: Fork zmqo2dry2bg3 fixed the latest TUI cost assertion race with commit 3a01c859. TuiAgentSmokeTest::testTypePromptAndVerifyTranscriptBlocks now waits for turn completion before checking footer cost: uses waitForCallback for assistant block present and '◐ Working...' absent, then asserts footer no longer contains $0.00. This preserves the visible cost E2E proof while avoiding streaming-start race. No product behavior changed.
