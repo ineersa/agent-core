@@ -1241,11 +1241,15 @@ function run_commands_parallel(array $commands, array $timeouts = []): array
             2 => ['pipe', 'w'],  // stderr
         ];
 
-        // Spawn inside an isolated process group via setsid -w.
+        // Spawn inside an isolated session via setsid -w.
         // setsid -w does NOT fork: it calls setsid() in-process then
-        // execs sh -lc <cmd>.  The process-group id equals the setsid
-        // PID, so kill(-PGID) reaps the entire tree including escaped
-        // grandchildren that outlive timeout/shell/phpunit exit.
+        // execs sh -lc <cmd>.  The proc_open child PID is the session
+        // leader (SID) and initial process-group leader (PGID).
+        //
+        // kill(-PGID) alone is insufficient: grandchildren spawned in
+        // their own PGIDs (messenger:consume, agent --controller) share
+        // the same SID but have different PGIDs.  Session-based cleanup
+        // via _reap_session() catches ALL processes in the SID.
         $process = @proc_open(
             ['setsid', '-w', 'sh', '-lc', $info['cmd']],
             $descriptors,
@@ -1270,10 +1274,10 @@ function run_commands_parallel(array $commands, array $timeouts = []): array
         stream_set_blocking($pipes[1], false);
         stream_set_blocking($pipes[2], false);
 
-        // Record the process-group id (= setsid PID) so we can reap the
-        // whole tree on completion.  setsid -w does not fork, so the
-        // proc_open child *is* the session/process-group leader.
-        $pgid = proc_get_status($process)['pid'];
+        // The proc_open child *is* the session leader, so its PID is
+        // both SID and PGID.  We store it as $sid for session-scoped
+        // cleanup that catches separate-PGID grandchildren.
+        $sid = proc_get_status($process)['pid'];
 
         $processes[$step] = [
             'handle' => $process,
@@ -1283,7 +1287,7 @@ function run_commands_parallel(array $commands, array $timeouts = []): array
             'outBuf' => '',
             'errBuf' => '',
             'timedOut' => false,
-            'pgid' => $pgid > 0 ? $pgid : null,
+            'sid' => $sid > 0 ? $sid : null,
         ];
     }
 
@@ -1319,15 +1323,30 @@ function run_commands_parallel(array $commands, array $timeouts = []): array
             $pInfo = $processes[$step];
             $elapsed = (hrtime(true) - $pInfo['start']) / 1e9;
 
+            // ── Snapshot descendant tree BEFORE intermediate parents exit ──
+            // Once proc_close() returns, intermediate parents are dead and
+            // grandchildren are reparented to systemd — pgrep -P can no
+            // longer find them.  Collect the full tree first, then reap.
+            // Also snapshot session PIDs: session cleanup is the primary
+            // mechanism for separate-PGID grandchildren that pgrep -P misses.
+            $descendantPids = _collect_descendant_pids($pInfo['sid'] ?? 0);
+            $sessionPids = _collect_session_pids($pInfo['sid'] ?? 0);
+
             // ── Close our pipe ends FIRST ──
+            // Close stdout/stderr before reaping so that processes
+            // holding the write end get SIGPIPE / exit faster.
             @fclose($pInfo['pipes'][0]);
             @fclose($pInfo['pipes'][1]);
 
+            // ── Reap by SESSION FIRST (primary mechanism) ──
+            // This kills ALL processes in the step's session including
+            // grandchildren in separate PGIDs (messenger:consume workers,
+            // agent --controller children) that kill(-PGID) misses.
+            _reap_session($pInfo['sid']);
+
             if ($pInfo['timedOut']) {
-                // ── Kill the full process tree ──
-                // Primary: kill the process group (setsid -w isolates it).
-                // Fallback: recursive descendant-kill if setsid PG unavailable.
-                _reap_process_group($pInfo['pgid']);
+                // ── Kill the full process group (belt-and-suspenders) ──
+                _reap_process_group($pInfo['sid']);
                 @proc_close($pInfo['handle']);
                 $exitCode = 124; // matches GNU timeout convention
                 $stepTimeout = $timeouts[$step] ?? 0;
@@ -1337,12 +1356,14 @@ function run_commands_parallel(array $commands, array $timeouts = []): array
                 $exitCode = proc_close($pInfo['handle']);
                 $output = $pInfo['outBuf'].$pInfo['errBuf'];
 
-                // ── Reap escaped grandchildren after normal exit ──
-                // Even on success, messenger:consume (--time-limit=3600),
-                // controller children, and tmux agents can outlive the
-                // shell/timeout/phpunit process.  Kill the isolated process
-                // group so no orphans remain after a green check.
-                _reap_process_group($pInfo['pgid']);
+                // Belt-and-suspenders: PG kill for any survivors.
+                _reap_process_group($pInfo['sid']);
+            }
+
+            // ── Kill any descendant that survived session + PG kills ──
+            // pgrep -P descendants + ps sid scan give us the full set.
+            foreach (array_merge($descendantPids, $sessionPids) as $pid) {
+                @posix_kill($pid, \SIGKILL);
             }
 
             if (null !== $pInfo['log']) {
@@ -1383,6 +1404,12 @@ function _reap_process_group(?int $pgid): void
         return;
     }
 
+    // Collect the full descendant tree BEFORE sending any signals.
+    // Once intermediate parents exit (from kill(-PGID)), grandchild
+    // pids are reparented to init/systemd and pgrep -P can no longer
+    // find them.  Snapshot first, then kill everything we captured.
+    $descendantPids = _collect_descendant_pids($pgid);
+
     // Best-effort SIGTERM to the process group.
     // kill(-pgid) targets all processes with that PGID even after
     // the original leader (setsid) has exited and children have been
@@ -1391,9 +1418,36 @@ function _reap_process_group(?int $pgid): void
     usleep(500_000); // 0.5 s grace
     @posix_kill(-$pgid, \SIGKILL);
 
-    // Belt: also walk descendants of the direct proc_open child as a
-    // safety net for systems where setsid or PG kill behave differently.
-    _kill_descendant_tree($pgid, \SIGKILL);
+    // Kill every captured descendant individually so grandchildren in
+    // separate process groups (e.g. messenger:consume workers spawned
+    // by the controller with their own PGID) are also reaped.
+    foreach ($descendantPids as $pid) {
+        @posix_kill($pid, \SIGKILL);
+    }
+}
+
+/**
+ * Recursively collect ALL descendant PIDs of a process.
+ *
+ * Walks pgrep -P depth-first to build a complete snapshot of the
+ * process tree before intermediate parents exit.  The result includes
+ * grandchildren in separate process groups (setsid, new PGID).
+ *
+ * @return list<int>
+ */
+function _collect_descendant_pids(int $pid): array
+{
+    if ($pid <= 1) {
+        return [];
+    }
+    $children = _find_child_pids($pid);
+    $pids = [];
+    foreach ($children as $child) {
+        $pids[] = $child;
+        $pids = array_merge($pids, _collect_descendant_pids($child));
+    }
+
+    return $pids;
 }
 
 /**
@@ -1440,6 +1494,85 @@ function _find_child_pids(int $ppid): array
     return $pids;
 }
 
+// ── Session-scoped cleanup (primary mechanism) ──────────────
+
+/**
+ * Collect all PIDs in a session using ps -eo pid=,sid=.
+ *
+ * Unlike pgrep -P (parent-based tree walk), session lookup finds
+ * ALL processes in a session regardless of intermediate parent
+ * survival.  This catches grandchildren in separate PGIDs (e.g.
+ * messenger:consume workers spawned via the controller with their
+ * own setsid) that pgrep -P misses after the intermediate parent
+ * exits.
+ *
+ * @return list<int>
+ */
+function _collect_session_pids(int $sid): array
+{
+    if ($sid <= 1) {
+        return [];
+    }
+    $output = [];
+    @exec('ps -eo pid=,sid= 2>/dev/null', $output);
+    $pids = [];
+    $myPid = getmypid();
+    foreach ($output as $line) {
+        $fields = preg_split('/\s+/', trim($line), 2);
+        if (2 !== count($fields)) {
+            continue;
+        }
+        $pid = (int) $fields[0];
+        $psSid = (int) $fields[1];
+        // Skip ourselves and init.
+        if ($pid <= 1 || $pid === $myPid) {
+            continue;
+        }
+        if ($psSid === $sid) {
+            $pids[] = $pid;
+        }
+    }
+
+    return $pids;
+}
+
+/**
+ * Reap all processes in a session: SIGTERM, grace, SIGKILL.
+ *
+ * This is the PRIMARY cleanup mechanism.  It catches every process
+ * in the step's session, including grandchildren that created their
+ * own process groups (messenger:consume, agent --controller) and are
+ * invisible to kill(-PGID).
+ *
+ * Paired with _reap_process_group() for belt-and-suspenders coverage.
+ */
+function _reap_session(?int $sid): void
+{
+    if (null === $sid || $sid <= 1) {
+        return;
+    }
+
+    // Collect before signaling so we can individually kill survivors.
+    $pids = _collect_session_pids($sid);
+
+    // Best-effort SIGTERM to all session PIDs individually.
+    foreach ($pids as $pid) {
+        @posix_kill($pid, \SIGTERM);
+    }
+    usleep(500_000); // 0.5 s grace
+
+    // SIGKILL any survivors.
+    foreach ($pids as $pid) {
+        @posix_kill($pid, \SIGKILL);
+    }
+
+    // Also SIGKILL via kill(0, -sid) — this sends to every process
+    // in the process group whose value is $sid.  Since SID=PGID for
+    // the session leader, this catches any process still lingering
+    // in the leader's PG.
+    @posix_kill(-$sid, \SIGKILL);
+}
+
 // ── Timeout hard-stop smoke proof task ──────────────────────
 
 /**
@@ -1451,8 +1584,16 @@ function _find_child_pids(int $ppid): array
  * 2. Reaps escaped grandchildren on NORMAL exit, not only timeout.
  *    Even if the step exits 0, leaked messenger:consume / controller /
  *    tmux-agent grandchildren must be killed.
+ *
+ * 3. Session-based cleanup (_reap_session) kills same-SID separate-PGID
+ *    grandchildren (e.g. messenger:consume workers that get their own
+ *    process group via job control).
+ *
+ * 4. Separate-SID grandchildren (e.g. setsid'd sub-processes that
+ *    create their own session) are NOT supported once reparented to
+ *    init/systemd after the parent exits — see the NOTE below.
  */
-#[AsTask(name: 'test:timeout-hardstop', description: 'Verify Castor hard timeout kills process trees without hanging and normal-exit cleanup')]
+#[AsTask(name: 'test:timeout-hardstop', description: 'Verify Castor hard timeout + normal-exit session cleanup (4 smoke proofs) without hangs')]
 function test_timeout_hardstop(string $cmdOverride = ''): void
 {
     echo "=== Castor timeout hard-stop + normal-exit cleanup smoke proof ===\n\n";
@@ -1651,8 +1792,70 @@ function test_timeout_hardstop(string $cmdOverride = ''): void
         }
     }
 
+    // ── Test D: Same-SID separate-PGID grandchild cleanup (session-based) ──
+    echo "\n── Test D: Session cleanup kills grandchild in separate PGID (same SID) ──\n\n";
+
+    // Simulate the real-world case: a test (PHPUnit) spans a worker
+    // (messenger:consume) that gets its own PGID but shares the SID
+    // with the Castor step.  'set -m' enables bash job control so
+    // the background sleep gets its own process group.
+    // The step exits normally; _reap_session() must find and kill the
+    // grandchild by SID even though it has a different PGID.
+    $separatePgidCmd = "bash -lc 'set -m; sleep 120 & echo \"session-leak\"; exit 0'";
+
+    echo "Command under test:\n  {$separatePgidCmd}\n\n";
+
+    $commandsD = [
+        'session-leak-test' => [
+            'cmd' => $separatePgidCmd,
+            'log' => report_path('check-test-session-leak.log'),
+        ],
+    ];
+
+    $preCountD = count_alive_descendants();
+
+    $startD = hrtime(true);
+    $resultsD = run_commands_parallel($commandsD, []);
+    $durationD = (hrtime(true) - $startD) / 1e9;
+
+    $resultD = $resultsD['session-leak-test'] ?? ['exitCode' => -1, 'output' => 'no result', 'duration' => 0];
+
+    echo "Result:\n";
+    echo "  exitCode: {$resultD['exitCode']}\n";
+    echo sprintf("  duration: %.2fs\n", $resultD['duration']);
+    echo "  output: {$resultD['output']}\n\n";
+
+    if (0 !== $resultD['exitCode']) {
+        echo "FAIL: expected exit code 0 (normal), got {$resultD['exitCode']}\n";
+        $ok = false;
+    } else {
+        echo "PASS: exit code 0 (normal)\n";
+    }
+
+    if ($durationD > 5.0) {
+        echo "FAIL: runner took {$durationD}s > 5s\n";
+        $ok = false;
+    } else {
+        echo "PASS: runner returned in {$durationD}s (< 5s)\n";
+    }
+
+    usleep(1_000_000); // 1s settle
+    $postCountD = count_alive_descendants();
+    if ($postCountD > $preCountD) {
+        echo "FAIL: {$postCountD} orphan processes remain after session cleanup (pre={$preCountD})\n";
+        $ok = false;
+    } else {
+        echo "PASS: no session orphans after separate-PGID same-SID cleanup (pre={$preCountD}, post={$postCountD})\n";
+    }
+
+    // NOTE: There is intentionally no Test E for separate-SID grandchild
+    // cleanup.  A child that calls setsid(2) into a new session after the
+    // parent exits cannot be found by same-SID cleanup (different SID) or
+    // by descendant-tree lookup (reparented to init/systemd after parent
+    // exit).  The supported case is same-SID separate-PGID (Test D).
+
     if ($ok) {
-        echo "\n✅ All timeout + normal-exit + startup-cleanup assertions passed.\n";
+        echo "\n✅ All timeout + normal-exit + startup-cleanup + session + separate-PGID assertions passed.\n";
     } else {
         echo "\n❌ Some assertions FAILED.\n";
         exit(1);
@@ -1890,7 +2093,7 @@ function run_check_commands_sequential(array $steps, array &$failures, array &$t
             continue;
         }
 
-        $pgid = proc_get_status($process)['pid'];
+        $sid = proc_get_status($process)['pid'];
 
         // Non-blocking incremental read to prevent hanging when
         // grandchildren survive and hold pipe write ends open.
@@ -1916,7 +2119,8 @@ function run_check_commands_sequential(array $steps, array &$failures, array &$t
                 break;
             }
             if ((hrtime(true) / 1e9) >= $deadline) {
-                _reap_process_group($pgid > 0 ? $pgid : null);
+                _reap_session($sid > 0 ? $sid : null);
+                _reap_process_group($sid > 0 ? $sid : null);
                 $outBuf .= "\n[Castor sequential hard timeout after 75s]";
                 break;
             }
@@ -1927,8 +2131,9 @@ function run_check_commands_sequential(array $steps, array &$failures, array &$t
         @fclose($pipes[2]);
         $exitCode = proc_close($process);
 
-        // Reap escaped grandchildren (messenger:consume --time-limit=3600, etc.)
-        _reap_process_group($pgid > 0 ? $pgid : null);
+        // Reap entire session (primary) + process group (belt-and-suspenders).
+        _reap_session($sid > 0 ? $sid : null);
+        _reap_process_group($sid > 0 ? $sid : null);
 
         $duration = (hrtime(true) - $start) / 1e9;
         $timings[$step] = $duration;

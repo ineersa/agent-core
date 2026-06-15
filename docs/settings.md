@@ -456,9 +456,10 @@ project `.hatfield/settings.yaml` `prompts:` list will replace the home
 `prompts:` list entirely. The auto-discovery directories are always
 scanned regardless of the `prompts:` list.
 
-A future `--no-prompt-templates` CLI option will disable auto-discovery
-and settings paths; CLI `--prompt-template <path>` paths will still load
-when it is implemented. Currently there are no CLI flags.
+The CLI flag `--no-prompt-templates` disables auto-discovery and
+settings `prompts:` paths. CLI `--prompt-template <path>` paths (repeatable)
+still load even when `--no-prompt-templates` is set. There is no
+`-np` shortcut.
 
 **Default:** `[]` (empty — only auto-discovery directories are scanned).
 
@@ -468,6 +469,9 @@ prompts:
   - .hatfield/team-prompts
   - ~/shared/prompts/review.md
 ```
+
+See [Prompt Templates](prompt-templates.md) for full syntax, loading
+order, collisions, placeholder reference, and current limitations.
 
 ### `extensions.enabled`
 

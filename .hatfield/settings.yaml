@@ -11,12 +11,23 @@
 # %kernel.project_dir%, and relative paths.
 #
 # Auto-discovery scans ~/.hatfield/prompts/*.md and
-# <cwd>/.hatfield/prompts/*.md non-recursively.
+# <cwd>/.hatfield/prompts/*.md non-recursively. These directories are
+# always scanned, even when the prompts: list is set.
+#
+# Template names are derived from lowercase filename stems (review.md →
+# /review). Use lowercase filenames to match TUI slash-command routing.
+#
+# CLI flags:
+#   --prompt-template <path>    (repeatable) explicit template path
+#   --no-prompt-templates       disable auto-discovery and settings paths
+#                               (CLI --prompt-template paths still load)
 #
 # Example:
 # prompts:
 #   - .hatfield/team-prompts
 #   - ~/shared/prompts/review.md
+#
+# See docs/prompt-templates.md for full reference.
 
 # ---------------------------------------------------------------------------
 # Tool output capping
