@@ -40,7 +40,7 @@ Out of scope:
 Status: IN-PROGRESS
 Branch: task/tools-10-prompt-docs-integration
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-10-prompt-docs-integration
-Fork run: gf5sx5r79xx6
+Fork run: ptb2g46gdcoo
 PR URL:
 PR Status:
 Started: 2026-06-16T22:05:47.991Z
@@ -91,3 +91,7 @@ Completed:
 
 ## Task workflow update - 2026-06-16T22:53:00.652Z
 - Summary: During task-to-pr focused validation, `castor test:llm-real` produced a passing JUnit report in ~20.4s but left the Castor task and PHAR messenger consumers alive for ~10 minutes after success. User requested hardening: enforce a 30s hard wall-clock kill for `test:llm-real` and all descendant processes. Treating this as a validation-infrastructure review-iteration fix on the task branch before CODE-REVIEW; implementation must use fork per orchestrator rules.
+
+## Task workflow update - 2026-06-16T22:53:28.939Z
+- Recorded fork run: ptb2g46gdcoo
+- Summary: Launched review-iteration fork `ptb2g46gdcoo` to harden `castor test:llm-real` per user request. Fork instructions: replace plain `passthru()` execution in `.castor/e2e.php::test_llm_real()` with session-aware `run_commands_parallel()` or equivalent, enforce a 30s hard timeout, kill all PHPUnit/PHAR controller/messenger descendant processes on timeout and normal completion, add/adjust hard-stop smoke proof, run `castor test:timeout-hardstop`, `castor test:llm-real`, and `castor cs-check`, then commit.
