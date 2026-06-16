@@ -29,7 +29,7 @@ Connected open issues as of 2026-06-12:
 - Task remains IN-PROGRESS during one-by-one cleanup until user explicitly asks to move forward.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
 Fork run: zmqo2dry2bg3
@@ -401,3 +401,7 @@ Castor Check Output SHA256: 8402952e60f19af97d70af3c9bd816e632c7b0adb64c7eea53f5
 ## Task workflow update - 2026-06-16T16:18:10.839Z
 - Validation: Scouts inspected .hatfield/sessions/16 events and relevant runtime/TUI projection architecture.; Parent spot-check of .hatfield/sessions/16/events.jsonl: llm_step_completed/tool_execution_start events early in session show tool_calls_count=1 and a single tool_execution_start/end per turn; supports 'not actually parallel execution' hypothesis.; Scout artifact with full reports: /home/ineersa/.pi/agent/tmp/2026-06--e7936733.txt.
 - Summary: Issue #124 scout investigation completed. Three scouts agree this is most likely a TUI/projection/display problem, not broken parallel tool execution. Session #16 canonical events show normal one-tool execution per turn; user-visible extra read/bash lines likely come from transient streaming tool_call.started/arguments_completed events that create ToolCall blocks before canonical tool_execution events, and the projector lacks cleanup/reconciliation for transient placeholder/orphan tool-call blocks when only one actual tool execution is accepted. Runtime parallel execution path (ToolBatchCollector/ToolCallResultHandler) appears correctly keyed by tool_call_id/order_index and handles errors/stale results; no evidence of extra tools actually running. Related display bugs found: ToolProjectionSubscriber appends finalized argument text to accumulated streaming JSON instead of replacing it, and streaming tool-call events are seq=0/transient so they are not deduped/replayable like canonical events.
+
+## Task workflow update - 2026-06-16T16:20:49.143Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Summary: Reopening implementation phase to address next backlog issue #124 ('Read + parallel bug?') on the existing PR branch per user request. Scout investigation indicates root cause is TUI/projection reconciliation of transient tool-call placeholder blocks versus canonical tool_execution events, not broken runtime parallel execution. Proceeding with fork implementation.
