@@ -13,7 +13,7 @@ use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
-use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
 
 /**
  * @covers \Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient
@@ -21,48 +21,28 @@ use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
  * Tests prompt-template expansion at the in-process runtime boundary.
  * Uses the test kernel with a fake AgentRunnerInterface spy injected
  * via container override so we can assert on expanded prompt text.
+ *
+ * Uses {@see PerMethodIsolatedKernelTestCase} (per-method kernel boot)
+ * because the InProcessAgentSessionClient (shared service) caches template
+ * directory contents.  With per-class kernel boot, templates written by
+ * later test methods are invisible to the already-booted client.
  */
-final class PromptTemplateExpansionInProcessTest extends IsolatedKernelTestCase
+final class PromptTemplateExpansionInProcessTest extends PerMethodIsolatedKernelTestCase
 {
-    private string $originalCwd;
-
     /** @var FakeCapturingAgentRunner */
     private FakeCapturingAgentRunner $spyRunner;
 
     /** @var FakeCapturingToolExecutor */
     private FakeCapturingToolExecutor $spyToolExecutor;
 
-    protected function setUp(): void
+    protected function afterKernelBoot(): void
     {
-        parent::setUp();
-
-        $this->originalCwd = getcwd() ?: '/';
-
-        // Install our spy runner before any session client is resolved.
+        // Install spies before any test code resolves the real services.
         $this->spyRunner = new FakeCapturingAgentRunner();
         $this->spyToolExecutor = new FakeCapturingToolExecutor();
 
-        // Container set() only works before first resolution.
-        // InProcessAgentSessionClient is not a shared/lazy service by default
-        // but the container caches after first get(). We set the spies before
-        // any test code resolves the client.
-        self::getContainer()->set(
-            AgentRunnerInterface::class,
-            $this->spyRunner,
-        );
-        self::getContainer()->set(
-            ToolExecutorInterface::class,
-            $this->spyToolExecutor,
-        );
-    }
-
-    protected function tearDown(): void
-    {
-        // Restore CWD before parent cleans up.
-        if (false !== $this->originalCwd) {
-            chdir($this->originalCwd);
-        }
-        parent::tearDown();
+        self::getContainer()->set(AgentRunnerInterface::class, $this->spyRunner);
+        self::getContainer()->set(ToolExecutorInterface::class, $this->spyToolExecutor);
     }
 
     // ── Helpers ───────────────────────────────────────────────────
@@ -273,6 +253,15 @@ final class FakeCapturingAgentRunner implements AgentRunnerInterface
     /** @var list<array{questionId: string, answer: mixed}> */
     public array $answerHumanCalls = [];
 
+    /** Clear captured state between test methods. */
+    public function reset(): void
+    {
+        $this->lastStartInput = null;
+        $this->steerMessages = [];
+        $this->followUpMessages = [];
+        $this->answerHumanCalls = [];
+    }
+
     public function start(StartRunInput $input): string
     {
         $this->lastStartInput = $input;
@@ -310,6 +299,12 @@ final class FakeCapturingAgentRunner implements AgentRunnerInterface
 final class FakeCapturingToolExecutor implements ToolExecutorInterface
 {
     public ?ToolCall $lastToolCall = null;
+
+    /** Clear captured state between test methods. */
+    public function reset(): void
+    {
+        $this->lastToolCall = null;
+    }
 
     public function execute(ToolCall $toolCall): ToolResult
     {

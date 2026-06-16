@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Extension\Builtin\SafeGuard\Classifier;
 
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Classifier\SafeGuardCommandMatcher;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Policy\SafeGuardDecisionKind;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -20,251 +21,142 @@ final class SafeGuardCommandMatcherTest extends TestCase
         $this->matcher = new SafeGuardCommandMatcher();
     }
 
-    // ── Hard block: sudo ──
+    // ── Hard block ──
 
-    public function testSudoIsHardBlocked(): void
+    #[DataProvider('hardBlockProvider')]
+    public function testHardBlockedCommands(string $command, ?string $expectedReason = null): void
     {
-        $result = $this->matcher->classify('sudo rm -rf /');
-
+        $result = $this->matcher->classify($command);
         $this->assertSame(SafeGuardDecisionKind::HardBlock, $result->kind);
-        $this->assertSame('sudo commands are not allowed', $result->reason);
+        if (null !== $expectedReason) {
+            $this->assertSame($expectedReason, $result->reason);
+        }
     }
 
-    public function testSudoInSubcommandIsHardBlocked(): void
+    /** @return iterable<string, array{string, string|null}> */
+    public static function hardBlockProvider(): iterable
     {
-        $result = $this->matcher->classify('bash -c "sudo something"');
-
-        $this->assertSame(SafeGuardDecisionKind::HardBlock, $result->kind);
+        yield 'sudo' => ['sudo rm -rf /', 'sudo commands are not allowed'];
+        yield 'sudo in subcommand' => ['bash -c "sudo something"', null];
     }
 
     // ── Destructive commands ──
 
-    public function testRmIsDestructive(): void
+    #[DataProvider('destructiveProvider')]
+    public function testDestructiveCommands(string $command): void
     {
-        $result = $this->matcher->classify('rm file.txt');
-
+        $result = $this->matcher->classify($command);
         $this->assertSame(SafeGuardDecisionKind::Destructive, $result->kind);
         $this->assertSame('Destructive command', $result->reason);
     }
 
-    public function testRmdirIsDestructive(): void
+    /** @return iterable<string, array{string}> */
+    public static function destructiveProvider(): iterable
     {
-        $result = $this->matcher->classify('rmdir some/dir');
-
-        $this->assertSame(SafeGuardDecisionKind::Destructive, $result->kind);
+        $cases = [
+            'rm'           => 'rm file.txt',
+            'rmdir'        => 'rmdir some/dir',
+            'git clean'    => 'git clean -fd',
+            'git reset --hard' => 'git reset --hard HEAD~1',
+            'git checkout .' => 'git checkout -- .',
+            'mkfs'         => 'mkfs.ext4 /dev/sdb',
+            'dd'           => 'dd if=/dev/zero of=/dev/sdb',
+            'chmod 777'    => 'chmod 777 file',
+            'chown -R'     => 'chown -R user:group /',
+            'mv to /dev/null' => 'mv file.txt /dev/null',
+        ];
+        foreach ($cases as $name => $cmd) {
+            yield $name => [$cmd];
+        }
     }
 
-    public function testGitCleanIsDestructive(): void
+    public function testChmodWithoutDigitsIsAllowed(): void
     {
-        $result = $this->matcher->classify('git clean -fd');
-
-        $this->assertSame(SafeGuardDecisionKind::Destructive, $result->kind);
-    }
-
-    public function testGitResetHardIsDestructive(): void
-    {
-        $result = $this->matcher->classify('git reset --hard HEAD~1');
-
-        $this->assertSame(SafeGuardDecisionKind::Destructive, $result->kind);
-    }
-
-    public function testGitCheckoutDotIsDestructive(): void
-    {
-        $result = $this->matcher->classify('git checkout -- .');
-
-        $this->assertSame(SafeGuardDecisionKind::Destructive, $result->kind);
-    }
-
-    public function testMkfsIsDestructive(): void
-    {
-        $result = $this->matcher->classify('mkfs.ext4 /dev/sdb');
-
-        $this->assertSame(SafeGuardDecisionKind::Destructive, $result->kind);
-    }
-
-    public function testDdIsDestructive(): void
-    {
-        $result = $this->matcher->classify('dd if=/dev/zero of=/dev/sdb');
-
-        $this->assertSame(SafeGuardDecisionKind::Destructive, $result->kind);
-    }
-
-    public function testChmodIsDestructive(): void
-    {
-        $result = $this->matcher->classify('chmod 777 file');
-
-        $this->assertSame(SafeGuardDecisionKind::Destructive, $result->kind);
-    }
-
-    public function testChmodRecursiveNotDetected(): void
-    {
-        // chmod without mode digits not matched
         $result = $this->matcher->classify('chmod +x file');
-
         $this->assertSame(SafeGuardDecisionKind::Allow, $result->kind);
-    }
-
-    public function testChownRecursiveIsDestructive(): void
-    {
-        $result = $this->matcher->classify('chown -R user:group /');
-
-        $this->assertSame(SafeGuardDecisionKind::Destructive, $result->kind);
-    }
-
-    public function testMvToDevNullIsDestructive(): void
-    {
-        $result = $this->matcher->classify('mv file.txt /dev/null');
-
-        $this->assertSame(SafeGuardDecisionKind::Destructive, $result->kind);
     }
 
     // ── Dangerous git commands ──
 
-    public function testGitPushForceIsDangerous(): void
+    #[DataProvider('dangerousGitProvider')]
+    public function testDangerousGitCommands(string $command): void
     {
-        $result = $this->matcher->classify('git push --force origin main');
-
+        $result = $this->matcher->classify($command);
         $this->assertSame(SafeGuardDecisionKind::DangerousGit, $result->kind);
         $this->assertSame('Dangerous git operation', $result->reason);
     }
 
-    public function testGitPushShortFlagIsDangerous(): void
+    /** @return iterable<string, array{string}> */
+    public static function dangerousGitProvider(): iterable
     {
-        $result = $this->matcher->classify('git push -f');
-
-        $this->assertSame(SafeGuardDecisionKind::DangerousGit, $result->kind);
-    }
-
-    public function testGitBranchDeleteIsDangerous(): void
-    {
-        $result = $this->matcher->classify('git branch -d old-branch');
-
-        $this->assertSame(SafeGuardDecisionKind::DangerousGit, $result->kind);
-    }
-
-    public function testGitBranchDeleteForceIsDangerous(): void
-    {
-        $result = $this->matcher->classify('git branch -D old-branch');
-
-        $this->assertSame(SafeGuardDecisionKind::DangerousGit, $result->kind);
-    }
-
-    public function testGitTagDeleteIsDangerous(): void
-    {
-        $result = $this->matcher->classify('git tag -d v1.0');
-
-        $this->assertSame(SafeGuardDecisionKind::DangerousGit, $result->kind);
-    }
-
-    public function testGitRebaseIsDangerous(): void
-    {
-        $result = $this->matcher->classify('git rebase main');
-
-        $this->assertSame(SafeGuardDecisionKind::DangerousGit, $result->kind);
-    }
-
-    public function testGitReflogExpireIsDangerous(): void
-    {
-        $result = $this->matcher->classify('git reflog expire --all');
-
-        $this->assertSame(SafeGuardDecisionKind::DangerousGit, $result->kind);
+        $cases = [
+            'push --force'     => 'git push --force origin main',
+            'push -f'          => 'git push -f',
+            'branch -d'        => 'git branch -d old-branch',
+            'branch -D'        => 'git branch -D old-branch',
+            'tag -d'           => 'git tag -d v1.0',
+            'rebase'           => 'git rebase main',
+            'reflog expire'    => 'git reflog expire --all',
+        ];
+        foreach ($cases as $name => $cmd) {
+            yield $name => [$cmd];
+        }
     }
 
     // ── Sensitive info ──
 
-    public function testEnvIsSensitive(): void
+    #[DataProvider('sensitiveProvider')]
+    public function testSensitiveCommands(string $command): void
     {
-        $result = $this->matcher->classify('env');
-
-        $this->assertSame(SafeGuardDecisionKind::SensitiveInfo, $result->kind);
-        $this->assertSame('Exposes environment variables', $result->reason);
-    }
-
-    public function testPrintenvIsSensitive(): void
-    {
-        $result = $this->matcher->classify('printenv');
-
+        $result = $this->matcher->classify($command);
         $this->assertSame(SafeGuardDecisionKind::SensitiveInfo, $result->kind);
     }
 
-    public function testEnvPipeIsSensitive(): void
+    /** @return iterable<string, array{string}> */
+    public static function sensitiveProvider(): iterable
     {
-        $result = $this->matcher->classify('env | grep SECRET');
-
-        $this->assertSame(SafeGuardDecisionKind::SensitiveInfo, $result->kind);
+        yield 'env'         => ['env'];
+        yield 'printenv'    => ['printenv'];
+        yield 'env pipe'    => ['env | grep SECRET'];
+        yield 'printenv pipe' => ['printenv | sort'];
     }
 
-    public function testPrintenvPipeIsSensitive(): void
+    // ── Custom dangerous ──
+
+    #[DataProvider('customDangerousProvider')]
+    public function testCustomDangerousPatterns(string $command, array $patterns): void
     {
-        $result = $this->matcher->classify('printenv | sort');
-
-        $this->assertSame(SafeGuardDecisionKind::SensitiveInfo, $result->kind);
-    }
-
-    // ── Custom dangerous patterns ──
-
-    public function testCustomDangerousMatchesSubstring(): void
-    {
-        $result = $this->matcher->classify(
-            command: 'some-risky-command --option',
-            dangerousCommandPatterns: ['risky'],
-        );
-
+        $result = $this->matcher->classify(command: $command, dangerousCommandPatterns: $patterns);
         $this->assertSame(SafeGuardDecisionKind::CustomDangerous, $result->kind);
         $this->assertSame('Matched custom dangerous pattern', $result->reason);
     }
 
-    public function testCustomDangerousIsCaseInsensitive(): void
+    /** @return iterable<string, array{string, list<string>}> */
+    public static function customDangerousProvider(): iterable
     {
-        $result = $this->matcher->classify(
-            command: 'RISKY-COMMAND',
-            dangerousCommandPatterns: ['risky'],
-        );
-
-        $this->assertSame(SafeGuardDecisionKind::CustomDangerous, $result->kind);
+        yield 'substring match'   => ['some-risky-command --option', ['risky']];
+        yield 'case insensitive'  => ['RISKY-COMMAND', ['risky']];
+        yield 'whitespace collapse' => ['risky    command', ['risky command']];
     }
 
-    public function testCustomDangerousCollapsesWhitespace(): void
-    {
-        $result = $this->matcher->classify(
-            command: 'risky    command',
-            dangerousCommandPatterns: ['risky command'],
-        );
+    // ── Allowlist ──
 
-        $this->assertSame(SafeGuardDecisionKind::CustomDangerous, $result->kind);
+    #[DataProvider('allowlistProvider')]
+    public function testAllowlist(array $allowed, string $command, bool $expected): void
+    {
+        $this->assertSame($expected, $this->matcher->isCommandAllowed($allowed, $command));
     }
 
-    // ── Allowlist (command allow bypass) ──
-
-    public function testAllowlistBypassesDestructive(): void
+    /** @return iterable<string, array{list<string>, string, bool}> */
+    public static function allowlistProvider(): iterable
     {
-        $this->assertTrue(
-            $this->matcher->isCommandAllowed(['rm -rf'], 'rm -rf /tmp/safe'),
-        );
+        yield 'bypass destructive' => [['rm -rf'], 'rm -rf /tmp/safe', true];
+        yield 'substring match'    => [['rm'], 'rm -rf /tmp/safe', true];
+        yield 'unrelated'          => [['ls'], 'rm -rf /tmp', false];
+        yield 'case insensitive'   => [['RM'], 'rm file', true];
     }
 
-    public function testAllowlistIsSubstringMatch(): void
-    {
-        $this->assertTrue(
-            $this->matcher->isCommandAllowed(['rm'], 'rm -rf /tmp/safe'),
-        );
-    }
-
-    public function testAllowlistDoesNotMatchUnrelated(): void
-    {
-        $this->assertFalse(
-            $this->matcher->isCommandAllowed(['ls'], 'rm -rf /tmp'),
-        );
-    }
-
-    public function testAllowlistIsCaseInsensitive(): void
-    {
-        $this->assertTrue(
-            $this->matcher->isCommandAllowed(['RM'], 'rm file'),
-        );
-    }
-
-    // ── Safe / allowed commands ──
+    // ── Safe commands ──
 
     public function testSafeCommandsAreAllowed(): void
     {

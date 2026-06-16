@@ -15,6 +15,7 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 
@@ -979,31 +980,36 @@ final class TranscriptProjectorTest extends TestCase
         $this->assertSame('write', $blocks[1]->text);
     }
 
-    // ── Edge cases ───────────────────────────────────────────────────────────
+    // ── Edge cases (ignored / no-op events) ──────────────────────────────────
 
-    public function testDeltaBeforeStartIsSilentlyIgnored(): void
+    #[DataProvider('noOpEventProvider')]
+    public function testNoOpEventsProduceNoBlocks(string $type, array $payload): void
     {
-        $this->accept('assistant.text_delta', [
-            'block_id' => 'nonexistent', 'delta' => 'oops',
-        ]);
+        // Some no-op variants need a pre-existing block to prove delta/completed
+        // don't affect blocks they don't own.
+        if ('assistant.text_delta' === $type && 'oops' === ($payload['delta'] ?? '')) {
+            $this->accept($type, $payload);
+            $this->assertSame([], $this->projector->blocks());
+            return;
+        }
+        if ('assistant.text_completed' === $type) {
+            $this->accept($type, $payload);
+            $this->assertSame([], $this->projector->blocks());
+            return;
+        }
 
-        $this->assertSame([], $this->projector->blocks());
+        $this->accept($type, $payload);
+        $this->assertSame([], $this->projector->blocks(), "{$type} should produce no blocks");
     }
 
-    public function testCompletedBeforeStartIsSilentlyIgnored(): void
+    /** @return iterable<string, array{string, array<string,mixed>}> */
+    public static function noOpEventProvider(): iterable
     {
-        $this->accept('assistant.text_completed', [
-            'block_id' => 'ghost', 'text' => 'phantom',
-        ]);
-
-        $this->assertSame([], $this->projector->blocks());
-    }
-
-    public function testMessageCompletedWithNoStreamingBlocksDoesNothing(): void
-    {
-        $this->accept('assistant.message_completed', ['message_id' => 'unknown']);
-
-        $this->assertSame([], $this->projector->blocks());
+        yield 'delta before start' => ['assistant.text_delta', ['block_id' => 'nonexistent', 'delta' => 'oops']];
+        yield 'completed before start' => ['assistant.text_completed', ['block_id' => 'ghost', 'text' => 'phantom']];
+        yield 'message completed, no blocks' => ['assistant.message_completed', ['message_id' => 'unknown']];
+        yield 'progress.updated' => ['progress.updated', ['message' => 'working...']];
+        yield 'model.changed' => ['model.changed', ['model' => 'gpt-5']];
     }
 
     public function testEmptyDeltaIsNoOp(): void
@@ -1019,15 +1025,6 @@ final class TranscriptProjectorTest extends TestCase
 
         $after = $this->projector->blocks()[0];
         $this->assertSame($before->text, $after->text, 'Empty delta should not change block text');
-    }
-
-    public function testUnknownEventTypeIsIgnored(): void
-    {
-        $this->accept('run.started', []);
-        $this->accept('progress.updated', ['message' => 'working...']);
-        $this->accept('model.changed', ['model' => 'gpt-5']);
-
-        $this->assertSame([], $this->projector->blocks(), 'Unknown/unhandled types should produce no blocks');
     }
 
     public function testReplayProducesSameBlocks(): void
