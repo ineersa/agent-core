@@ -35,7 +35,7 @@ Rules:
 Status: IN-PROGRESS
 Branch: task/maint-05f-codingagent-test-diet-sequential-speed
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05f-codingagent-test-diet-sequential-speed
-Fork run: 0lgasra9juhl
+Fork run: i8mws6e5n2l6
 PR URL:
 PR Status:
 Started: 2026-06-16T01:11:28.618Z
@@ -82,3 +82,8 @@ Completed:
 - Recorded fork run: 0lgasra9juhl
 - Validation: Fork guard passed in `/home/ineersa/projects/agent-core-worktrees/maint-05f-codingagent-test-diet-sequential-speed` on branch `task/maint-05f-codingagent-test-diet-sequential-speed`.; Fork validation: `castor test --suite=coding-agent --sequential` passed: 1467 tests, 4019 assertions, 0 risky, 0 skipped, 42.9s.; Fork validation: default `castor test` passed: 2524 tests, 7330 assertions, 15.8s.; Fork validation: `castor deptrac` passed with 0 violations/errors.; Fork validation: `castor phpstan` passed with 0 errors/file_errors.; Fork validation: `castor cs-check` passed with 0 fixable files.; Fork validation: `castor list` passed; commands/options intact.; Full `LLM_MODE=true castor check` skipped per MAINT-05A-F policy.
 - Summary: Follow-up fork completed the user-requested kernel-boot optimization and committed `40fd047e8` on the MAINT-05F task branch. `IsolatedKernelTestCase` now uses one isolated cwd and one Symfony kernel boot per test class, with per-method EM clear and class-level kernel shutdown/exception handler cleanup. Sequential CodingAgent runtime improved from ~131.9s to 42.9s (68% reduction). Fork also fixed the `castor test --sequential` path so it excludes E2E/live/replay-recording groups consistently, eliminating the previous skipped-test nonzero status. `PromptTemplateExpansionInProcessTest` remained a per-method kernel case because its shared `InProcessAgentSessionClient` service caches prompt template directory contents; user has now requested that this per-method lifecycle management be moved into an abstract test base instead of hand-managed in the concrete test.
+
+## Task workflow update - 2026-06-16T02:07:47.022Z
+- Recorded fork run: i8mws6e5n2l6
+- Validation: Pending fork `i8mws6e5n2l6`: expected validation includes focused Castor tests for changed kernel-test classes, `castor test --suite=coding-agent --sequential` timing, default `castor test`, `castor deptrac`, `castor phpstan`, `castor cs-check`, and `castor list`. Full `LLM_MODE=true castor check` remains skipped per MAINT-05A-F policy.
+- Summary: Launched follow-up fork for user feedback on the kernel optimization: per-method fallback lifecycle must live in an abstract test base, not as hand-managed CWD/kernel/shutdown/exception-handler code inside `PromptTemplateExpansionInProcessTest` or other concrete tests. Fork must create a reusable per-method isolated kernel test base with lifecycle hooks, refactor `PromptTemplateExpansionInProcessTest` to use it, audit remaining direct `KernelTestCase` subclasses for duplicated manual lifecycle, optionally move safe classes to per-class `IsolatedKernelTestCase`, update docs/comments, and re-measure sequential runtime against the 42.9s post-optimization baseline.
