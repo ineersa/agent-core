@@ -554,3 +554,6 @@ Castor Check Output SHA256: 8402952e60f19af97d70af3c9bd816e632c7b0adb64c7eea53f5
 - Updated PR Status: merged
 - Validation: Verified `gh pr view 150`: state MERGED, merge commit f2564c9736e8e7a110d96ae5301b4310cfc59f58.; Ran `git pull --rebase origin main`: fast-forwarded local main from 37f719a12 to f2564c973.; Verified issue #125 state CLOSED; issue #124 state CLOSED.
 - Summary: PR #150 merged externally by user at 2026-06-16T21:30:19Z (merge commit f2564c9736e8e7a110d96ae5301b4310cfc59f58). Local integration checkout fast-forwarded to origin/main. GitHub issues #124 (`Read + parallel bug?`) and #125 (`Compat flags in providers`) are closed. Merged scope includes durable OpenAI-compatible streaming tool-call conversion, TUI projector phantom cleanup, castor phar:build fix, simplified AgentCore provider-compat shaping architecture, public compat feature constants, and read-tool parallel execution with mixed parallel/sequential dispatch tests. Umbrella backlog cleanup task remains IN-PROGRESS for remaining issues.
+
+## Task workflow update - 2026-06-16T21:34:55.158Z
+- Summary: User selected next issue: investigate #127 (`TUI on /resume is not re-rendered properly`) and requested scouts to understand why TUI re-render/session resume is broken before implementation. Scope is investigation/root-cause only.
