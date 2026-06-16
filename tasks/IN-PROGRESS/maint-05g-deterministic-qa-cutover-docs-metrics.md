@@ -31,13 +31,13 @@ This task should not start until enough of A-F are complete that default QA can 
 - MAINT-05 umbrella task is updated with final status and links/results for MAINT-05A-G.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/maint-05g-deterministic-qa-cutover-docs-metrics
+Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05g-deterministic-qa-cutover-docs-metrics
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-16T02:21:32.044Z
 Completed:
 
 ## Work log
@@ -53,3 +53,12 @@ Completed:
 - Supersedes earlier PR-base notes in this task: do NOT use `prBaseBranch="task/maint-05-cardinal-qa-test-rework"`. Target `main` for MAINT-05G.
 - Sequential execution policy: MAINT-05G should start after MAINT-05A-F have been manually reviewed/merged to `main`, unless the user explicitly says otherwise.
 - MAINT-05G remains the stage that reconciles final deterministic validation, full `castor check` semantics, docs, metrics, and final review readiness.
+
+## Task workflow update - 2026-06-16T02:21:32.044Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/maint-05g-deterministic-qa-cutover-docs-metrics.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/maint-05g-deterministic-qa-cutover-docs-metrics.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/maint-05g-deterministic-qa-cutover-docs-metrics.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/maint-05g-deterministic-qa-cutover-docs-metrics.
+- Validation: Pre-start state: MAINT-05F PR #147 confirmed merged and task moved to DONE.; Integration checkout clean on `main` before starting MAINT-05G.; MAINT-05G owns final deterministic `castor check` semantics, docs, metrics, and task-workflow quality gate restoration.
+- Summary: Started MAINT-05G after MAINT-05A-F were merged to main. User explicitly instructed to restore the `castor check` quality gate in the task workflow CODE-REVIEW path as part of this final cutover, after it had been disabled for MAINT-05A-F. Main remains the MAINT-05 integration branch and MAINT-05G PR should target `main`.
