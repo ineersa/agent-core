@@ -169,19 +169,35 @@ final readonly class InteractiveMode
             // Set initial transcript
             $screen->setTranscriptBlocks($state->transcript);
 
-            // ── Force first-render screen clear when switching sessions ──
-            // Each loop iteration creates a fresh Tui whose ScreenWriter
-            // starts with empty previousLines.  On the first render
-            // ScreenWriter::writeInternal() calls fullRender() with
-            // $clear=false, appending output from the current cursor
-            // position instead of clearing the old TUI's rendered content.
+            // ── Clear the old TUI's rendered content before the new TUI paints ──
             //
-            // requestRender(true) resets the ScreenWriter (previousWidth=-1)
-            // which forces the first fullRender() to clear ($clear=true)
-            // atomically inside the TUI's synchronized-output block — no
-            // out-of-band fwrite(STDOUT) needed between Terminal::stop()
-            // and Terminal::start().
+            // Between Tui::stop() (restores echo, cooked mode) and
+            // Terminal::start() (raw mode, echo off), the terminal is
+            // in a fragile window where echo is ON.  Writing the clear
+            // escape sequence during this window would be echoed as
+            // visible garbage on the terminal.
+            //
+            // To avoid this, we save the current stty state, temporarily
+            // disable echo, write the clear sequence directly to STDOUT,
+            // then restore the original stty state before the new TUI
+            // starts.  This gives us a guaranteed blank screen regardless
+            // of whether ScreenWriter's DECSET-2026 synchronized-output
+            // brackets are supported by the terminal multiplexer.
+            //
+            // requestRender(true) is also called as a defence-in-depth
+            // layer so the ScreenWriter's first render also clears — if
+            // the terminal supports synchronized output this gives an
+            // atomic clear-and-paint in a single write.
             if ($needsTerminalClear) {
+                $originalStty = shell_exec('stty -g 2>/dev/null');
+                if (false !== $originalStty && null !== $originalStty) {
+                    shell_exec('stty -echo 2>/dev/null');
+                }
+                fwrite(\STDOUT, "\x1b[2J\x1b[3J\x1b[H");
+                fflush(\STDOUT);
+                if (false !== $originalStty && null !== $originalStty) {
+                    shell_exec('stty '.escapeshellarg(trim($originalStty)).' 2>/dev/null');
+                }
                 $tui->requestRender(true);
             }
 
