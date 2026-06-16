@@ -60,3 +60,33 @@ parameters:
 			count: 1
 			path: src/CodingAgent/CLI/AgentCommand.php
 
+		-
+			message: '#^Parameter &\$blockByIndex by\-ref type of method Ineersa\\Platform\\Bridge\\Generic\\DurableResultConverter\:\:accumulateDurableToolCalls\(\) expects array\<int, int\>, array\<int\> given\.$#'
+			identifier: parameterByRef.type
+			count: 1
+			path: src/Platform/Bridge/Generic/DurableResultConverter.php
+
+		-
+			message: '#^Parameter &\$blocks by\-ref type of method Ineersa\\Platform\\Bridge\\Generic\\DurableResultConverter\:\:accumulateDurableToolCalls\(\) expects array\<int, array\{id\: string, name\: string, partialJson\: string, index\: int\}\>, non\-empty\-array\<int, array\{id\: string, name\: string, partialJson\: mixed, index\: mixed\}\|array\{partialJson\: string\}\> given\.$#'
+			identifier: parameterByRef.type
+			count: 1
+			path: src/Platform/Bridge/Generic/DurableResultConverter.php
+
+		-
+			message: '#^Parameter &\$blocks by\-ref type of method Ineersa\\Platform\\Bridge\\Generic\\DurableResultConverter\:\:accumulateDurableToolCalls\(\) expects array\<int, array\{id\: string, name\: string, partialJson\: string, index\: int\}\>, non\-empty\-array\<int, array\{id\: string, name\: string, partialJson\: string, index\: int\}\|array\{partialJson\: string\}\> given\.$#'
+			identifier: parameterByRef.type
+			count: 1
+			path: src/Platform/Bridge/Generic/DurableResultConverter.php
+
+		-
+			message: '#^Parameter &\$blocks by\-ref type of method Ineersa\\Platform\\Bridge\\Generic\\DurableResultConverter\:\:accumulateDurableToolCalls\(\) expects array\<int, array\{id\: string, name\: string, partialJson\: string, index\: int\}\>, non\-empty\-array\<int, array\{id\: string, name\: string, partialJson\: string, index\: mixed\}\|array\{partialJson\: string\}\> given\.$#'
+			identifier: parameterByRef.type
+			count: 1
+			path: src/Platform/Bridge/Generic/DurableResultConverter.php
+
+		-
+			message: '#^Parameter &\$blocks by\-ref type of method Ineersa\\Platform\\Bridge\\Generic\\DurableResultConverter\:\:resolveBlockKey\(\) expects array\<int, array\{id\: string, name\: string, partialJson\: string, index\: int\}\>, non\-empty\-array\<int, array\{id\: string, name\: string, partialJson\: string, index\: int\}\|array\{index\: int\}\> given\.$#'
+			identifier: parameterByRef.type
+			count: 1
+			path: src/Platform/Bridge/Generic/DurableResultConverter.php
+

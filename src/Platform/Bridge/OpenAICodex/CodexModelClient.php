@@ -28,7 +28,7 @@ class CodexModelClient implements ModelClientInterface
     private const array INTERNAL_OPTION_KEYS = [
         '_agent_core_invocation',
         '_hatfield_reasoning',
-        '_hatfield_suppress_developer_role',
+        'tool_stream',
         'tools_ref',
         'turn_no',
         'run_id',

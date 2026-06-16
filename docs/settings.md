@@ -629,13 +629,15 @@ OpenAI chat-completions-style but may need request-shaping adjustments.
 |-----|------|-------------|
 | `supports_developer_role` | bool | Whether the provider accepts the OpenAI `developer` role. When `false`, map to `system` role. |
 | `supports_reasoning_effort` | bool | Whether the provider accepts `reasoning_effort`. When `false`, do not send this parameter. |
-| `thinking_format` | string | How reasoning is signalled. `zai` means `enable_thinking: boolean` instead of `reasoning_effort`. |
+| `thinking_format` | string | How reasoning is signalled. `zai` means `enable_thinking: boolean`; `deepseek` means `thinking.type` + `reasoning_effort`; `codex` means Codex Responses API `reasoning.effort`. Null = standard OpenAI `reasoning_effort`. |
+| `requires_reasoning_content_on_assistant_messages` | bool | Whether assistant messages without thinking must include an empty `reasoning_content` field (DeepSeek). Default: `false`. |
 
 Model-level `compatibility`:
 
 | Key | Type | Description |
 |-----|------|-------------|
-| `zai_tool_stream` | bool | Whether the model supports streaming tool-call deltas (z.ai provider only). |
+| `zai_tool_stream` | bool | Whether the model supports streaming tool-call deltas (z.ai provider only). When `true`, `tool_stream: true` is sent in the request. |
+| `requires_reasoning_content_on_assistant_messages` | bool | Per-model override for the provider-level flag. |
 
 These are **internal Hatfield metadata** consumed by the request-shaping
 layer. They are not native to Symfony's generic bridge.
@@ -683,6 +685,11 @@ them in your home settings (`~/.hatfield/settings.yaml`).
 #### deepseek
 
 OpenAI chat-completions-style provider. Requires `DEEPSEEK_API_KEY` environment variable.
+
+**Compat quirks:**
+
+- `thinking_format: deepseek` — emits `thinking.type` alongside `reasoning_effort` when reasoning is enabled.
+- `requires_reasoning_content_on_assistant_messages: true` — every assistant message includes `reasoning_content: ""` even when no thinking was produced. Without this, multi-turn conversations fail.
 
 Seed models: `deepseek-v4-pro`, `deepseek-v4-flash`.
 

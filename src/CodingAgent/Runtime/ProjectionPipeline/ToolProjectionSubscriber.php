@@ -18,14 +18,24 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
     public static function getSubscribedEvents(): array
     {
         return [
+            // Tool call streaming
             RuntimeEventTypeEnum::ToolCallStarted->value => 'onToolCallStarted',
             RuntimeEventTypeEnum::ToolCallArgumentsDelta->value => 'onToolCallArgumentsDelta',
             RuntimeEventTypeEnum::ToolCallArgumentsCompleted->value => 'onToolCallArgumentsCompleted',
+            // Tool execution
             RuntimeEventTypeEnum::ToolExecutionStarted->value => 'onToolExecutionStarted',
             RuntimeEventTypeEnum::ToolExecutionOutputDelta->value => 'onToolExecutionOutputDelta',
             RuntimeEventTypeEnum::ToolExecutionCompleted->value => 'onToolExecutionCompleted',
             RuntimeEventTypeEnum::ToolExecutionFailed->value => 'onToolExecutionFailed',
             RuntimeEventTypeEnum::ToolExecutionCancelled->value => 'onToolExecutionCancelled',
+            // Orphan cleanup: remove ToolCall blocks whose tool_call_id
+            // was never executed (common in parallel LLM responses where
+            // the LLM emits multiple non-empty tool calls but the runtime
+            // only accepts one).
+            RuntimeEventTypeEnum::TurnStarted->value => 'onTurnStarted',
+            RuntimeEventTypeEnum::RunCompleted->value => 'onRunCompleted',
+            RuntimeEventTypeEnum::RunFailed->value => 'onRunFailed',
+            RuntimeEventTypeEnum::RunCancelled->value => 'onRunCancelled',
         ];
     }
 
@@ -58,7 +68,8 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
         $p = $event->payload();
         $state = $event->state;
         $toolCallId = (string) ($p['tool_call_id'] ?? '');
-        $delta = (string) ($p['delta'] ?? '');
+        // Stream subscriber emits 'partial_json', not 'delta'.
+        $delta = (string) ($p['partial_json'] ?? $p['delta'] ?? '');
         $blockId = 'tool_call_'.$toolCallId;
         $block = $state->getBlock($blockId);
 
@@ -149,6 +160,18 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
             ],
             streaming: true,
         ));
+
+        // Remove still-streaming phantom ToolCall blocks now that a
+        // concrete tool is known to be executing.  This handles the case
+        // where the LLM emitted ToolCallStart for a tool that never
+        // appeared in ToolCallComplete (e.g. «read...» visible alongside
+        // the actual completed «bash(command: ...)»).
+        //
+        // Only streaming blocks are removed — finalized (non-streaming)
+        // blocks that await execution are safe to keep; the full orphan
+        // sweep runs at TurnStarted after all tools in the batch have
+        // executed or been dropped.
+        $state->removePhantomStreamingToolCallBlocks();
     }
 
     public function onToolExecutionOutputDelta(TranscriptProjectionEvent $event): void
@@ -227,5 +250,36 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
         $text = $timedOut ? 'Timed out' : 'Cancelled';
 
         $state->upsertToolResultBlock($blockId, $event->runId(), $text, $meta, false);
+    }
+
+    // ── Orphan cleanup ───────────────────────────────────────────────────────
+
+    /**
+     * Remove orphaned ToolCall blocks at the start of a new turn.
+     *
+     * After tool execution completes for a turn, any remaining ToolCall
+     * blocks without a matching ToolResult represent calls that the LLM
+     * emitted but the runtime never executed (e.g. parallel placeholder
+     * calls).  Cleaning them at TurnStarted ensures they are gone before
+     * the next turn's content appears.
+     */
+    public function onTurnStarted(TranscriptProjectionEvent $event): void
+    {
+        $event->state->removeOrphanedToolCallBlocks();
+    }
+
+    public function onRunCompleted(TranscriptProjectionEvent $event): void
+    {
+        $event->state->removeOrphanedToolCallBlocks();
+    }
+
+    public function onRunFailed(TranscriptProjectionEvent $event): void
+    {
+        $event->state->removeOrphanedToolCallBlocks();
+    }
+
+    public function onRunCancelled(TranscriptProjectionEvent $event): void
+    {
+        $event->state->removeOrphanedToolCallBlocks();
     }
 }

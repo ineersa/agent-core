@@ -9,11 +9,10 @@ namespace Ineersa\AgentCore\Domain\Model;
  * AgentCore infrastructure and CodingAgent compat/request shapers.
  *
  * These keys are stripped from provider invocation options before they
- * reach the Symfony AI Platform provider. They carry cross-cutting
- * concerns such as reasoning level and role-suppression flags.
+ * reach the Symfony AI Platform provider.
  *
  * @see \Ineersa\AgentCore\Infrastructure\SymfonyAi\ModelResolverRoutingSubscriber
- * @see \Ineersa\CodingAgent\Config\CompatRequestShaper
+ * @see \Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderCompatibilityRequestShaper
  */
 final class ProviderRequestOptionKeys
 {
@@ -25,11 +24,18 @@ final class ProviderRequestOptionKeys
     public const string REASONING = '_hatfield_reasoning';
 
     /**
-     * Internal option key signaling that the provider does not support the
-     * OpenAI developer role. Message converters should suppress developer
-     * messages when this flag is present.
+     * Internal option key carrying the provider compatibility features array
+     * (e.g. ['zai_tool_stream', 'requires_reasoning_content_on_assistant', 'reasoning']).
+     * Consumed by compat feature shapers and stripped before the provider sees options.
      */
-    public const string SUPPRESS_DEVELOPER_ROLE = '_hatfield_suppress_developer_role';
+    public const string COMPAT_FEATURES = '_hatfield_compat_features';
+
+    /**
+     * Internal option key carrying pre-computed reasoning options
+     * (e.g. ['enable_thinking' => true]) that the ReasoningOptionsFeatureShaper
+     * merges into the provider options. Stripped before the provider sees options.
+     */
+    public const string REASONING_OPTIONS = '_hatfield_reasoning_options';
 
     private function __construct()
     {

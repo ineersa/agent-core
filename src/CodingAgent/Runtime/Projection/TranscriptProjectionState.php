@@ -218,6 +218,77 @@ final class TranscriptProjectionState
     }
 
     /**
+     * Remove ToolCall blocks whose tool_call_id has no matching ToolResult
+     * block, cleaning up orphaned/phantom entries that were never executed.
+     *
+     * Common in parallel LLM responses where multiple non-empty tool calls
+     * are emitted but only one is actually accepted for execution.
+     */
+    /**
+     * Remove still-streaming ToolCall blocks that were never finalized
+     * by ToolCallComplete.  Safe to call mid-turn — this only removes
+     * blocks the LLM announced but never completed, not blocks that are
+     * finalized and awaiting execution.
+     *
+     * Called from onToolExecutionStarted() so phantom streaming blocks
+     * are cleaned at the earliest reliable moment rather than waiting
+     * for the next TurnStarted.
+     */
+    public function removePhantomStreamingToolCallBlocks(): void
+    {
+        $hasFinalized = false;
+
+        foreach ($this->blocks as $block) {
+            if (TranscriptBlockKindEnum::ToolCall === $block->kind && !$block->streaming) {
+                $hasFinalized = true;
+                break;
+            }
+        }
+
+        // No finalized tool call yet — nothing to compare against.
+        if (!$hasFinalized) {
+            return;
+        }
+
+        foreach ($this->blocks as $id => $block) {
+            if (TranscriptBlockKindEnum::ToolCall !== $block->kind) {
+                continue;
+            }
+
+            if ($block->streaming) {
+                $this->removeBlock($id);
+            }
+        }
+    }
+
+    public function removeOrphanedToolCallBlocks(): void
+    {
+        $executedIds = [];
+
+        foreach ($this->blocks as $block) {
+            if (TranscriptBlockKindEnum::ToolResult === $block->kind) {
+                $executedIds[] = $block->meta['tool_call_id'] ?? '';
+            }
+        }
+
+        // Nothing executed yet — keep all ToolCall blocks.
+        if ([] === $executedIds) {
+            return;
+        }
+
+        foreach ($this->blocks as $id => $block) {
+            if (TranscriptBlockKindEnum::ToolCall !== $block->kind) {
+                continue;
+            }
+
+            $callId = $block->meta['tool_call_id'] ?? '';
+            if (!\in_array($callId, $executedIds, true)) {
+                $this->removeBlock($id);
+            }
+        }
+    }
+
+    /**
      * Finalize all streaming blocks belonging to a given message.
      */
     /**

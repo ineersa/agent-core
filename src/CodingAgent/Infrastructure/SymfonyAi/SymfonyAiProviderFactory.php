@@ -8,12 +8,17 @@ use Ineersa\CodingAgent\Auth\CodexAuthStorage;
 use Ineersa\CodingAgent\Auth\CodexOAuthConfig;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\Platform\Bridge\Generic\DurableResultConverter;
 use Psr\Log\LoggerInterface;
+use Symfony\AI\Platform\Bridge\Generic\Completions\ModelClient as GenericCompletionsModelClient;
 use Symfony\AI\Platform\Bridge\Generic\CompletionsModel;
-use Symfony\AI\Platform\Bridge\Generic\Factory as GenericFactory;
+use Symfony\AI\Platform\Bridge\Generic\Embeddings\ModelClient as GenericEmbeddingsModelClient;
+use Symfony\AI\Platform\Bridge\Generic\Embeddings\ResultConverter as GenericEmbeddingsResultConverter;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModel;
 use Symfony\AI\Platform\Bridge\OpenAICodex\Factory as OpenAICodexFactory;
+use Symfony\AI\Platform\Provider;
 use Symfony\AI\Platform\ProviderInterface;
+use Symfony\Component\HttpClient\EventSourceHttpClient;
 use Symfony\Component\HttpClient\HttpClient;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
@@ -108,19 +113,7 @@ class SymfonyAiProviderFactory
             return $this->buildCodexProvider($provider, $projectedCatalog);
         }
 
-        return GenericFactory::createProvider(
-            baseUrl: $provider->baseUrl,
-            apiKey: $this->resolveApiKey($provider->apiKey),
-            httpClient: $this->getHttpClient(),
-            modelCatalog: $projectedCatalog,
-            contract: null,
-            eventDispatcher: $this->eventDispatcher,
-            supportsCompletions: $provider->supportsCompletions,
-            supportsEmbeddings: $provider->supportsEmbeddings,
-            completionsPath: $provider->completionsPath ?? '/v1/chat/completions',
-            embeddingsPath: $provider->embeddingsPath ?? '/v1/embeddings',
-            name: $provider->id,
-        );
+        return $this->buildGenericCompletionsProvider($provider, $projectedCatalog);
     }
 
     private function buildCodexProvider(AiProviderConfig $provider, ProjectedSymfonyModelCatalog $projectedCatalog): ProviderInterface
@@ -190,6 +183,55 @@ class SymfonyAiProviderFactory
 
         // Anything else is invalid: openai-codex- with no suffix, my-custom-key, weird chars
         throw new \RuntimeException(\sprintf('OpenAI Codex provider "%s" has an invalid auth_key "%s". Use "openai-codex" for the default account or run bin/console auth:codex --auth-profile=<name> to create an account under "openai-codex-<name>".', $provider->id, $authKey));
+    }
+
+    /**
+     * Build a generic chat-completions provider with durable streaming tool-call conversion.
+     *
+     * Replaces the vendor GenericFactory default ResultConverter with
+     * {@see DurableResultConverter}, which uses dual-map (stream index +
+     * tool-call id) tracking for robust sparse/out-of-order tool-call chunk
+     * handling.  The HTTP client, embedding support, and Provider wiring
+     * are identical to what GenericFactory creates.
+     */
+    private function buildGenericCompletionsProvider(AiProviderConfig $provider, ProjectedSymfonyModelCatalog $projectedCatalog): ProviderInterface
+    {
+        $httpClient = $this->getHttpClient();
+        $httpClient = $httpClient instanceof EventSourceHttpClient ? $httpClient : new EventSourceHttpClient($httpClient);
+
+        $modelClients = [];
+        $resultConverters = [];
+
+        if ($provider->supportsCompletions) {
+            $completionsPath = $provider->completionsPath ?? '/v1/chat/completions';
+            $modelClients[] = new GenericCompletionsModelClient(
+                $httpClient,
+                $provider->baseUrl,
+                $this->resolveApiKey($provider->apiKey),
+                $completionsPath,
+            );
+            $resultConverters[] = new DurableResultConverter();
+        }
+
+        if ($provider->supportsEmbeddings) {
+            $embeddingsPath = $provider->embeddingsPath ?? '/v1/embeddings';
+            $modelClients[] = new GenericEmbeddingsModelClient(
+                $httpClient,
+                $provider->baseUrl,
+                $this->resolveApiKey($provider->apiKey),
+                $embeddingsPath,
+            );
+            $resultConverters[] = new GenericEmbeddingsResultConverter();
+        }
+
+        return new Provider(
+            $provider->id,
+            $modelClients,
+            $resultConverters,
+            $projectedCatalog,
+            null,  // contract — use Symfony AI default
+            $this->eventDispatcher,
+        );
     }
 
     /**

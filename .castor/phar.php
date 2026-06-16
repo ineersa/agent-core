@@ -18,18 +18,13 @@ require_once __DIR__.'/../vendor/autoload.php';
 require_once __DIR__.'/helpers.php';
 
 /**
- * Build hatfield.phar via the phar:build Symfony Console command.
+ * Build hatfield.phar via the CastorTasks PHAR build pipeline.
  */
 #[AsTask(name: 'phar:build', description: 'Build hatfield.phar')]
 function phar_build(): void
 {
-    // Only build the project-local PHAR needed for controller/TUI subprocess
-    // tests; the real CI artifact lives in tools/phar/build-phar.php and only
-    // needs to be rebuilt when the source packaging script changes.
-    passthru(\PHP_BINARY.' '.__DIR__.'/../bin/console phar:build', $exitCode);
-    if (0 !== $exitCode) {
-        throw new RuntimeException("phar:build console command exited with code {$exitCode}");
-    }
+    \CastorTasks\phar_build();
+    echo "PHAR built successfully.\n";
 }
 
 /**

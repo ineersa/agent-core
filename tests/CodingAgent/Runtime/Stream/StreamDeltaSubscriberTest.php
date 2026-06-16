@@ -213,6 +213,43 @@ final class StreamDeltaSubscriberTest extends TestCase
         self::assertSame(['pattern' => '*.php'], $this->captured[0]->payload['arguments']);
     }
 
+    // ── Empty-ID suppression (defense-in-depth) ──────────────────────────────
+
+    #[Test]
+    public function toolCallStartWithEmptyIdIsSuppressed(): void
+    {
+        $this->observer->onStreamStart('run-1', 'step-1');
+        $this->captured = [];
+
+        $this->observer->onDelta('run-1', 'step-1', new ToolCallStart('', 'phantom'));
+
+        self::assertCount(0, $this->captured, 'Empty-ID ToolCallStart must be suppressed');
+    }
+
+    #[Test]
+    public function toolInputDeltaWithEmptyIdIsSuppressed(): void
+    {
+        $this->observer->onStreamStart('run-1', 'step-1');
+        $this->captured = [];
+
+        $this->observer->onDelta('run-1', 'step-1', new ToolInputDelta('', 'phantom', '{"x":1}'));
+
+        self::assertCount(0, $this->captured, 'Empty-ID ToolInputDelta must be suppressed');
+    }
+
+    #[Test]
+    public function toolCallStartWithValidIdStillEmits(): void
+    {
+        $this->observer->onStreamStart('run-1', 'step-1');
+        $this->captured = [];
+
+        $this->observer->onDelta('run-1', 'step-1', new ToolCallStart('tc-42', 'bash'));
+
+        self::assertCount(1, $this->captured, 'Non-empty ToolCallStart should still emit');
+        self::assertSame(RuntimeEventTypeEnum::ToolCallStarted->value, $this->captured[0]->type);
+        self::assertSame('tc-42', $this->captured[0]->payload['tool_call_id']);
+    }
+
     // ── Seq and payload invariants ───────────────────────────────────────────
 
     #[Test]

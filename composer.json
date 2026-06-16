@@ -17,7 +17,7 @@
         "symfony/lock": "^8.0",
         "helgesverre/toon": "^3.1",
         "symfony/ai-agent": "dev-main",
-        "symfony/ai-platform": "^0.9",
+        "symfony/ai-platform": "^0.10",
         "symfony/validator": "^8.0",
         "symfony/uid": "^8.0",
         "symfony/tui": "^8.1",
@@ -55,7 +55,8 @@
             "Ineersa\\Hatfield\\ExtensionApi\\": "src/CodingAgent/ExtensionApi/",
             "Ineersa\\Tui\\": "src/Tui/",
             "DoctrineMigrations\\": "migrations/",
-            "Symfony\\AI\\Platform\\Bridge\\OpenAICodex\\": "src/Platform/Bridge/OpenAICodex/"
+            "Symfony\\AI\\Platform\\Bridge\\OpenAICodex\\": "src/Platform/Bridge/OpenAICodex/",
+            "Ineersa\\Platform\\": "src/Platform/"
         }
     },
     "autoload-dev": {
@@ -63,7 +64,8 @@
             "Ineersa\\CodingAgent\\Tests\\": "tests/CodingAgent/",
             "Ineersa\\AgentCore\\Tests\\": "tests/AgentCore/",
             "Ineersa\\Tui\\Tests\\": "tests/Tui/",
-            "Symfony\\AI\\Platform\\Bridge\\OpenAICodex\\Tests\\": "tests/Platform/Bridge/OpenAICodex/"
+            "Symfony\\AI\\Platform\\Bridge\\OpenAICodex\\Tests\\": "tests/Platform/Bridge/OpenAICodex/",
+            "Ineersa\\Platform\\Tests\\": "tests/Platform/"
         }
     },
     "minimum-stability": "dev",

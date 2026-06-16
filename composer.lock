@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "42b70b2006e8349ed0c265e53e230745",
+    "content-hash": "69df31fb99fe5c6b5a2f58800526f9a8",
     "packages": [
         {
             "name": "doctrine/collections",
@@ -2541,12 +2541,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/ai-agent.git",
-                "reference": "754ad104d44778e87aef79fd4335e21f8deb288b"
+                "reference": "e319c1419c80f0767299631385798e8891def476"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/symfony/ai-agent/zipball/754ad104d44778e87aef79fd4335e21f8deb288b",
-                "reference": "754ad104d44778e87aef79fd4335e21f8deb288b",
+                "url": "https://api.github.com/repos/symfony/ai-agent/zipball/e319c1419c80f0767299631385798e8891def476",
+                "reference": "e319c1419c80f0767299631385798e8891def476",
                 "shasum": ""
             },
             "require": {
@@ -2555,7 +2555,7 @@
                 "phpdocumentor/reflection-docblock": "^5.4|^6.0",
                 "phpstan/phpdoc-parser": "^2.1",
                 "psr/log": "^3.0",
-                "symfony/ai-platform": "^0.9",
+                "symfony/ai-platform": "^0.10",
                 "symfony/clock": "^7.3|^8.0",
                 "symfony/http-client": "^7.3|^8.0",
                 "symfony/polyfill-php85": "^1.33",
@@ -2569,7 +2569,7 @@
                 "phpstan/phpstan-phpunit": "^2.0",
                 "phpstan/phpstan-strict-rules": "^2.0",
                 "phpunit/phpunit": "^11.5.53",
-                "symfony/ai-store": "^0.9",
+                "symfony/ai-store": "^0.10",
                 "symfony/event-dispatcher": "^7.3|^8.0",
                 "symfony/translation": "^7.3|^8.0",
                 "symfony/translation-contracts": "^3.6",
@@ -2633,7 +2633,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-05-18T16:29:40+00:00"
+            "time": "2026-06-16T07:10:08+00:00"
         },
         {
             "name": "symfony/ai-generic-platform",
@@ -2641,17 +2641,17 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/ai-generic-platform.git",
-                "reference": "1ab8b8242959a230d0fa36056237a8d6328ba547"
+                "reference": "a099d8a35ea9f7254a159b9c17bc7a4927f9ebb2"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/symfony/ai-generic-platform/zipball/1ab8b8242959a230d0fa36056237a8d6328ba547",
-                "reference": "1ab8b8242959a230d0fa36056237a8d6328ba547",
+                "url": "https://api.github.com/repos/symfony/ai-generic-platform/zipball/a099d8a35ea9f7254a159b9c17bc7a4927f9ebb2",
+                "reference": "a099d8a35ea9f7254a159b9c17bc7a4927f9ebb2",
                 "shasum": ""
             },
             "require": {
                 "php": ">=8.2",
-                "symfony/ai-platform": "^0.9",
+                "symfony/ai-platform": "^0.10",
                 "symfony/http-client": "^7.3|^8.0"
             },
             "require-dev": {
@@ -2719,7 +2719,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-06-03T21:48:27+00:00"
+            "time": "2026-06-16T07:10:08+00:00"
         },
         {
             "name": "symfony/ai-open-responses-platform",
@@ -2727,17 +2727,17 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/ai-open-responses-platform.git",
-                "reference": "70f67834bac270a756e641a8e0e45b12cca310e3"
+                "reference": "e522fe65253874bd52b9433172ca8c2ab34edf3d"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/symfony/ai-open-responses-platform/zipball/70f67834bac270a756e641a8e0e45b12cca310e3",
-                "reference": "70f67834bac270a756e641a8e0e45b12cca310e3",
+                "url": "https://api.github.com/repos/symfony/ai-open-responses-platform/zipball/e522fe65253874bd52b9433172ca8c2ab34edf3d",
+                "reference": "e522fe65253874bd52b9433172ca8c2ab34edf3d",
                 "shasum": ""
             },
             "require": {
                 "php": ">=8.2",
-                "symfony/ai-platform": "^0.9",
+                "symfony/ai-platform": "^0.10",
                 "symfony/http-client": "^7.3|^8.0"
             },
             "require-dev": {
@@ -2805,20 +2805,20 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-05-16T01:01:33+00:00"
+            "time": "2026-06-16T08:14:05+00:00"
         },
         {
             "name": "symfony/ai-platform",
-            "version": "v0.9.0",
+            "version": "v0.10.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/ai-platform.git",
-                "reference": "fb55ebdf20bbe30af6752a0ce6a25abc56b2b625"
+                "reference": "8100507aa9c46f3ad56d0272e8e46b558f451052"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/symfony/ai-platform/zipball/fb55ebdf20bbe30af6752a0ce6a25abc56b2b625",
-                "reference": "fb55ebdf20bbe30af6752a0ce6a25abc56b2b625",
+                "url": "https://api.github.com/repos/symfony/ai-platform/zipball/8100507aa9c46f3ad56d0272e8e46b558f451052",
+                "reference": "8100507aa9c46f3ad56d0272e8e46b558f451052",
                 "shasum": ""
             },
             "require": {
@@ -2917,7 +2917,7 @@
                 "voyage"
             ],
             "support": {
-                "source": "https://github.com/symfony/ai-platform/tree/v0.9.0"
+                "source": "https://github.com/symfony/ai-platform/tree/v0.10.0"
             },
             "funding": [
                 {
@@ -2937,7 +2937,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-05-15T19:15:50+00:00"
+            "time": "2026-06-16T06:39:24+00:00"
         },
         {
             "name": "symfony/cache",

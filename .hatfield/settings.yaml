@@ -216,6 +216,12 @@ ai:
             completions_path: /chat/completions
             supports_completions: true
             supports_embeddings: false
+            # DeepSeek API requires reasoning_content on every assistant
+            # message. thinking_format: deepseek emits thinking.type alongside
+            # reasoning_effort when enabled.
+            compatibility:
+                thinking_format: deepseek
+                requires_reasoning_content_on_assistant_messages: true
             models:
                 deepseek-v4-pro:
                     name: DeepSeek V4 Pro

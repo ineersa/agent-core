@@ -279,6 +279,88 @@ class ReasoningOptionsResolverTest extends TestCase
         self::assertSame([], $result);
     }
 
+    // ── DeepSeek: thinking.type + reasoning_effort ─────────────────────
+
+    public function testDeepseekEmitsThinkingTypeWithReasoningEffort(): void
+    {
+        $provider = $this->provider(
+            'deepseek',
+            $this->model([
+                'id' => 'deepseek-v4-pro',
+                'reasoning' => true,
+                'thinkingLevelMap' => [
+                    'minimal' => 'high',
+                    'low' => 'high',
+                    'medium' => 'high',
+                    'high' => 'high',
+                    'xhigh' => 'max',
+                ],
+            ]),
+            new AiCompatibility(
+                supportsReasoningEffort: true,
+                thinkingFormat: 'deepseek',
+            ),
+        );
+
+        $resolver = $this->resolverForProviders(['deepseek' => $provider]);
+
+        // medium → mapped to 'high'
+        self::assertSame(
+            ['thinking' => ['type' => 'enabled'], 'reasoning_effort' => 'high'],
+            $resolver->resolve($this->modelRef('deepseek', 'deepseek-v4-pro'), 'medium'),
+        );
+
+        // xhigh → mapped to 'max'
+        self::assertSame(
+            ['thinking' => ['type' => 'enabled'], 'reasoning_effort' => 'max'],
+            $resolver->resolve($this->modelRef('deepseek', 'deepseek-v4-pro'), 'xhigh'),
+        );
+    }
+
+    public function testDeepseekWithoutReasoningEffortOnlyEmitsThinkingType(): void
+    {
+        $provider = $this->provider(
+            'deepseek',
+            $this->model([
+                'id' => 'deepseek-v4-pro',
+                'reasoning' => true,
+                'thinkingLevelMap' => ['medium' => 'high'],
+            ]),
+            new AiCompatibility(
+                supportsReasoningEffort: false,
+                thinkingFormat: 'deepseek',
+            ),
+        );
+
+        $resolver = $this->resolverForProviders(['deepseek' => $provider]);
+
+        self::assertSame(
+            ['thinking' => ['type' => 'enabled']],
+            $resolver->resolve($this->modelRef('deepseek', 'deepseek-v4-pro'), 'medium'),
+        );
+    }
+
+    public function testDeepseekOffLevelReturnsEmpty(): void
+    {
+        $provider = $this->provider(
+            'deepseek',
+            $this->model([
+                'id' => 'deepseek-v4-pro',
+                'reasoning' => true,
+                'thinkingLevelMap' => ['medium' => 'high'],
+            ]),
+            new AiCompatibility(
+                supportsReasoningEffort: true,
+                thinkingFormat: 'deepseek',
+            ),
+        );
+
+        $resolver = $this->resolverForProviders(['deepseek' => $provider]);
+        $result = $resolver->resolve($this->modelRef('deepseek', 'deepseek-v4-pro'), 'off');
+
+        self::assertSame([], $result);
+    }
+
     // ── Codex: reasoning.effort (Responses API) ─────────────────────────
 
     public function testCodexEmitsReasoningEffortFormat(): void
