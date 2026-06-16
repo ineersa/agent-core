@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: 7s5i3m345izj
+Fork run: zml075skkij0
 PR URL: https://github.com/ineersa/agent-core/pull/150
 PR Status: open
 Started: 2026-06-12T16:54:23.580Z
@@ -544,3 +544,8 @@ Castor Check Output SHA256: 8402952e60f19af97d70af3c9bd816e632c7b0adb64c7eea53f5
 
 ## Task workflow update - 2026-06-16T21:03:10.198Z
 - Summary: User requested addressing latest PR #150 review comment. Comment id 3423964828 on `src/AgentCore/Infrastructure/SymfonyAi/ReasoningContentFeatureShaper.php`: "Make those public const, use in coding agent instead of raw strings." Action likely applies to compat feature string constants in AgentCore feature shapers (`ReasoningContentFeatureShaper`, `ZaiToolStreamFeatureShaper`, `ReasoningOptionsFeatureShaper`) and raw strings in `SessionAwareModelResolver`.
+
+## Task workflow update - 2026-06-16T21:11:02.571Z
+- Recorded fork run: zml075skkij0
+- Validation: Fork reported castor test --filter=ProviderCompatibilityRequestShaperTest: PASS 7/7.; Fork reported castor test --filter=ReasoningContentFeatureShaperTest: PASS 9/9.; Fork reported castor test --filter=SessionAwareModelResolverTest: PASS 7/7.; Fork reported castor phpstan: PASS 0 errors.; Fork reported castor deptrac: PASS 0 violations.; Fork reported castor cs-check after cs-fix: PASS clean.; Parent verification: git status clean; origin/main...HEAD = 0 behind / 10 ahead at e53f69342.
+- Summary: Fork zml075skkij0 addressed PR #150 review comment 3423964828 in commit e53f69342. The three AgentCore compat feature shaper constants are now public (`ReasoningContentFeatureShaper::FEATURE`, `ReasoningOptionsFeatureShaper::FEATURE`, `ZaiToolStreamFeatureShaper::FEATURE`), and CodingAgent `SessionAwareModelResolver` uses those constants instead of raw feature strings. Related tests updated to use constants. Parent verification: branch clean, 0 behind / 10 ahead at e53f69342.
