@@ -63,6 +63,7 @@ Read-only planning. No status changes, no file edits, no forks.
 3. Run focused local validation on worktree:
    - `castor test`, `castor deptrac`, `castor phpstan`, `castor cs-check`.
    - For TUI tasks: also run `castor test:tui` as part of local validation.
+   - When changes touch provider/LLM-visible code (Symfony AI provider, model routing, tool schemas, LLM prompts, streaming conversion), also run `castor test:llm-real` as opt-in focused validation. This is NOT required for every normal task — only when the change affects live provider compatibility path.
    - The orchestrator/user is responsible for focused validation before moving to CODE-REVIEW. `move_task(to="CODE-REVIEW")` automatically runs deterministic `castor check` in the worktree before pushing and creating the PR.
 4. Record reviewer decision, commit sha, validation results via `update_task`.
 5. `move_task(to="CODE-REVIEW")` — runs castor check in worktree, verifies it is clean, pushes branch, creates PR.

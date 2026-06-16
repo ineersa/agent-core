@@ -102,7 +102,7 @@ Key commands:
 - `castor test --suite=coding-agent --sequential` — sequential CodingAgent suite
 - `castor test --suite=coding-agent` — targeted ParaTest run on a suite
 - `castor test:tui` — TUI E2E journey tests (`#[Group('tui-e2e-replay')]`, replay-backed, no live LLM)
-- `castor test:llm-real` — real-LLM controller E2E tests (`#[Group('llm-real')]`)
+- `castor test:llm-real` — real-LLM controller E2E tests (`#[Group('llm-real')]`). Run as focused opt-in validation when changes touch provider/LLM-visible code — NOT required for every normal task.
 - `castor test:controller-replay` — controller replay E2E (default, no live LLM)
 - `castor test:controller` — controller smoke test (live LLM, opt-in)
 - `castor llm:fixtures:record` — re-record LLM replay fixtures from live LLM

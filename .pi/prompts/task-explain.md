@@ -41,7 +41,7 @@ If you catch yourself about to open an editor, write a file, or run a code chang
      - What changes in each file (new classes, modified methods, config changes).
      - Test files to create or update.
    - **Risks and open questions** — anything ambiguous, potentially breaking, or requiring a design decision.
-   - **Suggested validation** — which `castor` commands to run after implementation. For TUI tasks: explicitly include a real `TmuxHarness` E2E proof (replay-backed, no live LLM required), and note that `castor test:tui` is required before CODE-REVIEW.
+   - **Suggested validation** — which `castor` commands to run after implementation. For TUI tasks: explicitly include a real `TmuxHarness` E2E proof (replay-backed, no live LLM required), and note that `castor test:tui` is required before CODE-REVIEW. When the task touches provider/LLM-visible code (Symfony AI provider, model routing, tool schemas, LLM prompts, streaming conversion), also note `castor test:llm-real` as opt-in focused validation.
 
 4. **Discuss with the user**
    - Present the plan and explicitly ask for feedback.

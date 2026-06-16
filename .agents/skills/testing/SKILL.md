@@ -133,7 +133,7 @@ E2E, live-LLM, recording, and PHAR groups).
 |---|---|---|
 | `castor check` | Full QA gate (deterministic): deptrac, unit/integration (ParaTest), controller replay E2E, TUI replay E2E, phpstan, cs-check. No live LLM, no PHAR. | tmux |
 | `castor test` | Unit/integration tests (ParaTest parallel by default, sequential fallback for --filter) | Nothing (pure PHP) |
-| `castor test:llm-real` | Real LLM smoke: `ControllerSmokeTest`, `LlamaCppSmokeTest` (excludes `recording` group) | llama.cpp on port 9052 |
+| `castor test:llm-real` | Real LLM smoke: `ControllerSmokeTest`, `LlamaCppSmokeTest` (excludes `recording` group). Run as focused opt-in validation when changes touch provider/LLM-visible code — NOT required for every normal task. | llama.cpp on port 9052 |
 | `castor test:controller-replay` | Controller replay E2E: spawns `--controller`, JSONL protocol, replay fixtures (no live LLM) | Nothing (pure PHP) |
 | `castor test:controller` | Controller E2E: spawns `--controller`, JSONL protocol (live LLM, opt-in) | llama.cpp on port 9052 |
 | `castor test:tui` | TUI E2E journey tests (replay-backed, no live LLM) | tmux |
@@ -220,6 +220,18 @@ For especially risky visual or interaction changes, also run `castor run:agent-t
 Validation must exercise the real user flow: start agent, type prompt, submit, wait for visible assistant response or visible error block, and capture TUI snapshot plus session artifacts on failure. Do not claim runtime/TUI work is done based only on DTO tests, mocked pollers, container compilation, or isolated service tests.
 
 If tmux is unavailable, TUI tasks MUST remain IN-PROGRESS with exact environmental blocker output — never mark CODE-REVIEW or DONE without it. The default `castor check` is deterministic and does NOT require llama.cpp.
+
+### Focused live LLM provider validation
+
+`castor check` is deterministic and must NOT include `castor test:llm-real` by default. Run `castor test:llm-real` as opt-in focused validation when changes touch:
+- Symfony AI provider/factory/platform integration
+- LLM provider config, model catalog/resolution/routing/selection
+- Tool schemas, tool-call conversion, or tool argument prompts
+- LLM-visible system/developer prompts or prompt templates
+- Live provider compatibility, streaming conversion, stop_reason/usage/tool-call deltas
+- Controller live-provider path behavior where replay cannot prove provider compatibility
+
+`castor test:controller` remains opt-in for live controller E2E when appropriate. Do NOT require live LLM validation for every normal task — only for provider/LLM-visible changes.
 
 Before re-running failed controller/TUI E2E checks, kill stale worker processes from the failed worktree (`messenger:consume`, `agent --controller`, PHPUnit/Castor children). Orphaned consumers can keep queues busy and make a fixed test appear hung.
 

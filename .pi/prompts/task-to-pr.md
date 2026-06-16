@@ -36,6 +36,7 @@ If you catch yourself about to open an editor, write a file, or run a code chang
    - Run fast Castor validation on the worktree:
      `castor test`, `castor deptrac`, `castor phpstan`, `castor cs-check`.
    - **For TUI tasks: also run `castor test:tui` as part of local validation.** The TUI E2E proof test must pass before moving to CODE-REVIEW.
+   - **When changes touch provider/LLM-visible code (Symfony AI provider, model routing, tool schemas, LLM prompts, streaming conversion), also run `castor test:llm-real` as opt-in focused validation.** This is NOT required for every normal task — only when the change affects live provider compatibility.
    - Optionally run `castor test --filter=...` for targeted coverage.
    - `move_task(to="CODE-REVIEW")` automatically runs deterministic `castor check` in the worktree, then pushes the branch and creates the PR. The orchestrator/user should run focused validation before moving to catch issues early.
    - Report exact validation results.

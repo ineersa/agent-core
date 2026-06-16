@@ -33,6 +33,7 @@ If you catch yourself about to open an editor, write a file, or run a code chang
    - Use the researcher subagent for web searches or web-based research when up-to-date external information is needed.
    - Create exact implementation instructions for the fork: files to touch, old/new patterns, validation commands, and boundaries.
    - **For TUI tasks: the implementation scope MUST include a real `TmuxHarness` E2E proof (replay-backed, no live LLM required) exercising the user-visible feature path.** Mocks, service-only DTO tests, custom PHP smoke scripts, and picker/footer visibility checks are NOT acceptable substitutes. The fork must add this as a required deliverable.
+   - When the task touches provider/LLM-visible code (Symfony AI provider, model routing, tool schemas, LLM prompts, streaming conversion), the fork instructions should mention `castor test:llm-real` as opt-in focused validation. This is NOT required for every normal task — only when the change affects live provider compatibility.
    - Record useful context or updates on the task with `update_task` when helpful.
 
 4. **Launch a fork**

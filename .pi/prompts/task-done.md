@@ -33,6 +33,7 @@ If you catch yourself about to open an editor, write a file, or run a code chang
    - If prerequisites are unavailable (e.g. tmux), run the available subset:
      `castor test`, `castor deptrac`, `castor phpstan`, `castor cs-check`.
    - **For TUI tasks that were merged: the full gate or available subset must include `castor test:tui`.** If the E2E proof test fails post-merge, open a follow-up task immediately.
+   - **When merged changes touch provider/LLM-visible code (Symfony AI provider, model routing, tool schemas, LLM prompts, streaming conversion), also run `castor test:llm-real` as opt-in post-merge validation.** This is NOT required for every normal merge.
    - If `castor install` is needed because of new dependencies (e.g. Doctrine bundles), run it first.
 
 4. **Record results**

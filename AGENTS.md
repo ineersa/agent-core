@@ -60,6 +60,18 @@ For changes touching TUI runtime, `AgentSessionClient`, Messenger, `TranscriptPr
 
 Default `castor check` is fully deterministic (replay-backed controller and TUI E2E, no live LLM). Live LLM smoke is opt-in via `castor test:llm-real` and `castor test:controller`.
 
+### Focused live LLM provider validation
+
+`castor check` is deterministic and must NOT include `castor test:llm-real` by default. Run `castor test:llm-real` as opt-in focused validation when changes touch:
+- Symfony AI provider/factory/platform integration
+- LLM provider config, model catalog/resolution/routing/selection
+- Tool schemas, tool-call conversion, or tool argument prompts
+- LLM-visible system/developer prompts or prompt templates
+- Live provider compatibility, streaming conversion, stop_reason/usage/tool-call deltas
+- Controller live-provider path behavior where replay cannot prove provider compatibility
+
+`castor test:controller` remains opt-in for live controller E2E when appropriate. Do NOT require live LLM validation for every normal task — only for provider/LLM-visible changes.
+
 ## Mandatory TUI feature E2E proof
 
 **TUI implementation is NOT complete until there is an automated test using the real interactive TUI (`TmuxHarness`) with a snapshot or assertion proving the FEATURE works exactly as expected.** This is a hard gate — no exceptions. Default TUI E2E uses replay-backed fixtures for model interaction; live llama.cpp is not required for TUI feature proof.
