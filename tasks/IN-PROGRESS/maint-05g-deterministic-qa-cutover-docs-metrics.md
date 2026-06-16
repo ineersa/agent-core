@@ -31,7 +31,7 @@ This task should not start until enough of A-F are complete that default QA can 
 - MAINT-05 umbrella task is updated with final status and links/results for MAINT-05A-G.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/maint-05g-deterministic-qa-cutover-docs-metrics
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05g-deterministic-qa-cutover-docs-metrics
 Fork run: fl25h2kwzjs5
@@ -118,3 +118,7 @@ Completed:
 - branch 'task/maint-05g-deterministic-qa-cutover-docs-metrics' set up to track 'origin/task/maint-05g-deterministic-qa-cutover-docs-metrics'.
 - PR already exists: https://github.com/ineersa/agent-core/pull/148
 - Validation: Reviewer re-review after `f001b8e1f`: APPROVED.; Fork validation after review fixes: `castor list`, `castor cs-check`, and `castor phpstan` passed; stale-pattern rg clean except historical Before-table reference.; Prior MAINT-05G validation: `LLM_MODE=true castor check` passed: 6/6 lanes OK in 73.8s.; Prior MAINT-05G validation: `castor test:tui` passed: 3 tests, 35 assertions, 10.4s.; Prior MAINT-05G validation: `castor test` passed: 2524 tests, 7330 assertions, 21.3s; `castor test --suite=coding-agent --sequential` passed: 1467 tests, 4019 assertions, 55.9s; `castor test:controller-replay` passed: 1 test, 14 assertions, 7.7s.; Prior MAINT-05G validation: `castor deptrac`, `castor phpstan`, and `castor cs-check` passed.
+
+## Task workflow update - 2026-06-16T15:21:12.612Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Summary: Moved back from CODE-REVIEW for user-reported MAINT-05G issues: `castor check` still uses a slow sequential PHPUnit lane despite `castor test` ParaTest taking ~11s, and opt-in `castor test:llm-real` fails with exit code 1 because `ReplayRecordingTest` is included via `#[Group('llm-real')]` and two recording fixture methods skip under strict `--fail-on-all-issues`. Need update check lane to use ParaTest without PHAR and fix live smoke command to exclude recording-only tests.
