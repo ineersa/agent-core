@@ -34,7 +34,7 @@ This task should not start until enough of A-F are complete that default QA can 
 Status: IN-PROGRESS
 Branch: task/maint-05g-deterministic-qa-cutover-docs-metrics
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05g-deterministic-qa-cutover-docs-metrics
-Fork run: ku1zgicfnld3
+Fork run: e2cwwgtlg7bv
 PR URL: https://github.com/ineersa/agent-core/pull/148
 PR Status: open
 Started: 2026-06-16T02:21:32.044Z
@@ -148,3 +148,8 @@ Completed:
 ## Task workflow update - 2026-06-16T15:36:45.085Z
 - Moved CODE-REVIEW → IN-PROGRESS.
 - Summary: Moved back from CODE-REVIEW for user-requested documentation/prompt update: add explicit policy that `castor test:llm-real` should be run when touching Symfony AI/provider integration, model routing/selection, tool schemas/tool-call prompts, LLM prompts, or live-provider compatibility code, but should not be part of default deterministic `castor check`. Update AGENTS/task prompts/testing skill accordingly before returning PR #148 to CODE-REVIEW.
+
+## Task workflow update - 2026-06-16T15:37:15.582Z
+- Recorded fork run: e2cwwgtlg7bv
+- Validation: Pending fork `e2cwwgtlg7bv`: expected validation includes targeted rg over AGENTS.md, tests/AGENTS.md, testing/task-workflow skills, and .pi task prompts; optional `castor list`; no full `castor check` for docs-only change.
+- Summary: Launched docs/prompt update fork `e2cwwgtlg7bv` to add the conditional live LLM validation policy requested by the user: `castor test:llm-real` should be focused opt-in validation for Symfony AI/provider/model routing/tool schema/LLM prompt/live compatibility changes, while default `castor check` remains deterministic and should not run live LLM by default.
