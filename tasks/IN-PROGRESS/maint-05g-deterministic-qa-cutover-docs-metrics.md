@@ -31,7 +31,7 @@ This task should not start until enough of A-F are complete that default QA can 
 - MAINT-05 umbrella task is updated with final status and links/results for MAINT-05A-G.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/maint-05g-deterministic-qa-cutover-docs-metrics
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05g-deterministic-qa-cutover-docs-metrics
 Fork run: ku1zgicfnld3
@@ -144,3 +144,7 @@ Completed:
 - Skipped PR creation (pushOnly: true).
 - Validation: Parent verification: `git status --short --branch` showed clean `task/maint-05g-deterministic-qa-cutover-docs-metrics...origin/... [ahead 1]` before push; `git log --oneline -5` showed `30b4f4110 MAINT-05G: Use ParaTest in check and fix live LLM smoke skips` at HEAD.; Parent verification: `git show --stat --oneline HEAD` showed 7 files changed, 46 insertions, 20 deletions: `.agents/skills/testing/SKILL.md`, `.castor/e2e.php`, `.castor/phpunit.php`, `.castor/tasks.php`, `docs/qa-metrics.md`, `tests/AGENTS.md`, and `ReplayRecordingTest.php`.; Parent verification: `rg -n "build_check_paratest_command|exclude-group=recording|Group\('llm-real'\)" .castor tests/AgentCore/Infrastructure/SymfonyAi/Replay/ReplayRecordingTest.php -S` found the new check builder and recording exclusion; no `Group('llm-real')` in `ReplayRecordingTest`.; Parent verification: stale-pattern rg for current sequential-check wording returned no active hits.; Fork validation: `castor list` passed (33 commands present); `castor test:llm-real` passed (5 tests, 51 assertions, 0 skipped, 18.1s); `LLM_MODE=true castor check` passed 6/6 lanes in 43.8s with test lane ParaTest 13.0s; `castor deptrac` 0 violations; `castor phpstan` 0 errors; `castor cs-check` 0 fixable files.
 - Summary: Corrective fork `ku1zgicfnld3` accepted after parent verification. Commit `30b4f4110` is present at HEAD on `task/maint-05g-deterministic-qa-cutover-docs-metrics`, worktree clean and 1 commit ahead of origin before push. Changes: added `.castor/phpunit.php::build_check_paratest_command()`; switched `.castor/tasks.php` `check()` test lane from sequential PHPUnit to ParaTest with full opt-out groups including `phar` and 120s timeout; removed `#[Group('llm-real')]` from `ReplayRecordingTest`; added `--exclude-group=recording` to `castor test:llm-real`; updated testing docs/metrics to state `castor check` uses ParaTest for unit/integration. PR #148 already exists, so branch was pushed without creating a new PR.
+
+## Task workflow update - 2026-06-16T15:36:45.085Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Summary: Moved back from CODE-REVIEW for user-requested documentation/prompt update: add explicit policy that `castor test:llm-real` should be run when touching Symfony AI/provider integration, model routing/selection, tool schemas/tool-call prompts, LLM prompts, or live-provider compatibility code, but should not be part of default deterministic `castor check`. Update AGENTS/task prompts/testing skill accordingly before returning PR #148 to CODE-REVIEW.
