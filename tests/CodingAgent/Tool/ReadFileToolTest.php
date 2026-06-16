@@ -112,11 +112,11 @@ final class ReadFileToolTest extends TestCase
         $this->assertTrue(method_exists($this->readFileTool, 'definition'));
     }
 
-    public function testDefinitionExecutionModeIsSequential(): void
+    public function testDefinitionExecutionModeIsParallel(): void
     {
         $definition = $this->readFileTool->definition();
 
-        $this->assertSame('sequential', $definition->executionMode->value);
+        $this->assertSame('parallel', $definition->executionMode->value);
     }
 
     /* ── ToolRegistry integration test ── */

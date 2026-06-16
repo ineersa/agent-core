@@ -135,7 +135,7 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
                 'additionalProperties' => false,
             ],
             handler: $this,
-            executionMode: ToolExecutionMode::Sequential,
+            executionMode: ToolExecutionMode::Parallel,
             promptLine: 'read path [offset=N] [limit=N] — read a text file with cat -n line numbers; supports offset and limit for partial reads; use view_image for images',
             promptGuidelines: [
                 'Output uses cat -n line numbering with original file line numbers.',
