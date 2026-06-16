@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: amoy1wgwxmte
+Fork run: sb9v31a9x2it
 PR URL: https://github.com/ineersa/agent-core/pull/149
 PR Status: open
 Started: 2026-06-12T16:54:23.580Z
@@ -459,3 +459,8 @@ Castor Check Output SHA256: 8402952e60f19af97d70af3c9bd816e632c7b0adb64c7eea53f5
 
 ## Task workflow update - 2026-06-16T18:02:10.474Z
 - Summary: User reviewed the #125 two-hook priority approach and rejected the architecture: explicit before-provider hook priorities are suspicious because `_instanceof` auto-tags may duplicate tags, and two hooks communicating via internal `_hatfield_requires_reasoning_content` option is unnecessary. Agreed new architecture: provider compatibility shaping should be a final AgentCore Symfony-AI infrastructure step that runs after normal BeforeProviderRequestHookInterface hooks and before the provider request, using compatibility options resolved from CodingAgent config. This avoids hook-order dependencies and prevents third-party hooks from corrupting/leaking compat marker flags. Launching refactor fork to collapse compat behavior into a final ProviderCompatibilityRequestShaper pipeline.
+
+## Task workflow update - 2026-06-16T18:18:35.885Z
+- Recorded fork run: sb9v31a9x2it
+- Validation: Fork reported: castor test PASS (2542 tests / 7410 assertions).; Fork reported: castor deptrac PASS, 0 violations.; Fork reported: castor phpstan PASS, 0 errors.; Fork reported: castor cs-check PASS.; Fork reported: LLM_MODE=true castor check PASS, all 6 steps in 39.5s.; Fork reported: castor test:llm-real PASS, 5 tests / 51 assertions.; Parent verification: git status clean; origin/main...HEAD = 0 behind / 1 ahead at fde7174c9.
+- Summary: Fork sb9v31a9x2it completed the #125 architectural refactor in commit fde7174c9: provider compatibility shaping now runs as a final AgentCore Symfony-AI infrastructure phase after normal before-provider hooks, with AgentCore compatibility contracts/DTO/pipeline and CodingAgent resolver/feature shapers. CompatRequestShaper was deleted, ReasoningContentCompatShaper became a provider-compat feature shaper, and normal hook priority coupling was removed. Parent verification found branch clean and 0 behind / 1 ahead. Parent also found a remaining cleanup gap: `_hatfield_requires_reasoning_content` and `_hatfield_suppress_developer_role` still exist as dead ProviderRequestOptionKeys/Codex defensive stripping/test references even though the architecture removed marker emission and supportsDeveloperRole is out of scope. Launching a small cleanup fork to remove those dead marker references so the code matches the agreed 'no private marker option' architecture.
