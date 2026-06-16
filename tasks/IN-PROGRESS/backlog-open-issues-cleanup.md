@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: 6jgld561os2a
+Fork run: p7bs21whyj3b
 PR URL: https://github.com/ineersa/agent-core/pull/150
 PR Status: merged
 Started: 2026-06-12T16:54:23.580Z
@@ -584,3 +584,7 @@ Castor Check Output SHA256: 8402952e60f19af97d70af3c9bd816e632c7b0adb64c7eea53f5
 
 ## Task workflow update - 2026-06-16T22:42:49.979Z
 - Summary: User clarified the target invariant for issue #127: resumed TUI must render stably from the canonical `.hatfield/sessions/<id>/events.jsonl` replay. The project already has replay logic for resume, so the fix should make the projection/rendering from events.jsonl deterministic and clean rather than treating this as an ad-hoc terminal clear problem. Acceptance emphasis: replaying the same events.jsonl should produce a stable transcript containing only canonical completed history/cancellation markers, not transient live widgets (`Running…`, partial thinking/tool-call streaming blocks) resurrected as historical rows.
+
+## Task workflow update - 2026-06-16T22:47:17.332Z
+- Recorded fork run: p7bs21whyj3b
+- Summary: Fork p7bs21whyj3b did not deliver the requested issue #127 stable TUI resume/replay fix. Instead, it reported an unrelated but important tool-visibility execution gap: `RegistryBackedToolbox::execute()` looks up `toolDefinition()` and executes registered tools without checking visibility/exclusion, while schema/listing paths use `activeToolDefinitions()` / `isToolVisible()`. This means excluded tools are hidden from LLM-visible schemas/toolbox listings but can still execute if a replay fixture or hallucinated registered tool call names them. Treat this as a separate follow-up/security-hardening item unless the user explicitly decides to fold it into the current branch; do not let it distract from #127. #127 still needs a fork focused on deterministic transcript projection from `events.jsonl` and removal of transient streaming widgets from replay history.
