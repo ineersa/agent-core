@@ -39,13 +39,13 @@ Known entrypoints:
 - Docs/skills are updated so future TUI tests follow the journey model instead of one-harness-per-assertion.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/maint-05e-tui-journey-e2e-rework
+Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05e-tui-journey-e2e-rework
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-16T00:10:29.822Z
 Completed:
 
 ## Work log
@@ -61,3 +61,11 @@ Completed:
 - Supersedes earlier PR-base notes in this task: do NOT use `prBaseBranch="task/maint-05-cardinal-qa-test-rework"`. Target `main` for MAINT-05E.
 - Sequential execution policy: do not start MAINT-05E until prior MAINT-05 stages that it depends on are manually reviewed/merged to `main`, unless the user explicitly says otherwise.
 - Validation/review policy remains: skip reviewer subagent and skip full `LLM_MODE=true castor check` for MAINT-05E; user reviews manually and MAINT-05G owns final full-gate validation.
+
+## Task workflow update - 2026-06-16T00:10:29.822Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/maint-05e-tui-journey-e2e-rework.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/maint-05e-tui-journey-e2e-rework.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/maint-05e-tui-journey-e2e-rework.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/maint-05e-tui-journey-e2e-rework.
+- Summary: Started MAINT-05E after MAINT-05D was merged/done. Main remains the MAINT-05 integration branch and eventual PR targets main. Per MAINT-05A-F policy, skip automated reviewer and full `LLM_MODE=true castor check`; run focused TUI journey/replay validation only. Scope is test-infrastructure rework: default TUI E2E should be replay-backed and journey-based, with live TUI smoke remaining opt-in.
