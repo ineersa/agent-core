@@ -60,7 +60,8 @@ final readonly class ModelResolverRoutingSubscriber implements EventSubscriberIn
 
         $newOptions = array_replace($options, $resolvedModel->options);
 
-        // Attach reasoning level so CompatRequestShaper can shape provider options.
+        // Attach reasoning level, consumed by the final compat-normalization step
+        // (ProviderCompatibilityRequestShaper + ReasoningCompatFeatureShaper).
         if ('' !== $resolvedModel->reasoning) {
             $newOptions[ProviderRequestOptionKeys::REASONING] = $resolvedModel->reasoning;
         }

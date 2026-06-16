@@ -324,6 +324,7 @@ class AiConfigTest extends TestCase
         $this->assertTrue($compatibility->supportsReasoningEffort);
         $this->assertNull($compatibility->thinkingFormat);
         $this->assertFalse($compatibility->zaiToolStream);
+        $this->assertFalse($compatibility->requiresReasoningContentOnAssistantMessages);
     }
 
     public function testCompatibilityFromNonBoolValuesFallsBackToDefault(): void
@@ -332,12 +333,45 @@ class AiConfigTest extends TestCase
             'supports_developer_role' => 'not-a-bool',
             'supports_reasoning_effort' => 0,
             'thinking_format' => 'zai',
+            'requires_reasoning_content_on_assistant_messages' => 'yes',
         ]);
 
         // Non-boolean values fall back to constructor defaults (false, true)
         $this->assertFalse($compatibility->supportsDeveloperRole);
         $this->assertTrue($compatibility->supportsReasoningEffort);
         $this->assertSame('zai', $compatibility->thinkingFormat);
+        $this->assertFalse($compatibility->requiresReasoningContentOnAssistantMessages, 'non-bool falls back to false');
+    }
+
+    public function testCompatibilityFullParsing(): void
+    {
+        $compatibility = AiCompatibility::fromArray([
+            'supports_developer_role' => false,
+            'supports_reasoning_effort' => true,
+            'thinking_format' => 'deepseek',
+            'zai_tool_stream' => true,
+            'requires_reasoning_content_on_assistant_messages' => true,
+        ]);
+
+        $this->assertFalse($compatibility->supportsDeveloperRole);
+        $this->assertTrue($compatibility->supportsReasoningEffort);
+        $this->assertSame('deepseek', $compatibility->thinkingFormat);
+        $this->assertTrue($compatibility->zaiToolStream);
+        $this->assertTrue($compatibility->requiresReasoningContentOnAssistantMessages);
+    }
+
+    public function testCompatibilityDeepseekFlags(): void
+    {
+        $compatibility = AiCompatibility::fromArray([
+            'thinking_format' => 'deepseek',
+            'requires_reasoning_content_on_assistant_messages' => true,
+        ]);
+
+        $this->assertSame('deepseek', $compatibility->thinkingFormat);
+        $this->assertTrue($compatibility->requiresReasoningContentOnAssistantMessages);
+        // Remaining fields stay at defaults
+        $this->assertTrue($compatibility->supportsReasoningEffort, 'DeepSeek supports reasoning_effort by default');
+        $this->assertFalse($compatibility->zaiToolStream);
     }
 
     public function testRawSettingsPreservedInRaw(): void

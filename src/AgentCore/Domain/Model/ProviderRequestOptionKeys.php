@@ -13,7 +13,7 @@ namespace Ineersa\AgentCore\Domain\Model;
  * concerns such as reasoning level and role-suppression flags.
  *
  * @see \Ineersa\AgentCore\Infrastructure\SymfonyAi\ModelResolverRoutingSubscriber
- * @see \Ineersa\CodingAgent\Config\CompatRequestShaper
+ * @see \Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderCompatibilityRequestShaper
  */
 final class ProviderRequestOptionKeys
 {
@@ -30,6 +30,12 @@ final class ProviderRequestOptionKeys
      * messages when this flag is present.
      */
     public const string SUPPRESS_DEVELOPER_ROLE = '_hatfield_suppress_developer_role';
+
+    /**
+     * Internal option key signaling that assistant messages without thinking
+     * must include an empty reasoning_content field (DeepSeek).
+     */
+    public const string REQUIRES_REASONING_CONTENT_ON_ASSISTANT = '_hatfield_requires_reasoning_content';
 
     private function __construct()
     {

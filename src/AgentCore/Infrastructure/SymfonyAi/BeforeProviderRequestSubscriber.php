@@ -9,6 +9,16 @@ use Symfony\AI\Platform\Event\InvocationEvent;
 use Symfony\AI\Platform\Model;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
+/**
+ * Runs normal {@see BeforeProviderRequestHookInterface} hooks first,
+ * then applies final provider-compatibility normalization via
+ * {@see ProviderCompatibilityRequestShaper}.
+ *
+ * This ensures that normal hooks (which may be third-party or extension
+ * services) cannot accidentally see, consume, or corrupt internal compat
+ * flags, and that compat shaping always happens as a final deterministic
+ * step before the provider request.
+ */
 final readonly class BeforeProviderRequestSubscriber implements EventSubscriberInterface
 {
     /**
@@ -16,6 +26,9 @@ final readonly class BeforeProviderRequestSubscriber implements EventSubscriberI
      */
     public function __construct(
         private iterable $hooks = [],
+        private ProviderCompatibilityRequestShaper $compatShaper = new ProviderCompatibilityRequestShaper(
+            new NullProviderCompatibilityResolver(),
+        ),
     ) {
     }
 
@@ -45,6 +58,7 @@ final readonly class BeforeProviderRequestSubscriber implements EventSubscriberI
         $resolvedModel = $event->getModel()->getName();
         $resolvedOptions = $options;
 
+        // ── Phase 1: normal before-provider hooks (extensions, app-level hooks) ──
         foreach ($this->hooks as $hook) {
             $request = $hook->beforeProviderRequest($resolvedModel, $resolvedInput, $resolvedOptions, $metadata?->cancelToken);
             if (null === $request) {
@@ -56,6 +70,14 @@ final readonly class BeforeProviderRequestSubscriber implements EventSubscriberI
             $resolvedInput = $resolved['input'];
             $resolvedOptions = $resolved['options'];
         }
+
+        // ── Phase 2: final provider-compatibility normalization ──
+        // Runs after all hooks so no third-party/hook code can see or corrupt
+        // internal compat flags, and compat shaping is deterministic.
+        $final = $this->compatShaper->shape($resolvedModel, $resolvedInput, $resolvedOptions);
+        $resolvedModel = $final['model'];
+        $resolvedInput = $final['input'];
+        $resolvedOptions = $final['options'];
 
         if ($resolvedModel !== $event->getModel()->getName()) {
             $event->setModel(new Model(

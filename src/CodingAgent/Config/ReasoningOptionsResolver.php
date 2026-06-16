@@ -69,6 +69,16 @@ final readonly class ReasoningOptionsResolver
             return ['reasoning' => ['effort' => $mappedValue, 'summary' => 'auto']];
         }
 
+        // DeepSeek: thinking.type + optional reasoning_effort
+        if ('deepseek' === $thinkingFormat) {
+            $result = ['thinking' => ['type' => 'enabled']];
+            if ($this->supportsReasoningEffort($ref)) {
+                $result['reasoning_effort'] = $mappedValue;
+            }
+
+            return $result;
+        }
+
         // OpenAI-style: reasoning_effort
         if ($this->supportsReasoningEffort($ref)) {
             return ['reasoning_effort' => $mappedValue];

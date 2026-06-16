@@ -9,7 +9,7 @@ namespace Ineersa\AgentCore\Domain\Model;
  *
  * Produced by {@see ModelResolverInterface::resolve()} and consumed by
  * {@see ModelResolverRoutingSubscriber} to set the model name, attach reasoning
- * metadata for {@see CompatRequestShaper}, and optionally select a specific provider
+ * metadata for the final compat-normalization step, and optionally select a specific provider
  * via {@see ModelRoutingEvent::setProvider()}.
  */
 final readonly class ResolvedModel

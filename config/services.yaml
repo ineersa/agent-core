@@ -239,6 +239,27 @@ services:
   Ineersa\AgentCore\Contract\Model\ImageCapabilityCheckerInterface:
     alias: Ineersa\CodingAgent\Tool\ImageProcessing\CodingAgentImageCapabilityChecker
 
+  # ── Provider compatibility resolver (CodingAgent → AgentCore pipeline) ──
+  Ineersa\AgentCore\Contract\ProviderCompatibilityResolverInterface:
+    alias: Ineersa\CodingAgent\Config\HatfieldProviderCompatibilityResolver
+
+  # ── Provider compatibility feature shapers ──
+  Ineersa\CodingAgent\Config\ReasoningCompatFeatureShaper:
+    tags:
+      - { name: 'agent_core.provider_compatibility_feature_shaper', priority: 100 }
+
+  Ineersa\CodingAgent\Infrastructure\SymfonyAi\ReasoningContentCompatShaper:
+    tags:
+      - { name: 'agent_core.provider_compatibility_feature_shaper' }
+
+  Ineersa\CodingAgent\Infrastructure\SymfonyAi\ZaiToolStreamCompatShaper:
+    tags:
+      - { name: 'agent_core.provider_compatibility_feature_shaper' }
+
+  Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderCompatibilityRequestShaper:
+    arguments:
+      $featureShapers: !tagged_iterator agent_core.provider_compatibility_feature_shaper
+
   Ineersa\AgentCore\Infrastructure\SymfonyAi\BeforeProviderRequestSubscriber:
     arguments:
       $hooks: !tagged_iterator agent_core.before_provider_request_hook
