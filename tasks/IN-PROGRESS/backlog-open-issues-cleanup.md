@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: b7hv74mgr6r4
+Fork run: y2rimkqr9nbb
 PR URL: https://github.com/ineersa/agent-core/pull/150
 PR Status: open
 Started: 2026-06-12T16:54:23.580Z
@@ -489,3 +489,8 @@ Castor Check Output SHA256: 8402952e60f19af97d70af3c9bd816e632c7b0adb64c7eea53f5
 
 ## Task workflow update - 2026-06-16T19:10:00.900Z
 - Summary: User stopped the TmuxHarness E2E continuation fork, stating they do not think #124 can be tested properly through that path. User manually smoke-tested current branch: behavior is better but still saw duplicate visible tool-call lines (`● bash...` plus `● bash(command: ...)`). User also clarified that `castor phar:build` had worked before the Castor refactor; the weird `bin/console phar:build` delegation was likely introduced by the Castor refactor and should simply be corrected in the Castor task path. Launching another focused fork to fix the lingering streamed `bash...` orphan/duplicate.
+
+## Task workflow update - 2026-06-16T19:26:00.669Z
+- Recorded fork run: y2rimkqr9nbb
+- Validation: Fork reported castor test --filter=TranscriptProjectorTest: PASS, 79/79 tests.; Fork reported castor deptrac: PASS, 0 violations.; Fork reported castor phpstan: PASS, 0 errors.; Fork reported castor cs-check: PASS, clean.; Fork reported LLM_MODE=true castor check: PASS, all 6 steps green in 38.5s.; Fork reported castor phar:build: PASS, builds + smoke tests pass.; Parent verification: git status clean; origin/main...HEAD = 0 behind / 5 ahead at 79a6512f7.
+- Summary: Fork y2rimkqr9nbb completed the remaining #124 duplicate/orphan fix and Symfony AI upgrade in commits 0ed09581e and 79a6512f7. Root cause for the observed `● bash...` plus `● bash(command: ...)` was a still-streaming ToolCall block from ToolCallStart that never received ToolCallComplete; cleanup previously only ran at turn/run transitions and did not clean mid-turn phantoms. New `removePhantomStreamingToolCallBlocks()` removes streaming ToolCall blocks once a finalized ToolCall exists and a concrete tool execution starts, preserving finalized parallel calls and legitimate in-progress calls. Fork also found/fixed `partial_json` vs `delta` mismatch: ToolCallStreamSubscriber emits `partial_json` but ToolProjectionSubscriber read `delta`, so streaming argument text was not accumulated. Symfony AI Platform was upgraded to v0.10. Parent verified branch clean, 0 behind / 5 ahead at 79a6512f7. User had stopped TmuxHarness E2E attempt and accepted manual smoke/unit coverage path for this hard-to-drive transient case.
