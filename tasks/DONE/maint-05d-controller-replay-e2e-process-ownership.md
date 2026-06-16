@@ -33,14 +33,14 @@ Known entrypoints:
 - Task handoff records process tree behavior, cleanup proof, and before/after live LLM usage in controller tests.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/maint-05d-controller-replay-e2e-process-ownership
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05d-controller-replay-e2e-process-ownership
 Fork run: lcn5ct5erqxi
 PR URL: https://github.com/ineersa/agent-core/pull/145
-PR Status: open
+PR Status: merged
 Started: 2026-06-15T23:32:27.282Z
-Completed:
+Completed: 2026-06-16T00:10:19.294Z
 
 ## Work log
 - Created: 2026-06-15T21:07:41.944Z
@@ -104,3 +104,12 @@ Completed:
 - PR already exists: https://github.com/ineersa/agent-core/pull/145
 - Validation: Pre-move inspection: task worktree clean on `task/maint-05d-controller-replay-e2e-process-ownership` at `d893276b`, branch 1 commit ahead of origin PR branch.; Parent diff inspection: `git -C /home/ineersa/projects/agent-core-worktrees/maint-05d-controller-replay-e2e-process-ownership diff --stat origin/main...HEAD` showed expected 12 files for original controller replay implementation plus review fix.; Parent grep verification: replay activation references exist only in `config/services_test.yaml` comments and tests, not in production `src/CodingAgent`.; Fork validation: `php -l` on changed PHP files passed.; Fork validation: `castor list` passed and shows `test:controller-replay`, `test:controller`, `llm:fixtures:record`, and `llm:fixtures:info`.; Fork validation: `castor test:controller-replay` passed: 1 test, 14 assertions, 7.5s.; Fork validation: `castor test --filter=ControllerReplaySmokeTest` passed: 1 test, 14 assertions, 7.5s.; Fork validation: `castor test` passed: 2520 tests, 7359 assertions, 33.9s.; Fork validation: `castor deptrac` passed with 0 violations/errors.; Fork validation: `castor phpstan` passed with 0 errors/file_errors.; Fork validation: `castor cs-check` passed with 0 fixable files.; Skipped reviewer subagent per user MAINT-05A-F policy.; Skipped full `LLM_MODE=true castor check` per MAINT-05A-F policy / MAINT-05G owns final full-gate validation.; Live LLM smoke not run; llama.cpp unavailable and live smoke remains opt-in.
 - Summary: Moved MAINT-05D back to CODE-REVIEW after addressing PR #145 feedback. Branch now includes review-fix commit `d893276b` removing replay/test code from production `src/`, moving the replay HTTP factory to tests, restoring `SymfonyAiProviderFactory` to DI-only client injection/default timeout behavior, wiring replay through `services_test.yaml`, and preserving deterministic controller replay/process ownership validation. Automated reviewer and full `castor check` were skipped per MAINT-05 stage policy/user instruction.
+
+## Task workflow update - 2026-06-16T00:10:19.294Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/maint-05d-controller-replay-e2e-process-ownership into integration checkout.
+- Already up to date.
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/maint-05d-controller-replay-e2e-process-ownership.
+- Pulled integration checkout: Already up to date..
+- Validation: Verified PR #145 state via `gh pr view`: MERGED at 2026-06-16T00:09:25Z.; Synced integration checkout with `git pull --ff-only`; main fast-forwarded to merge commit `ba48be09` for PR #145.; Focused validation recorded before review: `php -l` on changed PHP files, `castor list`, `castor test:controller-replay` (1 test, 14 assertions, 7.5s), `castor test --filter=ControllerReplaySmokeTest` (1 test, 14 assertions, 7.5s), `castor test` (2520 tests, 7359 assertions, 33.9s), `castor deptrac`, `castor phpstan`, and `castor cs-check` passed.; No post-merge full `LLM_MODE=true castor check` run per MAINT-05A-F policy/user instruction; MAINT-05G owns final full-gate validation.
+- Summary: PR #145 was merged by the user. Moved MAINT-05D to DONE after syncing `main` from GitHub. Per MAINT-05A-F stage policy, skipped post-merge full `LLM_MODE=true castor check`; MAINT-05G remains responsible for final full-gate validation/metrics.
