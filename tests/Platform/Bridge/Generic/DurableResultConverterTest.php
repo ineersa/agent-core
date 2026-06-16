@@ -9,6 +9,7 @@ use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\AI\Platform\Exception\RuntimeException as PlatformRuntimeException;
 use Symfony\AI\Platform\Result\RawHttpResult;
 use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
 use Symfony\AI\Platform\Result\Stream\Delta\ToolCallComplete;
@@ -417,6 +418,24 @@ final class DurableResultConverterTest extends TestCase
         self::assertSame('call_xyz', $toolCalls[0]->getId());
         self::assertSame('bash', $toolCalls[0]->getName());
         self::assertSame(['command' => 're'], $toolCalls[0]->getArguments());
+    }
+
+    // ── Stream ended without finish reason ────────────────────────────────────
+
+    #[Test]
+    public function throwsExceptionWhenStreamEndsWithoutFinishReason(): void
+    {
+        $result = $this->streamResult([
+            // Send a text chunk (sets sawChunk = true) but no finish_reason.
+            $this->chunk(['choices' => [[
+                'delta' => ['content' => 'partial text'],
+            ]]]),
+        ]);
+
+        $this->expectException(PlatformRuntimeException::class);
+        $this->expectExceptionMessage('Completions stream ended before a finish reason was received.');
+
+        $this->collectStream($result);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

@@ -6,7 +6,6 @@ namespace Ineersa\Platform\Bridge\Generic;
 
 use Symfony\AI\Platform\Bridge\Generic\Completions\CompletionsConversionTrait;
 use Symfony\AI\Platform\Bridge\Generic\Completions\ResultConverter;
-use Symfony\AI\Platform\Exception\IncompleteStreamException;
 use Symfony\AI\Platform\Exception\RuntimeException;
 use Symfony\AI\Platform\Result\RawHttpResult;
 use Symfony\AI\Platform\Result\RawResultInterface;
@@ -143,7 +142,7 @@ final class DurableResultConverter extends ResultConverter
         }
 
         if ($sawChunk && !$sawFinishReason) {
-            throw new IncompleteStreamException('Completions stream ended before a finish reason was received.');
+            throw new RuntimeException('Completions stream ended before a finish reason was received.');
         }
     }
 
