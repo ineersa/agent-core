@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: p7bs21whyj3b
+Fork run: iojl1trve6g2
 PR URL: https://github.com/ineersa/agent-core/pull/150
 PR Status: merged
 Started: 2026-06-12T16:54:23.580Z
@@ -588,3 +588,8 @@ Castor Check Output SHA256: 8402952e60f19af97d70af3c9bd816e632c7b0adb64c7eea53f5
 ## Task workflow update - 2026-06-16T22:47:17.332Z
 - Recorded fork run: p7bs21whyj3b
 - Summary: Fork p7bs21whyj3b did not deliver the requested issue #127 stable TUI resume/replay fix. Instead, it reported an unrelated but important tool-visibility execution gap: `RegistryBackedToolbox::execute()` looks up `toolDefinition()` and executes registered tools without checking visibility/exclusion, while schema/listing paths use `activeToolDefinitions()` / `isToolVisible()`. This means excluded tools are hidden from LLM-visible schemas/toolbox listings but can still execute if a replay fixture or hallucinated registered tool call names them. Treat this as a separate follow-up/security-hardening item unless the user explicitly decides to fold it into the current branch; do not let it distract from #127. #127 still needs a fork focused on deterministic transcript projection from `events.jsonl` and removal of transient streaming widgets from replay history.
+
+## Task workflow update - 2026-06-16T23:00:40.616Z
+- Recorded fork run: iojl1trve6g2
+- Validation: castor test --filter=TranscriptProjectorTest — OK (79 tests, 292 assertions); castor test:tui --filter=TuiResumeSessionSwitchE2eTest — OK (1 test, 12 assertions); castor test:tui — OK (4 tests, 47 assertions); castor deptrac — OK (0 violations); castor phpstan — OK (0 errors); castor cs-check — OK; LLM_MODE=true castor check — OK (6/6 in 50.4s)
+- Summary: Fork iojl1trve6g2 completed the issue #127 correction. Accepted direction: root cause is transcript projection semantics during events.jsonl replay, not terminal clearing. Fix changes `TranscriptProjectionState::removeActiveStreamingBlocks()` to remove same-run streaming blocks on turn/run cancellation and run failure instead of finalizing transient live UI into history; updated `CancellationProjectionSubscriber` and `RunLifecycleProjectionSubscriber` call sites; kept legitimate `ChatScreen::mount()` editor-widget invalidation for stale singleton render cache; removed prior direct `stty -echo`/escape clear workaround from `InteractiveMode` while keeping `requestRender(true)`. Tests now assert streaming blocks are removed, not finalized, and `TuiResumeSessionSwitchE2eTest` seeds a real session's events.jsonl with completed history plus a cancelled streaming tool turn, resumes via real TmuxHarness, and asserts the visible pane (`capturePlain()`, not scrollback) contains canonical completed text + cancellation marker but no historical `● Running…` or `◇ </think>`. Fork explicitly did not implement unrelated RegistryBackedToolbox visibility gap. Parent verification: worktree clean, HEAD/origin branch at 565d9a9c7, diff includes 8 files. Note: local verification shows branch is currently 3 ahead / 1 behind origin/main because origin/main gained unrelated task metadata commit `168c00fe9`; rebase onto origin/main will be needed before PR/CODE-REVIEW.
