@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: iojl1trve6g2
+Fork run: dh8kaoxu0bxj
 PR URL: https://github.com/ineersa/agent-core/pull/150
 PR Status: merged
 Started: 2026-06-12T16:54:23.580Z
@@ -599,3 +599,8 @@ Castor Check Output SHA256: 8402952e60f19af97d70af3c9bd816e632c7b0adb64c7eea53f5
 
 ## Task workflow update - 2026-06-16T23:14:48.703Z
 - Summary: Scout investigation after user's rejection found the real remaining #127 gaps: commit 565d9a9c7 only fixed one cancellation subcase (streaming blocks finalized on cancel) but normal events.jsonl replay still loses canonical content. `RuntimeEventTranslator::onLlmStepCompleted()` extracts only assistant text and drops `assistant_message.details.thinking` and `assistant_message.tool_calls`, so resume cannot show thinking or tool-call blocks even though they exist in events.jsonl. Translator also explicitly drops `RunEventTypeEnum::ToolCallResultReceived`; `tool_execution_start` creates a `ToolResult` block with text `Running…`, while `tool_execution_end` often has no result text, so `TranscriptProjectionState::upsertToolResultBlock()` keeps the existing `Running…` text when completion has empty result. Correct fix should reconstruct transcript from canonical events: create non-streaming thinking blocks and tool-call blocks from `llm_step_completed.assistant_message`, map `tool_call_result_received` (and/or tool execution end result if present) to final ToolResult content, and ensure finalization never leaves stale `Running…`. Keep 565d9a9c7 removal-on-cancel semantics, but it is insufficient by itself. E2E must seed events.jsonl containing canonical thinking + tool_calls + tool result events and assert visible pane shows them and no `Running…`.
+
+## Task workflow update - 2026-06-16T23:53:11.333Z
+- Recorded fork run: dh8kaoxu0bxj
+- Validation: Manual smoke test by user: replay looks fine on first glance after commit 15ebd5f4d.; New manual observation: slash commands like `/resume` session list cause flicker and some scrollback.
+- Summary: User manually smoke-tested after fork dh8kaoxu0bxj and reports the core #127 replay behavior now looks like it is working on first glance. New observation: when running commands like `/resume` that show a list of sessions, there is flicker and some scrollback. This appears distinct from events.jsonl replay correctness and likely relates to command/list rendering or terminal viewport management during slash-command output, not the resumed transcript projection itself. Need user decision: include this flicker/scrollback as part of #127 before PR, or track separately and move the replay fix forward.
