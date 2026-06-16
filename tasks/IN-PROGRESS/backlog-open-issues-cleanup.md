@@ -34,7 +34,7 @@ Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
 Fork run: zml075skkij0
 PR URL: https://github.com/ineersa/agent-core/pull/150
-PR Status: open
+PR Status: merged
 Started: 2026-06-12T16:54:23.580Z
 Completed:
 
@@ -549,3 +549,8 @@ Castor Check Output SHA256: 8402952e60f19af97d70af3c9bd816e632c7b0adb64c7eea53f5
 - Recorded fork run: zml075skkij0
 - Validation: Fork reported castor test --filter=ProviderCompatibilityRequestShaperTest: PASS 7/7.; Fork reported castor test --filter=ReasoningContentFeatureShaperTest: PASS 9/9.; Fork reported castor test --filter=SessionAwareModelResolverTest: PASS 7/7.; Fork reported castor phpstan: PASS 0 errors.; Fork reported castor deptrac: PASS 0 violations.; Fork reported castor cs-check after cs-fix: PASS clean.; Parent verification: git status clean; origin/main...HEAD = 0 behind / 10 ahead at e53f69342.
 - Summary: Fork zml075skkij0 addressed PR #150 review comment 3423964828 in commit e53f69342. The three AgentCore compat feature shaper constants are now public (`ReasoningContentFeatureShaper::FEATURE`, `ReasoningOptionsFeatureShaper::FEATURE`, `ZaiToolStreamFeatureShaper::FEATURE`), and CodingAgent `SessionAwareModelResolver` uses those constants instead of raw feature strings. Related tests updated to use constants. Parent verification: branch clean, 0 behind / 10 ahead at e53f69342.
+
+## Task workflow update - 2026-06-16T21:33:12.047Z
+- Updated PR Status: merged
+- Validation: Verified `gh pr view 150`: state MERGED, merge commit f2564c9736e8e7a110d96ae5301b4310cfc59f58.; Ran `git pull --rebase origin main`: fast-forwarded local main from 37f719a12 to f2564c973.; Verified issue #125 state CLOSED; issue #124 state CLOSED.
+- Summary: PR #150 merged externally by user at 2026-06-16T21:30:19Z (merge commit f2564c9736e8e7a110d96ae5301b4310cfc59f58). Local integration checkout fast-forwarded to origin/main. GitHub issues #124 (`Read + parallel bug?`) and #125 (`Compat flags in providers`) are closed. Merged scope includes durable OpenAI-compatible streaming tool-call conversion, TUI projector phantom cleanup, castor phar:build fix, simplified AgentCore provider-compat shaping architecture, public compat feature constants, and read-tool parallel execution with mixed parallel/sequential dispatch tests. Umbrella backlog cleanup task remains IN-PROGRESS for remaining issues.
