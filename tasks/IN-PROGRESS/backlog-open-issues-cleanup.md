@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: y2rimkqr9nbb
+Fork run: fpsluhjjihag
 PR URL: https://github.com/ineersa/agent-core/pull/150
 PR Status: open
 Started: 2026-06-12T16:54:23.580Z
@@ -512,3 +512,8 @@ Castor Check Output SHA256: 8402952e60f19af97d70af3c9bd816e632c7b0adb64c7eea53f5
 
 ## Task workflow update - 2026-06-16T19:59:51.060Z
 - Summary: User clarified exact desired #125 compat architecture for follow-up: keep it simple. AgentCore should have one interface/contract for compat shapers, a tagged iterator of feature shapers, and run compat shaping before normal provider hooks. CodingAgent only resolves an array/list of compat features from config/catalog and passes that array to AgentCore. Each feature shaper checks the array for its flag (reasoning, z.ai tool calls, etc.) and shapes the request. Remove the current over-abstracted design with many interfaces/options/DTO layers; do not create '100 interfaces'. Follow-up should be launched after current fork fpsluhjjihag completes.
+
+## Task workflow update - 2026-06-16T20:12:45.559Z
+- Recorded fork run: fpsluhjjihag
+- Validation: Fork reported castor test: PASS 2562/2562.; Fork reported castor test --filter=DurableResultConverterTest: PASS 10/10.; Fork reported castor test --filter=StreamDeltaSubscriberTest: PASS 18/18.; Fork reported castor test --filter=TranscriptProjectorTest: PASS 79/79.; Fork reported castor deptrac: PASS 0 violations.; Fork reported castor phpstan: PASS 0 errors (with baseline updated for converter by-ref array shape warnings).; Fork reported castor cs-check: PASS clean.; Fork reported LLM_MODE=true castor check: PASS 6/6 in 40.4s.; Fork reported castor test:llm-real: PASS 5/5 in 20.4s.; Fork reported castor phar:build: PASS builds + smoke tests pass.; Parent verification: git status clean; origin/main...HEAD = 0 behind / 7 ahead at de7568639.
+- Summary: Fork fpsluhjjihag completed durable OpenAI-compatible streaming tool-call conversion for #124 in commits a1585caac and de7568639. Root cause fixed: vendor Symfony AI generic completions stream conversion used PHP array position `$i` instead of OpenAI `tool_calls[].index`, so parallel/interleaved streamed tool calls could overwrite each other or produce mismatched transient/canonical state. New `src/Platform/Bridge/Generic/DurableResultConverter.php` uses dual maps by stream index and tool-call id, accumulates id-bearing chunks with arguments, excludes empty-id/name candidates from final ToolCallComplete, and preserves real parallel calls. `SymfonyAiProviderFactory` now wires the generic provider with the durable converter, and `ToolCallStreamSubscriber` suppresses empty-id ToolCallStart/ToolInputDelta transients. z.ai `tool_stream` response handling explicitly deferred. Branch parent-verified clean, 0 behind / 7 ahead at de7568639.
