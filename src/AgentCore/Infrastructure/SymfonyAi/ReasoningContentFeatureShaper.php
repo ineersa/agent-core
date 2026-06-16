@@ -2,36 +2,35 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Infrastructure\SymfonyAi;
+namespace Ineersa\AgentCore\Infrastructure\SymfonyAi;
 
 use Ineersa\AgentCore\Contract\ProviderCompatibilityFeatureShaperInterface;
-use Ineersa\AgentCore\Contract\ProviderCompatibilityOptionEnum;
-use Ineersa\AgentCore\Domain\Model\ProviderCompatibility;
 use Ineersa\AgentCore\Domain\Model\ProviderRequest;
 use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Message\Content\Thinking;
 use Symfony\AI\Platform\Message\MessageBag;
 
 /**
- * Injects empty reasoning_content into assistant messages for providers
- * that require it (DeepSeek).
+ * Injects empty reasoning/thinking content into assistant messages for
+ * providers that require it (DeepSeek).
  *
- * Activated by {@see ProviderCompatibilityOptionEnum::REQUIRES_REASONING_CONTENT_ON_ASSISTANT}
- * in the resolved {@see ProviderCompatibility}. Runs during the final
- * compat-normalization step — no private request-option marker needed.
+ * Activated when {@code 'requires_reasoning_content_on_assistant'} is in
+ * the compat features array.
  */
-final readonly class ReasoningContentCompatShaper implements ProviderCompatibilityFeatureShaperInterface
+final readonly class ReasoningContentFeatureShaper implements ProviderCompatibilityFeatureShaperInterface
 {
-    public function supports(ProviderCompatibility $compat): bool
+    private const string FEATURE = 'requires_reasoning_content_on_assistant';
+
+    public function supports(array $compatFeatures): bool
     {
-        return $compat->has(ProviderCompatibilityOptionEnum::REQUIRES_REASONING_CONTENT_ON_ASSISTANT);
+        return \in_array(self::FEATURE, $compatFeatures, true);
     }
 
     public function shape(
         string $model,
         array $input,
         array $options,
-        ProviderCompatibility $compat,
+        array $compatFeatures,
     ): ?ProviderRequest {
         if (!isset($input['message_bag'])) {
             return null;

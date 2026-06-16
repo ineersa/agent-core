@@ -5,9 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Tests\Infrastructure\SymfonyAi;
 
 use Ineersa\AgentCore\Contract\ProviderCompatibilityFeatureShaperInterface;
-use Ineersa\AgentCore\Contract\ProviderCompatibilityOptionEnum;
-use Ineersa\AgentCore\Contract\ProviderCompatibilityResolverInterface;
-use Ineersa\AgentCore\Domain\Model\ProviderCompatibility;
 use Ineersa\AgentCore\Domain\Model\ProviderRequest;
 use Ineersa\AgentCore\Domain\Model\ProviderRequestOptionKeys;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderCompatibilityRequestShaper;
@@ -21,22 +18,28 @@ final class ProviderCompatibilityRequestShaperTest extends TestCase
 
     public function testStripsInternalOptionKeys(): void
     {
-        $resolver = new class implements ProviderCompatibilityResolverInterface {
-            public function resolve(string $model): ProviderCompatibility
-            {
-                return new ProviderCompatibility();
-            }
-        };
-
-        $shaper = new ProviderCompatibilityRequestShaper($resolver, []);
+        $shaper = new ProviderCompatibilityRequestShaper([]);
 
         $result = $shaper->shape('test-model', [], [
             ProviderRequestOptionKeys::REASONING => 'medium',
+            ProviderRequestOptionKeys::REASONING_OPTIONS => ['enable_thinking' => true],
             'stream' => true,
         ]);
 
         $this->assertArrayNotHasKey(ProviderRequestOptionKeys::REASONING, $result['options']);
+        $this->assertArrayNotHasKey(ProviderRequestOptionKeys::REASONING_OPTIONS, $result['options']);
         $this->assertArrayHasKey('stream', $result['options']);
+    }
+
+    public function testStripsCompatFeaturesKey(): void
+    {
+        $shaper = new ProviderCompatibilityRequestShaper([]);
+
+        $result = $shaper->shape('test-model', [], [
+            ProviderRequestOptionKeys::COMPAT_FEATURES => ['zai_tool_stream'],
+        ]);
+
+        $this->assertArrayNotHasKey(ProviderRequestOptionKeys::COMPAT_FEATURES, $result['options']);
     }
 
     // ──────────────────────────────────────────────
@@ -45,19 +48,12 @@ final class ProviderCompatibilityRequestShaperTest extends TestCase
 
     public function testIteratesMatchingFeatureShapers(): void
     {
-        $resolver = new class implements ProviderCompatibilityResolverInterface {
-            public function resolve(string $model): ProviderCompatibility
-            {
-                return new ProviderCompatibility(
-                    options: [ProviderCompatibilityOptionEnum::ZAI_TOOL_STREAM],
-                );
-            }
-        };
+        $shaper = new ZaiToolStreamFeatureShaperTest();
+        $pipeline = new ProviderCompatibilityRequestShaper([$shaper]);
 
-        $shaper = new ZaiToolStreamShaper();
-        $pipeline = new ProviderCompatibilityRequestShaper($resolver, [$shaper]);
-
-        $result = $pipeline->shape('glm-5.1', [], []);
+        $result = $pipeline->shape('glm-5.1', [], [
+            ProviderRequestOptionKeys::COMPAT_FEATURES => ['zai_tool_stream'],
+        ]);
 
         $this->assertArrayHasKey('tool_stream', $result['options']);
         $this->assertTrue($result['options']['tool_stream']);
@@ -65,58 +61,44 @@ final class ProviderCompatibilityRequestShaperTest extends TestCase
 
     public function testSkipsNonMatchingFeatureShapers(): void
     {
-        $resolver = new class implements ProviderCompatibilityResolverInterface {
-            public function resolve(string $model): ProviderCompatibility
-            {
-                return new ProviderCompatibility(); // no flags
-            }
-        };
+        $shaper = new ZaiToolStreamFeatureShaperTest();
+        $pipeline = new ProviderCompatibilityRequestShaper([$shaper]);
 
-        $shaper = new ZaiToolStreamShaper();
-        $pipeline = new ProviderCompatibilityRequestShaper($resolver, [$shaper]);
-
-        $result = $pipeline->shape('some-model', [], []);
+        $result = $pipeline->shape('some-model', [], [
+            ProviderRequestOptionKeys::COMPAT_FEATURES => [], // no flags
+        ]);
 
         $this->assertArrayNotHasKey('tool_stream', $result['options']);
     }
 
     public function testMultipleFeatureShapersChain(): void
     {
-        $resolver = new class implements ProviderCompatibilityResolverInterface {
-            public function resolve(string $model): ProviderCompatibility
-            {
-                return new ProviderCompatibility(
-                    options: [
-                        ProviderCompatibilityOptionEnum::ZAI_TOOL_STREAM,
-                        ProviderCompatibilityOptionEnum::REQUIRES_REASONING_CONTENT_ON_ASSISTANT,
-                    ],
-                );
-            }
-        };
+        $shaperA = new ZaiToolStreamFeatureShaperTest();
 
-        // Shaper that adds option A
-        $shaperA = new ZaiToolStreamShaper();
-
-        // Shaper that adds option B
         $shaperB = new class implements ProviderCompatibilityFeatureShaperInterface {
-            public function supports(ProviderCompatibility $compat): bool
+            public function supports(array $compatFeatures): bool
             {
-                return $compat->has(ProviderCompatibilityOptionEnum::REQUIRES_REASONING_CONTENT_ON_ASSISTANT);
+                return \in_array('requires_reasoning_content_on_assistant', $compatFeatures, true);
             }
 
             public function shape(
                 string $model,
                 array $input,
                 array $options,
-                ProviderCompatibility $compat,
+                array $compatFeatures,
             ): ?ProviderRequest {
                 return new ProviderRequest(options: array_merge($options, ['reasoning_content_injected' => true]));
             }
         };
 
-        $pipeline = new ProviderCompatibilityRequestShaper($resolver, [$shaperA, $shaperB]);
+        $pipeline = new ProviderCompatibilityRequestShaper([$shaperA, $shaperB]);
 
-        $result = $pipeline->shape('test-model', [], []);
+        $result = $pipeline->shape('test-model', [], [
+            ProviderRequestOptionKeys::COMPAT_FEATURES => [
+                'zai_tool_stream',
+                'requires_reasoning_content_on_assistant',
+            ],
+        ]);
 
         $this->assertArrayHasKey('tool_stream', $result['options']);
         $this->assertTrue($result['options']['tool_stream']);
@@ -130,14 +112,7 @@ final class ProviderCompatibilityRequestShaperTest extends TestCase
 
     public function testReturnsModelInputOptionsTriple(): void
     {
-        $resolver = new class implements ProviderCompatibilityResolverInterface {
-            public function resolve(string $model): ProviderCompatibility
-            {
-                return new ProviderCompatibility();
-            }
-        };
-
-        $shaper = new ProviderCompatibilityRequestShaper($resolver, []);
+        $shaper = new ProviderCompatibilityRequestShaper([]);
 
         $result = $shaper->shape('test-model', ['key' => 'value'], []);
 
@@ -145,23 +120,68 @@ final class ProviderCompatibilityRequestShaperTest extends TestCase
         $this->assertSame(['key' => 'value'], $result['input']);
         $this->assertIsArray($result['options']);
     }
+
+    // ──────────────────────────────────────────────
+    // Reasoning options merging
+    // ──────────────────────────────────────────────
+
+    public function testReasoningOptionsPassedToShapersButStrippedAfter(): void
+    {
+        // Simulate what ReasoningOptionsFeatureShaper does: read _hatfield_reasoning_options, merge, strip
+        $reasoningShaper = new class implements ProviderCompatibilityFeatureShaperInterface {
+            public function supports(array $compatFeatures): bool
+            {
+                return \in_array('reasoning', $compatFeatures, true);
+            }
+
+            public function shape(
+                string $model,
+                array $input,
+                array $options,
+                array $compatFeatures,
+            ): ?ProviderRequest {
+                $ro = $options[ProviderRequestOptionKeys::REASONING_OPTIONS] ?? null;
+                if (!\is_array($ro) || [] === $ro) {
+                    return null;
+                }
+
+                $newOptions = $options;
+                unset($newOptions[ProviderRequestOptionKeys::REASONING_OPTIONS]);
+
+                return new ProviderRequest(options: array_merge($newOptions, $ro));
+            }
+        };
+
+        $pipeline = new ProviderCompatibilityRequestShaper([$reasoningShaper]);
+
+        $result = $pipeline->shape('glm-5.1', [], [
+            ProviderRequestOptionKeys::COMPAT_FEATURES => ['reasoning'],
+            ProviderRequestOptionKeys::REASONING_OPTIONS => ['enable_thinking' => true],
+        ]);
+
+        $this->assertArrayHasKey('enable_thinking', $result['options']);
+        $this->assertTrue($result['options']['enable_thinking']);
+        $this->assertArrayNotHasKey(ProviderRequestOptionKeys::REASONING_OPTIONS, $result['options']);
+    }
 }
 
 /**
- * Minimal implementation for testing — mirrors the real ZaiToolStreamCompatShaper.
+ * Minimal test double for ZaiToolStreamFeatureShaper.
  */
-final readonly class ZaiToolStreamShaper implements ProviderCompatibilityFeatureShaperInterface
+final readonly class ZaiToolStreamFeatureShaperTest implements ProviderCompatibilityFeatureShaperInterface
 {
-    public function supports(ProviderCompatibility $compat): bool
+    private const string FEATURE = 'zai_tool_stream';
+
+    public function supports(array $compatFeatures): bool
     {
-        return $compat->has(ProviderCompatibilityOptionEnum::ZAI_TOOL_STREAM);
+        return \in_array(self::FEATURE, $compatFeatures, true);
     }
 
     public function shape(
         string $model,
         array $input,
         array $options,
-        ProviderCompatibility $compat,
+        array $compatFeatures,
     ): ?ProviderRequest {
         return new ProviderRequest(options: array_merge($options, ['tool_stream' => true]));
     }

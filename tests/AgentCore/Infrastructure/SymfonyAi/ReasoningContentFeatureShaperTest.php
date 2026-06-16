@@ -2,11 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Tests\Infrastructure\SymfonyAi;
+namespace Ineersa\AgentCore\Tests\Infrastructure\SymfonyAi;
 
-use Ineersa\AgentCore\Contract\ProviderCompatibilityOptionEnum;
-use Ineersa\AgentCore\Domain\Model\ProviderCompatibility;
-use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ReasoningContentCompatShaper;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ReasoningContentFeatureShaper;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Message\Content\Text;
@@ -19,13 +17,15 @@ use Symfony\AI\Platform\Message\ToolCallMessage;
 use Symfony\AI\Platform\Message\UserMessage;
 use Symfony\AI\Platform\Result\ToolCall;
 
-final class ReasoningContentCompatShaperTest extends TestCase
+final class ReasoningContentFeatureShaperTest extends TestCase
 {
-    private ReasoningContentCompatShaper $shaper;
+    private ReasoningContentFeatureShaper $shaper;
+
+    private const DEEPSEEK_FEATURES = ['requires_reasoning_content_on_assistant'];
 
     protected function setUp(): void
     {
-        $this->shaper = new ReasoningContentCompatShaper();
+        $this->shaper = new ReasoningContentFeatureShaper();
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────
@@ -65,36 +65,19 @@ final class ReasoningContentCompatShaperTest extends TestCase
         );
     }
 
-    private function deepseekCompat(): ProviderCompatibility
-    {
-        return new ProviderCompatibility(
-            options: [ProviderCompatibilityOptionEnum::REQUIRES_REASONING_CONTENT_ON_ASSISTANT],
-        );
-    }
-
-    private function emptyCompat(): ProviderCompatibility
-    {
-        return new ProviderCompatibility();
-    }
-
     // ── supports() ────────────────────────────────────────────────────────
 
     public function testSupportsWhenCompatHasFlag(): void
     {
-        $this->assertTrue($this->shaper->supports($this->deepseekCompat()));
+        $this->assertTrue($this->shaper->supports(self::DEEPSEEK_FEATURES));
     }
 
     public function testSupportsWhenCompatHasNoFlag(): void
     {
-        $this->assertFalse($this->shaper->supports($this->emptyCompat()));
+        $this->assertFalse($this->shaper->supports([]));
     }
 
     // ── shape() ───────────────────────────────────────────────────────────
-
-    public function testSupportsReturnsFalseWhenCompatHasNoFlag(): void
-    {
-        $this->assertFalse($this->shaper->supports($this->emptyCompat()));
-    }
 
     public function testNoOpWhenNoMessageBag(): void
     {
@@ -102,7 +85,7 @@ final class ReasoningContentCompatShaperTest extends TestCase
             'deepseek-v4-pro',
             ['something_else' => 'value'],
             [],
-            $this->deepseekCompat(),
+            self::DEEPSEEK_FEATURES,
         );
 
         $this->assertNull($result);
@@ -122,7 +105,7 @@ final class ReasoningContentCompatShaperTest extends TestCase
             'deepseek-v4-pro',
             ['message_bag' => $bag],
             ['stream' => true, 'reasoning_effort' => 'high'],
-            $this->deepseekCompat(),
+            self::DEEPSEEK_FEATURES,
         );
 
         $this->assertNotNull($result);
@@ -158,7 +141,7 @@ final class ReasoningContentCompatShaperTest extends TestCase
             'deepseek-v4-pro',
             ['message_bag' => $bag],
             [],
-            $this->deepseekCompat(),
+            self::DEEPSEEK_FEATURES,
         );
 
         $this->assertNull($result, 'Should return null when no assistant messages needed changing');
@@ -179,7 +162,7 @@ final class ReasoningContentCompatShaperTest extends TestCase
             'deepseek-v4-pro',
             ['message_bag' => $bag],
             [],
-            $this->deepseekCompat(),
+            self::DEEPSEEK_FEATURES,
         );
 
         $this->assertNotNull($result);
@@ -230,7 +213,7 @@ final class ReasoningContentCompatShaperTest extends TestCase
             'deepseek-v4-pro',
             ['message_bag' => $bag],
             [],
-            $this->deepseekCompat(),
+            self::DEEPSEEK_FEATURES,
         );
 
         $this->assertNotNull($result);
@@ -264,7 +247,7 @@ final class ReasoningContentCompatShaperTest extends TestCase
             'deepseek-v4-pro',
             ['message_bag' => $bag],
             [],
-            $this->deepseekCompat(),
+            self::DEEPSEEK_FEATURES,
         );
 
         $this->assertNotNull($result);
@@ -301,7 +284,7 @@ final class ReasoningContentCompatShaperTest extends TestCase
             'deepseek-v4-pro',
             ['message_bag' => $bag],
             [],
-            $this->deepseekCompat(),
+            self::DEEPSEEK_FEATURES,
         );
 
         $this->assertNotNull($result);

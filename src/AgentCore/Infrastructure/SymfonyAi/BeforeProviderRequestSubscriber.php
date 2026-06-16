@@ -10,14 +10,14 @@ use Symfony\AI\Platform\Model;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
 /**
- * Runs normal {@see BeforeProviderRequestHookInterface} hooks first,
- * then applies final provider-compatibility normalization via
- * {@see ProviderCompatibilityRequestShaper}.
+ * Runs provider-compatibility normalization FIRST (so compat shapers can
+ * inject provider-specific options/input shapes), THEN normal
+ * {@see BeforeProviderRequestHookInterface} hooks.
  *
  * This ensures that normal hooks (which may be third-party or extension
- * services) cannot accidentally see, consume, or corrupt internal compat
- * flags, and that compat shaping always happens as a final deterministic
- * step before the provider request.
+ * services) receive already-shaped compat options and that compat shaping
+ * always happens as a deterministic first step. Internal option keys are
+ * stripped after compat shaping so hooks never see them.
  */
 final readonly class BeforeProviderRequestSubscriber implements EventSubscriberInterface
 {
@@ -26,9 +26,7 @@ final readonly class BeforeProviderRequestSubscriber implements EventSubscriberI
      */
     public function __construct(
         private iterable $hooks = [],
-        private ProviderCompatibilityRequestShaper $compatShaper = new ProviderCompatibilityRequestShaper(
-            new NullProviderCompatibilityResolver(),
-        ),
+        private ProviderCompatibilityRequestShaper $compatShaper = new ProviderCompatibilityRequestShaper(),
     ) {
     }
 
@@ -58,7 +56,16 @@ final readonly class BeforeProviderRequestSubscriber implements EventSubscriberI
         $resolvedModel = $event->getModel()->getName();
         $resolvedOptions = $options;
 
-        // ── Phase 1: normal before-provider hooks (extensions, app-level hooks) ──
+        // ── Phase 1: compat shaping (BEFORE normal hooks) ──
+        // Runs first so that compat injection (e.g. empty thinking for DeepSeek)
+        // happens before any third-party hook inspects or mutates the input.
+        // Internal keys are stripped inside shape() so hooks never see them.
+        $final = $this->compatShaper->shape($resolvedModel, $resolvedInput, $resolvedOptions);
+        $resolvedModel = $final['model'];
+        $resolvedInput = $final['input'];
+        $resolvedOptions = $final['options'];
+
+        // ── Phase 2: normal before-provider hooks (extensions, app-level hooks) ──
         foreach ($this->hooks as $hook) {
             $request = $hook->beforeProviderRequest($resolvedModel, $resolvedInput, $resolvedOptions, $metadata?->cancelToken);
             if (null === $request) {
@@ -70,14 +77,6 @@ final readonly class BeforeProviderRequestSubscriber implements EventSubscriberI
             $resolvedInput = $resolved['input'];
             $resolvedOptions = $resolved['options'];
         }
-
-        // ── Phase 2: final provider-compatibility normalization ──
-        // Runs after all hooks so no third-party/hook code can see or corrupt
-        // internal compat flags, and compat shaping is deterministic.
-        $final = $this->compatShaper->shape($resolvedModel, $resolvedInput, $resolvedOptions);
-        $resolvedModel = $final['model'];
-        $resolvedInput = $final['input'];
-        $resolvedOptions = $final['options'];
 
         if ($resolvedModel !== $event->getModel()->getName()) {
             $event->setModel(new Model(

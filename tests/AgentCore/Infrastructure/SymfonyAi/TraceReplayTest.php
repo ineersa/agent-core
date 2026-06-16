@@ -403,8 +403,10 @@ final class TraceReplayTest extends KernelTestCase
         $homeWriter = new HomeSettingsWriter($pathResolver);
         $appConfig = $this->makeAppConfig($aiData);
         $selectionService = new ModelSelectionService($appConfig, new \Ineersa\CodingAgent\Config\ModelResolver($appConfig, $this->sessionMetaStore), new \Ineersa\CodingAgent\Config\ModelSettingsPersister($homeWriter, $this->sessionMetaStore));
+        $catalog = $appConfig->catalog
+            ?? new \Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog(new \Ineersa\CodingAgent\Config\Ai\AiConfig(defaultModel: '', defaultReasoning: 'medium', providers: []));
 
-        return new SessionAwareModelResolver($selectionService);
+        return new SessionAwareModelResolver($selectionService, $catalog);
     }
 
     private function createSelectionService(array $aiData): ModelSelectionService

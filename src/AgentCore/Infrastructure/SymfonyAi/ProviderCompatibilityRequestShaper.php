@@ -5,25 +5,24 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Infrastructure\SymfonyAi;
 
 use Ineersa\AgentCore\Contract\ProviderCompatibilityFeatureShaperInterface;
-use Ineersa\AgentCore\Contract\ProviderCompatibilityResolverInterface;
 use Ineersa\AgentCore\Domain\Model\ProviderRequestOptionKeys;
 
 /**
  * Final provider-compatibility normalization step.
  *
- * Runs AFTER all normal {@see \Ineersa\AgentCore\Contract\Hook\BeforeProviderRequestHookInterface}
+ * Runs BEFORE all normal {@see \Ineersa\AgentCore\Contract\Hook\BeforeProviderRequestHookInterface}
  * hooks and BEFORE the Symfony AI platform invokes the provider.
  *
- * 1. Resolves {@see \Ineersa\AgentCore\Domain\Model\ProviderCompatibility} for
- *    the effective model via {@see ProviderCompatibilityResolverInterface}.
+ * 1. Reads the active compat features from the internal option key
+ *    {@see ProviderRequestOptionKeys::COMPAT_FEATURES}.
  * 2. Iterates tagged {@see ProviderCompatibilityFeatureShaperInterface} shapers
  *    and applies their transformations.
  * 3. Strips all internal option keys ({@see ProviderRequestOptionKeys}) so
  *    they never reach the provider.
  *
- * This design means no hook-priority ordering is needed between compat shapers,
- * no private marker options leak between hooks, and no third-party hook can
- * accidentally corrupt or consume internal compat flags.
+ * CodingAgent resolves the compat features from its config/catalog and passes
+ * them here as a simple array — no resolver interface, no DTO layer, no
+ * model-name-based lookup in AgentCore.
  */
 final readonly class ProviderCompatibilityRequestShaper
 {
@@ -31,7 +30,6 @@ final readonly class ProviderCompatibilityRequestShaper
      * @param iterable<ProviderCompatibilityFeatureShaperInterface> $featureShapers
      */
     public function __construct(
-        private ProviderCompatibilityResolverInterface $compatResolver,
         private iterable $featureShapers = [],
     ) {
     }
@@ -39,26 +37,26 @@ final readonly class ProviderCompatibilityRequestShaper
     /**
      * Shape the final provider request by applying compatibility normalization.
      *
-     * @param string               $model   the effective model name (post-hooks)
-     * @param array<string, mixed> $input   the input array (post-hooks)
-     * @param array<string, mixed> $options the options array (post-hooks, may contain internal keys)
+     * @param string               $model   the effective model name
+     * @param array<string, mixed> $input   the input array
+     * @param array<string, mixed> $options the options array (may contain internal keys)
      *
      * @return array{model: string, input: array<string, mixed>, options: array<string, mixed>}
      */
     public function shape(string $model, array $input, array $options): array
     {
-        $compat = $this->compatResolver->resolve($model);
+        $compatFeatures = $this->extractCompatFeatures($options);
 
         $resolvedModel = $model;
         $resolvedInput = $input;
         $resolvedOptions = $options;
 
         foreach ($this->featureShapers as $shaper) {
-            if (!$shaper->supports($compat)) {
+            if (!$shaper->supports($compatFeatures)) {
                 continue;
             }
 
-            $request = $shaper->shape($resolvedModel, $resolvedInput, $resolvedOptions, $compat);
+            $request = $shaper->shape($resolvedModel, $resolvedInput, $resolvedOptions, $compatFeatures);
             if (null === $request) {
                 continue;
             }
@@ -80,11 +78,25 @@ final readonly class ProviderCompatibilityRequestShaper
     }
 
     /**
-     * Strip known internal option keys so they never leak into provider requests.
+     * Extract the compat features array from options and remove it from
+     * the options so the shapers don't need to see the raw option key.
      *
-     * Currently only {@see ProviderRequestOptionKeys::REASONING} is carried
-     * through the option pipeline; other cross-cutting concerns are handled
-     * by feature shapers directly and do not use private marker options.
+     * @param array<string, mixed> $options
+     *
+     * @return list<string>
+     */
+    private function extractCompatFeatures(array &$options): array
+    {
+        $features = \is_array($options[ProviderRequestOptionKeys::COMPAT_FEATURES] ?? null)
+            ? $options[ProviderRequestOptionKeys::COMPAT_FEATURES] : [];
+
+        unset($options[ProviderRequestOptionKeys::COMPAT_FEATURES]);
+
+        return $features;
+    }
+
+    /**
+     * Strip known internal option keys so they never leak into provider requests.
      *
      * @param array<string, mixed> $options
      *
@@ -92,7 +104,10 @@ final readonly class ProviderCompatibilityRequestShaper
      */
     private function stripInternalKeys(array $options): array
     {
-        unset($options[ProviderRequestOptionKeys::REASONING]);
+        unset(
+            $options[ProviderRequestOptionKeys::REASONING],
+            $options[ProviderRequestOptionKeys::REASONING_OPTIONS],
+        );
 
         return $options;
     }

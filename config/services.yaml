@@ -239,20 +239,20 @@ services:
   Ineersa\AgentCore\Contract\Model\ImageCapabilityCheckerInterface:
     alias: Ineersa\CodingAgent\Tool\ImageProcessing\CodingAgentImageCapabilityChecker
 
-  # ── Provider compatibility resolver (CodingAgent → AgentCore pipeline) ──
-  Ineersa\AgentCore\Contract\ProviderCompatibilityResolverInterface:
-    alias: Ineersa\CodingAgent\Config\HatfieldProviderCompatibilityResolver
+  # ── Provider compatibility feature shapers (AgentCore) ──
+  # CodingAgent resolves compat features and reasoning options from its catalog
+  # and passes them to AgentCore as a simple array. AgentCore's shapers consume
+  # that array — no catalog access, no DTOs, no resolver interfaces.
 
-  # ── Provider compatibility feature shapers ──
-  Ineersa\CodingAgent\Config\ReasoningCompatFeatureShaper:
-    tags:
-      - { name: 'agent_core.provider_compatibility_feature_shaper', priority: 100 }
-
-  Ineersa\CodingAgent\Infrastructure\SymfonyAi\ReasoningContentCompatShaper:
+  Ineersa\AgentCore\Infrastructure\SymfonyAi\ReasoningOptionsFeatureShaper:
     tags:
       - { name: 'agent_core.provider_compatibility_feature_shaper' }
 
-  Ineersa\CodingAgent\Infrastructure\SymfonyAi\ZaiToolStreamCompatShaper:
+  Ineersa\AgentCore\Infrastructure\SymfonyAi\ReasoningContentFeatureShaper:
+    tags:
+      - { name: 'agent_core.provider_compatibility_feature_shaper' }
+
+  Ineersa\AgentCore\Infrastructure\SymfonyAi\ZaiToolStreamFeatureShaper:
     tags:
       - { name: 'agent_core.provider_compatibility_feature_shaper' }
 

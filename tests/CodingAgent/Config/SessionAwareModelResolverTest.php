@@ -188,7 +188,9 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         $appConfig = $this->makeAppConfig($aiData);
         $selectionService = new ModelSelectionService($appConfig, new ModelResolver($appConfig, $sessionMetaStore), new ModelSettingsPersister($homeWriter, $sessionMetaStore));
 
-        return new SessionAwareModelResolver($selectionService);
+        $catalog = $appConfig->catalog ?? new HatfieldModelCatalog(new AiConfig(defaultModel: '', defaultReasoning: 'medium', providers: []));
+
+        return new SessionAwareModelResolver($selectionService, $catalog);
     }
 
     private function makeAppConfig(array $aiData): AppConfig

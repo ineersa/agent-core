@@ -23,6 +23,20 @@ final class ProviderRequestOptionKeys
      */
     public const string REASONING = '_hatfield_reasoning';
 
+    /**
+     * Internal option key carrying the provider compatibility features array
+     * (e.g. ['zai_tool_stream', 'requires_reasoning_content_on_assistant', 'reasoning']).
+     * Consumed by compat feature shapers and stripped before the provider sees options.
+     */
+    public const string COMPAT_FEATURES = '_hatfield_compat_features';
+
+    /**
+     * Internal option key carrying pre-computed reasoning options
+     * (e.g. ['enable_thinking' => true]) that the ReasoningOptionsFeatureShaper
+     * merges into the provider options. Stripped before the provider sees options.
+     */
+    public const string REASONING_OPTIONS = '_hatfield_reasoning_options';
+
     private function __construct()
     {
     }

@@ -276,8 +276,10 @@ final class LlamaCppSmokeTest extends KernelTestCase
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
         $homeWriter = new HomeSettingsWriter($pathResolver);
         $selectionService = new ModelSelectionService($appConfig, new \Ineersa\CodingAgent\Config\ModelResolver($appConfig, $this->sessionMetaStore), new \Ineersa\CodingAgent\Config\ModelSettingsPersister($homeWriter, $this->sessionMetaStore));
+        $catalog = $appConfig->catalog
+            ?? new \Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog(new \Ineersa\CodingAgent\Config\Ai\AiConfig(defaultModel: '', defaultReasoning: 'medium', providers: []));
 
-        return new SessionAwareModelResolver($selectionService);
+        return new SessionAwareModelResolver($selectionService, $catalog);
     }
 
     /**
