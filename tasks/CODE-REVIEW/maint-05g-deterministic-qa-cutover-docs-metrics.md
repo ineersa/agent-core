@@ -31,12 +31,12 @@ This task should not start until enough of A-F are complete that default QA can 
 - MAINT-05 umbrella task is updated with final status and links/results for MAINT-05A-G.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/maint-05g-deterministic-qa-cutover-docs-metrics
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05g-deterministic-qa-cutover-docs-metrics
 Fork run: mfp9t28q9xae
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/148
+PR Status: open
 Started: 2026-06-16T02:21:32.044Z
 Completed:
 
@@ -82,3 +82,10 @@ Completed:
 - Recorded fork run: mfp9t28q9xae
 - Validation: Fork validation: `castor list` found all 33 tasks.; Fork validation: `castor deptrac` passed: 0 violations, 0 errors.; Fork validation: `castor phpstan` passed: 0 errors, 0 file_errors.; Fork validation: `castor cs-check` passed: 0 fixable files.; Fork validation: `castor test:tui` passed: 3 tests, 35 assertions, 10.4s.; Fork validation: `LLM_MODE=true castor check` passed: 6/6 lanes OK in 73.8s (deptrac 0.9s; sequential test 47.4s, 2520 tests/7318 assertions; controller-replay 8.0s; TUI replay 12.5s; phpstan 3.1s; cs-check 1.9s).; Parent spot-check: worktree clean on branch `task/maint-05g-deterministic-qa-cutover-docs-metrics` at `08b32d4af`; targeted `rg` found no active `skipCastorCheck` hits, with remaining stale-pattern hits limited to acceptable isolation/historical before-metrics references.
 - Summary: Follow-up fork completed at commit `08b32d4af` on `task/maint-05g-deterministic-qa-cutover-docs-metrics`: removed the `skipCastorCheck` bypass from task workflow schema/implementation/docs so IN-PROGRESS→CODE-REVIEW always runs the deterministic gate after the branch is merged and pi is reloaded; added an explicit tmux preflight to `castor check` so missing tmux fails early with a clear diagnostic; fixed stale active docs around live TUI LLM wording, `castor check` live preflight wording, and tmux skip/pass-green wording. Parent spot-check confirmed clean worktree at `08b32d4af`, expected 11-file diff, and no active `skipCastorCheck` hits.
+
+## Task workflow update - 2026-06-16T02:45:40.657Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/maint-05g-deterministic-qa-cutover-docs-metrics to origin.
+- branch 'task/maint-05g-deterministic-qa-cutover-docs-metrics' set up to track 'origin/task/maint-05g-deterministic-qa-cutover-docs-metrics'.
+- Created PR: https://github.com/ineersa/agent-core/pull/148
+- Validation: Fork validation: `LLM_MODE=true castor check` passed: 6/6 lanes OK in 73.8s.; Fork validation: `castor test:tui` passed: 3 tests, 35 assertions, 10.4s.; Fork validation: `castor list` found all 33 tasks.; Fork validation: `castor deptrac` passed: 0 violations/errors.; Fork validation: `castor phpstan` passed: 0 errors.; Fork validation: `castor cs-check` passed: 0 fixable files.; Prior MAINT-05G fork validation: `castor test` passed: 2524 tests, 7330 assertions, 21.3s; `castor test --suite=coding-agent --sequential` passed: 1467 tests, 4019 assertions, 55.9s; `castor test:controller-replay` passed: 1 test, 14 assertions, 7.7s.
