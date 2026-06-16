@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Extension\Builtin\SafeGuard\Classifier;
 
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Classifier\SafeGuardPathMatcher;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Policy\SafeGuardPolicy;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -22,210 +23,70 @@ final class SafeGuardPathMatcherTest extends TestCase
 
     // ── isInsideCwd ──
 
-    public function testPathInsideCwd(): void
+    #[DataProvider('isInsideCwdProvider')]
+    public function testIsInsideCwd(string $cwd, string $path, bool $expected): void
     {
-        $this->assertTrue(
-            $this->matcher->isInsideCwd('/home/user/project', 'src/foo.php'),
-        );
+        $this->assertSame($expected, $this->matcher->isInsideCwd($cwd, $path));
     }
 
-    public function testPathEqualsCwd(): void
+    /** @return iterable<string, array{string, string, bool}> */
+    public static function isInsideCwdProvider(): iterable
     {
-        $this->assertTrue(
-            $this->matcher->isInsideCwd('/home/user/project', '.'),
-        );
-    }
-
-    public function testPathOutsideCwd(): void
-    {
-        $this->assertFalse(
-            $this->matcher->isInsideCwd('/home/user/project', '../other/file'),
-        );
-    }
-
-    public function testAbsolutePathOutsideCwd(): void
-    {
-        $this->assertFalse(
-            $this->matcher->isInsideCwd('/home/user/project', '/etc/passwd'),
-        );
-    }
-
-    public function testDotDotTraversalOutsideCwd(): void
-    {
-        $this->assertFalse(
-            $this->matcher->isInsideCwd('/home/user/project', '../../../etc/passwd'),
-        );
+        yield 'inside'           => ['/home/user/project', 'src/foo.php', true];
+        yield 'equals cwd'       => ['/home/user/project', '.', true];
+        yield 'outside relative' => ['/home/user/project', '../other/file', false];
+        yield 'outside absolute' => ['/home/user/project', '/etc/passwd', false];
+        yield 'dotdot traversal' => ['/home/user/project', '../../../etc/passwd', false];
     }
 
     // ── isPathInList ──
 
-    public function testPathInListExactMatch(): void
+    #[DataProvider('isPathInListProvider')]
+    public function testIsPathInList(array $patterns, string $path, bool $expected): void
     {
-        $cwd = getcwd() ?: '.';
-
-        $this->assertTrue(
-            $this->matcher->isPathInList([$cwd.'/tmp'], $cwd.'/tmp/file.txt'),
-        );
+        $this->assertSame($expected, $this->matcher->isPathInList($patterns, $path));
     }
 
-    public function testPathInListPrefixMatch(): void
+    /** @return iterable<string, array{list<string>, string, bool}> */
+    public static function isPathInListProvider(): iterable
     {
         $cwd = getcwd() ?: '.';
-
-        $this->assertTrue(
-            $this->matcher->isPathInList([$cwd.'/tmp'], $cwd.'/tmp'),
-        );
-    }
-
-    public function testPathNotInList(): void
-    {
-        $cwd = getcwd() ?: '.';
-
-        $this->assertFalse(
-            $this->matcher->isPathInList([$cwd.'/var'], $cwd.'/tmp/file.txt'),
-        );
-    }
-
-    public function testEmptyListReturnsFalse(): void
-    {
-        $this->assertFalse(
-            $this->matcher->isPathInList([], '/tmp/file.txt'),
-        );
+        yield 'exact match'  => [[$cwd.'/tmp'], $cwd.'/tmp/file.txt', true];
+        yield 'prefix match' => [[$cwd.'/tmp'], $cwd.'/tmp', true];
+        yield 'not in list'  => [[$cwd.'/var'], $cwd.'/tmp/file.txt', false];
+        yield 'empty list'   => [[], '/tmp/file.txt', false];
     }
 
     // ── isProtectedReadPath ──
 
-    public function testEnvLocalIsProtected(): void
+    #[DataProvider('protectedReadProvider')]
+    public function testIsProtectedReadPath(array $patterns, string $path, bool $expected): void
     {
-        $policy = new SafeGuardPolicy(
-            protectedReadPatterns: ['.env.local'],
-        );
-
-        $this->assertTrue(
-            $this->matcher->isProtectedReadPath($policy, '/home/user/project/.env.local'),
-        );
+        $policy = new SafeGuardPolicy(protectedReadPatterns: $patterns);
+        $this->assertSame($expected, $this->matcher->isProtectedReadPath($policy, $path));
     }
 
-    public function testAuthJsonIsProtected(): void
+    /** @return iterable<string, array{list<string>, string, bool}> */
+    public static function protectedReadProvider(): iterable
     {
-        $policy = new SafeGuardPolicy(
-            protectedReadPatterns: ['auth.json'],
-        );
-
-        $this->assertTrue(
-            $this->matcher->isProtectedReadPath($policy, '/home/user/project/auth.json'),
-        );
+        yield '.env.local'           => [['.env.local'], '/home/user/project/.env.local', true];
+        yield 'auth.json'            => [['auth.json'], '/home/user/project/auth.json', true];
+        yield '.ssh/id_ (ends-with)' => [['.ssh/id_'], '/home/user/.ssh/id_rsa', true];
+        yield '.aws/credentials'     => [['.aws/credentials'], '/home/user/.aws/credentials', true];
+        yield '.kube/config'         => [['.kube/config'], '/home/user/.kube/config', true];
+        yield '.pem'                 => [['.pem'], '/home/user/certs/server.pem', true];
+        yield 'service-account'      => [['service-account'], '/home/user/service-account', true];
+        yield 'case insensitive'     => [['.env.local'], '/home/user/.ENV.LOCAL', true];
+        yield 'segment match .gcp/'  => [['.gcp/'], '/home/user/.gcp/credentials.json', true];
+        yield 'regular file not protected' => [['.env.local'], '/home/user/project/src/main.php', false];
+        yield 'tracked .env not protected' => [['.env.local', '.env.dev.local'], '/home/user/project/.env', false];
     }
 
-    public function testSshKeyIsProtected(): void
-    {
-        $policy = new SafeGuardPolicy(
-            protectedReadPatterns: ['.ssh/id_'],
-        );
-
-        // .ssh/id_ matches .ssh/id_rsa (ends-with)
-        $this->assertTrue(
-            $this->matcher->isProtectedReadPath($policy, '/home/user/.ssh/id_rsa'),
-        );
-    }
-
-    public function testAwsCredentialsIsProtected(): void
-    {
-        $policy = new SafeGuardPolicy(
-            protectedReadPatterns: ['.aws/credentials'],
-        );
-
-        $this->assertTrue(
-            $this->matcher->isProtectedReadPath($policy, '/home/user/.aws/credentials'),
-        );
-    }
-
-    public function testKubeConfigIsProtected(): void
-    {
-        $policy = new SafeGuardPolicy(
-            protectedReadPatterns: ['.kube/config'],
-        );
-
-        $this->assertTrue(
-            $this->matcher->isProtectedReadPath($policy, '/home/user/.kube/config'),
-        );
-    }
-
-    public function testPemFileIsProtected(): void
-    {
-        $policy = new SafeGuardPolicy(
-            protectedReadPatterns: ['.pem'],
-        );
-
-        $this->assertTrue(
-            $this->matcher->isProtectedReadPath($policy, '/home/user/certs/server.pem'),
-        );
-    }
-
-    public function testServiceAccountIsProtected(): void
-    {
-        $policy = new SafeGuardPolicy(
-            protectedReadPatterns: ['service-account'],
-        );
-
-        $this->assertTrue(
-            $this->matcher->isProtectedReadPath($policy, '/home/user/service-account'),
-        );
-    }
-
-    public function testProtectedReadIsCaseInsensitive(): void
-    {
-        $policy = new SafeGuardPolicy(
-            protectedReadPatterns: ['.env.local'],
-        );
-
-        $this->assertTrue(
-            $this->matcher->isProtectedReadPath($policy, '/home/user/.ENV.LOCAL'),
-        );
-    }
-
-    public function testRegularFileIsNotProtected(): void
-    {
-        $policy = new SafeGuardPolicy(
-            protectedReadPatterns: ['.env.local'],
-        );
-
-        $this->assertFalse(
-            $this->matcher->isProtectedReadPath($policy, '/home/user/project/src/main.php'),
-        );
-
-        $this->assertFalse(
-            $this->matcher->isProtectedReadPath($policy, '/home/user/project/README.md'),
-        );
-    }
-
-    public function testTrackedEnvFileIsNotProtected(): void
-    {
-        // .env (tracked) is NOT protected; only .env.local and variants are
-        $policy = new SafeGuardPolicy(
-            protectedReadPatterns: ['.env.local', '.env.dev.local'],
-        );
-
-        $this->assertFalse(
-            $this->matcher->isProtectedReadPath($policy, '/home/user/project/.env'),
-        );
-    }
-
-    public function testPathContainingPatternAsSegment(): void
-    {
-        $policy = new SafeGuardPolicy(
-            protectedReadPatterns: ['.gcp/'],
-        );
-
-        $this->assertTrue(
-            $this->matcher->isProtectedReadPath($policy, '/home/user/.gcp/credentials.json'),
-        );
-    }
+    // ── Defaults ──
 
     public function testDefaultPatternsListIsNotEmpty(): void
     {
         $defaults = $this->matcher->defaultProtectedReadPatterns();
-
         $this->assertNotEmpty($defaults);
         $this->assertGreaterThan(20, \count($defaults));
     }

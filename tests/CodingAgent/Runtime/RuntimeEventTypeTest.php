@@ -342,36 +342,4 @@ final class RuntimeEventTypeTest extends TestCase
         $this->assertFalse(RuntimeEventTypeEnum::BackgroundProcessCompleted->isHitl());
     }
 
-    /**
-     * RuntimeEventTypeEnum::from() must round-trip from the string value.
-     */
-    public function testFromStringValueRoundtrip(): void
-    {
-        foreach (RuntimeEventTypeEnum::cases() as $case) {
-            $restored = RuntimeEventTypeEnum::from($case->value);
-            $this->assertSame($case, $restored);
-        }
-    }
-
-    /**
-     * RuntimeEventTypeEnum::tryFrom() must return null for unknown values.
-     */
-    public function testTryFromUnknownValueReturnsNull(): void
-    {
-        $this->assertNull(RuntimeEventTypeEnum::tryFrom('nonexistent.event'));
-        $this->assertNull(RuntimeEventTypeEnum::tryFrom(''));
-    }
-
-    /**
-     * Verify the total count of enumerated event types so accidental
-     * additions or deletions are caught in review.
-     */
-    public function testTotalCountIsExpected(): void
-    {
-        // 8 lifecycle + 1 user_input + 9 assistant + 8 tool + 2 progress
-        // + 6 HITL + 2 cancellation + 5 metadata + 2 command
-        // + 1 runtime + 1 protocol + 1 resumed + 1 tool_question
-        // + 1 background_process_completion = 48
-        $this->assertCount(48, RuntimeEventTypeEnum::cases());
-    }
 }

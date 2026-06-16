@@ -13,6 +13,8 @@ All PHPUnit invocations include `--stop-on-error --stop-on-failure --fail-on-all
 castor check                # Full validation: PHAR ensure + parallel steps (deptrac, unit/integration sequential, controller E2E, llm-real E2E, TUI E2E, phpstan, cs-check); per-step timeouts + logs at var/reports/check-*.log
 castor test                 # unit/integration tests (ParaTest parallel by default); excludes tui-e2e-replay, llm-real, recording, and controller-replay groups
 castor test --filter=X      # filter tests by name (sequential, single DB)
+castor test --suite=X       # target a specific phpunit.xml test suite
+castor test --suite=X --sequential  # sequential run on a specific suite
 castor test:tui [--filter=X]    # TUI E2E journey tests (replay-backed, no live LLM)
 castor test:tui-update [--filter=X]  # update TUI snapshot baselines (filter optional)
 castor test:llm-real [--filter=X]   # real llama.cpp smoke (filter optional)

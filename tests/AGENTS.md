@@ -99,6 +99,8 @@ All PHPUnit invocations include `--stop-on-error --stop-on-failure --fail-on-all
 Key commands:
 - `castor test` — unit/integration tests (ParaTest parallel by default, sequential fallback for --filter)
 - `castor test --filter=XxxTest` — filter to specific tests (sequential; single DB)
+- `castor test --suite=coding-agent --sequential` — sequential CodingAgent suite
+- `castor test --suite=coding-agent` — targeted ParaTest run on a suite
 - `castor test:tui` — TUI E2E journey tests (`#[Group('tui-e2e-replay')]`, replay-backed, no live LLM)
 - `castor test:llm-real` — real-LLM controller E2E tests (`#[Group('llm-real')]`)
 - `castor test:controller-replay` — controller replay E2E (default, no live LLM)

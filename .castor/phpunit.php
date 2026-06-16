@@ -70,9 +70,12 @@ function build_sequential_phpunit_command(string $pharEnv): string
  *
  * MAINT-05B: ParaTest is now the default.  Sequential PHPUnit is an
  * internal fallback only.
+ *
+ * MAINT-05F: Added --suite and --sequential options to target specific
+ * test suites and force deterministic sequential runs.
  */
 #[AsTask(name: 'test', description: 'Run unit/integration tests (ParaTest parallel by default)')]
-function test(?string $filter = null): void
+function test(?string $filter = null, ?string $suite = null, ?bool $sequential = null): void
 {
     // Prevent Xdebug overhead from hitting unit tests.
     if (extension_loaded('xdebug')) {
@@ -98,10 +101,19 @@ function test(?string $filter = null): void
 
     $start = hrtime(true);
 
-    if (null !== $filter) {
-        // Filtered runs use a single sequential PHPUnit invocation —
-        // ParaTest --filter can be unreliable with path/namespace overlap.
-        passthru('APP_ENV=test '.$pharEnv.\PHP_BINARY.' vendor/bin/phpunit --filter='.escapeshellarg($filter).' '.phpunit_strict_issue_flags(), $exitCode);
+    // Build suite flag for either PHPUnit or ParaTest.
+    $suiteFlag = '';
+    if (null !== $suite) {
+        $suiteFlag = ' --testsuite='.escapeshellarg($suite);
+    }
+
+    if (null !== $filter || true === $sequential) {
+        // Filtered and explicit sequential runs use single PHPUnit.
+        $phpunitCmd = 'APP_ENV=test '.$pharEnv.\PHP_BINARY.' vendor/bin/phpunit'
+            .$suiteFlag
+            .(null !== $filter ? ' --filter='.escapeshellarg($filter) : '')
+            .' '.phpunit_strict_issue_flags();
+        passthru($phpunitCmd, $exitCode);
         $duration = (hrtime(true) - $start) / 1e9;
         if (0 !== $exitCode) {
             echo sprintf("\nTests FAILED (%.1fs)\n", $duration);
@@ -134,6 +146,7 @@ function test(?string $filter = null): void
     $cmd = 'APP_ENV=test '.$pharEnv.\PHP_BINARY.' vendor/bin/paratest'
         .' --configuration=phpunit.xml.dist'
         .' --bootstrap='.escapeshellarg($bootstrap)
+        .$suiteFlag
         .' --exclude-group=tui-e2e-replay --exclude-group=llm-real --exclude-group=recording --exclude-group=controller-replay'
         .' '.$strictFlags.$llmFlags.$junitFlag;
 
