@@ -38,7 +38,7 @@ Before re-running `castor check`, `castor test:controller`, or `castor test:tui`
 
 ## E2E Testing Strategy
 
-All E2E tests use `llama_cpp_test/test` (port 9052). Test groups: `#[Group('llm-real')]`, `#[Group('tui-e2e-replay')]`. Tests use `var/tmp/test-{uuid}` isolation, never real `.hatfield/sessions/`.
+Replay-backed controller/TUI E2E tests use deterministic fixtures (no live LLM).  Live LLM smoke tests use `llama_cpp_test/test` (port 9052).  Test groups: `#[Group('llm-real')]`, `#[Group('tui-e2e-replay')]`, `#[Group('controller-replay')]`.  All E2E tests use `var/tmp/test-{uuid}` isolation, never real `.hatfield/sessions/`.
 
 See `tests/AGENTS.md` for full test standards: shared helpers, isolation, test doubles, what not to test, and cleanup conventions.
 

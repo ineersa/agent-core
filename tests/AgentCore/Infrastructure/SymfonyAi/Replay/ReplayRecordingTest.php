@@ -135,7 +135,7 @@ final class ReplayRecordingTest extends \PHPUnit\Framework\TestCase
         // Build a real platform via the factory — this makes actual HTTP calls
         // to the configured LLM endpoint. In test env with LLAMA_CPP_SMOKE_TEST=1,
         // the endpoint is llama_cpp_test/test on port 9052.
-        $aiConfig = AiConfig::fromConfigArray([
+        $aiConfig = AiConfig::fromArray([
             'default_model' => 'llama_cpp/test',
             'providers' => [
                 'llama_cpp' => [

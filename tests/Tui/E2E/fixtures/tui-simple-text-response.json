@@ -3,8 +3,8 @@
     "model": "llama_cpp_test/test",
     "provider_id": "llama_cpp_test",
     "reasoning": "off",
-    "recorded_at": "2026-06-15T23:00:00Z",
-    "recording_source": "llama_cpp_test/test",
+    "fixture_source": "synthetic",
+    "synthetic_reason": "MAINT-05E TUI rendering fixture; verifies replay-backed model-interaction block appearance. No provider-specific behaviour tested.",
     "input": {
         "messages": [
             {"role": "user", "content": "Respond with exactly one sentence: the sky is blue."}

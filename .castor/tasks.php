@@ -167,9 +167,10 @@ function check(): void
     }
 
     // Fail-fast: verify llama.cpp can actually generate before burning
-    // time on controller / llm-real / TUI E2E steps.  Health-only checks
-    // are insufficient — the server can respond to /health and /v1/models
+    // time on controller / llm-real steps.  Health-only checks are
+    // insufficient — the server can respond to /health and /v1/models
     // while generation is stuck (corrupted model load, slots busy).
+    // TUI E2E uses replay-backed fixtures and does NOT need live LLM.
     check_llm_generation_ready();
 
     $failures = [];

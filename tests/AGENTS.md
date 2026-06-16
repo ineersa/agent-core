@@ -128,11 +128,11 @@ The `llama_cpp_test/test` server should run deterministically (temperature 0, fi
 
 ### LLM generation preflight
 
-`castor check`, `test:llm-real`, `test:controller`, and `test:tui-update` all run a ~4s curl-based preflight (`check_llm_generation_ready`) before any E2E test starts. It verifies the test LLM can complete a tiny generation request. If the server responds to `/health` and `/v1/models` but generation is stuck (corrupted model load, stuck slots), Castor fails immediately with a diagnostic instead of burning step timeouts. Fix or restart the llama.cpp server before retrying.
+`castor check`, `test:llm-real`, and `test:controller` all run a ~4s curl-based preflight (`check_llm_generation_ready`) before any live-LLM E2E test starts. It verifies the test LLM can complete a tiny generation request. If the server responds to `/health` and `/v1/models` but generation is stuck (corrupted model load, stuck slots), Castor fails immediately with a diagnostic instead of burning step timeouts. Fix or restart the llama.cpp server before retrying.
 
 ## TUI behavior proof
 
-TUI implementation is NOT complete without an automated test using the real test LLM and `TmuxHarness`, exercising the actual interactive TUI flow. Mocked service-only tests are insufficient for TUI feature gate acceptance.
+TUI implementation is NOT complete without an automated test using the real interactive TUI (`TmuxHarness`), exercising the actual TUI flow. Default TUI E2E uses replay-backed fixtures for model interaction; live llama.cpp is not required for TUI feature proof. Mocked service-only tests are insufficient for TUI feature gate acceptance.
 
 ## DB-touching tests
 

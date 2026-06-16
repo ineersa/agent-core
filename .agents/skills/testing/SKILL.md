@@ -11,7 +11,7 @@ All PHPUnit invocations include `--stop-on-error --stop-on-failure --fail-on-all
 
 ```bash
 castor check                # Full validation: PHAR ensure + parallel steps (deptrac, unit/integration sequential, controller E2E, llm-real E2E, TUI E2E, phpstan, cs-check); per-step timeouts + logs at var/reports/check-*.log
-castor test                 # unit/integration tests (ParaTest parallel by default); excludes tui-e2e and llm-real
+castor test                 # unit/integration tests (ParaTest parallel by default); excludes tui-e2e-replay, llm-real, recording, and controller-replay groups
 castor test --filter=X      # filter tests by name (sequential, single DB)
 castor test:tui [--filter=X]    # TUI E2E journey tests (replay-backed, no live LLM)
 castor test:tui-update [--filter=X]  # update TUI snapshot baselines (filter optional)
@@ -38,7 +38,7 @@ Run the test llama.cpp server deterministically for smoke tests: temperature 0, 
 
 ### LLM generation readiness preflight
 
-Before `castor check`, `test:llm-real`, `test:controller`, and `test:tui-update` run any E2E tests, Castor runs `check_llm_generation_ready()` — a ~4s curl-based preflight that sends a tiny `max_tokens=1` chat completion to `llama_cpp_test/test`. If the server responds to `/health` and `/v1/models` but generation hangs (corrupted model load, stuck slots), this preflight fails immediately with a clear diagnostic instead of burning 30-90s Castor step timeouts.
+Before `castor check`, `test:llm-real`, and `test:controller` run any live-LLM E2E tests, Castor runs `check_llm_generation_ready()` — a ~4s curl-based preflight that sends a tiny `max_tokens=1` chat completion to `llama_cpp_test/test`. If the server responds to `/health` and `/v1/models` but generation hangs (corrupted model load, stuck slots), this preflight fails immediately with a clear diagnostic instead of burning 30-90s Castor step timeouts.
 
 If you see:
 ```
@@ -217,7 +217,7 @@ Before re-running failed controller/TUI E2E checks, kill stale worker processes 
 
 `castor test:tui` runs the deterministic replay-backed TUI journey test
 (`TuiJourneyE2eTest`, group `tui-e2e-replay`).  It exercises startup
-layout, Ctrl+J, reasoning cycling, /hotkeys, shell !ls, file completion,
+layout, reasoning cycling, /hotkeys, shell !ls, file completion,
 model interaction via replay fixtures, and double-bang rejection — all
 in a single long-lived tmux session.
 
