@@ -42,7 +42,7 @@ Known entrypoints:
 Status: IN-PROGRESS
 Branch: task/maint-05e-tui-journey-e2e-rework
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05e-tui-journey-e2e-rework
-Fork run: kczj79mfkzym
+Fork run: qs212tif12j0
 PR URL: https://github.com/ineersa/agent-core/pull/146
 PR Status: open
 Started: 2026-06-16T00:10:29.822Z
@@ -112,3 +112,8 @@ Completed:
 - Recorded fork run: kczj79mfkzym
 - Validation: Fork guard initially passed but fork later reported git corruption caused by `git rebase origin/main`/wrong worktree handling.; Fork validation reported: `castor list`, `castor test:tui`, `castor test`, `castor deptrac`, `castor phpstan`, `castor cs-check` passed; full `LLM_MODE=true castor check` skipped per MAINT-05 policy.; Parent repair validation: integration checkout `/home/ineersa/projects/agent-core` is clean on `main` tracking `origin/main`.; Parent repair validation: task worktree `/home/ineersa/projects/agent-core-worktrees/maint-05e-tui-journey-e2e-rework` is clean on `task/maint-05e-tui-journey-e2e-rework`, ahead of origin by 2 commits (`7cc28c2e`, `6e2f834fe`).; Parent decision: do not move to CODE-REVIEW; launch follow-up fork to do fixture recording properly through Castor and reject hand-written recording scripts.
 - Summary: Fork `kczj79mfkzym` completed but is NOT accepted as final for CODE-REVIEW. It fixed stale docs and produced live-recorded TUI fixtures, but user identified that fixtures were generated through an ad-hoc curl/PHP conversion script instead of the project-supported `castor llm:fixtures:record` flow. Fork also corrupted git by switching the integration checkout/worktree branch state; parent repaired git manually without `git reset --hard`: stashed corrupted integration checkout state, moved stray nested vendor to `/tmp/agent-core-git-repair-20260615-205142/`, switched `/home/ineersa/projects/agent-core` back to `main`, and confirmed task branch remains clean in the proper worktree. Backup stash: `stash@{0}: backup corrupted integration checkout before maint-05e repair 20260615-205142`. Follow-up required: remove reliance on ad-hoc recording, make/update the Castor fixture recording command to record the TUI fixtures properly, then regenerate/verify via `castor llm:fixtures:record` only.
+
+## Task workflow update - 2026-06-16T00:53:22.490Z
+- Recorded fork run: qs212tif12j0
+- Validation: Pending fork `qs212tif12j0`: expected validation is `castor list`, `castor llm:fixtures:record` (or documented Castor-supported options), `castor test:tui`, `castor test`, `castor deptrac`, `castor phpstan`, `castor cs-check`; no full `LLM_MODE=true castor check`; no raw curl/scripts/vendor/bin from shell.
+- Summary: Launched follow-up fork to fix the rejected recording shortcut properly. Fork must not use ad-hoc curl/PHP conversion; it must make/update `castor llm:fixtures:record` so the supported Castor recording path records the committed TUI fixtures via the intended `StreamRecorderObserver`/Symfony AI provider path, then run that Castor command to regenerate/verify fixtures. Strict git guard added after repeated corruption: no rebase/switch/checkout/reset/symbolic-ref/worktree commands; stay in the MAINT-05E worktree; allowed git only status/diff/log/add/commit/read-only. Real LLM smoke commands must remain, live TUI command must stay removed.
