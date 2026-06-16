@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: mm5dp9nqi83i
+Fork run: jxnn9j469qh8
 PR URL: https://github.com/ineersa/agent-core/pull/149
 PR Status: open
 Started: 2026-06-12T16:54:23.580Z
@@ -447,3 +447,7 @@ Castor Check Output SHA256: 8402952e60f19af97d70af3c9bd816e632c7b0adb64c7eea53f5
 ## Task workflow update - 2026-06-16T17:22:08.190Z
 - Recorded fork run: mm5dp9nqi83i
 - Summary: Fork mm5dp9nqi83i implemented #125 compat commit 8c1a7f342 and validation was green. Parent verification found branch clean, 0 behind / 1 ahead. However parent spotted a correctness issue before accepting: new DeepSeekCompatConvertHook applies `thinking: ''` globally whenever ANY configured model/provider requires reasoning_content, not based on the current resolved model. Because `.hatfield/settings.yaml` now includes DeepSeek compat, this can add Thinking/reasoning_content to assistant messages for non-DeepSeek providers too. Also `max_tokens_field` was added as config/docs but is not actually consumed, contrary to the 'actually implement compat flags' goal. Launching continuation fork to fix these before user validation/PR.
+
+## Task workflow update - 2026-06-16T17:44:39.228Z
+- Recorded fork run: jxnn9j469qh8
+- Summary: Fork jxnn9j469qh8 fixed the #125 model-scoping blocker and removed dead max_tokens_field in commit 8e276bb54. Parent verified branch clean and 0 behind / 2 ahead. Parent review found one remaining issue before accepting: `ReasoningContentCompatShaper` consumes `_hatfield_requires_reasoning_content` but does not remove it from provider options, so the generic OpenAI-compatible ModelClient will merge the internal flag into the JSON request body. Also hook ordering is currently implicit; ReasoningContentCompatShaper depends on CompatRequestShaper running first. Launching a small continuation fork to strip the internal flag after consumption and make hook ordering explicit. Existing supportsDeveloperRole leakage remains intentionally out of scope per user instruction.
