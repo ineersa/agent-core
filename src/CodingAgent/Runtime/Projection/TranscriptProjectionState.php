@@ -59,6 +59,22 @@ final class TranscriptProjectionState
         $this->blocks[$id] = $block;
     }
 
+    /**
+     * Remove a block by ID (both from the map and the order list).
+     *
+     * No-op when the block does not exist.
+     */
+    public function removeBlock(string $id): void
+    {
+        if (!\array_key_exists($id, $this->blocks)) {
+            return;
+        }
+        unset($this->blocks[$id]);
+        $this->order = array_values(
+            array_filter($this->order, static fn (string $oid): bool => $oid !== $id),
+        );
+    }
+
     // ── Accessors ────────────────────────────────────────────────────────────
 
     /**
