@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: 41bg7jk9vpwy
+Fork run: 6jgld561os2a
 PR URL: https://github.com/ineersa/agent-core/pull/150
 PR Status: merged
 Started: 2026-06-12T16:54:23.580Z
@@ -577,3 +577,7 @@ Castor Check Output SHA256: 8402952e60f19af97d70af3c9bd816e632c7b0adb64c7eea53f5
 
 ## Task workflow update - 2026-06-16T22:35:44.023Z
 - Summary: User clarified issue #127 more precisely: old terminal clearing is not the issue. The bad resume view is caused by replay/widget reconstruction: thinking blocks, tool-call blocks, and other historical widgets are being rebuilt/rendered as part of the resumed history, and `Running…` status appears between turns/history instead of being only the single live status row for the current turn. Investigation/fix should focus on separating canonical replay transcript from transient live widgets/status: replay should reconstruct only canonical completed transcript/tool-result content and terminal turn state should be idle after cancelled/completed runs; transient thinking/tool-call streaming widgets and working/running status must not be replayed as historical blocks or duplicated between turns.
+
+## Task workflow update - 2026-06-16T22:38:10.151Z
+- Recorded fork run: 6jgld561os2a
+- Summary: Fork 6jgld561os2a completed but is NOT accepted as the issue #127 fix. It again focused on terminal clearing (`stty -echo` + direct clear + `requestRender(true)`) and kept a tiny minimal replay fixture. This contradicts the user's clarification that resume clearing already worked and the observed bad output is replay/widget reconstruction of transient historical UI (thinking/tool-call/`Running…` blocks) between turns. Parent inspection of production code confirms the likely root: `ToolProjectionSubscriber::onToolExecutionStarted()` creates streaming ToolResult text `Running…`; `AssistantStreamProjectionSubscriber` creates streaming thinking/text blocks; `CancellationProjectionSubscriber::onTurnCancelled()` and `onRunCancelled()` call `TranscriptProjectionState::cancelActiveStreamingBlocks()`, which currently only finalizes active streaming blocks instead of dropping transient in-progress widgets. Existing tests `testTurnCancelledFinalizesStreamingBlocksAndCreatesCancelledBlock` / `testRunCancelledFinalizesStreamingBlocksAndCreatesCancelledBlock` assert this bad behavior, so they need to be rewritten. Need a new corrective fork focused on replay/projection/widget state: cancelled replay should remove/discard transient streaming blocks for that run (thinking, partial assistant text, tool-call placeholders, tool-result `Running…`) and leave only canonical completed history plus cancellation blocks; TUI E2E must use visible-pane assertions and a cancellation/streaming replay shape, not a tiny Hello fixture or scrollback assertions.
