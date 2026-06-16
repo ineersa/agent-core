@@ -32,14 +32,14 @@ Rules:
 - Task handoff includes before/after test counts, method/file reductions, runtime timings, and coverage tradeoffs.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/maint-05f-codingagent-test-diet-sequential-speed
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05f-codingagent-test-diet-sequential-speed
 Fork run: i8mws6e5n2l6
 PR URL: https://github.com/ineersa/agent-core/pull/147
-PR Status: open
+PR Status: merged
 Started: 2026-06-16T01:11:28.618Z
-Completed:
+Completed: 2026-06-16T02:21:19.035Z
 
 ## Work log
 - Created: 2026-06-15T21:08:09.602Z
@@ -100,3 +100,27 @@ Completed:
 - Created PR: https://github.com/ineersa/agent-core/pull/147
 - Validation: Pre-move parent check: integration checkout clean on `main` at `cc10defd8`; MAINT-05F worktree clean on `task/maint-05f-codingagent-test-diet-sequential-speed` at `10c3c4d06`.; Fork validation recorded: `castor test --suite=coding-agent --sequential` passed: 1467 tests, 4019 assertions, ~43.6s.; Fork validation recorded: default `castor test` passed: 2524 tests, 7330 assertions, 11.2s.; Fork validation recorded: `castor deptrac`, `castor phpstan`, `castor cs-check`, and `castor list` all passed.; Full `LLM_MODE=true castor check` skipped per MAINT-05A-F policy.
 - Summary: Moved MAINT-05F to CODE-REVIEW after user requested CR. Branch contains commits `af67a5003`, `40fd047e8`, and `10c3c4d06`, covering test diet, per-class kernel boot optimization, and abstract per-method kernel lifecycle. Focused Castor validation from forks is recorded in task metadata; full `LLM_MODE=true castor check` and automated reviewer remain skipped per MAINT-05A-F policy.
+
+## Task workflow update - 2026-06-16T02:21:19.035Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/maint-05f-codingagent-test-diet-sequential-speed into integration checkout.
+- Merge made by the 'ort' strategy.
+ .agents/skills/testing/SKILL.md                    |   2 +
+ .castor/phpunit.php                                |  25 +-
+ tests/AGENTS.md                                    |  11 +-
+ .../Config/ModelSelectionServiceTest.php           |  47 +---
+ .../Config/ModelSettingsPersisterTest.php          |  44 +---
+ .../Config/SessionAwareModelResolverTest.php       |  47 +---
+ .../Classifier/SafeGuardCommandMatcherTest.php     | 268 ++++++---------------
+ .../Classifier/SafeGuardPathMatcherTest.php        | 215 +++--------------
+ .../PromptTemplateExpansionInProcessTest.php       |  57 ++---
+ .../Runtime/Projection/TranscriptProjectorTest.php |  53 ++--
+ tests/CodingAgent/Runtime/RuntimeEventTypeTest.php |  32 ---
+ .../TestCase/IsolatedKernelTestCase.php            | 150 +++++++++---
+ .../TestCase/PerMethodIsolatedKernelTestCase.php   | 133 ++++++++++
+ 13 files changed, 475 insertions(+), 609 deletions(-)
+ create mode 100644 tests/CodingAgent/TestCase/PerMethodIsolatedKernelTestCase.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/maint-05f-codingagent-test-diet-sequential-speed.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Validation: Confirmed PR #147 state MERGED via `gh pr view 147 --json number,state,mergedAt,mergeCommit,title,baseRefName,headRefName,url`.; Focused MAINT-05F validation already recorded before CODE-REVIEW: sequential CodingAgent suite ~43.6s, default ParaTest 11.2s, deptrac/phpstan/cs-check/list all passing.; Post-merge full `LLM_MODE=true castor check` skipped here per MAINT-05A-F policy; MAINT-05G owns final full-gate validation and cutover.
+- Summary: MAINT-05F PR #147 was merged on GitHub (merge commit `a443f819a01ff8b2e0afdf8b05015b2c4d51b84c`, merged at 2026-06-16T02:20:17Z). Moved task to DONE and synced integration checkout. Post-merge full `LLM_MODE=true castor check` remains intentionally deferred to MAINT-05G per staged policy.
