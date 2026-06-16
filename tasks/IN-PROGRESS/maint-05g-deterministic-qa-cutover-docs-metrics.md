@@ -34,7 +34,7 @@ This task should not start until enough of A-F are complete that default QA can 
 Status: IN-PROGRESS
 Branch: task/maint-05g-deterministic-qa-cutover-docs-metrics
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05g-deterministic-qa-cutover-docs-metrics
-Fork run:
+Fork run: 64j0oqpro3l6
 PR URL:
 PR Status:
 Started: 2026-06-16T02:21:32.044Z
@@ -62,3 +62,8 @@ Completed:
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/maint-05g-deterministic-qa-cutover-docs-metrics.
 - Validation: Pre-start state: MAINT-05F PR #147 confirmed merged and task moved to DONE.; Integration checkout clean on `main` before starting MAINT-05G.; MAINT-05G owns final deterministic `castor check` semantics, docs, metrics, and task-workflow quality gate restoration.
 - Summary: Started MAINT-05G after MAINT-05A-F were merged to main. User explicitly instructed to restore the `castor check` quality gate in the task workflow CODE-REVIEW path as part of this final cutover, after it had been disabled for MAINT-05A-F. Main remains the MAINT-05 integration branch and MAINT-05G PR should target `main`.
+
+## Task workflow update - 2026-06-16T02:24:24.367Z
+- Recorded fork run: 64j0oqpro3l6
+- Validation: Pending fork `64j0oqpro3l6`: expected validation includes `castor list`, `castor test --suite=coding-agent --sequential`, `castor test`, `castor test:controller-replay`, `castor test:tui`, deterministic `castor check`, `castor deptrac`, `castor phpstan`, and `castor cs-check`. Optional live commands only if prerequisites are available.
+- Summary: Launched implementation fork for MAINT-05G final cutover. Scope includes making `castor check` deterministic by default (no live llama.cpp/OpenAI dependency), restoring the automatic `castor check` quality gate in the task workflow IN-PROGRESS→CODE-REVIEW transition, updating task-workflow prompts/skills and testing docs to the final command matrix, recording before/after QA metrics in repo docs, preserving opt-in live smoke/fixture commands, and validating through Castor. User explicitly reminded: restore castor check in CODE-REVIEW task workflow after the temporary MAINT-05A-F removal.
