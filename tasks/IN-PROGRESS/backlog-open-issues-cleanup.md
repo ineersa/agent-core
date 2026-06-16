@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: 3xrtgz5gerrj
+Fork run: 1mmxafbml49u
 PR URL: https://github.com/ineersa/agent-core/pull/140
 PR Status: open
 Started: 2026-06-12T16:54:23.580Z
@@ -418,3 +418,8 @@ Castor Check Output SHA256: 8402952e60f19af97d70af3c9bd816e632c7b0adb64c7eea53f5
 
 ## Task workflow update - 2026-06-16T16:37:23.366Z
 - Summary: User reported Castor check fails after #124 projection fix + --sequential cleanup, and requested a fork to fix it. Launching a focused fork to inspect latest Castor reports/logs, fix the failing gate, preserve #124 and Castor cleanup behavior, and validate with Castor only.
+
+## Task workflow update - 2026-06-16T16:41:27.301Z
+- Recorded fork run: 1mmxafbml49u
+- Validation: Initial LLM_MODE=true castor check failed at test step with `Could not open input file: vendor/bin/paratest`.; composer install restored missing vendor/bin/paratest in worktree.; LLM_MODE=true castor check after composer install: PASS, all 6 steps OK in 68.6s (deptrac, test, test:controller-replay, test:tui, phpstan, cs-check).; castor test --filter=TranscriptProjectorTest: PASS, 72 tests / 266 assertions.; Parent verification: git status clean; origin/main...HEAD = 0 behind / 2 ahead; HEAD 2c782e95b pushed to origin/task/backlog-open-issues-cleanup.
+- Summary: Fork 1mmxafbml49u investigated reported castor check failure. Root cause was environmental: worktree vendor directory was missing brianium/paratest / vendor/bin/paratest, so castor test failed immediately with `Could not open input file: vendor/bin/paratest`. Fork ran composer install in the worktree to restore vendor/bin/paratest; no code changes were needed for this failure. Branch was rebased and force-pushed; #124 fix hash is now 30ecfdb56 and --sequential cleanup hash is now 2c782e95b. Parent verified branch is clean, 0 behind / 2 ahead of origin/main.
