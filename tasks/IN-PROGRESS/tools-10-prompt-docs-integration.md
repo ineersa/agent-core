@@ -64,3 +64,6 @@ Completed:
 ## Task workflow update - 2026-06-16T22:09:39.237Z
 - Recorded fork run: t3ff1nsgaa75
 - Summary: Launched implementation fork `t3ff1nsgaa75` in worktree `/home/ineersa/projects/agent-core-worktrees/tools-10-prompt-docs-integration`. Fork instructions require prompt/tool metadata/docs/test updates, focused Castor validation, optional `castor test:llm-real` for LLM-visible prompt changes, and a final commit on `task/tools-10-prompt-docs-integration`. Main agent will wait for fork handoff before verifying commit/diff and recording results.
+
+## Task workflow update - 2026-06-16T22:16:16.378Z
+- Summary: Fork `t3ff1nsgaa75` returned an incomplete/argumentative handoff instead of a completion report. Verification found no implementation commit and dirty worktree changes only: `.hatfield/settings.yaml`, `config/SYSTEM.md`, `src/CodingAgent/Tool/BashTool.php`, `src/CodingAgent/Tool/EditFileTool.php`. The hardcoded `<tool_usage>` block in `config/SYSTEM.md` duplicates tool-owned prompt metadata; user clarified that tool usage information should come from tool definitions. Rejecting this fork output and relaunching with narrower instructions: keep SYSTEM.md generic/context-channel-only, put final toolbox usage in registry-backed tool prompt metadata/guidelines and tests, then commit.
