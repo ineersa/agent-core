@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: sb9v31a9x2it
+Fork run: 7krbp30ifo6t
 PR URL: https://github.com/ineersa/agent-core/pull/149
 PR Status: open
 Started: 2026-06-12T16:54:23.580Z
@@ -464,3 +464,8 @@ Castor Check Output SHA256: 8402952e60f19af97d70af3c9bd816e632c7b0adb64c7eea53f5
 - Recorded fork run: sb9v31a9x2it
 - Validation: Fork reported: castor test PASS (2542 tests / 7410 assertions).; Fork reported: castor deptrac PASS, 0 violations.; Fork reported: castor phpstan PASS, 0 errors.; Fork reported: castor cs-check PASS.; Fork reported: LLM_MODE=true castor check PASS, all 6 steps in 39.5s.; Fork reported: castor test:llm-real PASS, 5 tests / 51 assertions.; Parent verification: git status clean; origin/main...HEAD = 0 behind / 1 ahead at fde7174c9.
 - Summary: Fork sb9v31a9x2it completed the #125 architectural refactor in commit fde7174c9: provider compatibility shaping now runs as a final AgentCore Symfony-AI infrastructure phase after normal before-provider hooks, with AgentCore compatibility contracts/DTO/pipeline and CodingAgent resolver/feature shapers. CompatRequestShaper was deleted, ReasoningContentCompatShaper became a provider-compat feature shaper, and normal hook priority coupling was removed. Parent verification found branch clean and 0 behind / 1 ahead. Parent also found a remaining cleanup gap: `_hatfield_requires_reasoning_content` and `_hatfield_suppress_developer_role` still exist as dead ProviderRequestOptionKeys/Codex defensive stripping/test references even though the architecture removed marker emission and supportsDeveloperRole is out of scope. Launching a small cleanup fork to remove those dead marker references so the code matches the agreed 'no private marker option' architecture.
+
+## Task workflow update - 2026-06-16T18:23:34.946Z
+- Recorded fork run: 7krbp30ifo6t
+- Validation: Fork reported rg for `_hatfield_requires_reasoning_content|_hatfield_suppress_developer_role` excluding tasks/: zero matches.; Fork reported castor test --filter=ProviderCompatibilityRequestShaperTest: PASS, 5 tests / 12 assertions.; Fork reported castor test --filter=CodexModelClientTest: PASS, 12 tests / 88 assertions.; Fork reported castor deptrac: PASS, 0 violations.; Fork reported castor phpstan: PASS, 0 errors.; Fork reported castor cs-check: PASS, clean.; Fork reported LLM_MODE=true castor check: PASS, all 6 steps green in 45.3s.; Fork reported castor test:llm-real: PASS, 5 tests / 51 assertions.; Parent verification: git status clean; origin/main...HEAD = 0 behind / 2 ahead; no marker-string matches in src/tests/config/docs/.hatfield.
+- Summary: Fork 7krbp30ifo6t completed dead marker cleanup in commit 8e5ce0eae after the #125 provider-compat architecture refactor. It removed `_hatfield_requires_reasoning_content` and `_hatfield_suppress_developer_role` from ProviderRequestOptionKeys, ProviderCompatibilityRequestShaper stripping, CodexModelClient defensive stripping, and tests. Parent verified branch clean, 0 behind / 2 ahead of origin/main (refactor commit rebased to 6e29358fb plus cleanup 8e5ce0eae), and verified no remaining matches for those strings in src/tests/config/docs/.hatfield.
