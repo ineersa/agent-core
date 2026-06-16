@@ -42,7 +42,7 @@ Known entrypoints:
 Status: IN-PROGRESS
 Branch: task/maint-05e-tui-journey-e2e-rework
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05e-tui-journey-e2e-rework
-Fork run:
+Fork run: vtq0frsspzl7
 PR URL:
 PR Status:
 Started: 2026-06-16T00:10:29.822Z
@@ -69,3 +69,8 @@ Completed:
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/maint-05e-tui-journey-e2e-rework.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/maint-05e-tui-journey-e2e-rework.
 - Summary: Started MAINT-05E after MAINT-05D was merged/done. Main remains the MAINT-05 integration branch and eventual PR targets main. Per MAINT-05A-F policy, skip automated reviewer and full `LLM_MODE=true castor check`; run focused TUI journey/replay validation only. Scope is test-infrastructure rework: default TUI E2E should be replay-backed and journey-based, with live TUI smoke remaining opt-in.
+
+## Task workflow update - 2026-06-16T00:11:39.993Z
+- Recorded fork run: vtq0frsspzl7
+- Validation: Pending fork run `vtq0frsspzl7`. Expected focused validation: `castor list`, deterministic `castor test:tui --filter=<journey>` during development, final deterministic `castor test:tui`, `castor test:controller-replay` if shared replay/test env wiring changes, `castor test` if feasible, `castor deptrac`, `castor phpstan`, `castor cs-check`; no full `LLM_MODE=true castor check`; live smoke only if explicit/prereqs available.
+- Summary: Launched implementation fork for MAINT-05E in `/home/ineersa/projects/agent-core-worktrees/maint-05e-tui-journey-e2e-rework`. Fork instructed to rework TUI E2E into deterministic replay-backed journey tests, reuse MAINT-05D test-layer replay DI (`APP_ENV=test`, source `bin/console`, `HATFIELD_LLM_REPLAY_FIXTURE_PATH`, no production replay code), consolidate overlapping tmux tests into fewer long-lived sessions, remove `exec sleep 10`/fixed waits, preserve live TUI smoke as opt-in, improve TmuxHarness helpers/teardown, update Castor/docs, and record launch-count/wall-time metrics. Fork has strict cwd/branch guard, must not push, must not use destructive git operations, must not run reviewer, and must not run full `LLM_MODE=true castor check`.
