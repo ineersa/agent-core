@@ -27,7 +27,7 @@
         },
         {
             "type": "text",
-            "content": "Hello"
+            "content": "Hello from the test harness."
         },
         {
             "type": "finished",

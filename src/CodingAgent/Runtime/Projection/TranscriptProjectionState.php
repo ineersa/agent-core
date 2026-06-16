@@ -185,13 +185,23 @@ final class TranscriptProjectionState
     }
 
     /**
-     * Mark all streaming blocks for the given run as finalized (non-streaming).
+     * Remove all still-streaming blocks for the given run.
+     *
+     * Streaming blocks represent transient in-progress UI state
+     * (thinking deltas, partial tool-call placeholders, Running\u2026
+     * tool results) that must not become permanent history.  When a turn
+     * is cancelled, a run fails, or a run is cancelled, these blocks are
+     * discarded so they don't appear in the transcript on resume/replay.
+     *
+     * Completed (non-streaming) blocks from the same run are preserved.
+     * Cancellation blocks added after this call are themselves
+     * non-streaming so they survive.
      */
-    public function cancelActiveStreamingBlocks(string $runId): void
+    public function removeActiveStreamingBlocks(string $runId): void
     {
         foreach ($this->blocks as $id => $block) {
             if ($block->streaming && $block->runId === $runId) {
-                $this->blocks[$id] = $block->with(streaming: false);
+                $this->removeBlock($id);
             }
         }
     }

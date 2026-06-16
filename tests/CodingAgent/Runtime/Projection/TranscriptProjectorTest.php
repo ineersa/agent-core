@@ -1031,7 +1031,7 @@ final class TranscriptProjectorTest extends TestCase
         $this->assertFalse($block->streaming);
     }
 
-    public function testTurnCancelledFinalizesStreamingBlocksAndCreatesCancelledBlock(): void
+    public function testTurnCancelledRemovesStreamingBlocksAndCreatesCancelledBlock(): void
     {
         $this->accept('tool_call.started', [
             'tool_call_id' => 'tc_01', 'tool_name' => 'bash',
@@ -1041,23 +1041,19 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        $this->assertTrue($blocks[0]->streaming);
-        $this->assertTrue($blocks[1]->streaming);
+        $this->assertTrue($blocks[0]->streaming, 'ToolCall block should be streaming');
+        $this->assertTrue($blocks[1]->streaming, 'ToolResult block should be streaming');
 
         $this->accept('turn.cancelled', ['reason' => 'user_cancelled']);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(3, $blocks, 'Should have 2 finalized blocks + 1 cancelled block');
-        $this->assertFalse($blocks[0]->streaming, 'Tool call block should be finalized');
-        $this->assertFalse($blocks[1]->streaming, 'Tool result block should be finalized');
-
-        $cancelBlock = $blocks[2];
-        $this->assertSame(TranscriptBlockKindEnum::Cancelled, $cancelBlock->kind);
-        $this->assertStringContainsString('turn cancelled', $cancelBlock->text);
-        $this->assertFalse($cancelBlock->streaming);
+        $this->assertCount(1, $blocks, 'Only the cancellation block should remain; streaming blocks must be removed');
+        $this->assertSame(TranscriptBlockKindEnum::Cancelled, $blocks[0]->kind);
+        $this->assertStringContainsString('turn cancelled', $blocks[0]->text);
+        $this->assertFalse($blocks[0]->streaming);
     }
 
-    public function testRunCancelledFinalizesStreamingBlocksAndCreatesCancelledBlock(): void
+    public function testRunCancelledRemovesStreamingBlocksAndCreatesCancelledBlock(): void
     {
         $this->accept('tool_call.started', [
             'tool_call_id' => 'tc_01', 'tool_name' => 'read',
@@ -1069,11 +1065,9 @@ final class TranscriptProjectorTest extends TestCase
         $this->accept('run.cancelled', ['reason' => 'provider_aborted']);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(3, $blocks);
-        $this->assertFalse($blocks[0]->streaming);
-        $this->assertFalse($blocks[1]->streaming);
+        $this->assertCount(1, $blocks, 'Only the cancellation block should remain; streaming blocks must be removed');
 
-        $cancelBlock = $blocks[2];
+        $cancelBlock = $blocks[0];
         $this->assertSame(TranscriptBlockKindEnum::Cancelled, $cancelBlock->kind);
         $this->assertStringContainsString('run cancelled', $cancelBlock->text);
         $this->assertStringContainsString('provider_aborted', $cancelBlock->text);
@@ -1096,7 +1090,7 @@ final class TranscriptProjectorTest extends TestCase
 
     // ── Cancellation run-scoping ─────────────────────────────────────────────
 
-    public function testTurnCancelledOnlyFinalizesSameRunBlocks(): void
+    public function testTurnCancelledRemovesOnlySameRunBlocks(): void
     {
         // Add streaming block for run_1
         $this->accept('tool_call.started', [
@@ -1115,8 +1109,13 @@ final class TranscriptProjectorTest extends TestCase
         $this->accept('turn.cancelled', ['reason' => 'user_cancelled'], self::RUN_ID);
 
         $blocks = $this->projector->blocks();
-        $this->assertFalse($blocks[0]->streaming, 'run_1 block should be finalized');
-        $this->assertTrue($blocks[1]->streaming, 'run_other block should remain streaming');
+        // run_1 streaming block is removed; cancellation block added.
+        // run_other block remains streaming, still at its original position.
+        $this->assertCount(2, $blocks, 'Cancellation block for run_1 + run_other streaming block');
+        $this->assertSame(TranscriptBlockKindEnum::ToolCall, $blocks[0]->kind, 'Other-run block keeps original position');
+        $this->assertSame('run_other', $blocks[0]->runId, 'Other-run block must survive');
+        $this->assertTrue($blocks[0]->streaming, 'Other-run block should remain streaming');
+        $this->assertSame(TranscriptBlockKindEnum::Cancelled, $blocks[1]->kind, 'Cancellation block appended at end');
     }
 
     // ── Sequence ordering ────────────────────────────────────────────────────
@@ -1409,10 +1408,10 @@ final class TranscriptProjectorTest extends TestCase
         $this->accept('turn.cancelled', ['reason' => 'user_cancelled']);
 
         $blocks = $this->projector->blocks();
-        // Blocks: user(seq=0), tool_call(seq=1), cancelled(seq=2)
-        $this->assertCount(3, $blocks);
+        // Streaming tool_call is removed by turn.cancelled; only user + cancel remain.
+        $this->assertCount(2, $blocks);
 
-        $cancelBlock = $blocks[2];
+        $cancelBlock = $blocks[1];
         // ID should contain the seq number
         $this->assertStringContainsString((string) $cancelBlock->seq, $cancelBlock->id,
             'Cancelled block ID suffix must match its own seq number');
@@ -1439,7 +1438,7 @@ final class TranscriptProjectorTest extends TestCase
         $this->assertSame('CAS conflict exhausted after 3 attempts', $errorBlock->meta['error']);
     }
 
-    public function testRunFailedFinalizesStreamingBlocks(): void
+    public function testRunFailedRemovesStreamingBlocks(): void
     {
         $this->accept('assistant.text_started', [
             'message_id' => 'a1', 'block_id' => 'b1',
@@ -1459,9 +1458,8 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(2, $blocks, 'Should have finalized streaming block + error block');
-        $this->assertFalse($blocks[0]->streaming, 'Streaming block must be finalized');
-        $this->assertSame(TranscriptBlockKindEnum::Error, $blocks[1]->kind);
+        $this->assertCount(1, $blocks, 'Only the error block should remain; streaming block must be removed');
+        $this->assertSame(TranscriptBlockKindEnum::Error, $blocks[0]->kind);
     }
 
     public function testRunCompletedCreatesNoBlock(): void

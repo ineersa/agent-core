@@ -169,35 +169,15 @@ final readonly class InteractiveMode
             // Set initial transcript
             $screen->setTranscriptBlocks($state->transcript);
 
-            // ── Clear the old TUI's rendered content before the new TUI paints ──
+            // ── Force a full-screen clear on session switches ──
             //
-            // Between Tui::stop() (restores echo, cooked mode) and
-            // Terminal::start() (raw mode, echo off), the terminal is
-            // in a fragile window where echo is ON.  Writing the clear
-            // escape sequence during this window would be echoed as
-            // visible garbage on the terminal.
-            //
-            // To avoid this, we save the current stty state, temporarily
-            // disable echo, write the clear sequence directly to STDOUT,
-            // then restore the original stty state before the new TUI
-            // starts.  This gives us a guaranteed blank screen regardless
-            // of whether ScreenWriter's DECSET-2026 synchronized-output
-            // brackets are supported by the terminal multiplexer.
-            //
-            // requestRender(true) is also called as a defence-in-depth
-            // layer so the ScreenWriter's first render also clears — if
-            // the terminal supports synchronized output this gives an
-            // atomic clear-and-paint in a single write.
+            // requestRender(true) resets ScreenWriter's previous-dirty
+            // tracking so the first render clears the screen atomically
+            // inside TUI synchronized output.  The old TUI has already
+            // restored the terminal to its initial state via stop() so
+            // no separate stty manipulation or out-of-band escape writes
+            // are needed.
             if ($needsTerminalClear) {
-                $originalStty = shell_exec('stty -g 2>/dev/null');
-                if (false !== $originalStty && null !== $originalStty) {
-                    shell_exec('stty -echo 2>/dev/null');
-                }
-                fwrite(\STDOUT, "\x1b[2J\x1b[3J\x1b[H");
-                fflush(\STDOUT);
-                if (false !== $originalStty && null !== $originalStty) {
-                    shell_exec('stty '.escapeshellarg(trim($originalStty)).' 2>/dev/null');
-                }
                 $tui->requestRender(true);
             }
 

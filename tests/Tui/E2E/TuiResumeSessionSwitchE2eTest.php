@@ -10,28 +10,34 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
 /**
- * E2E proof that /resume <session-id> cleanly re-renders the full TUI
- * layout on the CURRENT VISIBLE PANE — no stale scrollback leakage.
+ * E2E proof that /resume <session-id> produces a clean transcript from
+ * canonical events.jsonl replay — no transient streaming widgets
+ * (thinking fragments, tool-call placeholders, Running… tool-result
+ * rows) resurrected as historical transcript blocks.
  *
- * The prior version of this test used waitForHistoryContains() and
- * capturePlainWithHistory() for the proof, which allowed stale
- * terminal scrollback from before the session switch to satisfy the
- * assertions.  This version uses waitForCaptureContains() and
- * capturePlain() (visible pane only) for all post-/resume assertions
- * so the proof is against what the user actually sees.
+ * This test exercises the session-resume projection path end-to-end
+ * via TmuxHarness.  A session is initially created with a simple
+ * completed turn, then its events.jsonl is replaced with a fixture
+ * containing a completed turn followed by a cancelled streaming turn.
+ * After /resume the visible pane must show canonical completed history
+ * plus a cancellation marker, but NO stale streaming fragments.
+ *
+ * The projection semantics proven here:
+ *  - on turn/run cancellation, active streaming blocks are REMOVED,
+ *    not finalized.
+ *  - Completed (non-streaming) blocks from prior turns survive.
+ *  - Cancellation blocks (non-streaming) are appended.
  *
  * Flow:
- *  1. Start TUI in draft mode, wait for startup layout.
- *  2. Type "hi" + Enter → session is created, replay fixture responds.
- *  3. Extract the numeric session ID from footer history.
- *  4. /resume <id> → session switch back to the created session.
- *  5. Wait for clean re-render via visible-pane header detection.
- *  6. Assert visible pane contains a valid TUI layout with no
- *     duplicate Working status rows, no orphaned stream fragments,
- *     and no raw escape-sequence leakage.
- *
- * Uses a minimal replay fixture (3 deltas: thinking, text, finish)
- * for fast deterministic playback.
+ *  1. Start TUI, wait for startup layout.
+ *  2. Submit "hi" → session is created, deterministic replay responds.
+ *  3. Extract session ID from footer history.
+ *  4. Overwrite <session>/events.jsonl with a fixture containing
+ *     a completed turn + a cancelled streaming turn.
+ *  5. /resume <sessionId> → session replayed from new events.jsonl.
+ *  6. Assert current visible pane (capturePlain) has proper layout,
+ *     the completed turn's assistant text, a cancellation marker,
+ *     and NO transient streaming fragments.
  *
  * @group tui-e2e-replay
  */
@@ -79,38 +85,37 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
             $this->tmux->waitForCaptureContains($pane, '█', 5.0);
             usleep(200_000);
 
-            // ── Phase 2: Type "hi" + Enter → creates session, gets replay response ──
+            // ── Phase 2: Create a session via "hi" + Enter ──
             $this->tmux->sendLiteral($pane, 'hi');
             $this->tmux->sendKey($pane, 'Enter');
 
-            // Wait for assistant block (◇) in the visible pane.
+            // Wait for assistant block (◇) or error (✕).
             $this->tmux->waitForCallback(
                 $pane,
                 static fn (string $cap): bool => str_contains($cap, '◇') || str_contains($cap, '✕'),
                 timeout: 5.0,
-                message: 'Neither ◇ assistant block nor ✕ error block appeared after first submit',
+                message: 'Neither ◇ assistant block nor ✕ error appeared after first submit',
                 history: 2000,
             );
 
-            // Prove the replay response text appears in the transcript
-            // (history is fine for content extraction — this is not a
-            //  layout assertion, just a content check).
-            $firstCapture = $this->tmux->capturePlainWithHistory($pane, 2000);
-            self::assertStringContainsString('Hello', $firstCapture, 'Replay response must be visible after first submit');
-
             // Extract session ID from footer history.
+            $firstCapture = $this->tmux->capturePlainWithHistory($pane, 2000);
+            self::assertStringContainsString('Hello from the test harness.', $firstCapture,
+                'Replay response must be visible after first submit');
+
             $matched = preg_match('/session\s+(\d+)/', $firstCapture, $matches);
-            self::assertSame(1, $matched, 'Footer must show numeric session ID after first submit');
+            self::assertSame(1, $matched,
+                'Footer must show numeric session ID after first submit');
             $sessionId = $matches[1];
 
-            // Wait for turn to complete (Working spinner gone) before switching.
+            // Wait for turn to complete.
             try {
                 $this->tmux->waitForCallback(
                     $pane,
                     static fn (string $cap): bool => str_contains($cap, '◇')
                         && !str_contains($cap, '◐ Working...'),
                     timeout: 3.0,
-                    message: 'Turn did not complete before session switch',
+                    message: 'Turn did not complete before session replacement',
                     history: 2000,
                 );
             } catch (\RuntimeException) {
@@ -119,55 +124,76 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
 
             $this->saveAnsiSnapshot($pane, 'resume-step1-first-session');
 
-            // ── Phase 3: /resume <sessionId> — resume the same session ──
-            // Clear the editor and issue the resume command.
+            // ── Phase 3: Replace events.jsonl with cancellation fixture ──
+            //
+            // Overwrite the session's events.jsonl with a fixture that
+            // contains a completed first turn followed by a cancelled
+            // streaming second turn.  This simulates a session where
+            // the user cancelled mid-streaming on turn 2, and the prior
+            // fork was projecting the transient streaming blocks as
+            // permanent history on resume.
+            $this->writeCancellationFixture($sessionId);
+
+            // ── Phase 4: /resume <sessionId> ──
             $this->tmux->sendKey($pane, 'C-u');
             usleep(50_000);
             $this->tmux->sendLiteral($pane, "/resume {$sessionId}");
             $this->tmux->sendKey($pane, 'Enter');
 
-            // Wait for the header (█) to appear in the VISIBLE PANE.
-            // Using waitForCaptureContains (not waitForHistoryContains)
-            // so we prove the re-render painted the header on the
-            // current screen, not that it's buried in scrollback.
+            // Wait for header (█) in the VISIBLE PANE — proves re-render.
             $this->tmux->waitForCaptureContains($pane, '█', 5.0);
             usleep(300_000);
 
-            // ── Phase 4: Assert clean visible-pane layout ──
-            // Capture ONLY the visible pane — no scrollback history.
+            // ── Phase 5: Assert clean current visible-pane layout ──
+            // capturePlain() returns ONLY the currently visible pane,
+            // not scrollback history.
             $visiblePane = $this->tmux->capturePlain($pane);
 
-            // A) Structural layout elements must be present.
+            // A) Structural TUI layout must be present.
             self::assertStringContainsString('█', $visiblePane,
-                'Hatfield logo (header) must be present in the visible pane after /resume');
+                'Hatfield logo (header) must be visible in the current pane after /resume');
             self::assertStringContainsString('◆', $visiblePane,
-                'Footer must be present in the visible pane after /resume');
+                'Footer must be visible in the current pane after /resume');
             self::assertTrue(
                 str_contains($visiblePane, '● idle') || str_contains($visiblePane, '◐ Work'),
-                'Working/idle status must be present in the visible pane after /resume',
+                'Working/idle status must be visible in the current pane after /resume',
             );
 
-            // B) Session/transcript content must be rendered.
+            // B) Session ID must appear in the visible pane.
             self::assertStringContainsString($sessionId, $visiblePane,
-                'Session ID must appear in the visible pane (footer or resume block)');
-            self::assertStringContainsString('Hello', $visiblePane,
-                'Original replay response must be visible in the transcript after /resume');
+                'Session ID must appear in the current pane after /resume');
 
-            // C) No orphaned streaming fragments or duplicate status rows.
-            //    After /resume the TUI should show exactly one Working
-            //    status line and at most one copy of any marker.
+            // C) The completed first turn's assistant text must survive replay.
+            self::assertStringContainsString('Hello from the test harness.', $visiblePane,
+                'Completed assistant text from turn 1 must survive /resume replay');
+
+            // D) Cancellation marker must appear (the turn 2 cancellation block).
+            self::assertStringContainsString('turn cancelled', $visiblePane,
+                'Cancellation block must be visible after /resume replay');
+
+            // E) No orphaned streaming fragments — these are the core
+            //    assertions for the projection fix.
+            //
+            //    The fixture's turn 2 contains a tool_execution.start
+            //    (streaming ToolResult "Running…") followed by an
+            //    llm_step_aborted (turn.cancelled).  The projection
+            //    fix removes streaming blocks on cancellation instead
+            //    of finalizing them, so "● Running…" must NOT appear
+            //    in the current visible pane.
+
             self::assertStringNotContainsString('◇ </think>', $visiblePane,
-                'Streaming thinking fragments must not appear in the visible pane after /resume');
+                'Transient thinking close tags must not appear in the current pane after /resume');
 
             $runningCount = \substr_count($visiblePane, '● Running…');
-            self::assertLessThanOrEqual(1, $runningCount,
+            self::assertSame(0, $runningCount,
                 \sprintf(
-                    'At most one "● Running…" may appear in the visible pane after /resume (found %d). '
-                    .'Multiple copies mean stale terminal output leaked.',
+                    'Zero "● Running…" expected in current pane after /resume (found %d). '
+                    .'Removing streaming blocks on cancellation must prevent transient '
+                    .'tool-result rows from being resurrected as historical content.',
                     $runningCount,
                 ));
 
-            // D) No raw escape-sequence leakage.
+            // F) No raw escape-sequence leakage.
             self::assertStringNotContainsString('[2J', $visiblePane,
                 'Escape [2J must not leak into visible pane');
             self::assertStringNotContainsString('[3J', $visiblePane,
@@ -185,6 +211,66 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
             }
             throw $e;
         }
+    }
+
+    // ── Cancellation fixture ────────────────────────────────────────────────
+
+    /**
+     * Write a custom events.jsonl that simulates a session with:
+     *  - Turn 1: completed assistant message (non-streaming, survives)
+     *  - Turn 2: tool_execution started (streaming Running…) then
+     *            llm_step_aborted (turn.cancelled — removes streaming blocks)
+     *
+     * After fix, the projector removes the streaming ToolResult block
+     * on turn.cancelled so the visible pane shows only the completed
+     * assistant text + the cancellation marker.
+     */
+    private function writeCancellationFixture(string $sessionId): void
+    {
+        $now = (new \DateTimeImmutable())->format(\DATE_ATOM);
+        $eventsPath = $this->testProjectDir.'/.hatfield/sessions/'.$sessionId.'/events.jsonl';
+
+        // Build the fixture event by event.
+        $events = [];
+
+        // Turn 0: run_started
+        $events[] = [
+            'schema_version' => '1.0',
+            'run_id' => $sessionId,
+            'seq' => 1,
+            'turn_no' => 0,
+            'type' => 'run_started',
+            'payload' => [
+                'step_id' => 'start-fix-1',
+                'payload' => [
+                    'system_prompt' => '',
+                    'messages' => [
+                        ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'hi']]],
+                    ],
+                ],
+            ],
+            'ts' => $now,
+        ];
+
+        // Turn 1: advance + leaf_set + completed message
+        $events[] = ['schema_version'=>'1.0','run_id'=>$sessionId,'seq'=>2,'turn_no'=>1,'type'=>'turn_advanced','payload'=>['step_id'=>'followup-1','turn_no'=>1,'parent_turn_no'=>null],'ts'=>$now];
+        $events[] = ['schema_version'=>'1.0','run_id'=>$sessionId,'seq'=>3,'turn_no'=>1,'type'=>'leaf_set','payload'=>['turn_no'=>1,'previous_turn_no'=>null,'parent_turn_no'=>null,'reason'=>'continue'],'ts'=>$now];
+        $events[] = ['schema_version'=>'1.0','run_id'=>$sessionId,'seq'=>4,'turn_no'=>1,'type'=>'llm_step_completed','payload'=>['step_id'=>'followup-1','stop_reason'=>'stop','text'=>'Hello from the test harness.','usage'=>['input_tokens'=>10,'output_tokens'=>6,'total_tokens'=>16],'tool_calls_count'=>0],'ts'=>$now];
+
+        // Turn 2: advance + leaf_set + tool_execution_start (streaming, creates Running…) + llm_step_aborted (cancellation)
+        $events[] = ['schema_version'=>'1.0','run_id'=>$sessionId,'seq'=>5,'turn_no'=>2,'type'=>'turn_advanced','payload'=>['step_id'=>'followup-2','turn_no'=>2,'parent_turn_no'=>null],'ts'=>$now];
+        $events[] = ['schema_version'=>'1.0','run_id'=>$sessionId,'seq'=>6,'turn_no'=>2,'type'=>'leaf_set','payload'=>['turn_no'=>2,'previous_turn_no'=>1,'parent_turn_no'=>null,'reason'=>'continue'],'ts'=>$now];
+        // tool_execution_start → creates streaming ToolResult "Running…" block
+        $events[] = ['schema_version'=>'1.0','run_id'=>$sessionId,'seq'=>7,'turn_no'=>2,'type'=>'tool_execution_start','payload'=>['tool_call_id'=>'call_cancel_test','tool_name'=>'bash','order_index'=>0,'mode'=>'sequential'],'ts'=>$now];
+        // llm_step_aborted → turn.cancelled → removeActiveStreamingBlocks
+        $events[] = ['schema_version'=>'1.0','run_id'=>$sessionId,'seq'=>8,'turn_no'=>2,'type'=>'llm_step_aborted','payload'=>['step_id'=>'followup-2','stop_reason'=>'aborted','usage'=>[]],'ts'=>$now];
+
+        $jsonl = '';
+        foreach ($events as $ev) {
+            $jsonl .= json_encode($ev, \JSON_THROW_ON_ERROR)."\n";
+        }
+
+        file_put_contents($eventsPath, $jsonl);
     }
 
     // ── Setup ─────────────────────────────────────────────────────
