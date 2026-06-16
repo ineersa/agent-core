@@ -138,14 +138,14 @@ Known scout entrypoints:
 - Before/after metrics are recorded in the task: default QA wall time, CodingAgent sequential time, TUI harness launch count, live LLM calls in default QA, and known remaining flakes/risks.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: DONE
 Branch: task/maint-05-cardinal-qa-test-rework
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05-cardinal-qa-test-rework
 Fork run:
 PR URL:
-PR Status:
+PR Status: merged
 Started: 2026-06-15T21:12:17.664Z
-Completed:
+Completed: 2026-06-16T15:44:40.993Z
 
 ## Work log
 - Created: 2026-06-15T20:59:06.144Z
@@ -201,3 +201,12 @@ Completed:
 - Execution policy: do not run MAINT-05A-G as parallel branches against an epic branch. Finish/review/merge each stage into `main` sequentially before starting the next stage unless the user explicitly changes this.
 - PR base policy: when opening PRs for MAINT-05A-G, target `main` (default) rather than `task/maint-05-cardinal-qa-test-rework`.
 - Validation/review policy remains: for MAINT-05A-F, skip reviewer subagent and skip full `LLM_MODE=true castor check`; user reviews manually. MAINT-05G owns the final full deterministic validation/docs/metrics.
+
+## Task workflow update - 2026-06-16T15:44:40.993Z
+- Moved IN-PROGRESS → DONE.
+- Merged task/maint-05-cardinal-qa-test-rework into integration checkout.
+- Already up to date.
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/maint-05-cardinal-qa-test-rework.
+- Pulled integration checkout: Already up to date..
+- Validation: MAINT-05A-G task files are all DONE after PR merges: MAINT-05A PR #141, MAINT-05B PR #142, MAINT-05C PR #144, MAINT-05D PR #145, MAINT-05E PR #146, MAINT-05F PR #147, MAINT-05G PR #148.; MAINT-05G final validation recorded before merge: `castor test:llm-real` passed (5 tests, 51 assertions, 0 skipped, 18.1s), `LLM_MODE=true castor check` passed (6/6 lanes, 43.8s total, ParaTest lane 13.0s), `castor deptrac` 0 violations, `castor phpstan` 0 errors, `castor cs-check` 0 fixable files.; Post-MAINT-05G merge verification: integration checkout clean on `main`; MAINT-05G moved to DONE and worktree removed; MAINT-05 umbrella branch/worktree had no unique diff versus main (`git diff --stat main...task/maint-05-cardinal-qa-test-rework` empty).
+- Summary: Closed MAINT-05 umbrella/epic after completion of all staged work MAINT-05A through MAINT-05G. The cardinal QA/test rework is complete: Castor was modularized, custom PHPUnit sharding was replaced by ParaTest, deterministic LLM replay/recording was added, controller replay E2E/process ownership was implemented, TUI E2E was reworked into replay-backed journeys, CodingAgent tests were reduced and kernel boot cost lowered, and the final deterministic QA cutover/docs/metrics landed in MAINT-05G. Main is the integration branch for the series; the obsolete epic worktree/branch had no unique implementation diff and is being closed as bookkeeping.
