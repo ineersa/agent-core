@@ -34,7 +34,7 @@ This task should not start until enough of A-F are complete that default QA can 
 Status: IN-PROGRESS
 Branch: task/maint-05g-deterministic-qa-cutover-docs-metrics
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05g-deterministic-qa-cutover-docs-metrics
-Fork run: 2cb8o44hdnmp
+Fork run: ku1zgicfnld3
 PR URL: https://github.com/ineersa/agent-core/pull/148
 PR Status: open
 Started: 2026-06-16T02:21:32.044Z
@@ -131,3 +131,8 @@ Completed:
 ## Task workflow update - 2026-06-16T15:24:32.944Z
 - Validation: Parent verification: `git show 5d210fa62` failed with unknown revision; `git branch --all --contains 5d210fa62` failed; `git log --all --grep='Use ParaTest in check'` found no commit; targeted `rg` still found current sequential-check references in `.castor/tasks.php`, `.agents/skills/testing/SKILL.md`, `tests/AGENTS.md`, and `docs/qa-metrics.md`.
 - Summary: Fork `2cb8o44hdnmp` handoff was NOT accepted as-is: parent verification found claimed commit `5d210fa62` is not present in the worktree or any local ref. Actual worktree `/home/ineersa/projects/agent-core-worktrees/maint-05g-deterministic-qa-cutover-docs-metrics` remains clean on `task/maint-05g-deterministic-qa-cutover-docs-metrics` at `f001b8e1f`, with stale sequential-check code/docs still present (`build_sequential_phpunit_command('').' --exclude-group=phar`, `ReplayRecordingTest` still has `#[Group('llm-real')]`). Relaunching a corrective fork before PR update.
+
+## Task workflow update - 2026-06-16T15:26:04.542Z
+- Recorded fork run: ku1zgicfnld3
+- Validation: Pending corrective fork `ku1zgicfnld3`: expected validation includes `castor list`, `castor test:llm-real`, `LLM_MODE=true castor check`, `castor test`, `castor phpstan`, `castor cs-check`, `castor deptrac`, plus stale-pattern `rg` and post-commit git self-verification.
+- Summary: Launched corrective fork `ku1zgicfnld3` after parent verification rejected `2cb8o44hdnmp` (claimed commit missing, worktree unchanged). New fork is instructed to apply the real MAINT-05G fixes: ParaTest-based `castor check` unit/integration lane, remove recording tests from `llm-real`, update docs/metrics, run Castor validation, and commit locally only.
