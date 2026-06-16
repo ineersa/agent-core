@@ -1,23 +1,2181 @@
 {
-    "$schema": "TUI journey reply fixture — simple text response for replay-backed TUI E2E",
+    "$schema": "TUI journey reply fixture \u2014 simple text response for replay-backed TUI E2E",
     "model": "llama_cpp_test/test",
     "provider_id": "llama_cpp_test",
     "reasoning": "off",
-    "fixture_source": "synthetic",
-    "synthetic_reason": "MAINT-05E TUI rendering fixture; verifies replay-backed model-interaction block appearance. No provider-specific behaviour tested.",
+    "recorded_at": "2026-06-16T00:56:06+00:00",
+    "recording_source": "llama_cpp_test/test",
     "input": {
         "messages": [
-            {"role": "user", "content": "Respond with exactly one sentence: the sky is blue."}
+            {
+                "role": "user",
+                "content": "Respond with exactly one sentence: the sky is blue."
+            }
         ]
     },
-    "deltas": [
-        {"type": "text", "content": "The sky is blue."}
-    ],
     "usage": {
-        "input_tokens": 15,
-        "output_tokens": 6,
-        "total_tokens": 21
+        "input_tokens": 21,
+        "output_tokens": 541,
+        "total_tokens": 562
     },
-    "stop_reason": "stop",
-    "expected_text": "The sky is blue."
+    "stop_reason": null,
+    "expected_text": null,
+    "deltas": [
+        {
+            "type": "thinking",
+            "content": "Thinking"
+        },
+        {
+            "type": "thinking",
+            "content": " Process"
+        },
+        {
+            "type": "thinking",
+            "content": ":"
+        },
+        {
+            "type": "thinking",
+            "content": "\n\n"
+        },
+        {
+            "type": "thinking",
+            "content": "1"
+        },
+        {
+            "type": "thinking",
+            "content": "."
+        },
+        {
+            "type": "thinking",
+            "content": " "
+        },
+        {
+            "type": "thinking",
+            "content": " **"
+        },
+        {
+            "type": "thinking",
+            "content": "An"
+        },
+        {
+            "type": "thinking",
+            "content": "alyze"
+        },
+        {
+            "type": "thinking",
+            "content": " the"
+        },
+        {
+            "type": "thinking",
+            "content": " Request"
+        },
+        {
+            "type": "thinking",
+            "content": ":**"
+        },
+        {
+            "type": "thinking",
+            "content": "\n"
+        },
+        {
+            "type": "thinking",
+            "content": "   "
+        },
+        {
+            "type": "thinking",
+            "content": " *"
+        },
+        {
+            "type": "thinking",
+            "content": "  "
+        },
+        {
+            "type": "thinking",
+            "content": " Task"
+        },
+        {
+            "type": "thinking",
+            "content": ":"
+        },
+        {
+            "type": "thinking",
+            "content": " Respond"
+        },
+        {
+            "type": "thinking",
+            "content": " with"
+        },
+        {
+            "type": "thinking",
+            "content": " exactly"
+        },
+        {
+            "type": "thinking",
+            "content": " one"
+        },
+        {
+            "type": "thinking",
+            "content": " sentence"
+        },
+        {
+            "type": "thinking",
+            "content": "."
+        },
+        {
+            "type": "thinking",
+            "content": "\n"
+        },
+        {
+            "type": "thinking",
+            "content": "   "
+        },
+        {
+            "type": "thinking",
+            "content": " *"
+        },
+        {
+            "type": "thinking",
+            "content": "  "
+        },
+        {
+            "type": "thinking",
+            "content": " Content"
+        },
+        {
+            "type": "thinking",
+            "content": ":"
+        },
+        {
+            "type": "thinking",
+            "content": " \""
+        },
+        {
+            "type": "thinking",
+            "content": "the"
+        },
+        {
+            "type": "thinking",
+            "content": " sky"
+        },
+        {
+            "type": "thinking",
+            "content": " is"
+        },
+        {
+            "type": "thinking",
+            "content": " blue"
+        },
+        {
+            "type": "thinking",
+            "content": ".\""
+        },
+        {
+            "type": "thinking",
+            "content": "\n"
+        },
+        {
+            "type": "thinking",
+            "content": "   "
+        },
+        {
+            "type": "thinking",
+            "content": " *"
+        },
+        {
+            "type": "thinking",
+            "content": "  "
+        },
+        {
+            "type": "thinking",
+            "content": " Constraint"
+        },
+        {
+            "type": "thinking",
+            "content": ":"
+        },
+        {
+            "type": "thinking",
+            "content": " The"
+        },
+        {
+            "type": "thinking",
+            "content": " response"
+        },
+        {
+            "type": "thinking",
+            "content": " must"
+        },
+        {
+            "type": "thinking",
+            "content": " be"
+        },
+        {
+            "type": "thinking",
+            "content": " exactly"
+        },
+        {
+            "type": "thinking",
+            "content": " one"
+        },
+        {
+            "type": "thinking",
+            "content": " sentence"
+        },
+        {
+            "type": "thinking",
+            "content": "."
+        },
+        {
+            "type": "thinking",
+            "content": "\n\n"
+        },
+        {
+            "type": "thinking",
+            "content": "2"
+        },
+        {
+            "type": "thinking",
+            "content": "."
+        },
+        {
+            "type": "thinking",
+            "content": " "
+        },
+        {
+            "type": "thinking",
+            "content": " **"
+        },
+        {
+            "type": "thinking",
+            "content": "Verify"
+        },
+        {
+            "type": "thinking",
+            "content": " Constraints"
+        },
+        {
+            "type": "thinking",
+            "content": ":**"
+        },
+        {
+            "type": "thinking",
+            "content": "\n"
+        },
+        {
+            "type": "thinking",
+            "content": "   "
+        },
+        {
+            "type": "thinking",
+            "content": " *"
+        },
+        {
+            "type": "thinking",
+            "content": "  "
+        },
+        {
+            "type": "thinking",
+            "content": " One"
+        },
+        {
+            "type": "thinking",
+            "content": " sentence"
+        },
+        {
+            "type": "thinking",
+            "content": "?"
+        },
+        {
+            "type": "thinking",
+            "content": " Yes"
+        },
+        {
+            "type": "thinking",
+            "content": "."
+        },
+        {
+            "type": "thinking",
+            "content": "\n"
+        },
+        {
+            "type": "thinking",
+            "content": "   "
+        },
+        {
+            "type": "thinking",
+            "content": " *"
+        },
+        {
+            "type": "thinking",
+            "content": "  "
+        },
+        {
+            "type": "thinking",
+            "content": " Content"
+        },
+        {
+            "type": "thinking",
+            "content": " matches"
+        },
+        {
+            "type": "thinking",
+            "content": " the"
+        },
+        {
+            "type": "thinking",
+            "content": " prompt"
+        },
+        {
+            "type": "thinking",
+            "content": "?"
+        },
+        {
+            "type": "thinking",
+            "content": " Yes"
+        },
+        {
+            "type": "thinking",
+            "content": "."
+        },
+        {
+            "type": "thinking",
+            "content": "\n"
+        },
+        {
+            "type": "thinking",
+            "content": "   "
+        },
+        {
+            "type": "thinking",
+            "content": " *"
+        },
+        {
+            "type": "thinking",
+            "content": "  "
+        },
+        {
+            "type": "thinking",
+            "content": " No"
+        },
+        {
+            "type": "thinking",
+            "content": " extra"
+        },
+        {
+            "type": "thinking",
+            "content": " text"
+        },
+        {
+            "type": "thinking",
+            "content": "?"
+        },
+        {
+            "type": "thinking",
+            "content": " Yes"
+        },
+        {
+            "type": "thinking",
+            "content": "."
+        },
+        {
+            "type": "thinking",
+            "content": "\n\n"
+        },
+        {
+            "type": "thinking",
+            "content": "3"
+        },
+        {
+            "type": "thinking",
+            "content": "."
+        },
+        {
+            "type": "thinking",
+            "content": " "
+        },
+        {
+            "type": "thinking",
+            "content": " **"
+        },
+        {
+            "type": "thinking",
+            "content": "Draft"
+        },
+        {
+            "type": "thinking",
+            "content": "ing"
+        },
+        {
+            "type": "thinking",
+            "content": ":**"
+        },
+        {
+            "type": "thinking",
+            "content": "\n"
+        },
+        {
+            "type": "thinking",
+            "content": "   "
+        },
+        {
+            "type": "thinking",
+            "content": " *"
+        },
+        {
+            "type": "thinking",
+            "content": "  "
+        },
+        {
+            "type": "thinking",
+            "content": " Option"
+        },
+        {
+            "type": "thinking",
+            "content": " "
+        },
+        {
+            "type": "thinking",
+            "content": "1"
+        },
+        {
+            "type": "thinking",
+            "content": ":"
+        },
+        {
+            "type": "thinking",
+            "content": " The"
+        },
+        {
+            "type": "thinking",
+            "content": " sky"
+        },
+        {
+            "type": "thinking",
+            "content": " is"
+        },
+        {
+            "type": "thinking",
+            "content": " blue"
+        },
+        {
+            "type": "thinking",
+            "content": "."
+        },
+        {
+            "type": "thinking",
+            "content": "\n"
+        },
+        {
+            "type": "thinking",
+            "content": "   "
+        },
+        {
+            "type": "thinking",
+            "content": " *"
+        },
+        {
+            "type": "thinking",
+            "content": "  "
+        },
+        {
+            "type": "thinking",
+            "content": " Option"
+        },
+        {
+            "type": "thinking",
+            "content": " "
+        },
+        {
+            "type": "thinking",
+            "content": "2"
+        },
+        {
+            "type": "thinking",
+            "content": ":"
+        },
+        {
+            "type": "thinking",
+            "content": " Because"
+        },
+        {
+            "type": "thinking",
+            "content": " the"
+        },
+        {
+            "type": "thinking",
+            "content": " sky"
+        },
+        {
+            "type": "thinking",
+            "content": " is"
+        },
+        {
+            "type": "thinking",
+            "content": " blue"
+        },
+        {
+            "type": "thinking",
+            "content": ","
+        },
+        {
+            "type": "thinking",
+            "content": " the"
+        },
+        {
+            "type": "thinking",
+            "content": " clouds"
+        },
+        {
+            "type": "thinking",
+            "content": " are"
+        },
+        {
+            "type": "thinking",
+            "content": " white"
+        },
+        {
+            "type": "thinking",
+            "content": "."
+        },
+        {
+            "type": "thinking",
+            "content": "\n"
+        },
+        {
+            "type": "thinking",
+            "content": "   "
+        },
+        {
+            "type": "thinking",
+            "content": " *"
+        },
+        {
+            "type": "thinking",
+            "content": "  "
+        },
+        {
+            "type": "thinking",
+            "content": " Option"
+        },
+        {
+            "type": "thinking",
+            "content": " "
+        },
+        {
+            "type": "thinking",
+            "content": "3"
+        },
+        {
+            "type": "thinking",
+            "content": ":"
+        },
+        {
+            "type": "thinking",
+            "content": " The"
+        },
+        {
+            "type": "thinking",
+            "content": " sky"
+        },
+        {
+            "type": "thinking",
+            "content": " is"
+        },
+        {
+            "type": "thinking",
+            "content": " blue"
+        },
+        {
+            "type": "thinking",
+            "content": "."
+        },
+        {
+            "type": "thinking",
+            "content": "\n"
+        },
+        {
+            "type": "thinking",
+            "content": "   "
+        },
+        {
+            "type": "thinking",
+            "content": " *"
+        },
+        {
+            "type": "thinking",
+            "content": "  "
+        },
+        {
+            "type": "thinking",
+            "content": " Option"
+        },
+        {
+            "type": "thinking",
+            "content": " "
+        },
+        {
+            "type": "thinking",
+            "content": "4"
+        },
+        {
+            "type": "thinking",
+            "content": ":"
+        },
+        {
+            "type": "thinking",
+            "content": " The"
+        },
+        {
+            "type": "thinking",
+            "content": " sky"
+        },
+        {
+            "type": "thinking",
+            "content": " is"
+        },
+        {
+            "type": "thinking",
+            "content": " blue"
+        },
+        {
+            "type": "thinking",
+            "content": "."
+        },
+        {
+            "type": "thinking",
+            "content": "\n\n"
+        },
+        {
+            "type": "thinking",
+            "content": "4"
+        },
+        {
+            "type": "thinking",
+            "content": "."
+        },
+        {
+            "type": "thinking",
+            "content": " "
+        },
+        {
+            "type": "thinking",
+            "content": " **"
+        },
+        {
+            "type": "thinking",
+            "content": "Select"
+        },
+        {
+            "type": "thinking",
+            "content": "ing"
+        },
+        {
+            "type": "thinking",
+            "content": " the"
+        },
+        {
+            "type": "thinking",
+            "content": " Best"
+        },
+        {
+            "type": "thinking",
+            "content": " Option"
+        },
+        {
+            "type": "thinking",
+            "content": ":**"
+        },
+        {
+            "type": "thinking",
+            "content": "\n"
+        },
+        {
+            "type": "thinking",
+            "content": "   "
+        },
+        {
+            "type": "thinking",
+            "content": " *"
+        },
+        {
+            "type": "thinking",
+            "content": "  "
+        },
+        {
+            "type": "thinking",
+            "content": " The"
+        },
+        {
+            "type": "thinking",
+            "content": " prompt"
+        },
+        {
+            "type": "thinking",
+            "content": " asks"
+        },
+        {
+            "type": "thinking",
+            "content": " to"
+        },
+        {
+            "type": "thinking",
+            "content": " \""
+        },
+        {
+            "type": "thinking",
+            "content": "Respond"
+        },
+        {
+            "type": "thinking",
+            "content": " with"
+        },
+        {
+            "type": "thinking",
+            "content": " exactly"
+        },
+        {
+            "type": "thinking",
+            "content": " one"
+        },
+        {
+            "type": "thinking",
+            "content": " sentence"
+        },
+        {
+            "type": "thinking",
+            "content": ":"
+        },
+        {
+            "type": "thinking",
+            "content": " the"
+        },
+        {
+            "type": "thinking",
+            "content": " sky"
+        },
+        {
+            "type": "thinking",
+            "content": " is"
+        },
+        {
+            "type": "thinking",
+            "content": " blue"
+        },
+        {
+            "type": "thinking",
+            "content": ".\""
+        },
+        {
+            "type": "thinking",
+            "content": "\n"
+        },
+        {
+            "type": "thinking",
+            "content": "   "
+        },
+        {
+            "type": "thinking",
+            "content": " *"
+        },
+        {
+            "type": "thinking",
+            "content": "  "
+        },
+        {
+            "type": "thinking",
+            "content": " This"
+        },
+        {
+            "type": "thinking",
+            "content": " implies"
+        },
+        {
+            "type": "thinking",
+            "content": " I"
+        },
+        {
+            "type": "thinking",
+            "content": " should"
+        },
+        {
+            "type": "thinking",
+            "content": " output"
+        },
+        {
+            "type": "thinking",
+            "content": " the"
+        },
+        {
+            "type": "thinking",
+            "content": " sentence"
+        },
+        {
+            "type": "thinking",
+            "content": " \""
+        },
+        {
+            "type": "thinking",
+            "content": "the"
+        },
+        {
+            "type": "thinking",
+            "content": " sky"
+        },
+        {
+            "type": "thinking",
+            "content": " is"
+        },
+        {
+            "type": "thinking",
+            "content": " blue"
+        },
+        {
+            "type": "thinking",
+            "content": ".\""
+        },
+        {
+            "type": "thinking",
+            "content": "\n"
+        },
+        {
+            "type": "thinking",
+            "content": "   "
+        },
+        {
+            "type": "thinking",
+            "content": " *"
+        },
+        {
+            "type": "thinking",
+            "content": "  "
+        },
+        {
+            "type": "thinking",
+            "content": " I"
+        },
+        {
+            "type": "thinking",
+            "content": " need"
+        },
+        {
+            "type": "thinking",
+            "content": " to"
+        },
+        {
+            "type": "thinking",
+            "content": " make"
+        },
+        {
+            "type": "thinking",
+            "content": " sure"
+        },
+        {
+            "type": "thinking",
+            "content": " I"
+        },
+        {
+            "type": "thinking",
+            "content": " don"
+        },
+        {
+            "type": "thinking",
+            "content": "'t"
+        },
+        {
+            "type": "thinking",
+            "content": " add"
+        },
+        {
+            "type": "thinking",
+            "content": " any"
+        },
+        {
+            "type": "thinking",
+            "content": " introductory"
+        },
+        {
+            "type": "thinking",
+            "content": " or"
+        },
+        {
+            "type": "thinking",
+            "content": " concluding"
+        },
+        {
+            "type": "thinking",
+            "content": " remarks"
+        },
+        {
+            "type": "thinking",
+            "content": "."
+        },
+        {
+            "type": "thinking",
+            "content": "\n\n"
+        },
+        {
+            "type": "thinking",
+            "content": "5"
+        },
+        {
+            "type": "thinking",
+            "content": "."
+        },
+        {
+            "type": "thinking",
+            "content": " "
+        },
+        {
+            "type": "thinking",
+            "content": " **"
+        },
+        {
+            "type": "thinking",
+            "content": "Final"
+        },
+        {
+            "type": "thinking",
+            "content": " Check"
+        },
+        {
+            "type": "thinking",
+            "content": ":**"
+        },
+        {
+            "type": "thinking",
+            "content": "\n"
+        },
+        {
+            "type": "thinking",
+            "content": "   "
+        },
+        {
+            "type": "thinking",
+            "content": " *"
+        },
+        {
+            "type": "thinking",
+            "content": "  "
+        },
+        {
+            "type": "thinking",
+            "content": " Sentence"
+        },
+        {
+            "type": "thinking",
+            "content": ":"
+        },
+        {
+            "type": "thinking",
+            "content": " \""
+        },
+        {
+            "type": "thinking",
+            "content": "The"
+        },
+        {
+            "type": "thinking",
+            "content": " sky"
+        },
+        {
+            "type": "thinking",
+            "content": " is"
+        },
+        {
+            "type": "thinking",
+            "content": " blue"
+        },
+        {
+            "type": "thinking",
+            "content": ".\""
+        },
+        {
+            "type": "thinking",
+            "content": "\n"
+        },
+        {
+            "type": "thinking",
+            "content": "   "
+        },
+        {
+            "type": "thinking",
+            "content": " *"
+        },
+        {
+            "type": "thinking",
+            "content": "  "
+        },
+        {
+            "type": "thinking",
+            "content": " Count"
+        },
+        {
+            "type": "thinking",
+            "content": ":"
+        },
+        {
+            "type": "thinking",
+            "content": " One"
+        },
+        {
+            "type": "thinking",
+            "content": " sentence"
+        },
+        {
+            "type": "thinking",
+            "content": "."
+        },
+        {
+            "type": "thinking",
+            "content": "\n"
+        },
+        {
+            "type": "thinking",
+            "content": "   "
+        },
+        {
+            "type": "thinking",
+            "content": " *"
+        },
+        {
+            "type": "thinking",
+            "content": "  "
+        },
+        {
+            "type": "thinking",
+            "content": " Content"
+        },
+        {
+            "type": "thinking",
+            "content": ":"
+        },
+        {
+            "type": "thinking",
+            "content": " Matches"
+        },
+        {
+            "type": "thinking",
+            "content": " the"
+        },
+        {
+            "type": "thinking",
+            "content": " instruction"
+        },
+        {
+            "type": "thinking",
+            "content": "."
+        },
+        {
+            "type": "thinking",
+            "content": "\n\n"
+        },
+        {
+            "type": "thinking",
+            "content": "6"
+        },
+        {
+            "type": "thinking",
+            "content": "."
+        },
+        {
+            "type": "thinking",
+            "content": " "
+        },
+        {
+            "type": "thinking",
+            "content": " **"
+        },
+        {
+            "type": "thinking",
+            "content": "Final"
+        },
+        {
+            "type": "thinking",
+            "content": " Output"
+        },
+        {
+            "type": "thinking",
+            "content": " Generation"
+        },
+        {
+            "type": "thinking",
+            "content": ":**"
+        },
+        {
+            "type": "thinking",
+            "content": "\n"
+        },
+        {
+            "type": "thinking",
+            "content": "   "
+        },
+        {
+            "type": "thinking",
+            "content": " *"
+        },
+        {
+            "type": "thinking",
+            "content": "  "
+        },
+        {
+            "type": "thinking",
+            "content": " \""
+        },
+        {
+            "type": "thinking",
+            "content": "The"
+        },
+        {
+            "type": "thinking",
+            "content": " sky"
+        },
+        {
+            "type": "thinking",
+            "content": " is"
+        },
+        {
+            "type": "thinking",
+            "content": " blue"
+        },
+        {
+            "type": "thinking",
+            "content": ".\""
+        },
+        {
+            "type": "thinking",
+            "content": "\n\n"
+        },
+        {
+            "type": "thinking",
+            "content": "   "
+        },
+        {
+            "type": "thinking",
+            "content": " Wait"
+        },
+        {
+            "type": "thinking",
+            "content": ","
+        },
+        {
+            "type": "thinking",
+            "content": " looking"
+        },
+        {
+            "type": "thinking",
+            "content": " at"
+        },
+        {
+            "type": "thinking",
+            "content": " the"
+        },
+        {
+            "type": "thinking",
+            "content": " instruction"
+        },
+        {
+            "type": "thinking",
+            "content": " again"
+        },
+        {
+            "type": "thinking",
+            "content": ":"
+        },
+        {
+            "type": "thinking",
+            "content": " \""
+        },
+        {
+            "type": "thinking",
+            "content": "Respond"
+        },
+        {
+            "type": "thinking",
+            "content": " with"
+        },
+        {
+            "type": "thinking",
+            "content": " exactly"
+        },
+        {
+            "type": "thinking",
+            "content": " one"
+        },
+        {
+            "type": "thinking",
+            "content": " sentence"
+        },
+        {
+            "type": "thinking",
+            "content": ":"
+        },
+        {
+            "type": "thinking",
+            "content": " the"
+        },
+        {
+            "type": "thinking",
+            "content": " sky"
+        },
+        {
+            "type": "thinking",
+            "content": " is"
+        },
+        {
+            "type": "thinking",
+            "content": " blue"
+        },
+        {
+            "type": "thinking",
+            "content": ".\""
+        },
+        {
+            "type": "thinking",
+            "content": "\n"
+        },
+        {
+            "type": "thinking",
+            "content": "   "
+        },
+        {
+            "type": "thinking",
+            "content": " Does"
+        },
+        {
+            "type": "thinking",
+            "content": " it"
+        },
+        {
+            "type": "thinking",
+            "content": " mean"
+        },
+        {
+            "type": "thinking",
+            "content": " I"
+        },
+        {
+            "type": "thinking",
+            "content": " should"
+        },
+        {
+            "type": "thinking",
+            "content": " literally"
+        },
+        {
+            "type": "thinking",
+            "content": " write"
+        },
+        {
+            "type": "thinking",
+            "content": " \""
+        },
+        {
+            "type": "thinking",
+            "content": "the"
+        },
+        {
+            "type": "thinking",
+            "content": " sky"
+        },
+        {
+            "type": "thinking",
+            "content": " is"
+        },
+        {
+            "type": "thinking",
+            "content": " blue"
+        },
+        {
+            "type": "thinking",
+            "content": ".\""
+        },
+        {
+            "type": "thinking",
+            "content": " or"
+        },
+        {
+            "type": "thinking",
+            "content": " just"
+        },
+        {
+            "type": "thinking",
+            "content": " answer"
+        },
+        {
+            "type": "thinking",
+            "content": " the"
+        },
+        {
+            "type": "thinking",
+            "content": " question"
+        },
+        {
+            "type": "thinking",
+            "content": "?"
+        },
+        {
+            "type": "thinking",
+            "content": "\n"
+        },
+        {
+            "type": "thinking",
+            "content": "   "
+        },
+        {
+            "type": "thinking",
+            "content": " Usually"
+        },
+        {
+            "type": "thinking",
+            "content": ","
+        },
+        {
+            "type": "thinking",
+            "content": " this"
+        },
+        {
+            "type": "thinking",
+            "content": " means"
+        },
+        {
+            "type": "thinking",
+            "content": " output"
+        },
+        {
+            "type": "thinking",
+            "content": " the"
+        },
+        {
+            "type": "thinking",
+            "content": " sentence"
+        },
+        {
+            "type": "thinking",
+            "content": " provided"
+        },
+        {
+            "type": "thinking",
+            "content": " in"
+        },
+        {
+            "type": "thinking",
+            "content": " the"
+        },
+        {
+            "type": "thinking",
+            "content": " prompt"
+        },
+        {
+            "type": "thinking",
+            "content": "."
+        },
+        {
+            "type": "thinking",
+            "content": "\n"
+        },
+        {
+            "type": "thinking",
+            "content": "   "
+        },
+        {
+            "type": "thinking",
+            "content": " So"
+        },
+        {
+            "type": "thinking",
+            "content": ","
+        },
+        {
+            "type": "thinking",
+            "content": " \""
+        },
+        {
+            "type": "thinking",
+            "content": "The"
+        },
+        {
+            "type": "thinking",
+            "content": " sky"
+        },
+        {
+            "type": "thinking",
+            "content": " is"
+        },
+        {
+            "type": "thinking",
+            "content": " blue"
+        },
+        {
+            "type": "thinking",
+            "content": ".\""
+        },
+        {
+            "type": "thinking",
+            "content": "\n\n"
+        },
+        {
+            "type": "thinking",
+            "content": "   "
+        },
+        {
+            "type": "thinking",
+            "content": " Let"
+        },
+        {
+            "type": "thinking",
+            "content": "'s"
+        },
+        {
+            "type": "thinking",
+            "content": " double"
+        },
+        {
+            "type": "thinking",
+            "content": "-check"
+        },
+        {
+            "type": "thinking",
+            "content": " the"
+        },
+        {
+            "type": "thinking",
+            "content": " constraint"
+        },
+        {
+            "type": "thinking",
+            "content": " \""
+        },
+        {
+            "type": "thinking",
+            "content": "Respond"
+        },
+        {
+            "type": "thinking",
+            "content": " with"
+        },
+        {
+            "type": "thinking",
+            "content": " exactly"
+        },
+        {
+            "type": "thinking",
+            "content": " one"
+        },
+        {
+            "type": "thinking",
+            "content": " sentence"
+        },
+        {
+            "type": "thinking",
+            "content": "\"."
+        },
+        {
+            "type": "thinking",
+            "content": "\n"
+        },
+        {
+            "type": "thinking",
+            "content": "   "
+        },
+        {
+            "type": "thinking",
+            "content": " If"
+        },
+        {
+            "type": "thinking",
+            "content": " I"
+        },
+        {
+            "type": "thinking",
+            "content": " write"
+        },
+        {
+            "type": "thinking",
+            "content": " \""
+        },
+        {
+            "type": "thinking",
+            "content": "The"
+        },
+        {
+            "type": "thinking",
+            "content": " sky"
+        },
+        {
+            "type": "thinking",
+            "content": " is"
+        },
+        {
+            "type": "thinking",
+            "content": " blue"
+        },
+        {
+            "type": "thinking",
+            "content": ".\","
+        },
+        {
+            "type": "thinking",
+            "content": " that"
+        },
+        {
+            "type": "thinking",
+            "content": " is"
+        },
+        {
+            "type": "thinking",
+            "content": " one"
+        },
+        {
+            "type": "thinking",
+            "content": " sentence"
+        },
+        {
+            "type": "thinking",
+            "content": "."
+        },
+        {
+            "type": "thinking",
+            "content": "\n"
+        },
+        {
+            "type": "thinking",
+            "content": "   "
+        },
+        {
+            "type": "thinking",
+            "content": " If"
+        },
+        {
+            "type": "thinking",
+            "content": " I"
+        },
+        {
+            "type": "thinking",
+            "content": " write"
+        },
+        {
+            "type": "thinking",
+            "content": " \""
+        },
+        {
+            "type": "thinking",
+            "content": "The"
+        },
+        {
+            "type": "thinking",
+            "content": " sky"
+        },
+        {
+            "type": "thinking",
+            "content": " is"
+        },
+        {
+            "type": "thinking",
+            "content": " blue"
+        },
+        {
+            "type": "thinking",
+            "content": "."
+        },
+        {
+            "type": "thinking",
+            "content": " The"
+        },
+        {
+            "type": "thinking",
+            "content": " clouds"
+        },
+        {
+            "type": "thinking",
+            "content": " are"
+        },
+        {
+            "type": "thinking",
+            "content": " white"
+        },
+        {
+            "type": "thinking",
+            "content": ".\","
+        },
+        {
+            "type": "thinking",
+            "content": " that"
+        },
+        {
+            "type": "thinking",
+            "content": " is"
+        },
+        {
+            "type": "thinking",
+            "content": " two"
+        },
+        {
+            "type": "thinking",
+            "content": " sentences"
+        },
+        {
+            "type": "thinking",
+            "content": "."
+        },
+        {
+            "type": "thinking",
+            "content": "\n"
+        },
+        {
+            "type": "thinking",
+            "content": "   "
+        },
+        {
+            "type": "thinking",
+            "content": " If"
+        },
+        {
+            "type": "thinking",
+            "content": " I"
+        },
+        {
+            "type": "thinking",
+            "content": " write"
+        },
+        {
+            "type": "thinking",
+            "content": " \""
+        },
+        {
+            "type": "thinking",
+            "content": "The"
+        },
+        {
+            "type": "thinking",
+            "content": " sky"
+        },
+        {
+            "type": "thinking",
+            "content": " is"
+        },
+        {
+            "type": "thinking",
+            "content": " blue"
+        },
+        {
+            "type": "thinking",
+            "content": ".\","
+        },
+        {
+            "type": "thinking",
+            "content": " that"
+        },
+        {
+            "type": "thinking",
+            "content": " is"
+        },
+        {
+            "type": "thinking",
+            "content": " one"
+        },
+        {
+            "type": "thinking",
+            "content": " sentence"
+        },
+        {
+            "type": "thinking",
+            "content": "."
+        },
+        {
+            "type": "thinking",
+            "content": "\n\n"
+        },
+        {
+            "type": "thinking",
+            "content": "   "
+        },
+        {
+            "type": "thinking",
+            "content": " Okay"
+        },
+        {
+            "type": "thinking",
+            "content": ","
+        },
+        {
+            "type": "thinking",
+            "content": " I"
+        },
+        {
+            "type": "thinking",
+            "content": " will"
+        },
+        {
+            "type": "thinking",
+            "content": " output"
+        },
+        {
+            "type": "thinking",
+            "content": " just"
+        },
+        {
+            "type": "thinking",
+            "content": " the"
+        },
+        {
+            "type": "thinking",
+            "content": " sentence"
+        },
+        {
+            "type": "thinking",
+            "content": "."
+        },
+        {
+            "type": "thinking",
+            "content": "\n\n"
+        },
+        {
+            "type": "thinking",
+            "content": "   "
+        },
+        {
+            "type": "thinking",
+            "content": " Wait"
+        },
+        {
+            "type": "thinking",
+            "content": ","
+        },
+        {
+            "type": "thinking",
+            "content": " I"
+        },
+        {
+            "type": "thinking",
+            "content": " need"
+        },
+        {
+            "type": "thinking",
+            "content": " to"
+        },
+        {
+            "type": "thinking",
+            "content": " check"
+        },
+        {
+            "type": "thinking",
+            "content": " if"
+        },
+        {
+            "type": "thinking",
+            "content": " there"
+        },
+        {
+            "type": "thinking",
+            "content": " are"
+        },
+        {
+            "type": "thinking",
+            "content": " any"
+        },
+        {
+            "type": "thinking",
+            "content": " hidden"
+        },
+        {
+            "type": "thinking",
+            "content": " constraints"
+        },
+        {
+            "type": "thinking",
+            "content": "."
+        },
+        {
+            "type": "thinking",
+            "content": " \""
+        },
+        {
+            "type": "thinking",
+            "content": "Respond"
+        },
+        {
+            "type": "thinking",
+            "content": " with"
+        },
+        {
+            "type": "thinking",
+            "content": " exactly"
+        },
+        {
+            "type": "thinking",
+            "content": " one"
+        },
+        {
+            "type": "thinking",
+            "content": " sentence"
+        },
+        {
+            "type": "thinking",
+            "content": ":"
+        },
+        {
+            "type": "thinking",
+            "content": " the"
+        },
+        {
+            "type": "thinking",
+            "content": " sky"
+        },
+        {
+            "type": "thinking",
+            "content": " is"
+        },
+        {
+            "type": "thinking",
+            "content": " blue"
+        },
+        {
+            "type": "thinking",
+            "content": ".\""
+        },
+        {
+            "type": "thinking",
+            "content": "\n"
+        },
+        {
+            "type": "thinking",
+            "content": "   "
+        },
+        {
+            "type": "thinking",
+            "content": " This"
+        },
+        {
+            "type": "thinking",
+            "content": " looks"
+        },
+        {
+            "type": "thinking",
+            "content": " like"
+        },
+        {
+            "type": "thinking",
+            "content": " a"
+        },
+        {
+            "type": "thinking",
+            "content": " test"
+        },
+        {
+            "type": "thinking",
+            "content": " of"
+        },
+        {
+            "type": "thinking",
+            "content": " instruction"
+        },
+        {
+            "type": "thinking",
+            "content": " following"
+        },
+        {
+            "type": "thinking",
+            "content": "."
+        },
+        {
+            "type": "thinking",
+            "content": "\n"
+        },
+        {
+            "type": "thinking",
+            "content": "   "
+        },
+        {
+            "type": "thinking",
+            "content": " The"
+        },
+        {
+            "type": "thinking",
+            "content": " instruction"
+        },
+        {
+            "type": "thinking",
+            "content": " says"
+        },
+        {
+            "type": "thinking",
+            "content": " \""
+        },
+        {
+            "type": "thinking",
+            "content": "Respond"
+        },
+        {
+            "type": "thinking",
+            "content": " with"
+        },
+        {
+            "type": "thinking",
+            "content": " exactly"
+        },
+        {
+            "type": "thinking",
+            "content": " one"
+        },
+        {
+            "type": "thinking",
+            "content": " sentence"
+        },
+        {
+            "type": "thinking",
+            "content": ":"
+        },
+        {
+            "type": "thinking",
+            "content": " the"
+        },
+        {
+            "type": "thinking",
+            "content": " sky"
+        },
+        {
+            "type": "thinking",
+            "content": " is"
+        },
+        {
+            "type": "thinking",
+            "content": " blue"
+        },
+        {
+            "type": "thinking",
+            "content": ".\""
+        },
+        {
+            "type": "thinking",
+            "content": "\n"
+        },
+        {
+            "type": "thinking",
+            "content": "   "
+        },
+        {
+            "type": "thinking",
+            "content": " So"
+        },
+        {
+            "type": "thinking",
+            "content": " the"
+        },
+        {
+            "type": "thinking",
+            "content": " output"
+        },
+        {
+            "type": "thinking",
+            "content": " should"
+        },
+        {
+            "type": "thinking",
+            "content": " be"
+        },
+        {
+            "type": "thinking",
+            "content": " the"
+        },
+        {
+            "type": "thinking",
+            "content": " sentence"
+        },
+        {
+            "type": "thinking",
+            "content": " \""
+        },
+        {
+            "type": "thinking",
+            "content": "the"
+        },
+        {
+            "type": "thinking",
+            "content": " sky"
+        },
+        {
+            "type": "thinking",
+            "content": " is"
+        },
+        {
+            "type": "thinking",
+            "content": " blue"
+        },
+        {
+            "type": "thinking",
+            "content": ".\""
+        },
+        {
+            "type": "thinking",
+            "content": "\n\n"
+        },
+        {
+            "type": "thinking",
+            "content": "   "
+        },
+        {
+            "type": "thinking",
+            "content": " Let"
+        },
+        {
+            "type": "thinking",
+            "content": "'s"
+        },
+        {
+            "type": "thinking",
+            "content": " refine"
+        },
+        {
+            "type": "thinking",
+            "content": " to"
+        },
+        {
+            "type": "thinking",
+            "content": " ensure"
+        },
+        {
+            "type": "thinking",
+            "content": " it"
+        },
+        {
+            "type": "thinking",
+            "content": "'s"
+        },
+        {
+            "type": "thinking",
+            "content": " gramm"
+        },
+        {
+            "type": "thinking",
+            "content": "atically"
+        },
+        {
+            "type": "thinking",
+            "content": " correct"
+        },
+        {
+            "type": "thinking",
+            "content": " and"
+        },
+        {
+            "type": "thinking",
+            "content": " matches"
+        },
+        {
+            "type": "thinking",
+            "content": " the"
+        },
+        {
+            "type": "thinking",
+            "content": "\n\n"
+        },
+        {
+            "type": "thinking",
+            "content": "Considering"
+        },
+        {
+            "type": "thinking",
+            "content": " the"
+        },
+        {
+            "type": "thinking",
+            "content": " limited"
+        },
+        {
+            "type": "thinking",
+            "content": " time"
+        },
+        {
+            "type": "thinking",
+            "content": " by"
+        },
+        {
+            "type": "thinking",
+            "content": " the"
+        },
+        {
+            "type": "thinking",
+            "content": " user"
+        },
+        {
+            "type": "thinking",
+            "content": ","
+        },
+        {
+            "type": "thinking",
+            "content": " I"
+        },
+        {
+            "type": "thinking",
+            "content": " have"
+        },
+        {
+            "type": "thinking",
+            "content": " to"
+        },
+        {
+            "type": "thinking",
+            "content": " give"
+        },
+        {
+            "type": "thinking",
+            "content": " the"
+        },
+        {
+            "type": "thinking",
+            "content": " solution"
+        },
+        {
+            "type": "thinking",
+            "content": " based"
+        },
+        {
+            "type": "thinking",
+            "content": " on"
+        },
+        {
+            "type": "thinking",
+            "content": " the"
+        },
+        {
+            "type": "thinking",
+            "content": " thinking"
+        },
+        {
+            "type": "thinking",
+            "content": " directly"
+        },
+        {
+            "type": "thinking",
+            "content": " now"
+        },
+        {
+            "type": "thinking",
+            "content": "."
+        },
+        {
+            "type": "unknown",
+            "content": ""
+        },
+        {
+            "type": "text",
+            "content": "The"
+        },
+        {
+            "type": "text",
+            "content": " sky"
+        },
+        {
+            "type": "text",
+            "content": " is"
+        },
+        {
+            "type": "text",
+            "content": " blue"
+        },
+        {
+            "type": "text",
+            "content": "."
+        }
+    ]
 }
