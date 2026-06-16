@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: gw981qu0xg7u
+Fork run: 3xrtgz5gerrj
 PR URL: https://github.com/ineersa/agent-core/pull/140
 PR Status: open
 Started: 2026-06-12T16:54:23.580Z
@@ -410,3 +410,8 @@ Castor Check Output SHA256: 8402952e60f19af97d70af3c9bd816e632c7b0adb64c7eea53f5
 - Recorded fork run: gw981qu0xg7u
 - Validation: Parent verified branch clean and pushed: HEAD/origin/task-backlog at 882468c67; diff against origin/main touches 3 files, 119 insertions / 4 deletions.; Fork validation: castor test --filter=TranscriptProjectorTest: PASS, 72 tests / 266 assertions.; Fork validation: castor test --suite=coding-agent --sequential: PASS, 1470 tests / 4030 assertions.; Fork validation: castor deptrac: PASS, 0 violations.; Fork validation: castor phpstan: PASS, 0 errors.; Fork validation: castor cs-fix then castor cs-check: PASS / clean.
 - Summary: Fork gw981qu0xg7u completed issue #124 implementation with commit 882468c67 on task/backlog-open-issues-cleanup. Fix is projection-side: ToolProjectionSubscriber suppresses/removes empty-argument transient tool_call blocks so fake `bash()` / `read()` placeholder executions are not rendered, and finalized non-empty tool-call text replaces accumulated raw streaming JSON with canonical `toolName(args)` instead of appending. TranscriptProjectionState gained removeBlock(). Added focused TranscriptProjectorTest coverage for empty-arg removal/non-creation, mixed-validity parallel calls, and no duplicated raw JSON. No TUI renderer/product runtime execution code touched.
+
+## Task workflow update - 2026-06-16T16:35:22.685Z
+- Recorded fork run: 3xrtgz5gerrj
+- Validation: Fork read testing skill, tests/AGENTS.md, castor skill, and root AGENTS.md before edits.; Fork validation: castor list OK; test task discovered with no --sequential shown.; Fork validation: castor test --filter=TranscriptProjectorTest: PASS, 72 tests / 266 assertions.; Fork validation: castor cs-check: PASS.; Fork validation: castor phpstan: PASS, 0 errors.; Parent verified git status clean; HEAD/origin task branch at 39218ee65; diff against origin/main includes #124 fix plus Castor/docs cleanup.
+- Summary: Follow-up fork 3xrtgz5gerrj removed user-facing `castor test --sequential` support and documentation. Commit 39218ee65 on task/backlog-open-issues-cleanup removes the `$sequential` parameter/branch from `.castor/phpunit.php`, removes `--sequential` command examples from `tests/AGENTS.md` and `.agents/skills/testing/SKILL.md`, and preserves internal sequential PHPUnit behavior for `--filter` / ParaTest-unavailable fallback. Parent verified branch contains #124 projection fix rebased as 85de3f452 plus Castor/docs cleanup 39218ee65; worktree clean and pushed.
