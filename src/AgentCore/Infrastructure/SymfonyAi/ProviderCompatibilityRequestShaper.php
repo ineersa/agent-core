@@ -82,17 +82,17 @@ final readonly class ProviderCompatibilityRequestShaper
     /**
      * Strip known internal option keys so they never leak into provider requests.
      *
+     * Currently only {@see ProviderRequestOptionKeys::REASONING} is carried
+     * through the option pipeline; other cross-cutting concerns are handled
+     * by feature shapers directly and do not use private marker options.
+     *
      * @param array<string, mixed> $options
      *
      * @return array<string, mixed>
      */
     private function stripInternalKeys(array $options): array
     {
-        unset(
-            $options[ProviderRequestOptionKeys::REASONING],
-            $options[ProviderRequestOptionKeys::SUPPRESS_DEVELOPER_ROLE],
-            $options[ProviderRequestOptionKeys::REQUIRES_REASONING_CONTENT_ON_ASSISTANT],
-        );
+        unset($options[ProviderRequestOptionKeys::REASONING]);
 
         return $options;
     }

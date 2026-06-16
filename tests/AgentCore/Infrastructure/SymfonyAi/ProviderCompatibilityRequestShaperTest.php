@@ -32,14 +32,10 @@ final class ProviderCompatibilityRequestShaperTest extends TestCase
 
         $result = $shaper->shape('test-model', [], [
             ProviderRequestOptionKeys::REASONING => 'medium',
-            ProviderRequestOptionKeys::SUPPRESS_DEVELOPER_ROLE => true,
-            ProviderRequestOptionKeys::REQUIRES_REASONING_CONTENT_ON_ASSISTANT => true,
             'stream' => true,
         ]);
 
         $this->assertArrayNotHasKey(ProviderRequestOptionKeys::REASONING, $result['options']);
-        $this->assertArrayNotHasKey(ProviderRequestOptionKeys::SUPPRESS_DEVELOPER_ROLE, $result['options']);
-        $this->assertArrayNotHasKey(ProviderRequestOptionKeys::REQUIRES_REASONING_CONTENT_ON_ASSISTANT, $result['options']);
         $this->assertArrayHasKey('stream', $result['options']);
     }
 

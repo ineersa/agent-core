@@ -136,7 +136,6 @@ final class CodexModelClientTest extends TestCase
             $body = \json_decode($options['body'], true);
             self::assertArrayNotHasKey('_agent_core_invocation', $body);
             self::assertArrayNotHasKey('_hatfield_reasoning', $body);
-            self::assertArrayNotHasKey('_hatfield_suppress_developer_role', $body);
             // stream is NOT stripped — it is a valid Codex API field and is preserved
             self::assertTrue($body['stream']);
             self::assertArrayNotHasKey('tools_ref', $body);
@@ -152,7 +151,6 @@ final class CodexModelClientTest extends TestCase
         $options = [
             '_agent_core_invocation' => ['some' => 'metadata'],
             '_hatfield_reasoning' => 'medium',
-            '_hatfield_suppress_developer_role' => true,
             'stream' => true,
             'tools_ref' => 'toolset-1',
             'turn_no' => 1,
@@ -206,7 +204,7 @@ final class CodexModelClientTest extends TestCase
         $resultCallback = static function (string $method, string $url, array $options): HttpResponse {
             $body = \json_decode($options['body'], true);
             // Internal keys stripped (_hatfield_ prefix)
-            self::assertArrayNotHasKey('_hatfield_suppress_developer_role', $body);
+            self::assertArrayNotHasKey('_hatfield_reasoning', $body);
             // stream is preserved (valid Codex API field)
             self::assertTrue($body['stream']);
             // Model and payload preserved
@@ -223,7 +221,7 @@ final class CodexModelClientTest extends TestCase
         $modelClient->request(
             new CodexModel('gpt-5.4-mini'),
             ['input' => [['role' => 'user', 'content' => 'Hello world']]],
-            ['stream' => true, '_hatfield_suppress_developer_role' => true],
+            ['stream' => true, '_hatfield_reasoning' => 'medium'],
         );
     }
 
@@ -243,7 +241,6 @@ final class CodexModelClientTest extends TestCase
             // Internal keys stripped
             self::assertArrayNotHasKey('_agent_core_invocation', $body);
             self::assertArrayNotHasKey('_hatfield_reasoning', $body);
-            self::assertArrayNotHasKey('_hatfield_suppress_developer_role', $body);
             self::assertArrayNotHasKey('tools_ref', $body);
             self::assertArrayNotHasKey('turn_no', $body);
             self::assertArrayNotHasKey('run_id', $body);
@@ -257,7 +254,6 @@ final class CodexModelClientTest extends TestCase
         $options = [
             '_agent_core_invocation' => ['some' => 'data'],
             '_hatfield_reasoning' => 'medium',
-            '_hatfield_suppress_developer_role' => true,
             'tools_ref' => 'toolset-1',
             'turn_no' => 1,
             'run_id' => 'run-abc',
