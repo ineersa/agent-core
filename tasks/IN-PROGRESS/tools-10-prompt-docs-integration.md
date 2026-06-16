@@ -37,14 +37,22 @@ Out of scope:
 - Focused tests pass with Castor/PHPUnit.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/tools-10-prompt-docs-integration
+Worktree: /home/ineersa/projects/agent-core-worktrees/tools-10-prompt-docs-integration
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-16T22:05:47.991Z
 Completed:
 
 ## Work log
 - Created: 2026-05-17T04:42:49.755Z
+
+## Task workflow update - 2026-06-16T22:05:47.991Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/tools-10-prompt-docs-integration.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/tools-10-prompt-docs-integration.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/tools-10-prompt-docs-integration.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/tools-10-prompt-docs-integration.
+- Summary: Started task-start workflow. Orchestrator will gather prompt/docs/test context and launch an implementation fork in the created worktree.
