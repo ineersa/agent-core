@@ -86,6 +86,11 @@ final class ReplayRecordingTest extends \PHPUnit\Framework\TestCase
         $this->assertTrue($hasText, 'Recording should contain at least one text delta');
 
         // Build the fixture array and verify structure
+        $stopReason = StreamRecorderObserver::resolveFixtureStopReason(
+            $result->stopReason,
+            $recorder->getDeltas(),
+        );
+
         $fixture = $recorder->buildFixture([
             'model' => 'llama_cpp/test',
             'provider_id' => 'llama_cpp',
@@ -95,7 +100,7 @@ final class ReplayRecordingTest extends \PHPUnit\Framework\TestCase
                 ],
             ],
             'usage' => $result->usage,
-            'stop_reason' => $result->stopReason,
+            'stop_reason' => $stopReason,
             'recorded_at' => date('c'),
             'recording_source' => 'llama_cpp_test/test',
         ]);
@@ -105,6 +110,11 @@ final class ReplayRecordingTest extends \PHPUnit\Framework\TestCase
 
         // Write the fixture (to a temp location, not overwriting committed fixtures)
         $outputPath = sys_get_temp_dir().'/llm-record-fixture-'.uniqid('', true).'.json';
+        $stopReason = StreamRecorderObserver::resolveFixtureStopReason(
+            $result->stopReason,
+            $recorder->getDeltas(),
+        );
+
         $bytes = $recorder->writeFixture($outputPath, [
             'model' => 'llama_cpp/test',
             'provider_id' => 'llama_cpp',
@@ -114,7 +124,7 @@ final class ReplayRecordingTest extends \PHPUnit\Framework\TestCase
                 ],
             ],
             'usage' => $result->usage,
-            'stop_reason' => $result->stopReason,
+            'stop_reason' => $stopReason,
             'recorded_at' => date('c'),
             'recording_source' => 'llama_cpp_test/test',
         ]);
@@ -157,6 +167,11 @@ final class ReplayRecordingTest extends \PHPUnit\Framework\TestCase
         $deltas = $recorder->getDeltas();
         $this->assertNotEmpty($deltas, 'Recording should capture at least one delta');
 
+        $stopReason = StreamRecorderObserver::resolveFixtureStopReason(
+            $result->stopReason,
+            $recorder->getDeltas(),
+        );
+
         $bytes = $recorder->writeFixture($outputPath, [
             '$schema' => 'TUI journey reply fixture — simple text response for replay-backed TUI E2E',
             'model' => 'llama_cpp_test/test',
@@ -170,7 +185,7 @@ final class ReplayRecordingTest extends \PHPUnit\Framework\TestCase
                 ],
             ],
             'usage' => $result->usage,
-            'stop_reason' => $result->stopReason,
+            'stop_reason' => $stopReason,
             'expected_text' => null,
         ]);
 
@@ -209,6 +224,11 @@ final class ReplayRecordingTest extends \PHPUnit\Framework\TestCase
         $deltas = $recorder->getDeltas();
         $this->assertNotEmpty($deltas, 'Recording should capture at least one delta');
 
+        $stopReason = StreamRecorderObserver::resolveFixtureStopReason(
+            $result->stopReason,
+            $recorder->getDeltas(),
+        );
+
         $bytes = $recorder->writeFixture($outputPath, [
             '$schema' => 'TUI startup snapshot replay fixture — response for auto-submitted --prompt',
             'model' => 'llama_cpp_test/test',
@@ -222,7 +242,7 @@ final class ReplayRecordingTest extends \PHPUnit\Framework\TestCase
                 ],
             ],
             'usage' => $result->usage,
-            'stop_reason' => $result->stopReason,
+            'stop_reason' => $stopReason,
             'expected_text' => null,
         ]);
 

@@ -267,6 +267,70 @@ final class ReplayTest extends \PHPUnit\Framework\TestCase
         }
     }
 
+    // ── resolveFixtureStopReason unit tests (no live LLM) ──────────
+
+    public function testResolveFixtureStopReasonReturnsExplicitValueWhenProvided(): void
+    {
+        $result = StreamRecorderObserver::resolveFixtureStopReason(
+            'tool_call',
+            [['type' => 'text', 'content' => 'hello']],
+        );
+        self::assertSame('tool_call', $result);
+    }
+
+    public function testResolveFixtureStopReasonDetectsToolCallFromDeltas(): void
+    {
+        $result = StreamRecorderObserver::resolveFixtureStopReason(
+            null,
+            [
+                ['type' => 'thinking', 'content' => '...'],
+                ['type' => 'tool_call_start', 'id' => 'call_1', 'name' => 'read'],
+                ['type' => 'tool_input_delta', 'id' => 'call_1', 'name' => 'read', 'partial_json' => '{}'],
+                ['type' => 'tool_call_complete', 'tool_calls' => [['id' => 'call_1', 'name' => 'read', 'arguments' => []]]],
+            ],
+        );
+        self::assertSame('tool_call', $result);
+    }
+
+    public function testResolveFixtureStopReasonReturnsStopForTextOnlyDeltas(): void
+    {
+        $result = StreamRecorderObserver::resolveFixtureStopReason(
+            null,
+            [['type' => 'text', 'content' => 'hello world']],
+        );
+        self::assertSame('stop', $result);
+    }
+
+    public function testResolveFixtureStopReasonReturnsStopForThinkingOnlyDeltas(): void
+    {
+        $result = StreamRecorderObserver::resolveFixtureStopReason(
+            null,
+            [
+                ['type' => 'thinking', 'content' => 'Let me think...'],
+                ['type' => 'thinking_signature', 'content' => 'sig123'],
+            ],
+        );
+        self::assertSame('stop', $result);
+    }
+
+    public function testResolveFixtureStopReasonReturnsStopForEmptyDeltas(): void
+    {
+        $result = StreamRecorderObserver::resolveFixtureStopReason(null, []);
+        self::assertSame('stop', $result);
+    }
+
+    public function testResolveFixtureStopReasonReturnsStopForMixedTextAndThinking(): void
+    {
+        $result = StreamRecorderObserver::resolveFixtureStopReason(
+            null,
+            [
+                ['type' => 'thinking', 'content' => 'Hmm'],
+                ['type' => 'text', 'content' => 'Hello'],
+            ],
+        );
+        self::assertSame('stop', $result);
+    }
+
     // ─── Helpers ───────────────────────────────────────────────────
 
     /**
