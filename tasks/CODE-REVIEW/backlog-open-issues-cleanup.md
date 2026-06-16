@@ -29,11 +29,11 @@ Connected open issues as of 2026-06-12:
 - Task remains IN-PROGRESS during one-by-one cleanup until user explicitly asks to move forward.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
 Fork run: 1mmxafbml49u
-PR URL: https://github.com/ineersa/agent-core/pull/140
+PR URL: https://github.com/ineersa/agent-core/pull/149
 PR Status: open
 Started: 2026-06-12T16:54:23.580Z
 Completed:
@@ -423,3 +423,12 @@ Castor Check Output SHA256: 8402952e60f19af97d70af3c9bd816e632c7b0adb64c7eea53f5
 - Recorded fork run: 1mmxafbml49u
 - Validation: Initial LLM_MODE=true castor check failed at test step with `Could not open input file: vendor/bin/paratest`.; composer install restored missing vendor/bin/paratest in worktree.; LLM_MODE=true castor check after composer install: PASS, all 6 steps OK in 68.6s (deptrac, test, test:controller-replay, test:tui, phpstan, cs-check).; castor test --filter=TranscriptProjectorTest: PASS, 72 tests / 266 assertions.; Parent verification: git status clean; origin/main...HEAD = 0 behind / 2 ahead; HEAD 2c782e95b pushed to origin/task/backlog-open-issues-cleanup.
 - Summary: Fork 1mmxafbml49u investigated reported castor check failure. Root cause was environmental: worktree vendor directory was missing brianium/paratest / vendor/bin/paratest, so castor test failed immediately with `Could not open input file: vendor/bin/paratest`. Fork ran composer install in the worktree to restore vendor/bin/paratest; no code changes were needed for this failure. Branch was rebased and force-pushed; #124 fix hash is now 30ecfdb56 and --sequential cleanup hash is now 2c782e95b. Parent verified branch is clean, 0 behind / 2 ahead of origin/main.
+
+## Task workflow update - 2026-06-16T16:46:12.101Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Running deterministic castor check in worktree (timeout 900s)...
+- castor check passed (14.5s).
+- Pushed task/backlog-open-issues-cleanup to origin.
+- branch 'task/backlog-open-issues-cleanup' set up to track 'origin/task/backlog-open-issues-cleanup'.
+- Created PR: https://github.com/ineersa/agent-core/pull/149
+- Validation: Fork 1mmxafbml49u: LLM_MODE=true castor check OK, all 6 steps passed in 68.6s.; Branch was clean and 0 behind / 2 ahead of origin/main before task metadata update; move_task CODE-REVIEW requested with 900s Castor gate timeout.
