@@ -218,6 +218,40 @@ final class TranscriptProjectionState
     }
 
     /**
+     * Remove ToolCall blocks whose tool_call_id has no matching ToolResult
+     * block, cleaning up orphaned/phantom entries that were never executed.
+     *
+     * Common in parallel LLM responses where multiple non-empty tool calls
+     * are emitted but only one is actually accepted for execution.
+     */
+    public function removeOrphanedToolCallBlocks(): void
+    {
+        $executedIds = [];
+
+        foreach ($this->blocks as $block) {
+            if (TranscriptBlockKindEnum::ToolResult === $block->kind) {
+                $executedIds[] = $block->meta['tool_call_id'] ?? '';
+            }
+        }
+
+        // Nothing executed yet — keep all ToolCall blocks.
+        if ([] === $executedIds) {
+            return;
+        }
+
+        foreach ($this->blocks as $id => $block) {
+            if (TranscriptBlockKindEnum::ToolCall !== $block->kind) {
+                continue;
+            }
+
+            $callId = $block->meta['tool_call_id'] ?? '';
+            if ('' !== $callId && !\in_array($callId, $executedIds, true)) {
+                $this->removeBlock($id);
+            }
+        }
+    }
+
+    /**
      * Finalize all streaming blocks belonging to a given message.
      */
     /**

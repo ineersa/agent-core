@@ -534,6 +534,144 @@ final class TranscriptProjectorTest extends TestCase
         $this->assertFalse($blocks[1]->streaming);
     }
 
+    // ── Orphan cleanup ───────────────────────────────────────────────────────
+
+    public function testTurnStartedRemovesOrphanedToolCallBlocks(): void
+    {
+        // Simulate a parallel LLM response: three ToolCall blocks but only
+        // one was actually executed (has a matching ToolResult).
+        $this->accept('tool_call.started', [
+            'tool_call_id' => 'tc_a', 'tool_name' => 'bash',
+        ]);
+        $this->accept('tool_call.arguments_completed', [
+            'tool_call_id' => 'tc_a', 'tool_name' => 'bash',
+            'arguments' => ['command' => 'ls'],
+        ]);
+        $this->accept('tool_call.started', [
+            'tool_call_id' => 'tc_b', 'tool_name' => 'read',
+        ]);
+        $this->accept('tool_call.arguments_completed', [
+            'tool_call_id' => 'tc_b', 'tool_name' => 'read',
+            'arguments' => ['path' => '/tmp/x'],
+        ]);
+
+        // Only tc_a was executed — tc_b is an orphan (the LLM emitted it
+        // but the runtime rejected/ignored it).
+        $this->accept('tool_execution.started', [
+            'tool_call_id' => 'tc_a', 'tool_name' => 'bash',
+        ]);
+        $this->accept('tool_execution.completed', [
+            'tool_call_id' => 'tc_a', 'result' => 'file.txt',
+        ]);
+
+        // Before TurnStarted, both ToolCall blocks still exist.
+        $this->assertCount(3, $this->projector->blocks());
+
+        // TurnStarted triggers orphan cleanup.
+        $this->accept('turn.started', ['turn_no' => 2]);
+
+        // Only the executed ToolCall and its ToolResult remain.
+        $blocks = $this->projector->blocks();
+        $this->assertCount(2, $blocks,
+            'Orphaned ToolCall block without matching ToolResult must be removed');
+        $this->assertSame('tool_call_tc_a', $blocks[0]->id);
+        $this->assertSame('tool_result_tc_a', $blocks[1]->id);
+    }
+
+    public function testTurnStartedKeepsMultipleExecutedToolCalls(): void
+    {
+        // Two tool calls, both executed — neither is orphaned.
+        $this->accept('tool_call.started', [
+            'tool_call_id' => 'tc_1', 'tool_name' => 'bash',
+        ]);
+        $this->accept('tool_call.arguments_completed', [
+            'tool_call_id' => 'tc_1', 'tool_name' => 'bash',
+            'arguments' => ['command' => 'ls'],
+        ]);
+        $this->accept('tool_call.started', [
+            'tool_call_id' => 'tc_2', 'tool_name' => 'read',
+        ]);
+        $this->accept('tool_call.arguments_completed', [
+            'tool_call_id' => 'tc_2', 'tool_name' => 'read',
+            'arguments' => ['path' => '/tmp/x'],
+        ]);
+
+        // Both executed.
+        $this->accept('tool_execution.started', [
+            'tool_call_id' => 'tc_1', 'tool_name' => 'bash',
+        ]);
+        $this->accept('tool_execution.completed', [
+            'tool_call_id' => 'tc_1', 'result' => 'ok',
+        ]);
+        $this->accept('tool_execution.started', [
+            'tool_call_id' => 'tc_2', 'tool_name' => 'read',
+        ]);
+        $this->accept('tool_execution.completed', [
+            'tool_call_id' => 'tc_2', 'result' => 'data',
+        ]);
+
+        $this->assertCount(4, $this->projector->blocks());
+
+        $this->accept('turn.started', ['turn_no' => 2]);
+
+        $blocks = $this->projector->blocks();
+        $this->assertCount(4, $blocks,
+            'Both executed ToolCall blocks plus their ToolResults must remain');
+    }
+
+    public function testOrphanCleanupDoesNotRemoveToolCallWhenNoToolResultsExist(): void
+    {
+        // ToolCall exists but no ToolResult yet (mid-stream) — must not
+        // remove the ToolCall block prematurely.
+        $this->accept('tool_call.started', [
+            'tool_call_id' => 'tc_streaming', 'tool_name' => 'bash',
+        ]);
+        $this->accept('tool_call.arguments_completed', [
+            'tool_call_id' => 'tc_streaming', 'tool_name' => 'bash',
+            'arguments' => ['command' => 'ls'],
+        ]);
+
+        // No tool_execution events yet — no ToolResult blocks.
+        $this->accept('turn.started', ['turn_no' => 1]);
+
+        // ToolCall block must survive because no ToolResult exists to
+        // drive the orphan check.
+        $this->assertCount(1, $this->projector->blocks());
+        $this->assertSame('tool_call_tc_streaming', $this->projector->blocks()[0]->id);
+    }
+
+    public function testRunCompletedRemovesOrphanedToolCalls(): void
+    {
+        $this->accept('tool_call.started', [
+            'tool_call_id' => 'tc_orphan', 'tool_name' => 'read',
+        ]);
+        $this->accept('tool_call.arguments_completed', [
+            'tool_call_id' => 'tc_orphan', 'tool_name' => 'read',
+            'arguments' => ['path' => '/tmp/x'],
+        ]);
+        $this->accept('tool_call.started', [
+            'tool_call_id' => 'tc_valid', 'tool_name' => 'bash',
+        ]);
+        $this->accept('tool_call.arguments_completed', [
+            'tool_call_id' => 'tc_valid', 'tool_name' => 'bash',
+            'arguments' => ['command' => 'ls'],
+        ]);
+        $this->accept('tool_execution.started', [
+            'tool_call_id' => 'tc_valid', 'tool_name' => 'bash',
+        ]);
+        $this->accept('tool_execution.completed', [
+            'tool_call_id' => 'tc_valid', 'result' => 'done',
+        ]);
+
+        $this->accept('run.completed', ['reason' => 'completed']);
+
+        $blocks = $this->projector->blocks();
+        $this->assertCount(2, $blocks,
+            'RunCompleted must remove orphaned ToolCall block');
+        $this->assertSame('tool_call_tc_valid', $blocks[0]->id);
+        $this->assertSame('tool_result_tc_valid', $blocks[1]->id);
+    }
+
     // ── Tool execution lifecycle ─────────────────────────────────────────────
 
     public function testToolExecutionStartedCreatesResultBlock(): void

@@ -18,14 +18,24 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
     public static function getSubscribedEvents(): array
     {
         return [
+            // Tool call streaming
             RuntimeEventTypeEnum::ToolCallStarted->value => 'onToolCallStarted',
             RuntimeEventTypeEnum::ToolCallArgumentsDelta->value => 'onToolCallArgumentsDelta',
             RuntimeEventTypeEnum::ToolCallArgumentsCompleted->value => 'onToolCallArgumentsCompleted',
+            // Tool execution
             RuntimeEventTypeEnum::ToolExecutionStarted->value => 'onToolExecutionStarted',
             RuntimeEventTypeEnum::ToolExecutionOutputDelta->value => 'onToolExecutionOutputDelta',
             RuntimeEventTypeEnum::ToolExecutionCompleted->value => 'onToolExecutionCompleted',
             RuntimeEventTypeEnum::ToolExecutionFailed->value => 'onToolExecutionFailed',
             RuntimeEventTypeEnum::ToolExecutionCancelled->value => 'onToolExecutionCancelled',
+            // Orphan cleanup: remove ToolCall blocks whose tool_call_id
+            // was never executed (common in parallel LLM responses where
+            // the LLM emits multiple non-empty tool calls but the runtime
+            // only accepts one).
+            RuntimeEventTypeEnum::TurnStarted->value => 'onTurnStarted',
+            RuntimeEventTypeEnum::RunCompleted->value => 'onRunCompleted',
+            RuntimeEventTypeEnum::RunFailed->value => 'onRunFailed',
+            RuntimeEventTypeEnum::RunCancelled->value => 'onRunCancelled',
         ];
     }
 
@@ -227,5 +237,36 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
         $text = $timedOut ? 'Timed out' : 'Cancelled';
 
         $state->upsertToolResultBlock($blockId, $event->runId(), $text, $meta, false);
+    }
+
+    // ── Orphan cleanup ───────────────────────────────────────────────────────
+
+    /**
+     * Remove orphaned ToolCall blocks at the start of a new turn.
+     *
+     * After tool execution completes for a turn, any remaining ToolCall
+     * blocks without a matching ToolResult represent calls that the LLM
+     * emitted but the runtime never executed (e.g. parallel placeholder
+     * calls).  Cleaning them at TurnStarted ensures they are gone before
+     * the next turn's content appears.
+     */
+    public function onTurnStarted(TranscriptProjectionEvent $event): void
+    {
+        $event->state->removeOrphanedToolCallBlocks();
+    }
+
+    public function onRunCompleted(TranscriptProjectionEvent $event): void
+    {
+        $event->state->removeOrphanedToolCallBlocks();
+    }
+
+    public function onRunFailed(TranscriptProjectionEvent $event): void
+    {
+        $event->state->removeOrphanedToolCallBlocks();
+    }
+
+    public function onRunCancelled(TranscriptProjectionEvent $event): void
+    {
+        $event->state->removeOrphanedToolCallBlocks();
     }
 }
