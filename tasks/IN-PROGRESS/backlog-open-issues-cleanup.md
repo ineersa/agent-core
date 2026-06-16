@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: 1mmxafbml49u
+Fork run: mm5dp9nqi83i
 PR URL: https://github.com/ineersa/agent-core/pull/149
 PR Status: open
 Started: 2026-06-12T16:54:23.580Z
@@ -443,3 +443,7 @@ Castor Check Output SHA256: 8402952e60f19af97d70af3c9bd816e632c7b0adb64c7eea53f5
 
 ## Task workflow update - 2026-06-16T17:05:28.339Z
 - Summary: User approved implementing issue #125 while compat context is fresh. User explicitly said supportsDeveloperRole is known/fine and should be skipped for now. Implementation should add missing provider compat behavior to LLM adapter/config path, using pi-mono as reference and adding tests/fixtures as appropriate (possibly yoinked/adapted from pi-mono).
+
+## Task workflow update - 2026-06-16T17:22:08.190Z
+- Recorded fork run: mm5dp9nqi83i
+- Summary: Fork mm5dp9nqi83i implemented #125 compat commit 8c1a7f342 and validation was green. Parent verification found branch clean, 0 behind / 1 ahead. However parent spotted a correctness issue before accepting: new DeepSeekCompatConvertHook applies `thinking: ''` globally whenever ANY configured model/provider requires reasoning_content, not based on the current resolved model. Because `.hatfield/settings.yaml` now includes DeepSeek compat, this can add Thinking/reasoning_content to assistant messages for non-DeepSeek providers too. Also `max_tokens_field` was added as config/docs but is not actually consumed, contrary to the 'actually implement compat flags' goal. Launching continuation fork to fix these before user validation/PR.
