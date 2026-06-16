@@ -568,3 +568,6 @@ Castor Check Output SHA256: 8402952e60f19af97d70af3c9bd816e632c7b0adb64c7eea53f5
 
 ## Task workflow update - 2026-06-16T22:16:05.675Z
 - Summary: Post-handoff sync: #127 fix branch was rebased onto latest origin/main and force-pushed. Current task branch is 0 behind / 1 ahead at 095497494 (`fix(#127): force TUI first-render clear on session switch`).
+
+## Task workflow update - 2026-06-16T22:25:47.629Z
+- Summary: Issue #127 manual validation rejected prior fork result. User-provided live snapshots in `.hatfield/tmp/tui/snapshots` were inspected: `snapshot-ansi-20260616-182036.ansi` exactly shows the bad post-resume display (repeated `● Running…`, orphaned `◇ </think>`, cancellation lines, `· Resumed run 12`, footer only; no clean full TUI repaint/header). The prior `TuiResumeSessionSwitchE2eTest` is invalid/too weak: it waits/asserts against scrollback history (`waitForHistoryContains`, `capturePlainWithHistory`) and a tiny 3-delta fixture, so stale earlier header/transcript/footer text can satisfy the test and it does not prove the current visible pane after `/resume <id>` is clean. Need corrective implementation: rewrite E2E to assert the visible viewport/current ANSI/plain capture after resume, reproduce realistic long/streaming/cancelled resume shape, and fix the actual render/projection behavior until the test fails before fix and passes after.
