@@ -34,7 +34,7 @@ This task should not start until enough of A-F are complete that default QA can 
 Status: IN-PROGRESS
 Branch: task/maint-05g-deterministic-qa-cutover-docs-metrics
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05g-deterministic-qa-cutover-docs-metrics
-Fork run: fl25h2kwzjs5
+Fork run: 2cb8o44hdnmp
 PR URL: https://github.com/ineersa/agent-core/pull/148
 PR Status: open
 Started: 2026-06-16T02:21:32.044Z
@@ -122,3 +122,8 @@ Completed:
 ## Task workflow update - 2026-06-16T15:21:12.612Z
 - Moved CODE-REVIEW → IN-PROGRESS.
 - Summary: Moved back from CODE-REVIEW for user-reported MAINT-05G issues: `castor check` still uses a slow sequential PHPUnit lane despite `castor test` ParaTest taking ~11s, and opt-in `castor test:llm-real` fails with exit code 1 because `ReplayRecordingTest` is included via `#[Group('llm-real')]` and two recording fixture methods skip under strict `--fail-on-all-issues`. Need update check lane to use ParaTest without PHAR and fix live smoke command to exclude recording-only tests.
+
+## Task workflow update - 2026-06-16T15:21:58.749Z
+- Recorded fork run: 2cb8o44hdnmp
+- Validation: Pending fork `2cb8o44hdnmp`: expected validation includes `castor list`, `castor test:llm-real`, `LLM_MODE=true castor check`, `castor test`, `castor phpstan`, `castor cs-check`, and `castor deptrac`, plus targeted rg for stale sequential-check wording.
+- Summary: Launched fork `2cb8o44hdnmp` to fix user-reported MAINT-05G issues: switch `castor check` unit/integration lane from sequential PHPUnit to ParaTest without PHAR while preserving deterministic replay/no-live-LLM gate semantics; fix `castor test:llm-real` failure caused by recording-only tests being selected and skipped under strict `--fail-on-all-issues`; update check/docs/metrics to reflect ParaTest in the gate; validate `castor test:llm-real`, `LLM_MODE=true castor check`, default `castor test`, and standard static/style checks.
