@@ -14,8 +14,10 @@ declare(strict_types=1);
  *   MAINT-05C will introduce deterministic LLM replay mode — these
  *     tasks (or their replay equivalents) will no longer require a
  *     live llama.cpp server for routine QA.
- *   MAINT-05D will add explicit controller/messenger process ownership
- *     contracts so failed E2E tests never leave orphaned consumers.
+ *   MAINT-05D added explicit controller/messenger process ownership
+ *     contracts (ControllerReplayE2eTestCase tracks process groups and
+ *     terminates the entire tree on teardown) and the deterministic
+ *     `test:controller-replay` command.
  *   MAINT-05E will restructure TUI E2E into long-lived journey tests
  *     with far fewer tmux launches; the sharding in here will be
  *     removed when that lands.
@@ -197,7 +199,7 @@ TUI snapshot update complete (exit code %d).
 
 // ─── Controller E2E ──────────────────────────────────────────────
 
-#[AsTask(name: 'test:controller', description: 'Run controller E2E smoke tests')]
+#[AsTask(name: 'test:controller', description: 'Run controller E2E smoke tests (live LLM, opt-in)')]
 function test_controller(): void
 {
     check_llm_generation_ready();
@@ -248,5 +250,54 @@ function test_controller(): void
 
 OK (%.1fs)
 ', $duration);
+    exit(0);
+}
+
+// ─── Controller Replay E2E (deterministic, no live LLM) ──────────
+
+#[AsTask(
+    name: 'test:controller-replay',
+    description: 'Run controller E2E smoke tests with replay fixtures (no live LLM)',
+)]
+function test_controller_replay(): void
+{
+    @mkdir('var/test', 0755, true);
+    $migrate = run_quiet_command(
+        'APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
+    );
+    if (0 !== $migrate->getExitCode()) {
+        fail_quality('test database migration failed: '.$migrate->getErrorOutput());
+    }
+
+    // Controller replay E2E must NOT use PHAR: the test DI replay
+    // factory (ControllerReplayHttpClientFactory in tests/) is wired
+    // through config/services_test.yaml, which requires source-tree
+    // autoload-dev paths.  The PHAR bundles only production autoload
+    // classes.  HATFIELD_BINARY_PATH is intentionally not set here.
+
+    $strictFlags = phpunit_strict_issue_flags();
+    $llmFlags = is_llm_mode() ? ' --colors=never --no-progress --log-junit='.report_path('phpunit-controller-replay.junit.xml') : '';
+
+    $cmd = 'APP_ENV=test '.\PHP_BINARY.' vendor/bin/phpunit'
+        .' --group=controller-replay'
+        .' '.$strictFlags.$llmFlags;
+
+    echo "\n=== Controller Replay E2E (deterministic, no live LLM) ===\n\n";
+
+    $start = hrtime(true);
+    passthru($cmd, $exitCode);
+    $duration = (hrtime(true) - $start) / 1e9;
+
+    if (is_llm_mode()) {
+        $summary = read_suite_junit_summary('controller-replay');
+        if ('' !== $summary) {
+            echo "{$summary}\n";
+        }
+    }
+
+    if (0 !== $exitCode) {
+        fail_quality(sprintf('Controller replay E2E tests failed in %.1fs (exit code %d)', $duration, $exitCode));
+    }
+    echo sprintf('\nOK (%.1fs)\n', $duration);
     exit(0);
 }

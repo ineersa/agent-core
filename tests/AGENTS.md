@@ -28,7 +28,24 @@ Both are available under the `Ineersa\AgentCore\Tests\Support` namespace. See:
 
 ### E2E controller tests
 
-Extend `ControllerE2eTestCase` for headless controller E2E.
+#### Controller replay E2E (default, deterministic)
+
+Extend `ControllerReplayE2eTestCase` for replay-backed controller E2E tests.
+These do NOT require live LLM.  Run with `castor test:controller-replay`.
+
+The replay seam is entirely in the test layer:
+- `ControllerReplayHttpClientFactory` (`tests/CodingAgent/Runtime/Controller/E2E/Replay/`)
+  checks `HATFIELD_LLM_REPLAY_FIXTURE_PATH` and returns a MockHttpClient.
+- `config/services_test.yaml` wires `HttpClientInterface` through the factory.
+- The controller subprocess boots with `APP_ENV=test` so `services_test.yaml`
+  is loaded and `SymfonyAiProviderFactory` receives the injected replay client
+  through its existing constructor DI path.
+- No production code in `src/` checks the replay env var.
+
+#### Controller live E2E (opt-in)
+
+Extend `ControllerE2eTestCase` for headless controller E2E against live LLM.
+These require `LLAMA_CPP_SMOKE_TEST=1`.  Run with `castor test:controller`.
 
 @see `tests/CodingAgent/Runtime/Controller/E2E/ControllerE2eTestCase.php`
 
@@ -79,7 +96,8 @@ Key commands:
 - `castor test --filter=XxxTest` — filter to specific tests (sequential; single DB)
 - `castor test:tui` — TUI E2E tests (`#[Group('tui-e2e')]`)
 - `castor test:llm-real` — real-LLM controller E2E tests (`#[Group('llm-real')]`)
-- `castor test:controller` — controller smoke test
+- `castor test:controller-replay` — controller replay E2E (default, no live LLM)
+- `castor test:controller` — controller smoke test (live LLM, opt-in)
 - `castor llm:fixtures:record` — re-record LLM replay fixtures from live LLM
 - `castor llm:fixtures:info` — list available LLM replay fixtures
 - `castor deptrac` — layer dependency validation

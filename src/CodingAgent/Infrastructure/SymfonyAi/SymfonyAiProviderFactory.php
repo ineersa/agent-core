@@ -78,9 +78,10 @@ class SymfonyAiProviderFactory
      * Return a configured HttpClient for outgoing LLM requests.
      *
      * When an HttpClient is explicitly injected (e.g. test environment
-     * with short timeout via services_test.yaml), use it directly.
-     * Otherwise create a default one with a permissive fallback timeout
-     * so a stuck generation endpoint cannot hang the agent indefinitely.
+     * via services_test.yaml, or by a test replay factory), use it
+     * directly.  Otherwise create a default one with a permissive
+     * fallback timeout so a stuck generation endpoint cannot hang the
+     * agent indefinitely.
      */
     private function getHttpClient(): HttpClientInterface
     {
