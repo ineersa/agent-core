@@ -55,7 +55,8 @@
             "Ineersa\\Hatfield\\ExtensionApi\\": "src/CodingAgent/ExtensionApi/",
             "Ineersa\\Tui\\": "src/Tui/",
             "DoctrineMigrations\\": "migrations/",
-            "Symfony\\AI\\Platform\\Bridge\\OpenAICodex\\": "src/Platform/Bridge/OpenAICodex/"
+            "Symfony\\AI\\Platform\\Bridge\\OpenAICodex\\": "src/Platform/Bridge/OpenAICodex/",
+            "Ineersa\\Platform\\": "src/Platform/"
         }
     },
     "autoload-dev": {
@@ -63,7 +64,8 @@
             "Ineersa\\CodingAgent\\Tests\\": "tests/CodingAgent/",
             "Ineersa\\AgentCore\\Tests\\": "tests/AgentCore/",
             "Ineersa\\Tui\\Tests\\": "tests/Tui/",
-            "Symfony\\AI\\Platform\\Bridge\\OpenAICodex\\Tests\\": "tests/Platform/Bridge/OpenAICodex/"
+            "Symfony\\AI\\Platform\\Bridge\\OpenAICodex\\Tests\\": "tests/Platform/Bridge/OpenAICodex/",
+            "Ineersa\\Platform\\Tests\\": "tests/Platform/"
         }
     },
     "minimum-stability": "dev",

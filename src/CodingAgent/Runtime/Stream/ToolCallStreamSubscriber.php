@@ -52,6 +52,13 @@ final class ToolCallStreamSubscriber implements EventSubscriberInterface
         \assert($delta instanceof ToolCallStart);
         $event->handled = true;
 
+        // The durable converter already suppresses empty-id starts at the
+        // conversion layer.  Keep this guard as defense-in-depth in case
+        // a future provider path bypasses DurableResultConverter.
+        if ('' === $delta->getId()) {
+            return;
+        }
+
         $this->emit(
             $event->runId, $event->stepId,
             RuntimeEventTypeEnum::ToolCallStarted,
@@ -72,6 +79,15 @@ final class ToolCallStreamSubscriber implements EventSubscriberInterface
         $delta = $event->delta;
         \assert($delta instanceof ToolInputDelta);
         $event->handled = true;
+
+        // Suppress argument deltas with empty tool-call ids.
+        // These can occur when the provider sends argument chunks at
+        // a stream index that never received an id-bearing chunk.
+        // The durable converter prevents these at the conversion layer;
+        // this guard is defense-in-depth.
+        if ('' === $delta->getId()) {
+            return;
+        }
 
         $this->emit(
             $event->runId, $event->stepId,
