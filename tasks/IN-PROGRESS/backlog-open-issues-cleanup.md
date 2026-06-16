@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: 7krbp30ifo6t
+Fork run: b7hv74mgr6r4
 PR URL: https://github.com/ineersa/agent-core/pull/150
 PR Status: open
 Started: 2026-06-12T16:54:23.580Z
@@ -481,3 +481,8 @@ Castor Check Output SHA256: 8402952e60f19af97d70af3c9bd816e632c7b0adb64c7eea53f5
 ## Task workflow update - 2026-06-16T18:25:33.769Z
 - Moved CODE-REVIEW → IN-PROGRESS.
 - Summary: User reported that issue #124 still reproduces on main after manual testing (session 26) and that `castor phar:build` also fails. Moving PR #150 task back to IN-PROGRESS to investigate/fix these regressions on the current task branch before returning to code review.
+
+## Task workflow update - 2026-06-16T19:05:59.084Z
+- Recorded fork run: b7hv74mgr6r4
+- Validation: Fork reported castor test --filter=TranscriptProjectorTest: PASS, 76 tests / 277 assertions.; Fork reported castor deptrac: PASS, 0 violations.; Fork reported castor phpstan: PASS, 0 errors.; Fork reported castor cs-check: PASS, clean.; Fork reported LLM_MODE=true castor check: PASS, all 6 steps green in 39.7s.; Fork reported castor phar:clean && castor phar:build: PASS, builds + smoke tests pass.; Fork did not run castor test:llm-real; fork rationale: projection-layer only, not provider/LLM-visible.; Parent verification: git status clean; origin/main...HEAD = 0 behind / 3 ahead; HEAD 489f058e7.
+- Summary: Fork b7hv74mgr6r4 fixed two reported regressions in commit 489f058e7: `castor phar:build` now delegates to CastorTasks\phar_build() instead of nonexistent `bin/console phar:build`, and #124 gets additional orphan ToolCall block cleanup on TurnStarted/RunCompleted/RunFailed/RunCancelled for non-empty streamed tool-call placeholders that never receive matching ToolResult blocks. Fork found user-cited session 26 absent and inspected corrected session 22: canonical events are clean (single tool per turn, no canonical tool_call transient events), suggesting stale PHAR likely contributed because PHAR rebuild was broken. Parent verified branch clean, 0 behind / 3 ahead at 489f058e7. However, fork explicitly skipped the mandatory TmuxHarness E2E proof for a TUI projection behavior change; launching a focused continuation fork to add/validate a real TUI E2E if feasible before returning to CODE-REVIEW.
