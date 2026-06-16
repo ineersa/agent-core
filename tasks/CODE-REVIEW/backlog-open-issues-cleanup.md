@@ -393,3 +393,7 @@ Castor Check Output SHA256: 8402952e60f19af97d70af3c9bd816e632c7b0adb64c7eea53f5
 - branch 'task/backlog-open-issues-cleanup' set up to track 'origin/task/backlog-open-issues-cleanup'.
 - Created PR: https://github.com/ineersa/agent-core/pull/140
 - Validation: Fork zmqo2dry2bg3: LLM_MODE=true castor check OK, all 14 steps passed in 300.3s.; Branch rebased onto origin/main after metadata update; origin/main...HEAD = 0 behind / 7 ahead.; move_task CODE-REVIEW requested with 900s Castor gate timeout.
+
+## Task workflow update - 2026-06-16T16:09:16.378Z
+- Validation: gh issue view 124: OPEN, title 'Read + parallel bug?', body references session #16 in main agent and repeated read/bash TUI entries.
+- Summary: Started investigation of GitHub issue #124 ('Read + parallel bug?') while PR #140 remains in review. User wants scout-only investigation first to determine whether repeated TUI tool call entries are a TUI rendering/projection glitch, broken parallel tool execution, or something else. Issue notes: in TUI sometimes 3-4 read/bash executions appear, but only one seems to run / only one has full command; logs may exist for session #16 in main agent.
