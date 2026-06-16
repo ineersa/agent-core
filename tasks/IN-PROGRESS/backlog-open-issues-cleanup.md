@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: fmu92qlw47jf
+Fork run: 7s5i3m345izj
 PR URL: https://github.com/ineersa/agent-core/pull/150
 PR Status: open
 Started: 2026-06-12T16:54:23.580Z
@@ -536,3 +536,8 @@ Castor Check Output SHA256: 8402952e60f19af97d70af3c9bd816e632c7b0adb64c7eea53f5
 
 ## Task workflow update - 2026-06-16T20:42:56.001Z
 - Summary: User requested next follow-up: make `read` tool eligible for parallel execution and investigate/fix session 14 apparent hang while inspecting issue #127 (`bash grep/sed vendor/symfony/tui/Terminal.php` stuck at `Running…`). User also asked for some automated proof that parallel execution works.
+
+## Task workflow update - 2026-06-16T20:54:35.801Z
+- Recorded fork run: 7s5i3m345izj
+- Validation: Fork reported castor test --filter=ToolBatchCollectorTest: PASS 4/4.; Fork reported castor test --filter=ReadFileToolTest: PASS 40/40.; Fork reported castor test --filter=CodingAgentToolSetResolverTest: PASS 5/5.; Fork reported castor deptrac: PASS 0 violations.; Fork reported castor phpstan: PASS 0 errors.; Fork reported castor cs-check: PASS clean.; Fork reported LLM_MODE=true castor check: PASS 6/6 in 44.1s, 2554 tests / 7483 assertions.; Fork reported castor phar:build: PASS PHAR smoke OK.; Parent verification before metadata update: git status clean; origin/main...HEAD = 0 behind / 9 ahead at 56a96b0be.
+- Summary: Fork 7s5i3m345izj completed read-tool parallel execution follow-up in commit 56a96b0be. `ReadFileTool` is now registered with `ToolExecutionMode::Parallel`; `bash`, `edit`, `write`, and bg process/status tools remain sequential. Added focused ToolBatchCollector tests proving two parallel calls dispatch immediately up to max_parallelism, while a sequential tool acts as a barrier and blocks later parallel calls until in-flight work clears. Updated ReadFileToolTest to assert parallel mode. Session 14 hang was investigated and diagnosed as provider/HTTP hang rather than tool execution bug: turn 35 completed tool execution and committed batch; turn 36 advanced to another LLM step, state remains `running` with no streaming and no pending tool calls; messenger `llm_14` message was delivered but unacknowledged; llm consumer PID was sleeping in HTTP wait with minimal CPU. User recovery path: stop/restart that live controller/consumer or kill the stuck llm consumer to retry the message; separate follow-up may be needed to enforce/provider-timeout z.ai hangs if default timeout is not taking effect. Parent verification before metadata update: branch clean, 0 behind / 9 ahead at 56a96b0be.
