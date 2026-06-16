@@ -159,6 +159,18 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
             ],
             streaming: true,
         ));
+
+        // Remove still-streaming phantom ToolCall blocks now that a
+        // concrete tool is known to be executing.  This handles the case
+        // where the LLM emitted ToolCallStart for a tool that never
+        // appeared in ToolCallComplete (e.g. «read...» visible alongside
+        // the actual completed «bash(command: ...)»).
+        //
+        // Only streaming blocks are removed — finalized (non-streaming)
+        // blocks that await execution are safe to keep; the full orphan
+        // sweep runs at TurnStarted after all tools in the batch have
+        // executed or been dropped.
+        $state->removePhantomStreamingToolCallBlocks();
     }
 
     public function onToolExecutionOutputDelta(TranscriptProjectionEvent $event): void
