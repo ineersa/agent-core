@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: fpsluhjjihag
+Fork run: d3orcvl351th
 PR URL: https://github.com/ineersa/agent-core/pull/150
 PR Status: open
 Started: 2026-06-12T16:54:23.580Z
@@ -523,3 +523,8 @@ Castor Check Output SHA256: 8402952e60f19af97d70af3c9bd816e632c7b0adb64c7eea53f5
 
 ## Task workflow update - 2026-06-16T20:33:13.473Z
 - Summary: Scout inspected session 14 canonical artifacts. Verdict: durable converter worked — multi-tool turns are canonical, not TUI phantoms. Session 14 had 27 turns, 38 total tool calls, including turn 1 with `bash(gh issue view 127)` + `read(task-workflow/SKILL.md)` in the same `llm_step_completed`; all 38 had matching `tool_execution_start`, `tool_call_result_received`, and `tool_execution_end`; zero errors/orphans/dropped calls. However execution is sequential only: events show mode `sequential`, `ToolBatchCollector::dispatchableCalls()` enforces one in-flight sequential tool, and result timestamps complete in order. `tool_execution_start` events are declarative/pre-dispatch batch events emitted together by LlmStepResultHandler, so identical start timestamps do not prove actual parallel execution.
+
+## Task workflow update - 2026-06-16T20:35:05.114Z
+- Recorded fork run: d3orcvl351th
+- Validation: Fork reported castor test --filter=ProviderCompatibilityRequestShaperTest: PASS 7/7.; Fork reported castor test --filter=ReasoningContentFeatureShaperTest: PASS 9/9.; Fork reported castor test: PASS 2552/2552.; Fork reported castor deptrac: PASS 0 violations.; Fork reported castor phpstan: PASS 0 errors.; Fork reported castor cs-check: PASS clean.; Fork reported LLM_MODE=true castor check: PASS 6/6 in 41.5s.; Fork reported castor phar:build: PASS PHAR smoke OK.; Not run by fork: castor test:llm-real (noted as optional by fork, but provider compat path changed so follow-up validation is recommended).; Parent verification: git status clean; origin/main...HEAD = 2 behind / 8 ahead at 1a39b0b8e.
+- Summary: Fork d3orcvl351th completed the #125 compat architecture simplification in commit 1a39b0b8e. Current design now matches user review: CodingAgent resolves a simple `list<string>` of compat features plus precomputed reasoning options in SessionAwareModelResolver, carries them through `ResolvedModel`, and ModelResolverRoutingSubscriber stores them in internal provider request option keys. AgentCore ProviderCompatibilityRequestShaper has no resolver/DTO dependency; it reads feature list from options, runs tagged feature shapers before normal before-provider hooks, and strips internal keys. Removed over-abstracted ProviderCompatibilityResolverInterface, ProviderCompatibility DTO, ProviderCompatibilityOptionEnum, NullProviderCompatibilityResolver, HatfieldProviderCompatibilityResolver, and old CodingAgent shapers. Added AgentCore shapers: ZaiToolStreamFeatureShaper, ReasoningContentFeatureShaper, ReasoningOptionsFeatureShaper. Preserved #124 durable streaming converter commits. Parent verification: branch clean at 1a39b0b8e, but branch is currently 2 behind origin/main because parent task metadata commits landed after the fork; needs rebase before PR/merge. Fork did not run `castor test:llm-real` despite requested provider-compat validation; should run as follow-up or manually before CODE-REVIEW.
