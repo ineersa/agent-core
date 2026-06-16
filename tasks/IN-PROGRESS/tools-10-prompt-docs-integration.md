@@ -40,7 +40,7 @@ Out of scope:
 Status: IN-PROGRESS
 Branch: task/tools-10-prompt-docs-integration
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-10-prompt-docs-integration
-Fork run: ptb2g46gdcoo
+Fork run: h90mpyxp2471
 PR URL:
 PR Status:
 Started: 2026-06-16T22:05:47.991Z
@@ -110,3 +110,7 @@ Completed:
 ## Task workflow update - 2026-06-16T23:22:00.287Z
 - Validation: Official CODE-REVIEW transition attempt: FAILED due to deterministic `castor check` phpstan lane only (`quality failed: - phpstan: exit code 1`).; Task status after failed transition: still `tasks/IN-PROGRESS/tools-10-prompt-docs-integration.md`; no PR created.; Checkouts after failed transition: integration `main...origin/main` clean; worktree `task/tools-10-prompt-docs-integration` clean.
 - Summary: Attempted official `move_task(to=CODE-REVIEW)` after reviewer approval and focused validation. The automatic deterministic `castor check` gate failed only on `phpstan` (exit code 1), so the task remains IN-PROGRESS and no PR was created. Worktree and integration checkout are clean. Gate output: `quality failed: - phpstan: exit code 1`. `var/reports/check-phpstan.log` shows the same known unrelated/mainline failure: `src/Platform/Bridge/Generic/DurableResultConverter.php:146` instantiates/throws missing `Symfony\AI\Platform\Exception\IncompleteStreamException` (2 file_errors).
+
+## Task workflow update - 2026-06-16T23:32:49.913Z
+- Recorded fork run: h90mpyxp2471
+- Summary: Launched fork `h90mpyxp2471` per user request to fix the remaining CODE-REVIEW gate PHPStan blocker without relaunching reviewer. Fork scope: investigate/replace missing `Symfony\AI\Platform\Exception\IncompleteStreamException` in `src/Platform/Bridge/Generic/DurableResultConverter.php` with an appropriate existing exception while preserving behavior, add/update focused tests only if needed, run `castor phpstan`, focused test(s) if applicable, and `castor cs-check`, then commit. Explicitly instructed not to move task, push, create PR, or run reviewer.
