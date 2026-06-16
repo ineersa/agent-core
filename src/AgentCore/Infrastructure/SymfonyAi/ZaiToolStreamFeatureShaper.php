@@ -15,7 +15,7 @@ use Ineersa\AgentCore\Domain\Model\ProviderRequest;
  */
 final readonly class ZaiToolStreamFeatureShaper implements ProviderCompatibilityFeatureShaperInterface
 {
-    private const string FEATURE = 'zai_tool_stream';
+    public const string FEATURE = 'zai_tool_stream';
 
     public function supports(array $compatFeatures): bool
     {

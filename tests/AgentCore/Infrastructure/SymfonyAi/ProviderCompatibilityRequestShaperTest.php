@@ -8,6 +8,9 @@ use Ineersa\AgentCore\Contract\ProviderCompatibilityFeatureShaperInterface;
 use Ineersa\AgentCore\Domain\Model\ProviderRequest;
 use Ineersa\AgentCore\Domain\Model\ProviderRequestOptionKeys;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderCompatibilityRequestShaper;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ReasoningContentFeatureShaper;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ReasoningOptionsFeatureShaper;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ZaiToolStreamFeatureShaper;
 use PHPUnit\Framework\TestCase;
 
 final class ProviderCompatibilityRequestShaperTest extends TestCase
@@ -36,7 +39,7 @@ final class ProviderCompatibilityRequestShaperTest extends TestCase
         $shaper = new ProviderCompatibilityRequestShaper([]);
 
         $result = $shaper->shape('test-model', [], [
-            ProviderRequestOptionKeys::COMPAT_FEATURES => ['zai_tool_stream'],
+            ProviderRequestOptionKeys::COMPAT_FEATURES => [ZaiToolStreamFeatureShaper::FEATURE],
         ]);
 
         $this->assertArrayNotHasKey(ProviderRequestOptionKeys::COMPAT_FEATURES, $result['options']);
@@ -52,7 +55,7 @@ final class ProviderCompatibilityRequestShaperTest extends TestCase
         $pipeline = new ProviderCompatibilityRequestShaper([$shaper]);
 
         $result = $pipeline->shape('glm-5.1', [], [
-            ProviderRequestOptionKeys::COMPAT_FEATURES => ['zai_tool_stream'],
+            ProviderRequestOptionKeys::COMPAT_FEATURES => [ZaiToolStreamFeatureShaper::FEATURE],
         ]);
 
         $this->assertArrayHasKey('tool_stream', $result['options']);
@@ -78,7 +81,7 @@ final class ProviderCompatibilityRequestShaperTest extends TestCase
         $shaperB = new class implements ProviderCompatibilityFeatureShaperInterface {
             public function supports(array $compatFeatures): bool
             {
-                return \in_array('requires_reasoning_content_on_assistant', $compatFeatures, true);
+                return \in_array(ReasoningContentFeatureShaper::FEATURE, $compatFeatures, true);
             }
 
             public function shape(
@@ -95,8 +98,8 @@ final class ProviderCompatibilityRequestShaperTest extends TestCase
 
         $result = $pipeline->shape('test-model', [], [
             ProviderRequestOptionKeys::COMPAT_FEATURES => [
-                'zai_tool_stream',
-                'requires_reasoning_content_on_assistant',
+                ZaiToolStreamFeatureShaper::FEATURE,
+                ReasoningContentFeatureShaper::FEATURE,
             ],
         ]);
 
@@ -131,7 +134,7 @@ final class ProviderCompatibilityRequestShaperTest extends TestCase
         $reasoningShaper = new class implements ProviderCompatibilityFeatureShaperInterface {
             public function supports(array $compatFeatures): bool
             {
-                return \in_array('reasoning', $compatFeatures, true);
+                return \in_array(ReasoningOptionsFeatureShaper::FEATURE, $compatFeatures, true);
             }
 
             public function shape(
@@ -155,7 +158,7 @@ final class ProviderCompatibilityRequestShaperTest extends TestCase
         $pipeline = new ProviderCompatibilityRequestShaper([$reasoningShaper]);
 
         $result = $pipeline->shape('glm-5.1', [], [
-            ProviderRequestOptionKeys::COMPAT_FEATURES => ['reasoning'],
+            ProviderRequestOptionKeys::COMPAT_FEATURES => [ReasoningOptionsFeatureShaper::FEATURE],
             ProviderRequestOptionKeys::REASONING_OPTIONS => ['enable_thinking' => true],
         ]);
 
@@ -170,7 +173,7 @@ final class ProviderCompatibilityRequestShaperTest extends TestCase
  */
 final readonly class ZaiToolStreamFeatureShaperTest implements ProviderCompatibilityFeatureShaperInterface
 {
-    private const string FEATURE = 'zai_tool_stream';
+    public const string FEATURE = ZaiToolStreamFeatureShaper::FEATURE;
 
     public function supports(array $compatFeatures): bool
     {

@@ -19,7 +19,7 @@ use Symfony\AI\Platform\Message\MessageBag;
  */
 final readonly class ReasoningContentFeatureShaper implements ProviderCompatibilityFeatureShaperInterface
 {
-    private const string FEATURE = 'requires_reasoning_content_on_assistant';
+    public const string FEATURE = 'requires_reasoning_content_on_assistant';
 
     public function supports(array $compatFeatures): bool
     {

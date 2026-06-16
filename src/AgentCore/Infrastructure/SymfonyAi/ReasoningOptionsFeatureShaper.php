@@ -21,7 +21,7 @@ use Ineersa\AgentCore\Domain\Model\ProviderRequestOptionKeys;
  */
 final readonly class ReasoningOptionsFeatureShaper implements ProviderCompatibilityFeatureShaperInterface
 {
-    private const string FEATURE = 'reasoning';
+    public const string FEATURE = 'reasoning';
 
     public function supports(array $compatFeatures): bool
     {

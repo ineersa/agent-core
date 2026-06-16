@@ -21,7 +21,7 @@ final class ReasoningContentFeatureShaperTest extends TestCase
 {
     private ReasoningContentFeatureShaper $shaper;
 
-    private const DEEPSEEK_FEATURES = ['requires_reasoning_content_on_assistant'];
+    private const DEEPSEEK_FEATURES = [ReasoningContentFeatureShaper::FEATURE];
 
     protected function setUp(): void
     {

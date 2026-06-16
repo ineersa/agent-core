@@ -8,6 +8,9 @@ use Ineersa\AgentCore\Contract\Model\ModelResolverInterface;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelResolutionOptions;
 use Ineersa\AgentCore\Domain\Model\ResolvedModel;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ReasoningContentFeatureShaper;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ReasoningOptionsFeatureShaper;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ZaiToolStreamFeatureShaper;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Symfony\AI\Platform\Message\MessageBag;
@@ -67,8 +70,8 @@ final class SessionAwareModelResolver implements ModelResolverInterface
             $reasoningOptions = $this->resolveReasoningOptions($modelRef, $reasoning);
 
             // Always pass 'reasoning' in compat features when reasoning is active.
-            if ([] !== $reasoningOptions && !\in_array('reasoning', $compatFeatures, true)) {
-                $compatFeatures[] = 'reasoning';
+            if ([] !== $reasoningOptions && !\in_array(ReasoningOptionsFeatureShaper::FEATURE, $compatFeatures, true)) {
+                $compatFeatures[] = ReasoningOptionsFeatureShaper::FEATURE;
             }
 
             return new ResolvedModel(
@@ -105,11 +108,11 @@ final class SessionAwareModelResolver implements ModelResolverInterface
         $features = [];
 
         if ($compat->zaiToolStream) {
-            $features[] = 'zai_tool_stream';
+            $features[] = ZaiToolStreamFeatureShaper::FEATURE;
         }
 
         if ($compat->requiresReasoningContentOnAssistantMessages) {
-            $features[] = 'requires_reasoning_content_on_assistant';
+            $features[] = ReasoningContentFeatureShaper::FEATURE;
         }
 
         return $features;
@@ -122,7 +125,7 @@ final class SessionAwareModelResolver implements ModelResolverInterface
      * Uses {@see ReasoningOptionsResolver} to produce options such as
      * {@code enable_thinking}, {@code reasoning_effort}, {@code thinking.type}.
      * This is done in CodingAgent where the catalog is available; AgentCore's
-     * {@see \Ineersa\AgentCore\Infrastructure\SymfonyAi\ReasoningOptionsFeatureShaper}
+     * {@see ReasoningOptionsFeatureShaper}
      * only merges the result.
      *
      * @return array<string, mixed>
