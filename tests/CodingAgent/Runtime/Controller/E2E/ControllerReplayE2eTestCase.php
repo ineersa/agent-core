@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller\E2E;
 
-use Ineersa\CodingAgent\Tests\Support\FixtureReplayHttpClient;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
-use Symfony\Component\HttpClient\HttpClient;
 
 /**
  * Deterministic controller replay E2E test case.
@@ -15,6 +13,16 @@ use Symfony\Component\HttpClient\HttpClient;
  * controller spawning to use pre-recorded LLM replay fixtures via
  * HATFIELD_LLM_REPLAY_FIXTURE_PATH instead of a live llama.cpp
  * endpoint.
+ *
+ * The replay seam is entirely in the test layer:
+ *   - ControllerReplayHttpClientFactory (tests/) checks the env var
+ *     and returns a MockHttpClient with fixture-driven SSE.
+ *   - config/services_test.yaml wires it as the default HttpClient.
+ *   - The controller subprocess is spawned with APP_ENV=test so
+ *     services_test.yaml is loaded and SymfonyAiProviderFactory
+ *     receives the injected replay client through its existing
+ *     constructor DI path.
+ *   - No production code in src/ checks HATFIELD_LLM_REPLAY_FIXTURE_PATH.
  *
  * Replay tests do NOT require LLAMA_CPP_SMOKE_TEST, llama.cpp on
  * port 9052, or any live AI provider.  They exercise the full
@@ -96,26 +104,38 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
     // ── Process lifecycle with ownership ─────────────────────────
 
     /**
-     * Spawn the controller subprocess in replay mode.
+     * Spawn the controller subprocess in replay mode with APP_ENV=test.
      *
-     * Sets HATFIELD_LLM_REPLAY_FIXTURE_PATH so the test DI container
-     * wires FixtureReplayHttpClient instead of the real HTTP transport.
-     * The controller still boots with APP_ENV=dev (its regular env),
-     * but the services_test.php DI override is applied via the env-var
-     * listener that activates replay when the env var is set.
+     * The subprocess uses APP_ENV=test so config/services_test.yaml is
+     * loaded.  That config wires Symfony\Contracts\HttpClient\HttpClientInterface
+     * through ControllerReplayHttpClientFactory (tests/).  When
+     * HATFIELD_LLM_REPLAY_FIXTURE_PATH is set, the factory returns a
+     * MockHttpClient serving fixture-driven SSE; otherwise it returns
+     * the normal 5s-timeout real HttpClient.
      *
-     * Process group tracking: after spawn we read /proc/<pid>/task/
-     * to discover child PIDs so teardown can kill the entire group.
+     * No production code in src/ checks the replay env var.
+     *
+     * Process group tracking: after spawn we discover child PIDs so
+     * teardown can kill the entire group.
      */
     protected function spawnController(): void
     {
-        [$php, $script] = \Ineersa\CodingAgent\Tests\Support\AgentTestExecutable::command();
+        // Controller replay E2E MUST use the source bin/console, not a
+        // PHAR: the controller boots with APP_ENV=test which loads
+        // config/packages/test/ bundles (e.g. DAMA\DoctrineTestBundle).
+        // These test-only bundles are not included in the PHAR.  Live
+        // controller smoke (castor test:controller, APP_ENV=dev, PHAR)
+        // is unaffected.
+        $php = \PHP_BINARY;
+        $projectDir = \Ineersa\CodingAgent\Tests\Support\ProjectDir::get();
+        $script = $projectDir.'/bin/console';
         \PHPUnit\Framework\Assert::assertFileExists(
             $script, 'Agent executable not found at '.$script,
         );
 
         // Write all replay fixtures to temp files and produce the
-        // semicolon-separated env path expected by the test DI wiring.
+        // semicolon-separated env path consumed by
+        // ControllerReplayHttpClientFactory in services_test.yaml.
         $fixturePaths = [];
         foreach ($this->replayFixtures as $i => $fixture) {
             $fixturePath = $this->tempDir.'/.replay-fixture-'.($i + 1).'.json';
@@ -133,14 +153,21 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
         ];
 
         $env = [
-            'APP_ENV' => 'dev',
+            // APP_ENV=test ensures services_test.yaml is loaded ->
+            // ControllerReplayHttpClientFactory wires the replay
+            // MockHttpClient via Symfony DI.
+            'APP_ENV' => 'test',
             'APP_DEBUG' => '1',
+            // Give the subprocess its own isolated SQLite DB so
+            // migrations run fresh (the parent PHPUnit migrated the
+            // shared test DB already).  The path is relative to
+            // %kernel.project_dir%/var/test/ per config/packages/test/doctrine.yaml.
+            'HATFIELD_TEST_DATABASE_PATH' => 'app_test-replay-'.$this->sessionId.'.sqlite',
             'HATFIELD_RUN_CONTROL_TRANSPORT_DSN' => "doctrine://default?queue_name=run_control_{$this->sessionId}",
             'HATFIELD_LLM_TRANSPORT_DSN' => "doctrine://default?queue_name=llm_{$this->sessionId}",
             'HATFIELD_TOOL_TRANSPORT_DSN' => "doctrine://default?queue_name=tool_{$this->sessionId}",
             'HATFIELD_SESSION_ID' => $this->sessionId,
-            // Replay activation — the test DI wiring checks this env var
-            // and replaces HttpClientInterface with FixtureReplayHttpClient.
+            // Replay activation — consumed by ControllerReplayHttpClientFactory
             'HATFIELD_LLM_REPLAY_FIXTURE_PATH' => implode(';', $fixturePaths),
             // Explicitly NOT setting LLAMA_CPP_SMOKE_TEST.
         ];

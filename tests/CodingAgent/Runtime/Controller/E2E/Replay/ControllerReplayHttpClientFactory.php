@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Infrastructure\SymfonyAi;
+namespace Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\Replay;
 
 use Symfony\Component\HttpClient\HttpClient;
 use Symfony\Component\HttpClient\MockHttpClient;
@@ -10,44 +10,64 @@ use Symfony\Component\HttpClient\Response\MockResponse;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 /**
- * Creates an HttpClient for LLM replay when HATFIELD_LLM_REPLAY_FIXTURE_PATH
- * is set.
+ * Creates an HttpClient for controller replay E2E tests.
  *
- * This is a production-neutral factory: it uses only vendor Symfony
- * components (MockHttpClient, MockResponse) and does not depend on
- * test helpers.  It is safe for use in the controller subprocess
- * (PHP source or PHAR), where test-namespace replay helpers from
- * MAINT-05C may not be autoloaded.
+ * This factory lives in tests/, NOT in production src/.  It is wired
+ * through config/services_test.yaml so that when the controller
+ * subprocess boots with APP_ENV=test, the Symfony DI container
+ * resolves Symfony\Contracts\HttpClient\HttpClientInterface via this
+ * factory.  The existing production code path
+ * (SymfonyAiProviderFactory::getHttpClient()) receives the injected
+ * HttpClient through its constructor — no production env-var branching
+ * needed.
  *
  * Activation:
  *   HATFIELD_LLM_REPLAY_FIXTURE_PATH=/path/to/fixture1.json;/path/to/fixture2.json
  *
- * The factory loads each fixture file, converts its deltas to
- * OpenAI-compatible SSE chunks, and returns a MockHttpClient that
- * serves up to one response per LLM invocation (cycling through
- * the fixture queue).  After the queue is exhausted, subsequent
- * requests use the fallback real client.
+ * When the env var is set, the factory loads each fixture file,
+ * converts its deltas to OpenAI-compatible SSE chunks, and returns
+ * a MockHttpClient that serves one response per LLM invocation
+ * (cycling through the fixture queue).  After the queue is exhausted,
+ * a minimal "done" text response is returned so the run can complete
+ * cleanly.
+ *
+ * When the env var is NOT set, the factory returns the normal test
+ * HttpClient with a 5s timeout — preserving existing behavior for
+ * non-replay test runs and live LLM smoke tests.
  *
  * MAINT-05D: This is the replay seam for controller E2E tests.
  * MAINT-05E will reuse it for TUI E2E replay.
  */
-final class ReplayHttpClientFactory
+final class ControllerReplayHttpClientFactory
 {
     /**
-     * Create a replay-enabled HttpClient or return null when replay is
-     * not activated (caller should fall back to real HttpClient).
+     * Create an HttpClient for the test environment.
      *
-     * @return HttpClientInterface|null null when replay not active
+     * This method is called by the Symfony DI container factory
+     * wiring in config/services_test.yaml.
      */
-    public static function createIfActive(): ?HttpClientInterface
+    public static function create(): HttpClientInterface
     {
         $fixturePathEnv = $_ENV['HATFIELD_LLM_REPLAY_FIXTURE_PATH']
             ?? ($_SERVER['HATFIELD_LLM_REPLAY_FIXTURE_PATH'] ?? getenv('HATFIELD_LLM_REPLAY_FIXTURE_PATH'));
-        if (false === $fixturePathEnv || '' === $fixturePathEnv) {
-            return null;
+
+        if (false !== $fixturePathEnv && '' !== $fixturePathEnv) {
+            return self::createReplayClient((string) $fixturePathEnv);
         }
 
-        $fixturePaths = explode(';', (string) $fixturePathEnv);
+        // Default: short timeout for test environment (live LLM smoke
+        // or non-replay controller tests).
+        return HttpClient::create(['timeout' => 5]);
+    }
+
+    // ── Replay client construction ────────────────────────────────
+
+    /**
+     * Build a MockHttpClient that serves fixture-driven SSE responses.
+     */
+    private static function createReplayClient(string $fixturePathEnv): HttpClientInterface
+    {
+        $fixturePaths = explode(';', $fixturePathEnv);
         $fixtures = [];
         foreach ($fixturePaths as $path) {
             $path = trim($path);
@@ -61,7 +81,11 @@ final class ReplayHttpClientFactory
         }
 
         if ([] === $fixtures) {
-            return null;
+            // No valid fixtures found — fall back to the normal 5s
+            // timeout client so the process doesn't fail on a missing
+            // HttpClient.  The test will still fail because there are
+            // no fixture responses, but the error is easier to debug.
+            return HttpClient::create(['timeout' => 5]);
         }
 
         $index = 0;
@@ -209,7 +233,7 @@ final class ReplayHttpClientFactory
             }
         }
 
-        // Terminal chunk with finish_reason
+        // Terminal chunk with finish_reason.
         $mappedReason = match ($stopReason) {
             'stop' => 'stop',
             'tool_call' => 'tool_calls',
@@ -232,7 +256,7 @@ final class ReplayHttpClientFactory
 
         $chunks[] = '[DONE]';
 
-        return implode("\n\ndata: ", array_map(
+        return implode("\n\n", array_map(
             static fn (string $c): string => "data: {$c}",
             $chunks,
         ))."\n\n";

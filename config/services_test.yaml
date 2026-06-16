@@ -25,13 +25,19 @@ services:
       $logger: '@Psr\Log\LoggerInterface'
     # No calls: registerShutdownHandler is intentionally omitted.
 
-  # Short HTTP timeout for LLM requests so controller/llm-real/TUI E2E
-  # tests fail fast (within 5s) when llama.cpp generation is stuck instead
-  # of hanging for 90s+ until the Castor-level timeout. Production/dev runs
-  # use a permissive 300s default via SymfonyAiProviderFactory::getHttpClient()
-  # when no explicit HttpClient is injected.
+  # Test HTTP client for LLM requests.  Two modes:
+  #
+  #  1. Replay  (HATFIELD_LLM_REPLAY_FIXTURE_PATH set):
+  #     ControllerReplayHttpClientFactory  returns  a  MockHttpClient
+  #     that serves pre-recorded SSE chunks from fixture files.  Used
+  #     by  deterministic  controller  replay  E2E  (no  live  LLM).
+  #
+  #  2. Live (default): normal HttpClient with a 5s timeout so
+  #     live LLM smoke tests fail fast when llama.cpp generation is
+  #     stuck, instead of hanging for 90s+ until the Castor timeout.
+  #
+  #  The  factory  lives  in  tests/  —  NOT  in  production  src/.
+  #  SymfonyAiProviderFactory  receives  the  injected  HttpClient
+  #  through its constructor; no production env-var branching needed.
   Symfony\Contracts\HttpClient\HttpClientInterface:
-    factory: ['Symfony\Component\HttpClient\HttpClient', 'create']
-    arguments:
-      $defaultOptions:
-        timeout: 5
+    factory: ['Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\Replay\ControllerReplayHttpClientFactory', 'create']

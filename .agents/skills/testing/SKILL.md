@@ -138,11 +138,15 @@ unit/integration lane.
 Run with `castor test:controller-replay`. Does NOT require live LLM.
 
 Extends `ControllerReplayE2eTestCase`, which:
-- Spawns `bin/console agent --controller` with `HATFIELD_LLM_REPLAY_FIXTURE_PATH`
-- The test DI wiring replaces `HttpClientInterface` with a replay client
+- Spawns `bin/console agent --controller` with `APP_ENV=test` + `HATFIELD_LLM_REPLAY_FIXTURE_PATH`
+- `config/services_test.yaml` wires `HttpClientInterface` through
+  `ControllerReplayHttpClientFactory` (tests/).  When the env var is
+  set, the factory returns a MockHttpClient with fixture-driven SSE.
+  No production code in `src/` checks the replay env var.
 - Uses pre-recorded fixture files (committed to repo) for deterministic responses
 - Tracks process group PIDs and terminates the entire tree on teardown
-- Does NOT require `LLAMA_CPP_SMOKE_TEST` or any live AI provider
+- Does NOT require `LLAMA_CPP_SMOKE_TEST`, `HATFIELD_BINARY_PATH`, or any live AI provider
+- Always uses the source `bin/console` (not PHAR) so test-DI autoload works
 
 Fixture format: same as `docs/llm-replay.md`.
 Fixtures live in `tests/CodingAgent/Runtime/Controller/E2E/fixtures/`.

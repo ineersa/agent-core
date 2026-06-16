@@ -33,6 +33,15 @@ Both are available under the `Ineersa\AgentCore\Tests\Support` namespace. See:
 Extend `ControllerReplayE2eTestCase` for replay-backed controller E2E tests.
 These do NOT require live LLM.  Run with `castor test:controller-replay`.
 
+The replay seam is entirely in the test layer:
+- `ControllerReplayHttpClientFactory` (`tests/CodingAgent/Runtime/Controller/E2E/Replay/`)
+  checks `HATFIELD_LLM_REPLAY_FIXTURE_PATH` and returns a MockHttpClient.
+- `config/services_test.yaml` wires `HttpClientInterface` through the factory.
+- The controller subprocess boots with `APP_ENV=test` so `services_test.yaml`
+  is loaded and `SymfonyAiProviderFactory` receives the injected replay client
+  through its existing constructor DI path.
+- No production code in `src/` checks the replay env var.
+
 #### Controller live E2E (opt-in)
 
 Extend `ControllerE2eTestCase` for headless controller E2E against live LLM.

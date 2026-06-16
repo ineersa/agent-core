@@ -269,21 +269,16 @@ function test_controller_replay(): void
         fail_quality('test database migration failed: '.$migrate->getErrorOutput());
     }
 
-    $pharPath = '';
-    try {
-        $pharPath = phar_ensure();
-    } catch (Throwable $e) {
-        echo "PHAR ensure skipped: {$e->getMessage()}\n";
-    }
-    if ('' !== $pharPath) {
-        $GLOBALS['CASTOR_PHAR_READY'] = $pharPath;
-    }
-    $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
+    // Controller replay E2E must NOT use PHAR: the test DI replay
+    // factory (ControllerReplayHttpClientFactory in tests/) is wired
+    // through config/services_test.yaml, which requires source-tree
+    // autoload-dev paths.  The PHAR bundles only production autoload
+    // classes.  HATFIELD_BINARY_PATH is intentionally not set here.
 
     $strictFlags = phpunit_strict_issue_flags();
     $llmFlags = is_llm_mode() ? ' --colors=never --no-progress --log-junit='.report_path('phpunit-controller-replay.junit.xml') : '';
 
-    $cmd = 'APP_ENV=test '.$pharEnv.\PHP_BINARY.' vendor/bin/phpunit'
+    $cmd = 'APP_ENV=test '.\PHP_BINARY.' vendor/bin/phpunit'
         .' --group=controller-replay'
         .' '.$strictFlags.$llmFlags;
 
