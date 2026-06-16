@@ -40,7 +40,7 @@ If you catch yourself about to open an editor, write a file, or run a code chang
    - Write exact implementation instructions covering each actionable comment.
    - Group nearby changes into single edits where possible.
    - Specify exact files, old/new text patterns, validation steps, and limits of authority.
-   - **For TUI tasks: if the fix addresses user-visible behavior or workflow, the instructions MUST require adding or updating the real TmuxHarness + test LLM E2E test for the affected feature path.** If the task previously lacked such a test, this iteration must remediate that gap.
+   - **For TUI tasks: if the fix addresses user-visible behavior or workflow, the instructions MUST require adding or updating a real `TmuxHarness` E2E proof (replay-backed, no live LLM required) for the affected feature path.** If the task previously lacked such a test, this iteration must remediate that gap.
    - Pass those instructions directly to the fork.
 
 5. **Launch a fork**
@@ -57,7 +57,7 @@ If you catch yourself about to open an editor, write a file, or run a code chang
 
 7. **Re-review**
    - Run the reviewer subagent again on the worktree at the new HEAD.
-   - **For TUI tasks: instruct the reviewer to verify a real TmuxHarness + test LLM E2E proof exists and covers the user-visible feature path.** Reject the iteration if it lacks this proof or substitutes mocks.
+   - **For TUI tasks: instruct the reviewer to verify a real `TmuxHarness` E2E proof (replay-backed, no live LLM required) exists and covers the user-visible feature path.** Reject the iteration if it lacks this proof or substitutes mocks.
    - If REQUEST CHANGES again, repeat from step 4 with the new feedback.
 
 8. **Move back to CODE-REVIEW**

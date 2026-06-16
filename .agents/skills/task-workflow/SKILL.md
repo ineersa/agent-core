@@ -53,7 +53,7 @@ Read-only planning. No status changes, no file edits, no forks.
    - Do NOT run: `castor check`, `move_task(to="CODE-REVIEW")`, `gh pr create`, `git push`, reviewer subagent.
    - Inform user implementation is done. They run `task-to-pr` when ready.
 
-**TUI E2E proof requirement for implementation:** For tasks touching TUI behavior, the fork MUST add or update a real TmuxHarness + test LLM E2E test proving the user-visible feature works. Fork instructions must explicitly include this as a required deliverable. Mocks, service-only DTO tests, custom PHP smoke scripts, and picker/footer visibility assertions are NOT acceptable substitutes. See the `## TUI E2E proof requirement` section below.
+**TUI E2E proof requirement for implementation:** For tasks touching TUI behavior, the fork MUST add or update a real `TmuxHarness` E2E proof (replay-backed, no live LLM required) exercising the user-visible feature path. Fork instructions must explicitly include this as a required deliverable. Mocks, service-only DTO tests, custom PHP smoke scripts, and picker/footer visibility assertions are NOT acceptable substitutes. See the `## TUI E2E proof requirement` section below.
 
 ### task-to-pr: Review and create PR (IN-PROGRESS → CODE-REVIEW)
 

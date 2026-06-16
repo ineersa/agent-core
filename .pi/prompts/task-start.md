@@ -32,7 +32,7 @@ If you catch yourself about to open an editor, write a file, or run a code chang
    - Launch scout subagents when useful to gather focused codebase context before implementation.
    - Use the researcher subagent for web searches or web-based research when up-to-date external information is needed.
    - Create exact implementation instructions for the fork: files to touch, old/new patterns, validation commands, and boundaries.
-   - **For TUI tasks: the implementation scope MUST include a real TmuxHarness + test LLM E2E test proving the user-visible feature path works.** Mocks, service-only DTO tests, custom PHP smoke scripts, and picker/footer visibility checks are NOT acceptable substitutes. The fork must add this as a required deliverable.
+   - **For TUI tasks: the implementation scope MUST include a real `TmuxHarness` E2E proof (replay-backed, no live LLM required) exercising the user-visible feature path.** Mocks, service-only DTO tests, custom PHP smoke scripts, and picker/footer visibility checks are NOT acceptable substitutes. The fork must add this as a required deliverable.
    - Record useful context or updates on the task with `update_task` when helpful.
 
 4. **Launch a fork**
@@ -43,7 +43,7 @@ If you catch yourself about to open an editor, write a file, or run a code chang
 
 5. **Handle fork report**
    - When the fork report arrives, verify the commit exists, inspect `git diff --stat`, and confirm the expected files changed.
-   - **For TUI tasks: verify the fork added a real TmuxHarness E2E test (in `tests/Tui/E2E/` or equivalent) exercising the actual feature path through the test LLM.** If the fork only reports abstract validations or mock-based tests, reject it and re-launch with explicit E2E test requirements.
+   - **For TUI tasks: verify the fork added a real `TmuxHarness` E2E proof (replay-backed, no live LLM required) exercising the actual feature path.** If the fork only reports abstract validations or mock-based tests, reject it and re-launch with explicit E2E test requirements.
    - Record fork run id, summary, and validation results via `update_task`.
    - If the fork failed or produced unacceptable output, re-launch with narrower instructions.
 

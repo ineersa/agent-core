@@ -737,17 +737,17 @@ export default function (pi: ExtensionAPI) {
 					}
 
 				// Step 2: run deterministic castor check in worktree
-					const checkTimeout = params.castorCheckTimeoutSeconds ?? 480;
-					notes.push(`Running deterministic castor check in worktree (timeout ${checkTimeout}s)...`);
+				const checkTimeout = params.castorCheckTimeoutSeconds ?? 480;
+				notes.push(`Running deterministic castor check in worktree (timeout ${checkTimeout}s)...`);
 
-					const checkStart = Date.now();
-					const checkResult = await run(
-						pi,
-						"timeout",
-						["--kill-after=30s", `${checkTimeout}s`, "env", "LLM_MODE=true", "castor", "check"],
-						worktree,
-						signal,
-						(checkTimeout + 30) * 1000, // Wait longer than timeout+kill-after
+				const checkStart = Date.now();
+				const checkResult = await run(
+					pi,
+					"timeout",
+					["--kill-after=30s", `${checkTimeout}s`, "env", "LLM_MODE=true", "castor", "check"],
+					worktree,
+					signal,
+					(checkTimeout + 45) * 1000, // Longer than timeout+kill-after to preserve formatted diagnostics
 					);
 
 					const checkDuration = (Date.now() - checkStart) / 1000;

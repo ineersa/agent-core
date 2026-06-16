@@ -27,7 +27,7 @@ If you catch yourself about to open an editor, write a file, or run a code chang
 2. **Review quality**
    - Run the reviewer subagent on the worktree (subagent agent="reviewer" cwd=worktree).
    - Use the researcher subagent for web searches or web-based research when up-to-date external information is needed.
-   - **For TUI tasks: instruct the reviewer to explicitly check for and reject work that lacks a real TmuxHarness + test LLM E2E proof of the user-visible feature.** Mocks, service-only tests, custom PHP smoke scripts, and picker/footer visibility assertions are NOT substitutes and must be flagged as a blocker.
+   - **For TUI tasks: instruct the reviewer to explicitly check for and reject work that lacks a real `TmuxHarness` E2E proof (replay-backed, no live LLM required) of the user-visible feature.** Mocks, service-only tests, custom PHP smoke scripts, and picker/footer visibility assertions are NOT substitutes and must be flagged as a blocker.
    - If reviewer returns REQUEST CHANGES or APPROVE WITH SUGGESTIONS, analyze **all actionable findings** (not only CRITICAL/BUG), create exact fork instructions, and launch a fork.
    - Address all sensible findings across severity levels: CRITICAL, BUG, EDGE CASE, SEC, CONVENTION, SIMPLIFY, NAMING, DEAD CODE, and reasonable NTH items. Skip only clearly subjective style preferences or items the reviewer explicitly marks as non-actionable.
    - Repeat until reviewer returns APPROVED for current HEAD.

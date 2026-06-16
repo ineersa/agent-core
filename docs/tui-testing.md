@@ -181,8 +181,6 @@ Run `castor test:tui` explicitly when testing TUI rendering during development.
 Any intentional footer/header/layout change should be followed by
 `castor test:tui-update` and a review of the golden snapshot diff.
 
-Pure unit/integration tests (`castor test`) remain source-based.
-
 ### How it works
 
 1. `TmuxHarness` creates a detached tmux session at 120×40.
