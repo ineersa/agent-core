@@ -37,12 +37,12 @@ Out of scope:
 - Focused tests pass with Castor/PHPUnit.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/tools-10-prompt-docs-integration
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-10-prompt-docs-integration
 Fork run: h90mpyxp2471
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/154
+PR Status: open
 Started: 2026-06-16T22:05:47.991Z
 Completed:
 
@@ -119,3 +119,13 @@ Completed:
 - Recorded fork run: h90mpyxp2471
 - Validation: Fork validation: `castor phpstan --path src/Platform/Bridge/Generic/DurableResultConverter.php` PASS 0 errors/file_errors.; Fork validation: `castor cs-check` PASS clean, files_fixed=0.; Fork validation: `castor test --filter DurableResultConverterTest` PASS 11 tests, 57 assertions.; Fork validation: full `castor phpstan` PASS 0 errors/file_errors.; Fork validation: full `castor test` PASS 2562 tests, 7523 assertions.; Parent verification: worktree HEAD is `e4365ddc8`; diff from `0eb266fcc` is limited to `DurableResultConverter.php` and `DurableResultConverterTest.php`; integration checkout clean.
 - Summary: Fork `h90mpyxp2471` completed and committed `e4365ddc8` (`fix(phpstan): replace missing IncompleteStreamException with existing RuntimeException`) on branch `task/tools-10-prompt-docs-integration`. Scope: `src/Platform/Bridge/Generic/DurableResultConverter.php` removed unknown `IncompleteStreamException` import and now throws existing `Symfony\AI\Platform\Exception\RuntimeException` with the same message when a streamed completions response ends after chunks but without a finish reason; `tests/Platform/Bridge/Generic/DurableResultConverterTest.php` adds focused coverage for this incomplete-stream path. Fork confirmed `.agents/skills/testing/SKILL.md` and `tests/AGENTS.md` were read, no reviewer was run, no `<tool_usage>` block was reintroduced, and no `IncompleteStreamException` references remain.
+
+## Task workflow update - 2026-06-16T23:36:19.648Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Running deterministic castor check in worktree (timeout 480s)...
+- castor check passed (16.4s).
+- Pushed task/tools-10-prompt-docs-integration to origin.
+- branch 'task/tools-10-prompt-docs-integration' set up to track 'origin/task/tools-10-prompt-docs-integration'.
+- Created PR: https://github.com/ineersa/agent-core/pull/154
+- Validation: Prior reviewer: APPROVED read-only for prompt/tool guidance + llm-real hardening; no reviewer rerun after user explicitly requested not to relaunch reviewer.; Current branch validation: `castor test:timeout-hardstop` PASS including Test E PHAR-worker leak proof.; Current branch validation: `castor test:llm-real` PASS 5 tests/51 assertions in 22.1s and no tools-10 stale PHAR/controller/messenger/PHPUnit workers afterward.; Current branch validation: `castor test` PASS before PHPStan fix (2561 tests/7520 assertions) and fork reran full `castor test` after fix PASS (2562 tests/7523 assertions).; Current branch validation: `castor deptrac` PASS 0 violations/errors.; Current branch validation: `castor cs-check` PASS clean.; Current branch validation after PHPStan fix: full `castor phpstan` PASS 0 errors/file_errors; focused `castor phpstan --path src/Platform/Bridge/Generic/DurableResultConverter.php` PASS; focused `castor test --filter DurableResultConverterTest` PASS 11 tests/57 assertions.
+- Summary: Ready for CODE-REVIEW after PHPStan blocker fix. Final task branch HEAD: `e4365ddc8` (`fix(phpstan): replace missing IncompleteStreamException with existing RuntimeException`). Per user instruction, no reviewer was relaunched after this fork; prior read-only reviewer had already APPROVED HEAD `0eb266fcc`, and the later PHPStan fix is minimal/scoped with tests. Final changes include prompt/tool metadata/docs/test integration, llm-real hardening with 30s session-aware hard timeout and timeout-hardstop Test E, plus DurableResultConverter exception fix and focused test.
