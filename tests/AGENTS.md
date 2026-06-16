@@ -130,7 +130,7 @@ The `llama_cpp_test/test` server should run deterministically (temperature 0, fi
 
 ### LLM generation preflight
 
-`castor check`, `test:llm-real`, and `test:controller` all run a ~4s curl-based preflight (`check_llm_generation_ready`) before any live-LLM E2E test starts. It verifies the test LLM can complete a tiny generation request. If the server responds to `/health` and `/v1/models` but generation is stuck (corrupted model load, stuck slots), Castor fails immediately with a diagnostic instead of burning step timeouts. Fix or restart the llama.cpp server before retrying.
+`test:llm-real` and `test:controller` run a ~4s curl-based preflight (`check_llm_generation_ready`) before any live-LLM E2E test starts. It verifies the test LLM can complete a tiny generation request. If the server responds to `/health` and `/v1/models` but generation is stuck (corrupted model load, stuck slots), Castor fails immediately with a diagnostic instead of burning step timeouts. Fix or restart the llama.cpp server before retrying. The default `castor check` is fully deterministic (replay-backed) and does NOT run this preflight.
 
 ## TUI behavior proof
 

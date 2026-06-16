@@ -163,7 +163,7 @@ The project includes a reusable tmux test harness under
 TUI layout against committed golden fixtures.
 
 ```bash
-# Run TUI e2e tests (skipped if tmux is not installed)
+# Run TUI E2E journey tests (tmux required — fails if not installed)
 castor test:tui
 
 # Update golden snapshots after intentional rendering changes
@@ -176,10 +176,10 @@ wires `ControllerReplayHttpClientFactory` for deterministic model responses.
 
 Pure unit/integration tests (`castor test`) remain source-based.
 
-These are NOT included in `castor check` by default — they require
-tmux and are environment-sensitive. Run them explicitly when testing
-TUI rendering. Any intentional footer/header/layout change should be followed
-by `castor test:tui-update` and a review of the golden snapshot diff.
+These ARE included in `castor check` (the gate fails if tmux is not installed).
+Run `castor test:tui` explicitly when testing TUI rendering during development.
+Any intentional footer/header/layout change should be followed by
+`castor test:tui-update` and a review of the golden snapshot diff.
 
 Pure unit/integration tests (`castor test`) remain source-based.
 

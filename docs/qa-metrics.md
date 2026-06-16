@@ -53,7 +53,7 @@ Source: metrics from MAINT-05G `castor check` and focused runs.
 
 ## Known remaining risks
 
-- **Tmux requirement**: `castor check` and `castor test:tui` still require tmux for TUI E2E lanes. Without tmux, the TUI lane is skipped and the gate passes green — the orchestrator/user must verify TUI coverage separately.
+- **Tmux requirement**: `castor check` and `castor test:tui` require tmux for TUI E2E lanes. If tmux is not installed, `castor check` fails immediately with a diagnostic instead of silently passing green. The orchestrator/user must install tmux before the gate can run.
 - **Sequential test lane in check**: The `test` lane uses sequential PHPUnit (~43s) to keep check output deterministic and readable. `castor test` (ParaTest, ~11–38s) is available for local dev use.
 - **Fixture staleness**: Replay fixtures recorded from the small `llama_cpp_test/test` model may drift from production provider behavior. Re-record with `castor llm:fixtures:record` on provider/prompt change.
 - **Controller-replay fixture queue**: Multi-turn controller interactions require multiple fixtures in sequence; currently only single-turn fixtures exist.

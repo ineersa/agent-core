@@ -149,6 +149,14 @@ function check(): void
         fail_quality('test database migration failed: '.$migrate->getErrorOutput());
     }
 
+    // Tmux is required for the deterministic TUI E2E lane.
+    // Fail early with a clear diagnostic instead of letting the
+    // TUI lane time out or skip silently.
+    $which = trim(shell_exec('which tmux 2>/dev/null') ?? '');
+    if ('' === $which) {
+        fail_quality('tmux is not installed. The deterministic QA gate requires tmux for the TUI E2E lane. Install it with your package manager.');
+    }
+
     $failures = [];
     $timings = [];
 

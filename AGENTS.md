@@ -62,7 +62,7 @@ Default `castor check` is fully deterministic (replay-backed controller and TUI 
 
 ## Mandatory TUI feature E2E proof
 
-**TUI implementation is NOT complete until there is an automated test using the real test LLM and `TmuxHarness` with a snapshot or assertion proving the FEATURE works exactly as expected through real interactive TUI behavior.** This is a hard gate — no exceptions.
+**TUI implementation is NOT complete until there is an automated test using the real interactive TUI (`TmuxHarness`) with a snapshot or assertion proving the FEATURE works exactly as expected.** This is a hard gate — no exceptions. Default TUI E2E uses replay-backed fixtures for model interaction; live llama.cpp is not required for TUI feature proof.
 
 - Tests must exercise the real TUI interaction flow, not just mocked services, DTO assembly, or service-only unit tests.
 - Tests must use the project TUI E2E infrastructure (`TmuxHarness`, `#[Group('tui-e2e-replay')]`), replay fixtures where model output is needed, and isolated `var/tmp/test-{uuid}` directories.

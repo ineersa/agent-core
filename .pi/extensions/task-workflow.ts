@@ -58,7 +58,6 @@ const MoveTaskParams = Type.Object({
 	prBaseBranch: Type.Optional(Type.String({ description: "Base branch for PR. Defaults to repository default branch." })),
 	pushOnly: Type.Optional(Type.Boolean({ description: "Push branch but skip PR creation. Default false." })),
 	castorCheckTimeoutSeconds: Type.Optional(Type.Number({ description: "Timeout in seconds for the deterministic castor check gate during CODE-REVIEW transition. Default 480.", minimum: 60, maximum: 1200 })),
-	skipCastorCheck: Type.Optional(Type.Boolean({ description: "Skip the automatic deterministic castor check gate during CODE-REVIEW transition. Default false." })),
 });
 
 const UpdateTaskParams = Type.Object({
@@ -613,7 +612,7 @@ This project uses a repo-local lightweight issue tracker under tasks/TODO, tasks
 - Use update_task to update task metadata or append work log entries without moving the task file.
 - Use move_task to change task status instead of moving task files manually.
 - When claiming a task, call move_task with to="IN-PROGRESS". This requires a clean integration checkout (commit/stash first). It creates a task/<slug> git branch and sibling worktree at ../<repo>-worktrees/<slug>, copies vendor/ and .vera/ into the worktree when they exist, then records metadata in the task file.
-- When implementation is complete and committed, the parent/orchestrator/user calls move_task with to="CODE-REVIEW". This automatically runs deterministic castor check (replay-backed, no live LLM) in the worktree, then pushes the branch and creates a GitHub PR via the gh CLI. The PR URL is stored in the task metadata. Run focused Castor validation (castor test, castor deptrac, castor phpstan, castor cs-check) before moving to catch issues early. Pass skipCastorCheck:true to bypass the automatic gate.
+- When implementation is complete and committed, the parent/orchestrator/user calls move_task with to="CODE-REVIEW". This automatically runs deterministic castor check (replay-backed, no live LLM) in the worktree, then pushes the branch and creates a GitHub PR via the gh CLI. The PR URL is stored in the task metadata. Run focused Castor validation (castor test, castor deptrac, castor phpstan, castor cs-check) before moving to catch issues early.
 - After code review and PR approval, the parent/orchestrator/user calls move_task with to="DONE". It attempts a git merge back into the integration checkout and reports conflicts without moving the task to DONE if the merge fails. After a successful merge, it runs git pull to sync with remote changes from GitHub PR merges.
 - move_task with to="DONE" requires a clean integration checkout by default. If it reports stale AD entries from staged additions deleted in the worktree, retry with cleanupStaleIndexEntries=true; do not commit unrelated staged changes just to satisfy the task workflow.
 - IDE tools are scoped to the current checkout and may not index sibling worktrees. move_task copies .vera when available so semantic-search can work in the worktree, but prefer absolute-path read/edit/bash operations or open a separate pi session rooted at the worktree when IDE indexes are unavailable.
@@ -738,43 +737,38 @@ export default function (pi: ExtensionAPI) {
 					}
 
 				// Step 2: run deterministic castor check in worktree
-					const skipGate = params.skipCastorCheck === true;
-					if (!skipGate) {
-						const checkTimeout = params.castorCheckTimeoutSeconds ?? 480;
-						notes.push(`Running deterministic castor check in worktree (timeout ${checkTimeout}s)...`);
+					const checkTimeout = params.castorCheckTimeoutSeconds ?? 480;
+					notes.push(`Running deterministic castor check in worktree (timeout ${checkTimeout}s)...`);
 
-						const checkStart = Date.now();
-						const checkResult = await run(
-							pi,
-							"timeout",
-							["--kill-after=30s", `${checkTimeout}s`, "env", "LLM_MODE=true", "castor", "check"],
-							worktree,
-							signal,
-							(checkTimeout + 30) * 1000, // Wait longer than timeout+kill-after
+					const checkStart = Date.now();
+					const checkResult = await run(
+						pi,
+						"timeout",
+						["--kill-after=30s", `${checkTimeout}s`, "env", "LLM_MODE=true", "castor", "check"],
+						worktree,
+						signal,
+						(checkTimeout + 30) * 1000, // Wait longer than timeout+kill-after
+					);
+
+					const checkDuration = (Date.now() - checkStart) / 1000;
+					const checkKilled = checkResult.code === 124 || checkResult.code === 137;
+
+					if (checkResult.code !== 0) {
+						const reason = checkKilled
+							? `timeout after ${checkTimeout}s`
+							: `exit code ${checkResult.code}`;
+						const detail = checkResult.stderr || checkResult.stdout || "(no output)";
+						throw new Error(
+							`Castor check FAILED (${reason}) in the worktree. ` +
+							`Fix the failures, re-validate with focused Castor commands, then move to CODE-REVIEW again.\n` +
+							`Worktree: ${worktree}\n` +
+							`Output:\n${detail.slice(0, 2000)}`,
 						);
-
-						const checkDuration = (Date.now() - checkStart) / 1000;
-						const checkKilled = checkResult.code === 124 || checkResult.code === 137;
-
-						if (checkResult.code !== 0) {
-							const reason = checkKilled
-								? `timeout after ${checkTimeout}s`
-								: `exit code ${checkResult.code}`;
-							const detail = checkResult.stderr || checkResult.stdout || "(no output)";
-							throw new Error(
-								`Castor check FAILED (${reason}) in the worktree. ` +
-								`Fix the failures, re-validate with focused Castor commands, then move to CODE-REVIEW again.\n` +
-								`Worktree: ${worktree}\n` +
-								`Output:\n${detail.slice(0, 2000)}`,
-							);
-						}
-
-						notes.push(
-							`castor check passed (${checkDuration.toFixed(1)}s).`,
-						);
-					} else {
-						notes.push("Skipped castor check gate (skipCastorCheck: true).");
 					}
+
+					notes.push(
+						`castor check passed (${checkDuration.toFixed(1)}s).`,
+					);
 
 					// Step 3: push branch
 					const pushResult = await pushTaskBranch(pi, root, branch, signal);

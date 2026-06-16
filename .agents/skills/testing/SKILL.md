@@ -34,7 +34,7 @@ castor phar:clean            # Remove worktree-local hatfield.phar
 
 ## Test LLM
 
-All E2E tests use `llama_cpp_test/test` (port 9052). This is a fast local model for deterministic smoke testing. Never use production LLM providers in E2E tests.
+Live LLM smoke tests (opt-in) use `llama_cpp_test/test` (port 9052). This is a fast local model for deterministic provider compatibility testing. Never use production LLM providers in E2E tests. Default E2E tests (controller replay, TUI replay) use deterministic pre-recorded fixtures and do NOT require llama.cpp.
 
 Run the test llama.cpp server deterministically for smoke tests: temperature 0, fixed seed, and the `test` alias on port 9052. The smoke model is expected to answer/tool-call within a few seconds; long 30-60s waits usually hide a bad prompt, stale worker, or stuck process rather than real model latency.
 
