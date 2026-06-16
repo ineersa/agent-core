@@ -42,7 +42,7 @@ Known entrypoints:
 Status: IN-PROGRESS
 Branch: task/maint-05e-tui-journey-e2e-rework
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05e-tui-journey-e2e-rework
-Fork run: qs212tif12j0
+Fork run: ix53j86ctmdx
 PR URL: https://github.com/ineersa/agent-core/pull/146
 PR Status: open
 Started: 2026-06-16T00:10:29.822Z
@@ -117,3 +117,8 @@ Completed:
 - Recorded fork run: qs212tif12j0
 - Validation: Pending fork `qs212tif12j0`: expected validation is `castor list`, `castor llm:fixtures:record` (or documented Castor-supported options), `castor test:tui`, `castor test`, `castor deptrac`, `castor phpstan`, `castor cs-check`; no full `LLM_MODE=true castor check`; no raw curl/scripts/vendor/bin from shell.
 - Summary: Launched follow-up fork to fix the rejected recording shortcut properly. Fork must not use ad-hoc curl/PHP conversion; it must make/update `castor llm:fixtures:record` so the supported Castor recording path records the committed TUI fixtures via the intended `StreamRecorderObserver`/Symfony AI provider path, then run that Castor command to regenerate/verify fixtures. Strict git guard added after repeated corruption: no rebase/switch/checkout/reset/symbolic-ref/worktree commands; stay in the MAINT-05E worktree; allowed git only status/diff/log/add/commit/read-only. Real LLM smoke commands must remain, live TUI command must stay removed.
+
+## Task workflow update - 2026-06-16T01:01:48.984Z
+- Recorded fork run: ix53j86ctmdx
+- Validation: Pending fork `ix53j86ctmdx`: expected validation includes `castor llm:fixtures:record`, JSON/provenance check proving TUI fixtures no longer contain null `stop_reason`, `castor test:tui`, `castor test`, `castor deptrac`, `castor phpstan`, `castor cs-check`, and `castor list` confirming no `test:tui-live` while real LLM commands remain. Full `LLM_MODE=true castor check` remains skipped per MAINT-05A-F policy.
+- Summary: Launched follow-up fork for user-identified `stop_reason` gap in recording infra. Current Castor recording path works but recorded TUI fixtures still persisted `stop_reason: null` for successful non-tool completions. Fork must fix fixture recording metadata so successful non-tool recordings persist `stop`, tool calls remain `tool_call`, and errors/aborts are not falsely reported as `stop`; regenerate TUI fixtures via `castor llm:fixtures:record`; keep `test:tui-live` removed and real LLM commands intact. Strict git safety rules remain in force.
