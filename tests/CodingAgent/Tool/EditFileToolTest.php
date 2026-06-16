@@ -82,6 +82,7 @@ final class EditFileToolTest extends TestCase
         $guidelinesText = implode(' ', $definition->promptGuidelines);
         $this->assertStringContainsString('unified diff', strtolower($guidelinesText));
         $this->assertStringContainsString('read', strtolower($guidelinesText));
+        $this->assertStringContainsString('cat -n', $guidelinesText);
         $this->assertStringContainsString('line number', strtolower($guidelinesText));
         $this->assertStringContainsString('@@', $guidelinesText);
     }

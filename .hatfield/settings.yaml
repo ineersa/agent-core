@@ -54,7 +54,7 @@
 #         session_prefix: null
 
 # ---------------------------------------------------------------------------
-# Background process settings (bg_status tool)
+# Background process settings (bash/bg_status tools)
 # ---------------------------------------------------------------------------
 #
 # Uncomment and adjust to override background process settings:

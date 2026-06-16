@@ -106,11 +106,12 @@ final class SystemPromptBuilderTest extends TestCase
         $this->assertStringContainsString('<skills_instructions>', $result);
         $this->assertStringContainsString('<available_skills>', $result);
 
-        // Preloaded --skills described as <skill ...> blocks in user-context
-        $this->assertStringContainsString('<skill', $result);
+        // Preloaded --skills described as <skill name="..." location="..."> blocks in user-context
+        // Use <skill name to distinguish from <skills_instructions>.
+        $this->assertStringContainsString('<skill name', $result);
 
         // Context channel must explicitly deny system-prompt insertion for both AGENTS and skills
-        $this->assertStringContainsString('never', strtolower($result));
+        $this->assertStringContainsString('never spliced into the system prompt', strtolower($result));
     }
 
     public function testBuiltInTemplateWithRegisteredTools(): void

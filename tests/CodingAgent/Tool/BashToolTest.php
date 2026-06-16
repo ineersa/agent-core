@@ -543,6 +543,8 @@ final class BashToolTest extends IsolatedKernelTestCase
         $guidelinesText = implode(' ', $def->promptGuidelines);
         $this->assertStringContainsStringIgnoringCase('user', $guidelinesText);
         $this->assertStringContainsStringIgnoringCase('bg_status', $guidelinesText);
+        // Guidelines must prove model-vs-user ownership: the model does not control backgrounding
+        $this->assertStringContainsStringIgnoringCase('does not control', $guidelinesText);
         // Guidelines must explicitly state there is no run_in_background parameter
         $this->assertStringContainsStringIgnoringCase('no run_in_background', $guidelinesText);
     }

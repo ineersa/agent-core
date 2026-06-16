@@ -86,8 +86,8 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             executionMode: ToolExecutionMode::Sequential,
             promptLine: 'edit path patch — apply a unified diff patch to an existing file; file must already exist, use write for new files',
             promptGuidelines: [
-                'Provide the patch in standard unified diff format (diff -u). Use `read` with its line numbers to determine `@@` hunk header ranges.',
-                '`@@` hunk headers must reference the original line numbers shown by `read` (e.g. `@@ -42,6 +42,8 @@`).',
+                'Provide the patch in standard unified diff format (diff -u). Use `read` and its `cat -n` original line numbers to determine `@@` hunk header ranges.',
+                '`@@` hunk headers must reference the original line numbers shown by `read` via `cat -n` (e.g. `@@ -42,6 +42,8 @@`).',
                 'The patch may contain multiple hunks to edit different parts of the file.',
                 'The target file must already exist — use the write tool to create new files.',
                 'Whitespace mismatches between the patch and the target file are handled automatically (tolerant matching).',
