@@ -109,9 +109,11 @@ function test(?string $filter = null, ?string $suite = null, ?bool $sequential =
 
     if (null !== $filter || true === $sequential) {
         // Filtered and explicit sequential runs use single PHPUnit.
+        // Exclude groups that require live LLM or tmux (same as build_sequential_phpunit_command).
         $phpunitCmd = 'APP_ENV=test '.$pharEnv.\PHP_BINARY.' vendor/bin/phpunit'
             .$suiteFlag
             .(null !== $filter ? ' --filter='.escapeshellarg($filter) : '')
+            .' --exclude-group=tui-e2e-replay --exclude-group=llm-real --exclude-group=recording --exclude-group=controller-replay'
             .' '.phpunit_strict_issue_flags();
         passthru($phpunitCmd, $exitCode);
         $duration = (hrtime(true) - $start) / 1e9;

@@ -10,10 +10,12 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
+use Ineersa\CodingAgent\Kernel;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
-use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
 /**
  * @covers \Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient
@@ -21,10 +23,22 @@ use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
  * Tests prompt-template expansion at the in-process runtime boundary.
  * Uses the test kernel with a fake AgentRunnerInterface spy injected
  * via container override so we can assert on expanded prompt text.
+ *
+ * This test extends KernelTestCase directly (not IsolatedKernelTestCase)
+ * with per-method kernel boots because the InProcessAgentSessionClient
+ * (shared service) caches template directory contents.  With per-class
+ * kernel boot, templates written by later test methods are invisible
+ * to the already-booted client.
  */
-final class PromptTemplateExpansionInProcessTest extends IsolatedKernelTestCase
+final class PromptTemplateExpansionInProcessTest extends KernelTestCase
 {
-    private string $originalCwd;
+    protected static function createKernel(array $options = []): Kernel
+    {
+        return new Kernel($options['environment'] ?? 'test', (bool) ($options['debug'] ?? false));
+    }
+
+    private string $isolatedCwd;
+    private string|false $originalCwd;
 
     /** @var FakeCapturingAgentRunner */
     private FakeCapturingAgentRunner $spyRunner;
@@ -36,33 +50,58 @@ final class PromptTemplateExpansionInProcessTest extends IsolatedKernelTestCase
     {
         parent::setUp();
 
-        $this->originalCwd = getcwd() ?: '/';
+        // Per-method isolated CWD and kernel boot — templates written
+        // by each test method are seen by a freshly-booted client.
+        $this->isolatedCwd = TestDirectoryIsolation::createProjectTempDir('hatfield-test', 0o750);
+        TestDirectoryIsolation::createHatfieldTree($this->isolatedCwd);
 
-        // Install our spy runner before any session client is resolved.
+        $this->originalCwd = getcwd();
+        chdir($this->isolatedCwd);
+
+        $_ENV['APP_ENV'] = 'test';
+        $_ENV['APP_DEBUG'] = '0';
+        $_ENV['APP_SECRET'] = 'test-secret';
+        $_ENV['HATFIELD_CWD'] = $this->isolatedCwd;
+        putenv('HATFIELD_CWD='.$this->isolatedCwd);
+
+        self::bootKernel(['environment' => 'test', 'debug' => false]);
+
+        // Install spies before any test code resolves the real services.
         $this->spyRunner = new FakeCapturingAgentRunner();
         $this->spyToolExecutor = new FakeCapturingToolExecutor();
 
-        // Container set() only works before first resolution.
-        // InProcessAgentSessionClient is not a shared/lazy service by default
-        // but the container caches after first get(). We set the spies before
-        // any test code resolves the client.
-        self::getContainer()->set(
-            AgentRunnerInterface::class,
-            $this->spyRunner,
-        );
-        self::getContainer()->set(
-            ToolExecutorInterface::class,
-            $this->spyToolExecutor,
-        );
+        self::getContainer()->set(AgentRunnerInterface::class, $this->spyRunner);
+        self::getContainer()->set(ToolExecutorInterface::class, $this->spyToolExecutor);
     }
 
     protected function tearDown(): void
     {
-        // Restore CWD before parent cleans up.
         if (false !== $this->originalCwd) {
             chdir($this->originalCwd);
         }
-        parent::tearDown();
+
+        if (self::$booted) {
+            // Direct shutdown to avoid ensureKernelShutdown re-boot
+            // which would push an extra exception handler.
+            self::$kernel->shutdown();
+            self::$booted = false;
+        }
+
+        if (isset($this->isolatedCwd) && is_dir($this->isolatedCwd)) {
+            TestDirectoryIsolation::removeDirectory($this->isolatedCwd);
+        }
+
+        // Pop the exception handler that was pushed during kernel boot
+        // in setUp.  We skip parent::tearDown() (which would call
+        // ensureKernelShutdown + re-boot), so we must restore the
+        // handler ourselves to avoid PHPUnit "did not remove its own
+        // exception handlers" risky warnings.
+        restore_exception_handler();
+    }
+
+    private function isolatedCwd(): string
+    {
+        return $this->isolatedCwd;
     }
 
     // ── Helpers ───────────────────────────────────────────────────
@@ -273,6 +312,15 @@ final class FakeCapturingAgentRunner implements AgentRunnerInterface
     /** @var list<array{questionId: string, answer: mixed}> */
     public array $answerHumanCalls = [];
 
+    /** Clear captured state between test methods. */
+    public function reset(): void
+    {
+        $this->lastStartInput = null;
+        $this->steerMessages = [];
+        $this->followUpMessages = [];
+        $this->answerHumanCalls = [];
+    }
+
     public function start(StartRunInput $input): string
     {
         $this->lastStartInput = $input;
@@ -310,6 +358,12 @@ final class FakeCapturingAgentRunner implements AgentRunnerInterface
 final class FakeCapturingToolExecutor implements ToolExecutorInterface
 {
     public ?ToolCall $lastToolCall = null;
+
+    /** Clear captured state between test methods. */
+    public function reset(): void
+    {
+        $this->lastToolCall = null;
+    }
 
     public function execute(ToolCall $toolCall): ToolResult
     {
