@@ -31,7 +31,7 @@ This task should not start until enough of A-F are complete that default QA can 
 - MAINT-05 umbrella task is updated with final status and links/results for MAINT-05A-G.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/maint-05g-deterministic-qa-cutover-docs-metrics
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05g-deterministic-qa-cutover-docs-metrics
 Fork run: fl25h2kwzjs5
@@ -111,3 +111,10 @@ Completed:
 ## Task workflow update - 2026-06-16T14:55:38.630Z
 - Validation: Reviewer guard passed in worktree `/home/ineersa/projects/agent-core-worktrees/maint-05g-deterministic-qa-cutover-docs-metrics` on branch `task/maint-05g-deterministic-qa-cutover-docs-metrics`, clean and ahead of origin by 1 commit.; Reviewer validation/review: inspected `git show f001b8e1f`, prior task-workflow change, full active docs/prompts/skills, `.castor/tasks.php`, `.castor/phpunit.php`, and task-workflow CODE-REVIEW block.; Reviewer grep confirmed stale wording absent from active files and `skipCastorCheck` absent from active code.; Reviewer did not rerun full Castor validation because fork already ran `castor list`, `castor cs-check`, `castor phpstan`, and previous forks ran full deterministic `castor check`; `f001b8e1f` only changes docs/prompts and TypeScript timeout buffer.
 - Summary: Reviewer subagent re-reviewed MAINT-05G after review-fix commit `f001b8e1f` and returned `APPROVED`. Reviewer verified all prior blocking findings are resolved: stale `test LLM E2E proof` wording removed from active prompts/skills, duplicate docs line removed, qa metrics timing mismatch fixed, task-workflow timeout buffer now strictly exceeds shell timeout+kill-after, and functional deterministic cutover remains sound. Reviewer noted one non-blocking maintainability issue: `.pi/extensions/task-workflow.ts` Step 2 gate block indentation is visually inconsistent but has no syntax or functional impact.
+
+## Task workflow update - 2026-06-16T14:55:56.678Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/maint-05g-deterministic-qa-cutover-docs-metrics to origin.
+- branch 'task/maint-05g-deterministic-qa-cutover-docs-metrics' set up to track 'origin/task/maint-05g-deterministic-qa-cutover-docs-metrics'.
+- PR already exists: https://github.com/ineersa/agent-core/pull/148
+- Validation: Reviewer re-review after `f001b8e1f`: APPROVED.; Fork validation after review fixes: `castor list`, `castor cs-check`, and `castor phpstan` passed; stale-pattern rg clean except historical Before-table reference.; Prior MAINT-05G validation: `LLM_MODE=true castor check` passed: 6/6 lanes OK in 73.8s.; Prior MAINT-05G validation: `castor test:tui` passed: 3 tests, 35 assertions, 10.4s.; Prior MAINT-05G validation: `castor test` passed: 2524 tests, 7330 assertions, 21.3s; `castor test --suite=coding-agent --sequential` passed: 1467 tests, 4019 assertions, 55.9s; `castor test:controller-replay` passed: 1 test, 14 assertions, 7.7s.; Prior MAINT-05G validation: `castor deptrac`, `castor phpstan`, and `castor cs-check` passed.
