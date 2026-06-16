@@ -29,7 +29,7 @@ Connected open issues as of 2026-06-12:
 - Task remains IN-PROGRESS during one-by-one cleanup until user explicitly asks to move forward.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
 Fork run: 7krbp30ifo6t
@@ -477,3 +477,7 @@ Castor Check Output SHA256: 8402952e60f19af97d70af3c9bd816e632c7b0adb64c7eea53f5
 - Pushed task/backlog-open-issues-cleanup to origin.
 - branch 'task/backlog-open-issues-cleanup' set up to track 'origin/task/backlog-open-issues-cleanup'.
 - Created PR: https://github.com/ineersa/agent-core/pull/150
+
+## Task workflow update - 2026-06-16T18:25:33.769Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Summary: User reported that issue #124 still reproduces on main after manual testing (session 26) and that `castor phar:build` also fails. Moving PR #150 task back to IN-PROGRESS to investigate/fix these regressions on the current task branch before returning to code review.
