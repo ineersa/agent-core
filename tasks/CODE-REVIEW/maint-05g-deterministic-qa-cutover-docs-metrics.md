@@ -31,7 +31,7 @@ This task should not start until enough of A-F are complete that default QA can 
 - MAINT-05 umbrella task is updated with final status and links/results for MAINT-05A-G.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/maint-05g-deterministic-qa-cutover-docs-metrics
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05g-deterministic-qa-cutover-docs-metrics
 Fork run: e2cwwgtlg7bv
@@ -153,3 +153,11 @@ Completed:
 - Recorded fork run: e2cwwgtlg7bv
 - Validation: Pending fork `e2cwwgtlg7bv`: expected validation includes targeted rg over AGENTS.md, tests/AGENTS.md, testing/task-workflow skills, and .pi task prompts; optional `castor list`; no full `castor check` for docs-only change.
 - Summary: Launched docs/prompt update fork `e2cwwgtlg7bv` to add the conditional live LLM validation policy requested by the user: `castor test:llm-real` should be focused opt-in validation for Symfony AI/provider/model routing/tool schema/LLM prompt/live compatibility changes, while default `castor check` remains deterministic and should not run live LLM by default.
+
+## Task workflow update - 2026-06-16T15:40:35.229Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/maint-05g-deterministic-qa-cutover-docs-metrics to origin.
+- branch 'task/maint-05g-deterministic-qa-cutover-docs-metrics' set up to track 'origin/task/maint-05g-deterministic-qa-cutover-docs-metrics'.
+- Skipped PR creation (pushOnly: true).
+- Validation: Parent verification: `git status --short --branch` showed clean `task/maint-05g-deterministic-qa-cutover-docs-metrics...origin/... [ahead 1]` before push; `git log --oneline -6` showed `6f1c9cb34 MAINT-05G: Document focused live LLM validation policy` at HEAD.; Parent verification: `git show --stat --oneline HEAD` showed 9 files changed, 32 insertions, 3 deletions: `AGENTS.md`, `tests/AGENTS.md`, `.agents/skills/testing/SKILL.md`, `.agents/skills/task-workflow/SKILL.md`, and `.pi/prompts/task-{start,to-pr,review-iterate,explain,done}.md`.; Parent verification: targeted `rg` confirmed policy wording in all expected files (`Focused live LLM provider validation`, `NOT required for every normal task`, `provider/LLM-visible`, and deterministic `castor check` wording).; Parent verification: stale/contradiction `rg` for `TUI.*live LLM`, `test:tui-live`, `check.*test:llm-real`, `castor check.*llm-real`, `always run.*test:llm-real`, and `every normal task.*test:llm-real` found no contradictory active wording; remaining hits are correct no-live-LLM / opt-in policy statements.; Fork validation: docs/policy only; no full Castor validation run. Fork ran targeted rg checks and confirmed no stale contradictions.
+- Summary: Docs/prompt policy fork `e2cwwgtlg7bv` accepted after parent verification. Commit `6f1c9cb34` is present at HEAD on `task/maint-05g-deterministic-qa-cutover-docs-metrics`, worktree clean and 1 commit ahead of origin before push. Changes document the conditional live LLM validation rule across AGENTS.md, tests/AGENTS.md, testing and task-workflow skills, and all task workflow prompts: default `castor check` remains deterministic and must not include `castor test:llm-real` by default; `castor test:llm-real` should be run as focused opt-in validation for Symfony AI/provider integration, model routing/selection/catalog config, tool schemas/tool-call conversion/tool argument prompts, LLM-visible prompts/templates, streaming conversion/stop_reason/usage/tool-call deltas, or live-provider compatibility paths. PR #148 already exists, so branch was pushed without creating a new PR.
