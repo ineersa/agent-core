@@ -136,9 +136,16 @@ The `llama_cpp_test/test` server should run deterministically (temperature 0, fi
 
 TUI implementation is NOT complete without an automated test using the real interactive TUI (`TmuxHarness`), exercising the actual TUI flow. Default TUI E2E uses replay-backed fixtures for model interaction; live llama.cpp is not required for TUI feature proof. Mocked service-only tests are insufficient for TUI feature gate acceptance.
 
+## Kernel-test base classes
+
+- **`IsolatedKernelTestCase`** (`tests/CodingAgent/TestCase/`) — preferred for most DB/integration tests. Boots the kernel ONCE per class; DAMA provides per-method transaction rollback. Dramatically faster than per-method boot.
+- **`PerMethodIsolatedKernelTestCase`** (`tests/CodingAgent/TestCase/`) — per-method kernel boot. Use ONLY when tests mutate the live container via `Container::set()` or when per-method filesystem artifacts must be visible to a freshly-booted kernel (e.g. template caching services). Most tests should use `IsolatedKernelTestCase` instead.
+
+Both handle CWD isolation, env vars, exception handler balance, and directory cleanup so concrete tests don't duplicate lifecycle code.
+
 ## DB-touching tests
 
-DB-touching tests must boot the Symfony kernel via `IsolatedKernelTestCase` (or equivalent) and use the test container. Each test method gets a transaction rollback via DAMA DoctrineTestBundle, so no manual cleanup is needed.
+DB-touching tests must boot the Symfony kernel via `IsolatedKernelTestCase` (or `PerMethodIsolatedKernelTestCase` when necessary) and use the test container. Each test method gets a transaction rollback via DAMA DoctrineTestBundle, so no manual cleanup is needed.
 
 ### ParaTest DB isolation
 

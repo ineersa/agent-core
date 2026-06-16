@@ -19,7 +19,8 @@ use Ineersa\CodingAgent\Config\HomeSettingsWriter;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 
 /**
  * Coordinator-level tests for ModelSelectionService.
@@ -28,15 +29,14 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
  * through the ModelSelectionService facade: validation, persistence,
  * and favorites with in-process cache consistency.
  *
+ * Uses {@see IsolatedKernelTestCase} for per-class kernel boot.
+ * Per-method temp directories isolate settings files without
+ * requiring a fresh kernel for each test method.
+ *
  * Pure resolution logic is tested in ModelResolverTest.
  */
-class ModelSelectionServiceTest extends KernelTestCase
+class ModelSelectionServiceTest extends IsolatedKernelTestCase
 {
-    protected static function createKernel(array $options = []): \Ineersa\CodingAgent\Kernel
-    {
-        return new \Ineersa\CodingAgent\Kernel($options['environment'] ?? 'test', (bool) ($options['debug'] ?? false));
-    }
-
     private string $tempDir;
     private string $homeDir;
     private ModelSelectionService $service;
@@ -49,7 +49,7 @@ class ModelSelectionServiceTest extends KernelTestCase
     {
         parent::setUp();
 
-        $this->tempDir = sys_get_temp_dir().'/hatfield-model-selection-test-'.uniqid('', true);
+        $this->tempDir = TestDirectoryIsolation::createProjectTempDir('hatfield-model-selection', 0o750);
         $this->homeDir = $this->tempDir.'/home';
         mkdir($this->homeDir, 0777, true);
         mkdir($this->homeDir.'/.hatfield', 0777, true);
@@ -57,7 +57,6 @@ class ModelSelectionServiceTest extends KernelTestCase
 
         file_put_contents($this->homeDir.'/.hatfield/settings.yaml', "tui:\n    theme: cyberpunk\n");
 
-        self::bootKernel(['environment' => 'test', 'debug' => false]);
         $container = static::getContainer();
         $this->entityManager = $container->get('doctrine.orm.default_entity_manager');
 
@@ -84,34 +83,8 @@ class ModelSelectionServiceTest extends KernelTestCase
 
     protected function tearDown(): void
     {
-        $this->removeDir($this->tempDir);
-        self::ensureKernelShutdown();
-        parent::tearDown();
-        // Pop the exception handler that FrameworkBundle::boot() registered
-        // during kernel boot/shutdown. Parent tearDown calls
-        // ensureKernelShutdown() which may re-boot and re-register, so
-        // this must run after parent::tearDown().
-        restore_exception_handler();
-    }
-
-    private function removeDir(string $dir): void
-    {
-        if (!is_dir($dir)) {
-            return;
-        }
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-        foreach ($iterator as $file) {
-            if ($file->isDir()) {
-                rmdir($file->getPathname());
-            } else {
-                chmod($file->getPathname(), 0644);
-                unlink($file->getPathname());
-            }
-        }
-        rmdir($dir);
+        TestDirectoryIsolation::removeDirectory($this->tempDir);
+        parent::tearDown(); // clears EM via IsolatedKernelTestCase
     }
 
     private function buildService(array $aiData): ModelSelectionService

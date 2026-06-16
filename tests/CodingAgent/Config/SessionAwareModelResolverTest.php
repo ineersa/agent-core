@@ -21,16 +21,12 @@ use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
-use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\AI\Platform\Message\MessageBag;
 
-final class SessionAwareModelResolverTest extends KernelTestCase
+final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
 {
-    protected static function createKernel(array $options = []): \Ineersa\CodingAgent\Kernel
-    {
-        return new \Ineersa\CodingAgent\Kernel($options['environment'] ?? 'test', (bool) ($options['debug'] ?? false));
-    }
-
     private string $tempDir;
     private string $homeDir;
     private \Doctrine\ORM\EntityManagerInterface $entityManager;
@@ -38,12 +34,11 @@ final class SessionAwareModelResolverTest extends KernelTestCase
     protected function setUp(): void
     {
         parent::setUp();
-        
-        self::bootKernel(['environment' => 'test', 'debug' => false]);
+
         $container = static::getContainer();
         $this->entityManager = $container->get('doctrine.orm.default_entity_manager');
-        
-        $this->tempDir = sys_get_temp_dir().'/hatfield-resolver-test-'.uniqid('', true);
+
+        $this->tempDir = TestDirectoryIsolation::createProjectTempDir('hatfield-resolver', 0o750);
         $this->homeDir = $this->tempDir.'/home';
         mkdir($this->homeDir, 0777, true);
         mkdir($this->homeDir.'/.hatfield', 0777, true);
@@ -52,14 +47,8 @@ final class SessionAwareModelResolverTest extends KernelTestCase
 
     protected function tearDown(): void
     {
-        $this->removeDir($this->tempDir);
-        self::ensureKernelShutdown();
-        parent::tearDown();
-        // Pop the exception handler that FrameworkBundle::boot() registered
-        // during kernel boot/shutdown. Parent tearDown calls
-        // ensureKernelShutdown() which may re-boot and re-register, so
-        // this must run after parent::tearDown().
-        restore_exception_handler();
+        TestDirectoryIsolation::removeDirectory($this->tempDir);
+        parent::tearDown(); // clears EM via IsolatedKernelTestCase
     }
 
     public function testResolveReturnsModelFromSessionMetadata(): void
@@ -251,26 +240,6 @@ final class SessionAwareModelResolverTest extends KernelTestCase
         $this->entityManager->flush();
 
         return $id;
-    }
-
-    private function removeDir(string $dir): void
-    {
-        if (!is_dir($dir)) {
-            return;
-        }
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-        foreach ($iterator as $file) {
-            if ($file->isDir()) {
-                rmdir($file->getPathname());
-            } else {
-                chmod($file->getPathname(), 0644);
-                unlink($file->getPathname());
-            }
-        }
-        rmdir($dir);
     }
 
     private function standardAiData(): array
