@@ -29,11 +29,11 @@ Connected open issues as of 2026-06-12:
 - Task remains IN-PROGRESS during one-by-one cleanup until user explicitly asks to move forward.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
 Fork run: 7krbp30ifo6t
-PR URL: https://github.com/ineersa/agent-core/pull/149
+PR URL: https://github.com/ineersa/agent-core/pull/150
 PR Status: open
 Started: 2026-06-12T16:54:23.580Z
 Completed:
@@ -469,3 +469,11 @@ Castor Check Output SHA256: 8402952e60f19af97d70af3c9bd816e632c7b0adb64c7eea53f5
 - Recorded fork run: 7krbp30ifo6t
 - Validation: Fork reported rg for `_hatfield_requires_reasoning_content|_hatfield_suppress_developer_role` excluding tasks/: zero matches.; Fork reported castor test --filter=ProviderCompatibilityRequestShaperTest: PASS, 5 tests / 12 assertions.; Fork reported castor test --filter=CodexModelClientTest: PASS, 12 tests / 88 assertions.; Fork reported castor deptrac: PASS, 0 violations.; Fork reported castor phpstan: PASS, 0 errors.; Fork reported castor cs-check: PASS, clean.; Fork reported LLM_MODE=true castor check: PASS, all 6 steps green in 45.3s.; Fork reported castor test:llm-real: PASS, 5 tests / 51 assertions.; Parent verification: git status clean; origin/main...HEAD = 0 behind / 2 ahead; no marker-string matches in src/tests/config/docs/.hatfield.
 - Summary: Fork 7krbp30ifo6t completed dead marker cleanup in commit 8e5ce0eae after the #125 provider-compat architecture refactor. It removed `_hatfield_requires_reasoning_content` and `_hatfield_suppress_developer_role` from ProviderRequestOptionKeys, ProviderCompatibilityRequestShaper stripping, CodexModelClient defensive stripping, and tests. Parent verified branch clean, 0 behind / 2 ahead of origin/main (refactor commit rebased to 6e29358fb plus cleanup 8e5ce0eae), and verified no remaining matches for those strings in src/tests/config/docs/.hatfield.
+
+## Task workflow update - 2026-06-16T18:24:23.267Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Running deterministic castor check in worktree (timeout 900s)...
+- castor check passed (14.5s).
+- Pushed task/backlog-open-issues-cleanup to origin.
+- branch 'task/backlog-open-issues-cleanup' set up to track 'origin/task/backlog-open-issues-cleanup'.
+- Created PR: https://github.com/ineersa/agent-core/pull/150
