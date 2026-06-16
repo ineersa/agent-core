@@ -97,9 +97,8 @@ All QA commands MUST go through Castor. Never run raw `vendor/bin/*` directly, e
 All PHPUnit invocations include `--stop-on-error --stop-on-failure --fail-on-all-issues --display-all-issues`.
 
 Key commands:
-- `castor test` — unit/integration tests (ParaTest parallel by default, sequential fallback for --filter)
-- `castor test --filter=XxxTest` — filter to specific tests (sequential; single DB)
-- `castor test --suite=coding-agent --sequential` — sequential CodingAgent suite
+- `castor test` — unit/integration tests (ParaTest parallel by default)
+- `castor test --filter=XxxTest` — filter to specific tests
 - `castor test --suite=coding-agent` — targeted ParaTest run on a suite
 - `castor test:tui` — TUI E2E journey tests (`#[Group('tui-e2e-replay')]`, replay-backed, no live LLM)
 - `castor test:llm-real` — real-LLM controller E2E tests (`#[Group('llm-real')]`). Run as focused opt-in validation when changes touch provider/LLM-visible code — NOT required for every normal task.
