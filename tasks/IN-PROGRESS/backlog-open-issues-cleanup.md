@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: jxnn9j469qh8
+Fork run: amoy1wgwxmte
 PR URL: https://github.com/ineersa/agent-core/pull/149
 PR Status: open
 Started: 2026-06-12T16:54:23.580Z
@@ -451,3 +451,8 @@ Castor Check Output SHA256: 8402952e60f19af97d70af3c9bd816e632c7b0adb64c7eea53f5
 ## Task workflow update - 2026-06-16T17:44:39.228Z
 - Recorded fork run: jxnn9j469qh8
 - Summary: Fork jxnn9j469qh8 fixed the #125 model-scoping blocker and removed dead max_tokens_field in commit 8e276bb54. Parent verified branch clean and 0 behind / 2 ahead. Parent review found one remaining issue before accepting: `ReasoningContentCompatShaper` consumes `_hatfield_requires_reasoning_content` but does not remove it from provider options, so the generic OpenAI-compatible ModelClient will merge the internal flag into the JSON request body. Also hook ordering is currently implicit; ReasoningContentCompatShaper depends on CompatRequestShaper running first. Launching a small continuation fork to strip the internal flag after consumption and make hook ordering explicit. Existing supportsDeveloperRole leakage remains intentionally out of scope per user instruction.
+
+## Task workflow update - 2026-06-16T17:50:57.192Z
+- Recorded fork run: amoy1wgwxmte
+- Validation: castor test --filter=ReasoningContentCompatShaperTest: PASS, 13 tests / 82 assertions.; castor test --filter=CompatRequestShaperTest: PASS, 16 tests / 42 assertions.; castor test --filter='ReasoningContentCompatShaperTest\|CompatRequestShaperTest\|AiConfigTest\|ReasoningOptionsResolverTest': PASS, 66 tests / 250 assertions.; castor deptrac: PASS, 0 violations.; castor phpstan: PASS, 0 errors.; castor cs-check: PASS, clean.; LLM_MODE=true castor check: PASS, all 6 steps green in 40.1s.; castor test:llm-real: PASS, 5 tests / 51 assertions.; Parent verification: git status clean; origin/main...HEAD = 0 behind / 3 ahead; HEAD 8ad49235a pushed to origin/task/backlog-open-issues-cleanup.
+- Summary: Fork amoy1wgwxmte completed final #125 fix in commit 8ad49235a. It strips `_hatfield_requires_reasoning_content` from provider options in all ReasoningContentCompatShaper branches, preserves unrelated provider options, and adds explicit before-provider-request hook priorities so CompatRequestShaper runs before ReasoningContentCompatShaper. supportsDeveloperRole remains intentionally untouched/out of scope per user instruction. Parent verified branch clean, 0 behind / 3 ahead of origin/main.
