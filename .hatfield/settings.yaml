@@ -54,6 +54,27 @@
 #         session_prefix: null
 
 # ---------------------------------------------------------------------------
+# Background process settings (bg_status tool)
+# ---------------------------------------------------------------------------
+#
+# Uncomment and adjust to override background process settings:
+#
+# tools:
+#     background_process:
+#         # Storage directory for background process log files.
+#         # Relative paths resolve against the project CWD.
+#         path: .hatfield/tmp/bg
+#
+#         # Stale log/record retention in seconds (24 hours).
+#         retention: 86400
+#
+#         # Grace period for SIGTERM before SIGKILL on stop.
+#         stop_grace_seconds: 5
+#
+#         # Max characters returned by bg_status log action.
+#         log_tail_chars: 5000
+
+# ---------------------------------------------------------------------------
 # Image tool (view_image) settings
 # ---------------------------------------------------------------------------
 #

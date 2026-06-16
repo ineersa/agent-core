@@ -535,6 +535,16 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->assertContains('command', $def->parametersJsonSchema['required'] ?? []);
         // Schema must NOT have 'run_in_background'
         $this->assertArrayNotHasKey('run_in_background', $def->parametersJsonSchema['properties'] ?? []);
+
+        // Prompt line must NOT advertise a run_in_background parameter
+        $this->assertStringNotContainsStringIgnoringCase('run_in_background', $def->promptLine);
+
+        // Prompt guidelines must describe user-offered (not model-controlled) backgrounding
+        $guidelinesText = implode(' ', $def->promptGuidelines);
+        $this->assertStringContainsStringIgnoringCase('user', $guidelinesText);
+        $this->assertStringContainsStringIgnoringCase('bg_status', $guidelinesText);
+        // Guidelines must explicitly state there is no run_in_background parameter
+        $this->assertStringContainsStringIgnoringCase('no run_in_background', $guidelinesText);
     }
 
     /* ── No-context execution (session-less) ── */

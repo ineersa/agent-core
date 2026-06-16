@@ -78,6 +78,41 @@ final class SystemPromptBuilderTest extends TestCase
         $this->assertStringContainsString($this->tmpDir, $result);
     }
 
+    public function testBuiltInTemplateDoesNotContainHardcodedToolUsageBlock(): void
+    {
+        // The built-in SYSTEM.md must NOT hardcode tool usage details.
+        // Tool guidance comes from registry-backed metadata via {available_tools_list}
+        // and {registered_guidelines}, not a static <tool_usage> block.
+        $builder = $this->createBuilder();
+
+        $result = $builder->build();
+
+        $this->assertStringNotContainsString('<tool_usage>', $result);
+        $this->assertStringNotContainsString('</tool_usage>', $result);
+    }
+
+    public function testBuiltInTemplateContextChannelsDescribeUserContextInjection(): void
+    {
+        $builder = $this->createBuilder();
+
+        $result = $builder->build();
+
+        // Context-channel wording must describe SYSTEM-02 / SYSTEM-03 behavior:
+        // AGENTS.md in initial user-context message.
+        $this->assertStringContainsString('user-context', $result);
+        $this->assertStringContainsString('<project_instructions', $result);
+
+        // Skills in initial user-context with <skills_instructions> + <available_skills>
+        $this->assertStringContainsString('<skills_instructions>', $result);
+        $this->assertStringContainsString('<available_skills>', $result);
+
+        // Preloaded --skills described as <skill ...> blocks in user-context
+        $this->assertStringContainsString('<skill', $result);
+
+        // Context channel must explicitly deny system-prompt insertion for both AGENTS and skills
+        $this->assertStringContainsString('never', strtolower($result));
+    }
+
     public function testBuiltInTemplateWithRegisteredTools(): void
     {
         $registry = $this->createRegistryWithTools();
@@ -406,6 +441,55 @@ final class SystemPromptBuilderTest extends TestCase
 
         // Should begin with the SYSTEM.md content (role: 'system' message)
         $this->assertStringContainsString('expert coding assistant', strtolower($systemPromptText));
+    }
+
+    public function testToolGuidanceComesFromRegistryMetadataNotHardcodedBlock(): void
+    {
+        // When tools are registered with rich metadata (promptLine + promptGuidelines),
+        // the built prompt must render them via {available_tools_list} / {registered_guidelines}
+        // rather than relying on a hardcoded <tool_usage> block in SYSTEM.md.
+        $registry = new ToolRegistry();
+        $registry->registerTool(
+            name: 'read',
+            description: 'Read text files',
+            parametersJsonSchema: ['type' => 'object', 'properties' => ['path' => ['type' => 'string']]],
+            handler: $this->dummyHandler(),
+            promptLine: '- read: examines text files with cat -n line numbers',
+            promptGuidelines: ['Use read line numbers for edit @@ hunk headers.'],
+        );
+        $registry->registerTool(
+            name: 'edit',
+            description: 'Edit files via unified diff',
+            parametersJsonSchema: [],
+            handler: $this->dummyHandler(),
+            promptLine: '- edit: applies unified diff patches',
+            promptGuidelines: ['Provide standard unified diffs. Use read line numbers for @@ headers.'],
+        );
+        $registry->registerTool(
+            name: 'bash',
+            description: 'Execute shell commands',
+            parametersJsonSchema: [],
+            handler: $this->dummyHandler(),
+            promptLine: '- bash: runs shell commands',
+            promptGuidelines: ['Long-running commands may be offered to the user to move to background.'],
+        );
+
+        $builder = $this->createBuilder($registry);
+
+        $result = $builder->build();
+
+        // Registry promptLines must appear in the rendered prompt (via {available_tools_list})
+        $this->assertStringContainsString('cat -n line numbers', $result);
+        $this->assertStringContainsString('unified diff patches', $result);
+        $this->assertStringContainsString('runs shell commands', $result);
+
+        // Registry guidelines must appear in the rendered prompt (via {registered_guidelines})
+        $this->assertStringContainsString('edit @@ hunk headers', $result);
+        $this->assertStringContainsString('standard unified diffs', $result);
+        $this->assertStringContainsString('move to background', $result);
+
+        // The built-in template must NOT have a hardcoded <tool_usage> block
+        $this->assertStringNotContainsString('<tool_usage>', $result);
     }
 
     /* ───────── Private helpers ───────── */
