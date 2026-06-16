@@ -34,7 +34,7 @@ This task should not start until enough of A-F are complete that default QA can 
 Status: IN-PROGRESS
 Branch: task/maint-05g-deterministic-qa-cutover-docs-metrics
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05g-deterministic-qa-cutover-docs-metrics
-Fork run: mfp9t28q9xae
+Fork run: fl25h2kwzjs5
 PR URL: https://github.com/ineersa/agent-core/pull/148
 PR Status: open
 Started: 2026-06-16T02:21:32.044Z
@@ -97,3 +97,8 @@ Completed:
 ## Task workflow update - 2026-06-16T14:34:41.938Z
 - Moved CODE-REVIEW → IN-PROGRESS.
 - Summary: Moved back from CODE-REVIEW to address reviewer REQUEST_CHANGES on PR #148: stale TUI proof/live LLM wording in prompts/skills, duplicate docs line, qa metrics timing mismatch, and task-workflow timeout edge.
+
+## Task workflow update - 2026-06-16T14:35:23.078Z
+- Recorded fork run: fl25h2kwzjs5
+- Validation: Pending fork `fl25h2kwzjs5`: expected validation includes targeted stale-pattern `rg`, `castor list`, `castor cs-check`, and `castor phpstan`; full `castor check` only if Castor/PHP behavior is touched.
+- Summary: Launched review-fix fork `fl25h2kwzjs5` to address PR #148 reviewer blockers: remove remaining stale `test LLM E2E proof` wording from active prompts/skills, remove duplicated `docs/tui-testing.md` line, align `docs/qa-metrics.md` sequential check-lane timing to ~47s, make task-workflow castor-check exec timeout strictly longer than shell timeout+kill-after, and re-run targeted stale-pattern `rg` plus focused Castor validation.
