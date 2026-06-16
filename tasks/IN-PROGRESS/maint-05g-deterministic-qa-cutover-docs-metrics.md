@@ -34,7 +34,7 @@ This task should not start until enough of A-F are complete that default QA can 
 Status: IN-PROGRESS
 Branch: task/maint-05g-deterministic-qa-cutover-docs-metrics
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05g-deterministic-qa-cutover-docs-metrics
-Fork run: 64j0oqpro3l6
+Fork run: mfp9t28q9xae
 PR URL:
 PR Status:
 Started: 2026-06-16T02:21:32.044Z
@@ -72,3 +72,8 @@ Completed:
 - Recorded fork run: 64j0oqpro3l6
 - Validation: Fork validation: `php -l .castor/tasks.php` and `.castor/phpunit.php` passed.; Fork validation: `castor list` passed.; Fork validation: deterministic `LLM_MODE=true castor check` passed in 77.3s with 6 lanes: deptrac 2.0s, sequential test 47.2s/2520 tests, controller-replay 8.0s/1 test/14 assertions, TUI replay 16.2s/3 tests/35 assertions, phpstan 3.1s, cs-check 0.9s.; Fork validation: `castor test` passed: 2524 tests, 7330 assertions, 21.3s.; Fork validation: `castor test --suite=coding-agent --sequential` passed: 1467 tests, 4019 assertions, 55.9s.; Fork validation: `castor test:controller-replay` passed: 1 test, 14 assertions, 7.7s.; Fork validation: `castor test:tui` passed: 3 tests, 35 assertions, 10.7s.; Fork validation: `castor deptrac`, `castor phpstan`, and `castor cs-check` all passed.; Live LLM commands not run; opt-in only and llama.cpp unavailable.
 - Summary: Implementation fork completed MAINT-05G core cutover at commit `b422d9a98`: `castor check` is deterministic by default with 6 lanes (deptrac, sequential unit/integration, controller replay, TUI replay, phpstan, cs-check), live LLM/PHAR lanes removed from default check, and task-workflow CODE-REVIEW gate restored to run `LLM_MODE=true castor check` before push/PR. Parent spot-check confirmed clean worktree and expected diff. Parent also found follow-up cleanup needed before CODE-REVIEW: active docs still contain stale live-TUI/LLM wording (`real test LLM` for TUI proof, `castor check` listed under `check_llm_generation_ready` preflight in `tests/AGENTS.md`, `All E2E tests use llama_cpp_test/test` in testing skill, and `docs/qa-metrics.md` says tmux-missing TUI lane is skipped/pass-green). Parent also wants the task-workflow gate to be mandatory rather than advertising a `skipCastorCheck` bypass unless explicitly approved by user.
+
+## Task workflow update - 2026-06-16T02:39:09.168Z
+- Recorded fork run: mfp9t28q9xae
+- Validation: Pending fork `mfp9t28q9xae`: expected validation includes `castor list`, deterministic `castor check`, `castor test:tui`, `castor deptrac`, `castor phpstan`, `castor cs-check`, plus targeted `rg` confirmation that `skipCastorCheck` and stale active docs wording are gone.
+- Summary: Launched follow-up cleanup fork before MAINT-05G CODE-REVIEW. Required fixes: remove the `skipCastorCheck` bypass so the restored CODE-REVIEW gate is mandatory; add an explicit tmux preflight to deterministic `castor check` so missing tmux fails clearly instead of relying on PHPUnit skip behavior; fix stale active docs/prompts that still mention live test LLM for TUI proof, `castor check` under live LLM generation preflight, `All E2E tests use llama_cpp_test/test`, and tmux-missing pass-green wording; then re-run focused Castor validation.
