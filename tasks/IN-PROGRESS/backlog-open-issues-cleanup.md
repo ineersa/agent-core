@@ -29,7 +29,7 @@ Connected open issues as of 2026-06-12:
 - Task remains IN-PROGRESS during one-by-one cleanup until user explicitly asks to move forward.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
 Fork run: 1mmxafbml49u
@@ -432,3 +432,7 @@ Castor Check Output SHA256: 8402952e60f19af97d70af3c9bd816e632c7b0adb64c7eea53f5
 - branch 'task/backlog-open-issues-cleanup' set up to track 'origin/task/backlog-open-issues-cleanup'.
 - Created PR: https://github.com/ineersa/agent-core/pull/149
 - Validation: Fork 1mmxafbml49u: LLM_MODE=true castor check OK, all 6 steps passed in 68.6s.; Branch was clean and 0 behind / 2 ahead of origin/main before task metadata update; move_task CODE-REVIEW requested with 900s Castor gate timeout.
+
+## Task workflow update - 2026-06-16T16:51:20.728Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Summary: PR #149 for issue #124 was merged externally by user (merge commit 2ecc6b9e). Reopening umbrella backlog task to continue with next issue #125. User requested scout investigation on /home/ineersa/claw/pi-mono to understand compat flags for z.ai, deepseek, llama.cpp/generic providers and add a report to GitHub issue #125 before implementation.
