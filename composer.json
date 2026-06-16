@@ -17,7 +17,7 @@
         "symfony/lock": "^8.0",
         "helgesverre/toon": "^3.1",
         "symfony/ai-agent": "dev-main",
-        "symfony/ai-platform": "^0.9",
+        "symfony/ai-platform": "^0.10",
         "symfony/validator": "^8.0",
         "symfony/uid": "^8.0",
         "symfony/tui": "^8.1",

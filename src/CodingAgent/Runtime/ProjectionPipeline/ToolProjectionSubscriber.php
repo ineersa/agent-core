@@ -68,7 +68,8 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
         $p = $event->payload();
         $state = $event->state;
         $toolCallId = (string) ($p['tool_call_id'] ?? '');
-        $delta = (string) ($p['delta'] ?? '');
+        // Stream subscriber emits 'partial_json', not 'delta'.
+        $delta = (string) ($p['partial_json'] ?? $p['delta'] ?? '');
         $blockId = 'tool_call_'.$toolCallId;
         $block = $state->getBlock($blockId);
 
