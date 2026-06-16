@@ -119,3 +119,26 @@ See `tests/AgentCore/Infrastructure/SymfonyAi/Replay/ReplayTest.php` for full ex
 | `castor llm:fixtures:record` | Re-record fixtures from live LLM endpoint |
 | `castor test` | Replay-based unit/integration tests (no live LLM) |
 | `castor test:llm-real` | Live LLM smoke (opt-in) |
+
+## Synthetic fixtures
+
+Synthetic (hand-authored) fixtures are allowed only for test-layer
+smoke/rendering assertions that do **not** require provider fidelity.
+They must:
+
+- Include `"fixture_source": "synthetic"`.
+- Include `"synthetic_reason"` explaining why synthetic was used.
+- NOT contain faked `recorded_at` or `recording_source` fields.
+
+Normal E2E provider-behaviour fixtures (tool calls, stop reasons,
+token usage) should be recorded via `castor llm:fixtures:record`.
+
+Example synthetic fixture annotation:
+
+```json
+{
+    "$schema": "synthetic TUI rendering fixture",
+    "fixture_source": "synthetic",
+    "synthetic_reason": "TUI rendering assertion — model response text is not assertion-critical"
+}
+```

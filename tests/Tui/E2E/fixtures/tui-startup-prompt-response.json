@@ -1,0 +1,2189 @@
+{
+    "$schema": "TUI startup snapshot replay fixture \u2014 response for auto-submitted --prompt",
+    "model": "llama_cpp_test/test",
+    "provider_id": "llama_cpp_test",
+    "reasoning": "off",
+    "recorded_at": "2026-06-16T01:04:30+00:00",
+    "recording_source": "llama_cpp_test/test",
+    "input": {
+        "messages": [
+            {
+                "role": "user",
+                "content": "hello from tmux e2e"
+            }
+        ]
+    },
+    "usage": {
+        "input_tokens": 17,
+        "output_tokens": 545,
+        "total_tokens": 562
+    },
+    "stop_reason": "stop",
+    "expected_text": null,
+    "deltas": [
+        {
+            "type": "thinking",
+            "content": "The"
+        },
+        {
+            "type": "thinking",
+            "content": " user"
+        },
+        {
+            "type": "thinking",
+            "content": " is"
+        },
+        {
+            "type": "thinking",
+            "content": " asking"
+        },
+        {
+            "type": "thinking",
+            "content": " about"
+        },
+        {
+            "type": "thinking",
+            "content": " \""
+        },
+        {
+            "type": "thinking",
+            "content": "tm"
+        },
+        {
+            "type": "thinking",
+            "content": "ux"
+        },
+        {
+            "type": "thinking",
+            "content": " e"
+        },
+        {
+            "type": "thinking",
+            "content": "2"
+        },
+        {
+            "type": "thinking",
+            "content": "e"
+        },
+        {
+            "type": "thinking",
+            "content": "\""
+        },
+        {
+            "type": "thinking",
+            "content": " which"
+        },
+        {
+            "type": "thinking",
+            "content": " is"
+        },
+        {
+            "type": "thinking",
+            "content": " a"
+        },
+        {
+            "type": "thinking",
+            "content": " common"
+        },
+        {
+            "type": "thinking",
+            "content": " term"
+        },
+        {
+            "type": "thinking",
+            "content": " in"
+        },
+        {
+            "type": "thinking",
+            "content": " the"
+        },
+        {
+            "type": "thinking",
+            "content": " context"
+        },
+        {
+            "type": "thinking",
+            "content": " of"
+        },
+        {
+            "type": "thinking",
+            "content": " testing"
+        },
+        {
+            "type": "thinking",
+            "content": " and"
+        },
+        {
+            "type": "thinking",
+            "content": " automation"
+        },
+        {
+            "type": "thinking",
+            "content": "."
+        },
+        {
+            "type": "thinking",
+            "content": " They"
+        },
+        {
+            "type": "thinking",
+            "content": "'re"
+        },
+        {
+            "type": "thinking",
+            "content": " likely"
+        },
+        {
+            "type": "thinking",
+            "content": " asking"
+        },
+        {
+            "type": "thinking",
+            "content": " about"
+        },
+        {
+            "type": "thinking",
+            "content": " testing"
+        },
+        {
+            "type": "thinking",
+            "content": " frameworks"
+        },
+        {
+            "type": "thinking",
+            "content": " or"
+        },
+        {
+            "type": "thinking",
+            "content": " tools"
+        },
+        {
+            "type": "thinking",
+            "content": " related"
+        },
+        {
+            "type": "thinking",
+            "content": " to"
+        },
+        {
+            "type": "thinking",
+            "content": " tm"
+        },
+        {
+            "type": "thinking",
+            "content": "ux"
+        },
+        {
+            "type": "thinking",
+            "content": "."
+        },
+        {
+            "type": "thinking",
+            "content": "\n\n"
+        },
+        {
+            "type": "thinking",
+            "content": "I"
+        },
+        {
+            "type": "thinking",
+            "content": " should"
+        },
+        {
+            "type": "thinking",
+            "content": " provide"
+        },
+        {
+            "type": "thinking",
+            "content": " a"
+        },
+        {
+            "type": "thinking",
+            "content": " helpful"
+        },
+        {
+            "type": "thinking",
+            "content": " response"
+        },
+        {
+            "type": "thinking",
+            "content": " that"
+        },
+        {
+            "type": "thinking",
+            "content": " covers"
+        },
+        {
+            "type": "thinking",
+            "content": ":"
+        },
+        {
+            "type": "thinking",
+            "content": "\n"
+        },
+        {
+            "type": "thinking",
+            "content": "1"
+        },
+        {
+            "type": "thinking",
+            "content": "."
+        },
+        {
+            "type": "thinking",
+            "content": " What"
+        },
+        {
+            "type": "thinking",
+            "content": " tm"
+        },
+        {
+            "type": "thinking",
+            "content": "ux"
+        },
+        {
+            "type": "thinking",
+            "content": " e"
+        },
+        {
+            "type": "thinking",
+            "content": "2"
+        },
+        {
+            "type": "thinking",
+            "content": "e"
+        },
+        {
+            "type": "thinking",
+            "content": " is"
+        },
+        {
+            "type": "thinking",
+            "content": "\n"
+        },
+        {
+            "type": "thinking",
+            "content": "2"
+        },
+        {
+            "type": "thinking",
+            "content": "."
+        },
+        {
+            "type": "thinking",
+            "content": " How"
+        },
+        {
+            "type": "thinking",
+            "content": " it"
+        },
+        {
+            "type": "thinking",
+            "content": " works"
+        },
+        {
+            "type": "thinking",
+            "content": "\n"
+        },
+        {
+            "type": "thinking",
+            "content": "3"
+        },
+        {
+            "type": "thinking",
+            "content": "."
+        },
+        {
+            "type": "thinking",
+            "content": " Common"
+        },
+        {
+            "type": "thinking",
+            "content": " use"
+        },
+        {
+            "type": "thinking",
+            "content": " cases"
+        },
+        {
+            "type": "thinking",
+            "content": "\n"
+        },
+        {
+            "type": "thinking",
+            "content": "4"
+        },
+        {
+            "type": "thinking",
+            "content": "."
+        },
+        {
+            "type": "thinking",
+            "content": " Best"
+        },
+        {
+            "type": "thinking",
+            "content": " practices"
+        },
+        {
+            "type": "thinking",
+            "content": "\n"
+        },
+        {
+            "type": "thinking",
+            "content": "5"
+        },
+        {
+            "type": "thinking",
+            "content": "."
+        },
+        {
+            "type": "thinking",
+            "content": " Examples"
+        },
+        {
+            "type": "thinking",
+            "content": "\n\n"
+        },
+        {
+            "type": "thinking",
+            "content": "Let"
+        },
+        {
+            "type": "thinking",
+            "content": " me"
+        },
+        {
+            "type": "thinking",
+            "content": " structure"
+        },
+        {
+            "type": "thinking",
+            "content": " this"
+        },
+        {
+            "type": "thinking",
+            "content": " clearly"
+        },
+        {
+            "type": "thinking",
+            "content": " and"
+        },
+        {
+            "type": "thinking",
+            "content": " compreh"
+        },
+        {
+            "type": "thinking",
+            "content": "ensively"
+        },
+        {
+            "type": "thinking",
+            "content": "."
+        },
+        {
+            "type": "thinking",
+            "content": "\n"
+        },
+        {
+            "type": "unknown",
+            "content": ""
+        },
+        {
+            "type": "text",
+            "content": "Hello"
+        },
+        {
+            "type": "text",
+            "content": "!"
+        },
+        {
+            "type": "text",
+            "content": " \ud83d\ude0a"
+        },
+        {
+            "type": "text",
+            "content": "\n\n"
+        },
+        {
+            "type": "text",
+            "content": "**"
+        },
+        {
+            "type": "text",
+            "content": "tm"
+        },
+        {
+            "type": "text",
+            "content": "ux"
+        },
+        {
+            "type": "text",
+            "content": " e"
+        },
+        {
+            "type": "text",
+            "content": "2"
+        },
+        {
+            "type": "text",
+            "content": "e"
+        },
+        {
+            "type": "text",
+            "content": "**"
+        },
+        {
+            "type": "text",
+            "content": " ("
+        },
+        {
+            "type": "text",
+            "content": "End"
+        },
+        {
+            "type": "text",
+            "content": "-to"
+        },
+        {
+            "type": "text",
+            "content": "-"
+        },
+        {
+            "type": "text",
+            "content": "End"
+        },
+        {
+            "type": "text",
+            "content": " Testing"
+        },
+        {
+            "type": "text",
+            "content": " with"
+        },
+        {
+            "type": "text",
+            "content": " tm"
+        },
+        {
+            "type": "text",
+            "content": "ux"
+        },
+        {
+            "type": "text",
+            "content": ")"
+        },
+        {
+            "type": "text",
+            "content": " is"
+        },
+        {
+            "type": "text",
+            "content": " a"
+        },
+        {
+            "type": "text",
+            "content": " testing"
+        },
+        {
+            "type": "text",
+            "content": " framework"
+        },
+        {
+            "type": "text",
+            "content": " that"
+        },
+        {
+            "type": "text",
+            "content": " allows"
+        },
+        {
+            "type": "text",
+            "content": " you"
+        },
+        {
+            "type": "text",
+            "content": " to"
+        },
+        {
+            "type": "text",
+            "content": " test"
+        },
+        {
+            "type": "text",
+            "content": " applications"
+        },
+        {
+            "type": "text",
+            "content": " and"
+        },
+        {
+            "type": "text",
+            "content": " systems"
+        },
+        {
+            "type": "text",
+            "content": " end"
+        },
+        {
+            "type": "text",
+            "content": "-to"
+        },
+        {
+            "type": "text",
+            "content": "-end"
+        },
+        {
+            "type": "text",
+            "content": " using"
+        },
+        {
+            "type": "text",
+            "content": " tm"
+        },
+        {
+            "type": "text",
+            "content": "ux"
+        },
+        {
+            "type": "text",
+            "content": ","
+        },
+        {
+            "type": "text",
+            "content": " a"
+        },
+        {
+            "type": "text",
+            "content": " powerful"
+        },
+        {
+            "type": "text",
+            "content": " terminal"
+        },
+        {
+            "type": "text",
+            "content": " emulator"
+        },
+        {
+            "type": "text",
+            "content": "."
+        },
+        {
+            "type": "text",
+            "content": " It"
+        },
+        {
+            "type": "text",
+            "content": "'s"
+        },
+        {
+            "type": "text",
+            "content": " particularly"
+        },
+        {
+            "type": "text",
+            "content": " useful"
+        },
+        {
+            "type": "text",
+            "content": " for"
+        },
+        {
+            "type": "text",
+            "content": " testing"
+        },
+        {
+            "type": "text",
+            "content": " applications"
+        },
+        {
+            "type": "text",
+            "content": ","
+        },
+        {
+            "type": "text",
+            "content": " services"
+        },
+        {
+            "type": "text",
+            "content": ","
+        },
+        {
+            "type": "text",
+            "content": " and"
+        },
+        {
+            "type": "text",
+            "content": " workflows"
+        },
+        {
+            "type": "text",
+            "content": " in"
+        },
+        {
+            "type": "text",
+            "content": " a"
+        },
+        {
+            "type": "text",
+            "content": " controlled"
+        },
+        {
+            "type": "text",
+            "content": ","
+        },
+        {
+            "type": "text",
+            "content": " isolated"
+        },
+        {
+            "type": "text",
+            "content": " environment"
+        },
+        {
+            "type": "text",
+            "content": "."
+        },
+        {
+            "type": "text",
+            "content": "\n\n"
+        },
+        {
+            "type": "text",
+            "content": "###"
+        },
+        {
+            "type": "text",
+            "content": " What"
+        },
+        {
+            "type": "text",
+            "content": " is"
+        },
+        {
+            "type": "text",
+            "content": " tm"
+        },
+        {
+            "type": "text",
+            "content": "ux"
+        },
+        {
+            "type": "text",
+            "content": " e"
+        },
+        {
+            "type": "text",
+            "content": "2"
+        },
+        {
+            "type": "text",
+            "content": "e"
+        },
+        {
+            "type": "text",
+            "content": "?"
+        },
+        {
+            "type": "text",
+            "content": "\n\n"
+        },
+        {
+            "type": "text",
+            "content": "-"
+        },
+        {
+            "type": "text",
+            "content": " **"
+        },
+        {
+            "type": "text",
+            "content": "Purpose"
+        },
+        {
+            "type": "text",
+            "content": ":**"
+        },
+        {
+            "type": "text",
+            "content": " To"
+        },
+        {
+            "type": "text",
+            "content": " simulate"
+        },
+        {
+            "type": "text",
+            "content": " real"
+        },
+        {
+            "type": "text",
+            "content": "-world"
+        },
+        {
+            "type": "text",
+            "content": " scenarios"
+        },
+        {
+            "type": "text",
+            "content": " in"
+        },
+        {
+            "type": "text",
+            "content": " a"
+        },
+        {
+            "type": "text",
+            "content": " controlled"
+        },
+        {
+            "type": "text",
+            "content": " environment"
+        },
+        {
+            "type": "text",
+            "content": "."
+        },
+        {
+            "type": "text",
+            "content": "\n"
+        },
+        {
+            "type": "text",
+            "content": "-"
+        },
+        {
+            "type": "text",
+            "content": " **"
+        },
+        {
+            "type": "text",
+            "content": "Use"
+        },
+        {
+            "type": "text",
+            "content": " Case"
+        },
+        {
+            "type": "text",
+            "content": ":**"
+        },
+        {
+            "type": "text",
+            "content": " Testing"
+        },
+        {
+            "type": "text",
+            "content": " applications"
+        },
+        {
+            "type": "text",
+            "content": ","
+        },
+        {
+            "type": "text",
+            "content": " services"
+        },
+        {
+            "type": "text",
+            "content": ","
+        },
+        {
+            "type": "text",
+            "content": " workflows"
+        },
+        {
+            "type": "text",
+            "content": ","
+        },
+        {
+            "type": "text",
+            "content": " and"
+        },
+        {
+            "type": "text",
+            "content": " systems"
+        },
+        {
+            "type": "text",
+            "content": "."
+        },
+        {
+            "type": "text",
+            "content": "\n"
+        },
+        {
+            "type": "text",
+            "content": "-"
+        },
+        {
+            "type": "text",
+            "content": " **"
+        },
+        {
+            "type": "text",
+            "content": "Key"
+        },
+        {
+            "type": "text",
+            "content": " Features"
+        },
+        {
+            "type": "text",
+            "content": ":**"
+        },
+        {
+            "type": "text",
+            "content": "\n"
+        },
+        {
+            "type": "text",
+            "content": " "
+        },
+        {
+            "type": "text",
+            "content": " -"
+        },
+        {
+            "type": "text",
+            "content": " Is"
+        },
+        {
+            "type": "text",
+            "content": "olated"
+        },
+        {
+            "type": "text",
+            "content": " environments"
+        },
+        {
+            "type": "text",
+            "content": "\n"
+        },
+        {
+            "type": "text",
+            "content": " "
+        },
+        {
+            "type": "text",
+            "content": " -"
+        },
+        {
+            "type": "text",
+            "content": " Test"
+        },
+        {
+            "type": "text",
+            "content": " automation"
+        },
+        {
+            "type": "text",
+            "content": "\n"
+        },
+        {
+            "type": "text",
+            "content": " "
+        },
+        {
+            "type": "text",
+            "content": " -"
+        },
+        {
+            "type": "text",
+            "content": " Integration"
+        },
+        {
+            "type": "text",
+            "content": " with"
+        },
+        {
+            "type": "text",
+            "content": " CI"
+        },
+        {
+            "type": "text",
+            "content": "/"
+        },
+        {
+            "type": "text",
+            "content": "CD"
+        },
+        {
+            "type": "text",
+            "content": " pipelines"
+        },
+        {
+            "type": "text",
+            "content": "\n"
+        },
+        {
+            "type": "text",
+            "content": " "
+        },
+        {
+            "type": "text",
+            "content": " -"
+        },
+        {
+            "type": "text",
+            "content": " Performance"
+        },
+        {
+            "type": "text",
+            "content": " testing"
+        },
+        {
+            "type": "text",
+            "content": "\n"
+        },
+        {
+            "type": "text",
+            "content": " "
+        },
+        {
+            "type": "text",
+            "content": " -"
+        },
+        {
+            "type": "text",
+            "content": " Security"
+        },
+        {
+            "type": "text",
+            "content": " testing"
+        },
+        {
+            "type": "text",
+            "content": "\n\n"
+        },
+        {
+            "type": "text",
+            "content": "###"
+        },
+        {
+            "type": "text",
+            "content": " Common"
+        },
+        {
+            "type": "text",
+            "content": " Use"
+        },
+        {
+            "type": "text",
+            "content": " Cases"
+        },
+        {
+            "type": "text",
+            "content": "\n\n"
+        },
+        {
+            "type": "text",
+            "content": "-"
+        },
+        {
+            "type": "text",
+            "content": " **"
+        },
+        {
+            "type": "text",
+            "content": "Application"
+        },
+        {
+            "type": "text",
+            "content": " Testing"
+        },
+        {
+            "type": "text",
+            "content": ":**"
+        },
+        {
+            "type": "text",
+            "content": " Testing"
+        },
+        {
+            "type": "text",
+            "content": " web"
+        },
+        {
+            "type": "text",
+            "content": " applications"
+        },
+        {
+            "type": "text",
+            "content": ","
+        },
+        {
+            "type": "text",
+            "content": " mobile"
+        },
+        {
+            "type": "text",
+            "content": " apps"
+        },
+        {
+            "type": "text",
+            "content": ","
+        },
+        {
+            "type": "text",
+            "content": " and"
+        },
+        {
+            "type": "text",
+            "content": " desktop"
+        },
+        {
+            "type": "text",
+            "content": " applications"
+        },
+        {
+            "type": "text",
+            "content": "."
+        },
+        {
+            "type": "text",
+            "content": "\n"
+        },
+        {
+            "type": "text",
+            "content": "-"
+        },
+        {
+            "type": "text",
+            "content": " **"
+        },
+        {
+            "type": "text",
+            "content": "System"
+        },
+        {
+            "type": "text",
+            "content": " Testing"
+        },
+        {
+            "type": "text",
+            "content": ":**"
+        },
+        {
+            "type": "text",
+            "content": " Testing"
+        },
+        {
+            "type": "text",
+            "content": " server"
+        },
+        {
+            "type": "text",
+            "content": "-side"
+        },
+        {
+            "type": "text",
+            "content": " applications"
+        },
+        {
+            "type": "text",
+            "content": ","
+        },
+        {
+            "type": "text",
+            "content": " databases"
+        },
+        {
+            "type": "text",
+            "content": ","
+        },
+        {
+            "type": "text",
+            "content": " and"
+        },
+        {
+            "type": "text",
+            "content": " infrastructure"
+        },
+        {
+            "type": "text",
+            "content": "."
+        },
+        {
+            "type": "text",
+            "content": "\n"
+        },
+        {
+            "type": "text",
+            "content": "-"
+        },
+        {
+            "type": "text",
+            "content": " **"
+        },
+        {
+            "type": "text",
+            "content": "Workflow"
+        },
+        {
+            "type": "text",
+            "content": " Testing"
+        },
+        {
+            "type": "text",
+            "content": ":**"
+        },
+        {
+            "type": "text",
+            "content": " Testing"
+        },
+        {
+            "type": "text",
+            "content": " end"
+        },
+        {
+            "type": "text",
+            "content": "-to"
+        },
+        {
+            "type": "text",
+            "content": "-end"
+        },
+        {
+            "type": "text",
+            "content": " workflows"
+        },
+        {
+            "type": "text",
+            "content": ","
+        },
+        {
+            "type": "text",
+            "content": " including"
+        },
+        {
+            "type": "text",
+            "content": " user"
+        },
+        {
+            "type": "text",
+            "content": " flows"
+        },
+        {
+            "type": "text",
+            "content": " and"
+        },
+        {
+            "type": "text",
+            "content": " data"
+        },
+        {
+            "type": "text",
+            "content": " flows"
+        },
+        {
+            "type": "text",
+            "content": "."
+        },
+        {
+            "type": "text",
+            "content": "\n"
+        },
+        {
+            "type": "text",
+            "content": "-"
+        },
+        {
+            "type": "text",
+            "content": " **"
+        },
+        {
+            "type": "text",
+            "content": "Security"
+        },
+        {
+            "type": "text",
+            "content": " Testing"
+        },
+        {
+            "type": "text",
+            "content": ":**"
+        },
+        {
+            "type": "text",
+            "content": " Testing"
+        },
+        {
+            "type": "text",
+            "content": " authentication"
+        },
+        {
+            "type": "text",
+            "content": ","
+        },
+        {
+            "type": "text",
+            "content": " authorization"
+        },
+        {
+            "type": "text",
+            "content": ","
+        },
+        {
+            "type": "text",
+            "content": " and"
+        },
+        {
+            "type": "text",
+            "content": " security"
+        },
+        {
+            "type": "text",
+            "content": " protocols"
+        },
+        {
+            "type": "text",
+            "content": "."
+        },
+        {
+            "type": "text",
+            "content": "\n"
+        },
+        {
+            "type": "text",
+            "content": "-"
+        },
+        {
+            "type": "text",
+            "content": " **"
+        },
+        {
+            "type": "text",
+            "content": "Performance"
+        },
+        {
+            "type": "text",
+            "content": " Testing"
+        },
+        {
+            "type": "text",
+            "content": ":**"
+        },
+        {
+            "type": "text",
+            "content": " Testing"
+        },
+        {
+            "type": "text",
+            "content": " system"
+        },
+        {
+            "type": "text",
+            "content": " performance"
+        },
+        {
+            "type": "text",
+            "content": " under"
+        },
+        {
+            "type": "text",
+            "content": " load"
+        },
+        {
+            "type": "text",
+            "content": "."
+        },
+        {
+            "type": "text",
+            "content": "\n\n"
+        },
+        {
+            "type": "text",
+            "content": "###"
+        },
+        {
+            "type": "text",
+            "content": " Best"
+        },
+        {
+            "type": "text",
+            "content": " Practices"
+        },
+        {
+            "type": "text",
+            "content": "\n\n"
+        },
+        {
+            "type": "text",
+            "content": "-"
+        },
+        {
+            "type": "text",
+            "content": " **"
+        },
+        {
+            "type": "text",
+            "content": "Environment"
+        },
+        {
+            "type": "text",
+            "content": " Is"
+        },
+        {
+            "type": "text",
+            "content": "olation"
+        },
+        {
+            "type": "text",
+            "content": ":**"
+        },
+        {
+            "type": "text",
+            "content": " Use"
+        },
+        {
+            "type": "text",
+            "content": " tm"
+        },
+        {
+            "type": "text",
+            "content": "ux"
+        },
+        {
+            "type": "text",
+            "content": " to"
+        },
+        {
+            "type": "text",
+            "content": " isolate"
+        },
+        {
+            "type": "text",
+            "content": " test"
+        },
+        {
+            "type": "text",
+            "content": " environments"
+        },
+        {
+            "type": "text",
+            "content": " from"
+        },
+        {
+            "type": "text",
+            "content": " production"
+        },
+        {
+            "type": "text",
+            "content": "."
+        },
+        {
+            "type": "text",
+            "content": "\n"
+        },
+        {
+            "type": "text",
+            "content": "-"
+        },
+        {
+            "type": "text",
+            "content": " **"
+        },
+        {
+            "type": "text",
+            "content": "Test"
+        },
+        {
+            "type": "text",
+            "content": " Data"
+        },
+        {
+            "type": "text",
+            "content": " Management"
+        },
+        {
+            "type": "text",
+            "content": ":**"
+        },
+        {
+            "type": "text",
+            "content": " Use"
+        },
+        {
+            "type": "text",
+            "content": " tm"
+        },
+        {
+            "type": "text",
+            "content": "ux"
+        },
+        {
+            "type": "text",
+            "content": " to"
+        },
+        {
+            "type": "text",
+            "content": " manage"
+        },
+        {
+            "type": "text",
+            "content": " test"
+        },
+        {
+            "type": "text",
+            "content": " data"
+        },
+        {
+            "type": "text",
+            "content": " securely"
+        },
+        {
+            "type": "text",
+            "content": "."
+        },
+        {
+            "type": "text",
+            "content": "\n"
+        },
+        {
+            "type": "text",
+            "content": "-"
+        },
+        {
+            "type": "text",
+            "content": " **"
+        },
+        {
+            "type": "text",
+            "content": "Automation"
+        },
+        {
+            "type": "text",
+            "content": ":**"
+        },
+        {
+            "type": "text",
+            "content": " Use"
+        },
+        {
+            "type": "text",
+            "content": " tm"
+        },
+        {
+            "type": "text",
+            "content": "ux"
+        },
+        {
+            "type": "text",
+            "content": " to"
+        },
+        {
+            "type": "text",
+            "content": " automate"
+        },
+        {
+            "type": "text",
+            "content": " test"
+        },
+        {
+            "type": "text",
+            "content": " scripts"
+        },
+        {
+            "type": "text",
+            "content": "."
+        },
+        {
+            "type": "text",
+            "content": "\n"
+        },
+        {
+            "type": "text",
+            "content": "-"
+        },
+        {
+            "type": "text",
+            "content": " **"
+        },
+        {
+            "type": "text",
+            "content": "Logging"
+        },
+        {
+            "type": "text",
+            "content": ":**"
+        },
+        {
+            "type": "text",
+            "content": " Use"
+        },
+        {
+            "type": "text",
+            "content": " tm"
+        },
+        {
+            "type": "text",
+            "content": "ux"
+        },
+        {
+            "type": "text",
+            "content": " to"
+        },
+        {
+            "type": "text",
+            "content": " log"
+        },
+        {
+            "type": "text",
+            "content": " test"
+        },
+        {
+            "type": "text",
+            "content": " results"
+        },
+        {
+            "type": "text",
+            "content": " and"
+        },
+        {
+            "type": "text",
+            "content": " debug"
+        },
+        {
+            "type": "text",
+            "content": " issues"
+        },
+        {
+            "type": "text",
+            "content": "."
+        },
+        {
+            "type": "text",
+            "content": "\n"
+        },
+        {
+            "type": "text",
+            "content": "-"
+        },
+        {
+            "type": "text",
+            "content": " **"
+        },
+        {
+            "type": "text",
+            "content": "CI"
+        },
+        {
+            "type": "text",
+            "content": "/"
+        },
+        {
+            "type": "text",
+            "content": "CD"
+        },
+        {
+            "type": "text",
+            "content": " Integration"
+        },
+        {
+            "type": "text",
+            "content": ":**"
+        },
+        {
+            "type": "text",
+            "content": " Use"
+        },
+        {
+            "type": "text",
+            "content": " tm"
+        },
+        {
+            "type": "text",
+            "content": "ux"
+        },
+        {
+            "type": "text",
+            "content": " to"
+        },
+        {
+            "type": "text",
+            "content": " integrate"
+        },
+        {
+            "type": "text",
+            "content": " with"
+        },
+        {
+            "type": "text",
+            "content": " CI"
+        },
+        {
+            "type": "text",
+            "content": "/"
+        },
+        {
+            "type": "text",
+            "content": "CD"
+        },
+        {
+            "type": "text",
+            "content": " pipelines"
+        },
+        {
+            "type": "text",
+            "content": "."
+        },
+        {
+            "type": "text",
+            "content": "\n\n"
+        },
+        {
+            "type": "text",
+            "content": "###"
+        },
+        {
+            "type": "text",
+            "content": " Example"
+        },
+        {
+            "type": "text",
+            "content": " Workflow"
+        },
+        {
+            "type": "text",
+            "content": "\n\n"
+        },
+        {
+            "type": "text",
+            "content": "```"
+        },
+        {
+            "type": "text",
+            "content": "bash"
+        },
+        {
+            "type": "text",
+            "content": "\n"
+        },
+        {
+            "type": "text",
+            "content": "#"
+        },
+        {
+            "type": "text",
+            "content": " Initialize"
+        },
+        {
+            "type": "text",
+            "content": " tm"
+        },
+        {
+            "type": "text",
+            "content": "ux"
+        },
+        {
+            "type": "text",
+            "content": "\n"
+        },
+        {
+            "type": "text",
+            "content": "tm"
+        },
+        {
+            "type": "text",
+            "content": "ux"
+        },
+        {
+            "type": "text",
+            "content": " new"
+        },
+        {
+            "type": "text",
+            "content": " -"
+        },
+        {
+            "type": "text",
+            "content": "s"
+        },
+        {
+            "type": "text",
+            "content": " test"
+        },
+        {
+            "type": "text",
+            "content": "\n\n"
+        },
+        {
+            "type": "text",
+            "content": "#"
+        },
+        {
+            "type": "text",
+            "content": " Create"
+        },
+        {
+            "type": "text",
+            "content": " a"
+        },
+        {
+            "type": "text",
+            "content": " test"
+        },
+        {
+            "type": "text",
+            "content": " session"
+        },
+        {
+            "type": "text",
+            "content": "\n"
+        },
+        {
+            "type": "text",
+            "content": "tm"
+        },
+        {
+            "type": "text",
+            "content": "ux"
+        },
+        {
+            "type": "text",
+            "content": " new"
+        },
+        {
+            "type": "text",
+            "content": "-session"
+        },
+        {
+            "type": "text",
+            "content": " -"
+        },
+        {
+            "type": "text",
+            "content": "d"
+        },
+        {
+            "type": "text",
+            "content": " -"
+        },
+        {
+            "type": "text",
+            "content": "s"
+        },
+        {
+            "type": "text",
+            "content": " test"
+        },
+        {
+            "type": "text",
+            "content": "\n\n"
+        },
+        {
+            "type": "text",
+            "content": "#"
+        },
+        {
+            "type": "text",
+            "content": " Run"
+        },
+        {
+            "type": "text",
+            "content": " a"
+        },
+        {
+            "type": "text",
+            "content": " test"
+        },
+        {
+            "type": "text",
+            "content": " script"
+        },
+        {
+            "type": "text",
+            "content": "\n"
+        },
+        {
+            "type": "text",
+            "content": "tm"
+        },
+        {
+            "type": "text",
+            "content": "ux"
+        },
+        {
+            "type": "text",
+            "content": " exec"
+        },
+        {
+            "type": "text",
+            "content": " -"
+        },
+        {
+            "type": "text",
+            "content": "t"
+        },
+        {
+            "type": "text",
+            "content": " test"
+        },
+        {
+            "type": "text",
+            "content": " python"
+        },
+        {
+            "type": "text",
+            "content": "3"
+        },
+        {
+            "type": "text",
+            "content": " -"
+        },
+        {
+            "type": "text",
+            "content": "c"
+        },
+        {
+            "type": "text",
+            "content": " \""
+        },
+        {
+            "type": "text",
+            "content": "import"
+        },
+        {
+            "type": "text",
+            "content": " requests"
+        },
+        {
+            "type": "text",
+            "content": ";"
+        },
+        {
+            "type": "text",
+            "content": " print"
+        },
+        {
+            "type": "text",
+            "content": "('"
+        },
+        {
+            "type": "text",
+            "content": "Test"
+        },
+        {
+            "type": "text",
+            "content": " passed"
+        },
+        {
+            "type": "text",
+            "content": "')\""
+        },
+        {
+            "type": "text",
+            "content": "\n\n"
+        },
+        {
+            "type": "text",
+            "content": "#"
+        },
+        {
+            "type": "text",
+            "content": " View"
+        },
+        {
+            "type": "text",
+            "content": " test"
+        },
+        {
+            "type": "text",
+            "content": " results"
+        },
+        {
+            "type": "text",
+            "content": "\n"
+        },
+        {
+            "type": "text",
+            "content": "tm"
+        },
+        {
+            "type": "text",
+            "content": "ux"
+        },
+        {
+            "type": "text",
+            "content": " list"
+        },
+        {
+            "type": "text",
+            "content": " -"
+        },
+        {
+            "type": "text",
+            "content": "t"
+        },
+        {
+            "type": "text",
+            "content": " test"
+        },
+        {
+            "type": "text",
+            "content": "\n"
+        },
+        {
+            "type": "text",
+            "content": "```"
+        },
+        {
+            "type": "text",
+            "content": "\n\n"
+        },
+        {
+            "type": "text",
+            "content": "###"
+        },
+        {
+            "type": "text",
+            "content": " Conclusion"
+        },
+        {
+            "type": "text",
+            "content": "\n\n"
+        },
+        {
+            "type": "text",
+            "content": "tm"
+        },
+        {
+            "type": "text",
+            "content": "ux"
+        },
+        {
+            "type": "text",
+            "content": " e"
+        },
+        {
+            "type": "text",
+            "content": "2"
+        },
+        {
+            "type": "text",
+            "content": "e"
+        },
+        {
+            "type": "text",
+            "content": " is"
+        },
+        {
+            "type": "text",
+            "content": " a"
+        },
+        {
+            "type": "text",
+            "content": " powerful"
+        },
+        {
+            "type": "text",
+            "content": " tool"
+        },
+        {
+            "type": "text",
+            "content": " for"
+        },
+        {
+            "type": "text",
+            "content": " testing"
+        },
+        {
+            "type": "text",
+            "content": " applications"
+        },
+        {
+            "type": "text",
+            "content": " and"
+        },
+        {
+            "type": "text",
+            "content": " systems"
+        },
+        {
+            "type": "text",
+            "content": " in"
+        },
+        {
+            "type": "text",
+            "content": " a"
+        },
+        {
+            "type": "text",
+            "content": " controlled"
+        },
+        {
+            "type": "text",
+            "content": ","
+        },
+        {
+            "type": "text",
+            "content": " isolated"
+        },
+        {
+            "type": "text",
+            "content": " environment"
+        },
+        {
+            "type": "text",
+            "content": "."
+        },
+        {
+            "type": "text",
+            "content": " It"
+        },
+        {
+            "type": "text",
+            "content": "'s"
+        },
+        {
+            "type": "text",
+            "content": " ideal"
+        },
+        {
+            "type": "text",
+            "content": " for"
+        },
+        {
+            "type": "text",
+            "content": " end"
+        },
+        {
+            "type": "text",
+            "content": "-to"
+        },
+        {
+            "type": "text",
+            "content": "-end"
+        },
+        {
+            "type": "text",
+            "content": " testing"
+        },
+        {
+            "type": "text",
+            "content": ","
+        },
+        {
+            "type": "text",
+            "content": " security"
+        },
+        {
+            "type": "text",
+            "content": " testing"
+        },
+        {
+            "type": "text",
+            "content": ","
+        },
+        {
+            "type": "text",
+            "content": " and"
+        },
+        {
+            "type": "text",
+            "content": " performance"
+        },
+        {
+            "type": "text",
+            "content": " testing"
+        },
+        {
+            "type": "text",
+            "content": "."
+        },
+        {
+            "type": "text",
+            "content": "\n\n"
+        },
+        {
+            "type": "text",
+            "content": "Let"
+        },
+        {
+            "type": "text",
+            "content": " me"
+        },
+        {
+            "type": "text",
+            "content": " know"
+        },
+        {
+            "type": "text",
+            "content": " if"
+        },
+        {
+            "type": "text",
+            "content": " you"
+        },
+        {
+            "type": "text",
+            "content": "'d"
+        },
+        {
+            "type": "text",
+            "content": " like"
+        },
+        {
+            "type": "text",
+            "content": " help"
+        },
+        {
+            "type": "text",
+            "content": " setting"
+        },
+        {
+            "type": "text",
+            "content": " up"
+        },
+        {
+            "type": "text",
+            "content": " tm"
+        },
+        {
+            "type": "text",
+            "content": "ux"
+        },
+        {
+            "type": "text",
+            "content": " e"
+        },
+        {
+            "type": "text",
+            "content": "2"
+        },
+        {
+            "type": "text",
+            "content": "e"
+        },
+        {
+            "type": "text",
+            "content": " or"
+        },
+        {
+            "type": "text",
+            "content": " testing"
+        },
+        {
+            "type": "text",
+            "content": " a"
+        },
+        {
+            "type": "text",
+            "content": " specific"
+        },
+        {
+            "type": "text",
+            "content": " scenario"
+        },
+        {
+            "type": "text",
+            "content": "!"
+        },
+        {
+            "type": "text",
+            "content": " \ud83d\ude0a"
+        }
+    ]
+}

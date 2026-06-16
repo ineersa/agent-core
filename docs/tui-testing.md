@@ -170,10 +170,11 @@ castor test:tui
 castor test:tui-update
 ```
 
-These tests run against the built PHAR, not the source tree. The `castor
-phar:ensure` prerequisite builds or validates the PHAR, and
-`HATFIELD_BINARY_PATH` is set so `AgentTestExecutable` resolves the PHAR
-path. If PHAR build fails, the test task skips gracefully.
+These tests run against the source tree (`bin/console`), not the built PHAR.
+The replay-backed TUI tests use `APP_ENV=test` so `config/services_test.yaml`
+wires `ControllerReplayHttpClientFactory` for deterministic model responses.
+
+Pure unit/integration tests (`castor test`) remain source-based.
 
 These are NOT included in `castor check` by default — they require
 tmux and are environment-sensitive. Run them explicitly when testing
@@ -230,7 +231,7 @@ model/token/elapsed/cwd/branch status line where applicable.
 ### Adding new e2e tests
 
 1. Place the test class in `tests/Tui/E2E/`.
-2. Add `#[Group('tui-e2e')]` to the class.
+2. Add `#[Group('tui-e2e-replay')]` to the class.
 3. Use `TmuxHarness` to start sessions, send keys, capture panes.
 4. Assert against committed golden snapshots or use `contains`
    assertions for content presence.
