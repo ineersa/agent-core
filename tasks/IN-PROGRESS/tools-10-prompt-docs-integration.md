@@ -40,7 +40,7 @@ Out of scope:
 Status: IN-PROGRESS
 Branch: task/tools-10-prompt-docs-integration
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-10-prompt-docs-integration
-Fork run:
+Fork run: t3ff1nsgaa75
 PR URL:
 PR Status:
 Started: 2026-06-16T22:05:47.991Z
@@ -60,3 +60,7 @@ Completed:
 ## Task workflow update - 2026-06-16T22:08:52.573Z
 - Validation: Read `.agents/skills/testing/SKILL.md` and `tests/AGENTS.md` before proposing tests.; Scout recommended focused Castor tests: `castor test --filter SystemPromptBuilderTest`, tool definition tests for edit/read/write/bash/bg_status/view_image, context tests for AgentsContextRenderer/Discovery and SkillsContextBuilder, plus `castor deptrac`, `castor phpstan`, `castor cs-check`; opt-in `castor test:llm-real` because system prompt/tool guidance is LLM-visible.
 - Summary: Read task and plan source `.pi/plans/toolbox-design-plan.md`; claimed worktree `/home/ineersa/projects/agent-core-worktrees/tools-10-prompt-docs-integration`. Loaded task-workflow, subagents, and testing skills plus `tests/AGENTS.md` for validation conventions. Scout found prompt assembly in `config/SYSTEM.md` + `src/CodingAgent/SystemPrompt/SystemPromptBuilder.php`; initial context injection in `src/CodingAgent/Runtime/InProcess/InProcessAgentSessionClient.php`; final tool prompt metadata in `src/CodingAgent/Tool/{ReadFileTool,EditFileTool,WriteFileTool,ViewImageTool,BashTool,BgStatusTool}.php`; settings docs in `docs/settings.md`, `config/hatfield.defaults.yaml`, `.hatfield/settings.yaml`; likely tests in `tests/CodingAgent/SystemPrompt/SystemPromptBuilderTest.php` and relevant tool/context tests. Key gap: `edit` guidance lacks explicit use of `read` line numbers for unified diff `@@` headers. Task is LLM-visible prompt/tool guidance, not a TUI feature; opt-in `castor test:llm-real` should be mentioned for focused provider validation.
+
+## Task workflow update - 2026-06-16T22:09:39.237Z
+- Recorded fork run: t3ff1nsgaa75
+- Summary: Launched implementation fork `t3ff1nsgaa75` in worktree `/home/ineersa/projects/agent-core-worktrees/tools-10-prompt-docs-integration`. Fork instructions require prompt/tool metadata/docs/test updates, focused Castor validation, optional `castor test:llm-real` for LLM-visible prompt changes, and a final commit on `task/tools-10-prompt-docs-integration`. Main agent will wait for fork handoff before verifying commit/diff and recording results.
