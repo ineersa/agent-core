@@ -14,22 +14,20 @@ use Ineersa\CodingAgent\Config\HomeSettingsWriter;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\Component\Yaml\Yaml;
 
 /**
  * Tests for ModelSettingsPersister (write-only persistence).
  *
  * Requires kernel boot for SessionMetadataStore (final class, cannot be
- * mocked) and a real DB session entity.
+ * mocked) and a real DB session entity.  Uses {@see IsolatedKernelTestCase}
+ * for per-class kernel boot; per-method temp directories isolate settings
+ * files without requiring a fresh kernel per test.
  */
-class ModelSettingsPersisterTest extends KernelTestCase
+class ModelSettingsPersisterTest extends IsolatedKernelTestCase
 {
-    protected static function createKernel(array $options = []): \Ineersa\CodingAgent\Kernel
-    {
-        return new \Ineersa\CodingAgent\Kernel($options['environment'] ?? 'test', (bool) ($options['debug'] ?? false));
-    }
-
     private string $tempDir;
     private string $homeDir;
     private ModelSettingsPersister $persister;
@@ -41,7 +39,7 @@ class ModelSettingsPersisterTest extends KernelTestCase
     {
         parent::setUp();
 
-        $this->tempDir = sys_get_temp_dir().'/hatfield-persister-test-'.uniqid('', true);
+        $this->tempDir = TestDirectoryIsolation::createProjectTempDir('hatfield-persister', 0o750);
         $this->homeDir = $this->tempDir.'/home';
         mkdir($this->homeDir, 0777, true);
         mkdir($this->homeDir.'/.hatfield', 0777, true);
@@ -50,7 +48,6 @@ class ModelSettingsPersisterTest extends KernelTestCase
         // Create initial home settings file so HomeSettingsWriter can read it
         file_put_contents($this->homeDir.'/.hatfield/settings.yaml', "tui:\n    theme: cyberpunk\n");
 
-        self::bootKernel(['environment' => 'test', 'debug' => false]);
         $container = static::getContainer();
         $this->entityManager = $container->get('doctrine.orm.default_entity_manager');
 
@@ -77,31 +74,8 @@ class ModelSettingsPersisterTest extends KernelTestCase
 
     protected function tearDown(): void
     {
-        $this->removeDir($this->tempDir);
-        self::ensureKernelShutdown();
-        parent::tearDown();
-        // Pop the exception handler that FrameworkBundle::boot() registered
-        restore_exception_handler();
-    }
-
-    private function removeDir(string $dir): void
-    {
-        if (!is_dir($dir)) {
-            return;
-        }
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-        foreach ($iterator as $file) {
-            if ($file->isDir()) {
-                rmdir($file->getPathname());
-            } else {
-                chmod($file->getPathname(), 0644);
-                unlink($file->getPathname());
-            }
-        }
-        rmdir($dir);
+        TestDirectoryIsolation::removeDirectory($this->tempDir);
+        parent::tearDown(); // clears EM via IsolatedKernelTestCase
     }
 
     // ──────────────────────────────────────────────
