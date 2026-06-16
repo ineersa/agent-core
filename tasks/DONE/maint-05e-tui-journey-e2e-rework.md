@@ -39,14 +39,14 @@ Known entrypoints:
 - Docs/skills are updated so future TUI tests follow the journey model instead of one-harness-per-assertion.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/maint-05e-tui-journey-e2e-rework
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05e-tui-journey-e2e-rework
 Fork run: ix53j86ctmdx
 PR URL: https://github.com/ineersa/agent-core/pull/146
-PR Status: open
+PR Status: merged
 Started: 2026-06-16T00:10:29.822Z
-Completed:
+Completed: 2026-06-16T01:10:49.667Z
 
 ## Work log
 - Created: 2026-06-15T21:07:56.576Z
@@ -130,3 +130,51 @@ Completed:
 - Skipped PR creation (pushOnly: true).
 - Validation: Fork guard passed: cwd/root `/home/ineersa/projects/agent-core-worktrees/maint-05e-tui-journey-e2e-rework`, branch `task/maint-05e-tui-journey-e2e-rework`.; Fork read mandatory docs: `AGENTS.md`, `.agents/skills/testing/SKILL.md`, `tests/AGENTS.md`, `.agents/skills/task-workflow/SKILL.md`, `.agents/skills/castor/SKILL.md`, `docs/llm-replay.md`, `docs/tui-testing.md`.; Fork validation: `castor test --filter=testResolveFixtureStopReason` passed: 6 tests, 6 assertions, 0.7s.; Fork validation: `castor llm:fixtures:record` passed: 3 tests, 10 assertions, 10.7s; regenerated both TUI replay fixtures through the supported Castor recording command.; Fork validation: committed TUI fixture JSON has `stop_reason: "stop"` (not null) for both `tests/Tui/E2E/fixtures/tui-simple-text-response.json` and `tests/Tui/E2E/fixtures/tui-startup-prompt-response.json`.; Fork validation: `castor test:tui` passed: 3 tests, 35 assertions, 14.6s.; Fork validation: `castor test` passed: 2526 tests, 7365 assertions, 31.9s.; Fork validation: `castor deptrac` passed: 0 violations, 0 errors.; Fork validation: `castor phpstan` passed: 0 errors, 0 file_errors.; Fork validation: `castor cs-check` passed: 0 fixable files.; Fork validation: `castor list` confirmed no `test:tui-live`; `test:llm-real`, `test:controller`, and `llm:fixtures:record` remain.; Parent verification: `gh pr view 146` reports OPEN PR from `task/maint-05e-tui-journey-e2e-rework` to `main`; worktree clean and 4 commits ahead of origin before push.; Parent verification: PHP JSON inspection confirmed both TUI fixtures have `stop_reason='stop'`, live `recording_source='llama_cpp_test/test'`, and 539/541 recorded deltas.; Skipped automated reviewer and full `LLM_MODE=true castor check` per MAINT-05A-F policy; MAINT-05G owns final full-gate validation.
 - Summary: MAINT-05E review iteration complete and ready again for manual CODE-REVIEW on existing PR #146. Follow-up fork fixed the user-identified `stop_reason` gap in the Castor fixture recording path: `StreamRecorderObserver::resolveFixtureStopReason()` now derives fixture metadata from recorded deltas when the production platform result returns null, preserving explicit stop reasons, mapping tool-call deltas to `tool_call`, and using `stop` for successful non-tool recordings. `ReplayRecordingTest` now uses the helper for all recording methods; `ReplayTest` adds non-live unit coverage; TUI fixtures were regenerated via `castor llm:fixtures:record` and now persist `stop_reason: "stop"` with `recording_source: "llama_cpp_test/test"`. Parent verification confirmed the MAINT-05E worktree is clean on branch `task/maint-05e-tui-journey-e2e-rework` at commit `33187942a`, existing PR #146 is open against `main`, no `test:tui-live` command is present, and real LLM commands remain. Automated reviewer and full `LLM_MODE=true castor check` were skipped per MAINT-05A-F policy/user instruction.
+
+## Task workflow update - 2026-06-16T01:10:49.667Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/maint-05e-tui-journey-e2e-rework into integration checkout.
+- Merge made by the 'ort' strategy.
+ .agents/skills/task-workflow/SKILL.md              |    4 +-
+ .agents/skills/testing/SKILL.md                    |   35 +-
+ .castor/e2e.php                                    |  100 +-
+ .castor/llm-replay.php                             |   26 +-
+ .castor/phpunit.php                                |  111 +-
+ .castor/tasks.php                                  |   21 +-
+ AGENTS.md                                          |   12 +-
+ docs/llm-replay.md                                 |   23 +
+ docs/tui-testing.md                                |   11 +-
+ tests/AGENTS.md                                    |   13 +-
+ .../SymfonyAi/Replay/ReplayRecordingTest.php       |  130 +-
+ .../Infrastructure/SymfonyAi/Replay/ReplayTest.php |   64 +
+ .../SymfonyAi/Replay/StreamRecorderObserver.php    |   29 +
+ tests/Tui/E2E/EditorBorderColorTest.php            |  295 ---
+ tests/Tui/E2E/FileCompletionMultilineE2ETest.php   |  257 ---
+ tests/Tui/E2E/HotkeySmokeTest.php                  |  297 ---
+ tests/Tui/E2E/ImmediateSubmitFeedbackTest.php      |  264 ---
+ .../Tui/E2E/PromptTemplateSlashCommandE2ETest.php  |  197 --
+ tests/Tui/E2E/ReasoningCycleTest.php               |  214 --
+ tests/Tui/E2E/SessionRenameE2ETest.php             |  276 ---
+ tests/Tui/E2E/ShellPrefixSmokeTest.php             |  382 ----
+ tests/Tui/E2E/TuiAgentSmokeTest.php                |  979 ---------
+ tests/Tui/E2E/TuiJourneyE2eTest.php                |  575 +++++
+ tests/Tui/E2E/TuiStartupSnapshotTest.php           |  131 +-
+ .../Tui/E2E/fixtures/tui-simple-text-response.json | 2181 +++++++++++++++++++
+ .../E2E/fixtures/tui-startup-prompt-response.json  | 2189 ++++++++++++++++++++
+ 26 files changed, 5367 insertions(+), 3449 deletions(-)
+ delete mode 100644 tests/Tui/E2E/EditorBorderColorTest.php
+ delete mode 100644 tests/Tui/E2E/FileCompletionMultilineE2ETest.php
+ delete mode 100644 tests/Tui/E2E/HotkeySmokeTest.php
+ delete mode 100644 tests/Tui/E2E/ImmediateSubmitFeedbackTest.php
+ delete mode 100644 tests/Tui/E2E/PromptTemplateSlashCommandE2ETest.php
+ delete mode 100644 tests/Tui/E2E/ReasoningCycleTest.php
+ delete mode 100644 tests/Tui/E2E/SessionRenameE2ETest.php
+ delete mode 100644 tests/Tui/E2E/ShellPrefixSmokeTest.php
+ delete mode 100644 tests/Tui/E2E/TuiAgentSmokeTest.php
+ create mode 100644 tests/Tui/E2E/TuiJourneyE2eTest.php
+ create mode 100644 tests/Tui/E2E/fixtures/tui-simple-text-response.json
+ create mode 100644 tests/Tui/E2E/fixtures/tui-startup-prompt-response.json
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/maint-05e-tui-journey-e2e-rework.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Validation: Verified PR #146 state via `gh pr view`: MERGED at 2026-06-16T01:10:03Z with merge commit ed3d82103ce91e1c7b616141fe88e381866c704b.; Skipped post-merge `LLM_MODE=true castor check` per explicit MAINT-05 staged policy/user instruction; focused validation was already recorded before CODE-REVIEW.
+- Summary: User confirmed PR #146 was merged on GitHub. Moving MAINT-05E to DONE and syncing integration checkout. Post-merge full `LLM_MODE=true castor check` remains intentionally skipped per MAINT-05A-F policy; MAINT-05G owns the final deterministic QA cutover/full-gate validation.
