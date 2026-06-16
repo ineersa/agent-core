@@ -319,6 +319,24 @@ final class TranscriptProjectionState
         return false;
     }
 
+    /**
+     * Check whether a block of a specific kind with the given message ID
+     * exists.  Used to avoid creating duplicate canonical blocks on replay
+     * when the live streaming path already produced the same block.
+     */
+    public function hasBlockOfKindForMessageId(string $messageId, TranscriptBlockKindEnum $kind): bool
+    {
+        foreach ($this->blocks as $block) {
+            if ($block->kind === $kind
+                && (($block->meta['message_id'] ?? '') === $messageId)
+            ) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public function finalizeMessageBlocks(string $messageId): void
     {
         foreach ($this->blocks as $id => $block) {

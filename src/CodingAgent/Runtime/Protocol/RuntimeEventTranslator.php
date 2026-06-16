@@ -179,6 +179,23 @@ final class RuntimeEventTranslator
             $payload['usage'] = $p['usage'];
         }
 
+        // Include canonical thinking details for replay/reconstruction of
+        // non-streaming AssistantThinking blocks on resume.
+        $assistantMessage = $p['assistant_message'] ?? null;
+        if (\is_array($assistantMessage)) {
+            $thinking = (string) ($assistantMessage['details']['thinking'] ?? '');
+            if ('' !== $thinking) {
+                $payload['details'] = ['thinking' => $thinking];
+            }
+
+            // Include canonical tool-call data for reconstruction of
+            // non-streaming ToolCall blocks on resume.
+            $toolCalls = $assistantMessage['tool_calls'] ?? null;
+            if (\is_array($toolCalls) && [] !== $toolCalls) {
+                $payload['tool_calls'] = $toolCalls;
+            }
+        }
+
         return new RuntimeEvent(
             type: RuntimeEventTypeEnum::AssistantMessageCompleted->value,
             runId: $runEvent->runId,

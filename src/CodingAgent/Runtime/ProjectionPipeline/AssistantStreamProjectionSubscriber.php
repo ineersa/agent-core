@@ -169,12 +169,49 @@ final readonly class AssistantStreamProjectionSubscriber implements EventSubscri
 
         $event->state->finalizeMessageBlocks($messageId);
 
-        $text = (string) ($p['text'] ?? '');
-        if ('' === $text) {
-            return;
+        // ── Reconstruct canonical thinking block ──
+        //
+        // Streaming thinking deltas are not persisted in events.jsonl.
+        // On replay the canonical llm_step_completed carries
+        // details.thinking with the full thinking text.  Create a
+        // non-streaming, collapsed AssistantThinking block so resume
+        // shows the same thinking content the user saw in the live TUI.
+        //
+        // Thinking is created FIRST so it appears before assistant text
+        // and tool-call blocks, matching live projection order.
+        $canonicalThinking = (string) ($p['details']['thinking'] ?? '');
+        if ('' !== $canonicalThinking
+            && !$event->state->hasBlockOfKindForMessageId($messageId, TranscriptBlockKindEnum::AssistantThinking)
+        ) {
+            $thinkingBlockId = 'think_'.$messageId;
+            $event->state->addBlock(new TranscriptBlock(
+                id: $thinkingBlockId,
+                kind: TranscriptBlockKindEnum::AssistantThinking,
+                runId: $event->runId(),
+                seq: $event->state->nextSeq(),
+                text: $canonicalThinking,
+                meta: $event->state->buildAssistantMeta($p),
+                streaming: false,
+                collapsed: true,
+            ));
         }
 
-        if (!$event->state->hasAnyBlockForMessageId($messageId)) {
+        // ── Reconstruct canonical (non-streaming) text block ──
+        //
+        // When the live streaming path already produced a text block,
+        // hasBlockOfKindForMessageId returns true and we skip.  On
+        // replay (no streaming deltas in events.jsonl) there are no
+        // blocks yet, so we create the non-streaming text block from
+        // the canonical llm_step_completed text.
+        //
+        // We check specifically for AssistantMessage kind, not
+        // hasAnyBlockForMessageId, because thinking and tool-call
+        // blocks (reconstructed above) also carry the message_id
+        // and would cause a false positive.
+        $text = (string) ($p['text'] ?? '');
+        if ('' !== $text
+            && !$event->state->hasBlockOfKindForMessageId($messageId, TranscriptBlockKindEnum::AssistantMessage)
+        ) {
             $blockId = 'msg_'.$messageId;
             $event->state->addBlock(new TranscriptBlock(
                 id: $blockId,
@@ -185,6 +222,52 @@ final readonly class AssistantStreamProjectionSubscriber implements EventSubscri
                 meta: $event->state->buildAssistantMeta($p),
                 streaming: false,
             ));
+        }
+
+        // ── Reconstruct canonical tool-call blocks ──
+        //
+        // Streaming tool-call deltas are not persisted in events.jsonl.
+        // On replay the canonical llm_step_completed carries
+        // assistant_message.tool_calls with id, name, and arguments.
+        // Create non-streaming ToolCall blocks for each call that
+        // doesn't already have a block (the live streaming path already
+        // created finalized ToolCall blocks during the original session).
+        $canonicalToolCalls = $p['tool_calls'] ?? [];
+        if (\is_array($canonicalToolCalls) && [] !== $canonicalToolCalls) {
+            foreach ($canonicalToolCalls as $tc) {
+                if (!\is_array($tc)) {
+                    continue;
+                }
+                $callId = (string) ($tc['id'] ?? '');
+                if ('' === $callId) {
+                    continue;
+                }
+                $toolCallBlockId = 'tool_call_'.$callId;
+                if (null !== $event->state->getBlock($toolCallBlockId)) {
+                    continue; // already exists from streaming path
+                }
+                $toolName = (string) ($tc['name'] ?? '');
+                $arguments = $tc['arguments'] ?? [];
+                $argsText = \is_array($arguments) && [] !== $arguments
+                    ? $event->state->argumentsToText($arguments)
+                    : '()';
+                $text = '' !== $toolName ? $toolName.$argsText : $argsText;
+
+                $event->state->addBlock(new TranscriptBlock(
+                    id: $toolCallBlockId,
+                    kind: TranscriptBlockKindEnum::ToolCall,
+                    runId: $event->runId(),
+                    seq: $event->state->nextSeq(),
+                    text: $text,
+                    meta: [
+                        'tool_call_id' => $callId,
+                        'tool_name' => $toolName,
+                        'arguments' => $arguments,
+                        'message_id' => $messageId,
+                    ],
+                    streaming: false,
+                ));
+            }
         }
     }
 

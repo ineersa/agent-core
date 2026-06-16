@@ -10,34 +10,37 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
 /**
- * E2E proof that /resume <session-id> produces a clean transcript from
- * canonical events.jsonl replay — no transient streaming widgets
- * (thinking fragments, tool-call placeholders, Running… tool-result
- * rows) resurrected as historical transcript blocks.
+ * E2E proof that /resume <session-id> reconstructs canonical non-streaming
+ * transcript blocks from events.jsonl — thinking, assistant text, tool-call
+ * blocks, tool results — so the visible pane shows the same content the
+ * user saw in the live session, with NO transient streaming remnants.
  *
- * This test exercises the session-resume projection path end-to-end
- * via TmuxHarness.  A session is initially created with a simple
- * completed turn, then its events.jsonl is replaced with a fixture
- * containing a completed turn followed by a cancelled streaming turn.
- * After /resume the visible pane must show canonical completed history
- * plus a cancellation marker, but NO stale streaming fragments.
+ * Prior forks incorrectly blamed terminal clearing.  The real root cause
+ * is twofold:
+ *   1. The translator drops assistant_message.details.thinking and
+ *      assistant_message.tool_calls from llm_step_completed, so the
+ *      projector never creates thinking or tool-call blocks on replay.
+ *   2. tool_execution_end without result leaves the ToolResult block
+ *      stuck at "Running…" because upsertToolResultBlock preserves
+ *      existing text when the incoming text is empty.
  *
- * The projection semantics proven here:
- *  - on turn/run cancellation, active streaming blocks are REMOVED,
- *    not finalized.
- *  - Completed (non-streaming) blocks from prior turns survive.
- *  - Cancellation blocks (non-streaming) are appended.
+ * This test seeds a session's events.jsonl with three turns:
+ *   Turn 1: completed llm_step_completed with thinking + assistant text
+ *           → proves thinking block reconstruction
+ *   Turn 2: llm_step_completed with tool_calls, then tool_execution_start,
+ *           tool_call_result_received, and tool_execution_end (no result)
+ *           → proves tool-call block reconstruction + Running… replacement
+ *   Turn 3: tool_execution_start + llm_step_aborted (cancellation)
+ *           → proves streaming blocks removed on cancellation (565d9a9c7)
  *
- * Flow:
- *  1. Start TUI, wait for startup layout.
- *  2. Submit "hi" → session is created, deterministic replay responds.
- *  3. Extract session ID from footer history.
- *  4. Overwrite <session>/events.jsonl with a fixture containing
- *     a completed turn + a cancelled streaming turn.
- *  5. /resume <sessionId> → session replayed from new events.jsonl.
- *  6. Assert current visible pane (capturePlain) has proper layout,
- *     the completed turn's assistant text, a cancellation marker,
- *     and NO transient streaming fragments.
+ * After /resume the visible pane (capturePlain) must show:
+ *  - Thinking content from turn 1
+ *  - Assistant text from turn 1
+ *  - Tool-call block with tool name and arguments from turn 2
+ *  - Tool result showing tool name (not "Running…") for turn 2
+ *  - Cancellation marker for turn 3
+ *  - ZERO "● Running…" rows
+ *  - ZERO raw escape sequences
  *
  * @group tui-e2e-replay
  */
@@ -70,7 +73,7 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
         }
     }
 
-    public function testResumeAfterNewRendersCleanVisiblePane(): void
+    public function testResumeReconstructsCanonicalBlocksFromEventsJsonl(): void
     {
         $pane = $this->tmux->startDetached(
             command: $this->agentCommand(),
@@ -124,15 +127,15 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
 
             $this->saveAnsiSnapshot($pane, 'resume-step1-first-session');
 
-            // ── Phase 3: Replace events.jsonl with cancellation fixture ──
+            // ── Phase 3: Replace events.jsonl with canonical fixture ──
             //
-            // Overwrite the session's events.jsonl with a fixture that
-            // contains a completed first turn followed by a cancelled
-            // streaming second turn.  This simulates a session where
-            // the user cancelled mid-streaming on turn 2, and the prior
-            // fork was projecting the transient streaming blocks as
-            // permanent history on resume.
-            $this->writeCancellationFixture($sessionId);
+            // Overwrite the session's events.jsonl with a three-turn
+            // fixture that exercises canonical reconstruction:
+            //   Turn 1: thinking + text → proves thinking block recon
+            //   Turn 2: tool_calls + tool result (no result text) →
+            //           proves tool-call block recon + Running→ falling back
+            //   Turn 3: cancelled turn → proves streaming removal
+            $this->writeCanonicalFixture($sessionId);
 
             // ── Phase 4: /resume <sessionId> ──
             $this->tmux->sendKey($pane, 'C-u');
@@ -144,7 +147,7 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
             $this->tmux->waitForCaptureContains($pane, '█', 5.0);
             usleep(300_000);
 
-            // ── Phase 5: Assert clean current visible-pane layout ──
+            // ── Phase 5: Assert clean visible-pane layout ──
             // capturePlain() returns ONLY the currently visible pane,
             // not scrollback history.
             $visiblePane = $this->tmux->capturePlain($pane);
@@ -159,41 +162,59 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
                 'Working/idle status must be visible in the current pane after /resume',
             );
 
-            // B) Session ID must appear in the visible pane.
+            // B) Session ID must appear.
             self::assertStringContainsString($sessionId, $visiblePane,
                 'Session ID must appear in the current pane after /resume');
 
-            // C) The completed first turn's assistant text must survive replay.
-            self::assertStringContainsString('Hello from the test harness.', $visiblePane,
-                'Completed assistant text from turn 1 must survive /resume replay');
-
-            // D) Cancellation marker must appear (the turn 2 cancellation block).
-            self::assertStringContainsString('turn cancelled', $visiblePane,
-                'Cancellation block must be visible after /resume replay');
-
-            // E) No orphaned streaming fragments — these are the core
-            //    assertions for the projection fix.
+            // ── C) Turn 1: thinking + assistant text ──
             //
-            //    The fixture's turn 2 contains a tool_execution.start
-            //    (streaming ToolResult "Running…") followed by an
-            //    llm_step_aborted (turn.cancelled).  The projection
-            //    fix removes streaming blocks on cancellation instead
-            //    of finalizing them, so "● Running…" must NOT appear
-            //    in the current visible pane.
+            // The fixture's turn 1 has assistant_message with
+            // details.thinking and text.  The projector must reconstruct
+            // a non-streaming thinking block and a text block.
 
-            self::assertStringNotContainsString('◇ </think>', $visiblePane,
-                'Transient thinking close tags must not appear in the current pane after /resume');
+            self::assertStringContainsString('Let me think about this request carefully.', $visiblePane,
+                'Thinking text from turn 1 must be visible after /resume');
 
+            self::assertStringContainsString('Here is the answer you requested.', $visiblePane,
+                'Assistant text from turn 1 must be visible after /resume');
+
+            // ── D) Turn 2: tool-call block + tool result ──
+            //
+            // The fixture's turn 2 has assistant_message.tool_calls with
+            // a read tool call, then tool_execution_start/end without
+            // result text.  The projector must reconstruct a tool-call
+            // block and replace "Running…" with the tool name.
+
+            self::assertStringContainsString('read', $visiblePane,
+                'Tool name must appear in tool-call block after /resume');
+            self::assertStringContainsString('/tmp/example.txt', $visiblePane,
+                'Tool arguments must appear in tool-call block after /resume');
+
+            self::assertStringContainsString('read completed', $visiblePane,
+                'Tool result must show "read completed" (fallback from tool name), not Running…');
+
+            // ── E) Turn 3: cancellation ──
+            self::assertStringContainsString('turn cancelled', $visiblePane,
+                'Cancellation marker for turn 3 must be visible after /resume');
+
+            // ── F) ZERO "● Running…" ──
+            //
+            // This is the core assertion.  Neither a completed tool
+            // without result (turn 2) nor a cancelled turn (turn 3)
+            // should leave "● Running…" in the visible pane.
             $runningCount = \substr_count($visiblePane, '● Running…');
             self::assertSame(0, $runningCount,
                 \sprintf(
                     'Zero "● Running…" expected in current pane after /resume (found %d). '
-                    .'Removing streaming blocks on cancellation must prevent transient '
-                    .'tool-result rows from being resurrected as historical content.',
+                    .'Completed tools must fall back to tool name; cancelled tools must be removed.',
                     $runningCount,
                 ));
 
-            // F) No raw escape-sequence leakage.
+            // ── G) No transient streaming fragments ──
+            self::assertStringNotContainsString('◇ </think>', $visiblePane,
+                'Transient thinking close tags must not appear after /resume');
+
+            // ── H) No raw escape-sequence leakage ──
             self::assertStringNotContainsString('[2J', $visiblePane,
                 'Escape [2J must not leak into visible pane');
             self::assertStringNotContainsString('[3J', $visiblePane,
@@ -213,24 +234,37 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
         }
     }
 
-    // ── Cancellation fixture ────────────────────────────────────────────────
+    // ── Canonical fixture ────────────────────────────────────────────────────
 
     /**
      * Write a custom events.jsonl that simulates a session with:
-     *  - Turn 1: completed assistant message (non-streaming, survives)
-     *  - Turn 2: tool_execution started (streaming Running…) then
-     *            llm_step_aborted (turn.cancelled — removes streaming blocks)
      *
-     * After fix, the projector removes the streaming ToolResult block
-     * on turn.cancelled so the visible pane shows only the completed
-     * assistant text + the cancellation marker.
+     *  Turn 1 (completed):
+     *    - llm_step_completed with details.thinking + text
+     *      → projector must reconstruct thinking + text blocks
+     *
+     *  Turn 2 (completed with tool):
+     *    - llm_step_completed with tool_calls (read tool)
+     *      → projector must reconstruct tool-call block
+     *    - tool_execution_start → creates ToolResult "Running…"
+     *    - tool_call_result_received → (no result text in canonical events)
+     *    - tool_execution_end without result
+     *      → projector must replace "Running…" with tool name
+     *
+     *  Turn 3 (cancelled):
+     *    - tool_execution_start → creates ToolResult "Running…"
+     *    - llm_step_aborted → turn.cancelled
+     *      → projector must remove streaming blocks (565d9a9c7 fix)
+     *
+     * The fixture uses the same canonical format as real sessions
+     * (assistant_message with details, tool_calls, etc.) so it exercises
+     * the full RuntimeEventTranslator→TranscriptProjector pipeline.
      */
-    private function writeCancellationFixture(string $sessionId): void
+    private function writeCanonicalFixture(string $sessionId): void
     {
         $now = (new \DateTimeImmutable())->format(\DATE_ATOM);
         $eventsPath = $this->testProjectDir.'/.hatfield/sessions/'.$sessionId.'/events.jsonl';
 
-        // Build the fixture event by event.
         $events = [];
 
         // Turn 0: run_started
@@ -241,29 +275,159 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
             'turn_no' => 0,
             'type' => 'run_started',
             'payload' => [
-                'step_id' => 'start-fix-1',
+                'step_id' => 'start-1',
                 'payload' => [
                     'system_prompt' => '',
                     'messages' => [
-                        ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'hi']]],
+                        ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Tell me about testing.']]],
                     ],
                 ],
             ],
             'ts' => $now,
         ];
 
-        // Turn 1: advance + leaf_set + completed message
-        $events[] = ['schema_version'=>'1.0','run_id'=>$sessionId,'seq'=>2,'turn_no'=>1,'type'=>'turn_advanced','payload'=>['step_id'=>'followup-1','turn_no'=>1,'parent_turn_no'=>null],'ts'=>$now];
-        $events[] = ['schema_version'=>'1.0','run_id'=>$sessionId,'seq'=>3,'turn_no'=>1,'type'=>'leaf_set','payload'=>['turn_no'=>1,'previous_turn_no'=>null,'parent_turn_no'=>null,'reason'=>'continue'],'ts'=>$now];
-        $events[] = ['schema_version'=>'1.0','run_id'=>$sessionId,'seq'=>4,'turn_no'=>1,'type'=>'llm_step_completed','payload'=>['step_id'=>'followup-1','stop_reason'=>'stop','text'=>'Hello from the test harness.','usage'=>['input_tokens'=>10,'output_tokens'=>6,'total_tokens'=>16],'tool_calls_count'=>0],'ts'=>$now];
+        // ── Turn 1: thinking + text (canonical reconstruction of thinking block) ──
+        $events[] = [
+            'schema_version' => '1.0', 'run_id' => $sessionId,
+            'seq' => 2, 'turn_no' => 1, 'type' => 'turn_advanced',
+            'payload' => ['step_id' => 'turn-1', 'turn_no' => 1, 'parent_turn_no' => null],
+            'ts' => $now,
+        ];
+        $events[] = [
+            'schema_version' => '1.0', 'run_id' => $sessionId,
+            'seq' => 3, 'turn_no' => 1, 'type' => 'leaf_set',
+            'payload' => ['turn_no' => 1, 'previous_turn_no' => null, 'parent_turn_no' => null, 'reason' => 'continue'],
+            'ts' => $now,
+        ];
+        $events[] = [
+            'schema_version' => '1.0', 'run_id' => $sessionId,
+            'seq' => 4, 'turn_no' => 1, 'type' => 'llm_step_completed',
+            'payload' => [
+                'step_id' => 'turn-1',
+                'stop_reason' => 'stop',
+                'text' => 'Here is the answer you requested.',
+                'tool_calls_count' => 0,
+                'assistant_message' => [
+                    'role' => 'assistant',
+                    'content' => [['type' => 'text', 'text' => 'Here is the answer you requested.']],
+                    'details' => [
+                        'thinking' => 'Let me think about this request carefully.',
+                    ],
+                ],
+                'usage' => ['input_tokens' => 10, 'output_tokens' => 6, 'total_tokens' => 16],
+            ],
+            'ts' => $now,
+        ];
 
-        // Turn 2: advance + leaf_set + tool_execution_start (streaming, creates Running…) + llm_step_aborted (cancellation)
-        $events[] = ['schema_version'=>'1.0','run_id'=>$sessionId,'seq'=>5,'turn_no'=>2,'type'=>'turn_advanced','payload'=>['step_id'=>'followup-2','turn_no'=>2,'parent_turn_no'=>null],'ts'=>$now];
-        $events[] = ['schema_version'=>'1.0','run_id'=>$sessionId,'seq'=>6,'turn_no'=>2,'type'=>'leaf_set','payload'=>['turn_no'=>2,'previous_turn_no'=>1,'parent_turn_no'=>null,'reason'=>'continue'],'ts'=>$now];
-        // tool_execution_start → creates streaming ToolResult "Running…" block
-        $events[] = ['schema_version'=>'1.0','run_id'=>$sessionId,'seq'=>7,'turn_no'=>2,'type'=>'tool_execution_start','payload'=>['tool_call_id'=>'call_cancel_test','tool_name'=>'bash','order_index'=>0,'mode'=>'sequential'],'ts'=>$now];
-        // llm_step_aborted → turn.cancelled → removeActiveStreamingBlocks
-        $events[] = ['schema_version'=>'1.0','run_id'=>$sessionId,'seq'=>8,'turn_no'=>2,'type'=>'llm_step_aborted','payload'=>['step_id'=>'followup-2','stop_reason'=>'aborted','usage'=>[]],'ts'=>$now];
+        // ── Turn 2: tool-call + tool execution (no result) ──
+        $events[] = [
+            'schema_version' => '1.0', 'run_id' => $sessionId,
+            'seq' => 5, 'turn_no' => 2, 'type' => 'turn_advanced',
+            'payload' => ['step_id' => 'turn-2', 'turn_no' => 2, 'parent_turn_no' => null],
+            'ts' => $now,
+        ];
+        $events[] = [
+            'schema_version' => '1.0', 'run_id' => $sessionId,
+            'seq' => 6, 'turn_no' => 2, 'type' => 'leaf_set',
+            'payload' => ['turn_no' => 2, 'previous_turn_no' => 1, 'parent_turn_no' => null, 'reason' => 'continue'],
+            'ts' => $now,
+        ];
+        // llm_step_completed with tool_calls + thinking
+        $events[] = [
+            'schema_version' => '1.0', 'run_id' => $sessionId,
+            'seq' => 7, 'turn_no' => 2, 'type' => 'llm_step_completed',
+            'payload' => [
+                'step_id' => 'turn-2',
+                'stop_reason' => 'tool_call',
+                'text' => null,
+                'tool_calls_count' => 1,
+                'assistant_message' => [
+                    'role' => 'assistant',
+                    'content' => null,
+                    'tool_calls' => [
+                        [
+                            'id' => 'call_read_e2e_001',
+                            'name' => 'read',
+                            'arguments' => ['path' => '/tmp/example.txt'],
+                            'order_index' => 0,
+                        ],
+                    ],
+                    'details' => [
+                        'thinking' => 'I need to read the file the user mentioned.',
+                    ],
+                ],
+                'usage' => ['input_tokens' => 50, 'output_tokens' => 20, 'total_tokens' => 70],
+            ],
+            'ts' => $now,
+        ];
+        // Tool execution sequence
+        $events[] = [
+            'schema_version' => '1.0', 'run_id' => $sessionId,
+            'seq' => 8, 'turn_no' => 2, 'type' => 'tool_execution_start',
+            'payload' => [
+                'tool_call_id' => 'call_read_e2e_001',
+                'tool_name' => 'read',
+                'order_index' => 0,
+                'mode' => 'sequential',
+            ],
+            'ts' => $now,
+        ];
+        $events[] = [
+            'schema_version' => '1.0', 'run_id' => $sessionId,
+            'seq' => 9, 'turn_no' => 2, 'type' => 'tool_call_result_received',
+            'payload' => [
+                'tool_call_id' => 'call_read_e2e_001',
+                'order_index' => 0,
+                'is_error' => false,
+            ],
+            'ts' => $now,
+        ];
+        // tool_execution_end WITHOUT result (real canonical events often lack it)
+        $events[] = [
+            'schema_version' => '1.0', 'run_id' => $sessionId,
+            'seq' => 10, 'turn_no' => 2, 'type' => 'tool_execution_end',
+            'payload' => [
+                'tool_call_id' => 'call_read_e2e_001',
+                'order_index' => 0,
+                'is_error' => false,
+            ],
+            'ts' => $now,
+        ];
+
+        // ── Turn 3: cancelled (streaming removal) ──
+        $events[] = [
+            'schema_version' => '1.0', 'run_id' => $sessionId,
+            'seq' => 11, 'turn_no' => 3, 'type' => 'turn_advanced',
+            'payload' => ['step_id' => 'turn-3', 'turn_no' => 3, 'parent_turn_no' => null],
+            'ts' => $now,
+        ];
+        $events[] = [
+            'schema_version' => '1.0', 'run_id' => $sessionId,
+            'seq' => 12, 'turn_no' => 3, 'type' => 'leaf_set',
+            'payload' => ['turn_no' => 3, 'previous_turn_no' => 2, 'parent_turn_no' => null, 'reason' => 'continue'],
+            'ts' => $now,
+        ];
+        $events[] = [
+            'schema_version' => '1.0', 'run_id' => $sessionId,
+            'seq' => 13, 'turn_no' => 3, 'type' => 'tool_execution_start',
+            'payload' => [
+                'tool_call_id' => 'call_cancel_e2e',
+                'tool_name' => 'bash',
+                'order_index' => 0,
+                'mode' => 'sequential',
+            ],
+            'ts' => $now,
+        ];
+        $events[] = [
+            'schema_version' => '1.0', 'run_id' => $sessionId,
+            'seq' => 14, 'turn_no' => 3, 'type' => 'llm_step_aborted',
+            'payload' => [
+                'step_id' => 'turn-3',
+                'stop_reason' => 'aborted',
+                'usage' => [],
+            ],
+            'ts' => $now,
+        ];
 
         $jsonl = '';
         foreach ($events as $ev) {

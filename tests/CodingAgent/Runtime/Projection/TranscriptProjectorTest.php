@@ -370,6 +370,174 @@ final class TranscriptProjectorTest extends TestCase
         $this->assertSame([], $this->projector->blocks(), 'message_started alone does not create blocks');
     }
 
+    // ── Canonical message reconstruction (replay from events.jsonl) ──────────
+
+    public function testMessageCompletedReconstructsThinkingFromCanonicalDetails(): void
+    {
+        $this->accept('assistant.message_completed', [
+            'message_id' => 'step_1',
+            'text' => 'I will help you.',
+            'details' => ['thinking' => 'Let me think about this carefully.'],
+        ]);
+
+        $blocks = $this->projector->blocks();
+        // Expect: thinking block, then text block
+        $this->assertCount(2, $blocks);
+
+        $thinkBlock = $blocks[0];
+        $this->assertSame('think_step_1', $thinkBlock->id);
+        $this->assertSame(TranscriptBlockKindEnum::AssistantThinking, $thinkBlock->kind);
+        $this->assertSame('Let me think about this carefully.', $thinkBlock->text);
+        $this->assertFalse($thinkBlock->streaming, 'Reconstructed thinking must be non-streaming');
+        $this->assertTrue($thinkBlock->collapsed, 'Reconstructed thinking must be collapsed');
+        $this->assertSame('step_1', $thinkBlock->meta['message_id']);
+
+        $msgBlock = $blocks[1];
+        $this->assertSame('msg_step_1', $msgBlock->id);
+        $this->assertSame(TranscriptBlockKindEnum::AssistantMessage, $msgBlock->kind);
+        $this->assertSame('I will help you.', $msgBlock->text);
+        $this->assertFalse($msgBlock->streaming);
+    }
+
+    public function testMessageCompletedReconstructsThinkingOnlyWhenTextEmpty(): void
+    {
+        // When the assistant only thinks (no text output), tool-call-only
+        // turn: thinking should still be reconstructed.
+        $this->accept('assistant.message_completed', [
+            'message_id' => 'step_2',
+            'text' => '',
+            'details' => ['thinking' => 'I need to call the read tool.'],
+        ]);
+
+        $blocks = $this->projector->blocks();
+        $this->assertCount(1, $blocks, 'Only the thinking block — no text block when text is empty');
+        $this->assertSame('think_step_2', $blocks[0]->id);
+        $this->assertSame(TranscriptBlockKindEnum::AssistantThinking, $blocks[0]->kind);
+        $this->assertSame('I need to call the read tool.', $blocks[0]->text);
+    }
+
+    public function testMessageCompletedReconstructsToolCallBlocksFromCanonicalToolCalls(): void
+    {
+        $this->accept('assistant.message_completed', [
+            'message_id' => 'step_3',
+            'text' => '',
+            'tool_calls' => [
+                [
+                    'id' => 'call_abc123',
+                    'name' => 'read',
+                    'arguments' => ['path' => '/tmp/file.txt'],
+                ],
+            ],
+        ]);
+
+        $blocks = $this->projector->blocks();
+        $this->assertCount(1, $blocks);
+        $toolCallBlock = $blocks[0];
+        $this->assertSame('tool_call_call_abc123', $toolCallBlock->id);
+        $this->assertSame(TranscriptBlockKindEnum::ToolCall, $toolCallBlock->kind);
+        $this->assertStringContainsString('read', $toolCallBlock->text);
+        $this->assertStringContainsString('path: "/tmp/file.txt"', $toolCallBlock->text);
+        $this->assertFalse($toolCallBlock->streaming, 'Reconstructed tool call must be non-streaming');
+        $this->assertSame('call_abc123', $toolCallBlock->meta['tool_call_id']);
+        $this->assertSame('read', $toolCallBlock->meta['tool_name']);
+        $this->assertSame('step_3', $toolCallBlock->meta['message_id']);
+    }
+
+    public function testMessageCompletedSkipsToolCallReconstructionWhenBlockExists(): void
+    {
+        // Simulate live path: streaming tool-call block already created,
+        // finalized, and has arguments.  Canonical reconstruction must
+        // skip the duplicate.
+        $this->accept('tool_call.started', [
+            'tool_call_id' => 'call_dup', 'tool_name' => 'bash',
+        ]);
+        $this->accept('tool_call.arguments_completed', [
+            'tool_call_id' => 'call_dup',
+            'tool_name' => 'bash',
+            'arguments' => ['command' => 'ls'],
+        ]);
+        $this->assertCount(1, $this->projector->blocks());
+        $existingText = $this->projector->blocks()[0]->text;
+
+        // Now a canonical message_completed arrives with the same tool_call_id.
+        $this->accept('assistant.message_completed', [
+            'message_id' => 'step_dup',
+            'text' => 'Done.',
+            'tool_calls' => [
+                ['id' => 'call_dup', 'name' => 'bash', 'arguments' => ['command' => 'ls']],
+            ],
+        ]);
+
+        // ToolCall block must remain unchanged (no duplicate, no overwrite).
+        $toolCallBlocks = array_values(array_filter(
+            $this->projector->blocks(),
+            static fn (TranscriptBlock $b) => TranscriptBlockKindEnum::ToolCall === $b->kind,
+        ));
+        $this->assertCount(1, $toolCallBlocks, 'Must not create duplicate tool-call block');
+        $this->assertSame($existingText, $toolCallBlocks[0]->text);
+    }
+
+    public function testMessageCompletedSkipsThinkingReconstructionWhenBlockExists(): void
+    {
+        // Live streaming path creates a thinking block.
+        $this->accept('assistant.thinking_started', [
+            'message_id' => 'step_live', 'block_id' => 'think_live_0',
+        ]);
+        $this->accept('assistant.thinking_delta', [
+            'block_id' => 'think_live_0', 'thinking' => 'Live thinking...',
+        ]);
+        $this->accept('assistant.thinking_completed', [
+            'block_id' => 'think_live_0', 'thinking' => 'Live thinking done.',
+        ]);
+
+        // Canonical message_completed with details.thinking on live path
+        // (which also has the streaming block).
+        $this->accept('assistant.message_completed', [
+            'message_id' => 'step_live',
+            'text' => 'Answer.',
+            'details' => ['thinking' => 'Canonical thinking text.'],
+        ]);
+
+        // Must not create a duplicate 'think_step_live' block.
+        $thinkingBlocks = array_values(array_filter(
+            $this->projector->blocks(),
+            static fn (TranscriptBlock $b) => TranscriptBlockKindEnum::AssistantThinking === $b->kind,
+        ));
+        $this->assertCount(1, $thinkingBlocks, 'Must not create duplicate thinking block');
+        $this->assertSame('Live thinking done.', $thinkingBlocks[0]->text,
+            'Existing streaming-originated thinking text must be preserved');
+    }
+
+    public function testMessageCompletedReconstructsBothThinkingAndToolCalls(): void
+    {
+        // Full canonical replay: thinking + text + tool-calls all in one event.
+        $this->accept('assistant.message_completed', [
+            'message_id' => 'step_full',
+            'text' => 'Let me read that file for you.',
+            'details' => ['thinking' => 'The user wants me to read a file.'],
+            'tool_calls' => [
+                [
+                    'id' => 'call_read_1',
+                    'name' => 'read',
+                    'arguments' => ['path' => '/tmp/doc.txt'],
+                ],
+            ],
+        ]);
+
+        $blocks = $this->projector->blocks();
+        // Expected order reflecting live projection: thinking → text → tool-call
+        $this->assertCount(3, $blocks);
+
+        $this->assertSame(TranscriptBlockKindEnum::AssistantThinking, $blocks[0]->kind);
+        $this->assertSame('think_step_full', $blocks[0]->id);
+
+        $this->assertSame(TranscriptBlockKindEnum::AssistantMessage, $blocks[1]->kind);
+        $this->assertSame('msg_step_full', $blocks[1]->id);
+
+        $this->assertSame(TranscriptBlockKindEnum::ToolCall, $blocks[2]->kind);
+        $this->assertSame('tool_call_call_read_1', $blocks[2]->id);
+    }
+
     // ── Tool call lifecycle ──────────────────────────────────────────────────
 
     public function testToolCallStartedCreatesStreamingToolCallBlock(): void
@@ -840,6 +1008,44 @@ final class TranscriptProjectorTest extends TestCase
         $block = $blocks[0];
         $this->assertSame('done', $block->text);
         $this->assertFalse($block->streaming);
+    }
+
+    public function testToolExecutionCompletedWithoutResultReplacesRunningWithToolName(): void
+    {
+        // Replay scenario: tool_execution_start creates "Running…", then
+        // tool_execution_end arrives without result (canonical events
+        // often lack result text).  The block must not stay at "Running…".
+        $this->accept('tool_execution.started', [
+            'tool_call_id' => 'tc_replay', 'tool_name' => 'read',
+        ]);
+        $this->assertSame('Running…', $this->projector->blocks()[0]->text);
+
+        $this->accept('tool_execution.completed', [
+            'tool_call_id' => 'tc_replay',
+            // No 'result' key — canonical events.jsonl often omit it.
+        ]);
+
+        $block = $this->projector->blocks()[0];
+        $this->assertFalse($block->streaming);
+        $this->assertStringContainsString('read', $block->text,
+            'Must fall back to tool name when result is empty and text was Running…');
+        $this->assertStringNotContainsString('Running…', $block->text,
+            'Must NOT leave Running… as final text');
+    }
+
+    public function testToolExecutionCompletedWithResultPreservesResult(): void
+    {
+        // Live path or replay-with-result: actual result text must survive.
+        $this->accept('tool_execution.started', [
+            'tool_call_id' => 'tc_result', 'tool_name' => 'bash',
+        ]);
+        $this->accept('tool_execution.completed', [
+            'tool_call_id' => 'tc_result', 'result' => 'file1.txt  file2.txt',
+        ]);
+
+        $block = $this->projector->blocks()[0];
+        $this->assertSame('file1.txt  file2.txt', $block->text,
+            'Explicit result must be preserved, not replaced by tool name');
     }
 
     public function testToolExecutionFailedCreatesErrorResult(): void
