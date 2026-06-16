@@ -22,9 +22,7 @@ use PHPUnit\Framework\TestCase;
  * Runs in an isolated project directory under var/tmp/tui-e2e-*
  * so it does NOT hit the stale project-root .hatfield/messenger.sqlite.
  *
- * @group tui-e2e
  */
-#[Group('tui-e2e')]
 #[Group('tui-e2e-replay')]
 final class TuiStartupSnapshotTest extends TestCase
 {
@@ -62,7 +60,6 @@ final class TuiStartupSnapshotTest extends TestCase
      * Hatfield logo to render, captures the snapshot, then exits
      * cleanly via Ctrl+D.
      */
-    #[Group('tui-e2e')]
     public function testStartupLayoutMatchesGoldenSnapshot(): void
     {
         $pane = $this->tmux->startDetached(
@@ -130,7 +127,6 @@ final class TuiStartupSnapshotTest extends TestCase
      *
      * This is a less brittle assertion than an exact golden match.
      */
-    #[Group('tui-e2e')]
     public function testStartupContainsExpectedElements(): void
     {
         $pane = $this->tmux->startDetached(

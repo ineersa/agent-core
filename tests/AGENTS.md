@@ -64,11 +64,10 @@ Do not write inline `byType` loops or ack searches in test methods. For tool-foc
 
 Default TUI E2E uses the replay-backed journey pattern (`#[Group('tui-e2e-replay')]`).
 Follow the pattern in `TuiJourneyE2eTest`: one long-lived tmux session exercising
-multiple behaviours with replay fixtures for model interaction.
+multiple behaviours with replay fixtures for model interaction.  No live LLM
+required — the test infrastructure is entirely deterministic.
 
-Live LLM TUI E2E tests (`#[Group('tui-e2e')]`) remain opt-in via `castor test:tui-live`.
-
-Use `TmuxHarness`. Follow the pattern in `TuiJourneyE2eTest` (replay) or `TuiAgentSmokeTest` (live):
+Use `TmuxHarness`. Follow the pattern in `TuiJourneyE2eTest`:
 - Detached tmux pane via `startDetached()`
 - Isolated project dir with model/provider overrides
 - `--prompt` for auto-submit, `sendLiteral`/`sendKey` for keyboard input
@@ -101,7 +100,6 @@ Key commands:
 - `castor test` — unit/integration tests (ParaTest parallel by default, sequential fallback for --filter)
 - `castor test --filter=XxxTest` — filter to specific tests (sequential; single DB)
 - `castor test:tui` — TUI E2E journey tests (`#[Group('tui-e2e-replay')]`, replay-backed, no live LLM)
-- `castor test:tui-live` — TUI E2E live-LLM tests (`#[Group('tui-e2e')]`, opt-in)
 - `castor test:llm-real` — real-LLM controller E2E tests (`#[Group('llm-real')]`)
 - `castor test:controller-replay` — controller replay E2E (default, no live LLM)
 - `castor test:controller` — controller smoke test (live LLM, opt-in)
@@ -130,7 +128,7 @@ The `llama_cpp_test/test` server should run deterministically (temperature 0, fi
 
 ### LLM generation preflight
 
-`castor check`, `test:tui`, `test:llm-real`, `test:controller`, and `test:tui-update` all run a ~4s curl-based preflight (`check_llm_generation_ready`) before any E2E test starts. It verifies the test LLM can complete a tiny generation request. If the server responds to `/health` and `/v1/models` but generation is stuck (corrupted model load, stuck slots), Castor fails immediately with a diagnostic instead of burning step timeouts. Fix or restart the llama.cpp server before retrying.
+`castor check`, `test:llm-real`, `test:controller`, and `test:tui-update` all run a ~4s curl-based preflight (`check_llm_generation_ready`) before any E2E test starts. It verifies the test LLM can complete a tiny generation request. If the server responds to `/health` and `/v1/models` but generation is stuck (corrupted model load, stuck slots), Castor fails immediately with a diagnostic instead of burning step timeouts. Fix or restart the llama.cpp server before retrying.
 
 ## TUI behavior proof
 

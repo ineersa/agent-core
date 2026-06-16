@@ -38,7 +38,7 @@ Before re-running `castor check`, `castor test:controller`, or `castor test:tui`
 
 ## E2E Testing Strategy
 
-All E2E tests use `llama_cpp_test/test` (port 9052). Test groups: `#[Group('llm-real')]`, `#[Group('tui-e2e')]`. Tests use `var/tmp/test-{uuid}` isolation, never real `.hatfield/sessions/`.
+All E2E tests use `llama_cpp_test/test` (port 9052). Test groups: `#[Group('llm-real')]`, `#[Group('tui-e2e-replay')]`. Tests use `var/tmp/test-{uuid}` isolation, never real `.hatfield/sessions/`.
 
 See `tests/AGENTS.md` for full test standards: shared helpers, isolation, test doubles, what not to test, and cleanup conventions.
 
@@ -56,7 +56,11 @@ Run `castor cleanup` to remove all temp/test artifacts.
 
 ## Required runtime/TUI validation
 
-For changes touching TUI runtime, `AgentSessionClient`, Messenger, `TranscriptProjector`, `RuntimeEventPoller`, or LLM-visible flow: you MUST run `castor check`. Unit/container/mocked tests are not enough. If prerequisites (tmux, llama.cpp:9052) are unavailable, the task MUST stay IN-PROGRESS with the blocker — never mark CODE-REVIEW or DONE without validation.
+For changes touching TUI runtime, `AgentSessionClient`, Messenger, `TranscriptProjector`, `RuntimeEventPoller`, or LLM-visible flow: you MUST run `castor check`. Unit/container/mocked tests are not enough. If tmux is unavailable, TUI tasks MUST stay IN-PROGRESS with the blocker — never mark CODE-REVIEW or DONE without validation.
+
+Default TUI E2E tests are replay-backed and deterministic — they do not require
+llama.cpp. Live LLM TUI tests have been removed; controller/live-LLM smoke remains
+opt-in via `castor test:llm-real` and `castor test:controller`.
 
 **Load the `testing` skill** when: touching runtime/TUI code, running validation, or unsure what `castor check` covers.
 
@@ -65,9 +69,9 @@ For changes touching TUI runtime, `AgentSessionClient`, Messenger, `TranscriptPr
 **TUI implementation is NOT complete until there is an automated test using the real test LLM and `TmuxHarness` with a snapshot or assertion proving the FEATURE works exactly as expected through real interactive TUI behavior.** This is a hard gate — no exceptions.
 
 - Tests must exercise the real TUI interaction flow, not just mocked services, DTO assembly, or service-only unit tests.
-- Tests must use the project TUI E2E infrastructure (`TmuxHarness`, `#[Group('tui-e2e')]`), the real test LLM endpoint (`llama_cpp_test/test` on port 9052), and isolated `var/tmp/test-{uuid}` directories.
+- Tests must use the project TUI E2E infrastructure (`TmuxHarness`, `#[Group('tui-e2e-replay')]`), replay fixtures where model output is needed, and isolated `var/tmp/test-{uuid}` directories.
 - The following are NOT acceptable substitutes: custom PHP smoke scripts, mocked `AgentSessionClient` passing through a mock runtime, checking only picker visibility or footer text, or manual-run reports from forks.
-- For the task workflow: do **not** move a TUI task to CODE-REVIEW or DONE unless a real TmuxHarness E2E proof exists and passes `castor test:tui` as well as `LLM_MODE=true castor check`. If prerequisites (tmux, llama.cpp on port 9052) are unavailable, or no such test has been written, the task MUST stay IN-PROGRESS with that blocker recorded.
+- For the task workflow: do **not** move a TUI task to CODE-REVIEW or DONE unless a real TmuxHarness E2E proof exists and passes `castor test:tui`. The default `castor test:tui` is deterministic/replay-backed; it does not require llama.cpp. If tmux is unavailable, the task MUST stay IN-PROGRESS with that blocker recorded.
 
 **Load the `testing` skill** when: writing, running, or debugging TUI E2E proof tests.
 

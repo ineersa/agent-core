@@ -30,10 +30,8 @@ use PHPUnit\Framework\TestCase;
  * Harness launch count: 1 (was 6+ across separate test classes for
  * startup, hotkeys, reasoning, border, shell-prefix, file-completion).
  *
- * @group tui-e2e
  * @group tui-e2e-replay
  */
-#[Group('tui-e2e')]
 #[Group('tui-e2e-replay')]
 final class TuiJourneyE2eTest extends TestCase
 {

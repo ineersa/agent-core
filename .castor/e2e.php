@@ -12,7 +12,6 @@ declare(strict_types=1);
  * =========================================================================
  * MAINT-05E: TUI E2E restructured into replay-backed journey tests.
  *   - test:tui      → default replay-backed TUI journey (no live LLM).
- *   - test:tui-live → opt-in live LLM TUI E2E (requires llama.cpp).
  *   - test:controller-replay → controller E2E with replay (no live LLM).
  *   - test:controller → opt-in live LLM controller E2E.
  * =========================================================================
@@ -131,82 +130,20 @@ function test_tui(?string $filter = null): void
     exit(0);
 }
 
-#[AsTask(name: 'test:tui-live', description: 'Run TUI E2E tests with live LLM (opt-in, requires llama.cpp)')]
-function test_tui_live(?string $filter = null): void
-{
-    $filterArg = null !== $filter ? ' --filter='.escapeshellarg($filter) : '';
-    check_tmux();
-    check_llm_generation_ready();
-
-    @mkdir('var/test', 0755, true);
-    $migrate = run_quiet_command(
-        'APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
-    );
-    if (0 !== $migrate->getExitCode()) {
-        fail_quality('test database migration failed: '.$migrate->getErrorOutput());
-    }
-
-    $pharPath = '';
-    try {
-        $pharPath = phar_ensure();
-    } catch (Throwable $e) {
-        echo "PHAR ensure skipped: {$e->getMessage()}\n";
-    }
-    if ('' !== $pharPath) {
-        $GLOBALS['CASTOR_PHAR_READY'] = $pharPath;
-    }
-    $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
-
-    $cmd = 'APP_ENV=test '.$pharEnv.'LLAMA_CPP_SMOKE_TEST=1 '.\PHP_BINARY.' vendor/bin/phpunit'
-        .' --group tui-e2e'
-        .$filterArg
-        .' '.phpunit_strict_issue_flags()
-        .(is_llm_mode() ? ' --colors=never --no-progress --log-junit='.report_path('phpunit-tui-live.junit.xml') : '');
-
-    echo "\n=== TUI E2E live-LLM tests (opt-in) ===\n\n";
-
-    $start = hrtime(true);
-    passthru($cmd, $exitCode);
-    $duration = (hrtime(true) - $start) / 1e9;
-
-    if (is_llm_mode()) {
-        $summary = read_suite_junit_summary('tui-live');
-        if ('' !== $summary) {
-            echo "{$summary}\n";
-        }
-    }
-
-    if (0 !== $exitCode) {
-        fail_quality(sprintf('TUI E2E live tests failed in %.1fs (exit code %d)', $duration, $exitCode));
-    }
-    echo sprintf('\nOK (%.1fs)\n', $duration);
-    exit(0);
-}
-
 #[AsTask(name: 'test:tui-update', description: 'Update TUI E2E snapshot baselines')]
 function test_tui_update(): void
 {
     check_tmux();
-    check_llm_generation_ready();
 
-    $pharPath = '';
-    try {
-        $pharPath = phar_ensure();
-    } catch (Throwable $e) {
-        echo "PHAR ensure skipped: {$e->getMessage()}
-";
-    }
-    if ('' !== $pharPath) {
-        $GLOBALS['CASTOR_PHAR_READY'] = $pharPath;
-    }
-    $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
-
-    echo 'Running TUI E2E tests with snapshot update...
+    echo 'Running TUI E2E tests with snapshot update (replay-backed)...
 ';
     passthru(
-        'APP_ENV=test '.$pharEnv.'LLAMA_CPP_SMOKE_TEST=1 '.\PHP_BINARY.' vendor/bin/phpunit'
-        .' tests/Tui/E2E '
-        .' --colors=never --no-progress --do-not-cache-result --log-junit='.report_path('phpunit-tui-update.junit.xml'),
+        'APP_ENV=test '.
+        'HATFIELD_UPDATE_SNAPSHOTS=1 '.
+        \PHP_BINARY.' vendor/bin/phpunit'
+        .' --group tui-e2e-replay'
+        .' --colors=never --no-progress --do-not-cache-result'
+        .(is_llm_mode() ? ' --log-junit='.report_path('phpunit-tui-update.junit.xml') : ''),
         $exitCode,
     );
 

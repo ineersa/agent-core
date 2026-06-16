@@ -6,9 +6,7 @@ declare(strict_types=1);
  * PHPUnit / unit-test task definitions, configuration, and workers.
  *
  * Contains the `test` command (ParaTest-powered parallel by default,
- * sequential fallback for --filter and when ParaTest is unavailable)
- * and TUI E2E worker helpers (the TUI E2E shard/worker logic remains
- * for now; MAINT-05E will refactor it into journey-based tests).
+ * sequential fallback for --filter and when ParaTest is unavailable).
  *
  * =========================================================================
  * MAINT-05B: Replaced custom file-shard fan-out with ParaTest as the
@@ -17,9 +15,8 @@ declare(strict_types=1);
  * helpers have been removed.  Sequential PHPUnit is kept as an
  * internal fallback for --filter and when ParaTest is unavailable.
  * =========================================================================
- * MAINT-05E (future): TUI E2E shard/worker helpers will move into a
- * journey-based TUI harness and the remaining custom shard builders
- * will be removed.
+ * MAINT-05E: Removed old live-LLM TUI E2E shard builders; the TUI
+ * E2E suite is now a single deterministic replay-backed journey.
  * =========================================================================
  */
 
@@ -33,104 +30,6 @@ use function CastorTasks\run_quiet_command;
 require_once __DIR__.'/../vendor/autoload.php';
 require_once __DIR__.'/helpers.php';
 require_once __DIR__.'/shared.php';
-
-// ─── TUI E2E shard helpers (retained for check() TUI steps) ─────
-// These will be refactored or removed in MAINT-05E when TUI tests
-// become journey-based.
-
-/**
- * Return TUI E2E test files split across two shards for parallel
- * execution under the 75s per-step timeout.
- *
- * Only files ending in Test.php are included; harness/support files
- * (TmuxHarness.php, TmuxPane.php) are excluded so PHPUnit does not
- * attempt to load them as test classes.
- *
- * Known files (Jun 2026) balance:
- *   shard 1: TuiAgentSmokeTest (heaviest), EditorBorderColorTest,
- *            HotkeySmokeTest, ImmediateSubmitFeedbackTest
- *   shard 2: PromptTemplateSlashCommandE2ETest, ReasoningCycleTest,
- *            SessionRenameE2ETest, ShellPrefixSmokeTest,
- *            TuiStartupSnapshotTest
- *
- * New Test.php files are round-robined starting on the lighter shard.
- *
- * @return array<string, list<string>> file paths grouping
- */
-function tui_e2e_shard_groups(): array
-{
-    $root = (false !== ($_rp = realpath(__DIR__.'/..')) ? $_rp : __DIR__.'/..');
-    $tuiE2eDir = $root.'/tests/Tui/E2E';
-    if (!is_dir($tuiE2eDir)) {
-        return ['tui-e2e-1' => [], 'tui-e2e-2' => []];
-    }
-    $allFiles = glob($tuiE2eDir.'/*.php');
-    if (false === $allFiles) {
-        $allFiles = [];
-    }
-    // Only include PHPUnit test files; skip harness/support files.
-    $files = array_values(array_filter($allFiles, static fn (string $f): bool => str_ends_with(basename($f), 'Test.php')));
-    sort($files, \SORT_STRING);
-    $shard1 = [];
-    $shard2 = [];
-    foreach ($files as $file) {
-        $basename = basename($file);
-        if (in_array($basename, [
-            'TuiAgentSmokeTest.php',
-            'EditorBorderColorTest.php',
-            'HotkeySmokeTest.php',
-            'ImmediateSubmitFeedbackTest.php',
-        ], true)) {
-            $shard1[] = $file;
-        } elseif (in_array($basename, [
-            'PromptTemplateSlashCommandE2ETest.php',
-            'ReasoningCycleTest.php',
-            'SessionRenameE2ETest.php',
-            'ShellPrefixSmokeTest.php',
-            'TuiStartupSnapshotTest.php',
-        ], true)) {
-            $shard2[] = $file;
-        } else {
-            // New/unknown E2E Test.php file — round-robin to the
-            // currently lighter shard.
-            if (count($shard1) <= count($shard2)) {
-                $shard1[] = $file;
-            } else {
-                $shard2[] = $file;
-            }
-        }
-    }
-
-    return ['tui-e2e-1' => $shard1, 'tui-e2e-2' => $shard2];
-}
-
-/**
- * Build a TUI E2E worker command for the given shard number.
- */
-function build_tui_e2e_worker_command(int $shardNum, string $pharEnv): string
-{
-    $worker = 'tui-e2e-'.$shardNum;
-    $dbEnv = 'HATFIELD_TEST_DATABASE_PATH='.escapeshellarg('app_test-tui-e2e-'.$shardNum.'.sqlite');
-    $phpBin = \PHP_BINARY;
-    $cacheDirEnv = 'HATFIELD_CACHE_DIR=.hatfield/cache-'.$worker;
-    $cacheDir = 'var/cache/.phpunit-'.$worker;
-    $junitFlag = is_llm_mode() ? ' --log-junit='.report_path('phpunit-'.$worker.'.junit.xml') : '';
-    $strictFlags = phpunit_strict_issue_flags();
-    $llmFlags = is_llm_mode() ? ' --colors=never --no-progress' : '';
-
-    $dirs = tui_e2e_shard_groups()[$worker] ?? [];
-    if ([] === $dirs) {
-        throw new RuntimeException("Unknown TUI E2E shard: {$worker}");
-    }
-    $phpunitArgs = implode(' ', array_map('escapeshellarg', $dirs));
-
-    return 'APP_ENV=test '.$cacheDirEnv.' '.$dbEnv.' '.$phpBin.' bin/console'
-        .' doctrine:migrations:migrate --no-interaction --allow-no-migration'
-        .' && APP_ENV=test '.$cacheDirEnv.' '.$dbEnv.' '.$pharEnv.$phpBin.' vendor/bin/phpunit'
-        .' '.$phpunitArgs
-        .' --cache-directory '.escapeshellarg($cacheDir)
-        .' '.$strictFlags.$llmFlags.$junitFlag;
-}
 
 // ─── Sequential baseline (deterministic, default) ────────────────
 
@@ -149,7 +48,7 @@ function build_sequential_phpunit_command(string $pharEnv): string
     $junitFlag = is_llm_mode() ? ' --log-junit='.report_path('phpunit-sequential.junit.xml') : '';
 
     return 'APP_ENV=test '.$pharEnv.$phpBin.' vendor/bin/phpunit'
-        .' --exclude-group tui-e2e --exclude-group tui-e2e-replay --exclude-group llm-real --exclude-group recording --exclude-group controller-replay'
+        .' --exclude-group tui-e2e-replay --exclude-group llm-real --exclude-group recording --exclude-group controller-replay'
         .' '.$strictFlags.$llmFlags.$junitFlag;
 }
 
@@ -235,7 +134,7 @@ function test(?string $filter = null): void
     $cmd = 'APP_ENV=test '.$pharEnv.\PHP_BINARY.' vendor/bin/paratest'
         .' --configuration=phpunit.xml.dist'
         .' --bootstrap='.escapeshellarg($bootstrap)
-        .' --exclude-group=tui-e2e --exclude-group=tui-e2e-replay --exclude-group=llm-real --exclude-group=recording --exclude-group=controller-replay'
+        .' --exclude-group=tui-e2e-replay --exclude-group=llm-real --exclude-group=recording --exclude-group=controller-replay'
         .' '.$strictFlags.$llmFlags.$junitFlag;
 
     passthru($cmd, $exitCode);
