@@ -58,15 +58,23 @@ Run `castor cleanup` to remove all temp/test artifacts.
 
 For changes touching TUI runtime, `AgentSessionClient`, Messenger, `TranscriptProjector`, `RuntimeEventPoller`, or LLM-visible flow: you MUST run `castor check`. Unit/container/mocked tests are not enough. If tmux is unavailable, TUI tasks MUST stay IN-PROGRESS with the blocker — never mark CODE-REVIEW or DONE without validation.
 
-Default TUI E2E tests are replay-backed and deterministic — they do not require
-llama.cpp. Live LLM TUI tests have been removed; controller/live-LLM smoke remains
-opt-in via `castor test:llm-real` and `castor test:controller`.
+Default `castor check` is fully deterministic (replay-backed controller and TUI E2E, no live LLM). Live LLM smoke is opt-in via `castor test:llm-real` and `castor test:controller`.
 
-**Load the `testing` skill** when: touching runtime/TUI code, running validation, or unsure what `castor check` covers.
+### Focused live LLM provider validation
+
+`castor check` is deterministic and must NOT include `castor test:llm-real` by default. Run `castor test:llm-real` as opt-in focused validation when changes touch:
+- Symfony AI provider/factory/platform integration
+- LLM provider config, model catalog/resolution/routing/selection
+- Tool schemas, tool-call conversion, or tool argument prompts
+- LLM-visible system/developer prompts or prompt templates
+- Live provider compatibility, streaming conversion, stop_reason/usage/tool-call deltas
+- Controller live-provider path behavior where replay cannot prove provider compatibility
+
+`castor test:controller` remains opt-in for live controller E2E when appropriate. Do NOT require live LLM validation for every normal task — only for provider/LLM-visible changes.
 
 ## Mandatory TUI feature E2E proof
 
-**TUI implementation is NOT complete until there is an automated test using the real test LLM and `TmuxHarness` with a snapshot or assertion proving the FEATURE works exactly as expected through real interactive TUI behavior.** This is a hard gate — no exceptions.
+**TUI implementation is NOT complete until there is an automated test using the real interactive TUI (`TmuxHarness`) with a snapshot or assertion proving the FEATURE works exactly as expected.** This is a hard gate — no exceptions. Default TUI E2E uses replay-backed fixtures for model interaction; live llama.cpp is not required for TUI feature proof.
 
 - Tests must exercise the real TUI interaction flow, not just mocked services, DTO assembly, or service-only unit tests.
 - Tests must use the project TUI E2E infrastructure (`TmuxHarness`, `#[Group('tui-e2e-replay')]`), replay fixtures where model output is needed, and isolated `var/tmp/test-{uuid}` directories.
