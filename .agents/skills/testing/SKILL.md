@@ -10,7 +10,7 @@ description: "E2E and validation testing strategy. Load this skill when: writing
 All PHPUnit invocations include `--stop-on-error --stop-on-failure --fail-on-all-issues --display-all-issues`.
 
 ```bash
-castor check                # Full QA gate (deterministic — no live LLM): deptrac, unit/integration sequential, controller replay E2E, TUI replay E2E, phpstan, cs-check; per-step timeouts + logs at var/reports/check-*.log
+castor check                # Full QA gate (deterministic — no live LLM): deptrac, unit/integration (ParaTest), controller replay E2E, TUI replay E2E, phpstan, cs-check; per-step timeouts + logs at var/reports/check-*.log
 castor test                 # unit/integration tests (ParaTest parallel by default); excludes tui-e2e-replay, llm-real, recording, and controller-replay groups
 castor test --filter=X      # filter tests by name (sequential, single DB)
 castor test --suite=X       # target a specific phpunit.xml test suite
@@ -118,8 +118,8 @@ compiled Symfony cache directory (via `TEST_TOKEN` in
 `tests/paratest-bootstrap.php`).  Filtered runs and non-ParaTest fallback
 use a single shared DB sequentially.
 
-`castor check` uses the deterministic sequential PHPUnit helper for the
-unit/integration lane.
+`castor check` uses ParaTest for the unit/integration lane (excludes
+E2E, live-LLM, recording, and PHAR groups).
 
 - DB path: `HATFIELD_TEST_DATABASE_PATH` (defaults to `app_test.sqlite`).
 - ParaTest cache dir: `HATFIELD_CACHE_DIR=.hatfield/cache-paraT{token}` (per-worker).
@@ -131,9 +131,9 @@ unit/integration lane.
 
 | Command | What it tests | Requires |
 |---|---|---|
-| `castor check` | Full QA gate (deterministic): deptrac, unit/integration (sequential), controller replay E2E, TUI replay E2E, phpstan, cs-check. No live LLM, no PHAR. | tmux |
+| `castor check` | Full QA gate (deterministic): deptrac, unit/integration (ParaTest), controller replay E2E, TUI replay E2E, phpstan, cs-check. No live LLM, no PHAR. | tmux |
 | `castor test` | Unit/integration tests (ParaTest parallel by default, sequential fallback for --filter) | Nothing (pure PHP) |
-| `castor test:llm-real` | Real LLM smoke: `ControllerSmokeTest`, `LlamaCppSmokeTest` | llama.cpp on port 9052 |
+| `castor test:llm-real` | Real LLM smoke: `ControllerSmokeTest`, `LlamaCppSmokeTest` (excludes `recording` group) | llama.cpp on port 9052 |
 | `castor test:controller-replay` | Controller replay E2E: spawns `--controller`, JSONL protocol, replay fixtures (no live LLM) | Nothing (pure PHP) |
 | `castor test:controller` | Controller E2E: spawns `--controller`, JSONL protocol (live LLM, opt-in) | llama.cpp on port 9052 |
 | `castor test:tui` | TUI E2E journey tests (replay-backed, no live LLM) | tmux |

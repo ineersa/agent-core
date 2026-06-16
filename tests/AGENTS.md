@@ -110,7 +110,7 @@ Key commands:
 - `castor deptrac` — layer dependency validation
 - `castor phpstan` — static analysis
 - `castor cs-check` / `castor cs-fix` — code style
-- `LLM_MODE=true castor check` — full quality gate (deterministic — no live LLM). Runs deptrac, unit/integration sequential, controller replay E2E, TUI replay E2E, phpstan, and cs-check in parallel. No PHAR, no llama.cpp requirement.
+- `LLM_MODE=true castor check` — full quality gate (deterministic — no live LLM). Runs deptrac, unit/integration (ParaTest), controller replay E2E, TUI replay E2E, phpstan, and cs-check in parallel. No PHAR, no llama.cpp requirement.
 - `castor cleanup` — remove all temp/test artifacts
 
 ## Snapshots and cleanup

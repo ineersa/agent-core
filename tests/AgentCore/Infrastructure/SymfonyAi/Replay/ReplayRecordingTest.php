@@ -26,7 +26,6 @@ use Psr\Log\NullLogger;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 
 #[Group('recording')]
-#[Group('llm-real')]
 /**
  * Recording tests that capture live LLM deltas into replay fixtures.
  *

@@ -11,7 +11,7 @@ declare(strict_types=1);
  *   castor test:llm-real, castor test:controller, castor llm:fixtures:record
  *
  * Lanes run concurrently:
- *   deptrac (30s) → test: sequential unit/integration (300s) →
+ *   deptrac (30s) → test: unit/integration ParaTest (120s) →
  *   test:controller-replay (30s) → test:tui (120s) → phpstan (30s) →
  *   cs-check (30s).  No PHAR, no live LLM.
  *
@@ -80,10 +80,11 @@ function check(): void
     // directly — not through a Castor task closure — to stay safe
     // inside the Castor PHAR (no pcntl_fork shared-memory issues).
     //
-    // MAINT-05B: The PHPUnit lane uses a single sequential run
-    // (build_sequential_phpunit_command) instead of ParaTest because
-    // the gate must be deterministic and produce clean JUnit output.
-    // Use `castor test` for fast ParaTest-powered local development.
+    // MAINT-05G: The PHPUnit lane uses ParaTest (build_check_paratest_command)
+    // with full group exclusions (tui-e2e-replay, llm-real, recording,
+    // controller-replay, phar).  The gate remains deterministic because
+    // all non-unit/integration groups are excluded and replay-backed
+    // E2E lanes run separately.
     //
     // MAINT-05G: test:controller and test:llm-real lanes removed.
     // Replaced with test:controller-replay (deterministic replay
@@ -99,9 +100,9 @@ function check(): void
         ],
         'test' => [
             'cmd' => timeout_check_command(
-                // Sequential PHPUnit; exclude phar group (PHAR is opt-in, not part of deterministic gate).
-                build_sequential_phpunit_command('').' --exclude-group=phar',
-                300,
+                // ParaTest unit/integration; PHAR excluded (opt-in, not part of deterministic gate).
+                build_check_paratest_command(),
+                120,
             ),
         ],
         'test:controller-replay' => [

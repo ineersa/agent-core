@@ -28,17 +28,17 @@ Source: metrics from MAINT-05G `castor check` and focused runs.
 
 | Metric | After | Notes |
 |--------|-------|-------|
-| `castor check` wall time | **~77s** | 6 deterministic lanes: deptrac (2s), sequential test (47s), controller-replay (8s), TUI replay (16s), phpstan (3s), cs-check (1s); run concurrently via proc_open |
+| `castor check` wall time | **~42s** | 6 deterministic lanes: deptrac (2s), ParaTest unit/integration (~12s), controller-replay (8s), TUI replay (16s), phpstan (3s), cs-check (1s); run concurrently via proc_open |
 | Live LLM calls in `castor check` | **0** | All lanes use replay fixtures or pure static analysis |
 | `castor test` CodingAgent sequential | **~56s** | Per-class kernel boot (MAINT-05F), data-provider consolidation |
-| `castor test` full ParaTest | **~21s** | ParaTest as default (MAINT-05B), per-worker cache isolation |
+| `castor test` full ParaTest | **~11–21s** | ParaTest as default (MAINT-05B), per-worker cache isolation |
 | `castor test:tui` wall time | **~11s** | 3 tests, 35 assertions (TuiJourneyE2eTest + TuiStartupSnapshotTest) with replay fixtures |
 | TUI harness launches per check | **2** | TuiJourneyE2eTest + TuiStartupSnapshotTest in one session |
 | Controller E2E in check | replay only | ControllerReplaySmokeTest (1 test, 14 assertions) with fixture-driven SSE (MAINT-05D) |
 | PHAR in default QA | **no** | PHAR is opt-in (castor phar:build, castor phar:ensure) |
-| Stale worker risk | low | Single sequential lane; process session tracking via setsid in Castor |
+| Stale worker risk | low | ParaTest workers + process session tracking via setsid in Castor |
 | check_llm_generation_ready in check | **no** | Only run by opt-in live commands |
-| Custom Castor shard discovery | **removed** | ParaTest handles parallelism; sequential PHPUnit for gate |
+| Custom Castor shard discovery | **removed** | ParaTest handles parallelism for both local dev and gate |
 | `castor test:controller-replay` | **~8s** | Replay-backed, no live LLM |
 
 † May be higher on first run due to doctrine:migration and cache warmup.  Measured at ~77s on a mid-range dev machine.
@@ -54,6 +54,6 @@ Source: metrics from MAINT-05G `castor check` and focused runs.
 ## Known remaining risks
 
 - **Tmux requirement**: `castor check` and `castor test:tui` require tmux for TUI E2E lanes. If tmux is not installed, `castor check` fails immediately with a diagnostic instead of silently passing green. The orchestrator/user must install tmux before the gate can run.
-- **Sequential test lane in check**: The `test` lane uses sequential PHPUnit (~47s) to keep check output deterministic and readable. `castor test` (ParaTest, ~21s) is available for local dev use.
+
 - **Fixture staleness**: Replay fixtures recorded from the small `llama_cpp_test/test` model may drift from production provider behavior. Re-record with `castor llm:fixtures:record` on provider/prompt change.
 - **Controller-replay fixture queue**: Multi-turn controller interactions require multiple fixtures in sequence; currently only single-turn fixtures exist.
