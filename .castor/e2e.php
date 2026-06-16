@@ -55,6 +55,7 @@ function test_llm_real(?string $filter = null): void
 
     $cmd = 'APP_ENV=test '.$pharEnv.'LLAMA_CPP_SMOKE_TEST=1 '.\PHP_BINARY.' vendor/bin/phpunit'
         .$filterArg
+        .' --exclude-group=recording'
         .' '.phpunit_strict_issue_flags()
         .(is_llm_mode() ? ' --colors=never --no-progress --log-junit='.report_path('phpunit-llm-real.junit.xml') : '');
 

@@ -10,7 +10,7 @@ description: "E2E and validation testing strategy. Load this skill when: writing
 All PHPUnit invocations include `--stop-on-error --stop-on-failure --fail-on-all-issues --display-all-issues`.
 
 ```bash
-castor check                # Full validation: PHAR ensure + parallel steps (deptrac, unit/integration sequential, controller E2E, llm-real E2E, TUI E2E, phpstan, cs-check); per-step timeouts + logs at var/reports/check-*.log
+castor check                # Full QA gate (deterministic — no live LLM): deptrac, unit/integration (ParaTest), controller replay E2E, TUI replay E2E, phpstan, cs-check; per-step timeouts + logs at var/reports/check-*.log
 castor test                 # unit/integration tests (ParaTest parallel by default); excludes tui-e2e-replay, llm-real, recording, and controller-replay groups
 castor test --filter=X      # filter tests by name (sequential, single DB)
 castor test --suite=X       # target a specific phpunit.xml test suite
@@ -34,13 +34,21 @@ castor phar:clean            # Remove worktree-local hatfield.phar
 
 ## Test LLM
 
-All E2E tests use `llama_cpp_test/test` (port 9052). This is a fast local model for deterministic smoke testing. Never use production LLM providers in E2E tests.
+Live LLM smoke tests (opt-in) use `llama_cpp_test/test` (port 9052). This is a fast local model for deterministic provider compatibility testing. Never use production LLM providers in E2E tests. Default E2E tests (controller replay, TUI replay) use deterministic pre-recorded fixtures and do NOT require llama.cpp.
 
 Run the test llama.cpp server deterministically for smoke tests: temperature 0, fixed seed, and the `test` alias on port 9052. The smoke model is expected to answer/tool-call within a few seconds; long 30-60s waits usually hide a bad prompt, stale worker, or stuck process rather than real model latency.
 
 ### LLM generation readiness preflight
 
-Before `castor check`, `test:llm-real`, and `test:controller` run any live-LLM E2E tests, Castor runs `check_llm_generation_ready()` — a ~4s curl-based preflight that sends a tiny `max_tokens=1` chat completion to `llama_cpp_test/test`. If the server responds to `/health` and `/v1/models` but generation hangs (corrupted model load, stuck slots), this preflight fails immediately with a clear diagnostic instead of burning 30-90s Castor step timeouts.
+Before `castor test:llm-real` and `castor test:controller` run live-LLM tests,
+Castor runs `check_llm_generation_ready()` — a ~4s curl-based preflight that
+sends a tiny `max_tokens=1` chat completion to `llama_cpp_test/test`. If the
+server responds to `/health` and `/v1/models` but generation hangs (corrupted
+model load, stuck slots), this preflight fails immediately with a clear
+diagnostic instead of burning 30-90s Castor step timeouts.
+
+This preflight is NOT run by `castor check` (which is fully deterministic
+and replay-backed).
 
 If you see:
 ```
@@ -62,7 +70,7 @@ pre-recorded fixture files under `tests/AgentCore/Fixtures/traces/`.
 
 - **Replay mode** is the default for `castor test`. No live LLM calls.
 - **Live mode** is opt-in: `castor test:llm-real`,
-  `castor test:controller`, and `castor check` still use live LLM.
+  `castor test:controller`, and `castor llm:fixtures:record`.
 - **Re-record fixtures** when provider behavior, prompts, or tool schemas
   change: `castor llm:fixtures:record`.
 - Fixture format and recording/replay architecture described in
@@ -110,8 +118,8 @@ compiled Symfony cache directory (via `TEST_TOKEN` in
 `tests/paratest-bootstrap.php`).  Filtered runs and non-ParaTest fallback
 use a single shared DB sequentially.
 
-`castor check` uses the deterministic sequential PHPUnit helper for the
-unit/integration lane.
+`castor check` uses ParaTest for the unit/integration lane (excludes
+E2E, live-LLM, recording, and PHAR groups).
 
 - DB path: `HATFIELD_TEST_DATABASE_PATH` (defaults to `app_test.sqlite`).
 - ParaTest cache dir: `HATFIELD_CACHE_DIR=.hatfield/cache-paraT{token}` (per-worker).
@@ -123,9 +131,9 @@ unit/integration lane.
 
 | Command | What it tests | Requires |
 |---|---|---|
-| `castor check` | Full validation: PHAR ensure plus parallel steps: deptrac, unit/integration (sequential), controller E2E, llm-real E2E, TUI E2E, phpstan, cs-check. The unit/integration step is a single deterministic sequential PHPUnit run. | tmux, llama.cpp on port 9052 |
+| `castor check` | Full QA gate (deterministic): deptrac, unit/integration (ParaTest), controller replay E2E, TUI replay E2E, phpstan, cs-check. No live LLM, no PHAR. | tmux |
 | `castor test` | Unit/integration tests (ParaTest parallel by default, sequential fallback for --filter) | Nothing (pure PHP) |
-| `castor test:llm-real` | Real LLM smoke: `ControllerSmokeTest`, `LlamaCppSmokeTest` | llama.cpp on port 9052 |
+| `castor test:llm-real` | Real LLM smoke: `ControllerSmokeTest`, `LlamaCppSmokeTest` (excludes `recording` group). Run as focused opt-in validation when changes touch provider/LLM-visible code — NOT required for every normal task. | llama.cpp on port 9052 |
 | `castor test:controller-replay` | Controller replay E2E: spawns `--controller`, JSONL protocol, replay fixtures (no live LLM) | Nothing (pure PHP) |
 | `castor test:controller` | Controller E2E: spawns `--controller`, JSONL protocol (live LLM, opt-in) | llama.cpp on port 9052 |
 | `castor test:tui` | TUI E2E journey tests (replay-backed, no live LLM) | tmux |
@@ -205,13 +213,25 @@ On E2E test failure, the test dumps:
 
 For changes touching TUI runtime behavior, `AgentSessionClient`, model routing, Messenger wiring, `TranscriptProjector`, `RuntimeEventPoller`, transcript rendering, or LLM-visible execution flow, unit/container/mocked tests are not enough.
 
-You MUST run `castor check`. It includes controller E2E, real LLM E2E, and TUI E2E, so runtime/TUI/error-propagation changes exercise the controller process, real model path, and interactive user-visible TUI path before handoff.
+You MUST run `castor check`. It includes controller replay E2E and TUI replay E2E (both deterministic), so runtime/TUI/error-propagation changes exercise the controller process and interactive user-visible TUI path before handoff. Live LLM validation is opt-in via `castor test:controller`.
 
 For especially risky visual or interaction changes, also run `castor run:agent-test` to drive the agent in tmux and capture snapshots.
 
 Validation must exercise the real user flow: start agent, type prompt, submit, wait for visible assistant response or visible error block, and capture TUI snapshot plus session artifacts on failure. Do not claim runtime/TUI work is done based only on DTO tests, mocked pollers, container compilation, or isolated service tests.
 
-If prerequisites are unavailable (tmux not installed, llama.cpp not reachable on port 9052), the task MUST remain IN-PROGRESS with exact environmental blocker output — never mark CODE-REVIEW or DONE without it.
+If tmux is unavailable, TUI tasks MUST remain IN-PROGRESS with exact environmental blocker output — never mark CODE-REVIEW or DONE without it. The default `castor check` is deterministic and does NOT require llama.cpp.
+
+### Focused live LLM provider validation
+
+`castor check` is deterministic and must NOT include `castor test:llm-real` by default. Run `castor test:llm-real` as opt-in focused validation when changes touch:
+- Symfony AI provider/factory/platform integration
+- LLM provider config, model catalog/resolution/routing/selection
+- Tool schemas, tool-call conversion, or tool argument prompts
+- LLM-visible system/developer prompts or prompt templates
+- Live provider compatibility, streaming conversion, stop_reason/usage/tool-call deltas
+- Controller live-provider path behavior where replay cannot prove provider compatibility
+
+`castor test:controller` remains opt-in for live controller E2E when appropriate. Do NOT require live LLM validation for every normal task — only for provider/LLM-visible changes.
 
 Before re-running failed controller/TUI E2E checks, kill stale worker processes from the failed worktree (`messenger:consume`, `agent --controller`, PHPUnit/Castor children). Orphaned consumers can keep queues busy and make a fixed test appear hung.
 

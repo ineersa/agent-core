@@ -163,6 +163,31 @@ function test(?string $filter = null, ?string $suite = null, ?bool $sequential =
     exit(0);
 }
 
+// ─── Check lane ParaTest command builder ───────────────────────
+
+/**
+ * Build the ParaTest command for the unit/integration lane in castor check.
+ *
+ * This is a standalone command builder — it does NOT call phar_ensure()
+ * and does NOT wrap in passthru/exit.  It excludes ALL groups that require
+ * live LLM, tmux, or external tooling: tui-e2e-replay, llm-real, recording,
+ * controller-replay, and phar.  The gate is fully deterministic.
+ */
+function build_check_paratest_command(): string
+{
+    $phpBin = \PHP_BINARY;
+    $bootstrap = paratest_bootstrap_path();
+    $strictFlags = phpunit_strict_issue_flags();
+    $llmFlags = is_llm_mode() ? ' --colors=never --no-progress' : '';
+    $junitFlag = is_llm_mode() ? ' --log-junit='.report_path('phpunit-parallel.junit.xml') : '';
+
+    return 'APP_ENV=test '.$phpBin.' vendor/bin/paratest'
+        .' --configuration=phpunit.xml.dist'
+        .' --bootstrap='.escapeshellarg($bootstrap)
+        .' --exclude-group=tui-e2e-replay --exclude-group=llm-real --exclude-group=recording --exclude-group=controller-replay --exclude-group=phar'
+        .' '.$strictFlags.$llmFlags.$junitFlag;
+}
+
 // ─── ParaTest internal helpers ────────────────────────────────
 
 /**

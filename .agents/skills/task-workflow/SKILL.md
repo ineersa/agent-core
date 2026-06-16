@@ -53,7 +53,7 @@ Read-only planning. No status changes, no file edits, no forks.
    - Do NOT run: `castor check`, `move_task(to="CODE-REVIEW")`, `gh pr create`, `git push`, reviewer subagent.
    - Inform user implementation is done. They run `task-to-pr` when ready.
 
-**TUI E2E proof requirement for implementation:** For tasks touching TUI behavior, the fork MUST add or update a real TmuxHarness + test LLM E2E test proving the user-visible feature works. Fork instructions must explicitly include this as a required deliverable. Mocks, service-only DTO tests, custom PHP smoke scripts, and picker/footer visibility assertions are NOT acceptable substitutes. See the `## TUI E2E proof requirement` section below.
+**TUI E2E proof requirement for implementation:** For tasks touching TUI behavior, the fork MUST add or update a real `TmuxHarness` E2E proof (replay-backed, no live LLM required) exercising the user-visible feature path. Fork instructions must explicitly include this as a required deliverable. Mocks, service-only DTO tests, custom PHP smoke scripts, and picker/footer visibility assertions are NOT acceptable substitutes. See the `## TUI E2E proof requirement` section below.
 
 ### task-to-pr: Review and create PR (IN-PROGRESS → CODE-REVIEW)
 
@@ -63,9 +63,10 @@ Read-only planning. No status changes, no file edits, no forks.
 3. Run focused local validation on worktree:
    - `castor test`, `castor deptrac`, `castor phpstan`, `castor cs-check`.
    - For TUI tasks: also run `castor test:tui` as part of local validation.
-   - The orchestrator/user is responsible for focused validation before moving to CODE-REVIEW. `move_task(to="CODE-REVIEW")` does not auto-run a quality gate — it only verifies the worktree is clean, pushes the branch, and creates the PR.
+   - When changes touch provider/LLM-visible code (Symfony AI provider, model routing, tool schemas, LLM prompts, streaming conversion), also run `castor test:llm-real` as opt-in focused validation. This is NOT required for every normal task — only when the change affects live provider compatibility path.
+   - The orchestrator/user is responsible for focused validation before moving to CODE-REVIEW. `move_task(to="CODE-REVIEW")` automatically runs deterministic `castor check` in the worktree before pushing and creating the PR.
 4. Record reviewer decision, commit sha, validation results via `update_task`.
-5. `move_task(to="CODE-REVIEW")` — verifies worktree is clean, pushes branch, creates PR.
+5. `move_task(to="CODE-REVIEW")` — runs castor check in worktree, verifies it is clean, pushes branch, creates PR.
 
 ### task-review-iterate: Address PR feedback (CODE-REVIEW → IN-PROGRESS → CODE-REVIEW)
 
@@ -89,7 +90,7 @@ Read-only planning. No status changes, no file edits, no forks.
 
 ## TUI E2E proof requirement
 
-**TUI implementation is NOT complete until there is an automated test using the real test LLM and `TmuxHarness` with a snapshot or assertion proving the FEATURE works exactly as expected through real interactive TUI behavior.** This is a hard gate — no exceptions.
+**TUI implementation is NOT complete until there is an automated test using the real interactive TUI (`TmuxHarness`) with a snapshot or assertion proving the FEATURE works exactly as expected.** This is a hard gate — no exceptions. Default TUI E2E uses replay-backed fixtures for model interaction; live llama.cpp is not required for TUI feature proof.
 
 - Tests must exercise the real TUI interaction flow, not just mocked services, DTO assembly, or service-only unit tests.
 - Tests must use the project TUI E2E infrastructure (`TmuxHarness`, `#[Group('tui-e2e-replay')]`), replay fixtures where model output is needed, and isolated `var/tmp/test-{uuid}` directories.
