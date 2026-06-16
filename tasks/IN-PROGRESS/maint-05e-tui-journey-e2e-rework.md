@@ -39,7 +39,7 @@ Known entrypoints:
 - Docs/skills are updated so future TUI tests follow the journey model instead of one-harness-per-assertion.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/maint-05e-tui-journey-e2e-rework
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05e-tui-journey-e2e-rework
 Fork run: vtq0frsspzl7
@@ -87,3 +87,8 @@ Completed:
 - Created PR: https://github.com/ineersa/agent-core/pull/146
 - Validation: Pre-move inspection: task worktree clean on `task/maint-05e-tui-journey-e2e-rework` at `9b6358cf`.; Parent diff inspection: `git -C /home/ineersa/projects/agent-core-worktrees/maint-05e-tui-journey-e2e-rework diff --stat origin/main...HEAD` showed expected 8 files for TUI journey/replay rework.; Parent grep verification: no remaining `exec sleep 10`/`sleep 10` pattern under `tests/Tui/E2E` or `.castor`.; Fork validation: `php -l` on new PHP files passed.; Fork validation: `castor list` passed and shows `test:tui`, `test:tui-live`, and `test:tui-update`.; Fork validation: `castor test:tui` passed: 3 tests, 35 assertions, 10.2s, replay-backed, no live LLM.; Fork validation: `castor test` passed: 2520 tests, 7359 assertions, 37.2s.; Fork validation: `castor test:controller-replay` passed: 1 test, 14 assertions, 9.4s.; Fork validation: `castor deptrac` passed with 0 violations/errors.; Fork validation: `castor phpstan` passed with 0 errors/file_errors.; Fork validation: `castor cs-check` passed with 0 fixable files.; Skipped reviewer subagent per user MAINT-05A-F policy.; Skipped full `LLM_MODE=true castor check` per MAINT-05A-F policy / MAINT-05G owns final full-gate validation.; Live LLM smoke not run; llama.cpp unavailable and live smoke remains opt-in via `castor test:tui-live`.; Metrics recorded by fork: default TUI harness launches reduced from 12 to 2, wall time from ~120-180s live to 10.2s replay, default live LLM calls from 12+ to 0, `exec sleep 10` instances from 1 to 0.
 - Summary: Moved MAINT-05E to CODE-REVIEW. Branch contains implementation commit `9b6358cf` with replay-backed TUI journey E2E, deterministic default `castor test:tui`, opt-in live `castor test:tui-live`, replay fixtures, removal of `exec sleep 10`, and docs updates. Automated reviewer and full `castor check` were skipped per MAINT-05 stage policy/user instruction.
+
+## Task workflow update - 2026-06-16T00:30:01.168Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Validation: User feedback: `castor test:tui-live` live-LLM tests should be removed instead of kept opt-in now that `castor check` no longer uses them.; Inspected current MAINT-05E worktree and confirmed `test:tui-live` command/docs plus legacy `#[Group('tui-e2e')]` test classes remain.
+- Summary: Moved MAINT-05E back to IN-PROGRESS for user PR feedback: remove the opt-in live TUI E2E path (`castor test:tui-live` / `#[Group('tui-e2e')]`) because it is no longer part of `castor check` and the user sees no value in keeping it. Follow-up should delete the live TUI command/docs and remove or replace remaining live-only TUI E2E tests with replay-backed coverage only.
