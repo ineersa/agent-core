@@ -40,7 +40,7 @@ Out of scope:
 Status: IN-PROGRESS
 Branch: task/tools-10-prompt-docs-integration
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-10-prompt-docs-integration
-Fork run: t3ff1nsgaa75
+Fork run: 9bh2eow8awjq
 PR URL:
 PR Status:
 Started: 2026-06-16T22:05:47.991Z
@@ -67,3 +67,7 @@ Completed:
 
 ## Task workflow update - 2026-06-16T22:16:16.378Z
 - Summary: Fork `t3ff1nsgaa75` returned an incomplete/argumentative handoff instead of a completion report. Verification found no implementation commit and dirty worktree changes only: `.hatfield/settings.yaml`, `config/SYSTEM.md`, `src/CodingAgent/Tool/BashTool.php`, `src/CodingAgent/Tool/EditFileTool.php`. The hardcoded `<tool_usage>` block in `config/SYSTEM.md` duplicates tool-owned prompt metadata; user clarified that tool usage information should come from tool definitions. Rejecting this fork output and relaunching with narrower instructions: keep SYSTEM.md generic/context-channel-only, put final toolbox usage in registry-backed tool prompt metadata/guidelines and tests, then commit.
+
+## Task workflow update - 2026-06-16T22:16:49.289Z
+- Recorded fork run: 9bh2eow8awjq
+- Summary: Launched corrective implementation fork `9bh2eow8awjq` in worktree `/home/ineersa/projects/agent-core-worktrees/tools-10-prompt-docs-integration`. Updated instructions require removing any hardcoded final-tool `<tool_usage>` block from SYSTEM.md, keeping SYSTEM.md generic/context-channel-only, moving final toolbox guidance into registry-backed tool definitions/guidelines, adding focused tests, running Castor validation, and committing the result.
