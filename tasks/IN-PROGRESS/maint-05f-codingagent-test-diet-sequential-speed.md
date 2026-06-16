@@ -32,13 +32,13 @@ Rules:
 - Task handoff includes before/after test counts, method/file reductions, runtime timings, and coverage tradeoffs.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/maint-05f-codingagent-test-diet-sequential-speed
+Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05f-codingagent-test-diet-sequential-speed
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-16T01:11:28.618Z
 Completed:
 
 ## Work log
@@ -54,3 +54,11 @@ Completed:
 - Supersedes earlier PR-base notes in this task: do NOT use `prBaseBranch="task/maint-05-cardinal-qa-test-rework"`. Target `main` for MAINT-05F.
 - Sequential execution policy: do not start MAINT-05F until prior MAINT-05 stages that it depends on are manually reviewed/merged to `main`, unless the user explicitly says otherwise.
 - Validation/review policy remains: skip reviewer subagent and skip full `LLM_MODE=true castor check` for MAINT-05F; user reviews manually and MAINT-05G owns final full-gate validation.
+
+## Task workflow update - 2026-06-16T01:11:28.618Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/maint-05f-codingagent-test-diet-sequential-speed.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/maint-05f-codingagent-test-diet-sequential-speed.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/maint-05f-codingagent-test-diet-sequential-speed.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/maint-05f-codingagent-test-diet-sequential-speed.
+- Summary: Started MAINT-05F after MAINT-05E was merged/done. Scope: audit and reduce CodingAgent unit/integration test complexity and sequential runtime while preserving behavior-level coverage and ParaTest compatibility. Main remains the MAINT-05 integration branch and eventual PR targets main. Per MAINT-05A-F policy, skip automated reviewer and full `LLM_MODE=true castor check`; run focused Castor validation for this stage only, especially sequential/ParaTest unit-integration tests and static checks.
