@@ -40,7 +40,7 @@ Out of scope:
 Status: IN-PROGRESS
 Branch: task/tools-10-prompt-docs-integration
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-10-prompt-docs-integration
-Fork run: 9bh2eow8awjq
+Fork run: gf5sx5r79xx6
 PR URL:
 PR Status:
 Started: 2026-06-16T22:05:47.991Z
@@ -79,3 +79,7 @@ Completed:
 
 ## Task workflow update - 2026-06-16T22:30:12.749Z
 - Summary: Reviewer subagent returned `APPROVE WITH SUGGESTIONS` for current HEAD `a649a788e1294c412d14782b2c2eac1359b3f54b`. It read `.agents/skills/testing/SKILL.md` and `tests/AGENTS.md`, confirmed this is not a TUI task and no TmuxHarness proof is required, and found no critical/bug/security issues. Actionable suggestions to address before CODE-REVIEW: strengthen `SystemPromptBuilderTest` assertions so `<skill` is not satisfied by `<skills_instructions>` and `never` is tied to `never spliced into the system prompt`; strengthen `BashToolTest` to assert the model-vs-user backgrounding ownership phrase; optionally clarify `.hatfield/settings.yaml` background process header and EditFileTool guideline with `cat -n` wording. Launching review-iteration fork to apply these non-blocking but sensible improvements.
+
+## Task workflow update - 2026-06-16T22:30:41.008Z
+- Recorded fork run: gf5sx5r79xx6
+- Summary: Launched review-iteration fork `gf5sx5r79xx6` after reviewer returned APPROVE WITH SUGGESTIONS. Fork instructions: tighten brittle `SystemPromptBuilderTest` context-channel assertions (`<skill name`/`location=` and `never spliced into the system prompt`), strengthen `BashToolTest` model-vs-user backgrounding assertion, optionally clarify EditFileTool `cat -n` wording/test and `.hatfield/settings.yaml` background process header, run focused Castor tests + cs-check, and commit.
