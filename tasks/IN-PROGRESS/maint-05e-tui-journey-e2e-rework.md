@@ -42,7 +42,7 @@ Known entrypoints:
 Status: IN-PROGRESS
 Branch: task/maint-05e-tui-journey-e2e-rework
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05e-tui-journey-e2e-rework
-Fork run: vtq0frsspzl7
+Fork run: riwo4uzpubae
 PR URL: https://github.com/ineersa/agent-core/pull/146
 PR Status: open
 Started: 2026-06-16T00:10:29.822Z
@@ -92,3 +92,8 @@ Completed:
 - Moved CODE-REVIEW → IN-PROGRESS.
 - Validation: User feedback: `castor test:tui-live` live-LLM tests should be removed instead of kept opt-in now that `castor check` no longer uses them.; Inspected current MAINT-05E worktree and confirmed `test:tui-live` command/docs plus legacy `#[Group('tui-e2e')]` test classes remain.
 - Summary: Moved MAINT-05E back to IN-PROGRESS for user PR feedback: remove the opt-in live TUI E2E path (`castor test:tui-live` / `#[Group('tui-e2e')]`) because it is no longer part of `castor check` and the user sees no value in keeping it. Follow-up should delete the live TUI command/docs and remove or replace remaining live-only TUI E2E tests with replay-backed coverage only.
+
+## Task workflow update - 2026-06-16T00:30:58.509Z
+- Recorded fork run: riwo4uzpubae
+- Validation: Pending fork run `riwo4uzpubae`. Expected validation: `castor list` with no `test:tui-live`, `castor test:tui`, focused `castor test:tui --filter=TuiJourneyE2eTest`, `castor test` if feasible, `castor deptrac`, `castor phpstan`, `castor cs-check`; no full `LLM_MODE=true castor check`; no live llama.cpp/TUI tests.
+- Summary: Launched review-iteration fork for user feedback to remove the opt-in live TUI E2E path entirely. Fork instructed to delete `castor test:tui-live`, remove docs/skills references to live TUI opt-in, delete or migrate old live-only `#[Group('tui-e2e')]` TUI test classes, remove obsolete group excludes/sharding helpers if dead, keep `castor test:tui` replay-backed deterministic, and validate with Castor only.
