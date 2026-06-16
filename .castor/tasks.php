@@ -130,16 +130,14 @@ function check(): void
                 60,
             ),
         ],
-        'test:tui-1' => [
+        'test:tui' => [
             'cmd' => timeout_check_command(
-                build_tui_e2e_worker_command(1, $pharEnv),
-                75,
-            ),
-        ],
-        'test:tui-2' => [
-            'cmd' => timeout_check_command(
-                build_tui_e2e_worker_command(2, $pharEnv),
-                75,
+                'APP_ENV=test '.$phpBin.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
+                .' && APP_ENV=test '.$phpBin.' vendor/bin/phpunit'
+                .' --group tui-e2e-replay'
+                .' '.$strictFlags.$llmFlags
+                .(is_llm_mode() ? ' --log-junit='.report_path('phpunit-tui.junit.xml') : ''),
+                120,
             ),
         ],
         'phpstan' => [
@@ -169,9 +167,10 @@ function check(): void
     }
 
     // Fail-fast: verify llama.cpp can actually generate before burning
-    // time on controller / llm-real / TUI E2E steps.  Health-only checks
-    // are insufficient — the server can respond to /health and /v1/models
+    // time on controller / llm-real steps.  Health-only checks are
+    // insufficient — the server can respond to /health and /v1/models
     // while generation is stuck (corrupted model load, slots busy).
+    // TUI E2E uses replay-backed fixtures and does NOT need live LLM.
     check_llm_generation_ready();
 
     $failures = [];

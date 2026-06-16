@@ -98,6 +98,35 @@ final class StreamRecorderObserver implements LlmStreamObserverInterface
     }
 
     /**
+     * Derive a reliable stop_reason for fixture metadata.
+     *
+     * When the production PlatformInvocationResult returns null
+     * stopReason (current behavior for non-tool text completions),
+     * this inspects the recorded deltas to provide a concrete value.
+     *
+     * @param list<array<string, mixed>> $deltas Recorded fixture deltas
+     */
+    public static function resolveFixtureStopReason(?string $resultStopReason, array $deltas): string
+    {
+        // Respect any explicit stop reason from the platform result.
+        if (null !== $resultStopReason) {
+            return $resultStopReason;
+        }
+
+        // Inspect recorded deltas for tool-call evidence.
+        foreach ($deltas as $delta) {
+            $type = $delta['type'] ?? '';
+            if ('tool_call_start' === $type || 'tool_call_complete' === $type) {
+                return 'tool_call';
+            }
+        }
+
+        // Non-tool, non-error completion (text / thinking only):
+        // the stream completed normally with an end-of-text token.
+        return 'stop';
+    }
+
+    /**
      * Convert a single delta to its fixture-record representation.
      *
      * @return array<string, mixed>

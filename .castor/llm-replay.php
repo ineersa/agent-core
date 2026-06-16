@@ -34,10 +34,8 @@ function llm_fixtures_record(): void
 
     echo "\n=== LLM Fixture Recording ===\n";
     echo "Recording fixtures from live LLM endpoint.\n";
-    echo "This will overwrite existing fixtures in tests/AgentCore/Fixtures/traces/\n\n";
+    echo "Captures stream deltas via StreamRecorderObserver → LlmPlatformAdapter.\n\n";
 
-    // Run the recording test that captures stream deltas via StreamRecorderObserver.
-    // This is a test-env PHPUnit invocation, not a standalone script.
     $recordingTestClass = 'tests/AgentCore/Infrastructure/SymfonyAi/Replay/ReplayRecordingTest.php';
 
     if (!file_exists($recordingTestClass)) {
@@ -46,10 +44,23 @@ function llm_fixtures_record(): void
         exit(0);
     }
 
-    echo "Running recording test...\n\n";
+    // ── TUI fixture output paths (committed locations) ───────────
+    $tuiSimpleFixture = 'tests/Tui/E2E/fixtures/tui-simple-text-response.json';
+    $tuiStartupFixture = 'tests/Tui/E2E/fixtures/tui-startup-prompt-response.json';
+
+    $tuiFixtureDir = dirname($tuiSimpleFixture);
+    if (!is_dir($tuiFixtureDir)) {
+        mkdir($tuiFixtureDir, 0755, true);
+    }
+
+    $env = 'APP_ENV=test LLAMA_CPP_SMOKE_TEST=1';
+    $env .= ' HATFIELD_RECORD_TUI_SIMPLE_FIXTURE_PATH='.escapeshellarg($tuiSimpleFixture);
+    $env .= ' HATFIELD_RECORD_TUI_STARTUP_FIXTURE_PATH='.escapeshellarg($tuiStartupFixture);
+
+    echo "Running recording test (ReplayRecordingTest + TUI fixture methods)...\n\n";
 
     passthru(
-        'APP_ENV=test LLAMA_CPP_SMOKE_TEST=1 '.\PHP_BINARY.' vendor/bin/phpunit'
+        $env.' '.\PHP_BINARY.' vendor/bin/phpunit'
         .' '.escapeshellarg($recordingTestClass)
         .' --colors=never --no-progress',
         $exitCode,
@@ -62,7 +73,10 @@ function llm_fixtures_record(): void
     }
 
     echo "\n\nRecording complete. Fixtures updated.\n";
-    echo "Run 'castor test' to verify replays pass with the new fixtures.\n";
+    echo "  AgentCore traces → tests/AgentCore/Fixtures/traces/\n";
+    echo "  TUI journey reply → {$tuiSimpleFixture}\n";
+    echo "  TUI startup reply → {$tuiStartupFixture}\n";
+    echo "\nRun 'castor test' and 'castor test:tui' to verify replays pass.\n";
 }
 
 // ─── Fixture info / listing ──────────────────────────────────────

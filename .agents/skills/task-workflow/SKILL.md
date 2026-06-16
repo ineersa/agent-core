@@ -92,9 +92,9 @@ Read-only planning. No status changes, no file edits, no forks.
 **TUI implementation is NOT complete until there is an automated test using the real test LLM and `TmuxHarness` with a snapshot or assertion proving the FEATURE works exactly as expected through real interactive TUI behavior.** This is a hard gate — no exceptions.
 
 - Tests must exercise the real TUI interaction flow, not just mocked services, DTO assembly, or service-only unit tests.
-- Tests must use the project TUI E2E infrastructure (`TmuxHarness`, `#[Group('tui-e2e')]`), the real test LLM endpoint (`llama_cpp_test/test` on port 9052), and isolated `var/tmp/test-{uuid}` directories.
+- Tests must use the project TUI E2E infrastructure (`TmuxHarness`, `#[Group('tui-e2e-replay')]`), replay fixtures where model output is needed, and isolated `var/tmp/test-{uuid}` directories.
 - The following are NOT acceptable substitutes: custom PHP smoke scripts, mocked `AgentSessionClient` passing through a mock runtime, checking only picker visibility or footer text, or manual-run reports from forks.
-- For the task workflow: do **not** move a TUI task to CODE-REVIEW or DONE unless a real TmuxHarness E2E proof exists and passes `castor test:tui`. The orchestrator/user must run `LLM_MODE=true castor check` on the integration checkout after DONE merge (or run focused TUI E2E validation before CODE-REVIEW move). If prerequisites (tmux, llama.cpp on port 9052) are unavailable, or no such test has been written, the task MUST stay IN-PROGRESS with that blocker recorded.
+- For the task workflow: do **not** move a TUI task to CODE-REVIEW or DONE unless a real TmuxHarness E2E proof exists and passes `castor test:tui`. The default `castor test:tui` is deterministic/replay-backed; it does not require llama.cpp. The orchestrator/user must run focused TUI E2E validation before CODE-REVIEW move. If tmux is unavailable, or no such test has been written, the task MUST stay IN-PROGRESS with that blocker recorded.
 - Fork instructions for TUI tasks must always require adding or updating the real E2E test for each user-visible feature path touched by the implementation.
 - Reviewers reviewing TUI work must explicitly check for the presence and validity of the TmuxHarness E2E proof and reject work that lacks it or substitutes mocks.
 
