@@ -149,7 +149,7 @@ function build_sequential_phpunit_command(string $pharEnv): string
     $junitFlag = is_llm_mode() ? ' --log-junit='.report_path('phpunit-sequential.junit.xml') : '';
 
     return 'APP_ENV=test '.$pharEnv.$phpBin.' vendor/bin/phpunit'
-        .' --exclude-group tui-e2e --exclude-group llm-real --exclude-group recording --exclude-group controller-replay'
+        .' --exclude-group tui-e2e --exclude-group tui-e2e-replay --exclude-group llm-real --exclude-group recording --exclude-group controller-replay'
         .' '.$strictFlags.$llmFlags.$junitFlag;
 }
 
@@ -235,7 +235,7 @@ function test(?string $filter = null): void
     $cmd = 'APP_ENV=test '.$pharEnv.\PHP_BINARY.' vendor/bin/paratest'
         .' --configuration=phpunit.xml.dist'
         .' --bootstrap='.escapeshellarg($bootstrap)
-        .' --exclude-group=tui-e2e --exclude-group=llm-real --exclude-group=recording --exclude-group=controller-replay'
+        .' --exclude-group=tui-e2e --exclude-group=tui-e2e-replay --exclude-group=llm-real --exclude-group=recording --exclude-group=controller-replay'
         .' '.$strictFlags.$llmFlags.$junitFlag;
 
     passthru($cmd, $exitCode);

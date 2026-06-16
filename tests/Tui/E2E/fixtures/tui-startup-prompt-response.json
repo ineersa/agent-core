@@ -1,0 +1,23 @@
+{
+    "$schema": "TUI startup snapshot replay fixture — response for auto-submitted --prompt",
+    "model": "llama_cpp_test/test",
+    "provider_id": "llama_cpp_test",
+    "reasoning": "off",
+    "recorded_at": "2026-06-15T23:00:00Z",
+    "recording_source": "llama_cpp_test/test",
+    "input": {
+        "messages": [
+            {"role": "user", "content": "hello from tmux e2e"}
+        ]
+    },
+    "deltas": [
+        {"type": "text", "content": "Hello! I'm ready to help with your coding tasks."}
+    ],
+    "usage": {
+        "input_tokens": 12,
+        "output_tokens": 15,
+        "total_tokens": 27
+    },
+    "stop_reason": "stop",
+    "expected_text": "Hello! I'm ready to help with your coding tasks."
+}

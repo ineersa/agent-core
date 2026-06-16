@@ -10,17 +10,11 @@ declare(strict_types=1);
  * port 9052) and run the PHAR ensure preflight.
  *
  * =========================================================================
- * FUTURE (MAINT-05C/D/E):
- *   MAINT-05C will introduce deterministic LLM replay mode — these
- *     tasks (or their replay equivalents) will no longer require a
- *     live llama.cpp server for routine QA.
- *   MAINT-05D added explicit controller/messenger process ownership
- *     contracts (ControllerReplayE2eTestCase tracks process groups and
- *     terminates the entire tree on teardown) and the deterministic
- *     `test:controller-replay` command.
- *   MAINT-05E will restructure TUI E2E into long-lived journey tests
- *     with far fewer tmux launches; the sharding in here will be
- *     removed when that lands.
+ * MAINT-05E: TUI E2E restructured into replay-backed journey tests.
+ *   - test:tui      → default replay-backed TUI journey (no live LLM).
+ *   - test:tui-live → opt-in live LLM TUI E2E (requires llama.cpp).
+ *   - test:controller-replay → controller E2E with replay (no live LLM).
+ *   - test:controller → opt-in live LLM controller E2E.
  * =========================================================================
  */
 
@@ -87,10 +81,58 @@ OK (%.1fs)
     exit(0);
 }
 
-// ─── TUI E2E ─────────────────────────────────────────────────────
+// ─── TUI E2E (replay-backed default) ────────────────────────────
 
-#[AsTask(name: 'test:tui', description: 'Run TUI E2E smoke tests')]
+#[AsTask(name: 'test:tui', description: 'Run TUI E2E journey tests (replay-backed, no live LLM)')]
 function test_tui(?string $filter = null): void
+{
+    $filterArg = null !== $filter ? ' --filter='.escapeshellarg($filter) : '';
+    check_tmux();
+
+    @mkdir('var/test', 0755, true);
+    $migrate = run_quiet_command(
+        'APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
+    );
+    if (0 !== $migrate->getExitCode()) {
+        fail_quality('test database migration failed: '.$migrate->getErrorOutput());
+    }
+
+    // Run the replay-backed TUI journey test (plus golden-snapshot test)
+    // as a single PHPUnit invocation.  Both use APP_ENV=test + source
+    // bin/console with ControllerReplayHttpClientFactory from
+    // config/services_test.yaml.  No PHAR, no HATFIELD_BINARY_PATH —
+    // the test DI requires autoload-dev paths.
+    $groupArg = '' !== $filterArg
+        ? $filterArg
+        : ' --group tui-e2e-replay';
+
+    $cmd = 'APP_ENV=test '.\PHP_BINARY.' vendor/bin/phpunit'
+        .$groupArg
+        .' '.phpunit_strict_issue_flags()
+        .(is_llm_mode() ? ' --colors=never --no-progress --log-junit='.report_path('phpunit-tui.junit.xml') : '');
+
+    echo "\n=== TUI E2E journey tests (replay-backed, no live LLM) ===\n\n";
+
+    $start = hrtime(true);
+    passthru($cmd, $exitCode);
+    $duration = (hrtime(true) - $start) / 1e9;
+
+    if (is_llm_mode()) {
+        $summary = read_suite_junit_summary('tui');
+        if ('' !== $summary) {
+            echo "{$summary}\n";
+        }
+    }
+
+    if (0 !== $exitCode) {
+        fail_quality(sprintf('TUI E2E journey tests failed in %.1fs (exit code %d)', $duration, $exitCode));
+    }
+    echo sprintf('\nOK (%.1fs)\n', $duration);
+    exit(0);
+}
+
+#[AsTask(name: 'test:tui-live', description: 'Run TUI E2E tests with live LLM (opt-in, requires llama.cpp)')]
+function test_tui_live(?string $filter = null): void
 {
     $filterArg = null !== $filter ? ' --filter='.escapeshellarg($filter) : '';
     check_tmux();
@@ -108,59 +150,36 @@ function test_tui(?string $filter = null): void
     try {
         $pharPath = phar_ensure();
     } catch (Throwable $e) {
-        echo "PHAR ensure skipped: {$e->getMessage()}
-";
+        echo "PHAR ensure skipped: {$e->getMessage()}\n";
     }
     if ('' !== $pharPath) {
         $GLOBALS['CASTOR_PHAR_READY'] = $pharPath;
     }
     $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
 
-    // DB must be ready before E2E tests start.
-    @mkdir('var/test', 0755, true);
-    $migrate2 = run_quiet_command(
-        'APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
-    );
-    if (0 !== $migrate2->getExitCode()) {
-        fail_quality('test database migration failed: '.$migrate2->getErrorOutput());
-    }
-
-    $testFiles = [];
-    if ('' !== $filterArg) {
-        $testFiles[] = 'tests/Tui/E2E';
-    } else {
-        // Run ALL E2E test files as a single PHPUnit invocation so the
-        // shared isolated DB, PHAR, and tmux overhead is paid once per
-        // batch, not per-test.  Shards are only relevant inside check().
-        $testFiles[] = 'tests/Tui/E2E';
-    }
-
-    $phpunitArgs = implode(' ', array_map('escapeshellarg', $testFiles));
-
     $cmd = 'APP_ENV=test '.$pharEnv.'LLAMA_CPP_SMOKE_TEST=1 '.\PHP_BINARY.' vendor/bin/phpunit'
-        .' '.$phpunitArgs
+        .' --group tui-e2e'
+        .$filterArg
         .' '.phpunit_strict_issue_flags()
-        .(is_llm_mode() ? ' --colors=never --no-progress --log-junit='.report_path('phpunit-tui.junit.xml') : '');
+        .(is_llm_mode() ? ' --colors=never --no-progress --log-junit='.report_path('phpunit-tui-live.junit.xml') : '');
+
+    echo "\n=== TUI E2E live-LLM tests (opt-in) ===\n\n";
 
     $start = hrtime(true);
     passthru($cmd, $exitCode);
     $duration = (hrtime(true) - $start) / 1e9;
 
     if (is_llm_mode()) {
-        $summary = read_suite_junit_summary('tui');
+        $summary = read_suite_junit_summary('tui-live');
         if ('' !== $summary) {
-            echo "{$summary}
-";
+            echo "{$summary}\n";
         }
     }
 
     if (0 !== $exitCode) {
-        fail_quality(sprintf('TUI E2E tests failed in %.1fs (exit code %d)', $duration, $exitCode));
+        fail_quality(sprintf('TUI E2E live tests failed in %.1fs (exit code %d)', $duration, $exitCode));
     }
-    echo sprintf('
-
-OK (%.1fs)
-', $duration);
+    echo sprintf('\nOK (%.1fs)\n', $duration);
     exit(0);
 }
 

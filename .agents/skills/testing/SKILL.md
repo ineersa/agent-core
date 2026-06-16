@@ -13,7 +13,8 @@ All PHPUnit invocations include `--stop-on-error --stop-on-failure --fail-on-all
 castor check                # Full validation: PHAR ensure + parallel steps (deptrac, unit/integration sequential, controller E2E, llm-real E2E, TUI E2E, phpstan, cs-check); per-step timeouts + logs at var/reports/check-*.log
 castor test                 # unit/integration tests (ParaTest parallel by default); excludes tui-e2e and llm-real
 castor test --filter=X      # filter tests by name (sequential, single DB)
-castor test:tui [--filter=X]    # tmux TUI e2e snapshots (filter optional)
+castor test:tui [--filter=X]    # TUI E2E journey tests (replay-backed, no live LLM)
+castor test:tui-live [--filter=X]    # TUI E2E tests with live LLM (opt-in, requires llama.cpp)
 castor test:tui-update [--filter=X]  # update TUI snapshot baselines (filter optional)
 castor test:llm-real [--filter=X]   # real llama.cpp smoke (filter optional)
 castor test:controller [--filter=X] # controller E2E smoke test (live LLM, opt-in)
@@ -71,7 +72,8 @@ pre-recorded fixture files under `tests/AgentCore/Fixtures/traces/`.
 ## Test groups
 
 - `#[Group('llm-real')]` — all tests that hit a real LLM endpoint
-- `#[Group('tui-e2e')]` — TUI tmux snapshot tests
+- `#[Group('tui-e2e')]` — TUI tmux snapshot tests (live LLM, opt-in)
+- `#[Group('tui-e2e-replay')]` — TUI journey tests (replay-backed, default)
 - `#[Group('phar')]` — PHAR smoke tests (PharSmokeTest)
 
 ## PHAR-based testing
@@ -123,7 +125,8 @@ unit/integration lane.
 | `castor test:llm-real` | Real LLM smoke: `ControllerSmokeTest`, `LlamaCppSmokeTest` | llama.cpp on port 9052 |
 | `castor test:controller-replay` | Controller replay E2E: spawns `--controller`, JSONL protocol, replay fixtures (no live LLM) | Nothing (pure PHP) |
 | `castor test:controller` | Controller E2E: spawns `--controller`, JSONL protocol (live LLM, opt-in) | llama.cpp on port 9052 |
-| `castor test:tui` | Tmux TUI E2E snapshot tests | tmux, llama.cpp on port 9052 |
+| `castor test:tui` | TUI E2E journey tests (replay-backed, no live LLM) | tmux |
+| `castor test:tui-live` | TUI E2E tests with live LLM (opt-in) | tmux, llama.cpp on port 9052 |
 | `castor run:agent-test` | Interactive tmux session for manual inspection | tmux, llama.cpp on port 9052 |
 | `castor run:agent` | Launch agent in tmux | tmux, LLM provider |
 | `castor llm:fixtures:record` | Re-record replay fixtures from live LLM | llama.cpp on port 9052 |
@@ -209,6 +212,26 @@ Validation must exercise the real user flow: start agent, type prompt, submit, w
 If prerequisites are unavailable (tmux not installed, llama.cpp not reachable on port 9052), the task MUST remain IN-PROGRESS with exact environmental blocker output — never mark CODE-REVIEW or DONE without it.
 
 Before re-running failed controller/TUI E2E checks, kill stale worker processes from the failed worktree (`messenger:consume`, `agent --controller`, PHPUnit/Castor children). Orphaned consumers can keep queues busy and make a fixed test appear hung.
+
+## TUI E2E (replay-backed journey, default)
+
+`castor test:tui` runs the deterministic replay-backed TUI journey test
+(`TuiJourneyE2eTest`, group `tui-e2e-replay`).  It exercises startup
+layout, Ctrl+J, reasoning cycling, /hotkeys, shell !ls, file completion,
+model interaction via replay fixtures, and double-bang rejection — all
+in a single long-lived tmux session.
+
+- Uses `APP_ENV=test` + source `bin/console` (not PHAR) so
+  `config/services_test.yaml` wires `ControllerReplayHttpClientFactory`
+  for deterministic model responses.
+- No live LLM, no `LLAMA_CPP_SMOKE_TEST`, no PHAR.
+- Golden snapshot test (`TuiStartupSnapshotTest`) also uses replay.
+
+## TUI E2E (live LLM, opt-in)
+
+`castor test:tui-live` runs the live LLM TUI E2E tests (group `tui-e2e`)
+that require `llama_cpp_test/test` on port 9052.  These are opt-in and
+not part of default `castor test:tui` or `castor test`.
 
 ## TUI E2E snapshot artifacts
 

@@ -1,0 +1,23 @@
+{
+    "$schema": "TUI journey reply fixture — simple text response for replay-backed TUI E2E",
+    "model": "llama_cpp_test/test",
+    "provider_id": "llama_cpp_test",
+    "reasoning": "off",
+    "recorded_at": "2026-06-15T23:00:00Z",
+    "recording_source": "llama_cpp_test/test",
+    "input": {
+        "messages": [
+            {"role": "user", "content": "Respond with exactly one sentence: the sky is blue."}
+        ]
+    },
+    "deltas": [
+        {"type": "text", "content": "The sky is blue."}
+    ],
+    "usage": {
+        "input_tokens": 15,
+        "output_tokens": 6,
+        "total_tokens": 21
+    },
+    "stop_reason": "stop",
+    "expected_text": "The sky is blue."
+}

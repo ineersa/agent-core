@@ -62,7 +62,13 @@ Do not write inline `byType` loops or ack searches in test methods. For tool-foc
 
 ### TUI E2E tests
 
-Use `TmuxHarness` with `#[Group('tui-e2e')]`. Follow the pattern in `TuiAgentSmokeTest`:
+Default TUI E2E uses the replay-backed journey pattern (`#[Group('tui-e2e-replay')]`).
+Follow the pattern in `TuiJourneyE2eTest`: one long-lived tmux session exercising
+multiple behaviours with replay fixtures for model interaction.
+
+Live LLM TUI E2E tests (`#[Group('tui-e2e')]`) remain opt-in via `castor test:tui-live`.
+
+Use `TmuxHarness`. Follow the pattern in `TuiJourneyE2eTest` (replay) or `TuiAgentSmokeTest` (live):
 - Detached tmux pane via `startDetached()`
 - Isolated project dir with model/provider overrides
 - `--prompt` for auto-submit, `sendLiteral`/`sendKey` for keyboard input
@@ -94,7 +100,8 @@ All PHPUnit invocations include `--stop-on-error --stop-on-failure --fail-on-all
 Key commands:
 - `castor test` — unit/integration tests (ParaTest parallel by default, sequential fallback for --filter)
 - `castor test --filter=XxxTest` — filter to specific tests (sequential; single DB)
-- `castor test:tui` — TUI E2E tests (`#[Group('tui-e2e')]`)
+- `castor test:tui` — TUI E2E journey tests (`#[Group('tui-e2e-replay')]`, replay-backed, no live LLM)
+- `castor test:tui-live` — TUI E2E live-LLM tests (`#[Group('tui-e2e')]`, opt-in)
 - `castor test:llm-real` — real-LLM controller E2E tests (`#[Group('llm-real')]`)
 - `castor test:controller-replay` — controller replay E2E (default, no live LLM)
 - `castor test:controller` — controller smoke test (live LLM, opt-in)
