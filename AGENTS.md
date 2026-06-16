@@ -58,11 +58,7 @@ Run `castor cleanup` to remove all temp/test artifacts.
 
 For changes touching TUI runtime, `AgentSessionClient`, Messenger, `TranscriptProjector`, `RuntimeEventPoller`, or LLM-visible flow: you MUST run `castor check`. Unit/container/mocked tests are not enough. If tmux is unavailable, TUI tasks MUST stay IN-PROGRESS with the blocker — never mark CODE-REVIEW or DONE without validation.
 
-Default TUI E2E tests are replay-backed and deterministic — they do not require
-llama.cpp. Live LLM TUI tests have been removed; controller/live-LLM smoke remains
-opt-in via `castor test:llm-real` and `castor test:controller`.
-
-**Load the `testing` skill** when: touching runtime/TUI code, running validation, or unsure what `castor check` covers.
+Default `castor check` is fully deterministic (replay-backed controller and TUI E2E, no live LLM). Live LLM smoke is opt-in via `castor test:llm-real` and `castor test:controller`.
 
 ## Mandatory TUI feature E2E proof
 

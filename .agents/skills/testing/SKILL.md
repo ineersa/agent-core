@@ -10,7 +10,7 @@ description: "E2E and validation testing strategy. Load this skill when: writing
 All PHPUnit invocations include `--stop-on-error --stop-on-failure --fail-on-all-issues --display-all-issues`.
 
 ```bash
-castor check                # Full validation: PHAR ensure + parallel steps (deptrac, unit/integration sequential, controller E2E, llm-real E2E, TUI E2E, phpstan, cs-check); per-step timeouts + logs at var/reports/check-*.log
+castor check                # Full QA gate (deterministic — no live LLM): deptrac, unit/integration sequential, controller replay E2E, TUI replay E2E, phpstan, cs-check; per-step timeouts + logs at var/reports/check-*.log
 castor test                 # unit/integration tests (ParaTest parallel by default); excludes tui-e2e-replay, llm-real, recording, and controller-replay groups
 castor test --filter=X      # filter tests by name (sequential, single DB)
 castor test --suite=X       # target a specific phpunit.xml test suite
@@ -40,7 +40,15 @@ Run the test llama.cpp server deterministically for smoke tests: temperature 0, 
 
 ### LLM generation readiness preflight
 
-Before `castor check`, `test:llm-real`, and `test:controller` run any live-LLM E2E tests, Castor runs `check_llm_generation_ready()` — a ~4s curl-based preflight that sends a tiny `max_tokens=1` chat completion to `llama_cpp_test/test`. If the server responds to `/health` and `/v1/models` but generation hangs (corrupted model load, stuck slots), this preflight fails immediately with a clear diagnostic instead of burning 30-90s Castor step timeouts.
+Before `castor test:llm-real` and `castor test:controller` run live-LLM tests,
+Castor runs `check_llm_generation_ready()` — a ~4s curl-based preflight that
+sends a tiny `max_tokens=1` chat completion to `llama_cpp_test/test`. If the
+server responds to `/health` and `/v1/models` but generation hangs (corrupted
+model load, stuck slots), this preflight fails immediately with a clear
+diagnostic instead of burning 30-90s Castor step timeouts.
+
+This preflight is NOT run by `castor check` (which is fully deterministic
+and replay-backed).
 
 If you see:
 ```
@@ -62,7 +70,7 @@ pre-recorded fixture files under `tests/AgentCore/Fixtures/traces/`.
 
 - **Replay mode** is the default for `castor test`. No live LLM calls.
 - **Live mode** is opt-in: `castor test:llm-real`,
-  `castor test:controller`, and `castor check` still use live LLM.
+  `castor test:controller`, and `castor llm:fixtures:record`.
 - **Re-record fixtures** when provider behavior, prompts, or tool schemas
   change: `castor llm:fixtures:record`.
 - Fixture format and recording/replay architecture described in
@@ -123,7 +131,7 @@ unit/integration lane.
 
 | Command | What it tests | Requires |
 |---|---|---|
-| `castor check` | Full validation: PHAR ensure plus parallel steps: deptrac, unit/integration (sequential), controller E2E, llm-real E2E, TUI E2E, phpstan, cs-check. The unit/integration step is a single deterministic sequential PHPUnit run. | tmux, llama.cpp on port 9052 |
+| `castor check` | Full QA gate (deterministic): deptrac, unit/integration (sequential), controller replay E2E, TUI replay E2E, phpstan, cs-check. No live LLM, no PHAR. | tmux |
 | `castor test` | Unit/integration tests (ParaTest parallel by default, sequential fallback for --filter) | Nothing (pure PHP) |
 | `castor test:llm-real` | Real LLM smoke: `ControllerSmokeTest`, `LlamaCppSmokeTest` | llama.cpp on port 9052 |
 | `castor test:controller-replay` | Controller replay E2E: spawns `--controller`, JSONL protocol, replay fixtures (no live LLM) | Nothing (pure PHP) |
@@ -205,13 +213,13 @@ On E2E test failure, the test dumps:
 
 For changes touching TUI runtime behavior, `AgentSessionClient`, model routing, Messenger wiring, `TranscriptProjector`, `RuntimeEventPoller`, transcript rendering, or LLM-visible execution flow, unit/container/mocked tests are not enough.
 
-You MUST run `castor check`. It includes controller E2E, real LLM E2E, and TUI E2E, so runtime/TUI/error-propagation changes exercise the controller process, real model path, and interactive user-visible TUI path before handoff.
+You MUST run `castor check`. It includes controller replay E2E and TUI replay E2E (both deterministic), so runtime/TUI/error-propagation changes exercise the controller process and interactive user-visible TUI path before handoff. Live LLM validation is opt-in via `castor test:controller`.
 
 For especially risky visual or interaction changes, also run `castor run:agent-test` to drive the agent in tmux and capture snapshots.
 
 Validation must exercise the real user flow: start agent, type prompt, submit, wait for visible assistant response or visible error block, and capture TUI snapshot plus session artifacts on failure. Do not claim runtime/TUI work is done based only on DTO tests, mocked pollers, container compilation, or isolated service tests.
 
-If prerequisites are unavailable (tmux not installed, llama.cpp not reachable on port 9052), the task MUST remain IN-PROGRESS with exact environmental blocker output — never mark CODE-REVIEW or DONE without it.
+If tmux is unavailable, TUI tasks MUST remain IN-PROGRESS with exact environmental blocker output — never mark CODE-REVIEW or DONE without it. The default `castor check` is deterministic and does NOT require llama.cpp.
 
 Before re-running failed controller/TUI E2E checks, kill stale worker processes from the failed worktree (`messenger:consume`, `agent --controller`, PHPUnit/Castor children). Orphaned consumers can keep queues busy and make a fixed test appear hung.
 

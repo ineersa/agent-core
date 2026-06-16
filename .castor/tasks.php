@@ -5,9 +5,15 @@ declare(strict_types=1);
 /**
  * QA orchestration: the `check` command and its direct helpers.
  *
- * This is the central quality gate.  It runs PHAR ensure, then
- * executes all validation steps concurrently (deptrac, unit-test
- * shards, controller E2E, real LLM E2E, TUI E2E, phpstan, cs-check).
+ * MAINT-05G: `check` is now fully deterministic — all lanes use
+ * replay-backed fixtures (no live llama.cpp/OpenAI dependency).
+ * Live LLM commands remain as opt-in provider compatibility smoke:
+ *   castor test:llm-real, castor test:controller, castor llm:fixtures:record
+ *
+ * Lanes run concurrently:
+ *   deptrac (30s) → test: sequential unit/integration (300s) →
+ *   test:controller-replay (30s) → test:tui (120s) → phpstan (30s) →
+ *   cs-check (30s).  No PHAR, no live LLM.
  *
  * =========================================================================
  * This file was split from the former monolithic .castor/tasks.php.
@@ -16,29 +22,21 @@ declare(strict_types=1);
  *   shared.php   — widely-used global helpers (fail_quality, etc.)
  *   process.php  — process management (run_commands_parallel, session
  *                   cleanup, timeout-hardstop smoke proof)
- *   phpunit.php  — PHPUnit tasks and shard discovery (test, shard
- *                   groups, worker command builders)
+ *   phpunit.php  — PHPUnit tasks (test, ParaTest, sequential builders)
  *   e2e.php      — E2E tasks (test:llm-real, test:tui, test:tui-update,
- *                   test:controller)
+ *                   test:controller, test:controller-replay)
  *   phar.php     — PHAR packaging tasks
  *   tools.php    — static analysis and code-style tasks
  *   run.php      — agent runtime launchers
  *   cleanup.php  — artifact cleanup
  *   env.php      — diagnostics and Datadog tasks
  *   logs.php     — log management tasks
- *
- * FUTURE (MAINT-05G): The `check` command will be refactored to use
- *   the deterministic command matrix (replay E2E, ParaTest unit
- *   acceleration, journey-based TUI).  The current live-LLM steps
- *   will become opt-in only.
  * =========================================================================
  */
 
 use Castor\Attribute\AsTask;
 
-use function CastorTasks\check_llm_generation_ready;
 use function CastorTasks\is_llm_mode;
-use function CastorTasks\phar_ensure;
 use function CastorTasks\report_path;
 use function CastorTasks\run_quiet_command;
 
@@ -51,14 +49,18 @@ require_once __DIR__.'/shared.php';
 // ─── Quality gate ─────────────────────────────────────────────────
 
 /**
- * Run full QA: deptrac, phpunit, controller E2E, real LLM E2E,
- * TUI snapshot E2E, phpstan, cs-fixer check.
+ * Run QA gate — fully deterministic.
  *
- * All steps run concurrently as external subprocesses (via proc_open)
- * so they do not share memory with the Castor PHAR.  Each step's
+ * All lanes use replay-backed fixtures or pure-static analysis.
+ * No live llama.cpp/OpenAI dependency.  Live LLM smoke is opt-in
+ * via `castor test:llm-real`, `castor test:controller`, and
+ * `castor llm:fixtures:record`.
+ *
+ * Lanes run concurrently as external subprocesses (via proc_open)
+ * so they do not share memory with the Castor PHAR.  Each lane's
  * output is captured to var/reports/check-<step>.log.
  */
-#[AsTask(description: 'Run full QA (deptrac, phpunit, controller E2E, real LLM E2E, TUI E2E, phpstan, cs-fixer)')]
+#[AsTask(description: 'Run full QA gate (deterministic — no live LLM)')]
 function check(): void
 {
     $root = (false !== ($_rp = realpath(__DIR__.'/..')) ? $_rp : __DIR__.'/..');
@@ -67,37 +69,26 @@ function check(): void
     // timeouts.  Scoped to this checkout only.
     cleanup_stale_check_workers($root);
 
-    $pharStart = hrtime(true);
-    $pharPath = '';
-    try {
-        $pharPath = phar_ensure();
-    } catch (Throwable $e) {
-        echo "PHAR ensure skipped: {$e->getMessage()}
-";
-    }
-    if ('' !== $pharPath) {
-        $GLOBALS['CASTOR_PHAR_READY'] = $pharPath;
-    }
-    $pharDuration = (hrtime(true) - $pharStart) / 1e9;
-    echo sprintf('PHAR: ok (%.1fs)
-
-', $pharDuration);
-
-    $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
+    // No PHAR ensure — the deterministic controller-replay and TUI
+    // replay lanes use source bin/console with APP_ENV=test, which
+    // requires autoload-dev paths not bundled in the PHAR.
     $phpBin = \PHP_BINARY;
     $strictFlags = phpunit_strict_issue_flags();
     $llmFlags = is_llm_mode() ? ' --colors=never --no-progress' : '';
 
-    // Each step is a shell command that runs the underlying tool
+    // Each lane is a shell command that runs the underlying tool
     // directly — not through a Castor task closure — to stay safe
     // inside the Castor PHAR (no pcntl_fork shared-memory issues).
     //
     // MAINT-05B: The PHPUnit lane uses a single sequential run
-    // (build_sequential_phpunit_command) instead of 7 custom shard
-    // workers.  This simplifies the parallel topology, removes
-    // stale-worker risk from per-shard timeouts, and keeps the check
-    // output readable.  Use `castor test` for ParaTest-powered unit
-    // acceleration (the default path).
+    // (build_sequential_phpunit_command) instead of ParaTest because
+    // the gate must be deterministic and produce clean JUnit output.
+    // Use `castor test` for fast ParaTest-powered local development.
+    //
+    // MAINT-05G: test:controller and test:llm-real lanes removed.
+    // Replaced with test:controller-replay (deterministic replay
+    // fixtures, no live LLM).  check_llm_generation_ready() is not
+    // called — it is only needed by opt-in live commands.
     $allCheckCommands = [
         'deptrac' => [
             'cmd' => timeout_check_command(
@@ -108,26 +99,18 @@ function check(): void
         ],
         'test' => [
             'cmd' => timeout_check_command(
-                build_sequential_phpunit_command($pharEnv),
+                // Sequential PHPUnit; exclude phar group (PHAR is opt-in, not part of deterministic gate).
+                build_sequential_phpunit_command('').' --exclude-group=phar',
                 300,
             ),
         ],
-        'test:controller' => [
+        'test:controller-replay' => [
             'cmd' => timeout_check_command(
-                'APP_ENV=test '.$pharEnv.'LLAMA_CPP_SMOKE_TEST=1 '.$phpBin.' vendor/bin/phpunit'
-                    .' --filter=ControllerSmokeTest'
+                'APP_ENV=test '.$phpBin.' vendor/bin/phpunit'
+                    .' --group=controller-replay'
                     .' '.$strictFlags.$llmFlags
-                    .(is_llm_mode() ? ' --log-junit='.report_path('phpunit-controller.junit.xml') : ''),
+                    .(is_llm_mode() ? ' --log-junit='.report_path('phpunit-controller-replay.junit.xml') : ''),
                 30,
-            ),
-        ],
-        'test:llm-real' => [
-            'cmd' => timeout_check_command(
-                'APP_ENV=test '.$pharEnv.'LLAMA_CPP_SMOKE_TEST=1 '.$phpBin.' vendor/bin/phpunit'
-                    .' --group llm-real'
-                    .' '.$strictFlags.$llmFlags
-                    .(is_llm_mode() ? ' --log-junit='.report_path('phpunit-llm-real.junit.xml') : ''),
-                60,
             ),
         ],
         'test:tui' => [
@@ -156,8 +139,8 @@ function check(): void
         ],
     ];
 
-    // DB schema must be ready before the test / controller / llm-real
-    // steps start.  Migrate once (fast, idempotent).
+    // DB schema must be ready before the test / controller-replay / TUI
+    // lanes start.  Migrate once (fast, idempotent).
     @mkdir('var/test', 0755, true);
     $migrate = run_quiet_command(
         'APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
@@ -165,13 +148,6 @@ function check(): void
     if (0 !== $migrate->getExitCode()) {
         fail_quality('test database migration failed: '.$migrate->getErrorOutput());
     }
-
-    // Fail-fast: verify llama.cpp can actually generate before burning
-    // time on controller / llm-real steps.  Health-only checks are
-    // insufficient — the server can respond to /health and /v1/models
-    // while generation is stuck (corrupted model load, slots busy).
-    // TUI E2E uses replay-backed fixtures and does NOT need live LLM.
-    check_llm_generation_ready();
 
     $failures = [];
     $timings = [];

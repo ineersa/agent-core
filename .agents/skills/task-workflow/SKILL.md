@@ -63,9 +63,9 @@ Read-only planning. No status changes, no file edits, no forks.
 3. Run focused local validation on worktree:
    - `castor test`, `castor deptrac`, `castor phpstan`, `castor cs-check`.
    - For TUI tasks: also run `castor test:tui` as part of local validation.
-   - The orchestrator/user is responsible for focused validation before moving to CODE-REVIEW. `move_task(to="CODE-REVIEW")` does not auto-run a quality gate — it only verifies the worktree is clean, pushes the branch, and creates the PR.
+   - The orchestrator/user is responsible for focused validation before moving to CODE-REVIEW. `move_task(to="CODE-REVIEW")` automatically runs deterministic `castor check` in the worktree before pushing and creating the PR.
 4. Record reviewer decision, commit sha, validation results via `update_task`.
-5. `move_task(to="CODE-REVIEW")` — verifies worktree is clean, pushes branch, creates PR.
+5. `move_task(to="CODE-REVIEW")` — runs castor check in worktree, verifies it is clean, pushes branch, creates PR.
 
 ### task-review-iterate: Address PR feedback (CODE-REVIEW → IN-PROGRESS → CODE-REVIEW)
 

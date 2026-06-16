@@ -37,7 +37,7 @@ If you catch yourself about to open an editor, write a file, or run a code chang
      `castor test`, `castor deptrac`, `castor phpstan`, `castor cs-check`.
    - **For TUI tasks: also run `castor test:tui` as part of local validation.** The TUI E2E proof test must pass before moving to CODE-REVIEW.
    - Optionally run `castor test --filter=...` for targeted coverage.
-   - `move_task(to="CODE-REVIEW")` verifies the worktree is clean, pushes the branch, and creates the PR. It does not auto-run a quality gate. The orchestrator/user is responsible for focused validation before moving.
+   - `move_task(to="CODE-REVIEW")` automatically runs deterministic `castor check` in the worktree, then pushes the branch and creates the PR. The orchestrator/user should run focused validation before moving to catch issues early.
    - Report exact validation results.
 
 4. **Update task metadata**
