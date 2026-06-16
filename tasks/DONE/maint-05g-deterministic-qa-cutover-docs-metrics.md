@@ -31,14 +31,14 @@ This task should not start until enough of A-F are complete that default QA can 
 - MAINT-05 umbrella task is updated with final status and links/results for MAINT-05A-G.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/maint-05g-deterministic-qa-cutover-docs-metrics
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05g-deterministic-qa-cutover-docs-metrics
 Fork run: e2cwwgtlg7bv
 PR URL: https://github.com/ineersa/agent-core/pull/148
-PR Status: open
+PR Status: merged
 Started: 2026-06-16T02:21:32.044Z
-Completed:
+Completed: 2026-06-16T15:43:31.532Z
 
 ## Work log
 - Created: 2026-06-15T21:09:07.755Z
@@ -161,3 +161,30 @@ Completed:
 - Skipped PR creation (pushOnly: true).
 - Validation: Parent verification: `git status --short --branch` showed clean `task/maint-05g-deterministic-qa-cutover-docs-metrics...origin/... [ahead 1]` before push; `git log --oneline -6` showed `6f1c9cb34 MAINT-05G: Document focused live LLM validation policy` at HEAD.; Parent verification: `git show --stat --oneline HEAD` showed 9 files changed, 32 insertions, 3 deletions: `AGENTS.md`, `tests/AGENTS.md`, `.agents/skills/testing/SKILL.md`, `.agents/skills/task-workflow/SKILL.md`, and `.pi/prompts/task-{start,to-pr,review-iterate,explain,done}.md`.; Parent verification: targeted `rg` confirmed policy wording in all expected files (`Focused live LLM provider validation`, `NOT required for every normal task`, `provider/LLM-visible`, and deterministic `castor check` wording).; Parent verification: stale/contradiction `rg` for `TUI.*live LLM`, `test:tui-live`, `check.*test:llm-real`, `castor check.*llm-real`, `always run.*test:llm-real`, and `every normal task.*test:llm-real` found no contradictory active wording; remaining hits are correct no-live-LLM / opt-in policy statements.; Fork validation: docs/policy only; no full Castor validation run. Fork ran targeted rg checks and confirmed no stale contradictions.
 - Summary: Docs/prompt policy fork `e2cwwgtlg7bv` accepted after parent verification. Commit `6f1c9cb34` is present at HEAD on `task/maint-05g-deterministic-qa-cutover-docs-metrics`, worktree clean and 1 commit ahead of origin before push. Changes document the conditional live LLM validation rule across AGENTS.md, tests/AGENTS.md, testing and task-workflow skills, and all task workflow prompts: default `castor check` remains deterministic and must not include `castor test:llm-real` by default; `castor test:llm-real` should be run as focused opt-in validation for Symfony AI/provider integration, model routing/selection/catalog config, tool schemas/tool-call conversion/tool argument prompts, LLM-visible prompts/templates, streaming conversion/stop_reason/usage/tool-call deltas, or live-provider compatibility paths. PR #148 already exists, so branch was pushed without creating a new PR.
+
+## Task workflow update - 2026-06-16T15:43:31.532Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/maint-05g-deterministic-qa-cutover-docs-metrics into integration checkout.
+- Merge made by the 'ort' strategy.
+ .agents/skills/task-workflow/SKILL.md              |   9 +-
+ .agents/skills/testing/SKILL.md                    |  40 +++++--
+ .castor/e2e.php                                    |   1 +
+ .castor/phpunit.php                                |  25 +++++
+ .castor/tasks.php                                  | 115 +++++++++------------
+ .pi/extensions/task-workflow.ts                    |  43 +++++++-
+ .pi/prompts/task-done.md                           |   4 +-
+ .pi/prompts/task-explain.md                        |   2 +-
+ .pi/prompts/task-review-iterate.md                 |  11 +-
+ .pi/prompts/task-start.md                          |   5 +-
+ .pi/prompts/task-to-pr.md                          |   5 +-
+ AGENTS.md                                          |  18 +++-
+ docs/qa-metrics.md                                 |  59 +++++++++++
+ docs/tui-testing.md                                |  12 +--
+ tests/AGENTS.md                                    |   6 +-
+ .../SymfonyAi/Replay/ReplayRecordingTest.php       |   1 -
+ 16 files changed, 247 insertions(+), 109 deletions(-)
+ create mode 100644 docs/qa-metrics.md
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/maint-05g-deterministic-qa-cutover-docs-metrics.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Validation: PR #148 confirmed merged on GitHub: https://github.com/ineersa/agent-core/pull/148 (merge commit 3e4afee5e4c6fdb680d9a8461211f00704c14b0f).; Pre-merge MAINT-05G validation recorded in task: `LLM_MODE=true castor check` passed 6/6 lanes after ParaTest cutover; corrective fork validation passed `castor test:llm-real` (5 tests, 51 assertions, 0 skipped, 18.1s), `LLM_MODE=true castor check` (6/6 lanes, 43.8s total, test lane 13.0s), `castor deptrac` (0 violations), `castor phpstan` (0 errors), and `castor cs-check` (0 fixable files).; Docs-only final policy update validated by targeted `rg` over AGENTS.md, tests/AGENTS.md, testing/task-workflow skills, and .pi task prompts; no contradictory active wording found.
+- Summary: PR #148 was merged on GitHub by the user. MAINT-05G completed the final deterministic QA cutover: `castor check` is deterministic and replay-backed by default, uses ParaTest for unit/integration lane, includes controller replay and TUI replay lanes, restores the mandatory task-workflow CODE-REVIEW castor-check gate, documents opt-in focused live LLM validation via `castor test:llm-real`, records QA metrics, and updates AGENTS/skills/prompts/docs. Closing MAINT-05G after merge.
