@@ -32,12 +32,12 @@ Rules:
 - Task handoff includes before/after test counts, method/file reductions, runtime timings, and coverage tradeoffs.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/maint-05f-codingagent-test-diet-sequential-speed
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-05f-codingagent-test-diet-sequential-speed
 Fork run: i8mws6e5n2l6
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/147
+PR Status: open
 Started: 2026-06-16T01:11:28.618Z
 Completed:
 
@@ -92,3 +92,11 @@ Completed:
 - Recorded fork run: i8mws6e5n2l6
 - Validation: Fork guard passed in `/home/ineersa/projects/agent-core-worktrees/maint-05f-codingagent-test-diet-sequential-speed` on branch `task/maint-05f-codingagent-test-diet-sequential-speed`.; Fork read mandatory docs/skills: `AGENTS.md`, `.agents/skills/testing/SKILL.md`, `.agents/skills/task-workflow/SKILL.md`, `.agents/skills/castor/SKILL.md`, and `tests/AGENTS.md`.; Fork validation: `php -l` on 6 changed files passed with 0 syntax errors.; Fork validation: `castor test --filter=PromptTemplateExpansionInProcessTest` passed: 11 tests, 25 assertions, 9.1s.; Fork validation: `castor test --filter=ModelSelectionServiceTest|ModelSettingsPersisterTest|SessionAwareModelResolverTest` passed: 39 tests, 109 assertions, 3.0s.; Fork validation: `castor test --suite=coding-agent --sequential` passed twice: 1467 tests, 4019 assertions, 43.7s and 43.6s.; Fork validation: default `castor test` passed: 2524 tests, 7330 assertions, 11.2s.; Fork validation: `castor deptrac` passed with 0 violations/errors.; Fork validation: `castor phpstan` passed with 0 errors/file_errors.; Fork validation: `castor cs-check` passed with 0 fixable files.; Fork validation: `castor list` passed with all commands intact.; Full `LLM_MODE=true castor check` skipped per MAINT-05A-F policy.
 - Summary: Follow-up fork completed user feedback to move per-method kernel lifecycle into an abstract base instead of hand-managed concrete tests. Commit `10c3c4d06` on branch `task/maint-05f-codingagent-test-diet-sequential-speed` adds `tests/CodingAgent/TestCase/PerMethodIsolatedKernelTestCase.php`, refactors `PromptTemplateExpansionInProcessTest` to extend it and only install spies in `afterKernelBoot()`, and converts `ModelSelectionServiceTest`, `ModelSettingsPersisterTest`, and `SessionAwareModelResolverTest` to the optimized per-class `IsolatedKernelTestCase`. Concrete CodingAgent tests no longer hand-manage CWD/kernel/shutdown/exception-handler lifecycle; duplicate `removeDir()` helpers and `ensureKernelShutdown()`+`restore_exception_handler()` boilerplate were removed. Docs updated in `tests/AGENTS.md`. Parent spot-check confirmed clean worktree at `10c3c4d06` and expected diff stat.
+
+## Task workflow update - 2026-06-16T02:19:48.234Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/maint-05f-codingagent-test-diet-sequential-speed to origin.
+- branch 'task/maint-05f-codingagent-test-diet-sequential-speed' set up to track 'origin/task/maint-05f-codingagent-test-diet-sequential-speed'.
+- Created PR: https://github.com/ineersa/agent-core/pull/147
+- Validation: Pre-move parent check: integration checkout clean on `main` at `cc10defd8`; MAINT-05F worktree clean on `task/maint-05f-codingagent-test-diet-sequential-speed` at `10c3c4d06`.; Fork validation recorded: `castor test --suite=coding-agent --sequential` passed: 1467 tests, 4019 assertions, ~43.6s.; Fork validation recorded: default `castor test` passed: 2524 tests, 7330 assertions, 11.2s.; Fork validation recorded: `castor deptrac`, `castor phpstan`, `castor cs-check`, and `castor list` all passed.; Full `LLM_MODE=true castor check` skipped per MAINT-05A-F policy.
+- Summary: Moved MAINT-05F to CODE-REVIEW after user requested CR. Branch contains commits `af67a5003`, `40fd047e8`, and `10c3c4d06`, covering test diet, per-class kernel boot optimization, and abstract per-method kernel lifecycle. Focused Castor validation from forks is recorded in task metadata; full `LLM_MODE=true castor check` and automated reviewer remain skipped per MAINT-05A-F policy.
