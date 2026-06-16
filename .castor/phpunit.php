@@ -6,7 +6,7 @@ declare(strict_types=1);
  * PHPUnit / unit-test task definitions, configuration, and workers.
  *
  * Contains the `test` command (ParaTest-powered parallel by default,
- * sequential fallback for --filter and when ParaTest is unavailable).
+ * sequential fallback for --filter and when ParaTest is unavailable.
  *
  * =========================================================================
  * MAINT-05B: Replaced custom file-shard fan-out with ParaTest as the
@@ -71,11 +71,10 @@ function build_sequential_phpunit_command(string $pharEnv): string
  * MAINT-05B: ParaTest is now the default.  Sequential PHPUnit is an
  * internal fallback only.
  *
- * MAINT-05F: Added --suite and --sequential options to target specific
- * test suites and force deterministic sequential runs.
+ * MAINT-05F: Added --suite option to target specific test suites.
  */
 #[AsTask(name: 'test', description: 'Run unit/integration tests (ParaTest parallel by default)')]
-function test(?string $filter = null, ?string $suite = null, ?bool $sequential = null): void
+function test(?string $filter = null, ?string $suite = null): void
 {
     // Prevent Xdebug overhead from hitting unit tests.
     if (extension_loaded('xdebug')) {
@@ -107,12 +106,12 @@ function test(?string $filter = null, ?string $suite = null, ?bool $sequential =
         $suiteFlag = ' --testsuite='.escapeshellarg($suite);
     }
 
-    if (null !== $filter || true === $sequential) {
-        // Filtered and explicit sequential runs use single PHPUnit.
+    if (null !== $filter) {
+        // Filtered runs use single PHPUnit (ParaTest --filter can be unreliable).
         // Exclude groups that require live LLM or tmux (same as build_sequential_phpunit_command).
         $phpunitCmd = 'APP_ENV=test '.$pharEnv.\PHP_BINARY.' vendor/bin/phpunit'
             .$suiteFlag
-            .(null !== $filter ? ' --filter='.escapeshellarg($filter) : '')
+            .' --filter='.escapeshellarg($filter)
             .' --exclude-group=tui-e2e-replay --exclude-group=llm-real --exclude-group=recording --exclude-group=controller-replay'
             .' '.phpunit_strict_issue_flags();
         passthru($phpunitCmd, $exitCode);

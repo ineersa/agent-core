@@ -12,9 +12,8 @@ All PHPUnit invocations include `--stop-on-error --stop-on-failure --fail-on-all
 ```bash
 castor check                # Full QA gate (deterministic — no live LLM): deptrac, unit/integration (ParaTest), controller replay E2E, TUI replay E2E, phpstan, cs-check; per-step timeouts + logs at var/reports/check-*.log
 castor test                 # unit/integration tests (ParaTest parallel by default); excludes tui-e2e-replay, llm-real, recording, and controller-replay groups
-castor test --filter=X      # filter tests by name (sequential, single DB)
-castor test --suite=X       # target a specific phpunit.xml test suite
-castor test --suite=X --sequential  # sequential run on a specific suite
+castor test --filter=X      # filter tests by name
+castor test --suite=X       # target a specific phpunit.xml test suite (ParaTest parallel)
 castor test:tui [--filter=X]    # TUI E2E journey tests (replay-backed, no live LLM)
 castor test:tui-update [--filter=X]  # update TUI snapshot baselines (filter optional)
 castor test:llm-real [--filter=X]   # real llama.cpp smoke (filter optional)
@@ -125,14 +124,14 @@ E2E, live-LLM, recording, and PHAR groups).
 - ParaTest cache dir: `HATFIELD_CACHE_DIR=.hatfield/cache-paraT{token}` (per-worker).
 - `doctrine:migrations:migrate` runs once before the suite.
 - Standalone `vendor/bin/phpunit` runs without Castor must export `HATFIELD_TEST_DATABASE_PATH=app_test.sqlite`.
-- Filtered runs (`castor test --filter=...`) use a single shared DB sequentially.
+- Filtered runs (`castor test --filter=...`) use sequential PHPUnit (shared single DB).
 
 ## What each command tests
 
 | Command | What it tests | Requires |
 |---|---|---|
 | `castor check` | Full QA gate (deterministic): deptrac, unit/integration (ParaTest), controller replay E2E, TUI replay E2E, phpstan, cs-check. No live LLM, no PHAR. | tmux |
-| `castor test` | Unit/integration tests (ParaTest parallel by default, sequential fallback for --filter) | Nothing (pure PHP) |
+| `castor test` | Unit/integration tests (ParaTest parallel by default) | Nothing (pure PHP) |
 | `castor test:llm-real` | Real LLM smoke: `ControllerSmokeTest`, `LlamaCppSmokeTest` (excludes `recording` group). Run as focused opt-in validation when changes touch provider/LLM-visible code — NOT required for every normal task. | llama.cpp on port 9052 |
 | `castor test:controller-replay` | Controller replay E2E: spawns `--controller`, JSONL protocol, replay fixtures (no live LLM) | Nothing (pure PHP) |
 | `castor test:controller` | Controller E2E: spawns `--controller`, JSONL protocol (live LLM, opt-in) | llama.cpp on port 9052 |

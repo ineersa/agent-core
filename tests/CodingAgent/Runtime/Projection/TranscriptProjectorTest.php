@@ -429,7 +429,9 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $block = $this->projector->blocks()[0];
-        $this->assertSame('bash{"cmd":"ls"}(cmd: "ls")', $block->text);
+        // Finalized text should use the canonical formatted args, not
+        // the raw streaming JSON deltas concatenated with formatted args.
+        $this->assertSame('bash(cmd: "ls")', $block->text);
         $this->assertFalse($block->streaming);
         $this->assertSame(['cmd' => 'ls'], $block->meta['arguments']);
     }
@@ -448,6 +450,88 @@ final class TranscriptProjectorTest extends TestCase
         $this->assertSame(TranscriptBlockKindEnum::ToolCall, $block->kind);
         $this->assertSame('write(path: "/tmp/x", content: "hello")', $block->text);
         $this->assertFalse($block->streaming);
+    }
+
+    public function testToolCallArgumentsCompletedEmptyArgsRemovesBlock(): void
+    {
+        // Streaming starts a tool-call block for a placeholder call with
+        // empty arguments (common in parallel LLM responses where only one
+        // tool call has valid parameters).
+        $this->accept('tool_call.started', [
+            'tool_call_id' => 'tc_empty', 'tool_name' => 'bash',
+        ]);
+        $this->assertCount(1, $this->projector->blocks());
+
+        // Empty arguments → suppress the block so the user does not see
+        // a fake "bash()" entry that was never really executed.
+        $this->accept('tool_call.arguments_completed', [
+            'tool_call_id' => 'tc_empty', 'tool_name' => 'bash',
+            'arguments' => [],
+        ]);
+
+        $this->assertCount(0, $this->projector->blocks(),
+            'Empty-argument tool calls must be suppressed');
+    }
+
+    public function testToolCallArgumentsCompletedEmptyArgsWithoutStartedDoesNotCreateBlock(): void
+    {
+        // Direct arguments_completed with empty args (no prior streaming)
+        // must not create a ToolCall block.
+        $this->accept('tool_call.arguments_completed', [
+            'tool_call_id' => 'tc_never_started', 'tool_name' => 'read',
+            'arguments' => [],
+        ]);
+
+        $this->assertCount(0, $this->projector->blocks(),
+            'Empty-argument completed must not create a block');
+    }
+
+    public function testMultipleParallelToolCallsOnlyNonNullArgsRemain(): void
+    {
+        // Simulate a parallel LLM response: 3 tool calls, only one has
+        // real arguments.  The two placeholder calls must be suppressed.
+        $this->accept('tool_call.started', [
+            'tool_call_id' => 'tc_bash', 'tool_name' => 'bash',
+        ]);
+        $this->accept('tool_call.started', [
+            'tool_call_id' => 'tc_read_empty', 'tool_name' => 'read',
+        ]);
+        $this->accept('tool_call.started', [
+            'tool_call_id' => 'tc_read_valid', 'tool_name' => 'read',
+        ]);
+
+        $this->assertCount(3, $this->projector->blocks());
+
+        // Empty parallel call → suppressed.
+        $this->accept('tool_call.arguments_completed', [
+            'tool_call_id' => 'tc_read_empty', 'tool_name' => 'read',
+            'arguments' => [],
+        ]);
+        $this->assertCount(2, $this->projector->blocks());
+
+        // Valid bash call.
+        $this->accept('tool_call.arguments_completed', [
+            'tool_call_id' => 'tc_bash', 'tool_name' => 'bash',
+            'arguments' => ['command' => 'ls'],
+        ]);
+        $this->assertCount(2, $this->projector->blocks());
+
+        // Valid read call.
+        $this->accept('tool_call.arguments_completed', [
+            'tool_call_id' => 'tc_read_valid', 'tool_name' => 'read',
+            'arguments' => ['path' => '/tmp/x'],
+        ]);
+        $this->assertCount(2, $this->projector->blocks());
+
+        // The remaining blocks should be the two valid calls, ordered
+        // by their original tool_call.started sequence.
+        $blocks = $this->projector->blocks();
+        $this->assertSame('tool_call_tc_bash', $blocks[0]->id);
+        $this->assertSame('bash(command: "ls")', $blocks[0]->text);
+        $this->assertFalse($blocks[0]->streaming);
+        $this->assertSame('tool_call_tc_read_valid', $blocks[1]->id);
+        $this->assertSame('read(path: "/tmp/x")', $blocks[1]->text);
+        $this->assertFalse($blocks[1]->streaming);
     }
 
     // ── Tool execution lifecycle ─────────────────────────────────────────────

@@ -78,10 +78,21 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
         $blockId = 'tool_call_'.$toolCallId;
         $block = $state->getBlock($blockId);
 
+        // Suppress tool-call blocks with empty arguments (common in parallel
+        // tool-call responses where the LLM emits placeholder calls alongside
+        // the single valid one).  If a real tool_execution.started for this
+        // id arrives later, it creates its own ToolResult block independently.
+        if ([] === $arguments) {
+            $state->removeBlock($blockId);
+
+            return;
+        }
+
+        $argumentsText = $state->argumentsToText($arguments);
+
         if (null === $block) {
             // Tool call block was never started — create a completed snapshot.
             $toolName = (string) ($p['tool_name'] ?? '');
-            $argumentsText = $state->argumentsToText($arguments);
             $text = '' !== $toolName ? $toolName.$argumentsText : $argumentsText;
 
             $state->addBlock(new TranscriptBlock(
@@ -101,12 +112,16 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
             return;
         }
 
-        $argumentsText = $state->argumentsToText($arguments);
+        // Replace the accumulated streaming text (raw JSON deltas) with
+        // the canonical formatted arguments.  This avoids displaying
+        // duplicated/raw JSON like bash({"cmd":"ls"})(command: "ls").
+        $toolName = (string) ($block->meta['tool_name'] ?? $p['tool_name'] ?? '');
+        $text = '' !== $toolName ? $toolName.$argumentsText : $argumentsText;
         $meta = $block->meta;
         $meta['arguments'] = $arguments;
 
         $state->updateBlock($blockId, $block->with(
-            text: $block->text.$argumentsText,
+            text: $text,
             streaming: false,
             meta: $meta,
         ));
