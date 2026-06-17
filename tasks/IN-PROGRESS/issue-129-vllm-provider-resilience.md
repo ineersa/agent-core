@@ -44,13 +44,13 @@ Suggested implementation direction:
 - Before implementation/validation, forks must read `.agents/skills/testing/SKILL.md` and `tests/AGENTS.md`; validate via Castor (`castor test`, `castor deptrac`, `castor phpstan`, `castor cs-check`, and `castor check` before PR; `castor test:llm-real` if live provider compatibility is affected).
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/issue-129-vllm-provider-resilience
+Worktree: /home/ineersa/projects/agent-core-worktrees/issue-129-vllm-provider-resilience
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-17T16:53:39.596Z
 Completed:
 
 ## Work log
@@ -59,3 +59,10 @@ Completed:
 ## Task workflow update - 2026-06-17T16:53:35.607Z
 - Summary: Scope clarification from user before implementation: the main goal is proper LLM HTTP request handling — sane timeouts, max duration/limits, bounded retries/backoff, Retry-After/header/status/error-body handling, terminal billing/quota detection, sanitized error classification, and visible red TUI/runtime diagnostics so users know what is happening. `DurableResultConverter` missing `finish_reason` behavior is explicitly OUT OF SCOPE for this task; the user will handle finish_reason upstream in Symfony AI later. Do not spend implementation budget changing finish_reason semantics except if tests need to assert current successful reasoning round-trip remains intact.
 - Implementation scope override: focus on HTTP/provider request resilience and user-visible sanitized error feedback. Treat the initial task acceptance item about changing missing/late finish_reason behavior as deferred/out-of-scope for this task; keep any reasoning coverage limited to verifying current successful reasoning-content round-trip if practical.
+
+## Task workflow update - 2026-06-17T16:53:39.596Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/issue-129-vllm-provider-resilience.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/issue-129-vllm-provider-resilience.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/issue-129-vllm-provider-resilience.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/issue-129-vllm-provider-resilience.
