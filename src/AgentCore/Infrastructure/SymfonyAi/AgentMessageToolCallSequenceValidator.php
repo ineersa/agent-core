@@ -25,6 +25,12 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
  */
 final class AgentMessageToolCallSequenceValidator
 {
+    /** @var list<string> open batch of tool_call_ids expected to be satisfied */
+    private array $openToolCallIds = [];
+
+    /** @var array<string, true> tool_call_ids already satisfied in the current/recent batch */
+    private array $satisfiedToolCallIds = [];
+
     /**
      * Validate message sequence. Throws on first violation.
      *
@@ -34,12 +40,12 @@ final class AgentMessageToolCallSequenceValidator
      */
     public function validate(array $messages): void
     {
-        /** @var list<string> $openToolCallIds */
-        $openToolCallIds = [];
+        $this->openToolCallIds = [];
+        $this->satisfiedToolCallIds = [];
 
         foreach ($messages as $index => $message) {
             if ('tool' === $message->role) {
-                $this->validateToolMessage($index, $message, $openToolCallIds);
+                $this->validateToolMessage($index, $message);
 
                 continue;
             }
@@ -52,12 +58,15 @@ final class AgentMessageToolCallSequenceValidator
                     // expected batch.  If there is an open batch from
                     // a previous assistant message, that is a violation
                     // (previous batch was never closed with tool results).
-                    if ([] !== $openToolCallIds) {
-                        throw MalformedToolCallSequenceException::unclosedBatch($index, $message->role, \count($openToolCallIds), $openToolCallIds);
+                    if ([] !== $this->openToolCallIds) {
+                        throw MalformedToolCallSequenceException::unclosedBatch($index, $message->role, \count($this->openToolCallIds), $this->openToolCallIds);
                     }
 
-                    /** @var list<string> $openToolCallIds */
-                    $openToolCallIds = $toolCalls;
+                    // Reset satisfied tracking for the new batch.
+                    $this->satisfiedToolCallIds = [];
+
+                    /* @var list<string> $this->openToolCallIds */
+                    $this->openToolCallIds = $toolCalls;
                 }
 
                 continue;
@@ -67,14 +76,19 @@ final class AgentMessageToolCallSequenceValidator
             // while there is an open tool-call batch is a violation:
             // the previous assistant's tool_calls were never answered
             // by tool results before the next user/system message.
-            if ([] !== $openToolCallIds) {
-                throw MalformedToolCallSequenceException::unclosedBatch($index, $message->role, \count($openToolCallIds), $openToolCallIds);
+            if ([] !== $this->openToolCallIds) {
+                throw MalformedToolCallSequenceException::unclosedBatch($index, $message->role, \count($this->openToolCallIds), $this->openToolCallIds);
             }
+
+            // Batch fully consumed, reset satisfied tracking so orphan
+            // tool messages after this point are reported as orphan
+            // rather than duplicate.
+            $this->satisfiedToolCallIds = [];
         }
 
         // End of messages with an unclosed tool-call batch.
-        if ([] !== $openToolCallIds) {
-            throw MalformedToolCallSequenceException::missingToolResults(\count($messages), \count($openToolCallIds), $openToolCallIds);
+        if ([] !== $this->openToolCallIds) {
+            throw MalformedToolCallSequenceException::missingToolResults(\count($messages), \count($this->openToolCallIds), $this->openToolCallIds);
         }
     }
 
@@ -115,15 +129,12 @@ final class AgentMessageToolCallSequenceValidator
     /**
      * Validate a tool message against the current open batch.
      *
-     * Validate a tool message against the current open batch.
-     *
-     * @param int                $index            Message index in the sequence
-     * @param AgentMessage       $message          The tool result message
-     * @param array<int, string> &$openToolCallIds Mutable list of expected tool_call_ids (modified in place)
+     * @param int          $index   Message index in the sequence
+     * @param AgentMessage $message The tool result message
      *
      * @throws MalformedToolCallSequenceException
      */
-    private function validateToolMessage(int $index, AgentMessage $message, array &$openToolCallIds): void
+    private function validateToolMessage(int $index, AgentMessage $message): void
     {
         $toolCallId = $message->toolCallId;
 
@@ -132,35 +143,39 @@ final class AgentMessageToolCallSequenceValidator
         // message.  Only enforce if there is an open batch expecting
         // specific IDs.
         if (null === $toolCallId || '' === $toolCallId) {
-            if ([] !== $openToolCallIds) {
+            if ([] !== $this->openToolCallIds) {
                 // An open batch expects tool results, but this tool
                 // message has no call ID — treat as orphan.
-                throw MalformedToolCallSequenceException::orphanToolMessage($index, $toolCallId, $openToolCallIds);
+                throw MalformedToolCallSequenceException::orphanToolMessage($index, $toolCallId, $this->openToolCallIds);
             }
 
             return;
         }
 
-        if ([] === $openToolCallIds) {
-            // Tool message with a call ID, but no open batch expects it.
-            throw MalformedToolCallSequenceException::orphanToolMessage($index, $toolCallId, $openToolCallIds);
+        // Check for duplicate before orphan/unknown — a tool_call_id
+        // that was already satisfied in the current batch is a
+        // duplicate even if the open batch is now empty (all expected
+        // results received).
+        if (isset($this->satisfiedToolCallIds[$toolCallId])) {
+            throw MalformedToolCallSequenceException::duplicateToolResult($index, $toolCallId, $this->openToolCallIds);
         }
 
-        $foundIndex = array_search($toolCallId, $openToolCallIds, true);
+        if ([] === $this->openToolCallIds) {
+            // Tool message with a call ID, but no open batch expects it.
+            throw MalformedToolCallSequenceException::orphanToolMessage($index, $toolCallId, $this->openToolCallIds);
+        }
+
+        $foundIndex = array_search($toolCallId, $this->openToolCallIds, true);
 
         if (false === $foundIndex) {
-            // Unknown tool_call_id — not in the expected batch.
-            // This also covers the duplicate case: if the ID was
-            // already satisfied and removed from the batch, a
-            // second tool result for the same ID is rejected here
-            // as unknown.
-            throw MalformedToolCallSequenceException::unknownToolCallId($index, $toolCallId, $openToolCallIds);
+            // Unknown tool_call_id — not in the expected batch
+            // and not previously satisfied.
+            throw MalformedToolCallSequenceException::unknownToolCallId($index, $toolCallId, $this->openToolCallIds);
         }
 
-        // Remove the expected ID from the open batch — it is now
-        // satisfied.  If the same ID appears again (duplicate), the
-        // array_search will return false because it was already removed.
-        unset($openToolCallIds[$foundIndex]);
-        $openToolCallIds = array_values($openToolCallIds); // Re-index
+        // Remove the expected ID from the open batch and mark as satisfied.
+        unset($this->openToolCallIds[$foundIndex]);
+        $this->openToolCallIds = array_values($this->openToolCallIds);
+        $this->satisfiedToolCallIds[$toolCallId] = true;
     }
 }

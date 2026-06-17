@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Application\Handler\ExecuteToolCallWorker;
 use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Contract\Model\PlatformInterface;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\MalformedToolCallSequenceException;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
@@ -58,6 +59,45 @@ final class ExecutionWorkerTest extends TestCase
         self::assertSame('turn-4-llm-1', $result->stepId());
         self::assertNotNull($result->error);
         self::assertSame('Provider unavailable.', $result->error['message']);
+    }
+
+    public function testLlmWorkerConvertsMalformedToolCallSequenceExceptionToStructuredError(): void
+    {
+        $platform = new class implements PlatformInterface {
+            public function invoke(ModelInvocationRequest $request): PlatformInvocationResult
+            {
+                unset($request);
+
+                throw MalformedToolCallSequenceException::unclosedBatch(2, 'user', 1, ['tc-1']);
+            }
+        };
+
+        $commandBus = new TestMessageBus();
+        $worker = new ExecuteLlmStepWorker($platform, $commandBus, 'test-model');
+
+        $worker(new ExecuteLlmStep(
+            runId: 'run-malformed-1',
+            turnNo: 3,
+            stepId: 'turn-3-llm-1',
+            attempt: 1,
+            idempotencyKey: 'llm-malformed-1',
+            contextRef: 'hot:run:run-malformed-1',
+            toolsRef: 'toolset:run:run-malformed-1:turn:3',
+        ));
+
+        self::assertCount(1, $commandBus->messages);
+        self::assertInstanceOf(LlmStepResult::class, $commandBus->messages[0]);
+
+        /** @var LlmStepResult $result */
+        $result = $commandBus->messages[0];
+
+        self::assertSame('run-malformed-1', $result->runId());
+        self::assertSame('turn-3-llm-1', $result->stepId());
+        self::assertSame('error', $result->stopReason);
+        self::assertNotNull($result->error);
+        // The exception message is preserved in the LlmStepResult error.
+        self::assertStringContainsString('Tool-call sequence violation', $result->error['message'] ?? '');
+        self::assertStringContainsString('MalformedToolCallSequenceException', $result->error['type'] ?? '');
     }
 
     public function testLlmWorkerRecordsLatencyErrorAndTracingSpans(): void

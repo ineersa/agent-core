@@ -76,6 +76,22 @@ final class AgentMessageToolCallSequenceValidatorTest extends TestCase
         $this->validator->validate($messages);
     }
 
+    public function testSystemMessageBeforeToolResultsThrowsUnclosed(): void
+    {
+        $messages = [
+            new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'Call tools']]),
+            $this->assistantWithToolCalls(['tc-1']),
+            // System message before tool result for tc-1
+            new AgentMessage(role: 'system', content: [['type' => 'text', 'text' => 'You are a helpful assistant.']]),
+        ];
+
+        $this->expectException(MalformedToolCallSequenceException::class);
+        $this->expectExceptionMessage('unclosed');
+        $this->expectExceptionMessage('tc-1');
+
+        $this->validator->validate($messages);
+    }
+
     public function testOrphanToolMessageThrows(): void
     {
         $messages = [
@@ -118,7 +134,8 @@ final class AgentMessageToolCallSequenceValidatorTest extends TestCase
         ];
 
         $this->expectException(MalformedToolCallSequenceException::class);
-        $this->expectExceptionMessage('unknown');
+        $this->expectExceptionMessage('duplicate');
+        $this->expectExceptionMessage('duplicate_tool_result');
         $this->expectExceptionMessage('tc-1');
 
         $this->validator->validate($messages);
