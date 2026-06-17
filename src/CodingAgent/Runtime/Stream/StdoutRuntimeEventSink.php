@@ -44,7 +44,7 @@ final class StdoutRuntimeEventSink implements RuntimeEventSinkInterface
         }
 
         if (null === self::$stdout) {
-            $handle = fopen('php://stdout', 'a');
+            $handle = fopen('php://stdout', 'ab');
             self::$stdout = false === $handle ? false : $handle;
         }
 

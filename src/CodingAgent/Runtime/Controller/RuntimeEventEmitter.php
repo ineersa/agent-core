@@ -60,7 +60,7 @@ final class RuntimeEventEmitter
      */
     public function openStdout(): void
     {
-        $this->stdout = fopen('php://stdout', 'w');
+        $this->stdout = fopen('php://stdout', 'wb');
         if (false === $this->stdout) {
             throw new \RuntimeException('Cannot open stdout for controller mode');
         }

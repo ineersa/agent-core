@@ -93,7 +93,7 @@ final class ViewImageTool implements HatfieldToolProviderInterface, ToolHandlerI
             }
 
             // Read the first 8KB for magic-byte MIME detection
-            $fh = @fopen($resolvedPath, 'r');
+            $fh = @fopen($resolvedPath, 'rb');
             if (false === $fh) {
                 throw new ToolCallException(\sprintf('Failed to open file "%s" for reading.', $resolvedPath), retryable: true, hint: 'Check file permissions and that the file is not locked by another process.');
             }

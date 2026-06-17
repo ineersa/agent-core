@@ -36,6 +36,27 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
 
         $runId = $message->runId();
 
+        // Safety guard: do not advance the run while there are still
+        // unresolved tool calls in flight.  An AdvanceRun dispatched
+        // before all pending tool results are collected would assemble
+        // incomplete prompt history (assistant with tool_calls followed
+        // by user/assistant instead of tool results) and cause a provider
+        // rejection or orphaned tool blocks.
+        //
+        // pendingToolCalls is array<string, bool> where false = not yet
+        // completed, true = completed.  Any value not true means there
+        // is unresolved tool work that must complete first.
+        $hasUnresolvedToolCalls = false;
+        foreach ($state->pendingToolCalls as $completed) {
+            if (true !== $completed) {
+                $hasUnresolvedToolCalls = true;
+                break;
+            }
+        }
+        if ($hasUnresolvedToolCalls) {
+            return new HandlerResult();
+        }
+
         [$preparedState, $boundaryEventSpecs] = null === $this->tracer
             ? $this->commandMailboxPolicy->applyPendingTurnStartCommands($state)
             : $this->tracer->inSpan('command.application.turn_start_boundary', [

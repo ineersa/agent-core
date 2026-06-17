@@ -279,7 +279,7 @@ class SymfonyAiProviderFactory
             throw new \RuntimeException(\sprintf('Cannot create capture directory "%s".', $dir));
         }
 
-        $handle = @fopen($path, 'a');
+        $handle = @fopen($path, 'ab');
         if (false === $handle) {
             throw new \RuntimeException(\sprintf('Cannot open capture file "%s" for writing.', $path));
         }

@@ -221,4 +221,43 @@ final class AdvanceRunHandlerTest extends TestCase
         $this->assertSame([], $result->events);
         $this->assertSame([], $result->effects);
     }
+
+    public function testAdvanceWithUnresolvedPendingToolCallsIsNoOp(): void
+    {
+        $commandStore = new InMemoryCommandStore();
+        $commandMailboxPolicy = new CommandMailboxPolicy(
+            commandStore: $commandStore,
+            commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+        );
+
+        $handler = new AdvanceRunHandler(
+            commandMailboxPolicy: $commandMailboxPolicy,
+            eventFactory: new EventFactory(),
+        );
+
+        $state = RunStateBuilder::create('run-pending-tools')
+            ->withStatus(RunStatus::Running)
+            ->withVersion(5)
+            ->withTurnNo(2)
+            ->withLastSeq(10)
+            ->withActiveStepId('turn-2-step')
+            ->withPendingToolCalls(['tool-call-1' => false])
+            ->build();
+
+        $this->assertFalse($state->pendingToolCalls['tool-call-1'], 'Precondition: tool call not completed');
+
+        $message = AdvanceRunMessageBuilder::create('run-pending-tools')
+            ->withTurnNo(2)
+            ->withStepId('turn-3-step')
+            ->withIdempotencyKey('advance-pending-tools-1')
+            ->build();
+
+        $result = $handler->handle($message, $state);
+
+        // AdvanceRun must be a no-op when there are unresolved tool calls
+        $this->assertNull($result->nextState, 'No state change when tool calls are still pending');
+        $this->assertSame([], $result->events, 'No events when tool calls are still pending');
+        $this->assertSame([], $result->effects, 'No effects when tool calls are still pending');
+        $this->assertSame([], $result->postCommit, 'No post-commit callbacks when tool calls are still pending');
+    }
 }

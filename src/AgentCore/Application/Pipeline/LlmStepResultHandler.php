@@ -76,9 +76,32 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
         }
 
         if ('aborted' === $message->stopReason || RunStatus::Cancelling === $state->status) {
-            $messages = $state->messages;
+            // Do NOT append the aborted assistant message to the state
+            // messages.  Aborted model output (including partial tool
+            // calls) must never become part of the prompt history for
+            // future turns.  If the TUI needs to display the aborted
+            // partial output, use the LlmStepAborted event payload
+            // (projection-only, not prompt context).
+            //
+            // Sanitized aborted assistant metadata is included in the
+            // LlmStepAborted event below so future TUI/projection
+            // consumers can display aborted partial output without it
+            // entering model context.
+            $abortedAssistantPayload = null;
             if (null !== $message->assistantMessage) {
-                $messages[] = $this->messageNormalizer->assistantMessage($message->assistantMessage);
+                $toolCalls = $this->toolCallExtractor->extractToolCalls($message->assistantMessage);
+                $text = $message->assistantMessage->asText() ?? '';
+                $abortedAssistantPayload = [
+                    'present' => true,
+                    'text_length' => \strlen($text),
+                    'text_sha256' => '' !== $text ? hash('sha256', $text) : null,
+                    'has_tool_calls' => [] !== $toolCalls,
+                    'tool_call_count' => \count($toolCalls),
+                    'tool_call_ids' => [] !== $toolCalls
+                        ? array_map(static fn (array $tc): string => $tc['id'], $toolCalls)
+                        : [],
+                    'has_thinking' => $message->assistantMessage->hasThinking(),
+                ];
             }
 
             $eventSpecs = [
@@ -88,6 +111,7 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
                         'step_id' => $message->stepId(),
                         'stop_reason' => $message->stopReason ?? 'aborted',
                         'usage' => $message->usage,
+                        'aborted_assistant' => $abortedAssistantPayload,
                     ],
                 ],
                 [
@@ -109,7 +133,9 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
                 streamingMessage: null,
                 pendingToolCalls: [],
                 errorMessage: $state->errorMessage ?? 'Run cancelled during LLM streaming.',
-                messages: $messages,
+                // Keep existing messages unchanged (no aborted assistant
+                // message appended).
+                messages: $state->messages,
                 activeStepId: $state->activeStepId,
                 retryableFailure: false,
             );
