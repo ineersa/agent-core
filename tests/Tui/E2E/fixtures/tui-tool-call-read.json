@@ -1,0 +1,37 @@
+{
+    "$schema": "TUI tool-call replay fixture — read tool output proof for issue #131",
+    "model": "llama_cpp_test/test",
+    "provider_id": "llama_cpp_test",
+    "reasoning": "off",
+    "recorded_at": "2026-06-17T00:00:00+00:00",
+    "recording_source": "manual",
+    "input": {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Read ./test.txt"
+            }
+        ]
+    },
+    "usage": {
+        "input_tokens": 10,
+        "output_tokens": 20,
+        "total_tokens": 30
+    },
+    "stop_reason": "tool_call",
+    "expected_text": "",
+    "deltas": [
+        {"type": "tool_call_start", "id": "call_tui_read_1", "name": "read"},
+        {"type": "tool_input_delta", "id": "call_tui_read_1", "name": "read", "partial_json": "{\"pa"},
+        {"type": "tool_input_delta", "id": "call_tui_read_1", "name": "read", "partial_json": "th\":"},
+        {"type": "tool_input_delta", "id": "call_tui_read_1", "name": "read", "partial_json": " \"./"},
+        {"type": "tool_input_delta", "id": "call_tui_read_1", "name": "read", "partial_json": "tes"},
+        {"type": "tool_input_delta", "id": "call_tui_read_1", "name": "read", "partial_json": "t."},
+        {"type": "tool_input_delta", "id": "call_tui_read_1", "name": "read", "partial_json": "tx"},
+        {"type": "tool_input_delta", "id": "call_tui_read_1", "name": "read", "partial_json": "t\""},
+        {"type": "tool_input_delta", "id": "call_tui_read_1", "name": "read", "partial_json": "}"},
+        {"type": "tool_call_complete", "tool_calls": [
+            {"id": "call_tui_read_1", "name": "read", "arguments": {"path": "./test.txt"}}
+        ]}
+    ]
+}
