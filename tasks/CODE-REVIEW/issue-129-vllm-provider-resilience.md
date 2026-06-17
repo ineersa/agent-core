@@ -134,3 +134,8 @@ Commits on branch task/issue-129-vllm-provider-resilience (HEAD 57bdf35af):
 - Pushed task/issue-129-vllm-provider-resilience to origin.
 - branch 'task/issue-129-vllm-provider-resilience' set up to track 'origin/task/issue-129-vllm-provider-resilience'.
 - Created PR: https://github.com/ineersa/agent-core/pull/158
+
+## Task workflow update - 2026-06-17T18:30:23.055Z
+- Updated PR URL: https://github.com/ineersa/agent-core/pull/158
+- Updated PR Status: open
+- Summary: Moved IN-PROGRESS → CODE-REVIEW. Deterministic castor check passed in worktree (27.4s). Branch pushed, PR #158 created: https://github.com/ineersa/agent-core/pull/158 — title "Fix issue #129 vLLM provider resilience, reasoning round-trip, and HTTP retry handling". Awaiting review/merge.
