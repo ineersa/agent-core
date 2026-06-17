@@ -29,14 +29,14 @@ Connected open issues as of 2026-06-12:
 - Task remains IN-PROGRESS during one-by-one cleanup until user explicitly asks to move forward.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
 Fork run: lfzl5tjyl9c6
 PR URL: https://github.com/ineersa/agent-core/pull/155
-PR Status: open
+PR Status: merged
 Started: 2026-06-12T16:54:23.580Z
-Completed:
+Completed: 2026-06-17T15:51:31.225Z
 
 ## Work log
 - Created: 2026-06-12T16:54:16.266Z
@@ -654,3 +654,12 @@ Castor Check Output SHA256: 8402952e60f19af97d70af3c9bd816e632c7b0adb64c7eea53f5
 ## Task workflow update - 2026-06-17T15:46:31.631Z
 - Validation: Cleanup fork validation: castor cs-check — clean; Cleanup fork validation: castor test --filter=TranscriptProjectorTest — OK (87 tests, 333 assertions); Cleanup fork validation: castor phpstan --path=src/CodingAgent/Runtime/Projection/ — 0 errors; Cleanup fork validation: castor phpstan --path=src/CodingAgent/Runtime/ProjectionPipeline/ — 0 errors; Cleanup fork validation: grep for hasAnyBlockForMessageId — no references; Post-cleanup rebase: git rebase origin/main — success; branch force-pushed at 3e0e6e4d5; 0 behind / 8 ahead
 - Summary: Addressed reviewer non-blocking cleanup via fork: removed dead `TranscriptProjectionState::hasAnyBlockForMessageId()`, updated `AssistantStreamProjectionSubscriber` comment to stop referencing removed method, and cleaned adjacent stale/stacked docblocks around phantom/orphan/finalize methods. No behavior changes. After fork pushed `8b60cf60b`, branch was rebased onto latest `origin/main` and force-pushed at `3e0e6e4d5` (0 behind / 8 ahead). Issue #153 not touched. Unrelated migration in integration checkout was not touched.
+
+## Task workflow update - 2026-06-17T15:51:31.226Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/backlog-open-issues-cleanup into integration checkout.
+- Already up to date.
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup.
+- Pulled integration checkout: Already up to date..
+- Validation: GitHub PR #155 state: MERGED at 2026-06-17T15:49:37Z; GitHub issue #127 closed via gh issue close 127 --comment 'Fixed by #155.'; Integration checkout fast-forwarded to origin/main (a58155af1) before DONE transition
+- Summary: PR #155 was merged by user (merge commit a58155af1) and issue #127 was closed with comment `Fixed by #155.` Further issues will be handled as separate tasks.
