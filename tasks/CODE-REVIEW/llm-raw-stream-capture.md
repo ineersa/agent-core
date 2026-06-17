@@ -22,12 +22,12 @@ Important constraints:
 - Do not persist raw chunks into normal session `events.jsonl` unless explicitly opted in; normal sessions remain canonical/coarse by default.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/llm-raw-stream-capture
 Worktree: /home/ineersa/projects/agent-core-worktrees/llm-raw-stream-capture
 Fork run: k7hal44ctfdn
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/157
+PR Status: open
 Started: 2026-06-17T16:19:29.050Z
 Completed:
 
@@ -60,3 +60,11 @@ Completed:
 
 ## Task workflow update - 2026-06-17T17:00:40.489Z
 - Summary: Post-fix reviewer subagent returned APPROVED with non-blocking suggestions only. Prior blockers resolved and acceptance criteria met. Suggestions noted: optional regression tests for error/incomplete single capture_end, document run_id/step_id/model limitation, and minor comments/cleanup; no merge-blocking issues.
+
+## Task workflow update - 2026-06-17T17:01:19.083Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Running deterministic castor check in worktree (timeout 1200s)...
+- castor check passed (28.0s).
+- Pushed task/llm-raw-stream-capture to origin.
+- branch 'task/llm-raw-stream-capture' set up to track 'origin/task/llm-raw-stream-capture'.
+- Created PR: https://github.com/ineersa/agent-core/pull/157
