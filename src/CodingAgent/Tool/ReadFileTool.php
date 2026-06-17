@@ -30,6 +30,12 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
     /** Default maximum lines for an unrestricted read. */
     private const int DEFAULT_LINE_LIMIT = 2000;
 
+    /** Maximum bytes to read for content inspection (8KB sample + 3-byte lookahead for UTF-8 multi-byte boundary). */
+    private const int INSPECTION_SAMPLE_BYTES = 8192;
+
+    /** Maximum additional bytes needed after INSPECTION_SAMPLE_BYTES to complete a UTF-8 multi-byte prefix. */
+    private const int LOOKAHEAD_BYTES = 3;
+
     /** @var list<string> Path prefixes that are obviously non-file resources. */
     private const array BLOCKED_PATH_PREFIXES = [
         '/dev/',
@@ -274,7 +280,7 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
         $sample = $this->readSample($resolvedPath);
         // Base sample (first 8192 bytes) for MIME and binary null-byte detection.
         // These checks do not need lookahead bytes.
-        $sampleBase = substr($sample, 0, 8192);
+        $sampleBase = substr($sample, 0, self::INSPECTION_SAMPLE_BYTES);
 
         // Reject images and other non-text MIME types FIRST.
         // Checked early so images get a helpful "use view_image" hint instead of
@@ -298,19 +304,20 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
 
     /**
      * Check whether the sample buffer contains valid UTF-8 content,
-     * using lookahead bytes and safe trimming to handle multi-byte
-     * characters split at the 8192-byte read boundary.
+     * using lookahead bytes to handle multi-byte characters that may
+     * be split at the INSPECTION_SAMPLE_BYTES read boundary.
      *
-     * The sample may contain up to 8195 bytes (8192 + 3 lookahead).
      * Strategy:
-     * 1. Fast path: the full buffer is valid UTF-8.
-     * 2. If the full buffer is invalid but larger than 8192, try
-     *    progressively longer prefixes using lookahead bytes.
-     * 3. If the buffer is <= 8192 bytes and invalid, try removing
-     *    trailing continuation bytes (0x80-0xBF) only. These are the
-     *    bytes that appear at the tail when a multi-byte character
-     *    is split at the read boundary. Genuinely invalid bytes
-     *    (leading bytes, out-of-range bytes) are never removed.
+     * 1. Empty buffer → valid (trivial edge case).
+     * 2. Fast path: the full probe (base + lookahead) is valid UTF-8.
+     * 3. If the probe contains lookahead bytes (> INSPECTION_SAMPLE_BYTES):
+     *    try prefix lengths from INSPECTION_SAMPLE_BYTES up to the full probe
+     *    length.  This allows completing a split multi-byte character with
+     *    lookahead bytes, while still accepting the base sample if it alone
+     *    is valid (lookahead may start a new multi-byte sequence that is itself
+     *    incomplete in the 3-byte lookahead window).
+     * 4. If the probe is ≤ INSPECTION_SAMPLE_BYTES (no lookahead): return the
+     *    full-sample check as-is; do NOT trim any trailing bytes at EOF.
      */
     private function isSampleValidUtf8(string $sample): bool
     {
@@ -318,52 +325,40 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             return true;
         }
 
-        // Fast path: already valid
+        // Fast path: the entire probe (base + lookahead) is already valid.
         if (mb_check_encoding($sample, 'UTF-8')) {
             return true;
         }
 
-        // Try progressively longer prefixes using lookahead bytes.
-        // This handles multi-byte characters split at the 8192-byte boundary
-        // when the file has additional content beyond the base sample.
         $totalLen = \strlen($sample);
-        for ($len = 8193; $len <= $totalLen; ++$len) {
-            if (mb_check_encoding(substr($sample, 0, $len), 'UTF-8')) {
-                return true;
-            }
-        }
 
-        // If we had lookahead bytes and none worked, the content is genuinely invalid.
-        if ($totalLen > 8192) {
+        if ($totalLen > self::INSPECTION_SAMPLE_BYTES) {
+            // Probe includes lookahead bytes.  Try the base sample first,
+            // then progressively longer prefixes including lookahead.
+            for ($len = self::INSPECTION_SAMPLE_BYTES; $len <= $totalLen; ++$len) {
+                if (mb_check_encoding(substr($sample, 0, $len), 'UTF-8')) {
+                    return true;
+                }
+            }
+
             return false;
         }
 
-        // No lookahead bytes available (file <= 8192 bytes or exactly 8192).
-        // Try removing trailing continuation bytes (0x80-0xBF) only.
-        // These are the only bytes that can appear at the tail when a
-        // multi-byte character is split at the boundary — removing them is safe because
-        // genuinely invalid bytes (leading bytes, overlong sequences,
-        // out-of-range values) are never continuation bytes.
-        $trimmed = $sample;
-        while ('' !== $trimmed) {
-            $ord = \ord(substr($trimmed, -1));
-            // Continuation bytes: 0x80-0xBF (binary 10xxxxxx)
-            if ($ord < 0x80 || $ord > 0xBF) {
-                break;
-            }
-            $trimmed = substr($trimmed, 0, -1);
-            if ('' !== $trimmed && mb_check_encoding($trimmed, 'UTF-8')) {
-                return true;
-            }
-        }
-
-        return false;
+        // No lookahead bytes: validate the sample as-is.  Never trim at EOF —
+        // a file that is ≤ INSPECTION_SAMPLE_BYTES ending with stray continuation
+        // bytes is genuinely invalid and must be rejected.
+        return mb_check_encoding($sample, 'UTF-8');
     }
 
     /**
-     * Read an 8KB sample from the file for content inspection.
+     * Read an inspection sample from the file for content analysis.
      *
-     * @return string Up to 8192 bytes from the start of the file
+     * Returns INSPECTION_SAMPLE_BYTES from the start plus up to LOOKAHEAD_BYTES
+     * additional bytes so that a multi-byte UTF-8 character split at the
+     * inspection boundary can be completed for validation.
+     *
+     * @return string Up to INSPECTION_SAMPLE_BYTES + LOOKAHEAD_BYTES bytes
+     *                from the start of the file
      *
      * @throws ToolCallException when the file cannot be read
      */
@@ -376,7 +371,7 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             throw new ToolCallException(\sprintf('Unable to inspect file "%s": %s', $resolvedPath, $diagnostic), retryable: true, hint: 'Check file permissions and disk health.');
         }
 
-        $sample = @fread($fh, 8192);
+        $sample = @fread($fh, self::INSPECTION_SAMPLE_BYTES);
         if (false === $sample) {
             $lastError = error_get_last();
             $diagnostic = $lastError['message'] ?? 'Failed to read sample from file';
@@ -384,10 +379,10 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             throw new ToolCallException(\sprintf('Unable to inspect file "%s": %s', $resolvedPath, $diagnostic), retryable: true, hint: 'Check disk health and file integrity.');
         }
 
-        // Read up to 3 additional bytes for lookahead when validating UTF-8.
-        // Multi-byte characters can be up to 4 bytes long, so 3 extra bytes
-        // are enough to complete any character that was split at byte 8192.
-        $lookahead = @fread($fh, 3);
+        // Read up to LOOKAHEAD_BYTES additional bytes.  Multi-byte UTF-8 characters
+        // can be up to 4 bytes, so LOOKAHEAD_BYTES (3) is enough to complete any
+        // character that was split at the INSPECTION_SAMPLE_BYTES boundary.
+        $lookahead = @fread($fh, self::LOOKAHEAD_BYTES);
         if (false !== $lookahead && '' !== $lookahead) {
             $sample .= $lookahead;
         }

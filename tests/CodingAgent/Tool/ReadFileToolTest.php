@@ -504,6 +504,42 @@ final class ReadFileToolTest extends TestCase
         ($this->readFileTool)(['path' => $targetPath]);
     }
 
+    public function testReadValidUtf8With8192AsciiFollowedByEmoji(): void
+    {
+        // Create a file where 8192 ASCII bytes (exactly one inspection sample)
+        // are followed by a 4-byte emoji.  The base sample (8192 ASCII bytes)
+        // is valid UTF-8, so the file passes even though the lookahead captures
+        // only the first 3 bytes of the 4-byte emoji.
+        $targetPath = $this->tmpDir.'/utf8_8192_plus_emoji.txt';
+        $prefix = str_repeat('a', 8192);
+        // U+1F600 GRINNING FACE = \xF0\x9F\x98\x80 (4 bytes)
+        $emoji = "\xF0\x9F\x98\x80";
+        file_put_contents($targetPath, $prefix.$emoji);
+
+        // Should read successfully (valid UTF-8)
+        $result = ($this->readFileTool)(['path' => $targetPath]);
+
+        $this->assertStringContainsString('a', $result);
+        $this->assertStringContainsString($emoji, $result);
+    }
+
+    public function testReadInvalidUtf8EndingWithStrayContinuationByteThrows(): void
+    {
+        // Create a file <= 8192 bytes that ends with a stray continuation
+        // byte.  This must be rejected — the sample is the entire file, so
+        // no "lookahead" is available and trimming at EOF is not allowed.
+        $targetPath = $this->tmpDir.'/invalid_stray_continuation.txt';
+        // 8191 ASCII bytes + a stray continuation byte (0x80)
+        $prefix = str_repeat('a', 8191);
+        $strayContinuation = "\x80";
+        file_put_contents($targetPath, $prefix.$strayContinuation);
+
+        $this->expectException(ToolCallException::class);
+        $this->expectExceptionMessage('non-UTF-8');
+
+        ($this->readFileTool)(['path' => $targetPath]);
+    }
+
     public function testReadImageByMimeThrows(): void
     {
         $targetPath = $this->tmpDir.'/fake.png';
