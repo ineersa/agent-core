@@ -208,19 +208,34 @@ final class RuntimeEventTranslator
     {
         $p = $runEvent->payload;
         $error = $p['error'] ?? [];
-        $errorText = \is_array($error) && isset($error['message'])
-            ? (string) $error['message']
-            : 'LLM step failed';
+
+        // Prefer sanitized user_message from the error classifier when available.
+        $errorText = \is_array($error) && isset($error['user_message'])
+            ? (string) $error['user_message']
+            : (\is_array($error) && isset($error['message'])
+                ? (string) $error['message']
+                : 'LLM step failed');
+
+        $payload = [
+            'message_id' => (string) ($p['step_id'] ?? ''),
+            'text' => $errorText,
+            'stop_reason' => 'error',
+        ];
+
+        // Pass through safe structured diagnostics for projection/TUI context.
+        if (\is_array($error)) {
+            foreach (['retryable', 'error_category', 'http_status_code', 'retry_after_ms', 'response_error_code', 'response_error_type'] as $key) {
+                if (\array_key_exists($key, $error)) {
+                    $payload[$key] = $error[$key];
+                }
+            }
+        }
 
         return new RuntimeEvent(
             type: RuntimeEventTypeEnum::AssistantMessageFailed->value,
             runId: $runEvent->runId,
             seq: $runEvent->seq,
-            payload: [
-                'message_id' => (string) ($p['step_id'] ?? ''),
-                'text' => $errorText,
-                'stop_reason' => 'error',
-            ],
+            payload: $payload,
         );
     }
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Infrastructure\SymfonyAi;
 
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
+use Ineersa\CodingAgent\Config\Ai\AiHttpConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelDefinition;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
@@ -84,6 +85,45 @@ final class SymfonyAiProviderFactoryTest extends TestCase
         $providers = $factory->createProviders();
 
         $this->assertArrayNotHasKey('openai-codex', $providers);
+    }
+
+    public function testCustomHttpConfigIsAcceptedByFactory(): void
+    {
+        $deepseek = new AiProviderConfig(
+            id: 'deepseek',
+            type: 'generic',
+            enabled: true,
+            baseUrl: 'https://api.deepseek.com',
+            apiKey: 'dummy-key',
+            models: [
+                'deepseek-v4-pro' => new AiModelDefinition(
+                    id: 'deepseek-v4-pro',
+                    toolCalling: true,
+                    reasoning: true,
+                ),
+            ],
+        );
+
+        $http = new AiHttpConfig(timeout: 15, maxDuration: 60);
+        $aiConfig = new AiConfig(
+            defaultModel: 'deepseek/deepseek-v4-pro',
+            http: $http,
+            providers: ['deepseek' => $deepseek],
+        );
+
+        $appConfig = new AppConfig(
+            tui: TuiConfig::fromArray(['theme' => 'cyberpunk']),
+            logging: new LoggingConfig(),
+            catalog: new HatfieldModelCatalog($aiConfig),
+        );
+
+        $factory = new SymfonyAiProviderFactory(
+            $appConfig,
+            $this->createStub(EventDispatcherInterface::class),
+        );
+
+        $providers = $factory->createProviders();
+        $this->assertArrayHasKey('deepseek', $providers);
     }
 
     /**

@@ -227,6 +227,14 @@ ai:
     # and cycled with Ctrl+P. Toggled via /model fav <provider/modelname>.
     # favorite_models: []
 
+    # HTTP retry/timeout settings (all values support env:VAR syntax):
+    # http:
+    #     timeout: 30
+    #     max_duration: 120
+    #     max_retries: 2
+    #     base_delay_ms: 1000
+    #     max_delay_ms: 60000
+
     providers:
         deepseek:
             type: generic

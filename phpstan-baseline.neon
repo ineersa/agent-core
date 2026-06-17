@@ -90,3 +90,15 @@ parameters:
 			count: 1
 			path: src/Platform/Bridge/Generic/DurableResultConverter.php
 
+		-
+			message: '#^Parameter .* of method Ineersa\\CodingAgent\\Infrastructure\\SymfonyAi\\Http\\LlmRetryingHttpClient\:\:request\(\) should be contravariant with parameter \$options \(array\) of method Symfony\\Contracts\\HttpClient\\HttpClientInterface\:\:request\(\)$#'
+			identifier: method.childParameterType
+			count: 1
+			path: src/CodingAgent/Infrastructure/SymfonyAi/Http/LlmRetryingHttpClient.php
+
+		-
+			message: '#^Parameter .* of method Ineersa\\CodingAgent\\Infrastructure\\SymfonyAi\\Http\\LlmRetryingHttpClient\:\:withOptions\(\) should be contravariant with parameter \$options \(array\) of method Symfony\\Contracts\\HttpClient\\HttpClientInterface\:\:withOptions\(\)$#'
+			identifier: method.childParameterType
+			count: 1
+			path: src/CodingAgent/Infrastructure/SymfonyAi/Http/LlmRetryingHttpClient.php
+

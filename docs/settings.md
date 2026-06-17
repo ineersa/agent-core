@@ -611,6 +611,33 @@ Favorites can be toggled via `/model fav <provider/modelname>` in the
 TUI. Changes are persisted to home settings immediately and are visible
 to other TUI controls in the same session without restarting.
 
+### `ai.http`
+
+HTTP client retry and timeout configuration for LLM provider requests.
+Settings are applied globally (not per-provider) by wrapping the underlying
+`HttpClient` with automatic retry/backoff logic.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `timeout` | int | `30` | Per-request timeout in seconds |
+| `max_duration` | int | `120` | Max total request duration in seconds |
+| `max_retries` | int | `2` | Max retry attempts (0 disables retries) |
+| `base_delay_ms` | int | `1000` | Base retry backoff delay in milliseconds |
+| `max_delay_ms` | int | `60000` | Max delay for any single retry in milliseconds |
+
+Every value supports the `env:VARNAME` syntax to reference an environment
+variable (e.g. `timeout: env:HATFIELD_HTTP_TIMEOUT`). The environment
+variable must contain a numeric value; unset or empty variables are silently
+treated as absent (falling back to the default).
+
+**Example:**
+```yaml
+ai:
+    http:
+        timeout: 45
+        max_retries: 0
+```
+
 ### `ai.providers`
 
 A map of provider IDs to provider configuration. Each provider exposes
