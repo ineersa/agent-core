@@ -90,14 +90,10 @@ final class OutputCapTest extends TestCase
 
         // Should contain the storage dir path
         $this->assertStringContainsString($this->tmpDir, $result);
-        // Should contain tool-first guidance (not bare shell-centric hints)
-        $this->assertStringContainsString('read', $result);
-        $this->assertStringContainsString('Do NOT rerun', $result);
-        $this->assertStringContainsString('Do NOT read the saved file in full', $result);
-        $this->assertStringContainsString('offset', $result);
-        $this->assertStringNotContainsString('head -50', $result);
-        // 'grep' appears as a targeted search tool invocation, not bare shell command
-        $this->assertStringContainsString('grep pattern=', $result);
+        // Should contain head hint (generic shell command)
+        $this->assertStringContainsString('head -50', $result);
+        // Should contain grep mention (generic shell command, not tool invocation)
+        $this->assertStringContainsString('grep', $result);
     }
 
     /* ───────── Persistence ───────── */
@@ -265,6 +261,36 @@ final class OutputCapTest extends TestCase
         $this->assertStringContainsString('Output capped', $result);
     }
 
+    /* ───────── capForPath ───────── */
+
+    public function testCapForPathReturnsDocCapForDocExtensions(): void
+    {
+        $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 50, docCap: 200);
+        $cap = new OutputCap($cfg);
+
+        $this->assertSame(200, $cap->capForPath('/path/to/file.md'));
+        $this->assertSame(200, $cap->capForPath('/path/to/file.txt'));
+        $this->assertSame(200, $cap->capForPath('/path/to/file.toon'));
+    }
+
+    public function testCapForPathReturnsDefaultCapForNonDocPaths(): void
+    {
+        $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 50, docCap: 200);
+        $cap = new OutputCap($cfg);
+
+        $this->assertSame(50, $cap->capForPath('/path/to/file.php'));
+        $this->assertSame(50, $cap->capForPath('/path/to/file.js'));
+        $this->assertSame(50, $cap->capForPath('/path/to/file.json'));
+    }
+
+    public function testCapForPathReturnsDefaultCapForNullPath(): void
+    {
+        $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 50, docCap: 200);
+        $cap = new OutputCap($cfg);
+
+        $this->assertSame(50, $cap->capForPath(null));
+    }
+
     /* ───────── Config construction ───────── */
 
     public function testRequiresConfig(): void
@@ -374,8 +400,8 @@ final class OutputCapTest extends TestCase
      */
     private function extractPathFromNotice(string $notice): ?string
     {
-        // The notice contains a "Saved for audit at: <path>" line
-        if (preg_match('/Saved for audit at: (.+\.txt)/', $notice, $matches)) {
+        // The notice contains a "Saved to: <path>" line
+        if (preg_match('/Saved to: (.+\.txt)/', $notice, $matches)) {
             return $matches[1];
         }
 

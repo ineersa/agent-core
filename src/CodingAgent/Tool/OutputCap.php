@@ -108,6 +108,22 @@ final class OutputCap
      * hooks or scheduled tasks can trigger it explicitly.
      */
     /**
+     * Resolve the applicable character cap for a given file path.
+     *
+     * Doc-like extensions (.md, .txt, .toon) return {@see docCap}.
+     * Null paths and non-doc extensions return {@see defaultCap}.
+     *
+     * This is the public equivalent of the private resolveCap() and
+     * is used by consumers (e.g. OutputCapLlmTransformHook) that need
+     * to determine the correct cap for a path without triggering
+     * capping or persistence side effects.
+     */
+    public function capForPath(?string $path): int
+    {
+        return $this->resolveCap($path);
+    }
+
+    /**
      * Expose the config for consumers that need to check the default cap
      * threshold before capping, or access config values for custom capping.
      */
@@ -214,11 +230,6 @@ final class OutputCap
 
     /**
      * Build a model-facing notice about capped output.
-     *
-     * Gives clear, tool-first instructions: do not rerun the full command,
-     * do not read the saved file wholesale. Prefer first-class tools
-     * (read with offset/limit, targeted search/grep with scoped paths).
-     * Shell commands are mentioned only as a secondary fallback.
      */
     private function buildCappedNotice(string $fullText, int $cap, string $savedPath): string
     {
@@ -226,10 +237,13 @@ final class OutputCap
         $tokenEstimate = (int) ceil($charCount / 4);
 
         return \sprintf(
-            "[Output capped to %d characters]\n\nFull output: %d characters (~%d tokens).\nSaved for audit at: %s\n\nDo NOT rerun the same full command.\nDo NOT read the saved file in full.\n\nInstead, use targeted tool calls to continue:\n• Read more from a file: `read path=<path> offset=<next_line> limit=<lines>`\n• Search for known text: `grep pattern=<pattern> path=<path>`\n• Request a summary of the output and I will help.\n\nIf you must inspect the raw saved output, use `read` with a small offset and limit.\n",
+            "[Output capped to %d characters, full output saved to %s]\n\nFull output: %d characters (~%d tokens).\nSaved to: %s\n\nTo view: **%s**\nTo view first lines: `head -50 %s`\nTo search saved output: use `grep` or similar search commands.\n",
             $cap,
+            $savedPath,
             $charCount,
             $tokenEstimate,
+            $savedPath,
+            $savedPath,
             $savedPath,
         );
     }
