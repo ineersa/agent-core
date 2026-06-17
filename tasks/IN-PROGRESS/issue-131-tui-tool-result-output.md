@@ -65,14 +65,21 @@ LOW. Root cause is a missing payload field; all downstream consumers already han
 - Castor validation green: castor test, castor test:tui (mandatory — runtime/TUI-visible change), castor deptrac, castor phpstan, castor cs-check. castor test:llm-real NOT required (no provider/LLM-visible change).
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/issue-131-tui-tool-result-output
+Worktree: /home/ineersa/projects/agent-core-worktrees/issue-131-tui-tool-result-output
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-17T20:38:34.453Z
 Completed:
 
 ## Work log
 - Created: 2026-06-17T20:38:22.538Z
+
+## Task workflow update - 2026-06-17T20:38:34.453Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/issue-131-tui-tool-result-output.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/issue-131-tui-tool-result-output.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/issue-131-tui-tool-result-output.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/issue-131-tui-tool-result-output.
