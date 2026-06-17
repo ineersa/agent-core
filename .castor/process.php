@@ -679,14 +679,74 @@ function test_timeout_hardstop(string $cmdOverride = ''): void
         echo "PASS: no session orphans after separate-PGID same-SID cleanup (pre={$preCountD}, post={$postCountD})\n";
     }
 
-    // NOTE: There is intentionally no Test E for separate-SID grandchild
-    // cleanup.  A child that calls setsid(2) into a new session after the
-    // parent exits cannot be found by same-SID cleanup (different SID) or
-    // by descendant-tree lookup (reparented to init/systemd after parent
-    // exit).  The supported case is same-SID separate-PGID (Test D).
+    // NOTE: There is intentionally no separate-SID grandchild cleanup test
+    // (different SID causes unreachable processes after parent exit).
+    // The supported case is same-SID separate-PGID (Test D).
+
+    // ── Test E: Live-LLM-like PHPUnit with leaked PHAR workers ──
+    echo "\n── Test E: Live-LLM-like PHPUnit with leaked PHAR workers ──\n\n";
+
+    // Regression proof for test:llm-real hardening.
+    // Simulate a PHPUnit run that exits 0 while leaving behind a
+    // background "messenger:consume" worker with the PHAR binary name
+    // (same real-world pattern that kept the Castor task alive for
+    // ~10 minutes after PHPUnit completed).  The session-based runner
+    // must kill the leaked worker on normal exit so the Castor task
+    // does not hang.
+    $pharFake = $root.'/var/tmp/phar/hatfield.phar';
+    $phpunitLeakCmd = "bash -c 'exec -a ".escapeshellarg($pharFake)
+        ." tail -f /dev/null -- messenger:consume llm --time-limit=3600 & echo \"PHPUnit OK (simulated)\"; exit 0' 2>&1";
+
+    echo "Command under test:\n  {$phpunitLeakCmd}\n\n";
+
+    $commandsE = [
+        'phpunit-leak-test' => [
+            'cmd' => $phpunitLeakCmd,
+            'log' => report_path('check-test-phpunit-leak.log'),
+        ],
+    ];
+
+    $preCountE = count_alive_descendants();
+
+    $startE = hrtime(true);
+    $resultsE = run_commands_parallel($commandsE, []);
+    $durationE = (hrtime(true) - $startE) / 1e9;
+
+    $resultE = $resultsE['phpunit-leak-test'] ?? ['exitCode' => -1, 'output' => 'no result', 'duration' => 0];
+
+    echo "Result:\n";
+    echo "  exitCode: {$resultE['exitCode']}\n";
+    echo sprintf("  duration: %.2fs\n", $resultE['duration']);
+    echo "  output: {$resultE['output']}\n\n";
+
+    // 1. Exit code must be 0 (simulated PHPUnit success).
+    if (0 !== $resultE['exitCode']) {
+        echo "FAIL: expected exit code 0 (PHPUnit OK), got {$resultE['exitCode']}\n";
+        $ok = false;
+    } else {
+        echo "PASS: exit code 0 (simulated PHPUnit OK)\n";
+    }
+
+    // 2. Runner must return fast (< 5 s) — must not hang on leaked worker pipes.
+    if ($durationE > 5.0) {
+        echo "FAIL: runner took {$durationE}s > 5s — likely hung on leaked PHAR worker pipes\n";
+        $ok = false;
+    } else {
+        echo "PASS: runner returned in {$durationE}s (< 5s)\n";
+    }
+
+    // 3. No leaked PHAR messenger:consume processes must remain.
+    usleep(1_000_000); // 1 s settle
+    $postCountE = count_alive_descendants();
+    if ($postCountE > $preCountE) {
+        echo "FAIL: {$postCountE} orphan processes remain after PHPUnit-like cleanup (pre={$preCountE})\n";
+        $ok = false;
+    } else {
+        echo "PASS: no orphan PHAR workers after PHPUnit-like cleanup (pre={$preCountE}, post={$postCountE})\n";
+    }
 
     if ($ok) {
-        echo "\n✅ All timeout + normal-exit + startup-cleanup + session + separate-PGID assertions passed.\n";
+        echo "\n✅ All timeout + normal-exit + startup-cleanup + session + separate-PGID + PHPUnit-leak assertions passed.\n";
     } else {
         echo "\n❌ Some assertions FAILED.\n";
         exit(1);

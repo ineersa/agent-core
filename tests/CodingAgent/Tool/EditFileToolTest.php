@@ -77,6 +77,14 @@ final class EditFileToolTest extends TestCase
         $definition = $this->editFileTool->definition();
 
         $this->assertNotEmpty($definition->promptGuidelines);
+
+        // Guidelines must describe unified diff, read line numbers, and @@ hunk headers
+        $guidelinesText = implode(' ', $definition->promptGuidelines);
+        $this->assertStringContainsString('unified diff', strtolower($guidelinesText));
+        $this->assertStringContainsString('read', strtolower($guidelinesText));
+        $this->assertStringContainsString('cat -n', $guidelinesText);
+        $this->assertStringContainsString('line number', strtolower($guidelinesText));
+        $this->assertStringContainsString('@@', $guidelinesText);
     }
 
     public function testDefinitionJsonSchemaHasPathAndPatch(): void
