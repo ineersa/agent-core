@@ -43,10 +43,12 @@ moment the human's answer is routed back to the originating hook.
                     ┌────────────────────────────┘
                     │  UserCommand → AgentSessionClient → runner.answerHuman()
                     ▼
-┌─────────────────┐   HumanResponse   ┌─────────────────────────────────┐
-│ AgentRunner     │ ────────────────► │ ExtensionApprovalAnswer         │
-│ ::answerHuman() │                   │ Subscriber                      │
-└─────────────────┘                   └────────────┬────────────────────┘
+┌─────────────────┐   HumanResponse   ┌────────────────────────────────────────┐
+│ AgentRunner     │ ────────────────► │ SafeGuardApprovalCommitSubscriber       │
+│ ::answerHuman() │                   │ (agent_core.hook_subscriber, fires       │
+└─────────────────┘                   │  synchronously inside RunCommit::commit()│
+                                      │  BEFORE postCommit AdvanceRun retry)     │
+                                      └────────────┬───────────────────────────┘
                                                    │
                                                    │  ApprovalAnswerHookInterface
                                                    │  ::onApprovalAnswered()
@@ -133,10 +135,22 @@ The command flows through:
 - **Controller mode**: `JsonlProcessAgentSessionClient::send()` writes JSONL to stdin;
   controller's `AnswerHumanHandler` parses it → `AgentRunner::answerHuman()` (same as above)
 
-After `ApplyCommandHandler` processes the `HumanResponse`, the
-`ExtensionApprovalAnswerSubscriber` (`src/CodingAgent/Extension/ExtensionApprovalAnswerSubscriber.php`)
-resolves the originating hook from `ExtensionHookRegistry::resolveApproval(questionId)` and
+After `ApplyCommandHandler` processes the `HumanResponse` and
+`RunCommit::commit()` persists the event, the
+`SafeGuardApprovalCommitSubscriber` (`src/CodingAgent/Extension/SafeGuardApprovalCommitSubscriber.php`)
+fires synchronously inside the commit. It scans the committed events for
+`agent_command_applied` with `kind=human_response`, resolves the originating hook
+from `ExtensionHookRegistry::resolveApproval(questionId)`, and
 calls `ApprovalAnswerHookInterface::onApprovalAnswered()`.
+
+This runs in the SAME (worker) process where the pending approval is registered
+in `ExtensionHookRegistry` — BEFORE the `postCommit` `AdvanceRun` retry.
+
+Previously, approval routing was handled by the polling-based
+`ExtensionApprovalAnswerSubscriber`, which only fired from
+`RuntimeEventTranslator::translate()` during TUI/controller polling — a
+different process than the tool worker. That cross-process isolation gap
+caused SafeGuard approvals to always be ignored (issue #130).
 
 ### Controller vs in-process modes
 
@@ -279,9 +293,17 @@ The `ApprovalAnswerContextDTO` provides:
 1. `ExtensionToolHookEventSubscriber::onToolCallRequested()` → `$hookRegistry->registerPendingApproval(questionId, hook, details)`
 2. Runtime emits `WaitingHuman` → `human_input.requested` → TUI question overlay
 3. User answers → `answer_human` command → `ApplyCommandHandler` → `HumanResponse` event
-4. `ExtensionApprovalAnswerSubscriber::onAgentCommandApplied()` → `$hookRegistry->resolveApproval(questionId)`
-   → calls `$hook->onApprovalAnswered(context)` if the hook implements the interface
+4. `RunCommit::commit()` persists the event, then **synchronously** dispatches to
+   `SafeGuardApprovalCommitSubscriber::handleAfterTurnCommit()` which scans committed
+   events, resolves the originating hook via `$hookRegistry->resolveApproval(questionId)`,
+   and calls `$hook->onApprovalAnswered(context)` — all BEFORE the `postCommit` `AdvanceRun`
+   retry.
 5. The hook updates its internal state (e.g. SafeGuard marks operation as approved)
+
+> **Note:** This runs in the worker process (same PHP process as tool execution).
+> The previous polling-based `ExtensionApprovalAnswerSubscriber` (`RuntimeEventTranslator::translate()`
+> path) has been removed. Approval routing now happens synchronously at commit time,
+> fixing the cross-process approval-state isolation issue.
 
 ### Extension author considerations
 
