@@ -16,12 +16,14 @@ final readonly class AiConfig
      * @param string|null                     $defaultReasoning Default reasoning level
      * @param array<string, AiProviderConfig> $providers        Enabled providers keyed by provider ID
      * @param list<string>                    $favoriteModels   Favorited provider/model strings
+     * @param AiHttpConfig                    $http             HTTP retry/timeout config from ai.http settings block
      */
     public function __construct(
         public ?string $defaultModel = null,
         public ?string $defaultReasoning = null,
         public array $providers = [],
         public array $favoriteModels = [],
+        public AiHttpConfig $http = new AiHttpConfig(),
     ) {
     }
 
@@ -75,6 +77,7 @@ final readonly class AiConfig
             defaultReasoning: isset($aiData['default_reasoning']) ? (string) $aiData['default_reasoning'] : null,
             providers: $providers,
             favoriteModels: $favorites,
+            http: AiHttpConfig::fromArray($aiData['http'] ?? []),
         );
     }
 }

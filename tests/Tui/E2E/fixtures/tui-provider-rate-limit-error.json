@@ -1,0 +1,10 @@
+{
+    "$schema": "TUI provider rate limit error fixture for provider error block E2E proof",
+    "http_status": 429,
+    "response_headers": {
+        "Content-Type": "application/json",
+        "Retry-After": "30",
+        "retry-after-ms": "30000"
+    },
+    "response_body": "{\"error\": {\"message\": \"rate limit raw sentinel DO_NOT_LEAK_PROVIDER_BODY\", \"code\": \"rate_limit_exceeded\", \"type\": \"rate_limit_error\"}}"
+}

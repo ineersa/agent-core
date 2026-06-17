@@ -56,6 +56,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         private ?CostCalculatorInterface $costCalculator,
         private LoggerInterface $logger,
         private ?ModelResolverInterface $modelResolver = null,
+        private readonly LlmProviderErrorClassifier $errorClassifier = new LlmProviderErrorClassifier(),
     ) {
     }
 
@@ -350,11 +351,13 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         $diag = [
             'http_status_code' => null,
             'response_content_type' => null,
+            'response_body_bytes' => null,
+            'response_body_is_json' => null,
             'response_error_code' => null,
             'response_error_type' => null,
             'response_error_param' => null,
             'response_error_message' => null,
-            'response_body_preview' => null,
+            'retry_after_ms' => null,
         ];
 
         try {
@@ -362,24 +365,33 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         } catch (\Throwable) {
         }
 
-        // Extract headers
+        // Extract headers including Retry-After for rate-limit feedback
         try {
             $headers = $response->getHeaders(false);
             $diag['response_content_type'] = $headers['content-type'][0] ?? null;
+
+            // Parse Retry-After headers (retry-after-ms has priority)
+            $retryAfterMs = self::parseRetryAfterHeader($headers);
+            if (null !== $retryAfterMs) {
+                $diag['retry_after_ms'] = $retryAfterMs;
+            }
         } catch (\Throwable) {
         }
 
         // Try to parse response body for structured error fields.
-        // If body is not JSON, include a truncated preview.
+        // For non-JSON bodies, record only safe metadata — never raw body content.
         try {
             $body = $response->getContent(false);
         } catch (\Throwable) {
             return $diag;
         }
 
+        $diag['response_body_bytes'] = \strlen($body);
         $data = json_decode($body, true);
 
         if (null !== $data) {
+            $diag['response_body_is_json'] = true;
+
             if (isset($data['error']) && \is_array($data['error'])) {
                 $error = $data['error'];
                 $diag['response_error_code'] = isset($error['code']) && '' !== $error['code'] ? $error['code'] : null;
@@ -393,12 +405,61 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                 $diag['response_error_message'] = mb_substr($data['error_description'], 0, 500);
             }
         } else {
-            // Non-JSON body — include truncated preview
-            $preview = trim(preg_replace('/\s+/', ' ', $body));
-            $diag['response_body_preview'] = mb_substr($preview, 0, 500);
+            // Non-JSON body — never store raw body content.
+            // Only safe metadata is recorded.
+            $diag['response_body_is_json'] = false;
         }
 
         return $diag;
+    }
+
+    /**
+     * Parse Retry-After delay from response headers.
+     *
+     * Supports, in priority order:
+     *   - retry-after-ms (custom header, integer milliseconds)
+     *   - retry-after (standard header — integer seconds or HTTP-date)
+     *
+     * @param array<string, list<string>> $headers
+     *
+     * @return int|null Delay in milliseconds, or null if no Retry-After header
+     */
+    private static function parseRetryAfterHeader(array $headers): ?int
+    {
+        // 1. retry-after-ms (custom header)
+        $ms = $headers['retry-after-ms'][0] ?? null;
+        if (null !== $ms && '' !== $ms) {
+            $value = (int) $ms;
+            if ($value > 0) {
+                return $value;
+            }
+        }
+
+        // 2. retry-after (standard: seconds or HTTP date)
+        $retryAfter = $headers['retry-after'][0] ?? null;
+        if (null === $retryAfter || '' === $retryAfter) {
+            return null;
+        }
+
+        $trimmed = trim($retryAfter);
+
+        // Try integer seconds
+        if (ctype_digit($trimmed)) {
+            return (int) $trimmed * 1000;
+        }
+
+        // Try HTTP-date (RFC 1123)
+        try {
+            $date = new \DateTimeImmutable($trimmed);
+            $now = new \DateTimeImmutable('now');
+            $diff = (int) ($date->format('U') - $now->format('U'));
+
+            return $diff > 0 ? $diff * 1000 : 0;
+        } catch (\Exception) {
+            // Not a valid date
+        }
+
+        return null;
     }
 
     /**
@@ -424,6 +485,9 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         foreach ($requestSummary as $key => $value) {
             $error['request_'.$key] = $value;
         }
+
+        // Classify the error with retryability, category, and sanitized user message.
+        $error = $this->errorClassifier->classify($error);
 
         return new PlatformInvocationResult(
             assistantMessage: $this->buildAssistantMessage($deltas),
