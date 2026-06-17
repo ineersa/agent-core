@@ -38,7 +38,7 @@ Testing notes:
 - Focused Castor validation passes: `castor test` for relevant filters, plus `castor deptrac`, `castor phpstan`, `castor cs-check`; run `castor check` before CODE-REVIEW. Run `castor test:llm-real` if live provider compatibility paths are changed.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/issue-134-orphaned-tool-calls
 Worktree: /home/ineersa/projects/agent-core-worktrees/issue-134-orphaned-tool-calls
 Fork run: b8uryk4sdhum
@@ -174,3 +174,13 @@ Refined agent-core design:
 - Recorded fork run: b8uryk4sdhum
 - Validation: Fork: `castor test --filter='ApplyCommandHandlerTest\|AdvanceRunHandlerTest\|LlmStepResultHandlerTest\|AgentMessageToolCallSequenceValidatorTest\|CommandMailboxPolicyTest\|ExecutionWorkerTest'` — OK (42 tests, 241 assertions).; Fork: `castor cs-check` — OK (0 files).; Fork: `castor deptrac` — OK (violations=0, errors=0).; Fork: `castor phpstan` — OK (errors=0, file_errors=0).; Fork: `castor test` — OK (2701 tests, 7995 assertions).; Parent: `castor test:llm-real` — OK (5 tests, 51 assertions).; Worktree status after merge + validation: clean at `c19acf824`, ahead of remote task branch pending push.
 - Summary: Merge-conflict resolution fork completed. Fork merged latest `origin/main` into `task/issue-134-orphaned-tool-calls`, resolved the single conflict in `src/AgentCore/Application/Pipeline/ApplyCommandHandler.php` by keeping the branch's `REJECT_ON_CANCEL_KINDS` constant over main's semantically equivalent inline array, accepted current task-board state from `origin/main`, and committed merge `c19acf824` (`Merge origin/main into task/issue-134-orphaned-tool-calls`). Worktree is clean and branch is ahead of remote task branch pending push. Parent additionally reran live LLM smoke validation after the merge.
+
+## Task workflow update - 2026-06-17T23:24:18.139Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Running deterministic castor check in worktree (timeout 1200s)...
+- castor check passed (36.1s).
+- Pushed task/issue-134-orphaned-tool-calls to origin.
+- branch 'task/issue-134-orphaned-tool-calls' set up to track 'origin/task/issue-134-orphaned-tool-calls'.
+- PR already exists: https://github.com/ineersa/agent-core/pull/163
+- Validation: Merge-conflict fork: `castor test --filter='ApplyCommandHandlerTest\|AdvanceRunHandlerTest\|LlmStepResultHandlerTest\|AgentMessageToolCallSequenceValidatorTest\|CommandMailboxPolicyTest\|ExecutionWorkerTest'` — OK (42 tests, 241 assertions).; Merge-conflict fork: `castor cs-check` — OK (0 files).; Merge-conflict fork: `castor deptrac` — OK (violations=0, errors=0).; Merge-conflict fork: `castor phpstan` — OK (errors=0, file_errors=0).; Merge-conflict fork: `castor test` — OK (2701 tests, 7995 assertions).; Parent post-merge: `castor test:llm-real` — OK (5 tests, 51 assertions).
+- Summary: Merge conflicts resolved and task branch refreshed against latest `origin/main`. Fork merge commit `c19acf824` resolved the only manual conflict in `src/AgentCore/Application/Pipeline/ApplyCommandHandler.php` by keeping the branch's `REJECT_ON_CANCEL_KINDS` constant; task-board state from main was accepted. Worktree is clean. Focused/full validation passed after merge; this transition runs deterministic `castor check`, pushes the refreshed branch, and updates PR #163.
