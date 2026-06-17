@@ -147,6 +147,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
                     'tool_call_id' => $message->toolCallId,
                     'order_index' => $message->orderIndex,
                     'is_error' => $message->isError,
+                    'result' => $this->extractResultText($message->result),
                 ],
             ],
         ];
@@ -263,6 +264,52 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
                 throw new \RuntimeException('Failed to dispatch AdvanceRun after tool batch completion.', previous: $exception);
             }
         };
+    }
+
+    /**
+     * Extract a displayable result string from a tool result payload.
+     *
+     * The result array carries 'content' as an array of content parts
+     * (Symfony AI format).  This helper collects text from parts where
+     * type === 'text' and joins them, so the string propagates through
+     * RuntimeEventTranslator to the projection layer and surfaces as
+     * actual tool output in the TUI.
+     *
+     * Returns '' for non-array results, missing/unexpected structures,
+     * or when no text parts are found.  The downstream projector falls
+     * back to '{tool_name} completed' when the result is empty, so
+     * tools that produce no displayable output still show a sensible
+     * status.
+     *
+     * @param array<string, mixed>|string|int|float|bool|null $result
+     */
+    private function extractResultText(mixed $result): string
+    {
+        if (!\is_array($result)) {
+            return '';
+        }
+
+        $content = $result['content'] ?? null;
+        if (!\is_array($content)) {
+            return '';
+        }
+
+        $parts = [];
+        foreach ($content as $part) {
+            if (!\is_array($part)) {
+                continue;
+            }
+            if (($part['type'] ?? null) !== 'text') {
+                continue;
+            }
+            $text = $part['text'] ?? null;
+            if (!\is_string($text)) {
+                continue;
+            }
+            $parts[] = $text;
+        }
+
+        return implode("\n", $parts);
     }
 
     /**
