@@ -10,9 +10,10 @@ namespace Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http;
  * Controls timeouts, max duration, retry counts, backoff delays,
  * retryable-error classification, and Retry-After header parsing.
  *
- * All values are validated at construction — env overrides are read
- * from environment variables but explicit constructor arguments win.
- * This makes the policy deterministic in tests without mocking env vars.
+ * All values come from Hatfield settings (`ai.http`); explicit constructor
+ * arguments (used by tests and the factory) win over defaults.
+ * Test-only overrides use the `env:` syntax in settings, not environment
+ * variables set directly on the process.
  */
 final class LlmHttpRetryPolicy
 {
@@ -54,11 +55,11 @@ final class LlmHttpRetryPolicy
         ?int $baseDelayMs = null,
         ?int $maxDelayMs = null,
     ) {
-        $this->timeout = self::readEnvInt('HATFIELD_LLM_HTTP_TIMEOUT', $timeout, self::DEFAULT_TIMEOUT);
-        $this->maxDuration = self::readEnvInt('HATFIELD_LLM_HTTP_MAX_DURATION', $maxDuration, self::DEFAULT_MAX_DURATION);
-        $this->maxRetries = self::readEnvNonNegative('HATFIELD_LLM_HTTP_MAX_RETRIES', $maxRetries, self::DEFAULT_MAX_RETRIES);
-        $this->baseDelayMs = self::readEnvNonNegative('HATFIELD_LLM_HTTP_BASE_DELAY_MS', $baseDelayMs, self::DEFAULT_BASE_DELAY_MS);
-        $this->maxDelayMs = self::readEnvNonNegative('HATFIELD_LLM_HTTP_MAX_DELAY_MS', $maxDelayMs, self::DEFAULT_MAX_DELAY_MS);
+        $this->timeout = self::validatePositive($timeout, 'timeout') ?? self::DEFAULT_TIMEOUT;
+        $this->maxDuration = self::validatePositive($maxDuration, 'maxDuration') ?? self::DEFAULT_MAX_DURATION;
+        $this->maxRetries = self::validateNonNegative($maxRetries, 'maxRetries') ?? self::DEFAULT_MAX_RETRIES;
+        $this->baseDelayMs = self::validateNonNegative($baseDelayMs, 'baseDelayMs') ?? self::DEFAULT_BASE_DELAY_MS;
+        $this->maxDelayMs = self::validateNonNegative($maxDelayMs, 'maxDelayMs') ?? self::DEFAULT_MAX_DELAY_MS;
     }
 
     /**
@@ -193,57 +194,37 @@ final class LlmHttpRetryPolicy
     // ── Internal helpers ──────────────────────────────────────────────────
 
     /**
-     * Read a constructor argument, falling back to an environment variable,
-     * then to a default value. Validates value > 0.
+     * Validate a positive integer (> 0) and return it, or return null
+     * when the value is null (caller applies the default).
      */
-    private static function readEnvInt(string $envName, ?int $explicit, int $default): int
+    private static function validatePositive(?int $value, string $name): ?int
     {
-        if (null !== $explicit) {
-            if ($explicit <= 0) {
-                throw new \InvalidArgumentException(\sprintf('%s must be a positive integer, got %d', $envName, $explicit));
-            }
-
-            return $explicit;
-        }
-
-        $envValue = getenv($envName);
-        if (false !== $envValue && '' !== $envValue) {
-            $value = (int) $envValue;
+        if (null !== $value) {
             if ($value <= 0) {
-                throw new \InvalidArgumentException(\sprintf('%s environment variable must be a positive integer, got %s', $envName, $envValue));
+                throw new \InvalidArgumentException(\sprintf('%s must be a positive integer, got %d', $name, $value));
             }
 
             return $value;
         }
 
-        return $default;
+        return null;
     }
 
     /**
-     * Read a constructor argument, falling back to environment, then default.
-     * Validates value >= 0.
+     * Validate a non-negative integer (>= 0) and return it, or return null
+     * when the value is null (caller applies the default).
      */
-    private static function readEnvNonNegative(string $envName, ?int $explicit, int $default): int
+    private static function validateNonNegative(?int $value, string $name): ?int
     {
-        if (null !== $explicit) {
-            if ($explicit < 0) {
-                throw new \InvalidArgumentException(\sprintf('%s must be a non-negative integer, got %d', $envName, $explicit));
-            }
-
-            return $explicit;
-        }
-
-        $envValue = getenv($envName);
-        if (false !== $envValue && '' !== $envValue) {
-            $value = (int) $envValue;
+        if (null !== $value) {
             if ($value < 0) {
-                throw new \InvalidArgumentException(\sprintf('%s environment variable must be a non-negative integer, got %s', $envName, $envValue));
+                throw new \InvalidArgumentException(\sprintf('%s must be a non-negative integer, got %d', $name, $value));
             }
 
             return $value;
         }
 
-        return $default;
+        return null;
     }
 
     /**

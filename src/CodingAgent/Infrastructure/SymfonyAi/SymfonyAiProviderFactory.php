@@ -96,7 +96,14 @@ class SymfonyAiProviderFactory
             return $this->httpClient;
         }
 
-        $policy = new LlmHttpRetryPolicy();
+        $http = $this->appConfig->ai?->http;
+        $policy = new LlmHttpRetryPolicy(
+            timeout: $http?->timeout,
+            maxDuration: $http?->maxDuration,
+            maxRetries: $http?->maxRetries,
+            baseDelayMs: $http?->baseDelayMs,
+            maxDelayMs: $http?->maxDelayMs,
+        );
         $baseClient = HttpClient::create($policy->httpClientOptions());
 
         return new LlmRetryingHttpClient(
