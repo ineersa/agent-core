@@ -47,7 +47,7 @@ Suggested implementation direction:
 Status: IN-PROGRESS
 Branch: task/issue-129-vllm-provider-resilience
 Worktree: /home/ineersa/projects/agent-core-worktrees/issue-129-vllm-provider-resilience
-Fork run:
+Fork run: 7dtgw8sj2p05
 PR URL:
 PR Status:
 Started: 2026-06-17T16:53:39.596Z
@@ -66,3 +66,7 @@ Completed:
 - Created worktree /home/ineersa/projects/agent-core-worktrees/issue-129-vllm-provider-resilience.
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/issue-129-vllm-provider-resilience.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/issue-129-vllm-provider-resilience.
+
+## Task workflow update - 2026-06-17T16:58:15.492Z
+- Recorded fork run: 7dtgw8sj2p05
+- Summary: Implementation fork launched in worktree `/home/ineersa/projects/agent-core-worktrees/issue-129-vllm-provider-resilience` to implement the scoped issue #129 request-handling work. Fork instructions focus on LLM HTTP timeout/max_duration, bounded retry/backoff, Retry-After/Retry-After-Ms parsing with cap, terminal quota/billing detection, sanitized provider error classification, and red TUI/runtime diagnostics. Fork explicitly instructed that `DurableResultConverter` missing/late finish_reason semantics are out of scope and should not be changed. Fork also instructed to read testing skill + tests/AGENTS.md before tests, use Castor only, add focused tests plus TmuxHarness E2E proof if TUI/projection behavior is changed, commit changes, leave worktree clean, and report validation results.
