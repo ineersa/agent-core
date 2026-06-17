@@ -45,14 +45,22 @@ Testing skill and `tests/AGENTS.md` were read before proposing validation. This 
 - Focused validation uses Castor only: relevant `castor test --filter=...`, `castor test:controller-replay` as needed, `castor test:tui` for TUI proof, `castor deptrac`, `castor phpstan`, `castor cs-check`, and final deterministic `castor check` via task workflow.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/issue-137-output-cap-observability
+Worktree: /home/ineersa/projects/agent-core-worktrees/issue-137-output-cap-observability
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-17T23:00:56.520Z
 Completed:
 
 ## Work log
 - Created: 2026-06-17T22:52:38.824Z
+
+## Task workflow update - 2026-06-17T23:00:56.520Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/issue-137-output-cap-observability.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/issue-137-output-cap-observability.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/issue-137-output-cap-observability.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/issue-137-output-cap-observability.
+- Summary: User chose one broad PR. Round 1 scope: update OutputCap/read-tool model guidance properly and fix central/double cap behavior. SafeGuard-specific implementation is deferred to round 2; after round 1 finishes, inspect changes and launch a second fork for observability.
