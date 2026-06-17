@@ -65,3 +65,6 @@ Completed:
 ## Task workflow update - 2026-06-17T22:03:30.442Z
 - Recorded fork run: 7i1fjqzsiuii
 - Summary: Launched second follow-up fork `7i1fjqzsiuii` to fix remaining UTF-8 sampling blockers: switch `readSample()` to binary mode, simplify validation to full-sample check for <=8192 and valid-prefix search for 8192..8195 when lookahead exists, add regressions for valid 8192-byte prefix with incomplete lookahead and invalid EOF continuation byte, run focused Castor validation, and commit.
+
+## Task workflow update - 2026-06-17T22:06:17.674Z
+- Summary: User raised UTF-8 BOM/text-detection question during implementation. Review/acceptance consideration: UTF-8 BOM (`EF BB BF`, U+FEFF) is valid UTF-8 and should be accepted by the read tool; add/verify regression coverage if not already present. UTF-16/UTF-32 BOMs should still be rejected as non-UTF-8 or non-text for this tool. MIME/type detection is useful for binary/image/document rejection but cannot replace explicit UTF-8 validation.
