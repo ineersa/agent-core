@@ -4,20 +4,21 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Extension;
 
+use Ineersa\Hatfield\ExtensionApi\ApprovalAnswerHookInterface;
 use Ineersa\Hatfield\ExtensionApi\ToolCallHookInterface;
 use Ineersa\Hatfield\ExtensionApi\ToolResultHookInterface;
 
 /**
  * Internal registry for tool call/result hooks registered by extensions.
  *
- * Hooks are stored in registration order. This registry is used by:
- * - ExtensionToolRegistryBridge to receive hooks from the public ExtensionApi
- * - Future ToolHookDispatcher (EXT-HOOK-04) to iterate and dispatch hooks
- *   during tool execution.
+ * Hooks are stored in registration order + indexed by class name for
+ * cross-process resolution via CachedApprovalLedger.
  *
- * Also tracks pending approvals: when a tool call hook returns RequireApproval,
- * the question_id is mapped back to the originating hook and its context,
- * so the answer can be routed back to onApprovalAnswered().
+ * Pending approvals and approved decisions are backed by the shared
+ * cache.approvals pool (via CachedApprovalLedger) so they survive the
+ * process boundary between the tool consumer (where SafeGuard intercepts
+ * tool calls) and the run_control consumer (where approval answers are
+ * committed). This is required for the default 'process' TUI transport.
  *
  * @internal this is app-internal wiring, not part of the public ExtensionApi
  */
@@ -38,11 +39,24 @@ final class ExtensionHookRegistry
     private array $toolResultHooks = [];
 
     /**
-     * Pending approvals: question_id => ApprovalPendingEntry.
+     * Hooks indexed by their class name (hookId) for cross-process resolution.
      *
-     * Populated when ExtensionToolHookEventSubscriber processes a
-     * RequireApproval decision. Consumed when the human answer is
-     * routed back to the originating hook.
+     * Populated automatically by addToolCallHook(). Allows resolveApproval
+     * (running in run_control consumer) to look up the local hook instance
+     * by the class name stored in the shared cache by the tool consumer.
+     *
+     * @var array<string, ToolCallHookInterface>
+     */
+    private array $hooksById = [];
+
+    /**
+     * Cross-process approval ledger backed by the cache.approvals pool.
+     * Injected by DI; null in unit tests (in-memory fallback).
+     */
+    private ?CachedApprovalLedger $ledger = null;
+
+    /**
+     * In-memory pending approvals fallback (when no ledger is available).
      *
      * @var array<string, ApprovalPendingEntry>
      */
@@ -51,6 +65,10 @@ final class ExtensionHookRegistry
     public function addToolCallHook(ToolCallHookInterface $hook): void
     {
         $this->toolCallHooks[] = $hook;
+
+        // Index by class name so the hook can be looked up by hookId
+        // from another consumer process via the shared cache.
+        $this->hooksById[$hook::class] = $hook;
     }
 
     /**
@@ -74,13 +92,30 @@ final class ExtensionHookRegistry
         return $this->toolResultHooks;
     }
 
+    // ── Cross-process approval ledger injection ──
+
     /**
-     * Register a pending approval for answer routing.
+     * Inject the cross-process approval ledger.
+     *
+     * Called by the DI container (services.yaml) after construction.
+     */
+    public function setLedger(?CachedApprovalLedger $ledger): void
+    {
+        $this->ledger = $ledger;
+    }
+
+    // ── Pending approval registration (cross-process cache) ──
+
+    /**
+     * Register a pending approval for cross-process answer routing.
      *
      * Called by ExtensionToolHookEventSubscriber when a tool call hook
-     * returns a RequireApproval decision. Stores the question_id → hook
-     * mapping so the answer can be routed back to the originating hook
-     * via ApprovalAnswerHookInterface::onApprovalAnswered().
+     * returns a RequireApproval decision. Writes to the shared cache
+     * (via CachedApprovalLedger) so the answer can be routed back to
+     * the originating hook in a different consumer process.
+     *
+     * When runId is empty or no ledger is available (test/unit context),
+     * falls back to in-memory registration for backward compat.
      *
      * @param array<string, mixed> $details the approval context from the RequireApproval decision
      */
@@ -88,7 +123,23 @@ final class ExtensionHookRegistry
         string $questionId,
         ToolCallHookInterface $hook,
         array $details,
+        string $runId = '',
     ): void {
+        // Attempt cross-process write via shared cache.
+        if ('' !== $runId && null !== $this->ledger) {
+            $operationKey = (string) ($details['operation_key'] ?? '');
+            $this->ledger->registerPending(
+                runId: $runId,
+                questionId: $questionId,
+                hookId: $hook::class,
+                operationKey: $operationKey,
+                details: $details,
+            );
+
+            return;
+        }
+
+        // Fallback to in-memory (no run context — e.g., unit tests).
         $this->pendingApprovals[$questionId] = new ApprovalPendingEntry(
             hook: $hook,
             details: $details,
@@ -96,13 +147,46 @@ final class ExtensionHookRegistry
     }
 
     /**
-     * Resolve a pending approval and remove it from the registry.
+     * Resolve a pending approval from the shared cache or in-memory store.
      *
-     * Returns null if no pending approval is found for the given question_id
-     * (e.g., already resolved, expired, or never registered).
+     * In cross-process mode (runId provided and ledger available):
+     * reads {hookId, operationKey, details} from the shared cache,
+     * looks up the live hook instance by hookId from the local
+     * hooksById map, and returns it wrapped in an ApprovalPendingEntry.
+     *
+     * In same-process mode: delegates to the in-memory pendingApprovals array.
+     *
+     * Returns null if no pending approval is found for the given
+     * question_id (already resolved, expired, or never registered).
      */
-    public function resolveApproval(string $questionId): ?ApprovalPendingEntry
+    public function resolveApproval(string $questionId, string $runId = ''): ?ApprovalPendingEntry
     {
+        // Cross-process resolve via shared cache.
+        if ('' !== $runId && null !== $this->ledger) {
+            $data = $this->ledger->resolvePending($runId, $questionId);
+
+            if (null === $data) {
+                return null;
+            }
+
+            $hookId = (string) ($data['hookId'] ?? '');
+            $hook = $this->hooksById[$hookId] ?? null;
+
+            if (null === $hook) {
+                return null;
+            }
+
+            if (!$hook instanceof ApprovalAnswerHookInterface) {
+                return null;
+            }
+
+            return new ApprovalPendingEntry(
+                hook: $hook,
+                details: $data['details'] ?? [],
+            );
+        }
+
+        // Same-process fallback (in-memory).
         $entry = $this->pendingApprovals[$questionId] ?? null;
 
         if (null !== $entry) {
@@ -110,6 +194,54 @@ final class ExtensionHookRegistry
         }
 
         return $entry;
+    }
+
+    /**
+     * Look up a registered hook by its class name.
+     *
+     * @return ToolCallHookInterface|null null if no hook registered under this class name
+     */
+    public function getHook(string $hookId): ?ToolCallHookInterface
+    {
+        return $this->hooksById[$hookId] ?? null;
+    }
+
+    // ── Approved decision management (cross-process cache) ──
+
+    /**
+     * Write an approved decision to the shared cache.
+     *
+     * Called by SafeGuardApprovalCommitSubscriber after resolving the
+     * pending entry and calling onApprovalAnswered(). The cached decision
+     * is consumed by ExtensionToolHookEventSubscriber on the retry.
+     */
+    public function markApproved(string $runId, string $operationKey): void
+    {
+        if (null === $this->ledger) {
+            return;
+        }
+
+        $this->ledger->markApproved($runId, $operationKey);
+    }
+
+    /**
+     * Check and consume an approved decision from the shared cache.
+     *
+     * Called by ExtensionToolHookEventSubscriber when a tool call hook
+     * returns RequireApproval. If the cache has an approved entry for
+     * this operation key, the subscriber skips the RequireApproval and
+     * allows the tool execution (the decision was made in a different
+     * process via SafeGuardApprovalCommitSubscriber).
+     *
+     * Returns true if the decision was consumed (one-time Allow once).
+     */
+    public function consumeApproval(string $runId, string $operationKey): bool
+    {
+        if (null === $this->ledger) {
+            return false;
+        }
+
+        return $this->ledger->consumeApproval($runId, $operationKey);
     }
 }
 

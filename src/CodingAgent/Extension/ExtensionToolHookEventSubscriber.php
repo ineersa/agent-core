@@ -89,6 +89,21 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
             }
 
             if (ToolCallDecisionKindEnum::RequireApproval === $decision->kind) {
+                $runId = $context->runId ?? '';
+
+                // BEFORE blocking, check the shared cache for a previously
+                // approved decision (written by SafeGuardApprovalCommitSubscriber
+                // in the run_control consumer). If found, consume the approval
+                // and allow the tool execution — the retry is being processed.
+                $operationKey = (string) ($decision->details['operation_key'] ?? '');
+                if ('' !== $operationKey && '' !== $runId
+                    && $this->hookRegistry->consumeApproval($runId, $operationKey)
+                ) {
+                    // Approved via cross-process cache — skip to next hook
+                    // (no hook blocked, allow fall-through to execution).
+                    continue;
+                }
+
                 $questionId = $decision->details['question_id']
                     ?? hash('sha256', \sprintf('%s|%s|%s', $toolCall->getName(), $toolCall->getId(), (string) microtime(true)));
                 $prompt = $decision->details['prompt'] ?? 'Approval required.';
@@ -96,10 +111,14 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
 
                 // Register pending approval so the answer can be routed back
                 // to the originating hook via ApprovalAnswerHookInterface.
+                // Writes to the shared cache (via CachedApprovalLedger) so the
+                // commit-time SafeGuardApprovalCommitSubscriber in a different
+                // consumer process can resolve it.
                 $this->hookRegistry->registerPendingApproval(
                     questionId: $questionId,
                     hook: $hook,
                     details: $decision->details,
+                    runId: $runId,
                 );
 
                 $event->setResult(new ToolResult($toolCall, [

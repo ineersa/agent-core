@@ -62,7 +62,10 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
         $operationKey = $this->resolveOperationKey($context);
 
         // Check in-memory approval tracker first.
-        // If the operation was just approved, consume the approval and allow.
+        // If the operation was just approved (same-process), consume
+        // the approval and allow. For cross-process approvals, the
+        // ExtensionToolHookEventSubscriber checks the shared cache
+        // BEFORE marking this decision as RequireApproval.
         if (null !== $operationKey && $this->approvalTracker->consumeApproval($operationKey)) {
             return ToolCallDecisionDTO::allow();
         }
@@ -136,6 +139,7 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
                     'path' => $this->extractPath($context),
                     'tool_name' => $decision->toolName,
                     'operation_key' => $operationKey,
+                    'run_id' => $context->runId,
                     'intercepted' => true,
                 ],
             );

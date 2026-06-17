@@ -16,9 +16,10 @@ namespace Ineersa\CodingAgent\Extension\Builtin\SafeGuard;
  *   3. consumeApproval(key) — called on the next onToolCall, returns true and removes
  *   4. remove(key) — called when the human answers "Deny" or on cleanup
  *
- * This tracker is NOT persisted across runs. All tool execution within a
- * session runs in the same Messenger consumer process, so a singleton-scoped
- * service works correctly.
+ * This tracker is NOT persisted across processes. Cross-process approval
+ * state is handled by SafeGuardApprovalCommitSubscriber (writes approved
+ * decisions to the shared cache.approvals pool) and ExtensionToolHookEventSubscriber
+ * (checks the cache before blocking with RequireApproval).
  *
  * @internal SafeGuard internal, not part of the public ExtensionApi
  */

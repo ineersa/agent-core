@@ -56,7 +56,14 @@ framework:
     scheduler: ~
 
     cache:
+        # Application cache (cache.app, autowired via CacheInterface) -> shared SQLite DB.
+        # System cache (cache.system, annotations/validator/serializer) stays filesystem.
+        app: cache.adapter.doctrine_dbal
         pools:
             cache.default:
                 adapter: cache.adapter.filesystem
                 default_lifetime: 3600
+            cache.approvals:
+                adapter: cache.adapter.doctrine_dbal
+                provider: doctrine.dbal.default_connection
+                default_lifetime: 86400

@@ -39,6 +39,8 @@ final readonly class SafeGuardApprovalCommitSubscriber implements HookSubscriber
 
     public function handleAfterTurnCommit(AfterTurnCommitHookContext $context): AfterTurnCommitHookContext
     {
+        $runId = $context->runId;
+
         foreach ($context->events as $event) {
             if ('agent_command_applied' !== $event->type) {
                 continue;
@@ -56,7 +58,10 @@ final readonly class SafeGuardApprovalCommitSubscriber implements HookSubscriber
                 continue;
             }
 
-            $entry = $this->hookRegistry->resolveApproval($questionId);
+            // Cross-process resolve: reads from shared cache (via
+            // CachedApprovalLedger) using runId, looks up the live
+            // hook instance by hookId from the local registry.
+            $entry = $this->hookRegistry->resolveApproval($questionId, $runId);
             if (null === $entry) {
                 continue;
             }
@@ -65,12 +70,31 @@ final readonly class SafeGuardApprovalCommitSubscriber implements HookSubscriber
                 continue;
             }
 
+            $answer = (string) ($payload['answer'] ?? '');
+
+            // Step 1: Call onApprovalAnswered so the hook processes the
+            // answer in-process (e.g., SafeGuard writes settings.yaml for
+            // "Always allow" persistence via SafeGuardPolicyWriter).
             $entry->hook->onApprovalAnswered(new ApprovalAnswerContextDTO(
                 questionId: $questionId,
-                answer: (string) ($payload['answer'] ?? ''),
+                answer: $answer,
                 toolName: (string) ($entry->details['tool_name'] ?? ''),
                 approvalContext: $entry->details,
             ));
+
+            // Step 2: Write the approved decision to the shared cache so
+            // the retry (in a different consumer process) can see it via
+            // ExtensionToolHookEventSubscriber's cache pre-check.
+            //
+            // For "Allow once" and "Always allow": write approved entry.
+            // For "Deny": do NOT write (the pending entry was already
+            // removed from cache by resolveApproval).
+            if ('Deny' !== $answer) {
+                $operationKey = (string) ($entry->details['operation_key'] ?? '');
+                if ('' !== $operationKey) {
+                    $this->hookRegistry->markApproved($runId, $operationKey);
+                }
+            }
         }
 
         return $context;
