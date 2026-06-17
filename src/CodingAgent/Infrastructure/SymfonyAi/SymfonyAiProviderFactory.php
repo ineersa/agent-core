@@ -142,7 +142,7 @@ class SymfonyAiProviderFactory
             baseUrl: $baseUrl,
             accessToken: $record->access,
             accountId: $record->accountId,
-            httpClient: $this->getHttpClient(),
+            httpClient: $this->getHttpClient($provider->id),
             modelCatalog: $projectedCatalog,
             contract: null,
             eventDispatcher: $this->eventDispatcher,
@@ -199,7 +199,7 @@ class SymfonyAiProviderFactory
      */
     private function buildGenericCompletionsProvider(AiProviderConfig $provider, ProjectedSymfonyModelCatalog $projectedCatalog): ProviderInterface
     {
-        $httpClient = $this->getHttpClient();
+        $httpClient = $this->getHttpClient($provider->id);
         $httpClient = $httpClient instanceof EventSourceHttpClient ? $httpClient : new EventSourceHttpClient($httpClient);
 
         $modelClients = [];

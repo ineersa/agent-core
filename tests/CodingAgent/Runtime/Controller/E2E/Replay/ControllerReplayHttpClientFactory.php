@@ -118,6 +118,11 @@ final class ControllerReplayHttpClientFactory
                 $fixture = $fixtures[$index];
                 ++$index;
 
+                // HTTP error fixtures return a non-200 MockResponse directly.
+                if (self::isHttpErrorFixture($fixture)) {
+                    return self::buildErrorResponse($fixture);
+                }
+
                 $deltas = $fixture['deltas'] ?? [];
                 $stopReason = $fixture['stop_reason'] ?? 'stop';
                 $model = $fixture['model'] ?? 'llama_cpp/test';
@@ -135,6 +140,42 @@ final class ControllerReplayHttpClientFactory
             },
             'http://replay.internal',
         );
+    }
+
+    /**
+     * Check whether a fixture represents an HTTP error response.
+     *
+     * HTTP error fixtures have an "http_status" key and are returned as
+     * non-SSE MockResponses so the Symfony AI provider's error-handling
+     * path is exercised (EventSourceHttpClient passthru → SseStream →
+     * convertStream error detection).
+     */
+    private static function isHttpErrorFixture(array $fixture): bool
+    {
+        return isset($fixture['http_status']);
+    }
+
+    /**
+     * Build a MockResponse from an HTTP error fixture.
+     *
+     * @param array<string, mixed> $fixture
+     */
+    private static function buildErrorResponse(array $fixture): MockResponse
+    {
+        $statusCode = (int) $fixture['http_status'];
+        $headers = $fixture['response_headers'] ?? [];
+        $body = $fixture['response_body'] ?? '{}';
+
+        // Ensure JSON content-type so EventSourceHttpClient does not
+        // interpret the error response as SSE (which would fail parsing).
+        if (!isset($headers['Content-Type'])) {
+            $headers['Content-Type'] = 'application/json';
+        }
+
+        return new MockResponse($body, [
+            'http_code' => $statusCode,
+            'response_headers' => $headers,
+        ]);
     }
 
     /**

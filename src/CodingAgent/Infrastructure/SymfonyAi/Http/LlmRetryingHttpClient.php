@@ -36,6 +36,9 @@ final class LlmRetryingHttpClient implements HttpClientInterface
     ) {
     }
 
+    /**
+     * @param array<string, mixed> $options
+     */
     public function request(string $method, string $url, array $options = []): ResponseInterface
     {
         // Merge policy defaults for timeouts if not explicitly overridden
@@ -145,6 +148,8 @@ final class LlmRetryingHttpClient implements HttpClientInterface
      * Return a new instance with the given options merged into the inner client.
      *
      * Retry behavior, policy, logger, and provider identity are preserved.
+     *
+     * @param array<string, mixed> $options
      */
     public function withOptions(array $options): static
     {

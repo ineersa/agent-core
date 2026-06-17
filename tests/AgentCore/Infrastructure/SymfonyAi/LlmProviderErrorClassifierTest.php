@@ -8,6 +8,8 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
+// phpcs:disable Ineersa.Files.LineLength.TooLong
+
 /**
  * @covers \Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier
  */
@@ -101,6 +103,37 @@ final class LlmProviderErrorClassifierTest extends TestCase
         self::assertSame(LlmProviderErrorClassifier::CATEGORY_RATE_LIMIT, $result['error_category']);
     }
 
+    public function testClassifyTransient429IncludesRetryAfter(): void
+    {
+        $result = $this->classifier->classify([
+            'type' => 'RuntimeException',
+            'message' => 'rate limit',
+            'http_status_code' => 429,
+            'retry_after_ms' => 30000,
+        ]);
+
+        self::assertTrue($result['retryable']);
+        self::assertSame(LlmProviderErrorClassifier::CATEGORY_RATE_LIMIT, $result['error_category']);
+        self::assertStringContainsString('30s', $result['user_message'], 'User message should include retry-after hint');
+        self::assertStringContainsString('rate limit', strtolower($result['user_message']));
+    }
+
+    public function testClassifyTransient429IncludesProviderCode(): void
+    {
+        $result = $this->classifier->classify([
+            'type' => 'RuntimeException',
+            'message' => 'rate limit exceeded',
+            'http_status_code' => 429,
+            'response_error_code' => 'rate_limit_exceeded',
+        ]);
+
+        self::assertTrue($result['retryable']);
+        self::assertSame(LlmProviderErrorClassifier::CATEGORY_RATE_LIMIT, $result['error_category']);
+        self::assertStringContainsString('rate_limit_exceeded', $result['user_message'], 'User message should include provider code');
+        // Raw message text must not be leaked as-is in user_message
+        self::assertStringNotContainsString('raw sentinel', $result['user_message']);
+    }
+
     // ── Terminal billing/quota 429 ─────────────────────────────────────────
 
     public function testClassifyBilling429(): void
@@ -114,6 +147,51 @@ final class LlmProviderErrorClassifierTest extends TestCase
         self::assertFalse($result['retryable']);
         self::assertSame(LlmProviderErrorClassifier::CATEGORY_QUOTA_BILLING, $result['error_category']);
         self::assertStringContainsString('quota or billing', strtolower($result['user_message']));
+    }
+
+    /**
+     * Terminal billing/quota detected through structured response fields
+     * even when the exception message does not contain billing patterns.
+     */
+    public function testClassifyBillingFromResponseErrorCode(): void
+    {
+        $result = $this->classifier->classify([
+            'type' => 'RuntimeException',
+            'message' => 'rate limit exceeded',
+            'http_status_code' => 429,
+            'response_error_code' => 'insufficient_quota',
+        ]);
+
+        self::assertFalse($result['retryable'], 'Billing from response_error_code should be terminal');
+        self::assertSame(LlmProviderErrorClassifier::CATEGORY_QUOTA_BILLING, $result['error_category']);
+        self::assertStringContainsString('quota or billing', strtolower($result['user_message']));
+    }
+
+    public function testClassifyBillingFromResponseErrorMessage(): void
+    {
+        $result = $this->classifier->classify([
+            'type' => 'RuntimeException',
+            'message' => 'something went wrong',
+            'http_status_code' => 429,
+            'response_error_message' => 'quota exceeded for current billing cycle',
+        ]);
+
+        self::assertFalse($result['retryable'], 'Billing from response_error_message should be terminal');
+        self::assertSame(LlmProviderErrorClassifier::CATEGORY_QUOTA_BILLING, $result['error_category']);
+        self::assertStringContainsString('quota or billing', strtolower($result['user_message']));
+    }
+
+    public function testClassifyBillingFromResponseErrorType(): void
+    {
+        $result = $this->classifier->classify([
+            'type' => 'RuntimeException',
+            'message' => 'request rejected',
+            'http_status_code' => 429,
+            'response_error_type' => 'insufficient_credits',
+        ]);
+
+        self::assertFalse($result['retryable'], 'Billing from response_error_type should be terminal');
+        self::assertSame(LlmProviderErrorClassifier::CATEGORY_QUOTA_BILLING, $result['error_category']);
     }
 
     public function testClassifyBilling429WithQuotaExceeded(): void

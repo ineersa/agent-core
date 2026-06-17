@@ -72,11 +72,22 @@ final class LlmProviderErrorClassifier
         $statusCode = isset($error['http_status_code']) ? (int) $error['http_status_code'] : null;
         $responseErrorCode = $error['response_error_code'] ?? null;
         $responseErrorType = $error['response_error_type'] ?? null;
+        $responseErrorMessage = $error['response_error_message'] ?? null;
+        $retryAfterMs = $error['retry_after_ms'] ?? null;
 
-        // Priority-based classification
-        [$category, $retryable, $userMessage] = $this->classifyByExceptionType($errorType, $errorMessage, $statusCode)
-            ?? $this->classifyByStatusCode($statusCode, $errorMessage, $responseErrorCode, $responseErrorType)
-            ?? $this->classifyByMessagePattern($errorMessage)
+        // Build a composite search text from all available structured fields.
+        // This ensures billing/quota/quota codes in any field are caught.
+        $allErrorText = implode(' ', array_filter([
+            $errorMessage,
+            \is_string($responseErrorMessage) ? $responseErrorMessage : '',
+            \is_string($responseErrorCode) ? $responseErrorCode : '',
+            \is_string($responseErrorType) ? $responseErrorType : '',
+        ], static fn (string $v): bool => '' !== $v));
+
+        // Priority-based classification using composite text and structured fields
+        [$category, $retryable, $userMessage] = $this->classifyByExceptionType($errorType, $allErrorText, $statusCode)
+            ?? $this->classifyByStatusCode($statusCode, $allErrorText, $responseErrorCode, $responseErrorType, $retryAfterMs)
+            ?? $this->classifyByMessagePattern($allErrorText)
             ?? [self::CATEGORY_PROVIDER, false, \sprintf('LLM provider error: %s', self::truncate($errorMessage, 200))];
 
         $result = $error + [
@@ -123,22 +134,37 @@ final class LlmProviderErrorClassifier
     }
 
     /**
+     * @param string          $allErrorText Composite text from all error fields
+     * @param int|string|null $retryAfterMs
+     *
      * @return array{string, bool, string}|null
      */
-    private function classifyByStatusCode(?int $statusCode, string $errorMessage, mixed $responseErrorCode, mixed $responseErrorType): ?array
+    private function classifyByStatusCode(?int $statusCode, string $allErrorText, mixed $responseErrorCode, mixed $responseErrorType, mixed $retryAfterMs): ?array
     {
         if (null === $statusCode) {
             return null;
         }
 
-        // Terminal billing/quota from error body patterns
-        if (429 === $statusCode && self::matchesAny($errorMessage, self::TERMINAL_BILLING_PATTERNS)) {
+        // Terminal billing/quota from error body patterns — check all available text
+        if (429 === $statusCode && self::matchesAny($allErrorText, self::TERMINAL_BILLING_PATTERNS)) {
             return [self::CATEGORY_QUOTA_BILLING, false, 'LLM provider quota or billing limit reached. Try switching provider/model or updating your quota.'];
+        }
+
+        // Build a user message with safe structured details for transient rate limits.
+        if (429 === $statusCode) {
+            $parts = ['LLM provider rate limit reached (retryable). Will retry automatically.'];
+            if (null !== $retryAfterMs && $retryAfterMs > 0) {
+                $parts[] = \sprintf('Retry after up to %ds.', (int) ceil($retryAfterMs / 1000));
+            }
+            if (\is_string($responseErrorCode) && '' !== $responseErrorCode) {
+                $parts[] = \sprintf('Provider code: %s.', $responseErrorCode);
+            }
+
+            return [self::CATEGORY_RATE_LIMIT, true, implode(' ', $parts)];
         }
 
         return match ($statusCode) {
             408, 425 => [self::CATEGORY_TIMEOUT, true, \sprintf('LLM provider request timed out (HTTP %d — retryable). Will retry automatically.', $statusCode)],
-            429 => [self::CATEGORY_RATE_LIMIT, true, 'LLM provider rate limit reached (retryable). Will retry automatically.'],
             500, 502, 503, 504 => [self::CATEGORY_SERVER, true, \sprintf('LLM provider server error (HTTP %d — retryable). Will retry automatically.', $statusCode)],
             default => null,
         };
