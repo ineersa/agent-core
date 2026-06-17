@@ -25,13 +25,13 @@ Implementation notes:
 - Focused validation passes at minimum: `castor test --filter=ReadFileToolTest`, `castor phpstan src/CodingAgent/Tool/ReadFileTool.php`, `castor cs-check`, and `castor deptrac`. Run `castor check` before CODE-REVIEW because this is an LLM-visible tool/runtime path.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/issue-159-read-tool-utf8-false-positive
+Worktree: /home/ineersa/projects/agent-core-worktrees/issue-159-read-tool-utf8-false-positive
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-17T21:49:35.275Z
 Completed:
 
 ## Work log
@@ -39,3 +39,11 @@ Completed:
 
 ## Task workflow update - 2026-06-17T21:48:33.522Z
 - User clarified: keep UTF-8 enforcement, but fix validation. Consider whether the existing League/Flysystem MIME type detection library should be used where appropriate; do not rely on MIME detection as a substitute for validating text encoding.
+
+## Task workflow update - 2026-06-17T21:49:35.275Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/issue-159-read-tool-utf8-false-positive.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/issue-159-read-tool-utf8-false-positive.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/issue-159-read-tool-utf8-false-positive.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/issue-159-read-tool-utf8-false-positive.
+- Summary: User approved starting implementation for GitHub issue #159. Scope: fix `ReadFileTool` UTF-8 validation false positives on valid UTF-8 files while preserving binary/image/invalid-encoding rejections.
