@@ -36,7 +36,7 @@ Doing RENDER-04 before #131 would render pretty cards that say "bash completed".
 - Downstream translator + projector already handle it — verify, don't re-implement.
 
 **Presentation (minimal — don't build RENDER-04):**
-- Once data flows, the existing renderer shows `$block->text`. Add a pragmatic line cap (e.g. first N lines + "… (M more lines)") so long bash output doesn't flood the transcript. Place at the display boundary (renderer/projector). Keep errors generous/full. Document that RENDER-04 will make the cap configurable via `tui.transcript.previews.tool_result_lines`.
+- Once data flows, the existing renderer shows `$block->text` verbatim — show the FULL unbounded output. Do NOT add any line cap, preview, or truncation (user decision 2026-06-17: all truncation/preview handling is deferred to RENDER-04). Just make the real text reach the block.
 
 **Mandatory TUI E2E proof (AGENTS.md hard gate):**
 - NEW `tests/Tui/E2E/TuiToolOutputE2eTest.php` (#[Group('tui-e2e-replay')]), mirroring `TuiJourneyE2eTest.php`.
@@ -57,8 +57,7 @@ LOW. Root cause is a missing payload field; all downstream consumers already han
 ## Acceptance criteria
 - Tool result OUTPUT text is included in the ToolExecutionEnd domain event payload in ToolCallResultHandler, extracted as a displayable string from the ToolCallResult (handles both string results like bash/read AND structured/array results via normalization, e.g. reusing AgentMessageNormalizer::toolMessage() content text or ToolExecutor normalization).
 - Output propagates end-to-end: RuntimeEventTranslator::onToolExecutionEnded passes the string result through (already implemented), ToolProjectionSubscriber::onToolExecutionCompleted uses it as the TranscriptBlock text (already implemented) — the '{tool} completed' fallback is no longer hit when real output exists.
-- TUI shows actual tool output (bash stdout/stderr, read file content, etc.) instead of only 'bash completed'/'read done'.
-- Long output is bounded by a sensible line cap with a truncation indicator so the transcript is not flooded; error results remain generous/full by default. Implemented minimally at the display layer (renderer/projector); documented that RENDER-04 will later make this configurable via tui.transcript.previews.tool_result_lines.
+- TUI shows the FULL actual tool output (bash stdout/stderr, read file content, etc.) verbatim instead of only 'bash completed'/'read done'. NO line cap, preview, or truncation — user defers all truncation/preview handling to RENDER-04.
 - Fallback '{tool} completed' still shows when a tool genuinely produces no output (empty result), so no regression for no-output tools.
 - No regression to the InProcess shell '!' path (which already injects result) or existing TranscriptProjector/ToolProjectionSubscriber tests — update any tests that asserted the 'completed' fallback where real output now flows.
 - Mandatory TUI E2E proof: new TuiToolOutputE2eTest (#[Group('tui-e2e-replay')]) + fixture exercising a read tool call, asserting real file content (sentinel) is visible in the TUI and the 'read completed' fallback is absent. Uses TmuxHarness + replay fixture, mirrors TuiJourneyE2eTest.
