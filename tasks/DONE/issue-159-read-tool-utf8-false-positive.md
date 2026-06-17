@@ -25,14 +25,14 @@ Implementation notes:
 - Focused validation passes at minimum: `castor test --filter=ReadFileToolTest`, `castor phpstan src/CodingAgent/Tool/ReadFileTool.php`, `castor cs-check`, and `castor deptrac`. Run `castor check` before CODE-REVIEW because this is an LLM-visible tool/runtime path.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/issue-159-read-tool-utf8-false-positive
 Worktree: /home/ineersa/projects/agent-core-worktrees/issue-159-read-tool-utf8-false-positive
 Fork run: ectdn5pv1hz3
 PR URL: https://github.com/ineersa/agent-core/pull/161
-PR Status: open
+PR Status: merged
 Started: 2026-06-17T21:49:35.275Z
-Completed:
+Completed: 2026-06-17T22:36:55.095Z
 
 ## Work log
 - Created: 2026-06-17T21:37:51.588Z
@@ -97,3 +97,17 @@ Completed:
 - Created PR: https://github.com/ineersa/agent-core/pull/161
 - Validation: Reviewer subagent verdict: APPROVE.; `castor test` PASS — 2671 tests, 7868 assertions.; `castor deptrac` PASS — violations=0, errors=0.; `castor phpstan` PASS — errors=0, file_errors=0.; `castor cs-check` PASS — files_fixed=0.
 - Summary: Reviewer approved HEAD `d6181c0ac`; focused Castor validation passed (`castor test`, `castor deptrac`, `castor phpstan`, `castor cs-check`). Moving to CODE-REVIEW to run deterministic `castor check`, push branch, and create PR.
+
+## Task workflow update - 2026-06-17T22:36:55.095Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/issue-159-read-tool-utf8-false-positive into integration checkout.
+- Auto-merging src/CodingAgent/Tool/ReadFileTool.php
+Auto-merging tests/CodingAgent/Tool/ReadFileToolTest.php
+Merge made by the 'ort' strategy.
+ src/CodingAgent/Tool/ReadFileTool.php       |  86 ++++++++++++++++++++--
+ tests/CodingAgent/Tool/ReadFileToolTest.php | 109 ++++++++++++++++++++++++++++
+ 2 files changed, 188 insertions(+), 7 deletions(-)
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/issue-159-read-tool-utf8-false-positive.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Validation: PR #161 verified via gh: state=MERGED, mergedAt=2026-06-17T22:33:41Z, mergeCommit=caf361c5c17700863137bc8336faacea19bfb221.
+- Summary: User reported the previously blocking local changes have been committed, PR #161 is merged, and smoke testing looks good. Moving task to DONE.
