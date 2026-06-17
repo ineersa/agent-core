@@ -44,7 +44,7 @@ Suggested implementation direction:
 - Before implementation/validation, forks must read `.agents/skills/testing/SKILL.md` and `tests/AGENTS.md`; validate via Castor (`castor test`, `castor deptrac`, `castor phpstan`, `castor cs-check`, and `castor check` before PR; `castor test:llm-real` if live provider compatibility is affected).
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/issue-129-vllm-provider-resilience
 Worktree: /home/ineersa/projects/agent-core-worktrees/issue-129-vllm-provider-resilience
 Fork run: r91hmmwynaz8
@@ -139,3 +139,6 @@ Commits on branch task/issue-129-vllm-provider-resilience (HEAD 57bdf35af):
 - Updated PR URL: https://github.com/ineersa/agent-core/pull/158
 - Updated PR Status: open
 - Summary: Moved IN-PROGRESS → CODE-REVIEW. Deterministic castor check passed in worktree (27.4s). Branch pushed, PR #158 created: https://github.com/ineersa/agent-core/pull/158 — title "Fix issue #129 vLLM provider resilience, reasoning round-trip, and HTTP retry handling". Awaiting review/merge.
+
+## Task workflow update - 2026-06-17T19:07:22.627Z
+- Moved CODE-REVIEW → IN-PROGRESS.
