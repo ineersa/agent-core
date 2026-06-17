@@ -38,7 +38,7 @@ Testing notes:
 - Focused Castor validation passes: `castor test` for relevant filters, plus `castor deptrac`, `castor phpstan`, `castor cs-check`; run `castor check` before CODE-REVIEW. Run `castor test:llm-real` if live provider compatibility paths are changed.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/issue-134-orphaned-tool-calls
 Worktree: /home/ineersa/projects/agent-core-worktrees/issue-134-orphaned-tool-calls
 Fork run: ujyykpezoctq
@@ -161,3 +161,7 @@ Refined agent-core design:
 - Created PR: https://github.com/ineersa/agent-core/pull/163
 - Validation: Final reviewer subagent: APPROVE, no actionable issues.; `castor test` — OK (2701 tests, 7995 assertions).; `castor deptrac` — OK (violations=0, errors=0).; `castor phpstan` — OK (errors=0, file_errors=0).; `castor cs-check` — OK (files_fixed=0).; `castor test:llm-real` — OK (5 tests, 51 assertions).
 - Summary: Prepared for code review. Final reviewer decision: APPROVE. Worktree HEAD `32f4351d6` implements boundary-driven command draining, cancel rejection of stale queued commands, AdvanceRun unresolved-tool-call guard, abort/cancel dropping assistant messages from prompt history with sanitized `llm_step_aborted` metadata, and provider preflight validation for assistant tool-call/tool-result ordering. Review-fix commit addressed duplicate tool-result diagnostics and added additional regression coverage. Focused validation passed before move; deterministic `castor check` is run by this transition.
+
+## Task workflow update - 2026-06-17T23:19:10.346Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Summary: Reopening from CODE-REVIEW to address merge conflicts on PR #163 before returning to code review.
