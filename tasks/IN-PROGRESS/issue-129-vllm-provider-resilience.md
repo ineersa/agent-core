@@ -47,7 +47,7 @@ Suggested implementation direction:
 Status: IN-PROGRESS
 Branch: task/issue-129-vllm-provider-resilience
 Worktree: /home/ineersa/projects/agent-core-worktrees/issue-129-vllm-provider-resilience
-Fork run: 7dtgw8sj2p05
+Fork run: r91hmmwynaz8
 PR URL:
 PR Status:
 Started: 2026-06-17T16:53:39.596Z
@@ -85,3 +85,7 @@ Not accepted for CODE-REVIEW yet. Blocking issues found in handoff/inspection:
 - `SymfonyAiProviderFactory::getHttpClient()` accepts `providerId` but callers do not pass `$provider->id`, leaving retry logs without provider identity.
 
 Next step: launch a follow-up implementation fork to address these blockers before reviewer/code-review phase.
+
+## Task workflow update - 2026-06-17T17:14:02.652Z
+- Recorded fork run: r91hmmwynaz8
+- Summary: Follow-up implementation fork `r91hmmwynaz8` launched on worktree `/home/ineersa/projects/agent-core-worktrees/issue-129-vllm-provider-resilience` to address blockers from fork `7dtgw8sj2p05`: add mandatory replay-backed TmuxHarness E2E proof for sanitized red provider error block; extend test replay seam for HTTP error fixtures; remove new PHPStan baseline additions and fix new-code docblocks; remove raw response body preview diagnostics and parse Retry-After headers into safe diagnostics; improve classifier use of structured provider fields/retry-after/provider code; wire provider ID to retry logs; rerun Castor-only focused/full validation. Fork explicitly instructed not to push/open PR/move task and to leave worktree clean with a commit.
