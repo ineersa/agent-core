@@ -143,3 +143,18 @@ BRANCH DECISION: Extend the current branch/worktree (commit 7ea229a40 is the fou
 ## Task workflow update - 2026-06-17T22:03:53.472Z
 - MIGRATION REQUIREMENT (user-confirmed, parallel-safety): cache_items table must ship as a real Doctrine migration, NOT rely on lazy auto-create. Lazy CREATE TABLE races under parallel consumer boot. Approach: add cache.approvals + cache.app pools (doctrine_dbal) -> run `bin/console doctrine:migrations:diff` (DoctrineDbalCacheAdapterSchemaListener auto-includes cache_items) -> commit generated migration. Canonical schema (vendor/symfony/cache/Adapter/PdoAdapter.php): table cache_items(item_id, item_data, item_lifetime, item_time) + index on item_time.
 - PARALLEL-SAFETY GUARANTEE (verified): AgentCommand.php:156 runs StartupDatabaseMigrator BEFORE runController() (which spawns consumers at HeadlessController.php:85-96). So cache_items is created before any consumer boots — no race. Migrations live in migrations/Version*.php.
+
+## Task workflow update - 2026-06-17T22:43:46.623Z
+- Validation: orchestrator-ran castor test:controller-replay -> OK 2 tests 25 assertions; orchestrator-ran castor test (full) -> OK 2670 tests 7892 assertions; orchestrator-ran castor deptrac -> 0 violations; orchestrator-ran castor phpstan -> 0 errors; orchestrator-ran castor cs-check -> clean; orchestrator-ran castor test --filter=SafeGuard -> 142/142
+- Summary: ORCHESTRATOR-VERIFIED COMPLETE. Branch task/safe-05-safeguard-approval-ignored, HEAD 7317a99f6 (on top of ce336092f the cross-process cache fix). 
+
+The fix resolves the REAL root cause: SafeGuard approval state crosses two process boundaries in the default 'process' transport (tool consumer registers; run_control consumer commits; tool consumer retries), so in-memory singletons can't bridge it. Backed both ExtensionHookRegistry pending approvals and the approved decision with a shared DBAL cache pool (cache.approvals, 1-day TTL) over the existing .hatfield SQLite. cache.app (application cache) also repointed to DBAL per user request; cache.default/cache.system stay filesystem. cache_items table shipped as a real Doctrine migration (Version20260617141001) registered in KNOWN_MIGRATIONS to avoid the parallel CREATE TABLE race — runs via StartupDatabaseMigrator before consumers spawn. Hook identity crosses by id (class name) looked up from a local hooksById map. 2 stale in-process docblocks corrected in 7317a99f6.
+
+ORCHESTRATOR INDEPENDENTLY RAN ALL VALIDATION (not trusting handoff):
+- Controller-replay E2E (the acceptance gate, multi-process default transport): OK 2 tests, 25 assertions
+- Full suite: OK 2670 tests, 7892 assertions (no regression from global cache.app->DBAL)
+- deptrac: 0 violations; phpstan: 0 errors; cs-check: clean
+- SafeGuard filter: 142/142
+- Verified migration registration, cache wiring, cross-process logic, and that the comment-corrective commit (ce336092f..7317a99f6) is pure docblock (zero executable lines).
+
+Two prior passes needed correction: (1) original commit 7ea229a40 ignored cross-process entirely; (2) second fork left work uncommitted with a failing E2E. Third pass + comment corrective fork landed it cleanly.
