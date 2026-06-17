@@ -263,9 +263,9 @@ class SymfonyAiProviderFactory
             $path = \sprintf('%s/var/tmp/llm-raw-stream-capture-%s-%s.jsonl', $cwd, $ts, bin2hex(random_bytes(4)));
         }
 
-        // Open file once — closure captures the handle.
+        // Harden permissions: dir 0700, file 0600 for sensitive debug artifacts.
         $dir = \dirname($path);
-        if (!is_dir($dir) && !@mkdir($dir, 0o755, true) && !is_dir($dir)) {
+        if (!is_dir($dir) && !@mkdir($dir, 0o700, true) && !is_dir($dir)) {
             throw new \RuntimeException(\sprintf('Cannot create capture directory "%s".', $dir));
         }
 
@@ -273,26 +273,25 @@ class SymfonyAiProviderFactory
         if (false === $handle) {
             throw new \RuntimeException(\sprintf('Cannot open capture file "%s" for writing.', $path));
         }
+        @chmod($path, 0o600);
 
         $writeLine = static function (array $record) use ($handle): void {
             $line = json_encode($record, \JSON_UNESCAPED_SLASHES | \JSON_INVALID_UTF8_SUBSTITUTE);
             if (false !== $line) {
                 @fwrite($handle, $line."\n");
+                @fflush($handle);
             }
         };
 
-        // Initial capture_start record
-        $writeLine([
-            'event' => 'capture_start',
-            'provider_id' => $providerId,
-            'timestamp' => (new \DateTimeImmutable())->format('Y-m-d\TH:i:s.uP'),
-        ]);
+        // No capture_start written here — the converter emits capture_start
+        // as the first event, enriched with provider_id by the closure below.
 
-        return static function (string $event, int $ordinal, array $context) use ($writeLine): void {
+        return static function (string $event, int $ordinal, array $context) use ($writeLine, $providerId): void {
             $record = [
                 'event' => $event,
                 'ordinal' => $ordinal,
                 'timestamp' => (new \DateTimeImmutable())->format('Y-m-d\TH:i:s.uP'),
+                'provider_id' => $providerId,
             ] + $context;
 
             $writeLine($record);

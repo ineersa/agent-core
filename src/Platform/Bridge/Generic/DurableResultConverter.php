@@ -109,6 +109,7 @@ final class DurableResultConverter extends ResultConverter
         $sawFinishReason = false;
         $finishReason = null;
         $chunkOrdinal = 0;
+        $alreadyEmittedEnd = false;
 
         $this->emit('capture_start', -1, []);
 
@@ -118,7 +119,6 @@ final class DurableResultConverter extends ResultConverter
 
                 if (isset($data['error'])) {
                     $message = \is_array($data['error']) ? ($data['error']['message'] ?? 'Unknown error') : (string) $data['error'];
-                    $this->emit('capture_end', -1, ['stop_reason' => 'error']);
                     throw new RuntimeException(\sprintf('Stream error: "%s".', $message));
                 }
 
@@ -130,7 +130,14 @@ final class DurableResultConverter extends ResultConverter
                 }
 
                 if (isset($data['usage'])) {
-                    yield $this->convertStreamUsage($data['usage']);
+                    $usage = $this->convertStreamUsage($data['usage']);
+                    $this->emit('converted_delta', $chunkOrdinal, [
+                        'type' => 'TokenUsage',
+                        'input_tokens' => $usage->getPromptTokens(),
+                        'output_tokens' => $usage->getCompletionTokens(),
+                        'total_tokens' => $usage->getTotalTokens(),
+                    ]);
+                    yield $usage;
                 }
 
                 // Durable tool-call processing
@@ -180,14 +187,18 @@ final class DurableResultConverter extends ResultConverter
                 yield $delta;
             }
 
+            if ($sawChunk && !$sawFinishReason) {
+                $this->emit('capture_end', -1, ['stop_reason' => 'incomplete']);
+                $alreadyEmittedEnd = true;
+                throw new IncompleteStreamException('Completions stream ended before a finish reason was received.');
+            }
+
             $this->emit('capture_end', -1, ['stop_reason' => $finishReason]);
         } catch (\Throwable $e) {
-            $this->emit('capture_end', -1, ['stop_reason' => 'error']);
+            if (!$alreadyEmittedEnd) {
+                $this->emit('capture_end', -1, ['stop_reason' => 'error']);
+            }
             throw $e;
-        }
-
-        if ($sawChunk && !$sawFinishReason) {
-            throw new IncompleteStreamException('Completions stream ended before a finish reason was received.');
         }
     }
 
