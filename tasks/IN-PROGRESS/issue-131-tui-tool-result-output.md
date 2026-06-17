@@ -67,7 +67,7 @@ LOW. Root cause is a missing payload field; all downstream consumers already han
 Status: IN-PROGRESS
 Branch: task/issue-131-tui-tool-result-output
 Worktree: /home/ineersa/projects/agent-core-worktrees/issue-131-tui-tool-result-output
-Fork run:
+Fork run: 423243cad
 PR URL:
 PR Status:
 Started: 2026-06-17T20:38:34.453Z
@@ -82,3 +82,16 @@ Completed:
 - Created worktree /home/ineersa/projects/agent-core-worktrees/issue-131-tui-tool-result-output.
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/issue-131-tui-tool-result-output.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/issue-131-tui-tool-result-output.
+
+## Task workflow update - 2026-06-17T21:33:08.872Z
+- Recorded fork run: 423243cad
+- Validation: Reviewer subagent APPROVED (testing skill + tests/AGENTS.md + AGENTS.md read). All Castor QA run by reviewer: ToolCallResultHandlerTest 6/29 (pre-followup), RuntimeEventMapperTest 42/139, TranscriptProjectorTest 87/333, TuiToolOutputE2eTest 1/4, deptrac 0, phpstan 0, cs-check 0, full castor test 2671/7876.; Follow-up fork 423243cad validation (tests-only): castor test --filter=ToolCallResultHandlerTest 9/38 OK, phpstan 0, cs-check 0, castor test full 2674/7885 OK.; Orchestrator independent focused validation @ 423243cad: castor deptrac 0 violations (allowed=1137); castor phpstan 0 errors; castor cs-check 0 files fixed; castor test --filter=ToolCallResultHandlerTest 9/38 OK; castor test full suite 2674 tests/7885 assertions OK (12.4s); castor test:tui 8 tests/83 assertions OK (38.4s) incl. TuiToolOutputE2eTest. Stale-worker check: PID 3415 confirmed root-owned (uid 0, Docker messenger, off-limits) — NOT killed; no ineersa-owned workers present.
+- Summary: task-to-pr: reviewer APPROVED (clean, no blockers); addressed 2 NTH findings via follow-up fork.
+
+REVIEWER VERDICT: APPROVED. Read testing skill + tests/AGENTS.md + AGENTS.md. Confirmed: extractResultText is defensively written (is_array/is_string guards at every access, returns '' on malformed input, cannot throw); result wired only to ToolExecutionEnd spec (not ToolCallResultReceived); end-to-end flow correct (translator passes string through, projector consumes, renderer shows block text); no backward-compat shim, no empty catches, Castor-only. TUI E2E proof VALID — TuiToolOutputE2eTest is a real TmuxHarness E2E (#[Group('tui-e2e-replay')], isolated dir, replay fixture tui-tool-call-read.json drives a real `read` tool call, asserts actual file content sentinel TOOL_OUTPUT_SENTINEL_131_READ appears in TUI and "read completed" fallback absent). Not a mock/picker-footer substitute.
+
+FOLLOW-UP FORK 423243cad (tests-only, production UNTOUCHED): addressed 2 NTH findings from review — (1) testExtractResultTextMalformedContent comment overstated coverage (claimed "content missing/non-array/null" but only tested null); (2) non-array content / non-array part / missing-content-key guards of extractResultText had no test coverage. Added 3 focused tests (testExtractResultTextNonArrayContentReturnsEmpty, testExtractResultTextNonArrayPartReturnsEmpty, testExtractResultTextMissingContentKeyReturnsEmpty) + fixed the comment. ToolCallResultHandlerTest now 9 tests/38 assertions, all extractResultText branches covered.
+
+Commits on task/issue-131-tui-tool-result-output: f1b87a505 (impl, production + tests + TUI E2E) + 423243cad (follow-up test coverage). 5 files, +866 lines. Worktree clean, NOT pushed.
+
+This is a tool-execution/runtime-visible change, not a provider/LLM-visible change — castor test:llm-real not required.
