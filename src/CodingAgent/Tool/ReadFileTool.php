@@ -300,7 +300,7 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
      */
     private function readSample(string $resolvedPath): string
     {
-        $fh = @fopen($resolvedPath, 'r');
+        $fh = @fopen($resolvedPath, 'rb');
         if (false === $fh) {
             $lastError = error_get_last();
             $diagnostic = $lastError['message'] ?? 'Failed to open file for inspection';

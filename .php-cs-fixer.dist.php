@@ -8,6 +8,7 @@ return (new PhpCsFixer\Config())
     ->setRules([
         '@Symfony' => true,
         '@Symfony:risky' => true,
+        'fopen_flags' => ['b_mode' => true],
         'protected_to_private' => false,
         'declare_strict_types' => true,
         'php_unit_test_case_static_method_calls' => ['call_type' => 'this'],

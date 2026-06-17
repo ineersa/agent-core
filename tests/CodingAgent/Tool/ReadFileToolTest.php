@@ -539,6 +539,19 @@ final class ReadFileToolTest extends TestCase
         );
     }
 
+    public function testReadWithUtf8BomIsAccepted(): void
+    {
+        // UTF-8 BOM (\xEF\xBB\xBF) is valid UTF-8 for U+FEFF ZERO WIDTH NO-BREAK SPACE.
+        // The read tool must accept it as a valid UTF-8 text file.
+        $targetPath = $this->tmpDir.'/utf8_bom.txt';
+        $content = "\xEF\xBB\xBFHello, UTF-8 BOM world!\n";
+        file_put_contents($targetPath, $content);
+
+        $result = ($this->readFileTool)(['path' => $targetPath]);
+
+        $this->assertStringContainsString('Hello, UTF-8 BOM world!', $result);
+    }
+
     /* ── helpers ── */
 
     private function createToken(bool $cancelled): CancellationTokenInterface
