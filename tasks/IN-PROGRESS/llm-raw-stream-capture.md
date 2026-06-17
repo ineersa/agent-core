@@ -25,7 +25,7 @@ Important constraints:
 Status: IN-PROGRESS
 Branch: task/llm-raw-stream-capture
 Worktree: /home/ineersa/projects/agent-core-worktrees/llm-raw-stream-capture
-Fork run:
+Fork run: 7mapik7lmh2r
 PR URL:
 PR Status:
 Started: 2026-06-17T16:19:29.050Z
@@ -40,3 +40,7 @@ Completed:
 - Created worktree /home/ineersa/projects/agent-core-worktrees/llm-raw-stream-capture.
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/llm-raw-stream-capture.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/llm-raw-stream-capture.
+
+## Task workflow update - 2026-06-17T16:19:58.452Z
+- Recorded fork run: 7mapik7lmh2r
+- Started implementation fork 7mapik7lmh2r in /home/ineersa/projects/agent-core-worktrees/llm-raw-stream-capture with minimal env-only raw stream capture scope and run:agent-capture Castor command instructions.
