@@ -25,7 +25,7 @@ Important constraints:
 Status: IN-PROGRESS
 Branch: task/llm-raw-stream-capture
 Worktree: /home/ineersa/projects/agent-core-worktrees/llm-raw-stream-capture
-Fork run: 7mapik7lmh2r
+Fork run: k7hal44ctfdn
 PR URL:
 PR Status:
 Started: 2026-06-17T16:19:29.050Z
@@ -52,3 +52,8 @@ Completed:
 
 ## Task workflow update - 2026-06-17T16:44:22.029Z
 - Summary: Pre-PR reviewer subagent returned REQUEST CHANGES. Blockers: actual env-gated JSONL writer untested; duplicate capture_end on stream error; duplicate capture_start from factory and converter; file handle not flushed/closed; incomplete stream emits clean capture_end before throwing; usage TokenUsage not captured/should be documented; security concern about permissive file/dir permissions. Will send implementation fork to address blockers before creating PR.
+
+## Task workflow update - 2026-06-17T16:54:03.807Z
+- Recorded fork run: k7hal44ctfdn
+- Validation: fork: `castor test --filter=DurableResultConverterTest|SymfonyAiProviderFactoryTest` — 22 tests, 119 assertions, OK; fork: `castor test` — 2576 tests, 7611 assertions, OK; fork: `castor deptrac` — 0 violations, 0 errors; fork: `castor phpstan` — 0 errors, 0 file errors; fork: `castor cs-check` — clean; parent verification: `git status --short --branch && git log --oneline -5 && git diff --stat origin/main...HEAD` — clean worktree; latest commit aa01c867a; expected 7-file diff stat
+- Summary: Fix fork completed and committed aa01c867a (`fix: address pre-PR reviewer blockers for raw stream capture`). Addressed reviewer blockers: factory/writer JSONL tests, duplicate capture markers, incomplete/error artifact semantics, usage delta correlation, provider_id enrichment, flushing, and restrictive permissions. Parent verified worktree clean and latest diff stat: 7 files changed, 715 insertions, 47 deletions against origin/main.
