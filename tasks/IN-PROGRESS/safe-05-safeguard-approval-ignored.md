@@ -114,3 +114,28 @@ VERIFIED BY ORCHESTRATOR: commit exists, diff stat sane, new subscriber logic co
 - RESIDUAL GAP 1 (main deviation): no full controller-replay/subprocess E2E test. Fork substituted a pipeline integration test (SafeGuardApprovalEndToEndTest) exercising real RunCommit::commit()->HookDispatcher->subscriber with real stores. This proves the fix mechanism and the commit→approval-marking path but does NOT spawn a real controller subprocess with multi-turn replay fixtures. Original acceptance asked for a process/controller-transport E2E.
 - RESIDUAL GAP 2 (deeper, out of scope): multi-consumer-worker isolation. If RequireApproval is registered in worker A and the answer_human is committed by worker B, worker B's registry is empty. The run lock serializes per-run but does not pin a run to a single worker process. A shared persistent approval store (DB/fs) would be needed for that topology. The current fix resolves the documented default-transport 'always blocked' bug and the single-worker/in-process cases.
 - Cosmetic: stale comment at config/services.yaml:367 still names the deleted ExtensionApprovalAnswerSubscriber.
+
+## Task workflow update - 2026-06-17T22:02:06.136Z
+- Summary: DESIGN CORRECTION (2026-06-17): The committed approach (commit-time subscriber) is NECESSARY but INSUFFICIENT. A scout confirmed the default `process` transport runs 5+ separate processes (HeadlessController.php:85-96: controller + run_control consumer + llm consumer + N tool workers + scheduler_default). SafeGuard approval state must cross TWO process boundaries, both of which the in-memory arrays cannot cross:
+- registerPendingApproval()/markPending() run in the TOOL consumer (ToolCallRequested during ExecuteToolCall).
+- resolveApproval()/onApprovalAnswered() (the new SafeGuardApprovalCommitSubscriber) run in the RUN_CONTROL consumer (ApplyCommand commit) -> DIFFERENT process -> resolveApproval() returns null -> silently skipped -> STILL BROKEN in default transport.
+- consumeApproval() on retry runs in the tool consumer again (possibly a different worker) -> also can't see a run_control-marked approval.
+
+USER-APPROVED FIX (Option A, cache-backed ledger): Back ExtensionHookRegistry pending approvals AND ApprovalSessionTracker approved set with a shared DBAL-backed Symfony cache pool. Crosses both process boundaries via the shared .hatfield SQLite. No entity/repo/migration (DBAL adapter self-manages cache_items table).
+
+Cache design (locked with user):
+- New pool `cache.approvals` -> cache.adapter.doctrine_dbal, provider = existing %app.cwd%/.hatfield/messenger.sqlite connection, default_lifetime 86400 (1 day — generous for user-walked-away; approved entries are consume-deleted so they don't accumulate).
+- ALSO (user request, future infra): repoint `cache.app` (application cache) -> doctrine_dbal, same connection, default_lifetime 3600. KEEP `cache.default` + system/validator/serializer/framework caches on filesystem (do NOT repoint default). Scan confirmed NO src/ code currently injects CacheInterface/cache.app, so repointing app cache is safe now.
+- Keys: `pending.<run_id>.<question_id>` = {hookId, opKey, details}; `approved.<run_id>.<op_key>` = decision.
+- Hook identity crosses by ID, not object ref: pending entry stores hookId; resolve side looks up the live hook from a local id->hook map (SafeGuard is the only approval hook; hooks are boot-registered in every consumer process).
+- consumeApproval(opKey) on retry reads `approved.<run>.<opKey>` from the SHARED cache (cross-process), returns true, deletes the key (one-time semantics for Allow once).
+- "Always allow" unchanged: already durable via settings.yaml + classifier allowlist; does NOT touch the cache.
+- Replace the in-memory arrays entirely (no backward-compat layer / dual-read); cache is the single source of truth.
+
+MUST-VERIFY integration detail: the `cache_items` table must auto-create in the per-project SQLite (DoctrineBundle schema subscriber). The controller-replay E2E with a fresh var/tmp/test-{uuid} project will catch this if broken.
+
+BRANCH DECISION: Extend the current branch/worktree (commit 7ea229a40 is the foundation; SafeGuardApprovalCommitSubscriber is what writes to cache at commit time). Do NOT split — splitting would ship a known-incomplete fix.
+- Committed foundation on task/safe-05-safeguard-approval-ignored (7ea229a40): AfterTurnCommitEventSummary.payload + SafeGuardApprovalCommitSubscriber skeleton + in-process tests. All castor checks green but in-process only.
+- Scout confirmed the committed fix is STILL BROKEN in the default process transport: registration (tool consumer) and resolution (run_control consumer) are in different processes; both ExtensionHookRegistry and ApprovalSessionTracker are in-memory singletons that cannot cross the boundary.
+- User decision: fix with a shared DBAL-backed cache pool (`cache.approvals`, 1-day TTL). User additionally requested repointing `cache.app` (application cache, not cache.default) to DBAL for future use. Scan confirmed no src/ code consumes cache.app today.
+- Launching continuation fork in the worktree to: add cache pools config, back registry+tracker with cache.approvals (hook-by-id), wire consume-from-cache on retry, and add a controller-replay E2E as the real acceptance gate.
