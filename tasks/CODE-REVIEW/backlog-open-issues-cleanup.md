@@ -29,12 +29,12 @@ Connected open issues as of 2026-06-12:
 - Task remains IN-PROGRESS during one-by-one cleanup until user explicitly asks to move forward.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
 Fork run: lfzl5tjyl9c6
-PR URL: https://github.com/ineersa/agent-core/pull/150
-PR Status: merged
+PR URL: https://github.com/ineersa/agent-core/pull/155
+PR Status: open
 Started: 2026-06-12T16:54:23.580Z
 Completed:
 
@@ -636,3 +636,13 @@ Castor Check Output SHA256: 8402952e60f19af97d70af3c9bd816e632c7b0adb64c7eea53f5
 - Recorded fork run: lfzl5tjyl9c6
 - Validation: php -l src/Tui/Application/InteractiveMode.php — OK; castor test:tui --filter=TuiResumeSessionSwitchE2eTest — OK (3 tests, 38 assertions, 11.4s); castor test:tui — OK (6 tests, 73 assertions, 21.3s); castor test --filter=TranscriptProjectorTest — OK (87 tests, 333 assertions, 0.7s); castor test — OK (2566 tests, 7534 assertions, 14.0s); castor deptrac — OK (0 violations); castor phpstan — OK (0 errors); castor cs-check — OK; LLM_MODE=true castor check — OK (6/6, 49.5s)
 - Summary: Fork lfzl5tjyl9c6 completed the remaining #127 transition/teardown regression fix. Root cause: after the old TUI stops, Symfony TUI `Terminal::stop()` restores cooked mode but does not clear the screen or home the cursor; with picker-open forced clear removed and picker-select stale render skipped, the cursor remained at the old focused widget/editor/picker position near the bottom and there was no immediate blank feedback before the new session render. Fix in `src/Tui/Application/InteractiveMode.php`: after old TUI exits and a session switch is pending, write `\x1b[2J\x1b[3J\x1b[H` directly to STDOUT and flush, giving immediate clear/home transition feedback before the new TUI starts; on Ctrl+D/no switch exit, write `\r\n` and flush so shell prompt/cursor lands cleanly. This intentionally uses lifecycle-managed direct ANSI escapes after terminal stop, not widget-tree rendering or DECSET 2026. Existing picker-open no-flicker, picker-select no-old-state-freeze, and canonical replay fixes preserved. Issue #153 not touched.
+
+## Task workflow update - 2026-06-17T14:11:58.614Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Running deterministic castor check in worktree (timeout 900s)...
+- castor check passed (25.9s).
+- Pushed task/backlog-open-issues-cleanup to origin.
+- branch 'task/backlog-open-issues-cleanup' set up to track 'origin/task/backlog-open-issues-cleanup'.
+- Created PR: https://github.com/ineersa/agent-core/pull/155
+- Validation: User manual smoke test: final #127 flow works (`/resume` replay, slash command picker flicker, picker session selection transition/cursor behavior).; Fork lfzl5tjyl9c6 validation: php -l src/Tui/Application/InteractiveMode.php — OK; Fork lfzl5tjyl9c6 validation: castor test:tui --filter=TuiResumeSessionSwitchE2eTest — OK (3 tests, 38 assertions, 11.4s); Fork lfzl5tjyl9c6 validation: castor test:tui — OK (6 tests, 73 assertions, 21.3s); Fork lfzl5tjyl9c6 validation: castor test --filter=TranscriptProjectorTest — OK (87 tests, 333 assertions, 0.7s); Fork lfzl5tjyl9c6 validation: castor test — OK (2566 tests, 7534 assertions, 14.0s); Fork lfzl5tjyl9c6 validation: castor deptrac — OK (0 violations); Fork lfzl5tjyl9c6 validation: castor phpstan — OK (0 errors); Fork lfzl5tjyl9c6 validation: castor cs-check — OK; Fork lfzl5tjyl9c6 validation: LLM_MODE=true castor check — OK (6/6, 49.5s)
+- Summary: Issue #127 was manually validated by user after the final transition/teardown fix: `/resume` replay now works, `/resume` command picker flicker is fixed, session selection transition/cursor behavior now works, and user said it works. Branch was rebased onto `origin/main` and force-pushed at `27813accb` before CODE-REVIEW. Note: integration checkout has unrelated untracked `migrations/Version20260617140313.php` from another run; it was explicitly not touched.
