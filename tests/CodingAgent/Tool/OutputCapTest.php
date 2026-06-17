@@ -90,10 +90,11 @@ final class OutputCapTest extends TestCase
 
         // Should contain the storage dir path
         $this->assertStringContainsString($this->tmpDir, $result);
-        // Should contain head hint (generic shell command)
-        $this->assertStringContainsString('head -50', $result);
-        // Should contain grep mention (generic shell command, not tool invocation)
-        $this->assertStringContainsString('grep', $result);
+        // Should contain tool-first guidance — no shell commands like head -50
+        $this->assertStringContainsString('Do NOT rerun the same full command', $result);
+        $this->assertStringContainsString('Do NOT read the saved file in full', $result);
+        // Should mention read with offset/limit as the preferred follow-up
+        $this->assertStringContainsString('read path=', $result);
     }
 
     /* ───────── Persistence ───────── */

@@ -102,12 +102,6 @@ final class OutputCap
     }
 
     /**
-     * Delete stored files older than the configured retention period.
-     *
-     * Called automatically on first use, but exposed publicly so session
-     * hooks or scheduled tasks can trigger it explicitly.
-     */
-    /**
      * Resolve the applicable character cap for a given file path.
      *
      * Doc-like extensions (.md, .txt, .toon) return {@see docCap}.
@@ -132,6 +126,12 @@ final class OutputCap
         return $this->config;
     }
 
+    /**
+     * Delete stored files older than the configured retention period.
+     *
+     * Called automatically on first use, but exposed publicly so session
+     * hooks or scheduled tasks can trigger it explicitly.
+     */
     public function cleanup(): void
     {
         $dir = $this->config->storageDir;
@@ -230,6 +230,11 @@ final class OutputCap
 
     /**
      * Build a model-facing notice about capped output.
+     *
+     * Gives clear, tool-first instructions: do not rerun the full command,
+     * do not read the saved file wholesale. Prefer first-class tools
+     * (read with offset/limit, targeted search with available tools).
+     * Shell commands are mentioned only as a secondary fallback.
      */
     private function buildCappedNotice(string $fullText, int $cap, string $savedPath): string
     {
@@ -237,13 +242,11 @@ final class OutputCap
         $tokenEstimate = (int) ceil($charCount / 4);
 
         return \sprintf(
-            "[Output capped to %d characters, full output saved to %s]\n\nFull output: %d characters (~%d tokens).\nSaved to: %s\n\nTo view: **%s**\nTo view first lines: `head -50 %s`\nTo search saved output: use `grep` or similar search commands.\n",
+            "[Output capped to %d characters, full output saved to %s]\n\nFull output: %d characters (~%d tokens).\nSaved to: %s\n\nDo NOT rerun the same full command/tool call.\nDo NOT read the saved file in full.\n\nInstead, use targeted tool calls to continue:\n• Read more of a file: `read path=<path> offset=<next_line> limit=<lines>`\n• Search for relevant content: use available search tools or targeted shell commands\n• Request a summary of the output\n\nIf you must inspect the raw saved output, use `read` with a small offset and limit.\n",
             $cap,
             $savedPath,
             $charCount,
             $tokenEstimate,
-            $savedPath,
-            $savedPath,
             $savedPath,
         );
     }
