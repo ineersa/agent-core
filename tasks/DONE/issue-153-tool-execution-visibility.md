@@ -71,3 +71,8 @@ Completed: 2026-06-17T16:31:18.705Z
 - Already up to date.
 - Removed worktree /home/ineersa/projects/agent-core-worktrees/issue-153-tool-execution-visibility.
 - Pulled integration checkout: Already up to date..
+
+## Task workflow update - 2026-06-17T16:32:21.841Z
+- Updated PR Status: merged
+- Validation: Confirmed GitHub PR #156 state: MERGED; merge commit `16c8fd47f9dcfb8a332a4976379bfa28b3323880`.; Before post-merge validation: checked for stale integration controller/messenger/phpunit/castor processes — none found.; Post-merge validation: `LLM_MODE=true castor check` — OK (quality ok, 51.2s). Steps: deptrac OK; test OK (2570 tests, 7557 assertions); test:controller-replay OK (1 test, 14 assertions); test:tui OK (6 tests, 73 assertions); phpstan OK (errors=0, file_errors=0); cs-check OK.; Final integration state: `git status --short --branch` clean on `main...origin/main`; HEAD `bb5354b35 Move task issue-153-tool-execution-visibility to done`.
+- Summary: Post-merge task-done validation completed on integration checkout after PR #156 merge. `move_task(to=DONE)` merged `task/issue-153-tool-execution-visibility`, removed worktree `/home/ineersa/projects/agent-core-worktrees/issue-153-tool-execution-visibility`, pulled integration checkout, committed task metadata `bb5354b35`, and pushed it. Integration checkout is clean on `main...origin/main`.
