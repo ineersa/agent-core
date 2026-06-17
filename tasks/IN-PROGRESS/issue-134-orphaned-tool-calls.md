@@ -38,7 +38,7 @@ Testing notes:
 - Focused Castor validation passes: `castor test` for relevant filters, plus `castor deptrac`, `castor phpstan`, `castor cs-check`; run `castor check` before CODE-REVIEW. Run `castor test:llm-real` if live provider compatibility paths are changed.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/issue-134-orphaned-tool-calls
 Worktree: /home/ineersa/projects/agent-core-worktrees/issue-134-orphaned-tool-calls
 Fork run: b8uryk4sdhum
@@ -184,3 +184,7 @@ Refined agent-core design:
 - PR already exists: https://github.com/ineersa/agent-core/pull/163
 - Validation: Merge-conflict fork: `castor test --filter='ApplyCommandHandlerTest\|AdvanceRunHandlerTest\|LlmStepResultHandlerTest\|AgentMessageToolCallSequenceValidatorTest\|CommandMailboxPolicyTest\|ExecutionWorkerTest'` — OK (42 tests, 241 assertions).; Merge-conflict fork: `castor cs-check` — OK (0 files).; Merge-conflict fork: `castor deptrac` — OK (violations=0, errors=0).; Merge-conflict fork: `castor phpstan` — OK (errors=0, file_errors=0).; Merge-conflict fork: `castor test` — OK (2701 tests, 7995 assertions).; Parent post-merge: `castor test:llm-real` — OK (5 tests, 51 assertions).
 - Summary: Merge conflicts resolved and task branch refreshed against latest `origin/main`. Fork merge commit `c19acf824` resolved the only manual conflict in `src/AgentCore/Application/Pipeline/ApplyCommandHandler.php` by keeping the branch's `REJECT_ON_CANCEL_KINDS` constant; task-board state from main was accepted. Worktree is clean. Focused/full validation passed after merge; this transition runs deterministic `castor check`, pushes the refreshed branch, and updates PR #163.
+
+## Task workflow update - 2026-06-17T23:35:09.044Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Summary: Reopening PR #163 after user reproduced a remaining cancellation case: cancelling after an assistant tool_call has already been committed and a tool is running leaves the committed assistant tool_calls without matching tool messages. A later Continue correctly fails the new preflight validator with an unresolved tool-call sequence. Next fix: when cancellation finalizes while `pendingToolCalls` are present, synthesize provider-safe cancelled tool result messages for the committed assistant tool-call batch so future prompt history is valid.
