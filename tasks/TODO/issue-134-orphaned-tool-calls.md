@@ -52,3 +52,6 @@ Completed:
 
 ## Task workflow update - 2026-06-17T22:20:02.618Z
 - Summary: Linked GitHub issue #152 as likely same command-mailbox/safe-boundary root cause: steer/follow_up queued during active/cancelling/restarted runs can be drained at the wrong time or out of order, causing duplicate/incorrect queued user messages. Design direction confirmed with user: drain steering only on safe model/tool/terminal boundaries; abort/cancel persistence should not leave provider-invalid assistant tool_calls; malformed transcript should fail loudly before provider conversion, not be silently filtered.
+
+## Task workflow update - 2026-06-17T22:22:21.965Z
+- Summary: pi-mono cancellation comparison: scout found pi-mono preserves aborted assistant messages as-is, including partial/complete toolCall content, with stopReason='aborted'; providers strip only streaming scratch fields like index/partialJson; no synthetic tool results are produced; UI marks pending tool components as Operation aborted. That design treats abort as meaningful conversation context. For agent-core, user prefers not to silently filter in AgentMessageConverter; local abort/cancel path should either drop aborted assistant prompt messages or explicitly sanitize them with diagnostics so provider-invalid orphan tool_calls are never persisted invisibly.
