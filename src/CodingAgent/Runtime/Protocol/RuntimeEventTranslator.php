@@ -28,6 +28,11 @@ final class RuntimeEventTranslator
     private const string DEBUG_RAW_TYPE = 'debug.raw_type';
     private const string DEBUG_RAW_PAYLOAD = 'debug.raw_payload';
 
+    /**
+     * Prefix used by RunEvent::extension() factory for extension-originated events.
+     */
+    private const string EXT_PREFIX = 'ext_';
+
     /** @var array<string, \Closure(RunEvent): ?RuntimeEvent> */
     private readonly array $dispatchTable;
 
@@ -67,6 +72,7 @@ final class RuntimeEventTranslator
             // Drop (turn tree metadata — not user-visible)
             RunEventTypeEnum::TurnBranched->value => $this->drop(...),
             RunEventTypeEnum::LeafSet->value => $this->drop(...),
+            // ext_* extension events are resolved at translate() time
         ];
     }
 
@@ -87,6 +93,12 @@ final class RuntimeEventTranslator
 
         if (isset($this->dispatchTable[$type])) {
             return $this->dispatchTable[$type]($runEvent);
+        }
+
+        // Extension-originated events with ext_* prefix → system.notice.
+        // These replace the previous fallthrough to opaque status.updated.
+        if (str_starts_with($type, self::EXT_PREFIX)) {
+            return $this->onExtensionEvent($runEvent);
         }
 
         // Unknown event type → status.updated with debug metadata.
@@ -290,6 +302,26 @@ final class RuntimeEventTranslator
             $payload['duration_ms'] = $p['duration_ms'];
         }
 
+        // Detect output cap notice in the result text and add structured
+        // metadata so the projector can create a visible System block.
+        $result = $payload['result'] ?? '';
+        if ('' !== $result && str_contains($result, '[Output capped to')) {
+            $payload['output_capped'] = true;
+            $payload['output_cap_notice'] = true;
+
+            // Parse cap and char_count from the notice format:
+            // "[Output capped to %d characters]\n\nFull output: %d characters (~%d tokens).\nSaved for audit at: %s"
+            if (preg_match('/Output capped to (\d+) characters/', $result, $m)) {
+                $payload['output_cap_limit'] = (int) $m[1];
+            }
+            if (preg_match('/Full output: (\d+) characters/', $result, $m)) {
+                $payload['output_cap_char_count'] = (int) $m[1];
+            }
+            if (preg_match('/Saved for audit at: (\S+)/', $result, $m)) {
+                $payload['output_cap_saved_path'] = $m[1];
+            }
+        }
+
         return new RuntimeEvent(
             type: $isError
                 ? RuntimeEventTypeEnum::ToolExecutionFailed->value
@@ -413,6 +445,65 @@ final class RuntimeEventTranslator
     private function drop(RunEvent $runEvent): null
     {
         return null;
+    }
+
+    // ── Extension events ─────────────────────────────────────────────────
+
+    /**
+     * Translate extension-originated (ext_*) RunEvents to system.notice.
+     *
+     * Safely extracts message/title/severity from the payload without dumping
+     * raw prompts, tool output, or environment secrets into the notice text.
+     */
+    private function onExtensionEvent(RunEvent $runEvent): RuntimeEvent
+    {
+        $p = $runEvent->payload;
+
+        // Extract safe display fields from the extension payload.
+        $sourceType = $runEvent->type;
+        $message = (string) ($p['message'] ?? $p['title'] ?? '');
+        $title = (string) ($p['title'] ?? '');
+        $severity = (string) ($p['severity'] ?? 'info');
+
+        // Build a compact text representation.
+        $text = '';
+        if ('' !== $title) {
+            $text = $title;
+        }
+        if ('' !== $message) {
+            $text = '' !== $text ? $text.': '.$message : $message;
+        }
+        if ('' === $text) {
+            $text = \sprintf('Extension event: %s', $sourceType);
+        }
+
+        $payload = [
+            'source' => $sourceType,
+            'severity' => $severity,
+            'text' => $text,
+        ];
+
+        // Include compact, safe details if present (not full prompts/output).
+        if (isset($p['details']) && \is_array($p['details'])) {
+            // Only forward safe scalar/array keys; drop anything that looks
+            // like prompts, raw output, or environment data.
+            $safeDetails = [];
+            foreach ($p['details'] as $key => $value) {
+                if (\is_scalar($value) || (\is_array($value) && \count($value) <= 5)) {
+                    $safeDetails[$key] = $value;
+                }
+            }
+            if ([] !== $safeDetails) {
+                $payload['details'] = $safeDetails;
+            }
+        }
+
+        return new RuntimeEvent(
+            type: RuntimeEventTypeEnum::SystemNotice->value,
+            runId: $runEvent->runId,
+            seq: $runEvent->seq,
+            payload: $payload,
+        );
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────
