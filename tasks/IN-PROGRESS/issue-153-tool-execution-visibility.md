@@ -20,7 +20,7 @@ Test target: `tests/CodingAgent/Tool/RegistryBackedToolboxTest.php` for the exec
 Status: IN-PROGRESS
 Branch: task/issue-153-tool-execution-visibility
 Worktree: /home/ineersa/projects/agent-core-worktrees/issue-153-tool-execution-visibility
-Fork run:
+Fork run: 206ynkox7fl5
 PR URL:
 PR Status:
 Started: 2026-06-17T16:12:02.630Z
@@ -35,3 +35,7 @@ Completed:
 - Created worktree /home/ineersa/projects/agent-core-worktrees/issue-153-tool-execution-visibility.
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/issue-153-tool-execution-visibility.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/issue-153-tool-execution-visibility.
+
+## Task workflow update - 2026-06-17T16:12:29.185Z
+- Recorded fork run: 206ynkox7fl5
+- Summary: Implementation fork launched in worktree `/home/ineersa/projects/agent-core-worktrees/issue-153-tool-execution-visibility` to make tool execution visibility-aware and add regression coverage for issue #153. Fork instructed to read testing skill + tests/AGENTS.md, use Castor validation, commit changes, and hand off results.
