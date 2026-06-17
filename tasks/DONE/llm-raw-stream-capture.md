@@ -22,14 +22,14 @@ Important constraints:
 - Do not persist raw chunks into normal session `events.jsonl` unless explicitly opted in; normal sessions remain canonical/coarse by default.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/llm-raw-stream-capture
 Worktree: /home/ineersa/projects/agent-core-worktrees/llm-raw-stream-capture
 Fork run: k7hal44ctfdn
 PR URL: https://github.com/ineersa/agent-core/pull/157
-PR Status: open
+PR Status: merged
 Started: 2026-06-17T16:19:29.050Z
-Completed:
+Completed: 2026-06-17T18:26:21.132Z
 
 ## Work log
 - Created: 2026-06-17T14:08:36.110Z
@@ -68,3 +68,22 @@ Completed:
 - Pushed task/llm-raw-stream-capture to origin.
 - branch 'task/llm-raw-stream-capture' set up to track 'origin/task/llm-raw-stream-capture'.
 - Created PR: https://github.com/ineersa/agent-core/pull/157
+
+## Task workflow update - 2026-06-17T18:26:21.132Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/llm-raw-stream-capture into integration checkout.
+- Auto-merging src/Platform/Bridge/Generic/DurableResultConverter.php
+Auto-merging tests/Platform/Bridge/Generic/DurableResultConverterTest.php
+Merge made by the 'ort' strategy.
+ .castor/run.php                                    |  58 ++++++
+ docs/llm-replay.md                                 |  64 +++++++
+ docs/settings.md                                   |  19 ++
+ .../SymfonyAi/SymfonyAiProviderFactory.php         |  66 ++++++-
+ .../Bridge/Generic/DurableResultConverter.php      | 210 ++++++++++++++++-----
+ .../SymfonyAi/SymfonyAiProviderFactoryTest.php     | 171 +++++++++++++++++
+ .../Bridge/Generic/DurableResultConverterTest.php  | 174 ++++++++++++++++-
+ 7 files changed, 715 insertions(+), 47 deletions(-)
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/llm-raw-stream-capture.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Validation: PR #157 merged on GitHub; fork QA (capture): castor test 2576 tests OK, deptrac 0, phpstan 0, cs-check clean; castor check passed during CODE-REVIEW transition (28s); live capture: 209 valid JSONL lines, 3 turns, correct stop_reason + no duplicate markers; spawned upstream issues symfony/ai#2193 and symfony/ai#2194 from captured evidence
+- Summary: PR #157 merged. Raw stream capture for DurableResultConverter is implemented, reviewed, fixed per reviewer blockers, and validated (2576 tests / 0 deptrac / 0 phpstan / cs-clean). Live-tested via castor run:agent-capture producing a valid 209-line JSONL artifact across 3 real-provider turns (runpod/Qwen3.6-27B) with multi-tool parallel calls. Capture artifact directly fed two upstream Symfony AI bug reports: symfony/ai#2193 (parallel tool calls collapse) and symfony/ai#2194 (finish_reason not surfaced). Independently, main was bumped to symfony/ai-platform dev-main and the custom IncompleteStreamException was dropped in favor of upstream (e0dfae68c, now on origin/main).
