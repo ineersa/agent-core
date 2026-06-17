@@ -467,6 +467,43 @@ final class ReadFileToolTest extends TestCase
         $this->assertStringContainsString('└───┘', $result);
     }
 
+    public function testReadInvalidUtf8At8192BoundaryThrows(): void
+    {
+        // Create a file where 8191 ASCII bytes are followed by an invalid
+        // UTF-8 byte (\xFF), then a suffix. The old trimToCompleteUtf8Prefix
+        // would silently remove the trailing \xFF and accept the file.
+        // The fix must reject: the 8192-byte sample with trailing invalid
+        // bytes is genuinely non-UTF-8, not a boundary truncation.
+        $targetPath = $this->tmpDir.'/invalid_utf8_at_boundary.txt';
+        $prefix = str_repeat('a', 8191);
+        $invalidByte = "\xFF";
+        $suffix = "\nmore content\n";
+        file_put_contents($targetPath, $prefix.$invalidByte.$suffix);
+
+        $this->expectException(ToolCallException::class);
+        $this->expectExceptionMessage('non-UTF-8');
+
+        ($this->readFileTool)(['path' => $targetPath]);
+    }
+
+    public function testReadInvalidUtf8At8190BoundaryWithContinuationByteThrows(): void
+    {
+        // Create a file where 8190 ASCII bytes are followed by an invalid
+        // stray continuation byte (\xBA) and then an invalid byte (\xFF).
+        // The trailing \xFF is NOT a continuation byte, so the safe
+        // continuation-byte trim must stop before it and reject.
+        $targetPath = $this->tmpDir.'/invalid_utf8_at_8190_boundary.txt';
+        $prefix = str_repeat('a', 8190);
+        $invalidByte = "\xBA\xFF"; // stray continuation + invalid start byte
+        $suffix = "\nmore content\n";
+        file_put_contents($targetPath, $prefix.$invalidByte.$suffix);
+
+        $this->expectException(ToolCallException::class);
+        $this->expectExceptionMessage('non-UTF-8');
+
+        ($this->readFileTool)(['path' => $targetPath]);
+    }
+
     public function testReadImageByMimeThrows(): void
     {
         $targetPath = $this->tmpDir.'/fake.png';

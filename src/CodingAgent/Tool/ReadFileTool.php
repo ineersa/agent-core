@@ -268,27 +268,27 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             return; // Empty file is valid text content
         }
 
-        // Binary, UTF-8, and MIME type check from sample buffer
+        // Binary, UTF-8, and MIME type check from sample buffer.
+        // ReadSample returns up to 8195 bytes (8192 + 3 lookahead) in binary mode
+        // to handle multi-byte UTF-8 characters split at the read boundary.
         $sample = $this->readSample($resolvedPath);
-
-        // Trim any incomplete trailing UTF-8 sequence from the sample buffer
-        // so a valid file whose multi-byte character spans the 8192-byte read
-        // boundary is not falsely rejected as non-UTF-8 content.
-        $sample = $this->trimToCompleteUtf8Prefix($sample);
+        // Base sample (first 8192 bytes) for MIME and binary null-byte detection.
+        // These checks do not need lookahead bytes.
+        $sampleBase = substr($sample, 0, 8192);
 
         // Reject images and other non-text MIME types FIRST.
         // Checked early so images get a helpful "use view_image" hint instead of
         // a generic "binary" or "non-UTF-8" error, since image magic bytes often
         // contain null bytes and non-UTF-8 sequences.
-        $this->rejectNonTextMime($sample, $resolvedPath);
+        $this->rejectNonTextMime($sampleBase, $resolvedPath);
 
         // Reject binary files (containing null bytes)
-        if (str_contains($sample, "\0")) {
+        if (str_contains($sampleBase, "\0")) {
             throw new ToolCallException(\sprintf('Cannot read "%s": file appears to be binary (contains null bytes).', $resolvedPath), retryable: false, hint: 'Use the view_image tool for image files. Binary code files (.so, .dll, etc.) are not supported by the read tool.');
         }
 
         // Reject non-UTF-8 content
-        if (!mb_check_encoding($sample, 'UTF-8')) {
+        if (!$this->isSampleValidUtf8($sample)) {
             throw new ToolCallException(\sprintf('Cannot read "%s": file contains non-UTF-8 encoded content.', $resolvedPath), retryable: false, hint: 'Convert the file to UTF-8 encoding first, or use a binary-safe tool.');
         }
 
@@ -297,46 +297,67 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
     }
 
     /**
-     * If the string ends with an incomplete UTF-8 multi-byte sequence,
-     * truncate it to a complete UTF-8 prefix. This prevents false
-     * negatives when a sample buffer ends at a character boundary.
+     * Check whether the sample buffer contains valid UTF-8 content,
+     * using lookahead bytes and safe trimming to handle multi-byte
+     * characters split at the 8192-byte read boundary.
      *
-     * When the sample is genuinely invalid (non-truncation) the
-     * original string is returned unchanged so mb_check_encoding
-     * can reject it as intended.
-     *
-     * @return string The original or trimmed string, ending at a
-     *                complete UTF-8 character boundary
+     * The sample may contain up to 8195 bytes (8192 + 3 lookahead).
+     * Strategy:
+     * 1. Fast path: the full buffer is valid UTF-8.
+     * 2. If the full buffer is invalid but larger than 8192, try
+     *    progressively longer prefixes using lookahead bytes.
+     * 3. If the buffer is <= 8192 bytes and invalid, try removing
+     *    trailing continuation bytes (0x80-0xBF) only. These are the
+     *    bytes that appear at the tail when a multi-byte character
+     *    is split at the read boundary. Genuinely invalid bytes
+     *    (leading bytes, out-of-range bytes) are never removed.
      */
-    private function trimToCompleteUtf8Prefix(string $text): string
+    private function isSampleValidUtf8(string $sample): bool
     {
-        if ('' === $text) {
-            return $text;
+        if ('' === $sample) {
+            return true;
         }
 
-        // Fast-path: if already valid, skip the trimming loop
-        if (mb_check_encoding($text, 'UTF-8')) {
-            return $text;
+        // Fast path: already valid
+        if (mb_check_encoding($sample, 'UTF-8')) {
+            return true;
         }
 
-        // A truncated UTF-8 character contributes at most 3 trailing bytes.
-        // Try removing 1-3 bytes and re-checking. If none produce a valid
-        // prefix, the invalid bytes are not from truncation and the original
-        // will correctly fail the UTF-8 check.
-        $trimmed = $text;
-        for ($i = 0; $i < 3; ++$i) {
+        // Try progressively longer prefixes using lookahead bytes.
+        // This handles multi-byte characters split at the 8192-byte boundary
+        // when the file has additional content beyond the base sample.
+        $totalLen = \strlen($sample);
+        for ($len = 8193; $len <= $totalLen; ++$len) {
+            if (mb_check_encoding(substr($sample, 0, $len), 'UTF-8')) {
+                return true;
+            }
+        }
+
+        // If we had lookahead bytes and none worked, the content is genuinely invalid.
+        if ($totalLen > 8192) {
+            return false;
+        }
+
+        // No lookahead bytes available (file <= 8192 bytes or exactly 8192).
+        // Try removing trailing continuation bytes (0x80-0xBF) only.
+        // These are the only bytes that can appear at the tail when a
+        // multi-byte character is split at the boundary — removing them is safe because
+        // genuinely invalid bytes (leading bytes, overlong sequences,
+        // out-of-range values) are never continuation bytes.
+        $trimmed = $sample;
+        while ('' !== $trimmed) {
+            $ord = \ord(substr($trimmed, -1));
+            // Continuation bytes: 0x80-0xBF (binary 10xxxxxx)
+            if ($ord < 0x80 || $ord > 0xBF) {
+                break;
+            }
             $trimmed = substr($trimmed, 0, -1);
-            if ('' === $trimmed) {
-                // Never reduce to empty — retain original for proper rejection
-                return $text;
-            }
-            if (mb_check_encoding($trimmed, 'UTF-8')) {
-                return $trimmed;
+            if ('' !== $trimmed && mb_check_encoding($trimmed, 'UTF-8')) {
+                return true;
             }
         }
 
-        // Genuinely invalid non-UTF-8 content; return original so caller rejects it
-        return $text;
+        return false;
     }
 
     /**
@@ -361,6 +382,14 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             $diagnostic = $lastError['message'] ?? 'Failed to read sample from file';
             @fclose($fh);
             throw new ToolCallException(\sprintf('Unable to inspect file "%s": %s', $resolvedPath, $diagnostic), retryable: true, hint: 'Check disk health and file integrity.');
+        }
+
+        // Read up to 3 additional bytes for lookahead when validating UTF-8.
+        // Multi-byte characters can be up to 4 bytes long, so 3 extra bytes
+        // are enough to complete any character that was split at byte 8192.
+        $lookahead = @fread($fh, 3);
+        if (false !== $lookahead && '' !== $lookahead) {
+            $sample .= $lookahead;
         }
 
         @fclose($fh);
