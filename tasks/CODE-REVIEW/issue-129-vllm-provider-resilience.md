@@ -44,7 +44,7 @@ Suggested implementation direction:
 - Before implementation/validation, forks must read `.agents/skills/testing/SKILL.md` and `tests/AGENTS.md`; validate via Castor (`castor test`, `castor deptrac`, `castor phpstan`, `castor cs-check`, and `castor check` before PR; `castor test:llm-real` if live provider compatibility is affected).
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/issue-129-vllm-provider-resilience
 Worktree: /home/ineersa/projects/agent-core-worktrees/issue-129-vllm-provider-resilience
 Fork run: 04c309926
@@ -159,3 +159,11 @@ Fork moved the LLM HTTP retry config source from HATFIELD_LLM_HTTP_* env vars to
 This is a pure config-sourcing refactor — runtime behavior unchanged (defaults identical when ai.http absent). PR #158's TUI E2E proof + llm-real coverage from the prior cycle still apply; retry client behavior untouched.
 
 Commit 04c309926 on task/issue-129-vllm-provider-resilience (now 3 commits over origin/main: d711ce375, 57bdf35af, 04c309926). 19 files, +2413/-27. Worktree clean, NOT pushed (orchestrator handles via CODE-REVIEW move).
+
+## Task workflow update - 2026-06-17T19:17:20.091Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Running deterministic castor check in worktree (timeout 480s)...
+- castor check passed (28.2s).
+- Pushed task/issue-129-vllm-provider-resilience to origin.
+- branch 'task/issue-129-vllm-provider-resilience' set up to track 'origin/task/issue-129-vllm-provider-resilience'.
+- PR already exists: https://github.com/ineersa/agent-core/pull/158
