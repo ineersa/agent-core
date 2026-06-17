@@ -56,6 +56,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         private ?CostCalculatorInterface $costCalculator,
         private LoggerInterface $logger,
         private ?ModelResolverInterface $modelResolver = null,
+        private readonly LlmProviderErrorClassifier $errorClassifier = new LlmProviderErrorClassifier(),
     ) {
     }
 
@@ -424,6 +425,9 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         foreach ($requestSummary as $key => $value) {
             $error['request_'.$key] = $value;
         }
+
+        // Classify the error with retryability, category, and sanitized user message.
+        $error = $this->errorClassifier->classify($error);
 
         return new PlatformInvocationResult(
             assistantMessage: $this->buildAssistantMessage($deltas),

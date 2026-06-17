@@ -8,8 +8,11 @@ use Ineersa\CodingAgent\Auth\CodexAuthStorage;
 use Ineersa\CodingAgent\Auth\CodexOAuthConfig;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http\LlmHttpRetryPolicy;
+use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http\LlmRetryingHttpClient;
 use Ineersa\Platform\Bridge\Generic\DurableResultConverter;
 use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Symfony\AI\Platform\Bridge\Generic\Completions\ModelClient as GenericCompletionsModelClient;
 use Symfony\AI\Platform\Bridge\Generic\CompletionsModel;
 use Symfony\AI\Platform\Bridge\Generic\Embeddings\ModelClient as GenericEmbeddingsModelClient;
@@ -84,24 +87,24 @@ class SymfonyAiProviderFactory
      *
      * When an HttpClient is explicitly injected (e.g. test environment
      * via services_test.yaml, or by a test replay factory), use it
-     * directly.  Otherwise create a default one with a permissive
-     * fallback timeout so a stuck generation endpoint cannot hang the
-     * agent indefinitely.
+     * directly.  Otherwise create a default one wrapped with
+     * {@see LlmRetryingHttpClient} for automatic retry/backoff.
      */
-    private function getHttpClient(): HttpClientInterface
+    private function getHttpClient(?string $providerId = null): HttpClientInterface
     {
         if (null !== $this->httpClient) {
             return $this->httpClient;
         }
 
-        // No explicit timeout configured — use a generous default
-        // (30s) that still prevents infinite hangs.  For the local
-        // llama_cpp_test/test smoke model this is still too long, but
-        // Castor-level preflight (check_llm_generation_ready) catches
-        // stuck generation in <5s before tests start.
-        $timeout = (int) ($_ENV['HATFIELD_LLM_HTTP_TIMEOUT'] ?? 30);
+        $policy = new LlmHttpRetryPolicy();
+        $baseClient = HttpClient::create($policy->httpClientOptions());
 
-        return HttpClient::create(['timeout' => $timeout]);
+        return new LlmRetryingHttpClient(
+            httpClient: $baseClient,
+            policy: $policy,
+            logger: $this->logger ?? new NullLogger(),
+            providerId: $providerId,
+        );
     }
 
     /**
