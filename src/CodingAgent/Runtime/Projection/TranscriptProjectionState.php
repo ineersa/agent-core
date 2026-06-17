@@ -228,13 +228,6 @@ final class TranscriptProjectionState
     }
 
     /**
-     * Remove ToolCall blocks whose tool_call_id has no matching ToolResult
-     * block, cleaning up orphaned/phantom entries that were never executed.
-     *
-     * Common in parallel LLM responses where multiple non-empty tool calls
-     * are emitted but only one is actually accepted for execution.
-     */
-    /**
      * Remove still-streaming ToolCall blocks that were never finalized
      * by ToolCallComplete.  Safe to call mid-turn — this only removes
      * blocks the LLM announced but never completed, not blocks that are
@@ -271,6 +264,13 @@ final class TranscriptProjectionState
         }
     }
 
+    /**
+     * Remove ToolCall blocks whose tool_call_id has no matching ToolResult
+     * block, cleaning up orphaned/phantom entries that were never executed.
+     *
+     * Common in parallel LLM responses where multiple non-empty tool calls
+     * are emitted but only one is actually accepted for execution.
+     */
     public function removeOrphanedToolCallBlocks(): void
     {
         $executedIds = [];
@@ -299,27 +299,6 @@ final class TranscriptProjectionState
     }
 
     /**
-     * Finalize all streaming blocks belonging to a given message.
-     */
-    /**
-     * Check whether any projected block references the given message ID.
-     *
-     * Used by AssistantStreamProjectionSubscriber to determine whether
-     * a non-streaming message_completed event (e.g. placeholder) needs
-     * a fresh block created.
-     */
-    public function hasAnyBlockForMessageId(string $messageId): bool
-    {
-        foreach ($this->blocks as $block) {
-            if (($block->meta['message_id'] ?? '') === $messageId) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
      * Check whether a block of a specific kind with the given message ID
      * exists.  Used to avoid creating duplicate canonical blocks on replay
      * when the live streaming path already produced the same block.
@@ -337,6 +316,9 @@ final class TranscriptProjectionState
         return false;
     }
 
+    /**
+     * Finalize all streaming blocks belonging to a given message.
+     */
     public function finalizeMessageBlocks(string $messageId): void
     {
         foreach ($this->blocks as $id => $block) {

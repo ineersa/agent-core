@@ -204,10 +204,9 @@ final readonly class AssistantStreamProjectionSubscriber implements EventSubscri
         // blocks yet, so we create the non-streaming text block from
         // the canonical llm_step_completed text.
         //
-        // We check specifically for AssistantMessage kind, not
-        // hasAnyBlockForMessageId, because thinking and tool-call
-        // blocks (reconstructed above) also carry the message_id
-        // and would cause a false positive.
+        // We check specifically for AssistantMessage kind because
+        // thinking and tool-call blocks (reconstructed above) also
+        // carry the message_id and would cause a false positive.
         $text = (string) ($p['text'] ?? '');
         if ('' !== $text
             && !$event->state->hasBlockOfKindForMessageId($messageId, TranscriptBlockKindEnum::AssistantMessage)
