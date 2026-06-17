@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: dh8kaoxu0bxj
+Fork run: j9ij6ht1wnye
 PR URL: https://github.com/ineersa/agent-core/pull/150
 PR Status: merged
 Started: 2026-06-12T16:54:23.580Z
@@ -615,3 +615,8 @@ Castor Check Output SHA256: 8402952e60f19af97d70af3c9bd816e632c7b0adb64c7eea53f5
 - Fork dh8kaoxu0bxj — investigation: traced /resume (no id) through ResumeSessionCommandHandler → SessionPickerController::open() → PickerOverlay::mount(). Found PickerOverlay::mount() calls $tui->requestRender(true) which resets ScreenWriter (previousLines=[], previousWidth=-1), forcing fullRender(clear=true) that writes ESC[2J ESC[3J ESC[H inside DECSET 2026 brackets — causes flicker in tmux. CompletionListener uses requestRender() without force and works smoothly.
 - Fix: PickerOverlay::mount() changed requestRender(true) → requestRender() for differential updates; PickerOverlay::close() added requestRender() for instant repaint on dismiss.
 - E2E: added testResumeSessionPickerRendersCleanly() to TuiResumeSessionSwitchE2eTest — seeds session, opens /resume picker, asserts visible pane (capturePlain) shows clean layout, picker header+entries, zero Running…, zero raw escapes, Esc closes cleanly.
+
+## Task workflow update - 2026-06-17T00:17:36.964Z
+- Recorded fork run: j9ij6ht1wnye
+- Validation: castor test:tui --filter=TuiResumeSessionSwitchE2eTest — OK (2 tests, 26 assertions, 7.9s); castor test:tui — OK (5 tests, 61 assertions, 18.0s); castor test --filter=TranscriptProjectorTest — OK (87 tests, 333 assertions); castor deptrac — OK (0 violations); castor phpstan — OK (0 errors); castor cs-check — OK; LLM_MODE=true castor check — OK (6/6 in 50.3s)
+- Summary: Fork j9ij6ht1wnye completed the `/resume` no-id picker flicker/scrollback regression fix. Root cause identified as `PickerOverlay::mount()` forcing `$tui->requestRender(true)`, which resets ScreenWriter and forces fullRender(clear=true) with `\x1b[2J\x1b[3J\x1b[H` inside DECSET 2026 synchronized-output brackets; in tmux this can visibly flicker and create scrollback artifacts. Fix changes picker mount to non-forced `$tui->requestRender()` for differential rendering and adds a render request on picker close to remove stale overlay immediately. Added/updated real TmuxHarness E2E `testResumeSessionPickerRendersCleanly()` for `/resume` with no id/session-list picker, using visible-pane `capturePlain()` assertions. Existing `/resume <id>` canonical replay proof remains intact. Issue #153 was not touched.
