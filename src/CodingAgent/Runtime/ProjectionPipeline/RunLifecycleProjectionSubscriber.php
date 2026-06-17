@@ -56,7 +56,7 @@ final readonly class RunLifecycleProjectionSubscriber implements EventSubscriber
 
         $text = implode(': ', $parts);
 
-        $state->cancelActiveStreamingBlocks($runId);
+        $state->removeActiveStreamingBlocks($runId);
 
         $state->addBlock(new TranscriptBlock(
             id: 'run_failed_'.$state->nextSeq(),

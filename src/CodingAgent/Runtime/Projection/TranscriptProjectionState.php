@@ -185,13 +185,23 @@ final class TranscriptProjectionState
     }
 
     /**
-     * Mark all streaming blocks for the given run as finalized (non-streaming).
+     * Remove all still-streaming blocks for the given run.
+     *
+     * Streaming blocks represent transient in-progress UI state
+     * (thinking deltas, partial tool-call placeholders, Running\u2026
+     * tool results) that must not become permanent history.  When a turn
+     * is cancelled, a run fails, or a run is cancelled, these blocks are
+     * discarded so they don't appear in the transcript on resume/replay.
+     *
+     * Completed (non-streaming) blocks from the same run are preserved.
+     * Cancellation blocks added after this call are themselves
+     * non-streaming so they survive.
      */
-    public function cancelActiveStreamingBlocks(string $runId): void
+    public function removeActiveStreamingBlocks(string $runId): void
     {
         foreach ($this->blocks as $id => $block) {
             if ($block->streaming && $block->runId === $runId) {
-                $this->blocks[$id] = $block->with(streaming: false);
+                $this->removeBlock($id);
             }
         }
     }
@@ -217,13 +227,6 @@ final class TranscriptProjectionState
         ));
     }
 
-    /**
-     * Remove ToolCall blocks whose tool_call_id has no matching ToolResult
-     * block, cleaning up orphaned/phantom entries that were never executed.
-     *
-     * Common in parallel LLM responses where multiple non-empty tool calls
-     * are emitted but only one is actually accepted for execution.
-     */
     /**
      * Remove still-streaming ToolCall blocks that were never finalized
      * by ToolCallComplete.  Safe to call mid-turn — this only removes
@@ -261,6 +264,13 @@ final class TranscriptProjectionState
         }
     }
 
+    /**
+     * Remove ToolCall blocks whose tool_call_id has no matching ToolResult
+     * block, cleaning up orphaned/phantom entries that were never executed.
+     *
+     * Common in parallel LLM responses where multiple non-empty tool calls
+     * are emitted but only one is actually accepted for execution.
+     */
     public function removeOrphanedToolCallBlocks(): void
     {
         $executedIds = [];
@@ -289,19 +299,16 @@ final class TranscriptProjectionState
     }
 
     /**
-     * Finalize all streaming blocks belonging to a given message.
+     * Check whether a block of a specific kind with the given message ID
+     * exists.  Used to avoid creating duplicate canonical blocks on replay
+     * when the live streaming path already produced the same block.
      */
-    /**
-     * Check whether any projected block references the given message ID.
-     *
-     * Used by AssistantStreamProjectionSubscriber to determine whether
-     * a non-streaming message_completed event (e.g. placeholder) needs
-     * a fresh block created.
-     */
-    public function hasAnyBlockForMessageId(string $messageId): bool
+    public function hasBlockOfKindForMessageId(string $messageId, TranscriptBlockKindEnum $kind): bool
     {
         foreach ($this->blocks as $block) {
-            if (($block->meta['message_id'] ?? '') === $messageId) {
+            if ($block->kind === $kind
+                && (($block->meta['message_id'] ?? '') === $messageId)
+            ) {
                 return true;
             }
         }
@@ -309,6 +316,9 @@ final class TranscriptProjectionState
         return false;
     }
 
+    /**
+     * Finalize all streaming blocks belonging to a given message.
+     */
     public function finalizeMessageBlocks(string $messageId): void
     {
         foreach ($this->blocks as $id => $block) {

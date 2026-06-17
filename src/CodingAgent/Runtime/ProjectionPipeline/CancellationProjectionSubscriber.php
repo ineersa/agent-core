@@ -68,7 +68,7 @@ final readonly class CancellationProjectionSubscriber implements EventSubscriber
         $state = $event->state;
         $reason = (string) ($p['reason'] ?? 'user_cancelled');
 
-        $state->cancelActiveStreamingBlocks($event->runId());
+        $state->removeActiveStreamingBlocks($event->runId());
         $state->addCancelledBlock($event->runId(), $reason, 'turn');
     }
 
@@ -78,7 +78,7 @@ final readonly class CancellationProjectionSubscriber implements EventSubscriber
         $state = $event->state;
         $reason = (string) ($p['reason'] ?? 'user_cancelled');
 
-        $state->cancelActiveStreamingBlocks($event->runId());
+        $state->removeActiveStreamingBlocks($event->runId());
         $state->addCancelledBlock($event->runId(), $reason, 'run');
     }
 }

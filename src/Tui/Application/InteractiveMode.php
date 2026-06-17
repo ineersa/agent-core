@@ -142,19 +142,6 @@ final readonly class InteractiveMode
         $needsTerminalClear = false;
 
         while (true) {
-            // ── Clear terminal when switching sessions ──
-            // Each loop iteration creates a fresh Tui whose ScreenWriter
-            // starts with empty previousLines.  On the first render
-            // ScreenWriter::writeInternal() calls fullRender() with
-            // $clear=false, appending output from the current cursor
-            // position instead of clearing the old TUI's rendered content.
-            // We must explicitly clear the screen before the new TUI
-            // paints so the old session's output does not remain visible.
-            if ($needsTerminalClear) {
-                fwrite(\STDOUT, "\x1b[2J\x1b[3J\x1b[H");
-                fflush(\STDOUT);
-            }
-
             // ── Initialize session state ──
             if ($isDraft) {
                 $state = $this->sessionInit->initializeDraft($targetRequest);
@@ -181,6 +168,18 @@ final readonly class InteractiveMode
 
             // Set initial transcript
             $screen->setTranscriptBlocks($state->transcript);
+
+            // ── Force a full-screen clear on session switches ──
+            //
+            // requestRender(true) resets ScreenWriter's previous-dirty
+            // tracking so the first render clears the screen atomically
+            // inside TUI synchronized output.  The old TUI has already
+            // restored the terminal to its initial state via stop() so
+            // no separate stty manipulation or out-of-band escape writes
+            // are needed.
+            if ($needsTerminalClear) {
+                $tui->requestRender(true);
+            }
 
             // ── Start or resume the run ──
             $this->startOrResumeRun($client, $state, $screen);
@@ -242,6 +241,44 @@ final readonly class InteractiveMode
 
             // ── After event loop exits: check for pending switch ──
             if (null !== $switchTarget) {
+                // ── Terminal transition feedback ──
+                //
+                // Write an immediate clear+home sequence to STDOUT before the
+                // new TUI starts.  This provides instant visual feedback (the
+                // screen blanks) and homes the cursor so it does not appear to
+                // jump to whatever position the old TUI left it at
+                // (typically the editor/picker area near the bottom).
+                //
+                // The old TUI's ScreenWriter performed its last render inside
+                // the just-exited event loop.  Terminal::stop() has restored
+                // cooked mode but does NOT reposition the cursor.  A direct
+                // ANSI escape sequence is the simplest correct approach:
+                //
+                //   \x1b[2J — clear visible screen
+                //   \x1b[3J — clear scrollback buffer
+                //   \x1b[H  — home cursor
+                //
+                // These sequences are processed by the terminal emulator
+                // regardless of terminal mode; they are NOT wrapped in
+                // DECSET 2026 synchronised-output markers because tmux does
+                // not universally support them and would render them as
+                // visible characters.
+                //
+                // The new TUI's first render (see $needsTerminalClear below)
+                // also performs fullRender(clear=true) via ScreenWriter, but
+                // that happens inside the new event loop and provides no
+                // perceptible gap between the clear and the content draw.
+                // The direct write here provides the gap the user perceived
+                // as "screen blanked for ~0.5s" before our changes.
+                //
+                // This does NOT affect picker-open rendering (triggered via
+                // PickerOverlay::mount()) — that code path never reaches this
+                // write because $switchTarget is consumed AFTER the picker
+                // callback runs.  The picker-open flicker fix (b50cb2540) is
+                // preserved unchanged.
+                fwrite(\STDOUT, "\x1b[2J\x1b[3J\x1b[H");
+                fflush(\STDOUT);
+
                 $needsTerminalClear = true;
                 // Record the session id we're leaving so the next
                 // iteration's lifecycle start event can reference
@@ -257,6 +294,17 @@ final readonly class InteractiveMode
                     $targetRequest = null;
                 }
             } else {
+                // ── Normal exit (Ctrl+D) — cursor cleanup ──
+                //
+                // Terminal::stop() leaves the cursor wherever the old TUI
+                // last positioned it (typically the editor area at the
+                // bottom).  Write a carriage-return + newline so the shell
+                // prompt appears at the beginning of the next line below
+                // the TUI content, rather than at the previous cursor
+                // position.  This eliminates the "cursor jumps to bottom"
+                // symptom the user reported.
+                fwrite(\STDOUT, "\r\n");
+                fflush(\STDOUT);
                 break; // Normal exit — no pending switch
             }
         }

@@ -279,6 +279,15 @@ final class ChatScreen
         $tui->add($this->aboveEditorWidget);
         $tui->add($this->editorSepWidget);
         $tui->add($this->promptEditor->getWidget());
+
+        // The PromptEditor wraps an EditorWidget that is a DI singleton
+        // reused across TUI iterations during session switches.  After
+        // the old TUI stopped, the widget's render cache still holds
+        // lines computed for the old TUI's dimensions and stylesheet.
+        // Invalidate it here so the first render in the new TUI
+        // re-computes the frame/border and editor content correctly.
+        $this->promptEditor->getWidget()->invalidate();
+
         $tui->add($this->belowEditorWidget);
         $tui->add($this->footerSepWidget);
         $tui->add($this->footerWidget);

@@ -199,6 +199,19 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
         $durationMs = isset($p['duration_ms']) ? (int) $p['duration_ms'] : null;
         $blockId = 'tool_result_'.$toolCallId;
 
+        // On replay the canonical tool_execution_end often has no result
+        // text, so the ToolResult block created by tool_execution_start
+        // would remain stuck at "Running…".  Resolve the tool name from
+        // the existing block's meta and use it as a fallback label so
+        // the user sees e.g. "read completed" instead of "Running…".
+        if ('' === $result) {
+            $existing = $state->getBlock($blockId);
+            if (null !== $existing && 'Running…' === $existing->text) {
+                $toolName = (string) ($existing->meta['tool_name'] ?? '');
+                $result = '' !== $toolName ? $toolName.' completed' : 'Completed';
+            }
+        }
+
         $meta = [
             'tool_call_id' => $toolCallId,
             'is_error' => false,

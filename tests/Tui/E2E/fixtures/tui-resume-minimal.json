@@ -1,0 +1,37 @@
+{
+    "$schema": "Minimal replay fixture for TUI resume-switch E2E — single-shot text response",
+    "model": "llama_cpp_test/test",
+    "provider_id": "llama_cpp_test",
+    "reasoning": "off",
+    "recorded_at": "2026-06-16T00:00:00+00:00",
+    "recording_source": "llama_cpp_test/test",
+    "input": {
+        "messages": [
+            {
+                "role": "user",
+                "content": "hi"
+            }
+        ]
+    },
+    "usage": {
+        "input_tokens": 5,
+        "output_tokens": 3,
+        "total_tokens": 8
+    },
+    "stop_reason": "stop",
+    "expected_text": null,
+    "deltas": [
+        {
+            "type": "thinking",
+            "content": "Hi"
+        },
+        {
+            "type": "text",
+            "content": "Hello from the test harness."
+        },
+        {
+            "type": "finished",
+            "content": "stop"
+        }
+    ]
+}
