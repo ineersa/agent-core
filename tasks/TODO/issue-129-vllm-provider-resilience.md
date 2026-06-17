@@ -55,3 +55,7 @@ Completed:
 
 ## Work log
 - Created: 2026-06-17T16:45:21.632Z
+
+## Task workflow update - 2026-06-17T16:53:35.607Z
+- Summary: Scope clarification from user before implementation: the main goal is proper LLM HTTP request handling — sane timeouts, max duration/limits, bounded retries/backoff, Retry-After/header/status/error-body handling, terminal billing/quota detection, sanitized error classification, and visible red TUI/runtime diagnostics so users know what is happening. `DurableResultConverter` missing `finish_reason` behavior is explicitly OUT OF SCOPE for this task; the user will handle finish_reason upstream in Symfony AI later. Do not spend implementation budget changing finish_reason semantics except if tests need to assert current successful reasoning round-trip remains intact.
+- Implementation scope override: focus on HTTP/provider request resilience and user-visible sanitized error feedback. Treat the initial task acceptance item about changing missing/late finish_reason behavior as deferred/out-of-scope for this task; keep any reasoning coverage limited to verifying current successful reasoning-content round-trip if practical.
