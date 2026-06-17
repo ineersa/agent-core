@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: j9ij6ht1wnye
+Fork run: w65rnz48dzm5
 PR URL: https://github.com/ineersa/agent-core/pull/150
 PR Status: merged
 Started: 2026-06-12T16:54:23.580Z
@@ -623,3 +623,8 @@ Castor Check Output SHA256: 8402952e60f19af97d70af3c9bd816e632c7b0adb64c7eea53f5
 
 ## Task workflow update - 2026-06-17T00:19:12.442Z
 - Summary: User manually retested after picker flicker fix b50cb2540: `/` command picker flicker is fixed, but selecting a session from the `/resume` picker now causes cursor/screen weirdness/freeze. Before the picker fix, selecting a session immediately blanked the old screen and rendered the resumed session; now the screen appears stuck/frozen during selection. This likely relates to picker close/render/focus lifecycle interacting with session switch: the recent `PickerOverlay::close()` render request and/or non-forced picker render may be scheduling an old-TUI differential repaint or leaving focus/cursor state wrong right as InteractiveMode tears down/rebuilds for the selected session. Need fix while preserving: no flicker when opening `/resume` list, and correct `/resume <id>` canonical replay.
+
+## Task workflow update - 2026-06-17T02:49:21.442Z
+- Recorded fork run: w65rnz48dzm5
+- Validation: castor test:tui --filter=TuiResumeSessionSwitchE2eTest — OK (3 tests, 38 assertions, 11.5s); castor test:tui — OK (6 tests, 73 assertions, 25.9s); castor test — OK (2566 tests, 7534 assertions, 13.6s); castor test --filter=TranscriptProjectorTest — OK (87 tests, 333 assertions, 0.7s); castor test:controller-replay — OK (1 test, 14 assertions, 7.5s); castor deptrac — OK (0 violations); castor phpstan — OK (0 errors); castor cs-check — OK
+- Summary: Fork w65rnz48dzm5 completed the `/resume` picker-selection freeze/cursor regression fix. Root cause: after b50cb2540, selecting a session called `applySelectEffect()` first, which triggers `TuiSessionSwitchService::requestResume()` -> reset local state/projector and `Tui::stop()`, then `closePicker()` called `PickerOverlay::close()` which removed the overlay and requested a render. That scheduled an old-TUI repaint after the state was torn down/stopping, causing frozen/funky cursor/screen. Fix: `PickerOverlay::close(bool $requestRender = true)` and `SessionPickerController::closePicker(bool $requestRender = true)` now support skipping render; selection path now removes overlay first with `closePicker(requestRender: false)` then applies the resume effect/stops TUI. Cancel/Esc path still requests render. Added TmuxHarness E2E `testSelectSessionFromPickerTransitionsCleanly()` proving picker selection transitions to resumed session cleanly. Existing picker-open no-flicker and canonical `/resume <id>` replay fixes preserved. Issue #153 not touched. Open observation from fork: Ctrl+D exit cursor weirdness may be separate/pre-existing and was not addressed.
