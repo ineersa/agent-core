@@ -398,6 +398,41 @@ final class ToolRegistryTest extends TestCase
         $this->assertSame(['G1', 'G2'], $this->registry->permanentGuidelines());
     }
 
+    public function testToolDefinitionReturnsNullForExcludedTool(): void
+    {
+        $this->registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'read: Read', promptGuidelines: ['G1']);
+        $this->registry->registerTool(name: 'bash', description: 'Bash', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'bash: Bash', promptGuidelines: ['G3']);
+
+        // Before exclusion, toolDefinition works
+        $this->assertNotNull($this->registry->toolDefinition('bash'));
+
+        $this->registry->setExcludedToolNames(['bash']);
+
+        // After exclusion, toolDefinition returns null for the excluded tool
+        $this->assertNull($this->registry->toolDefinition('bash'));
+
+        // Non-excluded tools still work
+        $this->assertNotNull($this->registry->toolDefinition('read'));
+    }
+
+    public function testToolDefinitionReturnsNullForAllowlistFilteredTool(): void
+    {
+        $this->registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'read: Read', promptGuidelines: ['G1']);
+        $this->registry->registerTool(name: 'bash', description: 'Bash', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'bash: Bash', promptGuidelines: ['G3']);
+
+        // Before allowlist, both are visible
+        $this->assertNotNull($this->registry->toolDefinition('bash'));
+        $this->assertNotNull($this->registry->toolDefinition('read'));
+
+        $this->registry->setAllowedToolNames(['read']);
+
+        // 'bash' is registered but not in allowlist — must return null
+        $this->assertNull($this->registry->toolDefinition('bash'));
+
+        // 'read' is in allowlist — still works
+        $this->assertNotNull($this->registry->toolDefinition('read'));
+    }
+
     public function testSetAllowedToolNamesWithUnknownToolThrows(): void
     {
         $this->registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'read: Read', promptGuidelines: ['G1']);

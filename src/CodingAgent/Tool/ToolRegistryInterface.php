@@ -186,8 +186,14 @@ interface ToolRegistryInterface
      * Searches permanent tools first, then dynamic tools. Returns the
      * canonical immutable ToolDefinitionDTO directly, not a copy.
      *
-     * @return ToolDefinitionDTO|null The definition, or null if no tool
-     *                                with the given name is registered
+     * The visibility filter (allowlist/denylist) is applied: returns
+     * null for registered but excluded or allowlist-filtered tools,
+     * not just for unknown names.  This prevents execution of
+     * non-visible tools through the registry.
+     *
+     * @return ToolDefinitionDTO|null The definition, or null if the tool
+     *                                is not registered or is excluded by
+     *                                the current visibility filter
      */
     public function toolDefinition(string $name): ?ToolDefinitionDTO;
 }
