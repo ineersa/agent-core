@@ -81,12 +81,12 @@ Alternative (if the summary-payload change is too invasive): dispatch the commit
 - castor test, castor deptrac, castor phpstan, castor cs-check all pass; AgentCore stays free of CodingAgent/TUI dependencies
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/safe-05-safeguard-approval-ignored
 Worktree: /home/ineersa/projects/agent-core-worktrees/safe-05-safeguard-approval-ignored
 Fork run:
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/162
+PR Status: open
 Started: 2026-06-17T20:44:06.133Z
 Completed:
 
@@ -158,3 +158,11 @@ ORCHESTRATOR INDEPENDENTLY RAN ALL VALIDATION (not trusting handoff):
 - Verified migration registration, cache wiring, cross-process logic, and that the comment-corrective commit (ce336092f..7317a99f6) is pure docblock (zero executable lines).
 
 Two prior passes needed correction: (1) original commit 7ea229a40 ignored cross-process entirely; (2) second fork left work uncommitted with a failing E2E. Third pass + comment corrective fork landed it cleanly.
+
+## Task workflow update - 2026-06-17T22:44:42.096Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Running deterministic castor check in worktree (timeout 480s)...
+- castor check passed (29.0s).
+- Pushed task/safe-05-safeguard-approval-ignored to origin.
+- branch 'task/safe-05-safeguard-approval-ignored' set up to track 'origin/task/safe-05-safeguard-approval-ignored'.
+- Created PR: https://github.com/ineersa/agent-core/pull/162
