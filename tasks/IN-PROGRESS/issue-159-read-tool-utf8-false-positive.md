@@ -51,3 +51,6 @@ Completed:
 ## Task workflow update - 2026-06-17T21:49:59.138Z
 - Recorded fork run: iq5q6zujj5es
 - Summary: Launched implementation fork in worktree `/home/ineersa/projects/agent-core-worktrees/issue-159-read-tool-utf8-false-positive`. Fork instructed to read testing skill + tests/AGENTS.md, fix `ReadFileTool` UTF-8 sample validation false positive while preserving binary/image/invalid-UTF-8 rejections, add regression tests, run focused Castor validation, and commit changes.
+
+## Task workflow update - 2026-06-17T21:56:41.264Z
+- Summary: Fork iq5q6zujj5es completed commit `2ea02eae2` and reported full validation passing, but parent verification found two issues before accepting handoff: (1) fork report claimed `readSample()` changed to `fopen(..., 'rb')`, but code still uses `'r'`; (2) the new trim-based UTF-8 fix can accept genuinely invalid UTF-8 if the invalid byte is in the last 1-3 bytes of the 8192-byte sample, because trimming can produce a valid prefix. Launching a narrow follow-up fork to revise the algorithm so it completes boundary-truncated sequences by reading/using a small lookahead instead of trimming invalid bytes away, and to add an invalid-boundary regression test.
