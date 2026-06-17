@@ -323,7 +323,8 @@ Per-session scoping:
 
 Storage:
   .hatfield/messenger.sqlite
-  auto_setup: true (creates messenger_messages table on first send/get)
+  auto_setup: true (fallback safety net; messenger_messages table is created
+  ahead-of-time by StartupDatabaseMigrator to prevent concurrency race)
   PDO SQLite auto-creates DB file if parent dir is writable
 
 Result routing (within consumer process):
@@ -614,7 +615,7 @@ pgrep -f messenger:consume
 ├── settings.yaml              Project-local settings (LLM config, themes)
 │
 ├── messenger.sqlite           Doctrine SQLite transport
-│   └── messenger_messages     Queue table (auto_setup: true)
+│   └── messenger_messages     Queue table (created by migration; auto_setup fallback)
 │       queue_name column filters by session:
 │         run_control_{runId}, llm_{runId}, tool_{runId}
 │
