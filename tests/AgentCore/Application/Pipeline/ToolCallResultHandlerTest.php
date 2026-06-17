@@ -324,8 +324,7 @@ final class ToolCallResultHandlerTest extends TestCase
             ->withActiveStepId('turn-1-malformed')
             ->build();
 
-        // Content key is missing, 'content' is not an array, and result is null —
-        // all cases the helper must degrade to '' without throwing.
+        // Null result: the helper must degrade to '' without throwing.
         $message = ToolCallResultBuilder::success('run-extract-malformed')
             ->withTurnNo(1)
             ->withStepId('turn-1-malformed')
@@ -341,7 +340,183 @@ final class ToolCallResultHandlerTest extends TestCase
         $this->assertSame('tool_execution_end', $result->events[1]->type);
         $this->assertArrayHasKey('result', $result->events[1]->payload);
         $this->assertSame('', $result->events[1]->payload['result'],
-            'Null or malformed result should produce empty string without throwing');
+            'Null result should produce empty string without throwing');
+    }
+
+    public function testExtractResultTextNonArrayContentReturnsEmpty(): void
+    {
+        $collector = new ToolBatchCollector();
+        $collector->registerExpectedBatch(
+            runId: 'run-extract-nonarr-content',
+            turnNo: 1,
+            stepId: 'turn-1-nonarr-content',
+            toolCalls: [
+                new ExecuteToolCall(
+                    runId: 'run-extract-nonarr-content',
+                    turnNo: 1,
+                    stepId: 'turn-1-nonarr-content',
+                    attempt: 1,
+                    idempotencyKey: 'exec-nonarr-content',
+                    toolCallId: 'tool-nonarr-content',
+                    toolName: 'read',
+                    args: [],
+                    orderIndex: 0,
+                    maxParallelism: 1,
+                ),
+            ],
+        );
+
+        $handler = new ToolCallResultHandler(
+            toolBatchCollector: $collector,
+            eventFactory: new EventFactory(),
+            toolCallExtractor: new ToolCallExtractor(),
+            messageNormalizer: new AgentMessageNormalizer(),
+        );
+
+        $state = RunStateBuilder::running('run-extract-nonarr-content')
+            ->withVersion(1)
+            ->withTurnNo(1)
+            ->withLastSeq(2)
+            ->withPendingToolCalls(['tool-nonarr-content' => false])
+            ->withActiveStepId('turn-1-nonarr-content')
+            ->build();
+
+        // Content key is present but its value is a string, not an array.
+        $message = ToolCallResultBuilder::success('run-extract-nonarr-content')
+            ->withTurnNo(1)
+            ->withStepId('turn-1-nonarr-content')
+            ->withIdempotencyKey('tool-result-nonarr-content')
+            ->withToolCallId('tool-nonarr-content')
+            ->withOrderIndex(0)
+            ->withResult([
+                'tool_name' => 'read',
+                'content' => 'not-an-array',
+            ])
+            ->build();
+
+        $result = $handler->handle($message, $state);
+
+        $this->assertSame('tool_execution_end', $result->events[1]->type);
+        $this->assertArrayHasKey('result', $result->events[1]->payload);
+        $this->assertSame('', $result->events[1]->payload['result'],
+            'Non-array content should produce empty string without throwing');
+    }
+
+    public function testExtractResultTextNonArrayPartReturnsEmpty(): void
+    {
+        $collector = new ToolBatchCollector();
+        $collector->registerExpectedBatch(
+            runId: 'run-extract-nonarr-part',
+            turnNo: 1,
+            stepId: 'turn-1-nonarr-part',
+            toolCalls: [
+                new ExecuteToolCall(
+                    runId: 'run-extract-nonarr-part',
+                    turnNo: 1,
+                    stepId: 'turn-1-nonarr-part',
+                    attempt: 1,
+                    idempotencyKey: 'exec-nonarr-part',
+                    toolCallId: 'tool-nonarr-part',
+                    toolName: 'read',
+                    args: [],
+                    orderIndex: 0,
+                    maxParallelism: 1,
+                ),
+            ],
+        );
+
+        $handler = new ToolCallResultHandler(
+            toolBatchCollector: $collector,
+            eventFactory: new EventFactory(),
+            toolCallExtractor: new ToolCallExtractor(),
+            messageNormalizer: new AgentMessageNormalizer(),
+        );
+
+        $state = RunStateBuilder::running('run-extract-nonarr-part')
+            ->withVersion(1)
+            ->withTurnNo(1)
+            ->withLastSeq(2)
+            ->withPendingToolCalls(['tool-nonarr-part' => false])
+            ->withActiveStepId('turn-1-nonarr-part')
+            ->build();
+
+        // Content is an array, but the element is not an array (no 'type' key).
+        $message = ToolCallResultBuilder::success('run-extract-nonarr-part')
+            ->withTurnNo(1)
+            ->withStepId('turn-1-nonarr-part')
+            ->withIdempotencyKey('tool-result-nonarr-part')
+            ->withToolCallId('tool-nonarr-part')
+            ->withOrderIndex(0)
+            ->withResult([
+                'tool_name' => 'read',
+                'content' => ['not-an-array-element'],
+            ])
+            ->build();
+
+        $result = $handler->handle($message, $state);
+
+        $this->assertSame('tool_execution_end', $result->events[1]->type);
+        $this->assertArrayHasKey('result', $result->events[1]->payload);
+        $this->assertSame('', $result->events[1]->payload['result'],
+            'Non-array content part should produce empty string without throwing');
+    }
+
+    public function testExtractResultTextMissingContentKeyReturnsEmpty(): void
+    {
+        $collector = new ToolBatchCollector();
+        $collector->registerExpectedBatch(
+            runId: 'run-extract-nokey',
+            turnNo: 1,
+            stepId: 'turn-1-nokey',
+            toolCalls: [
+                new ExecuteToolCall(
+                    runId: 'run-extract-nokey',
+                    turnNo: 1,
+                    stepId: 'turn-1-nokey',
+                    attempt: 1,
+                    idempotencyKey: 'exec-nokey',
+                    toolCallId: 'tool-nokey',
+                    toolName: 'read',
+                    args: [],
+                    orderIndex: 0,
+                    maxParallelism: 1,
+                ),
+            ],
+        );
+
+        $handler = new ToolCallResultHandler(
+            toolBatchCollector: $collector,
+            eventFactory: new EventFactory(),
+            toolCallExtractor: new ToolCallExtractor(),
+            messageNormalizer: new AgentMessageNormalizer(),
+        );
+
+        $state = RunStateBuilder::running('run-extract-nokey')
+            ->withVersion(1)
+            ->withTurnNo(1)
+            ->withLastSeq(2)
+            ->withPendingToolCalls(['tool-nokey' => false])
+            ->withActiveStepId('turn-1-nokey')
+            ->build();
+
+        // Content key is entirely missing from the result.
+        $message = ToolCallResultBuilder::success('run-extract-nokey')
+            ->withTurnNo(1)
+            ->withStepId('turn-1-nokey')
+            ->withIdempotencyKey('tool-result-nokey')
+            ->withToolCallId('tool-nokey')
+            ->withOrderIndex(0)
+            ->withResult([
+                'tool_name' => 'read',
+            ])
+            ->build();
+
+        $result = $handler->handle($message, $state);
+
+        $this->assertSame('tool_execution_end', $result->events[1]->type);
+        $this->assertArrayHasKey('result', $result->events[1]->payload);
+        $this->assertSame('', $result->events[1]->payload['result'],
+            'Missing content key should produce empty string without throwing');
     }
 
     public function testExtractResultTextErrorResult(): void
