@@ -58,3 +58,6 @@ Completed:
 ## Task workflow update - 2026-06-17T21:57:05.018Z
 - Recorded fork run: fd7nmzr5q9cy
 - Summary: Launched follow-up fork `fd7nmzr5q9cy` to correct the first fix: replace trim-away-invalid-suffix behavior with lookahead/completion validation, switch sampling to binary mode if applicable, add invalid-boundary regression test, rerun focused Castor validation, and commit.
+
+## Task workflow update - 2026-06-17T22:03:03.619Z
+- Summary: Follow-up fork `fd7nmzr5q9cy` completed commit `31238b612`, but parent verification found remaining blockers before accepting: (1) `readSample()` still uses `fopen($resolvedPath, 'r')` despite handoff claiming binary mode; (2) `isSampleValidUtf8()` can reject valid files when bytes 1-8192 are valid but the 3-byte lookahead starts a 4-byte character at byte 8193 because it never checks the 8192-byte prefix; (3) it can accept invalid files <=8192 bytes ending in stray continuation bytes by trimming them at EOF. Need a narrow correction: for samples <=8192 bytes validate the full sample only; for samples >8192 bytes accept if any prefix length 8192..totalLen is valid, never trim below 8192.
