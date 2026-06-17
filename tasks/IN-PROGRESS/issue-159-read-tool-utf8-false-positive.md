@@ -28,7 +28,7 @@ Implementation notes:
 Status: IN-PROGRESS
 Branch: task/issue-159-read-tool-utf8-false-positive
 Worktree: /home/ineersa/projects/agent-core-worktrees/issue-159-read-tool-utf8-false-positive
-Fork run: iq5q6zujj5es
+Fork run: fd7nmzr5q9cy
 PR URL:
 PR Status:
 Started: 2026-06-17T21:49:35.275Z
@@ -54,3 +54,7 @@ Completed:
 
 ## Task workflow update - 2026-06-17T21:56:41.264Z
 - Summary: Fork iq5q6zujj5es completed commit `2ea02eae2` and reported full validation passing, but parent verification found two issues before accepting handoff: (1) fork report claimed `readSample()` changed to `fopen(..., 'rb')`, but code still uses `'r'`; (2) the new trim-based UTF-8 fix can accept genuinely invalid UTF-8 if the invalid byte is in the last 1-3 bytes of the 8192-byte sample, because trimming can produce a valid prefix. Launching a narrow follow-up fork to revise the algorithm so it completes boundary-truncated sequences by reading/using a small lookahead instead of trimming invalid bytes away, and to add an invalid-boundary regression test.
+
+## Task workflow update - 2026-06-17T21:57:05.018Z
+- Recorded fork run: fd7nmzr5q9cy
+- Summary: Launched follow-up fork `fd7nmzr5q9cy` to correct the first fix: replace trim-away-invalid-suffix behavior with lookahead/completion validation, switch sampling to binary mode if applicable, add invalid-boundary regression test, rerun focused Castor validation, and commit.
