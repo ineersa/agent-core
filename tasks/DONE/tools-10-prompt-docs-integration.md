@@ -37,14 +37,14 @@ Out of scope:
 - Focused tests pass with Castor/PHPUnit.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/tools-10-prompt-docs-integration
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-10-prompt-docs-integration
 Fork run: 40trivh2au5d
 PR URL: https://github.com/ineersa/agent-core/pull/154
-PR Status: open
+PR Status: merged
 Started: 2026-06-16T22:05:47.991Z
-Completed:
+Completed: 2026-06-17T13:51:29.424Z
 
 ## Work log
 - Created: 2026-05-17T04:42:49.755Z
@@ -175,3 +175,25 @@ Completed:
 - PR already exists: https://github.com/ineersa/agent-core/pull/154
 - Validation: No reviewer rerun per explicit user instruction.; Fork validation: `castor test --filter DurableResultConverterTest` PASS 11 tests/57 assertions.; Fork validation: `castor phpstan` PASS 0 errors/file_errors.; Fork validation: `castor cs-check` PASS clean.; Fork validation: `<tool_usage>` absent from `config/SYSTEM.md`.; Parent verification: latest diff limited to new `IncompleteStreamException`, `DurableResultConverter`, and `DurableResultConverterTest`; integration checkout clean.; After first CODE-REVIEW attempt failed in `test:controller-replay`, parent checked for stale tools-10 controller/messenger/PHPUnit/Castor processes and found none.; Focused retry: `castor test:controller-replay` PASS 1 test/14 assertions in 7.6s.
 - Summary: Latest review iteration complete. Final branch HEAD: `6edd9dfa46a9115a82a4cc9daa89c1bb26b67b5a`. Addressed user feedback by replacing the generic truncated-stream `RuntimeException` with a project-owned semantic `IncompleteStreamException` extending Symfony AI platform `RuntimeException`, and updating the focused test to expect that specific type. No reviewer was relaunched. Previous CODE-REVIEW transition attempt failed only in deterministic `test:controller-replay` after collecting startup events but no tool event; no stale tools-10 workers were found, and focused rerun passed before retrying.
+
+## Task workflow update - 2026-06-17T13:51:29.424Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/tools-10-prompt-docs-integration into integration checkout.
+- Merge made by the 'ort' strategy.
+ .castor/e2e.php                                    | 30 ++++++++-
+ .castor/process.php                                | 72 ++++++++++++++++++++--
+ .hatfield/settings.yaml                            | 21 +++++++
+ src/CodingAgent/Tool/BashTool.php                  |  3 +-
+ src/CodingAgent/Tool/EditFileTool.php              |  5 +-
+ .../Bridge/Generic/DurableResultConverter.php      |  1 -
+ .../Bridge/Generic/IncompleteStreamException.php   | 16 +++++
+ .../SystemPrompt/SystemPromptBuilderTest.php       | 62 +++++++++++++++++++
+ tests/CodingAgent/Tool/BashToolTest.php            | 12 ++++
+ tests/CodingAgent/Tool/EditFileToolTest.php        |  8 +++
+ .../Bridge/Generic/DurableResultConverterTest.php  | 19 ++++++
+ 11 files changed, 236 insertions(+), 13 deletions(-)
+ create mode 100644 src/Platform/Bridge/Generic/IncompleteStreamException.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/tools-10-prompt-docs-integration.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Validation: Confirmed via `gh pr view 154 --json state,mergedAt,mergeCommit`: state MERGED, merge commit `262480c7bb9175a23fc854f1b38406ae9181bb4d`.; Integration checkout clean before DONE move: `git status --short --branch` showed `## main...origin/main`.
+- Summary: PR #154 was merged on GitHub at 2026-06-17T13:50:54Z with merge commit `262480c7bb9175a23fc854f1b38406ae9181bb4d`. Moving tracked task to DONE.
