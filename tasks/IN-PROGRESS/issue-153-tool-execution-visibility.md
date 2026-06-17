@@ -17,14 +17,21 @@ Test target: `tests/CodingAgent/Tool/RegistryBackedToolboxTest.php` for the exec
 - Run focused validation through Castor, at minimum `castor test --suite=coding-agent --filter=RegistryBackedToolboxTest` plus any targeted registry tests touched.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/issue-153-tool-execution-visibility
+Worktree: /home/ineersa/projects/agent-core-worktrees/issue-153-tool-execution-visibility
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-17T16:12:02.630Z
 Completed:
 
 ## Work log
 - Created: 2026-06-17T16:11:57.773Z
+
+## Task workflow update - 2026-06-17T16:12:02.630Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/issue-153-tool-execution-visibility.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/issue-153-tool-execution-visibility.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/issue-153-tool-execution-visibility.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/issue-153-tool-execution-visibility.
