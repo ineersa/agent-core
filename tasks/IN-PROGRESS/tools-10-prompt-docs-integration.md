@@ -37,7 +37,7 @@ Out of scope:
 - Focused tests pass with Castor/PHPUnit.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/tools-10-prompt-docs-integration
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-10-prompt-docs-integration
 Fork run: t7y0h63x87kn
@@ -152,3 +152,7 @@ Completed:
 - PR already exists: https://github.com/ineersa/agent-core/pull/154
 - Validation: No reviewer rerun per explicit user instruction.; Fork validation: `castor test --filter SystemPromptBuilderTest` PASS 19 tests/65 assertions.; Fork validation: `castor test --filter DurableResultConverterTest` PASS 11 tests/57 assertions.; Fork validation: `castor phpstan` PASS 0 errors/file_errors.; Fork validation: `castor cs-check` PASS clean.; Fork validation: full `castor test` PASS 2561 tests/7517 assertions.; Fork validation: `<tool_usage>` absent from `config/SYSTEM.md`.; Parent verification: review-iteration diff limited to `config/SYSTEM.md`, `src/Platform/Bridge/Generic/DurableResultConverter.php`, and `tests/CodingAgent/SystemPrompt/SystemPromptBuilderTest.php`; integration checkout clean.
 - Summary: Review-iteration for PR #154 comments complete. Final branch HEAD: `9ab620123e8cb41eb5a977f4ac861c40226ba7a3`. Addressed comments by reverting `config/SYSTEM.md` context-channel wording to `origin/main`, removing the test that asserted the reverted wording while preserving registry-metadata/no-`<tool_usage>` tests, and adding a concise rationale comment for the PHPStan-required `RuntimeException` in `DurableResultConverter`. Per user instruction, reviewer was not relaunched.
+
+## Task workflow update - 2026-06-17T00:23:03.395Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Summary: Starting another PR review-iteration based on user feedback about `DurableResultConverter`: the generic `RuntimeException` replacement is not acceptable. The correct fix is to create/use a specific project-owned `IncompleteStreamException` and keep the semantic exception at the truncated-stream guard. Do not relaunch reviewer.
