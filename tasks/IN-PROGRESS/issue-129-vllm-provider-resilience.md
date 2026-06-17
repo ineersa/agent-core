@@ -108,3 +108,21 @@ Next step: launch a follow-up implementation fork to address these blockers befo
 Worktree clean at `57bdf35af`; integration checkout `main` clean at `origin/main` (64a7eec98). Implementation phase complete. Non-blocking notes: (a) `response_error_message` (structured provider error text) is still persisted in the RunEvent error array → events.jsonl, but never displayed in TUI; (b) unused private `savePlainSnapshot` helper in the TUI test.
 
 Ready for task-to-pr phase (reviewer + focused validation + CODE-REVIEW) on user go-ahead.
+
+## Task workflow update - 2026-06-17T18:29:34.692Z
+- Validation: Reviewer subagent: APPROVED. Read testing skill + tests/AGENTS.md + task-workflow skill. Ran castor test --filter=LlmHttpRetryPolicyTest (24/76 OK), --filter=LlmRetryingHttpClientTest (12/27 OK), --filter=LlmProviderErrorClassifierTest (33/89 OK), test:tui --filter=TuiProviderErrorE2eTest (1/6 OK), deptrac (0 viol), phpstan (0 err), cs-check (0 fixed). Confirmed TUI E2E proof valid and privacy path closed.; Orchestrator stale-worker cleanup: killed 17 genuinely-stale workers from llm-raw-stream-capture worktree (supervising console agent controller was respawning messenger consumers). Root-owned system daemon PID 3415 (PPID 3319, root user) confirmed as harmless false-positive in stale-worker pattern — unkillable without root, present during all prior green validation, does not touch isolated test transports.; Orchestrator focused local validation (worktree task/issue-129-vllm-provider-resilience @ 57bdf35af): castor deptrac 0 violations; castor phpstan 0 errors; castor cs-check 0 files fixed; castor test 2643 tests/7761 assertions OK (11.1s); castor test:tui 7 tests/79 assertions OK (24.3s); castor test:llm-real 5 tests/51 assertions OK (21.9s). All lanes green.
+- Summary: task-to-pr phase complete. Reviewer subagent returned APPROVED (no CRITICAL/BUG/SEC blockers). Verified all hard gates: real TmuxHarness TUI E2E proof present and passing (TuiProviderErrorE2eTest — red ✕ block, sanitized text visible, sentinel body NOT leaked); privacy path closed (RuntimeEventTranslator passthrough list excludes response_error_message/raw body; extractResponseDiagnostics stores only safe metadata); retry logic correct (no mid-stream retries, Retry-After parsed + capped, terminal billing/quota not retried); provider-id wired on both generic + Codex paths.
+
+Reviewer confirmed the 2 new phpstan-baseline entries (method.childParameterType for LlmRetryingHttpClient::request()/withOptions()) are genuinely unavoidable — Symfony's HttpClientInterface declares bare `array $options` with no @param value type, so the narrowing docblock triggers contravariance; baseline is the correct standard approach.
+
+Reviewer findings were all non-blocking (reviewer verdict was APPROVE, not REQUEST CHANGES):
+- [EDGE CASE] total retry loop time can exceed maxDuration (per-request, not per-loop) — mitigated by maxDelay cap + env config; reviewer suggested a documenting comment.
+- [EDGE CASE] LlmPlatformAdapter::parseRetryAfterHeader() uses lowercase header access (relies on Symfony getHeaders(false) lowercasing) vs LlmHttpRetryPolicy's case-insensitive lookup — only affects diagnostics, not the actual retry path; boundary-driven (AgentCore can't depend on CodingAgent's policy).
+- [CONVENTION] 4 empty catch blocks in extractResponseDiagnostics() — VERIFIED PRE-EXISTING (present in origin/main), not introduced by this PR. The one NEW empty catch (parseRetryAfterHeader date parse, `// Not a valid date`) has a documenting comment.
+- [SIMPLIFY/NTH] near-duplicate Retry-After parsers across layer boundary; retry log could include url; consider controller-replay coverage. All optional.
+
+Decision: APPROVED verdict = no implementation fork needed. Proceeding to focused local validation + CODE-REVIEW.
+
+Commits on branch task/issue-129-vllm-provider-resilience (HEAD 57bdf35af):
+- d711ce375 fix: add LLM HTTP retry/backoff and provider error classification for issue #129
+- 57bdf35af fix: address blocker review items for issue #129 — TUI E2E proof, privacy-safe diagnostics, provider id wiring
