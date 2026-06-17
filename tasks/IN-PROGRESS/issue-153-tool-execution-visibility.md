@@ -39,3 +39,7 @@ Completed:
 ## Task workflow update - 2026-06-17T16:12:29.185Z
 - Recorded fork run: 206ynkox7fl5
 - Summary: Implementation fork launched in worktree `/home/ineersa/projects/agent-core-worktrees/issue-153-tool-execution-visibility` to make tool execution visibility-aware and add regression coverage for issue #153. Fork instructed to read testing skill + tests/AGENTS.md, use Castor validation, commit changes, and hand off results.
+
+## Task workflow update - 2026-06-17T16:15:34.764Z
+- Recorded fork run: 206ynkox7fl5
+- Summary: Fork 206ynkox7fl5 completed implementation at commit 9351ceb11. Verification confirmed expected changed files and diff stat (4 files: ToolRegistry, ToolRegistryInterface, RegistryBackedToolboxTest, ToolRegistryTest). Root fix matches scout recommendation: `ToolRegistry::toolDefinition()` now returns null when `isToolVisible()` is false, causing `RegistryBackedToolbox::execute()` to reject excluded/allowlist-filtered tools with ToolNotFoundException. During orchestrator verification, two new `RegistryBackedToolboxTest` methods had handler-call assertions placed after `expectException()` execution, making those assertions unreachable. Launching a follow-up fork to tighten the regression tests so handler non-invocation is actually asserted.
