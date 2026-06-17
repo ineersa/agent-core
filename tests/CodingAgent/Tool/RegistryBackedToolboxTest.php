@@ -309,6 +309,97 @@ final class RegistryBackedToolboxTest extends TestCase
         $this->assertSame('extension result', $result->getResult());
     }
 
+    /* ───────── Visibility filtering (excluded/allowlist) ───────── */
+
+    public function testExecuteThrowsToolNotFoundExceptionForExcludedTool(): void
+    {
+        $registry = new ToolRegistry();
+        $handler = $this->countingHandler('should not run');
+
+        $registry->registerTool(
+            name: 'bash',
+            description: 'Bash',
+            parametersJsonSchema: [],
+            handler: $handler,
+            promptLine: 'bash: Shell',
+        );
+        $registry->setExcludedToolNames(['bash']);
+
+        // Excluded tool must remain invisible to active listings
+        $this->assertSame([], $registry->activeToolNames());
+
+        $toolbox = new RegistryBackedToolbox($registry);
+
+        $this->expectException(ToolNotFoundException::class);
+        $toolbox->execute(new ToolCall('call-excluded', 'bash', []));
+
+        // Handler must NOT be invoked
+        $this->assertSame(0, $handler->calls);
+    }
+
+    public function testExecuteThrowsToolNotFoundExceptionForAllowlistFilteredTool(): void
+    {
+        $registry = new ToolRegistry();
+        $handler = $this->countingHandler('should not run');
+
+        $registry->registerTool(
+            name: 'bash',
+            description: 'Bash',
+            parametersJsonSchema: [],
+            handler: $handler,
+            promptLine: 'bash: Shell',
+        );
+        $registry->registerTool(
+            name: 'read',
+            description: 'Read',
+            parametersJsonSchema: [],
+            handler: $this->dummyHandler('ok'),
+            promptLine: 'read: Read',
+        );
+
+        // Only 'read' is allowed
+        $registry->setAllowedToolNames(['read']);
+
+        $this->assertSame(['read'], $registry->activeToolNames());
+
+        $toolbox = new RegistryBackedToolbox($registry);
+
+        // 'bash' is registered but not in the allowlist
+        $this->expectException(ToolNotFoundException::class);
+        $toolbox->execute(new ToolCall('call-allowlisted', 'bash', []));
+
+        // Handler must NOT be invoked
+        $this->assertSame(0, $handler->calls);
+    }
+
+    public function testExecuteStillWorksForAllowedToolInAllowlist(): void
+    {
+        $registry = new ToolRegistry();
+        $handler = $this->dummyHandler('allowlisted result');
+
+        $registry->registerTool(
+            name: 'read',
+            description: 'Read',
+            parametersJsonSchema: [],
+            handler: $handler,
+            promptLine: 'read: Read',
+        );
+        $registry->registerTool(
+            name: 'bash',
+            description: 'Bash',
+            parametersJsonSchema: [],
+            handler: $this->dummyHandler('should not be called'),
+            promptLine: 'bash: Shell',
+        );
+
+        $registry->setAllowedToolNames(['read']);
+
+        $toolbox = new RegistryBackedToolbox($registry);
+        $result = $toolbox->execute(new ToolCall('call-allowed', 'read', []));
+
+        $this->assertSame('allowlisted result', $result->getResult());
+    }
+
     /* ───────── Private helpers ───────── */
 
     private function dummyHandler(mixed $result): ToolHandlerInterface

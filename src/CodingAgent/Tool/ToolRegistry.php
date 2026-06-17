@@ -304,8 +304,21 @@ final class ToolRegistry implements ToolRegistryInterface
         return $definitions;
     }
 
+    /**
+     * Look up a single tool definition by name.
+     *
+     * Returns null for registered tools that are excluded or not in the
+     * allowlist — not just for unknown names.  This prevents execution of
+     * non-visible tools through the registry.
+     *
+     * @see ToolRegistryInterface::toolDefinition()
+     */
     public function toolDefinition(string $name): ?ToolDefinitionDTO
     {
+        if (!$this->isToolVisible($name)) {
+            return null;
+        }
+
         if (isset($this->permanentTools[$name])) {
             return $this->permanentTools[$name];
         }
