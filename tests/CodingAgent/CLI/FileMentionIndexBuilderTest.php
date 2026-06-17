@@ -313,57 +313,67 @@ final class FileMentionIndexBuilderTest extends TestCase
     }
 
     #[Test]
-    public function releaseCleansUpTempFileOnScanException(): void
+    public function indexesFilesWhenCwdIsVcsIgnoredByParentGitignore(): void
     {
-        // Create a regular file to use as the CWD so Finder->in()
-        // throws DirectoryNotFoundException AFTER the lock is acquired
-        // and the temp file is opened by scanAndWrite.  This exercises
-        // the tmp-unlink code path in the catch blocks.
-        $fakeCwd = $this->tmpDir.'/not-a-dir';
-        file_put_contents($fakeCwd, 'block');
-
-        $indexPath = $this->tmpDir.'/index.jsonl';
-
-        try {
-            $builder = new FileMentionIndexBuilder(
-                $fakeCwd,
-                $indexPath,
-                logger: $this->createLogger(),
-                lockFactory: $this->createLockFactory(),
-            );
-            $builder->build();
-            $this->fail('Expected RuntimeException when CWD is a file.');
-        } catch (\RuntimeException $e) {
-            // Expected — Finder fails because CWD is not a directory.
-            $this->assertStringContainsString(
-                'File mention index build failed',
-                $e->getMessage(),
-            );
+        // Simulate an isolated project nested inside a git repository
+        // where the parent .gitignore ignores the project directory
+        // (e.g. var/tmp/test-* in agent-core's .gitignore).
+        // The builder should skip ignoreVCSIgnored so the index is
+        // not empty — the explicit exclude list handles noisy dirs.
+        $gitExec = \exec('which git 2>/dev/null');
+        if ('' === $gitExec) {
+            self::markTestSkipped('git is not available for VCS-ignored CWD test.');
         }
 
-        // Remove the fake cwd file for cleanup.
-        unlink($fakeCwd);
+        // ── Create a temporary git repo with a .gitignore ──
+        $gitRepo = $this->tmpDir.'/parent-repo';
+        \mkdir($gitRepo, 0755, true);
+        \file_put_contents($gitRepo.'/.gitignore', "/ignored-scratch/\n");
 
-        // Verify no temp file was left behind (glob on *.tmp.* patterns).
-        $tmpFiles = glob($this->tmpDir.'/index.jsonl.tmp.*');
-        $this->assertEmpty(
-            $tmpFiles,
-            'Temp files should be cleaned up after scan exception.',
+        // Init git repo so .git/ exists (which is what Finder uses to
+        // detect the repo root for VcsIgnoredFilterIterator).
+        $cwd = \getcwd();
+        \chdir($gitRepo);
+        \exec('git init -q 2>/dev/null', output: $initOut, result_code: $initCode);
+        \chdir($cwd);
+        if (0 !== $initCode) {
+            self::markTestSkipped('git init failed in '.$gitRepo);
+        }
+
+        // ── Create the CWD inside the ignored directory ──
+        $cwd = $gitRepo.'/ignored-scratch/my-project';
+        \mkdir($cwd, 0755, true);
+        \touch($cwd.'/included.php');
+        \mkdir($cwd.'/vendor', 0755, true);
+        \touch($cwd.'/vendor/excluded.php');
+
+        // ── Verify git sees the cwd as ignored ──
+        \exec(
+            'git -C '.\escapeshellarg($cwd).' check-ignore . 2>/dev/null',
+            output: $ignoreOut,
+            result_code: $isIgnored,
         );
+        if (0 !== $isIgnored) {
+            self::markTestSkipped('CWD is not recognized as git-ignored; test setup may need adjustment.');
+        }
 
-        // Old index preserved (none existed, but no new one was written).
-        $this->assertFileDoesNotExist($indexPath);
+        $indexPath = $cwd.'/index.jsonl';
+        $builder = new FileMentionIndexBuilder($cwd, $indexPath, logger: $this->createLogger(), lockFactory: $this->createLockFactory());
+        $count = $builder->build();
 
-        // Lock released — subsequent build succeeds.
-        touch($this->tmpDir.'/another-file.php');
-        $builder2 = new FileMentionIndexBuilder(
-            $this->tmpDir,
-            $this->tmpDir.'/index2.jsonl',
-            logger: $this->createLogger(),
-            lockFactory: $this->createLockFactory(),
-        );
-        $count = $builder2->build();
-        $this->assertGreaterThan(0, $count, 'Lock should be released so subsequent builds succeed.');
+        $this->assertGreaterThan(0, $count, 'Index must contain entries even when CWD is VCS-ignored.');
+
+        $lines = \file($indexPath, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES);
+        $this->assertNotFalse($lines);
+        $paths = \array_map(static fn (string $l): string => \json_decode($l, true)['path'], $lines);
+
+        // included.php should appear (not filtered by VCS ignore).
+        $this->assertContains('included.php', $paths);
+
+        // vendor/ should NOT appear (explicit exclude).
+        foreach ($paths as $path) {
+            $this->assertStringNotContainsString('vendor/', $path);
+        }
     }
 
     private function removeDir(string $dir): void

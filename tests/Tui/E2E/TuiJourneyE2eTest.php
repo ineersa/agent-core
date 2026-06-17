@@ -271,12 +271,6 @@ final class TuiJourneyE2eTest extends TestCase
      */
     private function journeyPhase5FileCompletion(TmuxPane $pane): void
     {
-        @\mkdir($this->testProjectDir.'/home/testfiles', 0o777, true);
-        \file_put_contents($this->testProjectDir.'/home/testfiles/alpha.txt', 'test');
-
-        // Give the file index builder a moment to pick up new files.
-        \usleep(500_000);
-
         $this->tmux->sendKey($pane, 'C-u'); // Clear editor
         $this->tmux->sendLiteral($pane, '@test');
         $this->tmux->sendKey($pane, 'Tab');
@@ -507,6 +501,11 @@ final class TuiJourneyE2eTest extends TestCase
         // Also write for the HOME dir.
         @\mkdir($dir.'/home/.hatfield', 0o777, true);
         \file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
+
+        // Create test files for file mention completion phase
+        // before TUI starts, so the startup index scanner picks them up.
+        @\mkdir($dir.'/home/testfiles', 0o777, true);
+        \file_put_contents($dir.'/home/testfiles/alpha.txt', 'test');
 
         return $dir;
     }

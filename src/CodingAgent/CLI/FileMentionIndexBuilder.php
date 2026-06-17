@@ -184,19 +184,37 @@ final class FileMentionIndexBuilder
         // In Git worktrees where .git is a file (not a directory), the
         // root-detection heuristic in VcsIgnoredFilterIterator may not
         // find the actual repo root, so explicit excludes are mandatory.
-        try {
-            $finder->ignoreVCSIgnored(true);
-        } catch (\Throwable $e) {
-            // Intentional local degradation: .gitignore-aware filtering
-            // failed — fall back to explicit excludes only.  The
-            // completed index may include more entries than desired,
-            // but completion remains functional.
+        //
+        // When the CWD itself is VCS-ignored by a parent repository (e.g.
+        // a test project under var/tmp/ which is in the parent .gitignore),
+        // ignoreVCSIgnored would incorrectly exclude ALL files since the
+        // entire CWD matches .gitignore patterns.  Skip it in that case
+        // — the explicit exclude list already handles vendor/node_modules/
+        // var/.hatfield runtime dirs and is sufficient for these contexts.
+        if (!$this->isCwdVcsIgnored()) {
+            try {
+                $finder->ignoreVCSIgnored(true);
+            } catch (\Throwable $e) {
+                // Intentional local degradation: .gitignore-aware filtering
+                // failed — fall back to explicit excludes only.  The
+                // completed index may include more entries than desired,
+                // but completion remains functional.
+                $this->logger->debug(
+                    'File mention index: ignoreVCSIgnored unavailable, falling back to explicit excludes.',
+                    [
+                        'component' => 'file_mention_index',
+                        'event_type' => 'file_mention_index.vcs_ignored_unavailable',
+                        'message' => $e->getMessage(),
+                    ],
+                );
+            }
+        } else {
             $this->logger->debug(
-                'File mention index: ignoreVCSIgnored unavailable, falling back to explicit excludes.',
+                'File mention index: CWD is itself VCS-ignored, skipping ignoreVCSIgnored to avoid excluding all files; explicit excludes handle noisy dirs.',
                 [
                     'component' => 'file_mention_index',
-                    'event_type' => 'file_mention_index.vcs_ignored_unavailable',
-                    'message' => $e->getMessage(),
+                    'event_type' => 'file_mention_index.cwd_vcs_ignored',
+                    'cwd' => $this->cwd,
                 ],
             );
         }
@@ -279,5 +297,32 @@ final class FileMentionIndexBuilder
         }
 
         return $lock;
+    }
+
+    /**
+     * Check whether the CWD is itself ignored by the parent git repository's
+     * .gitignore rules.
+     *
+     * When this returns true, ignoreVCSIgnored() in Finder would incorrectly
+     * exclude all files because the entire CWD path matches a parent repo
+     * gitignore pattern (e.g. a test project under var/tmp/ ignored by the
+     * parent project's /var/ rule).  Callers should fall back to explicit
+     * excludes only.
+     *
+     * Uses `git -C <cwd> check-ignore .` which exits 0 when the path matches
+     * any gitignore rule.  Returns false when git is unavailable, the CWD is
+     * not inside a git repository, or the CWD is not ignored.
+     */
+    private function isCwdVcsIgnored(): bool
+    {
+        $cmd = \sprintf(
+            'git -C %s check-ignore . 2>/dev/null',
+            escapeshellarg($this->cwd),
+        );
+
+        exec($cmd, $_output, $exitCode);
+
+        // git check-ignore exits 0 when the path IS ignored.
+        return 0 === $exitCode;
     }
 }
