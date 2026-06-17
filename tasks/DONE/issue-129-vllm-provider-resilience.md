@@ -44,14 +44,14 @@ Suggested implementation direction:
 - Before implementation/validation, forks must read `.agents/skills/testing/SKILL.md` and `tests/AGENTS.md`; validate via Castor (`castor test`, `castor deptrac`, `castor phpstan`, `castor cs-check`, and `castor check` before PR; `castor test:llm-real` if live provider compatibility is affected).
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/issue-129-vllm-provider-resilience
 Worktree: /home/ineersa/projects/agent-core-worktrees/issue-129-vllm-provider-resilience
 Fork run: 04c309926
 PR URL: https://github.com/ineersa/agent-core/pull/158
-PR Status: open
+PR Status: merged
 Started: 2026-06-17T16:53:39.596Z
-Completed:
+Completed: 2026-06-17T20:04:04.534Z
 
 ## Work log
 - Created: 2026-06-17T16:45:21.632Z
@@ -167,3 +167,43 @@ Commit 04c309926 on task/issue-129-vllm-provider-resilience (now 3 commits over 
 - Pushed task/issue-129-vllm-provider-resilience to origin.
 - branch 'task/issue-129-vllm-provider-resilience' set up to track 'origin/task/issue-129-vllm-provider-resilience'.
 - PR already exists: https://github.com/ineersa/agent-core/pull/158
+
+## Task workflow update - 2026-06-17T20:04:04.534Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/issue-129-vllm-provider-resilience into integration checkout.
+- Auto-merging docs/settings.md
+Auto-merging src/CodingAgent/Infrastructure/SymfonyAi/SymfonyAiProviderFactory.php
+Auto-merging tests/CodingAgent/Infrastructure/SymfonyAi/SymfonyAiProviderFactoryTest.php
+Merge made by the 'ort' strategy.
+ .hatfield/settings.yaml                            |   8 +
+ docs/settings.md                                   |  27 ++
+ phpstan-baseline.neon                              |  12 +
+ .../SymfonyAi/LlmPlatformAdapter.php               |  76 +++-
+ .../SymfonyAi/LlmProviderErrorClassifier.php       | 219 ++++++++++++
+ src/CodingAgent/Config/Ai/AiConfig.php             |   3 +
+ src/CodingAgent/Config/Ai/AiHttpConfig.php         | 115 ++++++
+ .../SymfonyAi/Http/LlmHttpRetryPolicy.php          | 245 +++++++++++++
+ .../SymfonyAi/Http/LlmRetryingHttpClient.php       | 192 ++++++++++
+ .../SymfonyAi/SymfonyAiProviderFactory.php         |  36 +-
+ .../Runtime/Protocol/RuntimeEventTranslator.php    |  31 +-
+ .../SymfonyAi/LlmProviderErrorClassifierTest.php   | 385 +++++++++++++++++++++
+ tests/CodingAgent/Config/Ai/AiHttpConfigTest.php   | 189 ++++++++++
+ .../SymfonyAi/Http/LlmHttpRetryPolicyTest.php      | 279 +++++++++++++++
+ .../SymfonyAi/Http/LlmRetryingHttpClientTest.php   | 261 ++++++++++++++
+ .../SymfonyAi/SymfonyAiProviderFactoryTest.php     |  40 +++
+ .../Replay/ControllerReplayHttpClientFactory.php   |  41 +++
+ tests/Tui/E2E/TuiProviderErrorE2eTest.php          | 271 +++++++++++++++
+ .../fixtures/tui-provider-rate-limit-error.json    |  10 +
+ 19 files changed, 2413 insertions(+), 27 deletions(-)
+ create mode 100644 src/AgentCore/Infrastructure/SymfonyAi/LlmProviderErrorClassifier.php
+ create mode 100644 src/CodingAgent/Config/Ai/AiHttpConfig.php
+ create mode 100644 src/CodingAgent/Infrastructure/SymfonyAi/Http/LlmHttpRetryPolicy.php
+ create mode 100644 src/CodingAgent/Infrastructure/SymfonyAi/Http/LlmRetryingHttpClient.php
+ create mode 100644 tests/AgentCore/Infrastructure/SymfonyAi/LlmProviderErrorClassifierTest.php
+ create mode 100644 tests/CodingAgent/Config/Ai/AiHttpConfigTest.php
+ create mode 100644 tests/CodingAgent/Infrastructure/SymfonyAi/Http/LlmHttpRetryPolicyTest.php
+ create mode 100644 tests/CodingAgent/Infrastructure/SymfonyAi/Http/LlmRetryingHttpClientTest.php
+ create mode 100644 tests/Tui/E2E/TuiProviderErrorE2eTest.php
+ create mode 100644 tests/Tui/E2E/fixtures/tui-provider-rate-limit-error.json
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/issue-129-vllm-provider-resilience.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
