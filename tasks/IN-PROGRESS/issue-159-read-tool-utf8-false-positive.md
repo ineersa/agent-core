@@ -28,7 +28,7 @@ Implementation notes:
 Status: IN-PROGRESS
 Branch: task/issue-159-read-tool-utf8-false-positive
 Worktree: /home/ineersa/projects/agent-core-worktrees/issue-159-read-tool-utf8-false-positive
-Fork run:
+Fork run: iq5q6zujj5es
 PR URL:
 PR Status:
 Started: 2026-06-17T21:49:35.275Z
@@ -47,3 +47,7 @@ Completed:
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/issue-159-read-tool-utf8-false-positive.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/issue-159-read-tool-utf8-false-positive.
 - Summary: User approved starting implementation for GitHub issue #159. Scope: fix `ReadFileTool` UTF-8 validation false positives on valid UTF-8 files while preserving binary/image/invalid-encoding rejections.
+
+## Task workflow update - 2026-06-17T21:49:59.138Z
+- Recorded fork run: iq5q6zujj5es
+- Summary: Launched implementation fork in worktree `/home/ineersa/projects/agent-core-worktrees/issue-159-read-tool-utf8-false-positive`. Fork instructed to read testing skill + tests/AGENTS.md, fix `ReadFileTool` UTF-8 sample validation false positive while preserving binary/image/invalid-UTF-8 rejections, add regression tests, run focused Castor validation, and commit changes.
