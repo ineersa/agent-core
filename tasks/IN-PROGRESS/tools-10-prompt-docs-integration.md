@@ -37,7 +37,7 @@ Out of scope:
 - Focused tests pass with Castor/PHPUnit.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/tools-10-prompt-docs-integration
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-10-prompt-docs-integration
 Fork run: h90mpyxp2471
@@ -129,3 +129,7 @@ Completed:
 - Created PR: https://github.com/ineersa/agent-core/pull/154
 - Validation: Prior reviewer: APPROVED read-only for prompt/tool guidance + llm-real hardening; no reviewer rerun after user explicitly requested not to relaunch reviewer.; Current branch validation: `castor test:timeout-hardstop` PASS including Test E PHAR-worker leak proof.; Current branch validation: `castor test:llm-real` PASS 5 tests/51 assertions in 22.1s and no tools-10 stale PHAR/controller/messenger/PHPUnit workers afterward.; Current branch validation: `castor test` PASS before PHPStan fix (2561 tests/7520 assertions) and fork reran full `castor test` after fix PASS (2562 tests/7523 assertions).; Current branch validation: `castor deptrac` PASS 0 violations/errors.; Current branch validation: `castor cs-check` PASS clean.; Current branch validation after PHPStan fix: full `castor phpstan` PASS 0 errors/file_errors; focused `castor phpstan --path src/Platform/Bridge/Generic/DurableResultConverter.php` PASS; focused `castor test --filter DurableResultConverterTest` PASS 11 tests/57 assertions.
 - Summary: Ready for CODE-REVIEW after PHPStan blocker fix. Final task branch HEAD: `e4365ddc8` (`fix(phpstan): replace missing IncompleteStreamException with existing RuntimeException`). Per user instruction, no reviewer was relaunched after this fork; prior read-only reviewer had already APPROVED HEAD `0eb266fcc`, and the later PHPStan fix is minimal/scoped with tests. Final changes include prompt/tool metadata/docs/test integration, llm-real hardening with 30s session-aware hard timeout and timeout-hardstop Test E, plus DurableResultConverter exception fix and focused test.
+
+## Task workflow update - 2026-06-17T00:17:07.423Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Summary: Starting review-iteration for PR #154 comments. User explicitly requested fixes and no reviewer relaunch. Comments to address: (1) `config/SYSTEM.md` change: "I don't think I asked to change system prompt" — likely revert built-in system prompt template changes and adjust tests accordingly while keeping tool guidance sourced from tool metadata. (2) `src/Platform/Bridge/Generic/DurableResultConverter.php` exception change: "Why this change?" — keep PHPStan gate passing but make rationale/minimality clear, likely with code/test clarity around using existing Symfony AI platform `RuntimeException` because `IncompleteStreamException` does not exist. No reviewer should be launched after fixes.
