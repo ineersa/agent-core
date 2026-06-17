@@ -68,3 +68,6 @@ Completed:
 
 ## Task workflow update - 2026-06-17T22:06:17.674Z
 - Summary: User raised UTF-8 BOM/text-detection question during implementation. Review/acceptance consideration: UTF-8 BOM (`EF BB BF`, U+FEFF) is valid UTF-8 and should be accepted by the read tool; add/verify regression coverage if not already present. UTF-16/UTF-32 BOMs should still be rejected as non-UTF-8 or non-text for this tool. MIME/type detection is useful for binary/image/document rejection but cannot replace explicit UTF-8 validation.
+
+## Task workflow update - 2026-06-17T22:08:54.635Z
+- Summary: Fork `7i1fjqzsiuii` completed commit `5b9be66a0` and most algorithmic blockers appear resolved, but parent verification still found one required mismatch: `readSample()` still has `@fopen($resolvedPath, 'r')` even though the handoff and task requirements say binary mode (`'rb'`). User also asked about UTF-8 BOM handling; add/verify a UTF-8 BOM regression while making the narrow binary-mode correction.
