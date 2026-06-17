@@ -113,7 +113,14 @@ final readonly class CachedApprovalLedger
     /**
      * Consume (read-and-delete) an approved operation.
      *
-     * Called from SafeGuardToolCallHook::onToolCall() retry path.
+     * Called from ExtensionToolHookEventSubscriber::onToolCallRequested()
+     * via ExtensionHookRegistry::consumeApproval() — the cache pre-check
+     * that runs when a tool-call hook returns RequireApproval. The TOOL
+     * consumer subscriber reads the shared cache for an approved decision
+     * (previously written by SafeGuardApprovalCommitSubscriber in the
+     * RUN_CONTROL consumer) and, on hit, skips the RequireApproval so
+     * the tool executes.
+     *
      * Returns true if the operation was approved and now consumed
      * (one-time Allow once semantics).
      *

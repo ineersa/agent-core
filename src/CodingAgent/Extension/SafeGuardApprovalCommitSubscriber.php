@@ -11,18 +11,28 @@ use Ineersa\Hatfield\ExtensionApi\ApprovalAnswerHookInterface;
 
 /**
  * Routes human approval answers to the originating SafeGuard hook at
- * commit time — IN THE SAME (worker) PROCESS that performs tool execution.
+ * commit time in the RUN_CONTROL consumer process (where ApplyCommand
+ * commits) — a DIFFERENT process from the TOOL consumer where pending
+ * approvals are registered by SafeGuardToolCallHook.
+ *
+ * The shared CachedApprovalLedger (cache.approvals pool backed by the
+ * .hatfield messenger SQLite) bridges this process boundary:
+ *   1. TOOL consumer      registerPending() for RequireApproval
+ *   2. RUN_CONTROL consume resolveApproval() ← reads shared cache
+ *   3. RUN_CONTROL consume markApproved()    → writes shared cache
+ *   4. TOOL consumer      consumeApproval()  ← reads shared cache on retry
  *
  * This subscriber fires synchronously inside RunCommit::commit(), BEFORE
  * the postCommit AdvanceRun retry. It scans committed events for
- * 'agent_command_applied' with kind=human_response and routes each answer
- * to the originating hook via ExtensionHookRegistry::resolveApproval()
- * → ApprovalAnswerHookInterface::onApprovalAnswered().
+ * 'agent_command_applied' with kind=human_response, resolves the pending
+ * approval from the SHARED cache, calls onApprovalAnswered on the
+ * locally-looked-up hook instance (identified by hook class name stored
+ * at registration), then writes the approved decision back to the shared
+ * cache so the retry in the TOOL consumer can see it.
  *
  * This replaces the previous polling-based ExtensionApprovalAnswerSubscriber
  * which ran in the controller process's RuntimeEventTranslator::translate()
- * drain loop — a DIFFERENT process than the tool-worker where pending
- * approvals live in ExtensionHookRegistry. That cross-process gap caused
+ * drain loop — also the wrong process. That cross-process gap caused
  * SafeGuard approvals to always be ignored (issue #130).
  *
  * Registered via the 'agent_core.hook_subscriber' tag in services.yaml.
