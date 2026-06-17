@@ -271,6 +271,11 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
         // Binary, UTF-8, and MIME type check from sample buffer
         $sample = $this->readSample($resolvedPath);
 
+        // Trim any incomplete trailing UTF-8 sequence from the sample buffer
+        // so a valid file whose multi-byte character spans the 8192-byte read
+        // boundary is not falsely rejected as non-UTF-8 content.
+        $sample = $this->trimToCompleteUtf8Prefix($sample);
+
         // Reject images and other non-text MIME types FIRST.
         // Checked early so images get a helpful "use view_image" hint instead of
         // a generic "binary" or "non-UTF-8" error, since image magic bytes often
@@ -289,6 +294,49 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
 
         // Reject by extension as a secondary check for files finfo might not catch
         $this->rejectByExtension($resolvedPath);
+    }
+
+    /**
+     * If the string ends with an incomplete UTF-8 multi-byte sequence,
+     * truncate it to a complete UTF-8 prefix. This prevents false
+     * negatives when a sample buffer ends at a character boundary.
+     *
+     * When the sample is genuinely invalid (non-truncation) the
+     * original string is returned unchanged so mb_check_encoding
+     * can reject it as intended.
+     *
+     * @return string The original or trimmed string, ending at a
+     *                complete UTF-8 character boundary
+     */
+    private function trimToCompleteUtf8Prefix(string $text): string
+    {
+        if ('' === $text) {
+            return $text;
+        }
+
+        // Fast-path: if already valid, skip the trimming loop
+        if (mb_check_encoding($text, 'UTF-8')) {
+            return $text;
+        }
+
+        // A truncated UTF-8 character contributes at most 3 trailing bytes.
+        // Try removing 1-3 bytes and re-checking. If none produce a valid
+        // prefix, the invalid bytes are not from truncation and the original
+        // will correctly fail the UTF-8 check.
+        $trimmed = $text;
+        for ($i = 0; $i < 3; ++$i) {
+            $trimmed = substr($trimmed, 0, -1);
+            if ('' === $trimmed) {
+                // Never reduce to empty — retain original for proper rejection
+                return $text;
+            }
+            if (mb_check_encoding($trimmed, 'UTF-8')) {
+                return $trimmed;
+            }
+        }
+
+        // Genuinely invalid non-UTF-8 content; return original so caller rejects it
+        return $text;
     }
 
     /**

@@ -431,6 +431,42 @@ final class ReadFileToolTest extends TestCase
         ($this->readFileTool)(['path' => $targetPath]);
     }
 
+    public function testReadValidUtf8Near8192Boundary(): void
+    {
+        // Create a file where a 4-byte UTF-8 character starts at byte 8189
+        // so the 8192-byte sample buffer ends during the multi-byte sequence.
+        // This would falsely trigger a non-UTF-8 error with the old
+        // fixed-size fread + mb_check_encoding approach.
+        $targetPath = $this->tmpDir.'/utf8_boundary.txt';
+        $prefix = str_repeat('a', 8189);
+        // U+1F600 GRINNING FACE = \xF0\x9F\x98\x80 (4 bytes)
+        $emoji = "\xF0\x9F\x98\x80";
+        $trailing = "\nsome content after the boundary\n";
+        file_put_contents($targetPath, $prefix.$emoji.$trailing);
+
+        // Should NOT throw ToolCallException about non-UTF-8
+        $result = ($this->readFileTool)(['path' => $targetPath]);
+
+        $this->assertStringContainsString('some content after the boundary', $result);
+        $this->assertStringContainsString('a', $result);
+    }
+
+    public function testReadValidUtf8WithBoxDrawing(): void
+    {
+        $targetPath = $this->tmpDir.'/box_drawing.txt';
+        // Box drawing characters (U+2500-U+257F) are 3-byte UTF-8.
+        // These appear in docs/tui-architecture.md and are common
+        // in text files that read should handle correctly.
+        $content = "┌───┐\n│ x │\n└───┘\n";
+        file_put_contents($targetPath, $content);
+
+        $result = ($this->readFileTool)(['path' => $targetPath]);
+
+        $this->assertStringContainsString('┌───┐', $result);
+        $this->assertStringContainsString('│ x │', $result);
+        $this->assertStringContainsString('└───┘', $result);
+    }
+
     public function testReadImageByMimeThrows(): void
     {
         $targetPath = $this->tmpDir.'/fake.png';
