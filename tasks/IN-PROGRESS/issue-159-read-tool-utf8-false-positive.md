@@ -28,7 +28,7 @@ Implementation notes:
 Status: IN-PROGRESS
 Branch: task/issue-159-read-tool-utf8-false-positive
 Worktree: /home/ineersa/projects/agent-core-worktrees/issue-159-read-tool-utf8-false-positive
-Fork run: 7i1fjqzsiuii
+Fork run: ectdn5pv1hz3
 PR URL:
 PR Status:
 Started: 2026-06-17T21:49:35.275Z
@@ -71,3 +71,7 @@ Completed:
 
 ## Task workflow update - 2026-06-17T22:08:54.635Z
 - Summary: Fork `7i1fjqzsiuii` completed commit `5b9be66a0` and most algorithmic blockers appear resolved, but parent verification still found one required mismatch: `readSample()` still has `@fopen($resolvedPath, 'r')` even though the handoff and task requirements say binary mode (`'rb'`). User also asked about UTF-8 BOM handling; add/verify a UTF-8 BOM regression while making the narrow binary-mode correction.
+
+## Task workflow update - 2026-06-17T22:09:13.470Z
+- Recorded fork run: ectdn5pv1hz3
+- Summary: Launched tiny corrective fork `ectdn5pv1hz3` to change `readSample()` from `fopen(..., 'r')` to `fopen(..., 'rb')`, add a UTF-8 BOM acceptance regression test, run focused Castor validation, and commit.
