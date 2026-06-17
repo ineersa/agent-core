@@ -64,12 +64,12 @@ LOW. Root cause is a missing payload field; all downstream consumers already han
 - Castor validation green: castor test, castor test:tui (mandatory — runtime/TUI-visible change), castor deptrac, castor phpstan, castor cs-check. castor test:llm-real NOT required (no provider/LLM-visible change).
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/issue-131-tui-tool-result-output
 Worktree: /home/ineersa/projects/agent-core-worktrees/issue-131-tui-tool-result-output
 Fork run: 423243cad
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/160
+PR Status: open
 Started: 2026-06-17T20:38:34.453Z
 Completed:
 
@@ -95,3 +95,11 @@ FOLLOW-UP FORK 423243cad (tests-only, production UNTOUCHED): addressed 2 NTH fin
 Commits on task/issue-131-tui-tool-result-output: f1b87a505 (impl, production + tests + TUI E2E) + 423243cad (follow-up test coverage). 5 files, +866 lines. Worktree clean, NOT pushed.
 
 This is a tool-execution/runtime-visible change, not a provider/LLM-visible change — castor test:llm-real not required.
+
+## Task workflow update - 2026-06-17T21:33:53.488Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Running deterministic castor check in worktree (timeout 480s)...
+- castor check passed (34.4s).
+- Pushed task/issue-131-tui-tool-result-output to origin.
+- branch 'task/issue-131-tui-tool-result-output' set up to track 'origin/task/issue-131-tui-tool-result-output'.
+- Created PR: https://github.com/ineersa/agent-core/pull/160
