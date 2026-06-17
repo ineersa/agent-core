@@ -40,7 +40,7 @@ Out of scope:
 Status: IN-PROGRESS
 Branch: task/tools-10-prompt-docs-integration
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-10-prompt-docs-integration
-Fork run: t7y0h63x87kn
+Fork run: 40trivh2au5d
 PR URL: https://github.com/ineersa/agent-core/pull/154
 PR Status: open
 Started: 2026-06-16T22:05:47.991Z
@@ -156,3 +156,7 @@ Completed:
 ## Task workflow update - 2026-06-17T00:23:03.395Z
 - Moved CODE-REVIEW → IN-PROGRESS.
 - Summary: Starting another PR review-iteration based on user feedback about `DurableResultConverter`: the generic `RuntimeException` replacement is not acceptable. The correct fix is to create/use a specific project-owned `IncompleteStreamException` and keep the semantic exception at the truncated-stream guard. Do not relaunch reviewer.
+
+## Task workflow update - 2026-06-17T00:23:40.683Z
+- Recorded fork run: 40trivh2au5d
+- Summary: Launched review-iteration fork `40trivh2au5d` after user rejected the generic `RuntimeException` replacement. Instructions: create project-owned `Ineersa\Platform\Bridge\Generic\IncompleteStreamException` extending Symfony AI platform `RuntimeException`, update `DurableResultConverter` to throw the specific exception again, remove/update stale generic-rationale comment, update `DurableResultConverterTest` to expect the specific exception, run Castor validation, commit, do not push/move task/run reviewer.
