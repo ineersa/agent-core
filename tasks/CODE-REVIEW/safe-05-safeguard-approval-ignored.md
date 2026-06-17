@@ -166,3 +166,19 @@ Two prior passes needed correction: (1) original commit 7ea229a40 ignored cross-
 - Pushed task/safe-05-safeguard-approval-ignored to origin.
 - branch 'task/safe-05-safeguard-approval-ignored' set up to track 'origin/task/safe-05-safeguard-approval-ignored'.
 - Created PR: https://github.com/ineersa/agent-core/pull/162
+
+## Task workflow update - 2026-06-17T22:52:41.904Z
+- Updated PR URL: https://github.com/ineersa/agent-core/pull/162
+- Updated PR Status: open
+- Summary: REVIEWER VERDICT: APPROVE WITH SUGGESTIONS (mergeable, no blockers). Independent reviewer subagent traced the cross-process flow end-to-end in real code, ran deptrac (0 violations) + phpstan (0 errors) itself, verified security (Deny doesn't write approved key; runId namespacing prevents cross-run bleed), migration idempotency, cache.app isolation (cache.system/default stay filesystem, no existing CacheInterface consumers in src/), and that the controller-replay E2E is a genuine multi-process test. Docs (hitl-and-approvals.md) updated.
+
+Non-blocking suggestions raised by reviewer:
+1. [LOW] consumeApproval() read-then-delete not atomic under concurrency — reviewer judged acceptable given run-serialized retries (single worker consumes per retry). Could add a comment.
+2. [EDGE] Silent in-memory fallback when runId set but ledger null (DI misconfiguration) gives no diagnostic signal — suggests a warning log.
+3. [EDGE] Stale markPending entry left in in-memory ApprovalSessionTracker when cache pre-check hits — harmless (in-memory, reset per process).
+4. [SIMPLIFY] Dual-path verbose — NullCachedApprovalLedger for tests. Not needed (reviewer says dual-path is clear/correct).
+5. [DEAD CODE] removePending()/removeApproved() unused — harmless cleanup helpers.
+6. [COVERAGE] No test for Deny path (proves approved key NOT written) and no test for one-time semantics (approve → consume → re-prompt). Reviewer rated NTH.
+
+Decision pending user: merge as-is, or iterate on a focused subset (#1 comment, #2 warning log, #6 the two tests) before task-done.
+- task-to-pr step 2: reviewer subagent run on worktree. VERDICT=APPROVE WITH SUGGESTIONS, no blockers, mergeable. Reviewer independently ran deptrac (0) and phpstan (0), verified cross-process flow in real code, security (Deny/no cross-run bleed), migration idempotency, cache.app isolation, E2E test authenticity, docs sync. 6 non-blocking suggestions recorded.
