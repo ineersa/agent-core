@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Platform\Tests\Bridge\Generic;
 
 use Ineersa\Platform\Bridge\Generic\DurableResultConverter;
+use Ineersa\Platform\Bridge\Generic\IncompleteStreamException;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
@@ -417,6 +418,24 @@ final class DurableResultConverterTest extends TestCase
         self::assertSame('call_xyz', $toolCalls[0]->getId());
         self::assertSame('bash', $toolCalls[0]->getName());
         self::assertSame(['command' => 're'], $toolCalls[0]->getArguments());
+    }
+
+    // ── Stream ended without finish reason ────────────────────────────────────
+
+    #[Test]
+    public function throwsExceptionWhenStreamEndsWithoutFinishReason(): void
+    {
+        $result = $this->streamResult([
+            // Send a text chunk (sets sawChunk = true) but no finish_reason.
+            $this->chunk(['choices' => [[
+                'delta' => ['content' => 'partial text'],
+            ]]]),
+        ]);
+
+        $this->expectException(IncompleteStreamException::class);
+        $this->expectExceptionMessage('Completions stream ended before a finish reason was received.');
+
+        $this->collectStream($result);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

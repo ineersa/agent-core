@@ -59,9 +59,29 @@ function test_llm_real(?string $filter = null): void
         .' '.phpunit_strict_issue_flags()
         .(is_llm_mode() ? ' --colors=never --no-progress --log-junit='.report_path('phpunit-llm-real.junit.xml') : '');
 
+    // Run via session-aware process runner to prevent orphaned PHAR workers
+    // (messenger:consume children with --time-limit=3600 that outlive PHPUnit
+    // and keep the Castor task alive).  run_commands_parallel() spawns the
+    // command inside an isolated session via setsid -w and reaps the ENTIRE
+    // session tree on both timeout (30s) and normal completion, killing
+    // separate-PGID grandchildren that passthru() leaves behind.
+    $commands = [
+        'llm-real' => [
+            'cmd' => $cmd,
+            'log' => report_path('check-test-llm-real.log'),
+        ],
+    ];
+    $timeouts = ['llm-real' => 30];
+
     $start = hrtime(true);
-    passthru($cmd, $exitCode);
+    $results = run_commands_parallel($commands, $timeouts);
     $duration = (hrtime(true) - $start) / 1e9;
+    $result = $results['llm-real'] ?? ['exitCode' => -1, 'output' => 'no result', 'duration' => 0];
+
+    // Flush captured output.
+    if ('' !== $result['output']) {
+        echo $result['output'];
+    }
 
     if (is_llm_mode()) {
         $summary = read_suite_junit_summary('llm-real');
@@ -71,8 +91,12 @@ function test_llm_real(?string $filter = null): void
         }
     }
 
-    if (0 !== $exitCode) {
-        fail_quality(sprintf('LLM real smoke tests failed in %.1fs (exit code %d)', $duration, $exitCode));
+    // Timeout exit code (124) from run_commands_parallel is a hard failure.
+    if (124 === $result['exitCode']) {
+        fail_quality(sprintf('LLM real smoke tests timed out after %.1fs', $result['duration'] ?? $duration));
+    }
+    if (0 !== $result['exitCode']) {
+        fail_quality(sprintf('LLM real smoke tests failed in %.1fs (exit code %d)', $result['duration'] ?? $duration, $result['exitCode']));
     }
     echo sprintf('
 
