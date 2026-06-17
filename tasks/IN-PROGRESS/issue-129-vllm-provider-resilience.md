@@ -89,3 +89,22 @@ Next step: launch a follow-up implementation fork to address these blockers befo
 ## Task workflow update - 2026-06-17T17:14:02.652Z
 - Recorded fork run: r91hmmwynaz8
 - Summary: Follow-up implementation fork `r91hmmwynaz8` launched on worktree `/home/ineersa/projects/agent-core-worktrees/issue-129-vllm-provider-resilience` to address blockers from fork `7dtgw8sj2p05`: add mandatory replay-backed TmuxHarness E2E proof for sanitized red provider error block; extend test replay seam for HTTP error fixtures; remove new PHPStan baseline additions and fix new-code docblocks; remove raw response body preview diagnostics and parse Retry-After headers into safe diagnostics; improve classifier use of structured provider fields/retry-after/provider code; wire provider ID to retry logs; rerun Castor-only focused/full validation. Fork explicitly instructed not to push/open PR/move task and to leave worktree clean with a commit.
+
+## Task workflow update - 2026-06-17T17:34:12.661Z
+- Recorded fork run: r91hmmwynaz8
+- Validation: Fork-reported (Castor-only): castor test --filter=LlmHttpRetryPolicyTest 24/76 OK; --filter=LlmRetryingHttpClientTest 12/27 OK; --filter=LlmProviderErrorClassifierTest 33/89 OK; castor test 2643/7761 OK; castor deptrac 0 violations; castor phpstan 0 errors; castor cs-check 0 fixed; castor test:tui --filter=TuiProviderErrorE2eTest 1/6 OK; castor test:tui 7/79 OK; castor test:llm-real 5/51 OK; castor check full gate all lanes OK (54.3s).; Orchestrator state check: worktree `task/issue-129-vllm-provider-resilience` clean at 57bdf35af (2 commits over origin/main: d711ce375 + 57bdf35af); integration `main` clean at origin/main 64a7eec98.
+- Summary: Follow-up fork r91hmmwynaz8 completed at commit `57bdf35af`; orchestrator verified the implementation. All blockers from the first fork (7dtgw8sj2p05) are resolved:
+
+1. TUI E2E proof ADDED — `tests/Tui/E2E/TuiProviderErrorE2eTest.php` (real TmuxHarness, `#[Group('tui-e2e-replay')]`, isolated dir). Replay seam `ControllerReplayHttpClientFactory` extended with `isHttpErrorFixture()`/`buildErrorResponse()` to serve non-SSE HTTP error MockResponses; new fixture `tui-provider-rate-limit-error.json` (429, Retry-After 30, sentinel body). Test asserts red `✕` error block appears, `◇` assistant block absent, sanitized "rate limit"/"retryable" text visible, sentinel `DO_NOT_LEAK_PROVIDER_BODY` absent. Verified sentinel cannot leak: `RuntimeEventTranslator::onLlmStepFailed()` only passes through safe keys (retryable, error_category, http_status_code, retry_after_ms, response_error_code, response_error_type) — `response_error_message` is NOT in the passthrough list.
+
+2. PHPStan baseline — first fork's `missingType.iterableValue` entries removed; new code now has `@param array<string, mixed>` docblocks. This introduced `method.childParameterType` contravariance entries instead. Verified against `vendor/symfony/http-client-contracts/HttpClientInterface.php`: parent declares bare `array $options` with no value-type docblock, so ONE baseline entry per method is genuinely unavoidable at this phpstan level (bare array → missingType; precise array → contravariance). This is the standard Symfony escape hatch, not a defect.
+
+3. Privacy-safe diagnostics — `LlmPlatformAdapter::extractResponseDiagnostics()` no longer sets `response_body_preview`; uses `response_body_bytes` + `response_body_is_json` instead (non-JSON bodies record only metadata). Retry-After parsed into `retry_after_ms` via new `parseRetryAfterHeader()`. Confirmed no `response_body_preview` leak path remains in src (only the classifier's defensive unset + its test).
+
+4. Classifier — uses composite error text across message + structured provider fields; terminal billing/quota detection works via any structured field; 429 user_message includes retry-after hint + provider code; 6 new classifier tests added.
+
+5. Provider ID wired — both `buildGenericCompletionsProvider()` and `buildCodexProvider()` now pass `$provider->id` to `getHttpClient()`.
+
+Worktree clean at `57bdf35af`; integration checkout `main` clean at `origin/main` (64a7eec98). Implementation phase complete. Non-blocking notes: (a) `response_error_message` (structured provider error text) is still persisted in the RunEvent error array → events.jsonl, but never displayed in TUI; (b) unused private `savePlainSnapshot` helper in the TUI test.
+
+Ready for task-to-pr phase (reviewer + focused validation + CODE-REVIEW) on user go-ahead.
