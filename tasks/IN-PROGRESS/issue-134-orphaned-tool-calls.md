@@ -38,13 +38,13 @@ Testing notes:
 - Focused Castor validation passes: `castor test` for relevant filters, plus `castor deptrac`, `castor phpstan`, `castor cs-check`; run `castor check` before CODE-REVIEW. Run `castor test:llm-real` if live provider compatibility paths are changed.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/issue-134-orphaned-tool-calls
+Worktree: /home/ineersa/projects/agent-core-worktrees/issue-134-orphaned-tool-calls
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-17T22:37:40.939Z
 Completed:
 
 ## Work log
@@ -130,3 +130,11 @@ Refined agent-core design:
 
 ## Task workflow update - 2026-06-17T22:35:17.980Z
 - Summary: Finalized abort-message storage decision: implement simple safe behavior now by excluding aborted assistant messages from `RunState.messages` / future prompt context, but preserve enough sanitized event-side data for possible future TUI display. Concretely: `LlmStepResultHandler` abort/cancel branch should not append the assistant `AgentMessage`; `LlmStepAborted` event payload should include sanitized structural/preview metadata for the aborted assistant message (for example: whether an assistant message was present, text preview length/hash or bounded preview if existing event privacy permits, `has_tool_calls`, `tool_call_count`, tool call IDs/counts if safe, stop reason, usage, step id). This event data is projection/UI-only and must not be consumed as model prompt history. Already-applied user messages remain in `RunState.messages`; only unapplied queued steer/follow_up should be cleared/rejected on cancel so stale queued text cannot be consumed later.
+
+## Task workflow update - 2026-06-17T22:37:40.939Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/issue-134-orphaned-tool-calls.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/issue-134-orphaned-tool-calls.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/issue-134-orphaned-tool-calls.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/issue-134-orphaned-tool-calls.
+- Summary: Starting implementation. Decisions locked in: boundary-driven command draining; keep already-applied user messages; clear/reject unapplied steer/follow_up on cancel; drop aborted assistant messages from RunState.messages; preserve sanitized aborted assistant metadata in LlmStepAborted event payload/projection only; add provider preflight invariant for orphan assistant tool_calls.
