@@ -49,3 +49,6 @@ Completed:
 
 ## Work log
 - Created: 2026-06-17T22:10:18.115Z
+
+## Task workflow update - 2026-06-17T22:20:02.618Z
+- Summary: Linked GitHub issue #152 as likely same command-mailbox/safe-boundary root cause: steer/follow_up queued during active/cancelling/restarted runs can be drained at the wrong time or out of order, causing duplicate/incorrect queued user messages. Design direction confirmed with user: drain steering only on safe model/tool/terminal boundaries; abort/cancel persistence should not leave provider-invalid assistant tool_calls; malformed transcript should fail loudly before provider conversion, not be silently filtered.
