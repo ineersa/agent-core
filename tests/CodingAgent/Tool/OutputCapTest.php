@@ -90,9 +90,14 @@ final class OutputCapTest extends TestCase
 
         // Should contain the storage dir path
         $this->assertStringContainsString($this->tmpDir, $result);
-        // Should contain head/grep hints
-        $this->assertStringContainsString('head -50', $result);
-        $this->assertStringContainsString('grep', $result);
+        // Should contain tool-first guidance (not bare shell-centric hints)
+        $this->assertStringContainsString('read', $result);
+        $this->assertStringContainsString('Do NOT rerun', $result);
+        $this->assertStringContainsString('Do NOT read the saved file in full', $result);
+        $this->assertStringContainsString('offset', $result);
+        $this->assertStringNotContainsString('head -50', $result);
+        // 'grep' appears as a targeted search tool invocation, not bare shell command
+        $this->assertStringContainsString('grep pattern=', $result);
     }
 
     /* ───────── Persistence ───────── */
@@ -369,8 +374,8 @@ final class OutputCapTest extends TestCase
      */
     private function extractPathFromNotice(string $notice): ?string
     {
-        // The notice contains a "Saved to: <path>" line
-        if (preg_match('/Saved to: (.+\.txt)/', $notice, $matches)) {
+        // The notice contains a "Saved for audit at: <path>" line
+        if (preg_match('/Saved for audit at: (.+\.txt)/', $notice, $matches)) {
             return $matches[1];
         }
 

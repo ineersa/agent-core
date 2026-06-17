@@ -118,7 +118,7 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
     {
         return new ToolDefinitionDTO(
             name: 'read',
-            description: 'Read a text file and display its content with original line numbers. Supports offset (starting line) and limit (max lines) for reading specific sections. Binary files, image files, PDFs, and device paths are rejected.',
+            description: 'Read a text file and display its content with original line numbers. Use offset (starting line) and limit (max lines) to read specific sections. Binary files, image files, PDFs, and device paths are rejected.',
             parametersJsonSchema: [
                 'type' => 'object',
                 'properties' => [
@@ -128,12 +128,12 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
                     ],
                     'offset' => [
                         'type' => 'integer',
-                        'description' => 'Starting line number (1-indexed). Omit to read from the beginning.',
+                        'description' => 'Starting line number (1-indexed). Read from this line onward. Omit to read from the beginning. Example: offset=100 reads starting at line 100.',
                         'minimum' => 1,
                     ],
                     'limit' => [
                         'type' => 'integer',
-                        'description' => 'Maximum number of lines to return. Omit to use the default cap (2000 lines).',
+                        'description' => 'Maximum number of lines to return. Use with offset to read a window of lines. Example: offset=100 limit=50 reads lines 100–149. Omit to use the default cap (2000 lines).',
                         'minimum' => 1,
                     ],
                 ],
@@ -142,13 +142,14 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             ],
             handler: $this,
             executionMode: ToolExecutionMode::Parallel,
-            promptLine: 'read path [offset=N] [limit=N] — read a text file with cat -n line numbers; supports offset and limit for partial reads; use view_image for images',
+            promptLine: 'read path=<path> [offset=<line>] [limit=<lines>] — read a text file with cat -n line numbers; start at offset (1-indexed), show up to limit lines; supports partial reads; use view_image for images',
             promptGuidelines: [
-                'Output uses cat -n line numbering with original file line numbers.',
-                'Use offset (starting line, 1-indexed) and limit (max lines) to read specific sections of large files.',
-                'Reading without offset/limit returns up to 2000 lines from the beginning.',
+                'Output shows original file line numbers (cat -n style).',
+                'For large files: read a small window first (e.g. offset=1 limit=50), then continue with offset=<next_line> limit=50 to page through.',
+                'The offset parameter is 1-indexed — offset=1 reads from the first line.',
+                'If offset exceeds the number of lines in the file, the tool reports an error showing total line count.',
+                'When a read result is too large, it is capped and saved for audit. Do NOT rerun the same full read and do NOT read the saved file in full. Instead, continue with a specific offset/limit window.',
                 'Binary files, image files, and PDFs are rejected — use view_image for images.',
-                'Output is capped by character limit. Very large output may be saved to a file for inspection.',
                 'Device paths (/dev/*) and /proc/*/fd/* paths are rejected for safety.',
             ],
         );

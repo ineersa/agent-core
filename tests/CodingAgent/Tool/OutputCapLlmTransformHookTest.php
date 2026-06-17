@@ -325,6 +325,184 @@ final class OutputCapLlmTransformHookTest extends TestCase
         $this->assertSame([], $transformed[0]->content);
     }
 
+    /* ── Double-cap protection for known-capping tools ── */
+
+    public function testReadToolOutputUnderDefaultCapPassesThroughUncapped(): void
+    {
+        // Known-capping tool (read) with output under defaultCap should
+        // NOT be re-capped by the central hook, fixing the false positive
+        // where JSON wrapping overhead pushes combined text over defaultCap.
+        $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 500, docCap: 1000);
+        $cap = new OutputCap($cfg);
+        $hook = new OutputCapLlmTransformHook($cap);
+
+        // Simulate a read tool result where raw file content (300 chars)
+        // is under defaultCap (500) but the AgentMessageNormalizer
+        // JSON-wraps it with ToolCallResult structure.
+        $fileContent = str_repeat('L', 300);
+
+        $message = new AgentMessage(
+            role: 'tool',
+            content: [[
+                'type' => 'text',
+                'text' => '{"is_error":false,"result":{"tool_name":"read","content":[{"type":"text","text":"'.$fileContent.'"}],"details":{"raw_result":"'.$fileContent.'","mode":"parallel"}},"error":null}',
+            ]],
+            toolCallId: 'call-read-1',
+            toolName: 'read',
+            details: [
+                'tool_name' => 'read',
+                'content' => [['type' => 'text', 'text' => $fileContent]],
+                'details' => ['raw_result' => $fileContent, 'mode' => 'parallel'],
+            ],
+        );
+
+        $transformed = $hook->transformContext([$message]);
+
+        $this->assertCount(1, $transformed);
+        $text = $transformed[0]->content[0]['text'] ?? '';
+
+        // The content should pass through uncapped (no "Output capped" notice)
+        $this->assertStringNotContainsString('Output capped', $text);
+        // The full file content should still be present in the text
+        $this->assertStringContainsString($fileContent, $text);
+        // The JSON structure should be intact
+        $this->assertStringContainsString('"tool_name":"read"', $text);
+    }
+
+    public function testBashToolOutputUnderDefaultCapPassesThroughUncapped(): void
+    {
+        // Known-capping tool (bash) with output under defaultCap.
+        $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 500);
+        $cap = new OutputCap($cfg);
+        $hook = new OutputCapLlmTransformHook($cap);
+
+        $output = str_repeat('B', 200);
+
+        $message = new AgentMessage(
+            role: 'tool',
+            content: [[
+                'type' => 'text',
+                'text' => $output,
+            ]],
+            toolCallId: 'call-bash-1',
+            toolName: 'bash',
+            details: [
+                'tool_name' => 'bash',
+                'details' => ['raw_result' => $output],
+            ],
+        );
+
+        $transformed = $hook->transformContext([$message]);
+
+        $this->assertCount(1, $transformed);
+        $text = $transformed[0]->content[0]['text'] ?? '';
+
+        $this->assertStringNotContainsString('Output capped', $text);
+        $this->assertStringContainsString($output, $text);
+    }
+
+    public function testAlreadyCappedKnownToolPassesThrough(): void
+    {
+        // Known-capping tool that already produced a capped notice
+        // should pass through without re-capping.
+        $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 500);
+        $cap = new OutputCap($cfg);
+        $hook = new OutputCapLlmTransformHook($cap);
+
+        $cappedNotice = '[Output capped to 200 characters] Full output saved for audit.';
+
+        $message = new AgentMessage(
+            role: 'tool',
+            content: [[
+                'type' => 'text',
+                'text' => $cappedNotice,
+            ]],
+            toolCallId: 'call-read-capped',
+            toolName: 'read',
+            details: [
+                'tool_name' => 'read',
+                'details' => ['raw_result' => $cappedNotice],
+            ],
+        );
+
+        $transformed = $hook->transformContext([$message]);
+
+        $this->assertCount(1, $transformed);
+        $text = $transformed[0]->content[0]['text'] ?? '';
+
+        // Should still contain the original capped notice
+        $this->assertStringContainsString($cappedNotice, $text);
+        // Should not produce a SECOND capped notice
+        $this->assertSame(1, substr_count($text, 'Output capped'));
+    }
+
+    public function testRegressionGuardCapsKnownToolOutputOverDefaultCap(): void
+    {
+        // Regression guard: if a known-capping tool produces output
+        // over defaultCap WITHOUT the capped-notice marker, the central
+        // hook should still cap it (defense-in-depth).
+        $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 100);
+        $cap = new OutputCap($cfg);
+        $hook = new OutputCapLlmTransformHook($cap);
+
+        $largeOutput = str_repeat('X', 200); // 200 > 100
+
+        $message = new AgentMessage(
+            role: 'tool',
+            content: [[
+                'type' => 'text',
+                'text' => $largeOutput,
+            ]],
+            toolCallId: 'call-read-regression',
+            toolName: 'read',
+            details: [
+                'tool_name' => 'read',
+                'details' => ['raw_result' => $largeOutput],
+            ],
+        );
+
+        $transformed = $hook->transformContext([$message]);
+
+        $this->assertCount(1, $transformed);
+        $text = $transformed[0]->content[0]['text'] ?? '';
+
+        // Central cap should engage
+        $this->assertStringContainsString('Output capped', $text);
+    }
+
+    public function testNonCappingToolStillCappedCentrally(): void
+    {
+        // Non-capping tool (extension, MCP) should still be capped
+        // by the central hook as before.
+        $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 100);
+        $cap = new OutputCap($cfg);
+        $hook = new OutputCapLlmTransformHook($cap);
+
+        $sentinel = 'EXTENSION_TOOL_SENTINEL_'.bin2hex(random_bytes(8));
+        $largeOutput = str_repeat('E', 200).$sentinel;
+
+        $message = new AgentMessage(
+            role: 'tool',
+            content: [[
+                'type' => 'text',
+                'text' => $largeOutput,
+            ]],
+            toolCallId: 'call-ext-1',
+            toolName: 'some_extension_tool',
+            details: [
+                'tool_name' => 'some_extension_tool',
+            ],
+        );
+
+        $transformed = $hook->transformContext([$message]);
+
+        $this->assertCount(1, $transformed);
+        $text = $transformed[0]->content[0]['text'] ?? '';
+
+        $this->assertStringContainsString('Output capped', $text);
+        $this->assertStringNotContainsString($sentinel, $text);
+    }
+
     /* ── Helpers ── */
 
     private function removeDirectory(string $dir): void
