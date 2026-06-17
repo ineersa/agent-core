@@ -41,7 +41,7 @@ Testing notes:
 Status: IN-PROGRESS
 Branch: task/issue-134-orphaned-tool-calls
 Worktree: /home/ineersa/projects/agent-core-worktrees/issue-134-orphaned-tool-calls
-Fork run: b8uryk4sdhum
+Fork run: engg9joce9ox
 PR URL: https://github.com/ineersa/agent-core/pull/163
 PR Status: open
 Started: 2026-06-17T22:37:40.939Z
@@ -188,3 +188,7 @@ Refined agent-core design:
 ## Task workflow update - 2026-06-17T23:35:09.044Z
 - Moved CODE-REVIEW → IN-PROGRESS.
 - Summary: Reopening PR #163 after user reproduced a remaining cancellation case: cancelling after an assistant tool_call has already been committed and a tool is running leaves the committed assistant tool_calls without matching tool messages. A later Continue correctly fails the new preflight validator with an unresolved tool-call sequence. Next fix: when cancellation finalizes while `pendingToolCalls` are present, synthesize provider-safe cancelled tool result messages for the committed assistant tool-call batch so future prompt history is valid.
+
+## Task workflow update - 2026-06-17T23:35:48.109Z
+- Recorded fork run: engg9joce9ox
+- Summary: Launched fork `engg9joce9ox` to implement the remaining cancellation fix reproduced by the user. Required behavior: when a committed assistant `tool_calls` message already exists and cancellation finalizes while `pendingToolCalls` are present, synthesize privacy-safe error `tool` messages for each pending tool call before `AgentEnd(cancelled)` so future `Continue` prompt history is provider-valid. Fork instructed to focus on `ToolCallResultHandler` Cancelling branch, preserve existing PR #163 behavior, add regression coverage for single/multi pending tool calls and validator pass after follow-up, run focused Castor validation plus deptrac/phpstan/cs-check, commit but do not push or move task.
