@@ -439,6 +439,132 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
 
     // ── Setup ─────────────────────────────────────────────────────
 
+    /**
+     * Prove that /resume (no session-id) opens the interactive session
+     * picker cleanly — no flicker, no scrollback artifacts, no raw
+     * escape-sequence leakage in the visible pane.
+     */
+    public function testResumeSessionPickerRendersCleanly(): void
+    {
+        $pane = $this->tmux->startDetached(
+            command: $this->agentCommand(),
+            prefix: 'tui-picker',
+            width: 120,
+            height: 60,
+            cwd: $this->testProjectDir,
+        );
+
+        try {
+            // ── Phase 1: Startup layout ──
+            $this->tmux->waitForCaptureContains($pane, '█', 5.0);
+            usleep(200_000);
+
+            // ── Phase 2: Create a session so the picker list is non-empty ──
+            $this->tmux->sendLiteral($pane, 'hi');
+            $this->tmux->sendKey($pane, 'Enter');
+
+            // Wait for assistant block to appear.
+            $this->tmux->waitForCallback(
+                $pane,
+                static fn (string $cap): bool => str_contains($cap, '◇') || str_contains($cap, '✕'),
+                timeout: 5.0,
+                message: 'Neither ◇ assistant block nor ✕ error appeared after first submit',
+                history: 2000,
+            );
+
+            // Wait for turn to complete.
+            try {
+                $this->tmux->waitForCallback(
+                    $pane,
+                    static fn (string $cap): bool => str_contains($cap, '◇')
+                        && !str_contains($cap, '◐ Working...'),
+                    timeout: 3.0,
+                    message: 'Turn did not complete before picker test',
+                    history: 2000,
+                );
+            } catch (\RuntimeException) {
+                // Non-fatal.
+            }
+
+            $this->saveAnsiSnapshot($pane, 'picker-step1-session-ready');
+
+            // ── Phase 3: /resume (no id) — open session picker ──
+            $this->tmux->sendKey($pane, 'C-u');
+            usleep(50_000);
+            $this->tmux->sendLiteral($pane, '/resume');
+            $this->tmux->sendKey($pane, 'Enter');
+
+            // Wait for the picker header text to appear.
+            $this->tmux->waitForCaptureContains(
+                $pane,
+                'Resume session',
+                3.0,
+            );
+            usleep(200_000);
+
+            $this->saveAnsiSnapshot($pane, 'picker-step2-picker-open');
+
+            // ── Phase 4: Assert clean visible pane with picker ──
+            $visiblePane = $this->tmux->capturePlain($pane);
+
+            // A) Structural TUI layout must be present.
+            self::assertStringContainsString('█', $visiblePane,
+                'Hatfield logo (header) must be visible when picker is open');
+            self::assertStringContainsString('◆', $visiblePane,
+                'Footer must be visible when picker is open');
+
+            // B) Picker header must be visible.
+            self::assertStringContainsString('Resume session', $visiblePane,
+                'Picker header text must be in the visible pane');
+
+            // C) Session entry must appear in the picker list.
+            self::assertStringContainsString('#', $visiblePane,
+                'Session entries (marked with #) must appear in the picker list');
+
+            // D) No raw escape-sequence leakage.
+            self::assertStringNotContainsString('[2J', $visiblePane,
+                'Escape [2J must not leak into visible pane with picker open');
+            self::assertStringNotContainsString('[3J', $visiblePane,
+                'Escape [3J must not leak into visible pane with picker open');
+            self::assertStringNotContainsString('[H', $visiblePane,
+                'Escape [H must not leak into visible pane with picker open');
+
+            // E) No stale "Running…" artifacts.
+            $runningCount = \substr_count($visiblePane, '● Running…');
+            self::assertSame(0, $runningCount,
+                \sprintf(
+                    'Zero "● Running…" expected when picker is open (found %d)',
+                    $runningCount,
+                ));
+
+            // ── Phase 5: Close picker with Escape ──
+            $this->tmux->sendKey($pane, 'Escape');
+            usleep(200_000);
+
+            $this->saveAnsiSnapshot($pane, 'picker-step3-picker-closed');
+
+            $closedPane = $this->tmux->capturePlain($pane);
+
+            // Picker header should no longer be in the visible pane.
+            self::assertStringNotContainsString('arrows move, Enter resumes', $closedPane,
+                'Picker instruction text must not remain after closing with Esc');
+
+            // Structural layout still present.
+            self::assertStringContainsString('█', $closedPane,
+                'Header must remain visible after closing picker');
+
+            // Clean exit.
+            $this->tmux->sendKey($pane, 'C-d');
+        } catch (\Throwable $e) {
+            $this->saveAnsiSnapshot($pane, 'picker-FAILURE');
+            try {
+                $this->tmux->sendKey($pane, 'C-d');
+            } catch (\Throwable) {
+            }
+            throw $e;
+        }
+    }
+
     private function agentCommand(): string
     {
         $fixturePath = __DIR__.'/fixtures/tui-resume-minimal.json';
