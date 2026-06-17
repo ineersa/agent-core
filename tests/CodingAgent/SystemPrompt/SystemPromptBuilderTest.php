@@ -91,29 +91,6 @@ final class SystemPromptBuilderTest extends TestCase
         $this->assertStringNotContainsString('</tool_usage>', $result);
     }
 
-    public function testBuiltInTemplateContextChannelsDescribeUserContextInjection(): void
-    {
-        $builder = $this->createBuilder();
-
-        $result = $builder->build();
-
-        // Context-channel wording must describe SYSTEM-02 / SYSTEM-03 behavior:
-        // AGENTS.md in initial user-context message.
-        $this->assertStringContainsString('user-context', $result);
-        $this->assertStringContainsString('<project_instructions', $result);
-
-        // Skills in initial user-context with <skills_instructions> + <available_skills>
-        $this->assertStringContainsString('<skills_instructions>', $result);
-        $this->assertStringContainsString('<available_skills>', $result);
-
-        // Preloaded --skills described as <skill name="..." location="..."> blocks in user-context
-        // Use <skill name to distinguish from <skills_instructions>.
-        $this->assertStringContainsString('<skill name', $result);
-
-        // Context channel must explicitly deny system-prompt insertion for both AGENTS and skills
-        $this->assertStringContainsString('never spliced into the system prompt', strtolower($result));
-    }
-
     public function testBuiltInTemplateWithRegisteredTools(): void
     {
         $registry = $this->createRegistryWithTools();

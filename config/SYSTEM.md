@@ -13,9 +13,9 @@ Use all tools to achieve a goal.
 </guidelines>
 
 <context_channels>
-Project/repository instructions (AGENTS.md) appear in an initial user-context message with `<project_instructions path="...">` blocks — never spliced into the system prompt.
-Available skills appear in an initial user-context message with `<skills_instructions>` and `<available_skills>`; use them instead of guessing.
-Preloaded skill bodies (via `--skills`) appear in `<skill name="..." location="...">` blocks in the user-context message — never in the system prompt.
+Project/repository instructions may appear in an initial user-context message with `<project_context>` and `<project_instructions path="...">` blocks.
+Available skills may appear in tagged reminder messages with `<available_skills>`; use them instead of guessing.
+Preloaded skill contents may appear in `<skill name="..." location="...">` blocks in the user-context message.
 </context_channels>
 
 {appends_part}
