@@ -41,7 +41,7 @@ Testing notes:
 Status: IN-PROGRESS
 Branch: task/issue-134-orphaned-tool-calls
 Worktree: /home/ineersa/projects/agent-core-worktrees/issue-134-orphaned-tool-calls
-Fork run: ujyykpezoctq
+Fork run: b8uryk4sdhum
 PR URL: https://github.com/ineersa/agent-core/pull/163
 PR Status: open
 Started: 2026-06-17T22:37:40.939Z
@@ -165,3 +165,7 @@ Refined agent-core design:
 ## Task workflow update - 2026-06-17T23:19:10.346Z
 - Moved CODE-REVIEW → IN-PROGRESS.
 - Summary: Reopening from CODE-REVIEW to address merge conflicts on PR #163 before returning to code review.
+
+## Task workflow update - 2026-06-17T23:19:53.635Z
+- Recorded fork run: b8uryk4sdhum
+- Summary: Launched merge-conflict resolution fork in worktree `/home/ineersa/projects/agent-core-worktrees/issue-134-orphaned-tool-calls` on branch `task/issue-134-orphaned-tool-calls`. Instructions: fetch/merge latest `origin/main`, resolve conflicts while preserving issue #134/#152 behavior and current IN-PROGRESS task-board state, run focused Castor validation (`ApplyCommandHandlerTest|AdvanceRunHandlerTest|LlmStepResultHandlerTest|AgentMessageToolCallSequenceValidatorTest|CommandMailboxPolicyTest|ExecutionWorkerTest`, `castor cs-check`, plus deptrac/phpstan if possible), commit resolution, do not push or move task.
