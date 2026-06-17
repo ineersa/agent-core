@@ -30,6 +30,12 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
     /** Default maximum lines for an unrestricted read. */
     private const int DEFAULT_LINE_LIMIT = 2000;
 
+    /** Maximum bytes to read for content inspection (8KB sample + 3-byte lookahead for UTF-8 multi-byte boundary). */
+    private const int INSPECTION_SAMPLE_BYTES = 8192;
+
+    /** Maximum additional bytes needed after INSPECTION_SAMPLE_BYTES to complete a UTF-8 multi-byte prefix. */
+    private const int LOOKAHEAD_BYTES = 3;
+
     /** @var list<string> Path prefixes that are obviously non-file resources. */
     private const array BLOCKED_PATH_PREFIXES = [
         '/dev/',
@@ -268,22 +274,27 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             return; // Empty file is valid text content
         }
 
-        // Binary, UTF-8, and MIME type check from sample buffer
+        // Binary, UTF-8, and MIME type check from sample buffer.
+        // ReadSample returns up to 8195 bytes (8192 + 3 lookahead) in binary mode
+        // to handle multi-byte UTF-8 characters split at the read boundary.
         $sample = $this->readSample($resolvedPath);
+        // Base sample (first 8192 bytes) for MIME and binary null-byte detection.
+        // These checks do not need lookahead bytes.
+        $sampleBase = substr($sample, 0, self::INSPECTION_SAMPLE_BYTES);
 
         // Reject images and other non-text MIME types FIRST.
         // Checked early so images get a helpful "use view_image" hint instead of
         // a generic "binary" or "non-UTF-8" error, since image magic bytes often
         // contain null bytes and non-UTF-8 sequences.
-        $this->rejectNonTextMime($sample, $resolvedPath);
+        $this->rejectNonTextMime($sampleBase, $resolvedPath);
 
         // Reject binary files (containing null bytes)
-        if (str_contains($sample, "\0")) {
+        if (str_contains($sampleBase, "\0")) {
             throw new ToolCallException(\sprintf('Cannot read "%s": file appears to be binary (contains null bytes).', $resolvedPath), retryable: false, hint: 'Use the view_image tool for image files. Binary code files (.so, .dll, etc.) are not supported by the read tool.');
         }
 
         // Reject non-UTF-8 content
-        if (!mb_check_encoding($sample, 'UTF-8')) {
+        if (!$this->isSampleValidUtf8($sample)) {
             throw new ToolCallException(\sprintf('Cannot read "%s": file contains non-UTF-8 encoded content.', $resolvedPath), retryable: false, hint: 'Convert the file to UTF-8 encoding first, or use a binary-safe tool.');
         }
 
@@ -292,9 +303,62 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
     }
 
     /**
-     * Read an 8KB sample from the file for content inspection.
+     * Check whether the sample buffer contains valid UTF-8 content,
+     * using lookahead bytes to handle multi-byte characters that may
+     * be split at the INSPECTION_SAMPLE_BYTES read boundary.
      *
-     * @return string Up to 8192 bytes from the start of the file
+     * Strategy:
+     * 1. Empty buffer → valid (trivial edge case).
+     * 2. Fast path: the full probe (base + lookahead) is valid UTF-8.
+     * 3. If the probe contains lookahead bytes (> INSPECTION_SAMPLE_BYTES):
+     *    try prefix lengths from INSPECTION_SAMPLE_BYTES up to the full probe
+     *    length.  This allows completing a split multi-byte character with
+     *    lookahead bytes, while still accepting the base sample if it alone
+     *    is valid (lookahead may start a new multi-byte sequence that is itself
+     *    incomplete in the 3-byte lookahead window).
+     * 4. If the probe is ≤ INSPECTION_SAMPLE_BYTES (no lookahead): return the
+     *    full-sample check as-is; do NOT trim any trailing bytes at EOF.
+     */
+    private function isSampleValidUtf8(string $sample): bool
+    {
+        if ('' === $sample) {
+            return true;
+        }
+
+        // Fast path: the entire probe (base + lookahead) is already valid.
+        if (mb_check_encoding($sample, 'UTF-8')) {
+            return true;
+        }
+
+        $totalLen = \strlen($sample);
+
+        if ($totalLen > self::INSPECTION_SAMPLE_BYTES) {
+            // Probe includes lookahead bytes.  Try the base sample first,
+            // then progressively longer prefixes including lookahead.
+            for ($len = self::INSPECTION_SAMPLE_BYTES; $len <= $totalLen; ++$len) {
+                if (mb_check_encoding(substr($sample, 0, $len), 'UTF-8')) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        // No lookahead bytes: validate the sample as-is.  Never trim at EOF —
+        // a file that is ≤ INSPECTION_SAMPLE_BYTES ending with stray continuation
+        // bytes is genuinely invalid and must be rejected.
+        return mb_check_encoding($sample, 'UTF-8');
+    }
+
+    /**
+     * Read an inspection sample from the file for content analysis.
+     *
+     * Returns INSPECTION_SAMPLE_BYTES from the start plus up to LOOKAHEAD_BYTES
+     * additional bytes so that a multi-byte UTF-8 character split at the
+     * inspection boundary can be completed for validation.
+     *
+     * @return string Up to INSPECTION_SAMPLE_BYTES + LOOKAHEAD_BYTES bytes
+     *                from the start of the file
      *
      * @throws ToolCallException when the file cannot be read
      */
@@ -307,12 +371,20 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             throw new ToolCallException(\sprintf('Unable to inspect file "%s": %s', $resolvedPath, $diagnostic), retryable: true, hint: 'Check file permissions and disk health.');
         }
 
-        $sample = @fread($fh, 8192);
+        $sample = @fread($fh, self::INSPECTION_SAMPLE_BYTES);
         if (false === $sample) {
             $lastError = error_get_last();
             $diagnostic = $lastError['message'] ?? 'Failed to read sample from file';
             @fclose($fh);
             throw new ToolCallException(\sprintf('Unable to inspect file "%s": %s', $resolvedPath, $diagnostic), retryable: true, hint: 'Check disk health and file integrity.');
+        }
+
+        // Read up to LOOKAHEAD_BYTES additional bytes.  Multi-byte UTF-8 characters
+        // can be up to 4 bytes, so LOOKAHEAD_BYTES (3) is enough to complete any
+        // character that was split at the INSPECTION_SAMPLE_BYTES boundary.
+        $lookahead = @fread($fh, self::LOOKAHEAD_BYTES);
+        if (false !== $lookahead && '' !== $lookahead) {
+            $sample .= $lookahead;
         }
 
         @fclose($fh);

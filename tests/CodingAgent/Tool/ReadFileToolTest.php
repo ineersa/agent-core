@@ -431,6 +431,115 @@ final class ReadFileToolTest extends TestCase
         ($this->readFileTool)(['path' => $targetPath]);
     }
 
+    public function testReadValidUtf8Near8192Boundary(): void
+    {
+        // Create a file where a 4-byte UTF-8 character starts at byte 8189
+        // so the 8192-byte sample buffer ends during the multi-byte sequence.
+        // This would falsely trigger a non-UTF-8 error with the old
+        // fixed-size fread + mb_check_encoding approach.
+        $targetPath = $this->tmpDir.'/utf8_boundary.txt';
+        $prefix = str_repeat('a', 8189);
+        // U+1F600 GRINNING FACE = \xF0\x9F\x98\x80 (4 bytes)
+        $emoji = "\xF0\x9F\x98\x80";
+        $trailing = "\nsome content after the boundary\n";
+        file_put_contents($targetPath, $prefix.$emoji.$trailing);
+
+        // Should NOT throw ToolCallException about non-UTF-8
+        $result = ($this->readFileTool)(['path' => $targetPath]);
+
+        $this->assertStringContainsString('some content after the boundary', $result);
+        $this->assertStringContainsString('a', $result);
+    }
+
+    public function testReadValidUtf8WithBoxDrawing(): void
+    {
+        $targetPath = $this->tmpDir.'/box_drawing.txt';
+        // Box drawing characters (U+2500-U+257F) are 3-byte UTF-8.
+        // These appear in docs/tui-architecture.md and are common
+        // in text files that read should handle correctly.
+        $content = "┌───┐\n│ x │\n└───┘\n";
+        file_put_contents($targetPath, $content);
+
+        $result = ($this->readFileTool)(['path' => $targetPath]);
+
+        $this->assertStringContainsString('┌───┐', $result);
+        $this->assertStringContainsString('│ x │', $result);
+        $this->assertStringContainsString('└───┘', $result);
+    }
+
+    public function testReadInvalidUtf8At8192BoundaryThrows(): void
+    {
+        // Create a file where 8191 ASCII bytes are followed by an invalid
+        // UTF-8 byte (\xFF), then a suffix. The old trimToCompleteUtf8Prefix
+        // would silently remove the trailing \xFF and accept the file.
+        // The fix must reject: the 8192-byte sample with trailing invalid
+        // bytes is genuinely non-UTF-8, not a boundary truncation.
+        $targetPath = $this->tmpDir.'/invalid_utf8_at_boundary.txt';
+        $prefix = str_repeat('a', 8191);
+        $invalidByte = "\xFF";
+        $suffix = "\nmore content\n";
+        file_put_contents($targetPath, $prefix.$invalidByte.$suffix);
+
+        $this->expectException(ToolCallException::class);
+        $this->expectExceptionMessage('non-UTF-8');
+
+        ($this->readFileTool)(['path' => $targetPath]);
+    }
+
+    public function testReadInvalidUtf8At8190BoundaryWithContinuationByteThrows(): void
+    {
+        // Create a file where 8190 ASCII bytes are followed by an invalid
+        // stray continuation byte (\xBA) and then an invalid byte (\xFF).
+        // The trailing \xFF is NOT a continuation byte, so the safe
+        // continuation-byte trim must stop before it and reject.
+        $targetPath = $this->tmpDir.'/invalid_utf8_at_8190_boundary.txt';
+        $prefix = str_repeat('a', 8190);
+        $invalidByte = "\xBA\xFF"; // stray continuation + invalid start byte
+        $suffix = "\nmore content\n";
+        file_put_contents($targetPath, $prefix.$invalidByte.$suffix);
+
+        $this->expectException(ToolCallException::class);
+        $this->expectExceptionMessage('non-UTF-8');
+
+        ($this->readFileTool)(['path' => $targetPath]);
+    }
+
+    public function testReadValidUtf8With8192AsciiFollowedByEmoji(): void
+    {
+        // Create a file where 8192 ASCII bytes (exactly one inspection sample)
+        // are followed by a 4-byte emoji.  The base sample (8192 ASCII bytes)
+        // is valid UTF-8, so the file passes even though the lookahead captures
+        // only the first 3 bytes of the 4-byte emoji.
+        $targetPath = $this->tmpDir.'/utf8_8192_plus_emoji.txt';
+        $prefix = str_repeat('a', 8192);
+        // U+1F600 GRINNING FACE = \xF0\x9F\x98\x80 (4 bytes)
+        $emoji = "\xF0\x9F\x98\x80";
+        file_put_contents($targetPath, $prefix.$emoji);
+
+        // Should read successfully (valid UTF-8)
+        $result = ($this->readFileTool)(['path' => $targetPath]);
+
+        $this->assertStringContainsString('a', $result);
+        $this->assertStringContainsString($emoji, $result);
+    }
+
+    public function testReadInvalidUtf8EndingWithStrayContinuationByteThrows(): void
+    {
+        // Create a file <= 8192 bytes that ends with a stray continuation
+        // byte.  This must be rejected — the sample is the entire file, so
+        // no "lookahead" is available and trimming at EOF is not allowed.
+        $targetPath = $this->tmpDir.'/invalid_stray_continuation.txt';
+        // 8191 ASCII bytes + a stray continuation byte (0x80)
+        $prefix = str_repeat('a', 8191);
+        $strayContinuation = "\x80";
+        file_put_contents($targetPath, $prefix.$strayContinuation);
+
+        $this->expectException(ToolCallException::class);
+        $this->expectExceptionMessage('non-UTF-8');
+
+        ($this->readFileTool)(['path' => $targetPath]);
+    }
+
     public function testReadImageByMimeThrows(): void
     {
         $targetPath = $this->tmpDir.'/fake.png';
@@ -537,6 +646,19 @@ final class ReadFileToolTest extends TestCase
                 ($this->readFileTool)(['path' => $targetPath]);
             },
         );
+    }
+
+    public function testReadWithUtf8BomIsAccepted(): void
+    {
+        // UTF-8 BOM (\xEF\xBB\xBF) is valid UTF-8 for U+FEFF ZERO WIDTH NO-BREAK SPACE.
+        // The read tool must accept it as a valid UTF-8 text file.
+        $targetPath = $this->tmpDir.'/utf8_bom.txt';
+        $content = "\xEF\xBB\xBFHello, UTF-8 BOM world!\n";
+        file_put_contents($targetPath, $content);
+
+        $result = ($this->readFileTool)(['path' => $targetPath]);
+
+        $this->assertStringContainsString('Hello, UTF-8 BOM world!', $result);
     }
 
     /* ── helpers ── */
