@@ -47,7 +47,7 @@ Suggested implementation direction:
 Status: IN-PROGRESS
 Branch: task/issue-129-vllm-provider-resilience
 Worktree: /home/ineersa/projects/agent-core-worktrees/issue-129-vllm-provider-resilience
-Fork run: r91hmmwynaz8
+Fork run: 04c309926
 PR URL: https://github.com/ineersa/agent-core/pull/158
 PR Status: open
 Started: 2026-06-17T16:53:39.596Z
@@ -142,3 +142,20 @@ Commits on branch task/issue-129-vllm-provider-resilience (HEAD 57bdf35af):
 
 ## Task workflow update - 2026-06-17T19:07:22.627Z
 - Moved CODE-REVIEW → IN-PROGRESS.
+
+## Task workflow update - 2026-06-17T19:16:36.566Z
+- Recorded fork run: 04c309926
+- Validation: Fork validation (Castor-only): castor test --filter=AiHttpConfigTest 13/38 OK; --filter=LlmHttpRetryPolicyTest 24/76 OK; --filter=LlmProviderErrorClassifierTest 33/89 OK; --filter=LlmRetryingHttpClientTest 12/27 OK; --filter=SymfonyAiProviderFactoryTest 5/9 OK; castor deptrac 0 violations; castor phpstan 0 errors; castor cs-check 0 fixed; castor test full suite 2657 tests/7800 assertions OK (was 2643/7761, +14 tests +39 assertions).; Orchestrator independent re-confirm at 04c309926: castor deptrac 0 violations (allowed=1137); castor phpstan 0 errors; castor test --filter=AiHttpConfigTest 13 tests/38 assertions OK. Grep confirms no getenv/HATFIELD_LLM_HTTP in LlmHttpRetryPolicy; AiConfig exposes ->http; factory seeds policy from $this->appConfig->ai?->http.
+- Summary: task-review-iterate: addressed PR #158 inline comment (LlmHttpRetryPolicy.php:57) — "Will be way nicer to get those from settings, settings also support env: syntax if need envs for testing."
+
+Fork moved the LLM HTTP retry config source from HATFIELD_LLM_HTTP_* env vars to a new ai.http Hatfield settings block:
+- NEW src/CodingAgent/Config/Ai/AiHttpConfig.php — typed readonly DTO (?int timeout/maxDuration/maxRetries/baseDelayMs/maxDelayMs) with fromArray() supporting null / int / numeric-string / env:VARNAME resolution (env: reused for test overrides, matching the existing api_key env: pattern).
+- AiConfig now exposes ->http (parsed from ai.http block, default empty).
+- LlmHttpRetryPolicy: removed ALL getenv()/HATFIELD_LLM_HTTP_* reading; constructor now takes explicit ?ints falling back to DEFAULT_* constants via pure validatePositive()/validateNonNegative() validators (no backward-compat shim). Verified zero getenv/HATFIELD_LLM_HTTP references remain.
+- SymfonyAiProviderFactory::getHttpClient() now seeds LlmHttpRetryPolicy from $this->appConfig->ai?->http (null-safe; absent ai.http → all defaults, identical runtime behavior).
+- docs/settings.md: new ### ai.http subsection (5 keys, defaults 30/120/2/1000/60000, units, env: note). .hatfield/settings.yaml: commented example block added (kept in sync per AGENTS.md).
+- Tests: NEW AiHttpConfigTest (13 tests/38 assertions — empty/explicit/env:/unset/numeric-string/invalid + AiConfig integration); SymfonyAiProviderFactoryTest +1 test (custom ai.http accepted). LlmHttpRetryPolicyTest unchanged — all 24 existing tests pass (no env-specific assertions existed).
+
+This is a pure config-sourcing refactor — runtime behavior unchanged (defaults identical when ai.http absent). PR #158's TUI E2E proof + llm-real coverage from the prior cycle still apply; retry client behavior untouched.
+
+Commit 04c309926 on task/issue-129-vllm-provider-resilience (now 3 commits over origin/main: d711ce375, 57bdf35af, 04c309926). 19 files, +2413/-27. Worktree clean, NOT pushed (orchestrator handles via CODE-REVIEW move).
