@@ -17,12 +17,12 @@ Test target: `tests/CodingAgent/Tool/RegistryBackedToolboxTest.php` for the exec
 - Run focused validation through Castor, at minimum `castor test --suite=coding-agent --filter=RegistryBackedToolboxTest` plus any targeted registry tests touched.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/issue-153-tool-execution-visibility
 Worktree: /home/ineersa/projects/agent-core-worktrees/issue-153-tool-execution-visibility
 Fork run: 1fwj6ofj0h9g
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/156
+PR Status: open
 Started: 2026-06-17T16:12:02.630Z
 Completed:
 
@@ -56,3 +56,11 @@ Completed:
 ## Task workflow update - 2026-06-17T16:28:42.571Z
 - Validation: Reviewer subagent: APPROVED; no blocking issues. Reviewer ran `castor test --filter=ToolRegistryTest` — OK (47 tests, 108 assertions); `castor test --filter=RegistryBackedToolboxTest` — OK (17 tests, 36 assertions); `castor phpstan --path=src/CodingAgent/Tool` — OK; `castor phpstan` — OK; `castor cs-check` — OK.; Orchestrator focused validation: `castor test` — OK (2574 tests, 7569 assertions).; Orchestrator focused validation: `castor deptrac` — OK (violations=0, errors=0, allowed=1137).; Orchestrator focused validation: `castor phpstan` — OK (errors=0, file_errors=0).; Orchestrator focused validation: `castor cs-check` — OK (files_fixed=0).; Before CODE-REVIEW `castor check` gate: checked for stale worktree controller/messenger/phpunit/castor processes — none found.; Final worktree state before CODE-REVIEW: `git status --short --branch` clean on `task/issue-153-tool-execution-visibility`; diff stat origin/main...HEAD = 4 files changed, 151 insertions(+), 2 deletions(-).
 - Summary: Task-to-PR review completed for HEAD b34273611dd. Reviewer subagent verdict: APPROVED. Reviewer confirmed testing skill and tests/AGENTS.md were read, tests follow conventions, production fix closes issue #153, and handler non-invocation is genuinely asserted. Non-blocking notes were reviewed and skipped as cosmetic/redundant/out-of-scope: the internal test call id naming suggestion is cosmetic, combined allowlist+denylist execute-seam coverage is redundant with existing `isToolVisible()` coverage, and shared local test helpers are pre-existing. No implementation follow-up required.
+
+## Task workflow update - 2026-06-17T16:29:21.101Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Running deterministic castor check in worktree (timeout 480s)...
+- castor check passed (26.3s).
+- Pushed task/issue-153-tool-execution-visibility to origin.
+- branch 'task/issue-153-tool-execution-visibility' set up to track 'origin/task/issue-153-tool-execution-visibility'.
+- Created PR: https://github.com/ineersa/agent-core/pull/156
