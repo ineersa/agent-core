@@ -127,6 +127,26 @@ final readonly class CachedApprovalLedger
      * "Always allow" decisions are persisted in settings.yaml by
      * SafeGuardPolicyWriter and checked by SafeGuardClassifier;
      * they do NOT use this cache path after initial approval.
+     *
+     * # Atomicity note
+     *
+     * The read-then-delete sequence (getItem -> isHit check -> deleteItem)
+     * is NOT an atomic compare-and-delete. A concurrent consumer could
+     * read the item as a hit between another consumer's isHit and deleteItem,
+     * causing both to return true — breaking one-time semantics.
+     *
+     * This is safe TODAY because:
+     * - Runs are serialized by the run lock (RunState compareAndSwap).
+     * - A given operation key's retry is handled by a single AdvanceRun,
+     *   which produces one ExecuteToolCall message consumed by one tool
+     *   worker. No two workers race on the same operation key.
+     * - "Always allow" persistence is handled independently via
+     *   SafeGuardPolicyWriter/settings.yaml, not this cache path.
+     *
+     * IF the concurrency model is later widened to allow parallel retries
+     * of the same operation key, this method MUST be made atomic — either
+     * via an explicit SQLite transaction (DELETE ... RETURNING) or by
+     * switching the cache adapter to Redis with atomic EVAL/Lua script.
      */
     public function consumeApproval(string $runId, string $operationKey): bool
     {

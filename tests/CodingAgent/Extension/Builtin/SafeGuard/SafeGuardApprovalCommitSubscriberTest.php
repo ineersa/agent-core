@@ -18,11 +18,13 @@ use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Classifier\SafeGuardClassifi
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Policy\SafeGuardPolicy;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardConfig;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardToolCallHook;
+use Ineersa\CodingAgent\Extension\CachedApprovalLedger;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\Extension\SafeGuardApprovalCommitSubscriber;
 use Ineersa\Hatfield\ExtensionApi\ToolCallContextDTO;
 use Ineersa\Hatfield\ExtensionApi\ToolCallDecisionKindEnum;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\PropertyInfo\Extractor\PhpDocExtractor;
 use Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor;
@@ -474,6 +476,207 @@ final class SafeGuardApprovalCommitSubscriberTest extends TestCase
             }
             @rmdir($tmpDir);
         }
+    }
+
+    /**
+     * Verify that non-human_response events do NOT trigger approval routing.
+     */
+    public function testDenyPathDoesNotWriteApprovedCacheEntry(): void
+    {
+        // ── 1. Setup: ledger-backed registry + SafeGuard ──
+        $cachePool = new ArrayAdapter();
+        $ledger = new CachedApprovalLedger($cachePool);
+        $hookRegistry = new ExtensionHookRegistry();
+        $hookRegistry->setLedger($ledger);
+
+        $tracker = new ApprovalSessionTracker();
+        $config = new SafeGuardConfig(autoDenyInNoninteractive: false);
+        $classifier = SafeGuardClassifier::fromConfig($config);
+        $policy = new SafeGuardPolicy();
+        $hook = new SafeGuardToolCallHook(
+            classifier: $classifier,
+            policy: $policy,
+            approvalTracker: $tracker,
+            policyWriter: null,
+            cwd: $this->cwd,
+            autoDenyInNoninteractive: false,
+        );
+        $hookRegistry->addToolCallHook($hook);
+
+        // ── 2. Trigger RequireApproval and register pending ──
+        $toolCall = new ToolCallContextDTO(
+            toolCallId: 'call_deny_01',
+            toolName: 'write',
+            arguments: ['path' => '/outside-cwd/deny-test.txt'],
+            orderIndex: 0,
+        );
+        $decision = $hook->onToolCall($toolCall);
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $decision->kind);
+
+        $questionId = (string) ($decision->details['question_id'] ?? '');
+        $operationKey = (string) ($decision->details['operation_key'] ?? '');
+        $this->assertNotEmpty($questionId);
+        $this->assertNotEmpty($operationKey);
+
+        // Register with runId so it goes through the shared cache
+        $hookRegistry->registerPendingApproval(
+            questionId: $questionId,
+            hook: $hook,
+            details: $decision->details,
+            runId: 'run-deny-test',
+        );
+
+        // ── 3. Build subscriber and dispatch "Deny" answer through
+        //       SafeGuardApprovalCommitSubscriber ──
+
+        $runState = new RunState(
+            runId: 'run-deny-test',
+            status: RunStatus::Running,
+            version: 1,
+            turnNo: 1,
+            lastSeq: 5,
+            isStreaming: false,
+            streamingMessage: null,
+            pendingToolCalls: [],
+            errorMessage: null,
+            messages: [],
+            activeStepId: null,
+            retryableFailure: false,
+        );
+        $committedEvents = [
+            new RunEvent(
+                runId: 'run-deny-test',
+                seq: 6,
+                turnNo: 1,
+                type: 'agent_command_applied',
+                payload: [
+                    'kind' => 'human_response',
+                    'idempotency_key' => 'ik_deny_01',
+                    'question_id' => $questionId,
+                    'answer' => 'Deny',
+                    'message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Deny']]],
+                    'options' => [],
+                ],
+            ),
+        ];
+        $context = AfterTurnCommitHookContext::fromRunState($runState, $committedEvents, 0);
+
+        $subscriber = new SafeGuardApprovalCommitSubscriber($hookRegistry);
+        $dispatcher = new HookDispatcher(
+            registry: new HookSubscriberRegistry([$subscriber]),
+            eventDispatcher: new EventDispatcher(),
+            normalizer: $this->serializer,
+            denormalizer: $this->serializer,
+        );
+        $dispatcher->dispatchAfterTurnCommit($context);
+
+        // ── 4. Assert: approved cache entry was NOT written ──
+        // If the 'Deny !== $answer' guard in SafeGuardApprovalCommitSubscriber
+        // works, consumeApproval returns false (no approved entry to consume).
+        $this->assertFalse(
+            $ledger->consumeApproval('run-deny-test', $operationKey),
+            '"Deny" must NOT write an approved cache entry. '
+            .'SafeGuardApprovalCommitSubscriber guards the markApproved call '
+            .'with if (\'Deny\' !== $answer).',
+        );
+
+        // ── 5. Assert: the pending entry was consumed from the cache ──
+        // This proves the subscriber DID route the answer through
+        // resolveApproval (which resolves from cache and deletes the key).
+        // A second resolve returns null.
+        $this->assertNull(
+            $hookRegistry->resolveApproval($questionId, 'run-deny-test'),
+            'Pending entry must be consumed on resolve, even for "Deny". '
+            .'The answer WAS routed; the subscriber handled it.',
+        );
+
+        // ── 6. Assert: retry tool call is still blocked (not approved) ──
+        $retryDecision = $hook->onToolCall(new ToolCallContextDTO(
+            toolCallId: 'call_deny_02',
+            toolName: 'write',
+            arguments: ['path' => '/outside-cwd/deny-test.txt'],
+            orderIndex: 0,
+        ));
+        $this->assertNotSame(
+            ToolCallDecisionKindEnum::Allow,
+            $retryDecision->kind,
+            'After "Deny", the tool call must NOT be allowed on retry. '
+            .'The approved entry was not written, so the cache pre-check '
+            .'will not skip the RequireApproval.',
+        );
+    }
+
+    /**
+     * Prove one-time "Allow once" semantics across the shared cache.
+     *
+     * An approved decision must be consumed exactly once: the first
+     * consumeApproval returns true AND deletes the key; a second call
+     * returns false (would re-prompt / re-block the Retry).
+     */
+    public function testOneTimeAllowOnceAcrossCacheIsConsumedExactlyOnce(): void
+    {
+        $cachePool = new ArrayAdapter();
+        $ledger = new CachedApprovalLedger($cachePool);
+        $hookRegistry = new ExtensionHookRegistry();
+        $hookRegistry->setLedger($ledger);
+
+        $tracker = new ApprovalSessionTracker();
+        $config = new SafeGuardConfig(autoDenyInNoninteractive: false);
+        $classifier = SafeGuardClassifier::fromConfig($config);
+        $policy = new SafeGuardPolicy();
+        $hook = new SafeGuardToolCallHook(
+            classifier: $classifier,
+            policy: $policy,
+            approvalTracker: $tracker,
+            policyWriter: null,
+            cwd: $this->cwd,
+            autoDenyInNoninteractive: false,
+        );
+        $hookRegistry->addToolCallHook($hook);
+
+        // ── 1. Trigger RequireApproval and register pending ──
+        $toolCall = new ToolCallContextDTO(
+            toolCallId: 'call_once_01',
+            toolName: 'write',
+            arguments: ['path' => '/outside-cwd/one-time-test.txt'],
+            orderIndex: 0,
+        );
+        $decision = $hook->onToolCall($toolCall);
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $decision->kind);
+
+        $questionId = (string) ($decision->details['question_id'] ?? '');
+        $operationKey = (string) ($decision->details['operation_key'] ?? '');
+
+        $hookRegistry->registerPendingApproval(
+            questionId: $questionId,
+            hook: $hook,
+            details: $decision->details,
+            runId: 'run-once-test',
+        );
+
+        // ── 2. Simulate RUN_CONTROL consumer: resolve + markApproved ──
+        $entry = $hookRegistry->resolveApproval($questionId, 'run-once-test');
+        $this->assertNotNull($entry, 'Pending approval must be resolvable from cache');
+        $this->assertSame($operationKey, $entry->details['operation_key'] ?? '');
+
+        // Simulate onApprovalAnswered for "Allow once"
+        $hookRegistry->markApproved('run-once-test', $operationKey);
+
+        // ── 3. Simulate TOOL consumer retry: consume approval ──
+        $firstConsume = $hookRegistry->consumeApproval('run-once-test', $operationKey);
+        $this->assertTrue(
+            $firstConsume,
+            'First consumeApproval must return true — the approved decision exists in cache.',
+        );
+
+        // ── 4. Second retry (no intervening approval): no approved entry ──
+        $secondConsume = $hookRegistry->consumeApproval('run-once-test', $operationKey);
+        $this->assertFalse(
+            $secondConsume,
+            'Second consumeApproval must return false — the approved key was '
+            .'deleted on consume. Without re-approval, the tool call will '
+            .'be re-blocked (RequireApproval again). This proves one-time semantics.',
+        );
     }
 
     /**

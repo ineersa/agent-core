@@ -147,6 +147,8 @@ services:
       $cache: '@cache.approvals'
 
   Ineersa\CodingAgent\Extension\ExtensionHookRegistry:
+    arguments:
+      $logger: '@monolog.logger'
     calls:
       - setLedger: ['@Ineersa\CodingAgent\Extension\CachedApprovalLedger']
 

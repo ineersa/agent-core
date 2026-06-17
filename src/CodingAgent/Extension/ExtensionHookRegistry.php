@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Extension;
 use Ineersa\Hatfield\ExtensionApi\ApprovalAnswerHookInterface;
 use Ineersa\Hatfield\ExtensionApi\ToolCallHookInterface;
 use Ineersa\Hatfield\ExtensionApi\ToolResultHookInterface;
+use Psr\Log\LoggerInterface;
 
 /**
  * Internal registry for tool call/result hooks registered by extensions.
@@ -61,6 +62,16 @@ final class ExtensionHookRegistry
      * @var array<string, ApprovalPendingEntry>
      */
     private array $pendingApprovals = [];
+
+    /**
+     * Optional logger for diagnostic warnings (e.g., ledger misconfiguration).
+     */
+    private ?LoggerInterface $logger = null;
+
+    public function __construct(?LoggerInterface $logger = null)
+    {
+        $this->logger = $logger;
+    }
 
     public function addToolCallHook(ToolCallHookInterface $hook): void
     {
@@ -117,6 +128,10 @@ final class ExtensionHookRegistry
      * When runId is empty or no ledger is available (test/unit context),
      * falls back to in-memory registration for backward compat.
      *
+     * When runId is set but no ledger is available (DI misconfiguration),
+     * emits a structured warning log so the operator can detect the wiring
+     * gap that would cause issue #130 to reappear.
+     *
      * @param array<string, mixed> $details the approval context from the RequireApproval decision
      */
     public function registerPendingApproval(
@@ -137,6 +152,12 @@ final class ExtensionHookRegistry
             );
 
             return;
+        }
+
+        // Warn when runId is present but ledger is missing
+        // (DI misconfiguration — approvals will be silently ignored).
+        if ('' !== $runId) {
+            $this->warnLedgerMisconfigured($runId, 'registerPendingApproval');
         }
 
         // Fallback to in-memory (no run context — e.g., unit tests).
@@ -184,6 +205,12 @@ final class ExtensionHookRegistry
                 hook: $hook,
                 details: $data['details'] ?? [],
             );
+        }
+
+        // Warn when runId is present but ledger is missing
+        // (DI misconfiguration — cross-process resolve will fail).
+        if ('' !== $runId) {
+            $this->warnLedgerMisconfigured($runId, 'resolveApproval');
         }
 
         // Same-process fallback (in-memory).
@@ -242,6 +269,40 @@ final class ExtensionHookRegistry
         }
 
         return $this->ledger->consumeApproval($runId, $operationKey);
+    }
+
+    // ── Diagnostic logging ──
+
+    /**
+     * Log a structured warning when the cross-process approval ledger is
+     * missing but a runId is provided (DI misconfiguration signal).
+     *
+     * This is exactly the failure mode of issue #130: approvals silently
+     * fall back to in-memory storage and are IGNORED in the process transport.
+     * The log provides an operator-visible signal that would otherwise be
+     * invisible.
+     *
+     * Logs only when a logger is configured (it is in production via DI).
+     * No-op in unit tests that construct ExtensionHookRegistry without one.
+     */
+    private function warnLedgerMisconfigured(string $runId, string $operation): void
+    {
+        if (null === $this->logger) {
+            return;
+        }
+
+        $this->logger->warning(
+            'Cross-process approval ledger (CachedApprovalLedger) is not configured. '
+            .'Approvals will fall back to the in-memory store and will be IGNORED '
+            .'in the multi-process transport — this is the exact failure mode of issue #130. '
+            .'Ensure ExtensionHookRegistry.setLedger() is called with a CachedApprovalLedger service.',
+            [
+                'run_id' => $runId,
+                'component' => 'extension.hook_registry',
+                'event_type' => 'safeguard_approval_misconfig',
+                'operation' => $operation,
+            ],
+        );
     }
 }
 
