@@ -118,3 +118,7 @@ This is a tool-execution/runtime-visible change, not a provider/LLM-visible chan
  create mode 100644 tests/Tui/E2E/fixtures/tui-tool-call-read.json
 - Removed worktree /home/ineersa/projects/agent-core-worktrees/issue-131-tui-tool-result-output.
 - Pulled integration checkout: Merge made by the 'ort' strategy..
+
+## Task workflow update - 2026-06-17T21:53:22.099Z
+- Validation: PR #160 confirmed MERGED on GitHub (mergeCommit cb7c8f927b7c6493e5d42a2c088b1715dd287cc8, mergedAt 2026-06-17T21:50:44Z).; Integration checkout merged cleanly (ort strategy), worktree removed, git pull synced.; Post-merge LLM_MODE=true castor check on integration checkout: ALL GREEN (73.9s) — deptrac OK (0.9s), test OK 2670 tests/7873 assertions (17.1s), test:controller-replay OK 1/14 (9.0s), test:tui OK 8/83 (34.7s), phpstan 0 errors (10.2s), cs-check 0 fixed (2.0s).; Stale-worker safety: no ineersa-owned workers present; PID 3415 confirmed root-owned (uid 0, Docker messenger) and NOT touched.
+- Summary: PR #160 merged (merge commit cb7c8f927b, 2026-06-17T21:50:44Z) and merged into integration checkout. Worktree removed. Task complete — tool result output now visible in TUI (#131).
