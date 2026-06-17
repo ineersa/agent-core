@@ -395,6 +395,42 @@ final class RuntimeEventMapperTest extends TestCase
         self::assertTrue($result->payload['is_error']);
     }
 
+    public function testNormalizesToolExecutionEndPassesThroughResultText(): void
+    {
+        $event = $this->runEvent('tool_execution_end', [
+            'tool_call_id' => 'call-read',
+            'is_error' => false,
+            'order_index' => 0,
+            'result' => 'actual tool output content',
+        ]);
+
+        $result = $this->mapper->toRuntimeEvent($event);
+
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::ToolExecutionCompleted->value, $result->type);
+        self::assertArrayHasKey('result', $result->payload);
+        self::assertSame('actual tool output content', $result->payload['result'],
+            'Translator must pass through result text to the protocol event');
+    }
+
+    public function testNormalizesToolExecutionEndOmitsResultWhenNotString(): void
+    {
+        $event = $this->runEvent('tool_execution_end', [
+            'tool_call_id' => 'call-read',
+            'is_error' => false,
+            'order_index' => 0,
+            'result' => 42,
+        ]);
+
+        $result = $this->mapper->toRuntimeEvent($event);
+
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::ToolExecutionCompleted->value, $result->type);
+        // Translator only forwards string results; non-string should be omitted
+        // so the projector falls back to "{tool_name} completed".
+        self::assertArrayNotHasKey('result', $result->payload);
+    }
+
     // ── HITL normalization ───────────────────────────────────────────────────
 
     public function testNormalizesWaitingHumanToHumanInputRequested(): void
