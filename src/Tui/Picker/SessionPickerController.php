@@ -90,8 +90,15 @@ final class SessionPickerController
                 $item = $event->getItem();
                 $sessionId = $item['value'];
 
+                // Close the picker overlay WITHOUT requesting a render.
+                // applySelectEffect() → requestResume() calls
+                // resetLocalState() + Tui::stop(), so a render at this
+                // point would paint a torn-down widget tree and cause
+                // screen freeze / cursor weirdness.
+                // The Esc/cancel path uses closePicker(true) because it
+                // stays in the same TUI session and needs the repaint.
+                $this->closePicker(requestRender: false);
                 $this->applySelectEffect($sessionId);
-                $this->closePicker();
             },
         );
     }
@@ -192,10 +199,15 @@ final class SessionPickerController
      *
      * Delegates to PickerOverlay::close() which removes the container
      * from the TUI and resets internal state.
+     *
+     * @param bool $requestRender Whether to schedule a TUI repaint.
+     *                            Default true (Esc/cancel).  Pass false when the picker is
+     *                            closing as part of a session-switch selection — the TUI is
+     *                            about to stop and a render would paint torn-down state.
      */
-    public function closePicker(): void
+    public function closePicker(bool $requestRender = true): void
     {
-        $this->overlay?->close();
+        $this->overlay?->close($requestRender);
         $this->overlay = null;
     }
 

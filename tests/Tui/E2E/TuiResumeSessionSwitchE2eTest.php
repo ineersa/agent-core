@@ -565,6 +565,156 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
         }
     }
 
+    /**
+     * Proves that selecting a session from the /resume picker (Enter)
+     * cleanly transitions to the resumed session WITHOUT screen freeze,
+     * cursor weirdness, or visual corruption.
+     *
+     * The picker open path (non-forced render) must remain flicker-free,
+     * AND the select path must properly tear down the overlay and build
+     * the resumed session without a stale render of torn-down state.
+     */
+    public function testSelectSessionFromPickerTransitionsCleanly(): void
+    {
+        $pane = $this->tmux->startDetached(
+            command: $this->agentCommand(),
+            prefix: 'tui-picker-select',
+            width: 120,
+            height: 60,
+            cwd: $this->testProjectDir,
+        );
+
+        try {
+            // ── Phase 1: Startup layout ──
+            $this->tmux->waitForCaptureContains($pane, '█', 5.0);
+            usleep(200_000);
+
+            // ── Phase 2: Create a session so the picker list is non-empty ──
+            $this->tmux->sendLiteral($pane, 'hi');
+            $this->tmux->sendKey($pane, 'Enter');
+
+            // Wait for assistant block (◇) or error (✕).
+            $this->tmux->waitForCallback(
+                $pane,
+                static fn (string $cap): bool => str_contains($cap, '◇') || str_contains($cap, '✕'),
+                timeout: 5.0,
+                message: 'Neither ◇ assistant block nor ✕ error appeared after first submit',
+                history: 2000,
+            );
+
+            // Extract session ID from footer history.
+            $firstCapture = $this->tmux->capturePlainWithHistory($pane, 2000);
+            $matched = preg_match('/session\s+(\d+)/', $firstCapture, $matches);
+            self::assertSame(1, $matched,
+                'Footer must show numeric session ID after first submit');
+            $sessionId = $matches[1];
+
+            // Wait for turn to complete.
+            try {
+                $this->tmux->waitForCallback(
+                    $pane,
+                    static fn (string $cap): bool => str_contains($cap, '◇')
+                        && !str_contains($cap, '◐ Working...'),
+                    timeout: 3.0,
+                    message: 'Turn did not complete before picker select test',
+                    history: 2000,
+                );
+            } catch (\RuntimeException) {
+                // Non-fatal.
+            }
+
+            $this->saveAnsiSnapshot($pane, 'picker-select-step1-session-ready');
+
+            // ── Phase 3: /resume (no id) — open session picker ──
+            $this->tmux->sendKey($pane, 'C-u');
+            usleep(50_000);
+            $this->tmux->sendLiteral($pane, '/resume');
+            $this->tmux->sendKey($pane, 'Enter');
+
+            // Wait for the picker header text to appear.
+            $this->tmux->waitForCaptureContains(
+                $pane,
+                'Resume session',
+                3.0,
+            );
+            usleep(200_000);
+
+            $pickerOpenPane = $this->tmux->capturePlain($pane);
+            // Prove picker is open and flicker-free.
+            self::assertStringContainsString('█', $pickerOpenPane,
+                'Header must be visible when picker is open');
+            self::assertStringContainsString('Resume session', $pickerOpenPane,
+                'Picker header must be in visible pane');
+            self::assertStringNotContainsString('[2J', $pickerOpenPane,
+                'No flicker/escape leakage when picker opens');
+
+            $this->saveAnsiSnapshot($pane, 'picker-select-step2-picker-open');
+
+            // ── Phase 4: Press Enter to SELECT the first session ──
+            //
+            // The picker has focus (setFocus in PickerOverlay::mount).
+            // Enter triggers select_confirm → onSelect callback →
+            // closePicker(false) + applySelectEffect(sessionId).
+            // The TUI must exit the event loop and rebuild for the
+            // resumed session without visual corruption.
+            $this->tmux->sendKey($pane, 'Enter');
+
+            // ── Phase 5: Assert clean resumed visible pane ──
+            //
+            // Wait for the resumed TUI to paint.  The header (█) is the
+            // most reliable stable-mount signal.
+            $this->tmux->waitForCaptureContains($pane, '█', 5.0);
+            usleep(300_000);
+
+            $resumedPane = $this->tmux->capturePlain($pane);
+
+            // A) The resumed session shows header and footer.
+            self::assertStringContainsString('█', $resumedPane,
+                'Header must be visible after selecting session from picker');
+            self::assertStringContainsString('◆', $resumedPane,
+                'Footer must be visible after selecting session from picker');
+
+            // B) The resumed session ID must match the selected one.
+            self::assertStringContainsString($sessionId, $resumedPane,
+                'Session ID must appear after resuming via picker selection');
+
+            // C) The picker header must NOT remain.
+            self::assertStringNotContainsString('Resume session', $resumedPane,
+                'Picker header must not remain after selecting a session');
+
+            // D) No raw escape leakage.
+            self::assertStringNotContainsString('[2J', $resumedPane,
+                'Escape [2J must not leak after picker selection');
+            self::assertStringNotContainsString('[3J', $resumedPane,
+                'Escape [3J must not leak after picker selection');
+
+            // E) No stale Running… artifacts.
+            $runningCount = \substr_count($resumedPane, '● Running…');
+            self::assertSame(0, $runningCount,
+                \sprintf(
+                    'Zero "● Running…" expected after picker selection (found %d)',
+                    $runningCount,
+                ));
+
+            // F) Idle status present — proves the TUI event loop is
+            //    alive, not frozen.
+            self::assertStringContainsString('● idle', $resumedPane,
+                'Idle status must be visible — TUI must not be frozen after picker selection');
+
+            $this->saveAnsiSnapshot($pane, 'picker-select-step3-resumed');
+
+            // Clean exit.
+            $this->tmux->sendKey($pane, 'C-d');
+        } catch (\Throwable $e) {
+            $this->saveAnsiSnapshot($pane, 'picker-select-FAILURE');
+            try {
+                $this->tmux->sendKey($pane, 'C-d');
+            } catch (\Throwable) {
+            }
+            throw $e;
+        }
+    }
+
     private function agentCommand(): string
     {
         $fixturePath = __DIR__.'/fixtures/tui-resume-minimal.json';

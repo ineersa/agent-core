@@ -67,15 +67,24 @@ final class PickerOverlay
      *
      * Removing the container automatically detaches all children
      * (header + list) via the WidgetTree lifecycle.
+     *
+     * @param bool $requestRender Whether to schedule a TUI repaint
+     *                            after removal.  Default true (used by Esc/cancel — repaint
+     *                            so the overlay disappears visually).  Pass false when the
+     *                            TUI is about to stop for a session switch — the render
+     *                            would paint a torn-down widget/projector state, causing
+     *                            visual corruption or cursor freeze.
      */
-    public function close(): void
+    public function close(bool $requestRender = true): void
     {
         if (null !== $this->container && null !== $this->screen) {
             $this->screen->removeOverlay($this->container);
-            // Request a render so the TUI repaints without the
-            // overlay on the next tick instead of waiting for a
-            // natural tick — avoids a visible stale frame.
-            $this->screen->requestRender();
+            if ($requestRender) {
+                // Request a render so the TUI repaints without the
+                // overlay on the next tick instead of waiting for a
+                // natural tick — avoids a visible stale frame.
+                $this->screen->requestRender();
+            }
         }
 
         $this->container = null;
