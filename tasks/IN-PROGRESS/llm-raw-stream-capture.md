@@ -57,3 +57,6 @@ Completed:
 - Recorded fork run: k7hal44ctfdn
 - Validation: fork: `castor test --filter=DurableResultConverterTest|SymfonyAiProviderFactoryTest` — 22 tests, 119 assertions, OK; fork: `castor test` — 2576 tests, 7611 assertions, OK; fork: `castor deptrac` — 0 violations, 0 errors; fork: `castor phpstan` — 0 errors, 0 file errors; fork: `castor cs-check` — clean; parent verification: `git status --short --branch && git log --oneline -5 && git diff --stat origin/main...HEAD` — clean worktree; latest commit aa01c867a; expected 7-file diff stat
 - Summary: Fix fork completed and committed aa01c867a (`fix: address pre-PR reviewer blockers for raw stream capture`). Addressed reviewer blockers: factory/writer JSONL tests, duplicate capture markers, incomplete/error artifact semantics, usage delta correlation, provider_id enrichment, flushing, and restrictive permissions. Parent verified worktree clean and latest diff stat: 7 files changed, 715 insertions, 47 deletions against origin/main.
+
+## Task workflow update - 2026-06-17T17:00:40.489Z
+- Summary: Post-fix reviewer subagent returned APPROVED with non-blocking suggestions only. Prior blockers resolved and acceptance criteria met. Suggestions noted: optional regression tests for error/incomplete single capture_end, document run_id/step_id/model limitation, and minor comments/cleanup; no merge-blocking issues.
