@@ -81,12 +81,12 @@ Alternative (if the summary-payload change is too invasive): dispatch the commit
 - castor test, castor deptrac, castor phpstan, castor cs-check all pass; AgentCore stays free of CodingAgent/TUI dependencies
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/safe-05-safeguard-approval-ignored
 Worktree: /home/ineersa/projects/agent-core-worktrees/safe-05-safeguard-approval-ignored
 Fork run:
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/162
+PR Status: open
 Started: 2026-06-17T20:44:06.133Z
 Completed:
 
@@ -143,3 +143,42 @@ BRANCH DECISION: Extend the current branch/worktree (commit 7ea229a40 is the fou
 ## Task workflow update - 2026-06-17T22:03:53.472Z
 - MIGRATION REQUIREMENT (user-confirmed, parallel-safety): cache_items table must ship as a real Doctrine migration, NOT rely on lazy auto-create. Lazy CREATE TABLE races under parallel consumer boot. Approach: add cache.approvals + cache.app pools (doctrine_dbal) -> run `bin/console doctrine:migrations:diff` (DoctrineDbalCacheAdapterSchemaListener auto-includes cache_items) -> commit generated migration. Canonical schema (vendor/symfony/cache/Adapter/PdoAdapter.php): table cache_items(item_id, item_data, item_lifetime, item_time) + index on item_time.
 - PARALLEL-SAFETY GUARANTEE (verified): AgentCommand.php:156 runs StartupDatabaseMigrator BEFORE runController() (which spawns consumers at HeadlessController.php:85-96). So cache_items is created before any consumer boots — no race. Migrations live in migrations/Version*.php.
+
+## Task workflow update - 2026-06-17T22:43:46.623Z
+- Validation: orchestrator-ran castor test:controller-replay -> OK 2 tests 25 assertions; orchestrator-ran castor test (full) -> OK 2670 tests 7892 assertions; orchestrator-ran castor deptrac -> 0 violations; orchestrator-ran castor phpstan -> 0 errors; orchestrator-ran castor cs-check -> clean; orchestrator-ran castor test --filter=SafeGuard -> 142/142
+- Summary: ORCHESTRATOR-VERIFIED COMPLETE. Branch task/safe-05-safeguard-approval-ignored, HEAD 7317a99f6 (on top of ce336092f the cross-process cache fix). 
+
+The fix resolves the REAL root cause: SafeGuard approval state crosses two process boundaries in the default 'process' transport (tool consumer registers; run_control consumer commits; tool consumer retries), so in-memory singletons can't bridge it. Backed both ExtensionHookRegistry pending approvals and the approved decision with a shared DBAL cache pool (cache.approvals, 1-day TTL) over the existing .hatfield SQLite. cache.app (application cache) also repointed to DBAL per user request; cache.default/cache.system stay filesystem. cache_items table shipped as a real Doctrine migration (Version20260617141001) registered in KNOWN_MIGRATIONS to avoid the parallel CREATE TABLE race — runs via StartupDatabaseMigrator before consumers spawn. Hook identity crosses by id (class name) looked up from a local hooksById map. 2 stale in-process docblocks corrected in 7317a99f6.
+
+ORCHESTRATOR INDEPENDENTLY RAN ALL VALIDATION (not trusting handoff):
+- Controller-replay E2E (the acceptance gate, multi-process default transport): OK 2 tests, 25 assertions
+- Full suite: OK 2670 tests, 7892 assertions (no regression from global cache.app->DBAL)
+- deptrac: 0 violations; phpstan: 0 errors; cs-check: clean
+- SafeGuard filter: 142/142
+- Verified migration registration, cache wiring, cross-process logic, and that the comment-corrective commit (ce336092f..7317a99f6) is pure docblock (zero executable lines).
+
+Two prior passes needed correction: (1) original commit 7ea229a40 ignored cross-process entirely; (2) second fork left work uncommitted with a failing E2E. Third pass + comment corrective fork landed it cleanly.
+
+## Task workflow update - 2026-06-17T22:44:42.096Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Running deterministic castor check in worktree (timeout 480s)...
+- castor check passed (29.0s).
+- Pushed task/safe-05-safeguard-approval-ignored to origin.
+- branch 'task/safe-05-safeguard-approval-ignored' set up to track 'origin/task/safe-05-safeguard-approval-ignored'.
+- Created PR: https://github.com/ineersa/agent-core/pull/162
+
+## Task workflow update - 2026-06-17T22:52:41.904Z
+- Updated PR URL: https://github.com/ineersa/agent-core/pull/162
+- Updated PR Status: open
+- Summary: REVIEWER VERDICT: APPROVE WITH SUGGESTIONS (mergeable, no blockers). Independent reviewer subagent traced the cross-process flow end-to-end in real code, ran deptrac (0 violations) + phpstan (0 errors) itself, verified security (Deny doesn't write approved key; runId namespacing prevents cross-run bleed), migration idempotency, cache.app isolation (cache.system/default stay filesystem, no existing CacheInterface consumers in src/), and that the controller-replay E2E is a genuine multi-process test. Docs (hitl-and-approvals.md) updated.
+
+Non-blocking suggestions raised by reviewer:
+1. [LOW] consumeApproval() read-then-delete not atomic under concurrency — reviewer judged acceptable given run-serialized retries (single worker consumes per retry). Could add a comment.
+2. [EDGE] Silent in-memory fallback when runId set but ledger null (DI misconfiguration) gives no diagnostic signal — suggests a warning log.
+3. [EDGE] Stale markPending entry left in in-memory ApprovalSessionTracker when cache pre-check hits — harmless (in-memory, reset per process).
+4. [SIMPLIFY] Dual-path verbose — NullCachedApprovalLedger for tests. Not needed (reviewer says dual-path is clear/correct).
+5. [DEAD CODE] removePending()/removeApproved() unused — harmless cleanup helpers.
+6. [COVERAGE] No test for Deny path (proves approved key NOT written) and no test for one-time semantics (approve → consume → re-prompt). Reviewer rated NTH.
+
+Decision pending user: merge as-is, or iterate on a focused subset (#1 comment, #2 warning log, #6 the two tests) before task-done.
+- task-to-pr step 2: reviewer subagent run on worktree. VERDICT=APPROVE WITH SUGGESTIONS, no blockers, mergeable. Reviewer independently ran deptrac (0) and phpstan (0), verified cross-process flow in real code, security (Deny/no cross-run bleed), migration idempotency, cache.app isolation, E2E test authenticity, docs sync. 6 non-blocking suggestions recorded.
