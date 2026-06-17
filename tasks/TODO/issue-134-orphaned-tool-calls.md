@@ -111,3 +111,19 @@ Regression coverage to request from implementation fork:
 - Add LlmStepResultHandler test proving aborted assistant messages are not appended to `RunState.messages`, especially when assistant message contains tool calls.
 - Add validator tests for valid assistant-tool sequence and invalid cases: assistant tool calls followed by user, missing tool result, orphan tool message, duplicate tool result.
 - Run Castor validation only: focused `castor test --filter=...`, then `castor deptrac`, `castor phpstan`, `castor cs-check`; full `castor check` before CODE-REVIEW. Run `castor test:llm-real` only if live provider compatibility/conversion behavior is materially changed.
+
+## Task workflow update - 2026-06-17T22:30:01.994Z
+- Summary: Additional pi-mono scout findings and refined cancellation policy.
+
+pi-mono details from second scout:
+- User prompt that started a run remains in session/history if that run is later aborted.
+- User messages queued while streaming/active (`steering`/`followUp`) are not persisted to session on abort; interactive mode clears those queues and restores queued text to the editor before calling `agent.abort()` (`packages/coding-agent/src/modes/interactive/interactive-mode.ts::restoreQueuedMessagesToEditor`).
+- Aborted assistant messages are persisted in pi-mono and included in future LLM context because their typed `stopReason='aborted'` survives in history and rendering (`packages/agent/src/agent.ts::defaultConvertToLlm`, `packages/coding-agent/src/core/agent-session.ts::_handleAgentEvent`).
+- pi-mono TUI renders text-only aborted assistant partials with `Operation aborted`; if aborted assistant had tool calls, pending tool components are marked as error.
+
+Refined agent-core design:
+- Keep already-applied user messages in `RunState.messages`. If a user message has reached prompt history (initial prompt or command applied at a safe boundary), cancellation should not erase it.
+- Do not apply queued steer/follow_up messages while work is active. They should not become history until a safe boundary.
+- On cancel, reject/clear pending unapplied steer/follow_up commands (or emit enough command-cancelled/rejected events for TUI to remove/restore pending text) so stale queued messages cannot be consumed by a later follow-up/restart (#152). This mirrors pi-mono restoring queued text instead of persisting it.
+- Drop all aborted assistant messages from `RunState.messages` in agent-core. Unlike pi-mono, agent-core currently does not preserve `stopReason=aborted` on `AgentMessage`, so keeping aborted assistant content risks replaying partial tool calls as normal provider-visible `assistant.tool_calls`.
+- If aborted partial assistant text/tool-call UI should be displayed later, record sanitized details in `LlmStepAborted`/event projection only; never use it as future prompt context.
