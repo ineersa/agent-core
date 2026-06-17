@@ -64,14 +64,14 @@ LOW. Root cause is a missing payload field; all downstream consumers already han
 - Castor validation green: castor test, castor test:tui (mandatory — runtime/TUI-visible change), castor deptrac, castor phpstan, castor cs-check. castor test:llm-real NOT required (no provider/LLM-visible change).
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/issue-131-tui-tool-result-output
 Worktree: /home/ineersa/projects/agent-core-worktrees/issue-131-tui-tool-result-output
 Fork run: 423243cad
 PR URL: https://github.com/ineersa/agent-core/pull/160
-PR Status: open
+PR Status: merged
 Started: 2026-06-17T20:38:34.453Z
-Completed:
+Completed: 2026-06-17T21:51:33.354Z
 
 ## Work log
 - Created: 2026-06-17T20:38:22.538Z
@@ -103,3 +103,18 @@ This is a tool-execution/runtime-visible change, not a provider/LLM-visible chan
 - Pushed task/issue-131-tui-tool-result-output to origin.
 - branch 'task/issue-131-tui-tool-result-output' set up to track 'origin/task/issue-131-tui-tool-result-output'.
 - Created PR: https://github.com/ineersa/agent-core/pull/160
+
+## Task workflow update - 2026-06-17T21:51:33.354Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/issue-131-tui-tool-result-output into integration checkout.
+- Merge made by the 'ort' strategy.
+ .../Application/Pipeline/ToolCallResultHandler.php |  47 ++
+ .../Pipeline/ToolCallResultHandlerTest.php         | 474 +++++++++++++++++++++
+ .../CodingAgent/Runtime/RuntimeEventMapperTest.php |  36 ++
+ tests/Tui/E2E/TuiToolOutputE2eTest.php             | 272 ++++++++++++
+ tests/Tui/E2E/fixtures/tui-tool-call-read.json     |  37 ++
+ 5 files changed, 866 insertions(+)
+ create mode 100644 tests/Tui/E2E/TuiToolOutputE2eTest.php
+ create mode 100644 tests/Tui/E2E/fixtures/tui-tool-call-read.json
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/issue-131-tui-tool-result-output.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
