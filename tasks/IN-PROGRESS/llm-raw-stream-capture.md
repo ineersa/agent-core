@@ -22,14 +22,21 @@ Important constraints:
 - Do not persist raw chunks into normal session `events.jsonl` unless explicitly opted in; normal sessions remain canonical/coarse by default.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/llm-raw-stream-capture
+Worktree: /home/ineersa/projects/agent-core-worktrees/llm-raw-stream-capture
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-17T16:19:29.050Z
 Completed:
 
 ## Work log
 - Created: 2026-06-17T14:08:36.110Z
+
+## Task workflow update - 2026-06-17T16:19:29.051Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/llm-raw-stream-capture.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/llm-raw-stream-capture.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/llm-raw-stream-capture.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/llm-raw-stream-capture.
