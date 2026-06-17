@@ -131,13 +131,23 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             ],
         );
 
-        // Steer and follow-up commands must trigger AdvanceRun so the
-        // queued command is picked up and the LLM is invoked.  Without
-        // this callback, the command sits in the store forever.
+        // Queue-drain boundary: only dispatch an immediate AdvanceRun when
+        // the run is at a safe/terminal boundary (Completed, Failed,
+        // Cancelled, WaitingHuman).  If the run is active (Running or
+        // Cancelling), the queued command will be drained at the next
+        // stop boundary (no-tool-call result) or turn-start boundary
+        // (after tool batch completes).  Without this guard, a steer/
+        // follow-up during active model/tool work would immediately
+        // dispatch AdvanceRun while the prompt tail contains unresolved
+        // assistant tool_calls, causing the provider to reject the run
+        // with "insufficient tool messages following tool_calls message".
         $postCommit = [];
-        $followUpAdvance = $this->followUpAdvanceCallback($runId, $message->kind);
-        if (null !== $followUpAdvance) {
-            $postCommit[] = $followUpAdvance;
+        $isActive = \in_array($state->status, [RunStatus::Running, RunStatus::Cancelling], true);
+        if (!$isActive) {
+            $followUpAdvance = $this->followUpAdvanceCallback($runId, $message->kind);
+            if (null !== $followUpAdvance) {
+                $postCommit[] = $followUpAdvance;
+            }
         }
 
         return new HandlerResult(
@@ -193,11 +203,22 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             : 'Run cancelled by command.';
 
         $this->commandStore->markApplied($runId, $message->idempotencyKey());
-        $rejectedContinueCommands = $this->commandStore->rejectPendingByKind(
-            $runId,
-            CoreCommandKind::Continue,
-            'Rejected because cancel command was accepted.',
-        );
+
+        // Reject all pending queueable user-input commands (steer,
+        // follow_up, continue) so stale queued commands are never
+        // consumed after cancel/restart.  This prevents #152 where
+        // queued steer/follow-up from before a cancel could be drained
+        // unexpectedly after the run restarts.
+        $rejectedKinds = [CoreCommandKind::Steer, CoreCommandKind::FollowUp, CoreCommandKind::Continue];
+        $rejectedCommands = [];
+        foreach ($rejectedKinds as $kind) {
+            $rejected = $this->commandStore->rejectPendingByKind(
+                $runId,
+                $kind,
+                'Rejected because cancel command was accepted.',
+            );
+            $rejectedCommands = array_merge($rejectedCommands, $rejected);
+        }
 
         $eventSpecs = [[
             'type' => RunEventTypeEnum::AgentCommandApplied->value,
@@ -208,12 +229,12 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             ],
         ]];
 
-        foreach ($rejectedContinueCommands as $rejectedContinueCommand) {
+        foreach ($rejectedCommands as $rejectedCommand) {
             $eventSpecs[] = [
                 'type' => RunEventTypeEnum::AgentCommandRejected->value,
                 'payload' => [
-                    'kind' => CoreCommandKind::Continue,
-                    'idempotency_key' => $rejectedContinueCommand->idempotencyKey,
+                    'kind' => $rejectedCommand->kind,
+                    'idempotency_key' => $rejectedCommand->idempotencyKey,
                     'reason' => 'Rejected because cancel command was accepted.',
                 ],
             ];
