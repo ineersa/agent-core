@@ -75,3 +75,6 @@ Completed:
 ## Task workflow update - 2026-06-17T22:09:13.470Z
 - Recorded fork run: ectdn5pv1hz3
 - Summary: Launched tiny corrective fork `ectdn5pv1hz3` to change `readSample()` from `fopen(..., 'r')` to `fopen(..., 'rb')`, add a UTF-8 BOM acceptance regression test, run focused Castor validation, and commit.
+
+## Task workflow update - 2026-06-17T22:20:20.386Z
+- Summary: Clarification: plain 7-bit ASCII is valid UTF-8 and should work. "Extended ASCII" is ambiguous and is not generally a subset of UTF-8; Latin-1/Windows-1252/CP437 bytes in the 0x80-0xFF range should remain rejected unless encoded as valid UTF-8. Do not add transcoding/encoding-detection support in this bug fix unless explicitly requested.
