@@ -37,7 +37,7 @@ Out of scope:
 - Focused tests pass with Castor/PHPUnit.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/tools-10-prompt-docs-integration
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-10-prompt-docs-integration
 Fork run: 40trivh2au5d
@@ -165,3 +165,13 @@ Completed:
 - Recorded fork run: 40trivh2au5d
 - Validation: Fork read mandatory QA context: `.agents/skills/testing/SKILL.md` and `tests/AGENTS.md`.; Fork validation: `castor test --filter DurableResultConverterTest` PASS 11 tests, 57 assertions.; Fork validation: `castor phpstan` PASS 0 errors/file_errors.; Fork validation: `castor cs-check` PASS clean, files_fixed=0.; Fork validation: `rg '<tool_usage>' config/SYSTEM.md` found no matches.; Parent verification: HEAD is `6edd9dfa`, diff limited to `src/Platform/Bridge/Generic/IncompleteStreamException.php`, `src/Platform/Bridge/Generic/DurableResultConverter.php`, and `tests/Platform/Bridge/Generic/DurableResultConverterTest.php`; integration checkout clean.
 - Summary: Fork `40trivh2au5d` completed the latest review iteration in commit `6edd9dfa46a9115a82a4cc9daa89c1bb26b67b5a` (`fix(provider): add specific incomplete stream exception`). It creates `src/Platform/Bridge/Generic/IncompleteStreamException.php` as a project-owned semantic exception extending Symfony AI platform `RuntimeException`, updates `DurableResultConverter` to throw `IncompleteStreamException` at the truncated-stream guard, removes the stale generic-`RuntimeException` rationale comment, and updates `DurableResultConverterTest` to expect the specific exception. No reviewer was run and no `config/SYSTEM.md` changes were made.
+
+## Task workflow update - 2026-06-17T00:28:16.295Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Running deterministic castor check in worktree (timeout 480s)...
+- castor check passed (16.5s).
+- Pushed task/tools-10-prompt-docs-integration to origin.
+- branch 'task/tools-10-prompt-docs-integration' set up to track 'origin/task/tools-10-prompt-docs-integration'.
+- PR already exists: https://github.com/ineersa/agent-core/pull/154
+- Validation: No reviewer rerun per explicit user instruction.; Fork validation: `castor test --filter DurableResultConverterTest` PASS 11 tests/57 assertions.; Fork validation: `castor phpstan` PASS 0 errors/file_errors.; Fork validation: `castor cs-check` PASS clean.; Fork validation: `<tool_usage>` absent from `config/SYSTEM.md`.; Parent verification: latest diff limited to new `IncompleteStreamException`, `DurableResultConverter`, and `DurableResultConverterTest`; integration checkout clean.; After first CODE-REVIEW attempt failed in `test:controller-replay`, parent checked for stale tools-10 controller/messenger/PHPUnit/Castor processes and found none.; Focused retry: `castor test:controller-replay` PASS 1 test/14 assertions in 7.6s.
+- Summary: Latest review iteration complete. Final branch HEAD: `6edd9dfa46a9115a82a4cc9daa89c1bb26b67b5a`. Addressed user feedback by replacing the generic truncated-stream `RuntimeException` with a project-owned semantic `IncompleteStreamException` extending Symfony AI platform `RuntimeException`, and updating the focused test to expect that specific type. No reviewer was relaunched. Previous CODE-REVIEW transition attempt failed only in deterministic `test:controller-replay` after collecting startup events but no tool event; no stale tools-10 workers were found, and focused rerun passed before retrying.
