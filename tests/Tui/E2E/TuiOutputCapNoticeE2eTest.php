@@ -357,7 +357,7 @@ final class TuiOutputCapNoticeE2eTest extends TestCase
                 .'HATFIELD_LLM_REPLAY_FIXTURE_PATH=%s '
                 .'%s %s agent '
                 .'--model=llama_cpp_test/test '
-                .'--tools-excluded=bash,bg_status,edit,write,grep '
+                .'--tools-excluded=bash '
                 .'2>&1',
             \escapeshellarg($dbPath),
             \escapeshellarg($this->testProjectDir.'/home'),
