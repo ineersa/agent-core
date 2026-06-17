@@ -44,3 +44,8 @@ Completed:
 ## Task workflow update - 2026-06-17T16:19:58.452Z
 - Recorded fork run: 7mapik7lmh2r
 - Started implementation fork 7mapik7lmh2r in /home/ineersa/projects/agent-core-worktrees/llm-raw-stream-capture with minimal env-only raw stream capture scope and run:agent-capture Castor command instructions.
+
+## Task workflow update - 2026-06-17T16:30:52.794Z
+- Recorded fork run: 7mapik7lmh2r
+- Validation: fork: `castor test --filter=DurableResultConverterTest` — 15 tests, 87 assertions, OK; fork: `castor test` — 2573 tests, 7587 assertions, OK; fork: `castor deptrac` — 0 violations; fork: `castor phpstan` — 0 errors; fork: `castor cs-check` — clean; parent verification: `git status --short && git log --oneline -1 && git diff --stat HEAD~1..HEAD` in worktree — clean checkout; latest commit 72686ed10; expected 6-file diff stat
+- Summary: Implementation fork completed and committed 72686ed10 (`feat: add opt-in raw stream capture for DurableResultConverter`). Verified worktree commit and expected diff stat: 6 files changed (`.castor/run.php`, `docs/llm-replay.md`, `docs/settings.md`, `SymfonyAiProviderFactory.php`, `DurableResultConverter.php`, `DurableResultConverterTest.php`) with 531 insertions / 44 deletions. Fork confirmed it read `.agents/skills/testing/SKILL.md` and `tests/AGENTS.md` before test work. Scope implemented: minimal env-only raw stream capture, Generic provider wiring, `castor run:agent-capture`, docs, and unit coverage.
