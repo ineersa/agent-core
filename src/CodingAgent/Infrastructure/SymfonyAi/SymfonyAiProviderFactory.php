@@ -193,6 +193,9 @@ class SymfonyAiProviderFactory
      * tool-call id) tracking for robust sparse/out-of-order tool-call chunk
      * handling.  The HTTP client, embedding support, and Provider wiring
      * are identical to what GenericFactory creates.
+     *
+     * When HATFIELD_LLM_RAW_STREAM_CAPTURE=1 is set, the converter receives
+     * a closure that writes raw chunks and converted deltas to a JSONL file.
      */
     private function buildGenericCompletionsProvider(AiProviderConfig $provider, ProjectedSymfonyModelCatalog $projectedCatalog): ProviderInterface
     {
@@ -210,7 +213,9 @@ class SymfonyAiProviderFactory
                 $this->resolveApiKey($provider->apiKey),
                 $completionsPath,
             );
-            $resultConverters[] = new DurableResultConverter();
+            $resultConverters[] = new DurableResultConverter(
+                onStreamEvent: $this->buildCaptureListener($provider->id),
+            );
         }
 
         if ($provider->supportsEmbeddings) {
@@ -232,6 +237,66 @@ class SymfonyAiProviderFactory
             null,  // contract — use Symfony AI default
             $this->eventDispatcher,
         );
+    }
+
+    /**
+     * Build a stream event listener closure if capture is enabled.
+     *
+     * Checks HATFIELD_LLM_RAW_STREAM_CAPTURE (set to 1 to enable).
+     * Optionally overrides the output path with HATFIELD_LLM_RAW_STREAM_CAPTURE_PATH.
+     * Default path: <cwd>/var/tmp/llm-raw-stream-capture-<timestamp>-<id>.jsonl
+     *
+     * @return (\Closure(string, int, array<string, mixed>): void)|null
+     */
+    private function buildCaptureListener(string $providerId): ?\Closure
+    {
+        $enabled = $_ENV['HATFIELD_LLM_RAW_STREAM_CAPTURE'] ?? getenv('HATFIELD_LLM_RAW_STREAM_CAPTURE');
+        if (false === $enabled || '' === $enabled || '0' === $enabled || 'false' === $enabled) {
+            return null;
+        }
+
+        // Resolve path
+        $path = $_ENV['HATFIELD_LLM_RAW_STREAM_CAPTURE_PATH'] ?? getenv('HATFIELD_LLM_RAW_STREAM_CAPTURE_PATH');
+        if (false === $path || '' === $path) {
+            $cwd = $_ENV['HATFIELD_CWD'] ?? getcwd();
+            $ts = date('Ymd-His');
+            $path = \sprintf('%s/var/tmp/llm-raw-stream-capture-%s-%s.jsonl', $cwd, $ts, bin2hex(random_bytes(4)));
+        }
+
+        // Open file once — closure captures the handle.
+        $dir = \dirname($path);
+        if (!is_dir($dir) && !@mkdir($dir, 0o755, true) && !is_dir($dir)) {
+            throw new \RuntimeException(\sprintf('Cannot create capture directory "%s".', $dir));
+        }
+
+        $handle = @fopen($path, 'a');
+        if (false === $handle) {
+            throw new \RuntimeException(\sprintf('Cannot open capture file "%s" for writing.', $path));
+        }
+
+        $writeLine = static function (array $record) use ($handle): void {
+            $line = json_encode($record, \JSON_UNESCAPED_SLASHES | \JSON_INVALID_UTF8_SUBSTITUTE);
+            if (false !== $line) {
+                @fwrite($handle, $line."\n");
+            }
+        };
+
+        // Initial capture_start record
+        $writeLine([
+            'event' => 'capture_start',
+            'provider_id' => $providerId,
+            'timestamp' => (new \DateTimeImmutable())->format('Y-m-d\TH:i:s.uP'),
+        ]);
+
+        return static function (string $event, int $ordinal, array $context) use ($writeLine): void {
+            $record = [
+                'event' => $event,
+                'ordinal' => $ordinal,
+                'timestamp' => (new \DateTimeImmutable())->format('Y-m-d\TH:i:s.uP'),
+            ] + $context;
+
+            $writeLine($record);
+        };
     }
 
     /**

@@ -112,11 +112,75 @@ $modelClient = new FixtureReplayModelClient($fixture);
 
 See `tests/AgentCore/Infrastructure/SymfonyAi/Replay/ReplayTest.php` for full examples.
 
+## Raw provider stream capture
+
+For debugging `DurableResultConverter` behavior around multi-tool calls,
+phantom chunks, or upstream compatibility issues, an opt-in capture path
+writes every raw SSE `data:` chunk plus correlated converted deltas to a
+JSONL file.
+
+**Env vars:**
+
+| Variable | Default | Purpose |
+|----------|---------|--------|
+| `HATFIELD_LLM_RAW_STREAM_CAPTURE` | (unset) | Set to `1` to enable capture |
+| `HATFIELD_LLM_RAW_STREAM_CAPTURE_PATH` | auto-generated | Output JSONL path override |
+
+Default path: `<cwd>/var/tmp/llm-raw-stream-capture-<timestamp>-<id>.jsonl`
+
+The capture seam lives in `DurableResultConverter::convertStream()` via an
+optional `$onStreamEvent` closure.  It is injected only for generic
+OpenAI-compatible providers in `SymfonyAiProviderFactory` and only when the
+env var is set.
+
+### Usage
+
+```bash
+castor run:agent-capture
+```
+
+Or manually:
+
+```bash
+HATFIELD_LLM_RAW_STREAM_CAPTURE=1 \
+  HATFIELD_LLM_RAW_STREAM_CAPTURE_PATH=/tmp/my-capture.jsonl \
+  bin/console agent
+```
+
+### JSONL shape
+
+```jsonl
+{"event":"capture_start","provider_id":"zai","timestamp":"..."}
+{"event":"raw_chunk","ordinal":0,"timestamp":"...","data":{"choices":[{"delta":{"tool_calls":[...]}}]}}
+{"event":"converted_delta","ordinal":0,"timestamp":"...","type":"ToolCallStart","id":"call_1","name":"read"}
+{"event":"converted_delta","ordinal":1,"timestamp":"...","type":"ToolInputDelta","id":"call_1","partial_json":"{\"path\":\".\\/file.txt\"}"}
+{"event":"converted_delta","ordinal":2,"timestamp":"...","type":"ToolCallComplete","tool_calls":[{"id":"call_1","name":"read","arguments":{"path":"./file.txt"}}]}
+{"event":"capture_end","ordinal":-1,"timestamp":"...","stop_reason":"tool_call"}
+```
+
+Each `raw_chunk` record contains the full decoded SSE data array.  Each
+`converted_delta` record is correlated by `ordinal` and includes the delta
+type and its relevant fields.
+
+### Privacy warning
+
+Artifacts contain **raw model output** (generated text, tool-call arguments,
+reasoning content).  Treat them as potentially sensitive.  Delete or redact
+before attaching to issues or sharing publicly.
+
+### Using artifacts for tests
+
+A captured JSONL file is a complete record of a single provider turn.  To
+create a regression test, extract the `raw_chunk` data payloads in order
+and feed them as chunk fixtures to an existing test, or use the fixture
+as inspiration for the exact chunk sequence a provider emitted.
+
 ## Castor commands
 
 | Command | Purpose |
 |---------|---------|
 | `castor llm:fixtures:record` | Re-record fixtures from live LLM endpoint |
+| `castor run:agent-capture` | Launch agent TUI with raw stream capture enabled |
 | `castor test` | Replay-based unit/integration tests (no live LLM) |
 | `castor test:llm-real` | Live LLM smoke (opt-in) |
 

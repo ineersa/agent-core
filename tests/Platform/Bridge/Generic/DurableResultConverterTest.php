@@ -420,6 +420,164 @@ final class DurableResultConverterTest extends TestCase
         self::assertSame(['command' => 're'], $toolCalls[0]->getArguments());
     }
 
+    // ── Raw stream capture (optional onStreamEvent closure) ──────────────────
+
+    #[Test]
+    public function captureIsDisabledByDefault(): void
+    {
+        $converter = new DurableResultConverter();
+
+        $result = $this->streamResult([
+            $this->chunk(['choices' => [['finish_reason' => 'stop']]]),
+        ]);
+
+        // Default constructor: should produce zero deltas for a finish-only chunk
+        $deltas = $this->collectStreamWithConverter($converter, $result);
+        self::assertCount(0, $deltas);
+        // No file written, no exception — no-op by default.
+        $this->addToAssertionCount(1);
+    }
+
+    #[Test]
+    public function captureEnabledRecordsRawChunks(): void
+    {
+        $events = [];
+        $collector = static function (string $event, int $ordinal, array $context) use (&$events): void {
+            $events[] = ['event' => $event, 'ordinal' => $ordinal] + $context;
+        };
+        $converter = new DurableResultConverter($collector);
+
+        $deltas = $this->collectStreamWithConverter($converter, $this->streamResult([
+            $this->chunk(['choices' => [[
+                'delta' => ['content' => 'Hello'],
+            ]]]),
+            $this->chunk(['choices' => [[
+                'delta' => ['content' => ' World'],
+            ]]]),
+            $this->chunk(['choices' => [['finish_reason' => 'stop']]]),
+        ]));
+
+        // Should have captured raw chunks
+        $rawChunks = array_values(array_filter(
+            $events,
+            static fn (array $e): bool => 'raw_chunk' === $e['event'],
+        ));
+
+        self::assertCount(3, $rawChunks, 'Should record a raw_chunk for each SSE chunk');
+        self::assertSame(0, $rawChunks[0]['ordinal']);
+        self::assertSame(1, $rawChunks[1]['ordinal']);
+        self::assertSame(2, $rawChunks[2]['ordinal']);
+        self::assertArrayHasKey('data', $rawChunks[0]);
+        self::assertSame('Hello', $rawChunks[0]['data']['choices'][0]['delta']['content']);
+
+        // Should have start and end markers
+        $starts = array_filter($events, static fn (array $e): bool => 'capture_start' === $e['event']);
+        $ends = array_filter($events, static fn (array $e): bool => 'capture_end' === $e['event']);
+        self::assertCount(1, $starts);
+        self::assertCount(1, $ends);
+
+        // Deltas should be unchanged
+        self::assertCount(2, $deltas);
+        self::assertInstanceOf(TextDelta::class, $deltas[0]);
+        self::assertSame('Hello', $deltas[0]->getText());
+    }
+
+    #[Test]
+    public function captureEnabledRecordsConvertedDeltas(): void
+    {
+        $events = [];
+        $collector = static function (string $event, int $ordinal, array $context) use (&$events): void {
+            $events[] = ['event' => $event, 'ordinal' => $ordinal] + $context;
+        };
+        $converter = new DurableResultConverter($collector);
+
+        $deltas = $this->collectStreamWithConverter($converter, $this->streamResult([
+            $this->chunk(['choices' => [[
+                'delta' => ['tool_calls' => [[
+                    'index' => 0,
+                    'id' => 'call_1',
+                    'function' => ['name' => 'read'],
+                ]]],
+            ]]]),
+            $this->chunk(['choices' => [[
+                'delta' => ['tool_calls' => [[
+                    'index' => 0,
+                    'function' => ['arguments' => '{"path":"./file.txt"}'],
+                ]]],
+            ]]]),
+            $this->chunk(['choices' => [['finish_reason' => 'tool_calls']]]),
+        ]));
+
+        // Extract converted_delta events
+        $convDeltas = array_values(array_filter(
+            $events,
+            static fn (array $e): bool => 'converted_delta' === $e['event'],
+        ));
+
+        // Chunk 0: ToolCallStart + ToolInputDelta (buffered args replayed)
+        // Chunk 1: (tool calls accumulated, no new yields from yieldDurableToolCallDeltas)
+        //   Actually chunk 1 has no ID, and the block already has an ID, so it yields ToolInputDelta
+        // Chunk 2: ToolCallComplete
+        self::assertGreaterThanOrEqual(2, \count($convDeltas), 'Should record converted deltas');
+
+        // Find the ToolCallStart
+        $starts = array_values(array_filter(
+            $convDeltas,
+            static fn (array $e): bool => 'ToolCallStart' === ($e['type'] ?? ''),
+        ));
+        self::assertCount(1, $starts);
+        self::assertSame('call_1', $starts[0]['id']);
+        self::assertSame('read', $starts[0]['name']);
+
+        // Deltas should be unchanged
+        self::assertInstanceOf(ToolCallStart::class, $deltas[0]);
+        self::assertSame('call_1', $deltas[0]->getId());
+    }
+
+    #[Test]
+    public function emittedDeltasUnchangedWithCapture(): void
+    {
+        // Compare deltas from converters with and without capture closure
+        $events = [];
+        $collector = static function (string $event, int $ordinal, array $context) use (&$events): void {
+            $events[] = $event;
+        };
+        $captureConverter = new DurableResultConverter($collector);
+        $defaultConverter = new DurableResultConverter();
+
+        $chunks = [
+            $this->chunk(['choices' => [[
+                'delta' => ['content' => 'Hello'],
+            ]]]),
+            $this->chunk(['choices' => [[
+                'delta' => ['tool_calls' => [[
+                    'index' => 0,
+                    'id' => 'call_x',
+                    'function' => ['name' => 'bash', 'arguments' => '{}'],
+                ]]],
+            ]]]),
+            $this->chunk(['choices' => [['finish_reason' => 'tool_calls']]]),
+        ];
+
+        $captureResult = $this->streamResult($chunks);
+        $defaultResult = $this->streamResult($chunks);
+
+        $captureDeltas = $this->collectStreamWithConverter($captureConverter, $captureResult);
+        $defaultDeltas = $this->collectStreamWithConverter($defaultConverter, $defaultResult);
+
+        // Same number of deltas
+        self::assertCount(\count($defaultDeltas), $captureDeltas);
+
+        // Same types and key properties
+        foreach ($defaultDeltas as $i => $expected) {
+            $actual = $captureDeltas[$i];
+            self::assertInstanceOf($expected::class, $actual);
+        }
+
+        // Capture did fire events
+        self::assertGreaterThan(0, \count($events));
+    }
+
     // ── Stream ended without finish reason ────────────────────────────────────
 
     #[Test]
@@ -490,15 +648,25 @@ final class DurableResultConverterTest extends TestCase
     }
 
     /**
+     * Collect all deltas from a stream result using the given converter.
+     *
+     * @return list<object>
+     */
+    private function collectStreamWithConverter(DurableResultConverter $converter, RawHttpResult $rawResult): array
+    {
+        $result = $converter->convert($rawResult, ['stream' => true]);
+        self::assertInstanceOf(StreamResult::class, $result);
+
+        return iterator_to_array($result->getContent(), false);
+    }
+
+    /**
      * Collect all deltas from a stream result.
      *
      * @return list<object>
      */
     private function collectStream(RawHttpResult $rawResult): array
     {
-        $result = $this->converter->convert($rawResult, ['stream' => true]);
-        self::assertInstanceOf(StreamResult::class, $result);
-
-        return iterator_to_array($result->getContent(), false);
+        return $this->collectStreamWithConverter($this->converter, $rawResult);
     }
 }

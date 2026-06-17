@@ -49,10 +49,23 @@ use Symfony\AI\Platform\Result\ToolCall;
  * Error/usage/text/reasoning handling is identical to the vendor trait.
  *
  * @internal
+ *
+ * @phpstan-type StreamEvent = 'capture_start'|'raw_chunk'|'converted_delta'|'capture_end'
+ * @phpstan-type StreamListener = \Closure(string $event, int $ordinal, array<string, mixed> $context): void
  */
 final class DurableResultConverter extends ResultConverter
 {
     use CompletionsConversionTrait;
+
+    /**
+     * @param \Closure(string, int, array<string, mixed>): void|null $onStreamEvent Optional listener for debug capture.
+     *                                                                              Called with (event name, chunk ordinal, context array) for each raw chunk
+     *                                                                              and converted delta. Null when capture is not configured.
+     */
+    public function __construct(
+        private readonly ?\Closure $onStreamEvent = null,
+    ) {
+    }
 
     /**
      * Override convert() to route the streaming path to our durable
@@ -75,6 +88,10 @@ final class DurableResultConverter extends ResultConverter
      * Track tool‑call blocks by both stream index and tool‑call id
      * so that sparse/out‑of‑order chunks are correctly reconciled.
      *
+     * When an $onStreamEvent closure is configured, each raw chunk and the
+     * converted deltas it produces are emitted as structured events for
+     * offline inspection.
+     *
      * @return \Generator<TextDelta|ThinkingDelta|ThinkingComplete|ToolCallStart|ToolInputDelta|ToolCallComplete|\Symfony\AI\Platform\TokenUsage\TokenUsage>
      */
     protected function convertStream(RawResultInterface $result): \Generator
@@ -90,55 +107,83 @@ final class DurableResultConverter extends ResultConverter
         $reasoning = '';
         $sawChunk = false;
         $sawFinishReason = false;
+        $finishReason = null;
+        $chunkOrdinal = 0;
 
-        foreach ($result->getDataStream() as $data) {
-            if (isset($data['error'])) {
-                $message = \is_array($data['error']) ? ($data['error']['message'] ?? 'Unknown error') : (string) $data['error'];
-                throw new RuntimeException(\sprintf('Stream error: "%s".', $message));
+        $this->emit('capture_start', -1, []);
+
+        try {
+            foreach ($result->getDataStream() as $data) {
+                $this->emit('raw_chunk', $chunkOrdinal, ['data' => $data]);
+
+                if (isset($data['error'])) {
+                    $message = \is_array($data['error']) ? ($data['error']['message'] ?? 'Unknown error') : (string) $data['error'];
+                    $this->emit('capture_end', -1, ['stop_reason' => 'error']);
+                    throw new RuntimeException(\sprintf('Stream error: "%s".', $message));
+                }
+
+                $sawChunk = true;
+
+                if (null !== ($data['choices'][0]['finish_reason'] ?? null)) {
+                    $sawFinishReason = true;
+                    $finishReason = $data['choices'][0]['finish_reason'];
+                }
+
+                if (isset($data['usage'])) {
+                    yield $this->convertStreamUsage($data['usage']);
+                }
+
+                // Durable tool-call processing
+                $toolCallDeltas = $data['choices'][0]['delta']['tool_calls'] ?? null;
+                if (\is_array($toolCallDeltas)) {
+                    yield from $this->yieldDurableToolCallDeltas($blocks, $blockByIndex, $blockById, $data, $chunkOrdinal);
+                    $this->accumulateDurableToolCalls($blocks, $blockByIndex, $blockById, $nextStableKey, $data);
+                }
+
+                if ([] !== $blocks && $this->isToolCallsStreamFinished($data)) {
+                    $delta = new ToolCallComplete($this->buildDurableFinalToolCalls($blocks));
+                    $this->emit('converted_delta', $chunkOrdinal, $this->deltaContext($delta));
+                    yield $delta;
+                }
+
+                $reasoningContent = $data['choices'][0]['delta']['reasoning_content']
+                    ?? $data['choices'][0]['delta']['reasoning'] ?? null;
+                if (null !== $reasoningContent && '' !== $reasoningContent) {
+                    $reasoning .= $reasoningContent;
+                    $delta = new ThinkingDelta($reasoningContent);
+                    $this->emit('converted_delta', $chunkOrdinal, $this->deltaContext($delta));
+                    yield $delta;
+                }
+
+                if ('' !== $reasoning && isset($data['choices'][0]['delta']['content']) && '' !== $data['choices'][0]['delta']['content']) {
+                    $delta = new ThinkingComplete($reasoning);
+                    $this->emit('converted_delta', $chunkOrdinal, $this->deltaContext($delta));
+                    yield $delta;
+                    $reasoning = '';
+                }
+
+                if (!isset($data['choices'][0]['delta']['content'])) {
+                    ++$chunkOrdinal;
+                    continue;
+                }
+
+                $delta = new TextDelta($data['choices'][0]['delta']['content']);
+                $this->emit('converted_delta', $chunkOrdinal, $this->deltaContext($delta));
+                yield $delta;
+
+                ++$chunkOrdinal;
             }
 
-            $sawChunk = true;
-
-            if (null !== ($data['choices'][0]['finish_reason'] ?? null)) {
-                $sawFinishReason = true;
+            if ('' !== $reasoning) {
+                $delta = new ThinkingComplete($reasoning);
+                $this->emit('converted_delta', $chunkOrdinal, $this->deltaContext($delta));
+                yield $delta;
             }
 
-            if (isset($data['usage'])) {
-                yield $this->convertStreamUsage($data['usage']);
-            }
-
-            // Durable tool-call processing
-            $toolCallDeltas = $data['choices'][0]['delta']['tool_calls'] ?? null;
-            if (\is_array($toolCallDeltas)) {
-                yield from $this->yieldDurableToolCallDeltas($blocks, $blockByIndex, $blockById, $data);
-                $this->accumulateDurableToolCalls($blocks, $blockByIndex, $blockById, $nextStableKey, $data);
-            }
-
-            if ([] !== $blocks && $this->isToolCallsStreamFinished($data)) {
-                yield new ToolCallComplete($this->buildDurableFinalToolCalls($blocks));
-            }
-
-            $reasoningContent = $data['choices'][0]['delta']['reasoning_content']
-                ?? $data['choices'][0]['delta']['reasoning'] ?? null;
-            if (null !== $reasoningContent && '' !== $reasoningContent) {
-                $reasoning .= $reasoningContent;
-                yield new ThinkingDelta($reasoningContent);
-            }
-
-            if ('' !== $reasoning && isset($data['choices'][0]['delta']['content']) && '' !== $data['choices'][0]['delta']['content']) {
-                yield new ThinkingComplete($reasoning);
-                $reasoning = '';
-            }
-
-            if (!isset($data['choices'][0]['delta']['content'])) {
-                continue;
-            }
-
-            yield new TextDelta($data['choices'][0]['delta']['content']);
-        }
-
-        if ('' !== $reasoning) {
-            yield new ThinkingComplete($reasoning);
+            $this->emit('capture_end', -1, ['stop_reason' => $finishReason]);
+        } catch (\Throwable $e) {
+            $this->emit('capture_end', -1, ['stop_reason' => 'error']);
+            throw $e;
         }
 
         if ($sawChunk && !$sawFinishReason) {
@@ -153,6 +198,7 @@ final class DurableResultConverter extends ResultConverter
      * @param array<int, int>                                                              $blockByIndex
      * @param array<non-empty-string, int>                                                 $blockById
      * @param array<string, mixed>                                                         $data
+     * @param int                                                                          $chunkOrdinal Ordinal of the raw chunk producing these deltas
      *
      * @return \Generator<ToolCallStart|ToolInputDelta>
      */
@@ -161,6 +207,7 @@ final class DurableResultConverter extends ResultConverter
         array &$blockByIndex,
         array &$blockById,
         array $data,
+        int $chunkOrdinal,
     ): \Generator {
         foreach ($data['choices'][0]['delta']['tool_calls'] ?? [] as $chunk) {
             $index = $chunk['index'] ?? 0;
@@ -171,13 +218,17 @@ final class DurableResultConverter extends ResultConverter
 
                 // Only yield starts for non-empty IDs.
                 if ('' !== $chunk['id']) {
-                    yield new ToolCallStart($chunk['id'], $chunk['function']['name'] ?? '');
+                    $delta = new ToolCallStart($chunk['id'], $chunk['function']['name'] ?? '');
+                    $this->emit('converted_delta', $chunkOrdinal, $this->deltaContext($delta));
+                    yield $delta;
                 }
 
                 // Replay any buffered arguments now that we have a stable identity.
                 $bufferedArgs = $blocks[$stableKey]['partialJson'] ?? '';
                 if ('' !== $bufferedArgs && '' !== $chunk['id']) {
-                    yield new ToolInputDelta($chunk['id'], $chunk['function']['name'] ?? '', $bufferedArgs);
+                    $delta = new ToolInputDelta($chunk['id'], $chunk['function']['name'] ?? '', $bufferedArgs);
+                    $this->emit('converted_delta', $chunkOrdinal, $this->deltaContext($delta));
+                    yield $delta;
                 }
             } elseif (isset($chunk['function']['arguments'])) {
                 // Argument-only chunk: find the block by the OpenAI stream index.
@@ -188,7 +239,9 @@ final class DurableResultConverter extends ResultConverter
 
                     // Only yield argument deltas for blocks with known non-empty IDs.
                     if ('' !== $id) {
-                        yield new ToolInputDelta($id, $blocks[$stableKey]['name'], $chunk['function']['arguments']);
+                        $delta = new ToolInputDelta($id, $blocks[$stableKey]['name'], $chunk['function']['arguments']);
+                        $this->emit('converted_delta', $chunkOrdinal, $this->deltaContext($delta));
+                        yield $delta;
                     }
                     // Arguments on a block without ID are silently buffered
                     // in accumulateDurableToolCalls (called after this method).
@@ -372,5 +425,65 @@ final class DurableResultConverter extends ResultConverter
         }
 
         return $toolCalls;
+    }
+
+    // ── Capture helpers ──────────────────────────────────────────────────────
+
+    /**
+     * Emit a stream event to the optional listener.
+     *
+     * @param string               $event   Event name ('capture_start', 'raw_chunk', 'converted_delta', 'capture_end')
+     * @param int                  $ordinal Chunk ordinal (-1 for start/end)
+     * @param array<string, mixed> $context Event-specific context
+     */
+    private function emit(string $event, int $ordinal, array $context): void
+    {
+        if (null === $this->onStreamEvent) {
+            return;
+        }
+
+        ($this->onStreamEvent)($event, $ordinal, $context);
+    }
+
+    /**
+     * Build context array from a delta object for emission.
+     *
+     * @return array<string, mixed>
+     */
+    private function deltaContext(object $delta): array
+    {
+        $ctx = [
+            'type' => (new \ReflectionClass($delta))->getShortName(),
+        ];
+
+        if (method_exists($delta, 'getId')) {
+            $ctx['id'] = $delta->getId();
+        }
+        if (method_exists($delta, 'getName')) {
+            $ctx['name'] = $delta->getName();
+        }
+        if (method_exists($delta, 'getPartialJson')) {
+            $ctx['partial_json'] = $delta->getPartialJson();
+        }
+        if (method_exists($delta, 'getText')) {
+            $ctx['text'] = $delta->getText();
+        }
+        if (method_exists($delta, 'getContent')) {
+            $content = $delta->getContent();
+            $ctx['content'] = \is_string($content) ? mb_substr($content, 0, 2000) : $content;
+        }
+        if (method_exists($delta, 'getToolCalls')) {
+            $toolCalls = [];
+            foreach ($delta->getToolCalls() as $tc) {
+                $toolCalls[] = [
+                    'id' => $tc->getId(),
+                    'name' => $tc->getName(),
+                    'arguments' => $tc->getArguments(),
+                ];
+            }
+            $ctx['tool_calls'] = $toolCalls;
+        }
+
+        return $ctx;
     }
 }
