@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: w65rnz48dzm5
+Fork run: lfzl5tjyl9c6
 PR URL: https://github.com/ineersa/agent-core/pull/150
 PR Status: merged
 Started: 2026-06-12T16:54:23.580Z
@@ -631,3 +631,8 @@ Castor Check Output SHA256: 8402952e60f19af97d70af3c9bd816e632c7b0adb64c7eea53f5
 
 ## Task workflow update - 2026-06-17T13:49:53.100Z
 - Summary: User retested after c297dd48a and reports remaining #127 selection/teardown regressions: (1) cursor visibly jumps/moves to bottom when selecting a session to resume; same cursor jump happens on Ctrl+D exit. User asks whether we are touching cursor/custom escape codes there. (2) Previously selecting a session gave instant feedback: old screen cleared/blanked for ~0.5s, then new session rendered. Now selection appears to do nothing except cursor jump until the new session eventually renders. Current hypothesis: c297dd48a fixed frozen old-state repaint by skipping picker-close render before session switch, but overcorrected and removed the intentional transition clear/visual feedback; Symfony TUI or terminal teardown leaves cursor at focused editor/bottom because no clean transition clear/render happens before `Tui::stop()`. Need investigate/fix session-switch and Ctrl+D teardown cursor/clear lifecycle without reintroducing picker-open flicker or old-torn-state render.
+
+## Task workflow update - 2026-06-17T14:03:43.272Z
+- Recorded fork run: lfzl5tjyl9c6
+- Validation: php -l src/Tui/Application/InteractiveMode.php — OK; castor test:tui --filter=TuiResumeSessionSwitchE2eTest — OK (3 tests, 38 assertions, 11.4s); castor test:tui — OK (6 tests, 73 assertions, 21.3s); castor test --filter=TranscriptProjectorTest — OK (87 tests, 333 assertions, 0.7s); castor test — OK (2566 tests, 7534 assertions, 14.0s); castor deptrac — OK (0 violations); castor phpstan — OK (0 errors); castor cs-check — OK; LLM_MODE=true castor check — OK (6/6, 49.5s)
+- Summary: Fork lfzl5tjyl9c6 completed the remaining #127 transition/teardown regression fix. Root cause: after the old TUI stops, Symfony TUI `Terminal::stop()` restores cooked mode but does not clear the screen or home the cursor; with picker-open forced clear removed and picker-select stale render skipped, the cursor remained at the old focused widget/editor/picker position near the bottom and there was no immediate blank feedback before the new session render. Fix in `src/Tui/Application/InteractiveMode.php`: after old TUI exits and a session switch is pending, write `\x1b[2J\x1b[3J\x1b[H` directly to STDOUT and flush, giving immediate clear/home transition feedback before the new TUI starts; on Ctrl+D/no switch exit, write `\r\n` and flush so shell prompt/cursor lands cleanly. This intentionally uses lifecycle-managed direct ANSI escapes after terminal stop, not widget-tree rendering or DECSET 2026. Existing picker-open no-flicker, picker-select no-old-state-freeze, and canonical replay fixes preserved. Issue #153 not touched.
