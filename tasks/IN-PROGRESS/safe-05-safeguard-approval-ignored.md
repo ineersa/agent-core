@@ -81,14 +81,21 @@ Alternative (if the summary-payload change is too invasive): dispatch the commit
 - castor test, castor deptrac, castor phpstan, castor cs-check all pass; AgentCore stays free of CodingAgent/TUI dependencies
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/safe-05-safeguard-approval-ignored
+Worktree: /home/ineersa/projects/agent-core-worktrees/safe-05-safeguard-approval-ignored
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-17T20:44:06.133Z
 Completed:
 
 ## Work log
 - Created: 2026-06-17T20:43:49.337Z
+
+## Task workflow update - 2026-06-17T20:44:06.133Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/safe-05-safeguard-approval-ignored.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/safe-05-safeguard-approval-ignored.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/safe-05-safeguard-approval-ignored.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/safe-05-safeguard-approval-ignored.
