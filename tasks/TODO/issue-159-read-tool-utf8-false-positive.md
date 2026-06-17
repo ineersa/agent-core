@@ -36,3 +36,6 @@ Completed:
 
 ## Work log
 - Created: 2026-06-17T21:37:51.588Z
+
+## Task workflow update - 2026-06-17T21:48:33.522Z
+- User clarified: keep UTF-8 enforcement, but fix validation. Consider whether the existing League/Flysystem MIME type detection library should be used where appropriate; do not rely on MIME detection as a substitute for validating text encoding.
