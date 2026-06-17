@@ -330,11 +330,13 @@ final class RegistryBackedToolboxTest extends TestCase
 
         $toolbox = new RegistryBackedToolbox($registry);
 
-        $this->expectException(ToolNotFoundException::class);
-        $toolbox->execute(new ToolCall('call-excluded', 'bash', []));
-
-        // Handler must NOT be invoked
-        $this->assertSame(0, $handler->calls);
+        try {
+            $toolbox->execute(new ToolCall('call-excluded', 'bash', []));
+            $this->fail('Expected ToolNotFoundException.');
+        } catch (ToolNotFoundException) {
+            // Handler must NOT be invoked
+            $this->assertSame(0, $handler->calls);
+        }
     }
 
     public function testExecuteThrowsToolNotFoundExceptionForAllowlistFilteredTool(): void
@@ -365,11 +367,13 @@ final class RegistryBackedToolboxTest extends TestCase
         $toolbox = new RegistryBackedToolbox($registry);
 
         // 'bash' is registered but not in the allowlist
-        $this->expectException(ToolNotFoundException::class);
-        $toolbox->execute(new ToolCall('call-allowlisted', 'bash', []));
-
-        // Handler must NOT be invoked
-        $this->assertSame(0, $handler->calls);
+        try {
+            $toolbox->execute(new ToolCall('call-allowlisted', 'bash', []));
+            $this->fail('Expected ToolNotFoundException.');
+        } catch (ToolNotFoundException) {
+            // Handler must NOT be invoked
+            $this->assertSame(0, $handler->calls);
+        }
     }
 
     public function testExecuteStillWorksForAllowedToolInAllowlist(): void
