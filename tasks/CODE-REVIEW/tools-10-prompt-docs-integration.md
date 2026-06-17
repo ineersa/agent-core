@@ -37,7 +37,7 @@ Out of scope:
 - Focused tests pass with Castor/PHPUnit.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/tools-10-prompt-docs-integration
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-10-prompt-docs-integration
 Fork run: t7y0h63x87kn
@@ -142,3 +142,13 @@ Completed:
 - Recorded fork run: t7y0h63x87kn
 - Validation: Fork read mandatory QA context: `.agents/skills/testing/SKILL.md` and `tests/AGENTS.md`.; Fork validation: `castor test --filter SystemPromptBuilderTest` PASS 19 tests, 65 assertions.; Fork validation: `castor test --filter DurableResultConverterTest` PASS 11 tests, 57 assertions.; Fork validation: `castor phpstan` PASS 0 errors/file_errors.; Fork validation: `castor cs-check` PASS clean, files_fixed=0.; Fork validation: full `castor test` PASS 2561 tests, 7517 assertions.; Fork validation: `rg '<tool_usage>' config/SYSTEM.md` found no matches.; Parent verification: HEAD is `9ab620123`, worktree clean/ahead 1 of origin, diff from `e4365ddc8` limited to `config/SYSTEM.md`, `DurableResultConverter.php`, and `SystemPromptBuilderTest.php`; integration checkout clean.
 - Summary: Fork `t7y0h63x87kn` completed review-iteration for PR #154 comments in commit `9ab620123e8cb41eb5a977f4ac861c40226ba7a3` (`fix(TOOLS-10): address PR #154 review comments`). Files changed: `config/SYSTEM.md` reverted `<context_channels>` wording to `origin/main` per comment "I don't think I asked to change system prompt"; `tests/CodingAgent/SystemPrompt/SystemPromptBuilderTest.php` removed the now-invalid added context-channel wording test while keeping no-`<tool_usage>` and registry-metadata tests; `src/Platform/Bridge/Generic/DurableResultConverter.php` added a concise rationale comment above the PHPStan-required `RuntimeException` throw explaining Symfony AI has no dedicated `IncompleteStreamException` and the message identifies the truncated-stream condition. No reviewer was run.
+
+## Task workflow update - 2026-06-17T00:20:41.391Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Running deterministic castor check in worktree (timeout 480s)...
+- castor check passed (15.0s).
+- Pushed task/tools-10-prompt-docs-integration to origin.
+- branch 'task/tools-10-prompt-docs-integration' set up to track 'origin/task/tools-10-prompt-docs-integration'.
+- PR already exists: https://github.com/ineersa/agent-core/pull/154
+- Validation: No reviewer rerun per explicit user instruction.; Fork validation: `castor test --filter SystemPromptBuilderTest` PASS 19 tests/65 assertions.; Fork validation: `castor test --filter DurableResultConverterTest` PASS 11 tests/57 assertions.; Fork validation: `castor phpstan` PASS 0 errors/file_errors.; Fork validation: `castor cs-check` PASS clean.; Fork validation: full `castor test` PASS 2561 tests/7517 assertions.; Fork validation: `<tool_usage>` absent from `config/SYSTEM.md`.; Parent verification: review-iteration diff limited to `config/SYSTEM.md`, `src/Platform/Bridge/Generic/DurableResultConverter.php`, and `tests/CodingAgent/SystemPrompt/SystemPromptBuilderTest.php`; integration checkout clean.
+- Summary: Review-iteration for PR #154 comments complete. Final branch HEAD: `9ab620123e8cb41eb5a977f4ac861c40226ba7a3`. Addressed comments by reverting `config/SYSTEM.md` context-channel wording to `origin/main`, removing the test that asserted the reverted wording while preserving registry-metadata/no-`<tool_usage>` tests, and adding a concise rationale comment for the PHPStan-required `RuntimeException` in `DurableResultConverter`. Per user instruction, reviewer was not relaunched.
