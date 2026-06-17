@@ -40,7 +40,7 @@ Out of scope:
 Status: IN-PROGRESS
 Branch: task/tools-10-prompt-docs-integration
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-10-prompt-docs-integration
-Fork run: h90mpyxp2471
+Fork run: t7y0h63x87kn
 PR URL: https://github.com/ineersa/agent-core/pull/154
 PR Status: open
 Started: 2026-06-16T22:05:47.991Z
@@ -133,3 +133,7 @@ Completed:
 ## Task workflow update - 2026-06-17T00:17:07.423Z
 - Moved CODE-REVIEW → IN-PROGRESS.
 - Summary: Starting review-iteration for PR #154 comments. User explicitly requested fixes and no reviewer relaunch. Comments to address: (1) `config/SYSTEM.md` change: "I don't think I asked to change system prompt" — likely revert built-in system prompt template changes and adjust tests accordingly while keeping tool guidance sourced from tool metadata. (2) `src/Platform/Bridge/Generic/DurableResultConverter.php` exception change: "Why this change?" — keep PHPStan gate passing but make rationale/minimality clear, likely with code/test clarity around using existing Symfony AI platform `RuntimeException` because `IncompleteStreamException` does not exist. No reviewer should be launched after fixes.
+
+## Task workflow update - 2026-06-17T00:17:49.314Z
+- Recorded fork run: t7y0h63x87kn
+- Summary: Launched review-iteration fork `t7y0h63x87kn` to address PR #154 comments without relaunching reviewer. Instructions: revert `config/SYSTEM.md` to origin/main and adjust/remove the added context-channel wording test while preserving no-`<tool_usage>`/registry-metadata tests; keep the PHPStan-required `DurableResultConverter` exception fix but make rationale self-explanatory with minimal comment/test clarity; run focused Castor validation (`SystemPromptBuilderTest`, `DurableResultConverterTest`, `phpstan`, `cs-check`), commit, and do not push/move task/run reviewer.
