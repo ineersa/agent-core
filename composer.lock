@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "69df31fb99fe5c6b5a2f58800526f9a8",
+    "content-hash": "6c737543ee11d74f80154d2925ba9c88",
     "packages": [
         {
             "name": "doctrine/collections",
@@ -2809,7 +2809,7 @@
         },
         {
             "name": "symfony/ai-platform",
-            "version": "v0.10.0",
+            "version": "dev-main",
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/ai-platform.git",
@@ -2854,6 +2854,7 @@
                 "symfony/var-dumper": "^7.3|^8.0",
                 "symfony/yaml": "^7.3|^8.0"
             },
+            "default-branch": true,
             "type": "library",
             "extra": {
                 "thanks": {
@@ -2917,7 +2918,7 @@
                 "voyage"
             ],
             "support": {
-                "source": "https://github.com/symfony/ai-platform/tree/v0.10.0"
+                "source": "https://github.com/symfony/ai-platform/tree/main"
             },
             "funding": [
                 {
@@ -7229,16 +7230,16 @@
         },
         {
             "name": "webmozart/assert",
-            "version": "2.4.0",
+            "version": "2.4.1",
             "source": {
                 "type": "git",
                 "url": "https://github.com/webmozarts/assert.git",
-                "reference": "9007ea6f45ecf352a9422b36644e4bfc039b9155"
+                "reference": "2ccb7c2e821038c03a3e6e1700c570c158c55f70"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/webmozarts/assert/zipball/9007ea6f45ecf352a9422b36644e4bfc039b9155",
-                "reference": "9007ea6f45ecf352a9422b36644e4bfc039b9155",
+                "url": "https://api.github.com/repos/webmozarts/assert/zipball/2ccb7c2e821038c03a3e6e1700c570c158c55f70",
+                "reference": "2ccb7c2e821038c03a3e6e1700c570c158c55f70",
                 "shasum": ""
             },
             "require": {
@@ -7289,9 +7290,9 @@
             ],
             "support": {
                 "issues": "https://github.com/webmozarts/assert/issues",
-                "source": "https://github.com/webmozarts/assert/tree/2.4.0"
+                "source": "https://github.com/webmozarts/assert/tree/2.4.1"
             },
-            "time": "2026-05-20T13:07:01+00:00"
+            "time": "2026-06-15T15:31:57+00:00"
         }
     ],
     "packages-dev": [
@@ -11297,12 +11298,20 @@
             "time": "2025-12-08T11:19:18+00:00"
         }
     ],
-    "aliases": [],
+    "aliases": [
+        {
+            "package": "symfony/ai-platform",
+            "version": "dev-main",
+            "alias": "0.10.99",
+            "alias_normalized": "0.10.99.0"
+        }
+    ],
     "minimum-stability": "dev",
     "stability-flags": {
         "symfony/ai-agent": 20,
         "symfony/ai-generic-platform": 20,
-        "symfony/ai-open-responses-platform": 20
+        "symfony/ai-open-responses-platform": 20,
+        "symfony/ai-platform": 20
     },
     "prefer-stable": true,
     "prefer-lowest": false,

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Platform\Tests\Bridge\Generic;
 
 use Ineersa\Platform\Bridge\Generic\DurableResultConverter;
-use Ineersa\Platform\Bridge\Generic\IncompleteStreamException;
+use Symfony\AI\Platform\Exception\IncompleteStreamException;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
