@@ -44,12 +44,12 @@ Suggested implementation direction:
 - Before implementation/validation, forks must read `.agents/skills/testing/SKILL.md` and `tests/AGENTS.md`; validate via Castor (`castor test`, `castor deptrac`, `castor phpstan`, `castor cs-check`, and `castor check` before PR; `castor test:llm-real` if live provider compatibility is affected).
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/issue-129-vllm-provider-resilience
 Worktree: /home/ineersa/projects/agent-core-worktrees/issue-129-vllm-provider-resilience
 Fork run: r91hmmwynaz8
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/158
+PR Status: open
 Started: 2026-06-17T16:53:39.596Z
 Completed:
 
@@ -126,3 +126,11 @@ Decision: APPROVED verdict = no implementation fork needed. Proceeding to focuse
 Commits on branch task/issue-129-vllm-provider-resilience (HEAD 57bdf35af):
 - d711ce375 fix: add LLM HTTP retry/backoff and provider error classification for issue #129
 - 57bdf35af fix: address blocker review items for issue #129 — TUI E2E proof, privacy-safe diagnostics, provider id wiring
+
+## Task workflow update - 2026-06-17T18:30:11.273Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Running deterministic castor check in worktree (timeout 480s)...
+- castor check passed (27.4s).
+- Pushed task/issue-129-vllm-provider-resilience to origin.
+- branch 'task/issue-129-vllm-provider-resilience' set up to track 'origin/task/issue-129-vllm-provider-resilience'.
+- Created PR: https://github.com/ineersa/agent-core/pull/158
