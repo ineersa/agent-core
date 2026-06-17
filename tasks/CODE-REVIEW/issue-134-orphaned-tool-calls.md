@@ -38,12 +38,12 @@ Testing notes:
 - Focused Castor validation passes: `castor test` for relevant filters, plus `castor deptrac`, `castor phpstan`, `castor cs-check`; run `castor check` before CODE-REVIEW. Run `castor test:llm-real` if live provider compatibility paths are changed.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/issue-134-orphaned-tool-calls
 Worktree: /home/ineersa/projects/agent-core-worktrees/issue-134-orphaned-tool-calls
 Fork run: ujyykpezoctq
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/163
+PR Status: open
 Started: 2026-06-17T22:37:40.939Z
 Completed:
 
@@ -151,3 +151,13 @@ Refined agent-core design:
 ## Task workflow update - 2026-06-17T23:15:49.567Z
 - Validation: Reviewer subagent initial decision: APPROVED WITH SUGGESTIONS; all actionable findings addressed via fork.; Reviewer subagent final decision: APPROVE; no issues.; `castor test` in worktree — OK (2701 tests, 7995 assertions).; `castor deptrac` in worktree — OK (violations=0, errors=0).; `castor phpstan` in worktree — OK (errors=0, file_errors=0).; `castor cs-check` in worktree — OK (files_fixed=0).; `castor test:llm-real` in worktree — OK (5 tests, 51 assertions); run because task touches Symfony AI / LLM-visible preflight path.; Worktree status before CODE-REVIEW move: clean.
 - Summary: Task-to-PR review completed. Initial reviewer returned APPROVED WITH SUGGESTIONS and flagged actionable items: duplicate tool results were reported as unknown while `duplicateToolResult()` was dead code; 10 formatter-required binary-mode `fopen` changes looked unrelated; and additional focused tests were desirable. A review-fix fork committed `32f4351d6` (`Address tool-call validator review findings`): duplicate tool result diagnostics now use `duplicate_tool_result`; validator system-message gap test added; mixed/all-resolved pending-tool-call AdvanceRun tests added; `ExecuteLlmStepWorker` error propagation test added; cancel-rejected command kinds extracted to a constant. Follow-up cleanup fork restored the formatter-required binary-mode files to HEAD after `castor cs-check` proved they are required by current CS rules; no additional commit was needed. Final reviewer re-review returned APPROVE with no actionable issues. Current HEAD is `32f4351d6`; worktree is clean.
+
+## Task workflow update - 2026-06-17T23:16:43.837Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Running deterministic castor check in worktree (timeout 1200s)...
+- castor check passed (36.3s).
+- Pushed task/issue-134-orphaned-tool-calls to origin.
+- branch 'task/issue-134-orphaned-tool-calls' set up to track 'origin/task/issue-134-orphaned-tool-calls'.
+- Created PR: https://github.com/ineersa/agent-core/pull/163
+- Validation: Final reviewer subagent: APPROVE, no actionable issues.; `castor test` — OK (2701 tests, 7995 assertions).; `castor deptrac` — OK (violations=0, errors=0).; `castor phpstan` — OK (errors=0, file_errors=0).; `castor cs-check` — OK (files_fixed=0).; `castor test:llm-real` — OK (5 tests, 51 assertions).
+- Summary: Prepared for code review. Final reviewer decision: APPROVE. Worktree HEAD `32f4351d6` implements boundary-driven command draining, cancel rejection of stale queued commands, AdvanceRun unresolved-tool-call guard, abort/cancel dropping assistant messages from prompt history with sanitized `llm_step_aborted` metadata, and provider preflight validation for assistant tool-call/tool-result ordering. Review-fix commit addressed duplicate tool-result diagnostics and added additional regression coverage. Focused validation passed before move; deterministic `castor check` is run by this transition.
