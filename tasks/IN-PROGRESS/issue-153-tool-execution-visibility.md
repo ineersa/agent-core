@@ -47,3 +47,8 @@ Completed:
 ## Task workflow update - 2026-06-17T16:15:51.773Z
 - Recorded fork run: 1fwj6ofj0h9g
 - Summary: Follow-up fork launched to tighten `RegistryBackedToolboxTest` regression assertions. Required change: replace unreachable handler-call assertions after expected exceptions with reachable try/catch assertions proving excluded/allowlist-filtered tool handlers are not invoked.
+
+## Task workflow update - 2026-06-17T16:17:21.418Z
+- Recorded fork run: 1fwj6ofj0h9g
+- Validation: Fork 206ynkox7fl5: `castor test --suite=coding-agent --filter=RegistryBackedToolboxTest` — OK (17 tests, 36 assertions).; Fork 206ynkox7fl5: `castor test --suite=coding-agent --filter=ToolRegistryTest` — OK (47 tests, 108 assertions).; Fork 206ynkox7fl5: `castor test --suite=coding-agent` — OK (1488 tests, 4119 assertions).; Fork 206ynkox7fl5: `castor deptrac` — OK (0 violations, 0 errors, 1137 allowed).; Fork 1fwj6ofj0h9g: `castor test --suite=coding-agent --filter=RegistryBackedToolboxTest` — OK (17 tests, 36 assertions).; Orchestrator verification: `git status --short` in worktree — clean; `git diff --stat origin/main...HEAD` — 4 files changed, 151 insertions(+), 2 deletions(-).
+- Summary: Follow-up fork 1fwj6ofj0h9g completed at commit b34273611. Verified worktree is clean and final diff contains expected files only: ToolRegistry production fix/docblock, ToolRegistryInterface docblock, RegistryBackedToolboxTest regressions, ToolRegistryTest semantics tests. Follow-up changed only `tests/CodingAgent/Tool/RegistryBackedToolboxTest.php` to make handler non-invocation assertions reachable via try/catch after expected `ToolNotFoundException`. Final branch head: b34273611 (`fix: make handler non-invocation assertions reachable in visibility tests`).
