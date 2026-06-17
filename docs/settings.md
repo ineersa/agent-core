@@ -167,6 +167,25 @@ HATFIELD_CAPTURE_ERRORS=0 bin/console agent --controller
 HATFIELD_CAPTURE_ERRORS=0 bin/console agent
 ```
 
+### `HATFIELD_LLM_RAW_STREAM_CAPTURE`
+
+Enable raw LLM provider stream capture for debugging `DurableResultConverter`
+behaviour.  When set to `1`, every raw SSE `data:` chunk and the converted
+deltas produced by the converter are written to a JSONL file.  Only applies
+to generic OpenAI-compatible providers (not Codex).
+
+See `docs/llm-replay.md` for JSONL shape, privacy warnings, and how to
+use artifacts for regression tests.
+
+**Default:** (unset, disabled).
+
+### `HATFIELD_LLM_RAW_STREAM_CAPTURE_PATH`
+
+Override the output path for the raw stream capture JSONL file.  The
+directory is created automatically when capture is enabled.
+
+**Default:** `<cwd>/var/tmp/llm-raw-stream-capture-<timestamp>-<id>.jsonl`
+
 ### `HATFIELD_CWD`
 
 Override the runtime working directory. When set, the active CWD (where
