@@ -17,14 +17,14 @@ Test target: `tests/CodingAgent/Tool/RegistryBackedToolboxTest.php` for the exec
 - Run focused validation through Castor, at minimum `castor test --suite=coding-agent --filter=RegistryBackedToolboxTest` plus any targeted registry tests touched.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/issue-153-tool-execution-visibility
 Worktree: /home/ineersa/projects/agent-core-worktrees/issue-153-tool-execution-visibility
 Fork run: 1fwj6ofj0h9g
 PR URL: https://github.com/ineersa/agent-core/pull/156
-PR Status: open
+PR Status: merged
 Started: 2026-06-17T16:12:02.630Z
-Completed:
+Completed: 2026-06-17T16:31:18.705Z
 
 ## Work log
 - Created: 2026-06-17T16:11:57.773Z
@@ -64,3 +64,10 @@ Completed:
 - Pushed task/issue-153-tool-execution-visibility to origin.
 - branch 'task/issue-153-tool-execution-visibility' set up to track 'origin/task/issue-153-tool-execution-visibility'.
 - Created PR: https://github.com/ineersa/agent-core/pull/156
+
+## Task workflow update - 2026-06-17T16:31:18.705Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/issue-153-tool-execution-visibility into integration checkout.
+- Already up to date.
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/issue-153-tool-execution-visibility.
+- Pulled integration checkout: Already up to date..
