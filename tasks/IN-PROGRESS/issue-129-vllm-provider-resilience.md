@@ -70,3 +70,18 @@ Completed:
 ## Task workflow update - 2026-06-17T16:58:15.492Z
 - Recorded fork run: 7dtgw8sj2p05
 - Summary: Implementation fork launched in worktree `/home/ineersa/projects/agent-core-worktrees/issue-129-vllm-provider-resilience` to implement the scoped issue #129 request-handling work. Fork instructions focus on LLM HTTP timeout/max_duration, bounded retry/backoff, Retry-After/Retry-After-Ms parsing with cap, terminal quota/billing detection, sanitized provider error classification, and red TUI/runtime diagnostics. Fork explicitly instructed that `DurableResultConverter` missing/late finish_reason semantics are out of scope and should not be changed. Fork also instructed to read testing skill + tests/AGENTS.md before tests, use Castor only, add focused tests plus TmuxHarness E2E proof if TUI/projection behavior is changed, commit changes, leave worktree clean, and report validation results.
+
+## Task workflow update - 2026-06-17T17:12:49.410Z
+- Recorded fork run: 7dtgw8sj2p05
+- Validation: Fork-reported validation: castor test OK (2638 tests, 7745 assertions), castor deptrac OK (0 violations), castor phpstan OK (0 errors after baseline regeneration), castor cs-check OK (0 files fixed).; Orchestrator status check after repair: worktree `task/issue-129-vllm-provider-resilience` clean at d711ce375; integration checkout `main` clean at origin/main 64a7eec98.
+- Summary: Implementation fork 7dtgw8sj2p05 reported completion at commit `d711ce375` with LLM HTTP retry/backoff, provider error classification, sanitized runtime/TUI error text, and unit tests. Orchestrator repaired workflow state after discovering the implementation commit had landed on the integration checkout `main` instead of the task worktree branch: task worktree branch `task/issue-129-vllm-provider-resilience` was reset to `d711ce375`, and integration checkout `main` was reset back to `origin/main` (`64a7eec98`). Worktree and integration checkout are clean after repair.
+
+Not accepted for CODE-REVIEW yet. Blocking issues found in handoff/inspection:
+- Fork admitted no real TmuxHarness TUI E2E proof was added, despite changing `RuntimeEventTranslator::onLlmStepFailed()` visible TUI error text. AGENTS.md/task-workflow hard gate requires a real replay-backed `TmuxHarness` E2E proof and `castor test:tui` for TUI feature behavior.
+- Fork ran raw `phpunit --filter=...` commands before Castor; this violates project QA policy. Future validation must use Castor only.
+- Fork added new PHPStan baseline entries for `LlmRetryingHttpClient::request()` / `withOptions()` missing array value types instead of fixing the docblocks/types. These baseline additions should be removed and the code fixed.
+- `extractResponseDiagnostics()` still has a raw `response_body_preview` path for non-JSON bodies in log context; task instructions required no raw body previews in logs/persistence/display. Prefer safe fields such as content type, byte count, and truncated flag.
+- Runtime translator passes through `retry_after_ms` if present, but response diagnostics do not currently parse Retry-After headers into the error array.
+- `SymfonyAiProviderFactory::getHttpClient()` accepts `providerId` but callers do not pass `$provider->id`, leaving retry logs without provider identity.
+
+Next step: launch a follow-up implementation fork to address these blockers before reviewer/code-review phase.
