@@ -25,12 +25,12 @@ Implementation notes:
 - Focused validation passes at minimum: `castor test --filter=ReadFileToolTest`, `castor phpstan src/CodingAgent/Tool/ReadFileTool.php`, `castor cs-check`, and `castor deptrac`. Run `castor check` before CODE-REVIEW because this is an LLM-visible tool/runtime path.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/issue-159-read-tool-utf8-false-positive
 Worktree: /home/ineersa/projects/agent-core-worktrees/issue-159-read-tool-utf8-false-positive
 Fork run: ectdn5pv1hz3
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/161
+PR Status: open
 Started: 2026-06-17T21:49:35.275Z
 Completed:
 
@@ -87,3 +87,13 @@ Completed:
 ## Task workflow update - 2026-06-17T22:26:09.368Z
 - Validation: Reviewer verdict: APPROVE.; Focused validation run in worktree at HEAD `d6181c0ac`: `castor test` PASS — 2671 tests, 7868 assertions.; Focused validation: `castor deptrac` PASS — violations=0, errors=0.; Focused validation: `castor phpstan` PASS — errors=0, file_errors=0.; Focused validation: `castor cs-check` PASS — files_fixed=0.; Worktree final status before CODE-REVIEW move: clean on branch `task/issue-159-read-tool-utf8-false-positive`.; No `castor test:llm-real` run: this changes tool implementation validation, not provider integration, model routing, tool schema conversion, or live-provider compatibility. Deterministic `castor check` will run during CODE-REVIEW move.
 - Summary: Task-to-PR review completed. Reviewer subagent returned `APPROVE` for current HEAD `d6181c0ac`, after reading `.agents/skills/testing/SKILL.md` and `tests/AGENTS.md`. Reviewer found no blocking issues. Non-blocking notes recorded: sampling intentionally does not validate arbitrary invalid bytes after the 8192-byte base prefix when a valid prefix is found; this is an inherent/pre-existing sampling tradeoff and not a regression. `fopen(..., 'r')` is accepted because project CS fixer normalizes away `b` mode on this Linux/PHP 8 target. Existing test class uses legacy `sys_get_temp_dir()` setup, but new tests follow the class pattern; broader isolation cleanup is out of scope.
+
+## Task workflow update - 2026-06-17T22:26:51.857Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Running deterministic castor check in worktree (timeout 1200s)...
+- castor check passed (28.2s).
+- Pushed task/issue-159-read-tool-utf8-false-positive to origin.
+- branch 'task/issue-159-read-tool-utf8-false-positive' set up to track 'origin/task/issue-159-read-tool-utf8-false-positive'.
+- Created PR: https://github.com/ineersa/agent-core/pull/161
+- Validation: Reviewer subagent verdict: APPROVE.; `castor test` PASS — 2671 tests, 7868 assertions.; `castor deptrac` PASS — violations=0, errors=0.; `castor phpstan` PASS — errors=0, file_errors=0.; `castor cs-check` PASS — files_fixed=0.
+- Summary: Reviewer approved HEAD `d6181c0ac`; focused Castor validation passed (`castor test`, `castor deptrac`, `castor phpstan`, `castor cs-check`). Moving to CODE-REVIEW to run deterministic `castor check`, push branch, and create PR.
