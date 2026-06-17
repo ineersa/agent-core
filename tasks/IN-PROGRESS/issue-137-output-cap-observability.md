@@ -64,3 +64,7 @@ Completed:
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/issue-137-output-cap-observability.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/issue-137-output-cap-observability.
 - Summary: User chose one broad PR. Round 1 scope: update OutputCap/read-tool model guidance properly and fix central/double cap behavior. SafeGuard-specific implementation is deferred to round 2; after round 1 finishes, inspect changes and launch a second fork for observability.
+
+## Task workflow update - 2026-06-17T23:24:23.219Z
+- Validation: Fork reported `castor test --filter=OutputCap`: PASS (46 tests, 121 assertions) after cleanup.; Fork reported `castor phpstan --path=src/CodingAgent/Tool/OutputCap.php`: PASS (0 errors).; Fork reported `castor deptrac`: PASS (0 violations, 0 errors).; Fork reported `castor cs-check`: reported 10 pre-existing unrelated fopen mode issues; worktree left clean and task changes not dirty.
+- Summary: Round 1 implementation completed in worktree `/home/ineersa/projects/agent-core-worktrees/issue-137-output-cap-observability`. Commits: `a67f6dc25` initial OutputCap/read guidance and double-cap work, `70de1453c` path-aware central cap fix with tool arguments, `b98655368` cleanup restoring tool-first notice wording and PHPDoc placement. Parent inspected diffs and verified worktree clean. Next step: launch round 2 fork for events.jsonl/TUI observability; SafeGuard-specific behavior remains deferred unless covered by generic observability plumbing.
