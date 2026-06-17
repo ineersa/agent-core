@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace Ineersa\Platform\Tests\Bridge\Generic;
 
 use Ineersa\Platform\Bridge\Generic\DurableResultConverter;
+use Ineersa\Platform\Bridge\Generic\IncompleteStreamException;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
-use Symfony\AI\Platform\Exception\RuntimeException as PlatformRuntimeException;
 use Symfony\AI\Platform\Result\RawHttpResult;
 use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
 use Symfony\AI\Platform\Result\Stream\Delta\ToolCallComplete;
@@ -432,7 +432,7 @@ final class DurableResultConverterTest extends TestCase
             ]]]),
         ]);
 
-        $this->expectException(PlatformRuntimeException::class);
+        $this->expectException(IncompleteStreamException::class);
         $this->expectExceptionMessage('Completions stream ended before a finish reason was received.');
 
         $this->collectStream($result);

@@ -142,10 +142,7 @@ final class DurableResultConverter extends ResultConverter
         }
 
         if ($sawChunk && !$sawFinishReason) {
-            // Throw the generic platform RuntimeException — Symfony AI does not
-            // define a dedicated IncompleteStreamException. The diagnostic
-            // message identifies the truncated-stream condition.
-            throw new RuntimeException('Completions stream ended before a finish reason was received.');
+            throw new IncompleteStreamException('Completions stream ended before a finish reason was received.');
         }
     }
 
