@@ -98,10 +98,10 @@ final class TuiOutputCapNoticeE2eTest extends TestCase
             $this->tmux->sendLiteral($pane, "/resume {$sessionId}");
             $this->tmux->sendKey($pane, 'Enter');
 
-            // Wait for the System block (ℹ) or the "Output was capped" text.
+            // Wait for the System block (⚠) or the "Output exceeded" text.
             $this->tmux->waitForCallback(
                 $pane,
-                static fn (string $cap): bool => str_contains($cap, 'Output was capped'),
+                static fn (string $cap): bool => str_contains($cap, 'Output exceeded'),
                 timeout: 10.0,
                 message: 'Output cap System notice did not appear in transcript after resume',
                 history: 3000,
@@ -114,16 +114,16 @@ final class TuiOutputCapNoticeE2eTest extends TestCase
             self::assertStringContainsString('⚠', $visiblePane,
                 'Output-cap System block warning icon must be visible in transcript');
 
-            // 2. The "Output was capped" text must appear.
-            self::assertStringContainsString('Output was capped', $visiblePane,
+            // 2. The "Output exceeded the cap" text must appear.
+            self::assertStringContainsString('Output exceeded', $visiblePane,
                 'Output cap notice text must be visible in transcript');
 
             // 3. The guidance text telling user what model saw must appear.
-            self::assertStringContainsString('Model was instructed', $visiblePane,
+            self::assertStringContainsString('Model was shown', $visiblePane,
                 'Guidance text about model instructions must be visible in transcript');
 
-            // 4. Cap metadata (formatted visible chars and total) must appear.
-            self::assertStringContainsString('20,000 visible chars of 50,000', $visiblePane,
+            // 4. Cap metadata (formatted cap and total) must appear.
+            self::assertStringContainsString('exceeded the 20,000-character cap (50,000 chars total)', $visiblePane,
                 'Output cap formatted metadata must be visible in transcript');
             self::assertStringContainsString('full output saved for audit', $visiblePane,
                 'Saved-for-audit message must be visible in transcript');

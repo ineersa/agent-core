@@ -337,20 +337,31 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
         $capFmt = null !== $cap ? number_format($cap) : null;
         $charCountFmt = null !== $charCount ? number_format($charCount) : null;
 
-        $parts = ['Output was capped'];
+        // Build accurate notice: OutputCap replaces the original tool output
+        // with a notice — the model never saw any portion of the original content.
+        // Do NOT say "visible chars of" or imply partial content was shown.
+        $suffix = null !== $savedPath ? ' — full output saved for audit.' : '.';
         if (null !== $capFmt && null !== $charCountFmt) {
-            $parts[] = \sprintf('%s visible chars of %s', $capFmt, $charCountFmt);
+            $text = \sprintf(
+                'Output exceeded the %s-character cap (%s chars total)%s',
+                $capFmt, $charCountFmt, $suffix,
+            );
         } elseif (null !== $capFmt) {
-            $parts[] = \sprintf('%s character limit', $capFmt);
+            $text = \sprintf(
+                'Output exceeded the %s-character cap%s',
+                $capFmt, $suffix,
+            );
         } elseif (null !== $charCountFmt) {
-            $parts[] = \sprintf('%s total characters', $charCountFmt);
-        }
-        if (null !== $savedPath) {
-            $parts[] = 'full output saved for audit';
+            $text = \sprintf(
+                'Output capped — %s total characters%s',
+                $charCountFmt, $suffix,
+            );
+        } else {
+            $text = \sprintf('Output exceeded the character cap%s', $suffix);
         }
 
         // Tell the user that the model received follow-up guidance.
-        $text = implode(' — ', $parts).".\nModel was instructed to continue with targeted reads/search, not to rerun the tool or read the saved file wholesale.";
+        $text .= "\nModel was shown a cap notice with instructions to continue with targeted reads/search, not to rerun the tool or read the saved file wholesale.";
 
         $meta = [
             'tool_call_id' => $toolCallId,

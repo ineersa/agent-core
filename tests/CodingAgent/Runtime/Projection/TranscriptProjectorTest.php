@@ -1122,9 +1122,9 @@ final class TranscriptProjectorTest extends TestCase
         $notice = $blocks[1];
         $this->assertSame(TranscriptBlockKindEnum::System, $notice->kind);
         $this->assertSame('output_cap_tc_capped', $notice->id);
-        $this->assertStringContainsString('Output was capped', $notice->text);
-        $this->assertStringContainsString('20,000 visible chars of 50,000', $notice->text);
-        $this->assertStringContainsString('Model was instructed', $notice->text);
+        $this->assertStringContainsString('Output exceeded', $notice->text);
+        $this->assertStringContainsString('exceeded the 20,000-character cap (50,000 chars total)', $notice->text);
+        $this->assertStringContainsString('Model was shown', $notice->text);
         $this->assertSame('output_cap', $notice->meta['notice_type']);
         $this->assertSame(20000, $notice->meta['output_cap_limit']);
         $this->assertSame(50000, $notice->meta['output_cap_char_count']);
