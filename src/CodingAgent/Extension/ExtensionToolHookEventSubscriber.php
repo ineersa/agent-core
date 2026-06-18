@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Extension;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\CodingAgent\Entity\ToolQuestion;
+use Ineersa\CodingAgent\Entity\ToolQuestionStatusEnum;
 use Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface;
 use Ineersa\Hatfield\ExtensionApi\ApprovalAnswerContextDTO;
 use Ineersa\Hatfield\ExtensionApi\ApprovalAnswerHookInterface;
@@ -274,6 +275,37 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
         do {
             usleep(self::POLL_INTERVAL_MICROS);
             $answerText = $this->toolQuestionStore->pollAnswerText($requestId);
+
+            // If pollAnswerText returned NULL but the question status is
+            // Answered, the question was answered with the wrong method
+            // (e.g., boolean path via handleBooleanAnswer when the question
+            // expects a string via answer_text). This is an error state,
+            // not a still-pending question — do not block forever.
+            if (null === $answerText) {
+                $q = $this->toolQuestionStore->findByRequestId($requestId);
+                if (null !== $q
+                    && ToolQuestionStatusEnum::Answered === $q->status
+                    && null === $q->answerText
+                ) {
+                    // Shape mismatch: question was answered but without
+                    // setting answer_text. This happens when the TUI sent
+                    // answer_tool_question without kind=safeguard_approval,
+                    // routing through handleBooleanAnswer instead of
+                    // handleStringAnswer. Log and treat as Deny.
+                    $this->logger?->warning('safeguard.approval_answer_shape_mismatch', [
+                        'run_id' => $runId,
+                        'component' => 'extension.tool_hook_subscriber',
+                        'event_type' => 'safeguard.approval_answer_shape_mismatch',
+                        'request_id' => $requestId,
+                        'tool_call_id' => $toolCallId,
+                        'question_status' => $q->status->value,
+                        'answer_bool' => $q->answer,
+                    ]);
+
+                    $answerText = 'Deny';
+                    break;
+                }
+            }
         } while (null === $answerText);
 
         $this->logger?->info('safeguard.approval_polling_complete', [
@@ -316,8 +348,7 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
     /**
      * Process an already-resolved ToolQuestion (from crash recovery / redelivery).
      * Routes the existing answer without blocking.
-     */
-    /**
+     *
      * @param array<string, mixed> $details
      */
     private function processApprovalAnswer(

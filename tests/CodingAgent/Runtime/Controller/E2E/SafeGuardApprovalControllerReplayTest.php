@@ -216,4 +216,108 @@ final class SafeGuardApprovalControllerReplayTest extends ControllerReplayE2eTes
             'File content must match what the LLM wrote. '
             .$this->collectDiagnostics($events));
     }
+
+    /**
+     * Same flow as testWriteOutsideCwdAllowOnceViaBlockingPoll but sends the
+     * answer_tool_question WITHOUT kind=safeguard_approval. Proves the server-side
+     * kind inference in AnswerToolQuestionHandler works: when the command omits
+     * kind, the handler looks up the stored ToolQuestion, sees kind=safeguard_approval,
+     * and routes via handleStringAnswer instead of handleBooleanAnswer.
+     *
+     * This closes the exact failure mode from session 2 where the live TUI sent
+     * answer_tool_question without kind, causing the wedge (answer stored as boolean
+     * false, answer_text=null, pollAnswerText returns null forever).
+     */
+    public function testWriteOutsideCwdAllowOnceViaBlockingPollWithoutKind(): void
+    {
+        $this->spawnController();
+        $this->waitForEvent('runtime.ready', 5.0);
+
+        $startCmdId = 'cmd_start_'.uniqid();
+        $this->writeCommand([
+            'v' => 1,
+            'id' => $startCmdId,
+            'type' => 'start_run',
+            'payload' => [
+                'prompt' => 'Call the write tool with path ../sg-'.$this->sessionId
+                    .'.txt and content hello. After the tool succeeds, answer exactly done.',
+            ],
+        ]);
+
+        // Phase 1: Collect events until tool_question.requested is emitted.
+        $preAnswerEvents = $this->collectEventsUntil('tool_question.requested', 20.0);
+        $byTypePre = $this->indexByType($preAnswerEvents);
+
+        // Verify NO human_input.requested (old interrupt flow)
+        $this->assertArrayNotHasKey('human_input.requested', $byTypePre,
+            'Blocking-poll must NOT produce human_input.requested. '
+            .$this->collectDiagnostics($preAnswerEvents));
+
+        // Verify tool_execution.started
+        $this->assertArrayHasKey('tool_execution.started', $byTypePre,
+            'tool_execution.started should appear. '
+            .$this->collectDiagnostics($preAnswerEvents));
+
+        // Extract runId
+        $runStarted = $byTypePre['run.started'][0] ?? null;
+        $this->assertNotNull($runStarted, 'Expected run.started. '
+            .$this->collectDiagnostics($preAnswerEvents));
+        $this->runId = (string) ($runStarted['runId'] ?? $runStarted['payload']['runId'] ?? '');
+        $this->assertNotEmpty($this->runId, 'run.started must have a runId');
+
+        // Get request_id from tool_question.requested
+        $toolQuestionEvents = $byTypePre['tool_question.requested'] ?? [];
+        $this->assertNotEmpty($toolQuestionEvents,
+            'Expected tool_question.requested. '
+            .$this->collectDiagnostics($preAnswerEvents));
+        $tqPayload = $toolQuestionEvents[0]['payload'] ?? [];
+        $requestId = (string) ($tqPayload['request_id'] ?? '');
+        $this->assertNotEmpty($requestId,
+            'tool_question.requested must carry request_id. '
+            .$this->collectDiagnostics($preAnswerEvents));
+        $this->assertSame('safeguard_approval', $tqPayload['kind'] ?? '',
+            'tool_question.requested kind must be safeguard_approval. '
+            .$this->collectDiagnostics($preAnswerEvents));
+
+        // Phase 2: Send answer WITHOUT kind — this is the regression test.
+        // The server-side handler must infer kind from the stored ToolQuestion.
+        $answerCmdId = 'cmd_answer_'.uniqid();
+        $this->writeCommand([
+            'v' => 1,
+            'id' => $answerCmdId,
+            'type' => 'answer_tool_question',
+            'runId' => $this->runId,
+            'payload' => [
+                'request_id' => $requestId,
+                'answer' => 'Allow once',
+                // NO 'kind' field — testing server-side inference!
+            ],
+        ]);
+
+        // Wait for the write tool to complete.
+        $events = $this->collectEventsUntilToolCompleted('write', 30.0);
+        $byType = $this->indexByType($events);
+
+        // Verify the write tool completed successfully
+        $this->assertArrayHasKey('tool_execution.completed', $byType,
+            'write tool must complete after approval (kind-inferred path). '
+            .$this->collectDiagnostics($events));
+        $this->assertArrayNotHasKey('tool_execution.failed', $byType,
+            'write tool must not fail after approval. '
+            .$this->collectDiagnostics($events));
+
+        // Verify no error
+        $completedPayload = $byType['tool_execution.completed'][0]['payload'] ?? [];
+        $this->assertFalse($completedPayload['is_error'] ?? true,
+            'write tool must complete without error. '
+            .$this->collectDiagnostics($events));
+
+        // Prove the write actually happened on disk (outside CWD)
+        $this->assertFileExists($this->targetOutsidePath,
+            'The write tool must create the file outside CWD after approval (kind-inferred). '
+            .$this->collectDiagnostics($events));
+        $this->assertSame('hello', trim((string) file_get_contents($this->targetOutsidePath)),
+            'File content must match what the LLM wrote. '
+            .$this->collectDiagnostics($events));
+    }
 }

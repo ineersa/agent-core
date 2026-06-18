@@ -293,6 +293,21 @@ final class TickPollListener implements TuiListenerRegistrar
 
         $kind = (string) ($p['kind'] ?? 'confirm');
 
+        // Diagnostic: log the received kind so we can debug any future
+        // routing mismatches between the controller (ToolQuestionPoller)
+        // and this tick listener.
+        if ('safeguard_approval' !== $kind && 'confirm' !== $kind) {
+            // Unknown kind — log it but still render a confirm overlay
+            // as a safe fallback so the user is not left with no UI.
+            // The AnswerToolQuestionHandler on the controller side also
+            // performs kind-inference from the stored ToolQuestion as a
+            // second line of defense.
+            trigger_error(
+                \sprintf('ToolQuestionPoller emitted unknown kind "%s" for request_id=%s — falling back to confirm', $kind, $requestIdFromPayload),
+                \E_USER_WARNING,
+            );
+        }
+
         if ('safeguard_approval' === $kind) {
             self::handleApprovalToolQuestion($p, $requestId, $runId, $requestIdFromPayload, $client, $questionCoordinator);
 
@@ -310,8 +325,7 @@ final class TickPollListener implements TuiListenerRegistrar
      * through QuestionKind::Approval. The answer is sent as a raw string through
      * answer_tool_question with the kind preserved so AnswerToolQuestionHandler
      * stores it as answer_text (not the boolean answer column).
-     */
-    /**
+     *
      * @param array<string, mixed> $p
      */
     private static function handleApprovalToolQuestion(
@@ -384,8 +398,7 @@ final class TickPollListener implements TuiListenerRegistrar
      * Renders a boolean yes/no confirmation. The answer is sent as a boolean
      * through answer_tool_question (backward-compatible with existing
      * AnswerToolQuestionHandler which resolves boolean answers).
-     */
-    /**
+     *
      * @param array<string, mixed> $p
      */
     private static function handleConfirmToolQuestion(
@@ -421,6 +434,7 @@ final class TickPollListener implements TuiListenerRegistrar
                     payload: [
                         'request_id' => $requestIdFromPayload,
                         'answer' => $boolAnswer,
+                        'kind' => 'confirm',
                     ],
                 ));
             },
@@ -430,6 +444,7 @@ final class TickPollListener implements TuiListenerRegistrar
                     payload: [
                         'request_id' => $requestIdFromPayload,
                         'answer' => false,
+                        'kind' => 'confirm',
                     ],
                 ));
             },

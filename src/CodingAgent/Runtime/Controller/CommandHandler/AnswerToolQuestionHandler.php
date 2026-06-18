@@ -74,22 +74,34 @@ final readonly class AnswerToolQuestionHandler
         // string answer vs boolean answer.
         $kind = (string) ($command->payload['kind'] ?? '');
 
-        // If the payload doesn't carry a kind, try to infer from the
-        // existing question in the store (backward compat with existing
-        // boolean-only Confirm-kind callers).
-        if ('' === $kind) {
-            $this->handleBooleanAnswer($event, $requestId, $command);
-
-            return;
-        }
-
         if ('safeguard_approval' === $kind) {
             $this->handleStringAnswer($event, $requestId, $command);
 
             return;
         }
 
-        // Default to boolean for unrecognized kinds (forward compat).
+        // When the payload doesn't carry a kind (or has an unrecognized
+        // kind), look up the stored ToolQuestion to infer the correct
+        // answer path. This handles: (a) legacy callers that never send
+        // kind, and (b) the SafeGuard case where the TUI-side routing
+        // sent a different or empty kind by mistake. Without this
+        // inference, a safeguard_approval question answered without the
+        // proper kind would be stored as boolean false (via
+        // handleBooleanAnswer), answer_text stays null, and the blocking
+        // poll in ExtensionToolHookEventSubscriber reads null from
+        // pollAnswerText and hangs forever.
+        if ('' === $kind) {
+            $stored = $this->store->findByRequestId($requestId);
+            if (null !== $stored && 'safeguard_approval' === $stored->kind) {
+                $this->handleStringAnswer($event, $requestId, $command);
+
+                return;
+            }
+        }
+
+        // Default to boolean for unrecognized or missing kinds, and for
+        // stored Confirm-kind questions (backward compat with existing
+        // boolean-only confirm callers).
         $this->handleBooleanAnswer($event, $requestId, $command);
     }
 
