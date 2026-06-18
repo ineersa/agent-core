@@ -24,30 +24,63 @@ moment the human's answer is routed back to the originating hook.
                        └────────────┬─────────────┘
                                     │  RequireApproval
                                     ▼
-┌───────────┐   interrupt   ┌──────────────────┐   WaitingHuman   ┌────────────────────┐
-│ Tool      │ ◄──────────── │ ToolCallResult   │ ───────────────► │ HitlMapping        │
-│ Executor  │               │ Handler          │                  │ Subscriber         │
-└───────────┘               └──────────────────┘                  └────────┬───────────┘
-                                                                          │
-                                                        human_input.requested
-                                                                          │
-                      ┌───────────────────────────────────────────────────┘
-                      │
-                      ▼
-┌─────────────────┐   poll     ┌─────────────────┐   enqueue   ┌────────────────────┐
-│ RuntimeEvent    │ ◄───────── │ TickPollListener │ ──────────► │ QuestionCoordinator│
-│ Poller          │            │                 │            │ (FIFO queue)        │
-└─────────────────┘            └─────────────────┘            └────────┬───────────┘
-                                                                       │
-                    ┌──────────────────────────────────────────────────┘
-                    │  QuestionController.open() → overlay renders
-                    │  above editor with SelectListWidget
-                    ▼
-┌─────────────────┐   answer_human cmd   ┌────────────────────┐
-│ TUI (user)      │ ──────────────────► │ AnswerHumanHandler  │
-│ selects answer  │                     │ (controller)        │
-└─────────────────┘                     └────────┬───────────┘
-                                                 │
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ ExtensionToolHookEventSubscriber::handleRequireApproval()                    │
+│                                                                             │
+│  1. Computes deterministic requestId = sg_{runId}_{toolCallId}              │
+│  2. Creates ToolQuestion (kind=safeguard_approval) in shared SQLite         │
+│  3. BLOCKS tool-worker thread polling pollAnswerText() — no interrupt       │
+│     result, no WaitingHuman, no AdvanceRun, no extra LLM turn              │
+└────────────────────────────────┬────────────────────────────────────────────┘
+                                 │
+                                 │  ToolQuestionPoller emits
+                                 │  tool_question.requested
+                                 │  (kind=safeguard_approval + schema)
+                                 ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ TUI TickPollListener::handleApprovalToolQuestion()                          │
+│  → Renders QuestionKind::Approval overlay (Allow once / Always allow / Deny)│
+│  → onAnswer closure sends answer_tool_question with kind=safeguard_approval │
+└────────────────────────────────┬────────────────────────────────────────────┘
+                                 │
+                                 │  answer_tool_question
+                                 │  (kind=safeguard_approval, answer="Allow once")
+                                 ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ AnswerToolQuestionHandler                                                   │
+│  → Routes kind=safeguard_approval → answerWithText(requestId, answer)       │
+│  → Writes answer_text column → pollAnswerText() returns → poll breaks      │
+└────────────────────────────────┬────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ ExtensionToolHookEventSubscriber answer routing                             │
+│                                                                             │
+│  match ($answerText) {                                                      │
+│    'Allow once', 'Always allow' => null       // Falls through → handler    │
+│    'Deny'              => setResult(denied)    // Blocks execution          │
+│  }                                                                          │
+│                                                                             │
+│  Always-allow → SafeGuardPolicyWriter persists to .hatfield/settings.yaml   │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Key differences from the old soft-interrupt flow
+
+- **No interrupt result.** The subscriber does NOT set a ToolResult. The tool call
+  remains active on the event, waiting for the poll to return. The Symfony AI
+  toolbox's `RegistryBackedToolbox::execute()` blocks inside the subscriber
+  because the subscriber runs synchronously in the event listener chain.
+- **No WaitingHuman, no human_input.requested.** The old flow emitted
+  `human_input.requested` runtime events through `HitlMappingSubscriber`. That
+  path is entirely bypassed — approval questions flow through the ToolQuestion
+  system (`tool_question.requested`).
+- **No extra LLM turn.** The LLM never sees a tool result from the interrupted
+  call. After the poll returns, the real handler runs, and only the REAL result
+  reaches the LLM.
+- **No cross-process cache.** Approval state lives in the ToolQuestion row in
+  the shared SQLite DB. No `cache.approvals` pool, no `CachedApprovalLedger`,
+  no `SafeGuardApprovalCommitSubscriber`.
                     ┌────────────────────────────┘
                     │  UserCommand → AgentSessionClient → runner.answerHuman()
                     ▼
@@ -84,29 +117,32 @@ defines the full HITL family:
 | `ApprovalApproved` | `approval.approved` | Reserved for future use |
 | `ApprovalRejected` | `approval.rejected` | Reserved for future use |
 
-### From RequireApproval to human_input.requested
+### From RequireApproval to tool question
 
 1. **Tool hook interception**: `ExtensionToolHookEventSubscriber::onToolCallRequested()`
    (`src/CodingAgent/Extension/ExtensionToolHookEventSubscriber.php`) iterates over
    registered tool call hooks. When a hook returns `ToolCallDecisionKindEnum::RequireApproval`,
    the subscriber:
+   - Computes a **deterministic requestId** `sg_{runId}_{toolCallId}` for idempotent
+     re-attach on messenger redelivery / crash recovery.
+   - Looks up an existing pending ToolQuestion by requestId. If not found, creates
+     a new `ToolQuestion` with `kind=safeguard_approval` in the shared SQLite store.
    - Registers the hook + question_id in `ExtensionHookRegistry::registerPendingApproval()`
-   - Sets the `ToolCallRequested` result to an interrupt DTO containing `question_id`,
-     `prompt`, `schema`, `tool_call_id`, `tool_name`, and `approval_context`.
+     for the subsequent `onApprovalAnswered()` callback.
+   - **Blocks the tool-worker thread** in a polling loop (`pollAnswerText()`) with
+     a 200ms interval — no timeout, no TTL. The run stays halted at the tool execution
+     stage until the human answers.
 
-2. **Tool execution abort**: The tool executor sees the interrupt result and aborts the
-   tool call. The `ToolCallResultHandler` produces a `WaitingHuman` domain event.
-
-3. **HitlMappingSubscriber** maps `WaitingHuman` to a `RuntimeEvent` with type
-   `human_input.requested`. The payload includes:
+2. **ToolQuestion event emission**: The `ToolQuestionPoller` (`src/CodingAgent/Runtime/Controller/ToolQuestionPoller.php`)
+   picks up the pending ToolQuestion from the shared SQLite and emits a
+   `tool_question.requested` runtime event. The payload includes the question kind
+   (`safeguard_approval`), prompt, schema (options), and the deterministic requestId:
    ```json
    {
-     "v": 1,
-     "type": "human_input.requested",
-     "runId": "<run_id>",
-     "seq": <number>,
+     "type": "tool_question.requested",
      "payload": {
-       "question_id": "sg_<sha256>",
+       "request_id": "sg_<runId>_<toolCallId>",
+       "kind": "safeguard_approval",
        "prompt": "Allow write outside working directory: /home/user/file?",
        "schema": {"type": "string", "enum": ["Allow once", "Always allow", "Deny"]},
        "tool_call_id": "call_00_<sha256>",
@@ -115,59 +151,59 @@ defines the full HITL family:
    }
    ```
 
-4. **Runtime event emission**: The event is written to the session's
-   canonical `events.jsonl` and emitted through the runtime event FIFO queue
-   (`InProcessAgentSessionClient` in-process mode) or stdout JSONL (controller mode).
+3. **TUI routing**: `TickPollListener::handleToolQuestionRequested()` reads the
+   event kind. For `safeguard_approval`, it calls `handleApprovalToolQuestion()`:
+   - Builds `QuestionKind::Approval` with options parsed from the schema.
+   - Enqueues a `QuestionRequest` with an `onAnswer` closure that sends
+     `answer_tool_question` with `kind=safeguard_approval`.
+   - The Approval overlay renders above the editor with a `SelectListWidget`
+     showing the three canonical options.
 
-### Answer routing: answer_human command
+### Answer routing: answer_tool_question command (SafeGuard)
 
-When the user provides an answer, the TUI (or an external broker) sends an
-`answer_human` `UserCommand` with payload:
+SafeGuard approvals use the **answer_tool_question** command (not answer_human).
+When the user selects an option in the Approval overlay, the TUI sends an
+`answer_tool_question` `UserCommand` with payload:
 
 ```json
 {
-  "type": "answer_human",
+  "type": "answer_tool_question",
   "runId": "<run_id>",
   "payload": {
-    "question_id": "sg_<sha256>",
-    "answer": "Allow once"
+    "request_id": "sg_<runId>_<toolCallId>",
+    "answer": "Allow once",
+    "kind": "safeguard_approval"
   }
 }
 ```
 
 The command flows through:
 
-- **TUI**: `TickPollListener` closure → `AgentSessionClient::send()` with `UserCommand`
-- **In-process mode**: `InProcessAgentSessionClient::send()` → `AgentRunner::answerHuman()`
-  → `CoreCommand(HumanResponse)` → run_control consumer → `ApplyCommandHandler`
-- **Controller mode**: `JsonlProcessAgentSessionClient::send()` writes JSONL to stdin;
-  controller's `AnswerHumanHandler` parses it → `AgentRunner::answerHuman()` (same as above)
+- **TUI**: `TickPollListener`'s `handleApprovalToolQuestion` `onAnswer` closure
+  → `AgentSessionClient::send()` with `UserCommand`
+- **Controller**: `AnswerToolQuestionHandler` (`src/CodingAgent/Runtime/Controller/CommandHandler/AnswerToolQuestionHandler.php`)
+  routes based on the payload `kind`. For `safeguard_approval`, it calls
+  `answerWithText($requestId, $answer)` on the shared ToolQuestion store.
+- **Kind inference**: If the payload omits `kind` (e.g. a misrouted answer), the
+  handler infers it from the stored ToolQuestion record — look up
+  `findByRequestId($requestId)` and check the stored `kind` column.
 
-After `ApplyCommandHandler` processes the `HumanResponse` and
-`RunCommit::commit()` persists the event, the
-`SafeGuardApprovalCommitSubscriber` (`src/CodingAgent/Extension/SafeGuardApprovalCommitSubscriber.php`)
-fires synchronously inside the commit. It scans the committed events for
-`agent_command_applied` with `kind=human_response`, resolves the originating hook
-from `ExtensionHookRegistry::resolveApproval(questionId)`, and
-calls `ApprovalAnswerHookInterface::onApprovalAnswered()`.
+Once `answerWithText()` writes the answer to the shared SQLite, the blocking poll
+in the tool consumer's `ExtensionToolHookEventSubscriber::handleRequireApproval()`
+sees `pollAnswerText()` return a non-null value, breaks out of the loop, and
+routes the answer.
 
-This runs in the SAME (worker) process where the pending approval is registered
-in `ExtensionHookRegistry` — BEFORE the `postCommit` `AdvanceRun` retry.
+### Controller vs in-process modes (SafeGuard approval)
 
-Previously, approval routing was handled by the polling-based
-`ExtensionApprovalAnswerSubscriber`, which only fired from
-`RuntimeEventTranslator::translate()` during TUI/controller polling — a
-different process than the tool worker. That cross-process isolation gap
-caused SafeGuard approvals to always be ignored (issue #130).
-
-### Controller vs in-process modes
-
-| Aspect | In-process | Controller (JSONL) |
-|--------|-----------|-------------------|
-| Event transport | Shared `InProcessAgentSessionClient` FIFO queue | JSONL over stdin/stdout pipes |
-| answer_human routing | Direct `AgentRunner::answerHuman()` call | `AnswerHumanHandler` parses JSONL → same runner path |
-| Approval channel | N/A (same process) | `HATFIELD_APPROVAL_CHANNEL=controller` env var |
-| Subprocess isolation | N/A | Controller + messenger consumers in separate processes |
+| Aspect | Effect on SafeGuard |
+|--------|-------------------|
+| Tool question store | Shared SQLite (`messenger.sqlite`), accessible from all processes |
+| Poll location | Tool consumer process — blocks the tool-worker thread |
+| Answer location | Controller or worker process — writes to shared SQLite |
+| Polling seam | `ExtensionToolHookEventSubscriber::handleRequireApproval()` |
+| Crash/redelivery | Idempotent re-attach via `findByRequestId()` with deterministic requestId |
+| Always-allow persistence | `SafeGuardPolicyWriter` persists to `.hatfield/settings.yaml` at answer time |
+| No timeout / no TTL | Tool worker blocks indefinitely until answered; run stays halted
 
 ## TUI question system
 
@@ -298,20 +334,36 @@ The `ApprovalAnswerContextDTO` provides:
 
 ### Routing lifecycle
 
-1. `ExtensionToolHookEventSubscriber::onToolCallRequested()` → `$hookRegistry->registerPendingApproval(questionId, hook, details)`
-2. Runtime emits `WaitingHuman` → `human_input.requested` → TUI question overlay
-3. User answers → `answer_human` command → `ApplyCommandHandler` → `HumanResponse` event
-4. `RunCommit::commit()` persists the event, then **synchronously** dispatches to
-   `SafeGuardApprovalCommitSubscriber::handleAfterTurnCommit()` which scans committed
-   events, resolves the originating hook via `$hookRegistry->resolveApproval(questionId)`,
-   and calls `$hook->onApprovalAnswered(context)` — all BEFORE the `postCommit` `AdvanceRun`
-   retry.
-5. The hook updates its internal state (e.g. SafeGuard marks operation as approved)
+1. `ExtensionToolHookEventSubscriber::onToolCallRequested()` → a hook returns
+   `ToolCallDecisionKindEnum::RequireApproval` → `$hookRegistry->registerPendingApproval(questionId, hook, details)`
+2. `ExtensionToolHookEventSubscriber::handleRequireApproval()` creates a `ToolQuestion`
+   (`kind=safeguard_approval`, deterministic `requestId=sg_{runId}_{toolCallId}`) in
+   the shared SQLite store and blocks polling `pollAnswerText()`. **No interrupt result,
+   no WaitingHuman, no human_input.requested.**
+3. `ToolQuestionPoller` emits `tool_question.requested` → TUI `TickPollListener`
+   routes to `handleApprovalToolQuestion()` → Approval overlay rendered with
+   Allow once / Always allow / Deny options.
+4. User selects an option → `onAnswer` closure sends `answer_tool_question` command
+   with `kind=safeguard_approval` and the raw answer string.
+5. `AnswerToolQuestionHandler::handleStringAnswer()` calls
+   `$this->store->answerWithText($requestId, $answer)`.
+6. The blocking poll sees `pollAnswerText()` return a non-null value, breaks out of
+   the loop, and routes the answer via a `match` statement:
+   - `'Allow once', 'Always allow'` → falls through (no `setResult`) → the real tool
+     handler executes in the **same tool call**.
+   - `'Deny'` → `$event->setResult(denied)` → tool execution blocked.
+7. Before the match, if the hook implements `ApprovalAnswerHookInterface`, it calls
+   `$hook->onApprovalAnswered(context)`. For SafeGuard, the `Always allow` branch
+   calls `SafeGuardPolicyWriter::addAllowPattern()` to persist the path/command
+   to `.hatfield/settings.yaml` (durable, process-independent).
 
-> **Note:** This runs in the worker process (same PHP process as tool execution).
-> The previous polling-based `ExtensionApprovalAnswerSubscriber` (`RuntimeEventTranslator::translate()`
-> path) has been removed. Approval routing now happens synchronously at commit time,
-> fixing the cross-process approval-state isolation issue.
+> **Note:** The previous `SafeGuardApprovalCommitSubscriber` (`AfterTurnCommitEventSummary`
+> payload approach) and the polling-based `ExtensionApprovalAnswerSubscriber` have both
+> been **deleted**. Approval routing now happens entirely inside the blocking-poll
+> mechanism, with answer storage in the shared ToolQuestion SQLite table. The earlier
+> approach attempted to make approval-marking synchronous at commit time but still
+> depended on per-process in-memory state that couldn't cross consumer-process boundaries.
+> The blocking-poll approach eliminates cross-process state entirely.
 
 ### Extension author considerations
 

@@ -8,7 +8,7 @@ use Doctrine\DBAL\Schema\Schema;
 use Doctrine\Migrations\AbstractMigration;
 
 /**
- * Create cache_items table for DBAL-backed cache pools (cache.app, cache.approvals)
+ * Create cache_items table for DBAL-backed cache (cache.app)
  * ahead of consumer launch to prevent the auto-creation race when multiple
  * messenger processes boot simultaneously and race to CREATE TABLE.
  *

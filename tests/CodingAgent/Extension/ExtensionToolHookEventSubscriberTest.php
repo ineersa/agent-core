@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
 use Ineersa\AgentCore\Application\Handler\ToolExecutor;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
@@ -431,6 +432,99 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
             catalog: null,
             cwd: '',
         );
+    }
+
+    public function testAnsweredWithoutTextInPollIsTreatedAsDeny(): void
+    {
+        // Layer C wedge-hardening: when a ToolQuestion is answered via the
+        // boolean path (answer=false, answer_text=NULL), the shape-mismatch
+        // detection in the poll loop must treat it as Deny instead of
+        // hanging forever. This is the exact session-2 wedge failure mode.
+        $registry = new ToolRegistry();
+        $handler = $this->countingHandler('should_not_run');
+        $registry->registerTool('shape-mismatch-tool', 'Tool', [], $handler, 'shape-mismatch-tool');
+
+        $hookRegistry = new ExtensionHookRegistry();
+        $hookRegistry->addToolCallHook($this->toolCallHook(static function (ToolCallContextDTO $context): ToolCallDecisionDTO {
+            return ToolCallDecisionDTO::requireApproval(
+                prompt: 'Allow write outside CWD?',
+                questionId: 'sg_qid_shape',
+                schema: ['type' => 'string', 'enum' => ['Allow once', 'Always allow', 'Deny']],
+                details: ['category' => 'destructive', 'tool_name' => 'write'],
+            );
+        }));
+
+        // Simulate a ToolQuestion answered via the boolean path
+        // (answer=false, answer_text=NULL) — the session-2 wedge failure mode.
+        // We need TWO question states because the subscriber checks the
+        // question status at two different points:
+        //   1. Pre-poll: returns PENDING → enters poll loop (avoids create()
+        //      which would throw on empty runId with null contextAccessor).
+        //   2. Shape-mismatch check in poll loop: returns ANSWERED with
+        //      answerText=null → shape mismatch → Deny.
+        $pendingQuestion = new \Ineersa\CodingAgent\Entity\ToolQuestion();
+        $pendingQuestion->requestId = 'sg__call-shape';
+        $pendingQuestion->runId = '';
+        $pendingQuestion->toolCallId = 'call-shape';
+        $pendingQuestion->toolName = 'shape-mismatch-tool';
+        $pendingQuestion->prompt = 'Allow write outside CWD?';
+        $pendingQuestion->kind = 'safeguard_approval';
+        $pendingQuestion->status = \Ineersa\CodingAgent\Entity\ToolQuestionStatusEnum::Pending;
+
+        $answeredQuestion = new \Ineersa\CodingAgent\Entity\ToolQuestion();
+        $answeredQuestion->requestId = 'sg__call-shape';
+        $answeredQuestion->runId = '';
+        $answeredQuestion->toolCallId = 'call-shape';
+        $answeredQuestion->toolName = 'shape-mismatch-tool';
+        $answeredQuestion->prompt = 'Allow write outside CWD?';
+        $answeredQuestion->kind = 'safeguard_approval';
+        $answeredQuestion->answer = false;
+        $answeredQuestion->answerText = null;
+        $answeredQuestion->status = \Ineersa\CodingAgent\Entity\ToolQuestionStatusEnum::Answered;
+
+        $usePending = true;
+        $store = $this->createStub(\Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface::class);
+        $store->method('findByRequestId')
+            ->willReturnCallback(function () use (&$usePending, $pendingQuestion, $answeredQuestion): ?\Ineersa\CodingAgent\Entity\ToolQuestion {
+                if ($usePending) {
+                    $usePending = false;
+                    return $pendingQuestion; // First call: pending → enters poll loop
+                }
+                return $answeredQuestion; // Subsequent calls: answered-but-textless → shape mismatch
+            });
+        // pollAnswerText returns null — answer_text is NULL (boolean path).
+        $store->method('pollAnswerText')->willReturn(null);
+
+        // No create() is called in this path; findByRequestId returns pending → skips create.
+
+        $logger = new TestLogger();
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber(
+            $hookRegistry, $store, getcwd() ?: '/',
+            logger: $logger,
+        ));
+
+        $result = (new RegistryBackedToolbox($registry, $dispatcher))->execute(
+            new \Symfony\AI\Platform\Result\ToolCall('call-shape', 'shape-mismatch-tool', []),
+        );
+
+        // Handler must NOT have run — shape mismatch == Deny
+        $this->assertSame(0, $handler->calls);
+        $this->assertIsArray($result->getResult());
+        $this->assertSame(true, $result->getResult()['denied'] ?? null);
+        $this->assertSame('safeguard_denied', $result->getResult()['reason'] ?? null);
+
+        // The shape-mismatch warning must have been logged
+        $warningRecords = array_values(array_filter(
+            $logger->records,
+            static fn (array $r): bool => 'warning' === $r['level'],
+        ));
+        $this->assertCount(1, $warningRecords);
+        $this->assertStringContainsString(
+            'safeguard.approval_answer_shape_mismatch',
+            $warningRecords[0]['message'],
+        );
+        $this->assertSame('call-shape', $warningRecords[0]['context']['tool_call_id'] ?? null);
     }
 
     private function countingHandler(mixed $result): object
