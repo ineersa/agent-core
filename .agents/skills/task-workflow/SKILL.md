@@ -5,6 +5,19 @@ description: "Step-by-step procedures for each task workflow phase. Load this sk
 
 # Task Workflow Procedures
 
+## Task board location
+
+Tasks live in an **external task board directory** separate from the code repo.
+
+- **Code repo:** `/home/ineersa/projects/agent-core` — git operations (branches, worktrees, PRs)
+- **Task board:** `/home/ineersa/projects/agent-core-tasks` — task markdown files
+
+The task board root is configured via `.pi/settings.json`→`taskWorkflow.taskRoot`, or overridden by the `PI_TASK_WORKFLOW_ROOT` environment variable.
+
+**Task status/metadata moves do NOT commit to the agent-core code repo.**
+Task board changes are git-auto-detected in the external task repo but not auto-committed,
+preventing code-branch pollution. The user commits task board changes manually when desired.
+
 ## Orchestrator model
 
 The main agent is an **orchestrator**, not an implementor. Work is dispatched to specialized agents:
@@ -42,6 +55,7 @@ Read-only planning. No status changes, no file edits, no forks.
 ### task-start: Implement (TODO → IN-PROGRESS)
 
 1. `move_task(to="IN-PROGRESS")` — creates worktree branch.
+   - Worktree creation copies `vendor/`, `.vera/`, and `.idea/` (with path rewriting) into the worktree.
 2. Scout codebase for context, researcher for external info.
 3. Prepare exact fork instructions: files to touch, old/new patterns, validation commands, boundaries.
 4. Launch fork on worktree (`cwd=worktree`). Fork implements, you don't.
@@ -52,6 +66,14 @@ Read-only planning. No status changes, no file edits, no forks.
 6. **STOP.** Do not proceed to PR or code review.
    - Do NOT run: `castor check`, `move_task(to="CODE-REVIEW")`, `gh pr create`, `git push`, reviewer subagent.
    - Inform user implementation is done. They run `task-to-pr` when ready.
+
+**Note on task board changes:** Task metadata/status updates modify files in the external task board
+(`/home/ineersa/projects/agent-core-tasks/`). These changes are NOT committed to the agent-core code
+repo. The external task board repo must be committed manually when desired.
+
+**Worktree .idea copy:** When creating a worktree, the extension now also copies `.idea/` from the
+integration checkout and rewrites absolute path references to point at the worktree.
+This ensures IDE indexing points at the worktree, not main.
 
 **TUI E2E proof requirement for implementation:** For tasks touching TUI behavior, the fork MUST add or update a real `TmuxHarness` E2E proof (replay-backed, no live LLM required) exercising the user-visible feature path. Fork instructions must explicitly include this as a required deliverable. Mocks, service-only DTO tests, custom PHP smoke scripts, and picker/footer visibility assertions are NOT acceptable substitutes. See the `## TUI E2E proof requirement` section below.
 

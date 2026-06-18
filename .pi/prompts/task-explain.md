@@ -21,7 +21,7 @@ If you catch yourself about to open an editor, write a file, or run a code chang
 ## Steps
 
 1. **Read the task**
-   - Use `task_list` to find the task file (typically in `tasks/TODO/` or `tasks/IN-PROGRESS/`).
+   - Use `task_list` to find the task file (typically in the external task board at `/home/ineersa/projects/agent-core-tasks/` under `TODO/` or `IN-PROGRESS/`).
    - Read the task file to understand its title, body, and acceptance criteria.
    - Read any docs, plans, or referenced artifacts the task body mentions.
 
