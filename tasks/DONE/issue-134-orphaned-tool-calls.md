@@ -38,14 +38,14 @@ Testing notes:
 - Focused Castor validation passes: `castor test` for relevant filters, plus `castor deptrac`, `castor phpstan`, `castor cs-check`; run `castor check` before CODE-REVIEW. Run `castor test:llm-real` if live provider compatibility paths are changed.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: DONE
 Branch: task/issue-134-orphaned-tool-calls
 Worktree: /home/ineersa/projects/agent-core-worktrees/issue-134-orphaned-tool-calls
-Fork run: ujyykpezoctq
-PR URL:
-PR Status:
+Fork run: engg9joce9ox
+PR URL: https://github.com/ineersa/agent-core/pull/163
+PR Status: merged
 Started: 2026-06-17T22:37:40.939Z
-Completed:
+Completed: 2026-06-18T01:06:37.354Z
 
 ## Work log
 - Created: 2026-06-17T22:10:18.115Z
@@ -147,3 +147,61 @@ Refined agent-core design:
 - Recorded fork run: ujyykpezoctq
 - Validation: Fork: `castor test --filter='ApplyCommandHandlerTest\|AdvanceRunHandlerTest\|LlmStepResultHandlerTest\|AgentMessageToolCallSequenceValidatorTest\|CommandMailboxPolicyTest'` — OK (34 tests, 201 assertions).; Fork: `castor deptrac` — OK, 0 violations.; Fork: `castor phpstan` — OK, 0 errors.; Fork: `castor cs-check` — OK, 0 files fixed.; Fork also ran full unit suite excluding E2E/live groups: 360 tests, 1 pre-existing TraceReplayTest DB error reproduced from main, 4 skipped.; Not run yet: full `castor check` (requires tmux; run during task-to-pr before moving to CODE-REVIEW).; Not run: `castor test:llm-real`; skipped because validator fails before live provider call and does not alter provider conversion compatibility.
 - Summary: Implementation fork completed and committed on worktree branch at SHA `76a4f9eb3` (`Fix orphan assistant tool-call history handling`). Verified worktree is clean and diff stat shows expected core pipeline/provider/test changes. Implemented: queued steer/follow_up no longer dispatch immediate AdvanceRun while Running/Cancelling; cancel rejects pending steer/follow_up/continue; AdvanceRun no-ops while pendingToolCalls contains unresolved entries; LlmStepResultHandler abort/cancel branch keeps RunState.messages unchanged and emits sanitized `aborted_assistant` metadata in `llm_step_aborted`; new `AgentMessageToolCallSequenceValidator` + `MalformedToolCallSequenceException` wired into `LlmPlatformAdapter` before provider invocation; regression tests added/updated. Fork confirmed it read `AGENTS.md`, `.agents/skills/testing/SKILL.md`, and `tests/AGENTS.md`. Integration checkout was accidentally dirtied by the fork due relative edit/read tool paths; those duplicate uncommitted edits were discarded after confirming the worktree commit contains the changes. Integration checkout is clean again. Not moved to CODE-REVIEW per task-start workflow; `castor check` remains for task-to-pr phase.
+
+## Task workflow update - 2026-06-17T23:15:49.567Z
+- Validation: Reviewer subagent initial decision: APPROVED WITH SUGGESTIONS; all actionable findings addressed via fork.; Reviewer subagent final decision: APPROVE; no issues.; `castor test` in worktree — OK (2701 tests, 7995 assertions).; `castor deptrac` in worktree — OK (violations=0, errors=0).; `castor phpstan` in worktree — OK (errors=0, file_errors=0).; `castor cs-check` in worktree — OK (files_fixed=0).; `castor test:llm-real` in worktree — OK (5 tests, 51 assertions); run because task touches Symfony AI / LLM-visible preflight path.; Worktree status before CODE-REVIEW move: clean.
+- Summary: Task-to-PR review completed. Initial reviewer returned APPROVED WITH SUGGESTIONS and flagged actionable items: duplicate tool results were reported as unknown while `duplicateToolResult()` was dead code; 10 formatter-required binary-mode `fopen` changes looked unrelated; and additional focused tests were desirable. A review-fix fork committed `32f4351d6` (`Address tool-call validator review findings`): duplicate tool result diagnostics now use `duplicate_tool_result`; validator system-message gap test added; mixed/all-resolved pending-tool-call AdvanceRun tests added; `ExecuteLlmStepWorker` error propagation test added; cancel-rejected command kinds extracted to a constant. Follow-up cleanup fork restored the formatter-required binary-mode files to HEAD after `castor cs-check` proved they are required by current CS rules; no additional commit was needed. Final reviewer re-review returned APPROVE with no actionable issues. Current HEAD is `32f4351d6`; worktree is clean.
+
+## Task workflow update - 2026-06-17T23:16:43.837Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Running deterministic castor check in worktree (timeout 1200s)...
+- castor check passed (36.3s).
+- Pushed task/issue-134-orphaned-tool-calls to origin.
+- branch 'task/issue-134-orphaned-tool-calls' set up to track 'origin/task/issue-134-orphaned-tool-calls'.
+- Created PR: https://github.com/ineersa/agent-core/pull/163
+- Validation: Final reviewer subagent: APPROVE, no actionable issues.; `castor test` — OK (2701 tests, 7995 assertions).; `castor deptrac` — OK (violations=0, errors=0).; `castor phpstan` — OK (errors=0, file_errors=0).; `castor cs-check` — OK (files_fixed=0).; `castor test:llm-real` — OK (5 tests, 51 assertions).
+- Summary: Prepared for code review. Final reviewer decision: APPROVE. Worktree HEAD `32f4351d6` implements boundary-driven command draining, cancel rejection of stale queued commands, AdvanceRun unresolved-tool-call guard, abort/cancel dropping assistant messages from prompt history with sanitized `llm_step_aborted` metadata, and provider preflight validation for assistant tool-call/tool-result ordering. Review-fix commit addressed duplicate tool-result diagnostics and added additional regression coverage. Focused validation passed before move; deterministic `castor check` is run by this transition.
+
+## Task workflow update - 2026-06-17T23:19:10.346Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Summary: Reopening from CODE-REVIEW to address merge conflicts on PR #163 before returning to code review.
+
+## Task workflow update - 2026-06-17T23:19:53.635Z
+- Recorded fork run: b8uryk4sdhum
+- Summary: Launched merge-conflict resolution fork in worktree `/home/ineersa/projects/agent-core-worktrees/issue-134-orphaned-tool-calls` on branch `task/issue-134-orphaned-tool-calls`. Instructions: fetch/merge latest `origin/main`, resolve conflicts while preserving issue #134/#152 behavior and current IN-PROGRESS task-board state, run focused Castor validation (`ApplyCommandHandlerTest|AdvanceRunHandlerTest|LlmStepResultHandlerTest|AgentMessageToolCallSequenceValidatorTest|CommandMailboxPolicyTest|ExecutionWorkerTest`, `castor cs-check`, plus deptrac/phpstan if possible), commit resolution, do not push or move task.
+
+## Task workflow update - 2026-06-17T23:23:23.094Z
+- Recorded fork run: b8uryk4sdhum
+- Validation: Fork: `castor test --filter='ApplyCommandHandlerTest\|AdvanceRunHandlerTest\|LlmStepResultHandlerTest\|AgentMessageToolCallSequenceValidatorTest\|CommandMailboxPolicyTest\|ExecutionWorkerTest'` — OK (42 tests, 241 assertions).; Fork: `castor cs-check` — OK (0 files).; Fork: `castor deptrac` — OK (violations=0, errors=0).; Fork: `castor phpstan` — OK (errors=0, file_errors=0).; Fork: `castor test` — OK (2701 tests, 7995 assertions).; Parent: `castor test:llm-real` — OK (5 tests, 51 assertions).; Worktree status after merge + validation: clean at `c19acf824`, ahead of remote task branch pending push.
+- Summary: Merge-conflict resolution fork completed. Fork merged latest `origin/main` into `task/issue-134-orphaned-tool-calls`, resolved the single conflict in `src/AgentCore/Application/Pipeline/ApplyCommandHandler.php` by keeping the branch's `REJECT_ON_CANCEL_KINDS` constant over main's semantically equivalent inline array, accepted current task-board state from `origin/main`, and committed merge `c19acf824` (`Merge origin/main into task/issue-134-orphaned-tool-calls`). Worktree is clean and branch is ahead of remote task branch pending push. Parent additionally reran live LLM smoke validation after the merge.
+
+## Task workflow update - 2026-06-17T23:24:18.139Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Running deterministic castor check in worktree (timeout 1200s)...
+- castor check passed (36.1s).
+- Pushed task/issue-134-orphaned-tool-calls to origin.
+- branch 'task/issue-134-orphaned-tool-calls' set up to track 'origin/task/issue-134-orphaned-tool-calls'.
+- PR already exists: https://github.com/ineersa/agent-core/pull/163
+- Validation: Merge-conflict fork: `castor test --filter='ApplyCommandHandlerTest\|AdvanceRunHandlerTest\|LlmStepResultHandlerTest\|AgentMessageToolCallSequenceValidatorTest\|CommandMailboxPolicyTest\|ExecutionWorkerTest'` — OK (42 tests, 241 assertions).; Merge-conflict fork: `castor cs-check` — OK (0 files).; Merge-conflict fork: `castor deptrac` — OK (violations=0, errors=0).; Merge-conflict fork: `castor phpstan` — OK (errors=0, file_errors=0).; Merge-conflict fork: `castor test` — OK (2701 tests, 7995 assertions).; Parent post-merge: `castor test:llm-real` — OK (5 tests, 51 assertions).
+- Summary: Merge conflicts resolved and task branch refreshed against latest `origin/main`. Fork merge commit `c19acf824` resolved the only manual conflict in `src/AgentCore/Application/Pipeline/ApplyCommandHandler.php` by keeping the branch's `REJECT_ON_CANCEL_KINDS` constant; task-board state from main was accepted. Worktree is clean. Focused/full validation passed after merge; this transition runs deterministic `castor check`, pushes the refreshed branch, and updates PR #163.
+
+## Task workflow update - 2026-06-17T23:35:09.044Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Summary: Reopening PR #163 after user reproduced a remaining cancellation case: cancelling after an assistant tool_call has already been committed and a tool is running leaves the committed assistant tool_calls without matching tool messages. A later Continue correctly fails the new preflight validator with an unresolved tool-call sequence. Next fix: when cancellation finalizes while `pendingToolCalls` are present, synthesize provider-safe cancelled tool result messages for the committed assistant tool-call batch so future prompt history is valid.
+
+## Task workflow update - 2026-06-17T23:35:48.109Z
+- Recorded fork run: engg9joce9ox
+- Summary: Launched fork `engg9joce9ox` to implement the remaining cancellation fix reproduced by the user. Required behavior: when a committed assistant `tool_calls` message already exists and cancellation finalizes while `pendingToolCalls` are present, synthesize privacy-safe error `tool` messages for each pending tool call before `AgentEnd(cancelled)` so future `Continue` prompt history is provider-valid. Fork instructed to focus on `ToolCallResultHandler` Cancelling branch, preserve existing PR #163 behavior, add regression coverage for single/multi pending tool calls and validator pass after follow-up, run focused Castor validation plus deptrac/phpstan/cs-check, commit but do not push or move task.
+
+## Task workflow update - 2026-06-18T01:06:37.354Z
+- Moved IN-PROGRESS → DONE.
+- Merged task/issue-134-orphaned-tool-calls into integration checkout.
+- Already up to date.
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/issue-134-orphaned-tool-calls.
+- Pulled integration checkout: Already up to date..
+- Validation: GitHub PR #163 state: MERGED at 2026-06-18T01:05:21Z, merge commit 6d58daaaa95c8e8a3d266e6ac897662e0c32896f.; Pre-merge validation recorded on task branch: `castor test` OK (2706 tests, 8069 assertions), `castor deptrac` OK, `castor phpstan` OK, `castor cs-check` OK, `castor test:llm-real` OK (5 tests, 51 assertions).; User manual smoke test after final cancellation fix: works.
+- Summary: PR #163 was manually smoke-tested by the user and merged on GitHub. Final implementation prevents unresolved assistant tool_calls from reaching providers by: boundary-driven steer/follow-up draining; dropping aborted streaming assistant messages from prompt context while recording sanitized abort metadata; validating provider-bound prompt history for unresolved/orphaned tool-call sequences; and synthesizing privacy-safe cancelled/error tool results for committed pending tool calls when cancellation finalizes. User confirmed the cancellation smoke test works.
+
+## Task workflow update - 2026-06-18T01:08:07.418Z
+- Validation: Post-merge `LLM_MODE=true castor check` on main after PR #163 merge — FAILED due unrelated existing main failures: `RuntimeEventTypeTest::testAllPlannedEventNamesAreCovered` expected 48 event enum cases but found 49, and `TuiOutputCapNoticeE2eTest::testOutputCapNoticeVisibleOnResume` timed out because resume showed `Invalid session id: output-cap-e2e-...`. Other lanes passed: deptrac OK, controller replay OK, phpstan OK, cs-check OK.
+- Summary: Post-merge validation was attempted after moving the task to DONE. The check failure appears unrelated to issue #134 and points at current output-cap/runtime-event work on main (`RuntimeEventTypeTest` planned enum count and `TuiOutputCapNoticeE2eTest` invalid session id). Issue #134 task remains DONE because PR #163 is merged, user smoke test passed, and the issue #134 validation recorded on the task branch passed before merge.

@@ -503,7 +503,7 @@ function phar_build_with_lock(string $root): void
     $lockPath = $root.'/'.PHAR_BUILD_LOCK;
     @mkdir(\dirname($lockPath), 0755, true);
 
-    $lockHandle = fopen($lockPath, 'c+');
+    $lockHandle = fopen($lockPath, 'c+b');
     if (false === $lockHandle) {
         // Can't lock — build without serialization as best-effort.
         phar_build();

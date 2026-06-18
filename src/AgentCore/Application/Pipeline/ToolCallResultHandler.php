@@ -76,11 +76,113 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
                         'status' => $state->status->value,
                     ],
                 ],
-                [
-                    'type' => RunEventTypeEnum::AgentEnd->value,
+            ];
+
+            $messages = $state->messages;
+            $pendingIds = array_keys($state->pendingToolCalls);
+
+            if ([] !== $pendingIds) {
+                // Build tool_call_id → tool_info map from the most recent
+                // assistant message's metadata['tool_calls'], so synthetic
+                // cancellation messages carry the correct tool name and
+                // preserve the original order_index.
+                $toolCallInfoMap = [];
+                foreach (array_reverse($state->messages) as $replayMsg) {
+                    if ('assistant' === $replayMsg->role && \is_array($replayMsg->metadata['tool_calls'] ?? null)) {
+                        foreach ($replayMsg->metadata['tool_calls'] as $tc) {
+                            if (\is_string($tc['id'] ?? null)) {
+                                $toolCallInfoMap[$tc['id']] = $tc;
+                            }
+                        }
+                        break;
+                    }
+                }
+
+                $stepId = $state->activeStepId ?? \sprintf('synthetic-cancel-%d', hrtime(true));
+
+                // Sort pending IDs by their original order_index so
+                // synthetic tool messages appear in the same order as
+                // the assistant declared them.
+                usort($pendingIds, static function (string $a, string $b) use ($toolCallInfoMap): int {
+                    $orderA = isset($toolCallInfoMap[$a]['order_index']) && \is_int($toolCallInfoMap[$a]['order_index']) ? $toolCallInfoMap[$a]['order_index'] : 0;
+                    $orderB = isset($toolCallInfoMap[$b]['order_index']) && \is_int($toolCallInfoMap[$b]['order_index']) ? $toolCallInfoMap[$b]['order_index'] : 0;
+
+                    return $orderA <=> $orderB;
+                });
+
+                foreach ($pendingIds as $tcId) {
+                    $info = $toolCallInfoMap[$tcId] ?? null;
+                    $toolName = \is_string($info['name'] ?? null) ? $info['name'] : 'unknown';
+                    $orderIndex = \is_int($info['order_index'] ?? null) ? $info['order_index'] : 0;
+
+                    $syntheticResult = new ToolCallResult(
+                        runId: $runId,
+                        turnNo: $state->turnNo,
+                        stepId: $stepId,
+                        attempt: 1,
+                        idempotencyKey: hash('sha256', \sprintf('cancel-%s-%s', $runId, $tcId)),
+                        toolCallId: $tcId,
+                        orderIndex: $orderIndex,
+                        result: [
+                            'tool_name' => $toolName,
+                        ],
+                        isError: true,
+                        error: [
+                            'type' => 'cancelled',
+                            'message' => 'Tool execution cancelled by user.',
+                        ],
+                    );
+
+                    $toolMsg = $this->messageNormalizer->toolMessage($syntheticResult);
+                    $messages[] = $toolMsg;
+                    $toolMsgArray = $toolMsg->toArray();
+
+                    $eventSpecs[] = [
+                        'type' => RunEventTypeEnum::ToolCallResultReceived->value,
+                        'payload' => [
+                            'tool_call_id' => $tcId,
+                            'order_index' => $orderIndex,
+                            'is_error' => true,
+                        ],
+                    ];
+                    $eventSpecs[] = [
+                        'type' => RunEventTypeEnum::ToolExecutionEnd->value,
+                        'payload' => [
+                            'tool_call_id' => $tcId,
+                            'order_index' => $orderIndex,
+                            'is_error' => true,
+                            'result' => 'Tool execution cancelled by user.',
+                        ],
+                    ];
+                    $eventSpecs[] = [
+                        'type' => RunEventTypeEnum::MessageStart->value,
+                        'payload' => [
+                            'message_role' => 'tool',
+                            'tool_call_id' => $tcId,
+                        ],
+                    ];
+                    $eventSpecs[] = [
+                        'type' => RunEventTypeEnum::MessageEnd->value,
+                        'payload' => [
+                            'message_role' => 'tool',
+                            'tool_call_id' => $tcId,
+                            'message' => $toolMsgArray,
+                        ],
+                    ];
+                }
+
+                $eventSpecs[] = [
+                    'type' => RunEventTypeEnum::ToolBatchCommitted->value,
                     'payload' => [
-                        'reason' => 'cancelled',
+                        'count' => \count($pendingIds),
                     ],
+                ];
+            }
+
+            $eventSpecs[] = [
+                'type' => RunEventTypeEnum::AgentEnd->value,
+                'payload' => [
+                    'reason' => 'cancelled',
                 ],
             ];
 
@@ -95,7 +197,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
                 streamingMessage: null,
                 pendingToolCalls: [],
                 errorMessage: $state->errorMessage,
-                messages: $state->messages,
+                messages: $messages,
                 activeStepId: $state->activeStepId,
                 retryableFailure: false,
             );

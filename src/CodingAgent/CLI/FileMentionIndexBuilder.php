@@ -127,7 +127,7 @@ final class FileMentionIndexBuilder
             @mkdir($tmpDir, 0755, true);
         }
 
-        $handle = @fopen($tmpPath, 'w');
+        $handle = @fopen($tmpPath, 'wb');
         if (false === $handle) {
             throw new \RuntimeException("Cannot open temp index file for writing: {$tmpPath}");
         }

@@ -65,7 +65,7 @@ final readonly class LogReader
         $emitted = 0;
 
         foreach ($files as $file) {
-            $handle = @fopen($file, 'r');
+            $handle = @fopen($file, 'rb');
             if (false === $handle) {
                 continue;
             }

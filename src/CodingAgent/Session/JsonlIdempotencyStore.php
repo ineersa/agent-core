@@ -38,7 +38,7 @@ final class JsonlIdempotencyStore implements IdempotencyStoreInterface
 
         $needle = $this->formatKey($scope, $runId, $idempotencyKey);
 
-        $handle = fopen($path, 'r');
+        $handle = fopen($path, 'rb');
 
         if (false === $handle) {
             return false;

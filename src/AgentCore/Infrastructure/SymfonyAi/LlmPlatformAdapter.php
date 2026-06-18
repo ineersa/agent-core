@@ -60,6 +60,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         private LoggerInterface $logger,
         private ?ModelResolverInterface $modelResolver = null,
         private readonly LlmProviderErrorClassifier $errorClassifier = new LlmProviderErrorClassifier(),
+        private readonly AgentMessageToolCallSequenceValidator $toolCallSequenceValidator = new AgentMessageToolCallSequenceValidator(),
     ) {
     }
 
@@ -68,6 +69,14 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         $cancelToken = $this->cancellationToken($request);
         $messages = $this->resolveContextMessages($request->input);
         $messages = $this->applyTransformHooks($messages, $cancelToken);
+
+        // Preflight invariant: validate tool-call/tool-result sequence
+        // before any provider call.  An assistant message with tool_calls
+        // must be immediately followed by matching tool result messages,
+        // or the provider will reject the request or produce orphaned
+        // tool_call blocks in resumed runs.  This fails loudly — no
+        // silent filtering.
+        $this->toolCallSequenceValidator->validate($messages);
 
         $messageBag = $this->applyConvertHooks($messages, $cancelToken, $request->model);
 
