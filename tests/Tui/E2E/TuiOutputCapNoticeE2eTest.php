@@ -10,14 +10,14 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
 /**
- * E2E proof that output-cap notice System blocks are visible in the TUI
- * transcript when replaying a session from events.jsonl.
+ * E2E proof that the exact model-facing output-cap notice text is visible
+ * in the TUI transcript when replaying a session from events.jsonl.
  *
  * Creates a real session by sending a prompt (backed by replay fixture),
  * then replaces the session's events.jsonl with a fixture containing a
  * capped tool result.  /resume <sessionId> replays the fixture through
- * the translator and projector, and the TUI must show both the ToolResult
- * block and the System notice block ("Output was capped").
+ * the translator and projector, and the TUI shows the ToolResult block
+ * (styled with a ⚠ warning icon) containing the exact cap notice text.
  *
  * @group tui-e2e-replay
  */
@@ -98,41 +98,50 @@ final class TuiOutputCapNoticeE2eTest extends TestCase
             $this->tmux->sendLiteral($pane, "/resume {$sessionId}");
             $this->tmux->sendKey($pane, 'Enter');
 
-            // Wait for the System block (⚠) or the "Output exceeded" text.
+            // Wait for the output-cap ToolResult block (⚠) with the exact
+            // model-facing "[Output capped to ...]" notice text.
             $this->tmux->waitForCallback(
                 $pane,
-                static fn (string $cap): bool => str_contains($cap, 'Output exceeded'),
+                static fn (string $cap): bool => str_contains($cap, '[Output capped to'),
                 timeout: 10.0,
-                message: 'Output cap System notice did not appear in transcript after resume',
+                message: 'Output cap ToolResult block did not appear in transcript after resume',
                 history: 3000,
             );
 
             // Capture full visible pane for assertions.
             $visiblePane = $this->tmux->capturePlainWithHistory($pane, 3000);
 
-            // 1. The output-cap System block prefix (⚠) must be visible.
+            // 1. The output-cap ToolResult block prefix (⚠) must be visible.
             self::assertStringContainsString('⚠', $visiblePane,
-                'Output-cap System block warning icon must be visible in transcript');
+                'Output-cap ToolResult block warning icon must be visible in transcript');
 
-            // 2. The "Output exceeded the cap" text must appear.
-            self::assertStringContainsString('Output exceeded', $visiblePane,
-                'Output cap notice text must be visible in transcript');
-
-            // 3. The guidance text telling user what model saw must appear.
-            self::assertStringContainsString('Model was shown', $visiblePane,
-                'Guidance text about model instructions must be visible in transcript');
-
-            // 4. Cap metadata (formatted cap and total) must appear.
-            self::assertStringContainsString('exceeded the 20,000-character cap (50,000 chars total)', $visiblePane,
-                'Output cap formatted metadata must be visible in transcript');
-            self::assertStringContainsString('full output saved for audit', $visiblePane,
-                'Saved-for-audit message must be visible in transcript');
-
-            // 5. A ToolResult block with the original capped text must also be visible.
+            // 2. The exact model-facing cap notice must be visible verbatim.
             self::assertStringContainsString('[Output capped to', $visiblePane,
-                'Tool result with capped text must be visible in transcript');
+                'Model-facing cap notice text must be visible in transcript');
 
-            // 6. The session ID appears in the footer.
+            // 3. Full output size from the exact notice.
+            self::assertStringContainsString('Full output: 50000 characters', $visiblePane,
+                'Full output size from exact model-facing notice must be visible');
+
+            // 4. Saved path from the exact notice.
+            self::assertStringContainsString('Saved for audit at: /tmp/cap/', $visiblePane,
+                'Saved path from exact model-facing notice must be visible');
+
+            // 5. Follow-up guidance from the exact notice.
+            self::assertStringContainsString('Do NOT rerun', $visiblePane,
+                'Do-not-rerun instruction from exact cap notice must be visible');
+            self::assertStringContainsString('read path=', $visiblePane,
+                'Read-path guidance from exact cap notice must be visible');
+
+            // 6. No paraphrase/synthesis — the TUI shows exactly what the model saw.
+            self::assertStringNotContainsString('Output exceeded', $visiblePane,
+                'Must NOT contain paraphrased "Output exceeded" text');
+            self::assertStringNotContainsString('Model was shown', $visiblePane,
+                'Must NOT contain paraphrased "Model was shown" text');
+            self::assertStringNotContainsString('visible chars', $visiblePane,
+                'Must NOT contain old paraphrased "visible chars" text');
+
+            // 7. The session ID appears in the footer.
             self::assertStringContainsString($sessionId, $visiblePane,
                 'The exact session ID should be visible in the footer');
 

@@ -83,10 +83,10 @@ final readonly class SystemNoticeProjectionSubscriber implements EventSubscriber
     /**
      * Build a stable block ID from the event payload.
      *
-     * For output cap notices, use a tool_call_id if available.
-     * Otherwise derive from source type and sequence.
-     */
-    /**
+     * When a tool_call_id is available, prefix with output_cap_ for
+     * deterministic deduplication.  Otherwise derive from source type
+     * and message id or text hash.
+     *
      * @param array<string, mixed> $p
      */
     private function buildBlockId(array $p): string

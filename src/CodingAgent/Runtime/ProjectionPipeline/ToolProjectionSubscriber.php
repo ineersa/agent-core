@@ -303,12 +303,13 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
     // ── Output cap notice projection ─────────────────────────────────────────
 
     /**
-     * When a tool execution result was capped (output_capped=true), project a
-     * System notice block alongside the ToolResult block so the transcript
-     * shows both the tool outcome and a visible cap notice.
+     * When a tool execution result was capped (output_capped=true), mark the
+     * existing ToolResult block with output-cap metadata so the renderer can
+     * style it with a warning icon/colour.
      *
-     * The block ID is stable (output_cap_<tool_call_id>) so replay from
-     * events.jsonl produces exactly one notice block per capped tool call.
+     * The ToolResult block already contains the exact model-facing cap notice
+     * text — no paraphrase, summary, or extra System block is created.
+     * The transcript shows precisely what the model saw, no more, no less.
      */
     private function maybeProjectOutputCapNotice(TranscriptProjectionEvent $event, string $toolCallId): void
     {
@@ -320,65 +321,18 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
             return;
         }
 
-        $blockId = 'output_cap_'.$toolCallId;
-
-        // Deduplicate: skip if already projected (e.g. on replay when
-        // the live path already added this block).
-        if (null !== $state->getBlock($blockId)) {
+        $toolResultBlockId = 'tool_result_'.$toolCallId;
+        $existing = $state->getBlock($toolResultBlockId);
+        if (null === $existing) {
             return;
         }
 
-        // Build the user-visible notice text.
-        $cap = $p['output_cap_limit'] ?? null;
-        $charCount = $p['output_cap_char_count'] ?? null;
-        $savedPath = $p['output_cap_saved_path'] ?? null;
+        $meta = $existing->meta;
+        $meta['notice_type'] = 'output_cap';
+        $meta['output_cap_limit'] = $p['output_cap_limit'] ?? null;
+        $meta['output_cap_char_count'] = $p['output_cap_char_count'] ?? null;
+        $meta['output_cap_saved_path'] = $p['output_cap_saved_path'] ?? null;
 
-        // Use formatted numbers with thousands separators.
-        $capFmt = null !== $cap ? number_format($cap) : null;
-        $charCountFmt = null !== $charCount ? number_format($charCount) : null;
-
-        // Build accurate notice: OutputCap replaces the original tool output
-        // with a notice — the model never saw any portion of the original content.
-        // Do NOT say "visible chars of" or imply partial content was shown.
-        $suffix = null !== $savedPath ? ' — full output saved for audit.' : '.';
-        if (null !== $capFmt && null !== $charCountFmt) {
-            $text = \sprintf(
-                'Output exceeded the %s-character cap (%s chars total)%s',
-                $capFmt, $charCountFmt, $suffix,
-            );
-        } elseif (null !== $capFmt) {
-            $text = \sprintf(
-                'Output exceeded the %s-character cap%s',
-                $capFmt, $suffix,
-            );
-        } elseif (null !== $charCountFmt) {
-            $text = \sprintf(
-                'Output capped — %s total characters%s',
-                $charCountFmt, $suffix,
-            );
-        } else {
-            $text = \sprintf('Output exceeded the character cap%s', $suffix);
-        }
-
-        // Tell the user that the model received follow-up guidance.
-        $text .= "\nModel was shown a cap notice with instructions to continue with targeted reads/search, not to rerun the tool or read the saved file wholesale.";
-
-        $meta = [
-            'tool_call_id' => $toolCallId,
-            'notice_type' => 'output_cap',
-            'output_cap_limit' => $cap,
-            'output_cap_char_count' => $charCount,
-            'output_cap_saved_path' => $savedPath,
-        ];
-
-        $state->addBlock(new TranscriptBlock(
-            id: $blockId,
-            kind: TranscriptBlockKindEnum::System,
-            runId: $event->runId(),
-            seq: $state->nextSeq(),
-            text: $text,
-            meta: $meta,
-            streaming: false,
-        ));
+        $state->updateBlock($toolResultBlockId, $existing->with(meta: $meta));
     }
 }

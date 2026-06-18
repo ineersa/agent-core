@@ -52,9 +52,10 @@ final readonly class TranscriptBlockRenderer
 
     private function prefixFor(TranscriptBlock $block): string
     {
-        // Output-cap System blocks get a warning icon instead of the
-        // generic · prefix so they are visually distinct in the transcript.
-        if (TranscriptBlockKindEnum::System === $block->kind) {
+        // Output-cap ToolResult blocks get a warning icon instead of the
+        // generic ● prefix so the exact model-facing cap notice is
+        // visually distinct in the transcript.
+        if (TranscriptBlockKindEnum::ToolResult === $block->kind) {
             $noticeType = $block->meta['notice_type'] ?? '';
             if ('output_cap' === $noticeType) {
                 return '  ⚠';
@@ -65,7 +66,7 @@ final readonly class TranscriptBlockRenderer
             TranscriptBlockKindEnum::UserMessage => '  ❯',
             TranscriptBlockKindEnum::AssistantMessage => '  ◇',
             TranscriptBlockKindEnum::AssistantThinking => '  ⋯',
-            TranscriptBlockKindEnum::ToolCall,
+            TranscriptBlockKindEnum::ToolCall => '  ●',
             TranscriptBlockKindEnum::ToolResult => '  ●',
             TranscriptBlockKindEnum::Progress => '  ⏳',
             TranscriptBlockKindEnum::Question => '  ?',
@@ -78,8 +79,8 @@ final readonly class TranscriptBlockRenderer
 
     private function colorFor(TranscriptBlock $block): ThemeColorEnum
     {
-        // Output-cap System blocks use Warning colour for prominence.
-        if (TranscriptBlockKindEnum::System === $block->kind) {
+        // Output-cap ToolResult blocks use Warning colour for prominence.
+        if (TranscriptBlockKindEnum::ToolResult === $block->kind) {
             $noticeType = $block->meta['notice_type'] ?? '';
             if ('output_cap' === $noticeType) {
                 return ThemeColorEnum::Warning;

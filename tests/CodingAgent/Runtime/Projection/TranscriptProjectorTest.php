@@ -1091,9 +1091,9 @@ final class TranscriptProjectorTest extends TestCase
         $this->assertSame('Timed out', $block->text);
     }
 
-    // ── Output cap notice (ToolResult + System block) ────────────────────────
+    // ── Output cap notice (ToolResult with exact model-facing text) ──────────
 
-    public function testToolExecutionCompletedWithOutputCapCreatesSystemNoticeBlock(): void
+    public function testToolExecutionCompletedWithOutputCapAddsMetadataToToolResult(): void
     {
         $this->accept('tool_execution.started', [
             'tool_call_id' => 'tc_capped', 'tool_name' => 'read',
@@ -1108,31 +1108,27 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        // Should have ToolResult + System notice = 2 blocks.
-        $this->assertCount(2, $blocks);
+        // Should be only 1 block: ToolResult with cap metadata (no extra System block).
+        $this->assertCount(1, $blocks);
 
-        // First block: ToolResult with the capped notice text.
         $toolBlock = $blocks[0];
         $this->assertSame(TranscriptBlockKindEnum::ToolResult, $toolBlock->kind);
         $this->assertSame('tool_result_tc_capped', $toolBlock->id);
+        // Exact model-facing cap notice text is preserved verbatim.
         $this->assertStringContainsString('Output capped to', $toolBlock->text);
+        $this->assertSame('output_cap', $toolBlock->meta['notice_type']);
+        $this->assertSame(20000, $toolBlock->meta['output_cap_limit']);
+        $this->assertSame(50000, $toolBlock->meta['output_cap_char_count']);
+        $this->assertSame('/tmp/cap.txt', $toolBlock->meta['output_cap_saved_path']);
         $this->assertFalse($toolBlock->streaming);
 
-        // Second block: System notice with structured metadata.
-        $notice = $blocks[1];
-        $this->assertSame(TranscriptBlockKindEnum::System, $notice->kind);
-        $this->assertSame('output_cap_tc_capped', $notice->id);
-        $this->assertStringContainsString('Output exceeded', $notice->text);
-        $this->assertStringContainsString('exceeded the 20,000-character cap (50,000 chars total)', $notice->text);
-        $this->assertStringContainsString('Model was shown', $notice->text);
-        $this->assertSame('output_cap', $notice->meta['notice_type']);
-        $this->assertSame(20000, $notice->meta['output_cap_limit']);
-        $this->assertSame(50000, $notice->meta['output_cap_char_count']);
-        $this->assertSame('/tmp/cap.txt', $notice->meta['output_cap_saved_path']);
-        $this->assertFalse($notice->streaming);
+        // No paraphrase or extra System block.
+        $this->assertStringNotContainsString('Output exceeded', $toolBlock->text);
+        $this->assertStringNotContainsString('Model was shown', $toolBlock->text);
+        $this->assertStringNotContainsString('visible chars', $toolBlock->text);
     }
 
-    public function testToolExecutionCompletedWithoutOutputCapDoesNotCreateSystemNotice(): void
+    public function testToolExecutionCompletedWithoutOutputCapDoesNotAddCapMetadata(): void
     {
         $this->accept('tool_execution.started', [
             'tool_call_id' => 'tc_normal', 'tool_name' => 'bash',
@@ -1142,13 +1138,14 @@ final class TranscriptProjectorTest extends TestCase
             'result' => 'normal output without cap',
         ]);
 
-        // Only one ToolResult block — no System block.
+        // Only one ToolResult block — no extra System block, no output-cap metadata.
         $blocks = $this->projector->blocks();
         $this->assertCount(1, $blocks);
         $this->assertSame(TranscriptBlockKindEnum::ToolResult, $blocks[0]->kind);
+        $this->assertArrayNotHasKey('notice_type', $blocks[0]->meta);
     }
 
-    public function testToolExecutionFailedWithOutputCapCreatesSystemNotice(): void
+    public function testToolExecutionFailedWithOutputCapAddsMetadataToToolResult(): void
     {
         $this->accept('tool_execution.started', [
             'tool_call_id' => 'tc_failcap', 'tool_name' => 'bash',
@@ -1164,14 +1161,18 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(2, $blocks);
+        // Only 1 block: failed ToolResult with cap metadata.
+        $this->assertCount(1, $blocks);
 
-        // ToolResult block is error.
-        $this->assertTrue($blocks[0]->meta['is_error']);
+        $toolBlock = $blocks[0];
+        $this->assertTrue($toolBlock->meta['is_error']);
+        $this->assertSame('output_cap', $toolBlock->meta['notice_type']);
+        $this->assertSame(5000, $toolBlock->meta['output_cap_limit']);
+        $this->assertSame(6000, $toolBlock->meta['output_cap_char_count']);
+        $this->assertSame('/tmp/err.txt', $toolBlock->meta['output_cap_saved_path']);
 
-        // System notice present.
-        $this->assertSame(TranscriptBlockKindEnum::System, $blocks[1]->kind);
-        $this->assertSame('output_cap_tc_failcap', $blocks[1]->id);
+        // Exact model-facing text preserved.
+        $this->assertStringContainsString('Output capped to', $toolBlock->text);
     }
 
     // ── System notice ───────────────────────────────────────────────────────
