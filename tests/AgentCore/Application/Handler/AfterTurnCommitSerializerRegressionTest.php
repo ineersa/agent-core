@@ -155,4 +155,17 @@ final class AfterTurnCommitSerializerRegressionTest extends TestCase
 
         $this->assertContainsOnlyInstancesOf(AfterTurnCommitEventSummary::class, $restored->events);
     }
+
+    public function testAfterTurnCommitEventSummaryConstructsWithSeqAndTypeOnly(): void
+    {
+        // The $payload field was added for the now-deleted
+        // SafeGuardApprovalCommitSubscriber but was never read in production
+        // (AfterTurnCommitHookContext::fromRunState() explicitly excluded it).
+        // With no commit-time subscriber needing event payload data, the
+        // field is removed entirely.
+        $event = new AfterTurnCommitEventSummary(seq: 10, type: 'agent_command_applied');
+        $this->assertSame(10, $event->seq);
+        $this->assertSame('agent_command_applied', $event->type);
+    }
+
 }

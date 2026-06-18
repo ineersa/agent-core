@@ -19,9 +19,12 @@ use Symfony\Component\EventDispatcher\EventDispatcherInterface;
  * explicit if/else in onAgentCommandApplied() rather than Symfony subscriber
  * priority ordering.
  *
- * Extension subscribers (e.g. ExtensionApprovalAnswerSubscriber) that
- * previously observed the mapping flow through EventDispatcher now receive
- * the raw RunEvent via an optional dispatcher passed here.
+ * Approval answer routing was previously handled by an
+ * ExtensionApprovalAnswerSubscriber that observed the mapping flow through
+ * EventDispatcher. That approach was removed in favor of commit-time
+ * routing via ExtensionToolHookEventSubscriber (blocking-poll mechanism),
+ * which fires IN the worker process where pending approvals live.
+ * The event_dispatcher is still passed for potential extension subscribers.
  */
 final class RuntimeEventTranslator
 {
@@ -33,7 +36,7 @@ final class RuntimeEventTranslator
 
     /**
      * @param EventDispatcherInterface $eventDispatcher Dispatcher for extension subscribers
-     *                                                  that observe the mapping flow (e.g. ExtensionApprovalAnswerSubscriber).
+     *                                                  that observe the mapping flow.
      *                                                  Each translated RunEvent is dispatched by its type string so
      *                                                  observers continue to receive events.
      */
@@ -81,8 +84,9 @@ final class RuntimeEventTranslator
     {
         $type = $runEvent->type;
 
-        // Dispatch to extension subscribers that observe the mapping flow
-        // (e.g. ExtensionApprovalAnswerSubscriber).
+        // Dispatch to extension subscribers that observe the mapping flow.
+        // Approval answer routing is now handled at commit time by
+        // ExtensionToolHookEventSubscriber (blocking-poll), not through this dispatcher.
         $this->eventDispatcher->dispatch($runEvent, $type);
 
         if (isset($this->dispatchTable[$type])) {

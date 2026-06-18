@@ -56,6 +56,9 @@ framework:
     scheduler: ~
 
     cache:
+        # Application cache (cache.app, autowired via CacheInterface) -> shared SQLite DB.
+        # System cache (cache.system, annotations/validator/serializer) stays filesystem.
+        app: cache.adapter.doctrine_dbal
         pools:
             cache.default:
                 adapter: cache.adapter.filesystem

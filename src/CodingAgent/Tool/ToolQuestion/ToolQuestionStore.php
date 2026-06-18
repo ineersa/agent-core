@@ -157,7 +157,7 @@ final class ToolQuestionStore implements ToolQuestionStoreInterface
     }
 
     /**
-     * Answer a pending question. Sets the boolean answer and marks status Answered.
+     * Answer a pending question with a boolean answer (Confirm-kind).
      * Uses fresh DB read to ensure we have the latest state.
      *
      * Idempotent: if the question is already resolved (answered or cancelled),
@@ -169,41 +169,26 @@ final class ToolQuestionStore implements ToolQuestionStoreInterface
      */
     public function answer(string $requestId, bool $answer): bool
     {
-        $question = $this->findByRequestId($requestId);
-        if (null === $question) {
-            $this->logger->warning('tool_question.answer_not_found', [
-                'component' => 'tool_question.store',
-                'event_type' => 'tool_question.answer_not_found',
-                'request_id' => $requestId,
-            ]);
+        return $this->answerWithCallable($requestId, static function (ToolQuestion $q) use ($answer): void {
+            $q->setAnswer($answer);
+        });
+    }
 
-            return false;
-        }
-
-        // Guard against overwriting already-resolved state (e.g. late answer
-        // racing with cancellation, or duplicate answer_tool_question command).
-        if ($question->isResolved()) {
-            $this->logger->info('tool_question.answer_skipped_resolved', [
-                'component' => 'tool_question.store',
-                'event_type' => 'tool_question.answer_skipped_resolved',
-                'request_id' => $requestId,
-                'current_status' => $question->status->value,
-            ]);
-
-            return false;
-        }
-
-        $question->setAnswer($answer);
-        $this->entityManager->flush();
-
-        $this->logger->info('tool_question.answered', [
-            'component' => 'tool_question.store',
-            'event_type' => 'tool_question.answered',
-            'request_id' => $requestId,
-            'answer' => $answer ? 'yes' : 'no',
-        ]);
-
-        return true;
+    /**
+     * Answer a pending question with a string answer (Approval-kind).
+     * Used by SafeGuard approvals — values: 'Allow once', 'Always allow', 'Deny'.
+     *
+     * Uses fresh DB read and idempotency guard, same as answer().
+     *
+     * @param string $answer the string answer (e.g. 'Allow once', 'Always allow', 'Deny')
+     *
+     * @return bool true if the question was found and answered
+     */
+    public function answerWithText(string $requestId, string $answer): bool
+    {
+        return $this->answerWithCallable($requestId, static function (ToolQuestion $q) use ($answer): void {
+            $q->setAnswerText($answer);
+        });
     }
 
     /**
@@ -226,6 +211,27 @@ final class ToolQuestionStore implements ToolQuestionStoreInterface
             return false;
         }
 
+        return null;
+    }
+
+    /**
+     * Poll for a string answer (Approval-kind) with a fresh DB read.
+     *
+     * Returns the string answer (e.g. 'Allow once') if answered,
+     * null if still pending or cancelled.
+     */
+    public function pollAnswerText(string $requestId): ?string
+    {
+        $question = $this->findByRequestId($requestId);
+        if (null === $question) {
+            return null;
+        }
+
+        if (ToolQuestionStatusEnum::Answered === $question->status) {
+            return $question->answerText;
+        }
+
+        // Cancelled or pending → return null (caller treats this as unresolved)
         return null;
     }
 
@@ -313,5 +319,50 @@ final class ToolQuestionStore implements ToolQuestionStoreInterface
         }
 
         return $count;
+    }
+
+    /**
+     * Shared logic for answer and answerWithText.
+     *
+     * @param callable(ToolQuestion): void $mutator
+     *
+     * @return bool true if the question was found and answered
+     */
+    private function answerWithCallable(string $requestId, callable $mutator): bool
+    {
+        $question = $this->findByRequestId($requestId);
+        if (null === $question) {
+            $this->logger->warning('tool_question.answer_not_found', [
+                'component' => 'tool_question.store',
+                'event_type' => 'tool_question.answer_not_found',
+                'request_id' => $requestId,
+            ]);
+
+            return false;
+        }
+
+        // Guard against overwriting already-resolved state (e.g. late answer
+        // racing with cancellation, or duplicate answer_tool_question command).
+        if ($question->isResolved()) {
+            $this->logger->info('tool_question.answer_skipped_resolved', [
+                'component' => 'tool_question.store',
+                'event_type' => 'tool_question.answer_skipped_resolved',
+                'request_id' => $requestId,
+                'current_status' => $question->status->value,
+            ]);
+
+            return false;
+        }
+
+        $mutator($question);
+        $this->entityManager->flush();
+
+        $this->logger->info('tool_question.answered', [
+            'component' => 'tool_question.store',
+            'event_type' => 'tool_question.answered',
+            'request_id' => $requestId,
+        ]);
+
+        return true;
     }
 }
