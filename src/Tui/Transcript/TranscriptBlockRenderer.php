@@ -91,8 +91,9 @@ final readonly class TranscriptBlockRenderer
             : null;
 
         return match ($severity) {
+            'info' => '  ℹ',
             'warning' => '  ⚠',
-            'error' => '  ✕',
+            'error' => '  ✘',
             default => '  ·',
         };
     }
