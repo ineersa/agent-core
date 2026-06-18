@@ -224,8 +224,6 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
         }
 
         $state->upsertToolResultBlock($blockId, $event->runId(), $result, $meta, false);
-
-        $this->maybeProjectOutputCapNotice($event, $toolCallId);
     }
 
     public function onToolExecutionFailed(TranscriptProjectionEvent $event): void
@@ -245,8 +243,6 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
         }
 
         $state->upsertToolResultBlock($blockId, $event->runId(), $result, $meta, false);
-
-        $this->maybeProjectOutputCapNotice($event, $toolCallId);
     }
 
     public function onToolExecutionCancelled(TranscriptProjectionEvent $event): void
@@ -298,70 +294,5 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
     public function onRunCancelled(TranscriptProjectionEvent $event): void
     {
         $event->state->removeOrphanedToolCallBlocks();
-    }
-
-    // ── Output cap notice projection ─────────────────────────────────────────
-
-    /**
-     * When a tool execution result was capped (output_capped=true), project a
-     * System notice block alongside the ToolResult block so the transcript
-     * shows both the tool outcome and a visible cap notice.
-     *
-     * The block ID is stable (output_cap_<tool_call_id>) so replay from
-     * events.jsonl produces exactly one notice block per capped tool call.
-     */
-    private function maybeProjectOutputCapNotice(TranscriptProjectionEvent $event, string $toolCallId): void
-    {
-        $p = $event->payload();
-        $state = $event->state;
-
-        $capped = (bool) ($p['output_capped'] ?? $p['output_cap_notice'] ?? false);
-        if (!$capped) {
-            return;
-        }
-
-        $blockId = 'output_cap_'.$toolCallId;
-
-        // Deduplicate: skip if already projected (e.g. on replay when
-        // the live path already added this block).
-        if (null !== $state->getBlock($blockId)) {
-            return;
-        }
-
-        // Build the user-visible notice text.
-        $cap = $p['output_cap_limit'] ?? null;
-        $charCount = $p['output_cap_char_count'] ?? null;
-        $savedPath = $p['output_cap_saved_path'] ?? null;
-
-        $parts = ['Output was capped'];
-        if (null !== $cap) {
-            $parts[] = \sprintf('(%d character limit)', $cap);
-        }
-        if (null !== $charCount) {
-            $parts[] = \sprintf('%d total characters', $charCount);
-        }
-        if (null !== $savedPath) {
-            $parts[] = 'full output saved for audit';
-        }
-
-        $text = implode(' — ', $parts);
-
-        $meta = [
-            'tool_call_id' => $toolCallId,
-            'notice_type' => 'output_cap',
-            'output_cap_limit' => $cap,
-            'output_cap_char_count' => $charCount,
-            'output_cap_saved_path' => $savedPath,
-        ];
-
-        $state->addBlock(new TranscriptBlock(
-            id: $blockId,
-            kind: TranscriptBlockKindEnum::System,
-            runId: $event->runId(),
-            seq: $state->nextSeq(),
-            text: $text,
-            meta: $meta,
-            streaming: false,
-        ));
     }
 }

@@ -11,7 +11,6 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubs
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\CancellationProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\HitlProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\RunLifecycleProjectionSubscriber;
-use Ineersa\CodingAgent\Runtime\ProjectionPipeline\SystemNoticeProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber;
@@ -42,7 +41,6 @@ final class TranscriptProjectorTest extends TestCase
         $dispatcher->addSubscriber(new HitlProjectionSubscriber());
         $dispatcher->addSubscriber(new CancellationProjectionSubscriber());
         $dispatcher->addSubscriber(new RunLifecycleProjectionSubscriber());
-        $dispatcher->addSubscriber(new SystemNoticeProjectionSubscriber());
 
         $this->projector = new TranscriptProjector($dispatcher, $state);
         $this->seq = 0;
@@ -1089,125 +1087,6 @@ final class TranscriptProjectorTest extends TestCase
         $block = $this->projector->blocks()[0];
         $this->assertTrue($block->meta['timed_out']);
         $this->assertSame('Timed out', $block->text);
-    }
-
-    // ── Output cap notice (ToolResult + System block) ────────────────────────
-
-    public function testToolExecutionCompletedWithOutputCapCreatesSystemNoticeBlock(): void
-    {
-        $this->accept('tool_execution.started', [
-            'tool_call_id' => 'tc_capped', 'tool_name' => 'read',
-        ]);
-        $this->accept('tool_execution.completed', [
-            'tool_call_id' => 'tc_capped',
-            'result' => "[Output capped to 20000 characters]\n\nFull output: 50000 characters (~12500 tokens).\nSaved for audit at: /tmp/cap.txt\nDo NOT rerun...",
-            'output_capped' => true,
-            'output_cap_limit' => 20000,
-            'output_cap_char_count' => 50000,
-            'output_cap_saved_path' => '/tmp/cap.txt',
-        ]);
-
-        $blocks = $this->projector->blocks();
-        // Should have ToolResult + System notice = 2 blocks.
-        $this->assertCount(2, $blocks);
-
-        // First block: ToolResult with the capped notice text.
-        $toolBlock = $blocks[0];
-        $this->assertSame(TranscriptBlockKindEnum::ToolResult, $toolBlock->kind);
-        $this->assertSame('tool_result_tc_capped', $toolBlock->id);
-        $this->assertStringContainsString('Output capped to', $toolBlock->text);
-        $this->assertFalse($toolBlock->streaming);
-
-        // Second block: System notice with structured metadata.
-        $notice = $blocks[1];
-        $this->assertSame(TranscriptBlockKindEnum::System, $notice->kind);
-        $this->assertSame('output_cap_tc_capped', $notice->id);
-        $this->assertStringContainsString('Output was capped', $notice->text);
-        $this->assertStringContainsString('20000 character limit', $notice->text);
-        $this->assertStringContainsString('50000 total characters', $notice->text);
-        $this->assertSame('output_cap', $notice->meta['notice_type']);
-        $this->assertSame(20000, $notice->meta['output_cap_limit']);
-        $this->assertSame(50000, $notice->meta['output_cap_char_count']);
-        $this->assertSame('/tmp/cap.txt', $notice->meta['output_cap_saved_path']);
-        $this->assertFalse($notice->streaming);
-    }
-
-    public function testToolExecutionCompletedWithoutOutputCapDoesNotCreateSystemNotice(): void
-    {
-        $this->accept('tool_execution.started', [
-            'tool_call_id' => 'tc_normal', 'tool_name' => 'bash',
-        ]);
-        $this->accept('tool_execution.completed', [
-            'tool_call_id' => 'tc_normal',
-            'result' => 'normal output without cap',
-        ]);
-
-        // Only one ToolResult block — no System block.
-        $blocks = $this->projector->blocks();
-        $this->assertCount(1, $blocks);
-        $this->assertSame(TranscriptBlockKindEnum::ToolResult, $blocks[0]->kind);
-    }
-
-    public function testToolExecutionFailedWithOutputCapCreatesSystemNotice(): void
-    {
-        $this->accept('tool_execution.started', [
-            'tool_call_id' => 'tc_failcap', 'tool_name' => 'bash',
-        ]);
-        $this->accept('tool_execution.failed', [
-            'tool_call_id' => 'tc_failcap',
-            'result' => "[Output capped to 5000 characters]\n\nFull output: 6000 characters.\nSaved for audit at: /tmp/err.txt",
-            'output_capped' => true,
-            'output_cap_limit' => 5000,
-            'output_cap_char_count' => 6000,
-            'output_cap_saved_path' => '/tmp/err.txt',
-            'is_error' => true,
-        ]);
-
-        $blocks = $this->projector->blocks();
-        $this->assertCount(2, $blocks);
-
-        // ToolResult block is error.
-        $this->assertTrue($blocks[0]->meta['is_error']);
-
-        // System notice present.
-        $this->assertSame(TranscriptBlockKindEnum::System, $blocks[1]->kind);
-        $this->assertSame('output_cap_tc_failcap', $blocks[1]->id);
-    }
-
-    // ── System notice ───────────────────────────────────────────────────────
-
-    public function testSystemNoticeCreatesSystemBlock(): void
-    {
-        $this->accept('system.notice', [
-            'source' => 'ext_test_notification',
-            'severity' => 'info',
-            'text' => 'Extension message: processing complete',
-        ]);
-
-        $blocks = $this->projector->blocks();
-        $this->assertCount(1, $blocks);
-        $block = $blocks[0];
-        $this->assertSame(TranscriptBlockKindEnum::System, $block->kind);
-        $this->assertSame('Extension message: processing complete', $block->text);
-        $this->assertSame('ext_test_notification', $block->meta['source']);
-        $this->assertSame('info', $block->meta['severity']);
-        $this->assertFalse($block->streaming);
-    }
-
-    public function testSystemNoticeDeduplicatesById(): void
-    {
-        // Two identical system notices produce one block (dedup by block ID).
-        $this->accept('system.notice', [
-            'source' => 'ext_dup',
-            'text' => 'Duplicate notice',
-        ]);
-        $this->accept('system.notice', [
-            'source' => 'ext_dup',
-            'text' => 'Duplicate notice',
-        ]);
-
-        $blocks = $this->projector->blocks();
-        $this->assertCount(1, $blocks, 'Duplicate system.notice events must deduplicate by block ID');
     }
 
     // ── HITL ─────────────────────────────────────────────────────────────────

@@ -102,13 +102,6 @@ enum RuntimeEventTypeEnum: string
 
     case BackgroundProcessCompleted = 'bg_process.completed';
 
-    // ── System / internal notices ──────────────────────────────────────────
-    // Events that carry structured system-level notices (output caps applied,
-    // extension messages, SafeGuard decisions when added).  Projected as
-    // System transcript blocks.
-
-    case SystemNotice = 'system.notice';
-
     // ── Runtime lifecycle (controller process) ─────────────────────────────
 
     case RuntimeReady = 'runtime.ready';
@@ -158,8 +151,6 @@ enum RuntimeEventTypeEnum: string
             self::ToolQuestionRequested => 'tool_question',
 
             self::BackgroundProcessCompleted => 'background_process_completion',
-
-            self::SystemNotice => 'system',
 
             self::ModelChanged, self::ReasoningChanged, self::UsageUpdated,
             self::ContextUpdated, self::CostUpdated => 'metadata',
@@ -228,13 +219,5 @@ enum RuntimeEventTypeEnum: string
     public function isToolQuestion(): bool
     {
         return 'tool_question' === $this->family();
-    }
-
-    /**
-     * Return true when the event type is a system/notice event.
-     */
-    public function isSystem(): bool
-    {
-        return 'system' === $this->family();
     }
 }
