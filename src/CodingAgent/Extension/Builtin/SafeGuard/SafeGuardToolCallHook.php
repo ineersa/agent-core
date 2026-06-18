@@ -50,7 +50,7 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
      */
     private const array APPROVAL_OPTIONS = [
         'allow_once' => '✅ Allow once',
-        'always_allow' => '📌 Always allow this path',
+        'always_allow' => '📌 Always allow',
         'deny' => '❌ Block',
     ];
 

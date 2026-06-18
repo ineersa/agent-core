@@ -548,7 +548,7 @@ final class SafeGuardToolCallHookTest extends TestCase
             // Human answers "Always allow" through onApprovalAnswered
             $hook->onApprovalAnswered(new ApprovalAnswerContextDTO(
                 questionId: $questionId,
-                answer: '📌 Always allow this path',
+                answer: '📌 Always allow',
                 toolName: 'bash',
                 approvalContext: [
                     'operation_key' => $operationKey,
@@ -690,7 +690,7 @@ final class SafeGuardToolCallHookTest extends TestCase
     {
         $outcome = $this->hook->resolveApprovalAnswer(new ApprovalAnswerContextDTO(
             questionId: 'sg_qid',
-            answer: '📌 Always allow this path',
+            answer: '📌 Always allow',
             toolName: 'write',
             approvalContext: ['category' => 'write_outside_cwd'],
         ));
@@ -757,10 +757,10 @@ final class SafeGuardToolCallHookTest extends TestCase
         ));
         $this->assertSame(ToolCallDecisionKindEnum::Allow, $outcome->kind);
 
-        // '📌 Always allow this path' → allow
+        // '📌 Always allow' → allow
         $outcome = $this->hook->resolveApprovalAnswer(new ApprovalAnswerContextDTO(
             questionId: 'sg_qid',
-            answer: '📌 Always allow this path',
+            answer: '📌 Always allow',
             toolName: 'write',
             approvalContext: ['category' => 'write_outside_cwd'],
         ));

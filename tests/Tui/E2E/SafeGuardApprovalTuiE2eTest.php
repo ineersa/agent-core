@@ -158,7 +158,7 @@ final class SafeGuardApprovalTuiE2eTest extends TestCase
             // Verify the approval overlay shows the expected 3 options
             self::assertStringContainsString('✅ Allow once', $approvalCapture,
                 'Approval overlay must show Allow once option');
-            self::assertStringContainsString('📌 Always allow this path', $approvalCapture,
+            self::assertStringContainsString('📌 Always allow', $approvalCapture,
                 'Approval overlay must show Always allow option');
             self::assertStringContainsString('❌ Block', $approvalCapture,
                 'Approval overlay must show Deny option');
