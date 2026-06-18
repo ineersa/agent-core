@@ -48,7 +48,7 @@ Testing skill and `tests/AGENTS.md` were read before proposing validation. This 
 Status: IN-PROGRESS
 Branch: task/issue-137-output-cap-observability
 Worktree: /home/ineersa/projects/agent-core-worktrees/issue-137-output-cap-observability
-Fork run: cwo32syp3ok0
+Fork run: n3bshp0a0nzw
 PR URL:
 PR Status:
 Started: 2026-06-17T23:00:56.520Z
@@ -98,3 +98,8 @@ Completed:
 - Recorded fork run: cwo32syp3ok0
 - Validation: castor test --filter="RuntimeEventMapperTest|TranscriptProjectorTest|PlatformIntegrationTest|OutputCapTest|OutputCapLlmTransformHookTest": 203/203 OK (777 assertions).; castor test (full): 108/109 OK (1 pre-existing CommandMailboxPolicyTest failure).; castor test:tui --filter=OutputCap: 52 tests, 161 assertions, 0 failures (1 expected live-LLM skip).; castor deptrac: 0 violations.; castor phpstan: 0 errors.; castor cs-check: Only 10 pre-existing noise files remain (binary-mode fopen).
 - Summary: Fork completed: replaced ModelToolInput with broader ModelInputMessageDTO; added capture of generated user-role messages (image placeholders); model_input_messages now persisted on failed/aborted paths; ToolProjectionSubscriber handles both tool-role (ToolResult update) and user-role (System block) inputs; adapter-level test proves transform hook changes reflected in captured text; projection tests for user-role System blocks, SafeGuard-like exact JSON denial, and failed/aborted path coverage; all validation passes.
+
+## Task workflow update - 2026-06-18T02:39:35.418Z
+- Recorded fork run: n3bshp0a0nzw
+- Validation: Fork reported reading `.agents/skills/testing/SKILL.md` and `tests/AGENTS.md`.; Fork reported focused `castor test --filter="RuntimeEventMapperTest|TranscriptProjectorTest|PlatformIntegrationTest|OutputCapTest|OutputCapLlmTransformHookTest"`: PASS (203 tests, 777 assertions).; Fork reported full `castor test`: 108/109 OK with known pre-existing `CommandMailboxPolicyTest` failure.; Fork reported `castor test:tui --filter=OutputCap`: PASS (52 tests, 161 assertions, 1 expected live-LLM skip).; Fork reported `castor deptrac`: PASS (0 violations).; Fork reported `castor phpstan`: PASS (0 errors).; Fork reported `castor cs-check`: only 10 pre-existing binary-mode fopen noise files unchanged.
+- Summary: Fork `n3bshp0a0nzw` committed and pushed `01158c86c`, replacing `ModelToolInput` with `ModelInputMessageDTO`, capturing provider-facing tool-role and marked generated user-role model inputs, threading them through completed/failed/aborted LLM outcomes, and projecting exact text into ToolResult/System blocks. Parent verification found remaining cleanup/blockers before PR readiness: production `RuntimeEventTranslator` still has a backward-compat fallback for old `model_tool_inputs` despite active-development no-compat rule; tests/comments still contain stale `ModelToolInput`/`model_tool_inputs` names; the TmuxHarness E2E still only proves native tool-level cap via `tool_execution_end.result`, not the central `model_input_messages` projection path or generated user-role System block. A final cleanup/E2E-proof fork is needed before reviewer/CODE-REVIEW.
