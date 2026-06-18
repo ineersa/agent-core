@@ -33,6 +33,9 @@ final class ToolExecutor implements ToolExecutorInterface
     /** @var list<ToolResultProcessorInterface> */
     private readonly array $toolResultProcessors;
 
+    /**
+     * @param iterable<ToolResultProcessorInterface> $toolResultProcessors
+     */
     public function __construct(
         string $defaultMode,
         int $defaultTimeoutSeconds,
@@ -51,6 +54,9 @@ final class ToolExecutor implements ToolExecutorInterface
             : iterator_to_array($toolResultProcessors, false);
     }
 
+    /**
+     * @param iterable<ToolResultProcessorInterface> $toolResultProcessors
+     */
     public static function fromSettings(
         ToolExecutionSettingsInterface $settings,
         ToolExecutionResultStore $resultStore,
