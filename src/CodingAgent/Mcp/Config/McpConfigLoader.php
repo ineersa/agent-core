@@ -62,14 +62,7 @@ final class McpConfigLoader
         // Merge: project overrides global by whole-server replacement
         $mergedRaw = array_merge($globalServers, $projectServers);
 
-        // Apply disable-only overrides: remove servers where project says enabled:false
-        foreach ($projectServers as $name => $projData) {
-            if (\is_array($projData) && ($projData['enabled'] ?? true) === false) {
-                unset($mergedRaw[$name]);
-            }
-        }
-
-        // Also remove globally-disabled servers
+        // Remove any server with enabled:false from the final config
         foreach ($mergedRaw as $name => $data) {
             if (\is_array($data) && ($data['enabled'] ?? true) === false) {
                 unset($mergedRaw[$name]);
@@ -116,11 +109,7 @@ final class McpConfigLoader
     {
         $resolved = $this->pathResolver->resolve($pathPattern, $baseDir);
 
-        if (!is_file($resolved)) {
-            return [];
-        }
-
-        $content = file_get_contents($resolved);
+        $content = @file_get_contents($resolved);
 
         if (false === $content) {
             return [];

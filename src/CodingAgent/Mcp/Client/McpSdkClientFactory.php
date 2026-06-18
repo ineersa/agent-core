@@ -24,6 +24,18 @@ use Mcp\Client\Transport\TransportInterface;
 final class McpSdkClientFactory
 {
     /**
+     * Client name reported during MCP initialization.
+     * Phase 1+ can wire the real app/package version from runtime configuration.
+     */
+    private const CLIENT_NAME = 'hatfield';
+
+    /**
+     * Client version reported during MCP initialization.
+     * Phase 1+ can wire the real app/package version from runtime configuration.
+     */
+    private const CLIENT_VERSION = '0.1.0';
+
+    /**
      * Create a client adapter for the given server definition.
      *
      * The returned adapter is NOT connected — callers must invoke
@@ -41,6 +53,10 @@ final class McpSdkClientFactory
 
     private function createTransport(McpServerDefinitionDTO $server): TransportInterface
     {
+        if (null === $server->transportType) {
+            throw new \RuntimeException(\sprintf('MCP server "%s": cannot create transport — no transport type resolved.', $server->name));
+        }
+
         if (McpTransportTypeEnum::STDIO === $server->transportType) {
             return new StdioTransport(
                 command: $server->command ?? throw new \RuntimeException('STDIO transport requires a command.'),
@@ -60,9 +76,9 @@ final class McpSdkClientFactory
     private function createSdkClient(McpServerDefinitionDTO $server): SdkClient
     {
         // Use SDK builder's setClientInfo() which internally creates Implementation and ClientCapabilities objects.
-        // Passing the server's timeoutMs/startupTimeoutMs where applicable for init/request timeouts.
+        // Passing the server's startupTimeoutMs/timeoutMs for init/request timeouts.
         return SdkClient::builder()
-            ->setClientInfo('hatfield', '0.1.0')
+            ->setClientInfo(self::CLIENT_NAME, self::CLIENT_VERSION)
             ->setInitTimeout(max(1, (int) ($server->startupTimeoutMs / 1000)))
             ->setRequestTimeout(max(1, (int) ($server->timeoutMs / 1000)))
             ->build();

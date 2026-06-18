@@ -13,18 +13,18 @@ namespace Ineersa\CodingAgent\Mcp\Config;
 final readonly class McpServerDefinitionDTO
 {
     /**
-     * @param string                $name             Server name key from mcpServers map
-     * @param bool                  $enabled          Whether this server is active
-     * @param string|null           $command          STDIO command path / binary name
-     * @param list<string>          $args             STDIO command arguments
-     * @param array<string, string> $env              STDIO environment variables (interpolated)
-     * @param string|null           $cwd              STDIO working directory (resolved)
-     * @param string|null           $url              HTTP server endpoint URL
-     * @param array<string, string> $headers          HTTP request headers (interpolated)
-     * @param int                   $timeoutMs        Tool-call timeout in milliseconds
-     * @param int                   $startupTimeoutMs STDIO startup timeout in milliseconds
-     * @param list<string>          $excludeTools     Tool names to exclude from registration
-     * @param McpTransportTypeEnum  $transportType    Resolved transport type inferred from command/url presence
+     * @param string                    $name             Server name key from mcpServers map
+     * @param bool                      $enabled          Whether this server is active
+     * @param string|null               $command          STDIO command path / binary name
+     * @param list<string>              $args             STDIO command arguments
+     * @param array<string, string>     $env              STDIO environment variables (interpolated)
+     * @param string|null               $cwd              STDIO working directory (resolved)
+     * @param string|null               $url              HTTP server endpoint URL
+     * @param array<string, string>     $headers          HTTP request headers (interpolated)
+     * @param int                       $timeoutMs        Tool-call timeout in milliseconds
+     * @param int                       $startupTimeoutMs STDIO startup timeout in milliseconds
+     * @param list<string>              $excludeTools     Tool names to exclude from registration
+     * @param McpTransportTypeEnum|null $transportType    Resolved transport type; null only when neither command nor url is set (e.g. inherited disable-only)
      */
     public function __construct(
         public string $name,
@@ -38,7 +38,7 @@ final readonly class McpServerDefinitionDTO
         public int $timeoutMs = 30000,
         public int $startupTimeoutMs = 30000,
         public array $excludeTools = [],
-        public McpTransportTypeEnum $transportType = McpTransportTypeEnum::STDIO,
+        public ?McpTransportTypeEnum $transportType = null,
     ) {
     }
 
@@ -49,6 +49,10 @@ final readonly class McpServerDefinitionDTO
      * @param array<string,mixed> $data Raw config values
      *
      * @throws \RuntimeException when field types are invalid
+     *
+     * The DTO re-validates certain fields (e.g. enabled type) even though
+     * {@see McpConfigValidator} normally runs first, because fromArray() is
+     * a public standalone entry point that callers may use directly.
      */
     public static function fromArray(string $name, array $data): self
     {
@@ -70,7 +74,7 @@ final readonly class McpServerDefinitionDTO
         $cwd = null;
         $url = null;
         $headers = [];
-        $transportType = McpTransportTypeEnum::STDIO;
+        $transportType = null;
 
         if ($hasCommand) {
             $command = self::requireNonEmptyString($data['command'], $name, 'command');
@@ -150,10 +154,6 @@ final readonly class McpServerDefinitionDTO
      */
     private static function requireStringList(mixed $value, string $name, string $field): array
     {
-        if (!\is_array($value) || array_is_list($value) && [] === $value) {
-            // An empty list is allowed — only validate it is a list
-        }
-
         if (!\is_array($value)) {
             throw new \RuntimeException(\sprintf('MCP server "%s": "%s" must be an array.', $name, $field));
         }

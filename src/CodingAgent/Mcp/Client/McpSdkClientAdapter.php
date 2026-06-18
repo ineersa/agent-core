@@ -6,8 +6,14 @@ namespace Ineersa\CodingAgent\Mcp\Client;
 
 use Mcp\Client as SdkClient;
 use Mcp\Client\Transport\TransportInterface;
+use Mcp\Exception\ConnectionException as SdkConnectionException;
+use Mcp\Schema\Content\AudioContent;
+use Mcp\Schema\Content\BlobResourceContents;
+use Mcp\Schema\Content\Content;
+use Mcp\Schema\Content\EmbeddedResource;
 use Mcp\Schema\Content\ImageContent;
 use Mcp\Schema\Content\TextContent;
+use Mcp\Schema\Content\TextResourceContents;
 
 /**
  * Hatfield adapter wrapping the official PHP MCP SDK client.
@@ -33,7 +39,11 @@ final class McpSdkClientAdapter implements McpClientInterface
 
     public function connect(): void
     {
-        $this->client->connect($this->transport);
+        try {
+            $this->client->connect($this->transport);
+        } catch (SdkConnectionException $e) {
+            throw new McpClientConnectionException($e->getMessage(), $e->getCode(), $e);
+        }
     }
 
     public function disconnect(): void
@@ -68,7 +78,7 @@ final class McpSdkClientAdapter implements McpClientInterface
     }
 
     /**
-     * @return array{content: list<array<string, mixed>>}
+     * @return array{content: list<array<string, mixed>>, isError: bool}
      */
     public function callTool(string $name, array $arguments = []): array
     {
@@ -76,18 +86,87 @@ final class McpSdkClientAdapter implements McpClientInterface
 
         $content = [];
         foreach ($result->content as $item) {
-            $entry = ['type' => $item->type];
-
-            if ($item instanceof TextContent) {
-                $entry['text'] = $item->text;
-            } elseif ($item instanceof ImageContent) {
-                $entry['data'] = $item->data;
-                $entry['mimeType'] = $item->mimeType;
-            }
-
-            $content[] = $entry;
+            $content[] = $this->mapContent($item);
         }
 
-        return ['content' => $content];
+        return [
+            'content' => $content,
+            'isError' => $result->isError,
+        ];
+    }
+
+    /**
+     * Map a single SDK Content object to a PHP-native array.
+     *
+     * Handles all currently known MCP content types.
+     * Throws for unsupported types to avoid silent data loss.
+     *
+     * @return array<string, mixed>
+     */
+    private function mapContent(Content $item): array
+    {
+        if ($item instanceof TextContent) {
+            return [
+                'type' => 'text',
+                'text' => $item->text,
+            ];
+        }
+
+        if ($item instanceof ImageContent) {
+            return [
+                'type' => 'image',
+                'data' => $item->data,
+                'mimeType' => $item->mimeType,
+            ];
+        }
+
+        if ($item instanceof AudioContent) {
+            return [
+                'type' => 'audio',
+                'data' => $item->data,
+                'mimeType' => $item->mimeType,
+            ];
+        }
+
+        if ($item instanceof EmbeddedResource) {
+            return $this->mapEmbeddedResource($item);
+        }
+
+        throw new \RuntimeException(\sprintf('Unsupported MCP content type: "%s". Cannot safely map to native array.', $item->type));
+    }
+
+    /**
+     * Map an EmbeddedResource to a PHP-native array, resolving the nested
+     * TextResourceContents or BlobResourceContents.
+     *
+     * @return array<string, mixed>
+     */
+    private function mapEmbeddedResource(EmbeddedResource $item): array
+    {
+        $entry = ['type' => 'resource'];
+
+        $resource = $item->resource;
+
+        if ($resource instanceof TextResourceContents) {
+            $entry['resource'] = [
+                'uri' => $resource->uri,
+                'text' => $resource->text,
+            ];
+            if (null !== $resource->mimeType) {
+                $entry['resource']['mimeType'] = $resource->mimeType;
+            }
+        } elseif ($resource instanceof BlobResourceContents) {
+            $entry['resource'] = [
+                'uri' => $resource->uri,
+                'blob' => $resource->blob,
+            ];
+            if (null !== $resource->mimeType) {
+                $entry['resource']['mimeType'] = $resource->mimeType;
+            }
+        } else {
+            throw new \RuntimeException(\sprintf('Unsupported embedded resource type: "%s".', $resource::class));
+        }
+
+        return $entry;
     }
 }
