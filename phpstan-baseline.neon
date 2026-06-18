@@ -61,6 +61,18 @@ parameters:
 			path: src/CodingAgent/CLI/AgentCommand.php
 
 		-
+			message: '#^Parameter \#1 \$options \(array\<string, mixed\>\) of method Ineersa\\CodingAgent\\Infrastructure\\SymfonyAi\\Http\\LlmRetryingHttpClient\:\:withOptions\(\) should be contravariant with parameter \$options \(array\) of method Symfony\\Contracts\\HttpClient\\HttpClientInterface\:\:withOptions\(\)$#'
+			identifier: method.childParameterType
+			count: 1
+			path: src/CodingAgent/Infrastructure/SymfonyAi/Http/LlmRetryingHttpClient.php
+
+		-
+			message: '#^Parameter \#3 \$options \(array\<string, mixed\>\) of method Ineersa\\CodingAgent\\Infrastructure\\SymfonyAi\\Http\\LlmRetryingHttpClient\:\:request\(\) should be contravariant with parameter \$options \(array\) of method Symfony\\Contracts\\HttpClient\\HttpClientInterface\:\:request\(\)$#'
+			identifier: method.childParameterType
+			count: 1
+			path: src/CodingAgent/Infrastructure/SymfonyAi/Http/LlmRetryingHttpClient.php
+
+		-
 			message: '#^Parameter &\$blockByIndex by\-ref type of method Ineersa\\Platform\\Bridge\\Generic\\DurableResultConverter\:\:accumulateDurableToolCalls\(\) expects array\<int, int\>, array\<int\> given\.$#'
 			identifier: parameterByRef.type
 			count: 1
@@ -89,16 +101,4 @@ parameters:
 			identifier: parameterByRef.type
 			count: 1
 			path: src/Platform/Bridge/Generic/DurableResultConverter.php
-
-		-
-			message: '#^Parameter .* of method Ineersa\\CodingAgent\\Infrastructure\\SymfonyAi\\Http\\LlmRetryingHttpClient\:\:request\(\) should be contravariant with parameter \$options \(array\) of method Symfony\\Contracts\\HttpClient\\HttpClientInterface\:\:request\(\)$#'
-			identifier: method.childParameterType
-			count: 1
-			path: src/CodingAgent/Infrastructure/SymfonyAi/Http/LlmRetryingHttpClient.php
-
-		-
-			message: '#^Parameter .* of method Ineersa\\CodingAgent\\Infrastructure\\SymfonyAi\\Http\\LlmRetryingHttpClient\:\:withOptions\(\) should be contravariant with parameter \$options \(array\) of method Symfony\\Contracts\\HttpClient\\HttpClientInterface\:\:withOptions\(\)$#'
-			identifier: method.childParameterType
-			count: 1
-			path: src/CodingAgent/Infrastructure/SymfonyAi/Http/LlmRetryingHttpClient.php
 
