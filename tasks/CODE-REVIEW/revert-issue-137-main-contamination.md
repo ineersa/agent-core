@@ -15,8 +15,8 @@ Status: CODE-REVIEW
 Branch: task/revert-issue-137-main-contamination
 Worktree: /home/ineersa/projects/agent-core-worktrees/revert-issue-137-main-contamination
 Fork run: 198rgy17emyg
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/165
+PR Status: open
 Started: 2026-06-18T17:01:24.734Z
 Completed:
 
@@ -49,3 +49,8 @@ Completed:
 ## Task workflow update - 2026-06-18T17:07:24.847Z
 - Validation: gh pr create failed: HTTP 401 Requires authentication (https://api.github.com/graphql).
 - Summary: User requested PR creation for rollback branch. Attempted `gh pr create --base main --head task/revert-issue-137-main-contamination`, but GitHub CLI failed with HTTP 401 Requires authentication. Branch remains pushed and ready; PR must be created from an authenticated environment.
+
+## Task workflow update - 2026-06-18T17:09:05.623Z
+- Updated PR URL: https://github.com/ineersa/agent-core/pull/165
+- Updated PR Status: open
+- Summary: PR created successfully after GitHub CLI authentication was refreshed: https://github.com/ineersa/agent-core/pull/165
