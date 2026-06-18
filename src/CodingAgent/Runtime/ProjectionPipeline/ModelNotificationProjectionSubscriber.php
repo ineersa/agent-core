@@ -37,8 +37,12 @@ final readonly class ModelNotificationProjectionSubscriber implements EventSubsc
         $source = (string) ($p['source'] ?? '');
         $kind = (string) ($p['kind'] ?? '');
         $severity = (string) ($p['severity'] ?? 'info');
+        $delivery = (string) ($p['delivery'] ?? '');
         $toolCallId = isset($p['tool_call_id']) && \is_string($p['tool_call_id'])
             ? $p['tool_call_id']
+            : null;
+        $toolName = isset($p['tool_name']) && \is_string($p['tool_name'])
+            ? $p['tool_name']
             : null;
 
         $blockId = 'model_notification_'.('' !== $notificationId
@@ -72,5 +76,69 @@ final readonly class ModelNotificationProjectionSubscriber implements EventSubsc
             meta: $meta,
             streaming: false,
         ));
+
+        // When a notification replaces the tool-result text in the model
+        // context (delivery=tool_result_replace), compact the related
+        // ToolResult block so the TUI does not show raw/full output that
+        // the model never saw.  The exact model-facing notification is
+        // already visible in the System block above.
+        if ('tool_result_replace' === $delivery && null !== $toolCallId && '' !== $toolCallId) {
+            $this->compactCappedToolResult($state, $event->runId(), $toolCallId, $toolName);
+        }
+    }
+
+    /**
+     * Compact a ToolResult block whose raw output was replaced by a
+     * notification.  The visible text becomes a generic status label
+     * like 'read completed' — the exact model-facing notification is
+     * shown in the System block.
+     *
+     * Preserves existing ToolResult metadata (tool_name, is_error, etc.)
+     * since upsertToolResultBlock replaces metadata entirely rather than
+     * merging.
+     */
+    private function compactCappedToolResult(
+        \Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState $state,
+        string $runId,
+        string $toolCallId,
+        ?string $toolName,
+    ): void {
+        $toolResultBlockId = 'tool_result_'.$toolCallId;
+        $existing = $state->getBlock($toolResultBlockId);
+
+        // If no ToolResult block exists yet (e.g. notification arrived
+        // before tool_execution.completed via late hook), do nothing —
+        // the primary ToolProjectionSubscriber will create it later.
+        if (null === $existing) {
+            return;
+        }
+
+        // Prefer tool_name from the notification payload, then from
+        // existing ToolResult block metadata, then nothing.
+        $resolvedName = $toolName
+            ?? (\is_string($existing->meta['tool_name'] ?? null) && '' !== $existing->meta['tool_name']
+                ? $existing->meta['tool_name']
+                : null);
+
+        $isError = \is_bool($existing->meta['is_error'] ?? null)
+            && $existing->meta['is_error'];
+
+        $label = null !== $resolvedName
+            ? $resolvedName.($isError ? ' failed' : ' completed')
+            : ($isError ? 'failed' : 'completed');
+
+        // Collect existing metadata, preserving everything except the
+        // full visible text (which is now compact).
+        $meta = $existing->meta;
+        $meta['compact_label'] = true;
+        $meta['tool_call_id'] = $toolCallId;
+
+        $state->upsertToolResultBlock(
+            blockId: $toolResultBlockId,
+            runId: $runId,
+            text: $label,
+            meta: $meta,
+            streaming: false,
+        );
     }
 }

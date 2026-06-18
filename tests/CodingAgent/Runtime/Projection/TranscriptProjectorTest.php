@@ -1741,6 +1741,84 @@ final class TranscriptProjectorTest extends TestCase
         $this->assertSame(100, $block->meta['producer_metadata']['cap']);
     }
 
+    public function testModelNotificationWithToolResultReplaceCompactsToolResult(): void
+    {
+        // Set up a ToolResult block via tool_execution.completed.
+        $this->accept('tool_execution.completed', [
+            'tool_call_id' => 'call-compact',
+            'tool_name' => 'read',
+            'result' => 'Full raw output that should be replaced by the notification',
+        ]);
+
+        // Verify the ToolResult block has the original text.
+        $blocks = $this->projector->blocks();
+        $this->assertCount(1, $blocks);
+        $this->assertSame(TranscriptBlockKindEnum::ToolResult, $blocks[0]->kind);
+        $this->assertSame('Full raw output that should be replaced by the notification', $blocks[0]->text);
+
+        // Now emit a model_notification with delivery=tool_result_replace
+        // targeting the same tool_call_id.
+        $this->accept('model.notification', [
+            'id' => 'notif-compact-1',
+            'source' => 'output_cap',
+            'kind' => 'output_capped',
+            'severity' => 'warning',
+            'delivery' => 'tool_result_replace',
+            'text' => '[Output capped to 100 characters, full output saved to /tmp/cap-compact.txt]',
+            'tool_call_id' => 'call-compact',
+            'tool_name' => 'read',
+        ]);
+
+        // Two blocks: the System notification and the compacted ToolResult.
+        $blocks = $this->projector->blocks();
+        $this->assertCount(2, $blocks);
+
+        // Block 0: ToolResult (created first, compacted by notification).
+        $this->assertSame(TranscriptBlockKindEnum::ToolResult, $blocks[0]->kind);
+        $this->assertSame('read completed', $blocks[0]->text);
+        $this->assertTrue($blocks[0]->meta['compact_label'] ?? false, 'compact_label meta must be true');
+
+        // Block 1: System notification with exact text.
+        $this->assertSame(TranscriptBlockKindEnum::System, $blocks[1]->kind);
+        $this->assertStringStartsWith('[Output capped to', $blocks[1]->text);
+        $this->assertSame('warning', $blocks[1]->meta['severity']);
+        $this->assertSame('output_cap', $blocks[1]->meta['source']);
+        $this->assertSame('call-compact', $blocks[1]->meta['tool_call_id']);
+    }
+
+    public function testModelNotificationWithoutDeliveryDoesNotCompactToolResult(): void
+    {
+        // Set up a ToolResult block.
+        $this->accept('tool_execution.completed', [
+            'tool_call_id' => 'call-nocompact',
+            'tool_name' => 'bash',
+            'result' => 'Normal shell output that should remain visible',
+        ]);
+
+        // Emit a model_notification WITHOUT delivery=tool_result_replace.
+        $this->accept('model.notification', [
+            'id' => 'notif-info',
+            'source' => 'extension',
+            'kind' => 'nudge',
+            'severity' => 'info',
+            'delivery' => 'context_message',
+            'text' => 'Free-standing informational nudge',
+            'tool_call_id' => 'call-nocompact',
+        ]);
+
+        // Two blocks: ToolResult unchanged + System notification.
+        $blocks = $this->projector->blocks();
+        $this->assertCount(2, $blocks);
+
+        // ToolResult must still have original text (not compacted).
+        $this->assertSame(TranscriptBlockKindEnum::ToolResult, $blocks[0]->kind);
+        $this->assertSame('Normal shell output that should remain visible', $blocks[0]->text);
+
+        // System notification must be present.
+        $this->assertSame(TranscriptBlockKindEnum::System, $blocks[1]->kind);
+        $this->assertSame('Free-standing informational nudge', $blocks[1]->text);
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     /**

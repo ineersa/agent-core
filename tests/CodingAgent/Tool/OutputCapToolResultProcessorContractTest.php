@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
-use Ineersa\AgentCore\Domain\Notification\ModelNotificationDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tool\OutputCap;
 use Ineersa\CodingAgent\Tool\OutputCapToolResultProcessor;
 use PHPUnit\Framework\TestCase;
@@ -33,18 +33,13 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->tmpDir = sys_get_temp_dir().'/hatfield-opc-contract-'.bin2hex(random_bytes(4));
-        @mkdir($this->tmpDir, 0o777, true);
+        $this->tmpDir = TestDirectoryIsolation::createOsTempDir('hatfield-opc-contract');
     }
 
     protected function tearDown(): void
     {
-        if (is_dir($this->tmpDir)) {
-            $files = glob($this->tmpDir.'/*') ?: [];
-            foreach ($files as $f) {
-                @unlink($f);
-            }
-            @rmdir($this->tmpDir);
+        if (isset($this->tmpDir) && is_dir($this->tmpDir)) {
+            TestDirectoryIsolation::removeDirectory($this->tmpDir);
         }
     }
 

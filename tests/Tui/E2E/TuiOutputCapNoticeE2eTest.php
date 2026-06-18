@@ -99,35 +99,55 @@ final class TuiOutputCapNoticeE2eTest extends TestCase
             // Capture full transcript for assertions.
             $fullCapture = $this->tmux->capturePlainWithHistory($pane, 2000);
 
-            // 1. The exact cap notice text must be visible (model-notification System block).
+            // 1. The related tool call must be visible (the file path
+            //    from the original read call).
+            self::assertStringContainsString(
+                'large_file.txt',
+                $fullCapture,
+                'Related tool call (large_file.txt) must be visible in the TUI transcript',
+            );
+
+            // 2. The exact cap notice text must be visible (model-notification System block).
             self::assertStringContainsString(
                 self::CAP_NOTICE_MARKER,
                 $fullCapture,
                 'Output-cap notice text must be visible in the TUI transcript as a model-notification block',
             );
 
-            // 2. The warning severity prefix (⚠) must be present for the notification block.
+            // Verify the cap notice does not appear at TUI-churn scale
+            // (e.g. dozens of duplicates from bad event replay).
+            // Exact-once is too strict for real TUI ANSI rendering
+            // where line wrapping may show the same text in adjacent
+            // screen rows.  Allow small headroom.
+            $noticeCount = mb_substr_count($fullCapture, self::CAP_NOTICE_MARKER);
+            self::assertLessThanOrEqual(
+                4,
+                $noticeCount,
+                'Output-cap notice must not appear more than a few times (found '.$noticeCount.')',
+            );
+
+            // 3. The warning severity prefix (⚠) must be present for the notification block.
             self::assertStringContainsString(
                 '⚠',
                 $fullCapture,
                 'Warning icon (⚠) must appear for the output-cap notification',
             );
 
-            // 3. The compact ToolResult label must be visible (not raw output).
+            // 4. The compact ToolResult label must be visible (not raw output).
             self::assertStringContainsString(
                 'read completed',
                 $fullCapture,
                 'Compact ToolResult "read completed" must appear instead of raw output',
             );
 
-            // 4. The raw full output sentinel must NOT be visible.
+            // 5. The raw full output sentinel must NOT be visible.
             self::assertStringNotContainsString(
                 self::RAW_OUTPUT_SENTINEL,
                 $fullCapture,
                 'Raw full output must NOT appear in the TUI transcript',
             );
 
-            // 5. Save ANSI snapshot for inspection.
+            // 6. Save ANSI snapshot for inspection.
             $this->saveAnsiSnapshot($pane, 'output-cap-notification');
 
             // Clean exit.
