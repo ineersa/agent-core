@@ -1100,8 +1100,7 @@ final class TranscriptProjectorTest extends TestCase
         ]);
         $this->accept('tool_execution.completed', [
             'tool_call_id' => 'tc_capped',
-            'tool_name' => 'read',
-            'result' => "[Output capped to 20000 characters]\n\nFull output: 50000 characters (~12500 tokens).\nSaved for audit at: /tmp/cap.txt\nDo NOT rerun...",
+            'result' => '[Output capped to 20000 characters]\n\nFull output: 50000 characters (~12500 tokens).\nSaved for audit at: /tmp/cap.txt\nDo NOT rerun...',
             'output_cap' => true,
             'output_cap_limit' => 20000,
             'output_cap_char_count' => 50000,
@@ -1161,8 +1160,7 @@ final class TranscriptProjectorTest extends TestCase
         ]);
         $this->accept('tool_execution.failed', [
             'tool_call_id' => 'tc_failcap',
-            'tool_name' => 'bash',
-            'result' => "[Output capped to 5000 characters]\n\nFull output: 6000 characters.\nSaved for audit at: /tmp/err.txt",
+            'result' => '[Output capped to 5000 characters]\n\nFull output: 6000 characters.\nSaved for audit at: /tmp/err.txt',
             'output_cap' => true,
             'output_cap_limit' => 5000,
             'output_cap_char_count' => 6000,

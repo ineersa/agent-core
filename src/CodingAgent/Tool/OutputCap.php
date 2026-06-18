@@ -265,19 +265,13 @@ final class OutputCap
      *
      * The notice tells the model how much output was capped, where the
      * full output was saved for audit, and how to continue accessing the
-     * content using targeted tool calls.  The model receives clear,
-     * tool-first follow-up guidance: no bare shell commands, no rerunning
-     * full tools, no reading the saved file wholesale.
+     * content using targeted tool calls — no bare shell commands, no
+     * rerunning full tools, no reading the saved file wholesale.
      *
      * Structured cap metadata (limit, char count, saved path) is conveyed
      * through separate OutputCapResultDTO fields and runtime event payloads,
      * NOT by parsing this text.  The text format is stable for the model's
      * benefit, not for production parsing.
-     *
-     * The model receives clear, tool-first follow-up guidance: no bare
-     * shell commands, no rerunning full tools, no reading the saved file
-     * wholesale.  Prefer first-class tools (read with offset/limit,
-     * targeted search).
      */
     private function buildCappedNotice(string $fullText, int $cap, string $savedPath): string
     {

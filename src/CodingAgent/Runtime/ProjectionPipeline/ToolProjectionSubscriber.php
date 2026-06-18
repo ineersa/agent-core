@@ -221,10 +221,22 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
             }
         }
 
+        // Preserve tool_name from the existing block's metadata set by
+        // tool_execution.started.  RuntimeEventTranslator::onToolExecutionEnded()
+        // does not include tool_name in the payload, so we must carry it
+        // forward from the block that was created by the started event.
+        $existing = $state->getBlock($blockId);
+        $toolName = null !== $existing && isset($existing->meta['tool_name'])
+            ? (string) $existing->meta['tool_name']
+            : '';
+
         $meta = [
             'tool_call_id' => $toolCallId,
             'is_error' => false,
         ];
+        if ('' !== $toolName) {
+            $meta['tool_name'] = $toolName;
+        }
         if (null !== $durationMs) {
             $meta['duration_ms'] = $durationMs;
         }
@@ -245,10 +257,22 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
         $result = (string) ($p['result'] ?? '');
         $blockId = 'tool_result_'.$toolCallId;
 
+        // Preserve tool_name from the existing block's metadata set by
+        // tool_execution.started.  RuntimeEventTranslator::onToolExecutionEnded()
+        // does not include tool_name in the payload, so we must carry it
+        // forward from the block that was created by the started event.
+        $existing = $state->getBlock($blockId);
+        $toolName = null !== $existing && isset($existing->meta['tool_name'])
+            ? (string) $existing->meta['tool_name']
+            : '';
+
         $meta = [
             'tool_call_id' => $toolCallId,
             'is_error' => true,
         ];
+        if ('' !== $toolName) {
+            $meta['tool_name'] = $toolName;
+        }
         if ('' !== $result) {
             $meta['result'] = $result;
         }
@@ -589,7 +613,16 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
         $meta['raw_result'] = $existing->text;
         $meta['model_input_exact'] = true;
 
+        // Resolve visible tool name: prefer explicit parameter, fall back
+        // to existing block metadata from tool_execution.started.
+        // RuntimeEventTranslator::onToolExecutionEnded() does NOT include
+        // tool_name in completed/failed payloads, so $toolName is often
+        // empty in production.
+        if ('' === $toolName) {
+            $toolName = (string) ($existing->meta['tool_name'] ?? '');
+        }
         $compactText = '' !== $toolName ? $toolName.' completed' : 'Completed';
+
         $state->updateBlock($blockId, $existing->with(text: $compactText, meta: $meta));
     }
 
