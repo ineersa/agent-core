@@ -54,15 +54,25 @@ export async function resolveTaskRoot(
 	return join(codeRoot, "tasks");
 }
 
+/**
+ * Check whether a directory looks like a valid task board root.
+ *
+ * For auto-detection (sibling directory, env var pointing to an existing dir),
+ * at least one known status subdirectory must exist. This prevents false
+ * matches against unrelated directories.
+ *
+ * For explicit paths from settings/env that don't exist yet,
+ * callers use ensureTaskDirs() to create them — the path is trusted.
+ */
 function isValidTaskRoot(dir: string): boolean {
 	if (!existsSync(dir)) return false;
-	// Check for at least one status subdirectory with .md files
+	// Require at least one known status subdirectory to match
 	for (const status of STATUSES) {
 		const statusDir = join(dir, status);
 		if (existsSync(statusDir)) return true;
 	}
-	// Root itself might have tasks directly (for new boards)
-	return true;
+	// Existing directory but no status dirs — not a valid task root
+	return false;
 }
 
 // ── Utility ──────────────────────────────────────────────────────────────────

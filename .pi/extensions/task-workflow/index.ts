@@ -128,8 +128,8 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "task_list",
 		label: "Task List",
-		description: "List repo-local workflow tasks from tasks/TODO, tasks/IN-PROGRESS, tasks/CODE-REVIEW, and tasks/DONE.",
-		promptSnippet: "List project workflow tasks from tasks/TODO, tasks/IN-PROGRESS, tasks/CODE-REVIEW, and tasks/DONE",
+		description: "List workflow tasks from the external task board (TODO, IN-PROGRESS, CODE-REVIEW, DONE).",
+		promptSnippet: "List project workflow tasks from the external task board",
 		promptGuidelines: [
 			"Use task_list before starting tracked project work to understand TODO and IN-PROGRESS tasks.",
 		],
@@ -148,10 +148,10 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "create_task",
 		label: "Create Task",
-		description: "Create a Markdown task file in tasks/TODO.",
-		promptSnippet: "Create a tracked project task in tasks/TODO",
+		description: "Create a Markdown task file in the external task board TODO directory.",
+		promptSnippet: "Create a tracked project task (external task board)",
 		promptGuidelines: [
-			"Use create_task for user-approved follow-up work that should be tracked in the repo task board.",
+			"Use create_task for user-approved follow-up work that should be tracked on the task board.",
 		],
 		parameters: CreateTaskParams,
 		async execute(_toolCallId, params, signal, _onUpdate, ctx: ExtensionContext) {
@@ -179,7 +179,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "move_task",
 		label: "Move Task",
-		description: "Move a task between TODO, IN-PROGRESS, CODE-REVIEW, and DONE. TODO→IN-PROGRESS creates a worktree; IN-PROGRESS→CODE-REVIEW pushes the branch and creates a GitHub PR; CODE-REVIEW→DONE merges the task branch.",
+		description: "Move a task between TODO, IN-PROGRESS, CODE-REVIEW, and DONE on the external task board. TODO→IN-PROGRESS creates a code worktree; IN-PROGRESS→CODE-REVIEW pushes branch and creates PR; CODE-REVIEW→DONE merges the task branch.",
 		promptSnippet: "Move tracked project tasks between statuses; creates worktrees, opens PRs, and merges completed task branches",
 		promptGuidelines: [
 			"Use move_task instead of manual mv/git worktree commands for tracked task workflow transitions.",
@@ -350,7 +350,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "update_task",
 		label: "Update Task",
-		description: "Update metadata or append work log entries for an existing task without changing its status.",
+		description: "Update metadata or append work log entries for an existing task (external task board) without changing its status.",
 		promptSnippet: "Update task metadata fields or append work log entries without moving the task between statuses",
 		promptGuidelines: [
 			"Use update_task instead of editing task files directly when recording fork run IDs, summaries, validation results, PR information, or work log entries.",

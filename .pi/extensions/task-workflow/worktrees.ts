@@ -63,13 +63,57 @@ export function formatDirtyIntegrationCheckoutMessage(branch: string, status: st
 // ── .idea copy and path rewriting ────────────────────────────────────────────
 
 /**
+ * Maximum file size (bytes) to attempt text read for path rewriting.
+ * Files larger than this are skipped to avoid memory pressure.
+ */
+const MAX_TEXT_REWRITE_SIZE = 1 * 1024 * 1024; // 1 MiB
+
+/**
+ * Check whether a buffer looks like binary content.
+ * Reads up to 4 KiB and checks for null bytes — a reliable binary heuristic.
+ */
+function looksBinary(content: string): boolean {
+	// Check the first 4 KiB for null bytes — strong binary indicator
+	const sample = content.slice(0, 4096);
+	return sample.includes("\0");
+}
+
+/**
+ * Recursively collect all file paths under a directory, depth-first.
+ */
+async function collectFiles(dir: string): Promise<string[]> {
+	const result: string[] = [];
+	async function walk(current: string) {
+		let entries;
+		try {
+			entries = await readdir(current, { withFileTypes: true });
+		} catch {
+			return; // Permission or transient error — skip
+		}
+		for (const entry of entries) {
+			const fullPath = join(current, entry.name);
+			if (entry.isDirectory()) {
+				await walk(fullPath);
+			} else if (entry.isFile()) {
+				result.push(fullPath);
+			}
+		}
+	}
+	await walk(dir);
+	return result;
+}
+
+/**
  * Copy the integration checkout's `.idea/` directory into the worktree and
  * rewrite absolute path references to point at the worktree.
  *
- * This ensures IDE indexing points at the worktree, not the main checkout.
+ * This is best-effort: IDE indexing pointing at the worktree is a convenience,
+ * not a correctness requirement. If the copy or rewrite fails for any reason
+ * (permissions, disk space, binary content, file locks), the error is recorded
+ * as a non-fatal note; the worktree creation itself still succeeds.
  *
  * Returns true if .idea was copied, false otherwise.
- * Notes appended to the worktree creation result on success.
+ * Notes appended to the worktree creation result on success or partial failure.
  */
 export async function copyIdeaWithPathRewrite(
 	integrationRoot: string,
@@ -82,41 +126,72 @@ export async function copyIdeaWithPathRewrite(
 	}
 
 	try {
-		// Copy recursively
+		// Copy the entire tree recursively first
 		await cp(src, dst, { recursive: true });
 
-		// Rewrite absolute path references in text files
+		// Recursively collect all files under .idea/ for path rewriting
+		const allFiles = await collectFiles(dst);
 		let rewriteCount = 0;
-		const entries = await readdir(dst, { withFileTypes: true });
-		for (const entry of entries) {
-			if (!entry.isFile()) continue;
-			const filePath = join(dst, entry.name);
-			// Skip binary-like files by extension
-			const ext = entry.name.split(".").pop()?.toLowerCase() || "";
-			const binaryExts = new Set(["iml", "jar", "zip", "png", "jpg", "gif", "ico", "svg"]);
-			if (binaryExts.has(ext)) continue;
+		let skipCount = 0;
 
+		for (const filePath of allFiles) {
+			// Skip oversized files
+			let fileStat;
 			try {
-				const content = await readFile(filePath, "utf8");
-				// Only rewrite if the integration path appears in the content
-				if (content.includes(integrationRoot)) {
-					const rewritten = content.replaceAll(integrationRoot, worktreeRoot);
-					if (rewritten !== content) {
+				fileStat = await stat(filePath);
+			} catch {
+				skipCount++;
+				continue;
+			}
+			if (fileStat.size > MAX_TEXT_REWRITE_SIZE) {
+				skipCount++;
+				continue;
+			}
+
+			let content: string;
+			try {
+				content = await readFile(filePath, "utf8");
+			} catch {
+				// Not valid UTF-8 text — likely binary; skip
+				skipCount++;
+				continue;
+			}
+
+			// Skip if content looks binary (null bytes)
+			if (looksBinary(content)) {
+				skipCount++;
+				continue;
+			}
+
+			// Only rewrite if the integration path actually appears in content
+			if (content.includes(integrationRoot)) {
+				const rewritten = content.replaceAll(integrationRoot, worktreeRoot);
+				if (rewritten !== content) {
+					try {
 						await writeFile(filePath, rewritten, "utf8");
 						rewriteCount++;
+					} catch {
+						// Write failure — non-fatal; skip this file
+						skipCount++;
 					}
 				}
-			} catch {
-				// Skip files that can't be read as text
 			}
 		}
 
-		const note = rewriteCount > 0
-			? `Copied and rewrote ${rewriteCount} .idea file(s) to point at worktree.`
-			: `Copied .idea directory (no path rewrites needed).`;
-		return { copied: true, note };
+		const parts: string[] = [];
+		parts.push(`Copied .idea (${allFiles.length} file(s))`);
+		if (rewriteCount > 0) {
+			parts.push(`rewrote ${rewriteCount} file(s) to point at worktree`);
+		}
+		if (skipCount > 0) {
+			parts.push(`skipped ${skipCount} file(s)`);
+		}
+		parts.push(".");
+
+		return { copied: true, note: parts.join(" ") };
 	} catch (err: any) {
-		// Non-fatal: IDE indexing is a convenience
+		// Non-fatal: IDE indexing is a convenience, not a correctness requirement.
+		// If cp fails (permissions, disk space), the worktree still works fine.
 		return { copied: false, note: `Warning: .idea copy failed: ${err.message}` };
 	}
 }
