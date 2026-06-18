@@ -27,10 +27,14 @@ use Ineersa\AgentCore\Domain\Message\ToolResultType;
  *
  * PATH-AWARE CAPPING: The hook extracts the original tool call
  * arguments (persisted by ExecuteToolCallWorker as
- * details['arguments']) and checks the raw tool output length
- * against the correct cap for that path (docCap for .md/.txt/.toon,
- * defaultCap for everything else). This avoids false capping when
- * a doc-like file's output is above defaultCap but below docCap.
+ * details['arguments']) and resolves the path-specific cap via
+ * OutputCap::capForPath() (docCap for .md/.txt/.toon, defaultCap
+ * for everything else). The actual model-facing combined text
+ * (including JSON wrapping from AgentMessageNormalizer) is
+ * compared against that cap. This avoids false capping when
+ * a doc-like file's output is above defaultCap but below docCap,
+ * while still catching oversized JSON-wrapped text that would
+ * slip past a raw-length check.
  * For tools with no path context in their arguments, the defaultCap
  * is used as defense-in-depth.
  *
@@ -104,9 +108,9 @@ final readonly class OutputCapLlmTransformHook implements TransformContextHookIn
         // ── Path-aware capping ──
         // Extract path context from tool arguments (if available) so
         // doc-like files use docCap instead of the smaller defaultCap.
-        // Skip central capping entirely when raw tool output already
-        // fits under the path-specific cap or was already capped by
-        // the per-tool OutputCap call.
+        // Skip central capping entirely when the model-facing combined
+        // text already fits under the path-specific cap or was already
+        // capped by the per-tool OutputCap call.
         if ($this->shouldSkipCentralCap($message, $combinedText)) {
             return $this->buildPassthroughMessage($message, $combinedText, $nonTextParts);
         }
