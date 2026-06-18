@@ -38,14 +38,14 @@ Testing notes:
 - Focused Castor validation passes: `castor test` for relevant filters, plus `castor deptrac`, `castor phpstan`, `castor cs-check`; run `castor check` before CODE-REVIEW. Run `castor test:llm-real` if live provider compatibility paths are changed.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: DONE
 Branch: task/issue-134-orphaned-tool-calls
 Worktree: /home/ineersa/projects/agent-core-worktrees/issue-134-orphaned-tool-calls
 Fork run: engg9joce9ox
 PR URL: https://github.com/ineersa/agent-core/pull/163
-PR Status: open
+PR Status: merged
 Started: 2026-06-17T22:37:40.939Z
-Completed:
+Completed: 2026-06-18T01:06:37.354Z
 
 ## Work log
 - Created: 2026-06-17T22:10:18.115Z
@@ -192,3 +192,12 @@ Refined agent-core design:
 ## Task workflow update - 2026-06-17T23:35:48.109Z
 - Recorded fork run: engg9joce9ox
 - Summary: Launched fork `engg9joce9ox` to implement the remaining cancellation fix reproduced by the user. Required behavior: when a committed assistant `tool_calls` message already exists and cancellation finalizes while `pendingToolCalls` are present, synthesize privacy-safe error `tool` messages for each pending tool call before `AgentEnd(cancelled)` so future `Continue` prompt history is provider-valid. Fork instructed to focus on `ToolCallResultHandler` Cancelling branch, preserve existing PR #163 behavior, add regression coverage for single/multi pending tool calls and validator pass after follow-up, run focused Castor validation plus deptrac/phpstan/cs-check, commit but do not push or move task.
+
+## Task workflow update - 2026-06-18T01:06:37.354Z
+- Moved IN-PROGRESS → DONE.
+- Merged task/issue-134-orphaned-tool-calls into integration checkout.
+- Already up to date.
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/issue-134-orphaned-tool-calls.
+- Pulled integration checkout: Already up to date..
+- Validation: GitHub PR #163 state: MERGED at 2026-06-18T01:05:21Z, merge commit 6d58daaaa95c8e8a3d266e6ac897662e0c32896f.; Pre-merge validation recorded on task branch: `castor test` OK (2706 tests, 8069 assertions), `castor deptrac` OK, `castor phpstan` OK, `castor cs-check` OK, `castor test:llm-real` OK (5 tests, 51 assertions).; User manual smoke test after final cancellation fix: works.
+- Summary: PR #163 was manually smoke-tested by the user and merged on GitHub. Final implementation prevents unresolved assistant tool_calls from reaching providers by: boundary-driven steer/follow-up draining; dropping aborted streaming assistant messages from prompt context while recording sanitized abort metadata; validating provider-bound prompt history for unresolved/orphaned tool-call sequences; and synthesizing privacy-safe cancelled/error tool results for committed pending tool calls when cancellation finalizes. User confirmed the cancellation smoke test works.
