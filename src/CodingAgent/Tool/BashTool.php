@@ -144,7 +144,6 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
                 if (hrtime(true) > $deadline) {
                     $this->manager->stop($pid, $sessionId);
                     $partialOutput = $this->readOutput($pid, $sessionId);
-                    $capped = $partialOutput;
                     $this->logger->info('bash_tool.timed_out', [
                         'component' => 'tool.bash',
                         'event_type' => 'bash_tool.timed_out',
@@ -155,7 +154,7 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
                     return \sprintf(
                         "Command timed out after %d seconds.\n\nPartial output:\n%s",
                         $timeout,
-                        $capped,
+                        $partialOutput,
                     );
                 }
 
@@ -357,12 +356,11 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
      * @param int               $pid       Process PID
      * @param string|null       $sessionId Session ownership filter
      *
-     * @return string Formatted result with capped output
+     * @return string Formatted result text
      */
     private function handleFinished(BackgroundProcess $entity, int $pid, ?string $sessionId): string
     {
         $output = $this->readOutput($pid, $sessionId);
-        $capped = $output;
 
         $exitCode = $entity->exitCode;
         $status = $entity->status->value;
@@ -374,7 +372,7 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
             return \sprintf(
                 "Command was stopped (exit code %d).\n\nOutput:\n%s",
                 $exitCode ?? -1,
-                $capped,
+                $output,
             );
         }
 
@@ -387,7 +385,7 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
                 'exit_code' => $exitCode,
             ]);
 
-            return $capped;
+            return $output;
         }
 
         // Non-zero exit code or finished/unclean status
@@ -411,11 +409,11 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
             return \sprintf(
                 "Command failed with %s.\n\nOutput:\n%s",
                 $statusSuffix,
-                $capped,
+                $output,
             );
         }
 
         // Fallback: just return the output
-        return $capped;
+        return $output;
     }
 }

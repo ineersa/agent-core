@@ -9,6 +9,8 @@ use Ineersa\AgentCore\Domain\Notification\ModelNotificationDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 
+use function Symfony\Component\String\u;
+
 /**
  * Post-execution output capping via the generic ModelNotification system.
  *
@@ -24,7 +26,18 @@ use Ineersa\AgentCore\Domain\Tool\ToolResult;
  */
 final readonly class OutputCapToolResultProcessor implements ToolResultProcessorInterface
 {
-    /** @var list<string> Tool argument keys that carry a file path. */
+    /**
+     * Conventional tool argument keys used to determine path-specific caps.
+     *
+     * When a tool call carries one of these argument keys, its value is used
+     * to select the applicable cap: doc-like extensions (.md, .txt, .toon)
+     * get the higher docCap; everything else gets defaultCap.
+     *
+     * New tools with a different path argument name should either adopt one
+     * of these conventional keys or extend this list in the processor.
+     *
+     * @var list<string>
+     */
     private const array PATH_ARGUMENT_KEYS = ['path', 'file_path', 'file'];
 
     public function __construct(
@@ -41,7 +54,7 @@ final readonly class OutputCapToolResultProcessor implements ToolResultProcessor
 
         $path = $this->extractPathFromArguments($toolCall->arguments);
         $cap = $this->outputCap->capForPath($path);
-        $charCount = mb_strlen($text);
+        $charCount = u($text)->length();
 
         if ($charCount <= $cap) {
             // Text fits within the cap — return unchanged.
@@ -165,9 +178,15 @@ final readonly class OutputCapToolResultProcessor implements ToolResultProcessor
     }
 
     /**
-     * Build safe details from original result details, stripping raw_result
-     * (full output) but preserving attachment_refs and non-sensitive
-     * operational metadata (mode, duration_ms, sources).
+     * Build safe details from original result details when output was capped.
+     *
+     * Strips raw_result (full output) to prevent leakage through canonical
+     * ToolResult details, AgentMessage history, and TUI projection.  Preserves
+     * only attachment_refs (e.g. for image tools, though those don't typically
+     * hit the cap) and explicitly whitelisted non-sensitive operational metadata.
+     *
+     * Execution-level metadata added later by {@see ToolExecutor::withExecutionMetadata()}
+     * (beyond processor output) is not affected by this stripping.
      *
      * @param array<string, mixed> $original
      *
@@ -180,14 +199,16 @@ final readonly class OutputCapToolResultProcessor implements ToolResultProcessor
         // Preserve attachment references if the tool produced them
         // (e.g. image tools — but those don't typically hit the cap).
         $rawResult = $original['raw_result'] ?? null;
-        $attachmentRefs = \is_array($rawResult['attachment_refs'] ?? null)
-            ? $rawResult['attachment_refs']
-            : null;
-        if (null !== $attachmentRefs) {
-            $safe['raw_result'] = ['attachment_refs' => $attachmentRefs];
+        if (\is_array($rawResult)) {
+            $attachmentRefs = $rawResult['attachment_refs'] ?? null;
+            if (\is_array($attachmentRefs)) {
+                $safe['raw_result'] = ['attachment_refs' => $attachmentRefs];
+            }
         }
 
-        // Forward non-sensitive operational metadata.
+        // Forward only explicitly whitelisted non-sensitive operational metadata.
+        // New keys must be reviewed before addition — raw output, error bodies,
+        // and environment data must never appear here.
         foreach (['mode', 'duration_ms', 'sources'] as $key) {
             if (\array_key_exists($key, $original)) {
                 $safe[$key] = $original[$key];

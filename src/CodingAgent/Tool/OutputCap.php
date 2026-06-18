@@ -6,6 +6,8 @@ namespace Ineersa\CodingAgent\Tool;
 
 use Ineersa\CodingAgent\Config\OutputCapConfig;
 
+use function Symfony\Component\String\u;
+
 /**
  * Reusable output capping and persistence for text-producing tools.
  *
@@ -59,7 +61,7 @@ final class OutputCap
 
         $cap = $this->resolveCap($path);
 
-        if (mb_strlen($text) <= $cap) {
+        if (u($text)->length() <= $cap) {
             return $text;
         }
 
@@ -86,7 +88,7 @@ final class OutputCap
         $this->maybeCleanup();
 
         $cap = $this->resolveCap($path);
-        $charCount = mb_strlen($text);
+        $charCount = u($text)->length();
 
         if ($charCount <= $cap) {
             return null;
@@ -149,12 +151,6 @@ final class OutputCap
     }
 
     /**
-     * Delete stored files older than the configured retention period.
-     *
-     * Called automatically on first use, but exposed publicly so session
-     * hooks or scheduled tasks can trigger it explicitly.
-     */
-    /**
      * Expose the config for consumers that need to check the default cap
      * threshold before capping, or access config values for custom capping.
      */
@@ -163,6 +159,12 @@ final class OutputCap
         return $this->config;
     }
 
+    /**
+     * Delete stored files older than the configured retention period.
+     *
+     * Called automatically on first use, but exposed publicly so session
+     * hooks or scheduled tasks can trigger it explicitly.
+     */
     public function cleanup(): void
     {
         $dir = $this->config->storageDir;
@@ -242,14 +244,7 @@ final class OutputCap
      *
      * Doc-like extensions (.md, .txt, .toon) use {@see docCap}.
      * Everything else uses {@see defaultCap}.
-     * Null paths (no file context) use {@see defaultCap}.
-     */
-    /**
-     * Determine which character cap applies based on file extension.
-     *
-     * Doc-like extensions (.md, .txt, .toon) use docCap.
-     * Everything else uses defaultCap.
-     * Null paths use defaultCap.
+     * Null paths use {@see defaultCap}.
      */
     private function resolveCap(?string $path): int
     {
@@ -276,7 +271,7 @@ final class OutputCap
      */
     private function buildCappedNotice(string $fullText, int $cap, string $savedPath): string
     {
-        $charCount = mb_strlen($fullText);
+        $charCount = u($fullText)->length();
         $tokenEstimate = (int) ceil($charCount / 4);
 
         return \sprintf(
