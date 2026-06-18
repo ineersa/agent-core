@@ -143,3 +143,9 @@ Completed:
 ## Task workflow update - 2026-06-18T14:09:36.913Z
 - Recorded fork run: ogyf6t15ad4l
 - Summary: Launched review-iteration fork ogyf6t15ad4l to address sensible reviewer suggestions: remove redundant output_cap_notice key/fallback, fix/clarify OutputCapLlmTransformHook cap decision against actual model-facing combinedText with regression tests, and remove ModelInputMessageDTO::fromArray if confirmed unused. Fork instructed to run focused Castor validation and push the task branch.
+
+## Task workflow update - 2026-06-18T14:14:54.579Z
+- Recorded fork run: ogyf6t15ad4l
+- Validation: ogyf6t15ad4l: rg output_cap_notice/model_tool_inputs/ModelToolInput across src/tests — clean.; ogyf6t15ad4l: castor test focused filters — 173/173 and 150/150 pass.; ogyf6t15ad4l: castor test:tui --filter=OutputCap — pass (53 tests, 1 skipped llm-real).; ogyf6t15ad4l: castor deptrac — 0 violations; castor phpstan — 0 errors; castor cs-check — clean.
+- Summary: Review-iteration fork ogyf6t15ad4l completed and pushed commit efe66a8ce. Changes: removed redundant output_cap_notice writer/fallback and assertions, fixed OutputCapLlmTransformHook skip semantics to compare actual model-facing combinedText against path-specific cap, removed unused ModelInputMessageDTO::fromArray(), and added regression test for raw output under cap but JSON/model-facing text over cap.
+- Launched tiny follow-up fork osilw4kokk9s after parent verification noticed stale OutputCapLlmTransformHook comments still described raw_result/raw tool output length even though behavior now compares combined model-facing text. Scope: comment/PHPDoc cleanup only plus cs/phpstan/focused test.
