@@ -145,30 +145,30 @@ final class SafeGuardApprovalTuiE2eTest extends TestCase
 
         try {
             // Phase 1: Wait for the SafeGuard approval overlay to appear
-            // in the TUI. The overlay shows '✓ Allow once' as the first option
+            // in the TUI. The overlay shows '✅ Allow once' as the first option
             // (default-selected) from handleApprovalToolQuestion's schema.
             $approvalCapture = $this->tmux->waitForCaptureContains(
                 $pane,
-                '✓ Allow once',
+                '✅ Allow once',
                 timeout: 25.0,
             );
 
             $this->saveAnsiSnapshot($pane, 'sg-approval-overlay');
 
             // Verify the approval overlay shows the expected 3 options
-            self::assertStringContainsString('✓ Allow once', $approvalCapture,
+            self::assertStringContainsString('✅ Allow once', $approvalCapture,
                 'Approval overlay must show Allow once option');
-            self::assertStringContainsString('↻ Always allow', $approvalCapture,
+            self::assertStringContainsString('📌 Always allow this path', $approvalCapture,
                 'Approval overlay must show Always allow option');
-            self::assertStringContainsString('✗ Deny', $approvalCapture,
+            self::assertStringContainsString('❌ Block', $approvalCapture,
                 'Approval overlay must show Deny option');
 
             // Verify NO human_input.requested (the old interrupt flow is gone)
             self::assertStringNotContainsString('human_input.requested', $approvalCapture,
                 'Blocking-poll must NOT produce human_input.requested event');
 
-            // Phase 2: Accept '✓ Allow once' by pressing Enter.
-            // The first item ('✓ Allow once') is default-selected by
+            // Phase 2: Accept '✅ Allow once' by pressing Enter.
+            // The first item ('✅ Allow once') is default-selected by
             // SelectListWidget, so Enter confirms it directly.
             $this->tmux->sendKey($pane, 'Enter');
 

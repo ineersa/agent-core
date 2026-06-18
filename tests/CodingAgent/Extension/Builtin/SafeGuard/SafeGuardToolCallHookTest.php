@@ -442,7 +442,7 @@ final class SafeGuardToolCallHookTest extends TestCase
         // Human answers "Allow once" through onApprovalAnswered
         $this->hook->onApprovalAnswered(new ApprovalAnswerContextDTO(
             questionId: $questionId,
-            answer: '✓ Allow once',
+            answer: '✅ Allow once',
             toolName: 'bash',
             approvalContext: [
                 'operation_key' => $operationKey,
@@ -486,7 +486,7 @@ final class SafeGuardToolCallHookTest extends TestCase
         // Human answers "Deny" through onApprovalAnswered
         $this->hook->onApprovalAnswered(new ApprovalAnswerContextDTO(
             questionId: $questionId,
-            answer: '✗ Deny',
+            answer: '❌ Block',
             toolName: 'bash',
             approvalContext: [
                 'operation_key' => $operationKey,
@@ -548,7 +548,7 @@ final class SafeGuardToolCallHookTest extends TestCase
             // Human answers "Always allow" through onApprovalAnswered
             $hook->onApprovalAnswered(new ApprovalAnswerContextDTO(
                 questionId: $questionId,
-                answer: '↻ Always allow',
+                answer: '📌 Always allow this path',
                 toolName: 'bash',
                 approvalContext: [
                     'operation_key' => $operationKey,
@@ -575,8 +575,9 @@ final class SafeGuardToolCallHookTest extends TestCase
             $content = file_get_contents($settingsPath);
             $this->assertStringContainsString('rm -rf /tmp/build', $content);
             $this->assertStringContainsString('allow_command_patterns', $content);
-            $this->assertStringNotContainsString('✓', $content, 'Icon glyph must not leak into settings.yaml');
-            $this->assertStringNotContainsString('↻', $content, 'Icon glyph must not leak into settings.yaml');
+            $this->assertStringNotContainsString('✅', $content, 'Emoji icon must not leak into settings.yaml');
+            $this->assertStringNotContainsString('📌', $content, 'Emoji icon must not leak into settings.yaml');
+            $this->assertStringNotContainsString('❌', $content, 'Emoji icon must not leak into settings.yaml');
         } finally {
             if (file_exists($settingsPath)) {
                 unlink($settingsPath);
@@ -606,7 +607,7 @@ final class SafeGuardToolCallHookTest extends TestCase
         // Answer with same questionId but empty operation_key
         $this->hook->onApprovalAnswered(new ApprovalAnswerContextDTO(
             questionId: $questionId,
-            answer: '✓ Allow once',
+            answer: '✅ Allow once',
             toolName: 'bash',
             approvalContext: [
                 'operation_key' => '',
@@ -650,7 +651,7 @@ final class SafeGuardToolCallHookTest extends TestCase
         // Answer with same questionId but missing operation_key entirely
         $this->hook->onApprovalAnswered(new ApprovalAnswerContextDTO(
             questionId: $questionId,
-            answer: '✓ Allow once',
+            answer: '✅ Allow once',
             toolName: 'bash',
             approvalContext: [
                 'category' => 'destructive',
@@ -677,7 +678,7 @@ final class SafeGuardToolCallHookTest extends TestCase
     {
         $outcome = $this->hook->resolveApprovalAnswer(new ApprovalAnswerContextDTO(
             questionId: 'sg_qid',
-            answer: '✓ Allow once',
+            answer: '✅ Allow once',
             toolName: 'write',
             approvalContext: ['category' => 'write_outside_cwd'],
         ));
@@ -689,7 +690,7 @@ final class SafeGuardToolCallHookTest extends TestCase
     {
         $outcome = $this->hook->resolveApprovalAnswer(new ApprovalAnswerContextDTO(
             questionId: 'sg_qid',
-            answer: '↻ Always allow',
+            answer: '📌 Always allow this path',
             toolName: 'write',
             approvalContext: ['category' => 'write_outside_cwd'],
         ));
@@ -701,7 +702,7 @@ final class SafeGuardToolCallHookTest extends TestCase
     {
         $outcome = $this->hook->resolveApprovalAnswer(new ApprovalAnswerContextDTO(
             questionId: 'sg_qid',
-            answer: '✗ Deny',
+            answer: '❌ Block',
             toolName: 'write',
             approvalContext: ['category' => 'write_outside_cwd'],
         ));
@@ -747,28 +748,28 @@ final class SafeGuardToolCallHookTest extends TestCase
         // The TUI sends icon-bearing labels (the values from APPROVAL_OPTIONS).
         // resolveApprovalAnswer must reverse-map each to the correct canonical action.
 
-        // '✓ Allow once' → allow
+        // '✅ Allow once' → allow
         $outcome = $this->hook->resolveApprovalAnswer(new ApprovalAnswerContextDTO(
             questionId: 'sg_qid',
-            answer: '✓ Allow once',
+            answer: '✅ Allow once',
             toolName: 'write',
             approvalContext: ['category' => 'write_outside_cwd'],
         ));
         $this->assertSame(ToolCallDecisionKindEnum::Allow, $outcome->kind);
 
-        // '↻ Always allow' → allow
+        // '📌 Always allow this path' → allow
         $outcome = $this->hook->resolveApprovalAnswer(new ApprovalAnswerContextDTO(
             questionId: 'sg_qid',
-            answer: '↻ Always allow',
+            answer: '📌 Always allow this path',
             toolName: 'write',
             approvalContext: ['category' => 'write_outside_cwd'],
         ));
         $this->assertSame(ToolCallDecisionKindEnum::Allow, $outcome->kind);
 
-        // '✗ Deny' → block
+        // '❌ Block' → block
         $outcome = $this->hook->resolveApprovalAnswer(new ApprovalAnswerContextDTO(
             questionId: 'sg_qid',
-            answer: '✗ Deny',
+            answer: '❌ Block',
             toolName: 'write',
             approvalContext: ['category' => 'write_outside_cwd'],
         ));

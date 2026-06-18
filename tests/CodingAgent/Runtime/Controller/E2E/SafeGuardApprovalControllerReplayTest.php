@@ -182,7 +182,7 @@ final class SafeGuardApprovalControllerReplayTest extends ControllerReplayE2eTes
             'runId' => $this->runId,
             'payload' => [
                 'request_id' => $requestId,
-                'answer' => '✓ Allow once',
+                'answer' => '✅ Allow once',
                 'kind' => 'approval',
             ],
         ]);
@@ -289,7 +289,7 @@ final class SafeGuardApprovalControllerReplayTest extends ControllerReplayE2eTes
             'runId' => $this->runId,
             'payload' => [
                 'request_id' => $requestId,
-                'answer' => '✓ Allow once',
+                'answer' => '✅ Allow once',
                 // NO 'kind' field — testing server-side inference!
             ],
         ]);

@@ -28,7 +28,7 @@ use Ineersa\Hatfield\ExtensionApi\ToolCallHookInterface;
  * Implements ApprovalAnswerHookInterface to receive the human's answer,
  * update the ApprovalSessionTracker accordingly, and resolve the answer
  * into a tool-execution decision. Answer labels carry icon glyphs
- * (e.g. '✓ Allow once') and are reverse-mapped to canonical actions:
+ * (e.g. '✅ Allow once') and are reverse-mapped to canonical actions:
  * - allow_once / always_allow → allow() — handler runs
  * - deny → block('safeguard_denied', ...) — denied
  * - cancel (ESC / user cancel) → block('safeguard_cancelled', ...) — cancelled
@@ -49,9 +49,9 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
      * @var array<string, string>
      */
     private const array APPROVAL_OPTIONS = [
-        'allow_once' => '✓ Allow once',
-        'always_allow' => '↻ Always allow',
-        'deny' => '✗ Deny',
+        'allow_once' => '✅ Allow once',
+        'always_allow' => '📌 Always allow this path',
+        'deny' => '❌ Block',
     ];
 
     /**
@@ -233,7 +233,7 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
         $answer = $context->answer;
 
         // Reverse-map icon-bearing label to canonical action.
-        // The TUI sends labels with icon glyphs (e.g. '✓ Allow once');
+        // The TUI sends labels with emoji icons (e.g. '✅ Allow once');
         // we map back to the canonical action for the decision.
         $canonical = array_search($answer, self::APPROVAL_OPTIONS, true);
 
