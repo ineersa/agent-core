@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Infrastructure\Storage\CacheCommandStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use PHPUnit\Framework\Attributes\CoversClass;
 use Psr\Cache\CacheItemPoolInterface;
+use Psr\Cache\CacheItemInterface;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Lock\LockFactory;
 
@@ -248,6 +249,88 @@ final class CacheCommandStoreTest extends KernelTestCase
         $this->assertCount(2, $pending);
         $this->assertSame('order-1', $pending[0]->idempotencyKey, 'FIFO: first in, first out');
         $this->assertSame('order-2', $pending[1]->idempotencyKey);
+    }
+
+    /**
+     * CacheCommandStore must not silently swallow persistence failures — it
+     * throws so a lost enqueue/marking is visible instead of silently
+     * dropping a queued command (the cross-process visibility contract this
+     * store exists to enforce).
+     */
+    public function testPersistenceFailureThrowsRuntimeException(): void
+    {
+        $realPool = static::getContainer()->get('cache.app');
+        $lockFactory = static::getContainer()->get(LockFactory::class);
+
+        // Decorator that delegates everything to the real pool except
+        // save(), which returns false to simulate disk-full / DB-locked
+        // / adapter-error conditions.
+        $failingPool = new class($realPool) implements CacheItemPoolInterface {
+            public function __construct(
+                private readonly CacheItemPoolInterface $inner,
+            ) {
+            }
+
+            public function getItem(string $key): CacheItemInterface
+            {
+                return $this->inner->getItem($key);
+            }
+
+            public function getItems(array $keys = []): iterable
+            {
+                return $this->inner->getItems($keys);
+            }
+
+            public function hasItem(string $key): bool
+            {
+                return $this->inner->hasItem($key);
+            }
+
+            public function clear(): bool
+            {
+                return $this->inner->clear();
+            }
+
+            public function deleteItem(string $key): bool
+            {
+                return $this->inner->deleteItem($key);
+            }
+
+            public function deleteItems(array $keys): bool
+            {
+                return $this->inner->deleteItems($keys);
+            }
+
+            public function save(CacheItemInterface $item): bool
+            {
+                return false;
+            }
+
+            public function saveDeferred(CacheItemInterface $item): bool
+            {
+                return $this->inner->saveDeferred($item);
+            }
+
+            public function commit(): bool
+            {
+                return $this->inner->commit();
+            }
+        };
+
+        $failingStore = new CacheCommandStore($failingPool, $lockFactory);
+
+        $command = new PendingCommand(
+            runId: 'test-persist-fail',
+            kind: 'steer',
+            idempotencyKey: 'key-persist-fail',
+        );
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage(
+            'Failed to persist command store data for run test-persist-fail.',
+        );
+
+        $failingStore->enqueue($command);
     }
 
     protected static function createKernel(array $options = []): \Ineersa\CodingAgent\Kernel

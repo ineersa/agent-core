@@ -43,6 +43,9 @@ final class CacheCommandStore implements CommandStoreInterface
 
     public function enqueue(PendingCommand $command): bool
     {
+        // Fast-reject: non-authoritative hint outside the lock.
+        // Two concurrent enqueues of the same key can both pass this check —
+        // the authoritative check is inside the lock below.
         if ($this->has($command->runId, $command->idempotencyKey)) {
             return false;
         }
@@ -52,6 +55,19 @@ final class CacheCommandStore implements CommandStoreInterface
 
         try {
             $data = $this->load($command->runId);
+
+            // Authoritative idempotency check under the lock.
+            // Between the fast-reject has()→false above and acquiring the
+            // lock, another process may have enqueued the same key.  The
+            // check-and-write inside the lock is atomic — only one process
+            // will observe the key absent and proceed to write.  Without
+            // this, both processes could pass the outer has(), then the
+            // second would blindly overwrite commands[k]/statuses[k] and
+            // append a duplicate order[] entry, violating the idempotency
+            // guarantee.
+            if (isset($data['statuses'][$command->idempotencyKey])) {
+                return false;
+            }
 
             $data['commands'][$command->idempotencyKey] = $command;
             $data['statuses'][$command->idempotencyKey] = 'pending';
@@ -243,6 +259,8 @@ final class CacheCommandStore implements CommandStoreInterface
         // prune mechanism via item_lifetime; null means "no pruning").
         $item->expiresAfter(null);
 
-        $this->pool->save($item);
+        if (!$this->pool->save($item)) {
+            throw new \RuntimeException(\sprintf('Failed to persist command store data for run %s.', $runId));
+        }
     }
 }
