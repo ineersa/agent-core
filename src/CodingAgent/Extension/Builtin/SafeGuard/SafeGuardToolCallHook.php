@@ -152,7 +152,6 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
                     'path' => $this->extractPath($context),
                     'tool_name' => $decision->toolName,
                     'operation_key' => $operationKey,
-                    'run_id' => $context->runId,
                     'intercepted' => true,
                 ],
             );

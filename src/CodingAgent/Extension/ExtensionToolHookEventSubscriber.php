@@ -317,13 +317,15 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
                 answer: $answerText,
                 toolName: $toolCall->getName(),
                 approvalContext: $details,
+                runId: $context->runId,
+                toolCallId: $toolCall->getId(),
             ));
         }
 
         // Let the extension resolve the answer into a tool-execution decision.
         // The extension owns the complete answer vocabulary and outcome mapping
         // (Allow → handler runs, Block → denied reason, ReplaceResult → supplied).
-        $this->applyApprovalOutcome($event, $toolCall, $hook, $answerText, $questionId, $details);
+        $this->applyApprovalOutcome($event, $toolCall, $hook, $answerText, $questionId, $details, $context->runId, $toolCall->getId());
     }
 
     /**
@@ -355,16 +357,21 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
         }
 
         // Route to onApprovalAnswered for side-effects, then resolveApprovalAnswer for outcome.
+        $runId = '' !== $question->runId ? $question->runId : null;
+        $toolCallId = '' !== $question->toolCallId ? $question->toolCallId : null;
+
         if ($hook instanceof ApprovalAnswerHookInterface && '' !== $questionId) {
             $hook->onApprovalAnswered(new ApprovalAnswerContextDTO(
                 questionId: $questionId,
                 answer: $answerText,
                 toolName: $toolCall->getName(),
                 approvalContext: $details,
+                runId: $runId,
+                toolCallId: $toolCallId,
             ));
         }
 
-        $this->applyApprovalOutcome($event, $toolCall, $hook, $answerText, $questionId, $details);
+        $this->applyApprovalOutcome($event, $toolCall, $hook, $answerText, $questionId, $details, $runId, $toolCallId);
     }
 
     /**
@@ -380,6 +387,8 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
         string $answerText,
         string $questionId,
         array $details,
+        ?string $runId = null,
+        ?string $toolCallId = null,
     ): void {
         if (!$hook instanceof ApprovalAnswerHookInterface) {
             // No ApprovalAnswerHookInterface — no outcome mapping exists.
@@ -392,6 +401,8 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
             answer: $answerText,
             toolName: $toolCall->getName(),
             approvalContext: $details,
+            runId: $runId,
+            toolCallId: $toolCallId,
         );
 
         $outcome = $hook->resolveApprovalAnswer($context);

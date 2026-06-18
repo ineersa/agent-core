@@ -439,6 +439,76 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
     }
 
     /**
+     * Prove that ApprovalAnswerContextDTO carries runId and toolCallId
+     * as first-class fields, so extensions do NOT need to re-stash them
+     * in the details array at requireApproval() time.
+     *
+     * Test thesis: an extension implementing ApprovalAnswerHookInterface
+     * can read runId/toolCallId from the context DTO. If the subscriber
+     * fails to populate them, resolveApprovalAnswer receives null values
+     * and this test fails.
+     */
+    public function testApprovalAnswerContextDtoReceivesRunIdAndToolCallIdFromSubscriber(): void
+    {
+        $registry = new ToolRegistry();
+        $handler = $this->countingHandler('handler_ran');
+        $registry->registerTool('ctx-test-tool', 'Context test', [], $handler, 'ctx-test-tool');
+
+        $hookRegistry = new ExtensionHookRegistry();
+        $receivedContext = null;
+        $hook = $this->approvalAwareHook(
+            onToolCall: static function (ToolCallContextDTO $context): ToolCallDecisionDTO {
+                return ToolCallDecisionDTO::requireApproval(
+                    prompt: 'Allow?',
+                    questionId: 'qid_ctx',
+                );
+            },
+            resolveApprovalAnswer: function (ApprovalAnswerContextDTO $context) use (&$receivedContext): ToolCallDecisionDTO {
+                $receivedContext = $context;
+
+                return ToolCallDecisionDTO::allow();
+            },
+        );
+        $hookRegistry->addToolCallHook($hook);
+
+        $hookId = \hash('crc32b', $hook::class);
+        $expectedRequestId = \sprintf('%s__call-ctx', $hookId);
+
+        $existingQuestion = new \Ineersa\CodingAgent\Entity\ToolQuestion();
+        $existingQuestion->requestId = $expectedRequestId;
+        $existingQuestion->runId = 'run-ctx';
+        $existingQuestion->toolCallId = 'call-ctx';
+        $existingQuestion->toolName = 'ctx-test-tool';
+        $existingQuestion->prompt = 'Allow?';
+        $existingQuestion->kind = 'approval';
+        $existingQuestion->answerText = 'Allow once';
+        $existingQuestion->status = \Ineersa\CodingAgent\Entity\ToolQuestionStatusEnum::Answered;
+
+        $store = $this->createMock(\Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface::class);
+        $store->expects($this->once())
+            ->method('findByRequestId')
+            ->with($expectedRequestId)
+            ->willReturn($existingQuestion);
+
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry, $store, getcwd() ?: '/'));
+
+        $result = (new RegistryBackedToolbox($registry, $dispatcher))->execute(
+            new \Symfony\AI\Platform\Result\ToolCall('call-ctx', 'ctx-test-tool', [])
+        );
+
+        // Handler must have run (Allow once → allow).
+        $this->assertSame('handler_ran', $result->getResult());
+        $this->assertSame(1, $handler->calls);
+
+        // The extension received runId + toolCallId as first-class DTO fields
+        // without needing to stash them in details.
+        $this->assertNotNull($receivedContext, 'Expected resolveApprovalAnswer to be called with context');
+        $this->assertSame('run-ctx', $receivedContext->runId);
+        $this->assertSame('call-ctx', $receivedContext->toolCallId);
+    }
+
+    /**
      * Build a hook stub that implements both ToolCallHookInterface and
      * ApprovalAnswerHookInterface, allowing tests to control the
      * resolveApprovalAnswer outcome without needing the real SafeGuard hook.
