@@ -26,6 +26,6 @@ export type WorktreeCreateResult = {
 	output: string;
 	veraCopied: boolean;
 	vendorCopied: boolean;
-	ideaCopied: boolean;
+	ideaExclusionsUpdated: boolean;
 	ideaNote?: string;
 };

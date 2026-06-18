@@ -178,7 +178,7 @@ Slash commands `/tasks`, `/tasks-todo`, `/tasks-in-progress`, `/tasks-code-revie
 Task board changes affect the external task board files only. This prevents code-branch pollution from task bookkeeping.
 
 Code operations (branches, worktrees, PRs, merges) still run against this code repository.
-Worktree creation also copies `.idea/` (with path rewriting) into the worktree when present.
+Worktree creation updates the parent worktree IDEA module exclusions (when present) instead of copying `.idea/` into individual worktrees.
 
 ### Orchestrator model
 

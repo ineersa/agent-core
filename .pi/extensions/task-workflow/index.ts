@@ -229,7 +229,7 @@ export default function (pi: ExtensionAPI) {
 					notes.push(`Created branch ${wtResult.branch}.`, `Created worktree ${wtResult.worktree}.`);
 					if (wtResult.vendorCopied) notes.push(`Copied vendor directory into ${wtResult.worktree}.`);
 					if (wtResult.veraCopied) notes.push(`Copied .vera index into ${wtResult.worktree}.`);
-					if (wtResult.ideaCopied) notes.push(`Copied .idea with path rewriting into ${wtResult.worktree}.`);
+					if (wtResult.ideaExclusionsUpdated) notes.push(`Updated parent IDEA worktree exclusions for ${wtResult.worktree}.`);
 					if (wtResult.ideaNote) notes.push(wtResult.ideaNote);
 				}
 				// ── IN-PROGRESS → CODE-REVIEW: push + PR ─────────────────────

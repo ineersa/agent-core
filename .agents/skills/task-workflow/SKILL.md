@@ -55,7 +55,7 @@ Read-only planning. No status changes, no file edits, no forks.
 ### task-start: Implement (TODO → IN-PROGRESS)
 
 1. `move_task(to="IN-PROGRESS")` — creates worktree branch.
-   - Worktree creation copies `vendor/`, `.vera/`, and `.idea/` (with path rewriting) into the worktree.
+   - Worktree creation copies `vendor/` and `.vera/` into the worktree, and updates the parent worktree IDEA module exclusions when present.
 2. Scout codebase for context, researcher for external info.
 3. Prepare exact fork instructions: files to touch, old/new patterns, validation commands, boundaries.
 4. Launch fork on worktree (`cwd=worktree`). Fork implements, you don't.
@@ -71,9 +71,7 @@ Read-only planning. No status changes, no file edits, no forks.
 (`/home/ineersa/projects/agent-core-tasks/`). These changes are NOT committed to the agent-core code
 repo. The external task board repo must be committed manually when desired.
 
-**Worktree .idea copy:** When creating a worktree, the extension now also copies `.idea/` from the
-integration checkout and rewrites absolute path references to point at the worktree.
-This ensures IDE indexing points at the worktree, not main.
+**Worktree IDEA exclusions:** When creating a worktree, the extension updates the parent worktree IDEA module (e.g., `agent-core-worktrees.iml`) by adding an idempotent sentinel block of `<excludeFolder>` entries for the new worktree. The excluded directories (`.hatfield`, `.vera`, `var`, `vendor`, etc.) prevent IDEA from indexing generated content in the worktree. On DONE cleanup, these exclusions are automatically removed. No per-worktree `.idea/` directory is created or modified.
 
 **TUI E2E proof requirement for implementation:** For tasks touching TUI behavior, the fork MUST add or update a real `TmuxHarness` E2E proof (replay-backed, no live LLM required) exercising the user-visible feature path. Fork instructions must explicitly include this as a required deliverable. Mocks, service-only DTO tests, custom PHP smoke scripts, and picker/footer visibility assertions are NOT acceptable substitutes. See the `## TUI E2E proof requirement` section below.
 
