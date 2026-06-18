@@ -64,14 +64,4 @@ export async function branchExists(
 	return result.code === 0;
 }
 
-/**
- * Check whether the current branch has an upstream configured.
- */
-export async function hasUpstream(
-	pi: ExtensionAPI,
-	root: string,
-	signal?: AbortSignal,
-): Promise<boolean> {
-	const result = await git(pi, root, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], signal);
-	return result.code === 0;
-}
+

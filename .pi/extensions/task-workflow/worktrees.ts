@@ -80,15 +80,20 @@ function looksBinary(content: string): boolean {
 
 /**
  * Recursively collect all file paths under a directory, depth-first.
+ *
+ * Returns the list of files and a count of unreadable subdirectories
+ * that were skipped (permissions, transient errors).
  */
-async function collectFiles(dir: string): Promise<string[]> {
+async function collectFiles(dir: string): Promise<{ files: string[]; dirErrors: number }> {
 	const result: string[] = [];
+	let dirErrors = 0;
 	async function walk(current: string) {
 		let entries;
 		try {
 			entries = await readdir(current, { withFileTypes: true });
 		} catch {
-			return; // Permission or transient error — skip
+			dirErrors++;
+			return; // Permission or transient error — skip non-fatally
 		}
 		for (const entry of entries) {
 			const fullPath = join(current, entry.name);
@@ -100,7 +105,7 @@ async function collectFiles(dir: string): Promise<string[]> {
 		}
 	}
 	await walk(dir);
-	return result;
+	return { files: result, dirErrors };
 }
 
 /**
@@ -130,7 +135,7 @@ export async function copyIdeaWithPathRewrite(
 		await cp(src, dst, { recursive: true });
 
 		// Recursively collect all files under .idea/ for path rewriting
-		const allFiles = await collectFiles(dst);
+		const { files: allFiles, dirErrors } = await collectFiles(dst);
 		let rewriteCount = 0;
 		let skipCount = 0;
 
@@ -165,7 +170,16 @@ export async function copyIdeaWithPathRewrite(
 
 			// Only rewrite if the integration path actually appears in content
 			if (content.includes(integrationRoot)) {
-				const rewritten = content.replaceAll(integrationRoot, worktreeRoot);
+				// Use path-boundary-aware replacement to avoid partial prefix matches.
+				// E.g. "/home/foo" must not match "/home/foobar".
+				// The regex matches the root path followed by a path separator (/ or \),
+				// a quote, whitespace, XML-tag delimiter, or end-of-string.
+				const escaped = integrationRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+				const boundaryRegex = new RegExp(
+					`${escaped}(?=[/\\\\"'\\s<>]|\\$)`,
+					"g",
+				);
+				const rewritten = content.replace(boundaryRegex, worktreeRoot);
 				if (rewritten !== content) {
 					try {
 						await writeFile(filePath, rewritten, "utf8");
@@ -182,6 +196,9 @@ export async function copyIdeaWithPathRewrite(
 		parts.push(`Copied .idea (${allFiles.length} file(s))`);
 		if (rewriteCount > 0) {
 			parts.push(`rewrote ${rewriteCount} file(s) to point at worktree`);
+		}
+		if (dirErrors > 0) {
+			parts.push(`${dirErrors} unreadable dir(s) skipped`);
 		}
 		if (skipCount > 0) {
 			parts.push(`skipped ${skipCount} file(s)`);

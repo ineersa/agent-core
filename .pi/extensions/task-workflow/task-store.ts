@@ -18,23 +18,21 @@ import { STATUSES, type TaskStatus, type TaskInfo } from "./types";
  * 1. `PI_TASK_WORKFLOW_ROOT` env var
  * 2. `.pi/settings.json` key `taskWorkflow.taskRoot`
  * 3. Auto-detect sibling `${codeRepoBasename}-tasks` if it exists and has status dirs
- * 4. Legacy fallback: `codeRoot/tasks`
+ *
+ * If none of these resolve, throws a diagnostic error telling the user
+ * how to configure the task board.
  */
 export async function resolveTaskRoot(
 	codeRoot: string,
 	settings?: Record<string, unknown>,
 ): Promise<string> {
-	// 1. Env var
+	// 1. Env var — may point to a non-existent dir (ensureTaskDirs will create it)
 	const envRoot = process.env.PI_TASK_WORKFLOW_ROOT;
-	if (envRoot && isValidTaskRoot(envRoot)) {
-		return envRoot;
-	}
 	if (envRoot) {
-		// Env set but invalid; warn by returning anyway (mkdir will create dirs)
 		return envRoot;
 	}
 
-	// 2. Settings
+	// 2. Settings — may point to a non-existent dir (ensureTaskDirs will create it)
 	if (settings?.taskWorkflow) {
 		const tw = settings.taskWorkflow as Record<string, unknown>;
 		if (typeof tw.taskRoot === "string" && tw.taskRoot) {
@@ -42,7 +40,7 @@ export async function resolveTaskRoot(
 		}
 	}
 
-	// 3. Auto-detect sibling
+	// 3. Auto-detect sibling — only matches if it already has status dirs
 	const parentDir = join(codeRoot, "..");
 	const basename = codeRoot.split("/").pop() || "agent-core";
 	const sibling = join(parentDir, `${basename}-tasks`);
@@ -50,8 +48,17 @@ export async function resolveTaskRoot(
 		return sibling;
 	}
 
-	// 4. Legacy fallback
-	return join(codeRoot, "tasks");
+	// No valid task root found — throw diagnostic error instead of silently
+	// falling back to the code repo's tasks/ directory (which could mutate
+	// tracked files). The user must configure one of:
+	//   - PI_TASK_WORKFLOW_ROOT env var
+	//   - .pi/settings.json key taskWorkflow.taskRoot
+	//   - Create the sibling directory: ${sibling}
+	throw new Error(
+		`No task board root configured. Set PI_TASK_WORKFLOW_ROOT env var, ` +
+		`add "taskWorkflow.taskRoot" to .pi/settings.json, ` +
+		`or create the external sibling board at: ${sibling}`
+	);
 }
 
 /**

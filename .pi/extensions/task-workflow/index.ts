@@ -1,7 +1,7 @@
 // Task Workflow Extension — Multi-file refactored version
 //
 // Provides task_list, create_task, move_task, update_task tools and slash
-// commands for repo-local issue tracking using an external task board directory.
+// commands for issue tracking using an external task board directory.
 //
 // Design invariants:
 // - Task board root is configurable and lives OUTSIDE the code repo.
@@ -89,15 +89,24 @@ const UpdateTaskParams = Type.Object({
 /**
  * Read the project .pi/settings.json for task root config.
  * Lightweight — just sync JSON parse.
+ *
+ * Returns {} if the settings file does not exist (expected for repos
+ * that only use env-var or sibling-based task board detection).
+ *
+ * Throws if the file exists but cannot be read or parsed, so misconfigured
+ * settings never silently fall through to a wrong board.
  */
 function readSettings(codeRoot: string): Record<string, unknown> {
+	const settingsPath = join(codeRoot, ".pi", "settings.json");
+	if (!existsSync(settingsPath)) return {};
 	try {
-		const settingsPath = join(codeRoot, ".pi", "settings.json");
-		if (!existsSync(settingsPath)) return {};
 		const raw = readFileSync(settingsPath, "utf8");
 		return JSON.parse(raw);
-	} catch {
-		return {};
+	} catch (err: any) {
+		throw new Error(
+			`Failed to read/parse settings file: ${settingsPath}. ` +
+			`${err.message || "Parse error"}`
+		);
 	}
 }
 
