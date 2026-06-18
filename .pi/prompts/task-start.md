@@ -19,7 +19,7 @@ You are an **orchestrator**, not an implementor. Your job is to dispatch work to
 If you catch yourself about to open an editor, write a file, or run a code change — stop and launch a fork instead.
 
 1. **Inspect task context**
-   - Use `task_list` to find the task file (typically in `tasks/TODO/`).
+   - Use `task_list` to find the task file (typically in the external task board at `/home/ineersa/projects/agent-core-tasks/TODO/`).
    - Read the task file to understand what it's about, its body, and acceptance criteria.
    - Read any docs, plans, or referenced artifacts the task body mentions.
 
