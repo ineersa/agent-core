@@ -115,7 +115,7 @@ final class TickPollListener implements TuiListenerRegistrar
      * This is invoked by RuntimeEventPoller::poll() each time a
      * human_input.requested event is polled from the runtime stream.
      * The event carries a question_id, schema, prompt, and metadata
-     * from the tool that requested approval (e.g. SafeGuard).
+     * from the tool that requested approval.
      *
      * A guard against duplicate request IDs prevents enqueueing the
      * same question twice if the event stream replays (e.g. after a
@@ -167,9 +167,11 @@ final class TickPollListener implements TuiListenerRegistrar
         );
 
         // Enqueue the question with answer and cancel callbacks.
-        // Answer sends the user's selection; cancel sends a
-        // fail-safe Deny so the run is not left stuck in
-        // WaitingHuman when the user dismisses the overlay.
+        // Answer sends the user's selection. Cancel sends a generic
+        // 'cancel' sentinel — no extension-specific vocabulary leaks
+        // into this generic human_input path. The receiving extension
+        // owns fail-closed semantics via its resolveApprovalAnswer()
+        // contract, which must treat unrecognized answers as denied.
         $questionCoordinator->enqueue(
             $request,
             onAnswer: static function (mixed $answer) use ($client, $runId, $questionId): void {
@@ -177,7 +179,7 @@ final class TickPollListener implements TuiListenerRegistrar
                     type: 'answer_human',
                     payload: [
                         'question_id' => $questionId,
-                        'answer' => \is_scalar($answer) ? (string) $answer : 'Deny',
+                        'answer' => \is_scalar($answer) ? (string) $answer : 'cancel',
                     ],
                 ));
             },
@@ -186,7 +188,7 @@ final class TickPollListener implements TuiListenerRegistrar
                     type: 'answer_human',
                     payload: [
                         'question_id' => $questionId,
-                        'answer' => 'Deny',
+                        'answer' => 'cancel',
                     ],
                 ));
             },

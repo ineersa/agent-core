@@ -11,8 +11,9 @@ namespace Ineersa\Tui\Question;
  * subsequent requests. Answer callbacks are invoked for all sources
  * (Tui and AgentCore) — upper layers register callbacks that dispatch
  * answer_human commands to the runtime or handle local side effects.
- * Cancel callbacks (AgentCore) send a fail-safe Deny answer when the
- * user dismisses the overlay without responding.
+ * Cancel callbacks (AgentCore) send a generic 'cancel' sentinel when the
+ * user dismisses the overlay without responding; the receiving extension
+ * owns fail-closed semantics via its resolveApprovalAnswer() contract.
  *
  * This coordinator is stateful and should be scoped per-session.
  */
