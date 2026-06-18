@@ -48,7 +48,7 @@ Testing skill and `tests/AGENTS.md` were read before proposing validation. This 
 Status: IN-PROGRESS
 Branch: task/issue-137-output-cap-observability
 Worktree: /home/ineersa/projects/agent-core-worktrees/issue-137-output-cap-observability
-Fork run: gzyeocryqsws
+Fork run: cwo32syp3ok0
 PR URL:
 PR Status:
 Started: 2026-06-17T23:00:56.520Z
@@ -88,3 +88,8 @@ Completed:
 - Recorded fork run: gzyeocryqsws
 - Validation: Fork reported `castor test --filter="TranscriptProjectorTest"`: PASS (92/92).; Fork reported `castor test --filter="OutputCap"`: PASS (50/50).; Fork reported `castor test --filter="TranscriptBlockRendererTest"`: PASS (30/30).; Fork reported `castor test --filter="RuntimeEventMapperTest"`: PASS (47/47).; Fork reported `castor test:tui --filter=OutputCap`: PASS (52 tests, 161 assertions, 0 failures, 1 expected live-LLM skip).; Fork reported scoped `castor phpstan`: PASS (0 errors).; Fork reported `castor deptrac`: PASS (0 violations).
 - Summary: Fork `gzyeocryqsws` committed `f95db6f59`, removing the synthesized output-cap System notice and styling the existing output-cap ToolResult block (`notice_type=output_cap`) with warning icon/color. Parent notes this is still not sufficient for the user's clarified broader invariant: all model-facing generated messages/notices/nudges from tools, output cap, SafeGuard, image gating, or extensions must be visible in the TUI exactly as sent to the model. A follow-up implementation is needed to capture/project exact post-transform/pre-provider model input messages generically, not just output-cap-specific ToolResult text.
+
+## Task workflow update - 2026-06-18T02:11:02.343Z
+- Recorded fork run: cwo32syp3ok0
+- Validation: Fork reported reading `.agents/skills/testing/SKILL.md` and `tests/AGENTS.md`.; Fork reported `castor test --filter=...`: PASS (221 tests, 746 assertions).; Fork reported `castor test:tui`: PASS (9 tests, 94 assertions).; Fork reported `castor phpstan`: PASS (0 errors).; Fork reported `castor deptrac`: PASS (0 violations).; Fork reported `castor cs-check`: clean for changed files; parent notes all QA must use Castor in final validation.
+- Summary: Fork `cwo32syp3ok0` committed and pushed `219739d3d`, adding a generic capture path for final provider-facing `ToolCallMessage` content after transform/convert hooks. Verified commit exists on `task/issue-137-output-cap-observability`; worktree is clean; `git show --stat HEAD` reports 10 files changed (438 insertions, 4 deletions). Parent review accepted the core direction but found remaining gaps before CODE-REVIEW: the new DTO is named `ModelToolInput` without an explicit semantic suffix and only covers tool-role messages; generated synthetic user notices from tool conversion/image handling are not captured; model input payloads are dropped on LLM failed/aborted result branches. A follow-up fork is needed before PR readiness to satisfy the broader invariant that generated model-facing notices/messages are shown exactly, not just successful tool-role inputs.
