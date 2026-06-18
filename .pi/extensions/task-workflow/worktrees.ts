@@ -1,19 +1,19 @@
-// Git worktree creation, .idea copy/path-rewrite, and merge operations
+// Git worktree creation, parent IDEA module exclusion management, and merge operations
 //
 // Worktrees are created in the CODE repo (agent-core), not the task board repo.
 // This module handles:
 // - Creating task branches + worktrees
-// - Copying vendor/, .vera/, .idea/ into worktrees
-// - Rewriting absolute path references in copied .idea/ files
+// - Copying vendor/ and .vera/ into worktrees
+// - Adding/removing worktree exclusion blocks in the parent worktree IDEA module (when present)
 // - Merging task branches back into the integration checkout
 
 import { existsSync } from "node:fs";
-import { cp, mkdir, readFile, writeFile, readdir, stat } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { join, resolve, dirname, basename } from "node:path";
 // @ts-ignore
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { TaskInfo, WorktreeCreateResult } from "./types";
-import { gitOk, git, branchExists, run } from "./exec";
+import { gitOk, git, branchExists } from "./exec";
 
 // ── Worktree default base ────────────────────────────────────────────────────
 
@@ -60,163 +60,194 @@ export function formatDirtyIntegrationCheckoutMessage(branch: string, status: st
 	return sections.join("\n");
 }
 
-// ── .idea copy and path rewriting ────────────────────────────────────────────
+// ── Parent IDEA module exclusion management ──────────────────────────────────
 
 /**
- * Maximum file size (bytes) to attempt text read for path rewriting.
- * Files larger than this are skipped to avoid memory pressure.
+ * Exclusion entries for worktrees — practical roots derived from agent-core's
+ * meaningful excludes. These are the directories that contain generated content,
+ * caches, search indexes, or dependencies that IDEA should not index.
  */
-const MAX_TEXT_REWRITE_SIZE = 1 * 1024 * 1024; // 1 MiB
+const WORKTREE_EXCLUDE_PATHS = [
+	".hatfield",
+	".vera",
+	"var",
+	"vendor",
+	"apps/coding-agent/var",
+	"apps/coding-agent/vendor",
+	"packages/agent-core/var",
+	"packages/agent-core/vendor",
+	"packages/ai-index/vendor",
+];
 
 /**
- * Check whether a buffer looks like binary content.
- * Reads up to 4 KiB and checks for null bytes — a reliable binary heuristic.
+ * Sentinels that bracket the worktree exclusion block in the parent IDEA module.
+ * The slug is embedded in the comment so each worktree's block can be
+ * identified and removed independently.
  */
-function looksBinary(content: string): boolean {
-	// Check the first 4 KiB for null bytes — strong binary indicator
-	const sample = content.slice(0, 4096);
-	return sample.includes("\0");
-}
+const START_MARKER = (slug: string) => `<!-- pi-task-workflow:start ${slug} -->`;
+const END_MARKER = (slug: string) => `<!-- pi-task-workflow:end ${slug} -->`;
 
 /**
- * Recursively collect all file paths under a directory, depth-first.
- *
- * Returns the list of files and a count of unreadable subdirectories
- * that were skipped (permissions, transient errors).
+ * Build the full sentinel block of <excludeFolder> entries for a worktree.
  */
-async function collectFiles(dir: string): Promise<{ files: string[]; dirErrors: number }> {
-	const result: string[] = [];
-	let dirErrors = 0;
-	async function walk(current: string) {
-		let entries;
-		try {
-			entries = await readdir(current, { withFileTypes: true });
-		} catch {
-			dirErrors++;
-			return; // Permission or transient error — skip non-fatally
-		}
-		for (const entry of entries) {
-			const fullPath = join(current, entry.name);
-			if (entry.isDirectory()) {
-				await walk(fullPath);
-			} else if (entry.isFile()) {
-				result.push(fullPath);
-			}
-		}
+function buildExclusionBlock(slug: string): string {
+	const lines = ["", START_MARKER(slug)];
+	for (const relPath of WORKTREE_EXCLUDE_PATHS) {
+		lines.push(`    <excludeFolder url="file://$MODULE_DIR$/${slug}/${relPath}" />`);
 	}
-	await walk(dir);
-	return { files: result, dirErrors };
+	lines.push(END_MARKER(slug));
+	return lines.join("\n");
 }
 
 /**
- * Copy the integration checkout's `.idea/` directory into the worktree and
- * rewrite absolute path references to point at the worktree.
+ * Locate the parent worktree IDEA module .iml file.
  *
- * This is best-effort: IDE indexing pointing at the worktree is a convenience,
- * not a correctness requirement. If the copy or rewrite fails for any reason
- * (permissions, disk space, binary content, file locks), the error is recorded
- * as a non-fatal note; the worktree creation itself still succeeds.
+ * Strategy:
+ * 1. Build expected path: <base>/.idea/<baseBasename>.iml
+ * 2. Fallback: if exactly one .iml file exists under <base>/.idea, use it.
  *
- * Returns true if .idea was copied, false otherwise.
- * Notes appended to the worktree creation result on success or partial failure.
+ * Returns the path or null if none/ambiguous.
  */
-export async function copyIdeaWithPathRewrite(
-	integrationRoot: string,
-	worktreeRoot: string,
-): Promise<{ copied: boolean; note?: string }> {
-	const src = join(integrationRoot, ".idea");
-	const dst = join(worktreeRoot, ".idea");
-	if (!existsSync(src) || existsSync(dst)) {
-		return { copied: false };
+async function findParentIdeaModule(worktreeBase: string): Promise<string | null> {
+	const ideaDir = join(worktreeBase, ".idea");
+	if (!existsSync(ideaDir)) return null;
+
+	const primary = join(ideaDir, `${basename(worktreeBase)}.iml`);
+	if (existsSync(primary)) return primary;
+
+	// Fallback: if exactly one .iml, use it
+	try {
+		const entries = await readdir(ideaDir);
+		const imlFiles = entries.filter((e) => e.endsWith(".iml"));
+		if (imlFiles.length === 1) return join(ideaDir, imlFiles[0]);
+		if (imlFiles.length > 1) {
+			return null; // Ambiguous — can't pick
+		}
+	} catch {
+		// Permission error or directory vanished — non-fatal
+	}
+	return null;
+}
+
+/**
+ * Add (or replace) an exclusion block for the given worktree slug in the parent IDEA module.
+ * Idempotent: if a block already exists for the slug, it is replaced.
+ *
+ * Returns true if the module was updated, false otherwise.
+ */
+export async function addWorktreeExclusions(
+	slug: string,
+	worktreeBase: string,
+): Promise<{ updated: boolean; note?: string }> {
+	const imlPath = await findParentIdeaModule(worktreeBase);
+	if (!imlPath) {
+		return { updated: false, note: "Parent IDEA module not found or ambiguous; skipping exclusion update." };
+	}
+
+	let content: string;
+	try {
+		content = await readFile(imlPath, "utf8");
+	} catch (err: any) {
+		return { updated: false, note: `Failed to read parent IDEA module: ${err.message}` };
+	}
+
+	// Check for existing block for this slug
+	const startTag = START_MARKER(slug);
+	const endTag = END_MARKER(slug);
+	const startIdx = content.indexOf(startTag);
+	const endIdx = content.indexOf(endTag);
+
+	// Validate sentinel marker integrity
+	const hasStart = startIdx !== -1;
+	const hasEnd = endIdx !== -1;
+	if (hasStart !== hasEnd) {
+		return { updated: false, note: `Parent IDEA module has mismatched exclusion markers for ${slug} (${hasStart ? 'start-only' : 'end-only'}); skipping update to avoid corruption.` };
+	}
+	if (hasStart && endIdx < startIdx) {
+		return { updated: false, note: `Parent IDEA module has reversed exclusion markers for ${slug} (end before start); skipping update to avoid corruption.` };
+	}
+
+	const newBlock = buildExclusionBlock(slug);
+
+	if (hasStart) {
+		// Replace existing block — both markers valid and ordered
+		content = content.slice(0, startIdx) + newBlock + content.slice(endIdx + endTag.length);
+	} else {
+		// Insert new block inside <content ...> element, before </content>
+		const contentCloseIdx = content.indexOf("</content>");
+		if (contentCloseIdx === -1) {
+			return { updated: false, note: "Parent IDEA module has no <content> element; cannot insert exclusions." };
+		}
+		content = content.slice(0, contentCloseIdx) + newBlock + "\n" + content.slice(contentCloseIdx);
 	}
 
 	try {
-		// Copy the entire tree recursively first
-		await cp(src, dst, { recursive: true });
-
-		// Recursively collect all files under .idea/ for path rewriting
-		const { files: allFiles, dirErrors } = await collectFiles(dst);
-		let rewriteCount = 0;
-		let skipCount = 0;
-
-		for (const filePath of allFiles) {
-			// Skip oversized files
-			let fileStat;
-			try {
-				fileStat = await stat(filePath);
-			} catch {
-				skipCount++;
-				continue;
-			}
-			if (fileStat.size > MAX_TEXT_REWRITE_SIZE) {
-				skipCount++;
-				continue;
-			}
-
-			let content: string;
-			try {
-				content = await readFile(filePath, "utf8");
-			} catch {
-				// Not valid UTF-8 text — likely binary; skip
-				skipCount++;
-				continue;
-			}
-
-			// Skip if content looks binary (null bytes)
-			if (looksBinary(content)) {
-				skipCount++;
-				continue;
-			}
-
-			// Only rewrite if the integration path actually appears in content
-			if (content.includes(integrationRoot)) {
-				// Use path-boundary-aware replacement to avoid partial prefix matches.
-				// E.g. "/home/foo" must not match "/home/foobar".
-				// The regex matches the root path followed by a path separator (/ or \),
-				// a quote, whitespace, XML-tag delimiter, or end-of-string.
-				const escaped = integrationRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-				const boundaryRegex = new RegExp(
-					`${escaped}(?=[/\\\\"'\\s<>]|\\$)`,
-					"g",
-				);
-				const rewritten = content.replace(boundaryRegex, worktreeRoot);
-				if (rewritten !== content) {
-					try {
-						await writeFile(filePath, rewritten, "utf8");
-						rewriteCount++;
-					} catch {
-						// Write failure — non-fatal; skip this file
-						skipCount++;
-					}
-				}
-			}
-		}
-
-		const parts: string[] = [];
-		parts.push(`Copied .idea (${allFiles.length} file(s))`);
-		if (rewriteCount > 0) {
-			parts.push(`rewrote ${rewriteCount} file(s) to point at worktree`);
-		}
-		if (dirErrors > 0) {
-			parts.push(`${dirErrors} unreadable dir(s) skipped`);
-		}
-		if (skipCount > 0) {
-			parts.push(`skipped ${skipCount} file(s)`);
-		}
-		parts.push(".");
-
-		return { copied: true, note: parts.join(" ") };
+		await writeFile(imlPath, content, "utf8");
+		return { updated: true };
 	} catch (err: any) {
-		// Non-fatal: IDE indexing is a convenience, not a correctness requirement.
-		// If cp fails (permissions, disk space), the worktree still works fine.
-		return { copied: false, note: `Warning: .idea copy failed: ${err.message}` };
+		return { updated: false, note: `Failed to write parent IDEA module: ${err.message}` };
+	}
+}
+
+/**
+ * Remove the exclusion block for the given worktree slug from the parent IDEA module.
+ * Idempotent: if no block exists, this is a no-op.
+ *
+ * Returns true if the module was updated, false otherwise.
+ */
+export async function removeWorktreeExclusions(
+	slug: string,
+	worktreeBase: string,
+): Promise<{ updated: boolean; note?: string }> {
+	const imlPath = await findParentIdeaModule(worktreeBase);
+	if (!imlPath) {
+		return { updated: false, note: "Parent IDEA module not found; skipping exclusion cleanup." };
+	}
+
+	let content: string;
+	try {
+		content = await readFile(imlPath, "utf8");
+	} catch (err: any) {
+		return { updated: false, note: `Failed to read parent IDEA module for cleanup: ${err.message}` };
+	}
+
+	const startTag = START_MARKER(slug);
+	const endTag = END_MARKER(slug);
+	const startIdx = content.indexOf(startTag);
+	const endIdx = content.indexOf(endTag);
+
+	// Validate sentinel marker integrity
+	const hasStart = startIdx !== -1;
+	const hasEnd = endIdx !== -1;
+	if (hasStart !== hasEnd) {
+		return { updated: false, note: `Parent IDEA module has mismatched exclusion markers for ${slug} (${hasStart ? 'start-only' : 'end-only'}); skipping cleanup to avoid corruption.` };
+	}
+	if (hasStart && endIdx < startIdx) {
+		return { updated: false, note: `Parent IDEA module has reversed exclusion markers for ${slug} (end before start); skipping cleanup to avoid corruption.` };
+	}
+
+	if (!hasStart) {
+		return { updated: false }; // No block — idempotent
+	}
+
+	// Remove the block, including leading whitespace/newline before the start marker
+	// to keep formatting clean
+	const beforeStart = content.lastIndexOf("\n", startIdx - 1);
+	const removeStart = beforeStart !== -1 && beforeStart > 0 ? beforeStart : startIdx;
+	content = content.slice(0, removeStart) + content.slice(endIdx + endTag.length);
+
+	try {
+		await writeFile(imlPath, content, "utf8");
+		return { updated: true };
+	} catch (err: any) {
+		return { updated: false, note: `Failed to write parent IDEA module for cleanup: ${err.message}` };
 	}
 }
 
 // ── Create worktree ─────────────────────────────────────────────────────────
 //
-// Creates a task/ branch + git worktree, copies vendor/.vera/.idea,
-// and rewrites .idea paths to point at the worktree.
+// Creates a task/ branch + git worktree, copies vendor/.vera,
+// and updates parent worktree IDEA module exclusions.
 
 export async function createWorktreeForTask(
 	pi: ExtensionAPI,
@@ -265,8 +296,8 @@ export async function createWorktreeForTask(
 		}
 	}
 
-	// ── Copy .idea/ with path rewriting ──────────────────────────────────────
-	const { copied: ideaCopied, note: ideaNote } = await copyIdeaWithPathRewrite(codeRoot, worktree);
+	// ── Update parent IDEA worktree exclusions ─────────────────────────────
+	const { updated: ideaExclusionsUpdated, note: ideaNote } = await addWorktreeExclusions(slug, base);
 
 	return {
 		branch,
@@ -274,7 +305,7 @@ export async function createWorktreeForTask(
 		output: result.stdout || result.stderr,
 		veraCopied,
 		vendorCopied,
-		ideaCopied,
+		ideaExclusionsUpdated,
 		ideaNote,
 	};
 }
@@ -329,8 +360,23 @@ export async function mergeTaskBranch(
 	notes.push(`Merged ${branch} into integration checkout.`, (merge.stdout || merge.stderr).trim());
 
 	if (options.cleanupWorktree) {
+		const slug = task.file.replace(/\.md$/, "");
+		const base = dirname(worktree);
+
+		// Remove worktree first; only clean up IDEA exclusions on success
 		const remove = await git(pi, codeRoot, ["worktree", "remove", worktree], signal);
-		notes.push(remove.code === 0 ? `Removed worktree ${worktree}.` : `Worktree cleanup failed: ${remove.stderr || remove.stdout}`);
+		if (remove.code !== 0) {
+			const msg = `Worktree cleanup failed: ${remove.stderr || remove.stdout}`;
+			notes.push(msg);
+			// Worktree still exists — keep exclusion block and add failure note
+			notes.push(`IDEA exclusions preserved for ${worktree} because worktree removal failed.`);
+		} else {
+			notes.push(`Removed worktree ${worktree}.`);
+			// Worktree gone — safe to remove IDEA exclusions
+			const { updated: exclusionsRemoved, note: exclusionNote } = await removeWorktreeExclusions(slug, base);
+			if (exclusionNote) notes.push(exclusionNote);
+			if (exclusionsRemoved) notes.push(`Removed IDEA exclusions for worktree ${worktree}.`);
+		}
 	}
 	if (options.deleteBranch) {
 		const del = await git(pi, codeRoot, ["branch", "-d", branch], signal);
