@@ -10,14 +10,18 @@ use Ineersa\Hatfield\ExtensionApi\ToolResultHookInterface;
 /**
  * Internal registry for tool call/result hooks registered by extensions.
  *
- * Hooks are stored in registration order. This registry is used by:
- * - ExtensionToolRegistryBridge to receive hooks from the public ExtensionApi
- * - Future ToolHookDispatcher (EXT-HOOK-04) to iterate and dispatch hooks
- *   during tool execution.
+ * Hooks are stored in registration order and indexed by class name for
+ * lookup by getHook().
  *
- * Also tracks pending approvals: when a tool call hook returns RequireApproval,
- * the question_id is mapped back to the originating hook and its context,
- * so the answer can be routed back to onApprovalAnswered().
+ * Pending/approved decision tracking is handled by the blocking-poll
+ * mechanism in ExtensionToolHookEventSubscriber (for RequireApproval)
+ * and by SafeGuard's in-memory ApprovalSessionTracker (for same-process
+ * approve-once within a single tool worker invocation).
+ *
+ * Cross-process approval state is NOT needed here because the blocking
+ * poll holds the tool-worker thread until the answer is written to the
+ * shared ToolQuestion DB table by AnswerToolQuestionHandler in the
+ * controller process — all in the same process, no cache ledger needed.
  *
  * @internal this is app-internal wiring, not part of the public ExtensionApi
  */
@@ -38,19 +42,16 @@ final class ExtensionHookRegistry
     private array $toolResultHooks = [];
 
     /**
-     * Pending approvals: question_id => ApprovalPendingEntry.
+     * Hooks indexed by their class name (hookId) for lookup.
      *
-     * Populated when ExtensionToolHookEventSubscriber processes a
-     * RequireApproval decision. Consumed when the human answer is
-     * routed back to the originating hook.
-     *
-     * @var array<string, ApprovalPendingEntry>
+     * @var array<string, ToolCallHookInterface>
      */
-    private array $pendingApprovals = [];
+    private array $hooksById = [];
 
     public function addToolCallHook(ToolCallHookInterface $hook): void
     {
         $this->toolCallHooks[] = $hook;
+        $this->hooksById[$hook::class] = $hook;
     }
 
     /**
@@ -75,60 +76,12 @@ final class ExtensionHookRegistry
     }
 
     /**
-     * Register a pending approval for answer routing.
+     * Look up a registered hook by its class name.
      *
-     * Called by ExtensionToolHookEventSubscriber when a tool call hook
-     * returns a RequireApproval decision. Stores the question_id → hook
-     * mapping so the answer can be routed back to the originating hook
-     * via ApprovalAnswerHookInterface::onApprovalAnswered().
-     *
-     * @param array<string, mixed> $details the approval context from the RequireApproval decision
+     * @return ToolCallHookInterface|null null if no hook registered under this class name
      */
-    public function registerPendingApproval(
-        string $questionId,
-        ToolCallHookInterface $hook,
-        array $details,
-    ): void {
-        $this->pendingApprovals[$questionId] = new ApprovalPendingEntry(
-            hook: $hook,
-            details: $details,
-        );
-    }
-
-    /**
-     * Resolve a pending approval and remove it from the registry.
-     *
-     * Returns null if no pending approval is found for the given question_id
-     * (e.g., already resolved, expired, or never registered).
-     */
-    public function resolveApproval(string $questionId): ?ApprovalPendingEntry
+    public function getHook(string $hookId): ?ToolCallHookInterface
     {
-        $entry = $this->pendingApprovals[$questionId] ?? null;
-
-        if (null !== $entry) {
-            unset($this->pendingApprovals[$questionId]);
-        }
-
-        return $entry;
-    }
-}
-
-/**
- * Internal value object for pending approval routing.
- *
- * Pairs the originating hook with the approval context details so
- * the answer can be delivered to the correct hook with full context.
- *
- * @internal
- */
-final readonly class ApprovalPendingEntry
-{
-    /**
-     * @param array<string, mixed> $details the approval context from the RequireApproval decision
-     */
-    public function __construct(
-        public ToolCallHookInterface $hook,
-        public array $details,
-    ) {
+        return $this->hooksById[$hookId] ?? null;
     }
 }

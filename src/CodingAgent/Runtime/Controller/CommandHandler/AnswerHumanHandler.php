@@ -18,8 +18,9 @@ use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
  * sends an answer_human JSONL command with the question_id and answer.
  * This handler dispatches it to the InProcessAgentSessionClient so the
  * answer is routed through the run_control transport, processed by
- * ApplyCommandHandler (human_response → ExtensionApprovalAnswerSubscriber),
- * and delivered back to SafeGuardToolCallHook::onApprovalAnswered().
+ * ApplyCommandHandler (human_response), committed via RunCommit, and
+ * delivered to SafeGuardToolCallHook::onApprovalAnswered() synchronously
+ * via the blocking-poll mechanism in ExtensionToolHookEventSubscriber.
  */
 #[AsEventListener(event: ControllerCommandEvent::class)]
 final readonly class AnswerHumanHandler

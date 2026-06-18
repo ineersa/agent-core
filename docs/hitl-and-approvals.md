@@ -6,6 +6,28 @@ proceeding with a potentially dangerous operation. This document describes the
 end-to-end flow, from the moment a tool hook returns `RequireApproval` to the
 moment the human's answer is routed back to the originating hook.
 
+## Architecture principles
+
+The HITL mechanism is **generic and extension-neutral**. The CodingAgent
+infrastructure (subscribers, command handlers, TUI) contains ZERO knowledge
+of any specific extension. It exposes:
+
+- A **ToolQuestion store** (shared SQLite) — cross-process persistent state
+- A **blocking-poll subscriber** — suspends the tool worker until the human answers
+- A **schema-driven handler** — routes answers by schema type, not by extension kind
+- A **schema-driven TUI overlay** — renders Choice/Confirm/Text based on the schema
+
+Extensions drive this entire mechanism through the [Extension API](#extension-approval-flow):
+`ToolCallHookInterface::onToolCall()` returns `RequireApproval` with a prompt,
+schema, and metadata. The subscriber creates a generic ToolQuestion, blocks the
+tool worker on a poll, renders a schema-driven overlay, routes the answer by
+schema, and calls `onApprovalAnswered()` (side-effects) + `resolveApprovalAnswer()`
+(outcome) on the hook.
+
+**Adding a new approval-granting extension requires zero changes to the
+CodingAgent infrastructure** — only implementing the Extension API contracts.
+The canonical reference is `SafeGuardToolCallHook`.
+
 ## Overview
 
 ```
@@ -16,87 +38,100 @@ moment the human's answer is routed back to the originating hook.
                        └────────────┬─────────────┘
                                     │  RequireApproval
                                     ▼
-┌───────────┐   interrupt   ┌──────────────────┐   WaitingHuman   ┌────────────────────┐
-│ Tool      │ ◄──────────── │ ToolCallResult   │ ───────────────► │ HitlMapping        │
-│ Executor  │               │ Handler          │                  │ Subscriber         │
-└───────────┘               └──────────────────┘                  └────────┬───────────┘
-                                                                          │
-                                                        human_input.requested
-                                                                          │
-                      ┌───────────────────────────────────────────────────┘
-                      │
-                      ▼
-┌─────────────────┐   poll     ┌─────────────────┐   enqueue   ┌────────────────────┐
-│ RuntimeEvent    │ ◄───────── │ TickPollListener │ ──────────► │ QuestionCoordinator│
-│ Poller          │            │                 │            │ (FIFO queue)        │
-└─────────────────┘            └─────────────────┘            └────────┬───────────┘
-                                                                       │
-                    ┌──────────────────────────────────────────────────┘
-                    │  QuestionController.open() → overlay renders
-                    │  above editor with SelectListWidget
-                    ▼
-┌─────────────────┐   answer_human cmd   ┌────────────────────┐
-│ TUI (user)      │ ──────────────────► │ AnswerHumanHandler  │
-│ selects answer  │                     │ (controller)        │
-└─────────────────┘                     └────────┬───────────┘
-                                                 │
-                    ┌────────────────────────────┘
-                    │  UserCommand → AgentSessionClient → runner.answerHuman()
-                    ▼
-┌─────────────────┐   HumanResponse   ┌─────────────────────────────────┐
-│ AgentRunner     │ ────────────────► │ ExtensionApprovalAnswer         │
-│ ::answerHuman() │                   │ Subscriber                      │
-└─────────────────┘                   └────────────┬────────────────────┘
-                                                   │
-                                                   │  ApprovalAnswerHookInterface
-                                                   │  ::onApprovalAnswered()
-                                                   ▼
-                                   ┌───────────────────────────┐
-                                   │ SafeGuardToolCallHook     │
-                                   │ (or any hook implementing │
-                                   │  ApprovalAnswerHook)      │
-                                   └───────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ ExtensionToolHookEventSubscriber::handleRequireApproval()                    │
+│                                                                             │
+│  1. Computes deterministic requestId = hash(hookId)_{runId}_{toolCallId}    │
+│  2. Creates ToolQuestion (kind=approval) in shared SQLite                   │
+│     (schema and prompt from the extension's requireApproval DTO)           │
+│  3. BLOCKS tool-worker thread polling pollAnswerText() — no interrupt       │
+│     result, no WaitingHuman, no AdvanceRun, no extra LLM turn              │
+└────────────────────────────────┬────────────────────────────────────────────┘
+                                 │
+                                 │  ToolQuestionPoller emits
+                                 │  tool_question.requested
+                                 │  (generic kind, schema from extension)
+                                 ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ TUI TickPollListener (schema-driven)                                        │
+│  → Inspects schema: has enum → Choice overlay (enum values = buttons)       │
+│                    boolean  → Confirm overlay                                │
+│                    else     → Text overlay                                   │
+│  → onAnswer closure sends answer_tool_question with generic kind             │
+│  → NO extension-specific knowledge — rendering is driven by schema          │
+└────────────────────────────────┬────────────────────────────────────────────┘
+                                 │
+                                 │  answer_tool_question
+                                 │  (kind=approval, answer=any string)
+                                 ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ AnswerToolQuestionHandler (schema-driven)                                   │
+│  → Looks up stored ToolQuestion by request_id                                │
+│  → Inspects schema: boolean → answer() (boolean), enum/string → answerWithText() │
+│  → Writes answer/answer_text column → pollAnswerText() returns → poll breaks │
+│  → NO kind-based routing — routing is driven by stored schema               │
+└────────────────────────────────┬────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ ExtensionToolHookEventSubscriber answer routing (generic)                   │
+│                                                                             │
+│  1. $hook->onApprovalAnswered($ctx)    // Side-effects (e.g. policy write)  │
+│  2. $hook->resolveApprovalAnswer($ctx) // Extension returns ToolCallDecisionDTO │
+│  3. Apply Allow/Block/ReplaceResult generically                            │
+│                                                                             │
+│  The extension owns the complete answer vocabulary and outcome mapping.     │
+│  This subscriber contains ZERO extension-specific knowledge.                │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Runtime HITL event flow
+### Key properties
 
-### Event types
+- **No interrupt result.** The subscriber does NOT set a ToolResult. The tool call
+  remains active on the event, waiting for the poll to return. The Symfony AI
+  toolbox's `RegistryBackedToolbox::execute()` blocks inside the subscriber
+  because the subscriber runs synchronously in the event listener chain.
+- **No WaitingHuman, no human_input.requested.** Approval questions flow through
+  the ToolQuestion system (`tool_question.requested`), not the AgentCore HITL
+  pipeline.
+- **No extra LLM turn.** The LLM never sees a tool result from the interrupted
+  call. After the poll returns, the real handler runs, and only the REAL result
+  reaches the LLM.
+- **Cross-process safe.** The ToolQuestion row lives in the shared SQLite DB
+  (`messenger.sqlite`), accessible from all consumer processes. The tool worker
+  blocks on the poll; the controller process writes the answer; the poll breaks.
+- **OCP-correct.** Any extension implementing `ToolCallHookInterface` +
+  `ApprovalAnswerHookInterface` can drive the approval flow with its OWN
+  vocabulary, schema, and outcome mapping — zero changes to any infra file.
+## From RequireApproval to tool execution (generic flow)
 
-The `RuntimeEventTypeEnum` enum (`src/CodingAgent/Runtime/Protocol/RuntimeEventTypeEnum.php`)
-defines the full HITL family:
-
-| Enum case | String value | Purpose |
-|-----------|-------------|---------|
-| `HumanInputRequested` | `human_input.requested` | Emitted when the runtime needs a human answer |
-| `HumanInputAnswered` | `human_input.answered` | Emitted after an answer is received |
-| `HumanInputRejected` | `human_input.rejected` | Emitted when the question times out or is cancelled |
-| `ApprovalRequested` | `approval.requested` | Reserved for future use |
-| `ApprovalApproved` | `approval.approved` | Reserved for future use |
-| `ApprovalRejected` | `approval.rejected` | Reserved for future use |
-
-### From RequireApproval to human_input.requested
+### Step-by-step
 
 1. **Tool hook interception**: `ExtensionToolHookEventSubscriber::onToolCallRequested()`
    (`src/CodingAgent/Extension/ExtensionToolHookEventSubscriber.php`) iterates over
    registered tool call hooks. When a hook returns `ToolCallDecisionKindEnum::RequireApproval`,
    the subscriber:
-   - Registers the hook + question_id in `ExtensionHookRegistry::registerPendingApproval()`
-   - Sets the `ToolCallRequested` result to an interrupt DTO containing `question_id`,
-     `prompt`, `schema`, `tool_call_id`, `tool_name`, and `approval_context`.
+   - Computes a **deterministic requestId** from the hook identity (crc32b hash of
+     `$hook::class`), `runId`, and `toolCallId` — no extension-specific namespace.
+   - Looks up an existing pending ToolQuestion by requestId. If not found, creates
+     a new `ToolQuestion` with generic `kind=approval` in the shared SQLite store.
+     The schema and prompt come from the extension's `requireApproval()` DTO.
+   - **Blocks the tool-worker thread** in a polling loop (`pollAnswerText()`) with
+     a 200ms interval — no timeout, no TTL. The run stays halted at the tool execution
+     stage until the human answers.
 
-2. **Tool execution abort**: The tool executor sees the interrupt result and aborts the
-   tool call. The `ToolCallResultHandler` produces a `WaitingHuman` domain event.
-
-3. **HitlMappingSubscriber** maps `WaitingHuman` to a `RuntimeEvent` with type
-   `human_input.requested`. The payload includes:
+2. **ToolQuestion event emission**: The `ToolQuestionPoller`
+   (`src/CodingAgent/Runtime/Controller/ToolQuestionPoller.php`)
+   picks up the pending ToolQuestion from the shared SQLite and emits a
+   `tool_question.requested` runtime event. The payload includes the generic
+   kind (`approval`), the extension-supplied prompt and schema, and the
+   deterministic requestId:
    ```json
    {
-     "v": 1,
-     "type": "human_input.requested",
-     "runId": "<run_id>",
-     "seq": <number>,
+     "type": "tool_question.requested",
      "payload": {
-       "question_id": "sg_<sha256>",
+       "request_id": "<hookHash>_<runId>_<toolCallId>",
+       "kind": "approval",
        "prompt": "Allow write outside working directory: /home/user/file?",
        "schema": {"type": "string", "enum": ["Allow once", "Always allow", "Deny"]},
        "tool_call_id": "call_00_<sha256>",
@@ -104,48 +139,60 @@ defines the full HITL family:
      }
    }
    ```
+   Note: the `schema`, `prompt`, and `enum` values are all supplied by the extension.
+   The infrastructure treats them as opaque.
 
-4. **Runtime event emission**: The event is written to the session's
-   canonical `events.jsonl` and emitted through the runtime event FIFO queue
-   (`InProcessAgentSessionClient` in-process mode) or stdout JSONL (controller mode).
+3. **TUI rendering (schema-driven)**: `TickPollListener::handleToolQuestionRequested()`
+   inspects the schema (not the kind) to choose the overlay:
+   - Schema has `enum` → `QuestionKind::Choice` overlay with buttons for each enum value
+   - Schema type=boolean → `QuestionKind::Confirm` overlay (yes/no)
+   - Else → `QuestionKind::Text` overlay
+   
+   The TUI sends `answer_tool_question` with `kind=approval` (generic) for
+   Choice/Text overlays, and `kind=confirm` for boolean overlays. No extension-
+   specific kind is used.
 
-### Answer routing: answer_human command
+### Answer routing (schema-driven)
 
-When the user provides an answer, the TUI (or an external broker) sends an
-`answer_human` `UserCommand` with payload:
+When the user answers, `AnswerToolQuestionHandler`
+(`src/CodingAgent/Runtime/Controller/CommandHandler/AnswerToolQuestionHandler.php`)
+routes the answer by the **stored question's schema**, not by a kind string:
 
-```json
-{
-  "type": "answer_human",
-  "runId": "<run_id>",
-  "payload": {
-    "question_id": "sg_<sha256>",
-    "answer": "Allow once"
-  }
-}
-```
+1. Looks up the stored `ToolQuestion` by `request_id`.
+2. Parses the stored schema:
+   - Boolean schema → stores the answer via `answer()` (boolean column, legacy confirm path)
+   - String/enum schema → stores via `answerWithText()` (answer_text column)
+3. The blocking poll (`pollAnswerText()`) returns the non-null answer → poll breaks.
 
-The command flows through:
+This is fully generic. NO kind-based routing exists. Adding a new approval-granting
+extension requires zero changes to the handler.
 
-- **TUI**: `TickPollListener` closure → `AgentSessionClient::send()` with `UserCommand`
-- **In-process mode**: `InProcessAgentSessionClient::send()` → `AgentRunner::answerHuman()`
-  → `CoreCommand(HumanResponse)` → run_control consumer → `ApplyCommandHandler`
-- **Controller mode**: `JsonlProcessAgentSessionClient::send()` writes JSONL to stdin;
-  controller's `AnswerHumanHandler` parses it → `AgentRunner::answerHuman()` (same as above)
+### Answer outcome (extension-owned)
 
-After `ApplyCommandHandler` processes the `HumanResponse`, the
-`ExtensionApprovalAnswerSubscriber` (`src/CodingAgent/Extension/ExtensionApprovalAnswerSubscriber.php`)
-resolves the originating hook from `ExtensionHookRegistry::resolveApproval(questionId)` and
-calls `ApprovalAnswerHookInterface::onApprovalAnswered()`.
+Once the poll returns, the subscriber calls two hooks on the extension:
 
-### Controller vs in-process modes
+1. **`onApprovalAnswered($context)`** — for side-effects (e.g., SafeGuard's
+   `SafeGuardPolicyWriter` persists "Always allow" to `.hatfield/settings.yaml`).
+2. **`resolveApprovalAnswer($context)`** — returns a `ToolCallDecisionDTO`:
+   - `Allow` → handler runs (no `setResult`)
+   - `Block` → denied result with extension-supplied reason/message
+   - `ReplaceResult` → supplied result
 
-| Aspect | In-process | Controller (JSONL) |
-|--------|-----------|-------------------|
-| Event transport | Shared `InProcessAgentSessionClient` FIFO queue | JSONL over stdin/stdout pipes |
-| answer_human routing | Direct `AgentRunner::answerHuman()` call | `AnswerHumanHandler` parses JSONL → same runner path |
-| Approval channel | N/A (same process) | `HATFIELD_APPROVAL_CHANNEL=controller` env var |
-| Subprocess isolation | N/A | Controller + messenger consumers in separate processes |
+The subscriber applies the returned decision generically using
+`ToolCallDecisionKindEnum`. The extension owns the complete answer vocabulary
+and outcome mapping.
+
+### Cross-process safety
+
+| Aspect | Effect |
+|--------|-------|
+| Tool question store | Shared SQLite (`messenger.sqlite`), accessible from all processes |
+| Poll location | Tool consumer process — blocks the tool-worker thread |
+| Answer location | Controller or worker process — writes to shared SQLite |
+| Polling seam | `ExtensionToolHookEventSubscriber::handleRequireApproval()` |
+| Crash/redelivery | Idempotent re-attach via `findByRequestId()` with deterministic requestId |
+| Extension-specific persistence | Handled by the extension's `onApprovalAnswered()` (e.g. SafeGuardPolicyWriter) |
+| No timeout / no TTL | Tool worker blocks indefinitely until answered; run stays halted
 
 ## TUI question system
 
@@ -160,7 +207,7 @@ layout to request user input.
 |-------|------|---------|
 | `requestId` | `string` | Unique identifier (format: `hitl_<questionId>`) |
 | `source` | `QuestionSource` | `Tui` (local questions) or `AgentCore` (runtime questions) |
-| `kind` | `QuestionKind` | `Text`, `Confirm`, `Choice`, or `Approval` |
+| `kind` | `QuestionKind` | `Text`, `Confirm`, or `Choice` |
 | `prompt` | `string` | Question text displayed to the user |
 | `schema` | `array` | JSON Schema describing expected answer shape |
 | `choices` | `list<QuestionOption>` | Structured options for choice/approval questions |
@@ -178,9 +225,7 @@ layout to request user input.
 
 - `Text` — free-text input via editor (rendered as TextWidget banner above editor)
 - `Confirm` — yes/no selection via SelectListWidget
-- `Choice` — structured option selection via SelectListWidget
-- `Approval` — approval-specific selection (SafeGuard), same widget but with
-  display-only icons/colors and canonical answer values
+- `Choice` — structured option selection via SelectListWidget (driven from schema enum)
 
 ### QuestionCoordinator
 
@@ -216,21 +261,17 @@ Rendering order:
 aboveEditorWidget → question overlay → editorSep → editor → belowEditorWidget → footerSep → footer
 ```
 
-For `Approval` questions, the SelectListWidget shows items built from the schema `enum` with:
-- Display-only UTF-8 icons: ✅ `Allow once`, 🔐 `Always allow`, ❌ `Deny`
-- Theme colors per value: `Accent` / `Success` / `Error`
-- Select keybindings: Arrow keys navigate, Enter selects, Escape cancels
-
-**Answer values are canonical exact strings** — icons and colors are display-only.
-The `value` field sent to `QuestionCoordinator::answer()` and then dispatched as
-`answer_human` payload is always the raw enum string (e.g. `"Allow once"`,
-`"Always allow"`, `"Deny"`).
+For `Choice` questions (driven by an enum schema), the SelectListWidget shows
+items built from the schema `enum` values. Each enum value is rendered as a
+button with its raw label. Answer values are the raw enum strings dispatched
+as `answer_tool_question` payload. Select keybindings: Arrow keys navigate,
+Enter selects, Escape cancels.
 
 ### Integration points
 
 - **`TickPollListener::handleHumanInputRequested()`** — receives `human_input.requested`
   runtime events from `RuntimeEventPoller::poll()`, builds a `QuestionRequest` with
-  `QuestionSource::AgentCore` and `QuestionKind::Approval`, then enqueues it in
+  `QuestionSource::AgentCore` and `QuestionKind::Choice`, then enqueues it in
   `QuestionCoordinator` with answer and cancel callbacks that send `answer_human`
   commands via `AgentSessionClient::send()`. Cancel callback sends a fail-safe `Deny`.
 - **`SubmitListener`** — routes editor text to the active question when the question
@@ -251,9 +292,10 @@ The `onToolCall(ToolCallContextDTO)` method inspects the tool call and returns a
 
 When `RequireApproval` is returned, the extension must also:
 
-1. Generate a unique `question_id` (SafeGuard uses `sg_<sha256>`)
+1. Generate a unique `question_id` (the infra treats it as opaque)
 2. Provide a `prompt` describing the operation
-3. Provide a `schema` with an `enum` of allowed answers
+3. Provide a `schema` (e.g. `['type' => 'string', 'enum' => [...]]`) — the infra
+   drives rendering and routing from this schema without knowing its values
 4. Include any `details` needed for later routing (stored in `approval_context`)
 
 ### How extensions receive answers
@@ -265,8 +307,14 @@ Extensions that need to process the human's answer implement
 interface ApprovalAnswerHookInterface
 {
     public function onApprovalAnswered(ApprovalAnswerContextDTO $context): void;
+    public function resolveApprovalAnswer(ApprovalAnswerContextDTO $context): ToolCallDecisionDTO;
 }
 ```
+
+`onApprovalAnswered()` is called first for side-effects (e.g., persisting "Always allow"
+to settings). `resolveApprovalAnswer()` is called after and returns the tool-execution
+decision: `Allow` (handler runs), `Block` (denied with extension-supplied reason), or
+`ReplaceResult`. The extension owns the complete answer→outcome mapping.
 
 The `ApprovalAnswerContextDTO` provides:
 - `questionId` — the question ID from the RequireApproval return
@@ -274,14 +322,29 @@ The `ApprovalAnswerContextDTO` provides:
 - `toolName` — the tool that was intercepted
 - `approvalContext` — the full `details` array from the original RequireApproval
 
-### Routing lifecycle
+### Routing lifecycle (generic)
 
-1. `ExtensionToolHookEventSubscriber::onToolCallRequested()` → `$hookRegistry->registerPendingApproval(questionId, hook, details)`
-2. Runtime emits `WaitingHuman` → `human_input.requested` → TUI question overlay
-3. User answers → `answer_human` command → `ApplyCommandHandler` → `HumanResponse` event
-4. `ExtensionApprovalAnswerSubscriber::onAgentCommandApplied()` → `$hookRegistry->resolveApproval(questionId)`
-   → calls `$hook->onApprovalAnswered(context)` if the hook implements the interface
-5. The hook updates its internal state (e.g. SafeGuard marks operation as approved)
+1. `ExtensionToolHookEventSubscriber::onToolCallRequested()` → a hook returns
+   `ToolCallDecisionKindEnum::RequireApproval`.
+2. `ExtensionToolHookEventSubscriber::handleRequireApproval()` creates a generic
+   `ToolQuestion` (`kind=approval`, deterministic `requestId={hookHash}_{runId}_{toolCallId}`,
+   schema and prompt from the extension's `requireApproval()` DTO) in the shared
+   SQLite store and blocks polling `pollAnswerText()`. No interrupt result, no
+   WaitingHuman, no human_input.requested.
+3. `ToolQuestionPoller` emits `tool_question.requested` → TUI `TickPollListener`
+   inspects the schema (has enum? → Choice overlay with enum values as buttons).
+   The overlay labels come from the extension's schema — the TUI does not know
+   what any label means.
+4. User selects an option → `onAnswer` closure sends `answer_tool_question` command
+   with `kind=approval` (generic) and the raw answer string.
+5. `AnswerToolQuestionHandler` looks up the stored question by `request_id` and
+   routes by schema type: enum/string → `answerWithText()`, boolean → `answer()`.
+6. The blocking poll sees `pollAnswerText()` return a non-null value, breaks out.
+7. `$hook->onApprovalAnswered($ctx)` — side-effects (e.g., SafeGuard persists
+   "Always allow" to `.hatfield/settings.yaml`).
+8. `$hook->resolveApprovalAnswer($ctx)` → returns `ToolCallDecisionDTO`.
+   The subscriber applies Allow (handler runs), Block (denied), or ReplaceResult.
+   The extension owns the complete answer→outcome mapping.
 
 ### Extension author considerations
 
@@ -290,12 +353,16 @@ The `Ineersa\Hatfield\ExtensionApi` namespace is the designated future public su
 
 Extension authors should:
 - Implement `ToolCallHookInterface` for tool call interception
-- Implement `ApprovalAnswerHookInterface` to receive human answers
-- Return `RequireApproval` with a unique `question_id`, human-readable `prompt`, and an
-  answer `schema` enum
-- Handle the three canonical answer values or define their own via the schema enum
-- Treat the `approvalContext` as the extension's private payload — it is round-tripped
-  from `RequireApproval` → question → answer → `onApprovalAnswered()`
+- Implement `ApprovalAnswerHookInterface` for both:
+  - `onApprovalAnswered()` — side-effects (policy persistence, etc.)
+  - `resolveApprovalAnswer()` — return `Allow`, `Block`, or `ReplaceResult`
+- Return `RequireApproval` with a unique `question_id`, human-readable `prompt`, an
+  answer `schema` enum, and any `details` metadata
+- The extension's own vocabulary (prompt, enum values, labels, denied reasons) is
+  private to the extension — the infrastructure treats all of it as opaque
+- Treat the `approvalContext` (the `details` array from `requireApproval()`) as the
+  extension's private payload — it is round-tripped from `RequireApproval` → question
+  → answer → `onApprovalAnswered()`
 
 The canonical reference implementation is `SafeGuardToolCallHook`.
 

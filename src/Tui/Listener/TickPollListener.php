@@ -24,9 +24,9 @@ use Ineersa\Tui\Runtime\TuiRuntimeContext;
  * transcript display and working status when new events arrive.
  *
  * Also wires runtime human_input.requested events into the TUI
- * QuestionCoordinator/QuestionController so that approval/interrupt
- * questions (e.g. SafeGuard) show interactive overlays and answers
- * are dispatched back to the runtime via answer_human commands.
+ * QuestionCoordinator/QuestionController so that HITL/interrupt
+ * questions show interactive overlays and answers are dispatched
+ * back to the runtime via answer_human commands.
  *
  * Implements TuiListenerRegistrar for DI-driven registration.
  * The service itself is stateless; per-run state comes from the context.
@@ -115,7 +115,7 @@ final class TickPollListener implements TuiListenerRegistrar
      * This is invoked by RuntimeEventPoller::poll() each time a
      * human_input.requested event is polled from the runtime stream.
      * The event carries a question_id, schema, prompt, and metadata
-     * from the tool that requested approval (e.g. SafeGuard).
+     * from the tool that requested approval.
      *
      * A guard against duplicate request IDs prevents enqueueing the
      * same question twice if the event stream replays (e.g. after a
@@ -154,7 +154,7 @@ final class TickPollListener implements TuiListenerRegistrar
         $request = new QuestionRequest(
             requestId: $requestId,
             source: QuestionSource::AgentCore,
-            kind: QuestionKind::Approval,
+            kind: QuestionKind::Choice,
             prompt: (string) ($p['prompt'] ?? 'Approval required.'),
             schema: $schema,
             choices: $choices,
@@ -167,9 +167,11 @@ final class TickPollListener implements TuiListenerRegistrar
         );
 
         // Enqueue the question with answer and cancel callbacks.
-        // Answer sends the user's selection; cancel sends a
-        // fail-safe Deny so the run is not left stuck in
-        // WaitingHuman when the user dismisses the overlay.
+        // Answer sends the user's selection. Cancel sends a generic
+        // 'cancel' sentinel — no extension-specific vocabulary leaks
+        // into this generic human_input path. The receiving extension
+        // owns fail-closed semantics via its resolveApprovalAnswer()
+        // contract, which must treat unrecognized answers as denied.
         $questionCoordinator->enqueue(
             $request,
             onAnswer: static function (mixed $answer) use ($client, $runId, $questionId): void {
@@ -177,7 +179,7 @@ final class TickPollListener implements TuiListenerRegistrar
                     type: 'answer_human',
                     payload: [
                         'question_id' => $questionId,
-                        'answer' => \is_scalar($answer) ? (string) $answer : 'Deny',
+                        'answer' => \is_scalar($answer) ? (string) $answer : 'cancel',
                     ],
                 ));
             },
@@ -186,7 +188,7 @@ final class TickPollListener implements TuiListenerRegistrar
                     type: 'answer_human',
                     payload: [
                         'question_id' => $questionId,
-                        'answer' => 'Deny',
+                        'answer' => 'cancel',
                     ],
                 ));
             },
@@ -248,19 +250,27 @@ final class TickPollListener implements TuiListenerRegistrar
 
     /**
      * Handle a tool_question.requested runtime event by enqueuing a
-     * Confirm question in the coordinator.
+     * schema-driven question in the coordinator.
      *
      * This is invoked by RuntimeEventPoller::poll() each time a
      * tool_question.requested event is polled from the runtime stream.
-     * The event carries a request_id, prompt, and metadata from the tool
-     * that needs user confirmation (e.g. bash background prompt).
+     * The event carries a request_id, prompt, kind, schema, and metadata
+     * from the tool that needs user interaction.
      *
-     * Unlike human_input.requested, this is a LOCAL tool question:
+     * The question overlay is determined by the schema:
+     *   - schema has 'enum' -> Choice overlay (enum values as buttons)
+     *   - schema type=boolean -> Confirm overlay
+     *   - else -> Text overlay
+     *
+     * All tool_question.requested events are LOCAL tool questions:
      * - source is Tui (not AgentCore)
-     * - kind is Confirm (not Approval)
      * - transcript is false (no transcript block)
      * - answer sends answer_tool_question (not answer_human)
      * - no WaitingHuman state transition in AgentCore
+     *
+     * This contains ZERO extension-specific knowledge. The extension's
+     * schema (from requireApproval) drives both the TUI rendering and
+     * the server-side answer routing.
      *
      * A guard against duplicate request IDs prevents enqueueing the
      * same question twice if the event stream replays.
@@ -284,6 +294,122 @@ final class TickPollListener implements TuiListenerRegistrar
             return;
         }
 
+        // Parse schema to determine the overlay type.
+        $rawSchema = $p['schema'] ?? null;
+        $schema = \is_string($rawSchema)
+            ? (json_decode($rawSchema, true) ?? ['type' => 'string'])
+            : (\is_array($rawSchema) ? $rawSchema : ['type' => 'string']);
+
+        $hasEnum = isset($schema['enum']) && \is_array($schema['enum']) && [] !== $schema['enum'];
+        $isBoolean = ($schema['type'] ?? '') === 'boolean';
+
+        if ($hasEnum) {
+            self::handleChoiceToolQuestion($p, $schema, $requestId, $runId, $requestIdFromPayload, $client, $questionCoordinator);
+
+            return;
+        }
+
+        if ($isBoolean) {
+            self::handleConfirmToolQuestion($p, $requestId, $runId, $requestIdFromPayload, $client, $questionCoordinator);
+
+            return;
+        }
+
+        // Fallback: if the schema is unexpected, still show a choice overlay
+        // so the user can type or see something. The extension's prompt and
+        // the server-side AnswerToolQuestionHandler (schema-driven) handle
+        // the actual answer content.
+        trigger_error(
+            \sprintf('ToolQuestionPoller emitted unexpected schema type for request_id=%s — falling back to choice overlay', $requestIdFromPayload),
+            \E_USER_WARNING,
+        );
+
+        self::handleChoiceToolQuestion($p, $schema, $requestId, $runId, $requestIdFromPayload, $client, $questionCoordinator);
+    }
+
+    /**
+     * Handle a tool_question.requested with an enum schema.
+     *
+     * Renders a Choice overlay with the schema's enum values as buttons.
+     * The answer is sent as a raw string through answer_tool_question.
+     *
+     * @param array<string, mixed> $p
+     * @param array<string, mixed> $schema
+     */
+    private static function handleChoiceToolQuestion(
+        array $p,
+        array $schema,
+        string $requestId,
+        string $runId,
+        string $requestIdFromPayload,
+        AgentSessionClient $client,
+        QuestionCoordinator $questionCoordinator,
+    ): void {
+        $enum = $schema['enum'] ?? [];
+        $choices = array_map(
+            static fn (string $label): QuestionOption => new QuestionOption($label),
+            array_values($enum),
+        );
+
+        $request = new QuestionRequest(
+            requestId: $requestId,
+            source: QuestionSource::Tui,
+            kind: QuestionKind::Choice,
+            prompt: (string) ($p['prompt'] ?? 'Approval required.'),
+            schema: $schema,
+            choices: $choices,
+            allowOther: false,
+            runId: $runId,
+            questionId: $requestIdFromPayload,
+            toolCallId: (string) ($p['tool_call_id'] ?? ''),
+            toolName: (string) ($p['tool_name'] ?? ''),
+            transcript: false,
+        );
+
+        $questionCoordinator->enqueue(
+            $request,
+            onAnswer: static function (mixed $answer) use ($client, $runId, $requestIdFromPayload): void {
+                // Choice returns the label string directly.
+                $answerStr = \is_scalar($answer) ? (string) $answer : '';
+
+                $client->send($runId, new UserCommand(
+                    type: 'answer_tool_question',
+                    payload: [
+                        'request_id' => $requestIdFromPayload,
+                        'answer' => $answerStr,
+                        'kind' => 'approval',
+                    ],
+                ));
+            },
+            onCancel: static function () use ($client, $runId, $requestIdFromPayload): void {
+                $client->send($runId, new UserCommand(
+                    type: 'answer_tool_question',
+                    payload: [
+                        'request_id' => $requestIdFromPayload,
+                        'answer' => 'cancel',
+                        'kind' => 'approval',
+                    ],
+                ));
+            },
+        );
+    }
+
+    /**
+     * Handle a tool_question.requested event with a boolean schema.
+     *
+     * Renders a boolean yes/no confirmation. The answer is sent as a boolean
+     * through answer_tool_question.
+     *
+     * @param array<string, mixed> $p
+     */
+    private static function handleConfirmToolQuestion(
+        array $p,
+        string $requestId,
+        string $runId,
+        string $requestIdFromPayload,
+        AgentSessionClient $client,
+        QuestionCoordinator $questionCoordinator,
+    ): void {
         $request = new QuestionRequest(
             requestId: $requestId,
             source: QuestionSource::Tui,
@@ -299,13 +425,9 @@ final class TickPollListener implements TuiListenerRegistrar
             transcript: false,
         );
 
-        // Enqueue the question with answer and cancel callbacks.
-        // Answer sends 'yes' or 'no' through answer_tool_question command.
-        // Cancel sends 'no' so the tool does not hang waiting for input.
         $questionCoordinator->enqueue(
             $request,
             onAnswer: static function (mixed $answer) use ($client, $runId, $requestIdFromPayload): void {
-                // QuestionController::Confirm returns 'yes' or 'no' strings.
                 $boolAnswer = \is_string($answer) && 'yes' === strtolower($answer);
 
                 $client->send($runId, new UserCommand(
@@ -313,6 +435,7 @@ final class TickPollListener implements TuiListenerRegistrar
                     payload: [
                         'request_id' => $requestIdFromPayload,
                         'answer' => $boolAnswer,
+                        'kind' => 'confirm',
                     ],
                 ));
             },
@@ -322,6 +445,7 @@ final class TickPollListener implements TuiListenerRegistrar
                     payload: [
                         'request_id' => $requestIdFromPayload,
                         'answer' => false,
+                        'kind' => 'confirm',
                     ],
                 ));
             },
