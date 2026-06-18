@@ -168,3 +168,6 @@ Completed:
 ## Task workflow update - 2026-06-18T16:06:19.608Z
 - Moved CODE-REVIEW → IN-PROGRESS.
 - Summary: Review iteration requested after manual smoke found TUI regression: ToolResult blocks now show raw provider-facing JSON and warning icon can appear on uncapped reads when file contents contain the '[Output capped to' marker string. Need restore old visible tool output while retaining exact generated/cap notice observability, and make output-cap display structured/adequate without raw JSON.
+
+## Task workflow update - 2026-06-18T16:13:15.842Z
+- Summary: User clarified hard design constraint for the current TUI/output-cap regression fix: no fallback parsing/detection of notices from arbitrary text. Do not use preg_match, str_starts_with, or str_contains against tool output/model text to infer output-cap notices. Notices/nudges must be represented as structured system.notice-style projection data and rendered as proper notice blocks; normal ToolResult blocks must remain normal readable tool output. If the current fork returns with parser/fallback-based logic, run a follow-up fork to replace it with the structured design before CODE-REVIEW.
