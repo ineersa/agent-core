@@ -20,11 +20,11 @@ use PHPUnit\Framework\TestCase;
  *   4. ExtensionToolHookEventSubscriber creates a ToolQuestion and
  *      blocks in a polling loop in the tool consumer process
  *   5. Controller ToolQuestionPoller emits tool_question.requested
- *   6. TUI TickPollListener routes to handleApprovalToolQuestion →
- *      renders the Approval overlay with "Allow once" / "Always allow" / "Deny"
+ *   6. TUI TickPollListener inspects schema (has enum) → renders Choice overlay
+ *      with SafeGuard's enum values: "Allow once" / "Always allow" / "Deny"
  *   7. Test detects "Allow once" in the TUI capture and presses Enter
- *   8. onAnswer closure sends answer_tool_question with kind=safeguard_approval
- *   9. AnswerToolQuestionHandler calls answerWithText → poll returns → tool executes
+ *   8. onAnswer closure sends answer_tool_question with kind=approval (generic)
+ *   9. AnswerToolQuestionHandler routes by stored schema → answerWithText → poll returns → tool executes
  *   10. Write tool creates the file on disk outside CWD
  *   11. Second fixture streams "The file has been written." as assistant text
  *

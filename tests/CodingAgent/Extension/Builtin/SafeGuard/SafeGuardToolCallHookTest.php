@@ -671,6 +671,58 @@ final class SafeGuardToolCallHookTest extends TestCase
         $this->addToAssertionCount(1); // Reached without exception
     }
 
+    public function testResolveApprovalAnswerAllowOnceReturnsAllow(): void
+    {
+        $outcome = $this->hook->resolveApprovalAnswer(new ApprovalAnswerContextDTO(
+            questionId: 'sg_qid',
+            answer: 'Allow once',
+            toolName: 'write',
+            approvalContext: ['category' => 'write_outside_cwd'],
+        ));
+
+        $this->assertSame(ToolCallDecisionKindEnum::Allow, $outcome->kind);
+    }
+
+    public function testResolveApprovalAnswerAlwaysAllowReturnsAllow(): void
+    {
+        $outcome = $this->hook->resolveApprovalAnswer(new ApprovalAnswerContextDTO(
+            questionId: 'sg_qid',
+            answer: 'Always allow',
+            toolName: 'write',
+            approvalContext: ['category' => 'write_outside_cwd'],
+        ));
+
+        $this->assertSame(ToolCallDecisionKindEnum::Allow, $outcome->kind);
+    }
+
+    public function testResolveApprovalAnswerDenyReturnsBlockWithSafeGuardReason(): void
+    {
+        $outcome = $this->hook->resolveApprovalAnswer(new ApprovalAnswerContextDTO(
+            questionId: 'sg_qid',
+            answer: 'Deny',
+            toolName: 'write',
+            approvalContext: ['category' => 'write_outside_cwd'],
+        ));
+
+        $this->assertSame(ToolCallDecisionKindEnum::Block, $outcome->kind);
+        $this->assertSame('safeguard_denied', $outcome->reason);
+        $this->assertStringContainsString('denied by SafeGuard', $outcome->details['message'] ?? '');
+    }
+
+    public function testResolveApprovalAnswerUnknownDenyReturnsBlockWithUnknownReason(): void
+    {
+        $outcome = $this->hook->resolveApprovalAnswer(new ApprovalAnswerContextDTO(
+            questionId: 'sg_qid',
+            answer: 'Maybe',
+            toolName: 'write',
+            approvalContext: ['category' => 'write_outside_cwd'],
+        ));
+
+        $this->assertSame(ToolCallDecisionKindEnum::Block, $outcome->kind);
+        $this->assertSame('safeguard_unknown_answer', $outcome->reason);
+        $this->assertStringContainsString('unknown answer', $outcome->details['message'] ?? '');
+    }
+
     // ─── Approval-channel availability ────────────────────────────────
 
     public function testAutoDenyBlocksWhenNoApprovalChannel(): void

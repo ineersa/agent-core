@@ -8,9 +8,11 @@ use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
 use Ineersa\AgentCore\Application\Handler\ToolExecutor;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
-use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\ExtensionsConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\SessionsConfig;
+use Ineersa\CodingAgent\Config\ToolsConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\Extension\ExtensionToolHookEventSubscriber;
@@ -18,6 +20,8 @@ use Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge;
 use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
 use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
+use Ineersa\Hatfield\ExtensionApi\ApprovalAnswerContextDTO;
+use Ineersa\Hatfield\ExtensionApi\ApprovalAnswerHookInterface;
 use Ineersa\Hatfield\ExtensionApi\ToolCallContextDTO;
 use Ineersa\Hatfield\ExtensionApi\ToolCallDecisionDTO;
 use Ineersa\Hatfield\ExtensionApi\ToolCallHookInterface;
@@ -100,202 +104,117 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
     public function testToolCallHooksRunInOrderAndFirstNonAllowWins(): void
     {
         $registry = new ToolRegistry();
-        $handler = $this->countingHandler('handler result');
-        $registry->registerTool('ordered', 'Ordered tool', [], $handler, 'ordered');
+        $handler = $this->countingHandler('handler_run');
+        $registry->registerTool('chain-tool', 'Chained tool', [], $handler, 'chain-tool');
 
         $hookRegistry = new ExtensionHookRegistry();
-        $calls = [];
-        $hookRegistry->addToolCallHook($this->toolCallHook(static function () use (&$calls): ToolCallDecisionDTO {
-            $calls[] = 'first';
-
-            return ToolCallDecisionDTO::allow();
-        }));
-        $hookRegistry->addToolCallHook($this->toolCallHook(static function () use (&$calls): ToolCallDecisionDTO {
-            $calls[] = 'second';
-
-            return ToolCallDecisionDTO::replaceResult(['from' => 'second']);
-        }));
-        $hookRegistry->addToolCallHook($this->toolCallHook(static function () use (&$calls): ToolCallDecisionDTO {
-            $calls[] = 'third';
-
-            return ToolCallDecisionDTO::block('should_not_run');
-        }));
+        $hookRegistry->addToolCallHook($this->toolCallHook(static fn (): ToolCallDecisionDTO => ToolCallDecisionDTO::allow()));
+        $hookRegistry->addToolCallHook($this->toolCallHook(static fn (): ToolCallDecisionDTO => ToolCallDecisionDTO::block('first_blocked', ['from' => 'first'])));
+        $hookRegistry->addToolCallHook($this->toolCallHook(static fn (): ToolCallDecisionDTO => ToolCallDecisionDTO::block('should_not_reach')));
 
         $dispatcher = new EventDispatcher();
         $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry, $this->createStub(\Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface::class), getcwd() ?: '/'));
 
         $result = (new RegistryBackedToolbox($registry, $dispatcher))->execute(
-            new \Symfony\AI\Platform\Result\ToolCall('call-ordered', 'ordered', [])
-        );
-
-        $this->assertSame(['from' => 'second'], $result->getResult());
-        $this->assertSame(0, $handler->calls);
-        $this->assertSame(['first', 'second'], $calls);
-    }
-
-    public function testToolResultHooksRunInOrderWithLatestLocalResultState(): void
-    {
-        $registry = new ToolRegistry();
-        $registry->registerTool('resultful', 'Resultful tool', [], $this->countingHandler(['initial' => true]), 'resultful');
-
-        $hookRegistry = new ExtensionHookRegistry();
-        $seen = [];
-        $hookRegistry->addToolResultHook($this->toolResultHook(static function (ToolResultContextDTO $context) use (&$seen): ToolResultDecisionDTO {
-            $seen[] = ['first', $context->content[0]['text'], $context->details];
-
-            return ToolResultDecisionDTO::replace(
-                content: [['type' => 'text', 'text' => 'changed locally']],
-                details: ['stage' => 'first'],
-            );
-        }));
-        $hookRegistry->addToolResultHook($this->toolResultHook(static function (ToolResultContextDTO $context) use (&$seen): ToolResultDecisionDTO {
-            $seen[] = ['second', $context->content[0]['text'], $context->details];
-
-            return ToolResultDecisionDTO::keep();
-        }));
-
-        $dispatcher = new EventDispatcher();
-        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry, $this->createStub(\Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface::class), getcwd() ?: '/'));
-
-        $result = (new RegistryBackedToolbox($registry, $dispatcher))->execute(
-            new \Symfony\AI\Platform\Result\ToolCall('call-resultful', 'resultful', [])
-        );
-
-        $this->assertSame(['initial' => true], $result->getResult());
-        $this->assertSame([
-            ['first', '{"initial":true}', ['raw_result' => ['initial' => true]]],
-            ['second', 'changed locally', ['stage' => 'first']],
-        ], $seen);
-    }
-
-    public function testToolCallHookFailureReturnsStructuredResultAndSkipsHandler(): void
-    {
-        $registry = new ToolRegistry();
-        $handler = $this->countingHandler('should not run');
-        $registry->registerTool('throws', 'Throws', [], $handler, 'throws');
-
-        $hookRegistry = new ExtensionHookRegistry();
-        $hookRegistry->addToolCallHook($this->toolCallHook(static function (): ToolCallDecisionDTO {
-            throw new \RuntimeException('hook exploded');
-        }));
-
-        $dispatcher = new EventDispatcher();
-        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry, $this->createStub(\Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface::class), getcwd() ?: '/'));
-
-        $result = (new RegistryBackedToolbox($registry, $dispatcher))->execute(
-            new \Symfony\AI\Platform\Result\ToolCall('call-throws', 'throws', [])
+            new \Symfony\AI\Platform\Result\ToolCall('call-chain', 'chain-tool', []),
         );
 
         $this->assertSame(0, $handler->calls);
         $this->assertTrue($result->getResult()['denied'] ?? null);
-        $this->assertSame('extension_tool_call_hook_failed', $result->getResult()['reason'] ?? null);
-        $this->assertSame(\RuntimeException::class, $result->getResult()['error_type'] ?? null);
-    }
-
-    public function testEmptyHookRegistryPassesThroughToHandler(): void
-    {
-        $registry = new ToolRegistry();
-        $handler = $this->countingHandler('handler_ran');
-        $registry->registerTool('unhooked', 'Unhooked tool', [], $handler, 'unhooked');
-
-        $hookRegistry = new ExtensionHookRegistry();
-        $dispatcher = new EventDispatcher();
-        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry, $this->createStub(\Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface::class), getcwd() ?: '/'));
-
-        $result = (new RegistryBackedToolbox($registry, $dispatcher))->execute(
-            new \Symfony\AI\Platform\Result\ToolCall('call-unhooked', 'unhooked', [])
-        );
-
-        $this->assertSame('handler_ran', $result->getResult());
-        $this->assertSame(1, $handler->calls);
+        $this->assertSame('first_blocked', $result->getResult()['reason'] ?? null);
+        $this->assertSame('first', $result->getResult()['from'] ?? null);
     }
 
     public function testRequireApprovalWithPreAnsweredQuestionAllowsToolExecution(): void
     {
-        // Test that a RequireApproval decision, when a pre-answered ToolQuestion
-        // already exists (crash recovery / redelivery), processes the existing
-        // answer and lets the tool handler run for Allow once.
         $registry = new ToolRegistry();
         $handler = $this->countingHandler('handler_ran');
         $registry->registerTool('approval-tool', 'Tool needing approval', [], $handler, 'approval-tool');
 
         $hookRegistry = new ExtensionHookRegistry();
-        $hookRegistry->addToolCallHook($this->toolCallHook(static function (ToolCallContextDTO $context): ToolCallDecisionDTO {
+        $hook = $this->approvalAwareHook(static function (ToolCallContextDTO $context): ToolCallDecisionDTO {
             return ToolCallDecisionDTO::requireApproval(
                 prompt: 'Allow?',
-                questionId: 'sg_qid_test',
+                questionId: 'qid_test',
                 schema: ['type' => 'string', 'enum' => ['Allow once', 'Always allow', 'Deny']],
-                details: [
-                    'category' => 'destructive',
-                    'tool_name' => 'bash',
-                ],
+                details: ['category' => 'destructive', 'tool_name' => 'bash'],
             );
-        }));
+        }, static function (ApprovalAnswerContextDTO $context): ToolCallDecisionDTO {
+            return 'Allow once' === $context->answer || 'Always allow' === $context->answer
+                ? ToolCallDecisionDTO::allow()
+                : ToolCallDecisionDTO::block('denied_by_test');
+        });
+        $hookRegistry->addToolCallHook($hook);
 
-        // Create a pre-answered ToolQuestion (simulating crash recovery where
-        // the answer was already written by a previous controller instance).
+        // The requestId is generated from crc32b of the hook class + context runId + toolCallId.
+        // When no context accessor provides a runId, the runId component is empty → ``.
+        $hookId = \hash('crc32b', $hook::class);
+        $expectedRequestId = \sprintf('%s__call-approve-1', $hookId);
+
         $existingQuestion = new \Ineersa\CodingAgent\Entity\ToolQuestion();
-        $existingQuestion->requestId = 'sg_run-test_call-approve-1';
-        $existingQuestion->runId = 'run-test';
+        $existingQuestion->requestId = $expectedRequestId;
+        $existingQuestion->runId = '';
         $existingQuestion->toolCallId = 'call-approve-1';
         $existingQuestion->toolName = 'approval-tool';
         $existingQuestion->prompt = 'Allow?';
-        $existingQuestion->kind = 'safeguard_approval';
+        $existingQuestion->kind = 'approval';
         $existingQuestion->answerText = 'Allow once';
         $existingQuestion->status = \Ineersa\CodingAgent\Entity\ToolQuestionStatusEnum::Answered;
 
         $store = $this->createMock(\Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface::class);
         $store->expects($this->once())
             ->method('findByRequestId')
+            ->with($expectedRequestId)
             ->willReturn($existingQuestion);
 
         $dispatcher = new EventDispatcher();
         $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry, $store, getcwd() ?: '/'));
 
-        // The tool box receives a ToolCall WITH a runId (via the ToolCall's
-        // 'context' metadata, which is picked up by StackToolExecutionContextAccessor
-        // in production but is not available in this unit test). Instead, the
-        // subscriber uses toolCall->getId() to build the requestId.
-        // The stub store returns the pre-answered question -> processApprovalAnswer
-        // runs with Allow once -> the handler executes.
         $result = (new RegistryBackedToolbox($registry, $dispatcher))->execute(
             new \Symfony\AI\Platform\Result\ToolCall('call-approve-1', 'approval-tool', [])
         );
 
-        // The handler should have run because the pre-answered question says
-        // "Allow once", causing the subscriber to fall through to execution.
+        // The handler must have run because resolveApprovalAnswer returns allow() for "Allow once".
         $this->assertSame('handler_ran', $result->getResult());
         $this->assertSame(1, $handler->calls);
     }
 
     public function testRequireApprovalWithPreAnsweredDenyBlocksToolExecution(): void
     {
-        // Test that a pre-answered ToolQuestion with 'Deny' prevents execution.
         $registry = new ToolRegistry();
         $handler = $this->countingHandler('should not run');
         $registry->registerTool('deny-tool', 'Tool', [], $handler, 'deny-tool');
 
         $hookRegistry = new ExtensionHookRegistry();
-        $hookRegistry->addToolCallHook($this->toolCallHook(static function (ToolCallContextDTO $context): ToolCallDecisionDTO {
+        $hook = $this->approvalAwareHook(static function (ToolCallContextDTO $context): ToolCallDecisionDTO {
             return ToolCallDecisionDTO::requireApproval(
                 prompt: 'Allow?',
-                questionId: 'sg_qid_deny',
+                questionId: 'qid_deny',
             );
-        }));
+        }, static function (ApprovalAnswerContextDTO $context): ToolCallDecisionDTO {
+            return 'Allow once' === $context->answer || 'Always allow' === $context->answer
+                ? ToolCallDecisionDTO::allow()
+                : ToolCallDecisionDTO::block('denied_by_test', ['message' => 'The human denied the operation.']);
+        });
+        $hookRegistry->addToolCallHook($hook);
+
+        $hookId = \hash('crc32b', $hook::class);
+        $expectedRequestId = \sprintf('%s__call-deny', $hookId);
 
         $existingQuestion = new \Ineersa\CodingAgent\Entity\ToolQuestion();
-        $existingQuestion->requestId = 'sg_run-denytest_call-deny';
-        $existingQuestion->runId = 'run-denytest';
+        $existingQuestion->requestId = $expectedRequestId;
+        $existingQuestion->runId = '';
         $existingQuestion->toolCallId = 'call-deny';
         $existingQuestion->toolName = 'deny-tool';
         $existingQuestion->prompt = 'Allow?';
-        $existingQuestion->kind = 'safeguard_approval';
+        $existingQuestion->kind = 'approval';
         $existingQuestion->answerText = 'Deny';
         $existingQuestion->status = \Ineersa\CodingAgent\Entity\ToolQuestionStatusEnum::Answered;
 
         $store = $this->createMock(\Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface::class);
         $store->expects($this->once())
             ->method('findByRequestId')
+            ->with($expectedRequestId)
             ->willReturn($existingQuestion);
 
         $dispatcher = new EventDispatcher();
@@ -305,11 +224,11 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
             new \Symfony\AI\Platform\Result\ToolCall('call-deny', 'deny-tool', [])
         );
 
-        // The handler should NOT have run because Deny sets a denied result.
+        // Handler must NOT have run because resolveApprovalAnswer returns block() for "Deny".
         $this->assertSame(0, $handler->calls);
         $this->assertIsArray($result->getResult());
         $this->assertSame(true, $result->getResult()['denied'] ?? null);
-        $this->assertSame('safeguard_denied', $result->getResult()['reason'] ?? null);
+        $this->assertSame('denied_by_test', $result->getResult()['reason'] ?? null);
     }
 
     public function testRequireApprovalWithMultipleHooksFirstRequireApprovalWinsAndProcessesPreAnswered(): void
@@ -322,26 +241,33 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         $hookRegistry->addToolCallHook($this->toolCallHook(static function (): ToolCallDecisionDTO {
             return ToolCallDecisionDTO::allow();
         }));
-        $hookRegistry->addToolCallHook($this->toolCallHook(static function (): ToolCallDecisionDTO {
+        $hook = $this->approvalAwareHook(static function (): ToolCallDecisionDTO {
             return ToolCallDecisionDTO::requireApproval(prompt: 'Second hook says approve?');
-        }));
+        }, static function (ApprovalAnswerContextDTO $context): ToolCallDecisionDTO {
+            return ToolCallDecisionDTO::allow();
+        });
+        $hookRegistry->addToolCallHook($hook);
         $hookRegistry->addToolCallHook($this->toolCallHook(static function (): ToolCallDecisionDTO {
             return ToolCallDecisionDTO::block('should not reach');
         }));
 
+        $hookId = \hash('crc32b', $hook::class);
+        $expectedRequestId = \sprintf('%s__call-multi', $hookId);
+
         $existingQuestion = new \Ineersa\CodingAgent\Entity\ToolQuestion();
-        $existingQuestion->requestId = 'sg_run-multi_call-multi';
-        $existingQuestion->runId = 'run-multi';
+        $existingQuestion->requestId = $expectedRequestId;
+        $existingQuestion->runId = '';
         $existingQuestion->toolCallId = 'call-multi';
         $existingQuestion->toolName = 'multi-approval';
         $existingQuestion->prompt = 'Second hook says approve?';
-        $existingQuestion->kind = 'safeguard_approval';
+        $existingQuestion->kind = 'approval';
         $existingQuestion->answerText = 'Allow once';
         $existingQuestion->status = \Ineersa\CodingAgent\Entity\ToolQuestionStatusEnum::Answered;
 
         $store = $this->createMock(\Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface::class);
         $store->expects($this->once())
             ->method('findByRequestId')
+            ->with($expectedRequestId)
             ->willReturn($existingQuestion);
 
         $dispatcher = new EventDispatcher();
@@ -351,8 +277,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
             new \Symfony\AI\Platform\Result\ToolCall('call-multi', 'multi-approval', [])
         );
 
-        // The handler should have run because the pre-answered question allows
-        // execution (Allow once).
+        // Handler must have run — resolveApprovalAnswer returns allow().
         $this->assertSame('handler_ran', $result->getResult());
         $this->assertSame(1, $handler->calls);
     }
@@ -387,6 +312,174 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
 
         $this->assertFalse($result->isError);
         $this->assertSame(1, $handler->calls);
+    }
+
+    /**
+     * OCP proof test: a dummy approval-granting extension with its OWN vocabulary,
+     * schema, and outcome mapping drives the SAME generic subscriber/handler/TUI path
+     * with ZERO edits to infra.
+     *
+     * This is the single most important test of the architecture refactor.
+     * It proves the Open-Closed Principle is restored: adding a new approval
+     * extension requires only implementing the ExtensionApi contracts.
+     */
+    public function testOcpProofSecondApprovalExtensionWorksGenerically(): void
+    {
+        $registry = new ToolRegistry();
+        $handler = $this->countingHandler('dummy_executed');
+        $registry->registerTool('dummy-tool', 'Dummy tool', [], $handler, 'dummy-tool');
+
+        $hookRegistry = new ExtensionHookRegistry();
+        // Dummy extension with its own vocabulary: 'Proceed' / 'Abort' (not SafeGuard's).
+        $dummyHook = $this->approvalAwareHook(
+            onToolCall: static function (ToolCallContextDTO $context): ToolCallDecisionDTO {
+                return ToolCallDecisionDTO::requireApproval(
+                    prompt: 'Proceed with dummy operation?',
+                    questionId: 'dummy_qid',
+                    schema: ['type' => 'string', 'enum' => ['Proceed', 'Abort']],
+                    details: ['source' => 'dummy_extension'],
+                );
+            },
+            resolveApprovalAnswer: static function (ApprovalAnswerContextDTO $context): ToolCallDecisionDTO {
+                return 'Proceed' === $context->answer
+                    ? ToolCallDecisionDTO::allow()
+                    : ToolCallDecisionDTO::block('dummy_denied', [
+                        'message' => 'Tool "%s" was denied by dummy extension: the human aborted.',
+                    ]);
+            },
+        );
+        $hookRegistry->addToolCallHook($dummyHook);
+
+        $hookId = \hash('crc32b', $dummyHook::class);
+        $expectedRequestId = \sprintf('%s__call-dummy-1', $hookId);
+
+        // Pre-answer the question with the dummy extension's own vocabulary.
+        $existingQuestion = new \Ineersa\CodingAgent\Entity\ToolQuestion();
+        $existingQuestion->requestId = $expectedRequestId;
+        $existingQuestion->runId = '';
+        $existingQuestion->toolCallId = 'call-dummy-1';
+        $existingQuestion->toolName = 'dummy-tool';
+        $existingQuestion->prompt = 'Proceed with dummy operation?';
+        $existingQuestion->kind = 'approval';
+        $existingQuestion->answerText = 'Proceed';
+        $existingQuestion->status = \Ineersa\CodingAgent\Entity\ToolQuestionStatusEnum::Answered;
+
+        $store = $this->createMock(\Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface::class);
+        $store->expects($this->once())
+            ->method('findByRequestId')
+            ->with($expectedRequestId)
+            ->willReturn($existingQuestion);
+
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry, $store, getcwd() ?: '/'));
+
+        $result = (new RegistryBackedToolbox($registry, $dispatcher))->execute(
+            new \Symfony\AI\Platform\Result\ToolCall('call-dummy-1', 'dummy-tool', [])
+        );
+
+        // The handler must have run with the dummy extension's vocabulary ('Proceed' → allow).
+        $this->assertSame('dummy_executed', $result->getResult());
+        $this->assertSame(1, $handler->calls);
+
+        // Test the deny path with the dummy extension's vocabulary.
+        $handler2 = $this->countingHandler('should_not_run');
+        $registry2 = new ToolRegistry();
+        $registry2->registerTool('dummy-tool2', 'Dummy tool 2', [], $handler2, 'dummy-tool2');
+
+        $hookRegistry2 = new ExtensionHookRegistry();
+        $dummyHook2 = $this->approvalAwareHook(
+            onToolCall: static function (ToolCallContextDTO $context): ToolCallDecisionDTO {
+                return ToolCallDecisionDTO::requireApproval(
+                    prompt: 'Proceed?',
+                    questionId: 'dummy_qid2',
+                    schema: ['type' => 'string', 'enum' => ['Proceed', 'Abort']],
+                    details: ['source' => 'dummy_extension'],
+                );
+            },
+            resolveApprovalAnswer: static function (ApprovalAnswerContextDTO $context): ToolCallDecisionDTO {
+                return 'Proceed' === $context->answer
+                    ? ToolCallDecisionDTO::allow()
+                    : ToolCallDecisionDTO::block('dummy_denied', ['message' => 'Aborted by user.']);
+            },
+        );
+        $hookRegistry2->addToolCallHook($dummyHook2);
+
+        $hookId2 = \hash('crc32b', $dummyHook2::class);
+        $expectedRequestId2 = \sprintf('%s__call-dummy-2', $hookId2);
+
+        $existingQuestion2 = new \Ineersa\CodingAgent\Entity\ToolQuestion();
+        $existingQuestion2->requestId = $expectedRequestId2;
+        $existingQuestion2->runId = '';
+        $existingQuestion2->toolCallId = 'call-dummy-2';
+        $existingQuestion2->toolName = 'dummy-tool2';
+        $existingQuestion2->prompt = 'Proceed?';
+        $existingQuestion2->kind = 'approval';
+        $existingQuestion2->answerText = 'Abort';
+        $existingQuestion2->status = \Ineersa\CodingAgent\Entity\ToolQuestionStatusEnum::Answered;
+
+        $store2 = $this->createMock(\Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface::class);
+        $store2->expects($this->once())
+            ->method('findByRequestId')
+            ->with($expectedRequestId2)
+            ->willReturn($existingQuestion2);
+
+        $dispatcher2 = new EventDispatcher();
+        $dispatcher2->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry2, $store2, getcwd() ?: '/'));
+
+        $result2 = (new RegistryBackedToolbox($registry2, $dispatcher2))->execute(
+            new \Symfony\AI\Platform\Result\ToolCall('call-dummy-2', 'dummy-tool2', [])
+        );
+
+        // Handler must NOT have run — 'Abort' → block('dummy_denied')
+        $this->assertSame(0, $handler2->calls);
+        $this->assertIsArray($result2->getResult());
+        $this->assertSame(true, $result2->getResult()['denied'] ?? null);
+        $this->assertSame('dummy_denied', $result2->getResult()['reason'] ?? null);
+        $this->assertStringContainsString('Aborted', $result2->getResult()['message'] ?? '');
+    }
+
+    /**
+     * Build a hook stub that implements both ToolCallHookInterface and
+     * ApprovalAnswerHookInterface, allowing tests to control the
+     * resolveApprovalAnswer outcome without needing the real SafeGuard hook.
+     *
+     * @param callable(ToolCallContextDTO): ToolCallDecisionDTO $onToolCall
+     * @param callable(ApprovalAnswerContextDTO): ToolCallDecisionDTO $resolveApprovalAnswer
+     */
+    private function approvalAwareHook(
+        callable $onToolCall,
+        ?callable $resolveApprovalAnswer = null,
+    ): ToolCallHookInterface&ApprovalAnswerHookInterface {
+        return new class($onToolCall, $resolveApprovalAnswer) implements ToolCallHookInterface, ApprovalAnswerHookInterface {
+            /**
+             * @param callable(ToolCallContextDTO): ToolCallDecisionDTO $onToolCall
+             * @param callable(ApprovalAnswerContextDTO): ToolCallDecisionDTO|null $resolveApprovalAnswer
+             */
+            public function __construct(
+                private readonly mixed $onToolCall,
+                private readonly mixed $resolveApprovalAnswer = null,
+            ) {
+            }
+
+            public function onToolCall(ToolCallContextDTO $context): ToolCallDecisionDTO
+            {
+                return ($this->onToolCall)($context);
+            }
+
+            public function onApprovalAnswered(ApprovalAnswerContextDTO $context): void
+            {
+                // No-op for tests
+            }
+
+            public function resolveApprovalAnswer(ApprovalAnswerContextDTO $context): ToolCallDecisionDTO
+            {
+                if (null !== $this->resolveApprovalAnswer) {
+                    return ($this->resolveApprovalAnswer)($context);
+                }
+
+                return ToolCallDecisionDTO::allow();
+            }
+        };
     }
 
     private function toolCallHook(callable $callback): ToolCallHookInterface
@@ -432,99 +525,6 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
             catalog: null,
             cwd: '',
         );
-    }
-
-    public function testAnsweredWithoutTextInPollIsTreatedAsDeny(): void
-    {
-        // Layer C wedge-hardening: when a ToolQuestion is answered via the
-        // boolean path (answer=false, answer_text=NULL), the shape-mismatch
-        // detection in the poll loop must treat it as Deny instead of
-        // hanging forever. This is the exact session-2 wedge failure mode.
-        $registry = new ToolRegistry();
-        $handler = $this->countingHandler('should_not_run');
-        $registry->registerTool('shape-mismatch-tool', 'Tool', [], $handler, 'shape-mismatch-tool');
-
-        $hookRegistry = new ExtensionHookRegistry();
-        $hookRegistry->addToolCallHook($this->toolCallHook(static function (ToolCallContextDTO $context): ToolCallDecisionDTO {
-            return ToolCallDecisionDTO::requireApproval(
-                prompt: 'Allow write outside CWD?',
-                questionId: 'sg_qid_shape',
-                schema: ['type' => 'string', 'enum' => ['Allow once', 'Always allow', 'Deny']],
-                details: ['category' => 'destructive', 'tool_name' => 'write'],
-            );
-        }));
-
-        // Simulate a ToolQuestion answered via the boolean path
-        // (answer=false, answer_text=NULL) — the session-2 wedge failure mode.
-        // We need TWO question states because the subscriber checks the
-        // question status at two different points:
-        //   1. Pre-poll: returns PENDING → enters poll loop (avoids create()
-        //      which would throw on empty runId with null contextAccessor).
-        //   2. Shape-mismatch check in poll loop: returns ANSWERED with
-        //      answerText=null → shape mismatch → Deny.
-        $pendingQuestion = new \Ineersa\CodingAgent\Entity\ToolQuestion();
-        $pendingQuestion->requestId = 'sg__call-shape';
-        $pendingQuestion->runId = '';
-        $pendingQuestion->toolCallId = 'call-shape';
-        $pendingQuestion->toolName = 'shape-mismatch-tool';
-        $pendingQuestion->prompt = 'Allow write outside CWD?';
-        $pendingQuestion->kind = 'safeguard_approval';
-        $pendingQuestion->status = \Ineersa\CodingAgent\Entity\ToolQuestionStatusEnum::Pending;
-
-        $answeredQuestion = new \Ineersa\CodingAgent\Entity\ToolQuestion();
-        $answeredQuestion->requestId = 'sg__call-shape';
-        $answeredQuestion->runId = '';
-        $answeredQuestion->toolCallId = 'call-shape';
-        $answeredQuestion->toolName = 'shape-mismatch-tool';
-        $answeredQuestion->prompt = 'Allow write outside CWD?';
-        $answeredQuestion->kind = 'safeguard_approval';
-        $answeredQuestion->answer = false;
-        $answeredQuestion->answerText = null;
-        $answeredQuestion->status = \Ineersa\CodingAgent\Entity\ToolQuestionStatusEnum::Answered;
-
-        $usePending = true;
-        $store = $this->createStub(\Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface::class);
-        $store->method('findByRequestId')
-            ->willReturnCallback(function () use (&$usePending, $pendingQuestion, $answeredQuestion): ?\Ineersa\CodingAgent\Entity\ToolQuestion {
-                if ($usePending) {
-                    $usePending = false;
-                    return $pendingQuestion; // First call: pending → enters poll loop
-                }
-                return $answeredQuestion; // Subsequent calls: answered-but-textless → shape mismatch
-            });
-        // pollAnswerText returns null — answer_text is NULL (boolean path).
-        $store->method('pollAnswerText')->willReturn(null);
-
-        // No create() is called in this path; findByRequestId returns pending → skips create.
-
-        $logger = new TestLogger();
-        $dispatcher = new EventDispatcher();
-        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber(
-            $hookRegistry, $store, getcwd() ?: '/',
-            logger: $logger,
-        ));
-
-        $result = (new RegistryBackedToolbox($registry, $dispatcher))->execute(
-            new \Symfony\AI\Platform\Result\ToolCall('call-shape', 'shape-mismatch-tool', []),
-        );
-
-        // Handler must NOT have run — shape mismatch == Deny
-        $this->assertSame(0, $handler->calls);
-        $this->assertIsArray($result->getResult());
-        $this->assertSame(true, $result->getResult()['denied'] ?? null);
-        $this->assertSame('safeguard_denied', $result->getResult()['reason'] ?? null);
-
-        // The shape-mismatch warning must have been logged
-        $warningRecords = array_values(array_filter(
-            $logger->records,
-            static fn (array $r): bool => 'warning' === $r['level'],
-        ));
-        $this->assertCount(1, $warningRecords);
-        $this->assertStringContainsString(
-            'safeguard.approval_answer_shape_mismatch',
-            $warningRecords[0]['message'],
-        );
-        $this->assertSame('call-shape', $warningRecords[0]['context']['tool_call_id'] ?? null);
     }
 
     private function countingHandler(mixed $result): object

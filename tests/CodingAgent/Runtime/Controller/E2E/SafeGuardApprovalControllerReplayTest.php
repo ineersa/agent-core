@@ -10,15 +10,15 @@ use PHPUnit\Framework\Attributes\Group;
  * Controller-replay E2E test proving SafeGuard blocking-poll approval works
  * in the DEFAULT 'process' transport (separate messenger consumers).
  *
- * Flow (blocking-poll approach, no soft-interrupt):
+ * Flow (generic blocking-poll approach, no SafeGuard-specific infra):
  *   1. LLM calls write tool with a path OUTSIDE the project CWD
  *   2. SafeGuard intercepts with RequireApproval
- *   3. ExtensionToolHookEventSubscriber creates a ToolQuestion in the shared
- *      DB (kind=safeguard_approval) and BLOCKS in a polling loop
+ *   3. ExtensionToolHookEventSubscriber creates a generic ToolQuestion
+ *      (kind=approval) and BLOCKS in a polling loop
  *   4. Controller ToolQuestionPoller emits tool_question.requested
  *   5. Test injects the answer via answer_tool_question JSONL command
- *      with kind=safeguard_approval and answer="Allow once"
- *   6. Blocking poll returns "Allow once" → real tool handler executes
+ *      with answer="Allow once" (generic kind)
+ *   6. Blocking poll returns "Allow once" → resolveApprovalAnswer→Allow
  *   7. Write tool creates the file on disk (no retry needed, no extra LLM turn)
  *
  * @see ControllerReplayE2eTestCase
@@ -169,8 +169,8 @@ final class SafeGuardApprovalControllerReplayTest extends ControllerReplayE2eTes
         $this->assertNotEmpty($requestId,
             'tool_question.requested must carry a request_id. '
             .$this->collectDiagnostics($preAnswerEvents));
-        $this->assertSame('safeguard_approval', $tqPayload['kind'] ?? '',
-            'tool_question.requested kind must be safeguard_approval. '
+        $this->assertSame('approval', $tqPayload['kind'] ?? '',
+            'tool_question.requested kind must be generic approval. '
             .$this->collectDiagnostics($preAnswerEvents));
 
         // Phase 2: Send the answer and collect events until tool completes.
@@ -183,7 +183,7 @@ final class SafeGuardApprovalControllerReplayTest extends ControllerReplayE2eTes
             'payload' => [
                 'request_id' => $requestId,
                 'answer' => 'Allow once',
-                'kind' => 'safeguard_approval',
+                'kind' => 'approval',
             ],
         ]);
 
@@ -219,14 +219,14 @@ final class SafeGuardApprovalControllerReplayTest extends ControllerReplayE2eTes
 
     /**
      * Same flow as testWriteOutsideCwdAllowOnceViaBlockingPoll but sends the
-     * answer_tool_question WITHOUT kind=safeguard_approval. Proves the server-side
-     * kind inference in AnswerToolQuestionHandler works: when the command omits
-     * kind, the handler looks up the stored ToolQuestion, sees kind=safeguard_approval,
-     * and routes via handleStringAnswer instead of handleBooleanAnswer.
+     * answer_tool_question WITHOUT a kind field. With schema-driven routing this
+     * is the NORMAL case — the handler looks up the stored ToolQuestion by
+     * request_id and routes by schema type. The kind field in the answer command
+     * is optional (used as fallback only if the stored question is not found).
      *
-     * This closes the exact failure mode from session 2 where the live TUI sent
-     * answer_tool_question without kind, causing the wedge (answer stored as boolean
-     * false, answer_text=null, pollAnswerText returns null forever).
+     * This proves the schema-driven routing works regardless of whether the
+     * caller sends a kind: the stored question's enum schema routes to
+     * answerWithText, and the blocking poll returns the answer.
      */
     public function testWriteOutsideCwdAllowOnceViaBlockingPollWithoutKind(): void
     {
@@ -275,8 +275,8 @@ final class SafeGuardApprovalControllerReplayTest extends ControllerReplayE2eTes
         $this->assertNotEmpty($requestId,
             'tool_question.requested must carry request_id. '
             .$this->collectDiagnostics($preAnswerEvents));
-        $this->assertSame('safeguard_approval', $tqPayload['kind'] ?? '',
-            'tool_question.requested kind must be safeguard_approval. '
+        $this->assertSame('approval', $tqPayload['kind'] ?? '',
+            'tool_question.requested kind must be generic approval. '
             .$this->collectDiagnostics($preAnswerEvents));
 
         // Phase 2: Send answer WITHOUT kind — this is the regression test.

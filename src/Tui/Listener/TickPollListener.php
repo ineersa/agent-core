@@ -24,9 +24,9 @@ use Ineersa\Tui\Runtime\TuiRuntimeContext;
  * transcript display and working status when new events arrive.
  *
  * Also wires runtime human_input.requested events into the TUI
- * QuestionCoordinator/QuestionController so that approval/interrupt
- * questions (e.g. SafeGuard) show interactive overlays and answers
- * are dispatched back to the runtime via answer_human commands.
+ * QuestionCoordinator/QuestionController so that HITL/interrupt
+ * questions show interactive overlays and answers are dispatched
+ * back to the runtime via answer_human commands.
  *
  * Implements TuiListenerRegistrar for DI-driven registration.
  * The service itself is stateless; per-run state comes from the context.
@@ -154,7 +154,7 @@ final class TickPollListener implements TuiListenerRegistrar
         $request = new QuestionRequest(
             requestId: $requestId,
             source: QuestionSource::AgentCore,
-            kind: QuestionKind::Approval,
+            kind: QuestionKind::Choice,
             prompt: (string) ($p['prompt'] ?? 'Approval required.'),
             schema: $schema,
             choices: $choices,
@@ -248,26 +248,27 @@ final class TickPollListener implements TuiListenerRegistrar
 
     /**
      * Handle a tool_question.requested runtime event by enqueuing a
-     * Confirm or Approval question in the coordinator, depending on
-     * the event payload's kind field.
+     * schema-driven question in the coordinator.
      *
      * This is invoked by RuntimeEventPoller::poll() each time a
      * tool_question.requested event is polled from the runtime stream.
      * The event carries a request_id, prompt, kind, schema, and metadata
      * from the tool that needs user interaction.
      *
-     * Two question kinds are handled:
-     *   - 'confirm' (default): boolean answer, used by bash background prompts.
-     *     Answer sends 'yes'/'no' through answer_tool_question.
-     *   - 'safeguard_approval': string answer (Allow once/Always allow/Deny),
-     *     used by SafeGuard file-outside-CWD approvals. Answer sends the
-     *     raw string answer through answer_tool_question with kind=safeguard_approval.
+     * The question overlay is determined by the schema:
+     *   - schema has 'enum' -> Choice overlay (enum values as buttons)
+     *   - schema type=boolean -> Confirm overlay
+     *   - else -> Text overlay
      *
-     * Both are LOCAL tool questions:
+     * All tool_question.requested events are LOCAL tool questions:
      * - source is Tui (not AgentCore)
      * - transcript is false (no transcript block)
      * - answer sends answer_tool_question (not answer_human)
      * - no WaitingHuman state transition in AgentCore
+     *
+     * This contains ZERO extension-specific knowledge. The extension's
+     * schema (from requireApproval) drives both the TUI rendering and
+     * the server-side answer routing.
      *
      * A guard against duplicate request IDs prevents enqueueing the
      * same question twice if the event stream replays.
@@ -291,58 +292,58 @@ final class TickPollListener implements TuiListenerRegistrar
             return;
         }
 
-        $kind = (string) ($p['kind'] ?? 'confirm');
+        // Parse schema to determine the overlay type.
+        $rawSchema = $p['schema'] ?? null;
+        $schema = \is_string($rawSchema)
+            ? (json_decode($rawSchema, true) ?? ['type' => 'string'])
+            : (\is_array($rawSchema) ? $rawSchema : ['type' => 'string']);
 
-        // Diagnostic: log the received kind so we can debug any future
-        // routing mismatches between the controller (ToolQuestionPoller)
-        // and this tick listener.
-        if ('safeguard_approval' !== $kind && 'confirm' !== $kind) {
-            // Unknown kind — log it but still render a confirm overlay
-            // as a safe fallback so the user is not left with no UI.
-            // The AnswerToolQuestionHandler on the controller side also
-            // performs kind-inference from the stored ToolQuestion as a
-            // second line of defense.
-            trigger_error(
-                \sprintf('ToolQuestionPoller emitted unknown kind "%s" for request_id=%s — falling back to confirm', $kind, $requestIdFromPayload),
-                \E_USER_WARNING,
-            );
-        }
+        $hasEnum = isset($schema['enum']) && \is_array($schema['enum']) && [] !== $schema['enum'];
+        $isBoolean = ($schema['type'] ?? '') === 'boolean';
 
-        if ('safeguard_approval' === $kind) {
-            self::handleApprovalToolQuestion($p, $requestId, $runId, $requestIdFromPayload, $client, $questionCoordinator);
+        if ($hasEnum) {
+            self::handleChoiceToolQuestion($p, $schema, $requestId, $runId, $requestIdFromPayload, $client, $questionCoordinator);
 
             return;
         }
 
-        // Default: Confirm-kind question (e.g. bash background prompt).
-        self::handleConfirmToolQuestion($p, $requestId, $runId, $requestIdFromPayload, $client, $questionCoordinator);
+        if ($isBoolean) {
+            self::handleConfirmToolQuestion($p, $requestId, $runId, $requestIdFromPayload, $client, $questionCoordinator);
+
+            return;
+        }
+
+        // Fallback: if the schema is unexpected, still show a choice overlay
+        // so the user can type or see something. The extension's prompt and
+        // the server-side AnswerToolQuestionHandler (schema-driven) handle
+        // the actual answer content.
+        trigger_error(
+            \sprintf('ToolQuestionPoller emitted unexpected schema type for request_id=%s — falling back to choice overlay', $requestIdFromPayload),
+            \E_USER_WARNING,
+        );
+
+        self::handleChoiceToolQuestion($p, $schema, $requestId, $runId, $requestIdFromPayload, $client, $questionCoordinator);
     }
 
     /**
-     * Handle a tool_question.requested event with kind='safeguard_approval'.
+     * Handle a tool_question.requested with an enum schema.
      *
-     * Renders the SafeGuard approval overlay (Allow once / Always allow / Deny)
-     * through QuestionKind::Approval. The answer is sent as a raw string through
-     * answer_tool_question with the kind preserved so AnswerToolQuestionHandler
-     * stores it as answer_text (not the boolean answer column).
+     * Renders a Choice overlay with the schema's enum values as buttons.
+     * The answer is sent as a raw string through answer_tool_question.
      *
      * @param array<string, mixed> $p
+     * @param array<string, mixed> $schema
      */
-    private static function handleApprovalToolQuestion(
+    private static function handleChoiceToolQuestion(
         array $p,
+        array $schema,
         string $requestId,
         string $runId,
         string $requestIdFromPayload,
         AgentSessionClient $client,
         QuestionCoordinator $questionCoordinator,
     ): void {
-        // Parse schema from the stored JSON, or build default SafeGuard schema.
-        $rawSchema = $p['schema'] ?? null;
-        $schema = \is_string($rawSchema)
-            ? (json_decode($rawSchema, true) ?? ['type' => 'string', 'enum' => ['Allow once', 'Always allow', 'Deny']])
-            : (\is_array($rawSchema) ? $rawSchema : ['type' => 'string', 'enum' => ['Allow once', 'Always allow', 'Deny']]);
-
-        $enum = $schema['enum'] ?? ['Allow once', 'Always allow', 'Deny'];
+        $enum = $schema['enum'] ?? [];
         $choices = array_map(
             static fn (string $label): QuestionOption => new QuestionOption($label),
             array_values($enum),
@@ -351,7 +352,7 @@ final class TickPollListener implements TuiListenerRegistrar
         $request = new QuestionRequest(
             requestId: $requestId,
             source: QuestionSource::Tui,
-            kind: QuestionKind::Approval,
+            kind: QuestionKind::Choice,
             prompt: (string) ($p['prompt'] ?? 'Approval required.'),
             schema: $schema,
             choices: $choices,
@@ -366,16 +367,15 @@ final class TickPollListener implements TuiListenerRegistrar
         $questionCoordinator->enqueue(
             $request,
             onAnswer: static function (mixed $answer) use ($client, $runId, $requestIdFromPayload): void {
-                // QuestionController::Approval returns the label string directly
-                // (e.g. 'Allow once', 'Always allow', 'Deny').
-                $answerStr = \is_scalar($answer) ? (string) $answer : 'Deny';
+                // Choice returns the label string directly.
+                $answerStr = \is_scalar($answer) ? (string) $answer : '';
 
                 $client->send($runId, new UserCommand(
                     type: 'answer_tool_question',
                     payload: [
                         'request_id' => $requestIdFromPayload,
                         'answer' => $answerStr,
-                        'kind' => 'safeguard_approval',
+                        'kind' => 'approval',
                     ],
                 ));
             },
@@ -384,8 +384,8 @@ final class TickPollListener implements TuiListenerRegistrar
                     type: 'answer_tool_question',
                     payload: [
                         'request_id' => $requestIdFromPayload,
-                        'answer' => 'Deny',
-                        'kind' => 'safeguard_approval',
+                        'answer' => '',
+                        'kind' => 'approval',
                     ],
                 ));
             },
@@ -393,11 +393,10 @@ final class TickPollListener implements TuiListenerRegistrar
     }
 
     /**
-     * Handle a tool_question.requested event with Confirm-kind (default).
+     * Handle a tool_question.requested event with a boolean schema.
      *
      * Renders a boolean yes/no confirmation. The answer is sent as a boolean
-     * through answer_tool_question (backward-compatible with existing
-     * AnswerToolQuestionHandler which resolves boolean answers).
+     * through answer_tool_question.
      *
      * @param array<string, mixed> $p
      */

@@ -165,110 +165,104 @@ class QuestionControllerTest extends TestCase
     }
 
     #[Test]
-    public function testApprovalItemsDefault(): void
+    public function testChoiceItemsFromChoices(): void
     {
         $request = new QuestionRequest(
-            requestId: 'approval-1',
+            requestId: 'choice-1',
             source: QuestionSource::Tui,
-            kind: QuestionKind::Approval,
-            prompt: 'Approve this change?',
+            kind: QuestionKind::Choice,
+            prompt: 'Choose an option:',
+            choices: [
+                new QuestionOption('Option A'),
+                new QuestionOption('Option B'),
+                new QuestionOption('Option C'),
+            ],
         );
 
         $items = $this->invokeBuildItems($request);
 
-        // Default schema has no enum; falls back to generic Approve/Reject
-        self::assertCount(3, $items); // Approve, Reject, Type your answer
-        self::assertSame('approve', $items[0]['value']);
-        self::assertStringContainsString('Approve', $items[0]['label']);
-        self::assertStringNotContainsString('\u{', $items[0]['label'], 'Literal unicode escapes must not be rendered');
-        self::assertSame('reject', $items[1]['value']);
-        self::assertStringContainsString('Reject', $items[1]['label']);
-        self::assertStringNotContainsString('\u{', $items[1]['label'], 'Literal unicode escapes must not be rendered');
-        self::assertSame('__other__', $items[2]['value']);
+        // Choice items = choices + 'Type your answer' (allowOther defaults to true)
+        self::assertCount(4, $items);
+        self::assertSame('Option A', $items[0]['value']);
+        self::assertSame('Option A', $items[0]['label']);
+        self::assertSame('Option B', $items[1]['value']);
+        self::assertSame('Option B', $items[1]['label']);
+        self::assertSame('Option C', $items[2]['value']);
+        self::assertSame('Option C', $items[2]['label']);
+        self::assertSame('__other__', $items[3]['value']);
     }
 
     #[Test]
-    public function testApprovalItemsFromSchemaEnumWithoutOther(): void
+    public function testChoiceItemsWithSafeGuardVocabulary(): void
     {
-        // SafeGuard sets schema.enum: ['Allow once', 'Always allow', 'Deny']
-        // and allowOther: false (enum-only, no freeform).
         $request = new QuestionRequest(
-            requestId: 'approval-enum',
-            source: QuestionSource::AgentCore,
-            kind: QuestionKind::Approval,
-            prompt: 'Allow destructive command: rm -rf /tmp?',
-            schema: [
-                'type' => 'string',
-                'enum' => ['Allow once', 'Always allow', 'Deny'],
+            requestId: 'choice-sg',
+            source: QuestionSource::Tui,
+            kind: QuestionKind::Choice,
+            prompt: 'Pick one:',
+            choices: [
+                new QuestionOption('Allow once'),
+                new QuestionOption('Always allow'),
+                new QuestionOption('Deny'),
             ],
             allowOther: false,
         );
 
         $items = $this->invokeBuildItems($request);
 
+        // Choice without allowOther = choices only
         self::assertCount(3, $items);
-        // Values must remain the raw enum strings (not icon-prefixed) for correct
-        // answer_human command routing
         self::assertSame('Allow once', $items[0]['value']);
+        self::assertSame('Allow once', $items[0]['label']);
         self::assertSame('Always allow', $items[1]['value']);
+        self::assertSame('Always allow', $items[1]['label']);
         self::assertSame('Deny', $items[2]['value']);
-        // Labels contain display-only Unicode icons + the answer text.
-        // Values remain the raw enum strings for correct answer_human routing.
-        self::assertStringContainsString('Allow once', $items[0]['label']);
-        self::assertNotSame('Allow once', $items[0]['label'], 'Label must differ from value because icons are added');
-        self::assertStringContainsString('Always allow', $items[1]['label']);
-        self::assertNotSame('Always allow', $items[1]['label']);
-        self::assertStringContainsString('Deny', $items[2]['label']);
-        self::assertNotSame('Deny', $items[2]['label']);
-        // Verify no raw unicode escape sequences are rendered as text.
-        foreach ($items as $item) {
-            self::assertStringNotContainsString('\u{', $item['label'], \sprintf(
-                'Literal unicode escape in label for value "%s"',
-                $item['value'],
-            ));
-        }
+        self::assertSame('Deny', $items[2]['label']);
     }
 
     #[Test]
-    public function testApprovalItemsEmptySchemaEnumFallsBack(): void
-    {
-        // Schema has enum but it's empty — should fall back to generic
-        $request = new QuestionRequest(
-            requestId: 'approval-empty-enum',
-            source: QuestionSource::Tui,
-            kind: QuestionKind::Approval,
-            prompt: 'Approve?',
-            schema: ['type' => 'string', 'enum' => []],
-            allowOther: false,
-        );
-
-        $items = $this->invokeBuildItems($request);
-
-        self::assertCount(2, $items); // generic Approve, Reject
-        self::assertSame('approve', $items[0]['value']);
-        self::assertStringContainsString('Approve', $items[0]['label']);
-        self::assertSame('reject', $items[1]['value']);
-        self::assertStringContainsString('Reject', $items[1]['label']);
-    }
-
-    #[Test]
-    public function testApprovalItemsWithoutOther(): void
+    public function testChoiceItemsWithDescription(): void
     {
         $request = new QuestionRequest(
-            requestId: 'approval-2',
-            source: QuestionSource::Tui,
-            kind: QuestionKind::Approval,
-            prompt: 'Approve?',
+            requestId: 'choice-3',
+            source: QuestionSource::AgentCore,
+            kind: QuestionKind::Choice,
+            prompt: 'Allow destructive command?',
+            choices: [
+                new QuestionOption('Allow once', 'Approves one-time'),
+                new QuestionOption('Allow always', 'Persists to policy'),
+            ],
             allowOther: false,
         );
 
         $items = $this->invokeBuildItems($request);
 
         self::assertCount(2, $items);
-        self::assertSame('approve', $items[0]['value']);
-        self::assertStringContainsString('Approve', $items[0]['label']);
-        self::assertSame('reject', $items[1]['value']);
-        self::assertStringContainsString('Reject', $items[1]['label']);
+        self::assertSame('Allow once', $items[0]['value']);
+        self::assertSame('Allow once', $items[0]['label']);
+        self::assertSame('Approves one-time', $items[0]['description']);
+        self::assertSame('Allow always', $items[1]['value']);
+        self::assertSame('Allow always', $items[1]['label']);
+        self::assertSame('Persists to policy', $items[1]['description']);
+    }
+
+    #[Test]
+    public function testChoiceItemsEmptyChoicesFallsBack(): void
+    {
+        // Empty choices list with allowOther=false → fall back to generic
+        $request = new QuestionRequest(
+            requestId: 'choice-empty',
+            source: QuestionSource::Tui,
+            kind: QuestionKind::Choice,
+            prompt: 'Pick?',
+            choices: [],
+            allowOther: false,
+        );
+
+        $items = $this->invokeBuildItems($request);
+
+        // No choices, no Type your answer (allowOther=false) → empty
+        self::assertCount(0, $items);
     }
 
     #[Test]

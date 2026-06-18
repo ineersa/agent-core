@@ -16,17 +16,19 @@ use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
  * Handles answer_tool_question JSONL commands from the parent TUI process.
  *
  * When the TUI user answers a local tool question (e.g. bash background
- * prompt, SafeGuard approval), the parent sends an answer_tool_question
- * JSONL command with the request_id and answer. This handler writes the
- * answer to the ToolQuestionStore so the blocked tool worker can pick it up.
+ * prompt or an extension's approval prompt), the parent sends an
+ * answer_tool_question JSONL command with the request_id and answer.
+ * This handler writes the answer to the ToolQuestionStore so the blocked
+ * tool worker can pick it up.
  *
- * The handler stores answers according to the ToolQuestion's kind:
- * - Confirm-kind (bash bg prompts): stores the boolean answer
- * - Approval-kind (SafeGuard): stores the string answer (e.g. 'Allow once')
+ * The handler routes the answer by the STORED question's schema type:
+ * - boolean schema (type=boolean) -> stores the boolean answer (legacy confirm path)
+ * - string/enum schema -> stores the string answer via answerWithText
  *
- * This is the controller-side counterpart to AnswerHumanHandler but for
- * local tool questions that must NOT go through answer_human, WaitingHuman,
- * or transcript projection.
+ * This is schema-driven, not kind-driven — the handler contains ZERO
+ * references to any specific extension. The extension supplies the
+ * schema via ToolCallDecisionDTO::requireApproval(); the infra routes
+ * generically.
  */
 #[AsEventListener(event: ControllerCommandEvent::class)]
 final readonly class AnswerToolQuestionHandler
@@ -70,38 +72,39 @@ final readonly class AnswerToolQuestionHandler
             return;
         }
 
-        // Determine the question kind to decide whether to store a
-        // string answer vs boolean answer.
-        $kind = (string) ($command->payload['kind'] ?? '');
+        // Route by the stored question's schema type — no kind-based routing.
+        // The extension's schema (supplied via requireApproval) determines
+        // whether the answer is stored as boolean or string.
+        $stored = $this->store->findByRequestId($requestId);
 
-        if ('safeguard_approval' === $kind) {
+        if (null === $stored) {
+            // No stored question found — try payload-based routing,
+            // falling back to boolean for backward compat.
+            $kind = (string) ($command->payload['kind'] ?? '');
+            if ('approval' === $kind) {
+                $this->handleStringAnswer($event, $requestId, $command);
+
+                return;
+            }
+
+            $this->handleBooleanAnswer($event, $requestId, $command);
+
+            return;
+        }
+
+        // Parse the stored schema to determine the answer type.
+        $schema = $this->parseSchema($stored->schema);
+        $isEnum = isset($schema['enum']) && \is_array($schema['enum']) && [] !== $schema['enum'];
+        $isBoolean = ($schema['type'] ?? '') === 'boolean';
+
+        if ($isEnum || !$isBoolean) {
+            // Enum/string schema → store as text answer
             $this->handleStringAnswer($event, $requestId, $command);
 
             return;
         }
 
-        // When the payload doesn't carry a kind (or has an unrecognized
-        // kind), look up the stored ToolQuestion to infer the correct
-        // answer path. This handles: (a) legacy callers that never send
-        // kind, and (b) the SafeGuard case where the TUI-side routing
-        // sent a different or empty kind by mistake. Without this
-        // inference, a safeguard_approval question answered without the
-        // proper kind would be stored as boolean false (via
-        // handleBooleanAnswer), answer_text stays null, and the blocking
-        // poll in ExtensionToolHookEventSubscriber reads null from
-        // pollAnswerText and hangs forever.
-        if ('' === $kind) {
-            $stored = $this->store->findByRequestId($requestId);
-            if (null !== $stored && 'safeguard_approval' === $stored->kind) {
-                $this->handleStringAnswer($event, $requestId, $command);
-
-                return;
-            }
-        }
-
-        // Default to boolean for unrecognized or missing kinds, and for
-        // stored Confirm-kind questions (backward compat with existing
-        // boolean-only confirm callers).
+        // Boolean schema → store as boolean answer
         $this->handleBooleanAnswer($event, $requestId, $command);
     }
 
@@ -131,7 +134,7 @@ final readonly class AnswerToolQuestionHandler
                 type: RuntimeEventTypeEnum::ProtocolError->value,
                 runId: $command->runId ?? '',
                 seq: 0,
-                payload: ['error' => 'answer_tool_question with kind=safeguard_approval requires a non-empty answer'],
+                payload: ['error' => 'answer_tool_question requires a non-empty answer for string/enum questions'],
             ));
 
             return;
@@ -149,5 +152,25 @@ final readonly class AnswerToolQuestionHandler
                 ],
             ));
         }
+    }
+
+    /**
+     * Parse a stored schema value (JSON string or array) into an array.
+     *
+     * @return array<string, mixed>
+     */
+    private function parseSchema(mixed $schema): array
+    {
+        if (\is_array($schema)) {
+            return $schema;
+        }
+
+        if (\is_string($schema) && '' !== $schema) {
+            $decoded = json_decode($schema, true);
+
+            return \is_array($decoded) ? $decoded : ['type' => 'string'];
+        }
+
+        return ['type' => 'string'];
     }
 }

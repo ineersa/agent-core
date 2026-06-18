@@ -25,14 +25,27 @@ use Ineersa\Hatfield\ExtensionApi\ToolCallHookInterface;
  * returns RequireApproval to trigger the HITL approval flow instead
  * of immediately blocking.
  *
- * Implements ApprovalAnswerHookInterface to receive the human's answer
- * and update the ApprovalSessionTracker accordingly:
- * - "Allow once" → mark approved for the next retry
- * - "Always allow" → mark approved AND persist to policy file
- * - "Deny" → remove pending entry, command stays blocked
+ * Implements ApprovalAnswerHookInterface to receive the human's answer,
+ * update the ApprovalSessionTracker accordingly, and resolve the answer
+ * into a tool-execution decision:
+ * - "Allow once" / "Always allow" → allow() — handler runs
+ * - "Deny" → block('safeguard_denied', ...) — denied
+ * - "Always allow" also persists to policy file via onApprovalAnswered
  */
 final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, ApprovalAnswerHookInterface
 {
+    /**
+     * Canonical enum values for SafeGuard approval answers.
+     *
+     * These are SafeGuard's own vocabulary — stored in the ToolQuestion schema,
+     * rendered as TUI choice buttons, and mapped to tool-execution decisions
+     * in resolveApprovalAnswer(). The CodingAgent infrastructure uses the
+     * extension's supplied schema and never references these literals.
+     *
+     * Public so that tests can reference them without hardcoding strings.
+     */
+    public const array SANE_APPROVAL_ENUM = ['Allow once', 'Always allow', 'Deny'];
+
     /**
      * @var list<SafeGuardDecisionKind> Policy-relaxable categories that can be approved via HITL
      */
@@ -131,7 +144,7 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
                 questionId: $questionId,
                 schema: [
                     'type' => 'string',
-                    'enum' => ['Allow once', 'Always allow', 'Deny'],
+                    'enum' => self::SANE_APPROVAL_ENUM,
                 ],
                 details: [
                     'category' => $decision->kind->value,
@@ -198,6 +211,43 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
         //
         // The guard is intentionally sparse: no logging, no exception.
         // A stray/corrupted answer should not crash the run.
+    }
+
+    public function resolveApprovalAnswer(ApprovalAnswerContextDTO $context): ToolCallDecisionDTO
+    {
+        $answer = $context->answer;
+
+        if ('Allow once' === $answer || 'Always allow' === $answer) {
+            return ToolCallDecisionDTO::allow();
+        }
+
+        if ('Deny' === $answer) {
+            return ToolCallDecisionDTO::block(
+                reason: 'safeguard_denied',
+                details: [
+                    'category' => $context->approvalContext['category'] ?? '',
+                    'intercepted' => true,
+                    'message' => \sprintf(
+                        'Tool "%s" was denied by SafeGuard: the human denied the operation.',
+                        $context->toolName,
+                    ),
+                ],
+            );
+        }
+
+        // Unrecognized answer — fail closed
+        return ToolCallDecisionDTO::block(
+            reason: 'safeguard_unknown_answer',
+            details: [
+                'category' => $context->approvalContext['category'] ?? '',
+                'intercepted' => true,
+                'message' => \sprintf(
+                    'Tool "%s" was denied by SafeGuard: unknown answer "%s".',
+                    $context->toolName,
+                    $answer,
+                ),
+            ],
+        );
     }
 
     /**
