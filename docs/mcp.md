@@ -157,20 +157,88 @@ Phase 1 adds the runtime messenger foundation:
   on `agent.command.bus` and routed to the `mcp` transport.
 - Structured logs include `component=mcp`, `run_id`, `session_id`, `mcp_event`,
   `server_name`, and `transport` fields where applicable — never raw env values,
+  `server_name`, and `transport` fields where applicable — never raw env values,
   headers, tokens, or secrets.
 
-## Limitations in Phase 1
+## Phase 2 — Connection manager, discovery, and session catalog
+
+Phase 2 (MCP-03) adds real SDK connection management and tool discovery:
+
+- `McpConnectionManager` owns one SDK client per `(runId, serverName)` in the MCP broker process.
+- STDIO servers are session-scoped keep-alive — started once per session and reused.
+- On session initialize and catalog refresh: load current MCP config, connect to each
+  enabled server, list tools, and atomically write the session catalog.
+- **Session catalog** is written to `.hatfield/sessions/<runId>/mcp-tools.json`
+  where `session_id === run_id`.  This is the source of truth for available MCP tools
+  during a session.  It is NOT a cache — `app.cache` is not used as canonical catalog.
+- Catalog metadata includes `generatedAt`, `generation`, and `configHash` for invalidation.
+- Rediscovery is a full snapshot replacement (temp file + atomic rename).  Readers see
+  either the previous complete snapshot or the next complete snapshot, never a partial file.
+- Tool names are namespaced as `{server}_{tool}` with sanitization to safe identifiers.
+- Failed server discovery is warning-only and recorded with diagnostic-safe error messages
+  in the catalog — it must not crash the session. An empty/failed catalog snapshot is
+  written on config or discovery failure to invalidate any previously-discovered tools.
+- The catalog remains asynchronous: MCP-04 will handle LLM catalog synchronization and
+  dynamic ToolRegistry registration.
+
+### Session catalog path
+
+```text
+<projectCwd>/.hatfield/sessions/<runId>/mcp-tools.json
+```
+
+### Catalog shape
+
+```jsonc
+{
+  "schemaVersion": 1,
+  "runId": "...",
+  "generatedAt": "2026-06-18T12:00:00Z",
+  "generation": 1,
+  "configHash": "sha256-...",
+  "servers": {
+    "<serverName>": {
+      "serverName": "<serverName>",
+      "transport": "stdio|http",
+      "status": "connected|failed",
+      "errorMessage": null,
+      "tools": [
+        {
+          "hatfieldName": "server_tool",
+          "serverName": "server",
+          "mcpName": "tool",
+          "description": "...",
+          "inputSchema": { "type": "object", ... }
+        }
+      ]
+    }
+  }
+}
+```
+
+### Rediscovery and invalidation
+
+- **Triggers:** start_run, resume, and explicit McpRefreshCatalogCommand.
+- **Full snapshot:** each rediscovery replaces the entire catalog file atomically.
+- **Invalidation:** a new generation (with new `configHash` if config changed) replaces
+  the old catalog.  Failed discovery writes an empty catalog, so stale tools from
+  a previous successful discovery are never silently retained.
+- **Disconnect:** McpDisconnectSessionCommand closes broker-owned SDK clients.
+  The catalog file is retained as a historical/debug session artifact.
+  Full lifecycle cleanup/orphan hardening remains MCP-06.
+
+## Limitations in current phase
 
 - No OAuth support.
-- Configuration loading and validation work, but servers are NOT yet connected
-  (MCP-03 / Phase 2).
-- No tool discovery or catalog persistence (MCP-03).
-- No dynamic tool registration (MCP-04).
+- MCP tool catalog is not yet read by LLM schema resolution (MCP-04).
+- No dynamic ToolRegistry registration from catalog (MCP-04).
 - No broker request/reply tool invocation (MCP-05).
+- HTTP transport uses PSR-18/PSR-17 discovery (explicit injection deferred).
+- Deep graceful shutdown/orphan cleanup is not yet implemented (MCP-06).
 - MCP config failures during initialize are warning-only — normal sessions
   continue unaffected.
 
-These will be added in subsequent phases per `.pi/plans/mcp-client-implementation-plan.md`.
+These will be addressed in subsequent phases per `.pi/plans/mcp-client-implementation-plan.md`.
 
 ## SDK boundary
 
