@@ -76,15 +76,22 @@ final class CancelStickinessE2eTest extends TestCase
             $this->tmux->sendKey($pane, 'C-u');
             usleep(100_000);
 
-            // Submit a prompt that triggers a tool-call fixture (read ./test.txt).
-            // The tool execution involves real filesystem I/O, giving the cancel
-            // mechanism time to propagate between the LLM and tool phases.
-            $prompt = 'Read ./test.txt';
+            // Submit a prompt that triggers a slow bash tool call (sleep 3).
+            // Real bash execution gives the cancel mechanism several seconds to
+            // propagate, time for the TUI to render Cancelling, and time for
+            // the tmux capture to record it before the run ends.
+            $prompt = 'Run sleep 3';
             $this->tmux->sendLiteral($pane, $prompt);
             $this->tmux->sendKey($pane, 'Enter');
 
             // Wait for the run to start (Working indicator appears).
             $this->tmux->waitForCaptureContains($pane, '◐ Working', 5.0);
+
+            // Let the bash tool start executing (sleep 3) before sending
+            // Escape, so the cancel lands during tool execution rather than
+            // during LLM response processing. This gives the TUI at least
+            // one render cycle with Cancelling visible.
+            usleep(1_500_000);
 
             // Now send Escape to cancel the run.
             $this->tmux->sendKey($pane, 'Escape');
@@ -114,15 +121,20 @@ final class CancelStickinessE2eTest extends TestCase
                 $cancellingPos = mb_strrpos($capture, 'cancelling');
             }
 
-            if (false !== $cancellingPos) {
-                $afterCancelling = mb_substr($capture, $cancellingPos);
-                $this->assertStringNotContainsString(
-                    '◐ Working',
-                    $afterCancelling,
-                    'Footer must NOT show "Working" after "Cancelling" — late deltas must not regress the status',
-                );
-            }
+            // Assert Cancelling is present before checking that Working
+            // does NOT follow it. If Cancelling is absent, the subsequent
+            // guard would silently skip the assertion (0 assertions = risky).
+            $this->assertNotFalse(
+                $cancellingPos,
+                'Cancelling must appear in capture — cancel did not render in the TUI',
+            );
 
+            $afterCancelling = mb_substr($capture, $cancellingPos);
+            $this->assertStringNotContainsString(
+                '◐ Working',
+                $afterCancelling,
+                'Footer must NOT show "Working" after "Cancelling" — late deltas must not regress the status',
+            );
             // Clean exit.
             $this->tmux->sendKey($pane, 'C-d');
         } catch (\Throwable $e) {
@@ -138,9 +150,10 @@ final class CancelStickinessE2eTest extends TestCase
     {
         $fixturePaths = [];
 
-        // Use the tool-call-read fixture: triggers a read tool call with
-        // real filesystem I/O, giving the cancel mechanism time to work.
-        $toolCallFixture = __DIR__.'/fixtures/tui-tool-call-read.json';
+        // Use the bash-sleep fixture: triggers a real bash sleep 3,
+        // giving the cancel mechanism several seconds to propagate and
+        // the TUI time to render the Cancelling status.
+        $toolCallFixture = __DIR__.'/fixtures/tui-tool-call-bash-sleep.json';
         if (is_file($toolCallFixture)) {
             $fixturePaths[] = $toolCallFixture;
         }
@@ -158,7 +171,7 @@ final class CancelStickinessE2eTest extends TestCase
         return \sprintf(
             'APP_ENV=test HATFIELD_TEST_DATABASE_PATH=%s HOME=%s %s %s %s agent '
                 .'--model=llama_cpp_test/test '
-                .'--tools-excluded=bash 2>&1',
+                .'2>&1',
             escapeshellarg($dbPath),
             escapeshellarg($this->testProjectDir.'/home'),
             $fixtureEnv,
@@ -217,8 +230,7 @@ final class CancelStickinessE2eTest extends TestCase
                             'edit' => 'edit',
                             'read' => 'read',
                         ],
-                        'allow_command_patterns' => ['^ls\b', '^printf\b', '^echo\b'],
-                        'allow_write_outside_cwd' => [],
+                        'allow_command_patterns' => ['^ls\b', '^printf\b', '^echo\b', '^sleep\b'],
                         'protected_read_patterns' => [],
                         'dangerous_command_patterns' => [],
                     ],
