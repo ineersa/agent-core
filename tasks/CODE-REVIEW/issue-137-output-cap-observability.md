@@ -45,7 +45,7 @@ Testing skill and `tests/AGENTS.md` were read before proposing validation. This 
 - Focused validation uses Castor only: relevant `castor test --filter=...`, `castor test:controller-replay` as needed, `castor test:tui` for TUI proof, `castor deptrac`, `castor phpstan`, `castor cs-check`, and final deterministic `castor check` via task workflow.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/issue-137-output-cap-observability
 Worktree: /home/ineersa/projects/agent-core-worktrees/issue-137-output-cap-observability
 Fork run: osilw4kokk9s
@@ -154,3 +154,13 @@ Completed:
 - Recorded fork run: osilw4kokk9s
 - Validation: osilw4kokk9s: castor cs-check — clean.; osilw4kokk9s: castor phpstan — 0 errors.; osilw4kokk9s: castor test --filter=OutputCapLlmTransformHookTest — 14/14 pass, 62 assertions.; Parent verification: worktree clean at f7d8cf239; rg output_cap_notice/model_tool_inputs/ModelToolInput across src/tests — no hits.
 - Summary: Tiny follow-up fork osilw4kokk9s completed and pushed commit f7d8cf239. Change is comment/PHPDoc only in OutputCapLlmTransformHook: stale references to checking raw tool output were updated to say path cap is resolved via OutputCap::capForPath() and actual model-facing combinedText (including JSON wrapping) is compared against that cap. No behavior changes.
+
+## Task workflow update - 2026-06-18T14:19:01.164Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Running deterministic castor check in worktree (timeout 1200s)...
+- castor check passed (43.2s).
+- Pushed task/issue-137-output-cap-observability to origin.
+- branch 'task/issue-137-output-cap-observability' set up to track 'origin/task/issue-137-output-cap-observability'.
+- Skipped PR creation (pushOnly: true).
+- Validation: ogyf6t15ad4l: rg output_cap_notice/model_tool_inputs/ModelToolInput across src/tests — clean.; ogyf6t15ad4l: castor focused tests — 173/173 and 150/150 pass.; ogyf6t15ad4l: castor test:tui --filter=OutputCap — pass (53 tests, 1 skipped llm-real).; ogyf6t15ad4l: castor deptrac — 0 violations; castor phpstan — 0 errors; castor cs-check — clean.; osilw4kokk9s: castor cs-check — clean; castor phpstan — 0 errors; castor test --filter=OutputCapLlmTransformHookTest — 14/14 pass.; move_task CODE-REVIEW deterministic castor check should pass before task transition.
+- Summary: Review-iteration fixes complete and pushed through f7d8cf239. Existing PR remains https://github.com/ineersa/agent-core/pull/164 (gh auth token is invalid for creating/updating PR via CLI, so CODE-REVIEW transition used pushOnly). Addressed sensible reviewer suggestions: canonical output_capped key only, OutputCapLlmTransformHook cap decision uses actual model-facing combinedText with regression coverage, unused ModelInputMessageDTO::fromArray removed, stale PHPDoc/comments updated. Exact model-facing TUI invariant preserved; SafeGuard-specific styling remains deferred.
