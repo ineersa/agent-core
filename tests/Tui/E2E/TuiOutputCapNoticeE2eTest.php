@@ -31,13 +31,13 @@ final class TuiOutputCapNoticeE2eTest extends TestCase
     protected function setUp(): void
     {
         if (!TmuxHarness::isAvailable()) {
-            self::markTestSkipped('tmux is not installed. Skipping TUI e2e tests.');
+            $this->markTestSkipped('tmux is not installed. Skipping TUI e2e tests.');
         }
 
         $this->tmux = new TmuxHarness();
         $this->testProjectDir = $this->createIsolatedProjectDir();
         $this->snapshotDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
-        @\mkdir($this->snapshotDir, 0o777, true);
+        @mkdir($this->snapshotDir, 0o777, true);
     }
 
     protected function tearDown(): void
@@ -85,7 +85,7 @@ final class TuiOutputCapNoticeE2eTest extends TestCase
 
             $firstCapture = $this->tmux->capturePlainWithHistory($pane, 2000);
             $matched = preg_match('/session\s+(\d+)/', $firstCapture, $matches);
-            self::assertSame(1, $matched,
+            $this->assertSame(1, $matched,
                 'Footer must show numeric session ID after first submit');
             $sessionId = $matches[1];
 
@@ -99,7 +99,8 @@ final class TuiOutputCapNoticeE2eTest extends TestCase
             $this->tmux->sendKey($pane, 'Enter');
 
             // Wait for the output-cap ToolResult block (⚠) with the exact
-            // model-facing "[Output capped to ...]" notice text.
+            // model-facing "[Output capped to ...]" notice text from
+            // model_input_messages (central-cap path).
             $this->tmux->waitForCallback(
                 $pane,
                 static fn (string $cap): bool => str_contains($cap, '[Output capped to'),
@@ -112,37 +113,47 @@ final class TuiOutputCapNoticeE2eTest extends TestCase
             $visiblePane = $this->tmux->capturePlainWithHistory($pane, 3000);
 
             // 1. The output-cap ToolResult block prefix (⚠) must be visible.
-            self::assertStringContainsString('⚠', $visiblePane,
+            $this->assertStringContainsString('⚠', $visiblePane,
                 'Output-cap ToolResult block warning icon must be visible in transcript');
 
-            // 2. The exact model-facing cap notice must be visible verbatim.
-            self::assertStringContainsString('[Output capped to', $visiblePane,
+            // 2. The exact model-facing cap notice must be visible verbatim
+            //    (from model_input_messages, not from tool_execution_end.result).
+            $this->assertStringContainsString('[Output capped to', $visiblePane,
                 'Model-facing cap notice text must be visible in transcript');
 
             // 3. Full output size from the exact notice.
-            self::assertStringContainsString('Full output: 50000 characters', $visiblePane,
+            $this->assertStringContainsString('Full output: 50000 characters', $visiblePane,
                 'Full output size from exact model-facing notice must be visible');
 
             // 4. Saved path from the exact notice.
-            self::assertStringContainsString('Saved for audit at: /tmp/cap/', $visiblePane,
+            $this->assertStringContainsString('Saved for audit at: /tmp/cap/', $visiblePane,
                 'Saved path from exact model-facing notice must be visible');
 
             // 5. Follow-up guidance from the exact notice.
-            self::assertStringContainsString('Do NOT rerun', $visiblePane,
+            $this->assertStringContainsString('Do NOT rerun', $visiblePane,
                 'Do-not-rerun instruction from exact cap notice must be visible');
-            self::assertStringContainsString('read path=', $visiblePane,
+            $this->assertStringContainsString('read path=', $visiblePane,
                 'Read-path guidance from exact cap notice must be visible');
 
-            // 6. No paraphrase/synthesis — the TUI shows exactly what the model saw.
-            self::assertStringNotContainsString('Output exceeded', $visiblePane,
+            // 6. Raw tool output from tool_execution_end.result must NOT be
+            //    visible — the ToolResult block was replaced by model_input_messages.
+            $this->assertStringNotContainsString('RAW FULL TOOL OUTPUT', $visiblePane,
+                'Raw tool output text must NOT survive after model_input_messages projection');
+
+            // 7. Generated user-role model input projected as System block.
+            $this->assertStringContainsString('Tool result image for view_image', $visiblePane,
+                'Generated user-role model input (System block) must be visible with exact text');
+
+            // 8. No paraphrase/synthesis — the TUI shows exactly what the model saw.
+            $this->assertStringNotContainsString('Output exceeded', $visiblePane,
                 'Must NOT contain paraphrased "Output exceeded" text');
-            self::assertStringNotContainsString('Model was shown', $visiblePane,
+            $this->assertStringNotContainsString('Model was shown', $visiblePane,
                 'Must NOT contain paraphrased "Model was shown" text');
-            self::assertStringNotContainsString('visible chars', $visiblePane,
+            $this->assertStringNotContainsString('visible chars', $visiblePane,
                 'Must NOT contain old paraphrased "visible chars" text');
 
-            // 7. The session ID appears in the footer.
-            self::assertStringContainsString($sessionId, $visiblePane,
+            // 9. The session ID appears in the footer.
+            $this->assertStringContainsString($sessionId, $visiblePane,
                 'The exact session ID should be visible in the footer');
 
             // Save ANSI snapshot.
@@ -164,7 +175,8 @@ final class TuiOutputCapNoticeE2eTest extends TestCase
 
     /**
      * Write a custom events.jsonl with a tool execution whose result text
-     * contains the output cap marker "[Output capped to ...]".
+     * is raw (uncapped) and carried by the subsequent llm_step_completed's
+     * model_input_messages payload to prove the central-cap path.
      */
     private function writeCappedOutputFixture(string $sessionId): void
     {
@@ -246,7 +258,10 @@ final class TuiOutputCapNoticeE2eTest extends TestCase
             ],
             'ts' => $now,
         ];
-        // tool_execution_end WITH capped result (this is the key fixture data)
+        // tool_execution_end WITH raw (uncapped) result — the model-facing
+        // capped text is delivered later via model_input_messages in
+        // the following llm_step_completed so the TUI proves the
+        // central-cap path.
         $events[] = [
             'schema_version' => '1.0', 'run_id' => $sessionId,
             'seq' => 7, 'turn_no' => 1, 'type' => 'tool_execution_end',
@@ -254,7 +269,7 @@ final class TuiOutputCapNoticeE2eTest extends TestCase
                 'tool_call_id' => 'call_read_cap_001',
                 'order_index' => 0,
                 'is_error' => false,
-                'result' => "[Output capped to 20000 characters]\n\nFull output: 50000 characters (~12500 tokens).\nSaved for audit at: /tmp/cap/cap-lines.txt\n\nDo NOT rerun the same full command/tool call.\nDo NOT read the saved file in full.\n\nUse targeted tool calls to continue reading:\n• Read more from the file: `read path=<path> offset=<next_line> limit=<lines>`\n• Search for relevant content or ask for a summary\n\nIf you must inspect the raw saved output, use `read` with a small window.\n",
+                'result' => 'RAW FULL TOOL OUTPUT THAT SHOULD NOT REMAIN VISIBLE AFTER MODEL INPUT PROJECTION',
             ],
             'ts' => $now,
         ];
@@ -270,6 +285,9 @@ final class TuiOutputCapNoticeE2eTest extends TestCase
             'payload' => ['message_role' => 'tool', 'tool_call_id' => 'call_read_cap_001'],
             'ts' => $now,
         ];
+        // llm_step_completed WITH model_input_messages — this is the
+        // central-cap path proving the exact model-facing text (tool
+        // and generated user messages) is projected into the TUI.
         $events[] = [
             'schema_version' => '1.0', 'run_id' => $sessionId,
             'seq' => 10, 'turn_no' => 1, 'type' => 'llm_step_completed',
@@ -280,6 +298,27 @@ final class TuiOutputCapNoticeE2eTest extends TestCase
                 'assistant_message' => [
                     'role' => 'assistant',
                     'content' => [['type' => 'text', 'text' => 'The file was too large so only the beginning is shown.']],
+                ],
+                'model_input_messages' => [
+                    [
+                        'role' => 'tool',
+                        'tool_call_id' => 'call_read_cap_001',
+                        'tool_name' => 'read',
+                        'text' => "[Output capped to 20000 characters]\n\nFull output: 50000 characters (~12500 tokens).\nSaved for audit at: /tmp/cap/cap-lines.txt\n\nDo NOT rerun the same full command/tool call.\nDo NOT read the saved file in full.\n\nUse targeted tool calls to continue reading:\n• Read more from the file: `read path=<path> offset=<next_line> limit=<lines>`\n• Search for relevant content or ask for a summary\n\nIf you must inspect the raw saved output, use `read` with a small window.\n",
+                        'source' => 'tool_result',
+                        'metadata' => ['output_cap_limit' => 20000],
+                    ],
+                    [
+                        'role' => 'user',
+                        'text' => 'Tool result image for view_image: /tmp/cap/screenshot.png (image/png, 640x480, 12345 bytes)',
+                        'source' => 'tool_result_image',
+                        'tool_call_id' => 'call_read_cap_001',
+                        'tool_name' => 'read',
+                        'metadata' => [
+                            'model_input_generated' => true,
+                            'has_non_text_content' => true,
+                        ],
+                    ],
                 ],
             ],
             'ts' => $now,
@@ -310,8 +349,8 @@ final class TuiOutputCapNoticeE2eTest extends TestCase
     private function agentCommand(): string
     {
         $fixturePath = __DIR__.'/fixtures/tui-simple-text-response.json';
-        if (!\is_file($fixturePath)) {
-            self::fail("Fixture not found: {$fixturePath}");
+        if (!is_file($fixturePath)) {
+            $this->fail("Fixture not found: {$fixturePath}");
         }
 
         $projectDir = ProjectDir::get();
@@ -329,18 +368,18 @@ final class TuiOutputCapNoticeE2eTest extends TestCase
                 .'--model=llama_cpp_test/test '
                 .'--tools-excluded=bash '
                 .'2>&1',
-            \escapeshellarg($dbPath),
-            \escapeshellarg($this->testProjectDir.'/home'),
-            \escapeshellarg($fixturePath),
-            \escapeshellarg($php),
-            \escapeshellarg($script),
+            escapeshellarg($dbPath),
+            escapeshellarg($this->testProjectDir.'/home'),
+            escapeshellarg($fixturePath),
+            escapeshellarg($php),
+            escapeshellarg($script),
         );
     }
 
     private function createIsolatedProjectDir(): string
     {
         $dir = TestDirectoryIsolation::createProjectTempDir('tui-e2e-output-cap');
-        @\mkdir($dir.'/.hatfield', 0o777, true);
+        @mkdir($dir.'/.hatfield', 0o777, true);
 
         $settings = [
             'ai' => [
@@ -401,10 +440,10 @@ final class TuiOutputCapNoticeE2eTest extends TestCase
         ];
 
         $yaml = \Symfony\Component\Yaml\Yaml::dump($settings, 6, 4);
-        \file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
+        file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
 
-        @\mkdir($dir.'/home/.hatfield', 0o777, true);
-        \file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
+        @mkdir($dir.'/home/.hatfield', 0o777, true);
+        file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
 
         return $dir;
     }
@@ -414,6 +453,6 @@ final class TuiOutputCapNoticeE2eTest extends TestCase
         $ansi = $this->tmux->captureAnsi($pane);
         $ts = date('Ymd-His');
         $path = \sprintf('%s/%s-%s.ansi', $this->snapshotDir, $tag, $ts);
-        \file_put_contents($path, $ansi);
+        file_put_contents($path, $ansi);
     }
 }

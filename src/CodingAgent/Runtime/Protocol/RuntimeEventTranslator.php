@@ -212,7 +212,7 @@ final class RuntimeEventTranslator
         // projection.  The ToolProjectionSubscriber uses this to
         // replace raw tool result text with the exact text the model
         // saw (capped, denied, or otherwise hook-transformed).
-        $modelInputMessages = $p['model_input_messages'] ?? $p['model_tool_inputs'] ?? null;
+        $modelInputMessages = $p['model_input_messages'] ?? null;
         if (\is_array($modelInputMessages) && [] !== $modelInputMessages) {
             $payload['model_input_messages'] = $modelInputMessages;
         }

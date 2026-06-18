@@ -1177,7 +1177,7 @@ final class TranscriptProjectorTest extends TestCase
 
     // ── Model tool input (central cap path) ─────────────────────────────────
 
-    public function testModelToolInputUpdatesToolResultTextToExactModelFacingContent(): void
+    public function testModelInputMessagesUpdatesToolResultTextToExactModelFacingContent(): void
     {
         // Simulate a tool execution with FULL (uncapped) output — as if a
         // central cap was applied by OutputCapLlmTransformHook.
@@ -1189,14 +1189,14 @@ final class TranscriptProjectorTest extends TestCase
             'result' => 'Full file content that is very long...',
             // Note: no output_capped=true — this is the central-cap path
             // where raw output is stored and model-facing text is delivered
-            // later via assistant.message_completed.model_tool_inputs.
+            // later via assistant.message_completed.model_input_messages.
         ]);
 
         $blocks = $this->projector->blocks();
         $this->assertCount(1, $blocks);
         $this->assertSame('Full file content that is very long...', $blocks[0]->text);
 
-        // Now the next LLM step completes with model_tool_inputs carrying
+        // Now the next LLM step completes with model_input_messages carrying
         // the exact capped text the model actually saw.
         $this->accept('assistant.message_completed', [
             'message_id' => 'step-2',
@@ -1212,7 +1212,7 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        // 2 blocks: ToolResult (updated by model_tool_inputs) + AssistantMessage (from the event)
+        // 2 blocks: ToolResult (updated by model_input_messages) + AssistantMessage (from the event)
         $this->assertCount(2, $blocks, 'Expected ToolResult + AssistantMessage blocks');
 
         $toolBlock = $blocks[0];
@@ -1235,7 +1235,7 @@ final class TranscriptProjectorTest extends TestCase
         $this->assertStringNotContainsString('visible chars', $toolBlock->text);
     }
 
-    public function testModelToolInputWithNonMatchingToolCallIdIsIgnored(): void
+    public function testModelInputMessagesWithNonMatchingToolCallIdIsIgnored(): void
     {
         $this->accept('tool_execution.started', [
             'tool_call_id' => 'tc_other', 'tool_name' => 'bash',
@@ -1265,7 +1265,7 @@ final class TranscriptProjectorTest extends TestCase
         $this->assertArrayNotHasKey('model_input_exact', $blocks[0]->meta);
     }
 
-    public function testModelToolInputWithoutToolCallIdIsIgnored(): void
+    public function testModelInputMessagesWithoutToolCallIdIsIgnored(): void
     {
         $this->accept('assistant.message_completed', [
             'message_id' => 'step-2',
@@ -1285,7 +1285,7 @@ final class TranscriptProjectorTest extends TestCase
         $this->assertSame(TranscriptBlockKindEnum::AssistantMessage, $blocks[0]->kind);
     }
 
-    public function testModelToolInputDeduplicatesByContentHash(): void
+    public function testModelInputMessagesDeduplicatesByContentHash(): void
     {
         // Same tool result updated twice with same model-facing text.
         $this->accept('tool_execution.started', [
@@ -1328,7 +1328,7 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        // 3 blocks: ToolResult + AssistantMessage-1 + AssistantMessage-2 (deduped model_tool_inputs,
+        // 3 blocks: ToolResult + AssistantMessage-1 + AssistantMessage-2 (deduped model_input_messages,
         // but each assistant.message_completed still creates an AssistantMessage block).
         $this->assertCount(3, $blocks, 'Expected ToolResult + 2x AssistantMessage after second model input');
         // First block is ToolResult, unchanged by dedup.
