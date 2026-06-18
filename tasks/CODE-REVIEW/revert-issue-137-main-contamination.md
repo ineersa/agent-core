@@ -16,7 +16,7 @@ Branch: task/revert-issue-137-main-contamination
 Worktree: /home/ineersa/projects/agent-core-worktrees/revert-issue-137-main-contamination
 Fork run: 198rgy17emyg
 PR URL: https://github.com/ineersa/agent-core/pull/165
-PR Status: open
+PR Status: merged
 Started: 2026-06-18T17:01:24.734Z
 Completed:
 
@@ -54,3 +54,7 @@ Completed:
 - Updated PR URL: https://github.com/ineersa/agent-core/pull/165
 - Updated PR Status: open
 - Summary: PR created successfully after GitHub CLI authentication was refreshed: https://github.com/ineersa/agent-core/pull/165
+
+## Task workflow update - 2026-06-18T17:12:52.147Z
+- Updated PR Status: merged
+- Summary: User confirmed PR #165 was merged. Preparing to move rollback task to DONE. Note: integration checkout has an unrelated local .pi/settings.json modification, so DONE transition will use requireCleanMain=false to avoid touching that user-local change.
