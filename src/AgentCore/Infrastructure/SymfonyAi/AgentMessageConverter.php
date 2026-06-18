@@ -159,12 +159,19 @@ final class AgentMessageConverter
             $bytes = $imageRef['bytes'] ?? 0;
 
             if (!\is_string($path) || '' === $path || !is_file($path) || !is_readable($path)) {
-                // Image file is missing or unreadable — emit text placeholder
-                $messages[] = Message::ofUser(\sprintf(
+                // Image file is missing or unreadable — emit text placeholder.
+                $placeholderText = \sprintf(
                     '[Tool result image for view_image: %s (%s)]',
                     $path ?? '(deleted)',
                     $mediaType,
-                ));
+                );
+                $placeholderMsg = Message::ofUser($placeholderText);
+                // Mark as generated synthetic message for model-input capture.
+                $placeholderMsg->getMetadata()->add('model_input_generated', true);
+                $placeholderMsg->getMetadata()->add('source', 'tool_result_image');
+                $placeholderMsg->getMetadata()->add('tool_call_id', $toolCallId ?? '');
+                $placeholderMsg->getMetadata()->add('tool_name', $toolName ?? '');
+                $messages[] = $placeholderMsg;
 
                 continue;
             }
@@ -182,7 +189,14 @@ final class AgentMessageConverter
                 $bytes,
             ));
 
-            $messages[] = Message::ofUser($introText, Image::fromFile($path));
+            $imageMsg = Message::ofUser($introText, Image::fromFile($path));
+            // Mark as generated synthetic message for model-input capture.
+            $imageMsg->getMetadata()->add('model_input_generated', true);
+            $imageMsg->getMetadata()->add('source', 'tool_result_image');
+            $imageMsg->getMetadata()->add('tool_call_id', $toolCallId ?? '');
+            $imageMsg->getMetadata()->add('tool_name', $toolName ?? '');
+            $imageMsg->getMetadata()->add('has_non_text_content', true);
+            $messages[] = $imageMsg;
         }
 
         return $messages;

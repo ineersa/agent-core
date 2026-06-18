@@ -301,14 +301,15 @@ final class RuntimeEventMapperTest extends TestCase
         self::assertSame('', $result->payload['text']);
     }
 
-    public function testNormalizesLlmStepCompletedWithModelToolInputs(): void
+    public function testNormalizesLlmStepCompletedWithModelInputMessages(): void
     {
         $event = $this->runEvent('llm_step_completed', [
             'step_id' => 'turn-2-llm-1',
             'stop_reason' => 'stop',
             'text' => 'The file was too large.',
-            'model_tool_inputs' => [
+            'model_input_messages' => [
                 [
+                    'role' => 'tool',
                     'tool_call_id' => 'call_read_001',
                     'tool_name' => 'read',
                     'text' => "[Output capped to 20000 characters]\n\nFull output: 35000 characters",
@@ -322,17 +323,18 @@ final class RuntimeEventMapperTest extends TestCase
         self::assertNotNull($result);
         self::assertSame('assistant.message_completed', $result->type);
         self::assertSame('The file was too large.', $result->payload['text']);
-        self::assertArrayHasKey('model_tool_inputs', $result->payload);
-        self::assertCount(1, $result->payload['model_tool_inputs']);
-        self::assertSame('call_read_001', $result->payload['model_tool_inputs'][0]['tool_call_id']);
-        self::assertSame('read', $result->payload['model_tool_inputs'][0]['tool_name']);
-        self::assertStringContainsString('[Output capped to 20000 characters]', $result->payload['model_tool_inputs'][0]['text']);
-        self::assertSame(20000, $result->payload['model_tool_inputs'][0]['metadata']['output_cap_limit']);
+        self::assertArrayHasKey('model_input_messages', $result->payload);
+        self::assertCount(1, $result->payload['model_input_messages']);
+        self::assertSame('call_read_001', $result->payload['model_input_messages'][0]['tool_call_id']);
+        self::assertSame('read', $result->payload['model_input_messages'][0]['tool_name']);
+        self::assertSame('tool', $result->payload['model_input_messages'][0]['role']);
+        self::assertStringContainsString('[Output capped to 20000 characters]', $result->payload['model_input_messages'][0]['text']);
+        self::assertSame(20000, $result->payload['model_input_messages'][0]['metadata']['output_cap_limit']);
     }
 
-    public function testNormalizesLlmStepCompletedWithoutModelToolInputsIsUnchanged(): void
+    public function testNormalizesLlmStepCompletedWithoutModelInputMessagesIsUnchanged(): void
     {
-        // Legacy events without model_tool_inputs must work fine.
+        // Legacy events without model_input_messages must work fine.
         $event = $this->runEvent('llm_step_completed', [
             'step_id' => 'turn-3-llm-1',
             'stop_reason' => 'stop',
@@ -343,7 +345,7 @@ final class RuntimeEventMapperTest extends TestCase
 
         self::assertNotNull($result);
         self::assertSame('Hello', $result->payload['text']);
-        self::assertArrayNotHasKey('model_tool_inputs', $result->payload);
+        self::assertArrayNotHasKey('model_input_messages', $result->payload);
     }
 
     public function testNormalizesLlmStepFailedToAssistantMessageFailed(): void
@@ -389,6 +391,65 @@ final class RuntimeEventMapperTest extends TestCase
         self::assertNotNull($result);
         self::assertSame(RuntimeEventTypeEnum::TurnCancelled->value, $result->type);
         self::assertSame('timeout', $result->payload['reason']);
+    }
+
+    public function testNormalizesLlmStepFailedWithModelInputMessages(): void
+    {
+        $event = $this->runEvent('llm_step_failed', [
+            'step_id' => 'turn-fail-1',
+            'error' => ['message' => 'Provider error'],
+            'retryable' => false,
+            'model_input_messages' => [
+                [
+                    'role' => 'tool',
+                    'tool_call_id' => 'call_read_fail',
+                    'tool_name' => 'read',
+                    'text' => '[Output capped to 20000 characters]',
+                ],
+                [
+                    'role' => 'user',
+                    'source' => 'tool_result_image',
+                    'text' => 'Tool result image for view_image: /tmp/screenshot.png',
+                ],
+            ],
+        ]);
+
+        $result = $this->mapper->toRuntimeEvent($event);
+
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::AssistantMessageFailed->value, $result->type);
+        self::assertArrayHasKey('model_input_messages', $result->payload);
+        self::assertCount(2, $result->payload['model_input_messages']);
+        self::assertSame('tool', $result->payload['model_input_messages'][0]['role']);
+        self::assertSame('user', $result->payload['model_input_messages'][1]['role']);
+        self::assertStringContainsString('Output capped', $result->payload['model_input_messages'][0]['text']);
+        self::assertStringContainsString('Tool result image', $result->payload['model_input_messages'][1]['text']);
+    }
+
+    public function testNormalizesLlmStepAbortedWithModelInputMessages(): void
+    {
+        $event = $this->runEvent('llm_step_aborted', [
+            'step_id' => 'turn-abort-1',
+            'stop_reason' => 'user_cancelled',
+            'model_input_messages' => [
+                [
+                    'role' => 'tool',
+                    'tool_call_id' => 'call_read_abort',
+                    'tool_name' => 'read',
+                    'text' => '[Tool result was denied by SafeGuard]',
+                ],
+            ],
+        ]);
+
+        $result = $this->mapper->toRuntimeEvent($event);
+
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::TurnCancelled->value, $result->type);
+        self::assertArrayHasKey('model_input_messages', $result->payload);
+        self::assertCount(1, $result->payload['model_input_messages']);
+        self::assertSame('tool', $result->payload['model_input_messages'][0]['role']);
+        self::assertSame('call_read_abort', $result->payload['model_input_messages'][0]['tool_call_id']);
+        self::assertStringContainsString('SafeGuard', $result->payload['model_input_messages'][0]['text']);
     }
 
     // ── Tool normalization ───────────────────────────────────────────────────

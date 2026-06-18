@@ -448,6 +448,170 @@ final class PlatformIntegrationTest extends TestCase
         $this->assertSame(15, $response->usage['total_tokens']);
     }
 
+    public function testModelInputMessagesCapturedFromToolCallMessage(): void
+    {
+        $runStore = new InMemoryRunStore();
+        $runStore->compareAndSwap(new RunState(
+            runId: 'run-model-input',
+            status: RunStatus::Running,
+            version: 1,
+            turnNo: 1,
+            lastSeq: 0,
+            isStreaming: false,
+            streamingMessage: null,
+            pendingToolCalls: [],
+            errorMessage: null,
+            messages: [
+                new AgentMessage('user', [['type' => 'text', 'text' => 'count to 3']]),
+                new AgentMessage('tool', [['type' => 'text', 'text' => 'One two three']], toolCallId: 'tc-count-1', toolName: 'dummy_tool'),
+            ],
+            activeStepId: 'turn-1-llm-1',
+        ), 0);
+
+        $modelClient = new FakeSymfonyModelClient(new FakeTokenUsage(promptTokens: 5, completionTokens: 10, totalTokens: 15));
+        $platform = $this->createSymfonyPlatform(
+            modelClient: $modelClient,
+            streamFactory: static fn (): iterable => [new TextDelta('Response from model')],
+        );
+
+        $adapter = new LlmPlatformAdapter(
+            runStore: $runStore,
+            messageConverter: new AgentMessageConverter(),
+            toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
+            platform: $platform,
+            transformContextHooks: [],
+            convertToLlmHooks: [],
+            streamObserver: null,
+            costCalculator: null,
+            modelResolver: null,
+            logger: new NullLogger(),
+        );
+
+        $response = $adapter->invoke(new ModelInvocationRequest(
+            model: 'gpt-test',
+            input: new ModelInvocationInput(
+                runId: 'run-model-input',
+                turnNo: 1,
+                stepId: 'turn-1-llm-1',
+            ),
+        ));
+
+        // Tool message was sent to provider, so modelInputMessages should
+        // contain the exact text from the ToolCallMessage.
+        $this->assertNotEmpty($response->modelInputMessages,
+            'modelInputMessages should not be empty when tool messages are in context');
+
+        $foundToolInput = false;
+        foreach ($response->modelInputMessages as $input) {
+            if ('tool' === $input->role && 'tc-count-1' === $input->toolCallId) {
+                $foundToolInput = true;
+                $this->assertSame('dummy_tool', $input->toolName);
+                $this->assertStringContainsString('One two three', $input->text);
+            }
+        }
+        $this->assertTrue($foundToolInput, 'Expected tool-role model input for tc-count-1');
+    }
+
+    public function testTransformHookChangesReflectedInModelInputText(): void
+    {
+        // A transform hook that replaces tool message content before
+        // conversion.  The captured model input text must be the
+        // TRANSFORMED text, not the original.
+        $runStore = new InMemoryRunStore();
+        $runStore->compareAndSwap(new RunState(
+            runId: 'run-transform',
+            status: RunStatus::Running,
+            version: 1,
+            turnNo: 1,
+            lastSeq: 0,
+            isStreaming: false,
+            streamingMessage: null,
+            pendingToolCalls: [],
+            errorMessage: null,
+            messages: [
+                new AgentMessage('user', [['type' => 'text', 'text' => 'read file']]),
+                new AgentMessage('assistant', [['type' => 'text', 'text' => '']], toolName: 'read', toolCallId: 'tc-read-1'),
+                new AgentMessage('tool', [['type' => 'text', 'text' => 'Raw file content here...']], toolName: 'read', toolCallId: 'tc-read-1'),
+            ],
+            activeStepId: 'turn-1-llm-1',
+        ), 0);
+
+        $capturedAgentMessages = null;
+        $transformHook = new class($capturedAgentMessages) implements TransformContextHookInterface {
+            /** @param-out ?list<AgentMessage> $capturedAgentMessages */
+            public function __construct(private mixed &$capturedAgentMessages)
+            {
+            }
+
+            public function transformContext(array $messages, ?CancellationTokenInterface $cancelToken = null): array
+            {
+                $this->capturedAgentMessages = $messages;
+
+                $transformed = [];
+                foreach ($messages as $msg) {
+                    if ('tool' === $msg->role && 'tc-read-1' === $msg->toolCallId) {
+                        $transformed[] = new AgentMessage(
+                            role: 'tool',
+                            content: [['type' => 'text', 'text' => '[CAPPED] Output was too large -- truncated to 5000 chars.']],
+                            toolCallId: $msg->toolCallId,
+                            toolName: $msg->toolName,
+                            details: $msg->details,
+                            timestamp: $msg->timestamp,
+                        );
+                    } else {
+                        $transformed[] = $msg;
+                    }
+                }
+
+                return $transformed;
+            }
+        };
+
+        $modelClient = new FakeSymfonyModelClient(new FakeTokenUsage(promptTokens: 5, completionTokens: 10, totalTokens: 15));
+        $platform = $this->createSymfonyPlatform(
+            modelClient: $modelClient,
+            streamFactory: static fn (): iterable => [new TextDelta('File was too large')],
+        );
+
+        $adapter = new LlmPlatformAdapter(
+            runStore: $runStore,
+            messageConverter: new AgentMessageConverter(),
+            toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
+            platform: $platform,
+            transformContextHooks: [$transformHook],
+            convertToLlmHooks: [],
+            streamObserver: null,
+            costCalculator: null,
+            modelResolver: null,
+            logger: new NullLogger(),
+        );
+
+        $response = $adapter->invoke(new ModelInvocationRequest(
+            model: 'gpt-test',
+            input: new ModelInvocationInput(
+                runId: 'run-transform',
+                turnNo: 1,
+                stepId: 'turn-1-llm-1',
+            ),
+        ));
+
+        $this->assertNotEmpty($response->modelInputMessages,
+            'modelInputMessages should not be empty with tool messages');
+
+        $foundCapped = false;
+        foreach ($response->modelInputMessages as $input) {
+            if ('tool' === $input->role && 'tc-read-1' === $input->toolCallId) {
+                $foundCapped = true;
+                // Must be the transformed text, NOT the original raw content.
+                $this->assertStringContainsString('[CAPPED]', $input->text,
+                    'Model input text must reflect transform hook changes');
+                $this->assertStringNotContainsString('Raw file content', $input->text,
+                    'Model input text must NOT contain original text after transform hook');
+            }
+        }
+        $this->assertTrue($foundCapped, 'Expected tool-role model input for tc-read-1');
+    }
+
     /**
      * @param iterable<BeforeProviderRequestHookInterface> $beforeProviderRequestHooks
      * @param \Closure(): iterable<mixed>                  $streamFactory

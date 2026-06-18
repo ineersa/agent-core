@@ -112,6 +112,7 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
                         'stop_reason' => $message->stopReason ?? 'aborted',
                         'usage' => $message->usage,
                         'aborted_assistant' => $abortedAssistantPayload,
+                        'model_input_messages' => $this->modelInputMessagesPayload($message),
                     ],
                 ],
                 [
@@ -179,6 +180,7 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
                     'error' => $message->error,
                     'retryable' => $retryable,
                     'step_id' => $message->stepId(),
+                    'model_input_messages' => $this->modelInputMessagesPayload($message),
                 ],
             );
 
@@ -229,10 +231,7 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
             );
         }
 
-        $modelToolInputsPayload = [];
-        foreach ($message->modelToolInputs as $modelToolInput) {
-            $modelToolInputsPayload[] = $modelToolInput->toArray();
-        }
+        $modelInputMessagesPayload = $this->modelInputMessagesPayload($message);
 
         $eventSpecs = [[
             'type' => RunEventTypeEnum::LlmStepCompleted->value,
@@ -243,7 +242,7 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
                 'tool_calls_count' => \count($toolCalls),
                 'assistant_message' => $assistantMessagePayload,
                 'text' => $assistantMessage->asText(),
-                'model_tool_inputs' => $modelToolInputsPayload,
+                'model_input_messages' => $modelInputMessagesPayload,
             ],
         ]];
 
@@ -425,6 +424,19 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
         }
 
         return $schemas;
+    }
+
+    /**
+     * @return list<array{role: string, text: string, tool_call_id: string|null, tool_name: string|null, source: string, metadata: array<string, mixed>}>
+     */
+    private function modelInputMessagesPayload(LlmStepResult $message): array
+    {
+        $payload = [];
+        foreach ($message->modelInputMessages as $modelInputMessage) {
+            $payload[] = $modelInputMessage->toArray();
+        }
+
+        return $payload;
     }
 
     /**

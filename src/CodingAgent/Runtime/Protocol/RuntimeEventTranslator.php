@@ -208,13 +208,13 @@ final class RuntimeEventTranslator
             }
         }
 
-        // Pass through exact model-facing tool message content for
+        // Pass through exact model-facing message content for
         // projection.  The ToolProjectionSubscriber uses this to
         // replace raw tool result text with the exact text the model
         // saw (capped, denied, or otherwise hook-transformed).
-        $modelToolInputs = $p['model_tool_inputs'] ?? null;
-        if (\is_array($modelToolInputs) && [] !== $modelToolInputs) {
-            $payload['model_tool_inputs'] = $modelToolInputs;
+        $modelInputMessages = $p['model_input_messages'] ?? $p['model_tool_inputs'] ?? null;
+        if (\is_array($modelInputMessages) && [] !== $modelInputMessages) {
+            $payload['model_input_messages'] = $modelInputMessages;
         }
 
         return new RuntimeEvent(
@@ -243,6 +243,12 @@ final class RuntimeEventTranslator
             'stop_reason' => 'error',
         ];
 
+        // Pass through exact model-facing message content for projection.
+        $modelInputMessages = $p['model_input_messages'] ?? null;
+        if (\is_array($modelInputMessages) && [] !== $modelInputMessages) {
+            $payload['model_input_messages'] = $modelInputMessages;
+        }
+
         // Pass through safe structured diagnostics for projection/TUI context.
         if (\is_array($error)) {
             foreach (['retryable', 'error_category', 'http_status_code', 'retry_after_ms', 'response_error_code', 'response_error_type'] as $key) {
@@ -264,11 +270,19 @@ final class RuntimeEventTranslator
     {
         $p = $runEvent->payload;
 
+        $payload = ['reason' => (string) ($p['stop_reason'] ?? 'aborted')];
+
+        // Pass through exact model-facing message content for projection.
+        $modelInputMessages = $p['model_input_messages'] ?? null;
+        if (\is_array($modelInputMessages) && [] !== $modelInputMessages) {
+            $payload['model_input_messages'] = $modelInputMessages;
+        }
+
         return new RuntimeEvent(
             type: RuntimeEventTypeEnum::TurnCancelled->value,
             runId: $runEvent->runId,
             seq: $runEvent->seq,
-            payload: ['reason' => (string) ($p['stop_reason'] ?? 'aborted')],
+            payload: $payload,
         );
     }
 

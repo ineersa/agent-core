@@ -1201,7 +1201,7 @@ final class TranscriptProjectorTest extends TestCase
         $this->accept('assistant.message_completed', [
             'message_id' => 'step-2',
             'text' => 'I see the file is too large.',
-            'model_tool_inputs' => [
+            'model_input_messages' => [
                 [
                     'tool_call_id' => 'tc_central',
                     'tool_name' => 'read',
@@ -1248,7 +1248,7 @@ final class TranscriptProjectorTest extends TestCase
         $this->accept('assistant.message_completed', [
             'message_id' => 'step-2',
             'text' => 'OK',
-            'model_tool_inputs' => [
+            'model_input_messages' => [
                 [
                     'tool_call_id' => 'tc_nonexistent',
                     'tool_name' => 'read',
@@ -1270,7 +1270,7 @@ final class TranscriptProjectorTest extends TestCase
         $this->accept('assistant.message_completed', [
             'message_id' => 'step-2',
             'text' => 'OK',
-            'model_tool_inputs' => [
+            'model_input_messages' => [
                 [
                     'tool_call_id' => '',
                     'tool_name' => 'unknown',
@@ -1300,7 +1300,7 @@ final class TranscriptProjectorTest extends TestCase
         $this->accept('assistant.message_completed', [
             'message_id' => 'step-2',
             'text' => 'OK',
-            'model_tool_inputs' => [
+            'model_input_messages' => [
                 [
                     'tool_call_id' => 'tc_dedup',
                     'tool_name' => 'read',
@@ -1318,7 +1318,7 @@ final class TranscriptProjectorTest extends TestCase
         $this->accept('assistant.message_completed', [
             'message_id' => 'step-3',
             'text' => 'OK',
-            'model_tool_inputs' => [
+            'model_input_messages' => [
                 [
                     'tool_call_id' => 'tc_dedup',
                     'tool_name' => 'read',
@@ -1336,6 +1336,229 @@ final class TranscriptProjectorTest extends TestCase
         $this->assertStringContainsString('[Output capped to 10000]', $blocks[0]->text);
         $this->assertSame(TranscriptBlockKindEnum::AssistantMessage, $blocks[1]->kind);
         $this->assertSame(TranscriptBlockKindEnum::AssistantMessage, $blocks[2]->kind);
+    }
+
+    // ── Generated user-role model input (System block) ──────────────────────
+
+    public function testGeneratedUserModelInputCreatesSystemBlockWithExactText(): void
+    {
+        $this->accept('assistant.message_completed', [
+            'message_id' => 'step-img-1',
+            'text' => 'Here is the screenshot.',
+            'model_input_messages' => [
+                [
+                    'role' => 'user',
+                    'text' => 'Tool result image for view_image: /tmp/screenshot.png (image/png, 1920x1080, 245760 bytes)',
+                    'source' => 'tool_result_image',
+                    'tool_call_id' => 'call_view_001',
+                    'tool_name' => 'view_image',
+                    'metadata' => ['model_input_generated' => true, 'has_non_text_content' => true],
+                ],
+            ],
+        ]);
+
+        $blocks = $this->projector->blocks();
+        // 2 blocks: AssistantMessage + System (user-role model input)
+        $this->assertCount(2, $blocks, 'Expected AssistantMessage + System blocks');
+
+        // AssistantStreamProjectionSubscriber runs first, so AssistantMessage is blocks[0].
+        $this->assertSame(TranscriptBlockKindEnum::AssistantMessage, $blocks[0]->kind);
+        $systemBlock = $blocks[1];
+        $this->assertSame(TranscriptBlockKindEnum::System, $systemBlock->kind);
+        $this->assertSame('generated_input_call_view_001', $systemBlock->id);
+        $this->assertSame('Tool result image for view_image: /tmp/screenshot.png (image/png, 1920x1080, 245760 bytes)', $systemBlock->text);
+        $this->assertTrue($systemBlock->meta['model_input_exact']);
+        $this->assertSame('user', $systemBlock->meta['model_input_role']);
+        $this->assertFalse($systemBlock->streaming);
+
+        // No paraphrase.
+        $this->assertStringNotContainsString('Model was shown', $systemBlock->text);
+        $this->assertStringNotContainsString('Output exceeded', $systemBlock->text);
+        $this->assertStringNotContainsString('visible chars', $systemBlock->text);
+    }
+
+    public function testGeneratedUserModelInputDeduplicatesByBlockId(): void
+    {
+        // Same generated user input delivered twice produces one System block.
+        $payload = [
+            'role' => 'user',
+            'text' => 'Tool result image for view_image: /tmp/screenshot.png',
+            'source' => 'tool_result_image',
+            'tool_call_id' => 'call_view_002',
+            'tool_name' => 'view_image',
+            'metadata' => ['model_input_generated' => true],
+        ];
+
+        $this->accept('assistant.message_completed', [
+            'message_id' => 'step-1',
+            'text' => 'First response',
+            'model_input_messages' => [$payload],
+        ]);
+
+        $this->accept('assistant.message_completed', [
+            'message_id' => 'step-2',
+            'text' => 'Second response',
+            'model_input_messages' => [$payload],
+        ]);
+
+        $blocks = $this->projector->blocks();
+        // 3 blocks: AssistantMessage-1 + System + AssistantMessage-2 (System deduped, in insertion order)
+        $this->assertCount(3, $blocks, 'Expected 2x AssistantMessage + System (no duplicate System block)');
+
+        // System block is at index 1 (after first AssistantMessage, before second).
+        $this->assertSame(TranscriptBlockKindEnum::AssistantMessage, $blocks[0]->kind);
+        $this->assertSame(TranscriptBlockKindEnum::System, $blocks[1]->kind);
+        $this->assertSame(TranscriptBlockKindEnum::AssistantMessage, $blocks[2]->kind);
+
+        // System block is at index 1, unchanged.
+        $this->assertSame('Tool result image for view_image: /tmp/screenshot.png', $blocks[1]->text);
+        $this->assertSame('generated_input_call_view_002', $blocks[1]->id);
+        $this->assertTrue($blocks[1]->meta['model_input_exact']);
+        $this->assertSame('user', $blocks[1]->meta['model_input_role']);
+        $this->assertFalse($blocks[1]->streaming);
+    }
+
+    public function testGeneratedUserModelInputWithoutToolCallIdDeduplicatesByHash(): void
+    {
+        $payload = [
+            'role' => 'user',
+            'text' => 'Screenshot image from view_image',
+            'source' => 'tool_result_image',
+            'tool_call_id' => '',
+            'metadata' => ['model_input_generated' => true],
+        ];
+
+        $this->accept('assistant.message_completed', [
+            'message_id' => 'step-1',
+            'text' => 'OK',
+            'model_input_messages' => [$payload],
+        ]);
+
+        $blocks = $this->projector->blocks();
+        // 2 blocks: AssistantMessage + System
+        $this->assertCount(2, $blocks);
+        $this->assertSame(TranscriptBlockKindEnum::AssistantMessage, $blocks[0]->kind);
+        $this->assertSame(TranscriptBlockKindEnum::System, $blocks[1]->kind);
+        $this->assertStringContainsString('generated_input', $blocks[1]->id);
+    }
+
+    public function testModelInputOnAssistantMessageFailedProjectsToolText(): void
+    {
+        // Failed LLM step with model_input_messages should still update
+        // the ToolResult block with exact model-facing text.
+        $this->accept('tool_execution.started', [
+            'tool_call_id' => 'tc_fail', 'tool_name' => 'read',
+        ]);
+        $this->accept('tool_execution.completed', [
+            'tool_call_id' => 'tc_fail',
+            'result' => 'Raw full file content from before failure',
+        ]);
+
+        $this->accept('assistant.message_failed', [
+            'message_id' => 'step-fail-1',
+            'text' => 'Provider error: timeout',
+            'model_input_messages' => [
+                [
+                    'role' => 'tool',
+                    'tool_call_id' => 'tc_fail',
+                    'tool_name' => 'read',
+                    'text' => '[Output capped to 20000 characters] — model saw this before error',
+                ],
+            ],
+        ]);
+
+        $blocks = $this->projector->blocks();
+        // 2 blocks: ToolResult (updated) + Error (from assistant.message_failed)
+        $this->assertCount(2, $blocks, 'Expected ToolResult + Error block after failed message with model inputs');
+
+        $toolBlock = $blocks[0];
+        $this->assertSame(TranscriptBlockKindEnum::ToolResult, $toolBlock->kind);
+        $this->assertSame(TranscriptBlockKindEnum::Error, $blocks[1]->kind, 'Failed message creates Error block, not AssistantMessage');
+        $this->assertStringContainsString('[Output capped to 20000 characters]', $toolBlock->text);
+        $this->assertStringNotContainsString('Raw full file content', $toolBlock->text,
+            'ToolResult must NOT contain raw output after model_input update on failed path');
+        $this->assertTrue($toolBlock->meta['model_input_exact']);
+    }
+
+    public function testModelInputOnTurnCancelledProjectsToolText(): void
+    {
+        // Aborted LLM step with model_input_messages should update
+        // the ToolResult block with exact text.
+        $this->accept('tool_execution.started', [
+            'tool_call_id' => 'tc_cancel', 'tool_name' => 'bash',
+        ]);
+        $this->accept('tool_execution.completed', [
+            'tool_call_id' => 'tc_cancel',
+            'result' => 'Long bash output that was capped',
+        ]);
+
+        $this->accept('turn.cancelled', [
+            'reason' => 'user_cancelled',
+            'model_input_messages' => [
+                [
+                    'role' => 'tool',
+                    'tool_call_id' => 'tc_cancel',
+                    'tool_name' => 'bash',
+                    'text' => '[Output capped to 5000 characters]',
+                ],
+            ],
+        ]);
+
+        $blocks = $this->projector->blocks();
+        // 2 blocks: ToolResult (updated) + Cancelled (from CancellationProjectionSubscriber)
+        $this->assertCount(2, $blocks, 'Expected ToolResult + Cancelled block after cancellation with model inputs');
+
+        $toolBlock = $blocks[0];
+        $this->assertSame(TranscriptBlockKindEnum::ToolResult, $toolBlock->kind);
+        $this->assertStringContainsString('[Output capped to 5000 characters]', $toolBlock->text);
+        $this->assertTrue($toolBlock->meta['model_input_exact']);
+    }
+
+    public function testSafeGuardLikeToolDenialShowsExactTextInToolResult(): void
+    {
+        // Simulate a SafeGuard denial that replaces the tool result with
+        // a model-facing denial message.  The TUI must show this exact
+        // JSON/tool content, not 'completed' and not a paraphrase.
+        $this->accept('tool_execution.started', [
+            'tool_call_id' => 'tc_deny', 'tool_name' => 'sudo',
+        ]);
+        $this->accept('tool_execution.completed', [
+            'tool_call_id' => 'tc_deny',
+            'result' => 'sudo completed',
+        ]);
+
+        $this->accept('assistant.message_completed', [
+            'message_id' => 'step-deny-1',
+            'text' => 'I cannot run that command.',
+            'model_input_messages' => [
+                [
+                    'role' => 'tool',
+                    'tool_call_id' => 'tc_deny',
+                    'tool_name' => 'sudo',
+                    'text' => '{"error":"HardBlock: sudo is not allowed","safeguard":true,"category":"HardBlock","tool_call_id":"tc_deny"}',
+                    'source' => 'tool_result',
+                ],
+            ],
+        ]);
+
+        $blocks = $this->projector->blocks();
+        // 2 blocks: ToolResult (exact JSON, created by tool_execution) + AssistantMessage
+        $this->assertCount(2, $blocks, 'Expected ToolResult + AssistantMessage after denial model input');
+
+        $this->assertSame(TranscriptBlockKindEnum::ToolResult, $blocks[0]->kind);
+        $toolBlock = $blocks[0];
+        $this->assertSame(TranscriptBlockKindEnum::ToolResult, $toolBlock->kind);
+        // Text must be the exact JSON the model saw.
+        $this->assertSame('{"error":"HardBlock: sudo is not allowed","safeguard":true,"category":"HardBlock","tool_call_id":"tc_deny"}', $toolBlock->text);
+        $this->assertTrue($toolBlock->meta['model_input_exact']);
+        $this->assertArrayNotHasKey('notice_type', $toolBlock->meta);
+        $this->assertSame(TranscriptBlockKindEnum::AssistantMessage, $blocks[1]->kind);
+
+        // No paraphrase.
+        $this->assertStringNotContainsString('sudo completed', $toolBlock->text);
+        $this->assertStringNotContainsString('Model was shown', $toolBlock->text);
+        $this->assertStringNotContainsString('Output exceeded', $toolBlock->text);
+        $this->assertStringNotContainsString('visible chars', $toolBlock->text);
     }
 
     // ── System notice ───────────────────────────────────────────────────────

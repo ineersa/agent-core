@@ -14,10 +14,10 @@ use Ineersa\AgentCore\Contract\Model\PlatformInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Model\CostCalculatorInterface;
+use Ineersa\AgentCore\Domain\Model\ModelInputMessageDTO;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Domain\Model\ModelResolutionOptions;
-use Ineersa\AgentCore\Domain\Model\ModelToolInput;
 use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\Input;
@@ -27,6 +27,7 @@ use Symfony\AI\Platform\Message\Content\Text;
 use Symfony\AI\Platform\Message\Content\Thinking;
 use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\AI\Platform\Message\ToolCallMessage;
+use Symfony\AI\Platform\Message\UserMessage;
 use Symfony\AI\Platform\PlatformInterface as SymfonyPlatformInterface;
 use Symfony\AI\Platform\Result\DeferredResult;
 use Symfony\AI\Platform\Result\RawHttpResult;
@@ -74,7 +75,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         // transform/convert hooks have run.  This is the canonical
         // "what the model sees" text for tool results, projected into
         // the TUI to replace the raw tool output text.
-        $modelToolInputs = $this->extractModelToolInputs($messageBag);
+        $modelInputMessages = $this->extractModelInputMessages($messageBag);
 
         $options = $this->buildInputOptions($request);
         $input = new Input($request->model, $messageBag, $options);
@@ -120,7 +121,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             $request->input->stepId,
             $effectiveModel,
             $requestSummary,
-            modelToolInputs: $modelToolInputs,
+            modelInputMessages: $modelInputMessages,
         );
     }
 
@@ -205,49 +206,110 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
     }
 
     /**
-     * Extract exact model-facing tool message content from the final MessageBag.
+     * Extract exact model-facing message content from the final MessageBag.
      *
      * After all transform/convert hooks have run, the MessageBag contains
      * the canonical messages that will be sent to the provider.  Tool-role
      * messages (ToolCallMessage) carry the exact text the model sees for
      * each tool result — capped, denied, or otherwise modified by hooks.
      *
-     * @return list<ModelToolInput>
+     * Generated synthetic user-role messages (UserMessage with
+     * model_input_generated=true metadata) from image placeholders are
+     * also captured.
+     *
+     * Normal user prompts, system prompt, and assistant history are NOT
+     * captured.
+     *
+     * @return list<ModelInputMessageDTO>
      */
-    private function extractModelToolInputs(MessageBag $messageBag): array
+    private function extractModelInputMessages(MessageBag $messageBag): array
     {
         $inputs = [];
 
         foreach ($messageBag->withoutSystemMessage()->getMessages() as $message) {
-            if (!$message instanceof ToolCallMessage) {
-                continue;
-            }
+            // 1. ToolCallMessage — exact tool result text the model sees.
+            if ($message instanceof ToolCallMessage) {
+                $toolCall = $message->getToolCall();
+                $toolCallId = $toolCall->getId();
+                $toolName = $toolCall->getName();
+                $text = $message->getContent();
 
-            $toolCall = $message->getToolCall();
-            $toolCallId = $toolCall->getId();
-            $toolName = $toolCall->getName();
-            $text = $message->getContent();
-
-            if ('' === $toolCallId || '' === $text) {
-                continue;
-            }
-
-            // Detect if this tool message contains an output cap notice
-            // and attach structured metadata for TUI styling.
-            $metadata = [];
-            if (str_contains($text, '[Output capped to')) {
-                $metadata['notice_type'] = 'output_cap';
-                if (preg_match('/Output capped to (\d+) characters/', $text, $m)) {
-                    $metadata['output_cap_limit'] = (int) $m[1];
+                if ('' === $toolCallId || '' === $text) {
+                    continue;
                 }
+
+                // Detect if this tool message contains an output cap notice
+                // and attach structured metadata for TUI styling.
+                $metadata = [];
+                if (str_contains($text, '[Output capped to')) {
+                    $metadata['notice_type'] = 'output_cap';
+                    if (preg_match('/Output capped to (\d+) characters/', $text, $m)) {
+                        $metadata['output_cap_limit'] = (int) $m[1];
+                    }
+                }
+
+                $inputs[] = new ModelInputMessageDTO(
+                    role: 'tool',
+                    text: $text,
+                    toolCallId: $toolCallId,
+                    toolName: $toolName,
+                    source: 'tool_result',
+                    metadata: $metadata,
+                );
+
+                continue;
             }
 
-            $inputs[] = new ModelToolInput(
-                toolCallId: $toolCallId,
-                toolName: $toolName,
-                text: $text,
-                metadata: $metadata,
-            );
+            // 2. Generated synthetic user-role messages — only those
+            //    explicitly marked as model_input_generated by the converter.
+            if ($message instanceof UserMessage) {
+                $msgMetadata = $message->getMetadata();
+                $isGenerated = (bool) $msgMetadata->get('model_input_generated', false);
+                if (!$isGenerated) {
+                    continue;
+                }
+
+                // Extract exact text from content parts. Skip non-text
+                // parts (images) — only text content is persisted.
+                $textParts = [];
+                $hasNonText = false;
+                foreach ($message->getContent() as $contentPart) {
+                    if ($contentPart instanceof Text) {
+                        $partText = $contentPart->getText();
+                        if ('' !== $partText) {
+                            $textParts[] = $partText;
+                        }
+                    } else {
+                        $hasNonText = true;
+                    }
+                }
+
+                $text = implode("\n", $textParts);
+                if ('' === $text && !$hasNonText) {
+                    continue;
+                }
+
+                $source = $msgMetadata->get('source', 'tool_result_image');
+                $toolCallId = $msgMetadata->get('tool_call_id', '');
+                $toolName = $msgMetadata->get('tool_name', '');
+
+                $dtoMetadata = [
+                    'model_input_generated' => true,
+                    'source' => $source,
+                ];
+                if ($hasNonText) {
+                    $dtoMetadata['has_non_text_content'] = true;
+                }
+
+                $inputs[] = new ModelInputMessageDTO(
+                    role: 'user',
+                    text: $text,
+                    toolCallId: '' !== $toolCallId ? $toolCallId : null,
+                    toolName: '' !== $toolName ? $toolName : null,
+                    source: $source,
+                    metadata: $dtoMetadata,
+                );
+            }
         }
 
         return $inputs;
@@ -290,8 +352,8 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
     }
 
     /**
-     * @param array<string, mixed> $requestSummary  Privacy-safe request summary for error diagnostics
-     * @param list<ModelToolInput> $modelToolInputs Exact model-facing tool message content
+     * @param array<string, mixed>       $requestSummary     Privacy-safe request summary for error diagnostics
+     * @param list<ModelInputMessageDTO> $modelInputMessages Exact model-facing message content
      */
     private function consumeStream(
         DeferredResult $deferredResult,
@@ -300,7 +362,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         ?string $stepId,
         string $modelName = '',
         array $requestSummary = [],
-        array $modelToolInputs = [],
+        array $modelInputMessages = [],
     ): PlatformInvocationResult {
         $aborted = false;
         $deltas = [];
@@ -330,7 +392,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                 $requestSummary,
             ));
 
-            return $this->errorResult($deltas, $exception, $deferredResult, $modelName, $requestSummary, $modelToolInputs);
+            return $this->errorResult($deltas, $exception, $deferredResult, $modelName, $requestSummary, $modelInputMessages);
         }
 
         $this->notifyStreamEnd($runId, $stepId);
@@ -347,7 +409,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             usage: $this->extractUsage($deferredResult, $modelName),
             stopReason: $aborted ? 'aborted' : $this->resolveStopReason($assistantMessage),
             error: null,
-            modelToolInputs: $modelToolInputs,
+            modelInputMessages: $modelInputMessages,
         );
     }
 
@@ -524,11 +586,11 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
     }
 
     /**
-     * @param list<DeltaInterface> $deltas
-     * @param array<string, mixed> $requestSummary  Privacy-safe request summary
-     * @param list<ModelToolInput> $modelToolInputs
+     * @param list<DeltaInterface>       $deltas
+     * @param array<string, mixed>       $requestSummary     Privacy-safe request summary
+     * @param list<ModelInputMessageDTO> $modelInputMessages
      */
-    private function errorResult(array $deltas, \Throwable $exception, DeferredResult $deferredResult, string $modelName = '', array $requestSummary = [], array $modelToolInputs = []): PlatformInvocationResult
+    private function errorResult(array $deltas, \Throwable $exception, DeferredResult $deferredResult, string $modelName = '', array $requestSummary = [], array $modelInputMessages = []): PlatformInvocationResult
     {
         $error = [
             'type' => $exception::class,
@@ -557,7 +619,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             usage: $this->extractUsage($deferredResult, $modelName),
             stopReason: 'error',
             error: $error,
-            modelToolInputs: $modelToolInputs,
+            modelInputMessages: $modelInputMessages,
         );
     }
 

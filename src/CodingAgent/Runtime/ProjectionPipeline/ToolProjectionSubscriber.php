@@ -36,9 +36,15 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
             RuntimeEventTypeEnum::RunCompleted->value => 'onRunCompleted',
             RuntimeEventTypeEnum::RunFailed->value => 'onRunFailed',
             RuntimeEventTypeEnum::RunCancelled->value => 'onRunCancelled',
-            // Model-facing tool input projection: update ToolResult blocks
-            // with the exact text the model saw after transform hooks.
-            RuntimeEventTypeEnum::AssistantMessageCompleted->value => 'onAssistantMessageCompleted',
+            // Model-facing input projection: update ToolResult blocks and
+            // create System blocks with the exact text the model saw after
+            // transform hooks — for both tool-role and generated user-role
+            // messages. Handled on all LLM outcomes (completed, failed,
+            // aborted) so the user sees exact model-facing content even
+            // when the LLM request fails or is interrupted.
+            RuntimeEventTypeEnum::AssistantMessageCompleted->value => 'onModelInputMessages',
+            RuntimeEventTypeEnum::AssistantMessageFailed->value => 'onModelInputMessages',
+            RuntimeEventTypeEnum::TurnCancelled->value => 'onTurnCancelledWithModelInputs',
         ];
     }
 
@@ -275,83 +281,60 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
     // ── Model-facing text projection ──────────────────────────────────────────
 
     /**
-     * When an assistant message completes with model_tool_inputs payload,
-     * update existing ToolResult blocks with the exact text the model saw.
+     * Handle model_input_messages from any LLM outcome event (completed,
+     * failed, aborted).
      *
-     * This replaces the raw tool output (which may have been capped,
-     * denied, or otherwise transformed by hooks) with the canonical
-     * model-facing text.  The ToolResult block shows exactly what the
-     * model received — no more, no less.
+     * For tool-role messages: update existing ToolResult blocks with the
+     * exact text the model saw after transform hooks (capped, denied, or
+     * otherwise transformed).
      *
-     * Duplicate events (same tool_call_id, same text hash) are skipped
-     * to avoid accumulating duplicate block updates on replay.
+     * For generated user-role messages: create a System transcript block
+     * with the exact generated text (e.g. image placeholders from
+     * AgentMessageConverter).
+     *
+     * Duplicate updates (same tool_call_id + text hash, or same source +
+     * text hash for user role) are skipped to avoid accumulating duplicate
+     * blocks on replay.
      */
-    public function onAssistantMessageCompleted(TranscriptProjectionEvent $event): void
+    public function onModelInputMessages(TranscriptProjectionEvent $event): void
     {
         $p = $event->payload();
         $state = $event->state;
 
-        $modelToolInputs = $p['model_tool_inputs'] ?? [];
-        if (!\is_array($modelToolInputs) || [] === $modelToolInputs) {
+        $modelInputMessages = $p['model_input_messages'] ?? [];
+        if (!\is_array($modelInputMessages) || [] === $modelInputMessages) {
             return;
         }
 
-        foreach ($modelToolInputs as $input) {
+        foreach ($modelInputMessages as $input) {
             if (!\is_array($input)) {
                 continue;
             }
 
-            $toolCallId = (string) ($input['tool_call_id'] ?? '');
-            $toolName = (string) ($input['tool_name'] ?? '');
+            $role = (string) ($input['role'] ?? 'tool');
             $text = (string) ($input['text'] ?? '');
-            $metadata = (array) ($input['metadata'] ?? []);
 
-            if ('' === $toolCallId || '' === $text) {
+            if ('' === $text) {
                 continue;
             }
 
-            $blockId = 'tool_result_'.$toolCallId;
-            $existing = $state->getBlock($blockId);
-
-            if (null === $existing) {
-                // No matching ToolResult block yet (unusual — likely a
-                // stale/future reference).  Skip to avoid orphan blocks.
-                continue;
+            if ('tool' === $role) {
+                $this->projectToolModelInput($event, $input);
+            } elseif ('user' === $role) {
+                $this->projectUserGeneratedInput($event, $input);
             }
-
-            // Content-hash deduplication: if the tool result already
-            // carries the same model-facing text, skip to avoid
-            // redundant updates on replay.
-            $textHash = hash('sha256', $text);
-            if (($existing->meta['model_input_sha256'] ?? '') === $textHash) {
-                continue;
-            }
-
-            // Build metadata for the updated block.
-            $meta = $existing->meta;
-            $meta['model_input_exact'] = true;
-            $meta['model_input_sha256'] = $textHash;
-            $meta['tool_call_id'] = $toolCallId;
-            $meta['tool_name'] = $toolName;
-
-            // Detect output cap notices for warning styling.
-            if (str_contains($text, '[Output capped to')) {
-                $meta['notice_type'] = 'output_cap';
-                if (isset($metadata['output_cap_limit'])) {
-                    $meta['output_cap_limit'] = $metadata['output_cap_limit'];
-                }
-            }
-
-            // Preserve existing result for potential TUI detail views.
-            if ('' !== ($existing->meta['result'] ?? '')) {
-                $meta['raw_result'] = $existing->meta['result'];
-            }
-
-            $state->updateBlock($blockId, $existing->with(
-                text: $text,
-                meta: $meta,
-            ));
         }
+    }
+
+    /**
+     * Handle turn.cancelled events with model_input_messages.
+     *
+     * When an LLM step is aborted (e.g. user cancellation during streaming)
+     * and the abort path carried model_input_messages, project them here.
+     */
+    public function onTurnCancelledWithModelInputs(TranscriptProjectionEvent $event): void
+    {
+        $this->onModelInputMessages($event);
     }
 
     // ── Orphan cleanup ───────────────────────────────────────────────────────
@@ -383,6 +366,152 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
     public function onRunCancelled(TranscriptProjectionEvent $event): void
     {
         $event->state->removeOrphanedToolCallBlocks();
+    }
+
+    /**
+     * Project a tool-role model input by updating the matching ToolResult block.
+     *
+     * @param array<string, mixed> $input
+     */
+    private function projectToolModelInput(TranscriptProjectionEvent $event, array $input): void
+    {
+        $state = $event->state;
+
+        $toolCallId = (string) ($input['tool_call_id'] ?? '');
+        $toolName = (string) ($input['tool_name'] ?? '');
+        $text = (string) ($input['text'] ?? '');
+        $metadata = (array) ($input['metadata'] ?? []);
+
+        if ('' === $toolCallId || '' === $text) {
+            return;
+        }
+
+        $blockId = 'tool_result_'.$toolCallId;
+        $existing = $state->getBlock($blockId);
+
+        if (null === $existing) {
+            // No matching ToolResult block yet (unusual — likely a
+            // stale/future reference).  Skip to avoid orphan blocks.
+            return;
+        }
+
+        // Content-hash deduplication: if the tool result already
+        // carries the same model-facing text, skip to avoid
+        // redundant updates on replay.
+        $textHash = hash('sha256', $text);
+        if (($existing->meta['model_input_sha256'] ?? '') === $textHash) {
+            return;
+        }
+
+        // Build metadata for the updated block.
+        $meta = $existing->meta;
+        $meta['model_input_exact'] = true;
+        $meta['model_input_sha256'] = $textHash;
+        $meta['tool_call_id'] = $toolCallId;
+        $meta['tool_name'] = $toolName;
+
+        // Detect output cap notices for warning styling.
+        if (str_contains($text, '[Output capped to')) {
+            $meta['notice_type'] = 'output_cap';
+            if (isset($metadata['output_cap_limit'])) {
+                $meta['output_cap_limit'] = $metadata['output_cap_limit'];
+            }
+        }
+
+        // Preserve existing result for potential TUI detail views.
+        if ('' !== ($existing->meta['result'] ?? '')) {
+            $meta['raw_result'] = $existing->meta['result'];
+        }
+
+        $state->updateBlock($blockId, $existing->with(
+            text: $text,
+            meta: $meta,
+        ));
+    }
+
+    /**
+     * Project a generated user-role model input as a System transcript block.
+     *
+     * These are synthetic messages produced by AgentMessageConverter for
+     * multimodal tool results (e.g. image placeholders) that the model
+     * receives alongside tool results.  They are shown exactly as the
+     * model sees them — no paraphrase, no summary.
+     *
+     * Deduplication: by a stable block ID based on the tool_call_id
+     * (if available) or source + text hash, so replay does not multiply
+     * blocks.
+     *
+     * @param array<string, mixed> $input
+     */
+    private function projectUserGeneratedInput(TranscriptProjectionEvent $event, array $input): void
+    {
+        $state = $event->state;
+
+        $text = (string) ($input['text'] ?? '');
+        $toolCallId = (string) ($input['tool_call_id'] ?? '');
+        $toolName = (string) ($input['tool_name'] ?? '');
+        $source = (string) ($input['source'] ?? 'tool_result_image');
+        $inputMetadata = (array) ($input['metadata'] ?? []);
+
+        if ('' === $text) {
+            return;
+        }
+
+        // Build a stable block ID for deduplication.
+        $textHash = hash('sha256', $text);
+        if ('' !== $toolCallId) {
+            $blockId = 'generated_input_'.$toolCallId;
+        } elseif ('' !== $source) {
+            $blockId = 'generated_input_'.$source.'_'.substr($textHash, 0, 12);
+        } else {
+            $blockId = 'generated_input_'.substr($textHash, 0, 12);
+        }
+
+        // Deduplicate: skip if the exact same generated block already exists.
+        $existing = $state->getBlock($blockId);
+        if (null !== $existing) {
+            if (($existing->meta['text_hash'] ?? '') === $textHash) {
+                return;
+            }
+
+            // Text changed — update the existing block.
+            $meta = $existing->meta;
+            $meta['text_hash'] = $textHash;
+            $state->updateBlock($blockId, $existing->with(text: $text, meta: $meta));
+
+            return;
+        }
+
+        $meta = [
+            'model_input_exact' => true,
+            'model_input_role' => 'user',
+            'text_hash' => $textHash,
+            'source' => $source,
+        ];
+
+        if ('' !== $toolCallId) {
+            $meta['tool_call_id'] = $toolCallId;
+        }
+        if ('' !== $toolName) {
+            $meta['tool_name'] = $toolName;
+        }
+
+        // Forward any additional metadata (e.g. has_non_text_content).
+        foreach ($inputMetadata as $key => $value) {
+            if (!\array_key_exists($key, $meta)) {
+                $meta[$key] = $value;
+            }
+        }
+
+        $state->addBlock(new TranscriptBlock(
+            id: $blockId,
+            kind: TranscriptBlockKindEnum::System,
+            runId: $event->runId(),
+            seq: $state->nextSeq(),
+            text: $text,
+            meta: $meta,
+            streaming: false,
+        ));
     }
 
     // ── Output cap notice projection ─────────────────────────────────────────
