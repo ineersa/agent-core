@@ -61,7 +61,6 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
 
     public function __construct(
         private readonly ToolRuntime $toolRuntime,
-        private readonly OutputCap $outputCap,
     ) {
     }
 
@@ -106,8 +105,10 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             // Check if the output was truncated and append continuation hint
             $content = $this->appendContinuationHint($content, $resolvedPath, $offset, $limit);
 
-            // Pass through output capping (character-based)
-            return $this->outputCap->process($content, $resolvedPath);
+            // Output capping is now handled centrally by OutputCapToolResultProcessor
+            // after ToolExecutor converts the Symfony result to a domain ToolResult.
+            // Per-tool OutputCap calls are no longer needed.
+            return $content;
         });
     }
 

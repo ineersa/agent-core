@@ -10,24 +10,25 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ToolResultType;
 
 /**
- * Central LLM-bound output capping for all tool-result text.
+ * Defense-in-depth LLM-bound output capping for tool-result text.
  *
- * Transforms tool-role AgentMessages before provider conversion so
- * oversized tool output never reaches the LLM, regardless of whether
- * the individual tool called OutputCap directly. Extension, MCP,
- * third-party, and future tools are all covered by this single hook
- * because it operates on the final AgentMessage list right before
- * LlmPlatformAdapter converts to Symfony AI message bags.
+ * The primary output capping now lives in OutputCapToolResultProcessor,
+ * which runs immediately after tool execution and before canonical
+ * ToolResult/AgentMessage construction. Per-tool OutputCap calls have
+ * been removed from ReadFileTool, BashTool, and BgStatusTool.
  *
- * This is defense-in-depth: raw persisted state (RunState messages,
- * session artifacts) remains uncapped; only the provider-facing copy
- * is truncated. Per-tool OutputCap calls in BashTool/ReadFileTool
- * remain in place because they produce useful persisted-output hints
- * near the tool result.
+ * This hook remains as a safety net for any tool-role AgentMessage
+ * that reaches the LLM boundary with oversized text — for example
+ * extension tools, MCP tools, third-party tools, or messages that
+ * bypass the normal ToolExecutor→tool result processor pipeline.
  *
- * Image content parts (image_ref) are preserved unchanged. The hook
- * trusts upstream image gating to strip image_refs for non-vision
- * models before reaching this point.
+ * The hook now uses structured metadata (details['output_cap'])
+ * instead of text-marker detection to avoid double-capping messages
+ * that the primary processor already handled. When it does cap a
+ * message, it attaches structured output_cap metadata so downstream
+ * consumers can detect the cap without parsing text.
+ *
+ * Image content parts (image_ref) are preserved unchanged.
  */
 final readonly class OutputCapLlmTransformHook implements TransformContextHookInterface
 {
@@ -50,6 +51,15 @@ final readonly class OutputCapLlmTransformHook implements TransformContextHookIn
     private function transformMessage(AgentMessage $message): AgentMessage
     {
         if ('tool' !== $message->role) {
+            return $message;
+        }
+
+        // Skip messages already capped by the primary tool-result processor.
+        // Detection uses structured details['output_cap'] instead of text markers.
+        $alreadyCapped = \is_array($message->details['output_cap'] ?? null)
+            && true === ($message->details['output_cap']['capped'] ?? false);
+
+        if ($alreadyCapped) {
             return $message;
         }
 
@@ -92,16 +102,31 @@ final readonly class OutputCapLlmTransformHook implements TransformContextHookIn
             return $message;
         }
 
-        // Cap the combined text. Null path uses defaultCap which is
-        // appropriate for non-file tool output (logs, JSON blobs, etc.).
-        $cappedText = $this->outputCap->process($combinedText, null);
+        // Apply capping with a structured result.
+        $capResult = $this->outputCap->capIfNeeded($combinedText, null);
 
-        // Build new content: a text part with the capped content,
+        if (null === $capResult) {
+            // Text fits within the default cap — pass through unchanged.
+            return $message;
+        }
+
+        // Build new content: a text part with the capped notice,
         // plus all preserved non-text parts (image_refs).
-        $newContent = [['type' => 'text', 'text' => $cappedText]];
+        $newContent = [['type' => 'text', 'text' => $capResult->noticeText]];
         foreach ($nonTextParts as $part) {
             $newContent[] = $part;
         }
+
+        // Attach structured output_cap metadata so downstream consumers
+        // (e.g. LlmPlatformAdapter) can detect capping without text parsing.
+        $metadata = $message->metadata;
+        $metadata['output_cap'] = [
+            'capped' => true,
+            'cap' => $capResult->cap,
+            'char_count' => $capResult->charCount,
+            'token_estimate' => $capResult->tokenEstimate,
+            'saved_path' => $capResult->savedPath,
+        ];
 
         return new AgentMessage(
             role: $message->role,
@@ -112,7 +137,7 @@ final readonly class OutputCapLlmTransformHook implements TransformContextHookIn
             toolName: $message->toolName,
             details: $message->details,
             isError: $message->isError,
-            metadata: $message->metadata,
+            metadata: $metadata,
         );
     }
 

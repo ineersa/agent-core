@@ -31,8 +31,8 @@ final readonly class TranscriptBlockRenderer
      */
     public function renderBlock(TranscriptBlock $block, TuiRenderContext $context): array
     {
-        $prefix = $this->prefixFor($block->kind);
-        $color = $this->colorFor($block->kind);
+        $prefix = $this->prefixFor($block);
+        $color = $this->colorFor($block);
         $displayText = $this->displayTextFor($block);
         $suffix = $block->streaming ? '...' : '';
 
@@ -50,9 +50,22 @@ final readonly class TranscriptBlockRenderer
 
     /* ───────── Prefix / color / text helpers ───────── */
 
-    private function prefixFor(TranscriptBlockKindEnum $kind): string
+    private function prefixFor(TranscriptBlock $block): string
     {
-        return match ($kind) {
+        // Severity-driven icon override for System blocks.
+        if (TranscriptBlockKindEnum::System === $block->kind) {
+            $severity = \is_string($block->meta['severity'] ?? null)
+                ? $block->meta['severity']
+                : null;
+
+            return match ($severity) {
+                'warning' => '  ⚠',
+                'error' => '  ✕',
+                default => '  ·',
+            };
+        }
+
+        return match ($block->kind) {
             TranscriptBlockKindEnum::UserMessage => '  ❯',
             TranscriptBlockKindEnum::AssistantMessage => '  ◇',
             TranscriptBlockKindEnum::AssistantThinking => '  ⋯',
@@ -67,9 +80,22 @@ final readonly class TranscriptBlockRenderer
         };
     }
 
-    private function colorFor(TranscriptBlockKindEnum $kind): ThemeColorEnum
+    private function colorFor(TranscriptBlock $block): ThemeColorEnum
     {
-        return match ($kind) {
+        // Severity-driven color override for System blocks.
+        if (TranscriptBlockKindEnum::System === $block->kind) {
+            $severity = \is_string($block->meta['severity'] ?? null)
+                ? $block->meta['severity']
+                : null;
+
+            return match ($severity) {
+                'warning' => ThemeColorEnum::Warning,
+                'error' => ThemeColorEnum::Error,
+                default => ThemeColorEnum::SystemMessage,
+            };
+        }
+
+        return match ($block->kind) {
             TranscriptBlockKindEnum::UserMessage => ThemeColorEnum::UserMessage,
             TranscriptBlockKindEnum::AssistantMessage => ThemeColorEnum::AssistantMessage,
             TranscriptBlockKindEnum::AssistantThinking => ThemeColorEnum::ThinkingText,

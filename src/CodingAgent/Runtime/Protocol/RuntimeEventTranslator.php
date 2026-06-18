@@ -52,6 +52,8 @@ final class RuntimeEventTranslator
             // Tool execution
             RunEventTypeEnum::ToolExecutionStart->value => $this->onToolExecutionStarted(...),
             RunEventTypeEnum::ToolExecutionEnd->value => $this->onToolExecutionEnded(...),
+            // Model notification (generic, tool-scoped for now)
+            RunEventTypeEnum::ModelNotification->value => $this->onModelNotification(...),
             // HITL
             RunEventTypeEnum::WaitingHuman->value => $this->onWaitingHuman(...),
             // Shared: agent_command_applied — explicit priority resolution
@@ -297,6 +299,22 @@ final class RuntimeEventTranslator
             runId: $runEvent->runId,
             seq: $runEvent->seq,
             payload: $payload,
+        );
+    }
+
+    // ── Model notification ────────────────────────────────────────────────
+
+    private function onModelNotification(RunEvent $runEvent): RuntimeEvent
+    {
+        $p = $runEvent->payload;
+
+        // Pass through the entire notification payload as-is so the
+        // projection subscriber receives the exact structured data.
+        return new RuntimeEvent(
+            type: RuntimeEventTypeEnum::ModelNotification->value,
+            runId: $runEvent->runId,
+            seq: $runEvent->seq,
+            payload: $p,
         );
     }
 

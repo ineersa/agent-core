@@ -61,7 +61,6 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
         private readonly BackgroundProcessManager $manager,
         private readonly StackToolExecutionContextAccessor $contextAccessor,
         private readonly ToolRuntime $toolRuntime,
-        private readonly OutputCap $outputCap,
         private readonly LoggerInterface $logger,
         private readonly BashToolConfig $config = new BashToolConfig(),
         private readonly BashBackgroundPromptAdapterInterface $promptAdapter = new BashBackgroundPromptDeclineAdapter(),
@@ -145,8 +144,7 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
                 if (hrtime(true) > $deadline) {
                     $this->manager->stop($pid, $sessionId);
                     $partialOutput = $this->readOutput($pid, $sessionId);
-                    $capped = $this->outputCap->process($partialOutput);
-
+                    $capped = $partialOutput;
                     $this->logger->info('bash_tool.timed_out', [
                         'component' => 'tool.bash',
                         'event_type' => 'bash_tool.timed_out',
@@ -364,7 +362,7 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
     private function handleFinished(BackgroundProcess $entity, int $pid, ?string $sessionId): string
     {
         $output = $this->readOutput($pid, $sessionId);
-        $capped = $this->outputCap->process($output);
+        $capped = $output;
 
         $exitCode = $entity->exitCode;
         $status = $entity->status->value;
