@@ -48,7 +48,7 @@ Testing skill and `tests/AGENTS.md` were read before proposing validation. This 
 Status: IN-PROGRESS
 Branch: task/issue-137-output-cap-observability
 Worktree: /home/ineersa/projects/agent-core-worktrees/issue-137-output-cap-observability
-Fork run: osilw4kokk9s
+Fork run: v8iqnnemj4f7
 PR URL: https://github.com/ineersa/agent-core/pull/164
 PR Status: open
 Started: 2026-06-17T23:00:56.520Z
@@ -171,3 +171,8 @@ Completed:
 
 ## Task workflow update - 2026-06-18T16:13:15.842Z
 - Summary: User clarified hard design constraint for the current TUI/output-cap regression fix: no fallback parsing/detection of notices from arbitrary text. Do not use preg_match, str_starts_with, or str_contains against tool output/model text to infer output-cap notices. Notices/nudges must be represented as structured system.notice-style projection data and rendered as proper notice blocks; normal ToolResult blocks must remain normal readable tool output. If the current fork returns with parser/fallback-based logic, run a follow-up fork to replace it with the structured design before CODE-REVIEW.
+
+## Task workflow update - 2026-06-18T16:16:49.885Z
+- Recorded fork run: v8iqnnemj4f7
+- Validation: v8iqnnemj4f7 reported castor check passed: 2739 tests, 8261 assertions, deptrac/phpstan/cs-check clean.; Parent grep after v8iqnnemj4f7 found forbidden parser logic remains: LlmPlatformAdapter str_starts_with + preg_match; RuntimeEventTranslator str_starts_with + preg_match; ToolProjectionSubscriber str_starts_with; OutputCapLlmTransformHook str_starts_with + str_contains fallback.
+- Summary: Fork v8iqnnemj4f7 pushed commit 933f97a15 and passed castor check, but it does NOT satisfy the user's clarified design constraint. It fixed raw JSON by preserving ToolResult text, but still infers output-cap notices by parsing marker text with str_starts_with/preg_match and even keeps a str_contains fallback in OutputCapLlmTransformHook. User explicitly requires no fallbacks and no marker parsing; notices/nudges must be structured system.notice-style data rendered as standard notice blocks. Follow-up fork required before CODE-REVIEW.
