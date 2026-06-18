@@ -1285,6 +1285,55 @@ final class TranscriptProjectorTest extends TestCase
         $this->assertSame(TranscriptBlockKindEnum::AssistantMessage, $blocks[0]->kind);
     }
 
+    public function testModelInputMessagesWithoutCapNoticeDoesNotReplaceToolResultText(): void
+    {
+        // Tool executed normally (no cap).  The model-facing text from
+        // model_input_messages is raw provider JSON (e.g. from
+        // AgentMessageNormalizer JSON-wrapping).  The ToolResult must
+        // keep its original human-readable output — raw JSON must never
+        // become visible.
+        $this->accept('tool_execution.started', [
+            'tool_call_id' => 'tc_norm', 'tool_name' => 'read',
+        ]);
+        $this->accept('tool_execution.completed', [
+            'tool_call_id' => 'tc_norm',
+            'result' => 'Here is the file content: hello world',
+        ]);
+
+        // Model input is raw provider JSON (not a cap notice).
+        $this->accept('assistant.message_completed', [
+            'message_id' => 'step-2',
+            'text' => 'Got it.',
+            'model_input_messages' => [
+                [
+                    'role' => 'tool',
+                    'tool_call_id' => 'tc_norm',
+                    'tool_name' => 'read',
+                    'text' => '{"is_error":false,"result":{"tool_name":"read","content":[{"type":"text","text":"Here is the file content: hello world"}]}}',
+                    'source' => 'tool_result',
+                ],
+            ],
+        ]);
+
+        $blocks = $this->projector->blocks();
+        // 2 blocks: ToolResult + AssistantMessage
+        $this->assertCount(2, $blocks);
+
+        $toolBlock = $blocks[0];
+        $this->assertSame(TranscriptBlockKindEnum::ToolResult, $toolBlock->kind);
+        // Human-readable text must be preserved — NOT replaced with JSON.
+        $this->assertSame('Here is the file content: hello world', $toolBlock->text);
+        // Exact model-facing text only in metadata.
+        $this->assertTrue($toolBlock->meta['model_input_exact']);
+        $this->assertArrayNotHasKey('notice_type', $toolBlock->meta);
+        $this->assertArrayHasKey('model_input_sha256', $toolBlock->meta);
+
+        // Sanity: file content contains no cmd/raw-json strings.
+        $this->assertStringNotContainsString('is_error', $toolBlock->text);
+        $this->assertStringNotContainsString('model_input', $toolBlock->text);
+        $this->assertSame(TranscriptBlockKindEnum::AssistantMessage, $blocks[1]->kind);
+    }
+
     public function testModelInputMessagesDeduplicatesByContentHash(): void
     {
         // Same tool result updated twice with same model-facing text.
@@ -1514,11 +1563,12 @@ final class TranscriptProjectorTest extends TestCase
         $this->assertTrue($toolBlock->meta['model_input_exact']);
     }
 
-    public function testSafeGuardLikeToolDenialShowsExactTextInToolResult(): void
+    public function testSafeGuardLikeToolDenialExactTextInMetadataOnly(): void
     {
-        // Simulate a SafeGuard denial that replaces the tool result with
-        // a model-facing denial message.  The TUI must show this exact
-        // JSON/tool content, not 'completed' and not a paraphrase.
+        // Simulate a SafeGuard denial where the model-facing text is a
+        // JSON denial message.  The ToolResult must keep its original
+        // human-readable text; the exact model-facing denial text is
+        // stored in metadata only (not visible as raw JSON in the TUI).
         $this->accept('tool_execution.started', [
             'tool_call_id' => 'tc_deny', 'tool_name' => 'sudo',
         ]);
@@ -1542,20 +1592,22 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        // 2 blocks: ToolResult (exact JSON, created by tool_execution) + AssistantMessage
+        // 2 blocks: ToolResult + AssistantMessage
         $this->assertCount(2, $blocks, 'Expected ToolResult + AssistantMessage after denial model input');
 
         $this->assertSame(TranscriptBlockKindEnum::ToolResult, $blocks[0]->kind);
         $toolBlock = $blocks[0];
         $this->assertSame(TranscriptBlockKindEnum::ToolResult, $toolBlock->kind);
-        // Text must be the exact JSON the model saw.
-        $this->assertSame('{"error":"HardBlock: sudo is not allowed","safeguard":true,"category":"HardBlock","tool_call_id":"tc_deny"}', $toolBlock->text);
+        // Original human-readable text must be preserved — not replaced
+        // with raw provider JSON.
+        $this->assertSame('sudo completed', $toolBlock->text);
+        // Exact model-facing text is only in metadata (not visible).
         $this->assertTrue($toolBlock->meta['model_input_exact']);
         $this->assertArrayNotHasKey('notice_type', $toolBlock->meta);
         $this->assertSame(TranscriptBlockKindEnum::AssistantMessage, $blocks[1]->kind);
 
-        // No paraphrase.
-        $this->assertStringNotContainsString('sudo completed', $toolBlock->text);
+        // No paraphrase or raw JSON visible.
+        $this->assertStringNotContainsString('HardBlock', $toolBlock->text);
         $this->assertStringNotContainsString('Model was shown', $toolBlock->text);
         $this->assertStringNotContainsString('Output exceeded', $toolBlock->text);
         $this->assertStringNotContainsString('visible chars', $toolBlock->text);

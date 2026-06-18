@@ -874,6 +874,27 @@ final class RuntimeEventMapperTest extends TestCase
         self::assertArrayNotHasKey('output_capped', $result->payload);
     }
 
+    public function testNormalizesToolExecutionEndWithCapMarkerInFileContentNoMetadata(): void
+    {
+        // Tool output that merely contains the marker string (e.g. source
+        // code or file content mentioning &#039;[Output capped to&#039; must NOT
+        // trigger output_capped unless the text starts with the canonical
+        // cap notice.
+        $event = $this->runEvent('tool_execution_end', [
+            'tool_call_id' => 'call_marker',
+            'is_error' => false,
+            'order_index' => 0,
+            'result' => 'some code // [Output capped to 10000 characters] should not flag as cap',
+        ]);
+
+        $result = $this->mapper->toRuntimeEvent($event);
+
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::ToolExecutionCompleted->value, $result->type);
+        self::assertArrayNotHasKey('output_capped', $result->payload,
+            'File content with marker string inside must not flag output_capped');
+    }
+
     // ── toRunEventData backward compat ───────────────────────────────────────
 
     public function testToRunEventDataPreservesStableShape(): void

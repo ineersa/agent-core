@@ -154,8 +154,24 @@ final readonly class OutputCapLlmTransformHook implements TransformContextHookIn
      */
     private function shouldSkipCentralCap(AgentMessage $message, string $combinedText): bool
     {
-        // Already has a capped-notice marker → per-tool cap already applied.
-        if (str_contains($combinedText, '[Output capped')) {
+        // Per-tool cap already applied? Prefer checking the raw tool output
+        // stored in details (before JSON wrapping) with a strict starts-with
+        // check, so that tool output whose content merely contains the marker
+        // string is not mistaken for a cap notice.
+        $rawResult = null;
+        if (\is_array($message->details) && \is_array($message->details['details'] ?? null)) {
+            $rawResult = $message->details['details']['raw_result'] ?? null;
+        }
+        if (\is_string($rawResult) && '' !== $rawResult && str_starts_with(ltrim($rawResult), '[Output capped to')) {
+            return true;
+        }
+
+        // Fallback for test-constructed messages or extension/MCP tools
+        // where details['details']['raw_result'] may not be populated:
+        // check the combined text for the cap marker.  This uses a
+        // contains check (not starts-with) because $combinedText is
+        // JSON-wrapped and the cap notice appears inside the JSON.
+        if (null === $rawResult && str_contains($combinedText, '[Output capped')) {
             return true;
         }
 

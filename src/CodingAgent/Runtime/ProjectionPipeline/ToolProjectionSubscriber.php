@@ -410,8 +410,10 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
         $meta['tool_call_id'] = $toolCallId;
         $meta['tool_name'] = $toolName;
 
-        // Detect output cap notices for warning styling.
-        if (str_contains($text, '[Output capped to')) {
+        // Detect output cap notices for warning styling using strict
+        // starts-with check on the canonical notice format.
+        $isCapNotice = str_starts_with(ltrim($text), '[Output capped to');
+        if ($isCapNotice) {
             $meta['notice_type'] = 'output_cap';
             if (isset($metadata['output_cap_limit'])) {
                 $meta['output_cap_limit'] = $metadata['output_cap_limit'];
@@ -423,8 +425,24 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
             $meta['raw_result'] = $existing->meta['result'];
         }
 
+        // ── Visible text policy ──
+        //
+        // For cap-notice model inputs: update the visible ToolResult text
+        // to the exact model-facing cap notice so the user sees what the
+        // model saw.
+        //
+        // For ALL other model inputs (normal uncapped tool results where
+        // the model-facing text is raw provider JSON, SafeGuard denial
+        // JSON, etc.): keep the existing human-readable tool output and
+        // store the exact model-facing text only in metadata.  Raw JSON
+        // must never be the visible ToolResult text.
+        //
+        // The exact model-facing text is always available in metadata
+        // for future TUI detail views or SafeGuard-specific blocks.
+        $updateText = $isCapNotice ? $text : $existing->text;
+
         $state->updateBlock($blockId, $existing->with(
-            text: $text,
+            text: $updateText,
             meta: $meta,
         ));
     }

@@ -328,7 +328,10 @@ final class RuntimeEventTranslator
         // Detect output cap notice in the result text and add structured
         // metadata so the projector can create a visible System block.
         $result = $payload['result'] ?? '';
-        if ('' !== $result && str_contains($result, '[Output capped to')) {
+        // Strict starts-with check: only detect the canonical cap notice at
+        // the beginning of the result text.  File/tool output that merely
+        // contains the marker string must not trigger warning styling.
+        if ('' !== $result && str_starts_with(ltrim($result), '[Output capped to')) {
             $payload['output_capped'] = true;
 
             // Parse cap and char_count from the notice format:

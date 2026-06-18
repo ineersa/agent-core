@@ -250,7 +250,10 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                 // Detect if this tool message contains an output cap notice
                 // and attach structured metadata for TUI styling.
                 $metadata = [];
-                if (str_contains($text, '[Output capped to')) {
+                // Strict starts-with check: only flag the canonical cap
+                // notice at the start of the model-facing text, not file
+                // content that merely contains the marker string.
+                if (str_starts_with(ltrim($text), '[Output capped to')) {
                     $metadata['notice_type'] = 'output_cap';
                     if (preg_match('/Output capped to (\d+) characters/', $text, $m)) {
                         $metadata['output_cap_limit'] = (int) $m[1];
