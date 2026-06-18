@@ -133,14 +133,15 @@ final readonly class OutputCapLlmTransformHook implements TransformContextHookIn
 
         // Build a generic model notification for downstream consumers
         // (agent message history preserves exact model-facing text).
-        // Stable ID from tool_call_id + cap + content hash instead of random saved
-        // path so repeated transforms of the same message don't generate new TUI
-        // notification blocks / events (e.g. on resume or multi-step replay).
+        // Stable ID from tool_call_id + cap + original content hash so repeated
+        // transforms of the same oversized message generate the same notification
+        // ID and do not produce duplicate TUI blocks/events.  The ID does NOT
+        // include savedPath or noticeText, both of which vary per invocation.
         $notificationId = hash('sha256', implode('|', [
             $message->toolCallId ?? 'none',
             'output_cap',
             (string) $capResult->cap,
-            hash('sha256', $capResult->noticeText),
+            hash('sha256', $combinedText),
         ]));
 
         $notification = [

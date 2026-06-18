@@ -144,19 +144,19 @@ final readonly class AgentMessageNormalizer
                 $text = \is_string($errorMessage) ? $errorMessage : 'Tool error';
             }
 
-            // If still empty, fall back to the canonical JSON envelope so the
-            // model at least sees what the tool produced (edge case: tools
-            // whose content is empty but details carry structured results).
+            // If still empty, produce a compact label so the model knows what
+            // happened.  Do NOT JSON-encode the full ToolCallResult with
+            // details.raw_result — that duplication inflates model-facing text
+            // and triggers false late-hook capping.  The raw_result lives on
+            // the AgentMessage details for persistence but is not sent as
+            // provider text.
             if ('' === $text) {
-                $text = json_encode([
-                    'is_error' => $result->isError,
-                    'result' => $result->result,
-                    'error' => $result->error,
-                ]);
-
-                if (false === $text) {
-                    $text = '{}';
-                }
+                $toolLabel = \is_string($result->result['tool_name'] ?? null) && '' !== $result->result['tool_name']
+                    ? $result->result['tool_name']
+                    : null;
+                $text = null !== $toolLabel
+                    ? $toolLabel.($result->isError ? ' failed' : ' completed')
+                    : ($result->isError ? 'failed' : 'completed');
             }
         }
 
