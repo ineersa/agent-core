@@ -36,6 +36,9 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
             RuntimeEventTypeEnum::RunCompleted->value => 'onRunCompleted',
             RuntimeEventTypeEnum::RunFailed->value => 'onRunFailed',
             RuntimeEventTypeEnum::RunCancelled->value => 'onRunCancelled',
+            // Model-facing tool input projection: update ToolResult blocks
+            // with the exact text the model saw after transform hooks.
+            RuntimeEventTypeEnum::AssistantMessageCompleted->value => 'onAssistantMessageCompleted',
         ];
     }
 
@@ -267,6 +270,88 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
         $text = $timedOut ? 'Timed out' : 'Cancelled';
 
         $state->upsertToolResultBlock($blockId, $event->runId(), $text, $meta, false);
+    }
+
+    // ── Model-facing text projection ──────────────────────────────────────────
+
+    /**
+     * When an assistant message completes with model_tool_inputs payload,
+     * update existing ToolResult blocks with the exact text the model saw.
+     *
+     * This replaces the raw tool output (which may have been capped,
+     * denied, or otherwise transformed by hooks) with the canonical
+     * model-facing text.  The ToolResult block shows exactly what the
+     * model received — no more, no less.
+     *
+     * Duplicate events (same tool_call_id, same text hash) are skipped
+     * to avoid accumulating duplicate block updates on replay.
+     */
+    public function onAssistantMessageCompleted(TranscriptProjectionEvent $event): void
+    {
+        $p = $event->payload();
+        $state = $event->state;
+
+        $modelToolInputs = $p['model_tool_inputs'] ?? [];
+        if (!\is_array($modelToolInputs) || [] === $modelToolInputs) {
+            return;
+        }
+
+        foreach ($modelToolInputs as $input) {
+            if (!\is_array($input)) {
+                continue;
+            }
+
+            $toolCallId = (string) ($input['tool_call_id'] ?? '');
+            $toolName = (string) ($input['tool_name'] ?? '');
+            $text = (string) ($input['text'] ?? '');
+            $metadata = (array) ($input['metadata'] ?? []);
+
+            if ('' === $toolCallId || '' === $text) {
+                continue;
+            }
+
+            $blockId = 'tool_result_'.$toolCallId;
+            $existing = $state->getBlock($blockId);
+
+            if (null === $existing) {
+                // No matching ToolResult block yet (unusual — likely a
+                // stale/future reference).  Skip to avoid orphan blocks.
+                continue;
+            }
+
+            // Content-hash deduplication: if the tool result already
+            // carries the same model-facing text, skip to avoid
+            // redundant updates on replay.
+            $textHash = hash('sha256', $text);
+            if (($existing->meta['model_input_sha256'] ?? '') === $textHash) {
+                continue;
+            }
+
+            // Build metadata for the updated block.
+            $meta = $existing->meta;
+            $meta['model_input_exact'] = true;
+            $meta['model_input_sha256'] = $textHash;
+            $meta['tool_call_id'] = $toolCallId;
+            $meta['tool_name'] = $toolName;
+
+            // Detect output cap notices for warning styling.
+            if (str_contains($text, '[Output capped to')) {
+                $meta['notice_type'] = 'output_cap';
+                if (isset($metadata['output_cap_limit'])) {
+                    $meta['output_cap_limit'] = $metadata['output_cap_limit'];
+                }
+            }
+
+            // Preserve existing result for potential TUI detail views.
+            if ('' !== ($existing->meta['result'] ?? '')) {
+                $meta['raw_result'] = $existing->meta['result'];
+            }
+
+            $state->updateBlock($blockId, $existing->with(
+                text: $text,
+                meta: $meta,
+            ));
+        }
     }
 
     // ── Orphan cleanup ───────────────────────────────────────────────────────

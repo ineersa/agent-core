@@ -301,6 +301,51 @@ final class RuntimeEventMapperTest extends TestCase
         self::assertSame('', $result->payload['text']);
     }
 
+    public function testNormalizesLlmStepCompletedWithModelToolInputs(): void
+    {
+        $event = $this->runEvent('llm_step_completed', [
+            'step_id' => 'turn-2-llm-1',
+            'stop_reason' => 'stop',
+            'text' => 'The file was too large.',
+            'model_tool_inputs' => [
+                [
+                    'tool_call_id' => 'call_read_001',
+                    'tool_name' => 'read',
+                    'text' => "[Output capped to 20000 characters]\n\nFull output: 35000 characters",
+                    'metadata' => ['output_cap_limit' => 20000],
+                ],
+            ],
+        ]);
+
+        $result = $this->mapper->toRuntimeEvent($event);
+
+        self::assertNotNull($result);
+        self::assertSame('assistant.message_completed', $result->type);
+        self::assertSame('The file was too large.', $result->payload['text']);
+        self::assertArrayHasKey('model_tool_inputs', $result->payload);
+        self::assertCount(1, $result->payload['model_tool_inputs']);
+        self::assertSame('call_read_001', $result->payload['model_tool_inputs'][0]['tool_call_id']);
+        self::assertSame('read', $result->payload['model_tool_inputs'][0]['tool_name']);
+        self::assertStringContainsString('[Output capped to 20000 characters]', $result->payload['model_tool_inputs'][0]['text']);
+        self::assertSame(20000, $result->payload['model_tool_inputs'][0]['metadata']['output_cap_limit']);
+    }
+
+    public function testNormalizesLlmStepCompletedWithoutModelToolInputsIsUnchanged(): void
+    {
+        // Legacy events without model_tool_inputs must work fine.
+        $event = $this->runEvent('llm_step_completed', [
+            'step_id' => 'turn-3-llm-1',
+            'stop_reason' => 'stop',
+            'text' => 'Hello',
+        ]);
+
+        $result = $this->mapper->toRuntimeEvent($event);
+
+        self::assertNotNull($result);
+        self::assertSame('Hello', $result->payload['text']);
+        self::assertArrayNotHasKey('model_tool_inputs', $result->payload);
+    }
+
     public function testNormalizesLlmStepFailedToAssistantMessageFailed(): void
     {
         $event = $this->runEvent('llm_step_failed', [

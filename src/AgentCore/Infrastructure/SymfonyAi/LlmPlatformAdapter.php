@@ -17,6 +17,7 @@ use Ineersa\AgentCore\Domain\Model\CostCalculatorInterface;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Domain\Model\ModelResolutionOptions;
+use Ineersa\AgentCore\Domain\Model\ModelToolInput;
 use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\Input;
@@ -25,6 +26,7 @@ use Symfony\AI\Platform\Message\Content\ContentInterface;
 use Symfony\AI\Platform\Message\Content\Text;
 use Symfony\AI\Platform\Message\Content\Thinking;
 use Symfony\AI\Platform\Message\MessageBag;
+use Symfony\AI\Platform\Message\ToolCallMessage;
 use Symfony\AI\Platform\PlatformInterface as SymfonyPlatformInterface;
 use Symfony\AI\Platform\Result\DeferredResult;
 use Symfony\AI\Platform\Result\RawHttpResult;
@@ -67,6 +69,12 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         $messages = $this->applyTransformHooks($messages, $cancelToken);
 
         $messageBag = $this->applyConvertHooks($messages, $cancelToken, $request->model);
+
+        // Capture exact model-facing tool message content after all
+        // transform/convert hooks have run.  This is the canonical
+        // "what the model sees" text for tool results, projected into
+        // the TUI to replace the raw tool output text.
+        $modelToolInputs = $this->extractModelToolInputs($messageBag);
 
         $options = $this->buildInputOptions($request);
         $input = new Input($request->model, $messageBag, $options);
@@ -112,6 +120,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             $request->input->stepId,
             $effectiveModel,
             $requestSummary,
+            modelToolInputs: $modelToolInputs,
         );
     }
 
@@ -196,6 +205,55 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
     }
 
     /**
+     * Extract exact model-facing tool message content from the final MessageBag.
+     *
+     * After all transform/convert hooks have run, the MessageBag contains
+     * the canonical messages that will be sent to the provider.  Tool-role
+     * messages (ToolCallMessage) carry the exact text the model sees for
+     * each tool result — capped, denied, or otherwise modified by hooks.
+     *
+     * @return list<ModelToolInput>
+     */
+    private function extractModelToolInputs(MessageBag $messageBag): array
+    {
+        $inputs = [];
+
+        foreach ($messageBag->withoutSystemMessage()->getMessages() as $message) {
+            if (!$message instanceof ToolCallMessage) {
+                continue;
+            }
+
+            $toolCall = $message->getToolCall();
+            $toolCallId = $toolCall->getId();
+            $toolName = $toolCall->getName();
+            $text = $message->getContent();
+
+            if ('' === $toolCallId || '' === $text) {
+                continue;
+            }
+
+            // Detect if this tool message contains an output cap notice
+            // and attach structured metadata for TUI styling.
+            $metadata = [];
+            if (str_contains($text, '[Output capped to')) {
+                $metadata['notice_type'] = 'output_cap';
+                if (preg_match('/Output capped to (\d+) characters/', $text, $m)) {
+                    $metadata['output_cap_limit'] = (int) $m[1];
+                }
+            }
+
+            $inputs[] = new ModelToolInput(
+                toolCallId: $toolCallId,
+                toolName: $toolName,
+                text: $text,
+                metadata: $metadata,
+            );
+        }
+
+        return $inputs;
+    }
+
+    /**
      * Build Input options, propagating toolsRef, turnNo, and runId for
      * DynamicToolDescriptionProcessor / ToolSetResolver resolution.
      *
@@ -232,7 +290,8 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
     }
 
     /**
-     * @param array<string, mixed> $requestSummary Privacy-safe request summary for error diagnostics
+     * @param array<string, mixed> $requestSummary  Privacy-safe request summary for error diagnostics
+     * @param list<ModelToolInput> $modelToolInputs Exact model-facing tool message content
      */
     private function consumeStream(
         DeferredResult $deferredResult,
@@ -241,6 +300,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         ?string $stepId,
         string $modelName = '',
         array $requestSummary = [],
+        array $modelToolInputs = [],
     ): PlatformInvocationResult {
         $aborted = false;
         $deltas = [];
@@ -270,7 +330,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                 $requestSummary,
             ));
 
-            return $this->errorResult($deltas, $exception, $deferredResult, $modelName, $requestSummary);
+            return $this->errorResult($deltas, $exception, $deferredResult, $modelName, $requestSummary, $modelToolInputs);
         }
 
         $this->notifyStreamEnd($runId, $stepId);
@@ -287,6 +347,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             usage: $this->extractUsage($deferredResult, $modelName),
             stopReason: $aborted ? 'aborted' : $this->resolveStopReason($assistantMessage),
             error: null,
+            modelToolInputs: $modelToolInputs,
         );
     }
 
@@ -464,9 +525,10 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
 
     /**
      * @param list<DeltaInterface> $deltas
-     * @param array<string, mixed> $requestSummary Privacy-safe request summary
+     * @param array<string, mixed> $requestSummary  Privacy-safe request summary
+     * @param list<ModelToolInput> $modelToolInputs
      */
-    private function errorResult(array $deltas, \Throwable $exception, DeferredResult $deferredResult, string $modelName = '', array $requestSummary = []): PlatformInvocationResult
+    private function errorResult(array $deltas, \Throwable $exception, DeferredResult $deferredResult, string $modelName = '', array $requestSummary = [], array $modelToolInputs = []): PlatformInvocationResult
     {
         $error = [
             'type' => $exception::class,
@@ -495,6 +557,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             usage: $this->extractUsage($deferredResult, $modelName),
             stopReason: 'error',
             error: $error,
+            modelToolInputs: $modelToolInputs,
         );
     }
 

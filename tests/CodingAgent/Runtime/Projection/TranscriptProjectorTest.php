@@ -1175,6 +1175,169 @@ final class TranscriptProjectorTest extends TestCase
         $this->assertStringContainsString('Output capped to', $toolBlock->text);
     }
 
+    // ── Model tool input (central cap path) ─────────────────────────────────
+
+    public function testModelToolInputUpdatesToolResultTextToExactModelFacingContent(): void
+    {
+        // Simulate a tool execution with FULL (uncapped) output — as if a
+        // central cap was applied by OutputCapLlmTransformHook.
+        $this->accept('tool_execution.started', [
+            'tool_call_id' => 'tc_central', 'tool_name' => 'read',
+        ]);
+        $this->accept('tool_execution.completed', [
+            'tool_call_id' => 'tc_central',
+            'result' => 'Full file content that is very long...',
+            // Note: no output_capped=true — this is the central-cap path
+            // where raw output is stored and model-facing text is delivered
+            // later via assistant.message_completed.model_tool_inputs.
+        ]);
+
+        $blocks = $this->projector->blocks();
+        $this->assertCount(1, $blocks);
+        $this->assertSame('Full file content that is very long...', $blocks[0]->text);
+
+        // Now the next LLM step completes with model_tool_inputs carrying
+        // the exact capped text the model actually saw.
+        $this->accept('assistant.message_completed', [
+            'message_id' => 'step-2',
+            'text' => 'I see the file is too large.',
+            'model_tool_inputs' => [
+                [
+                    'tool_call_id' => 'tc_central',
+                    'tool_name' => 'read',
+                    'text' => "[Output capped to 20000 characters]\n\nFull output: 35000 characters\nSaved for audit at: /tmp/cap.txt\n\nDo NOT rerun the same full command/tool call.\nDo NOT read the saved file in full.",
+                    'metadata' => ['output_cap_limit' => 20000],
+                ],
+            ],
+        ]);
+
+        $blocks = $this->projector->blocks();
+        // 2 blocks: ToolResult (updated by model_tool_inputs) + AssistantMessage (from the event)
+        $this->assertCount(2, $blocks, 'Expected ToolResult + AssistantMessage blocks');
+
+        $toolBlock = $blocks[0];
+        $this->assertSame(TranscriptBlockKindEnum::ToolResult, $toolBlock->kind);
+        $this->assertSame('tool_result_tc_central', $toolBlock->id);
+
+        // Text must now be the exact model-facing capped notice, not raw output.
+        $this->assertStringContainsString('[Output capped to 20000 characters]', $toolBlock->text);
+        $this->assertStringNotContainsString('Full file content that is very long', $toolBlock->text,
+            'ToolResult must NOT contain raw output after model_input update');
+
+        // Cap metadata from the model tool input must be set.
+        $this->assertSame('output_cap', $toolBlock->meta['notice_type']);
+        $this->assertSame(20000, $toolBlock->meta['output_cap_limit']);
+        $this->assertTrue($toolBlock->meta['model_input_exact']);
+
+        // No paraphrase.
+        $this->assertStringNotContainsString('Output exceeded', $toolBlock->text);
+        $this->assertStringNotContainsString('Model was shown', $toolBlock->text);
+        $this->assertStringNotContainsString('visible chars', $toolBlock->text);
+    }
+
+    public function testModelToolInputWithNonMatchingToolCallIdIsIgnored(): void
+    {
+        $this->accept('tool_execution.started', [
+            'tool_call_id' => 'tc_other', 'tool_name' => 'bash',
+        ]);
+        $this->accept('tool_execution.completed', [
+            'tool_call_id' => 'tc_other',
+            'result' => 'some output',
+        ]);
+
+        $this->accept('assistant.message_completed', [
+            'message_id' => 'step-2',
+            'text' => 'OK',
+            'model_tool_inputs' => [
+                [
+                    'tool_call_id' => 'tc_nonexistent',
+                    'tool_name' => 'read',
+                    'text' => '[Output capped to 5000]',
+                ],
+            ],
+        ]);
+
+        $blocks = $this->projector->blocks();
+        // 2 blocks: ToolResult + AssistantMessage (from the event)
+        $this->assertCount(2, $blocks);
+        // Existing ToolResult must be unchanged.
+        $this->assertSame('some output', $blocks[0]->text);
+        $this->assertArrayNotHasKey('model_input_exact', $blocks[0]->meta);
+    }
+
+    public function testModelToolInputWithoutToolCallIdIsIgnored(): void
+    {
+        $this->accept('assistant.message_completed', [
+            'message_id' => 'step-2',
+            'text' => 'OK',
+            'model_tool_inputs' => [
+                [
+                    'tool_call_id' => '',
+                    'tool_name' => 'unknown',
+                    'text' => 'some message',
+                ],
+            ],
+        ]);
+
+        // No ToolResult blocks existed before.  Only AssistantMessage is created.
+        $blocks = $this->projector->blocks();
+        $this->assertCount(1, $blocks);
+        $this->assertSame(TranscriptBlockKindEnum::AssistantMessage, $blocks[0]->kind);
+    }
+
+    public function testModelToolInputDeduplicatesByContentHash(): void
+    {
+        // Same tool result updated twice with same model-facing text.
+        $this->accept('tool_execution.started', [
+            'tool_call_id' => 'tc_dedup', 'tool_name' => 'read',
+        ]);
+        $this->accept('tool_execution.completed', [
+            'tool_call_id' => 'tc_dedup',
+            'result' => 'Very long raw output...',
+        ]);
+
+        // First update.
+        $this->accept('assistant.message_completed', [
+            'message_id' => 'step-2',
+            'text' => 'OK',
+            'model_tool_inputs' => [
+                [
+                    'tool_call_id' => 'tc_dedup',
+                    'tool_name' => 'read',
+                    'text' => '[Output capped to 10000]',
+                ],
+            ],
+        ]);
+
+        $blocks = $this->projector->blocks();
+        $this->assertCount(2, $blocks, 'Expected ToolResult + AssistantMessage after first model input');
+        $this->assertStringContainsString('[Output capped to 10000]', $blocks[0]->text);
+        $this->assertSame(TranscriptBlockKindEnum::ToolResult, $blocks[0]->kind);
+
+        // Second update with same text — should be deduplicated.
+        $this->accept('assistant.message_completed', [
+            'message_id' => 'step-3',
+            'text' => 'OK',
+            'model_tool_inputs' => [
+                [
+                    'tool_call_id' => 'tc_dedup',
+                    'tool_name' => 'read',
+                    'text' => '[Output capped to 10000]',
+                ],
+            ],
+        ]);
+
+        $blocks = $this->projector->blocks();
+        // 3 blocks: ToolResult + AssistantMessage-1 + AssistantMessage-2 (deduped model_tool_inputs,
+        // but each assistant.message_completed still creates an AssistantMessage block).
+        $this->assertCount(3, $blocks, 'Expected ToolResult + 2x AssistantMessage after second model input');
+        // First block is ToolResult, unchanged by dedup.
+        $this->assertSame(TranscriptBlockKindEnum::ToolResult, $blocks[0]->kind);
+        $this->assertStringContainsString('[Output capped to 10000]', $blocks[0]->text);
+        $this->assertSame(TranscriptBlockKindEnum::AssistantMessage, $blocks[1]->kind);
+        $this->assertSame(TranscriptBlockKindEnum::AssistantMessage, $blocks[2]->kind);
+    }
+
     // ── System notice ───────────────────────────────────────────────────────
 
     public function testSystemNoticeCreatesSystemBlock(): void

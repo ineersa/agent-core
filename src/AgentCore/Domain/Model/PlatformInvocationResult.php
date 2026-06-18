@@ -13,6 +13,7 @@ final readonly class PlatformInvocationResult
      * @param list<DeltaInterface>      $deltas
      * @param array<string, int|float>  $usage
      * @param array<string, mixed>|null $error
+     * @param list<ModelToolInput>      $modelToolInputs
      */
     public function __construct(
         public ?AssistantMessage $assistantMessage,
@@ -20,6 +21,7 @@ final readonly class PlatformInvocationResult
         public array $usage = [],
         public ?string $stopReason = null,
         public ?array $error = null,
+        public array $modelToolInputs = [],
     ) {
     }
 

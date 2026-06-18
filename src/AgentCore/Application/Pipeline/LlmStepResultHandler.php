@@ -229,6 +229,11 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
             );
         }
 
+        $modelToolInputsPayload = [];
+        foreach ($message->modelToolInputs as $modelToolInput) {
+            $modelToolInputsPayload[] = $modelToolInput->toArray();
+        }
+
         $eventSpecs = [[
             'type' => RunEventTypeEnum::LlmStepCompleted->value,
             'payload' => [
@@ -238,6 +243,7 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
                 'tool_calls_count' => \count($toolCalls),
                 'assistant_message' => $assistantMessagePayload,
                 'text' => $assistantMessage->asText(),
+                'model_tool_inputs' => $modelToolInputsPayload,
             ],
         ]];
 

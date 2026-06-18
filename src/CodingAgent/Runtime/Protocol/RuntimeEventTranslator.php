@@ -208,6 +208,15 @@ final class RuntimeEventTranslator
             }
         }
 
+        // Pass through exact model-facing tool message content for
+        // projection.  The ToolProjectionSubscriber uses this to
+        // replace raw tool result text with the exact text the model
+        // saw (capped, denied, or otherwise hook-transformed).
+        $modelToolInputs = $p['model_tool_inputs'] ?? null;
+        if (\is_array($modelToolInputs) && [] !== $modelToolInputs) {
+            $payload['model_tool_inputs'] = $modelToolInputs;
+        }
+
         return new RuntimeEvent(
             type: RuntimeEventTypeEnum::AssistantMessageCompleted->value,
             runId: $runEvent->runId,
