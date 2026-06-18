@@ -22,6 +22,9 @@
     "defaultModel": "deepseek/deepseek-v4-flash",
     "defaultThinking": "xhigh"
   },
+  "taskWorkflow": {
+    "taskRoot": "/home/ineersa/projects/agent-core-tasks"
+  },
   "jetbrainsIndex": {
     "url": "http://127.0.0.1:29175/index-mcp/streamable-http"
   }

@@ -169,7 +169,16 @@ Themes use `ThemeColorEnum`, `ThemePalette`, `DefaultTheme`, `ThemeRegistry`, `T
 
 ## Task workflow
 
-This project uses a repo-local task board under `tasks/TODO`, `tasks/IN-PROGRESS`, `tasks/CODE-REVIEW`, and `tasks/DONE`. Slash commands `/tasks`, `/tasks-todo`, `/tasks-in-progress`, `/tasks-code-review`, `/tasks-done` list tasks in the TUI.
+This project uses an **external task board** (outside the code repo) under `TODO/`, `IN-PROGRESS/`, `CODE-REVIEW/`, and `DONE/`.
+The task board lives at `/home/ineersa/projects/agent-core-tasks`, configured in `.pi/settings.json`→`taskWorkflow.taskRoot`.
+
+Slash commands `/tasks`, `/tasks-todo`, `/tasks-in-progress`, `/tasks-code-review`, `/tasks-done` list tasks in the TUI.
+
+**Task status/metadata moves do NOT commit to the agent-core code repository.**
+Task board changes affect the external task board files only. This prevents code-branch pollution from task bookkeeping.
+
+Code operations (branches, worktrees, PRs, merges) still run against this code repository.
+Worktree creation also copies `.idea/` (with path rewriting) into the worktree when present.
 
 ### Orchestrator model
 
