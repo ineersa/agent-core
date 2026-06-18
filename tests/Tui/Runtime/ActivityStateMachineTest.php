@@ -148,7 +148,7 @@ final class ActivityStateMachineTest extends TestCase
     {
         $event = new RuntimeEvent(type: $eventType, runId: 'test', seq: 1);
         $result = ActivityStateMachine::transition($current, $event);
-        self::assertSame($expected, $result);
+        $this->assertSame($expected, $result);
     }
 
     #[DataProvider('provideWaitingHumanTransitions')]
@@ -156,7 +156,7 @@ final class ActivityStateMachineTest extends TestCase
     {
         $event = new RuntimeEvent(type: $eventType, runId: 'test', seq: 1);
         $result = ActivityStateMachine::transition($current, $event);
-        self::assertSame($expected, $result);
+        $this->assertSame($expected, $result);
     }
 
     #[DataProvider('provideCancellingTransitions')]
@@ -164,7 +164,7 @@ final class ActivityStateMachineTest extends TestCase
     {
         $event = new RuntimeEvent(type: $eventType, runId: 'test', seq: 1);
         $result = ActivityStateMachine::transition($current, $event);
-        self::assertSame($expected, $result);
+        $this->assertSame($expected, $result);
     }
 
     #[DataProvider('provideTerminalTransitions')]
@@ -172,7 +172,7 @@ final class ActivityStateMachineTest extends TestCase
     {
         $event = new RuntimeEvent(type: $eventType, runId: 'test', seq: 1);
         $result = ActivityStateMachine::transition($current, $event);
-        self::assertSame($expected, $result);
+        $this->assertSame($expected, $result);
     }
 
     #[DataProvider('provideDefaultTransitions')]
@@ -180,7 +180,7 @@ final class ActivityStateMachineTest extends TestCase
     {
         $event = new RuntimeEvent(type: $eventType, runId: 'test', seq: 1);
         $result = ActivityStateMachine::transition($current, $event);
-        self::assertSame($expected, $result);
+        $this->assertSame($expected, $result);
     }
 
     public function testTerminalGuardPreventsOverride(): void
@@ -196,7 +196,7 @@ final class ActivityStateMachineTest extends TestCase
 
         foreach ($terminalStates as $terminal) {
             $result = ActivityStateMachine::transition($terminal, $event);
-            self::assertSame($terminal, $result, 'Terminal state must not be overridden');
+            $this->assertSame($terminal, $result, 'Terminal state must not be overridden');
         }
     }
 
@@ -204,27 +204,133 @@ final class ActivityStateMachineTest extends TestCase
     {
         $event = new RuntimeEvent(type: RuntimeEventTypeEnum::RunStarted->value, runId: 'test', seq: 1);
         $result = ActivityStateMachine::transition(RunActivityStateEnum::Idle, $event);
-        self::assertSame(RunActivityStateEnum::Running, $result);
+        $this->assertSame(RunActivityStateEnum::Running, $result);
     }
 
     public function testStartingToRunning(): void
     {
         $event = new RuntimeEvent(type: RuntimeEventTypeEnum::TurnStarted->value, runId: 'test', seq: 1);
         $result = ActivityStateMachine::transition(RunActivityStateEnum::Starting, $event);
-        self::assertSame(RunActivityStateEnum::Running, $result);
+        $this->assertSame(RunActivityStateEnum::Running, $result);
     }
 
     public function testCompletedIsStickyEvenForRunStarted(): void
     {
         $event = new RuntimeEvent(type: RuntimeEventTypeEnum::RunStarted->value, runId: 'test', seq: 1);
         $result = ActivityStateMachine::transition(RunActivityStateEnum::Completed, $event);
-        self::assertSame(RunActivityStateEnum::Completed, $result);
+        $this->assertSame(RunActivityStateEnum::Completed, $result);
     }
 
     public function testCancelledIsSticky(): void
     {
         $event = new RuntimeEvent(type: RuntimeEventTypeEnum::RunStarted->value, runId: 'test', seq: 1);
         $result = ActivityStateMachine::transition(RunActivityStateEnum::Cancelled, $event);
-        self::assertSame(RunActivityStateEnum::Cancelled, $result);
+        $this->assertSame(RunActivityStateEnum::Cancelled, $result);
+    }
+
+    // ── Cancelling stickiness tests (issue #151 cosmetic flicker fix) ──
+
+    /** @return iterable<array{string, RunActivityStateEnum, RunActivityStateEnum}> */
+    public static function provideCancellingSticksOnMidTurnDeltas(): iterable
+    {
+        // Mid-turn streaming deltas must NOT regress Cancelling to Running.
+        $deltaTypes = [
+            'AssistantTextDelta' => RuntimeEventTypeEnum::AssistantTextDelta->value,
+            'AssistantThinkingDelta' => RuntimeEventTypeEnum::AssistantThinkingDelta->value,
+            'ToolCallStarted' => RuntimeEventTypeEnum::ToolCallStarted->value,
+            'ToolExecutionOutputDelta' => RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
+            'TurnStarted' => RuntimeEventTypeEnum::TurnStarted->value,
+            'TurnCompleted' => RuntimeEventTypeEnum::TurnCompleted->value,
+            'AssistantTextCompleted' => RuntimeEventTypeEnum::AssistantTextCompleted->value,
+            'ToolExecutionCompleted' => RuntimeEventTypeEnum::ToolExecutionCompleted->value,
+        ];
+
+        foreach ($deltaTypes as $label => $type) {
+            yield $label => [$type, RunActivityStateEnum::Cancelling, RunActivityStateEnum::Cancelling];
+        }
+    }
+
+    /**
+     * While Cancelling is sticky, a clean new-run transition from Starting
+     * must still work normally — the stickiness must not block fresh runs.
+     * The TUI sets activity = Starting when dispatching a follow-up after
+     * RunCancelled (RuntimeEventPoller lines 102-117).
+     */
+    #[DataProvider('provideCancellingSticksOnMidTurnDeltas')]
+    public function testCancellingSticksOnMidTurnDeltas(string $eventType, RunActivityStateEnum $current, RunActivityStateEnum $expected): void
+    {
+        $event = new RuntimeEvent(type: $eventType, runId: 'test', seq: 1);
+        $result = ActivityStateMachine::transition($current, $event);
+        $this->assertSame($expected, $result, "Cancelling should stay Cancelling on $eventType");
+    }
+
+    /** @return iterable<array{string, RunActivityStateEnum, RunActivityStateEnum}> */
+    public static function provideCancellingTerminalTransitions(): iterable
+    {
+        yield 'RunCancelled' => [
+            RuntimeEventTypeEnum::RunCancelled->value,
+            RunActivityStateEnum::Cancelling,
+            RunActivityStateEnum::Cancelled,
+        ];
+        yield 'TurnCancelled' => [
+            RuntimeEventTypeEnum::TurnCancelled->value,
+            RunActivityStateEnum::Cancelling,
+            RunActivityStateEnum::Cancelled,
+        ];
+        yield 'RunCompleted' => [
+            RuntimeEventTypeEnum::RunCompleted->value,
+            RunActivityStateEnum::Cancelling,
+            RunActivityStateEnum::Completed,
+        ];
+        yield 'RunFailed' => [
+            RuntimeEventTypeEnum::RunFailed->value,
+            RunActivityStateEnum::Cancelling,
+            RunActivityStateEnum::Failed,
+        ];
+        yield 'TurnFailed' => [
+            RuntimeEventTypeEnum::TurnFailed->value,
+            RunActivityStateEnum::Cancelling,
+            RunActivityStateEnum::Failed,
+        ];
+        yield 'AssistantMessageFailed' => [
+            RuntimeEventTypeEnum::AssistantMessageFailed->value,
+            RunActivityStateEnum::Cancelling,
+            RunActivityStateEnum::Failed,
+        ];
+    }
+
+    #[DataProvider('provideCancellingTerminalTransitions')]
+    public function testCancellingAllowsTerminalTransitions(string $eventType, RunActivityStateEnum $current, RunActivityStateEnum $expected): void
+    {
+        $event = new RuntimeEvent(type: $eventType, runId: 'test', seq: 1);
+        $result = ActivityStateMachine::transition($current, $event);
+        $this->assertSame($expected, $result, "Cancelling should allow $eventType transition");
+    }
+
+    /**
+     * Cancel-class events while already Cancelling stay Cancelling
+     * (they confirm the state, don't escalate).
+     */
+    public function testCancellingRepeatedCancelEventsStayCancelling(): void
+    {
+        foreach ([
+            RuntimeEventTypeEnum::CancellationRequested->value,
+            RuntimeEventTypeEnum::OperationCancelled->value,
+            RuntimeEventTypeEnum::ToolExecutionCancelled->value,
+        ] as $type) {
+            $event = new RuntimeEvent(type: $type, runId: 'test', seq: 1);
+            $result = ActivityStateMachine::transition(RunActivityStateEnum::Cancelling, $event);
+            $this->assertSame(RunActivityStateEnum::Cancelling, $result, "Repeat $type should stay Cancelling");
+        }
+    }
+
+    /**
+     * Unknown events while Cancelling stay Cancelling (default arm).
+     */
+    public function testCancellingUnknownEventStaysCancelling(): void
+    {
+        $event = new RuntimeEvent(type: 'some_random_internal_event', runId: 'test', seq: 1);
+        $result = ActivityStateMachine::transition(RunActivityStateEnum::Cancelling, $event);
+        $this->assertSame(RunActivityStateEnum::Cancelling, $result);
     }
 }
