@@ -33,14 +33,14 @@ Open design details to decide during implementation:
 - Validation covers task list/create/update/move behavior against an external task root and worktree creation behavior including `.idea` path rewrite.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/task-workflow-external-task-store
 Worktree: /home/ineersa/projects/agent-core-worktrees/task-workflow-external-task-store
 Fork run: aakihj74fsil
 PR URL: https://github.com/ineersa/agent-core/pull/166
-PR Status: open
+PR Status: merged
 Started: 2026-06-18T02:02:21.061Z
-Completed:
+Completed: 2026-06-18T17:22:33.150Z
 
 ## Work log
 - Created: 2026-06-18T01:54:42.880Z
@@ -63,3 +63,12 @@ Completed:
 - Created PR: https://github.com/ineersa/agent-core/pull/166
 - Validation: pi --approve --list-models __no_such_model__: PASS (extension loads).; castor cs-check: PASS (0 files fixed).; castor phpstan: PASS (0 errors, 0 file_errors).; castor deptrac: PASS (0 violations, 0 errors).; LLM_MODE=true castor check: PASS all 6 lanes in 67.9s: deptrac OK; test OK (2702 tests, 8057 assertions); test:controller-replay OK (1 test, 14 assertions); test:tui OK (8 tests, 83 assertions); phpstan OK; cs-check OK.
 - Summary: Branch updated with latest fixed origin/main. Fork aakihj74fsil merged origin/main cleanly into task/task-workflow-external-task-store at merge commit 0ee00298e; no conflicts. PR #165/revert-issue-137-main-contamination is included, removing the earlier main contamination that caused RuntimeEventTypeTest and TuiOutputCapNoticeE2eTest failures. Task-workflow external task board migration files preserved; no .idea directories were modified/touched/deleted. Worktree clean and ready for PR.
+
+## Task workflow update - 2026-06-18T17:22:33.151Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/task-workflow-external-task-store into integration checkout.
+- Already up to date.
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/task-workflow-external-task-store.
+- Pulled integration checkout: Already up to date..
+- Validation: PR #166 state: MERGED, mergedAt 2026-06-18T17:19:00Z, mergeCommit 9067d1b2c1d936a8701a5a1c0de04933cfa9dab7.; origin/task/task-workflow-external-task-store is an ancestor of current main.; Before DONE move, external task board synced from /home/ineersa/projects/agent-core/tasks to /home/ineersa/projects/agent-core-tasks with .git/.gitignore/.idea excluded.; CODE-REVIEW validation before merge: move_task deterministic castor check passed in 34.5s; fork aakihj74fsil full LLM_MODE=true castor check passed all 6 lanes.
+- Summary: PR #166 was merged into main (merge commit 9067d1b2c1d936a8701a5a1c0de04933cfa9dab7). Before closing, copied the current in-repo tasks/ snapshot into the external task board at /home/ineersa/projects/agent-core-tasks using rsync while preserving .git/.gitignore and excluding .idea. Moving to DONE using the new external task workflow; no task metadata commit should be needed in agent-core. Note: local integration checkout has unrelated .pi/settings.json user-local formatting/model changes, so clean-main enforcement was disabled for this bookkeeping transition; task branch is already an ancestor of current main.
