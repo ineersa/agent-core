@@ -339,11 +339,6 @@ final class TuiOutputCapNoticeE2eTest extends TestCase
 
     private function agentCommand(): string
     {
-        $fixturePath = __DIR__.'/fixtures/tui-resume-minimal.json';
-        if (!\is_file($fixturePath)) {
-            self::fail("Fixture not found: {$fixturePath}");
-        }
-
         $projectDir = ProjectDir::get();
         $php = \PHP_BINARY;
         $script = $projectDir.'/bin/console';
@@ -351,17 +346,11 @@ final class TuiOutputCapNoticeE2eTest extends TestCase
         $dbPath = 'app_test-tui-output-cap-'.bin2hex(random_bytes(4)).'.sqlite';
 
         return \sprintf(
-            'APP_ENV=test '
-                .'HATFIELD_TEST_DATABASE_PATH=%s '
-                .'HOME=%s '
-                .'HATFIELD_LLM_REPLAY_FIXTURE_PATH=%s '
-                .'%s %s agent '
+            'APP_ENV=test HATFIELD_TEST_DATABASE_PATH=%s HOME=%s %s %s agent '
                 .'--model=llama_cpp_test/test '
-                .'--tools-excluded=bash,bg_status,edit,write,grep '
-                .'2>&1',
+                .'--tools-excluded=bash,bg_status,edit,write,grep 2>&1',
             \escapeshellarg($dbPath),
             \escapeshellarg($this->testProjectDir.'/home'),
-            \escapeshellarg($fixturePath),
             \escapeshellarg($php),
             \escapeshellarg($script),
         );
