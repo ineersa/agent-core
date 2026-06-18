@@ -530,7 +530,7 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
         $p = $event->payload();
         $state = $event->state;
 
-        $capped = (bool) ($p['output_capped'] ?? $p['output_cap_notice'] ?? false);
+        $capped = (bool) ($p['output_capped'] ?? false);
         if (!$capped) {
             return;
         }

@@ -330,7 +330,6 @@ final class RuntimeEventTranslator
         $result = $payload['result'] ?? '';
         if ('' !== $result && str_contains($result, '[Output capped to')) {
             $payload['output_capped'] = true;
-            $payload['output_cap_notice'] = true;
 
             // Parse cap and char_count from the notice format:
             // "[Output capped to %d characters]\n\nFull output: %d characters (~%d tokens).\nSaved for audit at: %s"

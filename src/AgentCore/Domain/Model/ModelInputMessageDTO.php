@@ -47,19 +47,4 @@ final readonly class ModelInputMessageDTO
             'metadata' => $this->metadata,
         ];
     }
-
-    /**
-     * @param array{role?: string, text?: string, tool_call_id?: string|null, tool_name?: string|null, source?: string, metadata?: array<string, mixed>} $data
-     */
-    public static function fromArray(array $data): self
-    {
-        return new self(
-            role: (string) ($data['role'] ?? 'tool'),
-            text: (string) ($data['text'] ?? ''),
-            toolCallId: isset($data['tool_call_id']) && '' !== $data['tool_call_id'] ? (string) $data['tool_call_id'] : null,
-            toolName: isset($data['tool_name']) && '' !== $data['tool_name'] ? (string) $data['tool_name'] : null,
-            source: (string) ($data['source'] ?? ''),
-            metadata: (array) ($data['metadata'] ?? []),
-        );
-    }
 }

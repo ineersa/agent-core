@@ -454,6 +454,75 @@ final class OutputCapLlmTransformHookTest extends TestCase
         $this->assertSame($alreadyCapped, $text);
     }
 
+    /* ── Raw result under cap but combined model-facing text over cap ── */
+
+    public function testRawUnderCapButCombinedOverCapCapsCombinedText(): void
+    {
+        // defaultCap=500, docCap=5000 — set up tight so raw_result (4800 chars)
+        // is under docCap but JSON-wrapped combinedText (~5050 chars) exceeds it.
+        $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 500, docCap: 5000);
+        $cap = new OutputCap($cfg);
+        $hook = new OutputCapLlmTransformHook($cap);
+
+        // Raw doc content just under docCap.
+        $rawDocContent = str_repeat('D', 4800);
+
+        // JSON-encode as the model-facing tool result (as AgentMessageNormalizer
+        // produces). The JSON wrapping adds ~250 chars overhead, pushing the
+        // combined text over docCap.
+        $textContent = json_encode([
+            'is_error' => false,
+            'result' => [
+                'tool_name' => 'read',
+                'content' => [['type' => 'text', 'text' => $rawDocContent]],
+                'details' => ['raw_result' => $rawDocContent],
+                'arguments' => ['path' => '/path/to/notes.md'],
+            ],
+        ]);
+        if (false === $textContent) {
+            $textContent = '{}';
+        }
+
+        $this->assertGreaterThan(
+            5000,
+            mb_strlen($textContent),
+            'Combined text must exceed docCap for this edge case',
+        );
+
+        $sentinel = 'RAW_SENTINEL_' . bin2hex(random_bytes(8));
+
+        $message = new AgentMessage(
+            role: 'tool',
+            content: [['type' => 'text', 'text' => $textContent . $sentinel]],
+            toolCallId: 'call-raw-under',
+            toolName: 'read',
+            details: [
+                'tool_name' => 'read',
+                'content' => [['type' => 'text', 'text' => $rawDocContent]],
+                'details' => ['raw_result' => $rawDocContent],
+                'arguments' => ['path' => '/path/to/notes.md'],
+            ],
+        );
+
+        $transformed = $hook->transformContext([$message]);
+
+        $this->assertCount(1, $transformed);
+        // Must be capped because combined model-facing text exceeds docCap.
+        $this->assertStringContainsString('Output capped', $transformed[0]->content[0]['text'] ?? '');
+        // The sentinel must NOT appear in the model-facing text.
+        $this->assertStringNotContainsString($sentinel, $transformed[0]->content[0]['text'] ?? '');
+        // The sentinel must be persisted to disk.
+        $files = glob($cfg->storageDir . '/*.txt') ?: [];
+        $foundSentinel = false;
+        foreach ($files as $file) {
+            if (str_contains((string) file_get_contents($file), $sentinel)) {
+                $foundSentinel = true;
+                break;
+            }
+        }
+        $this->assertTrue($foundSentinel, 'Persisted file must contain the full sentinel despite raw_result being under the cap');
+    }
+
     /* ── Multi-text parts combined ── */
 
     public function testMultipleTextPartsAreCombinedForCapping(): void

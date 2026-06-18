@@ -140,13 +140,13 @@ final readonly class OutputCapLlmTransformHook implements TransformContextHookIn
      * Returns true (skip central cap) when:
      * 1. The combined text already contains a capped-notice marker
      *    (per-tool cap already applied).
-     * 2. Raw tool output fits under the path-specific cap
-     *    (per-tool cap correctly handled it or output was never
-     *    above the threshold for this file type).
+     * 2. Combined model-facing text fits under the path-specific cap
+     *    (output was never above the threshold for this file type when
+     *    accounting for the correct cap tier, or per-tool cap already
+     *    handled it).
      *
      * Returns false when:
-     * - Raw output exceeds the path-specific cap (cap with correct cap).
-     * - No raw_result available (apply defaultCap defense-in-depth).
+     * - Combined model-facing text exceeds the path-specific cap.
      */
     private function shouldSkipCentralCap(AgentMessage $message, string $combinedText): bool
     {
@@ -155,29 +155,19 @@ final readonly class OutputCapLlmTransformHook implements TransformContextHookIn
             return true;
         }
 
-        // Extract raw tool output for length comparison against the
-        // correct cap. This avoids false-capping doc-like output that
-        // is above defaultCap but below docCap.
-        $rawResult = $this->extractRawResult($message);
-
-        if (null === $rawResult || '' === $rawResult) {
-            // No raw_result to inspect → can't prove output fits;
-            // apply central cap as defense-in-depth.
-            return false;
-        }
-
         // Extract path context (may be null, which resolves to defaultCap).
         $path = $this->extractPath($message);
         $applicableCap = $this->outputCap->capForPath($path);
 
-        // Raw output fits under the applicable cap → per-tool cap was
-        // either already applied with the correct path context, or
-        // output was never above the threshold. Skip central capping.
-        if (mb_strlen($rawResult) <= $applicableCap) {
+        // Compare the actual model-facing text length against the
+        // path-specific cap. This uses $combinedText (the text that
+        // would reach the LLM) rather than raw_result so that JSON
+        // wrapping overhead doesn't let uncapped text slip through.
+        if (mb_strlen($combinedText) <= $applicableCap) {
             return true;
         }
 
-        // Raw output exceeds the applicable cap → central cap needed.
+        // Combined model-facing text exceeds the applicable cap → central cap needed.
         return false;
     }
 
@@ -202,26 +192,6 @@ final readonly class OutputCapLlmTransformHook implements TransformContextHookIn
         $path = $arguments['path'] ?? null;
 
         return \is_string($path) && '' !== $path ? $path : null;
-    }
-
-    /**
-     * Extract the raw tool output from the message details.
-     *
-     * The raw_result is the return value of the tool handler's
-     * __invoke() before JSON wrapping. It is stored by ToolExecutor
-     * in details['details']['raw_result'].
-     *
-     * @return string|null the raw tool output, or null if unavailable
-     */
-    private function extractRawResult(AgentMessage $message): ?string
-    {
-        $rawResult = \is_array($message->details)
-            && isset($message->details['details']['raw_result'])
-            && \is_string($message->details['details']['raw_result'])
-                ? $message->details['details']['raw_result']
-                : null;
-
-        return $rawResult;
     }
 
     /**

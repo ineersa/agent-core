@@ -853,7 +853,6 @@ final class RuntimeEventMapperTest extends TestCase
         self::assertNotNull($result);
         self::assertSame(RuntimeEventTypeEnum::ToolExecutionCompleted->value, $result->type);
         self::assertTrue($result->payload['output_capped']);
-        self::assertTrue($result->payload['output_cap_notice']);
         self::assertSame(20000, $result->payload['output_cap_limit']);
         self::assertSame(50000, $result->payload['output_cap_char_count']);
         self::assertSame('/tmp/cap.txt', $result->payload['output_cap_saved_path']);
@@ -873,7 +872,6 @@ final class RuntimeEventMapperTest extends TestCase
         self::assertNotNull($result);
         self::assertSame(RuntimeEventTypeEnum::ToolExecutionCompleted->value, $result->type);
         self::assertArrayNotHasKey('output_capped', $result->payload);
-        self::assertArrayNotHasKey('output_cap_notice', $result->payload);
     }
 
     // ── toRunEventData backward compat ───────────────────────────────────────
