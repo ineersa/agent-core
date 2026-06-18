@@ -263,13 +263,16 @@ final class OutputCap
     /**
      * Build a model-facing notice about capped output.
      *
-     * The first line format is parsed by the runtime translator to extract
-     * structured metadata (cap limit, char count, saved path) for TUI
-     * projection.  Keep the first-line marker and key labels stable:
+     * The notice tells the model how much output was capped, where the
+     * full output was saved for audit, and how to continue accessing the
+     * content using targeted tool calls.  The model receives clear,
+     * tool-first follow-up guidance: no bare shell commands, no rerunning
+     * full tools, no reading the saved file wholesale.
      *
-     *   "[Output capped to %d characters]" → output_cap_limit
-     *   "Full output: %d characters"       → output_cap_char_count
-     *   "Saved for audit at: %s"           → output_cap_saved_path
+     * Structured cap metadata (limit, char count, saved path) is conveyed
+     * through separate OutputCapResultDTO fields and runtime event payloads,
+     * NOT by parsing this text.  The text format is stable for the model's
+     * benefit, not for production parsing.
      *
      * The model receives clear, tool-first follow-up guidance: no bare
      * shell commands, no rerunning full tools, no reading the saved file

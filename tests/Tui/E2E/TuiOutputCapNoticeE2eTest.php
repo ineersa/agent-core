@@ -96,28 +96,27 @@ final class TuiOutputCapNoticeE2eTest extends TestCase
             $this->tmux->sendKey($pane, 'C-u');
             usleep(50_000);
             $this->tmux->sendLiteral($pane, "/resume {$sessionId}");
-            $this->tmux->sendKey($pane, 'Enter');
-
-            // Wait for the output-cap ToolResult block (⚠) with the exact
+            // Wait for the output-cap System notice block (⚠) with the exact
             // model-facing "[Output capped to ...]" notice text from
             // model_input_messages (central-cap path).
             $this->tmux->waitForCallback(
                 $pane,
                 static fn (string $cap): bool => str_contains($cap, '[Output capped to'),
                 timeout: 10.0,
-                message: 'Output cap ToolResult block did not appear in transcript after resume',
+                message: 'Output cap System notice block did not appear in transcript after resume',
                 history: 3000,
             );
 
             // Capture full visible pane for assertions.
             $visiblePane = $this->tmux->capturePlainWithHistory($pane, 3000);
 
-            // 1. The output-cap ToolResult block prefix (⚠) must be visible.
+            // 1. The ⚠ warning icon must be visible on the System notice block prefix.
             $this->assertStringContainsString('⚠', $visiblePane,
-                'Output-cap ToolResult block warning icon must be visible in transcript');
+                'Output-cap System notice block warning icon must be visible in transcript');
 
             // 2. The exact model-facing cap notice must be visible verbatim
-            //    (from model_input_messages, not from tool_execution_end.result).
+            //    in the System notice block (from model_input_messages, not
+            //    from tool_execution_end.result).
             $this->assertStringContainsString('[Output capped to', $visiblePane,
                 'Model-facing cap notice text must be visible in transcript');
 
@@ -135,22 +134,30 @@ final class TuiOutputCapNoticeE2eTest extends TestCase
             $this->assertStringContainsString('read path=', $visiblePane,
                 'Read-path guidance from exact cap notice must be visible');
 
-            // 6. Raw tool output from tool_execution_end.result must NOT be
-            //    visible — the ToolResult block was replaced by model_input_messages.
+            // 6. Compact ToolResult status ("read completed") must be visible.
+            $this->assertStringContainsString('read completed', $visiblePane,
+                'Compact ToolResult status must be visible instead of raw output');
+
+            // 7. Raw tool output from tool_execution_end.result must NOT be
+            //    visible — the ToolResult block was compacted.
             $this->assertStringNotContainsString('RAW FULL TOOL OUTPUT', $visiblePane,
                 'Raw tool output text must NOT survive after model_input_messages projection');
 
-            // 7. Generated user-role model input projected as System block.
+            // 8. Generated user-role model input projected as System block.
             $this->assertStringContainsString('Tool result image for view_image', $visiblePane,
                 'Generated user-role model input (System block) must be visible with exact text');
 
-            // 8. No paraphrase/synthesis — the TUI shows exactly what the model saw.
+            // 9. No paraphrase/synthesis — the TUI shows exactly what the model saw.
             $this->assertStringNotContainsString('Output exceeded', $visiblePane,
                 'Must NOT contain paraphrased "Output exceeded" text');
             $this->assertStringNotContainsString('Model was shown', $visiblePane,
                 'Must NOT contain paraphrased "Model was shown" text');
             $this->assertStringNotContainsString('visible chars', $visiblePane,
                 'Must NOT contain old paraphrased "visible chars" text');
+
+            // 10. The session ID appears in the footer.
+            $this->assertStringContainsString($sessionId, $visiblePane,
+                'The exact session ID should be visible in the footer');
 
             // 9. The session ID appears in the footer.
             $this->assertStringContainsString($sessionId, $visiblePane,
@@ -306,7 +313,7 @@ final class TuiOutputCapNoticeE2eTest extends TestCase
                         'tool_name' => 'read',
                         'text' => "[Output capped to 20000 characters]\n\nFull output: 50000 characters (~12500 tokens).\nSaved for audit at: /tmp/cap/cap-lines.txt\n\nDo NOT rerun the same full command/tool call.\nDo NOT read the saved file in full.\n\nUse targeted tool calls to continue reading:\n• Read more from the file: `read path=<path> offset=<next_line> limit=<lines>`\n• Search for relevant content or ask for a summary\n\nIf you must inspect the raw saved output, use `read` with a small window.\n",
                         'source' => 'tool_result',
-                        'metadata' => ['output_cap_limit' => 20000],
+                        'metadata' => ['output_cap' => true, 'output_cap_limit' => 20000],
                     ],
                     [
                         'role' => 'user',

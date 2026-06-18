@@ -365,10 +365,10 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
     /**
      * Handle a finished/stopped process entity.
      *
-     * @param BackgroundProcess $entity    The finished process entity
+     * @param BackgroundProcess  $entity    The finished process entity
      * @param OutputCapResultDTO $capResult The result of OutputCap::processDetailed
-     * @param int               $pid       Process PID
-     * @param string|null       $sessionId Session ownership filter
+     * @param int                $pid       Process PID
+     * @param string|null        $sessionId Session ownership filter
      *
      * @return string|ToolHandlerResultDTO Formatted result, optionally with
      *                                     structured cap metadata
@@ -441,8 +441,6 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
     /**
      * Wrap a tool result string into a ToolHandlerResultDTO when capped,
      * or return the string as-is when not capped.
-     *
-     * @return string|ToolHandlerResultDTO
      */
     private function toResult(string $text, OutputCapResultDTO $capResult): string|ToolHandlerResultDTO
     {

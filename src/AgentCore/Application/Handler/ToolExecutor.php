@@ -342,7 +342,7 @@ final class ToolExecutor implements ToolExecutorInterface
         // and merge structured details (output_cap, system_notices, etc.).
         if ($rawResult instanceof ToolHandlerResultDTO) {
             $text = $rawResult->text;
-            $details = \array_merge(
+            $details = array_merge(
                 ['raw_result' => $rawResult->text],
                 $rawResult->details,
             );
@@ -359,7 +359,7 @@ final class ToolExecutor implements ToolExecutorInterface
         }
 
         if (\is_array($rawResult) && 'interrupt' === ($rawResult['kind'] ?? null)) {
-            $details = \array_replace($details, $rawResult);
+            $details = array_replace($details, $rawResult);
         }
 
         return new ToolResult(

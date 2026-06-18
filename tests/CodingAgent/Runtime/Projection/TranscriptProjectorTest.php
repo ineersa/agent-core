@@ -1100,6 +1100,7 @@ final class TranscriptProjectorTest extends TestCase
         ]);
         $this->accept('tool_execution.completed', [
             'tool_call_id' => 'tc_capped',
+            'tool_name' => 'read',
             'result' => "[Output capped to 20000 characters]\n\nFull output: 50000 characters (~12500 tokens).\nSaved for audit at: /tmp/cap.txt\nDo NOT rerun...",
             'output_cap' => true,
             'output_cap_limit' => 20000,
@@ -1108,15 +1109,18 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        // 2 blocks: ToolResult with cap notice text + System notice block.
+        // 2 blocks: ToolResult (compact status) + System notice block.
         $this->assertCount(2, $blocks);
 
-        // ToolResult block: unchanged visible tool output (capped notice text).
+        // ToolResult block: compact status label, no cap notice text.
         $toolBlock = $blocks[0];
         $this->assertSame(TranscriptBlockKindEnum::ToolResult, $toolBlock->kind);
         $this->assertSame('tool_result_tc_capped', $toolBlock->id);
-        $this->assertStringContainsString('Output capped to', $toolBlock->text);
-        $this->assertArrayNotHasKey('notice_type', $toolBlock->meta);
+        $this->assertSame('read completed', $toolBlock->text,
+            'ToolResult must show compact status, not cap notice text');
+        $this->assertTrue($toolBlock->meta['model_input_exact']);
+        $this->assertStringContainsString('Output capped to', $toolBlock->meta['raw_result'],
+            'Original cap notice text must be preserved in raw_result metadata');
         $this->assertFalse($toolBlock->streaming);
 
         // System notice block with structured cap metadata and warning styling.
@@ -1157,6 +1161,7 @@ final class TranscriptProjectorTest extends TestCase
         ]);
         $this->accept('tool_execution.failed', [
             'tool_call_id' => 'tc_failcap',
+            'tool_name' => 'bash',
             'result' => "[Output capped to 5000 characters]\n\nFull output: 6000 characters.\nSaved for audit at: /tmp/err.txt",
             'output_cap' => true,
             'output_cap_limit' => 5000,
@@ -1166,14 +1171,16 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        // 2 blocks: failed ToolResult + System notice block.
+        // 2 blocks: failed ToolResult (compact) + System notice block.
         $this->assertCount(2, $blocks);
 
-        // ToolResult: unchanged, has is_error but no notice_type.
+        // ToolResult: compact status, is_error preserved, no notice_type.
         $toolBlock = $blocks[0];
         $this->assertTrue($toolBlock->meta['is_error']);
         $this->assertArrayNotHasKey('notice_type', $toolBlock->meta);
-        $this->assertStringContainsString('Output capped to', $toolBlock->text);
+        $this->assertSame('bash completed', $toolBlock->text,
+            'Failed tool with cap must show compact status, not cap notice text');
+        $this->assertTrue($toolBlock->meta['model_input_exact']);
 
         // System notice block.
         $noticeBlock = $blocks[1];
@@ -1224,15 +1231,17 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        // 3 blocks: ToolResult (unchanged) + System notice + AssistantMessage
+        // 3 blocks: ToolResult (compact) + System notice + AssistantMessage
         $this->assertCount(3, $blocks, 'Expected ToolResult + System notice + AssistantMessage blocks');
 
-        // ToolResult: unchanged, still shows original human-readable output.
+        // ToolResult: compact status, raw output hidden.
         $toolBlock = $blocks[0];
         $this->assertSame(TranscriptBlockKindEnum::ToolResult, $toolBlock->kind);
         $this->assertSame('tool_result_tc_central', $toolBlock->id);
-        $this->assertStringContainsString('Full file content that is very long', $toolBlock->text,
-            'ToolResult must retain original human-readable output');
+        $this->assertSame('read completed', $toolBlock->text,
+            'ToolResult must show compact status, not raw output');
+        $this->assertStringContainsString('Full file content that is very long...', $toolBlock->meta['raw_result'],
+            'Raw output must be preserved in raw_result metadata');
         $this->assertArrayNotHasKey('notice_type', $toolBlock->meta);
 
         // Assistant message block (created by AssistantStream subscriber first).
@@ -1513,8 +1522,8 @@ final class TranscriptProjectorTest extends TestCase
     public function testModelInputOnAssistantMessageFailedWithOutputCapProjectsNoticeBlock(): void
     {
         // Failed LLM step with model_input_messages. When the model input
-        // has output_cap metadata, a System notice block is created;
-        // ToolResult stays unchanged.
+        // has output_cap metadata, a System notice block is created and the
+        // ToolResult is compacted to a status label.
         $this->accept('tool_execution.started', [
             'tool_call_id' => 'tc_fail', 'tool_name' => 'read',
         ]);
@@ -1538,15 +1547,17 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        // 3 blocks: ToolResult (unchanged) + Error + System notice block
+        // 3 blocks: ToolResult (compact) + Error + System notice block
         $this->assertCount(3, $blocks, 'Expected ToolResult + Error + System notice block');
 
-        // ToolResult: unchanged human-readable output.
+        // ToolResult: compact status, not raw output.
         $toolBlock = $blocks[0];
         $this->assertSame(TranscriptBlockKindEnum::ToolResult, $toolBlock->kind);
-        $this->assertStringContainsString('Raw full file content', $toolBlock->text,
-            'ToolResult must retain original output');
-        $this->assertArrayNotHasKey('model_input_exact', $toolBlock->meta);
+        $this->assertSame('read completed', $toolBlock->text,
+            'ToolResult must show compact status, not original output');
+        $this->assertArrayHasKey('model_input_exact', $toolBlock->meta);
+        $this->assertStringContainsString('Raw full file content', $toolBlock->meta['raw_result'],
+            'Original output preserved in raw_result metadata');
 
         // System notice block with cap metadata.
         $noticeBlock = $blocks[2];
@@ -1564,8 +1575,8 @@ final class TranscriptProjectorTest extends TestCase
     public function testModelInputOnTurnCancelledWithOutputCapProjectsNoticeBlock(): void
     {
         // Aborted LLM step with model_input_messages carrying output_cap
-        // metadata should project a System notice block; ToolResult stays
-        // unchanged.
+        // metadata should project a System notice block and compact the
+        // ToolResult to a status label.
         $this->accept('tool_execution.started', [
             'tool_call_id' => 'tc_cancel', 'tool_name' => 'bash',
         ]);
@@ -1588,15 +1599,17 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        // 3 blocks: ToolResult (unchanged) + System notice + Cancelled block
+        // 3 blocks: ToolResult (compact) + System notice + Cancelled block
         $this->assertCount(3, $blocks, 'Expected ToolResult + System notice + Cancelled block');
 
-        // ToolResult stays unchanged (human-readable output).
+        // ToolResult: compact status, not raw output.
         $toolBlock = $blocks[0];
         $this->assertSame(TranscriptBlockKindEnum::ToolResult, $toolBlock->kind);
-        $this->assertStringContainsString('Long bash output that was capped', $toolBlock->text,
-            'ToolResult must retain original output');
-        $this->assertArrayNotHasKey('model_input_exact', $toolBlock->meta);
+        $this->assertSame('bash completed', $toolBlock->text,
+            'ToolResult must show compact status, not original output');
+        $this->assertArrayHasKey('model_input_exact', $toolBlock->meta);
+        $this->assertStringContainsString('Long bash output that was capped', $toolBlock->meta['raw_result'],
+            'Original output preserved in raw_result metadata');
 
         // System notice block with cap metadata (ToolProjectionSubscriber runs before CancellationProjectionSubscriber).
         $noticeBlock = $blocks[1];

@@ -372,9 +372,12 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
      * Project a tool-role model input.
      *
      * When the model input carries output_cap metadata (structured cap
-     * notice from OutputCapLlmTransformHook), creates a System notice
-     * block with the exact cap notice text and warning styling.
-     * The existing ToolResult block is NOT modified.
+     * notice from OutputCapLlmTransformHook):
+     *   - Creates a System notice block with the exact cap notice text
+     *     and warning styling;
+     *   - Replaces the ToolResult visible text with a compact status
+     *     label (e.g. "read completed") and preserves the original text
+     *     in metadata as raw_result.
      *
      * For non-capped model inputs, stores the exact model-facing text
      * in ToolResult block metadata without replacing the visible
@@ -395,13 +398,14 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
             return;
         }
 
-        // ── Output-cap notice → System block ──
+        // ── Output-cap notice → System block + compact ToolResult ──
         // When the model-facing text was centrally capped, project the
-        // exact cap notice as a System block with warning styling.
-        // The ToolResult block (created from tool_execution events with
-        // the original readable output) is left untouched.
+        // exact cap notice as a System block with warning styling and
+        // compact the existing ToolResult to a status label so the raw
+        // tool output is not visible.
         if (true === ($metadata['output_cap'] ?? false)) {
             $this->projectSystemNotice($event, $text, $metadata, $toolCallId);
+            $this->compactCappedToolResult($event, $toolCallId, $toolName);
 
             return;
         }
@@ -563,9 +567,36 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
     }
 
     /**
+     * Compact a capped ToolResult block to a status label.
+     *
+     * After creating a System notice for an output cap, the existing
+     * ToolResult block must not display the raw tool output or the
+     * cap notice text.  This replaces the visible text with a compact
+     * status (e.g. "read completed") and preserves the original text
+     * in raw_result metadata.
+     */
+    private function compactCappedToolResult(TranscriptProjectionEvent $event, string $toolCallId, string $toolName): void
+    {
+        $state = $event->state;
+        $blockId = 'tool_result_'.$toolCallId;
+        $existing = $state->getBlock($blockId);
+        if (null === $existing) {
+            return;
+        }
+
+        $meta = $existing->meta;
+        // Preserve the current visible text in metadata.
+        $meta['raw_result'] = $existing->text;
+        $meta['model_input_exact'] = true;
+
+        $compactText = '' !== $toolName ? $toolName.' completed' : 'Completed';
+        $state->updateBlock($blockId, $existing->with(text: $compactText, meta: $meta));
+    }
+
+    /**
      * When a tool execution result was capped (output_cap=true in payload),
      * create a System notice block with the exact cap notice text and
-     * warning styling. Does NOT modify the ToolResult block.
+     * warning styling, then compact the ToolResult to a status label.
      */
     private function maybeProjectOutputCapNotice(TranscriptProjectionEvent $event, string $toolCallId): void
     {
@@ -581,11 +612,17 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
             return;
         }
 
+        $toolName = (string) ($p['tool_name'] ?? '');
+
         $this->projectSystemNotice($event, $text, [
             'output_cap' => true,
             'output_cap_limit' => $p['output_cap_limit'] ?? null,
             'output_cap_char_count' => $p['output_cap_char_count'] ?? null,
             'output_cap_saved_path' => $p['output_cap_saved_path'] ?? null,
         ], $toolCallId);
+
+        // Compact the ToolResult block so it shows status instead of
+        // the duplicate cap notice text or raw output.
+        $this->compactCappedToolResult($event, $toolCallId, $toolName);
     }
 }

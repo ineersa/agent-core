@@ -52,6 +52,18 @@ final readonly class TranscriptBlockRenderer
 
     private function prefixFor(TranscriptBlock $block): string
     {
+        // System notice blocks with "output_cap" notice_type or "warning"
+        // severity render with a ⚠ icon for visibility.
+        if (TranscriptBlockKindEnum::System === $block->kind) {
+            $noticeType = $block->meta['notice_type'] ?? '';
+            $severity = $block->meta['severity'] ?? 'info';
+            if ('output_cap' === $noticeType || 'warning' === $severity) {
+                return '  ⚠';
+            }
+
+            return '  ·';
+        }
+
         return match ($block->kind) {
             TranscriptBlockKindEnum::UserMessage => '  ❯',
             TranscriptBlockKindEnum::AssistantMessage => '  ◇',
@@ -63,7 +75,6 @@ final readonly class TranscriptBlockRenderer
             TranscriptBlockKindEnum::Approval => '  🔐',
             TranscriptBlockKindEnum::Cancelled => '  ✕',
             TranscriptBlockKindEnum::Error => '  ✕',
-            TranscriptBlockKindEnum::System => '  ·',
         };
     }
 
