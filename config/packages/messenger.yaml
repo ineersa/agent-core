@@ -20,6 +20,8 @@
 # - AdvanceRun → run_control transport
 # - ExecuteLlmStep → llm transport (messenger:consume llm)
 # - ExecuteToolCall → tool transport (messenger:consume tool)
+# - McpInitializeSessionCommand → mcp transport (messenger:consume mcp)
+#   MCP lifecycle messages are routed to the dedicated mcp consumer (Phase 1).
 # - Result messages (LlmStepResult, ToolCallResult) stay sync on command bus
 #   within the consumer process where the worker ran. RunOrchestrator is
 #   registered for agent.command.bus and handles results in the same process.
@@ -56,6 +58,7 @@ framework:
                 serializer: 'messenger.transport.native_php_serializer'
             llm:         '%env(HATFIELD_LLM_TRANSPORT_DSN)%'
             tool:        '%env(HATFIELD_TOOL_TRANSPORT_DSN)%'
+            mcp:         '%env(HATFIELD_MCP_TRANSPORT_DSN)%'
 
         routing:
             Ineersa\AgentCore\Domain\Message\StartRun: run_control
@@ -63,3 +66,6 @@ framework:
             Ineersa\AgentCore\Domain\Message\AdvanceRun: run_control
             Ineersa\AgentCore\Domain\Message\ExecuteLlmStep: llm
             Ineersa\AgentCore\Domain\Message\ExecuteToolCall: tool
+            Ineersa\CodingAgent\Mcp\Message\McpInitializeSessionCommand: mcp
+            Ineersa\CodingAgent\Mcp\Message\McpRefreshCatalogCommand: mcp
+            Ineersa\CodingAgent\Mcp\Message\McpDisconnectSessionCommand: mcp

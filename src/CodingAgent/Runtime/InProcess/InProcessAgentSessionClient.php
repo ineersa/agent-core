@@ -13,6 +13,7 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
+use Ineersa\CodingAgent\Mcp\McpSessionLifecycleDispatcher;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateService;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
@@ -52,6 +53,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         private readonly ?ToolQuestionStoreInterface $toolQuestionStore = null,
         private readonly ToolQuestionAnswerResolver $answerResolver = new ToolQuestionAnswerResolver(),
         private readonly ?ToolExecutorInterface $toolExecutor = null,
+        private readonly ?McpSessionLifecycleDispatcher $mcpDispatcher = null,
     ) {
     }
 
@@ -123,12 +125,20 @@ final class InProcessAgentSessionClient implements AgentSessionClient
 
         $runId = $this->runner->start($input);
 
+        // Dispatch MCP session initialize after the run has started.
+        // Failure is non-fatal — MCP is optional infrastructure.
+        $this->mcpDispatcher?->dispatchInitialize($runId, 'start_run');
+
         return new RunHandle(runId: $runId, status: 'running');
     }
 
     public function resume(string $runId): RunHandle
     {
         $this->runner->continue($runId);
+
+        // Dispatch MCP session initialize on resume so resumed sessions
+        // also benefit from MCP tools (Phase 3+).
+        $this->mcpDispatcher?->dispatchInitialize($runId, 'resume');
 
         return new RunHandle(runId: $runId, status: 'running');
     }
