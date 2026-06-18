@@ -21,8 +21,33 @@ use Psr\Log\LoggerInterface;
  * SDK imports are isolated to this namespace and {@see McpSdkClientFactory},
  * preserving the SDK boundary.
  */
-class McpConnectionManager
+final class McpConnectionManager implements McpConnectionManagerInterface
 {
+    /**
+     * Patterns that may appear in error messages and indicate secret-bearing
+     * substrings that must not be logged or stored in catalog error messages.
+     *
+     * Each entry is [regex flag, 'replacement'].
+     *
+     * @var list<array{string, string}>
+     */
+    private const SECRET_PATTERNS = [
+        // Redact the entire authorization value (Bearer + token)
+        ['/authorization:\s*Bearer\s+\S+/i', 'authorization: Bearer <redacted>'],
+        ['/Authorization:\s*Bearer\s+\S+/i', 'Authorization: Bearer <redacted>'],
+        // Catch bare Bearer tokens not preceded by Authorization:
+        ['/bearer\s+\S+/i', 'bearer <redacted>'],
+        // URL query-like secret parameters
+        ['/[?&]api_key=\S+/i', 'api_key=<redacted>'],
+        ['/[?&]secret=\S+/i', 'secret=<redacted>'],
+        ['/[?&]token=\S+/i', 'token=<redacted>'],
+        ['/[?&]password=\S+/i', 'password=<redacted>'],
+        // Key:value style headers/bodies
+        ['/api[-_]?key\s*[:=]\s*\S+/i', 'api_key <redacted>'],
+    ];
+
+    /** Maximum allowable length for a sanitized error message. */
+    private const MAX_ERROR_MSG_LENGTH = 500;
     /**
      * Active clients keyed by "runId:serverName".
      *
@@ -37,20 +62,6 @@ class McpConnectionManager
     ) {
     }
 
-    /**
-     * Discover tools from all enabled MCP servers for a given run.
-     *
-     * Loads the current MCP config, connects to each enabled server,
-     * lists tools, and returns a map of server name → list of tool
-     * definitions (as returned by {@see McpClientInterface::listTools()}).
-     *
-     * On discovery failure for a server, the server is recorded as
-     * failed but discovery continues for remaining servers.
-     *
-     * @param string $runId Session/run identifier
-     *
-     * @return array<string, array{status: 'connected'|'failed', transport: string, tools: list<array{name: string, description?: string|null, inputSchema: array<string, mixed>}>, errorMessage?: string}>
-     */
     public function discover(string $runId): array
     {
         $results = [];
@@ -63,7 +74,7 @@ class McpConnectionManager
                 'mcp_event' => 'discovery.config_failed',
                 'run_id' => $runId,
                 'error_class' => $e::class,
-                'error_message' => $e->getMessage(),
+                'error_message' => self::sanitizeLogMessage($e->getMessage()),
             ]);
 
             return $results;
@@ -114,7 +125,7 @@ class McpConnectionManager
                     'status' => 'failed',
                     'transport' => $transport,
                     'tools' => [],
-                    'errorMessage' => $this->sanitizeErrorMessage($e),
+                    'errorMessage' => self::sanitizeLogMessage($e->getMessage()),
                 ];
 
                 $this->logger->warning('MCP server discovery failed', [
@@ -124,7 +135,7 @@ class McpConnectionManager
                     'server_name' => $serverName,
                     'transport' => $transport,
                     'error_class' => $e::class,
-                    'error_message' => $e->getMessage(),
+                    'error_message' => self::sanitizeLogMessage($e->getMessage()),
                 ]);
             }
         }
@@ -132,19 +143,11 @@ class McpConnectionManager
         return $results;
     }
 
-    /**
-     * Get an already-connected client for a server.
-     *
-     * Returns null if no connected client exists for this run/server.
-     */
     public function getClient(string $runId, string $serverName): ?McpClientInterface
     {
         return $this->clients[$this->clientKey($runId, $serverName)] ?? null;
     }
 
-    /**
-     * Disconnect a single server for a run.
-     */
     public function disconnectServer(string $runId, string $serverName): void
     {
         $key = $this->clientKey($runId, $serverName);
@@ -165,7 +168,7 @@ class McpConnectionManager
                     'run_id' => $runId,
                     'server_name' => $serverName,
                     'error_class' => $e::class,
-                    'error_message' => $e->getMessage(),
+                    'error_message' => self::sanitizeLogMessage($e->getMessage()),
                 ]);
             }
 
@@ -173,13 +176,6 @@ class McpConnectionManager
         }
     }
 
-    /**
-     * Disconnect all clients for a given run.
-     *
-     * Used on session disconnect or graceful shutdown.
-     * Individual disconnect failures are logged but do not prevent
-     * cleanup of remaining servers.
-     */
     public function disconnectAll(string $runId): void
     {
         $prefix = $runId.':';
@@ -206,7 +202,7 @@ class McpConnectionManager
                     'run_id' => $runId,
                     'server_name' => $serverName,
                     'error_class' => $e::class,
-                    'error_message' => $e->getMessage(),
+                    'error_message' => self::sanitizeLogMessage($e->getMessage()),
                 ]);
             }
 
@@ -215,28 +211,32 @@ class McpConnectionManager
     }
 
     /**
+     * Produce a diagnostic-safe error message for log/catalog use.
+     *
+     * Applies truncation and redacts common secret-bearing substrings
+     * (bearer tokens, authorization headers, api_key, token, password, secret).
+     * Never includes raw command args, env values, headers, or tokens.
+     */
+    public static function sanitizeLogMessage(string $message): string
+    {
+        // Truncate to a reasonable diagnostic length
+        if (\strlen($message) > self::MAX_ERROR_MSG_LENGTH) {
+            $message = substr($message, 0, self::MAX_ERROR_MSG_LENGTH - 3).'...';
+        }
+
+        // Redact common secret-bearing patterns
+        foreach (self::SECRET_PATTERNS as [$pattern, $replacement]) {
+            $message = preg_replace($pattern, $replacement, $message);
+        }
+
+        return (string) $message;
+    }
+
+    /**
      * Build an internal client-lookup key.
      */
     private function clientKey(string $runId, string $serverName): string
     {
         return $runId.':'.$serverName;
-    }
-
-    /**
-     * Produce a diagnostic-safe error message from an exception.
-     *
-     * Truncates long messages and never includes raw command args,
-     * env values, headers, or tokens.
-     */
-    private function sanitizeErrorMessage(\Throwable $e): string
-    {
-        $msg = $e->getMessage();
-
-        // Truncate to a reasonable diagnostic length
-        if (\strlen($msg) > 500) {
-            $msg = substr($msg, 0, 497).'...';
-        }
-
-        return $msg;
     }
 }

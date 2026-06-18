@@ -10,7 +10,7 @@ use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogDTO;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolDefinitionDTO;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolNameMapper;
-use Ineersa\CodingAgent\Mcp\Client\McpConnectionManager;
+use Ineersa\CodingAgent\Mcp\Client\McpConnectionManagerInterface;
 use Ineersa\CodingAgent\Mcp\Config\McpConfigDTO;
 use Ineersa\CodingAgent\Mcp\Config\McpConfigLoader;
 use Ineersa\CodingAgent\Mcp\Message\McpDisconnectSessionCommand;
@@ -28,11 +28,12 @@ use Symfony\Component\Messenger\Attribute\AsMessageHandler;
  *    continue unaffected.
  *  - Refresh catalog / Disconnect: no-op log-only skeletons.
  *
- * MCP-03 Phase 3 behavior (this implementation):
+ * MCP-03 Connection manager, discovery, and catalog (this implementation):
  *  - Initialize: load config, connect to enabled servers via McpConnectionManager,
  *    discover tools, write session catalog snapshot.
  *  - Refresh catalog: full rediscovery via McpConnectionManager, atomically
- *    replace catalog with new snapshot.
+ *    replace catalog with new snapshot.  On failure, write empty/failed
+ *    catalog to invalidate stale tools.
  *  - Disconnect: disconnect broker-owned clients for the run.
  *
  * This handler runs in the mcp consumer (controller mode, Doctrine
@@ -42,9 +43,14 @@ use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 #[AsMessageHandler(bus: 'agent.command.bus')]
 final class McpInitializeSessionHandler
 {
+    /**
+     * @param McpConnectionManagerInterface $connectionManager abstraction for
+     *                                                         broker-owned client lifecycle; the concrete implementation
+     *                                                         is {@see \Ineersa\CodingAgent\Mcp\Client\McpConnectionManager}
+     */
     public function __construct(
         private readonly McpConfigLoader $configLoader,
-        private readonly McpConnectionManager $connectionManager,
+        private readonly McpConnectionManagerInterface $connectionManager,
         private readonly McpToolNameMapper $nameMapper,
         private readonly McpToolCatalogStoreInterface $catalogStore,
         private readonly LoggerInterface $logger,
@@ -76,9 +82,6 @@ final class McpInitializeSessionHandler
         ];
 
         try {
-            // Load config to compute configHash for invalidation.
-            // If config load fails, write an empty/failed catalog so stale
-            // tools from any previous successful discovery are NOT retained.
             $config = $this->configLoader->load();
             $enabledCount = \count($config->servers);
             $configHash = $this->computeConfigHash($config);
@@ -90,7 +93,7 @@ final class McpInitializeSessionHandler
 
             if ($enabledCount > 0) {
                 $discoveryResults = $this->connectionManager->discover($message->runId);
-                $catalog = $this->buildCatalog($message->runId, $configHash, $discoveryResults);
+                $catalog = $this->buildCatalog($config, $message->runId, $configHash, $discoveryResults);
             } else {
                 // No servers configured — write empty catalog.
                 $catalog = McpToolCatalogDTO::empty($message->runId, 1, $configHash);
@@ -112,26 +115,22 @@ final class McpInitializeSessionHandler
             // any previously-discovered tools, then log a warning with
             // the exception class and message only — never dump raw
             // config, env values, headers, or tokens.
-            try {
-                $this->catalogStore->write(
-                    $message->runId,
-                    McpToolCatalogDTO::empty($message->runId, 1),
-                );
-            } catch (\Throwable) {
-                // Best-effort — if we cannot even write an empty catalog,
-                // there is nothing more we can do for this run.
-            }
+            $this->writeEmptyCatalogDiagnostic($message->runId);
 
             $this->logger->warning('MCP initialize failed — config or discovery error, continuing without MCP', [
                 ...$logContext,
                 'error_class' => $e::class,
-                'error_message' => $e->getMessage(),
+                'error_message' => $this->sanitizeErrorMsg($e),
             ]);
         }
     }
 
     /**
      * Handle catalog refresh — full rediscovery and snapshot replacement.
+     *
+     * MCP-03 behavior: on refresh failure, writes an empty/failed catalog
+     * to invalidate any previously-discovered tools.  Stale tools must
+     * never survive a failed refresh.
      */
     #[AsMessageHandler(bus: 'agent.command.bus')]
     public function onRefreshCatalog(McpRefreshCatalogCommand $message): void
@@ -150,7 +149,7 @@ final class McpInitializeSessionHandler
 
             if ($enabledCount > 0) {
                 $discoveryResults = $this->connectionManager->discover($message->runId);
-                $catalog = $this->buildCatalog($message->runId, $configHash, $discoveryResults);
+                $catalog = $this->buildCatalog($config, $message->runId, $configHash, $discoveryResults);
             } else {
                 $catalog = McpToolCatalogDTO::empty($message->runId, 1, $configHash);
             }
@@ -164,13 +163,15 @@ final class McpInitializeSessionHandler
                 'generation' => $catalog->generation,
             ]);
         } catch (\Throwable $e) {
-            // Refresh failure is non-fatal — log and continue.
-            // Do NOT overwrite catalog on refresh failure to avoid losing
-            // the previously-working catalog.
-            $this->logger->warning('MCP catalog refresh failed', [
+            // Refresh failure — invalidate stale tools by writing an empty
+            // catalog so readers never see previously-discovered tools that
+            // may no longer be valid (config changed, server unreachable).
+            $this->writeEmptyCatalogDiagnostic($message->runId);
+
+            $this->logger->warning('MCP catalog refresh failed — catalog invalidated', [
                 ...$logContext,
                 'error_class' => $e::class,
-                'error_message' => $e->getMessage(),
+                'error_message' => $this->sanitizeErrorMsg($e),
             ]);
         }
     }
@@ -195,30 +196,23 @@ final class McpInitializeSessionHandler
      * Build the catalog DTO from raw discovery results.
      *
      * Applies tool name mapping (server_tool), include/exclude filters,
-     * and builds server entry DTOs with appropriate statuses.
+     * and cross-catalog duplicate detection.
      *
      * @param array<string, array{status: 'connected'|'failed', transport: string, tools: list<array>, errorMessage?: string}> $discoveryResults
      */
-    private function buildCatalog(string $runId, ?string $configHash, array $discoveryResults): McpToolCatalogDTO
+    private function buildCatalog(McpConfigDTO $config, string $runId, ?string $configHash, array $discoveryResults): McpToolCatalogDTO
     {
         $servers = [];
-        $generation = 1;
-
-        // Load config for include/exclude tool filters
-        try {
-            $config = $this->configLoader->load();
-        } catch (\Throwable) {
-            $config = null;
-        }
+        $globalSeenNames = [];
 
         foreach ($discoveryResults as $serverName => $result) {
             $excludeTools = [];
-            if (null !== $config && isset($config->servers[$serverName])) {
+            if (isset($config->servers[$serverName])) {
                 $excludeTools = $config->servers[$serverName]->excludeTools;
             }
 
             if ('connected' === $result['status']) {
-                $tools = $this->mapTools($serverName, $result['tools'], $excludeTools);
+                $tools = $this->mapTools($serverName, $result['tools'], $excludeTools, $globalSeenNames);
 
                 $servers[$serverName] = new McpServerCatalogEntryDTO(
                     serverName: $serverName,
@@ -242,7 +236,7 @@ final class McpInitializeSessionHandler
             schemaVersion: 1,
             runId: $runId,
             generatedAt: (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format('Y-m-d\TH:i:s\Z'),
-            generation: $generation,
+            generation: 1,
             configHash: $configHash,
             servers: $servers,
         );
@@ -252,17 +246,18 @@ final class McpInitializeSessionHandler
      * Map raw server tools to Hatfield-namespaced tool definitions.
      *
      * Apply exclude filter if provided. Detect and log duplicate
-     * mapped names within the same server.
+     * mapped names across the entire catalog (cross-server), skipping
+     * duplicates and logging a warning.
      *
-     * @param list<array{name: string, description?: string|null, inputSchema: array<string, mixed>}> $rawTools
-     * @param list<string>                                                                            $excludeTools
+     * @param list<array{name: string, description?: string|null, inputSchema: array}> $rawTools
+     * @param list<string>                                                             $excludeTools
+     * @param array<string, true>                                                      $globalSeenNames Mutable cross-server duplicate tracker
      *
      * @return list<McpToolDefinitionDTO>
      */
-    private function mapTools(string $serverName, array $rawTools, array $excludeTools): array
+    private function mapTools(string $serverName, array $rawTools, array $excludeTools, array &$globalSeenNames): array
     {
         $tools = [];
-        $seenNames = [];
 
         foreach ($rawTools as $raw) {
             $mcpName = $raw['name'] ?? '';
@@ -283,8 +278,10 @@ final class McpInitializeSessionHandler
 
             $hatfieldName = $this->nameMapper->mapHatfieldName($serverName, $mcpName);
 
-            // Duplicate detection within the same catalog
-            if (isset($seenNames[$hatfieldName])) {
+            // Cross-catalog duplicate detection — sanitized names
+            // from different servers can collide (e.g. "a.b/tool" and
+            // "a_b/tool" both sanitize to "a_b_tool").
+            if (isset($globalSeenNames[$hatfieldName])) {
                 $this->logger->warning('MCP tool name collision — skipping duplicate', [
                     'component' => 'mcp',
                     'mcp_event' => 'tool.duplicate',
@@ -295,7 +292,7 @@ final class McpInitializeSessionHandler
                 continue;
             }
 
-            $seenNames[$hatfieldName] = true;
+            $globalSeenNames[$hatfieldName] = true;
 
             $tools[] = new McpToolDefinitionDTO(
                 hatfieldName: $hatfieldName,
@@ -325,28 +322,92 @@ final class McpInitializeSessionHandler
     /**
      * Compute a short hash of the merged MCP config for catalog invalidation.
      *
-     * This is a fast non-cryptographic fingerprint — used only to detect
-     * config changes between discovery generations.
+     * Includes all discovery-affecting fields so that URL, command, args,
+     * cwd, excludeTools, and env/header keys changes produce a new hash.
+     *
+     * Env/header keys are included for change detection, but values are
+     * hashed (SHA-256) before inclusion to avoid storing raw env values
+     * in the catalog.  The hash itself is a one-way digest — it reveals
+     * no secrets even if stored in plain text.
      */
     private function computeConfigHash(McpConfigDTO $config): ?string
     {
         try {
             $serversHash = [];
+
             foreach ($config->servers as $name => $server) {
-                // Hash only the config-relevant fields, not runtime state.
-                // Exclude timeoutMs/startupTimeoutMs because those are
-                // operational parameters, not identity-changing values.
                 $fields = [
                     'name' => $server->name,
                     'enabled' => $server->enabled,
                     'transport' => $server->transportType?->value,
+                    'command' => $server->command,
+                    'args' => $server->args,
+                    'cwd' => $server->cwd,
+                    'url' => $server->url,
+                    'timeoutMs' => $server->timeoutMs,
+                    'startupTimeoutMs' => $server->startupTimeoutMs,
+                    'excludeTools' => $server->excludeTools,
+                    // Include keys only (not values) for change detection
+                    // on env/headers — values are hashed separately.
+                    'envKeys' => array_keys($server->env),
+                    'envValuesHash' => [] !== $server->env
+                        ? hash('sha256', json_encode($server->env, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES))
+                        : null,
+                    'headerKeys' => array_keys($server->headers),
+                    'headerValuesHash' => [] !== $server->headers
+                        ? hash('sha256', json_encode($server->headers, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES))
+                        : null,
                 ];
-                $serversHash[$name] = hash('sha256', json_encode($fields, \JSON_THROW_ON_ERROR));
+
+                $serversHash[$name] = hash(
+                    'sha256',
+                    json_encode($fields, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES),
+                );
             }
+
+            // Sort by key for deterministic hash
+            ksort($serversHash);
 
             return hash('sha256', json_encode($serversHash, \JSON_THROW_ON_ERROR));
         } catch (\Throwable) {
             return null;
         }
+    }
+
+    /**
+     * Write an empty catalog and log any inner write failure.
+     *
+     * Best-effort invalidation: if we cannot even write an empty catalog,
+     * log the inner failure diagnostically so operators are aware that
+     * stale tools may be visible to readers.
+     */
+    private function writeEmptyCatalogDiagnostic(string $runId): void
+    {
+        try {
+            $this->catalogStore->write(
+                $runId,
+                McpToolCatalogDTO::empty($runId, 1),
+            );
+        } catch (\Throwable $inner) {
+            $this->logger->warning('MCP catalog invalidation write also failed — stale tools may persist', [
+                'component' => 'mcp',
+                'mcp_event' => 'catalog.invalidation_failed',
+                'run_id' => $runId,
+                'error_class' => $inner::class,
+                'error_message' => $this->sanitizeErrorMsg($inner),
+            ]);
+        }
+    }
+
+    /**
+     * Produce a diagnostic-safe error message for log contexts.
+     *
+     * Delegates to {@see \Ineersa\CodingAgent\Mcp\Client\McpConnectionManager::sanitizeLogMessage()}
+     * for consistent redaction. This is a thin pass-through to keep the
+     * dependency direction clear (handler → connection manager static method).
+     */
+    private function sanitizeErrorMsg(\Throwable $e): string
+    {
+        return \Ineersa\CodingAgent\Mcp\Client\McpConnectionManager::sanitizeLogMessage($e->getMessage());
     }
 }

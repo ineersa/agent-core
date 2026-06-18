@@ -178,6 +178,12 @@ Phase 2 (MCP-03) adds real SDK connection management and tool discovery:
 - Failed server discovery is warning-only and recorded with diagnostic-safe error messages
   in the catalog — it must not crash the session. An empty/failed catalog snapshot is
   written on config or discovery failure to invalidate any previously-discovered tools.
+- **Config hash** includes all discovery-affecting fields (command, args, cwd, url,
+  excludeTools, transport, timeouts, env/header keys) — config changes produce a new hash.
+  Env/header values are SHA-256-hashed before inclusion so the catalog never stores secrets.
+- **Cross-server duplicate detection** prevents sanitized name collisions (e.g. "a.b/tool"
+  and "a_b/tool" both sanitize to "a_b_tool") from silently overwriting tools. The second
+  occurrence is skipped with a warning.
 - The catalog remains asynchronous: MCP-04 will handle LLM catalog synchronization and
   dynamic ToolRegistry registration.
 

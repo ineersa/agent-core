@@ -564,9 +564,9 @@ services:
       $commandBus: '@agent.command.bus'
 
   # MCP lifecycle message handler is auto-discovered via #[AsMessageHandler]
-  # and autowired.  Its new MCP-03 dependencies (McpConnectionManager,
-  # McpToolNameMapper, McpToolCatalogStoreInterface) must be explicitly
-  # wired since some are new services or need parameter injection.
+  # and autowired.  McpConnectionManagerInterface is resolved via the
+  # alias above; McpToolNameMapper autowires; only McpToolCatalogStoreInterface
+  # needs explicit wiring (SessionFileMcpToolCatalogStore with projectCwd).
   Ineersa\CodingAgent\Mcp\Handler\McpInitializeSessionHandler:
     arguments:
       $catalogStore: '@Ineersa\CodingAgent\Mcp\Catalog\SessionFileMcpToolCatalogStore'
@@ -574,6 +574,9 @@ services:
   ## MCP connection manager (broker-owned, one client per run/server)
   Ineersa\CodingAgent\Mcp\Client\McpConnectionManager: ~
 
+  # Alias the interface so handlers depend on the abstraction.
+  Ineersa\CodingAgent\Mcp\Client\McpConnectionManagerInterface:
+    alias: Ineersa\CodingAgent\Mcp\Client\McpConnectionManager
   ## MCP SDK client factory
   Ineersa\CodingAgent\Mcp\Client\McpSdkClientFactory: ~
 
