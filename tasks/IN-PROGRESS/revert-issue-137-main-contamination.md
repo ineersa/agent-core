@@ -14,7 +14,7 @@ Rollback task requested after PR #164/current issue-137 architecture was rejecte
 Status: IN-PROGRESS
 Branch: task/revert-issue-137-main-contamination
 Worktree: /home/ineersa/projects/agent-core-worktrees/revert-issue-137-main-contamination
-Fork run:
+Fork run: 198rgy17emyg
 PR URL:
 PR Status:
 Started: 2026-06-18T17:01:24.734Z
@@ -30,3 +30,8 @@ Completed:
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/revert-issue-137-main-contamination.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/revert-issue-137-main-contamination.
 - Summary: Starting rollback requested by user: safe revert branch for accidental issue-137 commits on main. Implementation must be done in worktree via fork; no reset/rebase/force-push.
+
+## Task workflow update - 2026-06-18T17:05:29.427Z
+- Recorded fork run: 198rgy17emyg
+- Validation: Fork ran castor check: deptrac OK; unit/integration OK (2702 tests, 8057 assertions); controller replay OK (1 test, 14 assertions); TUI replay OK (8 tests, 83 assertions); cs-check OK; phpstan lane timed out at 30s on cold worktree.; Fork retried castor phpstan separately: 0 errors, 0 file_errors.; Parent verification: git status clean; git diff --stat origin/main...HEAD shows exactly 7 files / 932 deletions; leftover src grep for rejected issue-137 symbols returned zero hits.
+- Summary: Fork completed rollback branch task/revert-issue-137-main-contamination. Created and pushed three safe git-revert commits: 7b23272bc reverts eecb668c0, 11c9e14a8 reverts b499d8911, 03f20946e reverts 6a32a879e. No conflicts, no history rewrite. Revert deletes SystemNoticeProjectionSubscriber and TuiOutputCapNoticeE2eTest and removes issue-137 observability additions from RuntimeEventTranslator, RuntimeEventTypeEnum, ToolProjectionSubscriber, TranscriptProjectorTest, and RuntimeEventMapperTest. Parent verification confirmed worktree clean, 7 files changed with 932 deletions, and zero leftover source refs for output_cap_notice/model_tool_inputs/ModelToolInput/model_input_messages/SystemNotice/TuiOutputCapNotice.
