@@ -48,7 +48,7 @@ Testing skill and `tests/AGENTS.md` were read before proposing validation. This 
 Status: IN-PROGRESS
 Branch: task/issue-137-output-cap-observability
 Worktree: /home/ineersa/projects/agent-core-worktrees/issue-137-output-cap-observability
-Fork run:
+Fork run: j30em8bj6s4n
 PR URL:
 PR Status:
 Started: 2026-06-17T23:00:56.520Z
@@ -75,3 +75,8 @@ Completed:
 
 ## Task workflow update - 2026-06-18T01:31:18.093Z
 - Summary: Scope clarification after user smoke: non-capping of `docs/tui-architecture.md` is acceptable if caused by configurable `tools.output_cap.doc_cap` setting (currently 50k for doc-like `.md/.txt/.toon`). Do NOT treat doc-cap policy itself as a bug. Follow-up should preserve settings semantics; focus instead on real notice parser mismatch (`Saved to:` vs `Saved for audit at:`), making TUI cap notice show that model-facing guidance was sent, and improving output-cap visual styling/icons/theme treatment.
+
+## Task workflow update - 2026-06-18T01:42:27.475Z
+- Recorded fork run: j30em8bj6s4n
+- Validation: Fork reported `castor test --filter="TranscriptProjectorTest"`: PASS (92/92).; Fork reported `castor test --filter="OutputCap"`: PASS (50/50).; Fork reported `castor test:tui --filter=OutputCap`: PASS for TUI proof (52 tests, 157 assertions, 0 failures, 1 expected live-LLM skip).; Fork reported `castor phpstan --path src/CodingAgent/Runtime/ProjectionPipeline/ToolProjectionSubscriber.php`: PASS (0 errors).; Fork reported `castor deptrac`: PASS (0 violations).
+- Summary: Follow-up correction fork `j30em8bj6s4n` accepted. Commit `301e79545` fixes inaccurate TUI output-cap wording: the System notice now says the output exceeded the cap and that the model was shown a cap notice, rather than implying the model saw `20,000 visible chars` of original content. It updated `ToolProjectionSubscriber`, `TranscriptProjectorTest`, and `TuiOutputCapNoticeE2eTest`. Parent verified worktree clean and inspected the changed snippets. `doc_cap` semantics and SafeGuard UX were not changed.
