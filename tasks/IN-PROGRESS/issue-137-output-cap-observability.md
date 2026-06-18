@@ -48,7 +48,7 @@ Testing skill and `tests/AGENTS.md` were read before proposing validation. This 
 Status: IN-PROGRESS
 Branch: task/issue-137-output-cap-observability
 Worktree: /home/ineersa/projects/agent-core-worktrees/issue-137-output-cap-observability
-Fork run: j30em8bj6s4n
+Fork run: gzyeocryqsws
 PR URL:
 PR Status:
 Started: 2026-06-17T23:00:56.520Z
@@ -83,3 +83,8 @@ Completed:
 
 ## Task workflow update - 2026-06-18T01:46:47.778Z
 - Summary: User clarified a broader invariant: the TUI/events log must show the exact model-facing generated messages, no paraphrase/no summaries — all assistant/tool/runtime/extension-generated messages that are sent to the model from output cap, SafeGuard, tools, or other hooks must be visible exactly as sent. The currently running fork `gzyeocryqsws` only addresses output-cap exactness and should be treated as a partial step, not sufficient for final acceptance of the broader requirement.
+
+## Task workflow update - 2026-06-18T01:55:00.940Z
+- Recorded fork run: gzyeocryqsws
+- Validation: Fork reported `castor test --filter="TranscriptProjectorTest"`: PASS (92/92).; Fork reported `castor test --filter="OutputCap"`: PASS (50/50).; Fork reported `castor test --filter="TranscriptBlockRendererTest"`: PASS (30/30).; Fork reported `castor test --filter="RuntimeEventMapperTest"`: PASS (47/47).; Fork reported `castor test:tui --filter=OutputCap`: PASS (52 tests, 161 assertions, 0 failures, 1 expected live-LLM skip).; Fork reported scoped `castor phpstan`: PASS (0 errors).; Fork reported `castor deptrac`: PASS (0 violations).
+- Summary: Fork `gzyeocryqsws` committed `f95db6f59`, removing the synthesized output-cap System notice and styling the existing output-cap ToolResult block (`notice_type=output_cap`) with warning icon/color. Parent notes this is still not sufficient for the user's clarified broader invariant: all model-facing generated messages/notices/nudges from tools, output cap, SafeGuard, image gating, or extensions must be visible in the TUI exactly as sent to the model. A follow-up implementation is needed to capture/project exact post-transform/pre-provider model input messages generically, not just output-cap-specific ToolResult text.
