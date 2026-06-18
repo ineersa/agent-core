@@ -27,24 +27,32 @@ use Ineersa\Hatfield\ExtensionApi\ToolCallHookInterface;
  *
  * Implements ApprovalAnswerHookInterface to receive the human's answer,
  * update the ApprovalSessionTracker accordingly, and resolve the answer
- * into a tool-execution decision:
- * - "Allow once" / "Always allow" → allow() — handler runs
- * - "Deny" → block('safeguard_denied', ...) — denied
- * - "Always allow" also persists to policy file via onApprovalAnswered
+ * into a tool-execution decision. Answer labels carry icon glyphs
+ * (e.g. '✓ Allow once') and are reverse-mapped to canonical actions:
+ * - allow_once / always_allow → allow() — handler runs
+ * - deny → block('safeguard_denied', ...) — denied
+ * - cancel (ESC / user cancel) → block('safeguard_cancelled', ...) — cancelled
+ * - 'Always allow' also persists the pattern to policy file via onApprovalAnswered.
  */
 final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, ApprovalAnswerHookInterface
 {
     /**
-     * Canonical enum values for SafeGuard approval answers.
+     * Canonical action → display label with icon glyph.
      *
-     * These are SafeGuard's own vocabulary — stored in the ToolQuestion schema,
-     * rendered as TUI choice buttons, and mapped to tool-execution decisions
-     * in resolveApprovalAnswer(). The CodingAgent infrastructure uses the
-     * extension's supplied schema and never references these literals.
+     * The display labels (values) go into the ToolQuestion schema enum so the
+     * TUI renders icon-bearing buttons. resolveApprovalAnswer() reverse-maps
+     * the label back to the canonical action for tool-execution decisions.
+     * onApprovalAnswered() also reverse-maps so side effects (persistence,
+     * tracker) use canonical values — icon glyphs never leak into
+     * settings.yaml or logs.
      *
-     * Public so that tests can reference them without hardcoding strings.
+     * @var array<string, string>
      */
-    public const array SANE_APPROVAL_ENUM = ['Allow once', 'Always allow', 'Deny'];
+    private const array APPROVAL_OPTIONS = [
+        'allow_once' => '✓ Allow once',
+        'always_allow' => '↻ Always allow',
+        'deny' => '✗ Deny',
+    ];
 
     /**
      * @var list<SafeGuardDecisionKind> Policy-relaxable categories that can be approved via HITL
@@ -144,7 +152,7 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
                 questionId: $questionId,
                 schema: [
                     'type' => 'string',
-                    'enum' => self::SANE_APPROVAL_ENUM,
+                    'enum' => array_values(self::APPROVAL_OPTIONS),
                 ],
                 details: [
                     'category' => $decision->kind->value,
@@ -169,7 +177,12 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
             return;
         }
 
-        if ('Deny' === $context->answer) {
+        // Reverse-map the icon-bearing label to the canonical action
+        // so side effects (persistence, tracker) use canonical values —
+        // icon glyphs never leak into settings.yaml or logs.
+        $canonical = array_search($context->answer, self::APPROVAL_OPTIONS, true);
+
+        if ('deny' === $canonical || 'cancel' === $context->answer) {
             // removeByQuestionId cleans both the pending mapping and the
             // approved entry (if any) so stale state cannot accumulate.
             $this->approvalTracker->removeByQuestionId($context->questionId);
@@ -177,7 +190,7 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
             return;
         }
 
-        if ('Allow once' === $context->answer) {
+        if ('allow_once' === $canonical) {
             // approveByQuestionId resolves the operationKey from the
             // pendingByQuestionId mapping, marks approved, and cleans
             // the pending entry in one step.
@@ -186,10 +199,13 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
             return;
         }
 
-        if ('Always allow' === $context->answer) {
+        if ('always_allow' === $canonical) {
             $this->approvalTracker->approveByQuestionId($context->questionId);
 
-            // Persist to policy file for future sessions
+            // Persist to policy file for future sessions.
+            // resolvePatternFromAnswer reads command/path from approvalContext,
+            // NOT from the answer text — so icon glyphs cannot leak into
+            // the persisted settings.
             $category = (string) ($context->approvalContext['category'] ?? '');
             $pattern = $this->resolvePatternFromAnswer($category, $context);
 
@@ -204,7 +220,7 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
         // intentionally ignored: no approval is recorded and the
         // pending entry in the tracker remains, leaving the operation
         // blocked. This is a fail-closed safety guard — only explicit
-        // Deny / Allow once / Always allow answers mutate state.
+        // Allow once / Always allow / Deny / Cancel answers mutate state.
         // If the question is retried (re-answered), a new answer will
         // arrive on a fresh call to this method.
         //
@@ -216,11 +232,16 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
     {
         $answer = $context->answer;
 
-        if ('Allow once' === $answer || 'Always allow' === $answer) {
+        // Reverse-map icon-bearing label to canonical action.
+        // The TUI sends labels with icon glyphs (e.g. '✓ Allow once');
+        // we map back to the canonical action for the decision.
+        $canonical = array_search($answer, self::APPROVAL_OPTIONS, true);
+
+        if ('allow_once' === $canonical || 'always_allow' === $canonical) {
             return ToolCallDecisionDTO::allow();
         }
 
-        if ('Deny' === $answer) {
+        if ('deny' === $canonical) {
             return ToolCallDecisionDTO::block(
                 reason: 'safeguard_denied',
                 details: [
@@ -228,6 +249,20 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
                     'intercepted' => true,
                     'message' => \sprintf(
                         'Tool "%s" was denied by SafeGuard: the human denied the operation.',
+                        $context->toolName,
+                    ),
+                ],
+            );
+        }
+
+        if ('cancel' === $answer) {
+            return ToolCallDecisionDTO::block(
+                reason: 'safeguard_cancelled',
+                details: [
+                    'category' => $context->approvalContext['category'] ?? '',
+                    'intercepted' => true,
+                    'message' => \sprintf(
+                        'Tool "%s" was cancelled by the user.',
                         $context->toolName,
                     ),
                 ],

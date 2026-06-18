@@ -442,7 +442,7 @@ final class SafeGuardToolCallHookTest extends TestCase
         // Human answers "Allow once" through onApprovalAnswered
         $this->hook->onApprovalAnswered(new ApprovalAnswerContextDTO(
             questionId: $questionId,
-            answer: 'Allow once',
+            answer: '✓ Allow once',
             toolName: 'bash',
             approvalContext: [
                 'operation_key' => $operationKey,
@@ -486,7 +486,7 @@ final class SafeGuardToolCallHookTest extends TestCase
         // Human answers "Deny" through onApprovalAnswered
         $this->hook->onApprovalAnswered(new ApprovalAnswerContextDTO(
             questionId: $questionId,
-            answer: 'Deny',
+            answer: '✗ Deny',
             toolName: 'bash',
             approvalContext: [
                 'operation_key' => $operationKey,
@@ -548,7 +548,7 @@ final class SafeGuardToolCallHookTest extends TestCase
             // Human answers "Always allow" through onApprovalAnswered
             $hook->onApprovalAnswered(new ApprovalAnswerContextDTO(
                 questionId: $questionId,
-                answer: 'Always allow',
+                answer: '↻ Always allow',
                 toolName: 'bash',
                 approvalContext: [
                     'operation_key' => $operationKey,
@@ -575,6 +575,8 @@ final class SafeGuardToolCallHookTest extends TestCase
             $content = file_get_contents($settingsPath);
             $this->assertStringContainsString('rm -rf /tmp/build', $content);
             $this->assertStringContainsString('allow_command_patterns', $content);
+            $this->assertStringNotContainsString('✓', $content, 'Icon glyph must not leak into settings.yaml');
+            $this->assertStringNotContainsString('↻', $content, 'Icon glyph must not leak into settings.yaml');
         } finally {
             if (file_exists($settingsPath)) {
                 unlink($settingsPath);
@@ -604,7 +606,7 @@ final class SafeGuardToolCallHookTest extends TestCase
         // Answer with same questionId but empty operation_key
         $this->hook->onApprovalAnswered(new ApprovalAnswerContextDTO(
             questionId: $questionId,
-            answer: 'Allow once',
+            answer: '✓ Allow once',
             toolName: 'bash',
             approvalContext: [
                 'operation_key' => '',
@@ -648,7 +650,7 @@ final class SafeGuardToolCallHookTest extends TestCase
         // Answer with same questionId but missing operation_key entirely
         $this->hook->onApprovalAnswered(new ApprovalAnswerContextDTO(
             questionId: $questionId,
-            answer: 'Allow once',
+            answer: '✓ Allow once',
             toolName: 'bash',
             approvalContext: [
                 'category' => 'destructive',
@@ -675,7 +677,7 @@ final class SafeGuardToolCallHookTest extends TestCase
     {
         $outcome = $this->hook->resolveApprovalAnswer(new ApprovalAnswerContextDTO(
             questionId: 'sg_qid',
-            answer: 'Allow once',
+            answer: '✓ Allow once',
             toolName: 'write',
             approvalContext: ['category' => 'write_outside_cwd'],
         ));
@@ -687,7 +689,7 @@ final class SafeGuardToolCallHookTest extends TestCase
     {
         $outcome = $this->hook->resolveApprovalAnswer(new ApprovalAnswerContextDTO(
             questionId: 'sg_qid',
-            answer: 'Always allow',
+            answer: '↻ Always allow',
             toolName: 'write',
             approvalContext: ['category' => 'write_outside_cwd'],
         ));
@@ -699,7 +701,7 @@ final class SafeGuardToolCallHookTest extends TestCase
     {
         $outcome = $this->hook->resolveApprovalAnswer(new ApprovalAnswerContextDTO(
             questionId: 'sg_qid',
-            answer: 'Deny',
+            answer: '✗ Deny',
             toolName: 'write',
             approvalContext: ['category' => 'write_outside_cwd'],
         ));
@@ -721,6 +723,73 @@ final class SafeGuardToolCallHookTest extends TestCase
         $this->assertSame(ToolCallDecisionKindEnum::Block, $outcome->kind);
         $this->assertSame('safeguard_unknown_answer', $outcome->reason);
         $this->assertStringContainsString('unknown answer', $outcome->details['message'] ?? '');
+    }
+    // ─── Cancel and icon-label coverage ─────────────────────────────
+
+    public function testResolveApprovalAnswerCancelReturnsBlockWithCancelledReason(): void
+    {
+        // ESC / user cancel on the TUI overlay sends 'cancel' as the answer.
+        // SafeGuard must recognise it explicitly and block with a clean reason.
+        $outcome = $this->hook->resolveApprovalAnswer(new ApprovalAnswerContextDTO(
+            questionId: 'sg_qid',
+            answer: 'cancel',
+            toolName: 'write',
+            approvalContext: ['category' => 'write_outside_cwd'],
+        ));
+
+        $this->assertSame(ToolCallDecisionKindEnum::Block, $outcome->kind);
+        $this->assertSame('safeguard_cancelled', $outcome->reason);
+        $this->assertStringContainsString('cancelled by the user', $outcome->details['message'] ?? '');
+    }
+
+    public function testResolveApprovalAnswerIconLabelsMapToCorrectOutcomes(): void
+    {
+        // The TUI sends icon-bearing labels (the values from APPROVAL_OPTIONS).
+        // resolveApprovalAnswer must reverse-map each to the correct canonical action.
+
+        // '✓ Allow once' → allow
+        $outcome = $this->hook->resolveApprovalAnswer(new ApprovalAnswerContextDTO(
+            questionId: 'sg_qid',
+            answer: '✓ Allow once',
+            toolName: 'write',
+            approvalContext: ['category' => 'write_outside_cwd'],
+        ));
+        $this->assertSame(ToolCallDecisionKindEnum::Allow, $outcome->kind);
+
+        // '↻ Always allow' → allow
+        $outcome = $this->hook->resolveApprovalAnswer(new ApprovalAnswerContextDTO(
+            questionId: 'sg_qid',
+            answer: '↻ Always allow',
+            toolName: 'write',
+            approvalContext: ['category' => 'write_outside_cwd'],
+        ));
+        $this->assertSame(ToolCallDecisionKindEnum::Allow, $outcome->kind);
+
+        // '✗ Deny' → block
+        $outcome = $this->hook->resolveApprovalAnswer(new ApprovalAnswerContextDTO(
+            questionId: 'sg_qid',
+            answer: '✗ Deny',
+            toolName: 'write',
+            approvalContext: ['category' => 'write_outside_cwd'],
+        ));
+        $this->assertSame(ToolCallDecisionKindEnum::Block, $outcome->kind);
+        $this->assertSame('safeguard_denied', $outcome->reason);
+    }
+
+    public function testResolveApprovalAnswerOldLabelWithoutIconFallsThroughToUnknown(): void
+    {
+        // If a test or a non-icon-bearing client sends the old label without
+        // the icon glyph, array_search fails → unknown → fail-closed block.
+        // This proves the icon labels are the new canonical answer format.
+        $outcome = $this->hook->resolveApprovalAnswer(new ApprovalAnswerContextDTO(
+            questionId: 'sg_qid',
+            answer: 'Allow once',
+            toolName: 'write',
+            approvalContext: ['category' => 'write_outside_cwd'],
+        ));
+
+        $this->assertSame(ToolCallDecisionKindEnum::Block, $outcome->kind);
+        $this->assertSame('safeguard_unknown_answer', $outcome->reason);
     }
 
     // ─── Approval-channel availability ────────────────────────────────

@@ -182,14 +182,14 @@ final class SafeGuardApprovalControllerReplayTest extends ControllerReplayE2eTes
             'runId' => $this->runId,
             'payload' => [
                 'request_id' => $requestId,
-                'answer' => 'Allow once',
+                'answer' => '✓ Allow once',
                 'kind' => 'approval',
             ],
         ]);
 
         // Wait for the write tool to complete. The blocking poll runs in the
         // tool consumer: when AnswerToolQuestionHandler writes the answer to
-        // the shared SQLite DB, the poll returns "Allow once" and the real
+        // the shared SQLite DB, the poll returns the icon-bearing label and the real
         // tool handler executes.
         $events = $this->collectEventsUntilToolCompleted('write', 30.0);
         $byType = $this->indexByType($events);
@@ -289,7 +289,7 @@ final class SafeGuardApprovalControllerReplayTest extends ControllerReplayE2eTes
             'runId' => $this->runId,
             'payload' => [
                 'request_id' => $requestId,
-                'answer' => 'Allow once',
+                'answer' => '✓ Allow once',
                 // NO 'kind' field — testing server-side inference!
             ],
         ]);

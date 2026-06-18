@@ -386,7 +386,7 @@ final class TickPollListener implements TuiListenerRegistrar
                     type: 'answer_tool_question',
                     payload: [
                         'request_id' => $requestIdFromPayload,
-                        'answer' => '',
+                        'answer' => 'cancel',
                         'kind' => 'approval',
                     ],
                 ));
