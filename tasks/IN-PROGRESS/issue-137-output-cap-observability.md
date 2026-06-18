@@ -48,7 +48,7 @@ Testing skill and `tests/AGENTS.md` were read before proposing validation. This 
 Status: IN-PROGRESS
 Branch: task/issue-137-output-cap-observability
 Worktree: /home/ineersa/projects/agent-core-worktrees/issue-137-output-cap-observability
-Fork run: final-cleanup-e2e-proof-acb41a38f
+Fork run: nahs6w6vbp12
 PR URL:
 PR Status:
 Started: 2026-06-17T23:00:56.520Z
@@ -108,3 +108,8 @@ Completed:
 - Recorded fork run: final-cleanup-e2e-proof-acb41a38f
 - Validation: castor test --filter="RuntimeEventMapperTest|TranscriptProjectorTest|PlatformIntegrationTest|OutputCapTest|OutputCapLlmTransformHookTest": PASS 203 tests, 777 assertions; castor test:tui --filter=OutputCap: PASS 52 tests, 163 assertions (1 pre-existing skip); castor deptrac: 0 violations; castor phpstan: 0 errors; castor cs-check: only 10 pre-existing noise files unchanged; castor cs-fix: 1 file auto-fixed (cs-fx stylistic changes only)
 - Summary: Final cleanup/E2E-proof fork completed at commit `acb41a38f`. 3 files changed, 80 insertions, 41 deletions. (1) Removed backward-compat fallback for `model_tool_inputs` key in RuntimeEventTranslator — production now reads only `model_input_messages`. (2) Renamed 4 stale test method names and updated comments in TranscriptProjectorTest from `ModelToolInput`/`model_tool_inputs` to `ModelInputMessages`/`model_input_messages`. (3) Strengthened `TuiOutputCapNoticeE2eTest`: `tool_execution_end.result` changed from cap notice to raw uncapped text; `llm_step_completed` now carries `model_input_messages` with role=tool (exact cap notice) and role=user (generated image message) to prove the central-cap projection path. Assertions verify raw text NOT visible, generated user System block IS visible, and stale paraphrases still absent. All validation passes: 203 unit tests/777 assertions, 52 TUI E2E tests/163 assertions, 0 phpstan errors, 0 deptrac violations. No stale `ModelToolInput`/`model_tool_inputs` references remain in production or test code.
+
+## Task workflow update - 2026-06-18T02:46:13.115Z
+- Recorded fork run: nahs6w6vbp12
+- Validation: Fork reported reading `.agents/skills/testing/SKILL.md` and `tests/AGENTS.md`.; Fork reported `castor test --filter="RuntimeEventMapperTest|TranscriptProjectorTest|PlatformIntegrationTest|OutputCapTest|OutputCapLlmTransformHookTest"`: PASS (203 tests, 777 assertions).; Fork reported `castor test:tui --filter=OutputCap`: PASS (52 tests, 163 assertions, 1 pre-existing live-LLM skip).; Fork reported `castor deptrac`: PASS (0 violations).; Fork reported `castor phpstan`: PASS (0 errors).; Fork reported `castor cs-check`: only 10 pre-existing binary-mode fopen noise files unchanged.; Parent verification: `git status --short` clean; `rg -n 'model_tool_inputs|ModelToolInput|model_tool_input' --glob '!vendor/**' --glob '!tasks/**' .` returned no hits.
+- Summary: Fork `nahs6w6vbp12` committed and pushed `acb41a38f`: removed the active-development `model_tool_inputs` compatibility fallback from production, renamed stale `ModelToolInput`/`model_tool_inputs` test names/comments, and strengthened `TuiOutputCapNoticeE2eTest` so the TmuxHarness resume fixture proves `model_input_messages` projection for both role=tool exact cap notice replacement and role=user generated System block text. Parent verification: worktree clean at `acb41a38f`; grep for `model_tool_inputs|ModelToolInput|model_tool_input` outside vendor/tasks returns no hits; diff stat vs origin/main shows 22 files changed. Proceeding to task-to-pr reviewer/validation phase.
