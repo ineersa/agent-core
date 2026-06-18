@@ -45,7 +45,7 @@ Testing skill and `tests/AGENTS.md` were read before proposing validation. This 
 - Focused validation uses Castor only: relevant `castor test --filter=...`, `castor test:controller-replay` as needed, `castor test:tui` for TUI proof, `castor deptrac`, `castor phpstan`, `castor cs-check`, and final deterministic `castor check` via task workflow.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/issue-137-output-cap-observability
 Worktree: /home/ineersa/projects/agent-core-worktrees/issue-137-output-cap-observability
 Fork run: nahs6w6vbp12
@@ -135,3 +135,7 @@ Completed:
 ## Task workflow update - 2026-06-18T14:06:47.946Z
 - Validation: Reviewer inspected core output cap, model-input capture/projection, runtime translator/projector, renderer, and relevant unit/E2E tests.; Reviewer verified stale backward-compat names ModelToolInput/model_tool_inputs absent from production/test PHP files.; Reviewer noted castor check passed during move_task CODE-REVIEW and accepted validation evidence.
 - Summary: Reviewer subagent completed review of PR #164 / branch task/issue-137-output-cap-observability at f06014e4b. Decision: APPROVE WITH SUGGESTIONS. No critical/blocking issues found. Non-blocking suggestions: clarify OutputCapLlmTransformHook raw_result vs combinedText skip semantics; remove redundant output_cap_notice key/fallback in favor of output_capped; verify/remove unused ModelInputMessageDTO::fromArray if dead; optionally add a test documenting raw_result-under-cap but combinedText-over-cap behavior. Reviewer confirmed TmuxHarness E2E proof exists and validation evidence is credible.
+
+## Task workflow update - 2026-06-18T14:07:53.698Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Summary: Review iteration requested by user after reviewer APPROVE WITH SUGGESTIONS. Scope: address sensible non-blocking cleanup suggestions without changing task behavior: remove redundant output_cap_notice key/fallback, clarify/document OutputCap raw_result vs model-text cap semantics with test if appropriate, and remove unused ModelInputMessageDTO::fromArray if confirmed dead. Keep exact model-facing TUI invariant unchanged.
