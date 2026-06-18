@@ -15,7 +15,7 @@ services:
     alias: Ineersa\AgentCore\Application\Pipeline\AgentRunner
 
   Ineersa\AgentCore\Contract\CommandStoreInterface:
-    alias: Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore
+    alias: Ineersa\AgentCore\Infrastructure\Storage\CacheCommandStore
 
   Ineersa\AgentCore\Contract\PromptStateStoreInterface:
     alias: Ineersa\AgentCore\Infrastructure\Storage\InMemoryPromptStateStore
