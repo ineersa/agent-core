@@ -45,3 +45,7 @@ Completed:
 - Skipped PR creation (pushOnly: true).
 - Validation: Fork validation: castor check passed all lanes except initial phpstan timeout; standalone castor phpstan retry passed with 0 errors.; Parent verification: worktree clean, 7 files changed / 932 deletions vs origin/main, no leftover rejected issue-137 source symbols.; move_task CODE-REVIEW deterministic castor check result recorded by tool.
 - Summary: Rollback branch is ready for review. It safely reverts accidental issue-137 main contamination via normal git revert commits (7b23272bc, 11c9e14a8, 03f20946e), with no conflicts and no history rewrite. Branch pushed; gh auth is unavailable in this environment, so PR creation is skipped and should be done manually from origin/task/revert-issue-137-main-contamination to main.
+
+## Task workflow update - 2026-06-18T17:07:24.847Z
+- Validation: gh pr create failed: HTTP 401 Requires authentication (https://api.github.com/graphql).
+- Summary: User requested PR creation for rollback branch. Attempted `gh pr create --base main --head task/revert-issue-137-main-contamination`, but GitHub CLI failed with HTTP 401 Requires authentication. Branch remains pushed and ready; PR must be created from an authenticated environment.
