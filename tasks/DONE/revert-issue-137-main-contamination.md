@@ -11,14 +11,14 @@ Rollback task requested after PR #164/current issue-137 architecture was rejecte
 - PR is prepared for review; PR #164 remains rejected/unmerged.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/revert-issue-137-main-contamination
 Worktree: /home/ineersa/projects/agent-core-worktrees/revert-issue-137-main-contamination
 Fork run: 198rgy17emyg
 PR URL: https://github.com/ineersa/agent-core/pull/165
 PR Status: merged
 Started: 2026-06-18T17:01:24.734Z
-Completed:
+Completed: 2026-06-18T17:13:21.981Z
 
 ## Work log
 - Created: 2026-06-18T17:01:17.380Z
@@ -58,3 +58,12 @@ Completed:
 ## Task workflow update - 2026-06-18T17:12:52.147Z
 - Updated PR Status: merged
 - Summary: User confirmed PR #165 was merged. Preparing to move rollback task to DONE. Note: integration checkout has an unrelated local .pi/settings.json modification, so DONE transition will use requireCleanMain=false to avoid touching that user-local change.
+
+## Task workflow update - 2026-06-18T17:13:21.981Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/revert-issue-137-main-contamination into integration checkout.
+- Already up to date.
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/revert-issue-137-main-contamination.
+- Pulled integration checkout: Already up to date..
+- Validation: PR #165 state confirmed merged by user and prior gh view.; Rollback branch already passed move_task deterministic castor check (38.5s) before PR creation.; Post-merge local main synchronized with origin/main (0 ahead / 0 behind) before DONE transition; unrelated .pi/settings.json remains modified and was not touched.
+- Summary: PR #165 was merged on GitHub. Local main was merged with origin/main via a normal merge commit to preserve the task metadata update, then pushed. Rollback task completed; rejected issue-137 main contamination is reverted. Integration checkout still has unrelated local .pi/settings.json changes, intentionally left untouched.
