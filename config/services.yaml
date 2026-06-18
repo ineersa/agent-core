@@ -548,3 +548,27 @@ services:
   # Synchronous startup index build so @ completion works before the
   # first Scheduler cycle (periodic tasks fire at now + period).
   Ineersa\CodingAgent\CLI\FileMentionIndexStartupListener:
+
+  # ─── MCP Client (Phases 0-3) ───────────────────────────────────
+
+  # Config loader — needs explicit scalar $projectCwd binding
+  # because Symfony DI cannot autowire plain strings.
+  Ineersa\CodingAgent\Mcp\Config\McpConfigLoader:
+    arguments:
+      $projectCwd: '%app.cwd%'
+
+  # MCP session lifecycle dispatcher — injects the command bus
+  # explicitly (not autowired to agent.execution.bus).
+  Ineersa\CodingAgent\Mcp\McpSessionLifecycleDispatcher:
+    arguments:
+      $commandBus: '@agent.command.bus'
+
+  # MCP lifecycle message handler is auto-discovered via #[AsMessageHandler]
+  # and autowired.  Its McpConfigLoader dependency is now satisfiable.
+  Ineersa\CodingAgent\Mcp\Handler\McpInitializeSessionHandler: ~
+
+  # Inject MCP lifecycle dispatcher into the session client so
+  # start/resume both trigger MCP initialize.
+  Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient:
+    arguments:
+      $mcpDispatcher: '@Ineersa\CodingAgent\Mcp\McpSessionLifecycleDispatcher'

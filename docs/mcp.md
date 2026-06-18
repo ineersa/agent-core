@@ -146,12 +146,29 @@ Project override (`.hatfield/mcp.json`):
 }
 ```
 
-## Limitations in Phase 0
+## Phase 1 — Broker transport and consumer
+
+Phase 1 adds the runtime messenger foundation:
+
+- Dedicated `mcp` Messenger transport/queue for MCP lifecycle messages.
+- The headless controller supervises exactly one `mcp` consumer per session.
+- MCP session initialize is dispatched automatically on `start_run` and `resume`.
+- Lifecycle message handlers (initialize, refresh catalog, disconnect) are registered
+  on `agent.command.bus` and routed to the `mcp` transport.
+- Structured logs include `component=mcp`, `run_id`, `session_id`, `mcp_event`,
+  `server_name`, and `transport` fields where applicable — never raw env values,
+  headers, tokens, or secrets.
+
+## Limitations in Phase 1
 
 - No OAuth support.
-- No runtime broker — config loading only; servers are not connected.
-- No dynamic tool registration in this phase.
-- MCP tools are not yet callable from Hatfield.
+- Configuration loading and validation work, but servers are NOT yet connected
+  (MCP-03 / Phase 2).
+- No tool discovery or catalog persistence (MCP-03).
+- No dynamic tool registration (MCP-04).
+- No broker request/reply tool invocation (MCP-05).
+- MCP config failures during initialize are warning-only — normal sessions
+  continue unaffected.
 
 These will be added in subsequent phases per `.pi/plans/mcp-client-implementation-plan.md`.
 
