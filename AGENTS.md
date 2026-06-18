@@ -83,6 +83,18 @@ Default `castor check` is fully deterministic (replay-backed controller and TUI 
 
 **Load the `testing` skill** when: writing, running, or debugging TUI E2E proof tests.
 
+## Test value and scope
+
+Tests must protect a **user-visible behavior**, a **stable runtime/protocol contract**, a **safety or security boundary**, or a **previously observed bug/regression**. Before adding or changing tests, state the test thesis: what contract or bug would fail without the production fix.
+
+- **Bug fixes**: prefer the smallest failing repro first, then fix. Do not add extra tests unless they protect a distinct contract.
+- **Avoid excessive implementation-mirroring tests**: enum case lists, trivial DTO constructor/getter/roundtrip tests, private-helper exact-behavior mirrors, mapper tests that just repeat the implementation, coverage-only tests, and broad snapshot churn unless justified.
+- **Default test budget** for implementation tasks: one real TUI E2E proof when the change is TUI-visible, plus 1–3 focused contract or regression tests. More tests require explicit justification.
+- Ask whether the tests would have caught the actual smoke or user-reported bug; if not, reconsider.
+- **Do not broaden implementation tasks into test refactors.** Broad test cleanup or restructuring belongs in separate tasks, not mixed with production changes.
+
+Existing mandatory Castor QA and TUI E2E proof requirements (above) remain in full force. The goal is to improve test signal density, not to eliminate testing.
+
 ## Development rules
 
 - **Do not delete comments that explain non-obvious logic, invariants, concurrency, lifecycle, or rationale unless the described logic is removed.** When code changes, update those comments instead of deleting them. Remove only stale/noise comments that restate the obvious (e.g., "increment i" or "return the result"). Inline comments explaining why code is shaped a certain way — signal handling, crash resilience, transaction ordering, migration decisions, DB-to-filesystem interaction — are valuable and must be preserved or updated, never silently dropped.
