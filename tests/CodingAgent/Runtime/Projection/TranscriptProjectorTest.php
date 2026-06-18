@@ -10,11 +10,11 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\CancellationProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\HitlProjectionSubscriber;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ModelNotificationProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\RunLifecycleProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber;
-use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
@@ -41,6 +41,7 @@ final class TranscriptProjectorTest extends TestCase
         $dispatcher->addSubscriber(new HitlProjectionSubscriber());
         $dispatcher->addSubscriber(new CancellationProjectionSubscriber());
         $dispatcher->addSubscriber(new RunLifecycleProjectionSubscriber());
+        $dispatcher->addSubscriber(new ModelNotificationProjectionSubscriber());
 
         $this->projector = new TranscriptProjector($dispatcher, $state);
         $this->seq = 0;
@@ -1693,6 +1694,51 @@ final class TranscriptProjectorTest extends TestCase
 
         $blocksAfter = $this->projector->blocks();
         $this->assertCount(2, $blocksAfter, 'No extra blocks after run.completed');
+    }
+
+    // ── Model notification ─────────────────────────────────────────────────
+
+    /**
+     * Test thesis: a generic model.notification runtime event projects a System
+     * block with exact notification text, severity, source, and kind metadata —
+     * no output-cap-specific detection or text parsing.
+     */
+    public function testModelNotificationProjectsSystemBlockWithExactText(): void
+    {
+        $this->accept('model.notification', [
+            'id' => 'notif-1',
+            'source' => 'output_cap',
+            'kind' => 'output_capped',
+            'severity' => 'warning',
+            'delivery' => 'tool_result_replace',
+            'text' => '[Output capped to 100 characters, full output saved to /tmp/cap-123.txt]',
+            'tool_call_id' => 'call-1',
+            'tool_name' => 'read',
+            'metadata' => [
+                'cap' => 100,
+                'char_count' => 5000,
+            ],
+        ]);
+
+        $blocks = $this->projector->blocks();
+        $this->assertCount(1, $blocks);
+
+        $block = $blocks[0];
+        $this->assertSame(TranscriptBlockKindEnum::System, $block->kind);
+
+        // Exact model-facing text is what the TUI shows — no paraphrase.
+        $this->assertStringStartsWith('[Output capped to', $block->text);
+        $this->assertStringContainsString('full output saved to', $block->text);
+
+        // Severity drives TUI icon/color — no text-parsing from renderer.
+        $this->assertSame('warning', $block->meta['severity']);
+        $this->assertSame('output_cap', $block->meta['source']);
+        $this->assertSame('output_capped', $block->meta['kind']);
+        $this->assertSame('call-1', $block->meta['tool_call_id']);
+
+        // Producer metadata is available for detail views.
+        $this->assertIsArray($block->meta['producer_metadata']);
+        $this->assertSame(100, $block->meta['producer_metadata']['cap']);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

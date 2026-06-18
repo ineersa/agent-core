@@ -34,11 +34,6 @@ final readonly class OutputCapToolResultProcessor implements ToolResultProcessor
 
     public function process(ToolResult $result, ToolCall $toolCall): ToolResult
     {
-        // Only process non-error results with text content.
-        if ($result->isError) {
-            return $result;
-        }
-
         $text = $this->extractTextFromContent($result->content);
         if ('' === $text) {
             return $result;
@@ -49,28 +44,14 @@ final readonly class OutputCapToolResultProcessor implements ToolResultProcessor
         $charCount = mb_strlen($text);
 
         if ($charCount <= $cap) {
-            // Text fits within the cap — passthrough unchanged.
-            // Still record server-side cap metrics for auditing.
-            $result = $this->addCapMetadata($result, [
-                'capped' => false,
-                'cap' => $cap,
-                'char_count' => $charCount,
-                'path' => $path,
-            ]);
-
+            // Text fits within the cap — return unchanged.
             return $result;
         }
 
         $capResult = $this->outputCap->capIfNeeded($text, $path);
         // capIfNeeded returns null when under cap, so this path always has a result.
         if (null === $capResult) {
-            // Defensive: if somehow under cap despite length check, add metadata.
-            return $this->addCapMetadata($result, [
-                'capped' => false,
-                'cap' => $cap,
-                'char_count' => $charCount,
-                'path' => $path,
-            ]);
+            return $result;
         }
 
         $notificationId = hash('sha256', implode('|', [
@@ -99,19 +80,29 @@ final readonly class OutputCapToolResultProcessor implements ToolResultProcessor
         );
 
         // Replace visible content with compact status label.
+        $isError = $result->isError;
+        $compactLabel = $isError
+            ? $toolCall->toolName.' failed'
+            : $toolCall->toolName.' completed';
         $compactContent = [[
             'type' => 'text',
-            'text' => $toolCall->toolName.' completed',
+            'text' => $compactLabel,
         ]];
 
+        // Sanitize details: strip raw_result (full output) to prevent leakage
+        // through canonical ToolResult details, AgentMessage history, and TUI.
+        // Preserve attachment_refs if the original result carried any, and keep
+        // only safe structured metadata (mode, timeout_seconds, max_parallelism, etc.).
+        $originalDetails = \is_array($result->details) ? $result->details : [];
+        $safeDetails = $this->safeDetailsFromOriginal($originalDetails);
+
         // Collect existing notifications and append the new one.
-        $details = \is_array($result->details) ? $result->details : [];
-        $existingNotifications = \is_array($details['model_notifications'] ?? null)
-            ? $details['model_notifications']
+        $existingNotifications = \is_array($originalDetails['model_notifications'] ?? null)
+            ? $originalDetails['model_notifications']
             : [];
         $existingNotifications[] = $notification->toArray();
-        $details['model_notifications'] = $existingNotifications;
-        $details['output_cap'] = [
+        $safeDetails['model_notifications'] = $existingNotifications;
+        $safeDetails['output_cap'] = [
             'capped' => true,
             'cap' => $capResult->cap,
             'char_count' => $capResult->charCount,
@@ -124,8 +115,8 @@ final readonly class OutputCapToolResultProcessor implements ToolResultProcessor
             toolCallId: $result->toolCallId,
             toolName: $result->toolName,
             content: $compactContent,
-            details: $details,
-            isError: $result->isError,
+            details: $safeDetails,
+            isError: $isError,
         );
     }
 
@@ -174,21 +165,35 @@ final readonly class OutputCapToolResultProcessor implements ToolResultProcessor
     }
 
     /**
-     * Add output-cap metrics to tool result details without capping.
+     * Build safe details from original result details, stripping raw_result
+     * (full output) but preserving attachment_refs and non-sensitive
+     * operational metadata (mode, duration_ms, sources).
      *
-     * @param array<string, mixed> $capMeta
+     * @param array<string, mixed> $original
+     *
+     * @return array<string, mixed>
      */
-    private function addCapMetadata(ToolResult $result, array $capMeta): ToolResult
+    private function safeDetailsFromOriginal(array $original): array
     {
-        $details = \is_array($result->details) ? $result->details : [];
-        $details['output_cap'] = $capMeta;
+        $safe = [];
 
-        return new ToolResult(
-            toolCallId: $result->toolCallId,
-            toolName: $result->toolName,
-            content: $result->content,
-            details: $details,
-            isError: $result->isError,
-        );
+        // Preserve attachment references if the tool produced them
+        // (e.g. image tools — but those don't typically hit the cap).
+        $rawResult = $original['raw_result'] ?? null;
+        $attachmentRefs = \is_array($rawResult['attachment_refs'] ?? null)
+            ? $rawResult['attachment_refs']
+            : null;
+        if (null !== $attachmentRefs) {
+            $safe['raw_result'] = ['attachment_refs' => $attachmentRefs];
+        }
+
+        // Forward non-sensitive operational metadata.
+        foreach (['mode', 'duration_ms', 'sources'] as $key) {
+            if (\array_key_exists($key, $original)) {
+                $safe[$key] = $original[$key];
+            }
+        }
+
+        return $safe;
     }
 }

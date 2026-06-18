@@ -22,10 +22,10 @@ use Ineersa\AgentCore\Domain\Message\ToolResultType;
  * extension tools, MCP tools, third-party tools, or messages that
  * bypass the normal ToolExecutor→tool result processor pipeline.
  *
- * The hook now uses structured metadata (details['output_cap'])
- * instead of text-marker detection to avoid double-capping messages
- * that the primary processor already handled. When it does cap a
- * message, it attaches structured output_cap metadata so downstream
+ * The hook uses structured model_notifications metadata for skip
+ * detection instead of text-marker detection to avoid double-capping
+ * messages that the primary processor already handled. When it does
+ * cap a message, it attaches a generic model_notification so downstream
  * consumers can detect the cap without parsing text.
  *
  * Image content parts (image_ref) are preserved unchanged.
@@ -55,9 +55,12 @@ final readonly class OutputCapLlmTransformHook implements TransformContextHookIn
         }
 
         // Skip messages already capped by the primary tool-result processor.
-        // Detection uses structured details['output_cap'] instead of text markers.
-        $alreadyCapped = \is_array($message->details['output_cap'] ?? null)
-            && true === ($message->details['output_cap']['capped'] ?? false);
+        // Detection uses structured model_notifications in details instead of text markers.
+        $alreadyCapped = $this->hasDeliveryToolResultReplace(
+            \is_array($message->details['model_notifications'] ?? null)
+                ? $message->details['model_notifications']
+                : null,
+        );
 
         if ($alreadyCapped) {
             return $message;
@@ -117,16 +120,46 @@ final readonly class OutputCapLlmTransformHook implements TransformContextHookIn
             $newContent[] = $part;
         }
 
-        // Attach structured output_cap metadata so downstream consumers
-        // (e.g. LlmPlatformAdapter) can detect capping without text parsing.
-        $metadata = $message->metadata;
-        $metadata['output_cap'] = [
-            'capped' => true,
-            'cap' => $capResult->cap,
-            'char_count' => $capResult->charCount,
-            'token_estimate' => $capResult->tokenEstimate,
-            'saved_path' => $capResult->savedPath,
+        // Build a generic model notification for downstream consumers
+        // (agent message history preserves exact model-facing text).
+        $notificationId = hash('sha256', implode('|', [
+            $message->toolCallId ?? 'none',
+            'output_cap',
+            $capResult->savedPath,
+        ]));
+
+        $notification = [
+            'id' => $notificationId,
+            'source' => 'output_cap',
+            'kind' => 'output_capped',
+            'severity' => 'warning',
+            'delivery' => 'tool_result_replace',
+            'text' => $capResult->noticeText,
+            'metadata' => [
+                'cap' => $capResult->cap,
+                'char_count' => $capResult->charCount,
+                'token_estimate' => $capResult->tokenEstimate,
+                'saved_path' => $capResult->savedPath,
+            ],
         ];
+        if (null !== $message->toolCallId) {
+            $notification['tool_call_id'] = $message->toolCallId;
+        }
+        if (null !== $message->toolName) {
+            $notification['tool_name'] = $message->toolName;
+        }
+
+        // Attach the generic notification to both metadata (for the model history)
+        // and details (so downstream skip detection works on re-capping).
+        $metadata = $message->metadata;
+        $metadata['model_notifications'] = [$notification];
+
+        $details = \is_array($message->details) ? $message->details : [];
+        $existing = \is_array($details['model_notifications'] ?? null)
+            ? $details['model_notifications']
+            : [];
+        $existing[] = $notification;
+        $details['model_notifications'] = $existing;
 
         return new AgentMessage(
             role: $message->role,
@@ -135,7 +168,7 @@ final readonly class OutputCapLlmTransformHook implements TransformContextHookIn
             name: $message->name,
             toolCallId: $message->toolCallId,
             toolName: $message->toolName,
-            details: $message->details,
+            details: $details,
             isError: $message->isError,
             metadata: $metadata,
         );
@@ -150,5 +183,28 @@ final readonly class OutputCapLlmTransformHook implements TransformContextHookIn
         $encoded = json_encode($value, \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
 
         return false === $encoded ? '{}' : $encoded;
+    }
+
+    /**
+     * Check whether any notification in the list uses delivery=tool_result_replace.
+     *
+     * @param list<array<string, mixed>>|null $notifications
+     */
+    private function hasDeliveryToolResultReplace(?array $notifications): bool
+    {
+        if (null === $notifications) {
+            return false;
+        }
+
+        foreach ($notifications as $notif) {
+            if (!\is_array($notif)) {
+                continue;
+            }
+            if (($notif['delivery'] ?? null) === 'tool_result_replace') {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

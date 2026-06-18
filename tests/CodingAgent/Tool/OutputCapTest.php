@@ -90,9 +90,9 @@ final class OutputCapTest extends TestCase
 
         // Should contain the storage dir path
         $this->assertStringContainsString($this->tmpDir, $result);
-        // Should contain head/grep hints
-        $this->assertStringContainsString('head -50', $result);
-        $this->assertStringContainsString('grep', $result);
+        // Should contain tool-first guidance, not shell-centric head/grep hints
+        $this->assertStringContainsString('Do not rerun the original tool', $result);
+        $this->assertStringContainsString('targeted read', $result);
     }
 
     /* ───────── Persistence ───────── */

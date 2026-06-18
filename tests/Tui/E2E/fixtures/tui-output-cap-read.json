@@ -1,0 +1,37 @@
+{
+    "$schema": "TUI output-cap replay fixture — triggers read on oversized file",
+    "model": "llama_cpp_test/test",
+    "provider_id": "llama_cpp_test",
+    "reasoning": "off",
+    "recorded_at": "2026-06-18T00:00:00+00:00",
+    "recording_source": "manual",
+    "input": {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Read ./large_file.txt"
+            }
+        ]
+    },
+    "usage": {
+        "input_tokens": 10,
+        "output_tokens": 20,
+        "total_tokens": 30
+    },
+    "stop_reason": "tool_call",
+    "expected_text": "",
+    "deltas": [
+        {"type": "tool_call_start", "id": "call_output_cap_read_1", "name": "read"},
+        {"type": "tool_input_delta", "id": "call_output_cap_read_1", "name": "read", "partial_json": "{\"pa"},
+        {"type": "tool_input_delta", "id": "call_output_cap_read_1", "name": "read", "partial_json": "th\":"},
+        {"type": "tool_input_delta", "id": "call_output_cap_read_1", "name": "read", "partial_json": " \"./"},
+        {"type": "tool_input_delta", "id": "call_output_cap_read_1", "name": "read", "partial_json": "large_"},
+        {"type": "tool_input_delta", "id": "call_output_cap_read_1", "name": "read", "partial_json": "file."},
+        {"type": "tool_input_delta", "id": "call_output_cap_read_1", "name": "read", "partial_json": "txt"},
+        {"type": "tool_input_delta", "id": "call_output_cap_read_1", "name": "read", "partial_json": "\""},
+        {"type": "tool_input_delta", "id": "call_output_cap_read_1", "name": "read", "partial_json": "}"},
+        {"type": "tool_call_complete", "tool_calls": [
+            {"id": "call_output_cap_read_1", "name": "read", "arguments": {"path": "./large_file.txt"}}
+        ]}
+    ]
+}
