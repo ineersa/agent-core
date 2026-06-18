@@ -268,6 +268,16 @@ parameters:
       collectors:
         - type: directory
           value: src/CodingAgent/Mcp/Client/.*
+    - name: AppMcpMessage
+      collectors:
+        - type: directory
+          value: src/CodingAgent/Mcp/Message/.*
+    - name: AppMcpBroker
+      collectors:
+        - type: directory
+          value: src/CodingAgent/Mcp/Handler/.*
+        - type: classNameRegex
+          value: '#^Ineersa\\CodingAgent\\Mcp\\McpSessionLifecycleDispatcher$#'
     - name: McpSdk
       collectors:
         - type: classNameRegex
@@ -416,6 +426,7 @@ parameters:
       - AppPromptTemplate
       - AgentCore
       - AppConfig
+      - AppMcpBroker
       - SymfonyConsole
       - SymfonyMessenger
       - SymfonyAiPlatform
@@ -523,6 +534,13 @@ parameters:
     AppMcpClient:
       - AppMcpConfig
       - McpSdk
+
+    AppMcpMessage: ~
+
+    AppMcpBroker:
+      - AppMcpConfig
+      - AppMcpMessage
+      - SymfonyMessenger
 
     McpSdk: ~
 
