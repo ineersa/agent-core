@@ -138,19 +138,9 @@ services:
   Ineersa\CodingAgent\Extension\ExtensionToolHookEventSubscriber:
     arguments:
       $cwd: '@=service("Ineersa\\CodingAgent\\Config\\AppConfig").cwd'
-
-  # Cross-process approval ledger backed by the DBAL cache.approvals pool.
-  # Lives in AppExtension layer so ExtensionHookRegistry can reference it.
-  # Injected into ExtensionHookRegistry via setLedger() call.
-  Ineersa\CodingAgent\Extension\CachedApprovalLedger:
-    arguments:
-      $cache: '@cache.approvals'
-
-  Ineersa\CodingAgent\Extension\ExtensionHookRegistry:
-    arguments:
       $logger: '@monolog.logger'
-    calls:
-      - setLedger: ['@Ineersa\CodingAgent\Extension\CachedApprovalLedger']
+
+  Ineersa\CodingAgent\Extension\ExtensionHookRegistry: ~
 
   Ineersa\CodingAgent\Extension\ExtensionManager:
     arguments:

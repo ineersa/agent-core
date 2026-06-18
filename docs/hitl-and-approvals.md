@@ -1,5 +1,13 @@
 # HITL and Approval Architecture
 
+> **June 2026 architecture pivot:** SafeGuard approvals now use a **blocking-poll**
+> approach instead of the soft-interrupt flow. The extension subscriber
+> (`ExtensionToolHookEventSubscriber`) blocks the tool-worker thread polling the
+> ToolQuestion DB table. The answer is written by `AnswerToolQuestionHandler` to
+> the shared SQLite DB. The poll returns and the same tool call resumes executing.
+> No interrupt result, no `WaitingHuman`, no extra LLM turn, no cross-process
+> cache. See `ExtensionToolHookEventSubscriber::handleRequireApproval()`.
+
 Human-in-the-loop (HITL) is the mechanism by which the agent runtime pauses
 tool execution and asks a human (or an approval broker) for a decision before
 proceeding with a potentially dangerous operation. This document describes the

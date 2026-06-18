@@ -20,7 +20,7 @@ use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
  * answer is routed through the run_control transport, processed by
  * ApplyCommandHandler (human_response), committed via RunCommit, and
  * delivered to SafeGuardToolCallHook::onApprovalAnswered() synchronously
- * at commit time via SafeGuardApprovalCommitSubscriber.
+ * via the blocking-poll mechanism in ExtensionToolHookEventSubscriber.
  */
 #[AsEventListener(event: ControllerCommandEvent::class)]
 final readonly class AnswerHumanHandler

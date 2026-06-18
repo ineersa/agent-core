@@ -58,7 +58,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
 
         $contextAccessor = new StackToolExecutionContextAccessor();
         $dispatcher = new EventDispatcher();
-        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry, getcwd() ?: '/', $contextAccessor));
+        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry, $this->createStub(\Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface::class), getcwd() ?: '/', $contextAccessor));
 
         $executor = new ToolExecutor(
             defaultMode: 'parallel',
@@ -121,7 +121,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         }));
 
         $dispatcher = new EventDispatcher();
-        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry, getcwd() ?: '/'));
+        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry, $this->createStub(\Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface::class), getcwd() ?: '/'));
 
         $result = (new RegistryBackedToolbox($registry, $dispatcher))->execute(
             new \Symfony\AI\Platform\Result\ToolCall('call-ordered', 'ordered', [])
@@ -154,7 +154,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         }));
 
         $dispatcher = new EventDispatcher();
-        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry, getcwd() ?: '/'));
+        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry, $this->createStub(\Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface::class), getcwd() ?: '/'));
 
         $result = (new RegistryBackedToolbox($registry, $dispatcher))->execute(
             new \Symfony\AI\Platform\Result\ToolCall('call-resultful', 'resultful', [])
@@ -179,7 +179,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         }));
 
         $dispatcher = new EventDispatcher();
-        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry, getcwd() ?: '/'));
+        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry, $this->createStub(\Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface::class), getcwd() ?: '/'));
 
         $result = (new RegistryBackedToolbox($registry, $dispatcher))->execute(
             new \Symfony\AI\Platform\Result\ToolCall('call-throws', 'throws', [])
@@ -199,7 +199,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
 
         $hookRegistry = new ExtensionHookRegistry();
         $dispatcher = new EventDispatcher();
-        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry, getcwd() ?: '/'));
+        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry, $this->createStub(\Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface::class), getcwd() ?: '/'));
 
         $result = (new RegistryBackedToolbox($registry, $dispatcher))->execute(
             new \Symfony\AI\Platform\Result\ToolCall('call-unhooked', 'unhooked', [])
@@ -209,85 +209,112 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         $this->assertSame(1, $handler->calls);
     }
 
-    public function testRequireApprovalCreatesInterruptPayloadWithApprovalContext(): void
+    public function testRequireApprovalWithPreAnsweredQuestionAllowsToolExecution(): void
     {
+        // Test that a RequireApproval decision, when a pre-answered ToolQuestion
+        // already exists (crash recovery / redelivery), processes the existing
+        // answer and lets the tool handler run for Allow once.
         $registry = new ToolRegistry();
-        $handler = $this->countingHandler('should not run');
-        $registry->registerTool('approval-needing', 'Tool needing approval', [], $handler, 'approval-needing');
+        $handler = $this->countingHandler('handler_ran');
+        $registry->registerTool('approval-tool', 'Tool needing approval', [], $handler, 'approval-tool');
 
         $hookRegistry = new ExtensionHookRegistry();
         $hookRegistry->addToolCallHook($this->toolCallHook(static function (ToolCallContextDTO $context): ToolCallDecisionDTO {
             return ToolCallDecisionDTO::requireApproval(
-                prompt: 'Allow destructive command: rm -rf /tmp/build?',
+                prompt: 'Allow?',
                 questionId: 'sg_qid_test',
                 schema: ['type' => 'string', 'enum' => ['Allow once', 'Always allow', 'Deny']],
                 details: [
                     'category' => 'destructive',
-                    'command' => 'rm -rf /tmp/build',
                     'tool_name' => 'bash',
                 ],
             );
         }));
 
-        $dispatcher = new EventDispatcher();
-        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry, getcwd() ?: '/'));
+        // Create a pre-answered ToolQuestion (simulating crash recovery where
+        // the answer was already written by a previous controller instance).
+        $existingQuestion = new \Ineersa\CodingAgent\Entity\ToolQuestion();
+        $existingQuestion->requestId = 'sg_run-test_call-approve-1';
+        $existingQuestion->runId = 'run-test';
+        $existingQuestion->toolCallId = 'call-approve-1';
+        $existingQuestion->toolName = 'approval-tool';
+        $existingQuestion->prompt = 'Allow?';
+        $existingQuestion->kind = 'safeguard_approval';
+        $existingQuestion->answerText = 'Allow once';
+        $existingQuestion->status = \Ineersa\CodingAgent\Entity\ToolQuestionStatusEnum::Answered;
 
+        $store = $this->createMock(\Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface::class);
+        $store->expects($this->once())
+            ->method('findByRequestId')
+            ->willReturn($existingQuestion);
+
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry, $store, getcwd() ?: '/'));
+
+        // The tool box receives a ToolCall WITH a runId (via the ToolCall's
+        // 'context' metadata, which is picked up by StackToolExecutionContextAccessor
+        // in production but is not available in this unit test). Instead, the
+        // subscriber uses toolCall->getId() to build the requestId.
+        // The stub store returns the pre-answered question -> processApprovalAnswer
+        // runs with Allow once -> the handler executes.
         $result = (new RegistryBackedToolbox($registry, $dispatcher))->execute(
-            new \Symfony\AI\Platform\Result\ToolCall('call-approve', 'approval-needing', [])
+            new \Symfony\AI\Platform\Result\ToolCall('call-approve-1', 'approval-tool', [])
         );
 
-        $this->assertSame(0, $handler->calls);
-        $this->assertIsArray($result->getResult());
-        $this->assertSame('interrupt', $result->getResult()['kind']);
-        $this->assertSame('sg_qid_test', $result->getResult()['question_id']);
-        $this->assertSame('Allow destructive command: rm -rf /tmp/build?', $result->getResult()['prompt']);
-        $this->assertSame(['type' => 'string', 'enum' => ['Allow once', 'Always allow', 'Deny']], $result->getResult()['schema']);
-        $this->assertSame('approval-needing', $result->getResult()['tool_name']);
-        $this->assertSame('call-approve', $result->getResult()['tool_call_id']);
-
-        // approval_context preserves all extension-specific metadata
-        $this->assertIsArray($result->getResult()['approval_context']);
-        $this->assertSame('destructive', $result->getResult()['approval_context']['category']);
-        $this->assertSame('rm -rf /tmp/build', $result->getResult()['approval_context']['command']);
-        $this->assertSame('bash', $result->getResult()['approval_context']['tool_name']);
-        // prompt and schema from requireApproval are in details, visible in approval_context
-        $this->assertSame('Allow destructive command: rm -rf /tmp/build?', $result->getResult()['approval_context']['prompt']);
+        // The handler should have run because the pre-answered question says
+        // "Allow once", causing the subscriber to fall through to execution.
+        $this->assertSame('handler_ran', $result->getResult());
+        $this->assertSame(1, $handler->calls);
     }
 
-    public function testRequireApprovalGeneratesQuestionIdWhenNoneProvided(): void
+    public function testRequireApprovalWithPreAnsweredDenyBlocksToolExecution(): void
     {
+        // Test that a pre-answered ToolQuestion with 'Deny' prevents execution.
         $registry = new ToolRegistry();
         $handler = $this->countingHandler('should not run');
-        $registry->registerTool('approval-auto', 'Tool', [], $handler, 'approval-auto');
+        $registry->registerTool('deny-tool', 'Tool', [], $handler, 'deny-tool');
 
         $hookRegistry = new ExtensionHookRegistry();
-        $hookRegistry->addToolCallHook($this->toolCallHook(static function (): ToolCallDecisionDTO {
-            return ToolCallDecisionDTO::requireApproval(prompt: 'Allow?');
+        $hookRegistry->addToolCallHook($this->toolCallHook(static function (ToolCallContextDTO $context): ToolCallDecisionDTO {
+            return ToolCallDecisionDTO::requireApproval(
+                prompt: 'Allow?',
+                questionId: 'sg_qid_deny',
+            );
         }));
 
+        $existingQuestion = new \Ineersa\CodingAgent\Entity\ToolQuestion();
+        $existingQuestion->requestId = 'sg_run-denytest_call-deny';
+        $existingQuestion->runId = 'run-denytest';
+        $existingQuestion->toolCallId = 'call-deny';
+        $existingQuestion->toolName = 'deny-tool';
+        $existingQuestion->prompt = 'Allow?';
+        $existingQuestion->kind = 'safeguard_approval';
+        $existingQuestion->answerText = 'Deny';
+        $existingQuestion->status = \Ineersa\CodingAgent\Entity\ToolQuestionStatusEnum::Answered;
+
+        $store = $this->createMock(\Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface::class);
+        $store->expects($this->once())
+            ->method('findByRequestId')
+            ->willReturn($existingQuestion);
+
         $dispatcher = new EventDispatcher();
-        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry, getcwd() ?: '/'));
+        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry, $store, getcwd() ?: '/'));
 
         $result = (new RegistryBackedToolbox($registry, $dispatcher))->execute(
-            new \Symfony\AI\Platform\Result\ToolCall('call-auto', 'approval-auto', [])
+            new \Symfony\AI\Platform\Result\ToolCall('call-deny', 'deny-tool', [])
         );
 
+        // The handler should NOT have run because Deny sets a denied result.
         $this->assertSame(0, $handler->calls);
         $this->assertIsArray($result->getResult());
-        $this->assertSame('interrupt', $result->getResult()['kind']);
-        // When no question_id is provided, the subscriber generates a sha256 hash
-        $questionId = $result->getResult()['question_id'];
-        $this->assertIsString($questionId);
-        $this->assertSame(64, \strlen($questionId)); // sha256 hex length
-        $this->assertMatchesRegularExpression('/^[a-f0-9]{64}$/', $questionId);
-        $this->assertSame('Allow?', $result->getResult()['prompt']);
-        $this->assertSame(['type' => 'string'], $result->getResult()['schema']);
+        $this->assertSame(true, $result->getResult()['denied'] ?? null);
+        $this->assertSame('safeguard_denied', $result->getResult()['reason'] ?? null);
     }
 
-    public function testRequireApprovalWithMultipleHooksFirstNonAllowWins(): void
+    public function testRequireApprovalWithMultipleHooksFirstRequireApprovalWinsAndProcessesPreAnswered(): void
     {
         $registry = new ToolRegistry();
-        $handler = $this->countingHandler('should not run');
+        $handler = $this->countingHandler('handler_ran');
         $registry->registerTool('multi-approval', 'Multi', [], $handler, 'multi-approval');
 
         $hookRegistry = new ExtensionHookRegistry();
@@ -301,16 +328,32 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
             return ToolCallDecisionDTO::block('should not reach');
         }));
 
+        $existingQuestion = new \Ineersa\CodingAgent\Entity\ToolQuestion();
+        $existingQuestion->requestId = 'sg_run-multi_call-multi';
+        $existingQuestion->runId = 'run-multi';
+        $existingQuestion->toolCallId = 'call-multi';
+        $existingQuestion->toolName = 'multi-approval';
+        $existingQuestion->prompt = 'Second hook says approve?';
+        $existingQuestion->kind = 'safeguard_approval';
+        $existingQuestion->answerText = 'Allow once';
+        $existingQuestion->status = \Ineersa\CodingAgent\Entity\ToolQuestionStatusEnum::Answered;
+
+        $store = $this->createMock(\Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface::class);
+        $store->expects($this->once())
+            ->method('findByRequestId')
+            ->willReturn($existingQuestion);
+
         $dispatcher = new EventDispatcher();
-        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry, getcwd() ?: '/'));
+        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry, $store, getcwd() ?: '/'));
 
         $result = (new RegistryBackedToolbox($registry, $dispatcher))->execute(
             new \Symfony\AI\Platform\Result\ToolCall('call-multi', 'multi-approval', [])
         );
 
-        $this->assertSame(0, $handler->calls);
-        $this->assertSame('interrupt', $result->getResult()['kind']);
-        $this->assertSame('Second hook says approve?', $result->getResult()['prompt']);
+        // The handler should have run because the pre-answered question allows
+        // execution (Allow once).
+        $this->assertSame('handler_ran', $result->getResult());
+        $this->assertSame(1, $handler->calls);
     }
 
     public function testEmptyHookRegistryWithContextAccessorStillPassesThrough(): void
@@ -322,7 +365,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         $hookRegistry = new ExtensionHookRegistry();
         $contextAccessor = new StackToolExecutionContextAccessor();
         $dispatcher = new EventDispatcher();
-        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry, getcwd() ?: '/', $contextAccessor));
+        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry, $this->createStub(\Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface::class), getcwd() ?: '/', $contextAccessor));
 
         $executor = new ToolExecutor(
             defaultMode: 'parallel',

@@ -77,9 +77,23 @@ class ToolQuestion
     #[ORM\Column(name: 'status', type: 'string', length: 255, enumType: ToolQuestionStatusEnum::class)]
     public ToolQuestionStatusEnum $status = ToolQuestionStatusEnum::Pending;
 
-    /** The boolean answer, set when status becomes Answered. */
+    /** The boolean answer, set when status becomes Answered (used by Confirm-kind). */
     #[ORM\Column(type: 'boolean', nullable: true)]
     public ?bool $answer = null;
+
+    /**
+     * The string answer, set when status becomes Answered (used by Approval-kind).
+     * Holds values like 'Allow once', 'Always allow', 'Deny' for SafeGuard approvals.
+     */
+    #[ORM\Column(name: 'answer_text', type: 'string', length: 255, nullable: true)]
+    public ?string $answerText = null;
+
+    /**
+     * JSON schema for the question (e.g. {'type':'string','enum':['Allow once','Always allow','Deny']}).
+     * Stored as serialized JSON text; null for boolean Confirm-kind questions.
+     */
+    #[ORM\Column(type: 'text', nullable: true)]
+    public ?string $schema = null;
 
     /** When the question was first emitted as a runtime event. Null before first emission. */
     #[ORM\Column(name: 'emitted_at', type: 'datetime_immutable', nullable: true)]
@@ -119,6 +133,7 @@ class ToolQuestion
         string $commandPreview,
         string $prompt,
         string $kind = 'confirm',
+        ?string $schema = null,
     ): self {
         if ('' === trim($requestId)) {
             throw new \InvalidArgumentException('requestId must not be empty');
@@ -153,6 +168,7 @@ class ToolQuestion
         $entity->commandPreview = $commandPreview;
         $entity->prompt = $prompt;
         $entity->kind = $kind;
+        $entity->schema = $schema;
 
         return $entity;
     }
@@ -177,6 +193,22 @@ class ToolQuestion
         }
 
         $this->answer = $answer;
+        $this->status = ToolQuestionStatusEnum::Answered;
+        $this->answeredAt = new \DateTimeImmutable();
+    }
+
+    /**
+     * Set the string answer for Approval-kind questions.
+     *
+     * Idempotent: does nothing if the question is already resolved.
+     */
+    public function setAnswerText(string $answer): void
+    {
+        if ($this->isResolved()) {
+            return;
+        }
+
+        $this->answerText = $answer;
         $this->status = ToolQuestionStatusEnum::Answered;
         $this->answeredAt = new \DateTimeImmutable();
     }

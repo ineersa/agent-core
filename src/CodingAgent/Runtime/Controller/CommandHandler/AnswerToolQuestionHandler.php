@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Runtime\Controller\CommandHandler;
 
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionAnswerResolver;
@@ -15,9 +16,13 @@ use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
  * Handles answer_tool_question JSONL commands from the parent TUI process.
  *
  * When the TUI user answers a local tool question (e.g. bash background
- * prompt), the parent sends an answer_tool_question JSONL command with
- * the request_id and answer. This handler writes the answer to the
- * ToolQuestionStore so the blocked tool worker can pick it up.
+ * prompt, SafeGuard approval), the parent sends an answer_tool_question
+ * JSONL command with the request_id and answer. This handler writes the
+ * answer to the ToolQuestionStore so the blocked tool worker can pick it up.
+ *
+ * The handler stores answers according to the ToolQuestion's kind:
+ * - Confirm-kind (bash bg prompts): stores the boolean answer
+ * - Approval-kind (SafeGuard): stores the string answer (e.g. 'Allow once')
  *
  * This is the controller-side counterpart to AnswerHumanHandler but for
  * local tool questions that must NOT go through answer_human, WaitingHuman,
@@ -65,6 +70,31 @@ final readonly class AnswerToolQuestionHandler
             return;
         }
 
+        // Determine the question kind to decide whether to store a
+        // string answer vs boolean answer.
+        $kind = (string) ($command->payload['kind'] ?? '');
+
+        // If the payload doesn't carry a kind, try to infer from the
+        // existing question in the store (backward compat with existing
+        // boolean-only Confirm-kind callers).
+        if ('' === $kind) {
+            $this->handleBooleanAnswer($event, $requestId, $command);
+
+            return;
+        }
+
+        if ('safeguard_approval' === $kind) {
+            $this->handleStringAnswer($event, $requestId, $command);
+
+            return;
+        }
+
+        // Default to boolean for unrecognized kinds (forward compat).
+        $this->handleBooleanAnswer($event, $requestId, $command);
+    }
+
+    private function handleBooleanAnswer(ControllerCommandEvent $event, string $requestId, RuntimeCommand $command): void
+    {
         $answer = $this->answerResolver->resolve($command->payload['answer'] ?? null);
 
         try {
@@ -72,7 +102,35 @@ final readonly class AnswerToolQuestionHandler
         } catch (\Throwable $e) {
             $event->emit(new RuntimeEvent(
                 type: RuntimeEventTypeEnum::ProtocolError->value,
-                runId: $runId,
+                runId: $command->runId ?? '',
+                seq: 0,
+                payload: [
+                    'error' => \sprintf('Failed to answer tool question: %s', $e->getMessage()),
+                ],
+            ));
+        }
+    }
+
+    private function handleStringAnswer(ControllerCommandEvent $event, string $requestId, RuntimeCommand $command): void
+    {
+        $answer = (string) ($command->payload['answer'] ?? '');
+        if ('' === $answer) {
+            $event->emit(new RuntimeEvent(
+                type: RuntimeEventTypeEnum::ProtocolError->value,
+                runId: $command->runId ?? '',
+                seq: 0,
+                payload: ['error' => 'answer_tool_question with kind=safeguard_approval requires a non-empty answer'],
+            ));
+
+            return;
+        }
+
+        try {
+            $this->store->answerWithText($requestId, $answer);
+        } catch (\Throwable $e) {
+            $event->emit(new RuntimeEvent(
+                type: RuntimeEventTypeEnum::ProtocolError->value,
+                runId: $command->runId ?? '',
                 seq: 0,
                 payload: [
                     'error' => \sprintf('Failed to answer tool question: %s', $e->getMessage()),

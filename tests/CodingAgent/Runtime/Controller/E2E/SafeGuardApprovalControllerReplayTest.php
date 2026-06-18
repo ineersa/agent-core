@@ -7,27 +7,22 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Controller\E2E;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
- * Controller-replay E2E test proving SafeGuard cross-process approval works
+ * Controller-replay E2E test proving SafeGuard blocking-poll approval works
  * in the DEFAULT 'process' transport (separate messenger consumers).
  *
- * Flow:
+ * Flow (blocking-poll approach, no soft-interrupt):
  *   1. LLM calls write tool with a path OUTSIDE the project CWD
- *   2. SafeGuard interrupts with RequireApproval → WaitingHuman
- *   3. Test captures question_id from human_input.requested event
- *   4. Test answers "Allow once" via answer_human JSONL command
- *   5. SafeGuardApprovalCommitSubscriber writes approved decision to the
- *      shared cache.approvals pool (cross-process, via CachedApprovalLedger)
- *   6. AdvanceRun retries the tool call; ExtensionToolHookEventSubscriber
- *      checks the shared cache before blocking → ALLOWS the execution
- *   7. Write tool executes, creating the file on disk
- *
- * This exercises the REAL multi-process topology (run_control consumer
- * handles answer commit, tool consumer handles execution) with the shared
- * DBAL-backed cache as the cross-process glue.
+ *   2. SafeGuard intercepts with RequireApproval
+ *   3. ExtensionToolHookEventSubscriber creates a ToolQuestion in the shared
+ *      DB (kind=safeguard_approval) and BLOCKS in a polling loop
+ *   4. Controller ToolQuestionPoller emits tool_question.requested
+ *   5. Test injects the answer via answer_tool_question JSONL command
+ *      with kind=safeguard_approval and answer="Allow once"
+ *   6. Blocking poll returns "Allow once" → real tool handler executes
+ *   7. Write tool creates the file on disk (no retry needed, no extra LLM turn)
  *
  * @see ControllerReplayE2eTestCase
- * @see CachedApprovalLedger
- * @see SafeGuardApprovalCommitSubscriber
+ * @see ExtensionToolHookEventSubscriber
  */
 #[Group('controller-replay')]
 final class SafeGuardApprovalControllerReplayTest extends ControllerReplayE2eTestCase
@@ -44,9 +39,9 @@ final class SafeGuardApprovalControllerReplayTest extends ControllerReplayE2eTes
         parent::setUp();
 
         // Compute the absolute path of the expected target file.
-        // tempDir = var/tmp/test-sg-approval-{uuid}/
         // The fixture writes to ../sg-{sessionId}.txt
-        // so the resolved path is dirname(tempDir)/sg-{sessionId}.txt
+        // Since tempDir = var/tmp/test-sg-approval-{uuid}/,
+        // the resolved path is dirname(tempDir)/sg-{sessionId}.txt
         $this->targetOutsidePath = \dirname($this->tempDir).'/sg-'.$this->sessionId.'.txt';
 
         // Ensure file does not exist before test
@@ -58,12 +53,8 @@ final class SafeGuardApprovalControllerReplayTest extends ControllerReplayE2eTes
      */
     protected function replayFixtures(): array
     {
-        // The path the LLM generates: ../sg-{sessionId}.txt
-        // We splice the sessionId directly at clean JSON boundaries so
-        // the assembled partial_json produces exactly:
-        //   {"path":"../sg-{sessionId}.txt","content":"hello"}
-        $sessionId = $this->sessionId;
         $path = '../sg-'.$this->sessionId.'.txt';
+        $sessionId = $this->sessionId;
 
         $buildDeltas = static function (string $callId) use ($sessionId, $path): array {
             return [
@@ -79,7 +70,6 @@ final class SafeGuardApprovalControllerReplayTest extends ControllerReplayE2eTes
         };
 
         // First LLM call: returns a write tool call with path outside CWD.
-        // SafeGuard intercepts this and returns RequireApproval.
         $firstFixture = [
             'model' => 'llama_cpp/test',
             'provider_id' => 'llama_cpp',
@@ -88,30 +78,21 @@ final class SafeGuardApprovalControllerReplayTest extends ControllerReplayE2eTes
             'stop_reason' => 'tool_call',
         ];
 
-        // Second LLM call (retry after user answers "Allow once"):
-        // Returns the same write tool call. This time SafeGuard allows it
-        // because ExtensionToolHookEventSubscriber checks the shared cache
-        // before blocking with RequireApproval.
+        // Second LLM call (after the blocking-poll returns and tool executes):
+        // the LLM sees the real write result and returns text "done".
         $secondFixture = [
             'model' => 'llama_cpp/test',
             'provider_id' => 'llama_cpp',
             'reasoning' => 'off',
-            'deltas' => $buildDeltas('call_sg_2'),
-            'stop_reason' => 'tool_call',
+            'deltas' => [
+                ['type' => 'text', 'content' => 'done'],
+            ],
+            'stop_reason' => 'stop',
         ];
 
         return [$firstFixture, $secondFixture];
     }
 
-    /**
-     * Ensure SafeGuard uses RequireApproval (not auto-deny) in the spawned
-     * controller subprocess. The real process transport sets
-     * HATFIELD_APPROVAL_CHANNEL=controller (see JsonlProcessAgentSessionClient.php:413);
-     * without it SafeGuard defaults to autoDenyInNoninteractive which never
-     * emits human_input.requested.
-     *
-     * @return array<string, string>
-     */
     protected function replayExtraEnv(): array
     {
         return [
@@ -120,10 +101,18 @@ final class SafeGuardApprovalControllerReplayTest extends ControllerReplayE2eTes
     }
 
     /**
-     * Prove "Allow once" works across processes: SafeGuard blocks the
-     * first write, user approves, the retry write succeeds.
+     * Prove the blocking-poll SafeGuard approval flow: SafeGuard creates a
+     * ToolQuestion and blocks, test answers via answer_tool_question, the
+     * write tool executes and creates the file outside CWD.
+     *
+     * The test uses two collection phases:
+     *   1. collectEventsUntilPinpoint — waits for tool_question.requested,
+     *      sends the answer, then continues collecting events within a
+     *      single timeout window.
+     *   2. collectEventsUntilToolCompleted — waits for the write tool's
+     *      tool_execution.completed event with generous timeout.
      */
-    public function testWriteOutsideCwdAllowOnceAcrossProcessBoundary(): void
+    public function testWriteOutsideCwdAllowOnceViaBlockingPoll(): void
     {
         $this->spawnController();
         $this->waitForEvent('runtime.ready', 5.0);
@@ -139,60 +128,84 @@ final class SafeGuardApprovalControllerReplayTest extends ControllerReplayE2eTes
             ],
         ]);
 
-        // Collect events until SafeGuard interrupts via human_input.requested.
-        // This also gives us run.started (for runId).
-        $preApprovalEvents = $this->collectEventsUntil('human_input.requested', 8.0);
-        $byTypePre = $this->indexByType($preApprovalEvents);
+        // Phase 1: Collect events until tool_question.requested is emitted.
+        // This waits for the subscriber to create a ToolQuestion and the
+        // controller's ToolQuestionPoller to pick it up.
+        $preAnswerEvents = $this->collectEventsUntil('tool_question.requested', 20.0);
+        $byTypePre = $this->indexByType($preAnswerEvents);
 
-        // Extract runId from run.started
+        // Verify NO human_input.requested (the old interrupt flow is gone)
+        $this->assertArrayNotHasKey('human_input.requested', $byTypePre,
+            'Blocking-poll approach must NOT produce human_input.requested. '
+            .$this->collectDiagnostics($preAnswerEvents));
+
+        // tool_execution.started is emitted when the LLM step commits
+        // ToolExecutionStart events — BEFORE the tool actually executes.
+        // It should appear in the pre-answer events.
+        $this->assertArrayHasKey('tool_execution.started', $byTypePre,
+            'tool_execution.started should appear from the first LLM turn. '
+            .$this->collectDiagnostics($preAnswerEvents));
+        $this->assertSame('write',
+            $byTypePre['tool_execution.started'][0]['payload']['tool_name'] ?? null,
+            'The first LLM turn must call the write tool. '
+            .$this->collectDiagnostics($preAnswerEvents));
+
+        // Extract runId
         $runStarted = $byTypePre['run.started'][0] ?? null;
-        $this->assertNotNull($runStarted, 'Expected run.started before human_input.requested. '
-            .$this->collectDiagnostics($preApprovalEvents));
+        $this->assertNotNull($runStarted,
+            'Expected run.started before tool_question.requested. '
+            .$this->collectDiagnostics($preAnswerEvents));
         $this->runId = (string) ($runStarted['runId'] ?? $runStarted['payload']['runId'] ?? '');
         $this->assertNotEmpty($this->runId, 'run.started must have a runId');
 
-        // Extract question_id from human_input.requested
-        $humanInputEvents = $byTypePre['human_input.requested'] ?? [];
-        $this->assertNotEmpty($humanInputEvents,
-            'Expected human_input.requested when SafeGuard blocks an outside-CWD write. '
-            .$this->collectDiagnostics($preApprovalEvents));
-        $questionId = (string) ($humanInputEvents[0]['payload']['question_id'] ?? '');
-        $this->assertNotEmpty($questionId,
-            'human_input.requested must carry a question_id. '
-            .$this->collectDiagnostics($preApprovalEvents));
+        // Verify tool_question.requested event
+        $toolQuestionEvents = $byTypePre['tool_question.requested'] ?? [];
+        $this->assertNotEmpty($toolQuestionEvents,
+            'Expected tool_question.requested when SafeGuard blocks outside-CWD write. '
+            .$this->collectDiagnostics($preAnswerEvents));
 
-        // Simulate the human answering "Allow once"
+        $tqPayload = $toolQuestionEvents[0]['payload'] ?? [];
+        $requestId = (string) ($tqPayload['request_id'] ?? '');
+        $this->assertNotEmpty($requestId,
+            'tool_question.requested must carry a request_id. '
+            .$this->collectDiagnostics($preAnswerEvents));
+        $this->assertSame('safeguard_approval', $tqPayload['kind'] ?? '',
+            'tool_question.requested kind must be safeguard_approval. '
+            .$this->collectDiagnostics($preAnswerEvents));
+
+        // Phase 2: Send the answer and collect events until tool completes.
         $answerCmdId = 'cmd_answer_'.uniqid();
         $this->writeCommand([
             'v' => 1,
             'id' => $answerCmdId,
-            'type' => 'answer_human',
+            'type' => 'answer_tool_question',
             'runId' => $this->runId,
             'payload' => [
-                'question_id' => $questionId,
+                'request_id' => $requestId,
                 'answer' => 'Allow once',
+                'kind' => 'safeguard_approval',
             ],
         ]);
 
-        // Wait for the write tool to complete (proves SafeGuard allowed it
-        // on the retry because the approved decision reached the shared cache
-        // across the run_control → tool consumer process boundary).
-        $events = $this->collectEventsUntilToolCompleted('write', 12.0);
+        // Wait for the write tool to complete. The blocking poll runs in the
+        // tool consumer: when AnswerToolQuestionHandler writes the answer to
+        // the shared SQLite DB, the poll returns "Allow once" and the real
+        // tool handler executes.
+        $events = $this->collectEventsUntilToolCompleted('write', 30.0);
         $byType = $this->indexByType($events);
 
-        // Verify tool execution happened
-        $this->assertArrayHasKey('tool_execution.started', $byType,
-            'write tool must start after approval. '
-            .$this->collectDiagnostics($events));
-        $this->assertSame('write',
-            $byType['tool_execution.started'][0]['payload']['tool_name'] ?? null,
-            'The LLM must call the write tool. '
-            .$this->collectDiagnostics($events));
+        // Verify the write tool completed successfully (not failed)
         $this->assertArrayHasKey('tool_execution.completed', $byType,
             'write tool must complete after approval. '
             .$this->collectDiagnostics($events));
         $this->assertArrayNotHasKey('tool_execution.failed', $byType,
             'write tool must not fail after approval. '
+            .$this->collectDiagnostics($events));
+
+        // Verify the completed event has is_error=false
+        $completedPayload = $byType['tool_execution.completed'][0]['payload'] ?? [];
+        $this->assertFalse($completedPayload['is_error'] ?? true,
+            'write tool must complete without error. '
             .$this->collectDiagnostics($events));
 
         // Prove the write actually happened on disk (outside CWD)

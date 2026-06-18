@@ -48,7 +48,8 @@ final readonly class AfterTurnCommitHookContext
                 static fn (RunEvent $event): AfterTurnCommitEventSummary => new AfterTurnCommitEventSummary(
                     seq: $event->seq,
                     type: $event->type,
-                    payload: $event->payload,
+                    // payload intentionally excluded — no commit-time hook subscriber
+                    // needs event payload data under the current design.
                 ),
                 $events,
             )),

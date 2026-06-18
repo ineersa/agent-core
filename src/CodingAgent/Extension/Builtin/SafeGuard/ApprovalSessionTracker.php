@@ -17,9 +17,10 @@ namespace Ineersa\CodingAgent\Extension\Builtin\SafeGuard;
  *   4. remove(key) — called when the human answers "Deny" or on cleanup
  *
  * This tracker is NOT persisted across processes. Cross-process approval
- * state is handled by SafeGuardApprovalCommitSubscriber (writes approved
- * decisions to the shared cache.approvals pool) and ExtensionToolHookEventSubscriber
- * (checks the cache before blocking with RequireApproval).
+ * state is handled by the blocking-poll mechanism in
+ * ExtensionToolHookEventSubscriber (creates ToolQuestion, blocks, and
+ * resumes the same tool worker on answer) — no cross-process coordination
+ * needed because the answer is read from the shared DB in the same process.
  *
  * @internal SafeGuard internal, not part of the public ExtensionApi
  */

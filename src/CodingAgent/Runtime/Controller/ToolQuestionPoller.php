@@ -134,6 +134,7 @@ final class ToolQuestionPoller
                     'command_preview' => $question->commandPreview,
                     'prompt' => $question->prompt,
                     'kind' => $question->kind,
+                    'schema' => $question->schema,
                     'transcript' => false,
                 ],
             );

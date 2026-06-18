@@ -63,7 +63,3 @@ framework:
             cache.default:
                 adapter: cache.adapter.filesystem
                 default_lifetime: 3600
-            cache.approvals:
-                adapter: cache.adapter.doctrine_dbal
-                provider: doctrine.dbal.default_connection
-                default_lifetime: 86400

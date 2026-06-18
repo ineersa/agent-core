@@ -261,6 +261,16 @@ final class SpyToolQuestionStore implements \Ineersa\CodingAgent\Tool\ToolQuesti
         return 0;
     }
 
+    public function answerWithText(string $requestId, string $answer): bool
+    {
+        return true;
+    }
+
+    public function pollAnswerText(string $requestId): ?string
+    {
+        return null;
+    }
+
     public function create(\Ineersa\CodingAgent\Entity\ToolQuestion $question): \Ineersa\CodingAgent\Entity\ToolQuestion
     {
         return $question;

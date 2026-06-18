@@ -22,7 +22,7 @@ use Symfony\Component\EventDispatcher\EventDispatcherInterface;
  * Approval answer routing was previously handled by an
  * ExtensionApprovalAnswerSubscriber that observed the mapping flow through
  * EventDispatcher. That approach was removed in favor of commit-time
- * routing via SafeGuardApprovalCommitSubscriber (agent_core.hook_subscriber),
+ * routing via ExtensionToolHookEventSubscriber (blocking-poll mechanism),
  * which fires IN the worker process where pending approvals live.
  * The event_dispatcher is still passed for potential extension subscribers.
  */
@@ -86,7 +86,7 @@ final class RuntimeEventTranslator
 
         // Dispatch to extension subscribers that observe the mapping flow.
         // Approval answer routing is now handled at commit time by
-        // SafeGuardApprovalCommitSubscriber, not through this dispatcher.
+        // ExtensionToolHookEventSubscriber (blocking-poll), not through this dispatcher.
         $this->eventDispatcher->dispatch($runEvent, $type);
 
         if (isset($this->dispatchTable[$type])) {

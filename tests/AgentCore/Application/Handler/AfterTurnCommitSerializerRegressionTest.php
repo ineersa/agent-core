@@ -82,7 +82,6 @@ final class AfterTurnCommitSerializerRegressionTest extends TestCase
         $this->assertContainsOnlyInstancesOf(AfterTurnCommitEventSummary::class, $restored->events);
         $this->assertSame(1, $restored->events[0]->seq);
         $this->assertSame('run_started', $restored->events[0]->type);
-        $this->assertNull($restored->events[0]->payload, 'events without payload should round-trip as null');
         $this->assertSame(5, $restored->events[1]->seq);
         $this->assertSame('agent_end', $restored->events[1]->type);
     }
@@ -127,7 +126,6 @@ final class AfterTurnCommitSerializerRegressionTest extends TestCase
 
         $this->assertContainsOnlyInstancesOf(AfterTurnCommitEventSummary::class, $restored->events);
         $this->assertSame(42, $restored->events[0]->seq);
-        $this->assertNull($restored->events[0]->payload);
     }
 
     /**
@@ -158,27 +156,14 @@ final class AfterTurnCommitSerializerRegressionTest extends TestCase
         $this->assertContainsOnlyInstancesOf(AfterTurnCommitEventSummary::class, $restored->events);
     }
 
-    public function testRoundTripWithPayload(): void
+    public function testPayloadFieldIsOptional(): void
     {
-        $payload = ['kind' => 'human_response', 'question_id' => 'q_123', 'answer' => 'Allow once'];
-        $event = new AfterTurnCommitEventSummary(seq: 10, type: 'agent_command_applied', payload: $payload);
-
-        $normalized = $this->serializer->normalize($event);
-        $this->assertIsArray($normalized);
-        $this->assertSame(10, $normalized['seq']);
-        $this->assertSame('agent_command_applied', $normalized['type']);
-        $this->assertSame($payload, $normalized['payload']);
-
-        /** @var AfterTurnCommitEventSummary $restored */
-        $restored = $this->serializer->denormalize(
-            $normalized,
-            AfterTurnCommitEventSummary::class,
-        );
-
-        $this->assertInstanceOf(AfterTurnCommitEventSummary::class, $restored);
-        $this->assertSame(10, $restored->seq);
-        $this->assertSame('agent_command_applied', $restored->type);
-        $this->assertSame($payload, $restored->payload);
+        // AfterTurnCommitEventSummary no longer requires a payload field.
+        // The commit-time subscriber approach was superseded by the
+        // blocking-poll mechanism; no subscriber reads event payload data.
+        $event = new AfterTurnCommitEventSummary(seq: 10, type: 'agent_command_applied');
+        $this->assertSame(10, $event->seq);
+        $this->assertSame('agent_command_applied', $event->type);
     }
 
 }
