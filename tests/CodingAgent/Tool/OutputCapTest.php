@@ -401,8 +401,8 @@ final class OutputCapTest extends TestCase
      */
     private function extractPathFromNotice(string $notice): ?string
     {
-        // The notice contains a "Saved to: <path>" line
-        if (preg_match('/Saved to: (.+\.txt)/', $notice, $matches)) {
+        // The notice contains a "Saved for audit at: <path>" line
+        if (preg_match('/Saved for audit at: (.+\.txt)/', $notice, $matches)) {
             return $matches[1];
         }
 

@@ -31,8 +31,8 @@ final readonly class TranscriptBlockRenderer
      */
     public function renderBlock(TranscriptBlock $block, TuiRenderContext $context): array
     {
-        $prefix = $this->prefixFor($block->kind);
-        $color = $this->colorFor($block->kind);
+        $prefix = $this->prefixFor($block);
+        $color = $this->colorFor($block);
         $displayText = $this->displayTextFor($block);
         $suffix = $block->streaming ? '...' : '';
 
@@ -50,9 +50,18 @@ final readonly class TranscriptBlockRenderer
 
     /* ───────── Prefix / color / text helpers ───────── */
 
-    private function prefixFor(TranscriptBlockKindEnum $kind): string
+    private function prefixFor(TranscriptBlock $block): string
     {
-        return match ($kind) {
+        // Output-cap System blocks get a warning icon instead of the
+        // generic · prefix so they are visually distinct in the transcript.
+        if (TranscriptBlockKindEnum::System === $block->kind) {
+            $noticeType = $block->meta['notice_type'] ?? '';
+            if ('output_cap' === $noticeType) {
+                return '  ⚠';
+            }
+        }
+
+        return match ($block->kind) {
             TranscriptBlockKindEnum::UserMessage => '  ❯',
             TranscriptBlockKindEnum::AssistantMessage => '  ◇',
             TranscriptBlockKindEnum::AssistantThinking => '  ⋯',
@@ -67,9 +76,17 @@ final readonly class TranscriptBlockRenderer
         };
     }
 
-    private function colorFor(TranscriptBlockKindEnum $kind): ThemeColorEnum
+    private function colorFor(TranscriptBlock $block): ThemeColorEnum
     {
-        return match ($kind) {
+        // Output-cap System blocks use Warning colour for prominence.
+        if (TranscriptBlockKindEnum::System === $block->kind) {
+            $noticeType = $block->meta['notice_type'] ?? '';
+            if ('output_cap' === $noticeType) {
+                return ThemeColorEnum::Warning;
+            }
+        }
+
+        return match ($block->kind) {
             TranscriptBlockKindEnum::UserMessage => ThemeColorEnum::UserMessage,
             TranscriptBlockKindEnum::AssistantMessage => ThemeColorEnum::AssistantMessage,
             TranscriptBlockKindEnum::AssistantThinking => ThemeColorEnum::ThinkingText,

@@ -333,18 +333,24 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
         $charCount = $p['output_cap_char_count'] ?? null;
         $savedPath = $p['output_cap_saved_path'] ?? null;
 
+        // Use formatted numbers with thousands separators.
+        $capFmt = null !== $cap ? number_format($cap) : null;
+        $charCountFmt = null !== $charCount ? number_format($charCount) : null;
+
         $parts = ['Output was capped'];
-        if (null !== $cap) {
-            $parts[] = \sprintf('(%d character limit)', $cap);
-        }
-        if (null !== $charCount) {
-            $parts[] = \sprintf('%d total characters', $charCount);
+        if (null !== $capFmt && null !== $charCountFmt) {
+            $parts[] = \sprintf('%s visible chars of %s', $capFmt, $charCountFmt);
+        } elseif (null !== $capFmt) {
+            $parts[] = \sprintf('%s character limit', $capFmt);
+        } elseif (null !== $charCountFmt) {
+            $parts[] = \sprintf('%s total characters', $charCountFmt);
         }
         if (null !== $savedPath) {
             $parts[] = 'full output saved for audit';
         }
 
-        $text = implode(' — ', $parts);
+        // Tell the user that the model received follow-up guidance.
+        $text = implode(' — ', $parts).".\nModel was instructed to continue with targeted reads/search, not to rerun the tool or read the saved file wholesale.";
 
         $meta = [
             'tool_call_id' => $toolCallId,

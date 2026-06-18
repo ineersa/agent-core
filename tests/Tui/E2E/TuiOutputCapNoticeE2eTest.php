@@ -110,29 +110,33 @@ final class TuiOutputCapNoticeE2eTest extends TestCase
             // Capture full visible pane for assertions.
             $visiblePane = $this->tmux->capturePlainWithHistory($pane, 3000);
 
-            // 1. The System block prefix (·) must be visible.
-            self::assertStringContainsString('·', $visiblePane,
-                'System block prefix must be visible in transcript');
+            // 1. The output-cap System block prefix (⚠) must be visible.
+            self::assertStringContainsString('⚠', $visiblePane,
+                'Output-cap System block warning icon must be visible in transcript');
 
             // 2. The "Output was capped" text must appear.
             self::assertStringContainsString('Output was capped', $visiblePane,
                 'Output cap notice text must be visible in transcript');
 
-            // 3. Cap metadata (character limit and total characters) must appear.
-            self::assertStringContainsString('20000 character limit', $visiblePane,
+            // 3. The guidance text telling user what model saw must appear.
+            self::assertStringContainsString('Model was instructed', $visiblePane,
+                'Guidance text about model instructions must be visible in transcript');
+
+            // 4. Cap metadata (character limit and total characters) must appear.
+            self::assertStringContainsString('20,000 character limit', $visiblePane,
                 'Output cap limit must be visible in transcript');
-            self::assertStringContainsString('50000 total characters', $visiblePane,
+            self::assertStringContainsString('50,000 total characters', $visiblePane,
                 'Character count must be visible in transcript');
 
-            // 4. The "saved for audit" message must appear.
+            // 5. The "saved for audit" message must appear.
             self::assertStringContainsString('saved for audit', $visiblePane,
                 '"saved for audit" text must be visible in transcript');
 
-            // 5. A ToolResult block with the original capped text must also be visible.
-            self::assertStringContainsString('Output capped to', $visiblePane,
+            // 6. A ToolResult block with the original capped text must also be visible.
+            self::assertStringContainsString('[Output capped to', $visiblePane,
                 'Tool result with capped text must be visible in transcript');
 
-            // 6. The session ID appears in the footer.
+            // 7. The session ID appears in the footer.
             self::assertStringContainsString($sessionId, $visiblePane,
                 'The exact session ID should be visible in the footer');
 
@@ -245,7 +249,7 @@ final class TuiOutputCapNoticeE2eTest extends TestCase
                 'tool_call_id' => 'call_read_cap_001',
                 'order_index' => 0,
                 'is_error' => false,
-                'result' => "[Output capped to 20000 characters]\n\nFull output: 50000 characters (~12500 tokens).\nSaved for audit at: /tmp/cap/cap-lines.txt\n\nDo NOT rerun the same full command.\nDo NOT read the saved file in full.\n\nInstead, use targeted tool calls to continue:\n• Read more from a file: `read path=<path> offset=<next_line> limit=<lines>`\n• Search for known text: `grep pattern=<pattern> path=<path>`\n• Request a summary of the output and I will help.\n\nIf you must inspect the raw saved output, use `read` with a small offset and limit.\n",
+                'result' => "[Output capped to 20000 characters]\n\nFull output: 50000 characters (~12500 tokens).\nSaved for audit at: /tmp/cap/cap-lines.txt\n\nDo NOT rerun the same full command/tool call.\nDo NOT read the saved file in full.\n\nUse targeted tool calls to continue reading:\n• Read more from the file: `read path=<path> offset=<next_line> limit=<lines>`\n• Search for relevant content or ask for a summary\n\nIf you must inspect the raw saved output, use `read` with a small window.\n",
             ],
             'ts' => $now,
         ];

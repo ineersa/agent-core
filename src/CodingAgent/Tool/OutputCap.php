@@ -231,10 +231,18 @@ final class OutputCap
     /**
      * Build a model-facing notice about capped output.
      *
-     * Gives clear, tool-first instructions: do not rerun the full command,
-     * do not read the saved file wholesale. Prefer first-class tools
-     * (read with offset/limit, targeted search with available tools).
-     * Shell commands are mentioned only as a secondary fallback.
+     * The first line format is parsed by the runtime translator to extract
+     * structured metadata (cap limit, char count, saved path) for TUI
+     * projection.  Keep the first-line marker and key labels stable:
+     *
+     *   "[Output capped to %d characters]" → output_cap_limit
+     *   "Full output: %d characters"       → output_cap_char_count
+     *   "Saved for audit at: %s"           → output_cap_saved_path
+     *
+     * The model receives clear, tool-first follow-up guidance: no bare
+     * shell commands, no rerunning full tools, no reading the saved file
+     * wholesale.  Prefer first-class tools (read with offset/limit,
+     * targeted search).
      */
     private function buildCappedNotice(string $fullText, int $cap, string $savedPath): string
     {
@@ -242,9 +250,8 @@ final class OutputCap
         $tokenEstimate = (int) ceil($charCount / 4);
 
         return \sprintf(
-            "[Output capped to %d characters, full output saved to %s]\n\nFull output: %d characters (~%d tokens).\nSaved to: %s\n\nDo NOT rerun the same full command/tool call.\nDo NOT read the saved file in full.\n\nInstead, use targeted tool calls to continue:\n• Read more of a file: `read path=<path> offset=<next_line> limit=<lines>`\n• Search for relevant content: use available search tools or targeted shell commands\n• Request a summary of the output\n\nIf you must inspect the raw saved output, use `read` with a small offset and limit.\n",
+            "[Output capped to %d characters]\n\nFull output: %d characters (~%d tokens).\nSaved for audit at: %s\n\nDo NOT rerun the same full command/tool call.\nDo NOT read the saved file in full.\n\nUse targeted tool calls to continue reading:\n• Read more from the file: `read path=<path> offset=<next_line> limit=<lines>`\n• Search for relevant content or ask for a summary\n\nIf you must inspect the raw saved output, use `read` with a small window.\n",
             $cap,
-            $savedPath,
             $charCount,
             $tokenEstimate,
             $savedPath,
