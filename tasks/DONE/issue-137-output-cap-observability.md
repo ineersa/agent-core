@@ -45,14 +45,14 @@ Testing skill and `tests/AGENTS.md` were read before proposing validation. This 
 - Focused validation uses Castor only: relevant `castor test --filter=...`, `castor test:controller-replay` as needed, `castor test:tui` for TUI proof, `castor deptrac`, `castor phpstan`, `castor cs-check`, and final deterministic `castor check` via task workflow.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CANCELLED
 Branch: task/issue-137-output-cap-observability
 Worktree: /home/ineersa/projects/agent-core-worktrees/issue-137-output-cap-observability
 Fork run: tg4ktdw543t4
 PR URL: https://github.com/ineersa/agent-core/pull/164
 PR Status: closed
 Started: 2026-06-17T23:00:56.520Z
-Completed:
+Completed: 2026-06-18T17:20:16.293Z
 
 ## Work log
 - Created: 2026-06-17T22:52:38.824Z
@@ -204,3 +204,6 @@ Completed:
 
 ## Task workflow update - 2026-06-18T17:17:38.802Z
 - Summary: Cancelled at user request. PR #164 is closed/rejected, main contamination was reverted by PR #165, and replacement task issue-137-model-notification-system was created for a clean plan-first restart. Because DONE workflow would merge the rejected branch, this task will be closed manually as a cancelled record and the rejected local worktree will be removed without merging.
+
+## Task workflow update - 2026-06-18T17:20:16.293Z
+- Summary: Task cancelled at user request. PR #164 remains closed/rejected. Rejected local worktree `/home/ineersa/projects/agent-core-worktrees/issue-137-output-cap-observability` was removed and local branch `task/issue-137-output-cap-observability` was deleted without merging. Replacement task `issue-137-model-notification-system` tracks the clean restart.
