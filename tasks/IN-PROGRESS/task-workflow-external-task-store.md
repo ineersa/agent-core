@@ -33,14 +33,23 @@ Open design details to decide during implementation:
 - Validation covers task list/create/update/move behavior against an external task root and worktree creation behavior including `.idea` path rewrite.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/task-workflow-external-task-store
+Worktree: /home/ineersa/projects/agent-core-worktrees/task-workflow-external-task-store
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-18T02:02:21.061Z
 Completed:
 
 ## Work log
 - Created: 2026-06-18T01:54:42.880Z
+
+## Task workflow update - 2026-06-18T02:02:21.061Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/task-workflow-external-task-store.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/task-workflow-external-task-store.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/task-workflow-external-task-store.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/task-workflow-external-task-store.
+- Validation: Pre-start: `/home/ineersa/projects/agent-core-tasks` exists, contains copied current task board, and is initialized as a clean standalone git repo at commit b024b77.; Pre-start: `/home/ineersa/projects/agent-core` main checkout clean/synced with origin.
+- Summary: Starting implementation. Goal: move mutable task board out of agent-core into `/home/ineersa/projects/agent-core-tasks`, refactor `.pi/extensions/task-workflow.ts` into a configurable external task-root workflow with no task metadata commits to the agent-core code repo, update docs/skills/prompts, and copy/rewrite `.idea` into task worktrees.
