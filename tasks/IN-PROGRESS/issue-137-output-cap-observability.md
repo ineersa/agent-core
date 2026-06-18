@@ -50,7 +50,7 @@ Branch: task/issue-137-output-cap-observability
 Worktree: /home/ineersa/projects/agent-core-worktrees/issue-137-output-cap-observability
 Fork run: tg4ktdw543t4
 PR URL: https://github.com/ineersa/agent-core/pull/164
-PR Status: open
+PR Status: closed
 Started: 2026-06-17T23:00:56.520Z
 Completed:
 
@@ -194,3 +194,10 @@ Completed:
 - Reusable learning: output cap should emit a generic model notification with exact model-facing text and structured metadata; TUI/events should project generic notifications, not infer or special-case output cap text.
 - Reusable learning: avoid test churn that encodes interim architecture. Tests should prove the generic contract and one output-cap integration, not every internal DTO/mapper branch.
 - Reusable learning: when an invariant evolves into a cross-cutting concern, stop and redesign instead of adding follow-up patches around the old shape.
+
+## Task workflow update - 2026-06-18T17:13:48.622Z
+- Updated PR Status: closed
+- Summary: PR #164 was closed/rejected by user. Current task branch/worktree is rejected architecture and must not be merged. Main contamination from early wrong-cwd commits was cleaned by separate rollback PR #165. This task is superseded by a new restart task that should design a generalized model-notification system first, then make output cap a producer/user of that system. Do not continue patching this branch unless explicitly requested for reference extraction only.
+- User rejected the branch as a no-go: output-cap-specific plumbing pierced through runtime/TUI/projection layers instead of introducing a generalized notification-to-model abstraction.
+- Restart direction: implement a notification-to-model system usable by output cap, SafeGuard, extensions, and future internal nudges; exact model-facing text and structured metadata should be first-class generic data; output cap should use that system instead of custom output_cap fields spread across layers.
+- Rollback completed separately: PR #165 reverted accidental issue-137 code from main and was moved to DONE.
