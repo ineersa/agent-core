@@ -55,12 +55,15 @@ final class CacheCommandStoreTest extends KernelTestCase
 
     protected function tearDown(): void
     {
-        // Restore exception handlers installed by kernel boot.
-        // Without this, PHPUnit reports "Test code or tested code did
-        // not remove its own exception handlers" on every test method.
-        static::ensureKernelShutdown();
-
+        // Let KernelTestCase::tearDown() handle kernel shutdown.
+        // It calls ensureKernelShutdown() which may re-boot the kernel,
+        // which re-registers the exception handler.
         parent::tearDown();
+        // Pop the exception handler that FrameworkBundle::boot() registered
+        // during kernel boot/shutdown. Without this, PHPUnit reports
+        // "Test code or tested code did not remove its own exception
+        // handlers" (risky) on every test method. Mirrors TraceReplayTest.
+        restore_exception_handler();
     }
 
     /**
