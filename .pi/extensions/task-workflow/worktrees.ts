@@ -8,7 +8,7 @@
 // - Merging task branches back into the integration checkout
 
 import { existsSync } from "node:fs";
-import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { join, resolve, dirname, basename } from "node:path";
 // @ts-ignore
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -117,7 +117,6 @@ async function findParentIdeaModule(worktreeBase: string): Promise<string | null
 
 	// Fallback: if exactly one .iml, use it
 	try {
-		const { readdir } = await import("node:fs/promises");
 		const entries = await readdir(ideaDir);
 		const imlFiles = entries.filter((e) => e.endsWith(".iml"));
 		if (imlFiles.length === 1) return join(ideaDir, imlFiles[0]);
@@ -158,10 +157,20 @@ export async function addWorktreeExclusions(
 	const startIdx = content.indexOf(startTag);
 	const endIdx = content.indexOf(endTag);
 
+	// Validate sentinel marker integrity
+	const hasStart = startIdx !== -1;
+	const hasEnd = endIdx !== -1;
+	if (hasStart !== hasEnd) {
+		return { updated: false, note: `Parent IDEA module has mismatched exclusion markers for ${slug} (${hasStart ? 'start-only' : 'end-only'}); skipping update to avoid corruption.` };
+	}
+	if (hasStart && endIdx < startIdx) {
+		return { updated: false, note: `Parent IDEA module has reversed exclusion markers for ${slug} (end before start); skipping update to avoid corruption.` };
+	}
+
 	const newBlock = buildExclusionBlock(slug);
 
-	if (startIdx !== -1 && endIdx !== -1) {
-		// Replace existing block
+	if (hasStart) {
+		// Replace existing block — both markers valid and ordered
 		content = content.slice(0, startIdx) + newBlock + content.slice(endIdx + endTag.length);
 	} else {
 		// Insert new block inside <content ...> element, before </content>
@@ -207,7 +216,17 @@ export async function removeWorktreeExclusions(
 	const startIdx = content.indexOf(startTag);
 	const endIdx = content.indexOf(endTag);
 
-	if (startIdx === -1 || endIdx === -1) {
+	// Validate sentinel marker integrity
+	const hasStart = startIdx !== -1;
+	const hasEnd = endIdx !== -1;
+	if (hasStart !== hasEnd) {
+		return { updated: false, note: `Parent IDEA module has mismatched exclusion markers for ${slug} (${hasStart ? 'start-only' : 'end-only'}); skipping cleanup to avoid corruption.` };
+	}
+	if (hasStart && endIdx < startIdx) {
+		return { updated: false, note: `Parent IDEA module has reversed exclusion markers for ${slug} (end before start); skipping cleanup to avoid corruption.` };
+	}
+
+	if (!hasStart) {
 		return { updated: false }; // No block — idempotent
 	}
 
@@ -341,15 +360,23 @@ export async function mergeTaskBranch(
 	notes.push(`Merged ${branch} into integration checkout.`, (merge.stdout || merge.stderr).trim());
 
 	if (options.cleanupWorktree) {
-		// Remove IDEA exclusions before removing worktree
 		const slug = task.file.replace(/\.md$/, "");
 		const base = dirname(worktree);
-		const { updated: exclusionsRemoved, note: exclusionNote } = await removeWorktreeExclusions(slug, base);
-		if (exclusionNote) notes.push(exclusionNote);
-		if (exclusionsRemoved) notes.push(`Removed IDEA exclusions for worktree ${worktree}.`);
 
+		// Remove worktree first; only clean up IDEA exclusions on success
 		const remove = await git(pi, codeRoot, ["worktree", "remove", worktree], signal);
-		notes.push(remove.code === 0 ? `Removed worktree ${worktree}.` : `Worktree cleanup failed: ${remove.stderr || remove.stdout}`);
+		if (remove.code !== 0) {
+			const msg = `Worktree cleanup failed: ${remove.stderr || remove.stdout}`;
+			notes.push(msg);
+			// Worktree still exists — keep exclusion block and add failure note
+			notes.push(`IDEA exclusions preserved for ${worktree} because worktree removal failed.`);
+		} else {
+			notes.push(`Removed worktree ${worktree}.`);
+			// Worktree gone — safe to remove IDEA exclusions
+			const { updated: exclusionsRemoved, note: exclusionNote } = await removeWorktreeExclusions(slug, base);
+			if (exclusionNote) notes.push(exclusionNote);
+			if (exclusionsRemoved) notes.push(`Removed IDEA exclusions for worktree ${worktree}.`);
+		}
 	}
 	if (options.deleteBranch) {
 		const del = await git(pi, codeRoot, ["branch", "-d", branch], signal);
