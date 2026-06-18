@@ -48,7 +48,7 @@ Testing skill and `tests/AGENTS.md` were read before proposing validation. This 
 Status: IN-PROGRESS
 Branch: task/issue-137-output-cap-observability
 Worktree: /home/ineersa/projects/agent-core-worktrees/issue-137-output-cap-observability
-Fork run: v8iqnnemj4f7
+Fork run: ku075annz469
 PR URL: https://github.com/ineersa/agent-core/pull/164
 PR Status: open
 Started: 2026-06-17T23:00:56.520Z
@@ -176,3 +176,8 @@ Completed:
 - Recorded fork run: v8iqnnemj4f7
 - Validation: v8iqnnemj4f7 reported castor check passed: 2739 tests, 8261 assertions, deptrac/phpstan/cs-check clean.; Parent grep after v8iqnnemj4f7 found forbidden parser logic remains: LlmPlatformAdapter str_starts_with + preg_match; RuntimeEventTranslator str_starts_with + preg_match; ToolProjectionSubscriber str_starts_with; OutputCapLlmTransformHook str_starts_with + str_contains fallback.
 - Summary: Fork v8iqnnemj4f7 pushed commit 933f97a15 and passed castor check, but it does NOT satisfy the user's clarified design constraint. It fixed raw JSON by preserving ToolResult text, but still infers output-cap notices by parsing marker text with str_starts_with/preg_match and even keeps a str_contains fallback in OutputCapLlmTransformHook. User explicitly requires no fallbacks and no marker parsing; notices/nudges must be structured system.notice-style data rendered as standard notice blocks. Follow-up fork required before CODE-REVIEW.
+
+## Task workflow update - 2026-06-18T16:41:21.394Z
+- Recorded fork run: ku075annz469
+- Validation: Forbidden production parser grep: zero src hits for str_contains/str_starts_with/preg_match on Output capped; only test fixture waits/assertions remain.; castor test:tui --filter=OutputCap failed: TuiOutputCapNoticeE2eTest timed out waiting for cap notice; last pane showed raw full tool output and generated image System block, but no output-cap System notice. Exit code 1.; Worktree remains clean after failed focused TUI run.
+- Summary: Fork ku075annz469 committed 1ea4e19a2 and removed production text-parser cap detection in favor of structured ToolHandlerResultDTO/OutputCapResultDTO. Parent review found the design direction is closer, but not ready for CODE-REVIEW: focused TUI E2E fails because central cap metadata in the fixture is not marked output_cap=true and, more importantly, the current projection intentionally leaves raw tool output visible for central caps. That regresses the original observability bug: TUI can still show raw/full output while model saw the cap notice. Also per-tool caps appear duplicated because ToolResult shows the cap notice and a System notice shows the same cap notice. Follow-up fork required before CODE-REVIEW.
