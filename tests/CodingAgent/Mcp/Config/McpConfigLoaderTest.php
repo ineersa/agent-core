@@ -521,8 +521,24 @@ class McpConfigLoaderTest extends TestCase
         $this->assertSame(McpTransportTypeEnum::HTTP, $http->transportType);
         $this->assertSame(60000, $http->timeoutMs);
         $this->assertSame(['unsafe_tool'], $http->excludeTools);
+        $this->assertSame(['unsafe_tool'], $http->excludeTools);
     }
 
+    // ─── Edge case: mcpServers present but wrong type ───
+
+    public function testMpcServersNotAnObjectFailsClearly(): void
+    {
+        file_put_contents($this->projectDir.'/.hatfield/mcp.json', json_encode([
+            'mcpServers' => 'this-should-be-an-object',
+        ], \JSON_THROW_ON_ERROR));
+
+        $loader = $this->createLoader();
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessageMatches('/mcpServers.*must be a JSON object/i');
+
+        $loader->load();
+    }
     // ─── Helper ───
 
     private function createLoader(): McpConfigLoader

@@ -44,19 +44,14 @@ final class McpConfigLoader
         $globalRaw = $this->loadJsonFile('~/.hatfield/mcp.json', $this->pathResolver->getHomeDir());
         $projectRaw = $this->loadJsonFile($this->projectCwd.'/.hatfield/mcp.json', $this->projectCwd);
 
-        // Validate raw configs
-        $globalServers = $globalRaw['mcpServers'] ?? [];
-        if (\is_array($globalServers) && [] !== $globalServers) {
+        $globalServers = $this->extractServers($globalRaw, '~/.hatfield/mcp.json');
+        if ([] !== $globalServers) {
             $globalServers = $this->validator->validate($globalServers, null);
-        } else {
-            $globalServers = [];
         }
 
-        $projectServers = $projectRaw['mcpServers'] ?? [];
-        if (\is_array($projectServers) && [] !== $projectServers) {
+        $projectServers = $this->extractServers($projectRaw, $this->projectCwd.'/.hatfield/mcp.json');
+        if ([] !== $projectServers) {
             $projectServers = $this->validator->validate($projectServers, $globalServers);
-        } else {
-            $projectServers = [];
         }
 
         // Merge: project overrides global by whole-server replacement
@@ -126,6 +121,34 @@ final class McpConfigLoader
         }
 
         return $decoded;
+    }
+
+    /**
+     * Extract mcpServers from a decoded JSON config.
+     *
+     * Returns empty array when the key is missing (normal: no servers configured).
+     * Throws when the key is present but not a JSON object/array.
+     *
+     * @param array<string, mixed> $raw    Decoded JSON config
+     * @param string               $source Human-readable file path for error messages
+     *
+     * @return array<string, mixed>
+     *
+     * @throws \RuntimeException when mcpServers is present but not a JSON object
+     */
+    private function extractServers(array $raw, string $source): array
+    {
+        if (!\array_key_exists('mcpServers', $raw)) {
+            return [];
+        }
+
+        $servers = $raw['mcpServers'];
+
+        if (!\is_array($servers)) {
+            throw new \RuntimeException(\sprintf('MCP config file "%s": "mcpServers" must be a JSON object, got %s.', $source, \gettype($servers)));
+        }
+
+        return $servers;
     }
 
     /**

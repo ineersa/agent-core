@@ -92,6 +92,10 @@ final class McpSdkClientAdapter implements McpClientInterface
         return [
             'content' => $content,
             'isError' => $result->isError,
+            // TODO Phase 3: surface CallToolResult::structuredContent and meta
+            // in McpClientInterface::callTool() return shape before runtime tool
+            // invocation is wired. These fields are intentionally omitted in Phase 0
+            // to keep the boundary minimal.
         ];
     }
 
@@ -138,6 +142,10 @@ final class McpSdkClientAdapter implements McpClientInterface
     /**
      * Map an EmbeddedResource to a PHP-native array, resolving the nested
      * TextResourceContents or BlobResourceContents.
+     *
+     * TODO Phase 3: preserve EmbeddedResource annotations and nested resource
+     * _meta fields in the native return shape. These metadata fields are
+     * intentionally not mapped in Phase 0 to keep the boundary minimal.
      *
      * @return array<string, mixed>
      */
