@@ -260,6 +260,18 @@ parameters:
         - type: directory
           value: src/CodingAgent/Tool/.*
 
+    - name: AppMcpConfig
+      collectors:
+        - type: directory
+          value: src/CodingAgent/Mcp/Config/.*
+    - name: AppMcpClient
+      collectors:
+        - type: directory
+          value: src/CodingAgent/Mcp/Client/.*
+    - name: McpSdk
+      collectors:
+        - type: classNameRegex
+          value: '#^Mcp\\\\#i'
   ruleset:
     TuiApplication:
       - AppRuntimeContract
@@ -504,6 +516,15 @@ parameters:
       - AppConfig
       - SymfonyAiPlatform
       - SymfonyEventDispatcher
+
+    AppMcpConfig:
+      - AppConfig
+
+    AppMcpClient:
+      - AppMcpConfig
+      - McpSdk
+
+    McpSdk: ~
 
     AppExtensionApi: ~
 
