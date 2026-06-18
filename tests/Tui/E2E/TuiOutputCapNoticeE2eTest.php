@@ -122,21 +122,17 @@ final class TuiOutputCapNoticeE2eTest extends TestCase
             self::assertStringContainsString('Model was instructed', $visiblePane,
                 'Guidance text about model instructions must be visible in transcript');
 
-            // 4. Cap metadata (character limit and total characters) must appear.
-            self::assertStringContainsString('20,000 character limit', $visiblePane,
-                'Output cap limit must be visible in transcript');
-            self::assertStringContainsString('50,000 total characters', $visiblePane,
-                'Character count must be visible in transcript');
+            // 4. Cap metadata (formatted visible chars and total) must appear.
+            self::assertStringContainsString('20,000 visible chars of 50,000', $visiblePane,
+                'Output cap formatted metadata must be visible in transcript');
+            self::assertStringContainsString('full output saved for audit', $visiblePane,
+                'Saved-for-audit message must be visible in transcript');
 
-            // 5. The "saved for audit" message must appear.
-            self::assertStringContainsString('saved for audit', $visiblePane,
-                '"saved for audit" text must be visible in transcript');
-
-            // 6. A ToolResult block with the original capped text must also be visible.
+            // 5. A ToolResult block with the original capped text must also be visible.
             self::assertStringContainsString('[Output capped to', $visiblePane,
                 'Tool result with capped text must be visible in transcript');
 
-            // 7. The session ID appears in the footer.
+            // 6. The session ID appears in the footer.
             self::assertStringContainsString($sessionId, $visiblePane,
                 'The exact session ID should be visible in the footer');
 
