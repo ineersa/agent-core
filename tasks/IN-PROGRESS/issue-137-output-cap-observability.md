@@ -48,7 +48,7 @@ Testing skill and `tests/AGENTS.md` were read before proposing validation. This 
 Status: IN-PROGRESS
 Branch: task/issue-137-output-cap-observability
 Worktree: /home/ineersa/projects/agent-core-worktrees/issue-137-output-cap-observability
-Fork run: ku075annz469
+Fork run: tg4ktdw543t4
 PR URL: https://github.com/ineersa/agent-core/pull/164
 PR Status: open
 Started: 2026-06-17T23:00:56.520Z
@@ -181,3 +181,8 @@ Completed:
 - Recorded fork run: ku075annz469
 - Validation: Forbidden production parser grep: zero src hits for str_contains/str_starts_with/preg_match on Output capped; only test fixture waits/assertions remain.; castor test:tui --filter=OutputCap failed: TuiOutputCapNoticeE2eTest timed out waiting for cap notice; last pane showed raw full tool output and generated image System block, but no output-cap System notice. Exit code 1.; Worktree remains clean after failed focused TUI run.
 - Summary: Fork ku075annz469 committed 1ea4e19a2 and removed production text-parser cap detection in favor of structured ToolHandlerResultDTO/OutputCapResultDTO. Parent review found the design direction is closer, but not ready for CODE-REVIEW: focused TUI E2E fails because central cap metadata in the fixture is not marked output_cap=true and, more importantly, the current projection intentionally leaves raw tool output visible for central caps. That regresses the original observability bug: TUI can still show raw/full output while model saw the cap notice. Also per-tool caps appear duplicated because ToolResult shows the cap notice and a System notice shows the same cap notice. Follow-up fork required before CODE-REVIEW.
+
+## Task workflow update - 2026-06-18T16:50:05.360Z
+- Recorded fork run: tg4ktdw543t4
+- Validation: Parent verified worktree clean at cb4eb54c5 and branch pushed.; Forbidden production parser grep after cb4eb54c5: zero src hits; test literal waits/assertions remain only in tests/Tui/E2E/TuiOutputCapNoticeE2eTest.php and live controller test helper.; Parent reviewed ToolProjectionSubscriber, TranscriptBlockRenderer, OutputCap PHPDoc, and diff of cs-fix-only files.
+- Summary: Fork tg4ktdw543t4 committed cb4eb54c5 with compact ToolResult + System notice rendering and passed focused validations. Parent verification found one remaining production/test mismatch before CODE-REVIEW: per-tool cap compaction currently uses tool_name from tool_execution.completed payload, but RuntimeEventTranslator does not include tool_name in completed/failed payloads; the ToolResult block already has tool_name in metadata from tool_execution.started. Current tests include tool_name in completed/failed events, so they don't catch the live path. Also OutputCap::buildCappedNotice PHPDoc has duplicated guidance paragraph. Launching a tiny follow-up fork to fallback to existing ToolResult meta tool_name, adjust tests to omit tool_name on completed/failed events, and clean the duplicate comment.
