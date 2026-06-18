@@ -1,31 +1,31 @@
 {
-  "packages": [],
-  "theme": "cyberpunk",
-  "observational-memory": {
-    "observeAfterTokens": 10000,
-    "reflectAfterTokens": 40000,
-    "compactAfterTokens": 80000,
-    "passive": false,
-    "debugLog": false,
-    "model": {
-      "provider": "llama.cpp",
-      "id": "flash"
+    "packages": [],
+    "theme": "cyberpunk",
+    "observational-memory": {
+        "observeAfterTokens": 10000,
+        "reflectAfterTokens": 40000,
+        "compactAfterTokens": 80000,
+        "passive": false,
+        "debugLog": false,
+        "model": {
+            "provider": "llama.cpp",
+            "id": "flash"
+        }
+    },
+    "hideThinkingBlock": false,
+    "compaction": {
+        "enabled": true,
+        "keepRecentTokens": 20000,
+        "reserveTokens": 16384
+    },
+    "pi-fork": {
+        "defaultModel": "deepseek/deepseek-v4-pro",
+        "defaultThinking": "xhigh"
+    },
+    "taskWorkflow": {
+        "taskRoot": "/home/ineersa/projects/agent-core-tasks"
+    },
+    "jetbrainsIndex": {
+        "url": "http://127.0.0.1:29175/index-mcp/streamable-http"
     }
-  },
-  "hideThinkingBlock": false,
-  "compaction": {
-    "enabled": true,
-    "keepRecentTokens": 20000,
-    "reserveTokens": 16384
-  },
-  "pi-fork": {
-    "defaultModel": "deepseek/deepseek-v4-flash",
-    "defaultThinking": "xhigh"
-  },
-  "taskWorkflow": {
-    "taskRoot": "/home/ineersa/projects/agent-core-tasks"
-  },
-  "jetbrainsIndex": {
-    "url": "http://127.0.0.1:29175/index-mcp/streamable-http"
-  }
 }
