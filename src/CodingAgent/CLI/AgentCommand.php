@@ -212,7 +212,7 @@ final class AgentCommand
 
     private function runHeadless(OutputInterface $output): int
     {
-        $stdin = fopen('php://stdin', 'r');
+        $stdin = fopen('php://stdin', 'rb');
         if (false === $stdin) {
             throw new \RuntimeException('Cannot open stdin for headless mode');
         }

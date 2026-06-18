@@ -21,6 +21,13 @@ use Symfony\Component\Messenger\MessageBusInterface;
 
 final readonly class ApplyCommandHandler implements RunMessageHandler
 {
+    /** @var list<CoreCommandKind::*> */
+    private const REJECT_ON_CANCEL_KINDS = [
+        CoreCommandKind::Steer,
+        CoreCommandKind::FollowUp,
+        CoreCommandKind::Continue,
+    ];
+
     public function __construct(
         private CommandStoreInterface $commandStore,
         private CommandRouter $commandRouter,
@@ -209,7 +216,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         // consumed after cancel/restart.  This prevents #152 where
         // queued steer/follow-up from before a cancel could be drained
         // unexpectedly after the run restarts.
-        $rejectedKinds = [CoreCommandKind::Steer, CoreCommandKind::FollowUp, CoreCommandKind::Continue];
+        $rejectedKinds = self::REJECT_ON_CANCEL_KINDS;
         $rejectedCommands = [];
         foreach ($rejectedKinds as $kind) {
             $rejected = $this->commandStore->rejectPendingByKind(

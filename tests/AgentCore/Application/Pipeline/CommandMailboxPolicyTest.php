@@ -301,8 +301,9 @@ final class CommandMailboxPolicyTest extends TestCase
             $fixture->commandBus->messages,
             static fn (object $message): bool => $message instanceof AdvanceRun,
         ));
-        // One from ApplyCommandHandler queuing the follow_up, one from stop-boundary shouldContinue
-        $this->assertCount(2, $advanceCommands);
+        // Only one from stop-boundary shouldContinue (ApplyCommandHandler no
+        // longer dispatches AdvanceRun while the run is active).
+        $this->assertCount(1, $advanceCommands);
     }
 
     public function testStopBoundaryReturnsShouldContinueTrueWhenSteerApplied(): void
@@ -355,8 +356,9 @@ final class CommandMailboxPolicyTest extends TestCase
             $fixture->commandBus->messages,
             static fn (object $message): bool => $message instanceof AdvanceRun,
         ));
-        // One from ApplyCommandHandler queuing the steer, one from stop-boundary shouldContinue
-        $this->assertCount(2, $advanceCommands);
+        // Only one from stop-boundary shouldContinue (ApplyCommandHandler no
+        // longer dispatches AdvanceRun while the run is active).
+        $this->assertCount(1, $advanceCommands);
     }
 
     public function testStopBoundaryReturnsFalseWhenNoCommandsPending(): void

@@ -263,7 +263,7 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             return false; // Graceful degradation: caller already checked readability
         }
 
-        $handle = @fopen($targetPath, 'r');
+        $handle = @fopen($targetPath, 'rb');
         if (false === $handle) {
             return false; // Graceful degradation: file was readable, now is not
         }

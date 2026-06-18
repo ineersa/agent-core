@@ -221,4 +221,135 @@ final class AdvanceRunHandlerTest extends TestCase
         $this->assertSame([], $result->events);
         $this->assertSame([], $result->effects);
     }
+
+    public function testAdvanceWithUnresolvedPendingToolCallsIsNoOp(): void
+    {
+        $commandStore = new InMemoryCommandStore();
+        $commandMailboxPolicy = new CommandMailboxPolicy(
+            commandStore: $commandStore,
+            commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+        );
+
+        $handler = new AdvanceRunHandler(
+            commandMailboxPolicy: $commandMailboxPolicy,
+            eventFactory: new EventFactory(),
+        );
+
+        $state = RunStateBuilder::create('run-pending-tools')
+            ->withStatus(RunStatus::Running)
+            ->withVersion(5)
+            ->withTurnNo(2)
+            ->withLastSeq(10)
+            ->withActiveStepId('turn-2-step')
+            ->withPendingToolCalls(['tool-call-1' => false])
+            ->build();
+
+        $this->assertFalse($state->pendingToolCalls['tool-call-1'], 'Precondition: tool call not completed');
+
+        $message = AdvanceRunMessageBuilder::create('run-pending-tools')
+            ->withTurnNo(2)
+            ->withStepId('turn-3-step')
+            ->withIdempotencyKey('advance-pending-tools-1')
+            ->build();
+
+        $result = $handler->handle($message, $state);
+
+        // AdvanceRun must be a no-op when there are unresolved tool calls
+        $this->assertNull($result->nextState, 'No state change when tool calls are still pending');
+        $this->assertSame([], $result->events, 'No events when tool calls are still pending');
+        $this->assertSame([], $result->effects, 'No effects when tool calls are still pending');
+        $this->assertSame([], $result->postCommit, 'No post-commit callbacks when tool calls are still pending');
+    }
+
+    public function testAdvanceWithMixedUnresolvedPendingToolCallsIsNoOp(): void
+    {
+        $commandStore = new InMemoryCommandStore();
+        $commandMailboxPolicy = new CommandMailboxPolicy(
+            commandStore: $commandStore,
+            commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+        );
+
+        $handler = new AdvanceRunHandler(
+            commandMailboxPolicy: $commandMailboxPolicy,
+            eventFactory: new EventFactory(),
+        );
+
+        $state = RunStateBuilder::create('run-mixed-tools')
+            ->withStatus(RunStatus::Running)
+            ->withVersion(6)
+            ->withTurnNo(2)
+            ->withLastSeq(12)
+            ->withActiveStepId('turn-2-step')
+            ->withPendingToolCalls([
+                'tool-call-1' => true,
+                'tool-call-2' => false,
+            ])
+            ->build();
+
+        $this->assertTrue($state->pendingToolCalls['tool-call-1'], 'Precondition: tool-call-1 completed');
+        $this->assertFalse($state->pendingToolCalls['tool-call-2'], 'Precondition: tool-call-2 not completed');
+
+        $message = AdvanceRunMessageBuilder::create('run-mixed-tools')
+            ->withTurnNo(2)
+            ->withStepId('turn-3-step')
+            ->withIdempotencyKey('advance-mixed-1')
+            ->build();
+
+        $result = $handler->handle($message, $state);
+
+        // Must be no-op when ANY tool call is unresolved
+        $this->assertNull($result->nextState, 'No state change when some tool calls are still pending');
+        $this->assertSame([], $result->events, 'No events when some tool calls are still pending');
+        $this->assertSame([], $result->effects, 'No effects when some tool calls are still pending');
+        $this->assertSame([], $result->postCommit, 'No post-commit callbacks when some tool calls are still pending');
+    }
+
+    public function testAdvanceWithAllResolvedPendingToolCallsProceeds(): void
+    {
+        $commandStore = new InMemoryCommandStore();
+        $commandMailboxPolicy = new CommandMailboxPolicy(
+            commandStore: $commandStore,
+            commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+        );
+        $metrics = new RunMetrics();
+
+        $handler = new AdvanceRunHandler(
+            commandMailboxPolicy: $commandMailboxPolicy,
+            eventFactory: new EventFactory(),
+            metrics: $metrics,
+        );
+
+        $state = RunStateBuilder::create('run-all-resolved')
+            ->withStatus(RunStatus::Running)
+            ->withVersion(7)
+            ->withTurnNo(2)
+            ->withLastSeq(14)
+            ->withActiveStepId('turn-2-step')
+            ->withPendingToolCalls([
+                'tool-call-1' => true,
+                'tool-call-2' => true,
+            ])
+            ->build();
+
+        $this->assertTrue($state->pendingToolCalls['tool-call-1'], 'Precondition: tool-call-1 completed');
+        $this->assertTrue($state->pendingToolCalls['tool-call-2'], 'Precondition: tool-call-2 completed');
+
+        $message = AdvanceRunMessageBuilder::create('run-all-resolved')
+            ->withTurnNo(2)
+            ->withStepId('turn-3-step')
+            ->withIdempotencyKey('advance-all-resolved-1')
+            ->build();
+
+        $result = $handler->handle($message, $state);
+
+        // Should proceed normally when all pending tool calls are resolved
+        $this->assertNotNull($result->nextState, 'State should change when all tool calls resolved');
+        $this->assertNotNull($result->nextState->status);
+        $this->assertNotEmpty($result->events, 'Events should be produced when tool calls resolved');
+        $this->assertContains(
+            'turn_advanced',
+            array_map(static fn ($e) => $e->type, $result->events),
+            'Expected turn_advanced event',
+        );
+    }
 }
