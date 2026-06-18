@@ -45,12 +45,12 @@ Testing skill and `tests/AGENTS.md` were read before proposing validation. This 
 - Focused validation uses Castor only: relevant `castor test --filter=...`, `castor test:controller-replay` as needed, `castor test:tui` for TUI proof, `castor deptrac`, `castor phpstan`, `castor cs-check`, and final deterministic `castor check` via task workflow.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/issue-137-output-cap-observability
 Worktree: /home/ineersa/projects/agent-core-worktrees/issue-137-output-cap-observability
 Fork run: nahs6w6vbp12
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/164
+PR Status: open
 Started: 2026-06-17T23:00:56.520Z
 Completed:
 
@@ -121,3 +121,13 @@ Completed:
 ## Task workflow update - 2026-06-18T02:56:42.125Z
 - Validation: `castor check`: FAIL overall.; `castor check` lanes: deptrac OK (0.9s); test FAIL (1 known failure in `CommandMailboxPolicyTest::testStopBoundaryReturnsShouldContinueTrueWhenFollowUpApplied`); test:controller-replay OK (1 test, 14 assertions); test:tui OK (9 tests, 96 assertions); phpstan OK (0 errors); cs-check FAIL on 10 pre-existing files: `.castor/helpers.php`, `AgentCommand.php`, `FileMentionIndexBuilder.php`, `SymfonyAiProviderFactory.php`, `LogReader.php`, `RuntimeEventEmitter.php`, `StdoutRuntimeEventSink.php`, `JsonlIdempotencyStore.php`, `EditFileTool.php`, `ViewImageTool.php`.; Worktree status after validation: clean.
 - Summary: Local task-to-pr validation ran `castor check` in the worktree. Deterministic TUI/controller replay/deptrac/phpstan lanes passed, but the full gate is not green because of known unrelated baseline failures: `CommandMailboxPolicyTest::testStopBoundaryReturnsShouldContinueTrueWhenFollowUpApplied` and cs-check on 10 pre-existing binary-mode fopen files. Worktree remains clean. CODE-REVIEW move is blocked until either those gate failures are fixed/accepted or user chooses how to handle unrelated gate cleanup.
+
+## Task workflow update - 2026-06-18T03:21:14.487Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Running deterministic castor check in worktree (timeout 1200s)...
+- castor check passed (39.4s).
+- Pushed task/issue-137-output-cap-observability to origin.
+- branch 'task/issue-137-output-cap-observability' set up to track 'origin/task/issue-137-output-cap-observability'.
+- Created PR: https://github.com/ineersa/agent-core/pull/164
+- Validation: Fork 242i86ergvo7: read testing skill and tests/AGENTS.md; merged origin/main into task branch; resolved 4 conflicts with branch evolved versions; fixed PlatformIntegrationTest for AgentMessageToolCallSequenceValidator and RuntimeEventTypeTest for SystemNotice enum.; Fork 242i86ergvo7: castor test targeted filter — 210/210 pass.; Fork 242i86ergvo7: castor test:tui --filter=OutputCap — pass (52 tests, 1 skipped llm-real).; Fork 242i86ergvo7: castor deptrac — 0 violations; castor phpstan — 0 errors; castor cs-check — clean.; Fork 242i86ergvo7: full castor check — pass (2736 tests, 8246 assertions, deptrac, controller-replay, TUI, phpstan, cs-check).
+- Summary: Ready for PR after synchronizing task branch with latest origin/main. Branch now includes merge commit f06014e4b, is 0 behind / 13 ahead, and preserves exact model-facing tool/generated-message visibility plus output-cap guidance/TUI behavior. SafeGuard-specific styling remains deferred by decision.
