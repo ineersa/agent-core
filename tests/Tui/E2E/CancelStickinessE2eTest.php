@@ -50,10 +50,11 @@ final class CancelStickinessE2eTest extends TestCase
      * Cancel a running turn and assert the status stays Cancelling
      * without regressing to Working.
      *
-     * Strategy: submit a prompt that triggers a tool-call fixture
-     * (multi-phase run gives time for cancel to propagate), then
-     * press Escape and verify the footer never shows "Working"
-     * after "Cancelling".
+     * Strategy: submit a prompt that triggers a bash tool-call fixture
+     * (sleep 15), wait for the tool-execution indicator (ToolResult
+     * "Running…" block) so Escape is guaranteed to land during the
+     * multi-second tool phase rather than the instant-replay LLM step,
+     * then verify the footer never shows "Working" after "Cancelling".
      */
     public function testCancellingDoesNotRevertToWorking(): void
     {
@@ -76,24 +77,25 @@ final class CancelStickinessE2eTest extends TestCase
             $this->tmux->sendKey($pane, 'C-u');
             usleep(100_000);
 
-            // Submit a prompt that triggers a slow bash tool call (sleep 3).
-            // Real bash execution gives the cancel mechanism several seconds to
-            // propagate, time for the TUI to render Cancelling, and time for
-            // the tmux capture to record it before the run ends.
-            $prompt = 'Run sleep 3';
-            $this->tmux->sendLiteral($pane, $prompt);
+            // Send a slow bash tool-call prompt (sleep 15). The 15-second
+            // window guarantees Escape always lands during tool execution, not
+            // the instant-replay LLM step. With `sleep 3` the tool could
+            // complete before Escape, especially with replay fixtures where
+            // LLM deltas are instantaneous.
+            $this->tmux->sendLiteral($pane, 'Run sleep 15');
             $this->tmux->sendKey($pane, 'Enter');
 
-            // Wait for the run to start (Working indicator appears).
-            $this->tmux->waitForCaptureContains($pane, '◐ Working', 5.0);
+            // Wait for the tool execution indicator: the ToolResult block
+            // "Running…" appears in the transcript only after
+            // tool_execution_started fires in the tool consumer.  During
+            // instant-replay LLM steps this is the ONLY reliable boundary
+            // between the LLM step (instant) and the tool execution phase.
+            // Escape sent immediately after this appears lands during the
+            // multi-second bash sleep, guaranteeing Cancelling renders.
+            $this->tmux->waitForHistoryContains($pane, 'Running', 10.0);
 
-            // Let the bash tool start executing (sleep 3) before sending
-            // Escape, so the cancel lands during tool execution rather than
-            // during LLM response processing. This gives the TUI at least
-            // one render cycle with Cancelling visible.
-            usleep(1_500_000);
-
-            // Now send Escape to cancel the run.
+            // Cancel the run — now guaranteed to land during tool execution,
+            // not during the instant-replay LLM step.
             $this->tmux->sendKey($pane, 'Escape');
 
             // Wait for the Cancelling status to appear.
@@ -150,7 +152,7 @@ final class CancelStickinessE2eTest extends TestCase
     {
         $fixturePaths = [];
 
-        // Use the bash-sleep fixture: triggers a real bash sleep 3,
+        // Use the bash-sleep fixture: triggers a real bash sleep 15,
         // giving the cancel mechanism several seconds to propagate and
         // the TUI time to render the Cancelling status.
         $toolCallFixture = __DIR__.'/fixtures/tui-tool-call-bash-sleep.json';
