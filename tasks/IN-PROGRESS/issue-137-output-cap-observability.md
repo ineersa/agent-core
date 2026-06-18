@@ -48,7 +48,7 @@ Testing skill and `tests/AGENTS.md` were read before proposing validation. This 
 Status: IN-PROGRESS
 Branch: task/issue-137-output-cap-observability
 Worktree: /home/ineersa/projects/agent-core-worktrees/issue-137-output-cap-observability
-Fork run: ogyf6t15ad4l
+Fork run: osilw4kokk9s
 PR URL: https://github.com/ineersa/agent-core/pull/164
 PR Status: open
 Started: 2026-06-17T23:00:56.520Z
@@ -149,3 +149,8 @@ Completed:
 - Validation: ogyf6t15ad4l: rg output_cap_notice/model_tool_inputs/ModelToolInput across src/tests — clean.; ogyf6t15ad4l: castor test focused filters — 173/173 and 150/150 pass.; ogyf6t15ad4l: castor test:tui --filter=OutputCap — pass (53 tests, 1 skipped llm-real).; ogyf6t15ad4l: castor deptrac — 0 violations; castor phpstan — 0 errors; castor cs-check — clean.
 - Summary: Review-iteration fork ogyf6t15ad4l completed and pushed commit efe66a8ce. Changes: removed redundant output_cap_notice writer/fallback and assertions, fixed OutputCapLlmTransformHook skip semantics to compare actual model-facing combinedText against path-specific cap, removed unused ModelInputMessageDTO::fromArray(), and added regression test for raw output under cap but JSON/model-facing text over cap.
 - Launched tiny follow-up fork osilw4kokk9s after parent verification noticed stale OutputCapLlmTransformHook comments still described raw_result/raw tool output length even though behavior now compares combined model-facing text. Scope: comment/PHPDoc cleanup only plus cs/phpstan/focused test.
+
+## Task workflow update - 2026-06-18T14:17:01.689Z
+- Recorded fork run: osilw4kokk9s
+- Validation: osilw4kokk9s: castor cs-check — clean.; osilw4kokk9s: castor phpstan — 0 errors.; osilw4kokk9s: castor test --filter=OutputCapLlmTransformHookTest — 14/14 pass, 62 assertions.; Parent verification: worktree clean at f7d8cf239; rg output_cap_notice/model_tool_inputs/ModelToolInput across src/tests — no hits.
+- Summary: Tiny follow-up fork osilw4kokk9s completed and pushed commit f7d8cf239. Change is comment/PHPDoc only in OutputCapLlmTransformHook: stale references to checking raw tool output were updated to say path cap is resolved via OutputCap::capForPath() and actual model-facing combinedText (including JSON wrapping) is compared against that cap. No behavior changes.
