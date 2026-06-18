@@ -115,6 +115,9 @@ final class RuntimeEventTypeTest extends TestCase
 
             // Background process completion
             RuntimeEventTypeEnum::BackgroundProcessCompleted,
+
+            // System notices (derived / projected)
+            RuntimeEventTypeEnum::SystemNotice,
         ];
 
         $cases = RuntimeEventTypeEnum::cases();

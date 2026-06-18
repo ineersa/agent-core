@@ -463,6 +463,11 @@ final class PlatformIntegrationTest extends TestCase
             errorMessage: null,
             messages: [
                 new AgentMessage('user', [['type' => 'text', 'text' => 'count to 3']]),
+                new AgentMessage('assistant', [['type' => 'text', 'text' => '']], metadata: [
+                    'tool_calls' => [
+                        ['id' => 'tc-count-1', 'name' => 'dummy_tool', 'input' => []],
+                    ],
+                ]),
                 new AgentMessage('tool', [['type' => 'text', 'text' => 'One two three']], toolCallId: 'tc-count-1', toolName: 'dummy_tool'),
             ],
             activeStepId: 'turn-1-llm-1',
@@ -530,7 +535,11 @@ final class PlatformIntegrationTest extends TestCase
             errorMessage: null,
             messages: [
                 new AgentMessage('user', [['type' => 'text', 'text' => 'read file']]),
-                new AgentMessage('assistant', [['type' => 'text', 'text' => '']], toolName: 'read', toolCallId: 'tc-read-1'),
+                new AgentMessage('assistant', [['type' => 'text', 'text' => '']], metadata: [
+                    'tool_calls' => [
+                        ['id' => 'tc-read-1', 'name' => 'read', 'input' => []],
+                    ],
+                ]),
                 new AgentMessage('tool', [['type' => 'text', 'text' => 'Raw file content here...']], toolName: 'read', toolCallId: 'tc-read-1'),
             ],
             activeStepId: 'turn-1-llm-1',
