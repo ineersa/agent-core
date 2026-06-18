@@ -305,6 +305,36 @@ final class BackgroundProcessManager
     }
 
     /**
+     * Read the full background process log file without truncation.
+     *
+     * Used for commands that run in the foreground and have completed
+     * — the full output is needed so the primary OutputCapToolResultProcessor
+     * can decide whether to cap.  BgStatusTool continues to use readLogTail
+     * for its diagnostic log view.
+     *
+     * @param int         $pid       Process PID. Must be > 0.
+     * @param string|null $sessionId optional session ownership check
+     *
+     * @return LogTailResult full log content (truncated flag is always false)
+     *
+     * @throws \RuntimeException when process not found or session mismatches
+     */
+    public function readLogFull(int $pid, ?string $sessionId = null): LogTailResult
+    {
+        $entity = $this->store->fetchByPid($pid);
+
+        if (null === $entity) {
+            throw new \RuntimeException(\sprintf('No background process found with PID %d.', $pid));
+        }
+
+        if (null !== $sessionId && $entity->sessionId !== $sessionId) {
+            throw new \RuntimeException(\sprintf('No background process found with PID %d for this session.', $pid));
+        }
+
+        return $this->lifecycle->readLogFile($entity->logPath, $pid);
+    }
+
+    /**
      * Stop a background process: TERM → grace → KILL.
      *
      * Targets the entire process group via negative PGID

@@ -105,11 +105,22 @@ final readonly class OutputCapLlmTransformHook implements TransformContextHookIn
             return $message;
         }
 
+        // Extract a file path from the tool call arguments when available
+        // so the late hook applies the same docCap/defaultCap decision as the
+        // primary OutputCapToolResultProcessor.  Without path context, read results
+        // for .md/.txt files under docCap (50k) but over defaultCap (20k) are
+        // incorrectly capped at the lower default cap.
+        $path = $this->extractPathFromArguments(
+            \is_array($message->details['arguments'] ?? null)
+                ? $message->details['arguments']
+                : [],
+        );
+
         // Apply capping with a structured result.
-        $capResult = $this->outputCap->capIfNeeded($combinedText, null);
+        $capResult = $this->outputCap->capIfNeeded($combinedText, $path);
 
         if (null === $capResult) {
-            // Text fits within the default cap — pass through unchanged.
+            // Text fits within the applicable cap — pass through unchanged.
             return $message;
         }
 
@@ -122,10 +133,14 @@ final readonly class OutputCapLlmTransformHook implements TransformContextHookIn
 
         // Build a generic model notification for downstream consumers
         // (agent message history preserves exact model-facing text).
+        // Stable ID from tool_call_id + cap + content hash instead of random saved
+        // path so repeated transforms of the same message don't generate new TUI
+        // notification blocks / events (e.g. on resume or multi-step replay).
         $notificationId = hash('sha256', implode('|', [
             $message->toolCallId ?? 'none',
             'output_cap',
-            $capResult->savedPath,
+            (string) $capResult->cap,
+            hash('sha256', $capResult->noticeText),
         ]));
 
         $notification = [
@@ -183,6 +198,26 @@ final readonly class OutputCapLlmTransformHook implements TransformContextHookIn
         $encoded = json_encode($value, \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
 
         return false === $encoded ? '{}' : $encoded;
+    }
+
+    /**
+     * Find a file-path value from tool call arguments.
+     *
+     * Checks known path-carrying argument keys and returns the first
+     * string value found.  Returns null when no path argument exists.
+     *
+     * @param array<string, mixed> $arguments
+     */
+    private function extractPathFromArguments(array $arguments): ?string
+    {
+        foreach (['path', 'file_path', 'file'] as $key) {
+            $value = $arguments[$key] ?? null;
+            if (\is_string($value) && '' !== $value) {
+                return $value;
+            }
+        }
+
+        return null;
     }
 
     /**

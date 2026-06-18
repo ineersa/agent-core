@@ -334,7 +334,11 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
     private function readOutput(int $pid, ?string $sessionId): string
     {
         try {
-            $result = $this->manager->readLogTail($pid, $this->config->logTailChars, $sessionId);
+            // Read full log content for completed foreground commands so the
+            // central OutputCapToolResultProcessor sees the actual command output
+            // and produces the primary cap / compact ToolResult.  Tail-only reads
+            // hide the true output size and force late-hook double-capping.
+            $result = $this->manager->readLogFull($pid, $sessionId);
 
             return $result->content;
         } catch (\RuntimeException $e) {
