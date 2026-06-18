@@ -91,8 +91,8 @@ final class OutputCapTest extends TestCase
         // Should contain the storage dir path
         $this->assertStringContainsString($this->tmpDir, $result);
         // Should contain tool-first guidance, not shell-centric head/grep hints
-        $this->assertStringContainsString('Do not rerun the original tool', $result);
-        $this->assertStringContainsString('targeted read', $result);
+        $this->assertStringContainsString('Do not rerun the original command', $result);
+        $this->assertStringContainsString('focused follow-up', $result);
     }
 
     /* ───────── Persistence ───────── */
@@ -370,7 +370,8 @@ final class OutputCapTest extends TestCase
     private function extractPathFromNotice(string $notice): ?string
     {
         // The notice contains a "Saved to: <path>" line
-        if (preg_match('/Saved to: (.+\.txt)/', $notice, $matches)) {
+        // The notice contains a "Saved full output: <path>" line
+        if (preg_match('/Saved full output: (.+\.txt)/', $notice, $matches)) {
             return $matches[1];
         }
 

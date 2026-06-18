@@ -266,25 +266,22 @@ final class OutputCap
      * Build a model-facing notice about capped output.
      *
      * The notice gives the model clear tool-first guidance: do not rerun
-     * the original tool/command; do not read the saved audit file wholesale;
-     * continue with targeted read offset/limit or scoped search as appropriate.
+     * the original tool/command; do not read the saved audit file without
+     * a limit; continue with targeted read offset+limit or scoped search.
      */
     private function buildCappedNotice(string $fullText, int $cap, string $savedPath): string
     {
         $charCount = u($fullText)->length();
         $tokenEstimate = (int) ceil($charCount / 4);
 
-        return \sprintf(
-            "[Output capped to %d characters, full output saved to %s]\n\n".
-            "Full output: %d characters (~%d tokens).\n".
-            "Saved to: %s\n\n".
-            "Do not rerun the original tool or command. Do not read the saved file wholesale.\n".
-            "Continue with targeted read offset/limit to inspect specific sections, or search for specific patterns in the saved file.\n",
-            $cap,
-            $savedPath,
-            $charCount,
-            $tokenEstimate,
-            $savedPath,
-        );
+        return <<<STRING
+[Output capped: {$charCount} chars (~{$tokenEstimate} tokens) > {$cap}-char cap]
+Saved full output: {$savedPath}
+
+Next: use a focused follow-up, e.g.
+- read(path: "{$savedPath}", offset: 1, limit: 200)
+- bash(command: "grep -n -- 'PATTERN' '{$savedPath}' | head -50")
+Do not rerun the original command or read the saved file without offset+limit.
+STRING;
     }
 }

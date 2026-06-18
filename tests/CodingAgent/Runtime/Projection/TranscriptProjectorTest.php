@@ -1711,7 +1711,7 @@ final class TranscriptProjectorTest extends TestCase
             'kind' => 'output_capped',
             'severity' => 'warning',
             'delivery' => 'tool_result_replace',
-            'text' => '[Output capped to 100 characters, full output saved to /tmp/cap-123.txt]',
+            'text' => "[Output capped: 5000 chars (~1250 tokens) > 100-char cap]\nSaved full output: /tmp/cap-123.txt",
             'tool_call_id' => 'call-1',
             'tool_name' => 'read',
             'metadata' => [
@@ -1727,8 +1727,8 @@ final class TranscriptProjectorTest extends TestCase
         $this->assertSame(TranscriptBlockKindEnum::System, $block->kind);
 
         // Exact model-facing text is what the TUI shows — no paraphrase.
-        $this->assertStringStartsWith('[Output capped to', $block->text);
-        $this->assertStringContainsString('full output saved to', $block->text);
+        $this->assertStringStartsWith('[Output capped:', $block->text);
+        $this->assertStringContainsString('Saved full output', $block->text);
 
         // Severity drives TUI icon/color — no text-parsing from renderer.
         $this->assertSame('warning', $block->meta['severity']);
@@ -1764,7 +1764,7 @@ final class TranscriptProjectorTest extends TestCase
             'kind' => 'output_capped',
             'severity' => 'warning',
             'delivery' => 'tool_result_replace',
-            'text' => '[Output capped to 100 characters, full output saved to /tmp/cap-compact.txt]',
+            'text' => "[Output capped: 5000 chars (~1250 tokens) > 100-char cap]\nSaved full output: /tmp/cap-compact.txt",
             'tool_call_id' => 'call-compact',
             'tool_name' => 'read',
         ]);
@@ -1780,7 +1780,7 @@ final class TranscriptProjectorTest extends TestCase
 
         // Block 1: System notification with exact text.
         $this->assertSame(TranscriptBlockKindEnum::System, $blocks[1]->kind);
-        $this->assertStringStartsWith('[Output capped to', $blocks[1]->text);
+        $this->assertStringStartsWith('[Output capped:', $blocks[1]->text);
         $this->assertSame('warning', $blocks[1]->meta['severity']);
         $this->assertSame('output_cap', $blocks[1]->meta['source']);
         $this->assertSame('call-compact', $blocks[1]->meta['tool_call_id']);
