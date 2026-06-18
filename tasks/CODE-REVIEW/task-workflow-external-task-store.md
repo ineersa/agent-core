@@ -33,12 +33,12 @@ Open design details to decide during implementation:
 - Validation covers task list/create/update/move behavior against an external task root and worktree creation behavior including `.idea` path rewrite.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/task-workflow-external-task-store
 Worktree: /home/ineersa/projects/agent-core-worktrees/task-workflow-external-task-store
-Fork run:
-PR URL:
-PR Status:
+Fork run: aakihj74fsil
+PR URL: https://github.com/ineersa/agent-core/pull/166
+PR Status: open
 Started: 2026-06-18T02:02:21.061Z
 Completed:
 
@@ -53,3 +53,13 @@ Completed:
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/task-workflow-external-task-store.
 - Validation: Pre-start: `/home/ineersa/projects/agent-core-tasks` exists, contains copied current task board, and is initialized as a clean standalone git repo at commit b024b77.; Pre-start: `/home/ineersa/projects/agent-core` main checkout clean/synced with origin.
 - Summary: Starting implementation. Goal: move mutable task board out of agent-core into `/home/ineersa/projects/agent-core-tasks`, refactor `.pi/extensions/task-workflow.ts` into a configurable external task-root workflow with no task metadata commits to the agent-core code repo, update docs/skills/prompts, and copy/rewrite `.idea` into task worktrees.
+
+## Task workflow update - 2026-06-18T17:17:15.823Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Running deterministic castor check in worktree (timeout 900s)...
+- castor check passed (34.5s).
+- Pushed task/task-workflow-external-task-store to origin.
+- branch 'task/task-workflow-external-task-store' set up to track 'origin/task/task-workflow-external-task-store'.
+- Created PR: https://github.com/ineersa/agent-core/pull/166
+- Validation: pi --approve --list-models __no_such_model__: PASS (extension loads).; castor cs-check: PASS (0 files fixed).; castor phpstan: PASS (0 errors, 0 file_errors).; castor deptrac: PASS (0 violations, 0 errors).; LLM_MODE=true castor check: PASS all 6 lanes in 67.9s: deptrac OK; test OK (2702 tests, 8057 assertions); test:controller-replay OK (1 test, 14 assertions); test:tui OK (8 tests, 83 assertions); phpstan OK; cs-check OK.
+- Summary: Branch updated with latest fixed origin/main. Fork aakihj74fsil merged origin/main cleanly into task/task-workflow-external-task-store at merge commit 0ee00298e; no conflicts. PR #165/revert-issue-137-main-contamination is included, removing the earlier main contamination that caused RuntimeEventTypeTest and TuiOutputCapNoticeE2eTest failures. Task-workflow external task board migration files preserved; no .idea directories were modified/touched/deleted. Worktree clean and ready for PR.
