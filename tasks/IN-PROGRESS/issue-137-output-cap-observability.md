@@ -48,7 +48,7 @@ Testing skill and `tests/AGENTS.md` were read before proposing validation. This 
 Status: IN-PROGRESS
 Branch: task/issue-137-output-cap-observability
 Worktree: /home/ineersa/projects/agent-core-worktrees/issue-137-output-cap-observability
-Fork run: nahs6w6vbp12
+Fork run: ogyf6t15ad4l
 PR URL: https://github.com/ineersa/agent-core/pull/164
 PR Status: open
 Started: 2026-06-17T23:00:56.520Z
@@ -139,3 +139,7 @@ Completed:
 ## Task workflow update - 2026-06-18T14:07:53.698Z
 - Moved CODE-REVIEW → IN-PROGRESS.
 - Summary: Review iteration requested by user after reviewer APPROVE WITH SUGGESTIONS. Scope: address sensible non-blocking cleanup suggestions without changing task behavior: remove redundant output_cap_notice key/fallback, clarify/document OutputCap raw_result vs model-text cap semantics with test if appropriate, and remove unused ModelInputMessageDTO::fromArray if confirmed dead. Keep exact model-facing TUI invariant unchanged.
+
+## Task workflow update - 2026-06-18T14:09:36.913Z
+- Recorded fork run: ogyf6t15ad4l
+- Summary: Launched review-iteration fork ogyf6t15ad4l to address sensible reviewer suggestions: remove redundant output_cap_notice key/fallback, fix/clarify OutputCapLlmTransformHook cap decision against actual model-facing combinedText with regression tests, and remove ModelInputMessageDTO::fromArray if confirmed unused. Fork instructed to run focused Castor validation and push the task branch.
