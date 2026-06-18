@@ -38,6 +38,17 @@ use Ineersa\AgentCore\Domain\Message\ToolResultType;
  * For tools with no path context in their arguments, the defaultCap
  * is used as defense-in-depth.
  *
+ * STRUCTURED METADATA: When central capping is applied, the hook
+ * attaches structured output_cap metadata (output_cap, output_cap_limit,
+ * output_cap_char_count, output_cap_saved_path) to the AgentMessage
+ * metadata. This flows through AgentMessageConverter to Symfony AI
+ * message metadata, and from there to LlmPlatformAdapter::extractModelInputMessages()
+ * for projection — no text parsing required.
+ *
+ * Per-tool output caps are detected via structured metadata
+ * ($message->details['details']['output_cap'] === true) rather than
+ * scanning tool output text.
+ *
  * Image content parts (image_ref) are preserved unchanged. The hook
  * trusts upstream image gating to strip image_refs for non-vision
  * models before reaching this point.
@@ -105,25 +116,42 @@ final readonly class OutputCapLlmTransformHook implements TransformContextHookIn
             return $message;
         }
 
-        // ── Path-aware capping ──
-        // Extract path context from tool arguments (if available) so
-        // doc-like files use docCap instead of the smaller defaultCap.
-        // Skip central capping entirely when the model-facing combined
-        // text already fits under the path-specific cap or was already
-        // capped by the per-tool OutputCap call.
-        if ($this->shouldSkipCentralCap($message, $combinedText)) {
+        // ── Per-tool cap already applied (structured metadata) ──
+        // If the tool handler returned ToolHandlerResultDTO with
+        // output_cap metadata, the cap was already applied at the
+        // tool level.  Skip central capping — the model-facing text
+        // already contains the cap notice, and no re-processing is
+        // needed.
+        if ($this->isPerToolCapped($message)) {
             return $this->buildPassthroughMessage($message, $combinedText, $nonTextParts);
         }
 
+        // ── Path-aware capping ──
         $path = $this->extractPath($message);
-        $cappedText = $this->outputCap->process($combinedText, $path);
+        $capResult = $this->outputCap->processDetailed($combinedText, $path);
 
-        // Build new content: a text part with the capped content,
-        // plus all preserved non-text parts (image_refs).
-        $newContent = [['type' => 'text', 'text' => $cappedText]];
+        if (!$capResult->capped) {
+            // Combined text fits under the path-specific cap →
+            // no central capping needed.
+            return $this->buildPassthroughMessage($message, $combinedText, $nonTextParts);
+        }
+
+        // ── Central cap applied ──
+        // Build new content with the capped notice and preserved
+        // non-text parts (image_refs).
+        $newContent = [['type' => 'text', 'text' => $capResult->text]];
         foreach ($nonTextParts as $part) {
             $newContent[] = $part;
         }
+
+        // Attach structured cap metadata so downstream consumers
+        // (extractModelInputMessages, ToolProjectionSubscriber)
+        // can read it without parsing the notice text.
+        $metadata = $message->metadata;
+        $metadata['output_cap'] = true;
+        $metadata['output_cap_limit'] = $capResult->limit;
+        $metadata['output_cap_char_count'] = $capResult->charCount;
+        $metadata['output_cap_saved_path'] = $capResult->savedPath;
 
         return new AgentMessage(
             role: $message->role,
@@ -134,61 +162,28 @@ final readonly class OutputCapLlmTransformHook implements TransformContextHookIn
             toolName: $message->toolName,
             details: $message->details,
             isError: $message->isError,
-            metadata: $message->metadata,
+            metadata: $metadata,
         );
     }
 
     /**
-     * Determine whether central capping should be skipped.
+     * Check whether a per-tool output cap was already applied.
      *
-     * Returns true (skip central cap) when:
-     * 1. The combined text already contains a capped-notice marker
-     *    (per-tool cap already applied).
-     * 2. Combined model-facing text fits under the path-specific cap
-     *    (output was never above the threshold for this file type when
-     *    accounting for the correct cap tier, or per-tool cap already
-     *    handled it).
-     *
-     * Returns false when:
-     * - Combined model-facing text exceeds the path-specific cap.
+     * Uses structured metadata from ToolHandlerResultDTO (stored
+     * in details['details']['output_cap']) rather than scanning
+     * the tool output text for cap markers.
      */
-    private function shouldSkipCentralCap(AgentMessage $message, string $combinedText): bool
+    private function isPerToolCapped(AgentMessage $message): bool
     {
-        // Per-tool cap already applied? Prefer checking the raw tool output
-        // stored in details (before JSON wrapping) with a strict starts-with
-        // check, so that tool output whose content merely contains the marker
-        // string is not mistaken for a cap notice.
-        $rawResult = null;
-        if (\is_array($message->details) && \is_array($message->details['details'] ?? null)) {
-            $rawResult = $message->details['details']['raw_result'] ?? null;
-        }
-        if (\is_string($rawResult) && '' !== $rawResult && str_starts_with(ltrim($rawResult), '[Output capped to')) {
-            return true;
+        $detailsDetails = \is_array($message->details['details'] ?? null)
+            ? $message->details['details']
+            : null;
+
+        if (null === $detailsDetails) {
+            return false;
         }
 
-        // Fallback for test-constructed messages or extension/MCP tools
-        // where details['details']['raw_result'] may not be populated:
-        // check the combined text for the cap marker.  This uses a
-        // contains check (not starts-with) because $combinedText is
-        // JSON-wrapped and the cap notice appears inside the JSON.
-        if (null === $rawResult && str_contains($combinedText, '[Output capped')) {
-            return true;
-        }
-
-        // Extract path context (may be null, which resolves to defaultCap).
-        $path = $this->extractPath($message);
-        $applicableCap = $this->outputCap->capForPath($path);
-
-        // Compare the actual model-facing text length against the
-        // path-specific cap. This uses $combinedText (the text that
-        // would reach the LLM) rather than raw_result so that JSON
-        // wrapping overhead doesn't let uncapped text slip through.
-        if (mb_strlen($combinedText) <= $applicableCap) {
-            return true;
-        }
-
-        // Combined model-facing text exceeds the applicable cap → central cap needed.
-        return false;
+        return true === ($detailsDetails['output_cap'] ?? false);
     }
 
     /**

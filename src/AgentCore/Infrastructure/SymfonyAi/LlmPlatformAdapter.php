@@ -247,16 +247,26 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                     continue;
                 }
 
-                // Detect if this tool message contains an output cap notice
-                // and attach structured metadata for TUI styling.
+                // Read structured output-cap metadata from Symfony AI
+                // message metadata (set by OutputCapLlmTransformHook).
+                // No text parsing — the metadata is the source of truth.
                 $metadata = [];
-                // Strict starts-with check: only flag the canonical cap
-                // notice at the start of the model-facing text, not file
-                // content that merely contains the marker string.
-                if (str_starts_with(ltrim($text), '[Output capped to')) {
+                $msgMetadata = $message->getMetadata();
+                $outputCapped = (bool) $msgMetadata->get('output_cap', false);
+                if ($outputCapped) {
                     $metadata['notice_type'] = 'output_cap';
-                    if (preg_match('/Output capped to (\d+) characters/', $text, $m)) {
-                        $metadata['output_cap_limit'] = (int) $m[1];
+                    $metadata['output_cap'] = true;
+                    $capLimit = $msgMetadata->get('output_cap_limit');
+                    if (null !== $capLimit) {
+                        $metadata['output_cap_limit'] = (int) $capLimit;
+                    }
+                    $capCharCount = $msgMetadata->get('output_cap_char_count');
+                    if (null !== $capCharCount) {
+                        $metadata['output_cap_char_count'] = (int) $capCharCount;
+                    }
+                    $capSavedPath = $msgMetadata->get('output_cap_saved_path');
+                    if (null !== $capSavedPath) {
+                        $metadata['output_cap_saved_path'] = (string) $capSavedPath;
                     }
                 }
 

@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tool;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
+use Ineersa\AgentCore\Domain\Tool\ToolHandlerResultDTO;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 
@@ -49,7 +50,7 @@ final class BgStatusTool implements HatfieldToolProviderInterface, ToolHandlerIn
      *
      * @throws ToolCallException on validation or execution failures
      */
-    public function __invoke(array $arguments): string
+    public function __invoke(array $arguments): string|ToolHandlerResultDTO
     {
         // Validate required argument
         $action = $arguments['action'] ?? null;
@@ -155,7 +156,7 @@ final class BgStatusTool implements HatfieldToolProviderInterface, ToolHandlerIn
      *
      * @throws ToolCallException
      */
-    private function handleLog(array $arguments): string
+    private function handleLog(array $arguments): string|ToolHandlerResultDTO
     {
         $pid = $arguments['pid'] ?? null;
         if (!\is_int($pid) || $pid <= 0) {
@@ -188,7 +189,20 @@ final class BgStatusTool implements HatfieldToolProviderInterface, ToolHandlerIn
         // Cap oversized log output before returning to the model.
         // Uses the log path to select an appropriate doc-like cap
         // so log tails have a higher ceiling than code tool output.
-        return $this->outputCap->process($text, $result->logPath);
+        $capResult = $this->outputCap->processDetailed($text, $result->logPath);
+        if ($capResult->capped) {
+            return new ToolHandlerResultDTO(
+                text: $capResult->text,
+                details: [
+                    'output_cap' => true,
+                    'output_cap_limit' => $capResult->limit,
+                    'output_cap_char_count' => $capResult->charCount,
+                    'output_cap_saved_path' => $capResult->savedPath,
+                ],
+            );
+        }
+
+        return $capResult->text;
     }
 
     /**

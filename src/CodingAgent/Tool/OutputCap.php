@@ -44,6 +44,10 @@ final class OutputCap
      * extension), it is returned unchanged. Otherwise the full text is
      * persisted to disk and a model-facing capped notice is returned.
      *
+     * This is a convenience wrapper around processDetailed() that returns
+     * only the text. Consumers that need structured cap metadata should
+     * call processDetailed() directly.
+     *
      * Cleanup of stale persisted files runs once on first call.
      *
      * @param string      $text the raw tool output
@@ -55,17 +59,45 @@ final class OutputCap
      */
     public function process(string $text, ?string $path = null): string
     {
+        return $this->processDetailed($text, $path)->text;
+    }
+
+    /**
+     * Process text through output capping with a structured result.
+     *
+     * Same behaviour as process(), but returns an OutputCapResultDTO that
+     * carries both the output text and structured cap metadata (capped bool,
+     * limit, charCount, savedPath).  Downstream consumers use the DTO for
+     * projection and TUI display without parsing the text.
+     *
+     * Cleanup of stale persisted files runs once on first call.
+     *
+     * @param string      $text the raw tool output
+     * @param string|null $path Optional file path used to determine doc vs.
+     *                          code cap. Null paths use the default cap.
+     *
+     * @return OutputCapResultDTO structured result with text and metadata
+     */
+    public function processDetailed(string $text, ?string $path = null): OutputCapResultDTO
+    {
         $this->maybeCleanup();
 
         $cap = $this->resolveCap($path);
 
         if (mb_strlen($text) <= $cap) {
-            return $text;
+            return new OutputCapResultDTO(text: $text, capped: false);
         }
 
         $savedPath = $this->persist($text);
+        $cappedText = $this->buildCappedNotice($text, $cap, $savedPath);
 
-        return $this->buildCappedNotice($text, $cap, $savedPath);
+        return new OutputCapResultDTO(
+            text: $cappedText,
+            capped: true,
+            limit: $cap,
+            charCount: mb_strlen($text),
+            savedPath: $savedPath,
+        );
     }
 
     /**

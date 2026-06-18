@@ -245,8 +245,11 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
         $started = $this->withContext(self::TEST_SESSION, fn () => $this->manager->start($command, self::TEST_SESSION));
         usleep(100_000);
 
-        $result = $this->withContext(self::TEST_SESSION, fn (): string => $lowCapTool(['action' => 'log', 'pid' => $started->pid]));
+        $result = $this->withContext(self::TEST_SESSION, fn (): string|\Ineersa\AgentCore\Domain\Tool\ToolHandlerResultDTO => $lowCapTool(['action' => 'log', 'pid' => $started->pid]));
 
+        if ($result instanceof \Ineersa\AgentCore\Domain\Tool\ToolHandlerResultDTO) {
+            $result = $result->text;
+        }
         $this->assertStringContainsString('Output capped', $result);
         $this->assertStringNotContainsString($sentinel, $result, 'Large log sentinel must not leak past output cap');
 

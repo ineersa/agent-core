@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tool;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
+use Ineersa\AgentCore\Domain\Tool\ToolHandlerResultDTO;
 use Ineersa\CodingAgent\Config\BashToolConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
@@ -78,9 +79,9 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
      *
      * @throws ToolCallException on validation errors or execution failures
      */
-    public function __invoke(array $arguments): string
+    public function __invoke(array $arguments): string|ToolHandlerResultDTO
     {
-        return $this->toolRuntime->run(function () use ($arguments): string {
+        return $this->toolRuntime->run(function () use ($arguments): string|ToolHandlerResultDTO {
             // Validate and extract arguments
             $command = $this->validateCommand($arguments);
             $timeout = $this->resolveTimeout($arguments);
@@ -145,7 +146,7 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
                 if (hrtime(true) > $deadline) {
                     $this->manager->stop($pid, $sessionId);
                     $partialOutput = $this->readOutput($pid, $sessionId);
-                    $capped = $this->outputCap->process($partialOutput);
+                    $capResult = $this->outputCap->processDetailed($partialOutput);
 
                     $this->logger->info('bash_tool.timed_out', [
                         'component' => 'tool.bash',
@@ -154,10 +155,13 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
                         'timeout_seconds' => $timeout,
                     ]);
 
-                    return \sprintf(
-                        "Command timed out after %d seconds.\n\nPartial output:\n%s",
-                        $timeout,
-                        $capped,
+                    return $this->toResult(
+                        \sprintf(
+                            "Command timed out after %d seconds.\n\nPartial output:\n%s",
+                            $timeout,
+                            $capResult->text,
+                        ),
+                        $capResult,
                     );
                 }
 
@@ -173,7 +177,10 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
 
                 if (BackgroundProcessStatusEnum::Running !== $record->status) {
                     // Process finished (or stopped/finished uncleanly)
-                    return $this->handleFinished($record, $pid, $sessionId);
+                    $output = $this->readOutput($pid, $sessionId);
+                    $capResult = $this->outputCap->processDetailed($output);
+
+                    return $this->handleFinished($record, $capResult, $pid, $sessionId);
                 }
 
                 // 4. Background prompt threshold check (once per invocation)
@@ -198,7 +205,10 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
                                     'process_pid' => $pid,
                                 ]);
 
-                                return $this->handleFinished($recheck, $pid, $sessionId);
+                                $recheckOutput = $this->readOutput($pid, $sessionId);
+                                $recheckCapResult = $this->outputCap->processDetailed($recheckOutput);
+
+                                return $this->handleFinished($recheck, $recheckCapResult, $pid, $sessionId);
                             }
 
                             // Mark the process as backgrounded so the
@@ -356,15 +366,16 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
      * Handle a finished/stopped process entity.
      *
      * @param BackgroundProcess $entity    The finished process entity
+     * @param OutputCapResultDTO $capResult The result of OutputCap::processDetailed
      * @param int               $pid       Process PID
      * @param string|null       $sessionId Session ownership filter
      *
-     * @return string Formatted result with capped output
+     * @return string|ToolHandlerResultDTO Formatted result, optionally with
+     *                                     structured cap metadata
      */
-    private function handleFinished(BackgroundProcess $entity, int $pid, ?string $sessionId): string
+    private function handleFinished(BackgroundProcess $entity, OutputCapResultDTO $capResult, int $pid, ?string $sessionId): string|ToolHandlerResultDTO
     {
-        $output = $this->readOutput($pid, $sessionId);
-        $capped = $this->outputCap->process($output);
+        $capped = $capResult->text;
 
         $exitCode = $entity->exitCode;
         $status = $entity->status->value;
@@ -373,10 +384,13 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
         // before treating exit code 0 as normal success, so a
         // user-stopped command can never be misreported as successful.
         if ($entity->stoppedByUser) {
-            return \sprintf(
-                "Command was stopped (exit code %d).\n\nOutput:\n%s",
-                $exitCode ?? -1,
-                $capped,
+            return $this->toResult(
+                \sprintf(
+                    "Command was stopped (exit code %d).\n\nOutput:\n%s",
+                    $exitCode ?? -1,
+                    $capped,
+                ),
+                $capResult,
             );
         }
 
@@ -389,7 +403,7 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
                 'exit_code' => $exitCode,
             ]);
 
-            return $capped;
+            return $this->toResult($capped, $capResult);
         }
 
         // Non-zero exit code or finished/unclean status
@@ -410,14 +424,40 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
         }
 
         if ('' !== $statusSuffix) {
-            return \sprintf(
-                "Command failed with %s.\n\nOutput:\n%s",
-                $statusSuffix,
-                $capped,
+            return $this->toResult(
+                \sprintf(
+                    "Command failed with %s.\n\nOutput:\n%s",
+                    $statusSuffix,
+                    $capped,
+                ),
+                $capResult,
             );
         }
 
         // Fallback: just return the output
-        return $capped;
+        return $this->toResult($capped, $capResult);
+    }
+
+    /**
+     * Wrap a tool result string into a ToolHandlerResultDTO when capped,
+     * or return the string as-is when not capped.
+     *
+     * @return string|ToolHandlerResultDTO
+     */
+    private function toResult(string $text, OutputCapResultDTO $capResult): string|ToolHandlerResultDTO
+    {
+        if (!$capResult->capped) {
+            return $text;
+        }
+
+        return new ToolHandlerResultDTO(
+            text: $text,
+            details: [
+                'output_cap' => true,
+                'output_cap_limit' => $capResult->limit,
+                'output_cap_char_count' => $capResult->charCount,
+                'output_cap_saved_path' => $capResult->savedPath,
+            ],
+        );
     }
 }

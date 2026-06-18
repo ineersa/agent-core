@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tool;
 
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
+use Ineersa\AgentCore\Domain\Tool\ToolHandlerResultDTO;
 use Ineersa\CodingAgent\Path\PathResolver;
 use League\MimeTypeDetection\FinfoMimeTypeDetector;
 use Symfony\Component\Process\Process;
@@ -78,9 +79,9 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
      * @throws ToolCallException on validation failures or tool-level errors
      * @throws \RuntimeException on cancellation or timeout (runtime concerns)
      */
-    public function __invoke(array $arguments): string
+    public function __invoke(array $arguments): string|ToolHandlerResultDTO
     {
-        return $this->toolRuntime->run(function () use ($arguments): string {
+        return $this->toolRuntime->run(function () use ($arguments): string|ToolHandlerResultDTO {
             // Validate and extract arguments
             $path = $this->validatePath($arguments);
             $offset = $this->validateOffset($arguments);
@@ -106,8 +107,23 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             // Check if the output was truncated and append continuation hint
             $content = $this->appendContinuationHint($content, $resolvedPath, $offset, $limit);
 
-            // Pass through output capping (character-based)
-            return $this->outputCap->process($content, $resolvedPath);
+            // Pass through output capping (character-based) with
+            // structured metadata so downstream can project cap
+            // notices without parsing the notice text.
+            $capResult = $this->outputCap->processDetailed($content, $resolvedPath);
+            if ($capResult->capped) {
+                return new ToolHandlerResultDTO(
+                    text: $capResult->text,
+                    details: [
+                        'output_cap' => true,
+                        'output_cap_limit' => $capResult->limit,
+                        'output_cap_char_count' => $capResult->charCount,
+                        'output_cap_saved_path' => $capResult->savedPath,
+                    ],
+                );
+            }
+
+            return $capResult->text;
         });
     }
 

@@ -245,12 +245,15 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
             ],
             [
                 'type' => RunEventTypeEnum::ToolExecutionEnd->value,
-                'payload' => [
-                    'tool_call_id' => $message->toolCallId,
-                    'order_index' => $message->orderIndex,
-                    'is_error' => $message->isError,
-                    'result' => $this->extractResultText($message->result),
-                ],
+                'payload' => array_merge(
+                    [
+                        'tool_call_id' => $message->toolCallId,
+                        'order_index' => $message->orderIndex,
+                        'is_error' => $message->isError,
+                        'result' => $this->extractResultText($message->result),
+                    ],
+                    $this->extractToolCapMetadata($message->result),
+                ),
             ],
         ];
 
@@ -412,6 +415,42 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
         }
 
         return implode("\n", $parts);
+    }
+
+    /**
+     * Extract structured output-cap metadata from tool result details.
+     *
+     * Returns an associative array with only the output_cap fields that
+     * are present in the result's details array.  The returned array may
+     * be empty if the tool was not capped or the details are missing.
+     *
+     * Downstream consumers (RuntimeEventTranslator, ToolProjectionSubscriber)
+     * read these fields as structured data instead of parsing the result
+     * text for cap markers.
+     *
+     * @param array<string, mixed>|string|int|float|bool|null $result
+     *
+     * @return array<string, mixed>
+     */
+    private function extractToolCapMetadata(mixed $result): array
+    {
+        if (!\is_array($result)) {
+            return [];
+        }
+
+        $details = $result['details'] ?? null;
+        if (!\is_array($details)) {
+            return [];
+        }
+
+        $capFields = [];
+        foreach (['output_cap', 'output_cap_limit', 'output_cap_char_count', 'output_cap_saved_path'] as $key) {
+            if (\array_key_exists($key, $details)) {
+                $capFields[$key] = $details[$key];
+            }
+        }
+
+        return $capFields;
     }
 
     /**

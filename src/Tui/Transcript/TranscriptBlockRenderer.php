@@ -52,16 +52,6 @@ final readonly class TranscriptBlockRenderer
 
     private function prefixFor(TranscriptBlock $block): string
     {
-        // Output-cap ToolResult blocks get a warning icon instead of the
-        // generic ● prefix so the exact model-facing cap notice is
-        // visually distinct in the transcript.
-        if (TranscriptBlockKindEnum::ToolResult === $block->kind) {
-            $noticeType = $block->meta['notice_type'] ?? '';
-            if ('output_cap' === $noticeType) {
-                return '  ⚠';
-            }
-        }
-
         return match ($block->kind) {
             TranscriptBlockKindEnum::UserMessage => '  ❯',
             TranscriptBlockKindEnum::AssistantMessage => '  ◇',
@@ -79,12 +69,20 @@ final readonly class TranscriptBlockRenderer
 
     private function colorFor(TranscriptBlock $block): ThemeColorEnum
     {
-        // Output-cap ToolResult blocks use Warning colour for prominence.
-        if (TranscriptBlockKindEnum::ToolResult === $block->kind) {
+        // System notice blocks (output caps, extension messages, etc.)
+        // derive their colour from the severity field.
+        if (TranscriptBlockKindEnum::System === $block->kind) {
+            $severity = $block->meta['severity'] ?? 'info';
+            if ('warning' === $severity) {
+                return ThemeColorEnum::Warning;
+            }
+
             $noticeType = $block->meta['notice_type'] ?? '';
             if ('output_cap' === $noticeType) {
                 return ThemeColorEnum::Warning;
             }
+
+            return ThemeColorEnum::SystemMessage;
         }
 
         return match ($block->kind) {
@@ -98,6 +96,8 @@ final readonly class TranscriptBlockRenderer
             TranscriptBlockKindEnum::Question => ThemeColorEnum::Accent,
             TranscriptBlockKindEnum::Approval => ThemeColorEnum::Warning,
             TranscriptBlockKindEnum::Error => ThemeColorEnum::Error,
+            // SystemMessage is the default for System blocks; specific notice
+            // types like output_cap override via the check above.
             TranscriptBlockKindEnum::System => ThemeColorEnum::SystemMessage,
         };
     }

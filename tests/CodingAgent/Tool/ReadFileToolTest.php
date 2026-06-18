@@ -614,7 +614,10 @@ final class ReadFileToolTest extends TestCase
 
         $result = ($readTool)(['path' => $targetPath]);
 
-        // Output should be the capped notice
+        // Output should be the capped notice (may be DTO when capped)
+        if ($result instanceof \Ineersa\AgentCore\Domain\Tool\ToolHandlerResultDTO) {
+            $result = $result->text;
+        }
         $this->assertStringContainsString('Output capped', $result);
     }
 

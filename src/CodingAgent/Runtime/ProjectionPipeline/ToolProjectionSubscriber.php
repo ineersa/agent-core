@@ -369,7 +369,16 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
     }
 
     /**
-     * Project a tool-role model input by updating the matching ToolResult block.
+     * Project a tool-role model input.
+     *
+     * When the model input carries output_cap metadata (structured cap
+     * notice from OutputCapLlmTransformHook), creates a System notice
+     * block with the exact cap notice text and warning styling.
+     * The existing ToolResult block is NOT modified.
+     *
+     * For non-capped model inputs, stores the exact model-facing text
+     * in ToolResult block metadata without replacing the visible
+     * human-readable tool output.
      *
      * @param array<string, mixed> $input
      */
@@ -386,65 +395,43 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
             return;
         }
 
+        // ── Output-cap notice → System block ──
+        // When the model-facing text was centrally capped, project the
+        // exact cap notice as a System block with warning styling.
+        // The ToolResult block (created from tool_execution events with
+        // the original readable output) is left untouched.
+        if (true === ($metadata['output_cap'] ?? false)) {
+            $this->projectSystemNotice($event, $text, $metadata, $toolCallId);
+
+            return;
+        }
+
+        // ── Non-capped model input: store exact text in metadata ──
         $blockId = 'tool_result_'.$toolCallId;
         $existing = $state->getBlock($blockId);
 
         if (null === $existing) {
-            // No matching ToolResult block yet (unusual — likely a
-            // stale/future reference).  Skip to avoid orphan blocks.
             return;
         }
 
-        // Content-hash deduplication: if the tool result already
-        // carries the same model-facing text, skip to avoid
-        // redundant updates on replay.
         $textHash = hash('sha256', $text);
         if (($existing->meta['model_input_sha256'] ?? '') === $textHash) {
             return;
         }
 
-        // Build metadata for the updated block.
         $meta = $existing->meta;
         $meta['model_input_exact'] = true;
         $meta['model_input_sha256'] = $textHash;
         $meta['tool_call_id'] = $toolCallId;
         $meta['tool_name'] = $toolName;
 
-        // Detect output cap notices for warning styling using strict
-        // starts-with check on the canonical notice format.
-        $isCapNotice = str_starts_with(ltrim($text), '[Output capped to');
-        if ($isCapNotice) {
-            $meta['notice_type'] = 'output_cap';
-            if (isset($metadata['output_cap_limit'])) {
-                $meta['output_cap_limit'] = $metadata['output_cap_limit'];
-            }
-        }
-
-        // Preserve existing result for potential TUI detail views.
         if ('' !== ($existing->meta['result'] ?? '')) {
             $meta['raw_result'] = $existing->meta['result'];
         }
 
-        // ── Visible text policy ──
-        //
-        // For cap-notice model inputs: update the visible ToolResult text
-        // to the exact model-facing cap notice so the user sees what the
-        // model saw.
-        //
-        // For ALL other model inputs (normal uncapped tool results where
-        // the model-facing text is raw provider JSON, SafeGuard denial
-        // JSON, etc.): keep the existing human-readable tool output and
-        // store the exact model-facing text only in metadata.  Raw JSON
-        // must never be the visible ToolResult text.
-        //
-        // The exact model-facing text is always available in metadata
-        // for future TUI detail views or SafeGuard-specific blocks.
-        $updateText = $isCapNotice ? $text : $existing->text;
-
-        $state->updateBlock($blockId, $existing->with(
-            text: $updateText,
-            meta: $meta,
-        ));
+        // Keep human-readable visible text; store exact model-facing
+        // text (which may be raw JSON) only in metadata.
+        $state->updateBlock($blockId, $existing->with(meta: $meta));
     }
 
     /**
@@ -532,39 +519,73 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
         ));
     }
 
-    // ── Output cap notice projection ─────────────────────────────────────────
+    // ── System notice projection ─────────────────────────────────────────────
 
     /**
-     * When a tool execution result was capped (output_capped=true), mark the
-     * existing ToolResult block with output-cap metadata so the renderer can
-     * style it with a warning icon/colour.
+     * Project a System notice block from tool execution or model input metadata.
      *
-     * The ToolResult block already contains the exact model-facing cap notice
-     * text — no paraphrase, summary, or extra System block is created.
-     * The transcript shows precisely what the model saw, no more, no less.
+     * Creates a System block with the given notice text and structured metadata,
+     * deduplicating by stable block ID. Used for output cap notices from both
+     * per-tool caps (tool_execution payload) and central caps (model_input_messages).
+     */
+    private function projectSystemNotice(TranscriptProjectionEvent $event, string $noticeText, array $noticeMetadata, string $toolCallId): void
+    {
+        $state = $event->state;
+
+        $blockId = 'notice_output_cap_'.$toolCallId;
+        if (null !== $state->getBlock($blockId)) {
+            return; // Deduplicate
+        }
+
+        $meta = [
+            'notice_type' => 'output_cap',
+            'source' => 'output_cap',
+            'severity' => 'warning',
+            'tool_call_id' => $toolCallId,
+        ];
+
+        // Forward structured cap metadata.
+        foreach (['output_cap_limit', 'output_cap_char_count', 'output_cap_saved_path', 'output_cap'] as $key) {
+            if (\array_key_exists($key, $noticeMetadata)) {
+                $meta[$key] = $noticeMetadata[$key];
+            }
+        }
+
+        $state->addBlock(new TranscriptBlock(
+            id: $blockId,
+            kind: TranscriptBlockKindEnum::System,
+            runId: $event->runId(),
+            seq: $state->nextSeq(),
+            text: $noticeText,
+            meta: $meta,
+            streaming: false,
+        ));
+    }
+
+    /**
+     * When a tool execution result was capped (output_cap=true in payload),
+     * create a System notice block with the exact cap notice text and
+     * warning styling. Does NOT modify the ToolResult block.
      */
     private function maybeProjectOutputCapNotice(TranscriptProjectionEvent $event, string $toolCallId): void
     {
         $p = $event->payload();
-        $state = $event->state;
 
-        $capped = (bool) ($p['output_capped'] ?? false);
+        $capped = (bool) ($p['output_cap'] ?? false);
         if (!$capped) {
             return;
         }
 
-        $toolResultBlockId = 'tool_result_'.$toolCallId;
-        $existing = $state->getBlock($toolResultBlockId);
-        if (null === $existing) {
+        $text = (string) ($p['result'] ?? '');
+        if ('' === $text) {
             return;
         }
 
-        $meta = $existing->meta;
-        $meta['notice_type'] = 'output_cap';
-        $meta['output_cap_limit'] = $p['output_cap_limit'] ?? null;
-        $meta['output_cap_char_count'] = $p['output_cap_char_count'] ?? null;
-        $meta['output_cap_saved_path'] = $p['output_cap_saved_path'] ?? null;
-
-        $state->updateBlock($toolResultBlockId, $existing->with(meta: $meta));
+        $this->projectSystemNotice($event, $text, [
+            'output_cap' => true,
+            'output_cap_limit' => $p['output_cap_limit'] ?? null,
+            'output_cap_char_count' => $p['output_cap_char_count'] ?? null,
+            'output_cap_saved_path' => $p['output_cap_saved_path'] ?? null,
+        ], $toolCallId);
     }
 }

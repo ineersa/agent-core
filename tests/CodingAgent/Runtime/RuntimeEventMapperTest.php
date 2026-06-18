@@ -846,13 +846,17 @@ final class RuntimeEventMapperTest extends TestCase
             'is_error' => false,
             'order_index' => 0,
             'result' => "[Output capped to 20000 characters]\n\nFull output: 50000 characters (~12500 tokens).\nSaved for audit at: /tmp/cap.txt\nDo NOT rerun...",
+            'output_cap' => true,
+            'output_cap_limit' => 20000,
+            'output_cap_char_count' => 50000,
+            'output_cap_saved_path' => '/tmp/cap.txt',
         ]);
 
         $result = $this->mapper->toRuntimeEvent($event);
 
         self::assertNotNull($result);
         self::assertSame(RuntimeEventTypeEnum::ToolExecutionCompleted->value, $result->type);
-        self::assertTrue($result->payload['output_capped']);
+        self::assertTrue($result->payload["output_cap"]);
         self::assertSame(20000, $result->payload['output_cap_limit']);
         self::assertSame(50000, $result->payload['output_cap_char_count']);
         self::assertSame('/tmp/cap.txt', $result->payload['output_cap_saved_path']);
@@ -871,14 +875,14 @@ final class RuntimeEventMapperTest extends TestCase
 
         self::assertNotNull($result);
         self::assertSame(RuntimeEventTypeEnum::ToolExecutionCompleted->value, $result->type);
-        self::assertArrayNotHasKey('output_capped', $result->payload);
+        self::assertArrayNotHasKey("output_cap", $result->payload);
     }
 
-    public function testNormalizesToolExecutionEndWithCapMarkerInFileContentNoMetadata(): void
+    public function testNormalizesToolExecutionEndWithMarkerStringNoStructuredDataNoMetadata(): void
     {
         // Tool output that merely contains the marker string (e.g. source
         // code or file content mentioning &#039;[Output capped to&#039; must NOT
-        // trigger output_capped unless the text starts with the canonical
+        // trigger output_cap unless structured metadata is present
         // cap notice.
         $event = $this->runEvent('tool_execution_end', [
             'tool_call_id' => 'call_marker',
@@ -891,8 +895,8 @@ final class RuntimeEventMapperTest extends TestCase
 
         self::assertNotNull($result);
         self::assertSame(RuntimeEventTypeEnum::ToolExecutionCompleted->value, $result->type);
-        self::assertArrayNotHasKey('output_capped', $result->payload,
-            'File content with marker string inside must not flag output_capped');
+        self::assertArrayNotHasKey("output_cap", $result->payload,
+            'File content with marker string must not flag output_cap without structured metadata');
     }
 
     // ── toRunEventData backward compat ───────────────────────────────────────

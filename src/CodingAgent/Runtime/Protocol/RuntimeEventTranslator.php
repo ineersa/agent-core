@@ -325,26 +325,15 @@ final class RuntimeEventTranslator
             $payload['duration_ms'] = $p['duration_ms'];
         }
 
-        // Detect output cap notice in the result text and add structured
-        // metadata so the projector can create a visible System block.
-        $result = $payload['result'] ?? '';
-        // Strict starts-with check: only detect the canonical cap notice at
-        // the beginning of the result text.  File/tool output that merely
-        // contains the marker string must not trigger warning styling.
-        if ('' !== $result && str_starts_with(ltrim($result), '[Output capped to')) {
-            $payload['output_capped'] = true;
-
-            // Parse cap and char_count from the notice format:
-            // "[Output capped to %d characters]\n\nFull output: %d characters (~%d tokens).\nSaved for audit at: %s"
-            if (preg_match('/Output capped to (\d+) characters/', $result, $m)) {
-                $payload['output_cap_limit'] = (int) $m[1];
-            }
-            if (preg_match('/Full output: (\d+) characters/', $result, $m)) {
-                $payload['output_cap_char_count'] = (int) $m[1];
-            }
-            if (preg_match('/Saved for audit at: (\S+)/', $result, $m)) {
-                $payload['output_cap_saved_path'] = $m[1];
-            }
+        // Forward structured output-cap metadata from the RunEvent payload.
+        // These fields are set by ToolCallResultHandler::extractToolCapMetadata()
+        // from the tool result details when the tool returned ToolHandlerResultDTO.
+        // No text parsing — the structured data is the source of truth.
+        if (true === ($p['output_cap'] ?? false)) {
+            $payload['output_cap'] = true;
+            $payload['output_cap_limit'] = $p['output_cap_limit'] ?? null;
+            $payload['output_cap_char_count'] = $p['output_cap_char_count'] ?? null;
+            $payload['output_cap_saved_path'] = $p['output_cap_saved_path'] ?? null;
         }
 
         return new RuntimeEvent(

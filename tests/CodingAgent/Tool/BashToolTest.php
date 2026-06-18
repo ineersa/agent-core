@@ -491,10 +491,13 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->outputCap = new OutputCap($tinyCap);
         $this->createManager();
 
-        $result = $this->withContext(self::TEST_SESSION, function (): string {
+        $result = $this->withContext(self::TEST_SESSION, function (): string|\Ineersa\AgentCore\Domain\Tool\ToolHandlerResultDTO {
             return ($this->makeBashTool())(['command' => 'echo "this is a very long output that should be truncated"']);
         });
 
+        if ($result instanceof \Ineersa\AgentCore\Domain\Tool\ToolHandlerResultDTO) {
+            $result = $result->text;
+        }
         $this->assertStringContainsString('Output capped', $result);
     }
 

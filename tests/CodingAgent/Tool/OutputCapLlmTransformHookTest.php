@@ -431,8 +431,9 @@ final class OutputCapLlmTransformHookTest extends TestCase
 
     public function testAlreadyCappedNoticePassesThrough(): void
     {
-        // When the combined text already contains [Output capped,
-        // the hook must not re-cap it, regardless of tool name.
+        // When the per-tool cap was already applied (structured metadata
+        // details['details']['output_cap'] === true), the hook must not
+        // re-cap it, regardless of tool name.
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 10);
         $cap = new OutputCap($cfg);
         $hook = new OutputCapLlmTransformHook($cap);
@@ -444,6 +445,9 @@ final class OutputCapLlmTransformHookTest extends TestCase
             content: [['type' => 'text', 'text' => $alreadyCapped]],
             toolCallId: 'call-capped',
             toolName: 'any_tool',
+            details: [
+                'details' => ['output_cap' => true],
+            ],
         );
 
         $transformed = $hook->transformContext([$message]);

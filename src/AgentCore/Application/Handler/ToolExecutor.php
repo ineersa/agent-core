@@ -16,6 +16,7 @@ use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionPolicy;
+use Ineersa\AgentCore\Domain\Tool\ToolHandlerResultDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Symfony\AI\Agent\Toolbox\FaultTolerantToolbox;
 use Symfony\AI\Agent\Toolbox\Source\SourceCollection;
@@ -337,9 +338,20 @@ final class ToolExecutor implements ToolExecutorInterface
     {
         $rawResult = $toolboxResult->getResult();
 
-        $details = [
-            'raw_result' => $rawResult,
-        ];
+        // Handle structured tool result envelope: extract display text
+        // and merge structured details (output_cap, system_notices, etc.).
+        if ($rawResult instanceof ToolHandlerResultDTO) {
+            $text = $rawResult->text;
+            $details = \array_merge(
+                ['raw_result' => $rawResult->text],
+                $rawResult->details,
+            );
+        } else {
+            $text = $this->normalizeResultText($rawResult);
+            $details = [
+                'raw_result' => $rawResult,
+            ];
+        }
 
         $sources = $this->normalizeSources($toolboxResult->getSources());
         if ([] !== $sources) {
@@ -347,7 +359,7 @@ final class ToolExecutor implements ToolExecutorInterface
         }
 
         if (\is_array($rawResult) && 'interrupt' === ($rawResult['kind'] ?? null)) {
-            $details = array_replace($details, $rawResult);
+            $details = \array_replace($details, $rawResult);
         }
 
         return new ToolResult(
@@ -355,7 +367,7 @@ final class ToolExecutor implements ToolExecutorInterface
             toolName: $toolCall->toolName,
             content: [[
                 'type' => 'text',
-                'text' => $this->normalizeResultText($rawResult),
+                'text' => $text,
             ]],
             details: $details,
             isError: false,

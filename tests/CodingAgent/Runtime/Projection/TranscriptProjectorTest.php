@@ -1093,7 +1093,7 @@ final class TranscriptProjectorTest extends TestCase
 
     // ── Output cap notice (ToolResult with exact model-facing text) ──────────
 
-    public function testToolExecutionCompletedWithOutputCapAddsMetadataToToolResult(): void
+    public function testToolExecutionCompletedWithOutputCapProjectsSystemNoticeBlock(): void
     {
         $this->accept('tool_execution.started', [
             'tool_call_id' => 'tc_capped', 'tool_name' => 'read',
@@ -1101,31 +1101,36 @@ final class TranscriptProjectorTest extends TestCase
         $this->accept('tool_execution.completed', [
             'tool_call_id' => 'tc_capped',
             'result' => "[Output capped to 20000 characters]\n\nFull output: 50000 characters (~12500 tokens).\nSaved for audit at: /tmp/cap.txt\nDo NOT rerun...",
-            'output_capped' => true,
+            'output_cap' => true,
             'output_cap_limit' => 20000,
             'output_cap_char_count' => 50000,
             'output_cap_saved_path' => '/tmp/cap.txt',
         ]);
 
         $blocks = $this->projector->blocks();
-        // Should be only 1 block: ToolResult with cap metadata (no extra System block).
-        $this->assertCount(1, $blocks);
+        // 2 blocks: ToolResult with cap notice text + System notice block.
+        $this->assertCount(2, $blocks);
 
+        // ToolResult block: unchanged visible tool output (capped notice text).
         $toolBlock = $blocks[0];
         $this->assertSame(TranscriptBlockKindEnum::ToolResult, $toolBlock->kind);
         $this->assertSame('tool_result_tc_capped', $toolBlock->id);
-        // Exact model-facing cap notice text is preserved verbatim.
         $this->assertStringContainsString('Output capped to', $toolBlock->text);
-        $this->assertSame('output_cap', $toolBlock->meta['notice_type']);
-        $this->assertSame(20000, $toolBlock->meta['output_cap_limit']);
-        $this->assertSame(50000, $toolBlock->meta['output_cap_char_count']);
-        $this->assertSame('/tmp/cap.txt', $toolBlock->meta['output_cap_saved_path']);
+        $this->assertArrayNotHasKey('notice_type', $toolBlock->meta);
         $this->assertFalse($toolBlock->streaming);
 
-        // No paraphrase or extra System block.
-        $this->assertStringNotContainsString('Output exceeded', $toolBlock->text);
-        $this->assertStringNotContainsString('Model was shown', $toolBlock->text);
-        $this->assertStringNotContainsString('visible chars', $toolBlock->text);
+        // System notice block with structured cap metadata and warning styling.
+        $noticeBlock = $blocks[1];
+        $this->assertSame(TranscriptBlockKindEnum::System, $noticeBlock->kind);
+        $this->assertSame('notice_output_cap_tc_capped', $noticeBlock->id);
+        $this->assertSame('output_cap', $noticeBlock->meta['notice_type']);
+        $this->assertSame('warning', $noticeBlock->meta['severity']);
+        $this->assertStringContainsString('Output capped to', $noticeBlock->text);
+        $this->assertSame(20000, $noticeBlock->meta['output_cap_limit']);
+        $this->assertSame(50000, $noticeBlock->meta['output_cap_char_count']);
+        $this->assertSame('/tmp/cap.txt', $noticeBlock->meta['output_cap_saved_path']);
+        $this->assertTrue($noticeBlock->meta['output_cap']);
+        $this->assertFalse($noticeBlock->streaming);
     }
 
     public function testToolExecutionCompletedWithoutOutputCapDoesNotAddCapMetadata(): void
@@ -1145,7 +1150,7 @@ final class TranscriptProjectorTest extends TestCase
         $this->assertArrayNotHasKey('notice_type', $blocks[0]->meta);
     }
 
-    public function testToolExecutionFailedWithOutputCapAddsMetadataToToolResult(): void
+    public function testToolExecutionFailedWithOutputCapProjectsSystemNoticeBlock(): void
     {
         $this->accept('tool_execution.started', [
             'tool_call_id' => 'tc_failcap', 'tool_name' => 'bash',
@@ -1153,7 +1158,7 @@ final class TranscriptProjectorTest extends TestCase
         $this->accept('tool_execution.failed', [
             'tool_call_id' => 'tc_failcap',
             'result' => "[Output capped to 5000 characters]\n\nFull output: 6000 characters.\nSaved for audit at: /tmp/err.txt",
-            'output_capped' => true,
+            'output_cap' => true,
             'output_cap_limit' => 5000,
             'output_cap_char_count' => 6000,
             'output_cap_saved_path' => '/tmp/err.txt',
@@ -1161,23 +1166,28 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        // Only 1 block: failed ToolResult with cap metadata.
-        $this->assertCount(1, $blocks);
+        // 2 blocks: failed ToolResult + System notice block.
+        $this->assertCount(2, $blocks);
 
+        // ToolResult: unchanged, has is_error but no notice_type.
         $toolBlock = $blocks[0];
         $this->assertTrue($toolBlock->meta['is_error']);
-        $this->assertSame('output_cap', $toolBlock->meta['notice_type']);
-        $this->assertSame(5000, $toolBlock->meta['output_cap_limit']);
-        $this->assertSame(6000, $toolBlock->meta['output_cap_char_count']);
-        $this->assertSame('/tmp/err.txt', $toolBlock->meta['output_cap_saved_path']);
-
-        // Exact model-facing text preserved.
+        $this->assertArrayNotHasKey('notice_type', $toolBlock->meta);
         $this->assertStringContainsString('Output capped to', $toolBlock->text);
+
+        // System notice block.
+        $noticeBlock = $blocks[1];
+        $this->assertSame(TranscriptBlockKindEnum::System, $noticeBlock->kind);
+        $this->assertSame('output_cap', $noticeBlock->meta['notice_type']);
+        $this->assertSame(5000, $noticeBlock->meta['output_cap_limit']);
+        $this->assertSame(6000, $noticeBlock->meta['output_cap_char_count']);
+        $this->assertSame('/tmp/err.txt', $noticeBlock->meta['output_cap_saved_path']);
+        $this->assertStringContainsString('Output capped to', $noticeBlock->text);
     }
 
     // ── Model tool input (central cap path) ─────────────────────────────────
 
-    public function testModelInputMessagesUpdatesToolResultTextToExactModelFacingContent(): void
+    public function testModelInputMessagesWithCentralCapProjectsSystemNoticeBlock(): void
     {
         // Simulate a tool execution with FULL (uncapped) output — as if a
         // central cap was applied by OutputCapLlmTransformHook.
@@ -1187,9 +1197,8 @@ final class TranscriptProjectorTest extends TestCase
         $this->accept('tool_execution.completed', [
             'tool_call_id' => 'tc_central',
             'result' => 'Full file content that is very long...',
-            // Note: no output_capped=true — this is the central-cap path
-            // where raw output is stored and model-facing text is delivered
-            // later via assistant.message_completed.model_input_messages.
+            // No output_cap — central-cap path: raw output stored, model-facing
+            // text delivered later via model_input_messages.
         ]);
 
         $blocks = $this->projector->blocks();
@@ -1206,33 +1215,37 @@ final class TranscriptProjectorTest extends TestCase
                     'tool_call_id' => 'tc_central',
                     'tool_name' => 'read',
                     'text' => "[Output capped to 20000 characters]\n\nFull output: 35000 characters\nSaved for audit at: /tmp/cap.txt\n\nDo NOT rerun the same full command/tool call.\nDo NOT read the saved file in full.",
-                    'metadata' => ['output_cap_limit' => 20000],
+                    'metadata' => [
+                        'output_cap' => true,
+                        'output_cap_limit' => 20000,
+                    ],
                 ],
             ],
         ]);
 
         $blocks = $this->projector->blocks();
-        // 2 blocks: ToolResult (updated by model_input_messages) + AssistantMessage (from the event)
-        $this->assertCount(2, $blocks, 'Expected ToolResult + AssistantMessage blocks');
+        // 3 blocks: ToolResult (unchanged) + System notice + AssistantMessage
+        $this->assertCount(3, $blocks, 'Expected ToolResult + System notice + AssistantMessage blocks');
 
+        // ToolResult: unchanged, still shows original human-readable output.
         $toolBlock = $blocks[0];
         $this->assertSame(TranscriptBlockKindEnum::ToolResult, $toolBlock->kind);
         $this->assertSame('tool_result_tc_central', $toolBlock->id);
+        $this->assertStringContainsString('Full file content that is very long', $toolBlock->text,
+            'ToolResult must retain original human-readable output');
+        $this->assertArrayNotHasKey('notice_type', $toolBlock->meta);
 
-        // Text must now be the exact model-facing capped notice, not raw output.
-        $this->assertStringContainsString('[Output capped to 20000 characters]', $toolBlock->text);
-        $this->assertStringNotContainsString('Full file content that is very long', $toolBlock->text,
-            'ToolResult must NOT contain raw output after model_input update');
-
-        // Cap metadata from the model tool input must be set.
-        $this->assertSame('output_cap', $toolBlock->meta['notice_type']);
-        $this->assertSame(20000, $toolBlock->meta['output_cap_limit']);
-        $this->assertTrue($toolBlock->meta['model_input_exact']);
-
-        // No paraphrase.
-        $this->assertStringNotContainsString('Output exceeded', $toolBlock->text);
-        $this->assertStringNotContainsString('Model was shown', $toolBlock->text);
-        $this->assertStringNotContainsString('visible chars', $toolBlock->text);
+        // Assistant message block (created by AssistantStream subscriber first).
+        $this->assertSame(TranscriptBlockKindEnum::AssistantMessage, $blocks[1]->kind);
+        
+        // System notice block with cap metadata (created by ToolProjectionSubscriber).
+        $noticeBlock = $blocks[2];
+        $this->assertSame(TranscriptBlockKindEnum::System, $noticeBlock->kind);
+        $this->assertSame('notice_output_cap_tc_central', $noticeBlock->id);
+        $this->assertSame('output_cap', $noticeBlock->meta['notice_type']);
+        $this->assertTrue($noticeBlock->meta['output_cap']);
+        $this->assertSame(20000, $noticeBlock->meta['output_cap_limit']);
+        $this->assertStringContainsString('[Output capped to 20000 characters]', $noticeBlock->text);
     }
 
     public function testModelInputMessagesWithNonMatchingToolCallIdIsIgnored(): void
@@ -1345,7 +1358,9 @@ final class TranscriptProjectorTest extends TestCase
             'result' => 'Very long raw output...',
         ]);
 
-        // First update.
+        // First update — no output_cap metadata, so this is treated as
+        // normal (non-capped) model input; ToolResult text stays unchanged,
+        // model-facing text stored in metadata only.
         $this->accept('assistant.message_completed', [
             'message_id' => 'step-2',
             'text' => 'OK',
@@ -1360,8 +1375,12 @@ final class TranscriptProjectorTest extends TestCase
 
         $blocks = $this->projector->blocks();
         $this->assertCount(2, $blocks, 'Expected ToolResult + AssistantMessage after first model input');
-        $this->assertStringContainsString('[Output capped to 10000]', $blocks[0]->text);
+        // ToolResult text stays unchanged (no output_cap metadata).
+        $this->assertSame('Very long raw output...', $blocks[0]->text);
         $this->assertSame(TranscriptBlockKindEnum::ToolResult, $blocks[0]->kind);
+        // Model-facing text stored in metadata.
+        $this->assertTrue($blocks[0]->meta['model_input_exact']);
+        $this->assertSame(hash('sha256', '[Output capped to 10000]'), $blocks[0]->meta['model_input_sha256']);
 
         // Second update with same text — should be deduplicated.
         $this->accept('assistant.message_completed', [
@@ -1380,9 +1399,9 @@ final class TranscriptProjectorTest extends TestCase
         // 3 blocks: ToolResult + AssistantMessage-1 + AssistantMessage-2 (deduped model_input_messages,
         // but each assistant.message_completed still creates an AssistantMessage block).
         $this->assertCount(3, $blocks, 'Expected ToolResult + 2x AssistantMessage after second model input');
-        // First block is ToolResult, unchanged by dedup.
+        // ToolResult unchanged by dedup.
         $this->assertSame(TranscriptBlockKindEnum::ToolResult, $blocks[0]->kind);
-        $this->assertStringContainsString('[Output capped to 10000]', $blocks[0]->text);
+        $this->assertSame('Very long raw output...', $blocks[0]->text);
         $this->assertSame(TranscriptBlockKindEnum::AssistantMessage, $blocks[1]->kind);
         $this->assertSame(TranscriptBlockKindEnum::AssistantMessage, $blocks[2]->kind);
     }
@@ -1491,10 +1510,11 @@ final class TranscriptProjectorTest extends TestCase
         $this->assertStringContainsString('generated_input', $blocks[1]->id);
     }
 
-    public function testModelInputOnAssistantMessageFailedProjectsToolText(): void
+    public function testModelInputOnAssistantMessageFailedWithOutputCapProjectsNoticeBlock(): void
     {
-        // Failed LLM step with model_input_messages should still update
-        // the ToolResult block with exact model-facing text.
+        // Failed LLM step with model_input_messages. When the model input
+        // has output_cap metadata, a System notice block is created;
+        // ToolResult stays unchanged.
         $this->accept('tool_execution.started', [
             'tool_call_id' => 'tc_fail', 'tool_name' => 'read',
         ]);
@@ -1512,27 +1532,40 @@ final class TranscriptProjectorTest extends TestCase
                     'tool_call_id' => 'tc_fail',
                     'tool_name' => 'read',
                     'text' => '[Output capped to 20000 characters] — model saw this before error',
+                    'metadata' => ['output_cap' => true, 'output_cap_limit' => 20000],
                 ],
             ],
         ]);
 
         $blocks = $this->projector->blocks();
-        // 2 blocks: ToolResult (updated) + Error (from assistant.message_failed)
-        $this->assertCount(2, $blocks, 'Expected ToolResult + Error block after failed message with model inputs');
+        // 3 blocks: ToolResult (unchanged) + Error + System notice block
+        $this->assertCount(3, $blocks, 'Expected ToolResult + Error + System notice block');
 
+        // ToolResult: unchanged human-readable output.
         $toolBlock = $blocks[0];
         $this->assertSame(TranscriptBlockKindEnum::ToolResult, $toolBlock->kind);
-        $this->assertSame(TranscriptBlockKindEnum::Error, $blocks[1]->kind, 'Failed message creates Error block, not AssistantMessage');
-        $this->assertStringContainsString('[Output capped to 20000 characters]', $toolBlock->text);
-        $this->assertStringNotContainsString('Raw full file content', $toolBlock->text,
-            'ToolResult must NOT contain raw output after model_input update on failed path');
-        $this->assertTrue($toolBlock->meta['model_input_exact']);
+        $this->assertStringContainsString('Raw full file content', $toolBlock->text,
+            'ToolResult must retain original output');
+        $this->assertArrayNotHasKey('model_input_exact', $toolBlock->meta);
+
+        // System notice block with cap metadata.
+        $noticeBlock = $blocks[2];
+        $this->assertSame(TranscriptBlockKindEnum::Error, $blocks[1]->kind);
+        $this->assertSame(TranscriptBlockKindEnum::System, $noticeBlock->kind);
+        $this->assertSame('notice_output_cap_tc_fail', $noticeBlock->id);
+        $this->assertSame('output_cap', $noticeBlock->meta['notice_type']);
+        $this->assertTrue($noticeBlock->meta['output_cap']);
+        $this->assertSame(20000, $noticeBlock->meta['output_cap_limit']);
+        $this->assertStringContainsString('[Output capped to 20000 characters]', $noticeBlock->text);
+
+        // Error block.
     }
 
-    public function testModelInputOnTurnCancelledProjectsToolText(): void
+    public function testModelInputOnTurnCancelledWithOutputCapProjectsNoticeBlock(): void
     {
-        // Aborted LLM step with model_input_messages should update
-        // the ToolResult block with exact text.
+        // Aborted LLM step with model_input_messages carrying output_cap
+        // metadata should project a System notice block; ToolResult stays
+        // unchanged.
         $this->accept('tool_execution.started', [
             'tool_call_id' => 'tc_cancel', 'tool_name' => 'bash',
         ]);
@@ -1549,18 +1582,33 @@ final class TranscriptProjectorTest extends TestCase
                     'tool_call_id' => 'tc_cancel',
                     'tool_name' => 'bash',
                     'text' => '[Output capped to 5000 characters]',
+                    'metadata' => ['output_cap' => true, 'output_cap_limit' => 5000],
                 ],
             ],
         ]);
 
         $blocks = $this->projector->blocks();
-        // 2 blocks: ToolResult (updated) + Cancelled (from CancellationProjectionSubscriber)
-        $this->assertCount(2, $blocks, 'Expected ToolResult + Cancelled block after cancellation with model inputs');
+        // 3 blocks: ToolResult (unchanged) + System notice + Cancelled block
+        $this->assertCount(3, $blocks, 'Expected ToolResult + System notice + Cancelled block');
 
+        // ToolResult stays unchanged (human-readable output).
         $toolBlock = $blocks[0];
         $this->assertSame(TranscriptBlockKindEnum::ToolResult, $toolBlock->kind);
-        $this->assertStringContainsString('[Output capped to 5000 characters]', $toolBlock->text);
-        $this->assertTrue($toolBlock->meta['model_input_exact']);
+        $this->assertStringContainsString('Long bash output that was capped', $toolBlock->text,
+            'ToolResult must retain original output');
+        $this->assertArrayNotHasKey('model_input_exact', $toolBlock->meta);
+
+        // System notice block with cap metadata (ToolProjectionSubscriber runs before CancellationProjectionSubscriber).
+        $noticeBlock = $blocks[1];
+        $this->assertSame(TranscriptBlockKindEnum::System, $noticeBlock->kind);
+        $this->assertSame('notice_output_cap_tc_cancel', $noticeBlock->id);
+        $this->assertSame('output_cap', $noticeBlock->meta['notice_type']);
+        $this->assertTrue($noticeBlock->meta['output_cap']);
+        $this->assertSame(5000, $noticeBlock->meta['output_cap_limit']);
+        $this->assertStringContainsString('[Output capped to 5000 characters]', $noticeBlock->text);
+
+        // Cancelled block (from CancellationProjectionSubscriber on turn.cancelled).
+        $this->assertSame(TranscriptBlockKindEnum::Cancelled, $blocks[2]->kind);
     }
 
     public function testSafeGuardLikeToolDenialExactTextInMetadataOnly(): void
