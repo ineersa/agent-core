@@ -249,9 +249,9 @@ final class McpInitializeSessionHandler
      * mapped names across the entire catalog (cross-server), skipping
      * duplicates and logging a warning.
      *
-     * @param list<array{name: string, description?: string|null, inputSchema: array}> $rawTools
-     * @param list<string>                                                             $excludeTools
-     * @param array<string, true>                                                      $globalSeenNames Mutable cross-server duplicate tracker
+     * @param list<array{name: string, description?: string|null, inputSchema: array<string, mixed>}> $rawTools
+     * @param list<string>                                                                            $excludeTools
+     * @param array<string, true>                                                                     $globalSeenNames Mutable cross-server duplicate tracker
      *
      * @return list<McpToolDefinitionDTO>
      */

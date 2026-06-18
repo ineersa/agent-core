@@ -62,6 +62,9 @@ final class McpConnectionManager implements McpConnectionManagerInterface
     ) {
     }
 
+    /**
+     * @return array<string, array{status: 'connected'|'failed', transport: string, tools: list<array{name: string, description?: string|null, inputSchema: array<string, mixed>}>, errorMessage?: string}>
+     */
     public function discover(string $runId): array
     {
         $results = [];

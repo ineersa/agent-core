@@ -28,7 +28,7 @@ interface McpConnectionManagerInterface
      *
      * @param string $runId Session/run identifier
      *
-     * @return array<string, array{status: 'connected'|'failed', transport: string, tools: list<array{name: string, description?: string|null, inputSchema: array}>, errorMessage?: string}>
+     * @return array<string, array{status: 'connected'|'failed', transport: string, tools: list<array{name: string, description?: string|null, inputSchema: array<string, mixed>}>, errorMessage?: string}>
      */
     public function discover(string $runId): array;
 

@@ -47,8 +47,7 @@
         "deptrac/deptrac": "^4.6",
         "symfony/test-pack": "^1.0",
         "dama/doctrine-test-bundle": "^8.6",
-        "brianium/paratest": "^7.23",
-        "nyholm/psr7-server": "^1.1"
+        "brianium/paratest": "^7.23"
     },
     "autoload": {
         "psr-4": {
