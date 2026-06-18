@@ -201,3 +201,6 @@ Completed:
 - User rejected the branch as a no-go: output-cap-specific plumbing pierced through runtime/TUI/projection layers instead of introducing a generalized notification-to-model abstraction.
 - Restart direction: implement a notification-to-model system usable by output cap, SafeGuard, extensions, and future internal nudges; exact model-facing text and structured metadata should be first-class generic data; output cap should use that system instead of custom output_cap fields spread across layers.
 - Rollback completed separately: PR #165 reverted accidental issue-137 code from main and was moved to DONE.
+
+## Task workflow update - 2026-06-18T17:17:38.802Z
+- Summary: Cancelled at user request. PR #164 is closed/rejected, main contamination was reverted by PR #165, and replacement task issue-137-model-notification-system was created for a clean plan-first restart. Because DONE workflow would merge the rejected branch, this task will be closed manually as a cancelled record and the rejected local worktree will be removed without merging.
