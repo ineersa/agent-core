@@ -45,7 +45,7 @@ Testing skill and `tests/AGENTS.md` were read before proposing validation. This 
 - Focused validation uses Castor only: relevant `castor test --filter=...`, `castor test:controller-replay` as needed, `castor test:tui` for TUI proof, `castor deptrac`, `castor phpstan`, `castor cs-check`, and final deterministic `castor check` via task workflow.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/issue-137-output-cap-observability
 Worktree: /home/ineersa/projects/agent-core-worktrees/issue-137-output-cap-observability
 Fork run: osilw4kokk9s
@@ -164,3 +164,7 @@ Completed:
 - Skipped PR creation (pushOnly: true).
 - Validation: ogyf6t15ad4l: rg output_cap_notice/model_tool_inputs/ModelToolInput across src/tests — clean.; ogyf6t15ad4l: castor focused tests — 173/173 and 150/150 pass.; ogyf6t15ad4l: castor test:tui --filter=OutputCap — pass (53 tests, 1 skipped llm-real).; ogyf6t15ad4l: castor deptrac — 0 violations; castor phpstan — 0 errors; castor cs-check — clean.; osilw4kokk9s: castor cs-check — clean; castor phpstan — 0 errors; castor test --filter=OutputCapLlmTransformHookTest — 14/14 pass.; move_task CODE-REVIEW deterministic castor check should pass before task transition.
 - Summary: Review-iteration fixes complete and pushed through f7d8cf239. Existing PR remains https://github.com/ineersa/agent-core/pull/164 (gh auth token is invalid for creating/updating PR via CLI, so CODE-REVIEW transition used pushOnly). Addressed sensible reviewer suggestions: canonical output_capped key only, OutputCapLlmTransformHook cap decision uses actual model-facing combinedText with regression coverage, unused ModelInputMessageDTO::fromArray removed, stale PHPDoc/comments updated. Exact model-facing TUI invariant preserved; SafeGuard-specific styling remains deferred.
+
+## Task workflow update - 2026-06-18T16:06:19.608Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Summary: Review iteration requested after manual smoke found TUI regression: ToolResult blocks now show raw provider-facing JSON and warning icon can appear on uncapped reads when file contents contain the '[Output capped to' marker string. Need restore old visible tool output while retaining exact generated/cap notice observability, and make output-cap display structured/adequate without raw JSON.
