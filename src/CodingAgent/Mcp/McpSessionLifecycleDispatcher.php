@@ -6,7 +6,6 @@ namespace Ineersa\CodingAgent\Mcp;
 
 use Ineersa\CodingAgent\Mcp\Message\McpInitializeSessionCommand;
 use Psr\Log\LoggerInterface;
-use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
@@ -44,22 +43,11 @@ final readonly class McpSessionLifecycleDispatcher
                 reason: $reason,
                 correlationId: $correlationId,
             ));
-        } catch (ExceptionInterface $e) {
-            // Messenger dispatch failure is non-fatal for MCP.
-            // The session continues without MCP tools.
-            $this->logger->warning('Failed to dispatch MCP initialize command', [
-                'component' => 'mcp',
-                'mcp_event' => 'dispatch.initialize.failed',
-                'run_id' => $runId,
-                'session_id' => $runId,
-                'reason' => $reason,
-                'correlation_id' => $correlationId,
-                'error_class' => $e::class,
-                'error_message' => $e->getMessage(),
-            ]);
         } catch (\Throwable $e) {
-            // Unexpected dispatch error — still non-fatal.
-            $this->logger->warning('Unexpected error dispatching MCP initialize command', [
+            // Dispatch failure is non-fatal — MCP is optional infrastructure.
+            // The session continues without MCP tools. error_class in context
+            // distinguishes transport failures (ExceptionInterface) from bugs.
+            $this->logger->warning('Failed to dispatch MCP initialize command', [
                 'component' => 'mcp',
                 'mcp_event' => 'dispatch.initialize.failed',
                 'run_id' => $runId,

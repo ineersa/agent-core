@@ -143,7 +143,7 @@ final class HeadlessController
         // - llm consumes ExecuteLlmStep (ASYNC-04)
         // - tool consumes ExecuteToolCall (ASYNC-04)
         // - mcp consumes McpInitializeSessionCommand, McpRefreshCatalogCommand,
-        //   McpDisconnectSessionCommand, and (Phase 3+) McpCallToolCommand.
+        //   McpDisconnectSessionCommand, and McpCallToolCommand (MCP-05).
         //   Exactly ONE mcp consumer per session — serialized MCP calls and
         //   single owner for STDIO child processes.
         // Scheduler consumer: dispatches recurring background tasks such as
