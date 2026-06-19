@@ -282,6 +282,10 @@ parameters:
       collectors:
         - type: directory
           value: src/CodingAgent/Mcp/Catalog/.*
+    - name: AppMcpTool
+      collectors:
+        - type: directory
+          value: src/CodingAgent/Mcp/Tool/.*
     - name: McpSdk
       collectors:
         - type: classNameRegex
@@ -549,6 +553,11 @@ parameters:
       - SymfonyMessenger
 
     AppMcpCatalog: ~
+
+    AppMcpTool:
+      - AgentCore
+      - AppTool
+      - AppMcpCatalog
 
     McpSdk: ~
 
