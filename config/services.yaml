@@ -611,20 +611,38 @@ services:
     arguments:
       $mcpDispatcher: '@Ineersa\CodingAgent\Mcp\McpSessionLifecycleDispatcher'
 
-  # ─── MCP-04 Dynamic MCP tool registration ───────────────────────
+  # ─── MCP-04 / MCP-05 Dynamic MCP tool registration + invocation ────
 
   # MCP tool catalog store interface — alias for the session-file implementation.
   Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface:
     alias: Ineersa\CodingAgent\Mcp\Catalog\SessionFileMcpToolCatalogStore
+
+  # MCP result mapper — maps raw MCP callTool results to tool output / ToolCallException.
+  Ineersa\CodingAgent\Mcp\Tool\McpResultMapper: ~
+
+  # MCP tool invoker — autowired shared runtime that owns the real invocation work.
+  Ineersa\CodingAgent\Mcp\Tool\McpToolInvoker: ~
+
+  # MCP tool handler factory — creates per-tool handler instances with static identity.
+  Ineersa\CodingAgent\Mcp\Tool\McpToolHandlerFactory: ~
 
   # MCP tool registrar — bridges session catalog into ToolRegistry dynamic tools.
   Ineersa\CodingAgent\Mcp\Tool\McpToolRegistrar:
     arguments:
       $catalogStore: '@Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface'
       $toolRegistry: '@Ineersa\CodingAgent\Tool\ToolRegistryInterface'
+      $handlerFactory: '@Ineersa\CodingAgent\Mcp\Tool\McpToolHandlerFactory'
 
   # McpToolHandler is a value object with string constructor args (serverName,
-  # mcpName) — not an autowireable service.  Exclude it from the container
-  # so Symfony DI does not report missing autowiring for its scalar parameters.
+  # mcpName) plus a service dependency (invoker) — not an autowireable service.
+  # Exclude it from the container so Symfony DI does not report missing
+  # autowiring for its scalar parameters.
   Ineersa\CodingAgent\Mcp\Tool\McpToolHandler:
     autowire: false
+
+  # ─── MCP-05 MCP-aware ExecuteToolCall routing middleware ────────────
+
+  # Intercepts outbound ExecuteToolCall on agent.execution.bus and stamps
+  # MCP-backed tools with TransportNamesStamp(['mcp']) before send_message
+  # routes them.  Wired in messenger.yaml as bus-level middleware.
+  Ineersa\CodingAgent\Mcp\Messenger\McpExecuteToolCallRoutingMiddleware: ~

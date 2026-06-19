@@ -34,6 +34,16 @@ use PHPUnit\Framework\TestCase;
  * Test thesis 6: Error message sanitization redacts secret-bearing substrings
  * (bearer tokens, authorization headers, api_key, password, token values)
  * from log messages while preserving the class of error.
+ *
+ * Test thesis 7: Callback failure after successful server discovery must not
+ * corrupt the discovery result (connected stays connected, discover() does
+ * not throw, and callback failure is logged with correct attribution).
+ *
+ * Test thesis 8: Callback failure after failed server discovery must not
+ * propagate (discover() returns failed result, does not throw).
+ *
+ * Test thesis 9: Callback is invoked once per server result with cumulative
+ * results.
  */
 class McpConnectionManagerTest extends TestCase
 {
@@ -125,14 +135,25 @@ class McpConnectionManagerTest extends TestCase
         self::assertNotNull($reverseTool, 'Should discover reverse tool');
 
         // Verify structured logs
-        $infoLogs = array_filter(
+        $infoLogs = array_values(array_filter(
             $this->logger->records,
             static fn(array $r): bool =>
                 $r['level'] === 'info' &&
                 ($r['context']['mcp_event'] ?? '') === 'discovery.server_connected',
-        );
+        ));
         self::assertCount(1, $infoLogs);
         self::assertSame('fixture', $infoLogs[0]['context']['server_name']);
+
+        // Verify starting log exists before connect
+        $startingLogs = array_values(array_filter(
+            $this->logger->records,
+            static fn(array $r): bool =>
+                $r['level'] === 'info' &&
+                ($r['context']['mcp_event'] ?? '') === 'discovery.server_starting',
+        ));
+        self::assertCount(1, $startingLogs);
+        self::assertSame('fixture', $startingLogs[0]['context']['server_name']);
+        self::assertSame('stdio', $startingLogs[0]['context']['transport']);
 
         // Cleanup
         $this->manager->disconnectAll('test-run');
@@ -171,15 +192,27 @@ class McpConnectionManagerTest extends TestCase
         self::assertCount(0, $results['broken']['tools'], 'Failed server should have no tools');
 
         // Verify warning log exists for the failed server
-        $warnings = array_filter(
+        $warnings = array_values(array_filter(
             $this->logger->records,
             static fn(array $r): bool =>
                 $r['level'] === 'warning' &&
                 ($r['context']['mcp_event'] ?? '') === 'discovery.server_failed',
-        );
+        ));
         self::assertCount(1, $warnings);
         self::assertSame('broken', $warnings[0]['context']['server_name']);
         self::assertSame('http', $warnings[0]['context']['transport']);
+
+        // Verify starting log exists per server before connect attempt
+        $startingLogs = array_values(array_filter(
+            $this->logger->records,
+            static fn(array $r): bool =>
+                $r['level'] === 'info' &&
+                ($r['context']['mcp_event'] ?? '') === 'discovery.server_starting',
+        ));
+        self::assertCount(1, $startingLogs);
+        self::assertSame('broken', $startingLogs[0]['context']['server_name']);
+        self::assertSame('http', $startingLogs[0]['context']['transport']);
+        self::assertSame('test-run-fail', $startingLogs[0]['context']['run_id']);
     }
 
     public function testDiscoverWithEmptyConfigReturnsEmptyResults(): void
@@ -312,21 +345,172 @@ class McpConnectionManagerTest extends TestCase
             self::assertNotNull($addTool, 'Should discover add tool');
 
             // Verify structured logs — transport should be http
-            $infoLogs = array_filter(
+            $infoLogs = array_values(array_filter(
                 $this->logger->records,
                 static fn(array $r): bool =>
                     $r['level'] === 'info' &&
                     ($r['context']['mcp_event'] ?? '') === 'discovery.server_connected',
-            );
+            ));
             self::assertCount(1, $infoLogs);
             self::assertSame('http-fixture', $infoLogs[0]['context']['server_name']);
             self::assertSame('http', $infoLogs[0]['context']['transport']);
+
+            // Starting log must also be present
+            $startingLogs = array_values(array_filter(
+                $this->logger->records,
+                static fn(array $r): bool =>
+                    $r['level'] === 'info' &&
+                    ($r['context']['mcp_event'] ?? '') === 'discovery.server_starting',
+            ));
+            self::assertCount(1, $startingLogs);
+            self::assertSame('http-fixture', $startingLogs[0]['context']['server_name']);
 
             // Cleanup client
             $this->manager->disconnectAll('test-run-http');
         } finally {
             $cleanup();
         }
+    }
+
+    public function testCallbackFailureAfterConnectedServerDoesNotCorruptResults(): void
+    {
+        // Write an mcp.json with the fixture STDIO server
+        $mcpConfig = [
+            'mcpServers' => [
+                'fixture' => [
+                    'command' => PHP_BINARY,
+                    'args' => [$this->fixturePath],
+                    'timeoutMs' => 10000,
+                    'startupTimeoutMs' => 10000,
+                ],
+            ],
+        ];
+        file_put_contents(
+            $this->projectDir . '/.hatfield/mcp.json',
+            json_encode($mcpConfig, \JSON_PRETTY_PRINT),
+        );
+
+        $callbackError = new \RuntimeException('Catalog write disk full');
+        $callbackCalled = false;
+
+        $results = $this->manager->discover('test-run-cb', function (array $cumulative) use ($callbackError, &$callbackCalled): void {
+            $callbackCalled = true;
+            throw $callbackError;
+        });
+
+        // Discover must still return connected result, not throw
+        self::assertArrayHasKey('fixture', $results);
+        self::assertSame('connected', $results['fixture']['status'], 'Connected status must survive callback failure');
+        self::assertTrue($callbackCalled, 'Callback should have been invoked');
+
+        // Verify callback_failed warning was logged with correct attribution
+        $cbWarnings = array_values(array_filter(
+            $this->logger->records,
+            static fn(array $r): bool =>
+                $r['level'] === 'warning' &&
+                ($r['context']['mcp_event'] ?? '') === 'discovery.callback_failed',
+        ));
+        self::assertCount(1, $cbWarnings);
+        self::assertSame('test-run-cb', $cbWarnings[0]['context']['run_id']);
+        self::assertSame('fixture', $cbWarnings[0]['context']['server_name']);
+        self::assertSame($callbackError::class, $cbWarnings[0]['context']['error_class']);
+        self::assertStringContainsString('Catalog write disk full', $cbWarnings[0]['context']['error_message'] ?? '');
+
+        // Connected log must still exist — discovery result was not reclassified
+        $connectedLogs = array_values(array_filter(
+            $this->logger->records,
+            static fn(array $r): bool =>
+                $r['level'] === 'info' &&
+                ($r['context']['mcp_event'] ?? '') === 'discovery.server_connected',
+        ));
+        self::assertCount(1, $connectedLogs);
+
+        // Cleanup
+        $this->manager->disconnectAll('test-run-cb');
+    }
+
+    public function testCallbackFailureAfterFailedServerDoesNotThrow(): void
+    {
+        $port = $this->findAvailablePort();
+        self::assertNotNull($port, 'No available port found for failed-HTTP test');
+
+        $mcpConfig = [
+            'mcpServers' => [
+                'broken' => [
+                    'url' => sprintf('http://127.0.0.1:%d/mcp', $port),
+                    'timeoutMs' => 2000,
+                    'startupTimeoutMs' => 2000,
+                ],
+            ],
+        ];
+        file_put_contents(
+            $this->projectDir . '/.hatfield/mcp.json',
+            json_encode($mcpConfig, \JSON_PRETTY_PRINT),
+        );
+
+        $callbackCalled = false;
+
+        $results = $this->manager->discover('test-run-fail-cb', function (array $cumulative) use (&$callbackCalled): void {
+            $callbackCalled = true;
+            throw new \RuntimeException('Callback boom');
+        });
+
+        // Discover must still return failed result, not throw
+        self::assertArrayHasKey('broken', $results);
+        self::assertSame('failed', $results['broken']['status']);
+        self::assertTrue($callbackCalled, 'Callback should have been invoked');
+
+        // Verify callback_failed warning exists
+        $cbWarnings = array_values(array_filter(
+            $this->logger->records,
+            static fn(array $r): bool =>
+                $r['level'] === 'warning' &&
+                ($r['context']['mcp_event'] ?? '') === 'discovery.callback_failed',
+        ));
+        self::assertCount(1, $cbWarnings);
+        self::assertSame('broken', $cbWarnings[0]['context']['server_name']);
+
+        // Discovery failed log must still exist
+        $failWarnings = array_values(array_filter(
+            $this->logger->records,
+            static fn(array $r): bool =>
+                $r['level'] === 'warning' &&
+                ($r['context']['mcp_event'] ?? '') === 'discovery.server_failed',
+        ));
+        self::assertCount(1, $failWarnings);
+    }
+
+    public function testCallbackInvokedOncePerServerResult(): void
+    {
+        $port = $this->findAvailablePort();
+        self::assertNotNull($port, 'No available port found for failed-HTTP test');
+
+        $mcpConfig = [
+            'mcpServers' => [
+                'broken' => [
+                    'url' => sprintf('http://127.0.0.1:%d/mcp', $port),
+                    'timeoutMs' => 2000,
+                    'startupTimeoutMs' => 2000,
+                ],
+            ],
+        ];
+        file_put_contents(
+            $this->projectDir . '/.hatfield/mcp.json',
+            json_encode($mcpConfig, \JSON_PRETTY_PRINT),
+        );
+
+        $callCount = 0;
+        $lastCumulative = null;
+
+        $this->manager->discover('test-run-cb-count', function (array $cumulative) use (&$callCount, &$lastCumulative): void {
+            $callCount++;
+            $lastCumulative = $cumulative;
+        });
+
+        self::assertSame(1, $callCount, 'Callback must be invoked exactly once per server');
+        self::assertNotNull($lastCumulative);
+        self::assertArrayHasKey('broken', $lastCumulative);
+        self::assertSame('failed', $lastCumulative['broken']['status']);
     }
 
     public function testSanitizeLogMessageRedactsSecrets(): void

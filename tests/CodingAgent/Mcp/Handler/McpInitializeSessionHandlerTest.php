@@ -401,10 +401,200 @@ class McpInitializeSessionHandlerTest extends TestCase
             );
         }
     }
+
+    /**
+     * Test thesis 7: Partial catalog is written after each server's
+     * discovery result is known, so successful servers become visible
+     * before slow/failing servers finish.  This prevents a single slow
+     * STDIO server from blocking tool visibility for fast HTTP servers.
+     */
+    public function testPartialCatalogWrittenDuringDiscovery(): void
+    {
+        $mcpConfig = [
+            'mcpServers' => [
+                'fast-http' => [
+                    'url' => 'http://127.0.0.1:19123/mcp',
+                    'timeoutMs' => 5000,
+                ],
+                'slow-stdio' => [
+                    'command' => PHP_BINARY,
+                    'args' => [__DIR__ . '/../Fixtures/stdio-echo-server.php'],
+                    'timeoutMs' => 10000,
+                    'startupTimeoutMs' => 10000,
+                ],
+            ],
+        ];
+        file_put_contents(
+            $this->projectDir . '/.hatfield/mcp.json',
+            json_encode($mcpConfig, \JSON_PRETTY_PRINT),
+        );
+
+        // Create a mock connection manager that simulates sequential
+        // discovery with the callback invoked after each server.
+        $stubManager = $this->createStub(McpConnectionManagerInterface::class);
+        $stubManager->method('discover')
+            ->willReturnCallback(function (string $runId, ?callable $onServerDiscovered = null) {
+                // First server succeeds — callback fires with 1 server
+                $results = [
+                    'fast-http' => [
+                        'status' => 'connected',
+                        'transport' => 'http',
+                        'tools' => [
+                            ['name' => 'search', 'description' => 'Search the web', 'inputSchema' => []],
+                        ],
+                    ],
+                ];
+                if (null !== $onServerDiscovered) {
+                    $onServerDiscovered($results);
+                }
+
+                // Second server fails AFTER the first callback already
+                // published the partial catalog.
+                $results['slow-stdio'] = [
+                    'status' => 'failed',
+                    'transport' => 'stdio',
+                    'tools' => [],
+                    'errorMessage' => 'Request timed out',
+                ];
+                if (null !== $onServerDiscovered) {
+                    $onServerDiscovered($results);
+                }
+
+                return $results;
+            });
+
+        $handler = new McpInitializeSessionHandler(
+            new McpConfigLoader(
+                new SettingsPathResolver($this->projectDir, $this->projectDir),
+                new McpConfigValidator(),
+                new McpEnvInterpolator(),
+                $this->projectDir,
+            ),
+            $stubManager,
+            new McpToolNameMapper(),
+            $this->catalogStore,
+            $this->logger,
+        );
+
+        $command = new McpInitializeSessionCommand(
+            runId: 'test-run-partial',
+            reason: 'start_run',
+            correlationId: 'corr-partial',
+        );
+        ($handler)($command);
+
+        // The catalog was written in order: partial(1 server) → partial(2 servers) → final(2 servers).
+        self::assertCount(3, $this->catalogStore->writeLog, 'Expected 3 writes: 2 partial + 1 final');
+
+        // First write: only fast-http is present, slow-stdio hasn't been
+        // discovered yet. This is the partial catalog that would make
+        // HTTP tools visible before STDIO discovery completes.
+        $firstWrite = $this->catalogStore->writeLog[0];
+        self::assertSame('test-run-partial', $firstWrite['runId']);
+        $firstServers = $firstWrite['catalog']->servers;
+        self::assertCount(1, $firstServers, 'First partial write: only fast-http before slow-stdio result');
+        self::assertArrayHasKey('fast-http', $firstServers);
+        self::assertSame('connected', $firstServers['fast-http']->status->value);
+        self::assertCount(1, $firstServers['fast-http']->tools);
+        self::assertArrayNotHasKey('slow-stdio', $firstServers,
+            'Slow server must NOT appear in first partial catalog');
+
+        // Second write: both servers present (second server failed)
+        $secondWrite = $this->catalogStore->writeLog[1];
+        $secondServers = $secondWrite['catalog']->servers;
+        self::assertCount(2, $secondServers, 'Second write: both servers present');
+        self::assertArrayHasKey('fast-http', $secondServers);
+        self::assertArrayHasKey('slow-stdio', $secondServers);
+        self::assertSame('failed', $secondServers['slow-stdio']->status->value);
+
+        // Final write matches the final discovery results
+        $finalWrite = $this->catalogStore->writeLog[2];
+        self::assertSame('test-run-partial', $finalWrite['runId']);
+        self::assertCount(2, $finalWrite['catalog']->servers);
+
+        // Partial-write debug logs should be present
+        $partialLogs = array_values(array_filter(
+            $this->logger->records,
+            static fn(array $r): bool =>
+                $r['level'] === 'debug' &&
+                ($r['context']['mcp_event'] ?? '') === 'catalog.partial_written',
+        ));
+        self::assertCount(2, $partialLogs, 'Expected 2 partial-write debug logs');
+    }
+
+    /**
+     * Test thesis 8: Refresh handler also publishes partial catalogs
+     * incrementally during rediscovery.
+     */
+    public function testRefreshCatalogPublishesPartialCatalogs(): void
+    {
+        $mcpConfig = [
+            'mcpServers' => [
+                'server-a' => [
+                    'url' => 'http://127.0.0.1:19123/mcp',
+                    'timeoutMs' => 5000,
+                ],
+            ],
+        ];
+        file_put_contents(
+            $this->projectDir . '/.hatfield/mcp.json',
+            json_encode($mcpConfig, \JSON_PRETTY_PRINT),
+        );
+
+        $stubManager = $this->createStub(McpConnectionManagerInterface::class);
+        $stubManager->method('discover')
+            ->willReturnCallback(function (string $runId, ?callable $onServerDiscovered = null) {
+                $results = [
+                    'server-a' => [
+                        'status' => 'connected',
+                        'transport' => 'http',
+                        'tools' => [
+                            ['name' => 'tool', 'description' => 'A tool', 'inputSchema' => []],
+                        ],
+                    ],
+                ];
+                if (null !== $onServerDiscovered) {
+                    $onServerDiscovered($results);
+                }
+
+                return $results;
+            });
+
+        $handler = new McpInitializeSessionHandler(
+            new McpConfigLoader(
+                new SettingsPathResolver($this->projectDir, $this->projectDir),
+                new McpConfigValidator(),
+                new McpEnvInterpolator(),
+                $this->projectDir,
+            ),
+            $stubManager,
+            new McpToolNameMapper(),
+            $this->catalogStore,
+            $this->logger,
+        );
+
+        $message = new McpRefreshCatalogCommand(
+            runId: 'test-run-refresh-partial',
+            correlationId: 'corr-refresh-partial',
+        );
+        $this->handler = $handler;
+        $handler->onRefreshCatalog($message);
+
+        // Partial write + final write = 2 writes
+        self::assertCount(2, $this->catalogStore->writeLog, 'Expected 2 writes: 1 partial + 1 final');
+
+        $partialLogs = array_values(array_filter(
+            $this->logger->records,
+            static fn(array $r): bool =>
+                $r['level'] === 'debug' &&
+                ($r['context']['mcp_event'] ?? '') === 'catalog.partial_written',
+        ));
+        self::assertCount(1, $partialLogs);
+    }
 }
 
 /**
- * Test double for McpToolCatalogStoreInterface that records the last write.
+ * Test double for McpToolCatalogStoreInterface that records writes.
  */
 final class TestMcpCatalogStore implements McpToolCatalogStoreInterface
 {
@@ -413,12 +603,20 @@ final class TestMcpCatalogStore implements McpToolCatalogStoreInterface
     public ?McpToolCatalogDTO $lastCatalog = null;
     public array $reads = [];
 
+    /**
+     * All writes in order, each entry: ['runId' => string, 'catalog' => McpToolCatalogDTO].
+     *
+     * @var list<array{runId: string, catalog: McpToolCatalogDTO}>
+     */
+    public array $writeLog = [];
+
     public function write(string $runId, McpToolCatalogDTO $catalog): void
     {
         $this->wasWritten = true;
         $this->lastRunId = $runId;
         $this->lastCatalog = $catalog;
         $this->reads[$runId] = $catalog;
+        $this->writeLog[] = ['runId' => $runId, 'catalog' => $catalog];
     }
 
     public function read(string $runId): ?McpToolCatalogDTO

@@ -26,11 +26,18 @@ interface McpConnectionManagerInterface
      * On discovery failure for a server, the server is recorded as
      * failed but discovery continues for remaining servers.
      *
-     * @param string $runId Session/run identifier
+     * When {@see $onServerDiscovered} is provided, it is called after
+     * each server's result is known (connected or failed) with the
+     * cumulative discovery results so far.  Callers can use this to
+     * publish partial catalogs incrementally so successful servers
+     * are visible before slow or failing servers finish.
+     *
+     * @param string                                                                                                                                                                                                        $runId              Session/run identifier
+     * @param ?callable(array<string, array{status: 'connected'|'failed', transport: string, tools: list<array{name: string, description?: string|null, inputSchema: array<string, mixed>}>, errorMessage?: string}>): void $onServerDiscovered Called after each server result is known with cumulative results
      *
      * @return array<string, array{status: 'connected'|'failed', transport: string, tools: list<array{name: string, description?: string|null, inputSchema: array<string, mixed>}>, errorMessage?: string}>
      */
-    public function discover(string $runId): array;
+    public function discover(string $runId, ?callable $onServerDiscovered = null): array;
 
     /**
      * Get an already-connected client for a server.
@@ -52,4 +59,22 @@ interface McpConnectionManagerInterface
      * cleanup of remaining servers.
      */
     public function disconnectAll(string $runId): void;
+
+    /**
+     * Call a tool on a connected MCP server.
+     *
+     * If no live client exists for this run/server, attempts reconnect
+     * once before failing (does NOT rediscover/listTools).
+     *
+     * @param string               $runId      Session/run identifier
+     * @param string               $serverName MCP server name
+     * @param string               $toolName   Raw MCP tool name
+     * @param array<string, mixed> $arguments  Tool arguments
+     *
+     * @return array{content: list<array<string, mixed>>, isError: bool}
+     *
+     * @throws McpClientInvocationException on missing client after reconnect
+     * @throws McpClientInvocationException on SDK call failures
+     */
+    public function callTool(string $runId, string $serverName, string $toolName, array $arguments = []): array;
 }
