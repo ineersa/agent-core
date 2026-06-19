@@ -152,14 +152,36 @@ final readonly class ReplayService
                 $messages[] = $payload['message'];
             }
 
-            if (isset($payload['assistant']) && \is_string($payload['assistant'])) {
-                $messages[] = [
-                    'role' => 'assistant',
-                    'content' => [[
-                        'type' => 'text',
-                        'text' => $payload['assistant'],
-                    ]],
+            // Canonical llm_step_completed events emit the full normalized
+            // assistant message structure under payload.assistant_message.
+            // Convert the canonical shape into the internal message format:
+            //   - Keep role and content as-is
+            //   - Move tool_calls from top-level to metadata.tool_calls
+            //   - Keep details as-is
+            //   - Handle null content (tool-call-only) → empty array
+            if (isset($payload['assistant_message']) && \is_array($payload['assistant_message'])) {
+                $am = $payload['assistant_message'];
+
+                if (!isset($am['role']) || !\is_string($am['role'])) {
+                    continue;
+                }
+
+                $content = \is_array($am['content'] ?? null) ? $am['content'] : [];
+
+                $message = [
+                    'role' => $am['role'],
+                    'content' => $content,
                 ];
+
+                if (isset($am['tool_calls']) && \is_array($am['tool_calls']) && [] !== $am['tool_calls']) {
+                    $message['metadata']['tool_calls'] = $am['tool_calls'];
+                }
+
+                if (isset($am['details']) && \is_array($am['details']) && [] !== $am['details']) {
+                    $message['details'] = $am['details'];
+                }
+
+                $messages[] = $message;
             }
         }
 
