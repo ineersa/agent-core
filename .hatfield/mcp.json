@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "context7": {
+      "url": "https://mcp.context7.com/mcp",
+      "headers": {
+        "CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}"
+      },
+      "timeoutMs": 60000
+    },
+    "websearch": {
+      "url": "http://192.168.2.38:9001/sse",
+      "timeoutMs": 60000
+    }
+  }
+}
