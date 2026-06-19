@@ -155,8 +155,7 @@ Phase 1 adds the runtime messenger foundation:
 - MCP session initialize is dispatched automatically on `start_run` and `resume`.
 - Lifecycle message handlers (initialize, refresh catalog, disconnect) are registered
   on `agent.command.bus` and routed to the `mcp` transport.
-- Structured logs include `component=mcp`, `run_id`, `session_id`, `mcp_event`,
-  `server_name`, and `transport` fields where applicable — never raw env values,
+- Structured logs include `component=mcp`, `event_type`, `run_id`, `session_id`, `mcp_event`,
   `server_name`, and `transport` fields where applicable — never raw env values,
   headers, tokens, or secrets.
 
@@ -231,20 +230,58 @@ Phase 2 (MCP-03) adds real SDK connection management and tool discovery:
   a previous successful discovery are never silently retained.
 - **Disconnect:** McpDisconnectSessionCommand closes broker-owned SDK clients.
   The catalog file is retained as a historical/debug session artifact.
-  Full lifecycle cleanup/orphan hardening remains MCP-06.
+  MCP-06 adds best-effort graceful shutdown via `WorkerStoppedEvent` subscriber.
+  SIGKILL/OOM orphan recovery remains a documented limitation.
 
-## Limitations in current phase
+## Current design
 
-- No OAuth support.
-- MCP tool catalog is not yet read by LLM schema resolution (MCP-04).
-- No dynamic ToolRegistry registration from catalog (MCP-04).
-- No broker request/reply tool invocation (MCP-05).
-- HTTP transport uses PSR-18/PSR-17 discovery (explicit injection deferred).
-- Deep graceful shutdown/orphan cleanup is not yet implemented (MCP-06).
-- MCP config failures during initialize are warning-only — normal sessions
-  continue unaffected.
+- **Dynamic tool registration:** tools from MCP servers are registered into the
+  Hatfield tool registry at session start via `McpToolRegistrar`. The LLM sees
+  MCP tools alongside built-in tools in its schema output.
+- **Tool invocation:** when the LLM calls an MCP-backed tool, `ExecuteToolCall`
+  is routed to the single `mcp` Messenger consumer (via `McpExecuteToolCallRoutingMiddleware`)
+  instead of the default `tool` transport. The mcp consumer runs the standard
+  `ExecuteToolCallWorker`, which invokes `McpToolHandler` → `McpToolInvoker` →
+  `McpConnectionManager::callTool()` → SDK client. Results flow back through
+  the normal `ToolCallResult` pipeline — there is no separate request/reply
+  mailbox or result store.
+- **Incremental catalog publication:** tools from each successfully-discovered
+  server are published as soon as that server's discovery completes. A slow
+  or failing server does not block visibility of tools from faster servers.
+- **Reconnect-once:** if a live client is missing at tool-call time (e.g.,
+  STDIO process crashed), `McpConnectionManager::callTool()` attempts one
+  reconnect before failing.
+- **Graceful shutdown (best-effort):** `McpWorkerShutdownSubscriber` listens
+  to Symfony Messenger's `WorkerStoppedEvent` and calls `disconnectAll()`
+  when the mcp consumer process exits normally (SIGTERM). No waits, no
+  drain loops — this is best-effort and does not recover from SIGKILL/OOM.
 
-These will be addressed in subsequent phases per `.pi/plans/mcp-client-implementation-plan.md`.
+## Limitations
+
+- **No OAuth support** for MCP server authentication.
+- **No per-call timeout/cancellation:** the MCP SDK (`mcp/sdk`) has no
+  per-call timeout or cancellation hook. Request timeout is fixed at
+  client construction time from `mcp.json` `timeoutMs`. `ToolContext`
+  timeout/cancellation does not cap in-flight SDK calls.
+- **SIGKILL/OOM orphan processes:** when the mcp consumer process is
+  SIGKILL'd or OOM-killed, the `WorkerStoppedEvent` subscriber never
+  runs, and any STDIO MCP server subprocesses may remain orphaned.
+  The controller already performs best-effort consumer-process cleanup
+  on its own shutdown, but STDIO grandchildren may escape.
+- **Single mcp consumer serialization:** only one mcp consumer process
+  exists per session. All MCP tool calls are serialized through this
+  consumer. Parallel MCP tool calls from multiple LLM turns or
+  parallel tools within a turn are queued.
+- **Catalog read on every MCP tool call:** the middleware reads the
+  session catalog for routing decisions; config loading (for reconnect)
+  is deferred until the client is actually needed.
+- **MCP config failures during initialize are warning-only** — normal
+  sessions continue unaffected, just without MCP tools.
+- **Messenger consumer restarts (time-limit or normal graceful
+  exit) trigger `WorkerStoppedEvent`**, which disconnects MCP clients.
+  The next MCP tool call lazily reconnects, adding one-time startup
+  latency after restart. This is intentional — dedicated keep-alive
+  pings and idle timeout are deferred to a future phase.
 
 ## SDK boundary
 
