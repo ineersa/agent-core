@@ -155,7 +155,7 @@ Phase 1 adds the runtime messenger foundation:
 - MCP session initialize is dispatched automatically on `start_run` and `resume`.
 - Lifecycle message handlers (initialize, refresh catalog, disconnect) are registered
   on `agent.command.bus` and routed to the `mcp` transport.
-- Structured logs include `component=mcp`, `run_id`, `session_id`, `mcp_event`,
+- Structured logs include `component=mcp`, `event_type`, `run_id`, `session_id`, `mcp_event`,
   `server_name`, and `transport` fields where applicable — never raw env values,
   headers, tokens, or secrets.
 
@@ -230,7 +230,8 @@ Phase 2 (MCP-03) adds real SDK connection management and tool discovery:
   a previous successful discovery are never silently retained.
 - **Disconnect:** McpDisconnectSessionCommand closes broker-owned SDK clients.
   The catalog file is retained as a historical/debug session artifact.
-  Full lifecycle cleanup/orphan hardening remains MCP-06.
+  MCP-06 adds best-effort graceful shutdown via `WorkerStoppedEvent` subscriber.
+  SIGKILL/OOM orphan recovery remains a documented limitation.
 
 ## Current design
 
@@ -271,11 +272,16 @@ Phase 2 (MCP-03) adds real SDK connection management and tool discovery:
   exists per session. All MCP tool calls are serialized through this
   consumer. Parallel MCP tool calls from multiple LLM turns or
   parallel tools within a turn are queued.
-- **Config load on every MCP tool call:** the middleware reads the
+- **Catalog read on every MCP tool call:** the middleware reads the
   session catalog for routing decisions; config loading (for reconnect)
   is deferred until the client is actually needed.
 - **MCP config failures during initialize are warning-only** — normal
   sessions continue unaffected, just without MCP tools.
+- **Messenger consumer restarts (time-limit, memory-limit, graceful
+  exit) trigger `WorkerStoppedEvent`**, which disconnects MCP clients.
+  The next MCP tool call lazily reconnects, adding one-time startup
+  latency after restart. This is intentional — dedicated keep-alive
+  pings and idle timeout are deferred to a future phase.
 
 ## SDK boundary
 

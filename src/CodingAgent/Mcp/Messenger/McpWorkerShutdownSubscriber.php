@@ -44,8 +44,9 @@ final readonly class McpWorkerShutdownSubscriber
 
         // Resolve the session/run identifier from the controller-set env var.
         // In TUI/sync mode this is empty — but the mcp consumer only exists
-        // in controller mode, so this is set in practice.
-        $runId = $_SERVER['HATFIELD_SESSION_ID'] ?? $_ENV['HATFIELD_SESSION_ID'] ?? '';
+        // in controller mode, so this is set in practice.  Default 'unknown'
+        // matches HeadlessController/JsonlProcessAgentSessionClient conventions.
+        $runId = $_SERVER['HATFIELD_SESSION_ID'] ?? $_ENV['HATFIELD_SESSION_ID'] ?? 'unknown';
 
         if ('' === $runId || 'unknown' === $runId) {
             $this->logger->warning('MCP worker shutdown — no HATFIELD_SESSION_ID, skipping disconnect', [
@@ -67,6 +68,20 @@ final readonly class McpWorkerShutdownSubscriber
         ]);
 
         // No waits, no drain loops — best-effort disconnect only.
-        $this->connectionManager->disconnectAll($runId);
+        // Catch any unexpected Throwable — shutdown event listeners must not
+        // propagate exceptions.
+        try {
+            $this->connectionManager->disconnectAll($runId);
+        } catch (\Throwable $e) {
+            $this->logger->warning('MCP worker shutdown — disconnect failed', [
+                'component' => 'mcp',
+                'event_type' => 'worker.shutdown',
+                'mcp_event' => 'worker.shutdown.disconnect_failed',
+                'run_id' => $runId,
+                'session_id' => $runId,
+                'error_class' => $e::class,
+                'error_message' => $e->getMessage(),
+            ]);
+        }
     }
 }

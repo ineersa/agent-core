@@ -133,4 +133,45 @@ class McpWorkerShutdownSubscriberTest extends TestCase
         $this->assertSame('warning', $this->logger->records[0]['level']);
         $this->assertSame('worker.shutdown.no_session_id', $this->logger->records[0]['context']['mcp_event']);
     }
+
+    /**
+     * disconnectAll throws → logs warning, does not propagate exception.
+     * Shutdown event listeners must never crash the worker shutdown path.
+     */
+    public function testDisconnectAllFailureLogsWarningAndDoesNotThrow(): void
+    {
+        $receiver = $this->createStub(ReceiverInterface::class);
+        $bus = $this->createStub(MessageBusInterface::class);
+        $worker = new Worker(['mcp' => $receiver], $bus);
+
+        $event = new WorkerStoppedEvent($worker);
+
+        $disconnectError = new \RuntimeException('connection lost during shutdown');
+
+        /** @var McpConnectionManagerInterface&\PHPUnit\Framework\MockObject\MockObject $connectionManager */
+        $connectionManager = $this->createMock(McpConnectionManagerInterface::class);
+        $connectionManager->expects($this->once())
+            ->method('disconnectAll')
+            ->with('test-run-id')
+            ->willThrowException($disconnectError);
+
+        $_SERVER['HATFIELD_SESSION_ID'] = 'test-run-id';
+
+        $subscriber = new McpWorkerShutdownSubscriber($connectionManager, $this->logger);
+
+        // Must not throw — the subscriber catches and logs.
+        $subscriber($event);
+
+        $this->assertCount(2, $this->logger->records);
+        // First log: disconnecting (info, before the try/catch that fails)
+        $this->assertSame('info', $this->logger->records[0]['level']);
+        $this->assertSame('worker.shutdown.disconnecting', $this->logger->records[0]['context']['mcp_event']);
+        // Second log: disconnect failure (warning, from catch block)
+        $this->assertSame('warning', $this->logger->records[1]['level']);
+        $this->assertSame('worker.shutdown.disconnect_failed', $this->logger->records[1]['context']['mcp_event']);
+        $this->assertSame('RuntimeException', $this->logger->records[1]['context']['error_class']);
+        $this->assertSame('connection lost during shutdown', $this->logger->records[1]['context']['error_message']);
+        $this->assertSame('test-run-id', $this->logger->records[1]['context']['run_id']);
+        $this->assertSame('mcp', $this->logger->records[1]['context']['component']);
+    }
 }
