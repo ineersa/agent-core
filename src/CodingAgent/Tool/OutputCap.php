@@ -265,27 +265,27 @@ final class OutputCap
     /**
      * Build a model-facing notice about capped output.
      *
-     * Generic fallback for non-read tools: the saved cap artifact is rendered
-     * tool output text.  Suggest shell inspection (head/grep) rather than reusing
-     * read on the rendered artifact, which can add presentation noise.
-     *
-     * Read-tool callers should use a context-aware notice via their own
-     * builder that points follow-up reads at the original file, not this artifact.
+     * Generic fallback for non-read tools.  Suggests inspecting the saved
+     * output artefact with read (offset+limit) for chunked inspection and
+     * grep for targeted search.  Read-tool callers should use a
+     * context-aware notice via their own builder that points follow-up
+     * reads at the original file, not this artefact.
      */
     private function buildCappedNotice(string $fullText, int $cap, string $savedPath): string
     {
         $charCount = u($fullText)->length();
         $tokenEstimate = (int) ceil($charCount / 4);
-        $escapedPath = escapeshellarg($savedPath);
+        $escapedGrepPath = escapeshellarg($savedPath);
 
-        return <<<STRING
-[Output capped: {$charCount} chars (~{$tokenEstimate} tokens) > {$cap}-char cap]
-Saved full output: {$savedPath}
-
-Next: inspect the saved output, e.g.
-- bash(command: "head -200 {$escapedPath}")
-- bash(command: "grep -n -- 'PATTERN' {$escapedPath} | head -50")
-Do not rerun the original command.
-STRING;
+        return \sprintf(
+            "[Output capped: %d chars (~%d tokens) > %d-char cap]\n".
+            "Saved full output: %s\n".
+            "\n".
+            "Next: inspect the saved output, e.g.\n".
+            "- read(path: \"%s\", offset: 1, limit: 200)\n".
+            "- bash(command: \"grep -n -- 'PATTERN' %s | head -50\")\n".
+            'Do not rerun the original command or read the saved output without offset+limit.',
+            $charCount, $tokenEstimate, $cap, $savedPath, $savedPath, $escapedGrepPath,
+        );
     }
 }

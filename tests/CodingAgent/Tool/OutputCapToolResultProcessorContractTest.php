@@ -123,12 +123,14 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
         $this->assertSame(50, $details['output_cap']['cap']);
     }
 
-    public function testGenericCappedResultDoesNotSuggestReadOnSavedArtifact(): void
+    public function testGenericCappedResultSuggestsReadOnSavedArtifactWithOffsetLimit(): void
     {
-        // Test thesis: generic (non-read) tool output caps must suggest shell
-        // inspection (head/grep) rather than read(savedPath), because the saved
-        // cap artifact is rendered tool output and re-reading it adds presentation
-        // noise (e.g. double cat -n line numbers).
+        // Test thesis: generic (non-read) tool output caps use the generic
+        // notice from OutputCap::buildCappedNotice(), which now suggests
+        // read(savedPath, offset: 1, limit: 200) for chunked inspection
+        // and grep for targeted search.  This is safe because the saved
+        // cap artefact is rendered tool output text (NOT a read/cat -n
+        // artefact that would add double line numbers).
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 50, docCap: 50);
         $outputCap = new OutputCap($cfg);
         $processor = new OutputCapToolResultProcessor($outputCap);
@@ -160,12 +162,14 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
         $notif = $notifications[0];
         $noticeText = $notif['text'];
 
-        // Generic notice uses shell inspection, not read on saved artifact.
-        $this->assertStringContainsString('head -200', $noticeText,
-            'Generic cap notice must suggest shell head inspection');
-        $this->assertStringContainsString('Do not rerun the original command.', $noticeText);
-        $this->assertStringNotContainsString('read(path:', $noticeText,
-            'Generic cap notice must NOT suggest read on the saved artifact');
+        // Generic notice uses read + grep on saved artefact, not shell head.
+        $this->assertStringContainsString('read(path:', $noticeText,
+            'Generic cap notice must suggest read on saved artefact with offset+limit');
+        $this->assertStringContainsString('limit: 200', $noticeText);
+        $this->assertStringContainsString('without offset+limit', $noticeText);
+        $this->assertStringContainsString('Do not rerun the original command', $noticeText);
+        $this->assertStringNotContainsString('head -200', $noticeText,
+            'Generic cap notice must NOT suggest shell head (use read instead)');
     }
 
     public function testResultUnderCapPassesThroughUnchanged(): void

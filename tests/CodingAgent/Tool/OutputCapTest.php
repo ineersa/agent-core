@@ -90,9 +90,11 @@ final class OutputCapTest extends TestCase
 
         // Should contain the storage dir path
         $this->assertStringContainsString($this->tmpDir, $result);
-        // Should contain tool-first guidance, not shell-centric head/grep hints
+        // Generic notice now suggests read with offset+limit on saved output
         $this->assertStringContainsString('Do not rerun the original command', $result);
-        $this->assertStringContainsString('inspect the saved output', $result);
+        $this->assertStringContainsString('read(path:', $result);
+        $this->assertStringContainsString('limit: 200', $result);
+        $this->assertStringContainsString('without offset+limit', $result);
     }
 
     /* ───────── Persistence ───────── */
