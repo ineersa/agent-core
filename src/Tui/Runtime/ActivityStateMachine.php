@@ -33,6 +33,36 @@ final class ActivityStateMachine
             return $current;
         }
 
+        // Cancelling is sticky: mid-turn streaming deltas belong to the run
+        // we are aborting and must not regress activity back to Running.
+        // Only cancel-class and terminal events move out of Cancelling.
+        //
+        // The new-run path is safe because the TUI explicitly sets activity
+        // to Starting when dispatching a fresh run after cancellation completes
+        // (see RuntimeEventPoller::poll() lines 102-117). The stickiness gate
+        // only blocks mid-turn deltas on the dying run — a clean RunStarted
+        // or TurnStarted for a genuinely new run arrives with current=Starting,
+        // not Cancelling, and transitions normally.
+        if (RunActivityStateEnum::Cancelling === $current) {
+            return match ($event->type) {
+                // Cancel-class events: remain in Cancelling (confirming state)
+                RuntimeEventTypeEnum::CancellationRequested->value,
+                RuntimeEventTypeEnum::OperationCancelled->value,
+                RuntimeEventTypeEnum::ToolExecutionCancelled->value => RunActivityStateEnum::Cancelling,
+                // Terminal events: cancel completes or run fails
+                RuntimeEventTypeEnum::RunCancelled->value,
+                RuntimeEventTypeEnum::TurnCancelled->value => RunActivityStateEnum::Cancelled,
+                RuntimeEventTypeEnum::RunCompleted->value => RunActivityStateEnum::Completed,
+                RuntimeEventTypeEnum::RunFailed->value,
+                RuntimeEventTypeEnum::TurnFailed->value,
+                RuntimeEventTypeEnum::AssistantMessageFailed->value => RunActivityStateEnum::Failed,
+                // All other events (mid-turn streaming deltas, TurnStarted,
+                // tool-call deltas, etc.) belong to the dying run and must
+                // not regress to Running.
+                default => RunActivityStateEnum::Cancelling,
+            };
+        }
+
         return match ($event->type) {
             RuntimeEventTypeEnum::RunStarted->value,
             RuntimeEventTypeEnum::TurnStarted->value,
