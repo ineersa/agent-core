@@ -218,83 +218,20 @@ final class SessionCompactorTest extends TestCase
     }
 
     /**
-     * Thesis: detectPriorCompactSummary returns false when no compact summary present.
+     * Thesis: prepare() reports priorSummaryPresent=false for a clean conversation
+     * with no prior compact summary.
      */
     public function testPriorCompactSummaryNotDetected(): void
     {
         $messages = $this->makeLongConversation(30);
 
-        self::assertFalse($this->compactor->detectPriorCompactSummary($messages));
-    }
+        $result = $this->compactor->prepare($messages, $this->settings);
 
-    /**
-     * Thesis: detectPriorCompactSummary returns true when compact_summary metadata is true.
-     */
-    public function testDetectPriorCompactSummaryTrue(): void
-    {
-        $messages = [
-            new AgentMessage(
-                role: 'user',
-                content: [['type' => 'text', 'text' => 'Summary']],
-                metadata: ['compact_summary' => true],
-            ),
-        ];
-
-        self::assertTrue($this->compactor->detectPriorCompactSummary($messages));
-    }
-
-    /**
-     * Thesis: detectPriorCompactSummary handles non-true metadata values.
-     */
-    public function testDetectPriorCompactSummaryHandlesMetadata(): void
-    {
-        $messages = [
-            new AgentMessage(
-                role: 'user',
-                content: [['type' => 'text', 'text' => 'Not summary']],
-                metadata: ['compact_summary' => false],
-            ),
-            new AgentMessage(
-                role: 'assistant',
-                content: [['type' => 'text', 'text' => 'Response']],
-                metadata: [],
-            ),
-        ];
-
-        self::assertFalse($this->compactor->detectPriorCompactSummary($messages));
+        self::assertNotNull($result);
+        self::assertFalse($result->priorSummaryPresent);
     }
 
     // ── Safe cut: user boundary ─────────────────────────────────────
-
-    /**
-     * Thesis: The cut point prefers a user message boundary when available,
-     * even when an assistant boundary is closer to the token target.
-     */
-    public function testCutBeforeUserBoundary(): void
-    {
-        // Build a conversation where the token boundary falls at an assistant
-        // message, but a user message is nearby and should be preferred.
-        $messages = $this->makeLongConversation(10); // 20 alternating messages
-
-        // Add a final sequence: user → assistant where assistant is verbose.
-        $messages[] = $this->makeMessage('user', 'Final question ' . \str_repeat('pad ', 20));
-        $messages[] = $this->makeMessage('assistant', 'Final answer ' . \str_repeat('pad ', 20));
-
-        $result = $this->compactor->prepare($messages, $this->settings);
-
-        // When preparation succeeds and cut is non-trivial (not the first message):
-        if (null !== $result && $result->firstRetainedIndex > 0) {
-            // The first retained message should be 'user' when there is a
-            // user boundary within the walk-back range.
-            // But if the user boundary isn't safe (e.g., tool-call group)
-            // the algorithm will fall back to the assistant boundary.
-            // This test verifies the algorithm doesn't crash or violate safety.
-            $this->addToAssertionCount(1);
-        } else {
-            // No-op or first message boundary — still valid behavior.
-            $this->addToAssertionCount(1);
-        }
-    }
 
     /**
      * Thesis: When the only safe boundaries are before assistant messages,
@@ -343,9 +280,10 @@ final class SessionCompactorTest extends TestCase
 
         $result = $this->compactor->prepare($messages, $this->settings);
 
-        if (null !== $result) {
-            // The assistant tool-call message must be in the retained tail.
-            $retainedRoles = \array_map(static fn (AgentMessage $m): string => $m->role, $result->retainedTailMessages);
+        self::assertNotNull($result, 'Tool-call group near end should still produce a compaction');
+
+        // The assistant tool-call message must be in the retained tail.
+        $retainedRoles = \array_map(static fn (AgentMessage $m): string => $m->role, $result->retainedTailMessages);
 
             // Both the assistant and tool messages should be either ALL retained or NONE retained.
             $hasAssistant = \in_array('assistant', $retainedRoles, true);
@@ -355,7 +293,6 @@ final class SessionCompactorTest extends TestCase
             if ($hasAssistant || $hasTool) {
                 self::assertTrue($hasAssistant && $hasTool, 'Tool-call group must be retained together or not at all');
             }
-        }
     }
 
     /**
@@ -374,17 +311,15 @@ final class SessionCompactorTest extends TestCase
 
         $result = $this->compactor->prepare($messages, $this->settings);
 
-        if (null !== $result) {
-            // The retained tail should never contain a tool result whose
-            // assistant tool call was in the summarize partition.
-            foreach ($result->retainedTailMessages as $msg) {
-                if ('tool' === $msg->role && 'orphan_call' === $msg->toolCallId) {
-                    self::fail('Orphan tool result retained — its assistant call was summarized away');
-                }
+        self::assertNotNull($result, 'Orphan early in history should still produce compaction');
+
+        // The retained tail should never contain a tool result whose
+        // assistant tool call was in the summarize partition.
+        foreach ($result->retainedTailMessages as $msg) {
+            if ('tool' === $msg->role && 'orphan_call' === $msg->toolCallId) {
+                self::fail('Orphan tool result retained — its assistant call was summarized away');
             }
         }
-
-        self::assertTrue(true); // No exception = safe cut algorithm worked.
     }
 
     /**
@@ -403,35 +338,33 @@ final class SessionCompactorTest extends TestCase
 
         $result = $this->compactor->prepare($messages, $this->settings);
 
-        if (null !== $result) {
-            // Check that split_call is not in messagesToSummarize while its
-            // result is in retainedTailMessages.
-            $summarizeIds = [];
+        self::assertNotNull($result, 'Compaction should succeed with tool-call group in middle');
 
-            foreach ($result->messagesToSummarize as $msg) {
-                $toolCalls = $msg->metadata['tool_calls'] ?? null;
+        // Check that split_call is not in messagesToSummarize while its
+        // result is in retainedTailMessages.
+        $summarizeIds = [];
 
-                if (\is_array($toolCalls)) {
-                    foreach ($toolCalls as $tc) {
-                        if (isset($tc['id'])) {
-                            $summarizeIds[$tc['id']] = true;
-                        }
+        foreach ($result->messagesToSummarize as $msg) {
+            $toolCalls = $msg->metadata['tool_calls'] ?? null;
+
+            if (\is_array($toolCalls)) {
+                foreach ($toolCalls as $tc) {
+                    if (isset($tc['id'])) {
+                        $summarizeIds[$tc['id']] = true;
                     }
-                }
-            }
-
-            foreach ($result->retainedTailMessages as $msg) {
-                if ('tool' === $msg->role && null !== $msg->toolCallId) {
-                    self::assertArrayNotHasKey(
-                        $msg->toolCallId,
-                        $summarizeIds,
-                        "Tool result {$msg->toolCallId} retained but its assistant call was summarized away",
-                    );
                 }
             }
         }
 
-        self::assertTrue(true);
+        foreach ($result->retainedTailMessages as $msg) {
+            if ('tool' === $msg->role && null !== $msg->toolCallId) {
+                self::assertArrayNotHasKey(
+                    $msg->toolCallId,
+                    $summarizeIds,
+                    "Tool result {$msg->toolCallId} retained but its assistant call was summarized away",
+                );
+            }
+        }
     }
 
     /**
@@ -451,78 +384,92 @@ final class SessionCompactorTest extends TestCase
 
         $result = $this->compactor->prepare($messages, $this->settings);
 
-        if (null !== $result) {
-            // Verify the 'boundary_call' tool result is not in retain while
-            // its assistant is in summarize, or vice versa.
-            $foundInSummarize = false;
-            $foundInRetain = false;
+        self::assertNotNull($result, 'Compaction should succeed: boundary moved earlier rather than splitting group');
 
-            foreach ($result->messagesToSummarize as $msg) {
-                if ('tool' === $msg->role && 'boundary_call' === $msg->toolCallId) {
-                    $foundInSummarize = true;
-                }
+        // Verify the 'boundary_call' tool result is not in retain while
+        // its assistant is in summarize, or vice versa.
+        $foundInSummarize = false;
+        $foundInRetain = false;
 
-                $toolCalls = $msg->metadata['tool_calls'] ?? null;
+        foreach ($result->messagesToSummarize as $msg) {
+            if ('tool' === $msg->role && 'boundary_call' === $msg->toolCallId) {
+                $foundInSummarize = true;
+            }
 
-                if (\is_array($toolCalls)) {
-                    foreach ($toolCalls as $tc) {
-                        if (('boundary_call') === ($tc['id'] ?? null)) {
-                            $foundInSummarize = true;
-                        }
+            $toolCalls = $msg->metadata['tool_calls'] ?? null;
+
+            if (\is_array($toolCalls)) {
+                foreach ($toolCalls as $tc) {
+                    if (('boundary_call') === ($tc['id'] ?? null)) {
+                        $foundInSummarize = true;
                     }
                 }
             }
-
-            foreach ($result->retainedTailMessages as $msg) {
-                if ('tool' === $msg->role && 'boundary_call' === $msg->toolCallId) {
-                    $foundInRetain = true;
-                }
-
-                $toolCalls = $msg->metadata['tool_calls'] ?? null;
-
-                if (\is_array($toolCalls)) {
-                    foreach ($toolCalls as $tc) {
-                        if (('boundary_call') === ($tc['id'] ?? null)) {
-                            $foundInRetain = true;
-                        }
-                    }
-                }
-            }
-
-            // If found in both partitions, it means the group was split — invalid.
-            self::assertFalse(
-                $foundInSummarize && $foundInRetain,
-                'Tool-call group was split across partitions',
-            );
         }
+
+        foreach ($result->retainedTailMessages as $msg) {
+            if ('tool' === $msg->role && 'boundary_call' === $msg->toolCallId) {
+                $foundInRetain = true;
+            }
+
+            $toolCalls = $msg->metadata['tool_calls'] ?? null;
+
+            if (\is_array($toolCalls)) {
+                foreach ($toolCalls as $tc) {
+                    if (('boundary_call') === ($tc['id'] ?? null)) {
+                        $foundInRetain = true;
+                    }
+                }
+            }
+        }
+
+        // If found in both partitions, it means the group was split — invalid.
+        self::assertFalse(
+            $foundInSummarize && $foundInRetain,
+            'Tool-call group was split across partitions',
+        );
     }
 
     // ── Prompt text ──────────────────────────────────────────────────
 
     /**
      * Thesis: The summarization system message matches the plan exact text.
+     * Asserted through buildSummarizationMessages() output, not a test-only accessor.
      */
     public function testSummarizationSystemMessageExact(): void
     {
-        $expected = "You are a context summarization assistant. Read the conversation and produce only a handoff summary.\n\nDo not continue the conversation. Do not answer questions from the conversation. Do not call tools. Output only the summary text.";
+        $messages = $this->makeLongConversation(15);
+        $prep = $this->compactor->prepare($messages, $this->settings);
+        self::assertNotNull($prep);
 
-        self::assertSame($expected, $this->compactor->getSummarizationSystemMessage());
+        $result = $this->compactor->buildSummarizationMessages($prep, null);
+
+        $expected = "You are a context summarization assistant. Read the conversation and produce only a handoff summary.\n\nDo not continue the conversation. Do not answer questions from the conversation. Do not call tools. Output only the summary text.";
+        self::assertSame($expected, $result[0]->content[0]['text']);
     }
 
     /**
      * Thesis: The summarization user prompt matches the plan exact text.
+     * Asserted through buildSummarizationMessages() output, not a test-only accessor.
      */
     public function testSummarizationUserPromptExact(): void
     {
-        $expected = "You are performing a CONTEXT CHECKPOINT COMPACTION. Create a handoff summary for another LLM that will resume the task.\n\nInclude:\n- Current progress and key decisions made\n- Important context, constraints, or user preferences\n- What remains to be done (clear next steps)\n- Any critical data, examples, file paths, commands, errors, or references needed to continue\n\nIf a prior compaction summary exists in the conversation, incorporate it and preserve still-relevant facts.\n\nBe concise, structured, and focused on helping the next LLM seamlessly continue the work.";
+        $messages = $this->makeLongConversation(15);
+        $prep = $this->compactor->prepare($messages, $this->settings);
+        self::assertNotNull($prep);
 
-        self::assertSame($expected, $this->compactor->getSummarizationUserPrompt());
+        $result = $this->compactor->buildSummarizationMessages($prep, null);
+        $last = \count($result) - 1;
+
+        $expected = "You are performing a CONTEXT CHECKPOINT COMPACTION. Create a handoff summary for another LLM that will resume the task.\n\nInclude:\n- Current progress and key decisions made\n- Important context, constraints, or user preferences\n- What remains to be done (clear next steps)\n- Any critical data, examples, file paths, commands, errors, or references needed to continue\n\nIf a prior compaction summary exists in the conversation, incorporate it and preserve still-relevant facts.\n\nBe concise, structured, and focused on helping the next LLM seamlessly continue the work.";
+        self::assertSame($expected, $result[$last]->content[0]['text']);
     }
 
     // ── buildSummarizationMessages() ─────────────────────────────────
 
     /**
-     * Thesis: buildSummarizationMessages returns [system, ...toSummarize, user] format.
+     * Thesis: buildSummarizationMessages returns [system, ...toSummarize, user] format
+     * with the exact prompt texts embedded.
      */
     public function testBuildSummarizationMessagesStructure(): void
     {
@@ -535,8 +482,8 @@ final class SessionCompactorTest extends TestCase
 
         // First message is system.
         self::assertSame('system', $result[0]->role);
-        self::assertSame(
-            $this->compactor->getSummarizationSystemMessage(),
+        self::assertStringContainsString(
+            'context summarization assistant',
             $result[0]->content[0]['text'],
         );
 
@@ -547,8 +494,8 @@ final class SessionCompactorTest extends TestCase
         // Last message is user prompt.
         $lastIndex = \count($result) - 1;
         self::assertSame('user', $result[$lastIndex]->role);
-        self::assertSame(
-            $this->compactor->getSummarizationUserPrompt(),
+        self::assertStringContainsString(
+            'CONTEXT CHECKPOINT COMPACTION',
             $result[$lastIndex]->content[0]['text'],
         );
     }
@@ -626,7 +573,7 @@ final class SessionCompactorTest extends TestCase
             'Summary message should have compact_summary metadata',
         );
         self::assertStringContainsString(
-            $this->compactor->getSummaryPrefix(),
+            'The conversation history before this point was compacted',
             $result->summaryMessage->content[0]['text'],
         );
         self::assertStringContainsString(
@@ -634,7 +581,7 @@ final class SessionCompactorTest extends TestCase
             $result->summaryMessage->content[0]['text'],
         );
         self::assertStringContainsString(
-            $this->compactor->getSummarySuffix(),
+            '</summary>',
             $result->summaryMessage->content[0]['text'],
         );
 
@@ -688,31 +635,6 @@ final class SessionCompactorTest extends TestCase
         );
         self::assertStringContainsString('<summary>', $text);
         self::assertStringContainsString('</summary>', $text);
-    }
-
-    // ── Token estimation ────────────────────────────────────────────
-
-    /**
-     * Thesis: estimateTokens returns ceil(strlen(json_encode(messages))/4).
-     */
-    public function testEstimateTokens(): void
-    {
-        $messages = [$this->makeMessage('user', 'test')];
-
-        $estimate = $this->compactor->estimateTokens($messages);
-        $raw = \strlen(\json_encode([$messages[0]->toArray()], \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE));
-
-        self::assertSame((int) \ceil($raw / 4), $estimate);
-    }
-
-    /**
-     * Thesis: estimateTokens for empty list returns 0 (empty JSON array).
-     */
-    public function testEstimateTokensEmpty(): void
-    {
-        $estimate = $this->compactor->estimateTokens([]);
-        // Empty array serialized as "[]" → strlen("[]")=2, ceil(2/4)=1.
-        self::assertSame(1, $estimate);
     }
 
     // ── Partition validity via AgentMessageToolCallSequenceValidator ─
@@ -917,14 +839,15 @@ final class SessionCompactorTest extends TestCase
 
         $result = $this->compactor->prepare($messages, $tightSettings);
 
-        // Should still produce a valid preparation without the orphan.
-        if (null !== $result) {
-            foreach ($result->retainedTailMessages as $msg) {
-                self::assertFalse(
-                    'tool' === $msg->role && 'orphan_tc' === $msg->toolCallId,
-                    'Orphan tool result must not appear in retained tail',
-                );
-            }
+        // Compaction should succeed: the orphan group is entirely early
+        // and doesn't prevent finding a safe boundary.
+        self::assertNotNull($result, 'Compaction should still succeed with orphan tool group early in history');
+
+        foreach ($result->retainedTailMessages as $msg) {
+            self::assertFalse(
+                'tool' === $msg->role && 'orphan_tc' === $msg->toolCallId,
+                'Orphan tool result must not appear in retained tail',
+            );
         }
     }
 

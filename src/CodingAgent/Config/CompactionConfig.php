@@ -82,20 +82,6 @@ final readonly class CompactionConfig
     }
 
     /**
-     * Try to parse the model override string, returning null on malformed
-     * input instead of throwing. Useful for boot-time config validation
-     * that produces an actionable diagnostic.
-     */
-    public function tryResolveModelReference(): ?AiModelReference
-    {
-        if (null === $this->model) {
-            return null;
-        }
-
-        return AiModelReference::tryParse($this->model);
-    }
-
-    /**
      * DI factory — extract compaction settings from AppConfig entity.
      *
      * Used by the Symfony container via services.yaml factory definition

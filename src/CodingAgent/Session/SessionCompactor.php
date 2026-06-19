@@ -44,6 +44,13 @@ final class SessionCompactor
     private const string SUMMARY_PREFIX = "The conversation history before this point was compacted into the following handoff summary. Use it as prior context, not as a new user request.\n\n<summary>\n";
 
     private const string SUMMARY_SUFFIX = "\n</summary>";
+    private readonly AgentMessageToolCallSequenceValidator $sequenceValidator;
+
+    public function __construct(
+        ?AgentMessageToolCallSequenceValidator $sequenceValidator = null,
+    ) {
+        $this->sequenceValidator = $sequenceValidator ?? new AgentMessageToolCallSequenceValidator();
+    }
 
     // ── Preparation ───────────────────────────────────────────────────
 
@@ -196,7 +203,11 @@ final class SessionCompactor
     /**
      * Estimate token count for a list of AgentMessages.
      *
-     * Uses the JSON-length/4 approximation, matching ReplayService::estimateTokens().
+     * Uses the same JSON-length/4 approximation as
+     * ReplayService::estimateTokens().  Public so the future
+     * auto-compaction trigger policy (COMP-06) can check whether
+     * the estimated context exceeds the reserve threshold before
+     * deciding to compact.
      *
      * @param list<AgentMessage> $messages
      */
@@ -221,7 +232,7 @@ final class SessionCompactor
      *
      * @param list<AgentMessage> $messages
      */
-    public function detectPriorCompactSummary(array $messages): bool
+    private function detectPriorCompactSummary(array $messages): bool
     {
         foreach ($messages as $message) {
             $isCompact = $message->metadata['compact_summary'] ?? null;
@@ -232,48 +243,6 @@ final class SessionCompactor
         }
 
         return false;
-    }
-
-    // ── Prompt text accessors (for test assertions) ──────────────────
-
-    /**
-     * Return the canonical summarization system message text.
-     */
-    public function getSummarizationSystemMessage(): string
-    {
-        return self::SUMMARIZATION_SYSTEM_MESSAGE;
-    }
-
-    /**
-     * Return the canonical summarization user prompt text (without custom instructions).
-     */
-    public function getSummarizationUserPrompt(): string
-    {
-        return self::SUMMARIZATION_USER_PROMPT;
-    }
-
-    /**
-     * Return the canonical summary prefix text.
-     */
-    public function getSummaryPrefix(): string
-    {
-        return self::SUMMARY_PREFIX;
-    }
-
-    /**
-     * Return the canonical summary suffix text.
-     */
-    public function getSummarySuffix(): string
-    {
-        return self::SUMMARY_SUFFIX;
-    }
-
-    /**
-     * Return the custom instructions prefix text.
-     */
-    public function getCustomInstructionsPrefix(): string
-    {
-        return self::CUSTOM_INSTRUCTIONS_PREFIX;
     }
 
     // ── Cut-point selection ───────────────────────────────────────────
@@ -469,22 +438,22 @@ final class SessionCompactor
      * boundary causes prepare() to return null (skip compaction) rather
      * than risking an invalid conversation history.
      *
+     * Logging is intentionally deferred to the caller (COMP-02 pipeline):
+     * this service is a pure algorithm; the pipeline layer that calls
+     * prepare() owns the observable failure/log/event behaviour for
+     * null/no-op (compaction skipped, compaction failed).
+     *
      * @param list<AgentMessage> $messages
      */
     private function isValidSequence(array $messages): bool
     {
-        static $validator = null;
-
-        if (null === $validator) {
-            $validator = new AgentMessageToolCallSequenceValidator();
-        }
-
         try {
-            $validator->validate($messages);
+            $this->sequenceValidator->validate($messages);
         } catch (MalformedToolCallSequenceException) {
             // Intentional local degradation: an invalid partition
             // means the candidate cut point is unsafe; skip
             // compaction rather than risk provider errors.
+            // Logging is handled by the pipeline caller (COMP-02).
 
             return false;
         }

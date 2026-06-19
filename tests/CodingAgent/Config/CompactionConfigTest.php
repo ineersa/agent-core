@@ -81,29 +81,6 @@ final class CompactionConfigTest extends TestCase
     }
 
     /**
-     * tryResolveModelReference returns null on malformed model string.
-     */
-    public function testTryResolveModelReferenceInvalid(): void
-    {
-        $config = new CompactionConfig(model: 'notavalidref');
-
-        self::assertNull($config->tryResolveModelReference());
-    }
-
-    /**
-     * tryResolveModelReference returns AiModelReference on valid input.
-     */
-    public function testTryResolveModelReferenceValid(): void
-    {
-        $config = new CompactionConfig(model: 'zai/glm-5.1');
-
-        $ref = $config->tryResolveModelReference();
-        self::assertNotNull($ref);
-        self::assertSame('zai', $ref->providerId);
-        self::assertSame('glm-5.1', $ref->modelName);
-    }
-
-    /**
      * fromAppConfig extracts the compaction config from AppConfig.
      */
     public function testFromAppConfig(): void
