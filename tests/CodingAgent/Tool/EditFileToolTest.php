@@ -8,11 +8,14 @@ use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tool\EditFileTool;
 use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 
 /**
  * @covers \Ineersa\CodingAgent\Tool\EditFileTool
@@ -22,6 +25,7 @@ final class EditFileToolTest extends TestCase
 {
     private StackToolExecutionContextAccessor $contextAccessor;
     private ToolRuntime $toolRuntime;
+    private LockFactory $lockFactory;
     private string $tmpDir;
     private EditFileTool $editFileTool;
 
@@ -29,16 +33,15 @@ final class EditFileToolTest extends TestCase
     {
         $this->contextAccessor = new StackToolExecutionContextAccessor();
         $this->toolRuntime = new ToolRuntime($this->contextAccessor);
+        $this->lockFactory = new LockFactory(new FlockStore());
 
-        $this->tmpDir = sys_get_temp_dir().'/hatfield_edit_test_'.bin2hex(random_bytes(8));
-        mkdir($this->tmpDir, 0750, recursive: true);
-
-        $this->editFileTool = new EditFileTool($this->toolRuntime);
+        $this->tmpDir = TestDirectoryIsolation::createOsTempDir('hatfield_edit_test');
+        $this->editFileTool = new EditFileTool($this->toolRuntime, $this->lockFactory);
     }
 
     protected function tearDown(): void
     {
-        $this->rmDir($this->tmpDir);
+        TestDirectoryIsolation::removeDirectory($this->tmpDir);
     }
 
     /* ── definition() tests ── */
@@ -85,6 +88,18 @@ final class EditFileToolTest extends TestCase
         $this->assertStringContainsString('cat -n', $guidelinesText);
         $this->assertStringContainsString('line number', strtolower($guidelinesText));
         $this->assertStringContainsString('@@', $guidelinesText);
+    }
+
+    public function testDefinitionHasRetryGuidelines(): void
+    {
+        $definition = $this->editFileTool->definition();
+        $guidelinesText = implode(' ', $definition->promptGuidelines);
+
+        // Guidelines must instruct re-reading on failure and retry from current context
+        $this->assertStringContainsString('read the current file', strtolower($guidelinesText));
+        $this->assertStringContainsString('retry', strtolower($guidelinesText));
+        $this->assertStringContainsString('trailing newline', strtolower($guidelinesText));
+        $this->assertStringContainsString('current context', strtolower($guidelinesText));
     }
 
     public function testDefinitionJsonSchemaHasPathAndPatch(): void
@@ -139,6 +154,7 @@ final class EditFileToolTest extends TestCase
         $this->assertStringContainsString('single_hunk.txt', $result);
         $this->assertStringContainsString('1 addition', $result);
         $this->assertStringContainsString('1 deletion', $result);
+        $this->assertStringNotContainsString('@@', $result); // No full diff echo
         $this->assertSame($newContent, file_get_contents($targetPath));
     }
 
@@ -154,6 +170,7 @@ final class EditFileToolTest extends TestCase
         $result = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
 
         $this->assertStringContainsString('Applied patch', $result);
+        $this->assertStringNotContainsString('@@', $result); // No full diff echo
         $this->assertSame($modified, file_get_contents($targetPath));
     }
 
@@ -164,18 +181,15 @@ final class EditFileToolTest extends TestCase
         file_put_contents($targetPath, $original);
 
         // Construct a patch that removes and re-adds the same content (net no-op).
-        // diff -u on identical files returns empty, so we build the hunk manually:
-        // change b to b — dry-run passes, apply produces same content.
         $patch = "--- a/file\n+++ b/file\n@@ -1,3 +1,3 @@\n a\n-b\n+b\n c\n";
 
         $result = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
 
         $this->assertStringContainsString('No changes', $result);
-        // File content must remain identical
         $this->assertSame($original, file_get_contents($targetPath));
     }
 
-    /* ── __invoke() rejection tests ── */
+    /* ── __invoke() stale-hunk failure tests ── */
 
     public function testEditBadPatchRejectedOriginalUnchanged(): void
     {
@@ -183,8 +197,6 @@ final class EditFileToolTest extends TestCase
         $original = "hello\nworld\n";
         file_put_contents($targetPath, $original);
 
-        // Create a valid diff against completely different content so it
-        // fails to match the target file during dry-run.
         $patchOld = "something\ncompletely\ndifferent\n";
         $patchNew = "something\nnew\ndifferent\n";
         $patch = $this->createUnifiedDiff($patchOld, $patchNew);
@@ -193,12 +205,123 @@ final class EditFileToolTest extends TestCase
             ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
             $this->fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
-            $this->assertStringContainsString('Patch dry-run failed', $e->getMessage());
+            $this->assertStringContainsString('E_PATCH_STALE', $e->getMessage());
             $this->assertTrue($e->retryable());
             // Original must be untouched
             $this->assertSame($original, file_get_contents($targetPath));
         }
     }
+
+    public function testStaleHunkErrorIncludesCurrentFileContext(): void
+    {
+        $targetPath = $this->tmpDir.'/stale_context.txt';
+        // Current file has 20 numbered lines
+        $lines = [];
+        for ($i = 1; $i <= 20; ++$i) {
+            $lines[] = \sprintf('line %02d content', $i);
+        }
+
+        $original = implode("\n", $lines)."\n";
+        file_put_contents($targetPath, $original);
+
+        // Create a patch that references content NOT in the current file
+        $fakeOld = "this does not exist\nin the current file\n";
+        $fakeNew = "this does not exist\nmodified version\n";
+        $patch = $this->createUnifiedDiff($fakeOld, $fakeNew);
+
+        try {
+            ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+            $this->fail('Expected ToolCallException');
+        } catch (ToolCallException $e) {
+            $message = $e->getMessage();
+
+            // Must include error code
+            $this->assertStringContainsString('E_PATCH_STALE', $message);
+
+            // Must be retryable
+            $this->assertTrue($e->retryable());
+
+            // Must include current file context with line numbers
+            $this->assertStringContainsString('Current file context', $message);
+
+            // The hint should reference reading the file and regenerating
+            $hint = $e->hint() ?? '';
+            $this->assertStringContainsString('read', strtolower($hint));
+            $this->assertStringContainsString('cat -n', $hint);
+
+            // Original file must be untouched
+            $this->assertSame($original, file_get_contents($targetPath));
+        }
+    }
+
+    public function testStaleHunkContextIsBounded(): void
+    {
+        $targetPath = $this->tmpDir.'/bounded_context.txt';
+        // Create a fairly large file (100 lines)
+        $lines = [];
+        for ($i = 1; $i <= 100; ++$i) {
+            $lines[] = \sprintf('line %03d: some content here', $i);
+        }
+
+        $original = implode("\n", $lines)."\n";
+        file_put_contents($targetPath, $original);
+
+        // Generate a patch against completely foreign content
+        $fakeOld = "not in this file\neither is this\n";
+        $fakeNew = "not in this file\nbut different\n";
+        $patch = $this->createUnifiedDiff($fakeOld, $fakeNew);
+
+        try {
+            ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+            $this->fail('Expected ToolCallException');
+        } catch (ToolCallException $e) {
+            $message = $e->getMessage();
+
+            // The error message should NOT contain content from line 50+
+            // or line 80+ (far away from the failed hunk area)
+            $this->assertStringNotContainsString('line 080:', $message);
+            $this->assertStringNotContainsString('line 100:', $message);
+
+            // Message length should be bounded (not dumping the whole file)
+            $this->assertLessThan(5000, \strlen($message));
+
+            // Original must be untouched
+            $this->assertSame($original, file_get_contents($targetPath));
+        }
+    }
+
+    /* ── __invoke() malformed patch tests ── */
+
+    public function testMalformedPatchGivesFormatError(): void
+    {
+        $targetPath = $this->tmpDir.'/malformed_target.txt';
+        $original = "a\nb\nc\n";
+        file_put_contents($targetPath, $original);
+
+        // Completely invalid patch (not a diff at all)
+        $patch = "this is not a patch\njust random text\nno headers\nnohunks\n";
+
+        try {
+            ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+            $this->fail('Expected ToolCallException');
+        } catch (ToolCallException $e) {
+            $message = $e->getMessage();
+
+            // Must include format error code (or could be stale if patch
+            // tries to match, but the classification should detect garbage)
+            $this->assertMatchesRegularExpression('/E_PATCH_(?:FORMAT|STALE)/', $message);
+
+            // Must not include current-file context for format errors
+            if (\str_contains($message, 'E_PATCH_FORMAT')) {
+                $this->assertStringNotContainsString('Current file context', $message);
+            }
+
+            // Original must be untouched
+            $this->assertSame($original, file_get_contents($targetPath));
+        }
+    }
+
+    /* ── __invoke() rejection tests ── */
 
     public function testEditMissingFileThrowsDirectingToWrite(): void
     {
@@ -264,11 +387,9 @@ DIFF;
     public function testEditWhitespaceTolerantMatch(): void
     {
         $targetPath = $this->tmpDir.'/whitespace.txt';
-        // Original has 4 spaces between words
         $original = "apple    banana    cherry\n";
         file_put_contents($targetPath, $original);
 
-        // Patch expects 1 space between words (uses -l flag to tolerate whitespace)
         $patchOld = "apple banana cherry\n";
         $patchNew = "apple banana date\n";
         $patch = $this->createUnifiedDiff($patchOld, $patchNew);
@@ -276,7 +397,6 @@ DIFF;
         $result = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
 
         $this->assertStringContainsString('Applied patch', $result);
-        // With -l, patch produces content matching the patch's whitespace
         $this->assertSame($patchNew, file_get_contents($targetPath));
     }
 
@@ -303,7 +423,6 @@ DIFF;
             },
         );
 
-        // The file should NOT have been modified
         $this->assertSame($originalContent, file_get_contents($targetPath));
     }
 
@@ -311,12 +430,6 @@ DIFF;
 
     public function testEditOnWriteNormalizedFileSucceeds(): void
     {
-        // Simulate the write-then-edit workflow: write creates a file with
-        // content that would lack a trailing newline, but WriteFileTool
-        // normalizes it. The edit tool should apply cleanly.
-        //
-        // This test uses the createUnifiedDiff helper to produce a standard
-        // unified diff (which expects newline-terminated context lines).
         $targetPath = $this->tmpDir.'/write_normalized.txt';
         $original = "hello from outside cwd\n";
         file_put_contents($targetPath, $original);
@@ -332,16 +445,10 @@ DIFF;
 
     public function testEditTargetNotEndingWithNewlineIncludesEnrichedHint(): void
     {
-        // When patch -l does fail on a target without trailing newline,
-        // the enriched hint should help the LLM understand the root cause.
-        // This test verifies the enriched hint path even though -l often
-        // tolerates the missing newline in simple cases (defense-in-depth).
         $targetPath = $this->tmpDir.'/no_trailing_newline.txt';
-        // Create a multi-line file where the last line lacks a newline
         $original = "context line that matches\nlast line without newline";
         file_put_contents($targetPath, $original);
 
-        // Generate a diff where the old version IS newline-terminated
         $oldWithNewline = "context line that matches\nlast line without newline\n";
         $newWithNewline = "context line that matches\nmodified last line\n";
         $patch = $this->createUnifiedDiff($oldWithNewline, $newWithNewline);
@@ -351,51 +458,130 @@ DIFF;
         } catch (ToolCallException $e) {
             $message = $e->getMessage();
             $hint = $e->hint();
-            $combined = $message.' '.$hint;
+            $combined = $message.' '.($hint ?? '');
 
             // Verify the hint mentions trailing newline and actionable guidance
             if ($this->targetLacksTrailingNewline($targetPath)) {
-                $this->assertStringContainsString('does not end with a newline', $hint);
-                $this->assertStringContainsString('trailing newline', $hint);
+                $this->assertStringContainsString('does not end with a newline', $hint ?? '');
+                $this->assertStringContainsString('trailing newline', $hint ?? '');
                 $this->assertTrue($e->retryable());
             }
 
-            // Original must be untouched
             $this->assertSame($original, file_get_contents($targetPath));
 
             return;
         }
 
         // If no exception was thrown (patch -l succeeded despite missing newline),
-        // this is acceptable (defense-in-depth). The write normalization fix
-        // is the primary defense.
+        // this is acceptable (defense-in-depth).
         $this->assertStringContainsString('Applied patch', $result);
     }
 
-    /**
-     * Test helper: check if a file lacks a trailing newline.
-     */
-    private function targetLacksTrailingNewline(string $targetPath): bool
+    /* ── Symlink preservation tests ── */
+
+    public function testEditViaSymlinkPreservesSymlinkAndUpdatesTarget(): void
     {
-        if (!is_file($targetPath) || !is_readable($targetPath)) {
-            return false;
+        // Create a real target file
+        $realPath = $this->tmpDir.'/real_target.txt';
+        $original = "original line 1\noriginal line 2\noriginal line 3\n";
+        file_put_contents($realPath, $original);
+
+        // Create a symlink pointing to it
+        $linkPath = $this->tmpDir.'/link_to_target.txt';
+        if (!@symlink($realPath, $linkPath)) {
+            $this->markTestSkipped('symlink() not available on this platform.');
+
+            return;
         }
 
-        $handle = @fopen($targetPath, 'r');
-        if (false === $handle) {
-            return false;
+        $this->assertTrue(is_link($linkPath), 'Symlink was not created');
+        $this->assertSame($realPath, readlink($linkPath));
+
+        // Edit through the symlink
+        $newContent = "original line 1\nmodified line 2\noriginal line 3\n";
+        $patch = $this->createUnifiedDiff($original, $newContent);
+
+        $result = ($this->editFileTool)(['path' => $linkPath, 'patch' => $patch]);
+
+        $this->assertStringContainsString('Applied patch', $result);
+
+        // Symlink must still be a symlink
+        $this->assertTrue(is_link($linkPath), 'Symlink was replaced with a regular file');
+
+        // readlink must still point to the real target
+        $this->assertSame($realPath, readlink($linkPath));
+
+        // Target content must be updated
+        $this->assertSame($newContent, file_get_contents($realPath));
+
+        // Reading through symlink must show updated content
+        $this->assertSame($newContent, file_get_contents($linkPath));
+    }
+
+    /* ── Hardlink preservation tests ── */
+
+    public function testEditHardlinkUpdatesAllNames(): void
+    {
+        $path1 = $this->tmpDir.'/hardlink_a.txt';
+        $path2 = $this->tmpDir.'/hardlink_b.txt';
+
+        $original = "hardlink line 1\nhardlink line 2\nhardlink line 3\n";
+        file_put_contents($path1, $original);
+
+        // Create a hardlink
+        if (!@link($path1, $path2)) {
+            $this->markTestSkipped('link() not available on this platform (may require same filesystem).');
+
+            return;
         }
 
-        if (-1 === fseek($handle, -1, \SEEK_END)) {
-            fclose($handle);
+        // Both paths should share the same inode
+        $ino1 = stat($path1)['ino'];
+        $ino2 = stat($path2)['ino'];
+        $this->assertSame($ino1, $ino2, 'Hardlinks do not share inode');
 
-            return false;
+        // Edit path2
+        $newContent = "hardlink line 1\nmodified line 2\nhardlink line 3\n";
+        $patch = $this->createUnifiedDiff($original, $newContent);
+
+        $result = ($this->editFileTool)(['path' => $path2, 'patch' => $patch]);
+
+        $this->assertStringContainsString('Applied patch', $result);
+
+        // Both paths must show updated content
+        $this->assertSame($newContent, file_get_contents($path1), 'Hardlink path1 content not updated');
+        $this->assertSame($newContent, file_get_contents($path2), 'Hardlink path2 content not updated');
+
+        // Both paths must still share the same inode (in-place write preserves inode)
+        $newIno1 = stat($path1)['ino'];
+        $newIno2 = stat($path2)['ino'];
+        $this->assertSame($newIno1, $newIno2, 'Inodes diverged after edit');
+        $this->assertSame($ino1, $newIno1, 'Inode changed — hardlink identity not preserved');
+    }
+
+    /* ── Write failure / permission tests ── */
+
+    public function testEditUnwritableTargetReturnsInfraError(): void
+    {
+        $targetPath = $this->tmpDir.'/unwritable.txt';
+        $original = "content\n";
+        file_put_contents($targetPath, $original);
+
+        // Make the target read-only
+        chmod($targetPath, 0o444);
+
+        try {
+            $patch = "--- a/file\n+++ b/file\n@@ -1 +1 @@\n-content\n+new content\n";
+            ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+            $this->fail('Expected ToolCallException');
+        } catch (ToolCallException $e) {
+            $message = $e->getMessage();
+            $this->assertMatchesRegularExpression('/E_PATCH_(?:WRITE|INFRA|STALE)/', $message);
+            $this->assertTrue($e->retryable());
+        } finally {
+            // Restore write permission for cleanup
+            @chmod($targetPath, 0o644);
         }
-
-        $lastByte = fread($handle, 1);
-        fclose($handle);
-
-        return "\n" !== $lastByte;
     }
 
     /* ── helpers ── */
@@ -419,12 +605,9 @@ DIFF;
             ));
 
             if (null === $diff || '' === $diff) {
-                // Identical content — return a valid empty diff representation
                 return '';
             }
 
-            // Strip the absolute path prefixes from the ---/+++ lines so the
-            // patch is cleaner, though patch itself ignores header paths.
             return $diff;
         } finally {
             if (is_file($oldFile)) {
@@ -456,23 +639,29 @@ DIFF;
         );
     }
 
-    private function rmDir(string $path): void
+    /**
+     * Test helper: check if a file lacks a trailing newline.
+     */
+    private function targetLacksTrailingNewline(string $targetPath): bool
     {
-        if (!is_dir($path)) {
-            return;
+        if (!is_file($targetPath) || !is_readable($targetPath)) {
+            return false;
         }
 
-        $items = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($path, \RecursiveDirectoryIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-
-        foreach ($items as $item) {
-            $item->isDir()
-                ? rmdir((string) $item)
-                : unlink((string) $item);
+        $handle = @fopen($targetPath, 'r');
+        if (false === $handle) {
+            return false;
         }
 
-        @rmdir($path);
+        if (-1 === fseek($handle, -1, \SEEK_END)) {
+            fclose($handle);
+
+            return false;
+        }
+
+        $lastByte = fread($handle, 1);
+        fclose($handle);
+
+        return "\n" !== $lastByte;
     }
 }

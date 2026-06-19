@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tool;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Path\PathResolver;
+use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Process\Process;
 
 /**
@@ -15,22 +16,37 @@ use Symfony\Component\Process\Process;
  * Implements both HatfieldToolProviderInterface for automatic registration
  * as a permanent tool and ToolHandlerInterface for execution.
  *
- * Uses a two-pass approach around GNU patch for safety:
+ * Uses a three-phase approach around GNU patch for safety and link preservation:
  * 1. Dry-run validation (--dry-run --posix) — never touches the target.
- * 2. Apply with -o temp output — patches a temp copy, then atomically
- *    renames it to the target on success.
+ * 2. Apply to temp output (patch -o <temp>) — generates patched bytes
+ *    without modifying the target.
+ * 3. In-place byte write through the original target path — preserves
+ *    symlink target semantics and hardlink inode identity.
  *
  * Features:
  * - Whitespace-tolerant matching via patch -l flag.
  * - 3-line fuzz tolerance via patch -F3 flag.
  * - Forward-only application via patch -N flag.
- * - Original file is never modified until a successful apply + rename.
- * - Cancellation before the final rename leaves the original untouched.
+ * - Symfony Lock (flock) around the entire critical section.
+ * - Best-effort rollback on write failure: original bytes restored
+ *   through the target path in-place (not via rename).
+ *
+ * Tradeoff: in-place write preserves symlinks and hardlinks but is not
+ * crash-atomic like temp-output + rename. Most real usage has git as
+ * backup/recovery, and cancellation is only checked between phases, not
+ * mid-write (file_put_contents with LOCK_EX completes as a single syscall).
+ *
+ * Cancellation behavior:
+ * - Cancellation before the final in-place write leaves the target untouched.
+ * - Cancellation cannot interrupt file_put_contents mid-write.
+ * - If in-place write fails mid-flight (short write), best-effort rollback
+ *   restores original bytes.
  */
 final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerInterface
 {
     public function __construct(
         private readonly ToolRuntime $toolRuntime,
+        private readonly LockFactory $lockFactory,
     ) {
     }
 
@@ -86,13 +102,19 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             executionMode: ToolExecutionMode::Sequential,
             promptLine: 'edit path patch — apply a unified diff patch to an existing file; file must already exist, use write for new files',
             promptGuidelines: [
+                'Read the current file contents with the `read` tool before generating a patch — never guess line numbers or context.',
+                'Use exact unchanged context lines from the current file. Do not modify or reformat context lines; they must match byte-for-byte.',
                 'Provide the patch in standard unified diff format (diff -u). Use `read` and its `cat -n` original line numbers to determine `@@` hunk header ranges.',
                 '`@@` hunk headers must reference the original line numbers shown by `read` via `cat -n` (e.g. `@@ -42,6 +42,8 @@`).',
+                'Keep hunks tight: include only enough unchanged context (typically 3–4 lines) for the patch to apply reliably.',
                 'The patch may contain multiple hunks to edit different parts of the file.',
                 'The target file must already exist — use the write tool to create new files.',
                 'Whitespace mismatches between the patch and the target file are handled automatically (tolerant matching).',
-                'Returns a summary of additions and deletions applied.',
+                'On success, the tool returns only the file path and addition/deletion stats. Do NOT echo or expect the full applied diff back.',
                 'If the patch produces no changes, the tool reports "No changes" without modifying the file.',
+                'If an edit fails with a stale-hunk error (context mismatch), the error includes a current-file context window with exact line numbers. Re-read the file with `read` and retry with a regenerated patch using the exact current context from `cat -n`.',
+                'If an edit fails with a format error, check that the patch has proper ---/+++ headers and @@ hunk headers in standard unified diff format.',
+                'If the target file lacks a trailing newline, the error hint will mention it. Add a trailing newline with the write tool or include "\\ No newline at end of file" markers in the patch.',
             ],
         );
     }
@@ -137,8 +159,15 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
     }
 
     /**
-     * Orchestrate the full patch lifecycle: write temp file, dry-run, apply,
-     * check no-op, atomic rename, and stats.
+     * Orchestrate the full patch lifecycle under a Symfony Lock:
+     * snapshot → dry-run → temp-apply → in-place write.
+     *
+     * The lock key is derived from the real path so that edits to the
+     * same inode (via different hardlink names) are serialized.
+     *
+     * In-place write preserves symlinks (follows the link to update the
+     * target) and hardlinks (writes through the original path so all
+     * shared inode names see the update).
      *
      * @return array{additions: int, deletions: int}
      *
@@ -148,43 +177,449 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
     private function applyPatch(string $targetPath, string $patchContent): array
     {
         $patchFile = $this->writePatchFile($patchContent);
-        $tempOut = tempnam(sys_get_temp_dir(), 'hatfield_out_');
+        $tempOut = @tempnam(sys_get_temp_dir(), 'hatfield_out_');
+        if (false === $tempOut) {
+            @unlink($patchFile);
+            throw $this->infraError('Failed to create temp output file.', $targetPath);
+        }
+
+        // Lock key: derived from real path so edits to the same inode
+        // (via symlinks or hardlinks) are serialised.
+        $realPath = false !== ($r = realpath($targetPath)) ? $r : $targetPath;
+        $lockKey = 'edit-file-'.hash('sha256', $realPath);
+        $lock = $this->lockFactory->createLock($lockKey);
+        $lock->acquire(true); // blocking — consistent with project flock pattern
 
         try {
-            $this->dryRun($targetPath, $patchFile);
-            $this->applyPatches($targetPath, $patchFile, $tempOut);
-
-            $patchedContent = @file_get_contents($tempOut);
-            if (false === $patchedContent) {
-                throw new ToolCallException('Failed to read patched output file.', retryable: true, hint: 'Check file system availability and try again.');
+            // Snapshot original bytes (reads through symlinks to target content)
+            $originalContent = @file_get_contents($targetPath);
+            if (false === $originalContent) {
+                throw $this->infraError('Failed to read original file for snapshot.', $targetPath);
             }
 
-            // Early return if patch produced identical content — no need to rename
-            $originalContent = @file_get_contents($targetPath);
-            if (false !== $originalContent && $patchedContent === $originalContent) {
+            // ── Phase 1: dry-run ──
+            // Use the real (resolved) path for patch commands since GNU patch
+            // refuses to operate on symlinks ("is not a regular file").
+            $drResult = $this->runPatchDryRun($realPath, $patchFile);
+
+            if (0 !== $drResult->exitCode) {
+                $noTrailingNewline = $this->targetLacksTrailingNewline($targetPath);
+                $failure = $this->buildFailureMessage(
+                    $targetPath, $patchFile, $patchContent,
+                    $drResult->stdout, $drResult->stderr, $drResult->exitCode,
+                    $originalContent, $noTrailingNewline,
+                );
+
+                throw new ToolCallException($failure['message'], retryable: $failure['retryable'], hint: $failure['hint']);
+            }
+
+            // ── Phase 2: apply to temp output (target untouched) ──
+            $applyResult = $this->runPatchApply($realPath, $patchFile, $tempOut);
+
+            if (0 !== $applyResult->exitCode) {
+                $noTrailingNewline = $this->targetLacksTrailingNewline($targetPath);
+                $failure = $this->buildFailureMessage(
+                    $targetPath, $patchFile, $patchContent,
+                    $applyResult->stdout, $applyResult->stderr, $applyResult->exitCode,
+                    $originalContent, $noTrailingNewline,
+                );
+
+                throw new ToolCallException($failure['message'], retryable: $failure['retryable'], hint: $failure['hint']);
+            }
+
+            // ── Phase 3: read patched bytes and no-op check ──
+            $patchedContent = @file_get_contents($tempOut);
+            if (false === $patchedContent) {
+                throw $this->infraError('Failed to read patched output.', $targetPath);
+            }
+
+            // Early return if patch produced identical content — target unchanged
+            if ($patchedContent === $originalContent) {
                 return ['additions' => 0, 'deletions' => 0];
             }
 
-            // Atomic replace
-            if (!@rename($tempOut, $targetPath)) {
-                throw new ToolCallException(\sprintf('Failed to replace original file "%s" with patched version.', $targetPath), retryable: true, hint: 'Check file permissions and try again. The original file was not modified.');
-            }
-            $tempOut = null; // Prevent double-cleanup in finally
+            // ── Phase 4: in-place write through target path ──
+            // Writes through $targetPath to preserve symlink target
+            // semantics and hardlink inode identity.
+            $this->writeBytesInPlace($targetPath, $patchedContent, $originalContent);
 
             return [
                 'additions' => $this->computeStats($patchContent)['additions'],
                 'deletions' => $this->computeStats($patchContent)['deletions'],
             ];
+        } catch (ToolCallException $e) {
+            throw $e;
+        } catch (\RuntimeException $e) {
+            // Cancellation/timeout: target was never touched before
+            // the in-place write, so it remains unchanged.
+            throw $e;
         } finally {
+            $lock->release();
+
             // Clean up temp files
             if (is_file($patchFile)) {
                 @unlink($patchFile);
             }
-            if (null !== $tempOut && is_file($tempOut)) {
+            if (is_file($tempOut)) {
                 @unlink($tempOut);
             }
         }
     }
+
+    /**
+     * Write patched bytes through the target path in-place.
+     *
+     * This preserves symlinks (writes to the link target) and hardlinks
+     * (all names sharing the inode see the update). On write failure or
+     * short write, attempts best-effort rollback by restoring original bytes.
+     *
+     * @param string $targetPath      target path to write through (may be a symlink)
+     * @param string $patchedContent  bytes to write
+     * @param string $originalContent bytes to restore on failure
+     *
+     * @throws ToolCallException on write failure
+     */
+    private function writeBytesInPlace(string $targetPath, string $patchedContent, string $originalContent): void
+    {
+        $written = @file_put_contents($targetPath, $patchedContent, \LOCK_EX);
+
+        if (false !== $written && $written === \strlen($patchedContent)) {
+            return; // Success
+        }
+
+        // Best-effort rollback: restore original bytes in-place.
+        // This preserves the same symlink/hardlink semantics as the
+        // successful path.
+        @file_put_contents($targetPath, $originalContent, \LOCK_EX);
+
+        $detail = false === $written
+            ? 'write returned false (permission/disk error)'
+            : \sprintf('short write (%d of %d bytes)', $written, \strlen($patchedContent));
+
+        throw new ToolCallException(\sprintf('[E_PATCH_WRITE] Failed to write patched content to "%s": %s. Original content restored.', $targetPath, $detail), retryable: true, hint: 'Check file permissions and disk space, then retry.');
+    }
+
+    /**
+     * Build a structured infrastructure/write error.
+     */
+    private function infraError(string $context, string $targetPath): ToolCallException
+    {
+        return new ToolCallException(
+            \sprintf('[E_PATCH_INFRA] %s for "%s".', $context, $targetPath),
+            retryable: true,
+            hint: 'Check filesystem availability, permissions, and disk space.',
+        );
+    }
+
+    /* ── Patch process helpers ── */
+
+    /**
+     * Run patch dry-run validation.
+     *
+     * @return CancellableProcessResult process result; caller inspects exitCode
+     *                                  to decide success/failure
+     *
+     * @throws \RuntimeException on cancellation or timeout
+     */
+    private function runPatchDryRun(string $targetPath, string $patchFile): CancellableProcessResult
+    {
+        $process = new Process([
+            'patch', '-u', '-F3', '-l', '-N',
+            '--dry-run', '--posix',
+            '-o', '/dev/null',
+            $targetPath, $patchFile,
+        ]);
+
+        return $this->toolRuntime->runCancellableProcess($process);
+    }
+
+    /**
+     * Apply the patch to a temp output file (target file is never touched).
+     *
+     * @return CancellableProcessResult process result; caller inspects exitCode
+     *
+     * @throws \RuntimeException on cancellation or timeout
+     */
+    private function runPatchApply(string $targetPath, string $patchFile, string $tempOut): CancellableProcessResult
+    {
+        $process = new Process([
+            'patch', '-u', '-F3', '-l', '-N',
+            '-o', $tempOut,
+            $targetPath, $patchFile,
+        ]);
+
+        return $this->toolRuntime->runCancellableProcess($process);
+    }
+
+    /* ── Failure classification and message building ── */
+
+    /**
+     * Build a classified, bounded failure message suitable for LLM consumption.
+     *
+     * @return array{message: string, retryable: bool, hint: string}
+     */
+    private function buildFailureMessage(
+        string $targetPath,
+        string $patchFile,
+        string $patchContent,
+        string $stdout,
+        string $stderr,
+        ?int $exitCode,
+        string $originalContent,
+        bool $noTrailingNewline,
+    ): array {
+        $combined = $this->combinedPatchOutput($stdout, $stderr);
+        $classification = $this->classifyPatchFailure($combined);
+        $code = $classification['code'];
+        $retryable = $classification['retryable'];
+        $baseHint = $classification['baseHint'];
+
+        $trimmed = $this->trimPatchOutput($combined);
+        $phase = 'edit failed';
+
+        // Start building the message
+        $message = \sprintf("[%s] %s for \"%s\":\n%s", $code, $phase, $targetPath, $trimmed);
+
+        // For stale hunk failures: include bounded current-file context
+        $currentContext = '';
+        if ('E_PATCH_STALE' === $code) {
+            $failedLines = $this->extractFailedHunkLines($combined);
+            if ([] !== $failedLines) {
+                $currentContext = $this->buildCurrentFileContext($targetPath, $originalContent, $failedLines);
+                if ('' !== $currentContext) {
+                    $message .= "\n\nCurrent file context:\n".$currentContext;
+                }
+            }
+        }
+
+        // Build hint
+        $hint = $baseHint;
+
+        if ($noTrailingNewline) {
+            $nlHint = 'The target file does not end with a newline. Unified diff context lines normally expect newline-terminated text; add a trailing newline with the write tool or include "\\ No newline at end of file" markers in the patch.';
+
+            // Prepend NL hint for stale/malformed to make it the primary actionable guidance
+            if ('' !== ($baseHint ?? '')) {
+                $hint = $nlHint.' '.$baseHint;
+            } else {
+                $hint = $nlHint;
+            }
+        }
+
+        return [
+            'message' => trim($message),
+            'retryable' => $retryable,
+            'hint' => $hint,
+        ];
+    }
+
+    /**
+     * Classify a patch failure from combined stdout+stderr output.
+     *
+     * @return array{code: string, retryable: bool, baseHint: string}
+     */
+    private function classifyPatchFailure(string $combinedOutput): array
+    {
+        // Stale hunk / context mismatch
+        if (preg_match('/Hunk\s+#\d+\s+FAILED/i', $combinedOutput)) {
+            return [
+                'code' => 'E_PATCH_STALE',
+                'retryable' => true,
+                'baseHint' => 'The patch context does not match the current file content. Read the file with the `read` tool using `cat -n` for exact line numbers, then regenerate the patch with the exact current context lines.',
+            ];
+        }
+
+        // Malformed / not a unified diff
+        if (
+            preg_match('/(?:only\s+garbage\s+was\s+found|not\s+a\s+unified\s+diff|malformed|missing\s+header|unrecognized\s+input|can\'t\s+find\s+file\s+to\s+patch)/i', $combinedOutput)
+        ) {
+            return [
+                'code' => 'E_PATCH_FORMAT',
+                'retryable' => true,
+                'baseHint' => 'The patch appears malformed or is not a valid unified diff. Provide a standard `diff -u` format patch with proper ---/+++ headers and @@ hunk headers. Each hunk must have correct line-number ranges.',
+            ];
+        }
+
+        // Already applied / reversed / skipped by -N
+        if (
+            preg_match('/(?:reversed(?:\s+or\s+previously\s+applied)|already\s+applied|skipping\s+patch|patch\s+is\s+reversed|previously\s+applied)/i', $combinedOutput)
+        ) {
+            return [
+                'code' => 'E_PATCH_NOOP',
+                'retryable' => true,
+                'baseHint' => 'The patch appears to be reversed or already applied. Read the current file to check whether the intended changes are already present.',
+            ];
+        }
+
+        // hunk succeeded count mismatch (partial success)
+        if (preg_match('/(\d+)\s+out\s+of\s+(\d+)\s+hunks?\s+(?:FAILED|ignored)/i', $combinedOutput)) {
+            return [
+                'code' => 'E_PATCH_STALE',
+                'retryable' => true,
+                'baseHint' => 'Some hunks failed to apply. Read the current file with `read` using `cat -n` for exact line numbers, then regenerate the patch with the exact current context lines for the failing hunks.',
+            ];
+        }
+
+        // Generic failure — retryable, suggest re-reading
+        return [
+            'code' => 'E_PATCH_STALE',
+            'retryable' => true,
+            'baseHint' => 'The patch could not be applied. Read the current file with the `read` tool using `cat -n` for exact line numbers, then regenerate the patch.',
+        ];
+    }
+
+    /**
+     * Extract failed hunk line numbers from GNU patch output.
+     *
+     * Parses lines like "Hunk #1 FAILED at 42." to extract the line number.
+     *
+     * @return int[] Line numbers where hunks failed
+     */
+    private function extractFailedHunkLines(string $combinedOutput): array
+    {
+        $lines = [];
+        $matched = preg_match_all('/Hunk\s+#\d+\s+FAILED\s+at\s+(\d+)/i', $combinedOutput, $matches);
+
+        if (false !== $matched && $matched > 0) {
+            foreach ($matches[1] as $lineStr) {
+                $lines[] = (int) $lineStr;
+            }
+        }
+
+        return $lines;
+    }
+
+    /**
+     * Build a bounded current-file context window around failed line numbers.
+     *
+     * Returns a compact snippet with line numbers. The failed lines are
+     * marked with a "→" prefix. Context extends ±$contextLines around each
+     * failed line; overlapping windows are merged. Total output is capped.
+     *
+     * @param string $targetPath      path to the target file (already verified readable)
+     * @param string $originalContent full original file content (bytes)
+     * @param int[]  $failedLines     line numbers where hunks failed (1-based)
+     * @param int    $contextLines    number of context lines above/below each failed line
+     *
+     * @return string formatted context window, or empty string on failure
+     */
+    private function buildCurrentFileContext(
+        string $targetPath,
+        string $originalContent,
+        array $failedLines,
+        int $contextLines = 4,
+    ): string {
+        $fileLines = explode("\n", $originalContent);
+        $totalLines = \count($fileLines);
+
+        if (0 === $totalLines || [] === $failedLines) {
+            return '';
+        }
+
+        // Build inclusive ranges to display
+        $ranges = [];
+        foreach ($failedLines as $line) {
+            $start = max(1, $line - $contextLines);
+            $end = min($totalLines, $line + $contextLines);
+            $ranges[] = [$start, $end];
+        }
+
+        // Merge overlapping ranges
+        usort($ranges, static fn (array $a, array $b) => $a[0] <=> $b[0]);
+        $merged = [];
+        foreach ($ranges as [$start, $end]) {
+            if ([] === $merged) {
+                $merged[] = [$start, $end];
+
+                continue;
+            }
+
+            $last = array_key_last($merged);
+            if ($start <= $merged[$last][1] + 1) {
+                // Overlap or adjacent — merge
+                $merged[$last][1] = max($merged[$last][1], $end);
+            } else {
+                $merged[] = [$start, $end];
+            }
+        }
+
+        // Cap total merged context lines to avoid dumping too much
+        $maxContextLines = 60;
+        $totalInRanges = 0;
+        $cappedRanges = [];
+        foreach ($merged as [$start, $end]) {
+            $size = $end - $start + 1;
+            if ($totalInRanges + $size > $maxContextLines) {
+                $cappedEnd = $start + ($maxContextLines - $totalInRanges) - 1;
+                if ($cappedEnd >= $start) {
+                    $cappedRanges[] = [$start, $cappedEnd];
+                }
+                break;
+            }
+
+            $cappedRanges[] = [$start, $end];
+            $totalInRanges += $size;
+        }
+
+        // Build output
+        $output = '';
+        $prevEnd = 0;
+        foreach ($cappedRanges as [$start, $end]) {
+            if ($start > $prevEnd + 1 && '' !== $output) {
+                $output .= "  ...\n";
+            }
+
+            for ($i = $start; $i <= $end; ++$i) {
+                $lineNum = str_pad((string) $i, max(4, (int) floor(log10($end)) + 1), ' ', \STR_PAD_LEFT);
+                $marker = \in_array($i, $failedLines, true) ? '→' : ' ';
+                // fileLines is 0-indexed
+                $lineContent = $fileLines[$i - 1] ?? '';
+                $output .= \sprintf("%s %s: %s\n", $marker, $lineNum, $lineContent);
+            }
+
+            $prevEnd = $end;
+        }
+
+        return $output;
+    }
+
+    /**
+     * Combine stdout and stderr into a single diagnostic string.
+     */
+    private function combinedPatchOutput(string $stdout, string $stderr): string
+    {
+        $parts = [];
+        if ('' !== $stdout) {
+            $parts[] = rtrim($stdout);
+        }
+        if ('' !== $stderr) {
+            $parts[] = rtrim($stderr);
+        }
+
+        return implode("\n", $parts);
+    }
+
+    /**
+     * Trim patch diagnostic output to a bounded size for LLM consumption.
+     *
+     * @param string $output   raw combined patch output
+     * @param int    $maxLines maximum number of lines to include
+     *
+     * @return string trimmed output with truncation indicator if applicable
+     */
+    private function trimPatchOutput(string $output, int $maxLines = 20): string
+    {
+        $lines = explode("\n", $output);
+        if (\count($lines) <= $maxLines) {
+            return $output;
+        }
+
+        $trimmed = \array_slice($lines, 0, $maxLines);
+
+        return implode("\n", $trimmed)."\n... (output truncated, ".(\count($lines) - $maxLines).' more lines)';
+    }
+
+    /* ── Temp file helpers ── */
 
     /**
      * Write patch content to a temp file.
@@ -195,10 +630,10 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
      */
     private function writePatchFile(string $patchContent): string
     {
-        $patchFile = tempnam(sys_get_temp_dir(), 'hatfield_patch_');
+        $patchFile = @tempnam(sys_get_temp_dir(), 'hatfield_patch_');
 
         if (false === $patchFile) {
-            throw new ToolCallException('Failed to create temp file for patch content.', retryable: true, hint: 'Check disk space and temp directory permissions.');
+            throw new ToolCallException('[E_PATCH_INFRA] Failed to create temp file for patch content.', retryable: true, hint: 'Check disk space and temp directory permissions.');
         }
 
         $written = @file_put_contents($patchFile, $patchContent);
@@ -207,108 +642,10 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             if (is_file($patchFile)) {
                 @unlink($patchFile);
             }
-            throw new ToolCallException('Failed to write patch content to temp file.', retryable: true, hint: 'Check disk space and temp directory permissions.');
+            throw new ToolCallException('[E_PATCH_INFRA] Failed to write patch content to temp file.', retryable: true, hint: 'Check disk space and temp directory permissions.');
         }
 
         return $patchFile;
-    }
-
-    /**
-     * Run patch dry-run validation.
-     *
-     * @throws ToolCallException when the patch does not apply
-     * @throws \RuntimeException on cancellation or timeout
-     */
-    private function dryRun(string $targetPath, string $patchFile): void
-    {
-        $process = new Process([
-            'patch', '-u', '-F3', '-l', '-N',
-            '--dry-run', '--posix',
-            '-o', '/dev/null',
-            $targetPath, $patchFile,
-        ]);
-
-        $result = $this->toolRuntime->runCancellableProcess($process);
-
-        if ($result->cancelled) {
-            throw new \RuntimeException('Tool execution was cancelled during patch dry-run.');
-        }
-
-        if ($result->timedOut) {
-            throw new \RuntimeException('Patch dry-run timed out.');
-        }
-
-        if (0 !== $result->exitCode) {
-            $errorOutput = '' !== $result->stderr ? $result->stderr : $result->stdout;
-            $hint = 'Check that the patch context matches the file content and the diff is in unified format.';
-
-            if ($this->targetLacksTrailingNewline($targetPath)) {
-                $hint = 'The target file does not end with a newline. Unified diff context lines normally expect newline-terminated text; add a trailing newline with the write tool or include a "\\ No newline at end of file" marker in the patch.';
-            }
-
-            throw new ToolCallException(\sprintf('Patch dry-run failed for "%s": %s', $targetPath, $errorOutput), retryable: true, hint: $hint);
-        }
-    }
-
-    /**
-     * Check whether a regular file is non-empty and does not end with "\n".
-     *
-     * Unreadable files, directories, or empty files return false because
-     * resolveAndVerifyTarget() already checked readability and the caller
-     * handles other failure paths.
-     */
-    private function targetLacksTrailingNewline(string $targetPath): bool
-    {
-        if (!is_file($targetPath) || !is_readable($targetPath)) {
-            return false; // Graceful degradation: caller already checked readability
-        }
-
-        $handle = @fopen($targetPath, 'rb');
-        if (false === $handle) {
-            return false; // Graceful degradation: file was readable, now is not
-        }
-
-        // Seek to the last byte
-        if (-1 === fseek($handle, -1, \SEEK_END)) {
-            fclose($handle);
-
-            return false; // Empty file (or seek failed) — no trailing newline concern
-        }
-
-        $lastByte = fread($handle, 1);
-        fclose($handle);
-
-        return "\n" !== $lastByte;
-    }
-
-    /**
-     * Apply the patch to a temp output file.
-     *
-     * @throws ToolCallException when the patch application fails
-     * @throws \RuntimeException on cancellation or timeout
-     */
-    private function applyPatches(string $targetPath, string $patchFile, string $tempOut): void
-    {
-        $process = new Process([
-            'patch', '-u', '-F3', '-l', '-N',
-            '-o', $tempOut,
-            $targetPath, $patchFile,
-        ]);
-
-        $result = $this->toolRuntime->runCancellableProcess($process);
-
-        if ($result->cancelled) {
-            throw new \RuntimeException('Tool execution was cancelled during patch application.');
-        }
-
-        if ($result->timedOut) {
-            throw new \RuntimeException('Patch application timed out.');
-        }
-
-        if (0 !== $result->exitCode) {
-            $errorOutput = '' !== $result->stderr ? $result->stderr : $result->stdout;
-            throw new ToolCallException(\sprintf('Patch application failed for "%s": %s', $targetPath, $errorOutput), retryable: true, hint: 'Retry the edit operation.');
-        }
     }
 
     /**
@@ -355,5 +692,38 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             $additions,
             $deletions,
         );
+    }
+
+    /* ── File content helpers ── */
+
+    /**
+     * Check whether a regular file is non-empty and does not end with "\n".
+     *
+     * Unreadable files, directories, or empty files return false because
+     * resolveAndVerifyTarget() already checked readability and the caller
+     * handles other failure paths.
+     */
+    private function targetLacksTrailingNewline(string $targetPath): bool
+    {
+        if (!is_file($targetPath) || !is_readable($targetPath)) {
+            return false; // Graceful degradation: caller already checked readability
+        }
+
+        $handle = @fopen($targetPath, 'rb');
+        if (false === $handle) {
+            return false; // Graceful degradation: file was readable, now is not
+        }
+
+        // Seek to the last byte
+        if (-1 === fseek($handle, -1, \SEEK_END)) {
+            fclose($handle);
+
+            return false; // Empty file (or seek failed) — no trailing newline concern
+        }
+
+        $lastByte = fread($handle, 1);
+        fclose($handle);
+
+        return "\n" !== $lastByte;
     }
 }
