@@ -278,6 +278,10 @@ parameters:
           value: src/CodingAgent/Mcp/Handler/.*
         - type: classNameRegex
           value: '#^Ineersa\\CodingAgent\\Mcp\\McpSessionLifecycleDispatcher$#'
+    - name: AppMcpCatalog
+      collectors:
+        - type: directory
+          value: src/CodingAgent/Mcp/Catalog/.*
     - name: McpSdk
       collectors:
         - type: classNameRegex
@@ -539,13 +543,16 @@ parameters:
 
     AppMcpBroker:
       - AppMcpConfig
+      - AppMcpClient
+      - AppMcpCatalog
       - AppMcpMessage
       - SymfonyMessenger
+
+    AppMcpCatalog: ~
 
     McpSdk: ~
 
     AppExtensionApi: ~
-
     AppExtensionBuiltin:
       - AppExtensionApi
       - SymfonyYaml
