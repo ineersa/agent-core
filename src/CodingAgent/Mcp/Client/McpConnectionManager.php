@@ -235,11 +235,122 @@ final class McpConnectionManager implements McpConnectionManagerInterface
         return (string) $message;
     }
 
+    public function callTool(string $runId, string $serverName, string $toolName, array $arguments = [], int $requestedTimeoutMs = 30000): array
+    {
+        $client = $this->getClient($runId, $serverName);
+
+        if (null === $client) {
+            // Attempt reconnect/discovery once before failing
+            $this->reconnectServer($runId, $serverName);
+            $client = $this->getClient($runId, $serverName);
+        }
+
+        if (null === $client) {
+            throw new \Ineersa\AgentCore\Contract\Tool\ToolCallException(error: \sprintf('MCP server "%s" is not connected. The server may have been disconnected or never successfully discovered.', $serverName), retryable: false, hint: 'The MCP server is not available. Check server configuration and connectivity.');
+        }
+
+        try {
+            return $client->callTool($toolName, $arguments);
+        } catch (\Throwable $e) {
+            // Log with structured context, then wrap as ToolCallException
+            // so the ToolExecutor pipeline produces a failed ToolCallResult.
+            $this->logger->error('MCP tool call failed', [
+                'component' => 'mcp',
+                'event_type' => 'tool.call_failed',
+                'mcp_event' => 'tool.call_failed',
+                'run_id' => $runId,
+                'session_id' => $runId,
+                'server_name' => $serverName,
+                'mcp_tool_name' => $toolName,
+                'error_class' => $e::class,
+                'error_message' => self::sanitizeLogMessage($e->getMessage()),
+            ]);
+
+            // Remove the failed client so future attempts trigger reconnect
+            $this->disconnectServer($runId, $serverName);
+
+            throw new \Ineersa\AgentCore\Contract\Tool\ToolCallException(error: \sprintf('MCP tool "%s" (server "%s") call failed: %s', $toolName, $serverName, $e->getMessage()), retryable: false, hint: 'The MCP tool invocation failed. Check server logs and connectivity.', previous: $e);
+        }
+    }
+
     /**
      * Build an internal client-lookup key.
      */
     private function clientKey(string $runId, string $serverName): string
     {
         return $runId.':'.$serverName;
+    }
+
+    /**
+     * Reconnect to a single MCP server for a given run.
+     *
+     * Disconnects any existing client, creates a fresh one,
+     * and connects it.  Used as a one-shot recovery when a live
+     * client is missing at tool-call time.
+     *
+     * On failure the old client is cleaned up and the error is
+     * logged; callers must check getClient() after calling this.
+     */
+    private function reconnectServer(string $runId, string $serverName): void
+    {
+        // Clean up any existing client first
+        $this->disconnectServer($runId, $serverName);
+
+        try {
+            $config = $this->configLoader->load();
+        } catch (\Throwable $e) {
+            $this->logger->warning('MCP config load failed during reconnect', [
+                'component' => 'mcp',
+                'event_type' => 'client.reconnect_config_failed',
+                'mcp_event' => 'client.reconnect_config_failed',
+                'run_id' => $runId,
+                'session_id' => $runId,
+                'server_name' => $serverName,
+                'error_class' => $e::class,
+                'error_message' => self::sanitizeLogMessage($e->getMessage()),
+            ]);
+
+            return;
+        }
+
+        $server = $config->servers[$serverName] ?? null;
+        if (null === $server) {
+            $this->logger->warning('MCP server not found in config during reconnect', [
+                'component' => 'mcp',
+                'event_type' => 'client.reconnect_server_not_found',
+                'mcp_event' => 'client.reconnect_server_not_found',
+                'run_id' => $runId,
+                'session_id' => $runId,
+                'server_name' => $serverName,
+            ]);
+
+            return;
+        }
+
+        try {
+            $client = $this->clientFactory->create($server);
+            $client->connect();
+            $this->clients[$this->clientKey($runId, $serverName)] = $client;
+
+            $this->logger->info('MCP server reconnected for tool call', [
+                'component' => 'mcp',
+                'event_type' => 'client.reconnected',
+                'mcp_event' => 'client.reconnected',
+                'run_id' => $runId,
+                'session_id' => $runId,
+                'server_name' => $serverName,
+            ]);
+        } catch (\Throwable $e) {
+            $this->logger->warning('MCP server reconnect failed', [
+                'component' => 'mcp',
+                'event_type' => 'client.reconnect_failed',
+                'mcp_event' => 'client.reconnect_failed',
+                'run_id' => $runId,
+                'session_id' => $runId,
+                'server_name' => $serverName,
+                'error_class' => $e::class,
+                'error_message' => self::sanitizeLogMessage($e->getMessage()),
+            ]);
+        }
     }
 }

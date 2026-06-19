@@ -51,6 +51,12 @@ framework:
                     enabled: true
                     allow_no_handlers: false
                     allow_no_senders: true
+                middleware:
+                    # MCP-aware routing: stamps MCP-backed ExecuteToolCall with
+                    # TransportNamesStamp(['mcp']) so send_message routes to the
+                    # single mcp consumer instead of the default tool transport.
+                    # Runs before Symfony send_message middleware.
+                    - Ineersa\CodingAgent\Mcp\Messenger\McpExecuteToolCallRoutingMiddleware
 
         transports:
             run_control:

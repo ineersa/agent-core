@@ -8,28 +8,39 @@ use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 
 /**
- * Deferred MCP tool execution handler.
+ * Per-tool MCP execution handler.
  *
- * Stores the originating server and tool names for reverse mapping
- * (visible to tool workers and diagnostics).  Actual MCP request/reply
- * invocation is owned by MCP-05 — this handler throws a structured
- * ToolCallException so an LLM calling an MCP tool before MCP-05 is
- * wired receives a clear, safe diagnostic instead of a silent success
- * or opaque crash.
+ * Carries static MCP identity (originating server and tool names)
+ * and delegates actual invocation to the shared {@see McpToolInvoker}
+ * at call time.
  *
- * The error message intentionally excludes raw arguments and server
- * configuration details to avoid leaking them into LLM-visible output.
+ * This class is a tiny value-object-like callable.  It is NOT
+ * autowireable — instances must be produced by {@see McpToolHandlerFactory}.
  */
 final readonly class McpToolHandler implements ToolHandlerInterface
 {
+    /**
+     * @param McpToolInvoker $invoker Shared runtime invoker
+     */
     public function __construct(
         public string $serverName,
         public string $mcpName,
+        private McpToolInvoker $invoker,
     ) {
     }
 
     public function __invoke(array $arguments): mixed
     {
-        throw new ToolCallException(error: \sprintf('MCP tool "%s" (server "%s") is not yet available for invocation. MCP tool execution will be enabled in a future update.', $this->mcpName, $this->serverName), retryable: false, hint: 'MCP tool execution support is planned but not yet implemented. Use built-in tools instead.');
+        try {
+            return $this->invoker->invoke(
+                serverName: $this->serverName,
+                mcpName: $this->mcpName,
+                arguments: $arguments,
+            );
+        } catch (ToolCallException $e) {
+            // Re-wrap with server/tool context so the LLM sees a clear
+            // diagnostic without leaking raw MCP internals.
+            throw new ToolCallException(error: \sprintf('MCP tool "%s" (server "%s"): %s', $this->mcpName, $this->serverName, $e->getMessage()), retryable: $e->retryable(), hint: $e->hint(), previous: $e);
+        }
     }
 }

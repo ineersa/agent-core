@@ -13,6 +13,8 @@ use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogDTO;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolDefinitionDTO;
 use Ineersa\CodingAgent\Mcp\Tool\McpToolHandler;
+use Ineersa\CodingAgent\Mcp\Tool\McpToolHandlerFactory;
+use Ineersa\CodingAgent\Mcp\Tool\McpToolInvoker;
 use Ineersa\CodingAgent\Mcp\Tool\McpToolRegistrar;
 use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
@@ -33,6 +35,7 @@ final class McpToolRegistrarTest extends TestCase
 {
     private ToolRegistry $registry;
     private TestLogger $logger;
+    private \Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor $contextAccessor;
     /** @var array<string, McpToolCatalogDTO> */
     private array $catalogStoreData = [];
 
@@ -40,6 +43,7 @@ final class McpToolRegistrarTest extends TestCase
     {
         $this->registry = new ToolRegistry();
         $this->logger = new TestLogger();
+        $this->contextAccessor = new \Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor();
         $this->catalogStoreData = [];
     }
 
@@ -68,7 +72,7 @@ final class McpToolRegistrarTest extends TestCase
         );
 
         $store = $this->makeCatalogStore(['run-abc' => $catalog]);
-        $registrar = new McpToolRegistrar($store, $this->registry, $this->logger);
+        $registrar = new McpToolRegistrar($store, $this->registry, $this->makeHandlerFactory(), $this->logger);
 
         $registrar->registerForRun('run-abc');
 
@@ -91,20 +95,32 @@ final class McpToolRegistrarTest extends TestCase
 
     public function testHandlerThrowsStructuredToolCallException(): void
     {
-        $handler = new McpToolHandler('my-server', 'read');
+        $throwingInvoker = $this->makeThrowingInvoker(
+            new ToolCallException('MCP server error', retryable: false, hint: 'Try later'),
+        );
+        $handler = new McpToolHandler('my-server', 'read', $throwingInvoker);
 
         $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('not yet available for invocation');
+        $this->expectExceptionMessage('MCP tool "read" (server "my-server"): MCP server error');
 
-        ($handler)(['path' => 'test.txt']);
+        $this->contextAccessor->with(
+            new \Ineersa\AgentCore\Application\Tool\ToolContext('run-1', 1, 'tc1', 'my_server_read', new \Ineersa\AgentCore\Contract\Hook\NullCancellationToken(), 30),
+            fn () => ($handler)(['path' => 'test.txt']),
+        );
     }
 
     public function testHandlerExceptionIsNotRetryable(): void
     {
-        $handler = new McpToolHandler('my-server', 'read');
+        $throwingInvoker = $this->makeThrowingInvoker(
+            new ToolCallException('Timeout', retryable: false, hint: 'Retry later'),
+        );
+        $handler = new McpToolHandler('my-server', 'read', $throwingInvoker);
 
         try {
-            ($handler)([]);
+            $this->contextAccessor->with(
+                new \Ineersa\AgentCore\Application\Tool\ToolContext('run-1', 1, 'tc1', 'my_server_read', new \Ineersa\AgentCore\Contract\Hook\NullCancellationToken(), 30),
+                fn () => ($handler)([]),
+            );
         } catch (ToolCallException $e) {
             $this->assertFalse($e->retryable(), 'MCP tool handler must be non-retryable');
             $this->assertNotNull($e->hint());
@@ -134,7 +150,7 @@ final class McpToolRegistrarTest extends TestCase
         );
 
         $store = $this->makeCatalogStore(['run-x' => $catalog]);
-        $registrar = new McpToolRegistrar($store, $this->registry, $this->logger);
+        $registrar = new McpToolRegistrar($store, $this->registry, $this->makeHandlerFactory(), $this->logger);
 
         $registrar->registerForRun('run-x');
 
@@ -176,7 +192,7 @@ final class McpToolRegistrarTest extends TestCase
         );
 
         $store = $this->makeCatalogStore(['run-fail' => $catalog]);
-        $registrar = new McpToolRegistrar($store, $this->registry, $this->logger);
+        $registrar = new McpToolRegistrar($store, $this->registry, $this->makeHandlerFactory(), $this->logger);
 
         $registrar->registerForRun('run-fail');
 
@@ -190,7 +206,7 @@ final class McpToolRegistrarTest extends TestCase
     public function testMissingCatalogIsNoOp(): void
     {
         $store = $this->makeCatalogStore([]); // empty — read returns null
-        $registrar = new McpToolRegistrar($store, $this->registry, $this->logger);
+        $registrar = new McpToolRegistrar($store, $this->registry, $this->makeHandlerFactory(), $this->logger);
 
         $registrar->registerForRun('nonexistent');
 
@@ -224,7 +240,7 @@ final class McpToolRegistrarTest extends TestCase
         // Use a mutable store so the registrar sees catalog updates across calls.
         $storeData = ['run-1' => $catalog1];
         $store = $this->makeMutableStore($storeData);
-        $registrar = new McpToolRegistrar($store, $this->registry, $this->logger);
+        $registrar = new McpToolRegistrar($store, $this->registry, $this->makeHandlerFactory(), $this->logger);
         $registrar->registerForRun('run-1');
         $this->assertContains('srv_x', $this->registry->activeToolNames());
 
@@ -308,7 +324,7 @@ final class McpToolRegistrarTest extends TestCase
         );
 
         $store = $this->makeCatalogStore(['run-collide' => $catalog]);
-        $registrar = new McpToolRegistrar($store, $this->registry, $this->logger);
+        $registrar = new McpToolRegistrar($store, $this->registry, $this->makeHandlerFactory(), $this->logger);
 
         $registrar->registerForRun('run-collide');
 
@@ -363,7 +379,7 @@ final class McpToolRegistrarTest extends TestCase
         );
 
         $store = $this->makeCatalogStore(['run-dyn-collide' => $catalog]);
-        $registrar = new McpToolRegistrar($store, $this->registry, $this->logger);
+        $registrar = new McpToolRegistrar($store, $this->registry, $this->makeHandlerFactory(), $this->logger);
 
         $registrar->registerForRun('run-dyn-collide');
 
@@ -435,7 +451,7 @@ final class McpToolRegistrarTest extends TestCase
         );
 
         $store = $this->makeCatalogStore(['run-hidden' => $catalog]);
-        $registrar = new McpToolRegistrar($store, $this->registry, $this->logger);
+        $registrar = new McpToolRegistrar($store, $this->registry, $this->makeHandlerFactory(), $this->logger);
 
         $registrar->registerForRun('run-hidden');
 
@@ -465,10 +481,42 @@ final class McpToolRegistrarTest extends TestCase
         $this->assertSame('tool.register_failed', $warnings[0]['context']['event_type']);
     }
 
+    private function makeHandlerFactory(): McpToolHandlerFactory
+    {
+        // McpToolInvoker is final with autowired deps — Reflection is simplest
+        // for registrar-only tests that never actually invoke the handler.
+        $invoker = (new \ReflectionClass(McpToolInvoker::class))->newInstanceWithoutConstructor();
+
+        return new McpToolHandlerFactory($invoker);
+    }
+
+    private function makeThrowingInvoker(\Throwable $exception): McpToolInvoker
+    {
+        $configLoader = (new \ReflectionClass(\Ineersa\CodingAgent\Mcp\Config\McpConfigLoader::class))->newInstanceWithoutConstructor();
+        $resultMapper = new \Ineersa\CodingAgent\Mcp\Tool\McpResultMapper();
+
+        $stubManager = new class($exception) implements \Ineersa\CodingAgent\Mcp\Client\McpConnectionManagerInterface {
+            public function __construct(private \Throwable $exception) {}
+            public function discover(string $runId): array { return []; }
+            public function getClient(string $runId, string $serverName): ?\Ineersa\CodingAgent\Mcp\Client\McpClientInterface { return null; }
+            public function disconnectServer(string $runId, string $serverName): void {}
+            public function disconnectAll(string $runId): void {}
+            public function callTool(string $runId, string $serverName, string $toolName, array $arguments = [], int $requestedTimeoutMs = 30000): array { throw $this->exception; }
+        };
+
+        return new McpToolInvoker(
+            $stubManager,
+            $configLoader,
+            $this->contextAccessor,
+            $resultMapper,
+            $this->logger,
+        );
+    }
+
     /* ── Helpers ── */
 
     /**
-     * @param array<string, McpToolCatalogDTO> $data runId → catalog
+     * @param array<string, McpToolCatalogDTO> \$data runId → catalog
      */
     private function makeCatalogStore(array $data): McpToolCatalogStoreInterface
     {

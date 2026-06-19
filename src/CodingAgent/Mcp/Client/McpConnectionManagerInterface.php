@@ -52,4 +52,23 @@ interface McpConnectionManagerInterface
      * cleanup of remaining servers.
      */
     public function disconnectAll(string $runId): void;
+
+    /**
+     * Call a tool on a connected MCP server.
+     *
+     * If no live client exists for this run/server, attempts reconnect
+     * and discovery once before failing.
+     *
+     * @param string               $runId              Session/run identifier
+     * @param string               $serverName         MCP server name
+     * @param string               $toolName           Raw MCP tool name
+     * @param array<string, mixed> $arguments          Tool arguments
+     * @param int                  $requestedTimeoutMs Effective timeout in milliseconds (capped by server config)
+     *
+     * @return array{content: list<array<string, mixed>>, isError: bool}
+     *
+     * @throws \Ineersa\AgentCore\Contract\Tool\ToolCallException on missing client after reconnect,
+     *                                                            SDK errors, or other invocation failures
+     */
+    public function callTool(string $runId, string $serverName, string $toolName, array $arguments = [], int $requestedTimeoutMs = 30000): array;
 }
