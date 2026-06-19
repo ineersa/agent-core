@@ -285,7 +285,7 @@ final class SessionCompactorTest extends TestCase
         // The assistant tool-call message must be in the retained tail.
         $retainedRoles = \array_map(static fn (AgentMessage $m): string => $m->role, $result->retainedTailMessages);
 
-            // The tool-call group is placed at the end of the conversation
+        // The tool-call group is placed at the end of the conversation
         // and should be present, complete, in the retained tail.
         self::assertContains('assistant', $retainedRoles, 'Assistant tool-call expected in retained tail');
         self::assertContains('tool', $retainedRoles, 'Tool results expected in retained tail');
