@@ -26,8 +26,9 @@ interface ToolHandlerInterface
      *                                        parametersJsonSchema
      *
      * @return mixed Tool execution result. Typically a string or array that
-     *               the Toolbox serializes into the LLM response. Large text
-     *               results should use OutputCap before returning.
+     *               the Toolbox serializes into the LLM response. Output
+     *               capping is handled centrally by tool-result processors
+     *               after execution — tools can return full output directly.
      */
     public function __invoke(array $arguments): mixed;
 }

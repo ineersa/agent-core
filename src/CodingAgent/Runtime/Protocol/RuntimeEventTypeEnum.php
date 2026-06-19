@@ -108,6 +108,10 @@ enum RuntimeEventTypeEnum: string
     case ProtocolError = 'protocol.error';
     case RunResumed = 'run.resumed';
 
+    // ── Model notification ────────────────────────────────────────────
+
+    case ModelNotification = 'model.notification';
+
     /**
      * Return the event family name for grouping and documentation.
      *
@@ -147,10 +151,11 @@ enum RuntimeEventTypeEnum: string
 
             self::RuntimeReady => 'runtime',
             self::ProtocolError => 'protocol',
-
             self::ToolQuestionRequested => 'tool_question',
 
             self::BackgroundProcessCompleted => 'background_process_completion',
+
+            self::ModelNotification => 'notification',
 
             self::ModelChanged, self::ReasoningChanged, self::UsageUpdated,
             self::ContextUpdated, self::CostUpdated => 'metadata',

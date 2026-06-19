@@ -61,7 +61,6 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
         private readonly BackgroundProcessManager $manager,
         private readonly StackToolExecutionContextAccessor $contextAccessor,
         private readonly ToolRuntime $toolRuntime,
-        private readonly OutputCap $outputCap,
         private readonly LoggerInterface $logger,
         private readonly BashToolConfig $config = new BashToolConfig(),
         private readonly BashBackgroundPromptAdapterInterface $promptAdapter = new BashBackgroundPromptDeclineAdapter(),
@@ -145,8 +144,6 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
                 if (hrtime(true) > $deadline) {
                     $this->manager->stop($pid, $sessionId);
                     $partialOutput = $this->readOutput($pid, $sessionId);
-                    $capped = $this->outputCap->process($partialOutput);
-
                     $this->logger->info('bash_tool.timed_out', [
                         'component' => 'tool.bash',
                         'event_type' => 'bash_tool.timed_out',
@@ -157,7 +154,7 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
                     return \sprintf(
                         "Command timed out after %d seconds.\n\nPartial output:\n%s",
                         $timeout,
-                        $capped,
+                        $partialOutput,
                     );
                 }
 
@@ -337,7 +334,11 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
     private function readOutput(int $pid, ?string $sessionId): string
     {
         try {
-            $result = $this->manager->readLogTail($pid, $this->config->logTailChars, $sessionId);
+            // Read full log content for completed foreground commands so the
+            // central OutputCapToolResultProcessor sees the actual command output
+            // and produces the primary cap / compact ToolResult.  Tail-only reads
+            // hide the true output size and force late-hook double-capping.
+            $result = $this->manager->readLogFull($pid, $sessionId);
 
             return $result->content;
         } catch (\RuntimeException $e) {
@@ -359,12 +360,11 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
      * @param int               $pid       Process PID
      * @param string|null       $sessionId Session ownership filter
      *
-     * @return string Formatted result with capped output
+     * @return string Formatted result text
      */
     private function handleFinished(BackgroundProcess $entity, int $pid, ?string $sessionId): string
     {
         $output = $this->readOutput($pid, $sessionId);
-        $capped = $this->outputCap->process($output);
 
         $exitCode = $entity->exitCode;
         $status = $entity->status->value;
@@ -376,7 +376,7 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
             return \sprintf(
                 "Command was stopped (exit code %d).\n\nOutput:\n%s",
                 $exitCode ?? -1,
-                $capped,
+                $output,
             );
         }
 
@@ -389,7 +389,7 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
                 'exit_code' => $exitCode,
             ]);
 
-            return $capped;
+            return $output;
         }
 
         // Non-zero exit code or finished/unclean status
@@ -413,11 +413,11 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
             return \sprintf(
                 "Command failed with %s.\n\nOutput:\n%s",
                 $statusSuffix,
-                $capped,
+                $output,
             );
         }
 
         // Fallback: just return the output
-        return $capped;
+        return $output;
     }
 }

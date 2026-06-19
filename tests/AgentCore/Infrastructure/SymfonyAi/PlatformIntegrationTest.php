@@ -448,6 +448,306 @@ final class PlatformIntegrationTest extends TestCase
         $this->assertSame(15, $response->usage['total_tokens']);
     }
 
+    public function testTransformHookNotificationsFlowToPlatformInvocationResult(): void
+    {
+        $runStore = new InMemoryRunStore();
+        $streamFactory = static function (): \Generator {
+            yield new TextDelta('response');
+        };
+
+        $transformHook = new class implements TransformContextHookInterface {
+            public function transformContext(array $messages, ?CancellationTokenInterface $cancelToken = null): array
+            {
+                // Attach a model_notification to the last AgentMessage to
+                // simulate a defense-in-depth output cap firing.
+                $lastIndex = \count($messages) - 1;
+                if (isset($messages[$lastIndex])) {
+                    $msg = $messages[$lastIndex];
+                    $notification = [
+                        'id' => hash('sha256', 'defense-cap-'.$msg->toolCallId),
+                        'source' => 'output_cap',
+                        'kind' => 'output_capped',
+                        'severity' => 'warning',
+                        'delivery' => 'tool_result_replace',
+                        'text' => '[Output capped by defense-in-depth]',
+                        'tool_call_id' => $msg->toolCallId,
+                        'tool_name' => $msg->toolName,
+                    ];
+
+                    $details = \is_array($msg->details) ? $msg->details : [];
+                    $existing = \is_array($details['model_notifications'] ?? null)
+                        ? $details['model_notifications']
+                        : [];
+                    $existing[] = $notification;
+                    $details['model_notifications'] = $existing;
+
+                    $messages[$lastIndex] = new AgentMessage(
+                        role: $msg->role,
+                        content: $msg->content,
+                        toolCallId: $msg->toolCallId,
+                        toolName: $msg->toolName,
+                        details: $details,
+                        isError: $msg->isError,
+                    );
+                }
+
+                return $messages;
+            }
+        };
+
+        $adapter = $this->createAdapter($runStore, streamFactory: $streamFactory, transformHooks: [$transformHook]);
+
+        $response = $adapter->invoke(new ModelInvocationRequest(
+            model: 'fake',
+            input: new ModelInvocationInput(
+                runId: 'run-hook-notif',
+                turnNo: 1,
+                stepId: 'step-1',
+                messages: [
+                    new AgentMessage('user', [['type' => 'text', 'text' => 'hello']]),
+                    new AgentMessage(
+                        role: 'assistant',
+                        content: [['type' => 'text', 'text' => 'Calling read tool']],
+                        metadata: [
+                            'tool_calls' => [[
+                                'id' => 'call-def-1',
+                                'name' => 'read',
+                                'args' => ['path' => './file.txt'],
+                                'order_index' => 0,
+                            ]],
+                        ],
+                    ),
+                    new AgentMessage('tool', [['type' => 'text', 'text' => 'some output']],
+                        toolCallId: 'call-def-1',
+                        toolName: 'read',
+                    ),
+                ],
+            ),
+            options: new ModelInvocationOptions(),
+        ));
+
+        // The transform hook's notification must appear in the
+        // PlatformInvocationResult.
+        $this->assertCount(1, $response->modelNotifications);
+        $this->assertSame('output_cap', $response->modelNotifications[0]['source']);
+        $this->assertSame('output_capped', $response->modelNotifications[0]['kind']);
+        $this->assertSame('tool_result_replace', $response->modelNotifications[0]['delivery']);
+        $this->assertSame('call-def-1', $response->modelNotifications[0]['tool_call_id']);
+
+        // Normal (success) response.
+        $this->assertNull($response->error);
+        $this->assertNotNull($response->assistantMessage);
+    }
+
+    public function testTransformHookNotificationsFlowOnProviderError(): void
+    {
+        $runStore = new InMemoryRunStore();
+
+        // Stream factory that throws after yielding one delta,
+        // simulating a provider stream error.
+        $streamFactory = static function (): \Generator {
+            yield new TextDelta('partial');
+            throw new \RuntimeException('Provider stream error');
+        };
+
+        $transformHook = new class implements TransformContextHookInterface {
+            public function transformContext(array $messages, ?CancellationTokenInterface $cancelToken = null): array
+            {
+                $notification = [
+                    'id' => hash('sha256', 'err-cap'),
+                    'source' => 'output_cap',
+                    'kind' => 'output_capped',
+                    'severity' => 'warning',
+                    'delivery' => 'tool_result_replace',
+                    'text' => '[Output capped]',
+                    'tool_call_id' => 'call-err',
+                ];
+
+                if (isset($messages[0])) {
+                    $msg = $messages[0];
+                    $details = \is_array($msg->details) ? $msg->details : [];
+                    $details['model_notifications'] = [$notification];
+                    $messages[0] = new AgentMessage(
+                        role: $msg->role,
+                        content: $msg->content,
+                        details: $details,
+                    );
+                }
+
+                return $messages;
+            }
+        };
+
+        $adapter = $this->createAdapter($runStore, streamFactory: $streamFactory, transformHooks: [$transformHook]);
+
+        $response = $adapter->invoke(new ModelInvocationRequest(
+            model: 'fake',
+            input: new ModelInvocationInput(
+                runId: 'run-err-notif',
+                turnNo: 1,
+                stepId: 'step-err',
+                messages: [
+                    new AgentMessage('user', [['type' => 'text', 'text' => 'hello']]),
+                ],
+            ),
+            options: new ModelInvocationOptions(),
+        ));
+
+        // Notifications must still be present even on error.
+        $this->assertNotNull($response->error);
+        $this->assertCount(1, $response->modelNotifications);
+        $this->assertSame('call-err', $response->modelNotifications[0]['tool_call_id']);
+    }
+
+    public function testNotificationsPresentPreTransformAreNotReEmitted(): void
+    {
+        $runStore = new InMemoryRunStore();
+        $streamFactory = static function (): \Generator {
+            yield new TextDelta('response');
+        };
+
+        $existingNid = hash('sha256', 'existing-notif');
+
+        // Pre-transform: an AgentMessage already has a model_notification.
+        $preMsg = new AgentMessage(
+            role: 'tool',
+            content: [['type' => 'text', 'text' => 'capped output']],
+            toolCallId: 'call-exists',
+            toolName: 'read',
+            details: [
+                'model_notifications' => [[
+                    'id' => $existingNid,
+                    'source' => 'output_cap',
+                    'kind' => 'output_capped',
+                    'severity' => 'warning',
+                    'delivery' => 'tool_result_replace',
+                    'text' => '[Output capped to 100 chars]',
+                    'tool_call_id' => 'call-exists',
+                ]],
+            ],
+        );
+
+        // Transform hook that adds a NEW notification to the
+        // last message (simulating defense-in-depth on a different tool).
+        $transformHook = new class implements TransformContextHookInterface {
+            public function transformContext(array $messages, ?CancellationTokenInterface $cancelToken = null): array
+            {
+                $lastIndex = \count($messages) - 1;
+                if (isset($messages[$lastIndex])) {
+                    $msg = $messages[$lastIndex];
+                    $newNid = hash('sha256', 'defense-new-notif');
+                    $notification = [
+                        'id' => $newNid,
+                        'source' => 'output_cap',
+                        'kind' => 'output_capped',
+                        'severity' => 'warning',
+                        'delivery' => 'tool_result_replace',
+                        'text' => '[Output capped by defense]',
+                        'tool_call_id' => $msg->toolCallId,
+                    ];
+
+                    $details = \is_array($msg->details) ? $msg->details : [];
+                    $existing = \is_array($details['model_notifications'] ?? null)
+                        ? $details['model_notifications']
+                        : [];
+                    $existing[] = $notification;
+                    $details['model_notifications'] = $existing;
+
+                    $messages[$lastIndex] = new AgentMessage(
+                        role: $msg->role,
+                        content: $msg->content,
+                        toolCallId: $msg->toolCallId,
+                        details: $details,
+                    );
+                }
+
+                return $messages;
+            }
+        };
+
+        $adapter = $this->createAdapter($runStore, streamFactory: $streamFactory, transformHooks: [$transformHook]);
+
+        $response = $adapter->invoke(new ModelInvocationRequest(
+            model: 'fake',
+            input: new ModelInvocationInput(
+                runId: 'run-dedup',
+                turnNo: 1,
+                stepId: 'step-dedup',
+                messages: [
+                    new AgentMessage(
+                        role: 'assistant',
+                        content: [['type' => 'text', 'text' => 'Calling read tool']],
+                        metadata: [
+                            'tool_calls' => [[
+                                'id' => 'call-exists',
+                                'name' => 'read',
+                                'args' => [],
+                                'order_index' => 0,
+                            ]],
+                        ],
+                    ),
+                    $preMsg,
+                ],
+            ),
+            options: new ModelInvocationOptions(),
+        ));
+
+        // Only the NEW notification must be in modelNotifications.
+        $this->assertCount(1, $response->modelNotifications);
+        $this->assertNotSame($existingNid, $response->modelNotifications[0]['id']);
+        $this->assertStringContainsString('defense', $response->modelNotifications[0]['text']);
+    }
+
+    /**
+     * Create an LlmPlatformAdapter with a fake Symfony AI backend,
+     * a simple text-delta stream, and the given transform hooks.
+     *
+     * @param \Closure(): iterable<mixed>                     $streamFactory
+     * @param iterable<TransformContextHookInterface>          $transformHooks
+     * @param iterable<ConvertToLlmHookInterface>              $convertHooks
+     */
+    private function createAdapter(
+        InMemoryRunStore $runStore,
+        ?\Closure $streamFactory = null,
+        iterable $transformHooks = [],
+        iterable $convertHooks = [],
+    ): LlmPlatformAdapter {
+        $modelClient = new FakeSymfonyModelClient(new FakeTokenUsage());
+        $platform = $this->createSymfonyPlatform($modelClient, $streamFactory ?? static function (): \Generator {
+            yield new TextDelta('response');
+        });
+
+        return new LlmPlatformAdapter(
+            runStore: $runStore,
+            messageConverter: new AgentMessageConverter(),
+            toolDescriptionProcessor: new DynamicToolDescriptionProcessor(
+                new class implements ToolboxInterface {
+                    public function execute(ToolCall $toolCall): ToolResult
+                    {
+                        return new ToolResult(new Text(''));
+                    }
+
+                    public function getToolIterator(): \Traversable
+                    {
+                        return new \ArrayIterator([]);
+                    }
+
+                    public function getTools(): array
+                    {
+                        return [];
+                    }
+                },
+            ),
+            platform: $platform,
+            transformContextHooks: $transformHooks,
+            convertToLlmHooks: $convertHooks,
+            streamObserver: null,
+            costCalculator: null,
+            modelResolver: null,
+            logger: new NullLogger(),
+        );
+    }
+
     /**
      * @param iterable<BeforeProviderRequestHookInterface> $beforeProviderRequestHooks
      * @param \Closure(): iterable<mixed>                  $streamFactory

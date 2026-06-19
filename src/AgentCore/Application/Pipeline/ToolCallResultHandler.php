@@ -290,6 +290,12 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
                     ],
                 ];
 
+                // Emit model_notification events for any notifications
+                // attached to this tool result.
+                foreach ($this->collectModelNotificationEventSpecs($orderedResult) as $notifSpec) {
+                    $eventSpecs[] = $notifSpec;
+                }
+
                 $interruptPayload ??= $this->toolCallExtractor->interruptPayloadFromToolResult($orderedResult);
             }
 
@@ -412,6 +418,41 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
         }
 
         return implode("\n", $parts);
+    }
+
+    /**
+     * Collect model_notification event specs from a ToolCallResult.
+     *
+     * When a tool result processor attached model_notifications to the
+     * result details, this helper produces generic ModelNotification
+     * RunEvent specs that flow through to the runtime event stream and
+     * TUI projection.
+     *
+     * @return list<array{type: string, payload: array<string, mixed>}>
+     */
+    private function collectModelNotificationEventSpecs(ToolCallResult $result): array
+    {
+        $notifications = \is_array($result->result['details']['model_notifications'] ?? null)
+            ? $result->result['details']['model_notifications']
+            : null;
+
+        if (null === $notifications || [] === $notifications) {
+            return [];
+        }
+
+        $specs = [];
+        foreach ($notifications as $notif) {
+            if (!\is_array($notif)) {
+                continue;
+            }
+
+            $specs[] = [
+                'type' => RunEventTypeEnum::ModelNotification->value,
+                'payload' => $notif,
+            ];
+        }
+
+        return $specs;
     }
 
     /**

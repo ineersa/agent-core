@@ -157,6 +157,7 @@ final readonly class ExecuteLlmStepWorker
                 stopReason: $response->stopReason,
                 error: $response->error,
                 toolsRef: $message->toolsRef,
+                modelNotifications: $response->modelNotifications,
             );
         } catch (\Throwable $exception) {
             $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
@@ -186,6 +187,7 @@ final readonly class ExecuteLlmStepWorker
                     'message' => $exception->getMessage(),
                 ],
                 toolsRef: $message->toolsRef,
+                modelNotifications: [],
             );
         } finally {
             RunLogContext::leave();

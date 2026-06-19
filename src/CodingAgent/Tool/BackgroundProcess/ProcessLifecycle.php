@@ -264,6 +264,44 @@ final class ProcessLifecycle
         );
     }
 
+    /**
+     * Read the full background process log file.
+     *
+     * Used for foreground/foreground-completed commands where the primary
+     * OutputCapToolResultProcessor should see the full output and decide
+     * whether to cap.  Unlike readLogTail, this does not truncate.
+     *
+     * @param string $logPath Absolute path to the log file
+     * @param int    $pid     Process PID for result metadata
+     */
+    public function readLogFile(string $logPath, int $pid): LogTailResult
+    {
+        if (!is_file($logPath) || !is_readable($logPath)) {
+            return new LogTailResult(
+                pid: $pid,
+                logPath: $logPath,
+                content: '(log file not found or not readable)',
+                truncated: false,
+                totalBytes: 0,
+            );
+        }
+
+        $totalBytes = @filesize($logPath);
+        if (false === $totalBytes) {
+            $totalBytes = 0;
+        }
+
+        $content = @file_get_contents($logPath);
+
+        return new LogTailResult(
+            pid: $pid,
+            logPath: $logPath,
+            content: \is_string($content) ? $content : '(failed to read log)',
+            truncated: false,
+            totalBytes: $totalBytes,
+        );
+    }
+
     // ─── Storage directory ───────────────────────────────────────────
 
     /**

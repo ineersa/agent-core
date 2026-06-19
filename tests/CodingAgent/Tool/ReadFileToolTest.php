@@ -36,15 +36,8 @@ final class ReadFileToolTest extends TestCase
         $this->tmpDir = sys_get_temp_dir().'/hatfield_read_test_'.bin2hex(random_bytes(8));
         mkdir($this->tmpDir, 0750, recursive: true);
 
-        // High cap so tests don't trigger output capping by default
-        $capConfig = new OutputCapConfig(
-            storageDir: $this->tmpDir.'/output-cap',
-            defaultCap: 1_000_000,
-            docCap: 1_000_000,
-        );
-        $this->outputCap = new OutputCap($capConfig);
-
-        $this->readFileTool = new ReadFileTool($this->toolRuntime, $this->outputCap);
+        // Output capping is handled centrally by tool-result processors.
+        $this->readFileTool = new ReadFileTool($this->toolRuntime);
     }
 
     protected function tearDown(): void
@@ -600,22 +593,25 @@ final class ReadFileToolTest extends TestCase
 
     public function testReadWithOutputCap(): void
     {
-        // Use a very low cap for this test
+        // Output capping is now handled centrally by OutputCapToolResultProcessor.
+        // This test verifies the read tool returns raw output without embedding
+        // any cap notice in the result string.
         $capConfig = new OutputCapConfig(
             storageDir: $this->tmpDir.'/output-cap-low',
             defaultCap: 10,
             docCap: 10,
         );
         $cap = new OutputCap($capConfig);
-        $readTool = new ReadFileTool($this->toolRuntime, $cap);
+        $readTool = new ReadFileTool($this->toolRuntime);
 
         $targetPath = $this->tmpDir.'/cap_me.txt';
         file_put_contents($targetPath, "hello world this is a longer line that should exceed the cap\n");
 
         $result = ($readTool)(['path' => $targetPath]);
 
-        // Output should be the capped notice
-        $this->assertStringContainsString('Output capped', $result);
+        // Tool returns raw output; capping is centralized.
+        $this->assertStringContainsString('this is a longer line', $result);
+        $this->assertStringNotContainsString('Output capped', $result);
     }
 
     public function testReadPassesThroughWhenUnderCap(): void

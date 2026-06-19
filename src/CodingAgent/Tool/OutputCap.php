@@ -6,6 +6,8 @@ namespace Ineersa\CodingAgent\Tool;
 
 use Ineersa\CodingAgent\Config\OutputCapConfig;
 
+use function Symfony\Component\String\u;
+
 /**
  * Reusable output capping and persistence for text-producing tools.
  *
@@ -59,13 +61,60 @@ final class OutputCap
 
         $cap = $this->resolveCap($path);
 
-        if (mb_strlen($text) <= $cap) {
+        if (u($text)->length() <= $cap) {
             return $text;
         }
 
         $savedPath = $this->persist($text);
 
         return $this->buildCappedNotice($text, $cap, $savedPath);
+    }
+
+    /**
+     * Apply output capping and return a structured result or null.
+     *
+     * When the text fits within the applicable cap it returns null.
+     * Otherwise the full text is persisted and an OutputCapResult with
+     * the exact model-facing notice text and metrics is returned.
+     *
+     * @param string      $text the raw tool output
+     * @param string|null $path Optional file path used to determine doc vs.
+     *                          code cap. Null paths use the default cap.
+     *
+     * @return OutputCapResult|null structured result when capped, null otherwise
+     */
+    public function capIfNeeded(string $text, ?string $path = null): ?OutputCapResult
+    {
+        $this->maybeCleanup();
+
+        $cap = $this->resolveCap($path);
+        $charCount = u($text)->length();
+
+        if ($charCount <= $cap) {
+            return null;
+        }
+
+        $savedPath = $this->persist($text);
+
+        return new OutputCapResult(
+            savedPath: $savedPath,
+            cap: $cap,
+            charCount: $charCount,
+            tokenEstimate: (int) ceil($charCount / 4),
+            noticeText: $this->buildCappedNotice($text, $cap, $savedPath),
+        );
+    }
+
+    /**
+     * Determine which character cap applies based on file extension.
+     *
+     * Doc-like extensions (.md, .txt, .toon) use {@see docCap}.
+     * Everything else uses {@see defaultCap}.
+     * Null paths (no file context) use {@see defaultCap}.
+     */
+    public function capForPath(?string $path): int
+    {
+        return $this->resolveCap($path);
     }
 
     /**
@@ -102,12 +151,6 @@ final class OutputCap
     }
 
     /**
-     * Delete stored files older than the configured retention period.
-     *
-     * Called automatically on first use, but exposed publicly so session
-     * hooks or scheduled tasks can trigger it explicitly.
-     */
-    /**
      * Expose the config for consumers that need to check the default cap
      * threshold before capping, or access config values for custom capping.
      */
@@ -116,6 +159,12 @@ final class OutputCap
         return $this->config;
     }
 
+    /**
+     * Delete stored files older than the configured retention period.
+     *
+     * Called automatically on first use, but exposed publicly so session
+     * hooks or scheduled tasks can trigger it explicitly.
+     */
     public function cleanup(): void
     {
         $dir = $this->config->storageDir;
@@ -195,7 +244,7 @@ final class OutputCap
      *
      * Doc-like extensions (.md, .txt, .toon) use {@see docCap}.
      * Everything else uses {@see defaultCap}.
-     * Null paths (no file context) use {@see defaultCap}.
+     * Null paths use {@see defaultCap}.
      */
     private function resolveCap(?string $path): int
     {
@@ -203,8 +252,9 @@ final class OutputCap
             return $this->config->defaultCap;
         }
 
+        $lowerPath = strtolower($path);
         foreach (self::DOC_EXTENSIONS as $ext) {
-            if (str_ends_with(strtolower($path), '.'.$ext)) {
+            if (str_ends_with($lowerPath, '.'.$ext)) {
                 return $this->config->docCap;
             }
         }
@@ -214,22 +264,29 @@ final class OutputCap
 
     /**
      * Build a model-facing notice about capped output.
+     *
+     * Generic fallback for non-read tools.  Suggests inspecting the saved
+     * output artefact with read (offset+limit) for chunked inspection and
+     * grep for targeted search.  Read-tool callers should use a
+     * context-aware notice via their own builder that points follow-up
+     * reads at the original file, not this artefact.
      */
     private function buildCappedNotice(string $fullText, int $cap, string $savedPath): string
     {
-        $charCount = mb_strlen($fullText);
+        $charCount = u($fullText)->length();
         $tokenEstimate = (int) ceil($charCount / 4);
+        $escapedGrepPath = escapeshellarg($savedPath);
+        $jsonPath = json_encode($savedPath, \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE | \JSON_THROW_ON_ERROR);
 
         return \sprintf(
-            "[Output capped to %d characters, full output saved to %s]\n\nFull output: %d characters (~%d tokens).\nSaved to: %s\n\nTo view: **%s**\nTo view first lines: `head -50 %s`\nTo search: `grep 'pattern' %s`\n",
-            $cap,
-            $savedPath,
-            $charCount,
-            $tokenEstimate,
-            $savedPath,
-            $savedPath,
-            $savedPath,
-            $savedPath,
+            "[Output capped: %d chars (~%d tokens) > %d-char cap]\n".
+            "Saved full output: %s\n".
+            "\n".
+            "Next: inspect the saved output, e.g.\n".
+            "- read(path: %s, offset: 1, limit: 200)\n".
+            "- bash(command: \"grep -n -- 'PATTERN' %s | head -50\")\n".
+            'Do not rerun the original command or read the saved output without offset+limit.',
+            $charCount, $tokenEstimate, $cap, $savedPath, $jsonPath, $escapedGrepPath,
         );
     }
 }

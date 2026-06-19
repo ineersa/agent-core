@@ -483,6 +483,9 @@ final class BashToolTest extends IsolatedKernelTestCase
 
     public function testOutputCapping(): void
     {
+        // Output capping is now handled centrally by OutputCapToolResultProcessor,
+        // not by individual tools. This test verifies that BashTool returns raw
+        // output unchanged, without embedding any cap notice in the result string.
         $tinyCap = new OutputCapConfig(
             storageDir: $this->tmpDir.'/output-cap-tiny',
             defaultCap: 10,
@@ -495,7 +498,9 @@ final class BashToolTest extends IsolatedKernelTestCase
             return ($this->makeBashTool())(['command' => 'echo "this is a very long output that should be truncated"']);
         });
 
-        $this->assertStringContainsString('Output capped', $result);
+        // Tool returns raw output; capping is centralized.
+        $this->assertStringContainsString('this is a very long output', $result);
+        $this->assertStringNotContainsString('Output capped', $result);
     }
 
     /* ── Registry exposure ── */
@@ -613,7 +618,6 @@ final class BashToolTest extends IsolatedKernelTestCase
             manager: $this->manager,
             contextAccessor: $this->contextAccessor,
             toolRuntime: $this->toolRuntime,
-            outputCap: $this->outputCap,
             logger: new NullLogger(),
             config: $this->bashConfig,
             promptAdapter: $promptAdapter ?? new BashToolDeclineAdapter(),

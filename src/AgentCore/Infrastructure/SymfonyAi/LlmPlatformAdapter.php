@@ -65,7 +65,9 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
     {
         $cancelToken = $this->cancellationToken($request);
         $messages = $this->resolveContextMessages($request->input);
+        $preTransformIds = $this->extractNotificationIds($messages);
         $messages = $this->applyTransformHooks($messages, $cancelToken);
+        $modelNotifications = $this->extractNewModelNotifications($messages, $preTransformIds);
 
         // Preflight invariant: validate tool-call/tool-result sequence
         // before any provider call.  An assistant message with tool_calls
@@ -121,6 +123,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             $request->input->stepId,
             $effectiveModel,
             $requestSummary,
+            $modelNotifications,
         );
     }
 
@@ -205,6 +208,81 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
     }
 
     /**
+     * Collect notification IDs from all AgentMessages (pre-transform).
+     *
+     * Used for deduplication: only notifications whose IDs were NOT
+     * present pre-transform are new and should be threaded downstream.
+     *
+     * @param list<AgentMessage> $messages
+     *
+     * @return array<string, true>
+     */
+    private function extractNotificationIds(array $messages): array
+    {
+        $ids = [];
+
+        foreach ($messages as $message) {
+            $notifications = \is_array($message->details['model_notifications'] ?? null)
+                ? $message->details['model_notifications']
+                : null;
+
+            if (null === $notifications) {
+                continue;
+            }
+
+            foreach ($notifications as $notif) {
+                if (\is_array($notif) && isset($notif['id']) && \is_string($notif['id'])) {
+                    $ids[$notif['id']] = true;
+                }
+            }
+        }
+
+        return $ids;
+    }
+
+    /**
+     * Extract notifications newly added by transform context hooks.
+     *
+     * Compares post-transform message notification IDs against the
+     * pre-transform set. Only notifications whose IDs were NOT already
+     * present are collected — this prevents re-emitting primary-path
+     * notifications that are already in message history.
+     *
+     * @param list<AgentMessage>  $messages
+     * @param array<string, true> $seenIds  Notification IDs present pre-transform
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function extractNewModelNotifications(array $messages, array $seenIds): array
+    {
+        $notifications = [];
+
+        foreach ($messages as $message) {
+            $modelNotifs = \is_array($message->details['model_notifications'] ?? null)
+                ? $message->details['model_notifications']
+                : null;
+
+            if (null === $modelNotifs) {
+                continue;
+            }
+
+            foreach ($modelNotifs as $notif) {
+                if (!\is_array($notif)) {
+                    continue;
+                }
+
+                $id = $notif['id'] ?? null;
+                if (\is_string($id) && '' !== $id && !isset($seenIds[$id])) {
+                    $notifications[] = $notif;
+                    $seenIds[$id] = true;
+                }
+            }
+        }
+
+        return $notifications;
+    }
+
+    /**
      * Build Input options, propagating toolsRef, turnNo, and runId for
      * DynamicToolDescriptionProcessor / ToolSetResolver resolution.
      *
@@ -241,7 +319,9 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
     }
 
     /**
-     * @param array<string, mixed> $requestSummary Privacy-safe request summary for error diagnostics
+     * @param array<string, mixed>       $requestSummary     Privacy-safe request summary for error diagnostics
+     * @param list<array<string, mixed>> $modelNotifications generic model notifications
+     *                                                       produced by transform context hooks
      */
     private function consumeStream(
         DeferredResult $deferredResult,
@@ -250,6 +330,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         ?string $stepId,
         string $modelName = '',
         array $requestSummary = [],
+        array $modelNotifications = [],
     ): PlatformInvocationResult {
         $aborted = false;
         $deltas = [];
@@ -279,7 +360,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                 $requestSummary,
             ));
 
-            return $this->errorResult($deltas, $exception, $deferredResult, $modelName, $requestSummary);
+            return $this->errorResult($deltas, $exception, $deferredResult, $modelName, $requestSummary, $modelNotifications);
         }
 
         $this->notifyStreamEnd($runId, $stepId);
@@ -296,6 +377,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             usage: $this->extractUsage($deferredResult, $modelName),
             stopReason: $aborted ? 'aborted' : $this->resolveStopReason($assistantMessage),
             error: null,
+            modelNotifications: $modelNotifications,
         );
     }
 
@@ -472,10 +554,12 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
     }
 
     /**
-     * @param list<DeltaInterface> $deltas
-     * @param array<string, mixed> $requestSummary Privacy-safe request summary
+     * @param list<DeltaInterface>       $deltas
+     * @param array<string, mixed>       $requestSummary     Privacy-safe request summary
+     * @param list<array<string, mixed>> $modelNotifications generic model notifications
+     *                                                       from transform context hooks
      */
-    private function errorResult(array $deltas, \Throwable $exception, DeferredResult $deferredResult, string $modelName = '', array $requestSummary = []): PlatformInvocationResult
+    private function errorResult(array $deltas, \Throwable $exception, DeferredResult $deferredResult, string $modelName = '', array $requestSummary = [], array $modelNotifications = []): PlatformInvocationResult
     {
         $error = [
             'type' => $exception::class,
@@ -504,6 +588,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             usage: $this->extractUsage($deferredResult, $modelName),
             stopReason: 'error',
             error: $error,
+            modelNotifications: $modelNotifications,
         );
     }
 

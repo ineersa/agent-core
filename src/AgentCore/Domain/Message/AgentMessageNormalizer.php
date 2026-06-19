@@ -100,14 +100,64 @@ final readonly class AgentMessageNormalizer
 
     public function toolMessage(ToolCallResult $result): AgentMessage
     {
-        $text = json_encode([
-            'is_error' => $result->isError,
-            'result' => $result->result,
-            'error' => $result->error,
-        ]);
+        // Check for model_notifications with delivery=tool_result_replace.
+        // When present, the model-facing tool content is the exact
+        // notification text — not the raw/full output and not a JSON
+        // envelope.  The notification text is identical to what appears
+        // in the model_notification event for TUI projection.
+        $notifications = \is_array($result->result['details']['model_notifications'] ?? null)
+            ? $result->result['details']['model_notifications']
+            : null;
 
-        if (false === $text) {
-            $text = '{}';
+        $notificationText = null;
+        if (null !== $notifications) {
+            foreach ($notifications as $notif) {
+                if (!\is_array($notif)) {
+                    continue;
+                }
+                if (($notif['delivery'] ?? null) === 'tool_result_replace') {
+                    $notificationText = \is_string($notif['text'] ?? null) && '' !== $notif['text']
+                        ? $notif['text']
+                        : null;
+                    break;
+                }
+            }
+        }
+
+        if (null !== $notificationText) {
+            $text = $notificationText;
+        } else {
+            // Normal tool-result path: extract text from content parts.
+            // Do NOT JSON-encode the full ToolCallResult with details.raw_result
+            // — that duplication inflates model-facing text and triggers false
+            // late-hook capping.  The raw_result lives on the AgentMessage
+            // details for persistence but is not sent as provider text.
+            $text = $this->extractTextFromContent(
+                \is_array($result->result['content'] ?? null)
+                    ? $result->result['content']
+                    : [],
+            );
+
+            // When content is empty but an error is present, use the error message.
+            if ('' === $text && $result->isError && null !== $result->error) {
+                $errorMessage = $result->error['message'] ?? $result->error['type'] ?? 'Tool error';
+                $text = \is_string($errorMessage) ? $errorMessage : 'Tool error';
+            }
+
+            // If still empty, produce a compact label so the model knows what
+            // happened.  Do NOT JSON-encode the full ToolCallResult with
+            // details.raw_result — that duplication inflates model-facing text
+            // and triggers false late-hook capping.  The raw_result lives on
+            // the AgentMessage details for persistence but is not sent as
+            // provider text.
+            if ('' === $text) {
+                $toolLabel = \is_string($result->result['tool_name'] ?? null) && '' !== $result->result['tool_name']
+                    ? $result->result['tool_name']
+                    : null;
+                $text = null !== $toolLabel
+                    ? $toolLabel.($result->isError ? ' failed' : ' completed')
+                    : ($result->isError ? 'failed' : 'completed');
+            }
         }
 
         // Build content parts: start with the standard text part
@@ -117,11 +167,10 @@ final readonly class AgentMessageNormalizer
         ]];
 
         // Copy attachment references declared by the tool into content parts.
-        // Tools populate `raw_result.attachment_refs` to signal that content
-        // parts (e.g., image_ref) should be attached to the tool message.
-        // This convention avoids the normalizer needing to sniff tool-type strings.
         $rawResult = $result->result['details']['raw_result'] ?? null;
-        $attachmentRefs = \is_array($rawResult['attachment_refs'] ?? null) ? $rawResult['attachment_refs'] : null;
+        $attachmentRefs = \is_array($rawResult)
+            ? (\is_array($rawResult['attachment_refs'] ?? null) ? $rawResult['attachment_refs'] : null)
+            : null;
 
         if (null !== $attachmentRefs) {
             foreach ($attachmentRefs as $ref) {
@@ -178,6 +227,30 @@ final readonly class AgentMessageNormalizer
                 'order_index' => $result->orderIndex,
             ],
         );
+    }
+
+    /**
+     * Extract concatenated text from ToolResult content parts.
+     *
+     * @param array<int, array<string, mixed>> $content
+     */
+    private function extractTextFromContent(array $content): string
+    {
+        $parts = [];
+        foreach ($content as $part) {
+            if (!\is_array($part)) {
+                continue;
+            }
+            if (($part['type'] ?? null) !== 'text') {
+                continue;
+            }
+            $text = $part['text'] ?? null;
+            if (\is_string($text) && '' !== $text) {
+                $parts[] = $text;
+            }
+        }
+
+        return implode("\n", $parts);
     }
 
     /**

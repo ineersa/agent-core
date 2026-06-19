@@ -38,7 +38,7 @@ enum RunEventTypeEnum: string
     case StaleResultIgnored = 'stale_result_ignored';
     case ToolCallResultReceived = 'tool_call_result_received';
     case ToolBatchCommitted = 'tool_batch_committed';
-
+    case ModelNotification = 'model_notification';
     // ── Turn tree metadata (append-only canonical) ───────────────────────
     case TurnBranched = 'turn_branched';
     case LeafSet = 'leaf_set';

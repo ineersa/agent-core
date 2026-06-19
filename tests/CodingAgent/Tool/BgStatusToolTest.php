@@ -70,7 +70,6 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
             $this->manager,
             $this->config,
             $this->contextAccessor,
-            new OutputCap($this->outputCapCfg),
         );
     }
 
@@ -221,7 +220,9 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
 
     public function testLogCapCapsLargeOutput(): void
     {
-        // Create a low-cap OutputCap variant for this test.
+        // Output capping is now handled centrally by OutputCapToolResultProcessor.
+        // This test verifies BgStatusTool returns raw output without embedding
+        // any cap notice in the result string.
         $lowCapCfg = new OutputCapConfig(
             storageDir: $this->tmpDir.'/output-cap-low',
             defaultCap: 200,
@@ -232,13 +233,12 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
             $this->manager,
             $this->config,
             $this->contextAccessor,
-            $lowCap,
         );
 
         $sentinel = 'CAP_SHOULD_HIDE_'.bin2hex(random_bytes(8));
 
         // Generate output that exceeds the cap. The sentinel must appear
-        // after the cap threshold so it would be in the tail if uncapped.
+        // after the cap threshold.
         $padding = str_repeat('x', 170);
         $command = 'printf \''.$padding.'\n'.$sentinel.'\n\'';
 
@@ -247,24 +247,11 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
 
         $result = $this->withContext(self::TEST_SESSION, fn (): string => $lowCapTool(['action' => 'log', 'pid' => $started->pid]));
 
-        $this->assertStringContainsString('Output capped', $result);
-        $this->assertStringNotContainsString($sentinel, $result, 'Large log sentinel must not leak past output cap');
-
-        // The persisted file must contain the full content including the sentinel.
-        $this->assertDirectoryExists($lowCapCfg->storageDir);
-        $files = glob($lowCapCfg->storageDir.'/*.txt') ?: [];
-        $this->assertNotEmpty($files, 'Expected at least one persisted output-cap file');
-
-        $foundSentinel = false;
-        foreach ($files as $file) {
-            $content = (string) file_get_contents($file);
-            if (str_contains($content, $sentinel)) {
-                $foundSentinel = true;
-                break;
-            }
-        }
-        $this->assertTrue($foundSentinel, 'Persisted output-cap file must contain the full original sentinel');
+        // Tool returns raw output; capping is centralized.
+        $this->assertStringNotContainsString('Output capped', $result);
+        $this->assertStringContainsString($sentinel, $result, 'Large log must not be silently dropped by the tool');
     }
+
 
     /* ── Error: missing action ── */
 
