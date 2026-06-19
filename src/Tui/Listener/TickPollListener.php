@@ -93,14 +93,23 @@ final class TickPollListener implements TuiListenerRegistrar
             // SubmitListener sets 'Working...' optimistically on send;
             // this keeps it visible while active and clears it when idle/terminal.
             //
+            // Cancelling gets its own message ('Cancelling...') because
+            // CancelListener sets it once on Escape, and this tick renderer
+            // would otherwise overwrite it back to 'Working...' on the very
+            // next tick. Rendering the correct message from the activity state
+            // rather than a binary idle/active toggle keeps the footer truthful
+            // even when the activity state is sticky Cancelling through late deltas.
+            //
             // Always call setWorkingMessage — don't use a static last-value
             // cache. SubmitListener (and future features like shell commands)
             // may call setWorkingMessage directly between tick cycles, and a
             // stale static cache would skip the authoritative tick update,
             // permanently leaving a stuck working message.
-            $msg = (RunActivityStateEnum::Idle === $state->activity || $state->activity->isTerminal())
-                ? null
-                : 'Working...';
+            $msg = match (true) {
+                RunActivityStateEnum::Cancelling === $state->activity => 'Cancelling...',
+                RunActivityStateEnum::Idle === $state->activity || $state->activity->isTerminal() => null,
+                default => 'Working...',
+            };
 
             $screen->setWorkingMessage($msg);
 
