@@ -163,6 +163,9 @@ final readonly class ReplayService
                 $am = $payload['assistant_message'];
 
                 if (!isset($am['role']) || !\is_string($am['role'])) {
+                    // Intentionally skip malformed assistant_message entries
+                    // (missing or non-string role) as corrupt/partial replay
+                    // input rather than throwing during hot-prompt rebuild.
                     continue;
                 }
 

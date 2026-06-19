@@ -22,8 +22,10 @@ final class ReplayServiceTest extends TestCase
      * appends an assistant message into rebuilt hot prompt state.
      * Without the production fix (payload.assistant_message handling in
      * ReplayService), this fails because replayMessages() would skip the
-     * event entirely — it only handled payload.assistant (legacy string)
-     * and payload.message (synthetic test format), not the canonical
+     * event entirely — it previously handled payload.assistant (legacy
+     * string for assistant output) and payload.message (used by production
+     * AgentCommandApplied user-message events, but not by canonical
+     * llm_step_completed assistant output), not the canonical
      * payload.assistant_message emitted by LlmStepResultHandler.
      */
     public function testCanonicalLlmStepCompletedAppendsAssistantMessage(): void
@@ -86,7 +88,7 @@ final class ReplayServiceTest extends TestCase
         self::assertSame('Hi there!', $messages[1]['content'][0]['text']);
     }
 
-    public function testCanonicalLlmStepCompletedWithToolCallsAndDetails(): void
+    public function testCanonicalLlmStepCompletedWithToolCallsOnly(): void
     {
         $eventStore = new RunEventStore();
         $hotPromptStore = new HotPromptStateStore();
