@@ -71,8 +71,10 @@ final class McpConnectionManager implements McpConnectionManagerInterface
         } catch (\Throwable $e) {
             $this->logger->warning('MCP config load failed during discovery', [
                 'component' => 'mcp',
+                'event_type' => 'discovery.config_failed',
                 'mcp_event' => 'discovery.config_failed',
                 'run_id' => $runId,
+                'session_id' => $runId,
                 'error_class' => $e::class,
                 'error_message' => self::sanitizeLogMessage($e->getMessage()),
             ]);
