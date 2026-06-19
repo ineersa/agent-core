@@ -370,6 +370,27 @@ final class TuiJourneyE2eTest extends TestCase
         // After the first prompt submission, the session should exist.
         $sessionCapture = $this->tmux->capturePlainWithHistory($pane, 2000);
         self::assertStringContainsString('session ', $sessionCapture, 'Session ID should appear in footer after prompt submission');
+
+        // Cache-hit percentage must appear in the footer when the
+        // replay fixture includes cache_read_tokens telemetry.
+        // The fixture reports 100 input_tokens with 78 cache_read_tokens
+        // → footer should show "↻ 78%".
+        //
+        // Use waitForCallback with full scrollback instead of a single
+        // immediate capture to give the TUI poller time to accumulate
+        // and render the UsageProjection cache segment in the footer.
+        $footerCapture = $this->tmux->waitForCallback(
+            $pane,
+            static fn (string $cap): bool => str_contains($cap, '↻ 78%'),
+            timeout: 5.0,
+            message: 'Footer cache-hit segment (↻ 78%) did not appear after model replay',
+            history: 2000,
+        );
+        self::assertStringContainsString(
+            '↻ 78%',
+            $footerCapture,
+            'Footer must show cache-hit percentage (↻ 78%) when replay fixture provides cache telemetry',
+        );
     }
 
     /**

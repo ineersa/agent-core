@@ -202,6 +202,165 @@ final class UsageProjectionTest extends TestCase
         self::assertSame(500, $this->usage->latestInputTokens, 'Fresh turn usage must replace the carried-forward value');
     }
 
+    // ── Cache telemetry ──
+
+    public function testCacheReadTokensAccumulatedFromCacheReadTokensField(): void
+    {
+        $event = $this->makeAssistantMessageCompletedEvent([
+            'usage' => [
+                'input_tokens' => 100,
+                'output_tokens' => 50,
+                'cache_read_tokens' => 78,
+            ],
+        ]);
+
+        $this->usage->accumulate($event);
+
+        self::assertSame(78, $this->usage->cacheReadTokens);
+        self::assertTrue($this->usage->hasCacheTelemetry);
+        self::assertSame(78.0, $this->usage->cacheReadHitPercentage());
+    }
+
+    public function testCacheReadTokensFallbackToCachedTokens(): void
+    {
+        // When cache_read_tokens is absent but cached_tokens is present,
+        // the accumulator falls back to cached_tokens as cache-read.
+        $event = $this->makeAssistantMessageCompletedEvent([
+            'usage' => [
+                'input_tokens' => 200,
+                'output_tokens' => 30,
+                'cached_tokens' => 120,
+            ],
+        ]);
+
+        $this->usage->accumulate($event);
+
+        self::assertSame(120, $this->usage->cacheReadTokens);
+        self::assertTrue($this->usage->hasCacheTelemetry);
+        self::assertSame(60.0, $this->usage->cacheReadHitPercentage());
+    }
+
+    public function testCacheCreationTokensAccumulated(): void
+    {
+        $event = $this->makeAssistantMessageCompletedEvent([
+            'usage' => [
+                'input_tokens' => 100,
+                'output_tokens' => 50,
+                'cache_read_tokens' => 78,
+                'cache_creation_tokens' => 20,
+            ],
+        ]);
+
+        $this->usage->accumulate($event);
+
+        self::assertSame(78, $this->usage->cacheReadTokens);
+        self::assertSame(20, $this->usage->cacheCreationTokens);
+        self::assertTrue($this->usage->hasCacheTelemetry);
+    }
+
+    public function testCacheTelemetryAbsentReturnsNullPercentage(): void
+    {
+        // No cache fields at all → no telemetry flag, null percentage.
+        $event = $this->makeAssistantMessageCompletedEvent([
+            'usage' => [
+                'input_tokens' => 100,
+                'output_tokens' => 50,
+            ],
+        ]);
+
+        $this->usage->accumulate($event);
+
+        self::assertFalse($this->usage->hasCacheTelemetry);
+        self::assertSame(0, $this->usage->cacheReadTokens);
+        self::assertNull($this->usage->cacheReadHitPercentage());
+    }
+
+    public function testReportedZeroCacheReadTokensShowsZeroPercent(): void
+    {
+        // Provider explicitly reports 0 cache_read_tokens → hasCacheTelemetry
+        // is true, and the percentage is 0% when input > 0.
+        $event = $this->makeAssistantMessageCompletedEvent([
+            'usage' => [
+                'input_tokens' => 100,
+                'output_tokens' => 50,
+                'cache_read_tokens' => 0,
+            ],
+        ]);
+
+        $this->usage->accumulate($event);
+
+        self::assertTrue($this->usage->hasCacheTelemetry);
+        self::assertSame(0, $this->usage->cacheReadTokens);
+        self::assertSame(0.0, $this->usage->cacheReadHitPercentage());
+    }
+
+    public function testCacheReadTokensSurviveResetTurn(): void
+    {
+        // Session-level: cache accumulation must survive turn resets.
+        $event = $this->makeAssistantMessageCompletedEvent([
+            'usage' => [
+                'input_tokens' => 100,
+                'output_tokens' => 50,
+                'cache_read_tokens' => 78,
+            ],
+        ]);
+
+        $this->usage->accumulate($event);
+
+        self::assertSame(78, $this->usage->cacheReadTokens);
+        self::assertTrue($this->usage->hasCacheTelemetry);
+
+        $this->usage->resetTurn();
+
+        // Cache fields must survive reset.
+        self::assertSame(78, $this->usage->cacheReadTokens);
+        self::assertTrue($this->usage->hasCacheTelemetry);
+        // Percentage is based on session-level accumulators.
+        self::assertSame(78.0, $this->usage->cacheReadHitPercentage());
+    }
+
+    public function testCacheReadHitPercentageCappedAt100(): void
+    {
+        $event = $this->makeAssistantMessageCompletedEvent([
+            'usage' => [
+                'input_tokens' => 100,
+                'output_tokens' => 50,
+                'cache_read_tokens' => 200,
+            ],
+        ]);
+
+        $this->usage->accumulate($event);
+
+        self::assertSame(200, $this->usage->cacheReadTokens);
+        self::assertSame(100.0, $this->usage->cacheReadHitPercentage());
+    }
+
+    public function testCacheReadTokensAccumulateAcrossEvents(): void
+    {
+        $event1 = $this->makeAssistantMessageCompletedEvent([
+            'usage' => [
+                'input_tokens' => 100,
+                'output_tokens' => 50,
+                'cache_read_tokens' => 40,
+            ],
+        ]);
+        $event2 = $this->makeAssistantMessageCompletedEvent([
+            'usage' => [
+                'input_tokens' => 150,
+                'output_tokens' => 60,
+                'cache_read_tokens' => 60,
+            ],
+        ]);
+
+        $this->usage->accumulate($event1);
+        $this->usage->accumulate($event2);
+
+        // Session-level: accumulated across both events.
+        self::assertSame(100, $this->usage->cacheReadTokens);
+        // inputTokens = 100 + 150 = 250, cacheRead = 40 + 60 = 100
+        self::assertSame(40.0, $this->usage->cacheReadHitPercentage());
+    }
+
     // ── Cost edge cases ──
 
     public function testCostWithIntValue(): void

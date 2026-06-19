@@ -699,6 +699,145 @@ final class PlatformIntegrationTest extends TestCase
     }
 
     /**
+     * Verify that cache-read and cache-creation tokens flow from
+     * TokenUsageInterface through extractUsage into the response usage
+     * payload.  This is the path from LlmPlatformAdapter → events →
+     * UsageProjection → TUI footer.
+     */
+    public function testCacheReadTokensFlowToUsagePayload(): void
+    {
+        $runStore = new InMemoryRunStore();
+        $runStore->compareAndSwap(new RunState(
+            runId: 'run-cache-01',
+            status: RunStatus::Running,
+            version: 1,
+            turnNo: 1,
+            lastSeq: 0,
+            isStreaming: false,
+            streamingMessage: null,
+            pendingToolCalls: [],
+            errorMessage: null,
+            messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'ping']])],
+            activeStepId: 'turn-1-llm-1',
+        ), 0);
+
+        // Fake token usage with cache-read tokens but no explicit cache-creation.
+        $modelClient = new FakeSymfonyModelClient(new FakeTokenUsage(
+            promptTokens: 100,
+            completionTokens: 50,
+            cachedTokens: 78,
+            cacheReadTokens: 78,
+            totalTokens: 150,
+        ));
+
+        $platform = $this->createSymfonyPlatform(
+            modelClient: $modelClient,
+            streamFactory: static fn (): iterable => [new TextDelta('response')],
+        );
+
+        $adapter = new LlmPlatformAdapter(
+            runStore: $runStore,
+            messageConverter: new AgentMessageConverter(),
+            toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
+            platform: $platform,
+            transformContextHooks: [],
+            convertToLlmHooks: [],
+            streamObserver: null,
+            costCalculator: null,
+            modelResolver: null,
+            logger: new NullLogger(),
+        );
+
+        $response = $adapter->invoke(new ModelInvocationRequest(
+            model: 'fake',
+            input: new ModelInvocationInput(
+                runId: 'run-cache-01',
+                turnNo: 1,
+                stepId: 'step-cache-01',
+            ),
+        ));
+
+        // The usage payload must contain the cache fields.
+        self::assertArrayHasKey('cached_tokens', $response->usage, 'Usage must contain cached_tokens');
+        self::assertSame(78, $response->usage['cached_tokens']);
+
+        self::assertArrayHasKey('cache_read_tokens', $response->usage, 'Usage must contain cache_read_tokens');
+        self::assertSame(78, $response->usage['cache_read_tokens']);
+
+        self::assertArrayNotHasKey('cache_creation_tokens', $response->usage, 'cache_creation_tokens must be absent when not reported');
+
+        // Standard fields still present.
+        self::assertSame(100, $response->usage['input_tokens']);
+        self::assertSame(50, $response->usage['output_tokens']);
+        self::assertSame(150, $response->usage['total_tokens']);
+    }
+
+    /**
+     * Verify that cache-read falls back to getCachedTokens() when
+     * getCacheReadTokens() returns null — the incremental provider
+     * compatibility fallback.
+     */
+    public function testCacheReadTokensFallbackToCachedTokensInUsagePayload(): void
+    {
+        $runStore = new InMemoryRunStore();
+        $runStore->compareAndSwap(new RunState(
+            runId: 'run-cache-02',
+            status: RunStatus::Running,
+            version: 1,
+            turnNo: 1,
+            lastSeq: 0,
+            isStreaming: false,
+            streamingMessage: null,
+            pendingToolCalls: [],
+            errorMessage: null,
+            messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'ping']])],
+            activeStepId: 'turn-1-llm-1',
+        ), 0);
+
+        // Only aggregate cached_tokens; no explicit cache_read_tokens.
+        $modelClient = new FakeSymfonyModelClient(new FakeTokenUsage(
+            promptTokens: 200,
+            completionTokens: 80,
+            cachedTokens: 120,
+            cacheReadTokens: null,
+            totalTokens: 280,
+        ));
+
+        $platform = $this->createSymfonyPlatform(
+            modelClient: $modelClient,
+            streamFactory: static fn (): iterable => [new TextDelta('response')],
+        );
+
+        $adapter = new LlmPlatformAdapter(
+            runStore: $runStore,
+            messageConverter: new AgentMessageConverter(),
+            toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
+            platform: $platform,
+            transformContextHooks: [],
+            convertToLlmHooks: [],
+            streamObserver: null,
+            costCalculator: null,
+            modelResolver: null,
+            logger: new NullLogger(),
+        );
+
+        $response = $adapter->invoke(new ModelInvocationRequest(
+            model: 'fake',
+            input: new ModelInvocationInput(
+                runId: 'run-cache-02',
+                turnNo: 1,
+                stepId: 'step-cache-02',
+            ),
+        ));
+
+        // cache_read_tokens must fall back to cached_tokens when explicit
+        // cache-read is absent.
+        self::assertArrayHasKey('cache_read_tokens', $response->usage);
+        self::assertSame(120, $response->usage['cache_read_tokens'], 'cache_read_tokens must fall back to cached_tokens');
+        self::assertSame(120, $response->usage['cached_tokens']);
+    }
+
+    /**
      * Create an LlmPlatformAdapter with a fake Symfony AI backend,
      * a simple text-delta stream, and the given transform hooks.
      *
@@ -856,6 +995,9 @@ final readonly class FakeTokenUsage implements TokenUsageInterface
     public function __construct(
         private ?int $promptTokens = null,
         private ?int $completionTokens = null,
+        private ?int $cachedTokens = null,
+        private ?int $cacheReadTokens = null,
+        private ?int $cacheCreationTokens = null,
         private ?int $totalTokens = null,
     ) {
     }
@@ -882,17 +1024,17 @@ final readonly class FakeTokenUsage implements TokenUsageInterface
 
     public function getCachedTokens(): ?int
     {
-        return null;
+        return $this->cachedTokens;
     }
 
     public function getCacheCreationTokens(): ?int
     {
-        return null;
+        return $this->cacheCreationTokens;
     }
 
     public function getCacheReadTokens(): ?int
     {
-        return null;
+        return $this->cacheReadTokens;
     }
 
     public function getRemainingTokens(): ?int
