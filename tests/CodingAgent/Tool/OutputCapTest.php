@@ -92,7 +92,7 @@ final class OutputCapTest extends TestCase
         $this->assertStringContainsString($this->tmpDir, $result);
         // Should contain tool-first guidance, not shell-centric head/grep hints
         $this->assertStringContainsString('Do not rerun the original command', $result);
-        $this->assertStringContainsString('focused follow-up', $result);
+        $this->assertStringContainsString('inspect the saved output', $result);
     }
 
     /* ───────── Persistence ───────── */

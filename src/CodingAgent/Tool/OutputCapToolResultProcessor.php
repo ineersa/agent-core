@@ -67,6 +67,10 @@ final readonly class OutputCapToolResultProcessor implements ToolResultProcessor
             return $result;
         }
 
+        // Build context-aware notice: read tools get original-path guidance,
+        // generic tools use the default saved-artifact inspection notice.
+        $noticeText = $this->buildContextualNotice($toolCall, $capResult);
+
         $notificationId = hash('sha256', implode('|', [
             $toolCall->toolCallId,
             'output_cap',
@@ -79,7 +83,7 @@ final readonly class OutputCapToolResultProcessor implements ToolResultProcessor
             kind: 'output_capped',
             severity: 'warning',
             delivery: 'tool_result_replace',
-            text: $capResult->noticeText,
+            text: $noticeText,
             toolCallId: $toolCall->toolCallId,
             toolName: $toolCall->toolName,
             orderIndex: $toolCall->orderIndex,
@@ -134,6 +138,37 @@ final readonly class OutputCapToolResultProcessor implements ToolResultProcessor
     }
 
     /**
+     * Build a context-aware capping notice.
+     *
+     * For read tools: guides follow-up reads to the original file path with
+     * offset+limit, avoiding double line numbers from reading the saved
+     * rendered artifact.  For all other tools: uses the generic saved-output
+     * inspection notice from OutputCap.
+     */
+    private function buildContextualNotice(ToolCall $toolCall, OutputCapResult $capResult): string
+    {
+        if ('read' !== $toolCall->toolName) {
+            return $capResult->noticeText;
+        }
+
+        $originalPath = $this->extractPathFromArguments($toolCall->arguments);
+        $originalOffset = $this->extractOffsetFromArguments($toolCall->arguments);
+        $offset = (\is_int($originalOffset) && $originalOffset > 0) ? $originalOffset : 1;
+        $readPath = $originalPath ?? $capResult->savedPath;
+        $escapedGrepPath = escapeshellarg($readPath);
+
+        return <<<STRING
+[Output capped: {$capResult->charCount} chars (~{$capResult->tokenEstimate} tokens) > {$capResult->cap}-char cap]
+Saved full output: {$capResult->savedPath}
+
+Next: use a focused follow-up, e.g.
+- read(path: "{$readPath}", offset: {$offset}, limit: 200)
+- bash(command: "grep -n -- 'PATTERN' {$escapedGrepPath} | head -50")
+Do not rerun the original command or read the saved output with read.
+STRING;
+    }
+
+    /**
      * Extract concatenated text from ToolResult content parts.
      *
      * @param array<int, array<string, mixed>> $content
@@ -172,6 +207,29 @@ final readonly class OutputCapToolResultProcessor implements ToolResultProcessor
             if (\is_string($value) && '' !== $value) {
                 return $value;
             }
+        }
+
+        return null;
+    }
+
+    /**
+     * Extract a numeric offset from tool call arguments.
+     *
+     * The read tool accepts an 'offset' argument (positive integer)
+     * indicating the starting line for file read operations.  When
+     * available, it is used in the read-tool cap notice to suggest
+     * a reasonable follow-up starting point.
+     *
+     * @param array<string, mixed> $arguments
+     *
+     * @return int|null the offset value, or null when absent or non-integer
+     */
+    private function extractOffsetFromArguments(array $arguments): ?int
+    {
+        $offset = $arguments['offset'] ?? null;
+
+        if (\is_int($offset) && $offset > 0) {
+            return $offset;
         }
 
         return null;

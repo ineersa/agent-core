@@ -265,9 +265,12 @@ final class OutputCap
     /**
      * Build a model-facing notice about capped output.
      *
-     * The notice gives the model clear tool-first guidance: do not rerun
-     * the original tool/command; do not read the saved audit file without
-     * a limit; continue with targeted read offset+limit or scoped search.
+     * Generic fallback for non-read tools: the saved cap artifact is rendered
+     * tool output text.  Suggest shell inspection (head/grep) rather than reusing
+     * read on the rendered artifact, which can add presentation noise.
+     *
+     * Read-tool callers should use a context-aware notice via their own
+     * builder that points follow-up reads at the original file, not this artifact.
      */
     private function buildCappedNotice(string $fullText, int $cap, string $savedPath): string
     {
@@ -278,10 +281,10 @@ final class OutputCap
 [Output capped: {$charCount} chars (~{$tokenEstimate} tokens) > {$cap}-char cap]
 Saved full output: {$savedPath}
 
-Next: use a focused follow-up, e.g.
-- read(path: "{$savedPath}", offset: 1, limit: 200)
+Next: inspect the saved output, e.g.
+- bash(command: "head -200 '{$savedPath}'")
 - bash(command: "grep -n -- 'PATTERN' '{$savedPath}' | head -50")
-Do not rerun the original command or read the saved file without offset+limit.
+Do not rerun the original command.
 STRING;
     }
 }

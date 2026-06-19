@@ -379,6 +379,71 @@ final class OutputCapLlmTransformHookTest extends TestCase
         );
     }
 
+    /* ── Read-tool late hook produces original-path guidance ── */
+
+    /**
+     * Test thesis: when the late defense-in-depth hook caps a read-tool
+     * AgentMessage, the notice must guide follow-up reads to the ORIGINAL
+     * file path (not the saved output-cap artifact).  Reading the saved
+     * artifact with the read tool adds presentation noise (double cat -n
+     * line numbers).
+     */
+    public function testLateHookReadNoticeUsesOriginalPathNotSavedArtifact(): void
+    {
+        $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 50);
+        $outputCap = new OutputCap($cfg);
+        $hook = new OutputCapLlmTransformHook($outputCap);
+        $converter = new AgentMessageConverter();
+
+        $sentinel = 'READ_SENTINEL_'.bin2hex(random_bytes(8));
+        $largeText = str_repeat('R', 200)."\n".$sentinel;
+
+        $message = new AgentMessage(
+            role: 'tool',
+            content: [['type' => 'text', 'text' => $largeText]],
+            toolCallId: 'call-read-late',
+            toolName: 'read',
+            details: [
+                'arguments' => ['path' => './src/file.php', 'offset' => 42],
+                'raw_result' => $largeText,
+            ],
+        );
+
+        $transformed = $hook->transformContext([$message]);
+        $messageBag = $converter->toMessageBag($transformed);
+
+        $toolMessages = array_filter(
+            $messageBag->getMessages(),
+            static fn (object $m): bool => $m instanceof \Symfony\AI\Platform\Message\ToolCallMessage,
+        );
+        $this->assertCount(1, $toolMessages);
+
+        $toolMsg = reset($toolMessages);
+        $providerContent = $toolMsg->getContent();
+        $this->assertIsString($providerContent);
+
+        // Must cap.
+        $this->assertStringContainsString('Output capped', $providerContent);
+        $this->assertStringNotContainsString($sentinel, $providerContent);
+
+        // Must reference original file, NOT saved artifact via read.
+        $this->assertStringContainsString('./src/file.php', $providerContent,
+            'Late-hook read notice must reference original file path');
+        $this->assertStringContainsString('read(path:', $providerContent);
+        $this->assertStringContainsString('offset: 42', $providerContent,
+            'Late-hook read notice must use original offset');
+        $this->assertStringContainsString('limit: 200', $providerContent);
+        $this->assertStringNotContainsString('head -200', $providerContent,
+            'Late-hook read notice must NOT suggest shell head (generic path)');
+
+        // The notification text in metadata should match what was sent to provider.
+        $notifications = \is_array($transformed[0]->metadata['model_notifications'] ?? null)
+            ? $transformed[0]->metadata['model_notifications']
+            : [];
+        $this->assertCount(1, $notifications);
+        $this->assertStringContainsString('./src/file.php', $notifications[0]['text']);
+        $this->assertStringContainsString('offset: 42', $notifications[0]['text']);
+    }
     /* ── Normalizer: empty content does not leak raw_result ── */
 
     /**

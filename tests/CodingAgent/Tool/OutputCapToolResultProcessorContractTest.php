@@ -102,6 +102,13 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
         $this->assertSame('warning', $notif['severity']);
         $this->assertSame('tool_result_replace', $notif['delivery']);
         $this->assertStringContainsString('Output capped', $notif['text']);
+        $this->assertStringContainsString('./test.txt', $notif['text'],
+            'Read-capped notice must reference the original file path, not the saved artifact');
+        $this->assertStringContainsString('read(path:', $notif['text']);
+        $this->assertStringContainsString('limit: 200', $notif['text']);
+        $this->assertStringContainsString('Do not rerun the original command or read the saved output with read', $notif['text']);
+        $this->assertStringNotContainsString('head -200', $notif['text'],
+            'Read-capped notice must NOT suggest shell head on saved artifact');
         $this->assertNotEmpty($notif['id']);
         $this->assertSame('call-1', $notif['tool_call_id'] ?? null);
         $this->assertSame('read', $notif['tool_name'] ?? null);
@@ -114,6 +121,51 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
         $this->assertArrayHasKey('output_cap', $details);
         $this->assertTrue($details['output_cap']['capped']);
         $this->assertSame(50, $details['output_cap']['cap']);
+    }
+
+    public function testGenericCappedResultDoesNotSuggestReadOnSavedArtifact(): void
+    {
+        // Test thesis: generic (non-read) tool output caps must suggest shell
+        // inspection (head/grep) rather than read(savedPath), because the saved
+        // cap artifact is rendered tool output and re-reading it adds presentation
+        // noise (e.g. double cat -n line numbers).
+        $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 50, docCap: 50);
+        $outputCap = new OutputCap($cfg);
+        $processor = new OutputCapToolResultProcessor($outputCap);
+
+        $largeText = str_repeat('B', 300).'GENERIC_SENTINEL_'.bin2hex(random_bytes(8));
+
+        $result = new ToolResult(
+            toolCallId: 'call-g1',
+            toolName: 'bash',
+            content: [['type' => 'text', 'text' => $largeText]],
+            details: ['raw_result' => $largeText],
+            isError: false,
+        );
+
+        $toolCall = new ToolCall(
+            toolCallId: 'call-g1',
+            toolName: 'bash',
+            arguments: ['command' => 'cat large.log'],
+            orderIndex: 3,
+        );
+
+        $processed = $processor->process($result, $toolCall);
+
+        $details = \is_array($processed->details) ? $processed->details : [];
+        $this->assertArrayHasKey('model_notifications', $details);
+        $notifications = $details['model_notifications'];
+        $this->assertCount(1, $notifications);
+
+        $notif = $notifications[0];
+        $noticeText = $notif['text'];
+
+        // Generic notice uses shell inspection, not read on saved artifact.
+        $this->assertStringContainsString('head -200', $noticeText,
+            'Generic cap notice must suggest shell head inspection');
+        $this->assertStringContainsString('Do not rerun the original command.', $noticeText);
+        $this->assertStringNotContainsString('read(path:', $noticeText,
+            'Generic cap notice must NOT suggest read on the saved artifact');
     }
 
     public function testResultUnderCapPassesThroughUnchanged(): void
