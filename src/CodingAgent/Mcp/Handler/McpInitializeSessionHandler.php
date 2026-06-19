@@ -212,8 +212,10 @@ final class McpInitializeSessionHandler
     {
         $this->logger->debug('MCP session disconnect — closing broker clients', [
             'component' => 'mcp',
+            'event_type' => 'session.disconnect',
             'mcp_event' => 'session.disconnect',
             'run_id' => $message->runId,
+            'session_id' => $message->runId,
             'correlation_id' => '' !== $message->correlationId ? $message->correlationId : null,
         ]);
 
