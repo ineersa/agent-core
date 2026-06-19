@@ -115,7 +115,7 @@ final class McpToolHandlerTest extends TestCase
     {
         $connectionManager = new class($fakeResult) implements McpConnectionManagerInterface {
             public function __construct(private string $fakeResult) {}
-            public function discover(string $runId): array { return []; }
+            public function discover(string $runId, ?callable $onServerDiscovered = null): array { return []; }
             public function getClient(string $runId, string $serverName): ?\Ineersa\CodingAgent\Mcp\Client\McpClientInterface { return null; }
             public function disconnectServer(string $runId, string $serverName): void {}
             public function disconnectAll(string $runId): void {}
@@ -141,7 +141,7 @@ final class McpToolHandlerTest extends TestCase
     {
         $connectionManager = new class($exception) implements McpConnectionManagerInterface {
             public function __construct(private \Throwable $exception) {}
-            public function discover(string $runId): array { return []; }
+            public function discover(string $runId, ?callable $onServerDiscovered = null): array { return []; }
             public function getClient(string $runId, string $serverName): ?\Ineersa\CodingAgent\Mcp\Client\McpClientInterface { return null; }
             public function disconnectServer(string $runId, string $serverName): void {}
             public function disconnectAll(string $runId): void {}
