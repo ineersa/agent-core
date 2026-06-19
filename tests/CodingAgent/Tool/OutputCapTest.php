@@ -95,6 +95,12 @@ final class OutputCapTest extends TestCase
         $this->assertStringContainsString('read(path:', $result);
         $this->assertStringContainsString('limit: 200', $result);
         $this->assertStringContainsString('without offset+limit', $result);
+        // Path is JSON-encoded so special characters (e.g. double quotes)
+        // cannot break the notice.  Normal paths appear as read(path: \"/tmp/...\").
+        $this->assertMatchesRegularExpression(
+            '/read\\(path: "[^"]+",/',
+            $result,
+        );
     }
 
     /* ───────── Persistence ───────── */

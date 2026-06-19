@@ -276,16 +276,17 @@ final class OutputCap
         $charCount = u($fullText)->length();
         $tokenEstimate = (int) ceil($charCount / 4);
         $escapedGrepPath = escapeshellarg($savedPath);
+        $jsonPath = json_encode($savedPath, \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE | \JSON_THROW_ON_ERROR);
 
         return \sprintf(
             "[Output capped: %d chars (~%d tokens) > %d-char cap]\n".
             "Saved full output: %s\n".
             "\n".
             "Next: inspect the saved output, e.g.\n".
-            "- read(path: \"%s\", offset: 1, limit: 200)\n".
+            "- read(path: %s, offset: 1, limit: 200)\n".
             "- bash(command: \"grep -n -- 'PATTERN' %s | head -50\")\n".
             'Do not rerun the original command or read the saved output without offset+limit.',
-            $charCount, $tokenEstimate, $cap, $savedPath, $savedPath, $escapedGrepPath,
+            $charCount, $tokenEstimate, $cap, $savedPath, $jsonPath, $escapedGrepPath,
         );
     }
 }
