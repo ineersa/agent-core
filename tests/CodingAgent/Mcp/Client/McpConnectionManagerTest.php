@@ -140,13 +140,19 @@ class McpConnectionManagerTest extends TestCase
 
     public function testDiscoverFailedServerReturnsFailedStatus(): void
     {
-        // Write an mcp.json with a non-existent command
+        // Use an unused TCP port on localhost for an HTTP connection that
+        // will fail cleanly with a ConnectionException (connection refused).
+        // Avoids verndor STDIO broken-pipe PHP notices triggered by
+        // nonexistent-command process launch.
+        $port = $this->findAvailablePort();
+        self::assertNotNull($port, 'No available port found for failed-HTTP test');
+
+        // Write an mcp.json with an HTTP server pointing at an unused port
         $mcpConfig = [
             'mcpServers' => [
                 'broken' => [
-                    'command' => '/nonexistent/command/that/does/not/exist',
-                    'args' => [],
-                    'timeoutMs' => 5000,
+                    'url' => sprintf('http://127.0.0.1:%d/mcp', $port),
+                    'timeoutMs' => 2000,
                     'startupTimeoutMs' => 2000,
                 ],
             ],
@@ -160,6 +166,7 @@ class McpConnectionManagerTest extends TestCase
 
         self::assertArrayHasKey('broken', $results);
         self::assertSame('failed', $results['broken']['status']);
+        self::assertSame('http', $results['broken']['transport']);
         self::assertArrayHasKey('errorMessage', $results['broken']);
         self::assertCount(0, $results['broken']['tools'], 'Failed server should have no tools');
 
@@ -172,6 +179,7 @@ class McpConnectionManagerTest extends TestCase
         );
         self::assertCount(1, $warnings);
         self::assertSame('broken', $warnings[0]['context']['server_name']);
+        self::assertSame('http', $warnings[0]['context']['transport']);
     }
 
     public function testDiscoverWithEmptyConfigReturnsEmptyResults(): void
