@@ -470,6 +470,7 @@ final class TmuxHarness
      *   - Absolute paths to the project root → <root>
      *   - CWD path in footer after ⌂ → <cwd>
      *   - Git branch in footer after ⎇ → <branch>
+     *   - Elapsed time after ⏱ → ⏱ 0s
      *   - Wrapped footer lines rejoined
      *   - Date/timestamps → <timestamp>  (future; not yet applied)
      *   - Trailing blank lines trimmed
@@ -577,7 +578,7 @@ final class TmuxHarness
 
         while ($i < \count($lines)) {
             $line = $lines[$i];
-            $isFooter = (bool) \preg_match('/[◆⌂⎇]/u', $line) || \str_contains($line, 'session ');
+            $isFooter = (bool) \preg_match('/[◆⌂⎇⏱↻]/u', $line) || \str_contains($line, 'session ');
 
             if (!$isFooter) {
                 $result[] = $line;
@@ -592,7 +593,7 @@ final class TmuxHarness
 
             while ($i < \count($lines)) {
                 $next = $lines[$i];
-                $isNextFooter = (bool) \preg_match('/[◆⌂⎇]/u', $next) || \str_contains($next, 'session ');
+                $isNextFooter = (bool) \preg_match('/[◆⌂⎇⏱↻]/u', $next) || \str_contains($next, 'session ');
 
                 if (!$isNextFooter) {
                     break;
@@ -616,6 +617,12 @@ final class TmuxHarness
 
         // 3) Normalize dynamic branch content after ⎇
         $snapshot = \preg_replace('/⎇\s+\S+/u', '⎇ <branch>', $snapshot);
+
+        // 4) Normalize dynamic elapsed time after ⏱
+        //    The elapsed seconds clock starts at ≈0 and ticks every second.
+        //    Captured snapshots may show ⏱ 0s, ⏱ 1s, ⏱ 2s, etc. depending
+        //    on timing.  Lock the golden to ⏱ 0s for deterministic comparison.
+        $snapshot = \preg_replace('/⏱\s+\S+/u', '⏱ 0s', $snapshot);
 
         return $snapshot;
     }
