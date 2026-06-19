@@ -596,6 +596,153 @@ final class DurableResultConverterTest extends TestCase
         $this->collectStream($result);
     }
 
+    // ── Token usage with cache fields ─────────────────────────────────────────
+
+    #[Test]
+    public function extractsOpenAiPromptTokensDetailsCachedTokens(): void
+    {
+        // OpenAI / z.ai Chat Completions format:
+        // usage.prompt_tokens_details.cached_tokens
+        $deltas = $this->collectStream($this->streamResult([
+            $this->chunk(['choices' => [[
+                'delta' => ['content' => 'Hello'],
+            ]]]),
+            $this->chunk([
+                'choices' => [['finish_reason' => 'stop']],
+                'usage' => [
+                    'prompt_tokens' => 100,
+                    'completion_tokens' => 50,
+                    'prompt_tokens_details' => [
+                        'cached_tokens' => 78,
+                    ],
+                    'total_tokens' => 150,
+                ],
+            ]),
+        ]));
+
+        // Last delta should be a TokenUsage with the cache fields populated.
+        $last = end($deltas);
+        self::assertInstanceOf(\Symfony\AI\Platform\TokenUsage\TokenUsage::class, $last);
+        self::assertSame(100, $last->getPromptTokens());
+        self::assertSame(50, $last->getCompletionTokens());
+        self::assertSame(78, $last->getCachedTokens());
+        self::assertSame(78, $last->getCacheReadTokens(), 'cache_read_tokens must match prompt_tokens_details.cached_tokens');
+        self::assertNull($last->getCacheCreationTokens(), 'cache_creation_tokens must not be inferred');
+        self::assertSame(150, $last->getTotalTokens());
+    }
+
+    #[Test]
+    public function extractsInputTokensDetailsCachedTokens(): void
+    {
+        // OpenAI Responses format:
+        // usage.input_tokens_details.cached_tokens
+        $deltas = $this->collectStream($this->streamResult([
+            $this->chunk(['choices' => [[
+                'delta' => ['content' => 'Hello'],
+            ]]]),
+            $this->chunk([
+                'choices' => [['finish_reason' => 'stop']],
+                'usage' => [
+                    'input_tokens' => 200,
+                    'output_tokens' => 80,
+                    'input_tokens_details' => [
+                        'cached_tokens' => 120,
+                    ],
+                    'total_tokens' => 280,
+                ],
+            ]),
+        ]));
+
+        $last = end($deltas);
+        self::assertInstanceOf(\Symfony\AI\Platform\TokenUsage\TokenUsage::class, $last);
+        self::assertSame(200, $last->getPromptTokens());
+        self::assertSame(80, $last->getCompletionTokens());
+        self::assertSame(120, $last->getCachedTokens());
+        self::assertSame(120, $last->getCacheReadTokens(), 'cache_read_tokens must match input_tokens_details.cached_tokens');
+    }
+
+    #[Test]
+    public function extractsDeepSeekPromptCacheHitTokens(): void
+    {
+        // DeepSeek format:
+        // usage.prompt_cache_hit_tokens (top-level)
+        $deltas = $this->collectStream($this->streamResult([
+            $this->chunk(['choices' => [[
+                'delta' => ['content' => 'Hello'],
+            ]]]),
+            $this->chunk([
+                'choices' => [['finish_reason' => 'stop']],
+                'usage' => [
+                    'prompt_tokens' => 100,
+                    'completion_tokens' => 50,
+                    'prompt_cache_hit_tokens' => 60,
+                    'total_tokens' => 150,
+                ],
+            ]),
+        ]));
+
+        $last = end($deltas);
+        self::assertInstanceOf(\Symfony\AI\Platform\TokenUsage\TokenUsage::class, $last);
+        self::assertSame(100, $last->getPromptTokens());
+        self::assertSame(50, $last->getCompletionTokens());
+        self::assertSame(60, $last->getCacheReadTokens(), 'cache_read_tokens must match prompt_cache_hit_tokens');
+        // DeepSeek: prompt_cache_hit_tokens also populates cachedTokens
+        // (aggregate) so cost calculation and footer fallbacks work.
+        self::assertSame(60, $last->getCachedTokens(), 'cached_tokens falls back to cache_read when no separate aggregate field');
+    }
+
+    #[Test]
+    public function extractsLegacyNumCachedTokens(): void
+    {
+        // Existing generic format: usage.num_cached_tokens
+        $deltas = $this->collectStream($this->streamResult([
+            $this->chunk(['choices' => [[
+                'delta' => ['content' => 'Hello'],
+            ]]]),
+            $this->chunk([
+                'choices' => [['finish_reason' => 'stop']],
+                'usage' => [
+                    'prompt_tokens' => 50,
+                    'completion_tokens' => 25,
+                    'num_cached_tokens' => 30,
+                    'total_tokens' => 75,
+                ],
+            ]),
+        ]));
+
+        $last = end($deltas);
+        self::assertInstanceOf(\Symfony\AI\Platform\TokenUsage\TokenUsage::class, $last);
+        self::assertSame(50, $last->getPromptTokens());
+        self::assertSame(25, $last->getCompletionTokens());
+        self::assertSame(30, $last->getCachedTokens());
+        self::assertSame(30, $last->getCacheReadTokens(), 'cache_read_tokens falls back to num_cached_tokens');
+    }
+
+    #[Test]
+    public function extractsThinkingTokensFromCompletionTokensDetails(): void
+    {
+        $deltas = $this->collectStream($this->streamResult([
+            $this->chunk(['choices' => [[
+                'delta' => ['content' => 'Hello'],
+            ]]]),
+            $this->chunk([
+                'choices' => [['finish_reason' => 'stop']],
+                'usage' => [
+                    'prompt_tokens' => 100,
+                    'completion_tokens' => 50,
+                    'completion_tokens_details' => [
+                        'reasoning_tokens' => 20,
+                    ],
+                    'total_tokens' => 150,
+                ],
+            ]),
+        ]));
+
+        $last = end($deltas);
+        self::assertInstanceOf(\Symfony\AI\Platform\TokenUsage\TokenUsage::class, $last);
+        self::assertSame(20, $last->getThinkingTokens());
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     /**

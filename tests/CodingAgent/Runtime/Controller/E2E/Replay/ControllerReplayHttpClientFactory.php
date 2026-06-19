@@ -104,6 +104,7 @@ final class ControllerReplayHttpClientFactory
                                 ['type' => 'text', 'content' => 'done'],
                             ],
                             stopReason: 'stop',
+                            usage: null,
                         ),
                         [
                             'http_code' => 200,
@@ -127,7 +128,8 @@ final class ControllerReplayHttpClientFactory
                 $stopReason = $fixture['stop_reason'] ?? 'stop';
                 $model = $fixture['model'] ?? 'llama_cpp/test';
 
-                $body = self::buildSSEFromDeltas($model, $deltas, $stopReason);
+                $usage = $fixture['usage'] ?? null;
+                $body = self::buildSSEFromDeltas($model, $deltas, $stopReason, $usage);
 
                 return new MockResponse($body, [
                     'http_code' => 200,
@@ -183,7 +185,10 @@ final class ControllerReplayHttpClientFactory
      *
      * @param list<array<string, mixed>> $deltas
      */
-    private static function buildSSEFromDeltas(string $model, array $deltas, string $stopReason): string
+    /**
+     * @param array<string, mixed>|null $usage Fixture usage payload (null if no usage)
+     */
+    private static function buildSSEFromDeltas(string $model, array $deltas, string $stopReason, ?array $usage): string
     {
         $chunks = [];
         $chunkId = 'chatcmpl-replay-'.bin2hex(random_bytes(4));
@@ -294,6 +299,21 @@ final class ControllerReplayHttpClientFactory
                 'finish_reason' => $mappedReason,
             ]],
         ], \JSON_UNESCAPED_UNICODE | \JSON_UNESCAPED_SLASHES);
+
+        // Usage chunk: send token usage as a separate SSE frame so the
+        // DurableResultConverter yields a TokenUsage delta.  Usage is
+        // read from the fixture, which must include a top-level "usage"
+        // key.  When absent, no usage chunk is emitted.
+        if (null !== $usage && [] !== $usage) {
+            $chunks[] = json_encode([
+                'id' => $chunkId,
+                'object' => 'chat.completion.chunk',
+                'created' => $created,
+                'model' => $model,
+                'choices' => [],
+                'usage' => $usage,
+            ], \JSON_UNESCAPED_UNICODE | \JSON_UNESCAPED_SLASHES);
+        }
 
         $chunks[] = '[DONE]';
 

@@ -14,8 +14,10 @@
         ]
     },
     "usage": {
-        "input_tokens": 21,
+        "input_tokens": 100,
         "output_tokens": 541,
+        "cached_tokens": 78,
+        "cache_read_tokens": 78,
         "total_tokens": 562
     },
     "stop_reason": "stop",

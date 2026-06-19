@@ -15,7 +15,7 @@ use Ineersa\Tui\Theme\ThemeColorEnum;
  *
  * Segment order:
  *   ◆ model (priority 0-1) — both coloured by reasoning level
- *     token block: input/output(10)  $cost(11)  pct% used/ctx(12)
+ *     token block: input/output(10)  $cost(11)  ↻cache%(12, opt)  pct% used/ctx(13)
  *     ⚡ t/s (15, optional)
  *     ⏱ elapsed (20)
  *     ⌂ cwd (25)
@@ -53,7 +53,7 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
             color: $thinkColor,
         );
 
-        // ── Group 2: Token stats block (priorities 10-12) ──
+        // ── Group 2: Token stats block (priorities 10-13) ──
         $in = self::fmt($s->usage->inputTokens);
         $out = self::fmt($s->usage->outputTokens);
         $segments[] = new FooterSegment(
@@ -67,6 +67,17 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
             priority: 11,
             color: ThemeColorEnum::Warning,
         );
+
+        // Cache-hit segment: only shown when cache-read telemetry exists.
+        // Absent telemetry is not shown (no misleading 0%).
+        $cachePct = $s->usage->cacheReadHitPercentage();
+        if (null !== $cachePct) {
+            $segments[] = new FooterSegment(
+                text: \sprintf('↻ %.0f%%', $cachePct),
+                priority: 12,
+                color: ThemeColorEnum::Success,
+            );
+        }
 
         if ($s->contextWindow > 0) {
             // Context window usage uses the latest input_tokens value
@@ -82,7 +93,7 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
         }
         $segments[] = new FooterSegment(
             text: $ctxDetail,
-            priority: 12,
+            priority: 13,
             color: $pctColor,
         );
 
