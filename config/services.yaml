@@ -415,8 +415,22 @@ services:
     alias: Ineersa\CodingAgent\Tool\ToolRegistry
 
   # CodingAgent ToolSetResolver — bridges ToolRegistry to AgentCore resolver seam.
+  # The inner resolver (CodingAgentToolSetResolver) is wrapped by
+  # McpCatalogRegisteringToolSetResolver so MCP dynamic tools from the
+  # session catalog are registered before the active tool snapshot is built.
+  Ineersa\CodingAgent\Tool\CodingAgentToolSetResolver:
+    arguments:
+      $toolRegistry: '@Ineersa\CodingAgent\Tool\ToolRegistryInterface'
+
+  # MCP-aware wrapper: calls registrar before delegate so LLM-visible
+  # tool schemas and execution allowlists include catalog-backed MCP tools.
+  Ineersa\CodingAgent\Mcp\Tool\McpCatalogRegisteringToolSetResolver:
+    arguments:
+      $inner: '@Ineersa\CodingAgent\Tool\CodingAgentToolSetResolver'
+      $mcpToolRegistrar: '@Ineersa\CodingAgent\Mcp\Tool\McpToolRegistrar'
+
   Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface:
-    alias: Ineersa\CodingAgent\Tool\CodingAgentToolSetResolver
+    alias: Ineersa\CodingAgent\Mcp\Tool\McpCatalogRegisteringToolSetResolver
 
   # RegistryBackedToolbox — reads ToolRegistry definitions and exposes them through
   # the Symfony AI ToolboxInterface so the existing Execution pipeline can invoke
@@ -596,3 +610,15 @@ services:
   Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient:
     arguments:
       $mcpDispatcher: '@Ineersa\CodingAgent\Mcp\McpSessionLifecycleDispatcher'
+
+  # ─── MCP-04 Dynamic MCP tool registration ───────────────────────
+
+  # MCP tool catalog store interface — alias for the session-file implementation.
+  Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface:
+    alias: Ineersa\CodingAgent\Mcp\Catalog\SessionFileMcpToolCatalogStore
+
+  # MCP tool registrar — bridges session catalog into ToolRegistry dynamic tools.
+  Ineersa\CodingAgent\Mcp\Tool\McpToolRegistrar:
+    arguments:
+      $catalogStore: '@Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface'
+      $toolRegistry: '@Ineersa\CodingAgent\Tool\ToolRegistryInterface'
