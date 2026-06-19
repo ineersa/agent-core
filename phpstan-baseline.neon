@@ -78,14 +78,11 @@ parameters:
 			count: 1
 			path: src/CodingAgent/Mcp/Client/McpClientInterface.php
 
-
-
 		-
 			message: '#^Method Ineersa\\CodingAgent\\Mcp\\Client\\McpSdkClientAdapter\:\:listTools\(\) return type has no value type specified in iterable type array\.$#'
 			identifier: missingType.iterableValue
 			count: 1
 			path: src/CodingAgent/Mcp/Client/McpSdkClientAdapter.php
-
 
 		-
 			message: '#^Parameter &\$blockByIndex by\-ref type of method Ineersa\\Platform\\Bridge\\Generic\\DurableResultConverter\:\:accumulateDurableToolCalls\(\) expects array\<int, int\>, array\<int\> given\.$#'
