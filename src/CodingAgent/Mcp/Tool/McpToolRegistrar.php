@@ -158,6 +158,7 @@ final class McpToolRegistrar
                 [
                     'component' => 'mcp',
                     'mcp_event' => 'tool.collision',
+                    'event_type' => 'tool.collision',
                     'server_name' => $serverName,
                     'mcp_tool_name' => $toolDef->mcpName,
                     'hatfield_tool_name' => $hatfieldName,
@@ -208,6 +209,7 @@ final class McpToolRegistrar
                 [
                     'component' => 'mcp',
                     'mcp_event' => 'tool.register_failed',
+                    'event_type' => 'tool.register_failed',
                     'server_name' => $serverName,
                     'mcp_tool_name' => $toolDef->mcpName,
                     'hatfield_tool_name' => $hatfieldName,

@@ -140,7 +140,6 @@ final class McpCatalogRegisteringToolSetResolverTest extends TestCase
         $result = $wrapper->resolve('toolset:run:no-catalog:turn:1', turnNo: 1, runId: 'no-catalog');
 
         $this->assertSame([], $result->toolNames);
-        $this->assertSame([], $result->toolNames);
     }
 
     /**

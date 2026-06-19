@@ -329,6 +329,7 @@ final class McpToolRegistrarTest extends TestCase
         $this->assertSame('tool_name_collision', $warnings[0]['context']['reason']);
         $this->assertSame('run-collide', $warnings[0]['context']['run_id']);
         $this->assertSame('run-collide', $warnings[0]['context']['session_id']);
+        $this->assertSame('tool.collision', $warnings[0]['context']['event_type']);
     }
 
     public function testCollisionWithUnrelatedDynamicToolIsAlsoSkipped(): void
@@ -379,6 +380,7 @@ final class McpToolRegistrarTest extends TestCase
         $this->assertCount(1, $warnings);
         $this->assertSame('run-dyn-collide', $warnings[0]['context']['run_id']);
         $this->assertSame('run-dyn-collide', $warnings[0]['context']['session_id']);
+        $this->assertSame('tool.collision', $warnings[0]['context']['event_type']);
     }
 
     /**
@@ -460,6 +462,7 @@ final class McpToolRegistrarTest extends TestCase
         $this->assertSame('srv', $warnings[0]['context']['server_name']);
         $this->assertSame('run-hidden', $warnings[0]['context']['run_id']);
         $this->assertSame('run-hidden', $warnings[0]['context']['session_id']);
+        $this->assertSame('tool.register_failed', $warnings[0]['context']['event_type']);
     }
 
     /* ── Helpers ── */
