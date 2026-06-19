@@ -85,7 +85,7 @@ final class DurableResultConverter extends ResultConverter
         return parent::convert($result, $options);
     }
 
-    public function getTokenUsageExtractor(): ?TokenUsageExtractorInterface
+    public function getTokenUsageExtractor(): TokenUsageExtractorInterface
     {
         return new PromptCacheTokenUsageExtractor();
     }
