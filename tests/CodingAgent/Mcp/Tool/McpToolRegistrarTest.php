@@ -503,7 +503,7 @@ final class McpToolRegistrarTest extends TestCase
 
         $stubManager = new class($exception) implements \Ineersa\CodingAgent\Mcp\Client\McpConnectionManagerInterface {
             public function __construct(private \Throwable $exception) {}
-            public function discover(string $runId): array { return []; }
+            public function discover(string $runId, ?callable $onServerDiscovered = null): array { return []; }
             public function getClient(string $runId, string $serverName): ?\Ineersa\CodingAgent\Mcp\Client\McpClientInterface { return null; }
             public function disconnectServer(string $runId, string $serverName): void {}
             public function disconnectAll(string $runId): void {}
