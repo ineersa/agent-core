@@ -218,10 +218,6 @@ final class SessionCompactor
             \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE,
         );
 
-        if (false === $serialized) {
-            return 0;
-        }
-
         return (int) ceil(\strlen($serialized) / 4);
     }
 
@@ -506,10 +502,6 @@ final class SessionCompactor
             $message->toArray(),
             \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE,
         );
-
-        if (false === $serialized) {
-            return 0;
-        }
 
         return (int) ceil(\strlen($serialized) / 4);
     }

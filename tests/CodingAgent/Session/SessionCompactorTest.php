@@ -285,14 +285,27 @@ final class SessionCompactorTest extends TestCase
         // The assistant tool-call message must be in the retained tail.
         $retainedRoles = \array_map(static fn (AgentMessage $m): string => $m->role, $result->retainedTailMessages);
 
-            // Both the assistant and tool messages should be either ALL retained or NONE retained.
-            $hasAssistant = \in_array('assistant', $retainedRoles, true);
-            $hasTool = \in_array('tool', $retainedRoles, true);
+            // The tool-call group is placed at the end of the conversation
+        // and should be present, complete, in the retained tail.
+        self::assertContains('assistant', $retainedRoles, 'Assistant tool-call expected in retained tail');
+        self::assertContains('tool', $retainedRoles, 'Tool results expected in retained tail');
 
-            // They must not be split: either both are retained or neither.
-            if ($hasAssistant || $hasTool) {
-                self::assertTrue($hasAssistant && $hasTool, 'Tool-call group must be retained together or not at all');
+        // Verify the specific tool-call group is intact.
+        $retainedCallIds = [];
+        foreach ($result->retainedTailMessages as $msg) {
+            if ('tool' === $msg->role) {
+                $retainedCallIds[] = $msg->toolCallId;
             }
+
+            if ('assistant' === $msg->role) {
+                foreach ($this->extractToolCallIdsFromMessage($msg) as $id) {
+                    $retainedCallIds[] = $id;
+                }
+            }
+        }
+
+        self::assertContains('call_1', $retainedCallIds, 'call_1 must be in retained tail');
+        self::assertContains('call_2', $retainedCallIds, 'call_2 must be in retained tail');
     }
 
     /**
