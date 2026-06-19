@@ -74,6 +74,7 @@ final class McpInitializeSessionHandler
     {
         $logContext = [
             'component' => 'mcp',
+            'event_type' => 'session.initialize',
             'mcp_event' => 'session.initialize',
             'run_id' => $message->runId,
             'session_id' => $message->runId,
@@ -120,8 +121,10 @@ final class McpInitializeSessionHandler
 
             $this->logger->info('MCP catalog written', [
                 'component' => 'mcp',
+                'event_type' => 'catalog.written',
                 'mcp_event' => 'catalog.written',
                 'run_id' => $message->runId,
+                'session_id' => $message->runId,
                 'server_count' => \count($catalog->servers),
                 'tool_count' => $this->countTools($catalog),
                 'generation' => $catalog->generation,

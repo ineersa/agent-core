@@ -49,6 +49,7 @@ final readonly class McpSessionLifecycleDispatcher
             // distinguishes transport failures (ExceptionInterface) from bugs.
             $this->logger->warning('Failed to dispatch MCP initialize command', [
                 'component' => 'mcp',
+                'event_type' => 'dispatch.initialize_failed',
                 'mcp_event' => 'dispatch.initialize.failed',
                 'run_id' => $runId,
                 'session_id' => $runId,

@@ -43,9 +43,10 @@ final readonly class McpWorkerShutdownSubscriber
         }
 
         // Resolve the session/run identifier from the controller-set env var.
-        // In TUI/sync mode this is empty — but the mcp consumer only exists
-        // in controller mode, so this is set in practice.  Default 'unknown'
-        // matches HeadlessController/JsonlProcessAgentSessionClient conventions.
+        // In TUI/sync mode the env var is absent or 'unknown' — but the mcp
+        // consumer only exists in controller mode, so this is set in practice.
+        // Default 'unknown' matches HeadlessController/JsonlProcessAgentSessionClient
+        // conventions.
         $runId = $_SERVER['HATFIELD_SESSION_ID'] ?? $_ENV['HATFIELD_SESSION_ID'] ?? 'unknown';
 
         if ('' === $runId || 'unknown' === $runId) {
