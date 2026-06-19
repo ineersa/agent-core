@@ -125,14 +125,25 @@ class McpConnectionManagerTest extends TestCase
         self::assertNotNull($reverseTool, 'Should discover reverse tool');
 
         // Verify structured logs
-        $infoLogs = array_filter(
+        $infoLogs = array_values(array_filter(
             $this->logger->records,
             static fn(array $r): bool =>
                 $r['level'] === 'info' &&
                 ($r['context']['mcp_event'] ?? '') === 'discovery.server_connected',
-        );
+        ));
         self::assertCount(1, $infoLogs);
         self::assertSame('fixture', $infoLogs[0]['context']['server_name']);
+
+        // Verify starting log exists before connect
+        $startingLogs = array_values(array_filter(
+            $this->logger->records,
+            static fn(array $r): bool =>
+                $r['level'] === 'info' &&
+                ($r['context']['mcp_event'] ?? '') === 'discovery.server_starting',
+        ));
+        self::assertCount(1, $startingLogs);
+        self::assertSame('fixture', $startingLogs[0]['context']['server_name']);
+        self::assertSame('stdio', $startingLogs[0]['context']['transport']);
 
         // Cleanup
         $this->manager->disconnectAll('test-run');
@@ -171,15 +182,27 @@ class McpConnectionManagerTest extends TestCase
         self::assertCount(0, $results['broken']['tools'], 'Failed server should have no tools');
 
         // Verify warning log exists for the failed server
-        $warnings = array_filter(
+        $warnings = array_values(array_filter(
             $this->logger->records,
             static fn(array $r): bool =>
                 $r['level'] === 'warning' &&
                 ($r['context']['mcp_event'] ?? '') === 'discovery.server_failed',
-        );
+        ));
         self::assertCount(1, $warnings);
         self::assertSame('broken', $warnings[0]['context']['server_name']);
         self::assertSame('http', $warnings[0]['context']['transport']);
+
+        // Verify starting log exists per server before connect attempt
+        $startingLogs = array_values(array_filter(
+            $this->logger->records,
+            static fn(array $r): bool =>
+                $r['level'] === 'info' &&
+                ($r['context']['mcp_event'] ?? '') === 'discovery.server_starting',
+        ));
+        self::assertCount(1, $startingLogs);
+        self::assertSame('broken', $startingLogs[0]['context']['server_name']);
+        self::assertSame('http', $startingLogs[0]['context']['transport']);
+        self::assertSame('test-run-fail', $startingLogs[0]['context']['run_id']);
     }
 
     public function testDiscoverWithEmptyConfigReturnsEmptyResults(): void
@@ -312,15 +335,25 @@ class McpConnectionManagerTest extends TestCase
             self::assertNotNull($addTool, 'Should discover add tool');
 
             // Verify structured logs — transport should be http
-            $infoLogs = array_filter(
+            $infoLogs = array_values(array_filter(
                 $this->logger->records,
                 static fn(array $r): bool =>
                     $r['level'] === 'info' &&
                     ($r['context']['mcp_event'] ?? '') === 'discovery.server_connected',
-            );
+            ));
             self::assertCount(1, $infoLogs);
             self::assertSame('http-fixture', $infoLogs[0]['context']['server_name']);
             self::assertSame('http', $infoLogs[0]['context']['transport']);
+
+            // Starting log must also be present
+            $startingLogs = array_values(array_filter(
+                $this->logger->records,
+                static fn(array $r): bool =>
+                    $r['level'] === 'info' &&
+                    ($r['context']['mcp_event'] ?? '') === 'discovery.server_starting',
+            ));
+            self::assertCount(1, $startingLogs);
+            self::assertSame('http-fixture', $startingLogs[0]['context']['server_name']);
 
             // Cleanup client
             $this->manager->disconnectAll('test-run-http');

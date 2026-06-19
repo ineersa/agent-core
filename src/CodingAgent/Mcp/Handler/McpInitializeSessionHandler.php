@@ -92,7 +92,22 @@ final class McpInitializeSessionHandler
             ]);
 
             if ($enabledCount > 0) {
-                $discoveryResults = $this->connectionManager->discover($message->runId);
+                // Publish a partial catalog after each server's discovery finishes
+                // so successful servers are visible before slow/failing servers.
+                $onServerDiscovered = function (array $cumulativeResults) use ($config, $message, $configHash): void {
+                    $partialCatalog = $this->buildCatalog($config, $message->runId, $configHash, $cumulativeResults);
+                    $this->catalogStore->write($message->runId, $partialCatalog);
+
+                    $this->logger->debug('MCP partial catalog written', [
+                        'component' => 'mcp',
+                        'mcp_event' => 'catalog.partial_written',
+                        'run_id' => $message->runId,
+                        'server_count' => \count($partialCatalog->servers),
+                        'tool_count' => $this->countTools($partialCatalog),
+                    ]);
+                };
+
+                $discoveryResults = $this->connectionManager->discover($message->runId, $onServerDiscovered);
                 $catalog = $this->buildCatalog($config, $message->runId, $configHash, $discoveryResults);
             } else {
                 // No servers configured — write empty catalog.
@@ -148,7 +163,20 @@ final class McpInitializeSessionHandler
             $configHash = $this->computeConfigHash($config);
 
             if ($enabledCount > 0) {
-                $discoveryResults = $this->connectionManager->discover($message->runId);
+                $onServerDiscovered = function (array $cumulativeResults) use ($config, $message, $configHash): void {
+                    $partialCatalog = $this->buildCatalog($config, $message->runId, $configHash, $cumulativeResults);
+                    $this->catalogStore->write($message->runId, $partialCatalog);
+
+                    $this->logger->debug('MCP partial catalog written', [
+                        'component' => 'mcp',
+                        'mcp_event' => 'catalog.partial_written',
+                        'run_id' => $message->runId,
+                        'server_count' => \count($partialCatalog->servers),
+                        'tool_count' => $this->countTools($partialCatalog),
+                    ]);
+                };
+
+                $discoveryResults = $this->connectionManager->discover($message->runId, $onServerDiscovered);
                 $catalog = $this->buildCatalog($config, $message->runId, $configHash, $discoveryResults);
             } else {
                 $catalog = McpToolCatalogDTO::empty($message->runId, 1, $configHash);

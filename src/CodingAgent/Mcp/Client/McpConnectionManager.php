@@ -62,10 +62,7 @@ final class McpConnectionManager implements McpConnectionManagerInterface
     ) {
     }
 
-    /**
-     * @return array<string, array{status: 'connected'|'failed', transport: string, tools: list<array{name: string, description?: string|null, inputSchema: array<string, mixed>}>, errorMessage?: string}>
-     */
-    public function discover(string $runId): array
+    public function discover(string $runId, ?callable $onServerDiscovered = null): array
     {
         $results = [];
 
@@ -84,6 +81,23 @@ final class McpConnectionManager implements McpConnectionManagerInterface
         }
 
         foreach ($config->servers as $serverName => $server) {
+            $transport = null !== $server->transportType
+                ? $server->transportType->value
+                : 'unknown';
+
+            // Log before blocking connect so operators see which server
+            // discovery is in progress — especially important for slow
+            // STDIO servers that can delay overall catalog visibility.
+            $this->logger->info('MCP server discovery starting', [
+                'component' => 'mcp',
+                'event_type' => 'discovery.server_starting',
+                'mcp_event' => 'discovery.server_starting',
+                'run_id' => $runId,
+                'session_id' => $runId,
+                'server_name' => $serverName,
+                'transport' => $transport,
+            ]);
+
             $clientKey = $this->clientKey($runId, $serverName);
 
             try {
@@ -99,10 +113,6 @@ final class McpConnectionManager implements McpConnectionManagerInterface
                 // Keep client alive for future tool calls
                 $this->clients[$clientKey] = $client;
 
-                $transport = null !== $server->transportType
-                    ? $server->transportType->value
-                    : 'unknown';
-
                 $results[$serverName] = [
                     'status' => 'connected',
                     'transport' => $transport,
@@ -117,13 +127,16 @@ final class McpConnectionManager implements McpConnectionManagerInterface
                     'transport' => $transport,
                     'tool_count' => \count($tools),
                 ]);
+
+                // Notify callback so callers can publish a partial catalog
+                // immediately — successful servers are visible before later
+                // slow or failing servers finish discovery.
+                if (null !== $onServerDiscovered) {
+                    $onServerDiscovered($results);
+                }
             } catch (\Throwable $e) {
                 // Server discovery failed — log and continue with next server.
                 // Never include raw config, env values, headers, or tokens.
-                $transport = null !== $server->transportType
-                    ? $server->transportType->value
-                    : 'unknown';
-
                 $results[$serverName] = [
                     'status' => 'failed',
                     'transport' => $transport,
@@ -140,6 +153,13 @@ final class McpConnectionManager implements McpConnectionManagerInterface
                     'error_class' => $e::class,
                     'error_message' => self::sanitizeLogMessage($e->getMessage()),
                 ]);
+
+                // Publish partial catalog including this failed server
+                // so readers see that discovery is complete for this
+                // server (failed, no tools).
+                if (null !== $onServerDiscovered) {
+                    $onServerDiscovered($results);
+                }
             }
         }
 
