@@ -34,7 +34,9 @@ Before writing, editing, debugging, reviewing, or running tests — and before t
 
 This must happen before proposing a test strategy, adding tests, running Castor tests, or handing off validation results. Forks must mention in their handoff that they read both files and followed the shared conventions. A fork handoff that omits this for test-related work is incomplete — the parent agent must not accept the handoff as valid for CODE-REVIEW or DONE without confirming the conventions were followed.
 
-Before re-running `castor check`, `castor test:controller`, or `castor test:tui`, kill stale worker processes from prior runs (e.g., `messenger:consume`, `agent --controller`, orphaned PHPUnit/Castor children). Orphaned consumers steal queue messages and can make passing tests appear hung.
+Before re-running `castor check`, `castor test:controller`, or `castor test:tui`, kill stale worker processes from prior runs that are owned by the current user (e.g., `messenger:consume`, `agent --controller`, orphaned PHPUnit/Castor children). Orphaned consumers steal queue messages and can make passing tests appear hung.
+
+**Never kill, signal, restart, or otherwise touch root-owned worker processes.** In particular, do not touch the root-owned `php bin/console messenger:consume --all --exclude-receivers=failed` process (currently observed as PID 3361). If a root-owned process appears stale, report it to the user and leave it alone.
 
 ## E2E Testing Strategy
 
