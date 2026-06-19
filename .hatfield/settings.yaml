@@ -197,6 +197,21 @@ logging:
       max_files: 2
 
 # ---------------------------------------------------------------------------
+# Compaction
+# ---------------------------------------------------------------------------
+#
+# Compaction replaces older conversation history with a summary while
+# keeping the most recent messages raw. Uncomment and adjust to override
+# compaction settings.
+#
+# compaction:
+#     enabled: true
+#     reserve_tokens: 16384
+#     keep_recent_tokens: 20000
+#     max_summary_tokens: null       # null = floor(reserve_tokens * 0.8)
+#     model: null                    # null = session model; set provider/model to override
+
+# ---------------------------------------------------------------------------
 # AI provider and model configuration
 # ---------------------------------------------------------------------------
 #

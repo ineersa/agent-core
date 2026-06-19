@@ -29,6 +29,37 @@ sessions:
     path: '.hatfield/sessions'
 
 # ---------------------------------------------------------------------------
+# Compaction
+# ---------------------------------------------------------------------------
+#
+# Compaction replaces older conversation history with a concise handoff summary
+# while keeping the most recent messages raw. The summarization model defaults
+# to the active session model; override via compaction.model.
+#
+compaction:
+    # Whether manual compaction (/compact) and, later, auto-compaction are enabled.
+    enabled: true
+
+    # Tokens reserved for the next model response. Used by the auto-compaction
+    # trigger policy (Phase 2). Also influences the effective max_summary_tokens
+    # when max_summary_tokens is null.
+    reserve_tokens: 16384
+
+    # Approximate number of newest tokens to retain raw after compaction.
+    # Messages are kept whole — the cut never splits a message, so the actual
+    # retained token count may exceed this target when the nearest safe boundary
+    # is further back.
+    keep_recent_tokens: 20000
+
+    # Explicit cap for summary generation. When null, defaults to
+    # floor(reserve_tokens * 0.8).
+    max_summary_tokens: null
+
+    # Summarization model override. Format: provider/model (e.g. llama_cpp/flash).
+    # When null, the active session model is used for summarization.
+    model: null
+
+# ---------------------------------------------------------------------------
 # Tools
 # ---------------------------------------------------------------------------
 #

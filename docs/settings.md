@@ -133,6 +133,60 @@ Files are stored under `logging.path`. The default of 14 keeps two weeks of logs
 
 **Default:** `14`
 
+---
+
+### `compaction.enabled`
+
+Whether manual compaction (`/compact`) and, later, auto-compaction are
+enabled. When `false`, the `/compact` slash command exits with a status
+message and no state mutation occurs.
+
+**Default:** `true`
+
+### `compaction.reserve_tokens`
+
+Tokens reserved for the next model response. Used by the auto-compaction
+trigger policy (`estimatedContextTokens > contextWindow - reserveTokens`)
+and as the basis for the effective `max_summary_tokens` when that setting
+is null.
+
+**Default:** `16384`
+
+### `compaction.keep_recent_tokens`
+
+Approximate number of newest tokens to retain raw after compaction.
+Messages are kept whole — the cut never splits a message — so the actual
+retained token count may modestly exceed this target when the nearest safe
+boundary is further back (to avoid splitting tool-call groups).
+
+**Default:** `20000`
+
+### `compaction.max_summary_tokens`
+
+Explicit token cap for summary generation. When `null`, the effective cap
+is `floor(reserve_tokens * 0.8)`. Setting an explicit value overrides the
+proportional fallback.
+
+**Default:** `null`
+
+### `compaction.model`
+
+Summarization model override. When `null`, the active session model is
+used for summarization. When set, the value must be in `provider/model`
+format (e.g. `llama_cpp/flash`).
+
+**Default:** `null`
+
+**Example:**
+```yaml
+compaction:
+    enabled: true
+    reserve_tokens: 16384
+    keep_recent_tokens: 20000
+    max_summary_tokens: null
+    model: null
+```
+
 ## Environment variables
 
 ### `HATFIELD_CAPTURE_ERRORS`

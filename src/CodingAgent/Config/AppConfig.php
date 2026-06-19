@@ -40,6 +40,7 @@ final class AppConfig
         public ToolsConfig $tools = new ToolsConfig(),
         public ?AiConfig $ai = null,
         public PromptsConfig $prompts = new PromptsConfig(),
+        public CompactionConfig $compaction = new CompactionConfig(),
         /** @var array<string, mixed> Raw merged data for forward compatibility */
         public array $raw = [],
         public ?HatfieldModelCatalog $catalog = null,
@@ -98,6 +99,10 @@ final class AppConfig
             ),
             ai: $ai,
             prompts: PromptsConfig::fromRaw($data['prompts'] ?? []),
+            compaction: $denormalizer->denormalize(
+                (array) ($data['compaction'] ?? []),
+                CompactionConfig::class,
+            ),
             raw: $data,
             catalog: $catalog,
             cwd: $cwd,
