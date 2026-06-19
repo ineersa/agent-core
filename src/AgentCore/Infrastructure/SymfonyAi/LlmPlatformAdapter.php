@@ -718,12 +718,22 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             return [];
         }
 
+        // Cache-read tokens: the primary signal for the TUI footer's
+        // cache-hit percentage.  For providers that only report an
+        // aggregate cached-tokens count (getCachedTokens) without
+        // splitting read vs creation, treat the aggregate as cache-read.
+        // Explicit cache-read telemetry takes precedence when available.
+        $cacheReadTokens = $tokenUsage->getCacheReadTokens()
+            ?? $tokenUsage->getCachedTokens();
+
         $usage = array_filter([
             'input_tokens' => $tokenUsage->getPromptTokens(),
             'output_tokens' => $tokenUsage->getCompletionTokens(),
             'thinking_tokens' => $tokenUsage->getThinkingTokens(),
             'tool_tokens' => $tokenUsage->getToolTokens(),
             'cached_tokens' => $tokenUsage->getCachedTokens(),
+            'cache_read_tokens' => $cacheReadTokens,
+            'cache_creation_tokens' => $tokenUsage->getCacheCreationTokens(),
             'total_tokens' => $tokenUsage->getTotalTokens(),
         ], static fn (mixed $value): bool => null !== $value);
 

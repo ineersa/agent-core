@@ -19,6 +19,8 @@ use Symfony\AI\Platform\Result\Stream\Delta\ToolCallStart;
 use Symfony\AI\Platform\Result\Stream\Delta\ToolInputDelta;
 use Symfony\AI\Platform\Result\StreamResult;
 use Symfony\AI\Platform\Result\ToolCall;
+use Symfony\AI\Platform\TokenUsage\TokenUsage;
+use Symfony\AI\Platform\TokenUsage\TokenUsageExtractorInterface;
 
 /**
  * OpenAI-compatible completions ResultConverter with durable streaming tool-call conversion.
@@ -83,6 +85,11 @@ final class DurableResultConverter extends ResultConverter
         return parent::convert($result, $options);
     }
 
+    public function getTokenUsageExtractor(): ?TokenUsageExtractorInterface
+    {
+        return new PromptCacheTokenUsageExtractor();
+    }
+
     /**
      * Durable streaming conversion — replaces the trait's convertStream().
      *
@@ -93,7 +100,7 @@ final class DurableResultConverter extends ResultConverter
      * converted deltas it produces are emitted as structured events for
      * offline inspection.
      *
-     * @return \Generator<TextDelta|ThinkingDelta|ThinkingComplete|ToolCallStart|ToolInputDelta|ToolCallComplete|\Symfony\AI\Platform\TokenUsage\TokenUsage>
+     * @return \Generator<TextDelta|ThinkingDelta|ThinkingComplete|ToolCallStart|ToolInputDelta|ToolCallComplete|TokenUsage>
      */
     protected function convertStream(RawResultInterface $result): \Generator
     {
@@ -201,6 +208,18 @@ final class DurableResultConverter extends ResultConverter
             }
             throw $e;
         }
+    }
+
+    // ── Token usage overrides ───────────────────────────────────────────────
+
+    /**
+     * Override streaming usage conversion to use the prompt-cache-aware extractor.
+     *
+     * {@inheritDoc}
+     */
+    protected function convertStreamUsage(array $usage): TokenUsage
+    {
+        return (new PromptCacheTokenUsageExtractor())->extractFromArray($usage);
     }
 
     /**

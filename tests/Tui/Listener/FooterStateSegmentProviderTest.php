@@ -15,6 +15,7 @@ use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\Tui\Footer\FooterDataProvider;
 use Ineersa\Tui\Footer\FooterBarWidget;
+use Ineersa\Tui\Footer\FooterSegment;
 use Ineersa\Tui\Listener\FooterStateSegmentProvider;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Theme\ThemeColorEnum;
@@ -141,5 +142,74 @@ class FooterStateSegmentProviderTest extends TestCase
                 "Diamond and model name should share the same thinking colour for level '{$level}'",
             );
         }
+    }
+
+    #[Test]
+    public function testCacheHitSegmentAppearsWhenTelemetryExists(): void
+    {
+        $state = $this->state;
+        $state->footerModel = 'test-model';
+        $state->contextWindow = 32768;
+
+        // Simulate cache telemetry: 78 cache-read out of 100 input → 78%
+        $state->usage->inputTokens = 100;
+        $state->usage->cacheReadTokens = 78;
+        $state->usage->hasCacheTelemetry = true;
+
+        $provider = new FooterStateSegmentProvider($state);
+        $segments = $provider->getSegments();
+
+        // Find the cache segment (priority 12).
+        $cacheSegments = array_filter(
+            $segments,
+            static fn (FooterSegment $s): bool => 12 === $s->priority,
+        );
+        self::assertCount(1, $cacheSegments, 'Cache segment should exist when telemetry is present');
+
+        $cacheSegment = array_values($cacheSegments)[0];
+        self::assertStringContainsString('↻', $cacheSegment->text, 'Cache segment should contain ↻ symbol');
+        self::assertStringContainsString('78%', $cacheSegment->text, 'Cache segment should show 78%');
+        self::assertSame(ThemeColorEnum::Success, $cacheSegment->color);
+    }
+
+    #[Test]
+    public function testCacheHitSegmentAbsentWhenTelemetryIsAbsent(): void
+    {
+        $state = $this->state;
+        $state->footerModel = 'test-model';
+        $state->contextWindow = 32768;
+
+        // No cache telemetry set.
+        self::assertFalse($state->usage->hasCacheTelemetry);
+        self::assertSame(0, $state->usage->cacheReadTokens);
+
+        $provider = new FooterStateSegmentProvider($state);
+        $segments = $provider->getSegments();
+
+        // No segment with priority 12 should exist.
+        $cacheSegments = array_filter(
+            $segments,
+            static fn (FooterSegment $s): bool => 12 === $s->priority,
+        );
+        self::assertCount(0, $cacheSegments, 'Cache segment should NOT exist when telemetry is absent');
+    }
+
+    #[Test]
+    public function testContextWindowSegmentMovedToPriority13(): void
+    {
+        $state = $this->state;
+        $state->footerModel = 'test-model';
+        $state->contextWindow = 32768;
+        $state->usage->latestInputTokens = 5000;
+
+        $provider = new FooterStateSegmentProvider($state);
+        $segments = $provider->getSegments();
+
+        // Context window segment should now be at priority 13.
+        $ctxSegments = array_filter(
+            $segments,
+            static fn (FooterSegment $s): bool => 13 === $s->priority,
+        );
+        self::assertCount(1, $ctxSegments, 'Context window segment should be at priority 13');
     }
 }

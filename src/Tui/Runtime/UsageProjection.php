@@ -15,6 +15,10 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
  * llmEndTime, latestInputTokens). Per-turn fields are reset on each new
  * turn via resetTurn().
  *
+ * Cache-read / cache-creation tokens are session-level accumulators that
+ * survive resetTurn().  The cache-hit percentage is derived from
+ * cache-read tokens divided by accumulated input tokens.
+ *
  * Extracted from RuntimeEventPoller::extractFooterUsage().
  */
 final class UsageProjection
@@ -41,11 +45,40 @@ final class UsageProjection
     public int $latestInputTokens = 0;
 
     /**
+     * Accumulated cache-read tokens across the session (not reset per-turn).
+     *
+     * When a provider reports cache-read telemetry (either explicitly via
+     * cache_read_tokens or via the aggregate cached_tokens field), these
+     * tokens are accumulated here to compute the session-level cache-hit %.
+     */
+    public int $cacheReadTokens = 0;
+
+    /**
+     * Accumulated cache-creation tokens across the session (not reset per-turn).
+     *
+     * Only populated when the provider explicitly reports cache-creation
+     * telemetry (cache_creation_tokens).
+     */
+    public int $cacheCreationTokens = 0;
+
+    /**
+     * Whether any cache-read telemetry has been seen this session.
+     *
+     * Set to true on the first {@see AssistantMessageCompleted} event
+     * whose usage payload contains a cache_read_tokens (or cached_tokens
+     * fallback) key with a non-null value.  Used by the footer to decide
+     * whether to show the cache-hit segment: absent telemetry shows
+     * nothing; reported zero cache-read tokens shows 0%.
+     */
+    public bool $hasCacheTelemetry = false;
+
+    /**
      * Reset all per-turn metrics for a new turn.
      *
      * Called by the poller when a TurnStarted event arrives.
-     * Session-level fields (inputTokens, outputTokens, totalCost)
-     * are NOT reset — they accumulate across the entire session.
+     * Session-level fields (inputTokens, outputTokens, totalCost,
+     * cacheReadTokens, cacheCreationTokens) are NOT reset — they
+     * accumulate across the entire session.
      */
     public function resetTurn(): void
     {
@@ -56,6 +89,8 @@ final class UsageProjection
         // window percentage footer does not flicker to 0% during Working...
         // between TurnStarted and the first AssistantMessageCompleted.
         // Fresh turn usage will overwrite this when it arrives.
+        // cacheReadTokens, cacheCreationTokens, and hasCacheTelemetry
+        // are session-level and intentionally NOT reset.
     }
 
     /**
@@ -89,9 +124,46 @@ final class UsageProjection
         // Per-turn output tokens for t/s calculation
         $this->turnOutputTokens += $outputTokens;
 
+        // ── Cache-read tokens (session-level accumulation) ──
+        // Cache-read telemetry takes priority; fall back to the aggregate
+        // cached_tokens field for providers that don't split read vs creation.
+        $turnCacheRead = $usage['cache_read_tokens'] ?? $usage['cached_tokens'] ?? null;
+        if (null !== $turnCacheRead) {
+            $this->cacheReadTokens += (int) $turnCacheRead;
+            $this->hasCacheTelemetry = true;
+        }
+
+        // Cache-creation tokens: only accumulate when explicitly reported
+        $turnCacheCreation = $usage['cache_creation_tokens'] ?? null;
+        if (null !== $turnCacheCreation) {
+            $this->cacheCreationTokens += (int) $turnCacheCreation;
+        }
+
         $cost = $usage['cost'] ?? $usage['total_cost'] ?? null;
         if (\is_float($cost) || \is_int($cost)) {
             $this->totalCost += (float) $cost;
         }
+    }
+
+    /**
+     * Return the session-level cache-read hit percentage.
+     *
+     * Returns null when no cache-read telemetry has been observed
+     * this session (the footer hides the cache segment entirely).
+     *
+     * When telemetry exists but input tokens are zero, returns null
+     * to avoid division by zero.  When telemetry exists and input
+     * tokens > 0, returns (cacheReadTokens / inputTokens) * 100,
+     * capped at 100.
+     */
+    public function cacheReadHitPercentage(): ?float
+    {
+        if (!$this->hasCacheTelemetry || $this->inputTokens <= 0) {
+            return null;
+        }
+
+        $pct = ($this->cacheReadTokens / $this->inputTokens) * 100.0;
+
+        return min(100.0, max(0.0, $pct));
     }
 }

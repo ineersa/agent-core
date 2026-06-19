@@ -48,6 +48,10 @@ final class FixtureReplayModelClient implements ModelClientInterface
             'token_usage' => new FixtureTokenUsage(
                 promptTokens: $this->fixture['usage']['input_tokens'] ?? null,
                 completionTokens: $this->fixture['usage']['output_tokens'] ?? null,
+                cachedTokens: $this->fixture['usage']['cached_tokens'] ?? null,
+                cacheReadTokens: $this->fixture['usage']['cache_read_tokens']
+                    ?? $this->fixture['usage']['cached_tokens'] ?? null,
+                cacheCreationTokens: $this->fixture['usage']['cache_creation_tokens'] ?? null,
                 totalTokens: $this->fixture['usage']['total_tokens'] ?? null,
             ),
         ]);
@@ -57,15 +61,19 @@ final class FixtureReplayModelClient implements ModelClientInterface
 /**
  * Token usage DTO that returns fixture usage values.
  *
- * MAINT-05C note: tool/thinking token fields are not populated from
- * current fixtures.  If future fixtures add these fields, extend this
- * class or add a factory that reads them.
+ * Reads prompt-cache fields (cached_tokens, cache_read_tokens,
+ * cache_creation_tokens) from the fixture so the real
+ * LlmPlatformAdapter → UsageProjection → FooterStateSegmentProvider
+ * path receives cache telemetry in replay-backed TUI E2E tests.
  */
 final readonly class FixtureTokenUsage implements \Symfony\AI\Platform\TokenUsage\TokenUsageInterface
 {
     public function __construct(
         private ?int $promptTokens = null,
         private ?int $completionTokens = null,
+        private ?int $cachedTokens = null,
+        private ?int $cacheReadTokens = null,
+        private ?int $cacheCreationTokens = null,
         private ?int $totalTokens = null,
     ) {
     }
@@ -92,17 +100,17 @@ final readonly class FixtureTokenUsage implements \Symfony\AI\Platform\TokenUsag
 
     public function getCachedTokens(): ?int
     {
-        return null;
+        return $this->cachedTokens;
     }
 
     public function getCacheCreationTokens(): ?int
     {
-        return null;
+        return $this->cacheCreationTokens;
     }
 
     public function getCacheReadTokens(): ?int
     {
-        return null;
+        return $this->cacheReadTokens;
     }
 
     public function getRemainingTokens(): ?int

@@ -370,6 +370,16 @@ final class TuiJourneyE2eTest extends TestCase
         // After the first prompt submission, the session should exist.
         $sessionCapture = $this->tmux->capturePlainWithHistory($pane, 2000);
         self::assertStringContainsString('session ', $sessionCapture, 'Session ID should appear in footer after prompt submission');
+
+        // Cache-hit percentage must appear in the footer when the
+        // replay fixture includes cache_read_tokens telemetry.
+        // The fixture reports 100 input_tokens with 78 cache_read_tokens
+        // → footer should show "↻ 78%".
+        self::assertStringContainsString(
+            '↻ 78%',
+            $sessionCapture,
+            'Footer must show cache-hit percentage (↻ 78%) when replay fixture provides cache telemetry',
+        );
     }
 
     /**
