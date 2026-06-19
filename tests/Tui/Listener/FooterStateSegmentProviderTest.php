@@ -195,21 +195,42 @@ class FooterStateSegmentProviderTest extends TestCase
     }
 
     #[Test]
-    public function testContextWindowSegmentMovedToPriority13(): void
+    public function testContextWindowSegmentOrderedAfterCacheSegment(): void
     {
         $state = $this->state;
         $state->footerModel = 'test-model';
         $state->contextWindow = 32768;
         $state->usage->latestInputTokens = 5000;
 
+        // Enable cache telemetry so both cache and context segments appear.
+        $state->usage->inputTokens = 100;
+        $state->usage->cacheReadTokens = 50;
+        $state->usage->hasCacheTelemetry = true;
+
         $provider = new FooterStateSegmentProvider($state);
         $segments = $provider->getSegments();
 
-        // Context window segment should now be at priority 13.
+        // Find cache and context segments by their distinctive text.
+        $cacheSegments = array_filter(
+            $segments,
+            static fn (FooterSegment $s): bool => str_starts_with($s->text, '↻'),
+        );
         $ctxSegments = array_filter(
             $segments,
-            static fn (FooterSegment $s): bool => 13 === $s->priority,
+            static fn (FooterSegment $s): bool => str_contains($s->text, '/') && str_contains($s->text, '%'),
         );
-        self::assertCount(1, $ctxSegments, 'Context window segment should be at priority 13');
+
+        self::assertCount(1, $cacheSegments, 'Cache segment should exist when telemetry is present');
+        self::assertCount(1, $ctxSegments, 'Context window segment should exist');
+
+        $cacheSegment = array_values($cacheSegments)[0];
+        $ctxSegment = array_values($ctxSegments)[0];
+
+        // Cache segment must render before the context window segment.
+        self::assertLessThan(
+            $ctxSegment->priority,
+            $cacheSegment->priority,
+            'Cache segment priority must be less than context window priority (cache renders first)',
+        );
     }
 }

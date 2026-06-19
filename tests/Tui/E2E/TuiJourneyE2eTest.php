@@ -375,9 +375,20 @@ final class TuiJourneyE2eTest extends TestCase
         // replay fixture includes cache_read_tokens telemetry.
         // The fixture reports 100 input_tokens with 78 cache_read_tokens
         // → footer should show "↻ 78%".
+        //
+        // Use waitForCallback with full scrollback instead of a single
+        // immediate capture to give the TUI poller time to accumulate
+        // and render the UsageProjection cache segment in the footer.
+        $footerCapture = $this->tmux->waitForCallback(
+            $pane,
+            static fn (string $cap): bool => str_contains($cap, '↻ 78%'),
+            timeout: 5.0,
+            message: 'Footer cache-hit segment (↻ 78%) did not appear after model replay',
+            history: 2000,
+        );
         self::assertStringContainsString(
             '↻ 78%',
-            $sessionCapture,
+            $footerCapture,
             'Footer must show cache-hit percentage (↻ 78%) when replay fixture provides cache telemetry',
         );
     }

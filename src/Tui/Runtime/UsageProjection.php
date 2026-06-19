@@ -126,7 +126,9 @@ final class UsageProjection
 
         // ── Cache-read tokens (session-level accumulation) ──
         // Cache-read telemetry takes priority; fall back to the aggregate
-        // cached_tokens field for providers that don't split read vs creation.
+        // cached_tokens field for runtime events produced by alternate or
+        // older event producers that only have aggregate cached-token
+        // telemetry and do not split cache-read vs cache-creation.
         $turnCacheRead = $usage['cache_read_tokens'] ?? $usage['cached_tokens'] ?? null;
         if (null !== $turnCacheRead) {
             $this->cacheReadTokens += (int) $turnCacheRead;
@@ -147,6 +149,11 @@ final class UsageProjection
 
     /**
      * Return the session-level cache-read hit percentage.
+     *
+     * This is a session-cumulative metric (not per-turn): it divides
+     * all accumulated cacheReadTokens by all accumulated inputTokens
+     * since the session began.  The result is a running average across
+     * every completed turn.
      *
      * Returns null when no cache-read telemetry has been observed
      * this session (the footer hides the cache segment entirely).
