@@ -564,8 +564,29 @@ services:
       $commandBus: '@agent.command.bus'
 
   # MCP lifecycle message handler is auto-discovered via #[AsMessageHandler]
-  # and autowired.  Its McpConfigLoader dependency is now satisfiable.
-  Ineersa\CodingAgent\Mcp\Handler\McpInitializeSessionHandler: ~
+  # and autowired.  McpConnectionManagerInterface is resolved via the
+  # alias above; McpToolNameMapper autowires; only McpToolCatalogStoreInterface
+  # needs explicit wiring (SessionFileMcpToolCatalogStore with projectCwd).
+  Ineersa\CodingAgent\Mcp\Handler\McpInitializeSessionHandler:
+    arguments:
+      $catalogStore: '@Ineersa\CodingAgent\Mcp\Catalog\SessionFileMcpToolCatalogStore'
+
+  ## MCP connection manager (broker-owned, one client per run/server)
+  Ineersa\CodingAgent\Mcp\Client\McpConnectionManager: ~
+
+  # Alias the interface so handlers depend on the abstraction.
+  Ineersa\CodingAgent\Mcp\Client\McpConnectionManagerInterface:
+    alias: Ineersa\CodingAgent\Mcp\Client\McpConnectionManager
+  ## MCP SDK client factory
+  Ineersa\CodingAgent\Mcp\Client\McpSdkClientFactory: ~
+
+  ## MCP tool name mapper
+  Ineersa\CodingAgent\Mcp\Catalog\McpToolNameMapper: ~
+
+  ## MCP session-file catalog store — needs explicit $projectCwd
+  Ineersa\CodingAgent\Mcp\Catalog\SessionFileMcpToolCatalogStore:
+    arguments:
+      $projectCwd: '%app.cwd%'
 
   # Inject MCP lifecycle dispatcher into the session client so
   # start/resume both trigger MCP initialize.
