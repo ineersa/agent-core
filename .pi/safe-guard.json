@@ -1,7 +1,8 @@
 {
   "allowCommandPatterns": [],
   "allowWriteOutsideCwd": [
-    "/home/ineersa/projects/agent-core-worktrees"
+    "/home/ineersa/projects/agent-core-worktrees",
+    "/home/ineersa/projects/agent-core-tasks"
   ],
   "allowDestructiveInPaths": [],
   "protectedReadPatterns": [],
