@@ -74,6 +74,7 @@ final class McpInitializeSessionHandler
     {
         $logContext = [
             'component' => 'mcp',
+            'event_type' => 'session.initialize',
             'mcp_event' => 'session.initialize',
             'run_id' => $message->runId,
             'session_id' => $message->runId,
@@ -100,8 +101,10 @@ final class McpInitializeSessionHandler
 
                     $this->logger->debug('MCP partial catalog written', [
                         'component' => 'mcp',
+                        'event_type' => 'catalog.partial_written',
                         'mcp_event' => 'catalog.partial_written',
                         'run_id' => $message->runId,
+                        'session_id' => $message->runId,
                         'server_count' => \count($partialCatalog->servers),
                         'tool_count' => $this->countTools($partialCatalog),
                     ]);
@@ -118,8 +121,10 @@ final class McpInitializeSessionHandler
 
             $this->logger->info('MCP catalog written', [
                 'component' => 'mcp',
+                'event_type' => 'catalog.written',
                 'mcp_event' => 'catalog.written',
                 'run_id' => $message->runId,
+                'session_id' => $message->runId,
                 'server_count' => \count($catalog->servers),
                 'tool_count' => $this->countTools($catalog),
                 'generation' => $catalog->generation,
@@ -152,8 +157,10 @@ final class McpInitializeSessionHandler
     {
         $logContext = [
             'component' => 'mcp',
+            'event_type' => 'catalog.refresh',
             'mcp_event' => 'catalog.refresh',
             'run_id' => $message->runId,
+            'session_id' => $message->runId,
             'correlation_id' => '' !== $message->correlationId ? $message->correlationId : null,
         ];
 
@@ -169,8 +176,10 @@ final class McpInitializeSessionHandler
 
                     $this->logger->debug('MCP partial catalog written', [
                         'component' => 'mcp',
+                        'event_type' => 'catalog.partial_written',
                         'mcp_event' => 'catalog.partial_written',
                         'run_id' => $message->runId,
+                        'session_id' => $message->runId,
                         'server_count' => \count($partialCatalog->servers),
                         'tool_count' => $this->countTools($partialCatalog),
                     ]);
@@ -212,8 +221,10 @@ final class McpInitializeSessionHandler
     {
         $this->logger->debug('MCP session disconnect — closing broker clients', [
             'component' => 'mcp',
+            'event_type' => 'session.disconnect',
             'mcp_event' => 'session.disconnect',
             'run_id' => $message->runId,
+            'session_id' => $message->runId,
             'correlation_id' => '' !== $message->correlationId ? $message->correlationId : null,
         ]);
 
@@ -240,7 +251,7 @@ final class McpInitializeSessionHandler
             }
 
             if ('connected' === $result['status']) {
-                $tools = $this->mapTools($serverName, $result['tools'], $excludeTools, $globalSeenNames);
+                $tools = $this->mapTools($serverName, $result['tools'], $excludeTools, $globalSeenNames, $runId);
 
                 $servers[$serverName] = new McpServerCatalogEntryDTO(
                     serverName: $serverName,
@@ -283,7 +294,7 @@ final class McpInitializeSessionHandler
      *
      * @return list<McpToolDefinitionDTO>
      */
-    private function mapTools(string $serverName, array $rawTools, array $excludeTools, array &$globalSeenNames): array
+    private function mapTools(string $serverName, array $rawTools, array $excludeTools, array &$globalSeenNames, string $runId): array
     {
         $tools = [];
 
@@ -297,7 +308,10 @@ final class McpInitializeSessionHandler
             if (\in_array($mcpName, $excludeTools, true)) {
                 $this->logger->debug('MCP tool excluded by filter', [
                     'component' => 'mcp',
+                    'event_type' => 'tool.excluded',
                     'mcp_event' => 'tool.excluded',
+                    'run_id' => $runId,
+                    'session_id' => $runId,
                     'server_name' => $serverName,
                     'mcp_tool_name' => $mcpName,
                 ]);
@@ -312,7 +326,10 @@ final class McpInitializeSessionHandler
             if (isset($globalSeenNames[$hatfieldName])) {
                 $this->logger->warning('MCP tool name collision — skipping duplicate', [
                     'component' => 'mcp',
+                    'event_type' => 'tool.duplicate',
                     'mcp_event' => 'tool.duplicate',
+                    'run_id' => $runId,
+                    'session_id' => $runId,
                     'server_name' => $serverName,
                     'hatfield_name' => $hatfieldName,
                     'mcp_tool_name' => $mcpName,
@@ -419,8 +436,10 @@ final class McpInitializeSessionHandler
         } catch (\Throwable $inner) {
             $this->logger->warning('MCP catalog invalidation write also failed — stale tools may persist', [
                 'component' => 'mcp',
+                'event_type' => 'catalog.invalidation_failed',
                 'mcp_event' => 'catalog.invalidation_failed',
                 'run_id' => $runId,
+                'session_id' => $runId,
                 'error_class' => $inner::class,
                 'error_message' => $this->sanitizeErrorMsg($inner),
             ]);

@@ -192,16 +192,20 @@ final class McpConnectionManager implements McpConnectionManagerInterface
                 $this->clients[$key]->disconnect();
                 $this->logger->debug('MCP server disconnected', [
                     'component' => 'mcp',
+                    'event_type' => 'server.disconnected',
                     'mcp_event' => 'server.disconnected',
                     'run_id' => $runId,
+                    'session_id' => $runId,
                     'server_name' => $serverName,
                 ]);
             } catch (\Throwable $e) {
                 // Disconnect failure is non-fatal — log and continue cleanup.
                 $this->logger->warning('MCP server disconnect error', [
                     'component' => 'mcp',
+                    'event_type' => 'server.disconnect_failed',
                     'mcp_event' => 'server.disconnect_failed',
                     'run_id' => $runId,
+                    'session_id' => $runId,
                     'server_name' => $serverName,
                     'error_class' => $e::class,
                     'error_message' => self::sanitizeLogMessage($e->getMessage()),
@@ -227,15 +231,19 @@ final class McpConnectionManager implements McpConnectionManagerInterface
                 $client->disconnect();
                 $this->logger->debug('MCP server disconnected (shutdown)', [
                     'component' => 'mcp',
+                    'event_type' => 'server.disconnected',
                     'mcp_event' => 'server.disconnected',
                     'run_id' => $runId,
+                    'session_id' => $runId,
                     'server_name' => $serverName,
                 ]);
             } catch (\Throwable $e) {
                 $this->logger->warning('MCP server disconnect error during shutdown', [
                     'component' => 'mcp',
+                    'event_type' => 'server.disconnect_failed',
                     'mcp_event' => 'server.disconnect_failed',
                     'run_id' => $runId,
+                    'session_id' => $runId,
                     'server_name' => $serverName,
                     'error_class' => $e::class,
                     'error_message' => self::sanitizeLogMessage($e->getMessage()),
