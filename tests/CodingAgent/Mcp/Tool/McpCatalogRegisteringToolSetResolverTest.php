@@ -66,8 +66,7 @@ final class McpCatalogRegisteringToolSetResolverTest extends TestCase
 
         $store = $this->makeStore(['run-xyz' => $catalog]);
         $registrar = new McpToolRegistrar($store, $registry, new TestLogger());
-        $wrapper = new McpCatalogRegisteringToolSetResolver($inner, $registrar);
-
+        $wrapper = new McpCatalogRegisteringToolSetResolver($inner, $registrar, new TestLogger());
         $result = $wrapper->resolve('toolset:run:run-xyz:turn:1', turnNo: 1, runId: 'run-xyz');
 
         $this->assertContains('srv_calc', $result->toolNames, 'MCP tool should be in resolved toolNames');
@@ -108,8 +107,7 @@ final class McpCatalogRegisteringToolSetResolverTest extends TestCase
 
         $store = $this->makeStore([]);
         $registrar = new McpToolRegistrar($store, $registry, new TestLogger());
-        $wrapper = new McpCatalogRegisteringToolSetResolver($inner, $registrar);
-
+        $wrapper = new McpCatalogRegisteringToolSetResolver($inner, $registrar, new TestLogger());
         // null runId — registration should be skipped
         $result = $wrapper->resolve('toolset:run:unknown:turn:1');
 
@@ -138,11 +136,82 @@ final class McpCatalogRegisteringToolSetResolverTest extends TestCase
         // Store has no catalog — read returns null
         $store = $this->makeStore([]);
         $registrar = new McpToolRegistrar($store, $registry, new TestLogger());
-        $wrapper = new McpCatalogRegisteringToolSetResolver($inner, $registrar);
-
+        $wrapper = new McpCatalogRegisteringToolSetResolver($inner, $registrar, new TestLogger());
         $result = $wrapper->resolve('toolset:run:no-catalog:turn:1', turnNo: 1, runId: 'no-catalog');
 
         $this->assertSame([], $result->toolNames);
+        $this->assertSame([], $result->toolNames);
+    }
+
+    /**
+     * Test: When registerForRun throws, the wrapper catches the exception,
+     * logs a structured warning, and still delegates to the inner resolver.
+     * The resolver contract requires returning an ActiveToolSet, not throwing.
+     */
+    public function testCatchesRegistrarExceptionAndDelegates(): void
+    {
+        $registry = new ToolRegistry();
+        // Add a permanent tool so delegate returns something meaningful
+        $registry->registerTool(
+            name: 'perm',
+            description: 'Permanent',
+            parametersJsonSchema: [],
+            handler: new class implements \Ineersa\CodingAgent\Tool\ToolHandlerInterface {
+                public function __invoke(array $arguments = []): string
+                {
+                    return 'perm';
+                }
+            },
+            promptLine: 'perm: Perm',
+        );
+
+        $inner = new class($registry) implements ToolSetResolverInterface {
+            public function __construct(private ToolRegistry $registry)
+            {
+            }
+
+            public function resolve(string $toolsRef, ?int $turnNo = null, ?string $runId = null): ActiveToolSet
+            {
+                return new ActiveToolSet(
+                    toolNames: $this->registry->activeToolNames(),
+                    allowListNames: $this->registry->activeToolNames(),
+                    executionModes: [],
+                );
+            }
+        };
+
+        // Store throws on read to simulate a catastrophic catalog failure
+        $failingStore = new class implements McpToolCatalogStoreInterface {
+            public function write(string $runId, McpToolCatalogDTO $catalog): void
+            {
+            }
+
+            public function read(string $runId): ?McpToolCatalogDTO
+            {
+                throw new \RuntimeException('Catalog storage I/O failure');
+            }
+        };
+
+        $logger = new TestLogger();
+        $registrar = new McpToolRegistrar($failingStore, $registry, $logger);
+        $wrapper = new McpCatalogRegisteringToolSetResolver($inner, $registrar, $logger);
+
+        // Must not throw — returns inner resolver result
+        $result = $wrapper->resolve('toolset:failure:turn:1', turnNo: 1, runId: 'run-fail');
+
+        $this->assertSame(['perm'], $result->toolNames, 'Inner resolver result should be returned');
+
+        // Verify structured warning was logged
+        $warnings = array_values(array_filter(
+            $logger->records,
+            static fn (array $r): bool => 'warning' === $r['level']
+                && ($r['context']['mcp_event'] ?? '') === 'resolver.register_failed',
+        ));
+        $this->assertCount(1, $warnings, 'Expected one resolver.register_failed warning');
+        $this->assertSame('run-fail', $warnings[0]['context']['run_id']);
+        $this->assertSame('run-fail', $warnings[0]['context']['session_id']);
+        $this->assertSame('RuntimeException', $warnings[0]['context']['error_class']);
+        $this->assertStringContainsString('Catalog storage I/O failure', $warnings[0]['context']['error_message']);
     }
 
     /** @param array<string, McpToolCatalogDTO> $data */

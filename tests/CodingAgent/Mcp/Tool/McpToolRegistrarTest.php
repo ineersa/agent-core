@@ -327,6 +327,8 @@ final class McpToolRegistrarTest extends TestCase
         $this->assertSame('target', $warnings[0]['context']['mcp_tool_name']);
         $this->assertSame('collision_target', $warnings[0]['context']['hatfield_tool_name']);
         $this->assertSame('tool_name_collision', $warnings[0]['context']['reason']);
+        $this->assertSame('run-collide', $warnings[0]['context']['run_id']);
+        $this->assertSame('run-collide', $warnings[0]['context']['session_id']);
     }
 
     public function testCollisionWithUnrelatedDynamicToolIsAlsoSkipped(): void
@@ -375,6 +377,89 @@ final class McpToolRegistrarTest extends TestCase
                 && ($r['context']['mcp_event'] ?? '') === 'tool.collision',
         ));
         $this->assertCount(1, $warnings);
+        $this->assertSame('run-dyn-collide', $warnings[0]['context']['run_id']);
+        $this->assertSame('run-dyn-collide', $warnings[0]['context']['session_id']);
+    }
+
+    /**
+     * Test: A permanent tool hidden by visibility filtering (allowlist
+     * excluding its name) bypasses the toolDefinition() collision pre-check
+     * (which returns null for hidden tools), but addDynamicTool still throws
+     * because the permanent tool exists.  The registrar must catch that
+     * exception and skip the collided tool while still registering non-
+     * colliding tools from the same server.
+     *
+     * This exercises the catch-and-continue path in registerOneTool for
+     * hidden permanent-tool collisions.
+     */
+    public function testSkipsHiddenPermanentCollisionAndLogsWarning(): void
+    {
+        // Register a permanent tool, then hide it via exclusions so
+        // toolDefinition() returns null but addDynamicTool still throws.
+        $this->registry->registerTool(
+            name: 'hidden_perm',
+            description: 'Hidden permanent tool',
+            parametersJsonSchema: [],
+            handler: $this->dummyHandler(),
+            promptLine: 'hidden_perm: Hidden',
+        );
+        $this->registry->setExcludedToolNames(['hidden_perm']);
+
+        $catalog = new McpToolCatalogDTO(
+            runId: 'run-hidden',
+            servers: [
+                'srv' => new McpServerCatalogEntryDTO(
+                    serverName: 'srv',
+                    transport: 'stdio',
+                    status: McpServerCatalogStatusEnum::CONNECTED,
+                    tools: [
+                        new McpToolDefinitionDTO(
+                            hatfieldName: 'hidden_perm',  // collides with hidden permanent
+                            serverName: 'srv',
+                            mcpName: 'hidden',
+                            description: 'Collision',
+                            inputSchema: [],
+                        ),
+                        new McpToolDefinitionDTO(
+                            hatfieldName: 'srv_good',
+                            serverName: 'srv',
+                            mcpName: 'good',
+                            description: 'Non-colliding',
+                            inputSchema: [],
+                        ),
+                    ],
+                ),
+            ],
+        );
+
+        $store = $this->makeCatalogStore(['run-hidden' => $catalog]);
+        $registrar = new McpToolRegistrar($store, $this->registry, $this->logger);
+
+        $registrar->registerForRun('run-hidden');
+
+        // hidden_perm should NOT be registered as a dynamic tool
+        // (the collision was caught); but srv_good should be registered.
+        $dynamicTools = $this->registry->getDynamicTools();
+        $dynamicNames = array_map(static fn (array $t): string => $t['name'], $dynamicTools);
+        $this->assertNotContains('hidden_perm', $dynamicNames, 'Hidden permanent collision should not be registered as dynamic');
+
+        // Non-colliding MCP tool should be registered
+        $names = $this->registry->activeToolNames();
+        // hidden_perm is excluded from visibility but srv_good should be visible
+        $this->assertNotContains('hidden_perm', $names, 'Hidden permanent should not appear in active names');
+        $this->assertContains('srv_good', $names, 'Non-colliding MCP tool should register and be visible');
+
+        // Verify register_failed warning was logged with run_id/session_id
+        $warnings = array_values(array_filter(
+            $this->logger->records,
+            static fn (array $r): bool => 'warning' === $r['level']
+                && ($r['context']['mcp_event'] ?? '') === 'tool.register_failed',
+        ));
+        $this->assertCount(1, $warnings, 'Expected one register_failed warning for hidden collision');
+        $this->assertSame('hidden_perm', $warnings[0]['context']['hatfield_tool_name']);
+        $this->assertSame('srv', $warnings[0]['context']['server_name']);
+        $this->assertSame('run-hidden', $warnings[0]['context']['run_id']);
+        $this->assertSame('run-hidden', $warnings[0]['context']['session_id']);
     }
 
     /* ── Helpers ── */

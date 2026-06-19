@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Mcp\Tool;
 
 use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
+use Psr\Log\LoggerInterface;
 
 /**
  * Decorates CodingAgentToolSetResolver so MCP dynamic tools are
@@ -23,12 +24,17 @@ use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
  *  - Command handler before LlmStepResultHandler resolves schemas
  *    and execution policies.
  *  - Tool worker allowlist path before toolbox execution.
+ *
+ * MCP registration failures are caught and logged — the resolver
+ * contract requires returning a (possibly empty) ActiveToolSet, not
+ * throwing, because MCP catalog registration is optional.
  */
 final readonly class McpCatalogRegisteringToolSetResolver implements ToolSetResolverInterface
 {
     public function __construct(
         private ToolSetResolverInterface $inner,
         private McpToolRegistrar $mcpToolRegistrar,
+        private LoggerInterface $logger,
     ) {
     }
 
@@ -39,7 +45,30 @@ final readonly class McpCatalogRegisteringToolSetResolver implements ToolSetReso
         // being called outside a run context (e.g. container validation);
         // MCP tools are session-scoped and not relevant there.
         if (null !== $runId && '' !== $runId) {
-            $this->mcpToolRegistrar->registerForRun($runId);
+            try {
+                $this->mcpToolRegistrar->registerForRun($runId);
+            } catch (\Throwable $e) {
+                // MCP catalog registration is optional — a failure
+                // here must not prevent the resolver from returning
+                // a valid toolset.  Log a structured warning and
+                // fall through to the inner resolver.
+                $this->logger->warning(
+                    \sprintf(
+                        'MCP tool registration failed for run "%s": %s',
+                        $runId,
+                        $e->getMessage(),
+                    ),
+                    [
+                        'component' => 'mcp',
+                        'mcp_event' => 'resolver.register_failed',
+                        'event_type' => 'resolver.register_failed',
+                        'run_id' => $runId,
+                        'session_id' => $runId,
+                        'error_class' => $e::class,
+                        'error_message' => $e->getMessage(),
+                    ],
+                );
+            }
         }
 
         return $this->inner->resolve($toolsRef, $turnNo, $runId);

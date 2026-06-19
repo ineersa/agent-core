@@ -72,7 +72,7 @@ final class McpToolRegistrar
             return;
         }
 
-        $this->registerFromCatalog($catalog);
+        $this->registerFromCatalog($catalog, $runId);
     }
 
     /**
@@ -95,7 +95,7 @@ final class McpToolRegistrar
      * Iterate connected catalog servers and register their tools as
      * dynamic registry entries.
      */
-    private function registerFromCatalog(\Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogDTO $catalog): void
+    private function registerFromCatalog(\Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogDTO $catalog, string $runId): void
     {
         foreach ($catalog->servers as $serverEntry) {
             if (McpServerCatalogStatusEnum::CONNECTED !== $serverEntry->status) {
@@ -104,7 +104,7 @@ final class McpToolRegistrar
                 continue;
             }
 
-            $this->registerServerTools($serverEntry);
+            $this->registerServerTools($serverEntry, $runId);
         }
     }
 
@@ -116,9 +116,10 @@ final class McpToolRegistrar
      */
     private function registerServerTools(
         \Ineersa\CodingAgent\Mcp\Catalog\McpServerCatalogEntryDTO $serverEntry,
+        string $runId,
     ): void {
         foreach ($serverEntry->tools as $toolDef) {
-            $this->registerOneTool($toolDef, $serverEntry->serverName);
+            $this->registerOneTool($toolDef, $serverEntry->serverName, $runId);
         }
     }
 
@@ -134,12 +135,18 @@ final class McpToolRegistrar
     private function registerOneTool(
         \Ineersa\CodingAgent\Mcp\Catalog\McpToolDefinitionDTO $toolDef,
         string $serverName,
+        string $runId,
     ): void {
         $hatfieldName = $toolDef->hatfieldName;
 
         // Collision check: if the name exists after we removed our own
         // stale entries, it belongs to someone else (permanent tool or
         // unrelated dynamic tool).  Skip with structured warning.
+        //
+        // Note: toolDefinition() applies visibility filtering
+        // (allowlist/denylist).  A hidden permanent tool may pass
+        // this check but still cause addDynamicTool() to throw.
+        // The catch block below handles that path.
         if (null !== $this->toolRegistry->toolDefinition($hatfieldName)) {
             $this->logger->warning(
                 \sprintf(
@@ -155,6 +162,8 @@ final class McpToolRegistrar
                     'mcp_tool_name' => $toolDef->mcpName,
                     'hatfield_tool_name' => $hatfieldName,
                     'reason' => 'tool_name_collision',
+                    'run_id' => $runId,
+                    'session_id' => $runId,
                 ],
             );
 
@@ -185,7 +194,9 @@ final class McpToolRegistrar
             $this->ownedNames[$hatfieldName] = true;
         } catch (\Throwable $e) {
             // addDynamicTool rejects permanent/dynamic name collisions
-            // with \InvalidArgumentException.  Log and continue so
+            // with \InvalidArgumentException, including hidden
+            // permanent tools that bypassed the visibility-filtered
+            // toolDefinition() check above.  Log and continue so
             // other tools still register.
             $this->logger->warning(
                 \sprintf(
@@ -201,6 +212,9 @@ final class McpToolRegistrar
                     'mcp_tool_name' => $toolDef->mcpName,
                     'hatfield_tool_name' => $hatfieldName,
                     'error_class' => $e::class,
+                    'error_message' => $e->getMessage(),
+                    'run_id' => $runId,
+                    'session_id' => $runId,
                 ],
             );
         }

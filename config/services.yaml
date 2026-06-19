@@ -428,7 +428,7 @@ services:
     arguments:
       $inner: '@Ineersa\CodingAgent\Tool\CodingAgentToolSetResolver'
       $mcpToolRegistrar: '@Ineersa\CodingAgent\Mcp\Tool\McpToolRegistrar'
-
+      $logger: '@logger'
   Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface:
     alias: Ineersa\CodingAgent\Mcp\Tool\McpCatalogRegisteringToolSetResolver
 
@@ -622,3 +622,9 @@ services:
     arguments:
       $catalogStore: '@Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface'
       $toolRegistry: '@Ineersa\CodingAgent\Tool\ToolRegistryInterface'
+
+  # McpToolHandler is a value object with string constructor args (serverName,
+  # mcpName) — not an autowireable service.  Exclude it from the container
+  # so Symfony DI does not report missing autowiring for its scalar parameters.
+  Ineersa\CodingAgent\Mcp\Tool\McpToolHandler:
+    autowire: false
