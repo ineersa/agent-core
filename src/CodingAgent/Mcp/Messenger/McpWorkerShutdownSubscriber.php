@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Mcp\Messenger;
 
+use Ineersa\CodingAgent\Mcp\Client\McpConnectionManager;
 use Ineersa\CodingAgent\Mcp\Client\McpConnectionManagerInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
@@ -81,7 +82,7 @@ final readonly class McpWorkerShutdownSubscriber
                 'run_id' => $runId,
                 'session_id' => $runId,
                 'error_class' => $e::class,
-                'error_message' => $e->getMessage(),
+                'error_message' => McpConnectionManager::sanitizeLogMessage($e->getMessage()),
             ]);
         }
     }
