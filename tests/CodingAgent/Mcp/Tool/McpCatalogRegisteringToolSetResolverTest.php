@@ -13,6 +13,7 @@ use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogDTO;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolDefinitionDTO;
 use Ineersa\CodingAgent\Mcp\Tool\McpCatalogRegisteringToolSetResolver;
+use Ineersa\CodingAgent\Mcp\Tool\McpToolHandlerFactory;
 use Ineersa\CodingAgent\Mcp\Tool\McpToolRegistrar;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use PHPUnit\Framework\TestCase;
@@ -65,7 +66,7 @@ final class McpCatalogRegisteringToolSetResolverTest extends TestCase
         );
 
         $store = $this->makeStore(['run-xyz' => $catalog]);
-        $registrar = new McpToolRegistrar($store, $registry, new TestLogger());
+        $registrar = new McpToolRegistrar($store, $registry, $this->makeHandlerFactory(), new TestLogger());
         $wrapper = new McpCatalogRegisteringToolSetResolver($inner, $registrar, new TestLogger());
         $result = $wrapper->resolve('toolset:run:run-xyz:turn:1', turnNo: 1, runId: 'run-xyz');
 
@@ -106,7 +107,7 @@ final class McpCatalogRegisteringToolSetResolverTest extends TestCase
         };
 
         $store = $this->makeStore([]);
-        $registrar = new McpToolRegistrar($store, $registry, new TestLogger());
+        $registrar = new McpToolRegistrar($store, $registry, $this->makeHandlerFactory(), new TestLogger());
         $wrapper = new McpCatalogRegisteringToolSetResolver($inner, $registrar, new TestLogger());
         // null runId — registration should be skipped
         $result = $wrapper->resolve('toolset:run:unknown:turn:1');
@@ -135,7 +136,7 @@ final class McpCatalogRegisteringToolSetResolverTest extends TestCase
 
         // Store has no catalog — read returns null
         $store = $this->makeStore([]);
-        $registrar = new McpToolRegistrar($store, $registry, new TestLogger());
+        $registrar = new McpToolRegistrar($store, $registry, $this->makeHandlerFactory(), new TestLogger());
         $wrapper = new McpCatalogRegisteringToolSetResolver($inner, $registrar, new TestLogger());
         $result = $wrapper->resolve('toolset:run:no-catalog:turn:1', turnNo: 1, runId: 'no-catalog');
 
@@ -192,7 +193,7 @@ final class McpCatalogRegisteringToolSetResolverTest extends TestCase
         };
 
         $logger = new TestLogger();
-        $registrar = new McpToolRegistrar($failingStore, $registry, $logger);
+        $registrar = new McpToolRegistrar($failingStore, $registry, $this->makeHandlerFactory(), $logger);
         $wrapper = new McpCatalogRegisteringToolSetResolver($inner, $registrar, $logger);
 
         // Must not throw — returns inner resolver result
@@ -211,6 +212,15 @@ final class McpCatalogRegisteringToolSetResolverTest extends TestCase
         $this->assertSame('run-fail', $warnings[0]['context']['session_id']);
         $this->assertSame('RuntimeException', $warnings[0]['context']['error_class']);
         $this->assertStringContainsString('Catalog storage I/O failure', $warnings[0]['context']['error_message']);
+    }
+
+    private function makeHandlerFactory(): McpToolHandlerFactory
+    {
+        // McpToolInvoker is final and has autowired deps — Reflection is simplest
+        // for registrar-only tests that never invoke the handler.
+        $invoker = (new \ReflectionClass(\Ineersa\CodingAgent\Mcp\Tool\McpToolInvoker::class))->newInstanceWithoutConstructor();
+
+        return new McpToolHandlerFactory($invoker);
     }
 
     /** @param array<string, McpToolCatalogDTO> $data */

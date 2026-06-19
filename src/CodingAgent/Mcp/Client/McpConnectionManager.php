@@ -62,10 +62,7 @@ final class McpConnectionManager implements McpConnectionManagerInterface
     ) {
     }
 
-    /**
-     * @return array<string, array{status: 'connected'|'failed', transport: string, tools: list<array{name: string, description?: string|null, inputSchema: array<string, mixed>}>, errorMessage?: string}>
-     */
-    public function discover(string $runId): array
+    public function discover(string $runId, ?callable $onServerDiscovered = null): array
     {
         $results = [];
 
@@ -74,8 +71,10 @@ final class McpConnectionManager implements McpConnectionManagerInterface
         } catch (\Throwable $e) {
             $this->logger->warning('MCP config load failed during discovery', [
                 'component' => 'mcp',
+                'event_type' => 'discovery.config_failed',
                 'mcp_event' => 'discovery.config_failed',
                 'run_id' => $runId,
+                'session_id' => $runId,
                 'error_class' => $e::class,
                 'error_message' => self::sanitizeLogMessage($e->getMessage()),
             ]);
@@ -84,6 +83,23 @@ final class McpConnectionManager implements McpConnectionManagerInterface
         }
 
         foreach ($config->servers as $serverName => $server) {
+            $transport = null !== $server->transportType
+                ? $server->transportType->value
+                : 'unknown';
+
+            // Log before blocking connect so operators see which server
+            // discovery is in progress — especially important for slow
+            // STDIO servers that can delay overall catalog visibility.
+            $this->logger->info('MCP server discovery starting', [
+                'component' => 'mcp',
+                'event_type' => 'discovery.server_starting',
+                'mcp_event' => 'discovery.server_starting',
+                'run_id' => $runId,
+                'session_id' => $runId,
+                'server_name' => $serverName,
+                'transport' => $transport,
+            ]);
+
             $clientKey = $this->clientKey($runId, $serverName);
 
             try {
@@ -99,10 +115,6 @@ final class McpConnectionManager implements McpConnectionManagerInterface
                 // Keep client alive for future tool calls
                 $this->clients[$clientKey] = $client;
 
-                $transport = null !== $server->transportType
-                    ? $server->transportType->value
-                    : 'unknown';
-
                 $results[$serverName] = [
                     'status' => 'connected',
                     'transport' => $transport,
@@ -111,8 +123,10 @@ final class McpConnectionManager implements McpConnectionManagerInterface
 
                 $this->logger->info('MCP server connected and tools discovered', [
                     'component' => 'mcp',
+                    'event_type' => 'discovery.server_connected',
                     'mcp_event' => 'discovery.server_connected',
                     'run_id' => $runId,
+                    'session_id' => $runId,
                     'server_name' => $serverName,
                     'transport' => $transport,
                     'tool_count' => \count($tools),
@@ -120,10 +134,6 @@ final class McpConnectionManager implements McpConnectionManagerInterface
             } catch (\Throwable $e) {
                 // Server discovery failed — log and continue with next server.
                 // Never include raw config, env values, headers, or tokens.
-                $transport = null !== $server->transportType
-                    ? $server->transportType->value
-                    : 'unknown';
-
                 $results[$serverName] = [
                     'status' => 'failed',
                     'transport' => $transport,
@@ -133,13 +143,36 @@ final class McpConnectionManager implements McpConnectionManagerInterface
 
                 $this->logger->warning('MCP server discovery failed', [
                     'component' => 'mcp',
+                    'event_type' => 'discovery.server_failed',
                     'mcp_event' => 'discovery.server_failed',
                     'run_id' => $runId,
+                    'session_id' => $runId,
                     'server_name' => $serverName,
                     'transport' => $transport,
                     'error_class' => $e::class,
                     'error_message' => self::sanitizeLogMessage($e->getMessage()),
                 ]);
+            }
+
+            // Callback runs OUTSIDE the discovery try/catch — discovery
+            // result is final before the callback fires.  Callback failures
+            // (e.g. catalog write error, stale partial catalog) must never
+            // corrupt $results or propagate out of discover().
+            if (null !== $onServerDiscovered) {
+                try {
+                    $onServerDiscovered($results);
+                } catch (\Throwable $cbError) {
+                    $this->logger->warning('MCP discovery callback failed — partial catalog may be stale', [
+                        'component' => 'mcp',
+                        'event_type' => 'discovery.callback_failed',
+                        'mcp_event' => 'discovery.callback_failed',
+                        'run_id' => $runId,
+                        'session_id' => $runId,
+                        'server_name' => $serverName,
+                        'error_class' => $cbError::class,
+                        'error_message' => self::sanitizeLogMessage($cbError->getMessage()),
+                    ]);
+                }
             }
         }
 
@@ -236,10 +269,134 @@ final class McpConnectionManager implements McpConnectionManagerInterface
     }
 
     /**
+     * {@inheritDoc}
+     *
+     * TODO: Per-call timeout and cancellation are not enforced because the
+     * MCP SDK ({@see McpSdkClientAdapter}) has no per-call timeout or
+     * cancellation hook.  Request timeout is fixed at client construction
+     * time ({@see McpSdkClientFactory::createSdkClient()}) and cannot be
+     * capped by {@see \Ineersa\AgentCore\Application\Tool\ToolContext::timeoutSeconds()}
+     * on a per-call basis.  If/when the SDK adds call-level timeout support,
+     * wire it through {@see McpClientInterface::callTool()} and resume
+     * enforcement here.
+     */
+    public function callTool(string $runId, string $serverName, string $toolName, array $arguments = []): array
+    {
+        $client = $this->getClient($runId, $serverName);
+
+        if (null === $client) {
+            // Attempt reconnect once before failing
+            $this->reconnectServer($runId, $serverName);
+            $client = $this->getClient($runId, $serverName);
+        }
+
+        if (null === $client) {
+            throw new McpClientInvocationException(\sprintf('MCP server "%s" is not connected after reconnect attempt.', $serverName));
+        }
+
+        try {
+            return $client->callTool($toolName, $arguments);
+        } catch (\Throwable $e) {
+            // Log with structured context and sanitized message.
+            $this->logger->error('MCP tool call failed', [
+                'component' => 'mcp',
+                'event_type' => 'tool.call_failed',
+                'mcp_event' => 'tool.call_failed',
+                'run_id' => $runId,
+                'session_id' => $runId,
+                'server_name' => $serverName,
+                'mcp_tool_name' => $toolName,
+                'error_class' => $e::class,
+                'error_message' => self::sanitizeLogMessage($e->getMessage()),
+            ]);
+
+            // Remove the failed client so future attempts trigger reconnect
+            $this->disconnectServer($runId, $serverName);
+
+            // Use sanitized error text so secrets/credentials never
+            // appear in LLM-visible exception messages.
+            throw new McpClientInvocationException(self::sanitizeLogMessage($e->getMessage()), (int) $e->getCode(), $e);
+        }
+    }
+
+    /**
      * Build an internal client-lookup key.
      */
     private function clientKey(string $runId, string $serverName): string
     {
         return $runId.':'.$serverName;
+    }
+
+    /**
+     * Reconnect to a single MCP server for a given run.
+     *
+     * Disconnects any existing client, creates a fresh one,
+     * and connects it.  Used as a one-shot recovery when a live
+     * client is missing at tool-call time.
+     *
+     * On failure the old client is cleaned up and the error is
+     * logged; callers must check getClient() after calling this.
+     */
+    private function reconnectServer(string $runId, string $serverName): void
+    {
+        // Clean up any existing client first
+        $this->disconnectServer($runId, $serverName);
+
+        try {
+            $config = $this->configLoader->load();
+        } catch (\Throwable $e) {
+            $this->logger->warning('MCP config load failed during reconnect', [
+                'component' => 'mcp',
+                'event_type' => 'client.reconnect_config_failed',
+                'mcp_event' => 'client.reconnect_config_failed',
+                'run_id' => $runId,
+                'session_id' => $runId,
+                'server_name' => $serverName,
+                'error_class' => $e::class,
+                'error_message' => self::sanitizeLogMessage($e->getMessage()),
+            ]);
+
+            return;
+        }
+
+        $server = $config->servers[$serverName] ?? null;
+        if (null === $server) {
+            $this->logger->warning('MCP server not found in config during reconnect', [
+                'component' => 'mcp',
+                'event_type' => 'client.reconnect_server_not_found',
+                'mcp_event' => 'client.reconnect_server_not_found',
+                'run_id' => $runId,
+                'session_id' => $runId,
+                'server_name' => $serverName,
+            ]);
+
+            return;
+        }
+
+        try {
+            $client = $this->clientFactory->create($server);
+            $client->connect();
+            $this->clients[$this->clientKey($runId, $serverName)] = $client;
+
+            $this->logger->info('MCP server reconnected for tool call', [
+                'component' => 'mcp',
+                'event_type' => 'client.reconnected',
+                'mcp_event' => 'client.reconnected',
+                'run_id' => $runId,
+                'session_id' => $runId,
+                'server_name' => $serverName,
+            ]);
+        } catch (\Throwable $e) {
+            $this->logger->warning('MCP server reconnect failed', [
+                'component' => 'mcp',
+                'event_type' => 'client.reconnect_failed',
+                'mcp_event' => 'client.reconnect_failed',
+                'run_id' => $runId,
+                'session_id' => $runId,
+                'server_name' => $serverName,
+                'error_class' => $e::class,
+                'error_message' => self::sanitizeLogMessage($e->getMessage()),
+            ]);
+        }
     }
 }

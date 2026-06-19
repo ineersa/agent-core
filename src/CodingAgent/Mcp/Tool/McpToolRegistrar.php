@@ -35,6 +35,7 @@ final class McpToolRegistrar
     public function __construct(
         private readonly McpToolCatalogStoreInterface $catalogStore,
         private readonly ToolRegistryInterface $toolRegistry,
+        private readonly McpToolHandlerFactory $handlerFactory,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -177,7 +178,7 @@ final class McpToolRegistrar
             ? $toolDef->description
             : \sprintf('MCP tool "%s" from server "%s"', $toolDef->mcpName, $serverName);
 
-        $handler = new McpToolHandler(
+        $handler = $this->handlerFactory->create(
             serverName: $serverName,
             mcpName: $toolDef->mcpName,
         );
