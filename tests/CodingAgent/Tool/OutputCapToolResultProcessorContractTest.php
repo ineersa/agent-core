@@ -106,7 +106,7 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
             'Read-capped notice must reference the original file path, not the saved artifact');
         $this->assertStringContainsString('read(path:', $notif['text']);
         $this->assertStringContainsString('limit: 200', $notif['text']);
-        $this->assertStringContainsString('Do not rerun the original command or read the saved output with read', $notif['text']);
+        $this->assertStringContainsString('Do not repeat the original full read or read the saved output with read', $notif['text']);
         $this->assertStringNotContainsString('head -200', $notif['text'],
             'Read-capped notice must NOT suggest shell head on saved artifact');
         $this->assertNotEmpty($notif['id']);

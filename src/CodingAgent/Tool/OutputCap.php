@@ -276,14 +276,15 @@ final class OutputCap
     {
         $charCount = u($fullText)->length();
         $tokenEstimate = (int) ceil($charCount / 4);
+        $escapedPath = escapeshellarg($savedPath);
 
         return <<<STRING
 [Output capped: {$charCount} chars (~{$tokenEstimate} tokens) > {$cap}-char cap]
 Saved full output: {$savedPath}
 
 Next: inspect the saved output, e.g.
-- bash(command: "head -200 '{$savedPath}'")
-- bash(command: "grep -n -- 'PATTERN' '{$savedPath}' | head -50")
+- bash(command: "head -200 {$escapedPath}")
+- bash(command: "grep -n -- 'PATTERN' {$escapedPath} | head -50")
 Do not rerun the original command.
 STRING;
     }

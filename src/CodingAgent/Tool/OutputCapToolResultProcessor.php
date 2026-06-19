@@ -152,19 +152,25 @@ final readonly class OutputCapToolResultProcessor implements ToolResultProcessor
         }
 
         $originalPath = $this->extractPathFromArguments($toolCall->arguments);
+
+        // Only produce read-specific notice when we have the original path.
+        // Without it, fall back to the generic saved-artifact notice (head/grep).
+        if (null === $originalPath) {
+            return $capResult->noticeText;
+        }
+
         $originalOffset = $this->extractOffsetFromArguments($toolCall->arguments);
         $offset = (\is_int($originalOffset) && $originalOffset > 0) ? $originalOffset : 1;
-        $readPath = $originalPath ?? $capResult->savedPath;
-        $escapedGrepPath = escapeshellarg($readPath);
+        $escapedGrepPath = escapeshellarg($originalPath);
 
         return <<<STRING
 [Output capped: {$capResult->charCount} chars (~{$capResult->tokenEstimate} tokens) > {$capResult->cap}-char cap]
 Saved full output: {$capResult->savedPath}
 
 Next: use a focused follow-up, e.g.
-- read(path: "{$readPath}", offset: {$offset}, limit: 200)
+- read(path: "{$originalPath}", offset: {$offset}, limit: 200)
 - bash(command: "grep -n -- 'PATTERN' {$escapedGrepPath} | head -50")
-Do not rerun the original command or read the saved output with read.
+Do not repeat the original full read or read the saved output with read.
 STRING;
     }
 
