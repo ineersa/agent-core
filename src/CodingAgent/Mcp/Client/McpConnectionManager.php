@@ -121,19 +121,14 @@ final class McpConnectionManager implements McpConnectionManagerInterface
 
                 $this->logger->info('MCP server connected and tools discovered', [
                     'component' => 'mcp',
+                    'event_type' => 'discovery.server_connected',
                     'mcp_event' => 'discovery.server_connected',
                     'run_id' => $runId,
+                    'session_id' => $runId,
                     'server_name' => $serverName,
                     'transport' => $transport,
                     'tool_count' => \count($tools),
                 ]);
-
-                // Notify callback so callers can publish a partial catalog
-                // immediately — successful servers are visible before later
-                // slow or failing servers finish discovery.
-                if (null !== $onServerDiscovered) {
-                    $onServerDiscovered($results);
-                }
             } catch (\Throwable $e) {
                 // Server discovery failed — log and continue with next server.
                 // Never include raw config, env values, headers, or tokens.
@@ -146,19 +141,35 @@ final class McpConnectionManager implements McpConnectionManagerInterface
 
                 $this->logger->warning('MCP server discovery failed', [
                     'component' => 'mcp',
+                    'event_type' => 'discovery.server_failed',
                     'mcp_event' => 'discovery.server_failed',
                     'run_id' => $runId,
+                    'session_id' => $runId,
                     'server_name' => $serverName,
                     'transport' => $transport,
                     'error_class' => $e::class,
                     'error_message' => self::sanitizeLogMessage($e->getMessage()),
                 ]);
+            }
 
-                // Publish partial catalog including this failed server
-                // so readers see that discovery is complete for this
-                // server (failed, no tools).
-                if (null !== $onServerDiscovered) {
+            // Callback runs OUTSIDE the discovery try/catch — discovery
+            // result is final before the callback fires.  Callback failures
+            // (e.g. catalog write error, stale partial catalog) must never
+            // corrupt $results or propagate out of discover().
+            if (null !== $onServerDiscovered) {
+                try {
                     $onServerDiscovered($results);
+                } catch (\Throwable $cbError) {
+                    $this->logger->warning('MCP discovery callback failed — partial catalog may be stale', [
+                        'component' => 'mcp',
+                        'event_type' => 'discovery.callback_failed',
+                        'mcp_event' => 'discovery.callback_failed',
+                        'run_id' => $runId,
+                        'session_id' => $runId,
+                        'server_name' => $serverName,
+                        'error_class' => $cbError::class,
+                        'error_message' => self::sanitizeLogMessage($cbError->getMessage()),
+                    ]);
                 }
             }
         }
