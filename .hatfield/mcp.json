@@ -10,6 +10,28 @@
     "websearch": {
       "url": "http://192.168.2.38:9001/sse",
       "timeoutMs": 60000
+    },
+    "database-server": {
+      "command": "/usr/bin/env",
+      "args": [
+        "COMPOSE_MENU=false",
+        "COMPOSE_PROGRESS=plain",
+        "COMPOSE_ANSI=never",
+        "COMPOSE_IGNORE_ORPHANS=true",
+        "DOCKER_CLI_HINTS=false",
+        "/usr/local/bin/docker",
+        "compose",
+        "-f",
+        "/home/ineersa/mcp/database/docker-compose.yaml",
+        "run",
+        "--rm",
+        "--no-deps",
+        "-T",
+        "--quiet-pull",
+        "database-mcp"
+      ],
+      "timeoutMs": 60000,
+      "startupTimeoutMs": 60000
     }
   }
 }
