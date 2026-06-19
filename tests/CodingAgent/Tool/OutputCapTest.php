@@ -90,9 +90,17 @@ final class OutputCapTest extends TestCase
 
         // Should contain the storage dir path
         $this->assertStringContainsString($this->tmpDir, $result);
-        // Should contain head/grep hints
-        $this->assertStringContainsString('head -50', $result);
-        $this->assertStringContainsString('grep', $result);
+        // Generic notice now suggests read with offset+limit on saved output
+        $this->assertStringContainsString('Do not rerun the original command', $result);
+        $this->assertStringContainsString('read(path:', $result);
+        $this->assertStringContainsString('limit: 200', $result);
+        $this->assertStringContainsString('without offset+limit', $result);
+        // Path is JSON-encoded so special characters (e.g. double quotes)
+        // cannot break the notice.  Normal paths appear as read(path: \"/tmp/...\").
+        $this->assertMatchesRegularExpression(
+            '/read\\(path: "[^"]+",/',
+            $result,
+        );
     }
 
     /* ───────── Persistence ───────── */
@@ -370,7 +378,8 @@ final class OutputCapTest extends TestCase
     private function extractPathFromNotice(string $notice): ?string
     {
         // The notice contains a "Saved to: <path>" line
-        if (preg_match('/Saved to: (.+\.txt)/', $notice, $matches)) {
+        // The notice contains a "Saved full output: <path>" line
+        if (preg_match('/Saved full output: (.+\.txt)/', $notice, $matches)) {
             return $matches[1];
         }
 

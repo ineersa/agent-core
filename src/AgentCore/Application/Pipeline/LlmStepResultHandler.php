@@ -122,6 +122,13 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
                 ],
             ];
 
+            // Emit generic model_notification events for any
+            // notifications produced by transform context hooks
+            // during this LLM step (e.g. defense-in-depth output caps).
+            foreach ($this->collectLlmModelNotificationEventSpecs($message->modelNotifications) as $notifSpec) {
+                $eventSpecs[] = $notifSpec;
+            }
+
             $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
             $nextState = new RunState(
                 runId: $state->runId,
@@ -155,12 +162,29 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
                 ? $message->error['retryable']
                 : false;
 
+            $eventSpecs = [[
+                'type' => RunEventTypeEnum::LlmStepFailed->value,
+                'payload' => [
+                    'error' => $message->error,
+                    'retryable' => $retryable,
+                    'step_id' => $message->stepId(),
+                ],
+            ]];
+
+            // Emit generic model_notification events for any
+            // notifications produced by transform context hooks
+            // during this LLM step (e.g. defense-in-depth output caps
+            // that fired before the provider error).
+            foreach ($this->collectLlmModelNotificationEventSpecs($message->modelNotifications) as $notifSpec) {
+                $eventSpecs[] = $notifSpec;
+            }
+
             $nextState = new RunState(
                 runId: $state->runId,
                 status: RunStatus::Failed,
                 version: $state->version + 1,
                 turnNo: $state->turnNo,
-                lastSeq: $state->lastSeq + 1,
+                lastSeq: $state->lastSeq + \count($eventSpecs),
                 isStreaming: false,
                 streamingMessage: null,
                 pendingToolCalls: [],
@@ -170,21 +194,11 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
                 retryableFailure: $retryable,
             );
 
-            $event = $this->eventFactory->event(
-                runId: $runId,
-                seq: $nextState->lastSeq,
-                turnNo: $nextState->turnNo,
-                type: RunEventTypeEnum::LlmStepFailed->value,
-                payload: [
-                    'error' => $message->error,
-                    'retryable' => $retryable,
-                    'step_id' => $message->stepId(),
-                ],
-            );
+            $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
 
             return new HandlerResult(
                 nextState: $nextState,
-                events: [$event],
+                events: $events,
                 postCommit: $this->turnCompletedCallbacks($runId, $state->turnNo),
             );
         }
@@ -240,6 +254,15 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
                 'text' => $assistantMessage->asText(),
             ],
         ]];
+
+        // Emit generic model_notification events for notifications
+        // produced by transform context hooks during this LLM step.
+        // These carry the same generic shape as ToolCallResultHandler
+        // emissions and project to the same model.notification runtime
+        // event / System transcript block.
+        foreach ($this->collectLlmModelNotificationEventSpecs($message->modelNotifications) as $notifSpec) {
+            $eventSpecs[] = $notifSpec;
+        }
 
         if ([] === $toolCalls) {
             $stateAfterAssistant = new RunState(
@@ -456,5 +479,34 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
                 throw new \RuntimeException('Failed to dispatch follow-up AdvanceRun command.', previous: $exception);
             }
         };
+    }
+
+    /**
+     * Collect model_notification RunEvent specs from an LlmStepResult's
+     * generic model notifications (produced by transform context hooks).
+     *
+     * @param list<array<string, mixed>> $notifications
+     *
+     * @return list<array{type: string, payload: array<string, mixed>}>
+     */
+    private function collectLlmModelNotificationEventSpecs(array $notifications): array
+    {
+        if ([] === $notifications) {
+            return [];
+        }
+
+        $specs = [];
+        foreach ($notifications as $notif) {
+            if (!\is_array($notif)) {
+                continue;
+            }
+
+            $specs[] = [
+                'type' => RunEventTypeEnum::ModelNotification->value,
+                'payload' => $notif,
+            ];
+        }
+
+        return $specs;
     }
 }

@@ -61,7 +61,6 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
 
     public function __construct(
         private readonly ToolRuntime $toolRuntime,
-        private readonly OutputCap $outputCap,
     ) {
     }
 
@@ -106,8 +105,10 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             // Check if the output was truncated and append continuation hint
             $content = $this->appendContinuationHint($content, $resolvedPath, $offset, $limit);
 
-            // Pass through output capping (character-based)
-            return $this->outputCap->process($content, $resolvedPath);
+            // Output capping is now handled centrally by OutputCapToolResultProcessor
+            // after ToolExecutor converts the Symfony result to a domain ToolResult.
+            // Per-tool OutputCap calls are no longer needed.
+            return $content;
         });
     }
 
@@ -145,10 +146,10 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             promptLine: 'read path [offset=N] [limit=N] — read a text file with cat -n line numbers; supports offset and limit for partial reads; use view_image for images',
             promptGuidelines: [
                 'Output uses cat -n line numbering with original file line numbers.',
-                'Use offset (starting line, 1-indexed) and limit (max lines) to read specific sections of large files.',
+                'Use offset and limit together for follow-up reads after large or capped output — avoid reading huge files wholesale.',
                 'Reading without offset/limit returns up to 2000 lines from the beginning.',
                 'Binary files, image files, and PDFs are rejected — use view_image for images.',
-                'Output is capped by character limit. Very large output may be saved to a file for inspection.',
+                'Output is capped by character limit. Use read with offset=1 limit=200 on saved files instead of reading them wholesale.',
                 'Device paths (/dev/*) and /proc/*/fd/* paths are rejected for safety.',
             ],
         );
@@ -550,7 +551,7 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
 
         if ($totalLines > $lastReturnedLine) {
             $nextOffset = $lastReturnedLine + 1;
-            $hint = \sprintf("\n--- %d more lines (use `read` with offset=%d to continue) ---\n", $totalLines - $lastReturnedLine, $nextOffset);
+            $hint = \sprintf("\n--- %d more lines (use read with offset=%d limit=200 to continue) ---\n", $totalLines - $lastReturnedLine, $nextOffset);
 
             return $content.$hint;
         }

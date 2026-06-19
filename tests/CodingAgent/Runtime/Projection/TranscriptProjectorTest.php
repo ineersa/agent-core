@@ -10,11 +10,11 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\CancellationProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\HitlProjectionSubscriber;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ModelNotificationProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\RunLifecycleProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber;
-use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
@@ -41,6 +41,7 @@ final class TranscriptProjectorTest extends TestCase
         $dispatcher->addSubscriber(new HitlProjectionSubscriber());
         $dispatcher->addSubscriber(new CancellationProjectionSubscriber());
         $dispatcher->addSubscriber(new RunLifecycleProjectionSubscriber());
+        $dispatcher->addSubscriber(new ModelNotificationProjectionSubscriber());
 
         $this->projector = new TranscriptProjector($dispatcher, $state);
         $this->seq = 0;
@@ -1693,6 +1694,129 @@ final class TranscriptProjectorTest extends TestCase
 
         $blocksAfter = $this->projector->blocks();
         $this->assertCount(2, $blocksAfter, 'No extra blocks after run.completed');
+    }
+
+    // ── Model notification ─────────────────────────────────────────────────
+
+    /**
+     * Test thesis: a generic model.notification runtime event projects a System
+     * block with exact notification text, severity, source, and kind metadata —
+     * no output-cap-specific detection or text parsing.
+     */
+    public function testModelNotificationProjectsSystemBlockWithExactText(): void
+    {
+        $this->accept('model.notification', [
+            'id' => 'notif-1',
+            'source' => 'output_cap',
+            'kind' => 'output_capped',
+            'severity' => 'warning',
+            'delivery' => 'tool_result_replace',
+            'text' => "[Output capped: 5000 chars (~1250 tokens) > 100-char cap]\nSaved full output: /tmp/cap-123.txt",
+            'tool_call_id' => 'call-1',
+            'tool_name' => 'read',
+            'metadata' => [
+                'cap' => 100,
+                'char_count' => 5000,
+            ],
+        ]);
+
+        $blocks = $this->projector->blocks();
+        $this->assertCount(1, $blocks);
+
+        $block = $blocks[0];
+        $this->assertSame(TranscriptBlockKindEnum::System, $block->kind);
+
+        // Exact model-facing text is what the TUI shows — no paraphrase.
+        $this->assertStringStartsWith('[Output capped:', $block->text);
+        $this->assertStringContainsString('Saved full output', $block->text);
+
+        // Severity drives TUI icon/color — no text-parsing from renderer.
+        $this->assertSame('warning', $block->meta['severity']);
+        $this->assertSame('output_cap', $block->meta['source']);
+        $this->assertSame('output_capped', $block->meta['kind']);
+        $this->assertSame('call-1', $block->meta['tool_call_id']);
+
+        // Producer metadata is available for detail views.
+        $this->assertIsArray($block->meta['producer_metadata']);
+        $this->assertSame(100, $block->meta['producer_metadata']['cap']);
+    }
+
+    public function testModelNotificationWithToolResultReplaceCompactsToolResult(): void
+    {
+        // Set up a ToolResult block via tool_execution.completed.
+        $this->accept('tool_execution.completed', [
+            'tool_call_id' => 'call-compact',
+            'tool_name' => 'read',
+            'result' => 'Full raw output that should be replaced by the notification',
+        ]);
+
+        // Verify the ToolResult block has the original text.
+        $blocks = $this->projector->blocks();
+        $this->assertCount(1, $blocks);
+        $this->assertSame(TranscriptBlockKindEnum::ToolResult, $blocks[0]->kind);
+        $this->assertSame('Full raw output that should be replaced by the notification', $blocks[0]->text);
+
+        // Now emit a model_notification with delivery=tool_result_replace
+        // targeting the same tool_call_id.
+        $this->accept('model.notification', [
+            'id' => 'notif-compact-1',
+            'source' => 'output_cap',
+            'kind' => 'output_capped',
+            'severity' => 'warning',
+            'delivery' => 'tool_result_replace',
+            'text' => "[Output capped: 5000 chars (~1250 tokens) > 100-char cap]\nSaved full output: /tmp/cap-compact.txt",
+            'tool_call_id' => 'call-compact',
+            'tool_name' => 'read',
+        ]);
+
+        // Two blocks: the System notification and the compacted ToolResult.
+        $blocks = $this->projector->blocks();
+        $this->assertCount(2, $blocks);
+
+        // Block 0: ToolResult (created first, compacted by notification).
+        $this->assertSame(TranscriptBlockKindEnum::ToolResult, $blocks[0]->kind);
+        $this->assertSame('read completed', $blocks[0]->text);
+        $this->assertTrue($blocks[0]->meta['compact_label'] ?? false, 'compact_label meta must be true');
+
+        // Block 1: System notification with exact text.
+        $this->assertSame(TranscriptBlockKindEnum::System, $blocks[1]->kind);
+        $this->assertStringStartsWith('[Output capped:', $blocks[1]->text);
+        $this->assertSame('warning', $blocks[1]->meta['severity']);
+        $this->assertSame('output_cap', $blocks[1]->meta['source']);
+        $this->assertSame('call-compact', $blocks[1]->meta['tool_call_id']);
+    }
+
+    public function testModelNotificationWithoutDeliveryDoesNotCompactToolResult(): void
+    {
+        // Set up a ToolResult block.
+        $this->accept('tool_execution.completed', [
+            'tool_call_id' => 'call-nocompact',
+            'tool_name' => 'bash',
+            'result' => 'Normal shell output that should remain visible',
+        ]);
+
+        // Emit a model_notification WITHOUT delivery=tool_result_replace.
+        $this->accept('model.notification', [
+            'id' => 'notif-info',
+            'source' => 'extension',
+            'kind' => 'nudge',
+            'severity' => 'info',
+            'delivery' => 'context_message',
+            'text' => 'Free-standing informational nudge',
+            'tool_call_id' => 'call-nocompact',
+        ]);
+
+        // Two blocks: ToolResult unchanged + System notification.
+        $blocks = $this->projector->blocks();
+        $this->assertCount(2, $blocks);
+
+        // ToolResult must still have original text (not compacted).
+        $this->assertSame(TranscriptBlockKindEnum::ToolResult, $blocks[0]->kind);
+        $this->assertSame('Normal shell output that should remain visible', $blocks[0]->text);
+
+        // System notification must be present.
+        $this->assertSame(TranscriptBlockKindEnum::System, $blocks[1]->kind);
+        $this->assertSame('Free-standing informational nudge', $blocks[1]->text);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

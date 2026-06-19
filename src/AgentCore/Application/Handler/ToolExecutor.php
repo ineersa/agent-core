@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolIdempotencyKeyResolverInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolResultProcessorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
@@ -29,6 +30,12 @@ final class ToolExecutor implements ToolExecutorInterface
 
     private ?FaultTolerantToolbox $faultTolerantToolbox;
 
+    /** @var list<ToolResultProcessorInterface> */
+    private readonly array $toolResultProcessors;
+
+    /**
+     * @param iterable<ToolResultProcessorInterface> $toolResultProcessors
+     */
     public function __construct(
         string $defaultMode,
         int $defaultTimeoutSeconds,
@@ -38,11 +45,18 @@ final class ToolExecutor implements ToolExecutorInterface
         private readonly ?ToolIdempotencyKeyResolverInterface $toolIdempotencyKeyResolver = null,
         private readonly ?StackToolExecutionContextAccessor $contextAccessor = null,
         private readonly ?ToolSetResolverInterface $toolSetResolver = null,
+        iterable $toolResultProcessors = [],
     ) {
         $this->policyResolver = new ToolExecutionPolicyResolver($defaultMode, $defaultTimeoutSeconds, $maxParallelism);
         $this->faultTolerantToolbox = null !== $toolbox ? new FaultTolerantToolbox($toolbox) : null;
+        $this->toolResultProcessors = \is_array($toolResultProcessors)
+            ? array_values($toolResultProcessors)
+            : iterator_to_array($toolResultProcessors, false);
     }
 
+    /**
+     * @param iterable<ToolResultProcessorInterface> $toolResultProcessors
+     */
     public static function fromSettings(
         ToolExecutionSettingsInterface $settings,
         ToolExecutionResultStore $resultStore,
@@ -50,6 +64,7 @@ final class ToolExecutor implements ToolExecutorInterface
         ?ToolIdempotencyKeyResolverInterface $toolIdempotencyKeyResolver = null,
         ?StackToolExecutionContextAccessor $contextAccessor = null,
         ?ToolSetResolverInterface $toolSetResolver = null,
+        iterable $toolResultProcessors = [],
     ): self {
         return new self(
             defaultMode: $settings->defaultMode(),
@@ -60,6 +75,7 @@ final class ToolExecutor implements ToolExecutorInterface
             toolIdempotencyKeyResolver: $toolIdempotencyKeyResolver,
             contextAccessor: $contextAccessor,
             toolSetResolver: $toolSetResolver,
+            toolResultProcessors: $toolResultProcessors,
         );
     }
 
@@ -350,7 +366,7 @@ final class ToolExecutor implements ToolExecutorInterface
             $details = array_replace($details, $rawResult);
         }
 
-        return new ToolResult(
+        $result = new ToolResult(
             toolCallId: $toolCall->toolCallId,
             toolName: $toolCall->toolName,
             content: [[
@@ -360,6 +376,15 @@ final class ToolExecutor implements ToolExecutorInterface
             details: $details,
             isError: false,
         );
+
+        // Apply registered tool-result processors (e.g. OutputCap).
+        // Processors may modify content, attach model_notifications, or
+        // replace the result entirely — but must never throw.
+        foreach ($this->toolResultProcessors as $processor) {
+            $result = $processor->process($result, $toolCall);
+        }
+
+        return $result;
     }
 
     /**

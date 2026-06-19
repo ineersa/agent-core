@@ -31,8 +31,8 @@ final readonly class TranscriptBlockRenderer
      */
     public function renderBlock(TranscriptBlock $block, TuiRenderContext $context): array
     {
-        $prefix = $this->prefixFor($block->kind);
-        $color = $this->colorFor($block->kind);
+        $prefix = $this->prefixFor($block);
+        $color = $this->colorFor($block);
         $displayText = $this->displayTextFor($block);
         $suffix = $block->streaming ? '...' : '';
 
@@ -50,9 +50,9 @@ final readonly class TranscriptBlockRenderer
 
     /* ───────── Prefix / color / text helpers ───────── */
 
-    private function prefixFor(TranscriptBlockKindEnum $kind): string
+    private function prefixFor(TranscriptBlock $block): string
     {
-        return match ($kind) {
+        return match ($block->kind) {
             TranscriptBlockKindEnum::UserMessage => '  ❯',
             TranscriptBlockKindEnum::AssistantMessage => '  ◇',
             TranscriptBlockKindEnum::AssistantThinking => '  ⋯',
@@ -63,13 +63,13 @@ final readonly class TranscriptBlockRenderer
             TranscriptBlockKindEnum::Approval => '  🔐',
             TranscriptBlockKindEnum::Cancelled => '  ✕',
             TranscriptBlockKindEnum::Error => '  ✕',
-            TranscriptBlockKindEnum::System => '  ·',
+            TranscriptBlockKindEnum::System => $this->severityPrefix($block),
         };
     }
 
-    private function colorFor(TranscriptBlockKindEnum $kind): ThemeColorEnum
+    private function colorFor(TranscriptBlock $block): ThemeColorEnum
     {
-        return match ($kind) {
+        return match ($block->kind) {
             TranscriptBlockKindEnum::UserMessage => ThemeColorEnum::UserMessage,
             TranscriptBlockKindEnum::AssistantMessage => ThemeColorEnum::AssistantMessage,
             TranscriptBlockKindEnum::AssistantThinking => ThemeColorEnum::ThinkingText,
@@ -80,7 +80,34 @@ final readonly class TranscriptBlockRenderer
             TranscriptBlockKindEnum::Question => ThemeColorEnum::Accent,
             TranscriptBlockKindEnum::Approval => ThemeColorEnum::Warning,
             TranscriptBlockKindEnum::Error => ThemeColorEnum::Error,
-            TranscriptBlockKindEnum::System => ThemeColorEnum::SystemMessage,
+            TranscriptBlockKindEnum::System => $this->severityColor($block),
+        };
+    }
+
+    private function severityPrefix(TranscriptBlock $block): string
+    {
+        $severity = \is_string($block->meta['severity'] ?? null)
+            ? $block->meta['severity']
+            : null;
+
+        return match ($severity) {
+            'info' => '  ℹ',
+            'warning' => '  ⚠',
+            'error' => '  ✘',
+            default => '  ·',
+        };
+    }
+
+    private function severityColor(TranscriptBlock $block): ThemeColorEnum
+    {
+        $severity = \is_string($block->meta['severity'] ?? null)
+            ? $block->meta['severity']
+            : null;
+
+        return match ($severity) {
+            'warning' => ThemeColorEnum::Warning,
+            'error' => ThemeColorEnum::Error,
+            default => ThemeColorEnum::SystemMessage,
         };
     }
 

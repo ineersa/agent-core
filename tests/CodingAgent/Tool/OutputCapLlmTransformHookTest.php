@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Tool;
 
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
+use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Tool\OutputCap;
@@ -323,6 +325,178 @@ final class OutputCapLlmTransformHookTest extends TestCase
 
         $this->assertCount(1, $transformed);
         $this->assertSame([], $transformed[0]->content);
+    }
+
+    /* ── Stable late-hook notification ID ── */
+
+    /**
+     * Test thesis: repeated late-hook transforms of the same oversized
+     * AgentMessage must produce the same model_notification ID.  The previous
+     * code hashed noticeText (which includes a random saved path), causing
+     * every transform to create a new ID and duplicate TUI notification
+     * blocks / events.  The fix uses original content hash instead.
+     */
+    public function testLateHookProducesStableNotificationIdOnRepeatTransform(): void
+    {
+        $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 100);
+        $cap = new OutputCap($cfg);
+        $hook = new OutputCapLlmTransformHook($cap);
+
+        $largeText = str_repeat('X', 500);
+
+        $message = new AgentMessage(
+            role: 'tool',
+            content: [['type' => 'text', 'text' => $largeText]],
+            toolCallId: 'call-stable',
+            toolName: 'some_tool',
+        );
+
+        $first = $hook->transformContext([$message]);
+        $second = $hook->transformContext([$message]);
+
+        $this->assertCount(1, $first);
+        $this->assertCount(1, $second);
+
+        $notifsA = \is_array($first[0]->metadata['model_notifications'] ?? null)
+            ? $first[0]->metadata['model_notifications']
+            : [];
+        $notifsB = \is_array($second[0]->metadata['model_notifications'] ?? null)
+            ? $second[0]->metadata['model_notifications']
+            : [];
+
+        $this->assertCount(1, $notifsA);
+        $this->assertCount(1, $notifsB);
+
+        $this->assertSame($notifsA[0]['id'], $notifsB[0]['id'],
+            'Repeated late-hook transforms must produce the same notification ID');
+
+        // Saved paths differ (each invocation persists to a new random file)
+        // but the notification identity is stable.
+        $this->assertNotSame(
+            $notifsA[0]['metadata']['saved_path'] ?? null,
+            $notifsB[0]['metadata']['saved_path'] ?? null,
+            'Sanity: saved paths should differ across invocations',
+        );
+    }
+
+    /* ── Read-tool late hook produces original-path guidance ── */
+
+    /**
+     * Test thesis: when the late defense-in-depth hook caps a read-tool
+     * AgentMessage, the notice must guide follow-up reads to the ORIGINAL
+     * file path (not the saved output-cap artifact).  Reading the saved
+     * artifact with the read tool adds presentation noise (double cat -n
+     * line numbers).
+     */
+    public function testLateHookReadNoticeUsesOriginalPathNotSavedArtifact(): void
+    {
+        $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 50);
+        $outputCap = new OutputCap($cfg);
+        $hook = new OutputCapLlmTransformHook($outputCap);
+        $converter = new AgentMessageConverter();
+
+        $sentinel = 'READ_SENTINEL_'.bin2hex(random_bytes(8));
+        $largeText = str_repeat('R', 200)."\n".$sentinel;
+
+        $message = new AgentMessage(
+            role: 'tool',
+            content: [['type' => 'text', 'text' => $largeText]],
+            toolCallId: 'call-read-late',
+            toolName: 'read',
+            details: [
+                'arguments' => ['path' => './src/file.php', 'offset' => 42],
+                'raw_result' => $largeText,
+            ],
+        );
+
+        $transformed = $hook->transformContext([$message]);
+        $messageBag = $converter->toMessageBag($transformed);
+
+        $toolMessages = array_filter(
+            $messageBag->getMessages(),
+            static fn (object $m): bool => $m instanceof \Symfony\AI\Platform\Message\ToolCallMessage,
+        );
+        $this->assertCount(1, $toolMessages);
+
+        $toolMsg = reset($toolMessages);
+        $providerContent = $toolMsg->getContent();
+        $this->assertIsString($providerContent);
+
+        // Must cap.
+        $this->assertStringContainsString('Output capped', $providerContent);
+        $this->assertStringNotContainsString($sentinel, $providerContent);
+
+        // Must reference original file, NOT saved artifact via read.
+        $this->assertStringContainsString('./src/file.php', $providerContent,
+            'Late-hook read notice must reference original file path');
+        $this->assertStringContainsString('read(path:', $providerContent);
+        $this->assertStringContainsString('offset: 42', $providerContent,
+            'Late-hook read notice must use original offset');
+        $this->assertStringContainsString('limit: 200', $providerContent);
+        $this->assertStringNotContainsString('head -200', $providerContent,
+            'Late-hook read notice must NOT suggest shell head (generic path)');
+
+        // The notification text in metadata should match what was sent to provider.
+        $notifications = \is_array($transformed[0]->metadata['model_notifications'] ?? null)
+            ? $transformed[0]->metadata['model_notifications']
+            : [];
+        $this->assertCount(1, $notifications);
+        $this->assertStringContainsString('./src/file.php', $notifications[0]['text']);
+        $this->assertStringContainsString('offset: 42', $notifications[0]['text']);
+    }
+    /* ── Normalizer: empty content does not leak raw_result ── */
+
+    /**
+     * Test thesis: when a ToolCallResult has empty content but large
+     * details.raw_result, the AgentMessageNormalizer must NOT JSON-encode
+     * the full ToolCallResult envelope as model-facing text.  Doing so
+     * duplicates raw_output into the model context, inflates the message
+     * far beyond the tool's actual output, and triggers false late-hook
+     * output capping (the root cause of the double-cap smoke bug).
+     */
+    public function testEmptyContentDoesNotExposeRawResultToModelText(): void
+    {
+        $normalizer = new AgentMessageNormalizer();
+
+        $sentinel = 'RAW_SENTINEL_'.bin2hex(random_bytes(8));
+        $largeRaw = str_repeat('Z', 1000).$sentinel;
+
+        $result = new ToolCallResult(
+            runId: 'r1',
+            turnNo: 1,
+            stepId: 's1',
+            attempt: 1,
+            idempotencyKey: 'ik1',
+            toolCallId: 'call-empty-content',
+            orderIndex: 0,
+            result: [
+                'tool_name' => 'read',
+                'content' => [],
+                'details' => ['raw_result' => $largeRaw],
+            ],
+            isError: false,
+        );
+
+        $message = $normalizer->toolMessage($result);
+
+        // The model-facing text must NOT contain the raw sentinel.
+        $contentText = '';
+        foreach ($message->content as $part) {
+            if (\is_array($part) && ($part['type'] ?? null) === 'text') {
+                $contentText .= $part['text'];
+            }
+        }
+
+        $this->assertStringNotContainsString($sentinel, $contentText,
+            'Sentinel from details.raw_result must not leak into model-facing content text');
+
+        // The model-facing text should be a compact label like 'read completed'.
+        $this->assertStringContainsString('read', $contentText);
+        $this->assertStringNotContainsString('RAW_SENTINEL_', $contentText);
+
+        // details are preserved on the AgentMessage for persistence
+        $this->assertSame($largeRaw, $message->details['details']['raw_result'] ?? null,
+            'Raw result must be preserved in AgentMessage details for persistence');
     }
 
     /* ── Helpers ── */
