@@ -282,6 +282,11 @@ parameters:
       collectors:
         - type: directory
           value: src/CodingAgent/Mcp/Catalog/.*
+    # AppMcpTool covers MCP-to-tool-registry bridging (Mcp/Tool/) and the
+    # Messenger middleware that routes ExecuteToolCall to mcp transport
+    # (Mcp/Messenger/).  Both live together because the middleware reads
+    # the session MCP catalog to decide routing — it is an integral part
+    # of the tool-layer wiring, not a generic broker concern.
     - name: AppMcpTool
       collectors:
         - type: directory

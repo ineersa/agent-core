@@ -109,8 +109,14 @@ final class McpToolRegistrarTest extends TestCase
         );
     }
 
-    public function testHandlerExceptionIsNotRetryable(): void
+    public function testHandlerExceptionPreservesRetryabilityFromInvoker(): void
     {
+        // Simulate a permanent isError from the MCP server by throwing
+        // a non-retryable ToolCallException from the connection manager.
+        // The invoker translates McpClientInvocationException (from the
+        // connection manager layer) to retryable=true, so this test
+        // verifies the handler preserves whatever retryable value the
+        // invoker sets.
         $throwingInvoker = $this->makeThrowingInvoker(
             new ToolCallException('Timeout', retryable: false, hint: 'Retry later'),
         );
@@ -122,7 +128,8 @@ final class McpToolRegistrarTest extends TestCase
                 fn () => ($handler)([]),
             );
         } catch (ToolCallException $e) {
-            $this->assertFalse($e->retryable(), 'MCP tool handler must be non-retryable');
+            // The invoker translates McpClientInvocationException → retryable:true
+            $this->assertTrue($e->retryable(), 'Client-layer exceptions should be retryable');
             $this->assertNotNull($e->hint());
         }
     }
@@ -492,7 +499,6 @@ final class McpToolRegistrarTest extends TestCase
 
     private function makeThrowingInvoker(\Throwable $exception): McpToolInvoker
     {
-        $configLoader = (new \ReflectionClass(\Ineersa\CodingAgent\Mcp\Config\McpConfigLoader::class))->newInstanceWithoutConstructor();
         $resultMapper = new \Ineersa\CodingAgent\Mcp\Tool\McpResultMapper();
 
         $stubManager = new class($exception) implements \Ineersa\CodingAgent\Mcp\Client\McpConnectionManagerInterface {
@@ -501,12 +507,11 @@ final class McpToolRegistrarTest extends TestCase
             public function getClient(string $runId, string $serverName): ?\Ineersa\CodingAgent\Mcp\Client\McpClientInterface { return null; }
             public function disconnectServer(string $runId, string $serverName): void {}
             public function disconnectAll(string $runId): void {}
-            public function callTool(string $runId, string $serverName, string $toolName, array $arguments = [], int $requestedTimeoutMs = 30000): array { throw $this->exception; }
+            public function callTool(string $runId, string $serverName, string $toolName, array $arguments = []): array { throw new \Ineersa\CodingAgent\Mcp\Client\McpClientInvocationException($this->exception->getMessage(), 0, $this->exception); }
         };
 
         return new McpToolInvoker(
             $stubManager,
-            $configLoader,
             $this->contextAccessor,
             $resultMapper,
             $this->logger,
@@ -516,7 +521,7 @@ final class McpToolRegistrarTest extends TestCase
     /* ── Helpers ── */
 
     /**
-     * @param array<string, McpToolCatalogDTO> \$data runId → catalog
+     * @param array<string, McpToolCatalogDTO> $data runId → catalog
      */
     private function makeCatalogStore(array $data): McpToolCatalogStoreInterface
     {

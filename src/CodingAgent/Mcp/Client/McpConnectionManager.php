@@ -235,25 +235,36 @@ final class McpConnectionManager implements McpConnectionManagerInterface
         return (string) $message;
     }
 
-    public function callTool(string $runId, string $serverName, string $toolName, array $arguments = [], int $requestedTimeoutMs = 30000): array
+    /**
+     * {@inheritDoc}
+     *
+     * TODO: Per-call timeout and cancellation are not enforced because the
+     * MCP SDK ({@see McpSdkClientAdapter}) has no per-call timeout or
+     * cancellation hook.  Request timeout is fixed at client construction
+     * time ({@see McpSdkClientFactory::createSdkClient()}) and cannot be
+     * capped by {@see \Ineersa\AgentCore\Application\Tool\ToolContext::timeoutSeconds()}
+     * on a per-call basis.  If/when the SDK adds call-level timeout support,
+     * wire it through {@see McpClientInterface::callTool()} and resume
+     * enforcement here.
+     */
+    public function callTool(string $runId, string $serverName, string $toolName, array $arguments = []): array
     {
         $client = $this->getClient($runId, $serverName);
 
         if (null === $client) {
-            // Attempt reconnect/discovery once before failing
+            // Attempt reconnect once before failing
             $this->reconnectServer($runId, $serverName);
             $client = $this->getClient($runId, $serverName);
         }
 
         if (null === $client) {
-            throw new \Ineersa\AgentCore\Contract\Tool\ToolCallException(error: \sprintf('MCP server "%s" is not connected. The server may have been disconnected or never successfully discovered.', $serverName), retryable: false, hint: 'The MCP server is not available. Check server configuration and connectivity.');
+            throw new McpClientInvocationException(\sprintf('MCP server "%s" is not connected after reconnect attempt.', $serverName));
         }
 
         try {
             return $client->callTool($toolName, $arguments);
         } catch (\Throwable $e) {
-            // Log with structured context, then wrap as ToolCallException
-            // so the ToolExecutor pipeline produces a failed ToolCallResult.
+            // Log with structured context and sanitized message.
             $this->logger->error('MCP tool call failed', [
                 'component' => 'mcp',
                 'event_type' => 'tool.call_failed',
@@ -269,7 +280,9 @@ final class McpConnectionManager implements McpConnectionManagerInterface
             // Remove the failed client so future attempts trigger reconnect
             $this->disconnectServer($runId, $serverName);
 
-            throw new \Ineersa\AgentCore\Contract\Tool\ToolCallException(error: \sprintf('MCP tool "%s" (server "%s") call failed: %s', $toolName, $serverName, $e->getMessage()), retryable: false, hint: 'The MCP tool invocation failed. Check server logs and connectivity.', previous: $e);
+            // Use sanitized error text so secrets/credentials never
+            // appear in LLM-visible exception messages.
+            throw new McpClientInvocationException(self::sanitizeLogMessage($e->getMessage()), (int) $e->getCode(), $e);
         }
     }
 

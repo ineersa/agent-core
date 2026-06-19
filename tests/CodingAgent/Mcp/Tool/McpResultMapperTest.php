@@ -141,17 +141,95 @@ final class McpResultMapperTest extends TestCase
         $this->assertStringContainsString('custom_binary', $result);
     }
 
-    // ── Test thesis 4: Empty content → ToolCallException ──
+    // ── Test thesis 4: Empty content handling ──
 
-    public function testEmptyContentThrowsToolCallException(): void
+    public function testEmptyContentWithIsErrorFalseReturnsEmptyString(): void
     {
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('empty content');
-
-        $this->mapper->map([
+        $result = $this->mapper->map([
             'content' => [],
             'isError' => false,
         ]);
+
+        $this->assertSame('', $result);
+    }
+
+    public function testEmptyContentWithIsErrorTrueThrowsToolCallException(): void
+    {
+        $this->expectException(ToolCallException::class);
+        $this->expectExceptionMessage('MCP tool returned an error');
+
+        $this->mapper->map([
+            'content' => [],
+            'isError' => true,
+        ]);
+    }
+
+    // ── Sanitization: error text is truncated and redacted ──
+
+    public function testTruncatesLongErrorText(): void
+    {
+        $longText = str_repeat('x', 600);
+
+        try {
+            $this->mapper->map([
+                'content' => [
+                    ['type' => 'text', 'text' => $longText],
+                ],
+                'isError' => true,
+            ]);
+            $this->fail('Expected ToolCallException');
+        } catch (ToolCallException $e) {
+            $this->assertStringEndsWith('...', $e->getMessage());
+            $this->assertLessThanOrEqual(600, \strlen($e->getMessage()));
+        }
+    }
+
+    public function testRedactsBearerTokenInErrorText(): void
+    {
+        try {
+            $this->mapper->map([
+                'content' => [
+                    ['type' => 'text', 'text' => 'Authorization: Bearer sk-abc123secret'],
+                ],
+                'isError' => true,
+            ]);
+            $this->fail('Expected ToolCallException');
+        } catch (ToolCallException $e) {
+            $this->assertStringContainsString('redacted', $e->getMessage());
+            $this->assertStringNotContainsString('sk-abc123secret', $e->getMessage());
+        }
+    }
+
+    public function testRedactsApiKeyInErrorText(): void
+    {
+        try {
+            $this->mapper->map([
+                'content' => [
+                    ['type' => 'text', 'text' => 'Failed with api_key=abcdef123456'],
+                ],
+                'isError' => true,
+            ]);
+            $this->fail('Expected ToolCallException');
+        } catch (ToolCallException $e) {
+            $this->assertStringContainsString('redacted', $e->getMessage());
+            $this->assertStringNotContainsString('abcdef123456', $e->getMessage());
+        }
+    }
+
+    // ── URI redaction ──
+
+    public function testRedactsCredentialsFromResourceUri(): void
+    {
+        $result = $this->mapper->map([
+            'content' => [
+                ['type' => 'resource', 'resource' => ['uri' => 'https://user:pass@example.com/file.txt']],
+            ],
+            'isError' => false,
+        ]);
+
+        $this->assertStringContainsString('[MCP resource:', $result);
+        $this->assertStringContainsString('example.com', $result);
+        $this->assertStringNotContainsString('user:pass', $result, 'Credentials must not appear in tool output');
     }
 
     // ── Mixed content produces correct output ──

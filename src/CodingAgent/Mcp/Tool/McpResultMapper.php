@@ -21,12 +21,15 @@ use Ineersa\AgentCore\Contract\Tool\ToolCallException;
  */
 final class McpResultMapper
 {
+    /** Maximum allowable length for error text extracted from MCP content. */
+    private const MAX_ERROR_TEXT_LENGTH = 500;
+
     /**
      * Map a raw MCP callTool result to a Hatfield tool output string.
      *
      * @param array{content: list<array<string, mixed>>, isError: bool} $rawResult
      *
-     * @throws ToolCallException when isError is true or no text content is available
+     * @throws ToolCallException when isError is true
      */
     public function map(array $rawResult): string
     {
@@ -42,13 +45,14 @@ final class McpResultMapper
      * Merge text content blocks into a single string.
      *
      * Non-text blocks produce a diagnostic placeholder.
+     * Empty successful content returns ''.
      *
      * @param list<array<string, mixed>> $content
      */
     private function mergeTextContent(array $content): string
     {
         if ([] === $content) {
-            throw new ToolCallException(error: 'MCP tool returned empty content.', retryable: false, hint: 'The MCP server produced no output for this tool call.');
+            return '';
         }
 
         $parts = [];
@@ -72,7 +76,8 @@ final class McpResultMapper
                 );
             } elseif ('resource' === $type) {
                 $resource = $block['resource'] ?? [];
-                $uri = \is_array($resource) && isset($resource['uri']) ? (string) $resource['uri'] : 'unknown';
+                $rawUri = \is_array($resource) && isset($resource['uri']) ? (string) $resource['uri'] : 'unknown';
+                $uri = $this->redactUriCredentials($rawUri);
                 $parts[] = \sprintf('[MCP resource: %s]', $uri);
             } else {
                 $parts[] = \sprintf('[MCP content: type="%s"]', $type);
@@ -84,6 +89,10 @@ final class McpResultMapper
 
     /**
      * Extract a human-readable error string from error content blocks.
+     *
+     * Truncates to MAX_ERROR_TEXT_LENGTH and redacts common secret
+     * patterns so MCP server error text never exposes credentials
+     * or raw secrets to LLM-visible ToolCallException messages.
      *
      * @param list<array<string, mixed>> $content
      */
@@ -98,6 +107,54 @@ final class McpResultMapper
             }
         }
 
-        return implode('; ', $texts);
+        $joined = implode('; ', $texts);
+
+        // Truncate long error messages — MCP servers may return
+        // arbitrary-length text that should not appear verbatim in
+        // LLM-visible exception messages.
+        if (\strlen($joined) > self::MAX_ERROR_TEXT_LENGTH) {
+            $joined = substr($joined, 0, self::MAX_ERROR_TEXT_LENGTH - 3).'...';
+        }
+
+        // Redact common secret-bearing patterns (Bearer tokens,
+        // API keys, passwords).  Use the same patterns as the
+        // connection manager's SECRET_PATTERNS for consistency.
+        return \Ineersa\CodingAgent\Mcp\Client\McpConnectionManager::sanitizeLogMessage($joined);
+    }
+
+    /**
+     * Redact credentials from a resource URI before including it
+     * in tool output.
+     */
+    private function redactUriCredentials(string $uri): string
+    {
+        $parts = @parse_url($uri);
+
+        if (false === $parts) {
+            return 'unknown';
+        }
+
+        $cleaned = '';
+        if (isset($parts['scheme'])) {
+            $cleaned .= $parts['scheme'].'://';
+        }
+        if (isset($parts['host'])) {
+            // Omit user:pass — never include credentials in tool output
+            $cleaned .= $parts['host'];
+        }
+        if (isset($parts['port'])) {
+            $cleaned .= ':'.$parts['port'];
+        }
+        if (isset($parts['path'])) {
+            $cleaned .= $parts['path'];
+        }
+        if (isset($parts['query'])) {
+            $cleaned .= '?'.$parts['query'];
+        }
+        if (isset($parts['fragment'])) {
+            $cleaned .= '#'.$parts['fragment'];
+        }
+
+        return '' !== $cleaned ? $cleaned : 'unknown';
     }
 }

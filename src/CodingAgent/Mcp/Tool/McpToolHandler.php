@@ -38,8 +38,9 @@ final readonly class McpToolHandler implements ToolHandlerInterface
                 arguments: $arguments,
             );
         } catch (ToolCallException $e) {
-            // Re-wrap with server/tool context so the LLM sees a clear
-            // diagnostic without leaking raw MCP internals.
+            // Add single server/tool context prefix.  Lower layers
+            // throw neutral messages — only this handler adds the
+            // user-visible MCP identity prefix.
             throw new ToolCallException(error: \sprintf('MCP tool "%s" (server "%s"): %s', $this->mcpName, $this->serverName, $e->getMessage()), retryable: $e->retryable(), hint: $e->hint(), previous: $e);
         }
     }

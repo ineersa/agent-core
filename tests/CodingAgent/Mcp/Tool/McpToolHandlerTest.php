@@ -9,8 +9,8 @@ use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Ineersa\CodingAgent\Mcp\Client\McpClientInvocationException;
 use Ineersa\CodingAgent\Mcp\Client\McpConnectionManagerInterface;
-use Ineersa\CodingAgent\Mcp\Config\McpConfigLoader;
 use Ineersa\CodingAgent\Mcp\Tool\McpResultMapper;
 use Ineersa\CodingAgent\Mcp\Tool\McpToolHandler;
 use Ineersa\CodingAgent\Mcp\Tool\McpToolHandlerFactory;
@@ -100,8 +100,12 @@ final class McpToolHandlerTest extends TestCase
         } catch (ToolCallException $e) {
             $this->assertStringContainsString('MCP tool "query" (server "api")', $e->getMessage());
             $this->assertStringContainsString('Server timeout', $e->getMessage());
-            $this->assertSame('Retry with smaller payload', $e->hint());
-            $this->assertFalse($e->retryable());
+            // The invoker translates McpClientInvocationException with its own hint;
+            // the handler preserves whatever hint the invoker sets.
+            $this->assertStringContainsString('could not complete', $e->hint());
+            // Client-layer exceptions are translated to retryable=true
+            // because connection/transport errors are often transient.
+            $this->assertTrue($e->retryable());
         }
     }
 
@@ -116,7 +120,7 @@ final class McpToolHandlerTest extends TestCase
             public function disconnectServer(string $runId, string $serverName): void {}
             public function disconnectAll(string $runId): void {}
 
-            public function callTool(string $runId, string $serverName, string $toolName, array $arguments = [], int $requestedTimeoutMs = 30000): array
+            public function callTool(string $runId, string $serverName, string $toolName, array $arguments = []): array
             {
                 return [
                     'content' => [['type' => 'text', 'text' => $this->fakeResult]],
@@ -127,7 +131,6 @@ final class McpToolHandlerTest extends TestCase
 
         return new McpToolInvoker(
             $connectionManager,
-            $this->createConfigLoaderStub(),
             $this->contextAccessor,
             new McpResultMapper(),
             $this->logger,
@@ -143,29 +146,17 @@ final class McpToolHandlerTest extends TestCase
             public function disconnectServer(string $runId, string $serverName): void {}
             public function disconnectAll(string $runId): void {}
 
-            public function callTool(string $runId, string $serverName, string $toolName, array $arguments = [], int $requestedTimeoutMs = 30000): array
+            public function callTool(string $runId, string $serverName, string $toolName, array $arguments = []): array
             {
-                throw $this->exception;
+                throw new McpClientInvocationException($this->exception->getMessage(), 0, $this->exception);
             }
         };
 
         return new McpToolInvoker(
             $connectionManager,
-            $this->createConfigLoaderStub(),
             $this->contextAccessor,
             new McpResultMapper(),
             $this->logger,
         );
-    }
-
-    private function createConfigLoaderStub(): McpConfigLoader
-    {
-        // McpConfigLoader is final — in tests we use Reflection to
-        // create a stub that never has its methods called (the invoker's
-        // resolveServerTimeoutMs() path is only reached after callTool
-        // succeeds, and our fakes return/throw before that).
-        $ref = new \ReflectionClass(McpConfigLoader::class);
-
-        return $ref->newInstanceWithoutConstructor();
     }
 }
