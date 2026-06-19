@@ -251,7 +251,7 @@ final class McpInitializeSessionHandler
             }
 
             if ('connected' === $result['status']) {
-                $tools = $this->mapTools($serverName, $result['tools'], $excludeTools, $globalSeenNames);
+                $tools = $this->mapTools($serverName, $result['tools'], $excludeTools, $globalSeenNames, $runId);
 
                 $servers[$serverName] = new McpServerCatalogEntryDTO(
                     serverName: $serverName,
@@ -294,7 +294,7 @@ final class McpInitializeSessionHandler
      *
      * @return list<McpToolDefinitionDTO>
      */
-    private function mapTools(string $serverName, array $rawTools, array $excludeTools, array &$globalSeenNames): array
+    private function mapTools(string $serverName, array $rawTools, array $excludeTools, array &$globalSeenNames, string $runId): array
     {
         $tools = [];
 
@@ -310,6 +310,8 @@ final class McpInitializeSessionHandler
                     'component' => 'mcp',
                     'event_type' => 'tool.excluded',
                     'mcp_event' => 'tool.excluded',
+                    'run_id' => $runId,
+                    'session_id' => $runId,
                     'server_name' => $serverName,
                     'mcp_tool_name' => $mcpName,
                 ]);
@@ -326,6 +328,8 @@ final class McpInitializeSessionHandler
                     'component' => 'mcp',
                     'event_type' => 'tool.duplicate',
                     'mcp_event' => 'tool.duplicate',
+                    'run_id' => $runId,
+                    'session_id' => $runId,
                     'server_name' => $serverName,
                     'hatfield_name' => $hatfieldName,
                     'mcp_tool_name' => $mcpName,
