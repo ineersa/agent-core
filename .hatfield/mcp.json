@@ -19,7 +19,7 @@
         "COMPOSE_ANSI=never",
         "COMPOSE_IGNORE_ORPHANS=true",
         "DOCKER_CLI_HINTS=false",
-        "/usr/local/bin/docker",
+        "docker",
         "compose",
         "-f",
         "/home/ineersa/mcp/database/docker-compose.yaml",
