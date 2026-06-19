@@ -17,6 +17,7 @@ use Ineersa\CodingAgent\Session\CompactionPreparationResultDTO;
 use Ineersa\CodingAgent\Session\CompactionPromptBuilder;
 use Ineersa\CodingAgent\Session\CompactionSkipReasonEnum;
 use Ineersa\CodingAgent\Session\SessionCompactor;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Message\TemplateRenderer\StringTemplateRenderer;
@@ -32,16 +33,17 @@ final class SessionCompactorTest extends TestCase
 {
     private SessionCompactor $compactor;
     private CompactionConfig $settings;
+    private string $projectDir;
+    private string $homeDir;
 
     protected function setUp(): void
     {
-        $projectDir = sys_get_temp_dir().'/compaction-test-'.uniqid();
+        $this->projectDir = TestDirectoryIsolation::createOsTempDir('compaction-test');
+        $this->homeDir = TestDirectoryIsolation::createOsTempDir('compaction-test-home');
 
         // Ensure the built-in COMPACTION.md is available for the prompt builder.
-        $configDir = $projectDir.'/config';
-        if (!is_dir($configDir)) {
-            mkdir($configDir, 0o777, true);
-        }
+        $configDir = $this->projectDir.'/config';
+        TestDirectoryIsolation::ensureDirectory($configDir);
 
         $builtinPath = $configDir.'/COMPACTION.md';
         // Create a minimal template for tests.
@@ -50,16 +52,11 @@ final class SessionCompactorTest extends TestCase
         $appConfig = new AppConfig(
             tui: new TuiConfig(theme: 'test'),
             logging: new LoggingConfig(),
-            cwd: $projectDir,
+            cwd: $this->projectDir,
         );
 
         // SettingsPathResolver is final — use a real instance with test dirs.
-        $homeDir = sys_get_temp_dir().'/compaction-test-home-'.uniqid();
-        if (!is_dir($homeDir)) {
-            mkdir($homeDir, 0o777, true);
-        }
-
-        $pathResolver = new SettingsPathResolver($projectDir, $homeDir);
+        $pathResolver = new SettingsPathResolver($this->projectDir, $this->homeDir);
 
         $templateRenderer = new StringTemplateRenderer();
 
@@ -67,7 +64,7 @@ final class SessionCompactorTest extends TestCase
             $pathResolver,
             $templateRenderer,
             $appConfig,
-            $projectDir,
+            $this->projectDir,
         );
 
         $this->compactor = new SessionCompactor($promptBuilder);
@@ -75,6 +72,19 @@ final class SessionCompactorTest extends TestCase
             autoEnabled: true,
             keepRecentTokens: 200,
         );
+    }
+
+    protected function tearDown(): void
+    {
+        if (isset($this->projectDir)) {
+            TestDirectoryIsolation::removeDirectory($this->projectDir);
+        }
+
+        if (isset($this->homeDir)) {
+            TestDirectoryIsolation::removeDirectory($this->homeDir);
+        }
+
+        parent::tearDown();
     }
 
     // ── Helpers ──────────────────────────────────────────────────────

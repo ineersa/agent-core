@@ -163,10 +163,19 @@ final readonly class CompactionConfig
 
     /**
      * Extract the provider ID from a provider/model string.
+     *
+     * Only the provider/model shape (e.g. 'openai/gpt-4.1') is
+     * recognized. Bare strings without '/' (e.g. 'gpt-4.1') return
+     * an empty string so they never accidentally match provider
+     * override keys.
      */
     private function extractProviderId(string $modelRef): string
     {
         $parts = explode('/', $modelRef, 2);
+
+        if (\count($parts) < 2) {
+            return '';
+        }
 
         return $parts[0];
     }

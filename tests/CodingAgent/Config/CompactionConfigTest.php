@@ -5,9 +5,22 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Config;
 
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
+use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\AppConfigLoader;
+use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\CompactionConfig;
+use Ineersa\CodingAgent\Config\SettingsPathResolver;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor;
+use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
+use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
+use Symfony\Component\Serializer\NameConverter\MetadataAwareNameConverter;
+use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
+use Symfony\Component\Serializer\Serializer;
+use Symfony\Component\Serializer\SerializerInterface;
+use Symfony\Component\Yaml\Yaml;
 
 #[CoversClass(CompactionConfig::class)]
 final class CompactionConfigTest extends TestCase
@@ -153,5 +166,111 @@ final class CompactionConfigTest extends TestCase
         // Model override wins over provider.
         self::assertSame(140000, $runtime->compactAfterTokens);
         self::assertSame('off', $runtime->thinkingLevel);
+    }
+
+    /**
+     * Thesis: Symfony Serializer denormalization preserves provider_overrides
+     * and model_overrides through the production AppConfig::fromContainer()
+     * path (same ObjectNormalizer+ReflectionExtractor stack as boot time).
+     *
+     * Without this, config files with overrides would silently produce
+     * empty arrays instead of the populated override maps.
+     */
+    public function testDenormalizationPreservesOverrides(): void
+    {
+        $projectDir = TestDirectoryIsolation::createProjectTempDir('compaction_cfg_serializer');
+
+        try {
+            $homeDir = $projectDir.'/home';
+            $configDir = $projectDir.'/config';
+
+            TestDirectoryIsolation::ensureDirectory($homeDir);
+            TestDirectoryIsolation::ensureDirectory($homeDir.'/.hatfield');
+            TestDirectoryIsolation::ensureDirectory($configDir);
+
+            // Minimal home settings (no compaction section — defaults drive).
+            file_put_contents($homeDir.'/.hatfield/settings.yaml', "tui:\n    theme: cyberpunk\n");
+
+            // Defaults with compaction provider/model overrides.
+            $defaults = [
+                'tui' => ['theme' => 'cyberpunk', 'theme_paths' => ['/app/config/themes']],
+                'sessions' => ['path' => '.hatfield/sessions'],
+                'logging' => ['path' => '.hatfield/logs', 'level' => 'info', 'max_files' => 14],
+                'compaction' => [
+                    'auto_enabled' => true,
+                    'compact_after_tokens' => 120000,
+                    'keep_recent_tokens' => 20000,
+                    'model' => 'llama_cpp/flash',
+                    'thinking_level' => 'low',
+                    'provider_overrides' => [
+                        'openai' => [
+                            'compact_after_tokens' => 80000,
+                            'thinking_level' => 'off',
+                        ],
+                    ],
+                    'model_overrides' => [
+                        'openai/gpt-4.1' => [
+                            'compact_after_tokens' => 140000,
+                            'thinking_level' => 'high',
+                        ],
+                    ],
+                ],
+            ];
+
+            file_put_contents($configDir.'/hatfield.defaults.yaml', Yaml::dump($defaults));
+
+            $pathResolver = new SettingsPathResolver('/app', $homeDir);
+            $loader = new AppConfigLoader($pathResolver);
+            $resources = new AppResourceLocator($projectDir);
+
+            // Serializer setup mirrors the production FrameworkBundle wiring:
+            // ClassMetadataFactory + AttributeLoader reads #[SerializedName] so
+            // snake_case YAML keys map to camelCase constructor parameters.
+            $classMetadataFactory = new ClassMetadataFactory(new AttributeLoader());
+            $nameConverter = new MetadataAwareNameConverter($classMetadataFactory);
+            $reflectionExtractor = new ReflectionExtractor();
+            $serializer = new Serializer(
+                normalizers: [
+                    new ObjectNormalizer(
+                        classMetadataFactory: $classMetadataFactory,
+                        nameConverter: $nameConverter,
+                        propertyAccessor: \Symfony\Component\PropertyAccess\PropertyAccess::createPropertyAccessor(),
+                        propertyTypeExtractor: $reflectionExtractor,
+                    ),
+                ],
+                encoders: [],
+            );
+
+            $appConfig = AppConfig::fromContainer($loader, $resources, $serializer, $projectDir);
+            $compaction = CompactionConfig::fromAppConfig($appConfig);
+
+            // Global settings survived denormalization.
+            self::assertTrue($compaction->autoEnabled);
+            self::assertSame(120000, $compaction->compactAfterTokens);
+            self::assertSame('llama_cpp/flash', $compaction->model);
+            self::assertSame('low', $compaction->thinkingLevel);
+
+            // Provider overrides survived denormalization.
+            self::assertArrayHasKey('openai', $compaction->providerOverrides);
+            self::assertSame(80000, $compaction->providerOverrides['openai']['compact_after_tokens']);
+            self::assertSame('off', $compaction->providerOverrides['openai']['thinking_level']);
+
+            // Model overrides survived denormalization.
+            self::assertArrayHasKey('openai/gpt-4.1', $compaction->modelOverrides);
+            self::assertSame(140000, $compaction->modelOverrides['openai/gpt-4.1']['compact_after_tokens']);
+            self::assertSame('high', $compaction->modelOverrides['openai/gpt-4.1']['thinking_level']);
+
+            // Runtime resolution uses the denormalized overrides.
+            $runtime = $compaction->resolveRuntimeSettings('openai/gpt-4.1');
+            self::assertSame(140000, $runtime->compactAfterTokens);
+            self::assertSame('high', $runtime->thinkingLevel);
+
+            // extractProviderId(): bare strings return empty (no accidental matching).
+            $config = new CompactionConfig(providerOverrides: ['bare' => ['compact_after_tokens' => 1]]);
+            $runtimeBare = $config->resolveRuntimeSettings('noproviderslash');
+            self::assertSame(CompactionConfig::DEFAULT_COMPACT_AFTER_TOKENS, $runtimeBare->compactAfterTokens);
+        } finally {
+            TestDirectoryIsolation::removeDirectory($projectDir);
+        }
     }
 }
