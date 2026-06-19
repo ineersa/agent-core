@@ -714,4 +714,241 @@ final class SessionCompactorTest extends TestCase
         // Empty array serialized as "[]" → strlen("[]")=2, ceil(2/4)=1.
         self::assertSame(1, $estimate);
     }
+
+    // ── Partition validity via AgentMessageToolCallSequenceValidator ─
+
+    /**
+     * Thesis: When the retained tail has an unclosed assistant tool-call
+     * batch that no boundary walk can resolve, prepare() returns null.
+     *
+     * Construction: the last message is an assistant with tool_calls and
+     * no following tool result.  Every possible boundary includes this
+     * message in the retained tail (boundary=0 is rejected by
+     * findSafeBoundary).  Cross-boundary checks pass because no tool
+     * results exist at all, but isValidSequence rejects every retained
+     * tail ending with an unclosed batch.
+     */
+    public function testUnclosedBatchInRetainedTailReturnsNull(): void
+    {
+        // Keep recent tokens small so even short messages trigger compaction.
+        $tightSettings = new CompactionConfig(
+            enabled: true,
+            keepRecentTokens: 50,
+        );
+
+        // Padded user/assistant pairs that each exceed 50 tokens.
+        $messages = [];
+        for ($i = 0; $i < 4; ++$i) {
+            $messages[] = $this->makeMessage(
+                'user',
+                \str_repeat('x', 200),
+            );
+            $messages[] = $this->makeMessage(
+                'assistant',
+                \str_repeat('y', 200),
+            );
+        }
+
+        // Last message: assistant with unclosed tool calls.
+        $messages[] = $this->makeAssistantWithToolCalls(['unclosed_tc']);
+
+        $result = $this->compactor->prepare($messages, $tightSettings);
+
+        self::assertNull(
+            $result,
+            'prepare() should return null: retained tail always contains unclosed batch',
+        );
+    }
+
+    /**
+     * Thesis: An unclosed assistant tool-call batch in the summarize prefix
+     * is not accepted as a safe cut — partition validity rejects it even
+     * when cross-boundary checks pass.
+     *
+     * Construction: [valid-prefix, assistant(tc), user-breaking, tool(tc), tail…]
+     * The user-breaking message sits between the assistant tool call and its
+     * result, making the summarize prefix invalid when cut after tool(tc).
+     * Cross-boundary passes (no tool result in retain from summarize), but
+     * isValidSequence on the summarize prefix catches the unclosed batch
+     * at the user-breaking message.
+     */
+    public function testUnclosedBatchInSummarizePrefixNotSafe(): void
+    {
+        $tightSettings = new CompactionConfig(
+            enabled: true,
+            keepRecentTokens: 60,
+        );
+
+        // Valid prefix.
+        $messages = [];
+        $messages[] = $this->makeMessage('user', 'start');
+        $messages[] = $this->makeMessage('assistant', 'ok');
+
+        // Block that creates the invalid summarize prefix when cut after
+        // the tool message: assistant opens tc1, user breaks open batch,
+        // tool result for tc1.
+        $messages[] = $this->makeAssistantWithToolCalls(['tc1']);
+        $messages[] = $this->makeMessage('user', 'breaking open batch');
+        $messages[] = $this->makeToolResult('tc1');
+
+        // Padding: messages large enough to push total above keepRecentTokens.
+        for ($i = 0; $i < 3; ++$i) {
+            $messages[] = $this->makeMessage(
+                'assistant',
+                \str_repeat('pad', 30),
+            );
+        }
+
+        $result = $this->compactor->prepare($messages, $tightSettings);
+
+        // Every boundary >= 1 produces an invalid partition (either
+        // summarize-prefix unclosed batch or retain-tail unclosed
+        // batch) and boundary=0 is rejected by findSafeBoundary.
+        self::assertNull(
+            $result,
+            'prepare() should return null: no boundary produces two valid partitions',
+        );
+    }
+
+    /**
+     * Thesis: A valid assistant tool-call + tool result group is still
+     * retained together after the partition validity strengthening —
+     * both partitions pass isValidSequence.
+     */
+    public function testValidToolCallGroupRetainedTogetherAccepted(): void
+    {
+        $tightSettings = new CompactionConfig(
+            enabled: true,
+            keepRecentTokens: 200,
+        );
+
+        // Prefix padding.
+        $messages = [];
+        for ($i = 0; $i < 10; ++$i) {
+            $messages[] = $this->makeMessage(
+                'user',
+                \str_repeat('history-', 30),
+            );
+            $messages[] = $this->makeMessage(
+                'assistant',
+                \str_repeat('response-', 30),
+            );
+        }
+
+        // Tool-call group near the end — full open/close.
+        $messages[] = $this->makeAssistantWithToolCalls(['group_tc1', 'group_tc2']);
+        $messages[] = $this->makeToolResult('group_tc1');
+        $messages[] = $this->makeToolResult('group_tc2');
+
+        $result = $this->compactor->prepare($messages, $tightSettings);
+
+        self::assertNotNull(
+            $result,
+            'Valid tool-call group should not block compaction',
+        );
+
+        // If the tool-call group ends up in the retained tail, it must be
+        // complete (all three messages present).
+        $retained = $result->retainedTailMessages;
+        $foundAssistant = false;
+        $foundTc1 = false;
+        $foundTc2 = false;
+
+        foreach ($retained as $msg) {
+            if ('assistant' === $msg->role) {
+                $tcIds = $this->extractToolCallIdsFromMessage($msg);
+
+                if (\in_array('group_tc1', $tcIds, true)) {
+                    $foundAssistant = true;
+                }
+            }
+
+            if ('tool' === $msg->role && 'group_tc1' === $msg->toolCallId) {
+                $foundTc1 = true;
+            }
+
+            if ('tool' === $msg->role && 'group_tc2' === $msg->toolCallId) {
+                $foundTc2 = true;
+            }
+        }
+
+        // Either the entire group is retained or none of it is.
+        if ($foundAssistant || $foundTc1 || $foundTc2) {
+            self::assertTrue(
+                $foundAssistant && $foundTc1 && $foundTc2,
+                'Tool-call group must be retained together or not at all',
+            );
+        }
+    }
+
+    /**
+     * Thesis: An orphan retained tool result with a call ID remains unsafe
+     * under partition validation — prepare() does not accept a boundary
+     * that splits the assistant from its tool result.
+     *
+     * Construction: [assistant(tc), tool(tc), ...padded-history...]
+     * The tool-call group is entirely in the summarize zone.  Any orphan
+     * tool result in the retained tail with a call ID and no matching
+     * assistant is rejected by cross-boundary checks.
+     */
+    public function testOrphanRetainedToolResultUnsafe(): void
+    {
+        $tightSettings = new CompactionConfig(
+            enabled: true,
+            keepRecentTokens: 200,
+        );
+
+        // A tool-call group entirely in the early part of history.
+        $messages = [];
+        $messages[] = $this->makeAssistantWithToolCalls(['orphan_tc']);
+        $messages[] = $this->makeToolResult('orphan_tc');
+
+        // Padded history to push the boundary beyond the early group.
+        for ($i = 0; $i < 15; ++$i) {
+            $messages[] = $this->makeMessage(
+                'user',
+                \str_repeat('x', 200),
+            );
+            $messages[] = $this->makeMessage(
+                'assistant',
+                \str_repeat('y', 200),
+            );
+        }
+
+        $result = $this->compactor->prepare($messages, $tightSettings);
+
+        // Should still produce a valid preparation without the orphan.
+        if (null !== $result) {
+            foreach ($result->retainedTailMessages as $msg) {
+                self::assertFalse(
+                    'tool' === $msg->role && 'orphan_tc' === $msg->toolCallId,
+                    'Orphan tool result must not appear in retained tail',
+                );
+            }
+        }
+    }
+
+    /**
+     * Extract tool_call_ids from a message for test assertions.
+     *
+     * @return list<string>
+     */
+    private function extractToolCallIdsFromMessage(AgentMessage $message): array
+    {
+        $toolCalls = $message->metadata['tool_calls'] ?? null;
+
+        if (!\is_array($toolCalls)) {
+            return [];
+        }
+
+        $ids = [];
+
+        foreach ($toolCalls as $tc) {
+            if (\is_array($tc) && \is_string($tc['id'] ?? null) && '' !== $tc['id']) {
+                $ids[] = $tc['id'];
+            }
+        }
+
+        return $ids;
+    }
 }

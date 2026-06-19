@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Session;
 
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\MalformedToolCallSequenceException;
 use Ineersa\CodingAgent\Config\CompactionConfig;
 
 /**
@@ -364,10 +366,16 @@ final class SessionCompactor
      * Messages[0..boundary-1] will be summarized.
      * Messages[boundary..end] will be retained.
      *
-     * Safety checks:
+     * Safety checks (two layers):
+     *
+     * Cross-boundary invariants:
      *   - No tool result in the retained tail whose assistant tool call is in the summarize partition.
      *   - No assistant tool call in the summarize partition whose tool results are in the retained tail.
      *   - No tool result in the retained tail without a corresponding assistant tool call (orphan).
+     *
+     * Partition validity (each side is provider-valid per AgentMessageToolCallSequenceValidator):
+     *   - The summarize prefix must be a valid message sequence (no unclosed batches, no orphans).
+     *   - The retained tail must be a valid message sequence.
      *
      * @param list<AgentMessage> $messages
      * @param int                $boundary Index of first retained message
@@ -375,6 +383,8 @@ final class SessionCompactor
     private function isSafeCutPoint(array $messages, int $boundary): bool
     {
         $count = \count($messages);
+
+        // ── Cross-boundary invariants ─────────────────────────────
 
         // Collect all tool_call_ids opened by assistant messages in the summarize partition.
         $summarizeToolCallIds = [];
@@ -403,9 +413,9 @@ final class SessionCompactor
             $toolCallId = $messages[$i]->toolCallId;
 
             if (null === $toolCallId || '' === $toolCallId) {
-                // Tool message without a call ID — only safe if no open
-                // assistant tool-call batch would need it.  Conservatively
-                // treat as unsafe to avoid risk.
+                // Tool message without a call ID — not a cross-boundary
+                // concern.  Partition validity (isValidSequence) handles
+                // whether it's safe within its partition.
                 continue;
             }
 
@@ -415,30 +425,68 @@ final class SessionCompactor
             }
 
             // Rule: no orphan retained tool result.
-            // A tool result is orphan if it's not opened by a retained assistant message
-            // AND not satisfied by a prior assistant message in the summarize partition
-            // that has ALL its tool results summarized too (the batch is closed).
-            // However, the "not in summarizeToolCallIds" case is already handled above.
-            // Here we only check if the tool_call_id wasn't opened by any retained assistant.
+            // A tool result is orphan if it's not opened by a retained assistant message.
+            // Since the assistant is not in the summarize partition (checked above),
+            // and not in the retained tail, it's genuinely orphan.
             if (!isset($retainedAssistantToolCallIds[$toolCallId])) {
-                // The tool result is orphan — no assistant in the retained tail opened it,
-                // and the assistant in the summarize partition would have part of its
-                // batch retained (this tool result) while the assistant itself is
-                // summarized away. This violates the invariant.
                 return false;
             }
         }
 
         // Rule: never summarize an assistant tool-call message while retaining its tool results.
-        // Check each tool_call_id in the summarize partition: if any of its tool results
-        // appear in the retained tail, the cut is unsafe.
         foreach ($summarizeToolCallIds as $toolCallId => $_unused) {
-            // Scan retained tail for tool messages matching this ID.
             for ($i = $boundary; $i < $count; ++$i) {
                 if ('tool' === $messages[$i]->role && $messages[$i]->toolCallId === $toolCallId) {
                     return false;
                 }
             }
+        }
+
+        // ── Partition validity ────────────────────────────────────
+        // Each partition must be provider-valid on its own so that the
+        // summarization call and the resumed conversation both satisfy
+        // the tool-call sequence invariant.
+
+        if (!$this->isValidSequence(\array_slice($messages, 0, $boundary))) {
+            return false;
+        }
+
+        if (!$this->isValidSequence(\array_slice($messages, $boundary))) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Check whether a message sequence is provider-valid per the
+     * tool-call/tool-result sequence invariant.
+     *
+     * Reuses AgentMessageToolCallSequenceValidator, which is also used by
+     * LlmPlatformAdapter before every provider call.  On violation the
+     * validator throws MalformedToolCallSequenceException; we catch it and
+     * return false.  This is intentional local degradation: an unsafe
+     * boundary causes prepare() to return null (skip compaction) rather
+     * than risking an invalid conversation history.
+     *
+     * @param list<AgentMessage> $messages
+     */
+    private function isValidSequence(array $messages): bool
+    {
+        static $validator = null;
+
+        if (null === $validator) {
+            $validator = new AgentMessageToolCallSequenceValidator();
+        }
+
+        try {
+            $validator->validate($messages);
+        } catch (MalformedToolCallSequenceException) {
+            // Intentional local degradation: an invalid partition
+            // means the candidate cut point is unsafe; skip
+            // compaction rather than risk provider errors.
+
+            return false;
         }
 
         return true;
