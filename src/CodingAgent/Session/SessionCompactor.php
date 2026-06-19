@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\MalformedToolCallSequenceException;
 use Ineersa\CodingAgent\Config\CompactionConfig;
+use Symfony\Component\String\UnicodeString;
 
 /**
  * Compaction preparation, safe cut-point selection, summarization prompt
@@ -16,37 +17,43 @@ use Ineersa\CodingAgent\Config\CompactionConfig;
  * This service contains the pure algorithm and prompt-construction logic.
  * It does NOT call any LLM or platform — COMP-02 handles model invocation.
  *
- * Preparation algorithm (plan section 9):
- *   1. Hydrate all messages into AgentMessage objects.
- *   2. Estimate total tokens.
- *   3. Walk backward from newest to oldest, accumulating tokens until
+ * Preparation algorithm:
+ *   1. Estimate total tokens from model-facing text (no JSON).
+ *   2. Walk backward from newest to oldest, accumulating tokens until
  *      keepRecentTokens is reached.
- *   4. Move the boundary to a safe cut point (plan section 10).
- *   5. Return partitions or null if no compaction is needed/possible.
+ *   3. Move the boundary to a safe cut point.
+ *   4. Return rich result or skip reason.
  *
- * Safe cut rules (plan section 10):
+ * Safe cut rules:
  *   - Prefer cutting before a user message.
  *   - Never retain a tool result whose assistant tool call was summarized away.
  *   - Never summarize an assistant tool-call message while retaining its tool results.
  *   - Assistant/tool-call groups are indivisible.
  *   - If no safe boundary exists, skip compaction.
+ *
+ * Token estimation uses only model-facing text/content with a
+ * Unicode-safe 3.25 chars/token divisor. No JSON envelope is included.
+ *
+ * Tool results in the summarize partition are deterministically
+ * digested/placeholdered before summarization so the model call never
+ * receives huge raw tool output.
  */
 final class SessionCompactor
 {
-    // ── Prompt texts (plan section 5) ────────────────────────────────
+    /** Characters-per-token divisor for estimation */
+    private const float CHARS_PER_TOKEN = 3.25;
 
-    private const string SUMMARIZATION_SYSTEM_MESSAGE = "You are a context summarization assistant. Read the conversation and produce only a handoff summary.\n\nDo not continue the conversation. Do not answer questions from the conversation. Do not call tools. Output only the summary text.";
+    /** Maximum preview snippet length for tool-result digests */
+    private const int TOOL_DIGEST_PREVIEW_LENGTH = 500;
 
-    private const string SUMMARIZATION_USER_PROMPT = "You are performing a CONTEXT CHECKPOINT COMPACTION. Create a handoff summary for another LLM that will resume the task.\n\nInclude:\n- Current progress and key decisions made\n- Important context, constraints, or user preferences\n- What remains to be done (clear next steps)\n- Any critical data, examples, file paths, commands, errors, or references needed to continue\n\nIf a prior compaction summary exists in the conversation, incorporate it and preserve still-relevant facts.\n\nBe concise, structured, and focused on helping the next LLM seamlessly continue the work.";
-
-    private const string CUSTOM_INSTRUCTIONS_PREFIX = "Additional user instructions for this compaction:\n";
-
+    /** Prefix/suffix markers for the compacted summary injection */
     private const string SUMMARY_PREFIX = "The conversation history before this point was compacted into the following handoff summary. Use it as prior context, not as a new user request.\n\n<summary>\n";
-
     private const string SUMMARY_SUFFIX = "\n</summary>";
+
     private readonly AgentMessageToolCallSequenceValidator $sequenceValidator;
 
     public function __construct(
+        private readonly CompactionPromptBuilder $promptBuilder,
         ?AgentMessageToolCallSequenceValidator $sequenceValidator = null,
     ) {
         $this->sequenceValidator = $sequenceValidator ?? new AgentMessageToolCallSequenceValidator();
@@ -57,44 +64,50 @@ final class SessionCompactor
     /**
      * Prepare compaction partitions for a message list.
      *
+     * Returns a rich result object — either a usable preparation or
+     * a specific skip reason — so the future pipeline (COMP-02) can
+     * distinguish disabled/below-threshold/no-safe-boundary without
+     * inspecting bare null.
+     *
      * @param list<AgentMessage> $messages Current message list
      * @param CompactionConfig   $settings Compaction settings (budgets, enabled flag)
-     *
-     * @return CompactionPreparationDTO|null Null when no compaction is needed
-     *                                       (short session, no safe boundary, or compaction disabled)
      */
-    public function prepare(array $messages, CompactionConfig $settings): ?CompactionPreparationDTO
+    public function prepare(array $messages, CompactionConfig $settings): CompactionPreparationResultDTO
     {
-        if (!$settings->enabled) {
-            return null;
-        }
-
         $count = \count($messages);
 
         // Nothing to compact with 0 or 1 messages.
         if ($count < 2) {
-            return null;
+            return CompactionPreparationResultDTO::skipped(
+                CompactionSkipReasonEnum::TooFewMessages,
+            );
         }
 
         $totalEstimate = $this->estimateTokens($messages);
 
         // No need to compact if the entire session fits within keepRecentTokens.
         if ($totalEstimate <= $settings->keepRecentTokens) {
-            return null;
+            return CompactionPreparationResultDTO::skipped(
+                CompactionSkipReasonEnum::BelowKeepRecentTokens,
+            );
         }
 
         // Walk backward accumulating tokens until we retain at least keepRecentTokens.
         $boundary = $this->findBoundary($messages, $settings->keepRecentTokens);
 
         if (null === $boundary) {
-            return null;
+            return CompactionPreparationResultDTO::skipped(
+                CompactionSkipReasonEnum::NoBoundary,
+            );
         }
 
         // Move the boundary to a safe cut point.
         $safeBoundary = $this->findSafeBoundary($messages, $boundary);
 
         if (null === $safeBoundary) {
-            return null;
+            return CompactionPreparationResultDTO::skipped(
+                CompactionSkipReasonEnum::NoSafeBoundary,
+            );
         }
 
         $messagesToSummarize = \array_slice($messages, 0, $safeBoundary);
@@ -102,14 +115,16 @@ final class SessionCompactor
 
         $priorSummaryPresent = $this->detectPriorCompactSummary($messagesToSummarize);
 
-        return new CompactionPreparationDTO(
-            messagesToSummarize: $messagesToSummarize,
-            retainedTailMessages: $retainedTail,
-            tokenEstimateBefore: $totalEstimate,
-            messagesCompacted: \count($messagesToSummarize),
-            messagesRetained: \count($retainedTail),
-            firstRetainedIndex: $safeBoundary,
-            priorSummaryPresent: $priorSummaryPresent,
+        return CompactionPreparationResultDTO::ready(
+            new CompactionPreparationDTO(
+                messagesToSummarize: $messagesToSummarize,
+                retainedTailMessages: $retainedTail,
+                tokenEstimateBefore: $totalEstimate,
+                messagesCompacted: \count($messagesToSummarize),
+                messagesRetained: \count($retainedTail),
+                firstRetainedIndex: $safeBoundary,
+                priorSummaryPresent: $priorSummaryPresent,
+            ),
         );
     }
 
@@ -118,9 +133,14 @@ final class SessionCompactor
     /**
      * Build the message list for the summarization LLM call.
      *
-     * Returns [system message, ...messagesToSummarize, user prompt message]
-     * as AgentMessage instances. The system and user prompts are synthetic
-     * messages with 'system' and 'user' roles respectively.
+     * Returns a list of AgentMessage instances ready for the model.
+     * Messages in the summarize partition are digested (tool results
+     * replaced with deterministic placeholders) before appending the
+     * summarization prompt.
+     *
+     * The summarization prompt is rendered from COMPACTION.md template
+     * files (same precedence as SYSTEM.md). Custom instructions are
+     * injected via the {custom_instructions_part} placeholder.
      *
      * @param CompactionPreparationDTO $preparation        Prepared partitions
      * @param string|null              $customInstructions Optional user-provided instructions
@@ -131,26 +151,18 @@ final class SessionCompactor
         CompactionPreparationDTO $preparation,
         ?string $customInstructions,
     ): array {
-        $systemMessage = new AgentMessage(
-            role: 'system',
-            content: [['type' => 'text', 'text' => self::SUMMARIZATION_SYSTEM_MESSAGE]],
-        );
+        $renderedPrompt = $this->promptBuilder->build($customInstructions);
 
-        $userPromptText = self::SUMMARIZATION_USER_PROMPT;
-
-        if (null !== $customInstructions && '' !== trim($customInstructions)) {
-            $userPromptText .= "\n\n".self::CUSTOM_INSTRUCTIONS_PREFIX.trim($customInstructions);
-        }
-
-        $userPromptMessage = new AgentMessage(
+        $promptMessage = new AgentMessage(
             role: 'user',
-            content: [['type' => 'text', 'text' => $userPromptText]],
+            content: [['type' => 'text', 'text' => $renderedPrompt]],
         );
+
+        $digestedMessages = $this->digestToolResults($preparation->messagesToSummarize);
 
         return [
-            $systemMessage,
-            ...$preparation->messagesToSummarize,
-            $userPromptMessage,
+            ...$digestedMessages,
+            $promptMessage,
         ];
     }
 
@@ -203,22 +215,167 @@ final class SessionCompactor
     /**
      * Estimate token count for a list of AgentMessages.
      *
-     * Uses the same JSON-length/4 approximation as
-     * ReplayService::estimateTokens().  Public so the future
-     * auto-compaction trigger policy (COMP-06) can check whether
-     * the estimated context exceeds the reserve threshold before
-     * deciding to compact.
+     * Estimates from model-facing text/content only, using
+     * Symfony UnicodeString length and a 3.25 chars/token divisor.
+     * No JSON envelope is included; metadata, details, and structural
+     * keys are not counted.
+     *
+     * Public so the future auto-compaction trigger policy (COMP-06)
+     * can check whether the estimated context exceeds the reserve
+     * threshold.
      *
      * @param list<AgentMessage> $messages
      */
     public function estimateTokens(array $messages): int
     {
-        $serialized = json_encode(
-            array_map(static fn (AgentMessage $m): array => $m->toArray(), $messages),
-            \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE,
+        $total = 0;
+
+        foreach ($messages as $message) {
+            $total += $this->estimateMessageTokens($message);
+        }
+
+        return $total;
+    }
+
+    // ── Tool-result digest ────────────────────────────────────────────
+
+    /**
+     * Transform tool messages into deterministic digest/placeholder content.
+     *
+     * Only tool results are replaced; all other messages pass through
+     * unchanged. The original session messages are never mutated — this
+     * operates on a copy of the summarize partition.
+     *
+     * The digest includes: tool name, tool_call_id, is_error, estimated
+     * tokens, char count, and a bounded first/last text preview.
+     *
+     * @param list<AgentMessage> $messages
+     *
+     * @return list<AgentMessage>
+     */
+    private function digestToolResults(array $messages): array
+    {
+        $result = [];
+
+        foreach ($messages as $message) {
+            if ('tool' !== $message->role) {
+                $result[] = $message;
+
+                continue;
+            }
+
+            $result[] = $this->buildToolDigest($message);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Build a deterministic digest AgentMessage for a tool result.
+     */
+    private function buildToolDigest(AgentMessage $toolMessage): AgentMessage
+    {
+        $originalText = $this->messageToText($toolMessage);
+        $charCount = \strlen($originalText);
+
+        $lines = explode("\n", $originalText);
+        $preview = '';
+
+        if ($charCount <= self::TOOL_DIGEST_PREVIEW_LENGTH * 2) {
+            $preview = $originalText;
+        } else {
+            $first = mb_substr($originalText, 0, self::TOOL_DIGEST_PREVIEW_LENGTH);
+            $last = mb_substr($originalText, -self::TOOL_DIGEST_PREVIEW_LENGTH);
+            $preview = $first."\n\n... [".($charCount - self::TOOL_DIGEST_PREVIEW_LENGTH * 2).' chars truncated] ...'."\n\n".$last;
+        }
+
+        $status = $toolMessage->isError ? 'ERROR' : 'ok';
+        $exitCode = null;
+
+        if (\is_array($toolMessage->details) && isset($toolMessage->details['exit_code'])) {
+            $exitCode = $toolMessage->details['exit_code'];
+            if (0 !== $exitCode) {
+                $status = 'exit code '.$exitCode;
+            }
+        }
+
+        $digestText = \sprintf(
+            "[Tool result: %s]\ntool_call_id: %s\nstatus: %s\nestimated tokens: %d\nchar count: %d\n\n--- content preview ---\n%s\n--- end preview ---",
+            $toolMessage->toolName ?? 'unknown',
+            $toolMessage->toolCallId ?? '(none)',
+            $status,
+            $this->estimateMessageTokens($toolMessage),
+            $charCount,
+            $preview,
         );
 
-        return (int) ceil(\strlen($serialized) / 4);
+        return new AgentMessage(
+            role: 'tool',
+            content: [['type' => 'text', 'text' => $digestText]],
+            toolCallId: $toolMessage->toolCallId,
+            toolName: $toolMessage->toolName,
+        );
+    }
+
+    /**
+     * Estimate tokens for a single AgentMessage using model-facing
+     * text only.
+     */
+    private function estimateMessageTokens(AgentMessage $message): int
+    {
+        $text = $this->messageToText($message);
+
+        if ('' === $text) {
+            return 0;
+        }
+
+        $length = (new UnicodeString($text))->length();
+
+        return (int) ceil($length / self::CHARS_PER_TOKEN);
+    }
+
+    /**
+     * Extract the model-facing text content from an AgentMessage.
+     *
+     * Follows AgentMessageConverter semantics:
+     *   - Concatenates non-empty text content parts with newline.
+     *   - For custom roles, includes the `[role] ` prefix.
+     *   - For tool messages, uses the text content that would be sent
+     *     (not details.raw_result).
+     *   - Does not include metadata, details, or JSON envelope.
+     */
+    private function messageToText(AgentMessage $message): string
+    {
+        $text = $this->extractContentText($message->content);
+
+        if ($message->isCustomRole()) {
+            $text = \sprintf('[%s] %s', $message->role, $text);
+        }
+
+        return $text;
+    }
+
+    /**
+     * Concatenate text from all 'text' content parts.
+     *
+     * @param array<int, array<string, mixed>> $content
+     */
+    private function extractContentText(array $content): string
+    {
+        $parts = [];
+
+        foreach ($content as $contentPart) {
+            if (!\is_array($contentPart)) {
+                continue;
+            }
+
+            $text = $contentPart['text'] ?? null;
+            if (\is_string($text) && '' !== $text) {
+                $parts[] = $text;
+            }
+        }
+
+        return implode("\n", $parts);
     }
 
     // ── Prior summary detection ───────────────────────────────────────
@@ -248,8 +405,7 @@ final class SessionCompactor
      * until at least targetTokens is accumulated. Returns the index
      * of the first message in the tail (i.e. the cut boundary).
      *
-     * Returns null if all messages fit inside the target (shouldn't happen
-     * since we already checked totalEstimate > keepRecentTokens).
+     * Returns null if all messages fit inside the target.
      *
      * @param list<AgentMessage> $messages
      *
@@ -268,54 +424,38 @@ final class SessionCompactor
             }
         }
 
-        // All messages fit — shouldn't be called if totalEstimate > target.
         return null;
     }
 
     /**
      * Find a safe boundary at or before the given tentative boundary.
      *
-     * Rules:
-     *   1. Prefer cutting before a user message.
-     *   2. Never split an assistant tool-call group from its tool results.
-     *   3. Never leave an orphan tool result in the retained tail.
-     *   4. Conservative: keep more messages rather than fewer.
-     *
      * Walks backward from tentativeBoundary, preferring cuts before user
      * messages. Falls back to any safe cut point if no user boundary exists
      * within range.
      *
      * @param list<AgentMessage> $messages
-     * @param int                $tentativeBoundary Index of the first retained message (from findBoundary)
+     * @param int                $tentativeBoundary Index of the first retained message
      *
      * @return int|null A safe boundary index, or null if none found
      */
     private function findSafeBoundary(array $messages, int $tentativeBoundary): ?int
     {
-        $count = \count($messages);
-
-        // If boundary is at or before the first message, nothing to summarize.
         if ($tentativeBoundary < 1) {
             return null;
         }
 
         $fallback = null;
 
-        // Walk backward from the tentative boundary, preferring
-        // safe cuts before user messages.
         for ($candidate = $tentativeBoundary; $candidate >= 1; --$candidate) {
             if (!$this->isSafeCutPoint($messages, $candidate)) {
                 continue;
             }
 
-            // User-boundary preference: if the first retained message
-            // is a user message, return immediately.
             if ('user' === $messages[$candidate]->role) {
                 return $candidate;
             }
 
-            // Record the first safe boundary found (largest index)
-            // as fallback in case no user boundary exists.
             if (null === $fallback) {
                 $fallback = $candidate;
             }
@@ -327,20 +467,7 @@ final class SessionCompactor
     /**
      * Check whether cutting at the given boundary is safe.
      *
-     * The boundary is the index of the first retained message.
-     * Messages[0..boundary-1] will be summarized.
-     * Messages[boundary..end] will be retained.
-     *
-     * Safety checks (two layers):
-     *
-     * Cross-boundary invariants:
-     *   - No tool result in the retained tail whose assistant tool call is in the summarize partition.
-     *   - No assistant tool call in the summarize partition whose tool results are in the retained tail.
-     *   - No tool result in the retained tail without a corresponding assistant tool call (orphan).
-     *
-     * Partition validity (each side is provider-valid per AgentMessageToolCallSequenceValidator):
-     *   - The summarize prefix must be a valid message sequence (no unclosed batches, no orphans).
-     *   - The retained tail must be a valid message sequence.
+     * Two-layer safety: cross-boundary invariants + partition validity.
      *
      * @param list<AgentMessage> $messages
      * @param int                $boundary Index of first retained message
@@ -351,25 +478,22 @@ final class SessionCompactor
 
         // ── Cross-boundary invariants ─────────────────────────────
 
-        // Collect all tool_call_ids opened by assistant messages in the summarize partition.
         $summarizeToolCallIds = [];
         for ($i = 0; $i < $boundary; ++$i) {
-            $extracted = $this->extractToolCallIds($messages[$i]);
+            $extracted = AgentMessageToolCallSequenceValidator::extractToolCallIds($messages[$i]);
             foreach ($extracted as $id) {
                 $summarizeToolCallIds[$id] = true;
             }
         }
 
-        // Collect all tool_call_ids expected from assistant messages in the retained tail.
         $retainedAssistantToolCallIds = [];
         for ($i = $boundary; $i < $count; ++$i) {
-            $extracted = $this->extractToolCallIds($messages[$i]);
+            $extracted = AgentMessageToolCallSequenceValidator::extractToolCallIds($messages[$i]);
             foreach ($extracted as $id) {
                 $retainedAssistantToolCallIds[$id] = true;
             }
         }
 
-        // Check every retained tool message.
         for ($i = $boundary; $i < $count; ++$i) {
             if ('tool' !== $messages[$i]->role) {
                 continue;
@@ -378,27 +502,18 @@ final class SessionCompactor
             $toolCallId = $messages[$i]->toolCallId;
 
             if (null === $toolCallId || '' === $toolCallId) {
-                // Tool message without a call ID — not a cross-boundary
-                // concern.  Partition validity (isValidSequence) handles
-                // whether it's safe within its partition.
                 continue;
             }
 
-            // Rule: never retain a tool result if its assistant tool call was summarized away.
             if (isset($summarizeToolCallIds[$toolCallId])) {
                 return false;
             }
 
-            // Rule: no orphan retained tool result.
-            // A tool result is orphan if it's not opened by a retained assistant message.
-            // Since the assistant is not in the summarize partition (checked above),
-            // and not in the retained tail, it's genuinely orphan.
             if (!isset($retainedAssistantToolCallIds[$toolCallId])) {
                 return false;
             }
         }
 
-        // Rule: never summarize an assistant tool-call message while retaining its tool results.
         foreach ($summarizeToolCallIds as $toolCallId => $_unused) {
             for ($i = $boundary; $i < $count; ++$i) {
                 if ('tool' === $messages[$i]->role && $messages[$i]->toolCallId === $toolCallId) {
@@ -408,9 +523,6 @@ final class SessionCompactor
         }
 
         // ── Partition validity ────────────────────────────────────
-        // Each partition must be provider-valid on its own so that the
-        // summarization call and the resumed conversation both satisfy
-        // the tool-call sequence invariant.
 
         if (!$this->isValidSequence(\array_slice($messages, 0, $boundary))) {
             return false;
@@ -427,18 +539,6 @@ final class SessionCompactor
      * Check whether a message sequence is provider-valid per the
      * tool-call/tool-result sequence invariant.
      *
-     * Reuses AgentMessageToolCallSequenceValidator, which is also used by
-     * LlmPlatformAdapter before every provider call.  On violation the
-     * validator throws MalformedToolCallSequenceException; we catch it and
-     * return false.  This is intentional local degradation: an unsafe
-     * boundary causes prepare() to return null (skip compaction) rather
-     * than risking an invalid conversation history.
-     *
-     * Logging is intentionally deferred to the caller (COMP-02 pipeline):
-     * this service is a pure algorithm; the pipeline layer that calls
-     * prepare() owns the observable failure/log/event behaviour for
-     * null/no-op (compaction skipped, compaction failed).
-     *
      * @param list<AgentMessage> $messages
      */
     private function isValidSequence(array $messages): bool
@@ -446,63 +546,9 @@ final class SessionCompactor
         try {
             $this->sequenceValidator->validate($messages);
         } catch (MalformedToolCallSequenceException) {
-            // Intentional local degradation: an invalid partition
-            // means the candidate cut point is unsafe; skip
-            // compaction rather than risk provider errors.
-            // Logging is handled by the pipeline caller (COMP-02).
-
             return false;
         }
 
         return true;
-    }
-
-    /**
-     * Extract tool_call_ids from an assistant message's metadata.
-     *
-     * Mirrors AgentMessageToolCallSequenceValidator::extractToolCallIds() logic.
-     *
-     * @return list<string>
-     */
-    private function extractToolCallIds(AgentMessage $message): array
-    {
-        if ('assistant' !== $message->role) {
-            return [];
-        }
-
-        $rawToolCalls = $message->metadata['tool_calls'] ?? null;
-
-        if (!\is_array($rawToolCalls)) {
-            return [];
-        }
-
-        $ids = [];
-
-        foreach ($rawToolCalls as $rawToolCall) {
-            if (!\is_array($rawToolCall)) {
-                continue;
-            }
-
-            $id = $rawToolCall['id'] ?? null;
-
-            if (\is_string($id) && '' !== $id) {
-                $ids[] = $id;
-            }
-        }
-
-        return $ids;
-    }
-
-    /**
-     * Estimate tokens for a single AgentMessage using the same approximation.
-     */
-    private function estimateMessageTokens(AgentMessage $message): int
-    {
-        $serialized = json_encode(
-            $message->toArray(),
-            \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE,
-        );
-
-        return (int) ceil(\strlen($serialized) / 4);
     }
 }

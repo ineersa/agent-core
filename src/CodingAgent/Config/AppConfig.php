@@ -25,7 +25,7 @@ use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
  *  - tools      ToolsConfig (execution, output_cap, background_process, image, …)
  *  - ai         AiConfig (provider and model configuration)
  *  - prompts    PromptsConfig (custom system/user prompt overrides)
- *  - compaction CompactionConfig (enabled, reserve_tokens, keep_recent_tokens, max_summary_tokens, model)
+ *  - compaction CompactionConfig (auto_enabled, compact_after_tokens, keep_recent_tokens, model, thinking_level, provider_overrides, model_overrides)
  *
  * The raw array is kept for forward compatibility with config keys
  * that do not yet have a typed DTO. Production consumers must use

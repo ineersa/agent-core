@@ -205,11 +205,21 @@ logging:
 # compaction settings.
 #
 # compaction:
-#     enabled: true
-#     reserve_tokens: 16384
+#     auto_enabled: true
+#     compact_after_tokens: 120000
 #     keep_recent_tokens: 20000
-#     max_summary_tokens: null       # null = floor(reserve_tokens * 0.8)
 #     model: null                    # null = session model; set provider/model to override
+#     thinking_level: null           # null = session thinking level
+#     provider_overrides:
+#         openai:
+#             compact_after_tokens: 120000
+#             model: openai/gpt-4.1-mini
+#             thinking_level: low
+#     model_overrides:
+#         openai/gpt-4.1:
+#             compact_after_tokens: 140000
+#             model: openai/gpt-4.1-mini
+#             thinking_level: off
 
 # ---------------------------------------------------------------------------
 # AI provider and model configuration

@@ -33,17 +33,19 @@ sessions:
 # ---------------------------------------------------------------------------
 #
 # Compaction replaces older conversation history with a concise handoff summary
-# while keeping the most recent messages raw. The summarization model defaults
-# to the active session model; override via compaction.model.
+# while keeping the most recent messages raw. Manual /compact is always available.
+# Auto-compaction triggers when the estimated context exceeds compact_after_tokens.
+#
+# Per-provider and per-model overrides win over global settings.
+# Provider overrides use provider IDs (e.g. openai, llama_cpp).
+# Model overrides use provider/model keys (e.g. openai/gpt-4.1).
 #
 compaction:
-    # Whether manual compaction (/compact) and, later, auto-compaction are enabled.
-    enabled: true
+    # Controls auto-compaction only. Manual /compact is always available.
+    auto_enabled: true
 
-    # Tokens reserved for the next model response. Used by the auto-compaction
-    # trigger policy (Phase 2). Also influences the effective max_summary_tokens
-    # when max_summary_tokens is null.
-    reserve_tokens: 16384
+    # Flat token threshold for auto-compaction trigger.
+    compact_after_tokens: 120000
 
     # Approximate number of newest tokens to retain raw after compaction.
     # Messages are kept whole — the cut never splits a message, so the actual
@@ -51,13 +53,29 @@ compaction:
     # is further back.
     keep_recent_tokens: 20000
 
-    # Explicit cap for summary generation. When null, defaults to
-    # floor(reserve_tokens * 0.8).
-    max_summary_tokens: null
-
     # Summarization model override. Format: provider/model (e.g. llama_cpp/flash).
     # When null, the active session model is used for summarization.
     model: null
+
+    # Thinking/reasoning level for summarization calls.
+    # When null, the session's active thinking level is used.
+    thinking_level: null
+
+    # Per-provider override settings.
+    # Each entry can set: compact_after_tokens, model, thinking_level.
+    # provider_overrides:
+    #     openai:
+    #         compact_after_tokens: 120000
+    #         model: openai/gpt-4.1-mini
+    #         thinking_level: low
+
+    # Per-model override settings (wins over provider, which wins over global).
+    # Each entry can set: compact_after_tokens, model, thinking_level.
+    # model_overrides:
+    #     openai/gpt-4.1:
+    #         compact_after_tokens: 140000
+    #         model: openai/gpt-4.1-mini
+    #         thinking_level: off
 
 # ---------------------------------------------------------------------------
 # Tools

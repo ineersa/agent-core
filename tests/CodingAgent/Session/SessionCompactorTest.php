@@ -5,17 +5,29 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Session;
 
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
+use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\CompactionConfig;
+use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\SettingsPathResolver;
+use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\CompactResultDTO;
 use Ineersa\CodingAgent\Session\CompactionPreparationDTO;
+use Ineersa\CodingAgent\Session\CompactionPreparationResultDTO;
+use Ineersa\CodingAgent\Session\CompactionPromptBuilder;
+use Ineersa\CodingAgent\Session\CompactionSkipReasonEnum;
 use Ineersa\CodingAgent\Session\SessionCompactor;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
+use Symfony\AI\Platform\Message\TemplateRenderer\StringTemplateRenderer;
 
 #[CoversClass(SessionCompactor::class)]
 #[CoversClass(CompactionPreparationDTO::class)]
 #[CoversClass(CompactResultDTO::class)]
+#[CoversClass(CompactionPreparationResultDTO::class)]
+#[CoversClass(CompactionSkipReasonEnum::class)]
 #[CoversClass(CompactionConfig::class)]
+#[CoversClass(CompactionPromptBuilder::class)]
 final class SessionCompactorTest extends TestCase
 {
     private SessionCompactor $compactor;
@@ -23,14 +35,45 @@ final class SessionCompactorTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->compactor = new SessionCompactor();
-        // Use a small keep_recent_tokens so we can test with short message lists.
+        $projectDir = sys_get_temp_dir().'/compaction-test-'.uniqid();
+
+        // Ensure the built-in COMPACTION.md is available for the prompt builder.
+        $configDir = $projectDir.'/config';
+        if (!is_dir($configDir)) {
+            mkdir($configDir, 0o777, true);
+        }
+
+        $builtinPath = $configDir.'/COMPACTION.md';
+        // Create a minimal template for tests.
+        file_put_contents($builtinPath, "Test compaction prompt.\n\n{date}\n{cwd}{custom_instructions_part}");
+
+        $appConfig = new AppConfig(
+            tui: new TuiConfig(theme: 'test'),
+            logging: new LoggingConfig(),
+            cwd: $projectDir,
+        );
+
+        // SettingsPathResolver is final — use a real instance with test dirs.
+        $homeDir = sys_get_temp_dir().'/compaction-test-home-'.uniqid();
+        if (!is_dir($homeDir)) {
+            mkdir($homeDir, 0o777, true);
+        }
+
+        $pathResolver = new SettingsPathResolver($projectDir, $homeDir);
+
+        $templateRenderer = new StringTemplateRenderer();
+
+        $promptBuilder = new CompactionPromptBuilder(
+            $pathResolver,
+            $templateRenderer,
+            $appConfig,
+            $projectDir,
+        );
+
+        $this->compactor = new SessionCompactor($promptBuilder);
         $this->settings = new CompactionConfig(
-            enabled: true,
-            reserveTokens: 16384,
-            keepRecentTokens: 200, // small to trigger compaction on short lists
-            maxSummaryTokens: null,
-            model: null,
+            autoEnabled: true,
+            keepRecentTokens: 200,
         );
     }
 
@@ -43,6 +86,8 @@ final class SessionCompactorTest extends TestCase
             content: [['type' => 'text', 'text' => $text]],
             toolCallId: $extra['toolCallId'] ?? null,
             toolName: $extra['toolName'] ?? null,
+            details: $extra['details'] ?? null,
+            isError: $extra['isError'] ?? false,
             metadata: $extra['metadata'] ?? [],
         );
     }
@@ -70,18 +115,12 @@ final class SessionCompactorTest extends TestCase
     {
         return new AgentMessage(
             role: 'tool',
-            content: [['type' => 'text', 'text' => 'Result for ' . $toolCallId]],
+            content: [['type' => 'text', 'text' => 'Result for '.$toolCallId]],
             toolCallId: $toolCallId,
             toolName: 'some_tool',
         );
     }
 
-    /**
-     * Create a long synthetic conversation that exceeds keepRecentTokens.
-     *
-     * Pattern: alternating user/assistant pairs with verbose content.
-     * Returns messages that will trigger compaction.
-     */
     private function makeLongConversation(int $pairs = 20): array
     {
         $messages = [];
@@ -89,53 +128,41 @@ final class SessionCompactorTest extends TestCase
         for ($i = 0; $i < $pairs; ++$i) {
             $messages[] = $this->makeMessage(
                 'user',
-                'This is a long user message number ' . $i . '. ' . \str_repeat('padding ', 20),
+                'This is a long user message number '.$i.'. '.\str_repeat('padding ', 20),
             );
             $messages[] = $this->makeMessage(
                 'assistant',
-                'This is a long assistant message number ' . $i . '. ' . \str_repeat('response padding ', 20),
+                'This is a long assistant message number '.$i.'. '.\str_repeat('response padding ', 20),
             );
         }
 
         return $messages;
     }
 
-    // ── prepare(): no-op conditions ──────────────────────────────────
+    // ── prepare(): skip reasons ──────────────────────────────────────
 
     /**
-     * Thesis: prepare() returns null when compaction is disabled.
+     * Thesis: prepare() returns TooFewMessages skip reason for 0 or 1 message.
      */
-    public function testPrepareReturnsNullWhenDisabled(): void
-    {
-        $disabledSettings = new CompactionConfig(enabled: false);
-        $messages = $this->makeLongConversation(50);
-
-        $result = $this->compactor->prepare($messages, $disabledSettings);
-
-        self::assertNull($result);
-    }
-
-    /**
-     * Thesis: prepare() returns null for very short sessions (0 or 1 message).
-     */
-    public function testPrepareReturnsNullForShortSessions(): void
+    public function testPrepareReturnsTooFewMessages(): void
     {
         $result0 = $this->compactor->prepare([], $this->settings);
-        self::assertNull($result0);
+        self::assertFalse($result0->isReady());
+        self::assertSame(CompactionSkipReasonEnum::TooFewMessages, $result0->skipReason);
 
         $result1 = $this->compactor->prepare(
             [$this->makeMessage('user', 'hello')],
             $this->settings,
         );
-        self::assertNull($result1);
+        self::assertFalse($result1->isReady());
+        self::assertSame(CompactionSkipReasonEnum::TooFewMessages, $result1->skipReason);
     }
 
     /**
-     * Thesis: prepare() returns null when the session fits within keepRecentTokens.
+     * Thesis: prepare() returns BelowKeepRecentTokens when session fits budget.
      */
-    public function testPrepareReturnsNullWhenWithinBudget(): void
+    public function testPrepareReturnsBelowKeepRecentTokens(): void
     {
-        // Two small messages fit in 200 token budget.
         $messages = [
             $this->makeMessage('user', 'hi'),
             $this->makeMessage('assistant', 'hello'),
@@ -143,35 +170,37 @@ final class SessionCompactorTest extends TestCase
 
         $result = $this->compactor->prepare($messages, $this->settings);
 
-        self::assertNull($result);
+        self::assertFalse($result->isReady());
+        self::assertSame(CompactionSkipReasonEnum::BelowKeepRecentTokens, $result->skipReason);
     }
 
     // ── prepare(): long session partitions ───────────────────────────
 
     /**
-     * Thesis: For a long conversation, prepare() returns non-null partitions
+     * Thesis: For a long conversation, prepare() returns a ready result
      * with correct counts, indexes, and token estimate.
      */
     public function testPrepareProducesPartitionsForLongSession(): void
     {
         $messages = $this->makeLongConversation(30);
-        $total = \count($messages); // 60 messages
+        $total = \count($messages);
 
         $result = $this->compactor->prepare($messages, $this->settings);
 
-        self::assertNotNull($result, 'Should produce preparation for long session');
-        self::assertGreaterThan(0, $result->messagesCompacted, 'Should compact some messages');
-        self::assertGreaterThan(0, $result->messagesRetained, 'Should retain some messages');
-        self::assertSame($total, $result->messagesCompacted + $result->messagesRetained, 'All messages accounted for');
-        self::assertSame($result->messagesCompacted, $result->firstRetainedIndex, 'First retained index matches compacted count');
-        self::assertGreaterThan(0, $result->tokenEstimateBefore, 'Token estimate before should be positive');
-        self::assertSameSize($result->messagesToSummarize, range(0, $result->messagesCompacted - 1), 'messagesToSummarize count matches');
-        self::assertSameSize($result->retainedTailMessages, range(0, $result->messagesRetained - 1), 'retainedTailMessages count matches');
+        self::assertTrue($result->isReady(), 'Should produce preparation for long session');
+        $prep = $result->preparation;
+        self::assertNotNull($prep);
+        self::assertGreaterThan(0, $prep->messagesCompacted, 'Should compact some messages');
+        self::assertGreaterThan(0, $prep->messagesRetained, 'Should retain some messages');
+        self::assertSame($total, $prep->messagesCompacted + $prep->messagesRetained, 'All messages accounted for');
+        self::assertSame($prep->messagesCompacted, $prep->firstRetainedIndex, 'First retained index matches compacted count');
+        self::assertGreaterThan(0, $prep->tokenEstimateBefore, 'Token estimate before should be positive');
+        self::assertSameSize($prep->messagesToSummarize, range(0, $prep->messagesCompacted - 1));
+        self::assertSameSize($prep->retainedTailMessages, range(0, $prep->messagesRetained - 1));
     }
 
     /**
-     * Thesis: The first message in retainedTailMessages should be the message
-     * at firstRetainedIndex in the original list.
+     * Thesis: The first message in retainedTailMessages matches original at firstRetainedIndex.
      */
     public function testRetainedTailMatchesOriginalContinuity(): void
     {
@@ -179,11 +208,12 @@ final class SessionCompactorTest extends TestCase
 
         $result = $this->compactor->prepare($messages, $this->settings);
 
-        self::assertNotNull($result);
-        // The first retained message should equal the original at firstRetainedIndex.
+        self::assertTrue($result->isReady());
+        $prep = $result->preparation;
+        self::assertNotNull($prep);
         self::assertSame(
-            $messages[$result->firstRetainedIndex],
-            $result->retainedTailMessages[0],
+            $messages[$prep->firstRetainedIndex],
+            $prep->retainedTailMessages[0],
         );
     }
 
@@ -194,32 +224,30 @@ final class SessionCompactorTest extends TestCase
      */
     public function testPriorCompactSummaryDetected(): void
     {
-        // Build a long conversation with a compact summary in the middle.
         $summaryMsg = new AgentMessage(
             role: 'user',
             content: [['type' => 'text', 'text' => 'Previous summary...']],
             metadata: ['compact_summary' => true],
         );
 
-        // Put the summary early in the conversation so it ends up in messagesToSummarize.
         $messages = [
             $this->makeMessage('user', 'Start'),
             $this->makeMessage('assistant', 'Response 1'),
             $summaryMsg,
         ];
 
-        // Add enough padding to exceed keepRecentTokens.
         $messages = \array_merge($messages, $this->makeLongConversation(20));
 
         $result = $this->compactor->prepare($messages, $this->settings);
 
-        self::assertNotNull($result);
-        self::assertTrue($result->priorSummaryPresent, 'Should detect prior compact summary');
+        self::assertTrue($result->isReady());
+        $prep = $result->preparation;
+        self::assertNotNull($prep);
+        self::assertTrue($prep->priorSummaryPresent, 'Should detect prior compact summary');
     }
 
     /**
-     * Thesis: prepare() reports priorSummaryPresent=false for a clean conversation
-     * with no prior compact summary.
+     * Thesis: prepare() reports priorSummaryPresent=false for clean conversation.
      */
     public function testPriorCompactSummaryNotDetected(): void
     {
@@ -227,40 +255,38 @@ final class SessionCompactorTest extends TestCase
 
         $result = $this->compactor->prepare($messages, $this->settings);
 
-        self::assertNotNull($result);
-        self::assertFalse($result->priorSummaryPresent);
+        self::assertTrue($result->isReady());
+        $prep = $result->preparation;
+        self::assertNotNull($prep);
+        self::assertFalse($prep->priorSummaryPresent);
     }
 
     // ── Safe cut: user boundary ─────────────────────────────────────
 
     /**
-     * Thesis: When the only safe boundaries are before assistant messages,
-     * the algorithm falls back to an assistant-text boundary (no user
-     * boundary available).
+     * Thesis: When no user boundary exists, the algorithm falls back to
+     * an assistant-text boundary.
      */
     public function testAssistantTextBoundaryWhenNoUserBoundary(): void
     {
-        // Create conversation where the last several messages are all assistant.
         $messages = [];
 
-        // Put user messages early.
         for ($i = 0; $i < 5; ++$i) {
-            $messages[] = $this->makeMessage('user', 'Question ' . $i . ' ' . \str_repeat('pad ', 20));
-            $messages[] = $this->makeMessage('assistant', 'Answer ' . $i . ' ' . \str_repeat('pad ', 20));
+            $messages[] = $this->makeMessage('user', 'Question '.$i.' '.\str_repeat('pad ', 20));
+            $messages[] = $this->makeMessage('assistant', 'Answer '.$i.' '.\str_repeat('pad ', 20));
         }
 
-        // Then many consecutive assistant messages (no user boundary nearby).
         for ($i = 0; $i < 10; ++$i) {
-            $messages[] = $this->makeMessage('assistant', 'Follow-up ' . $i . ' ' . \str_repeat('pad ', 20));
+            $messages[] = $this->makeMessage('assistant', 'Follow-up '.$i.' '.\str_repeat('pad ', 20));
         }
 
         $result = $this->compactor->prepare($messages, $this->settings);
 
-        // Should still produce a valid preparation — cutting before an
-        // assistant message when no user boundary is available.
-        self::assertNotNull($result);
-        self::assertGreaterThan(0, $result->messagesCompacted);
-        self::assertGreaterThan(0, $result->messagesRetained);
+        self::assertTrue($result->isReady());
+        $prep = $result->preparation;
+        self::assertNotNull($prep);
+        self::assertGreaterThan(0, $prep->messagesCompacted);
+        self::assertGreaterThan(0, $prep->messagesRetained);
     }
 
     // ── Safe cut: assistant tool-call groups ─────────────────────────
@@ -273,32 +299,29 @@ final class SessionCompactorTest extends TestCase
     {
         $messages = $this->makeLongConversation(8);
 
-        // Add a tool-call group near the end.
         $messages[] = $this->makeAssistantWithToolCalls(['call_1', 'call_2']);
         $messages[] = $this->makeToolResult('call_1');
         $messages[] = $this->makeToolResult('call_2');
 
         $result = $this->compactor->prepare($messages, $this->settings);
 
-        self::assertNotNull($result, 'Tool-call group near end should still produce a compaction');
+        self::assertTrue($result->isReady(), 'Tool-call group near end should still produce a compaction');
+        $prep = $result->preparation;
+        self::assertNotNull($prep);
 
-        // The assistant tool-call message must be in the retained tail.
-        $retainedRoles = \array_map(static fn (AgentMessage $m): string => $m->role, $result->retainedTailMessages);
+        $retainedRoles = \array_map(static fn (AgentMessage $m): string => $m->role, $prep->retainedTailMessages);
 
-        // The tool-call group is placed at the end of the conversation
-        // and should be present, complete, in the retained tail.
         self::assertContains('assistant', $retainedRoles, 'Assistant tool-call expected in retained tail');
         self::assertContains('tool', $retainedRoles, 'Tool results expected in retained tail');
 
-        // Verify the specific tool-call group is intact.
         $retainedCallIds = [];
-        foreach ($result->retainedTailMessages as $msg) {
+        foreach ($prep->retainedTailMessages as $msg) {
             if ('tool' === $msg->role) {
                 $retainedCallIds[] = $msg->toolCallId;
             }
 
             if ('assistant' === $msg->role) {
-                foreach ($this->extractToolCallIdsFromMessage($msg) as $id) {
+                foreach (AgentMessageToolCallSequenceValidator::extractToolCallIds($msg) as $id) {
                     $retainedCallIds[] = $id;
                 }
             }
@@ -309,26 +332,23 @@ final class SessionCompactorTest extends TestCase
     }
 
     /**
-     * Thesis: No orphan tool result is retained — every tool result
-     * in the retained tail has its assistant tool call also retained.
+     * Thesis: No orphan tool result is retained.
      */
     public function testNoOrphanToolResult(): void
     {
-        // Build messages where a tool-call group is entirely in the summarize zone.
         $messages = [];
         $messages[] = $this->makeAssistantWithToolCalls(['orphan_call']);
         $messages[] = $this->makeToolResult('orphan_call');
 
-        // Add padding after to push boundary.
         $messages = \array_merge($messages, $this->makeLongConversation(15));
 
         $result = $this->compactor->prepare($messages, $this->settings);
 
-        self::assertNotNull($result, 'Orphan early in history should still produce compaction');
+        self::assertTrue($result->isReady(), 'Orphan early in history should still produce compaction');
+        $prep = $result->preparation;
+        self::assertNotNull($prep);
 
-        // The retained tail should never contain a tool result whose
-        // assistant tool call was in the summarize partition.
-        foreach ($result->retainedTailMessages as $msg) {
+        foreach ($prep->retainedTailMessages as $msg) {
             if ('tool' === $msg->role && 'orphan_call' === $msg->toolCallId) {
                 self::fail('Orphan tool result retained — its assistant call was summarized away');
             }
@@ -341,23 +361,21 @@ final class SessionCompactorTest extends TestCase
      */
     public function testNoSummarizedAssistantWithRetainedToolResults(): void
     {
-        // Build a tool-call group near the middle, after some history.
         $messages = $this->makeLongConversation(5);
         $messages[] = $this->makeAssistantWithToolCalls(['split_call']);
         $messages[] = $this->makeToolResult('split_call');
 
-        // Add more padding.
         $messages = \array_merge($messages, $this->makeLongConversation(15));
 
         $result = $this->compactor->prepare($messages, $this->settings);
 
-        self::assertNotNull($result, 'Compaction should succeed with tool-call group in middle');
+        self::assertTrue($result->isReady());
+        $prep = $result->preparation;
+        self::assertNotNull($prep);
 
-        // Check that split_call is not in messagesToSummarize while its
-        // result is in retainedTailMessages.
         $summarizeIds = [];
 
-        foreach ($result->messagesToSummarize as $msg) {
+        foreach ($prep->messagesToSummarize as $msg) {
             $toolCalls = $msg->metadata['tool_calls'] ?? null;
 
             if (\is_array($toolCalls)) {
@@ -369,7 +387,7 @@ final class SessionCompactorTest extends TestCase
             }
         }
 
-        foreach ($result->retainedTailMessages as $msg) {
+        foreach ($prep->retainedTailMessages as $msg) {
             if ('tool' === $msg->role && null !== $msg->toolCallId) {
                 self::assertArrayNotHasKey(
                     $msg->toolCallId,
@@ -381,30 +399,27 @@ final class SessionCompactorTest extends TestCase
     }
 
     /**
-     * Thesis: When a tool-call group spans the boundary, the algorithm
-     * moves the boundary earlier so the entire group is retained.
+     * Thesis: Tool-call group spanning boundary moves boundary earlier.
      */
     public function testToolCallGroupMovesBoundaryEarlier(): void
     {
-        // Place a tool-call group right at where the boundary would be.
         $messages = $this->makeLongConversation(8);
 
-        // Assistant with tool call → tool result → then more conversation to push boundary near.
         $messages[] = $this->makeAssistantWithToolCalls(['boundary_call']);
         $messages[] = $this->makeToolResult('boundary_call');
-        $messages[] = $this->makeMessage('assistant', 'After tool ' . \str_repeat('pad ', 20));
-        $messages[] = $this->makeMessage('user', 'Latest ' . \str_repeat('pad ', 20));
+        $messages[] = $this->makeMessage('assistant', 'After tool '.\str_repeat('pad ', 20));
+        $messages[] = $this->makeMessage('user', 'Latest '.\str_repeat('pad ', 20));
 
         $result = $this->compactor->prepare($messages, $this->settings);
 
-        self::assertNotNull($result, 'Compaction should succeed: boundary moved earlier rather than splitting group');
+        self::assertTrue($result->isReady(), 'Compaction should succeed: boundary moved earlier');
+        $prep = $result->preparation;
+        self::assertNotNull($prep);
 
-        // Verify the 'boundary_call' tool result is not in retain while
-        // its assistant is in summarize, or vice versa.
         $foundInSummarize = false;
         $foundInRetain = false;
 
-        foreach ($result->messagesToSummarize as $msg) {
+        foreach ($prep->messagesToSummarize as $msg) {
             if ('tool' === $msg->role && 'boundary_call' === $msg->toolCallId) {
                 $foundInSummarize = true;
             }
@@ -420,7 +435,7 @@ final class SessionCompactorTest extends TestCase
             }
         }
 
-        foreach ($result->retainedTailMessages as $msg) {
+        foreach ($prep->retainedTailMessages as $msg) {
             if ('tool' === $msg->role && 'boundary_call' === $msg->toolCallId) {
                 $foundInRetain = true;
             }
@@ -436,129 +451,231 @@ final class SessionCompactorTest extends TestCase
             }
         }
 
-        // If found in both partitions, it means the group was split — invalid.
         self::assertFalse(
             $foundInSummarize && $foundInRetain,
             'Tool-call group was split across partitions',
         );
     }
 
-    // ── Prompt text ──────────────────────────────────────────────────
-
-    /**
-     * Thesis: The summarization system message matches the plan exact text.
-     * Asserted through buildSummarizationMessages() output, not a test-only accessor.
-     */
-    public function testSummarizationSystemMessageExact(): void
-    {
-        $messages = $this->makeLongConversation(15);
-        $prep = $this->compactor->prepare($messages, $this->settings);
-        self::assertNotNull($prep);
-
-        $result = $this->compactor->buildSummarizationMessages($prep, null);
-
-        $expected = "You are a context summarization assistant. Read the conversation and produce only a handoff summary.\n\nDo not continue the conversation. Do not answer questions from the conversation. Do not call tools. Output only the summary text.";
-        self::assertSame($expected, $result[0]->content[0]['text']);
-    }
-
-    /**
-     * Thesis: The summarization user prompt matches the plan exact text.
-     * Asserted through buildSummarizationMessages() output, not a test-only accessor.
-     */
-    public function testSummarizationUserPromptExact(): void
-    {
-        $messages = $this->makeLongConversation(15);
-        $prep = $this->compactor->prepare($messages, $this->settings);
-        self::assertNotNull($prep);
-
-        $result = $this->compactor->buildSummarizationMessages($prep, null);
-        $last = \count($result) - 1;
-
-        $expected = "You are performing a CONTEXT CHECKPOINT COMPACTION. Create a handoff summary for another LLM that will resume the task.\n\nInclude:\n- Current progress and key decisions made\n- Important context, constraints, or user preferences\n- What remains to be done (clear next steps)\n- Any critical data, examples, file paths, commands, errors, or references needed to continue\n\nIf a prior compaction summary exists in the conversation, incorporate it and preserve still-relevant facts.\n\nBe concise, structured, and focused on helping the next LLM seamlessly continue the work.";
-        self::assertSame($expected, $result[$last]->content[0]['text']);
-    }
-
     // ── buildSummarizationMessages() ─────────────────────────────────
 
     /**
-     * Thesis: buildSummarizationMessages returns [system, ...toSummarize, user] format
-     * with the exact prompt texts embedded.
+     * Thesis: buildSummarizationMessages returns [...digestedMessages, userPrompt]
+     * with the prompt rendered from COMPACTION.md.
      */
     public function testBuildSummarizationMessagesStructure(): void
     {
         $messages = $this->makeLongConversation(20);
 
-        $preparation = $this->compactor->prepare($messages, $this->settings);
-        self::assertNotNull($preparation);
+        $result = $this->compactor->prepare($messages, $this->settings);
+        self::assertTrue($result->isReady());
+        $prep = $result->preparation;
+        self::assertNotNull($prep);
 
-        $result = $this->compactor->buildSummarizationMessages($preparation, null);
+        $summarizationMessages = $this->compactor->buildSummarizationMessages($prep, null);
 
-        // First message is system.
-        self::assertSame('system', $result[0]->role);
-        self::assertStringContainsString(
-            'context summarization assistant',
-            $result[0]->content[0]['text'],
-        );
+        // Last message is the user prompt.
+        $last = \count($summarizationMessages) - 1;
+        self::assertSame('user', $summarizationMessages[$last]->role);
 
-        // Middle messages are the summarize partition.
-        $middleCount = \count($result) - 2; // exclude system and user
-        self::assertCount($preparation->messagesCompacted, \array_slice($result, 1, $middleCount));
+        // The prompt should contain rendered template content (date, cwd, etc.)
+        $promptText = $summarizationMessages[$last]->content[0]['text'];
+        self::assertStringContainsString((string) date('Y'), $promptText, 'Prompt should contain current year');
 
-        // Last message is user prompt.
-        $lastIndex = \count($result) - 1;
-        self::assertSame('user', $result[$lastIndex]->role);
-        self::assertStringContainsString(
-            'CONTEXT CHECKPOINT COMPACTION',
-            $result[$lastIndex]->content[0]['text'],
-        );
+        // Messages before the prompt are the digested summarize partition.
+        $digestedCount = \count($summarizationMessages) - 1; // all except the prompt
+        self::assertCount($prep->messagesCompacted, \array_slice($summarizationMessages, 0, $digestedCount));
     }
 
     /**
-     * Thesis: Custom instructions are appended to the user prompt.
+     * Thesis: Custom instructions are injected into the rendered prompt.
      */
     public function testBuildSummarizationMessagesWithCustomInstructions(): void
     {
         $messages = $this->makeLongConversation(20);
 
-        $preparation = $this->compactor->prepare($messages, $this->settings);
-        self::assertNotNull($preparation);
+        $result = $this->compactor->prepare($messages, $this->settings);
+        self::assertTrue($result->isReady());
+        $prep = $result->preparation;
+        self::assertNotNull($prep);
 
-        $result = $this->compactor->buildSummarizationMessages(
-            $preparation,
+        $summarizationMessages = $this->compactor->buildSummarizationMessages(
+            $prep,
             'summarize only database decisions',
         );
-        $lastIndex = \count($result) - 1;
-        $promptText = $result[$lastIndex]->content[0]['text'];
+        $last = \count($summarizationMessages) - 1;
+        $promptText = $summarizationMessages[$last]->content[0]['text'];
 
-        self::assertStringContainsString(
-            'summarize only database decisions',
-            $promptText,
-        );
-        self::assertStringContainsString(
-            'Additional user instructions for this compaction:',
-            $promptText,
-        );
+        self::assertStringContainsString('summarize only database decisions', $promptText);
+        self::assertStringContainsString('Additional user instructions for this compaction:', $promptText);
     }
 
     /**
-     * Thesis: buildSummarizationMessages with empty/whitespace custom instructions
-     * does not append the instructions block.
+     * Thesis: Empty/whitespace custom instructions don't append instructions block.
      */
     public function testBuildSummarizationMessagesEmptyCustomInstructions(): void
     {
         $messages = $this->makeLongConversation(20);
 
-        $preparation = $this->compactor->prepare($messages, $this->settings);
-        self::assertNotNull($preparation);
+        $result = $this->compactor->prepare($messages, $this->settings);
+        self::assertTrue($result->isReady());
+        $prep = $result->preparation;
+        self::assertNotNull($prep);
 
-        $result = $this->compactor->buildSummarizationMessages($preparation, '   ');
-        $lastIndex = \count($result) - 1;
-        $promptText = $result[$lastIndex]->content[0]['text'];
+        $summarizationMessages = $this->compactor->buildSummarizationMessages($prep, '   ');
+        $last = \count($summarizationMessages) - 1;
+        $promptText = $summarizationMessages[$last]->content[0]['text'];
 
-        self::assertStringNotContainsString(
-            'Additional user instructions',
-            $promptText,
+        self::assertStringNotContainsString('Additional user instructions', $promptText);
+    }
+
+    // ── Token estimation (model-facing text, no JSON) ─────────────────
+
+    /**
+     * Thesis: estimateTokens counts only model-facing text, not JSON/metadata.
+     */
+    public function testEstimateTokensIsTextOnly(): void
+    {
+        $msg = new AgentMessage(
+            role: 'user',
+            content: [['type' => 'text', 'text' => 'hello world']],
+            metadata: ['compact_summary' => true, 'large_key' => \str_repeat('x', 1000)],
         );
+
+        $tokens = $this->compactor->estimateTokens([$msg]);
+
+        // ~11 chars for "hello world" → ceil(11/3.25) = 4 tokens
+        // If JSON was included, it would be hundreds.
+        self::assertLessThan(10, $tokens, 'Token estimate should be text-only, not JSON-envelope');
+    }
+
+    /**
+     * Thesis: A custom-role message includes the [role] prefix in estimation.
+     */
+    public function testEstimateTokensCustomRole(): void
+    {
+        $msg = new AgentMessage(
+            role: 'custom_role',
+            content: [['type' => 'text', 'text' => 'hello']],
+        );
+
+        $tokens = $this->compactor->estimateTokens([$msg]);
+
+        // '[custom_role] hello' ≈ 20 chars → ceil(20/3.25) ≈ 7
+        self::assertGreaterThan(3, $tokens, 'Custom role prefix adds to token estimate');
+        self::assertLessThan(15, $tokens);
+    }
+
+    /**
+     * Thesis: A message with no text content estimates to 0 tokens.
+     */
+    public function testEstimateTokensEmptyContent(): void
+    {
+        $msg = new AgentMessage(
+            role: 'assistant',
+            content: [],
+        );
+
+        $tokens = $this->compactor->estimateTokens([$msg]);
+
+        self::assertSame(0, $tokens);
+    }
+
+    // ── Tool-result digest ───────────────────────────────────────────
+
+    /**
+     * Thesis: Tool results in the summarize partition are replaced with
+     * deterministic digest placeholders in buildSummarizationMessages output.
+     */
+    public function testToolResultsAreDigested(): void
+    {
+        $messages = $this->makeLongConversation(8);
+
+        // Add a tool call + result pair.
+        $messages[] = $this->makeAssistantWithToolCalls(['digest_test']);
+        $messages[] = new AgentMessage(
+            role: 'tool',
+            content: [['type' => 'text', 'text' => 'Large tool output: '.\str_repeat('data ', 500)]],
+            toolCallId: 'digest_test',
+            toolName: 'bash',
+        );
+
+        // Add padding to trigger compaction.
+        $messages = \array_merge($messages, $this->makeLongConversation(10));
+
+        $result = $this->compactor->prepare($messages, $this->settings);
+        self::assertTrue($result->isReady());
+        $prep = $result->preparation;
+        self::assertNotNull($prep);
+
+        $summarizationMessages = $this->compactor->buildSummarizationMessages($prep, null);
+
+        // Find tool messages in the digest partition (before the prompt).
+        $foundDigest = false;
+        $lastPrompt = \count($summarizationMessages) - 1;
+
+        for ($i = 0; $i < $lastPrompt; ++$i) {
+            $msg = $summarizationMessages[$i];
+
+            if ('tool' !== $msg->role) {
+                continue;
+            }
+
+            $text = $msg->content[0]['text'] ?? '';
+            self::assertStringContainsString('[Tool result:', $text, 'Tool message should be digested');
+            self::assertStringContainsString('tool_call_id:', $text);
+            self::assertStringContainsString('estimated tokens:', $text);
+            self::assertStringContainsString('char count:', $text);
+
+            // The digest is a placeholder — original full text is truncated.
+            // The preview snippet may include the start of the original output.
+            self::assertStringContainsString('estimated tokens:', $text);
+            self::assertStringContainsString('char count:', $text);
+            self::assertStringContainsString('--- content preview ---', $text);
+            self::assertStringContainsString('--- end preview ---', $text);
+
+            $foundDigest = true;
+
+            break;
+        }
+
+        self::assertTrue($foundDigest, 'Should find at least one digested tool message');
+    }
+
+    /**
+     * Thesis: Non-tool messages in the summarize partition pass through
+     * unchanged in buildSummarizationMessages.
+     */
+    public function testNonToolMessagesAreNotDigested(): void
+    {
+        $messages = $this->makeLongConversation(12);
+
+        // Add a known user message early that will be in summarize partition.
+        $marker = $this->makeMessage('user', 'MARKER: important user context');
+        array_unshift($messages, $marker);
+
+        $result = $this->compactor->prepare($messages, $this->settings);
+        self::assertTrue($result->isReady());
+        $prep = $result->preparation;
+        self::assertNotNull($prep);
+
+        $summarizationMessages = $this->compactor->buildSummarizationMessages($prep, null);
+
+        $foundMarker = false;
+        $lastPrompt = \count($summarizationMessages) - 1;
+
+        for ($i = 0; $i < $lastPrompt; ++$i) {
+            $msg = $summarizationMessages[$i];
+            $text = $msg->content[0]['text'] ?? '';
+
+            if ('user' === $msg->role && str_contains($text, 'MARKER: important user context')) {
+                $foundMarker = true;
+
+                break;
+            }
+        }
+
+        self::assertTrue($foundMarker, 'User message marker should pass through undigested');
     }
 
     // ── buildCompactedMessages() ────────────────────────────────────
@@ -571,227 +688,134 @@ final class SessionCompactorTest extends TestCase
     {
         $messages = $this->makeLongConversation(20);
 
-        $preparation = $this->compactor->prepare($messages, $this->settings);
-        self::assertNotNull($preparation);
+        $result = $this->compactor->prepare($messages, $this->settings);
+        self::assertTrue($result->isReady());
+        $prep = $result->preparation;
+        self::assertNotNull($prep);
 
-        $result = $this->compactor->buildCompactedMessages(
+        $compacted = $this->compactor->buildCompactedMessages(
             'This is the summary text.',
-            $preparation,
+            $prep,
         );
 
-        // Summary message properties.
-        self::assertSame('user', $result->summaryMessage->role);
+        self::assertSame('user', $compacted->summaryMessage->role);
         self::assertTrue(
-            ($result->summaryMessage->metadata['compact_summary'] ?? false) === true,
+            (bool) ($compacted->summaryMessage->metadata['compact_summary'] ?? false),
             'Summary message should have compact_summary metadata',
         );
         self::assertStringContainsString(
             'The conversation history before this point was compacted',
-            $result->summaryMessage->content[0]['text'],
+            $compacted->summaryMessage->content[0]['text'],
         );
-        self::assertStringContainsString(
-            'This is the summary text.',
-            $result->summaryMessage->content[0]['text'],
-        );
-        self::assertStringContainsString(
-            '</summary>',
-            $result->summaryMessage->content[0]['text'],
-        );
+        self::assertStringContainsString('This is the summary text.', $compacted->summaryMessage->content[0]['text']);
+        self::assertStringContainsString('</summary>', $compacted->summaryMessage->content[0]['text']);
 
-        // Compacted messages = [summaryMessage, ...retainedTail].
-        self::assertCount(
-            $preparation->messagesRetained + 1, // +1 for summary
-            $result->compactedMessages,
-        );
-        self::assertSame($result->summaryMessage, $result->compactedMessages[0]);
-        self::assertSame(
-            $preparation->retainedTailMessages,
-            \array_slice($result->compactedMessages, 1),
-        );
+        self::assertCount($prep->messagesRetained + 1, $compacted->compactedMessages);
+        self::assertSame($compacted->summaryMessage, $compacted->compactedMessages[0]);
+        self::assertSame($prep->retainedTailMessages, \array_slice($compacted->compactedMessages, 1));
 
-        // Token estimates.
-        self::assertSame($preparation->tokenEstimateBefore, $result->tokenEstimateBefore);
-        self::assertGreaterThan(0, $result->tokenEstimateAfter);
+        self::assertSame($prep->tokenEstimateBefore, $compacted->tokenEstimateBefore);
+        self::assertGreaterThan(0, $compacted->tokenEstimateAfter);
         self::assertGreaterThan(
-            $result->tokenEstimateAfter,
-            $result->tokenEstimateBefore,
+            $compacted->tokenEstimateAfter,
+            $compacted->tokenEstimateBefore,
             'Token estimate after should be less than before',
         );
 
-        // Counts carry through.
-        self::assertSame($preparation->messagesCompacted, $result->messagesCompacted);
-        self::assertSame($preparation->messagesRetained, $result->messagesRetained);
-        self::assertSame($preparation->firstRetainedIndex, $result->firstRetainedIndex);
+        self::assertSame($prep->messagesCompacted, $compacted->messagesCompacted);
+        self::assertSame($prep->messagesRetained, $compacted->messagesRetained);
+        self::assertSame($prep->firstRetainedIndex, $compacted->firstRetainedIndex);
     }
 
-    /**
-     * Thesis: The summary prefix text tells the model it's prior context, not a new request.
-     */
-    public function testSummaryPrefixExplicitlyMarksAsContext(): void
-    {
-        $messages = $this->makeLongConversation(20);
-
-        $preparation = $this->compactor->prepare($messages, $this->settings);
-        self::assertNotNull($preparation);
-
-        $result = $this->compactor->buildCompactedMessages('Test summary', $preparation);
-
-        $text = $result->summaryMessage->content[0]['text'];
-
-        self::assertStringContainsString(
-            'The conversation history before this point was compacted',
-            $text,
-        );
-        self::assertStringContainsString(
-            'Use it as prior context, not as a new user request',
-            $text,
-        );
-        self::assertStringContainsString('<summary>', $text);
-        self::assertStringContainsString('</summary>', $text);
-    }
-
-    // ── Partition validity via AgentMessageToolCallSequenceValidator ─
+    // ── Partition validity ───────────────────────────────────────────
 
     /**
-     * Thesis: When the retained tail has an unclosed assistant tool-call
-     * batch that no boundary walk can resolve, prepare() returns null.
-     *
-     * Construction: the last message is an assistant with tool_calls and
-     * no following tool result.  Every possible boundary includes this
-     * message in the retained tail (boundary=0 is rejected by
-     * findSafeBoundary).  Cross-boundary checks pass because no tool
-     * results exist at all, but isValidSequence rejects every retained
-     * tail ending with an unclosed batch.
+     * Thesis: Unclosed assistant tool-call batch in retained tail makes
+     * prepare() return NoSafeBoundary.
      */
     public function testUnclosedBatchInRetainedTailReturnsNull(): void
     {
-        // Keep recent tokens small so even short messages trigger compaction.
         $tightSettings = new CompactionConfig(
-            enabled: true,
+            autoEnabled: true,
             keepRecentTokens: 50,
         );
 
-        // Padded user/assistant pairs that each exceed 50 tokens.
         $messages = [];
         for ($i = 0; $i < 4; ++$i) {
-            $messages[] = $this->makeMessage(
-                'user',
-                \str_repeat('x', 200),
-            );
-            $messages[] = $this->makeMessage(
-                'assistant',
-                \str_repeat('y', 200),
-            );
+            $messages[] = $this->makeMessage('user', \str_repeat('x', 200));
+            $messages[] = $this->makeMessage('assistant', \str_repeat('y', 200));
         }
 
-        // Last message: assistant with unclosed tool calls.
         $messages[] = $this->makeAssistantWithToolCalls(['unclosed_tc']);
 
         $result = $this->compactor->prepare($messages, $tightSettings);
 
-        self::assertNull(
-            $result,
-            'prepare() should return null: retained tail always contains unclosed batch',
-        );
+        self::assertFalse($result->isReady());
+        self::assertSame(CompactionSkipReasonEnum::NoSafeBoundary, $result->skipReason);
     }
 
     /**
-     * Thesis: An unclosed assistant tool-call batch in the summarize prefix
-     * is not accepted as a safe cut — partition validity rejects it even
-     * when cross-boundary checks pass.
-     *
-     * Construction: [valid-prefix, assistant(tc), user-breaking, tool(tc), tail…]
-     * The user-breaking message sits between the assistant tool call and its
-     * result, making the summarize prefix invalid when cut after tool(tc).
-     * Cross-boundary passes (no tool result in retain from summarize), but
-     * isValidSequence on the summarize prefix catches the unclosed batch
-     * at the user-breaking message.
+     * Thesis: Unclosed batch in summarize prefix not accepted as safe cut.
      */
     public function testUnclosedBatchInSummarizePrefixNotSafe(): void
     {
         $tightSettings = new CompactionConfig(
-            enabled: true,
+            autoEnabled: true,
             keepRecentTokens: 60,
         );
 
-        // Valid prefix.
         $messages = [];
         $messages[] = $this->makeMessage('user', 'start');
         $messages[] = $this->makeMessage('assistant', 'ok');
-
-        // Block that creates the invalid summarize prefix when cut after
-        // the tool message: assistant opens tc1, user breaks open batch,
-        // tool result for tc1.
         $messages[] = $this->makeAssistantWithToolCalls(['tc1']);
         $messages[] = $this->makeMessage('user', 'breaking open batch');
         $messages[] = $this->makeToolResult('tc1');
 
-        // Padding: messages large enough to push total above keepRecentTokens.
         for ($i = 0; $i < 3; ++$i) {
-            $messages[] = $this->makeMessage(
-                'assistant',
-                \str_repeat('pad', 30),
-            );
+            $messages[] = $this->makeMessage('assistant', \str_repeat('pad', 30));
         }
 
         $result = $this->compactor->prepare($messages, $tightSettings);
 
-        // Every boundary >= 1 produces an invalid partition (either
-        // summarize-prefix unclosed batch or retain-tail unclosed
-        // batch) and boundary=0 is rejected by findSafeBoundary.
-        self::assertNull(
-            $result,
-            'prepare() should return null: no boundary produces two valid partitions',
-        );
+        self::assertFalse($result->isReady());
+        self::assertSame(CompactionSkipReasonEnum::NoSafeBoundary, $result->skipReason);
     }
 
     /**
-     * Thesis: A valid assistant tool-call + tool result group is still
-     * retained together after the partition validity strengthening —
-     * both partitions pass isValidSequence.
+     * Thesis: Valid tool-call group retained together still accepted
+     * after partition validity strengthening.
      */
     public function testValidToolCallGroupRetainedTogetherAccepted(): void
     {
         $tightSettings = new CompactionConfig(
-            enabled: true,
+            autoEnabled: true,
             keepRecentTokens: 200,
         );
 
-        // Prefix padding.
         $messages = [];
         for ($i = 0; $i < 10; ++$i) {
-            $messages[] = $this->makeMessage(
-                'user',
-                \str_repeat('history-', 30),
-            );
-            $messages[] = $this->makeMessage(
-                'assistant',
-                \str_repeat('response-', 30),
-            );
+            $messages[] = $this->makeMessage('user', \str_repeat('history-', 30));
+            $messages[] = $this->makeMessage('assistant', \str_repeat('response-', 30));
         }
 
-        // Tool-call group near the end — full open/close.
         $messages[] = $this->makeAssistantWithToolCalls(['group_tc1', 'group_tc2']);
         $messages[] = $this->makeToolResult('group_tc1');
         $messages[] = $this->makeToolResult('group_tc2');
 
         $result = $this->compactor->prepare($messages, $tightSettings);
 
-        self::assertNotNull(
-            $result,
-            'Valid tool-call group should not block compaction',
-        );
+        self::assertTrue($result->isReady(), 'Valid tool-call group should not block compaction');
+        $prep = $result->preparation;
+        self::assertNotNull($prep);
 
-        // If the tool-call group ends up in the retained tail, it must be
-        // complete (all three messages present).
-        $retained = $result->retainedTailMessages;
+        $retained = $prep->retainedTailMessages;
         $foundAssistant = false;
         $foundTc1 = false;
         $foundTc2 = false;
 
         foreach ($retained as $msg) {
             if ('assistant' === $msg->role) {
-                $tcIds = $this->extractToolCallIdsFromMessage($msg);
+                $tcIds = AgentMessageToolCallSequenceValidator::extractToolCallIds($msg);
 
                 if (\in_array('group_tc1', $tcIds, true)) {
                     $foundAssistant = true;
@@ -807,7 +831,6 @@ final class SessionCompactorTest extends TestCase
             }
         }
 
-        // Either the entire group is retained or none of it is.
         if ($foundAssistant || $foundTc1 || $foundTc2) {
             self::assertTrue(
                 $foundAssistant && $foundTc1 && $foundTc2,
@@ -817,74 +840,36 @@ final class SessionCompactorTest extends TestCase
     }
 
     /**
-     * Thesis: An orphan retained tool result with a call ID remains unsafe
-     * under partition validation — prepare() does not accept a boundary
-     * that splits the assistant from its tool result.
-     *
-     * Construction: [assistant(tc), tool(tc), ...padded-history...]
-     * The tool-call group is entirely in the summarize zone.  Any orphan
-     * tool result in the retained tail with a call ID and no matching
-     * assistant is rejected by cross-boundary checks.
+     * Thesis: Orphan retained tool result is unsafe — prepare() succeeds
+     * with orphan group early in history.
      */
     public function testOrphanRetainedToolResultUnsafe(): void
     {
         $tightSettings = new CompactionConfig(
-            enabled: true,
+            autoEnabled: true,
             keepRecentTokens: 200,
         );
 
-        // A tool-call group entirely in the early part of history.
         $messages = [];
         $messages[] = $this->makeAssistantWithToolCalls(['orphan_tc']);
         $messages[] = $this->makeToolResult('orphan_tc');
 
-        // Padded history to push the boundary beyond the early group.
         for ($i = 0; $i < 15; ++$i) {
-            $messages[] = $this->makeMessage(
-                'user',
-                \str_repeat('x', 200),
-            );
-            $messages[] = $this->makeMessage(
-                'assistant',
-                \str_repeat('y', 200),
-            );
+            $messages[] = $this->makeMessage('user', \str_repeat('x', 200));
+            $messages[] = $this->makeMessage('assistant', \str_repeat('y', 200));
         }
 
         $result = $this->compactor->prepare($messages, $tightSettings);
 
-        // Compaction should succeed: the orphan group is entirely early
-        // and doesn't prevent finding a safe boundary.
-        self::assertNotNull($result, 'Compaction should still succeed with orphan tool group early in history');
+        self::assertTrue($result->isReady(), 'Compaction should succeed with orphan tool group early in history');
+        $prep = $result->preparation;
+        self::assertNotNull($prep);
 
-        foreach ($result->retainedTailMessages as $msg) {
+        foreach ($prep->retainedTailMessages as $msg) {
             self::assertFalse(
                 'tool' === $msg->role && 'orphan_tc' === $msg->toolCallId,
                 'Orphan tool result must not appear in retained tail',
             );
         }
-    }
-
-    /**
-     * Extract tool_call_ids from a message for test assertions.
-     *
-     * @return list<string>
-     */
-    private function extractToolCallIdsFromMessage(AgentMessage $message): array
-    {
-        $toolCalls = $message->metadata['tool_calls'] ?? null;
-
-        if (!\is_array($toolCalls)) {
-            return [];
-        }
-
-        $ids = [];
-
-        foreach ($toolCalls as $tc) {
-            if (\is_array($tc) && \is_string($tc['id'] ?? null) && '' !== $tc['id']) {
-                $ids[] = $tc['id'];
-            }
-        }
-
-        return $ids;
     }
 }

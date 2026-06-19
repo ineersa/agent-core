@@ -51,7 +51,7 @@ final class AgentMessageToolCallSequenceValidator
             }
 
             if ('assistant' === $message->role) {
-                $toolCalls = $this->extractToolCallIds($message);
+                $toolCalls = self::extractToolCallIds($message);
 
                 if ([] !== $toolCalls) {
                     // An assistant message with tool calls opens a new
@@ -99,9 +99,12 @@ final class AgentMessageToolCallSequenceValidator
      * (non-string id) are silently skipped, matching AgentMessageConverter's
      * behavior.
      *
+     * Shared implementation used by this validator and by SessionCompactor
+     * for cut-point safety checks.
+     *
      * @return list<string>
      */
-    private function extractToolCallIds(AgentMessage $message): array
+    public static function extractToolCallIds(AgentMessage $message): array
     {
         $rawToolCalls = $message->metadata['tool_calls'] ?? null;
 

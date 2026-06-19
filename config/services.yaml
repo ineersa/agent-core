@@ -411,6 +411,11 @@ services:
     arguments:
       $projectDir: '%kernel.project_dir%'
 
+  # ─── Compaction prompt builder ───
+  Ineersa\CodingAgent\Session\CompactionPromptBuilder:
+    arguments:
+      $projectDir: '%kernel.project_dir%'
+
   # ToolRegistry — concrete CodingAgent registry for permanent/dynamic tools.
   # Tagged built-in providers are seeded during registry construction.
   Ineersa\CodingAgent\Tool\ToolRegistry:
