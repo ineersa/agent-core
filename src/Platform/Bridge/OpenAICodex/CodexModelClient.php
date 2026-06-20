@@ -74,10 +74,21 @@ class CodexModelClient implements ModelClientInterface
         // Strip Hatfield/Symfony AI internal keys that are not valid Codex API fields.
         $bodyOptions = array_diff_key($options, array_flip(self::INTERNAL_OPTION_KEYS));
 
+        // Prompt caching: use run_id (session ID) as the cache key.
+        // run_id is stripped from bodyOptions above, so we extract it
+        // before merging. Pi-mono: prompt_cache_key: sessionId.
+        $runId = $options['run_id'] ?? null;
+
         // Merge payload (from contract) over options, with model name last
         // so CodexContract's payload keys (input, instructions) always win
         // over any top-level option keys.
         $jsonBody = array_merge($bodyOptions, ['model' => $model->getName()], $payload);
+
+        // Prompt cache key from session/run ID (added after merge so an
+        // explicit caller value in payload takes precedence via ??=).
+        if (\is_string($runId) && '' !== $runId) {
+            $jsonBody['prompt_cache_key'] ??= $runId;
+        }
 
         // Apply Codex Responses API defaults for required fields that are
         // not explicitly set by the caller or the contract. These match the
