@@ -743,8 +743,12 @@ final class ResultConverterTest extends TestCase
 
     /**
      * 'response.incomplete' events (context limit, etc.) must throw with
-     * the reason, and must yield any partial tool calls accumulated before
-     * the truncation.
+     * the reason. Partial tool calls are intentionally NOT yielded — the
+     * RuntimeException propagates to LlmPlatformAdapter::consumeStream →
+     * errorResult (stopReason='error') which is short-circuited by
+     * LlmStepResultHandler::__invoke (checks error !== null, returns
+     * RunStatus::Failed with empty pendingToolCalls) before any tool
+     * dispatch, so yielding partial tool calls would be dead code.
      */
     public function testStreamResponseIncompleteThrowsRuntimeException(): void
     {
@@ -798,8 +802,7 @@ final class ResultConverterTest extends TestCase
      * A thinking-only stream (reasoning items, no output_text) must capture
      * the full reasoning item JSON as the thinking signature so it survives
      * persistence and round-trips on the next turn.
-     */
-    /**
+     *
      * Reasoning signature must be captured at response.output_item.done — the
      * only event that carries encrypted_content.  The added item does NOT carry
      * it, and reasoning_summary_text.done fires before encrypted_content is

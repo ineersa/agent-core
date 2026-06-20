@@ -257,21 +257,13 @@ final class ResultConverter implements ResultConverterInterface
                 yield new TextDelta($event['delta']);
             }
 
-            // Reasoning summary delta — accumulate thinking text from the
-            // Codex reasoning_summary_text stream events.
-            if ('response.reasoning_summary_text.delta' === $type && isset($event['delta'])) {
-                if (null === $currentThinking) {
-                    $currentThinking = '';
-                    yield new ThinkingStart();
-                }
-                $currentThinking .= $event['delta'];
-                yield new ThinkingDelta($event['delta']);
-            }
-
-            // Raw reasoning text delta (non-summary variant). Same accumulation
-            // buffer as summary deltas — mixing both within a single turn is valid
-            // in the Codex Responses API (pi-mono openai-responses-shared.ts:362).
-            if ('response.reasoning_text.delta' === $type && isset($event['delta'])) {
+            // Reasoning text deltas (both summary and raw variants).
+            // Summary: reasoning_summary_text.delta — the common path.
+            // Raw: reasoning_text.delta — when summary:none or the
+            // backend emits reasoning without a structured summary.
+            // Both share the same accumulation buffer; mixing them within
+            // a single turn is valid (pi-mono openai-responses-shared.ts:332,362).
+            if (\in_array($type, ['response.reasoning_summary_text.delta', 'response.reasoning_text.delta'], true) && isset($event['delta'])) {
                 if (null === $currentThinking) {
                     $currentThinking = '';
                     yield new ThinkingStart();
