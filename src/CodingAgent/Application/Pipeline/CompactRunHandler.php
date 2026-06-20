@@ -75,7 +75,7 @@ final readonly class CompactRunHandler implements RunMessageHandler
                 'payload' => [
                     'reason' => $failureReason,
                     'message' => $userMessage,
-                    'preserved_messages' => true,
+                    'messages_replaced' => false,
                     'trigger' => $message->trigger,
                 ],
             ]]);

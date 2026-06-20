@@ -50,6 +50,11 @@ final readonly class CompactionStepResultHandler implements RunMessageHandler
         // context_compaction_failed event so the user-visible compaction
         // state is resolved instead of leaving a dangling started event.
         //
+        // Preserve the current activeStepId — clearing it would lose a
+        // newer in-flight compaction's identity (e.g. compaction B started,
+        // stale result A arrives).  The active step is only cleared when
+        // the result genuinely matches the current step (success/error paths).
+        //
         // Also guard against terminal run states (Completed, Failed, Cancelled)
         // where the result arrived after the run already finished.
         if ($state->turnNo !== $message->turnNo() || $state->activeStepId !== $message->stepId()) {
@@ -59,12 +64,13 @@ final readonly class CompactionStepResultHandler implements RunMessageHandler
                     'reason' => 'stale_result',
                     'message' => 'Compaction result arrived too late — the active step has moved on.',
                     'messages_replaced' => false,
+                    'step_id' => $message->stepId(),
                     'trigger' => $message->trigger,
                 ],
             ]]);
 
             return new HandlerResult(
-                nextState: $this->incrementState($state, $events, clearActiveStepId: true),
+                nextState: $this->incrementState($state, $events, clearActiveStepId: false),
                 events: $events,
             );
         }
@@ -78,12 +84,13 @@ final readonly class CompactionStepResultHandler implements RunMessageHandler
                     'reason' => 'stale_result',
                     'message' => 'Compaction result arrived after the run ended.',
                     'messages_replaced' => false,
+                    'step_id' => $message->stepId(),
                     'trigger' => $message->trigger,
                 ],
             ]]);
 
             return new HandlerResult(
-                nextState: $this->incrementState($state, $events, clearActiveStepId: true),
+                nextState: $this->incrementState($state, $events, clearActiveStepId: false),
                 events: $events,
             );
         }
@@ -100,7 +107,8 @@ final readonly class CompactionStepResultHandler implements RunMessageHandler
                 'payload' => [
                     'reason' => $reason,
                     'message' => $errorMessage,
-                    'preserved_messages' => true,
+                    'messages_replaced' => false,
+                    'step_id' => $message->stepId(),
                     'model' => $message->model,
                     'thinking_level' => $message->thinkingLevel,
                     'trigger' => $message->trigger,
@@ -122,7 +130,8 @@ final readonly class CompactionStepResultHandler implements RunMessageHandler
                 'payload' => [
                     'reason' => 'empty_summary',
                     'message' => 'Compaction failed: summarization model returned an empty summary.',
-                    'preserved_messages' => true,
+                    'messages_replaced' => false,
+                    'step_id' => $message->stepId(),
                     'model' => $message->model,
                     'thinking_level' => $message->thinkingLevel,
                     'trigger' => $message->trigger,
@@ -148,6 +157,10 @@ final readonly class CompactionStepResultHandler implements RunMessageHandler
             }
         }
 
+        // priorSummaryPresent is synthetic: the summarization prompt already
+        // handled the prior compact_summary marker when it was present.
+        // buildCompactedMessages only uses it to annotate the new summary
+        // message — it does not affect the merged message list.
         $preparation = CompactionPrepareResult::ready(
             messagesToSummarize: [], // Not needed for buildCompactedMessages
             retainedTailMessages: $retainedTail,

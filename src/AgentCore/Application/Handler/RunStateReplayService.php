@@ -286,7 +286,7 @@ final readonly class RunStateReplayService
             RunEventTypeEnum::StaleResultIgnored->value => $this->applyNoMutation($event, $state),
             RunEventTypeEnum::ContextCompactionStarted->value => $this->applyContextCompactionStarted($payload, $state),
             RunEventTypeEnum::ContextCompacted->value => $this->applyContextCompacted($payload, $state, $messages),
-            RunEventTypeEnum::ContextCompactionFailed->value => $this->applyNoMutation($event, $state),
+            RunEventTypeEnum::ContextCompactionFailed->value => $this->applyContextCompactionFailed($payload, $state),
             RunEventTypeEnum::TurnBranched->value,
             RunEventTypeEnum::LeafSet->value => $this->applyNoMutation($event, $state),
             default => $this->applyNoMutation($event, $state),
@@ -689,6 +689,10 @@ final readonly class RunStateReplayService
      * is replaced wholesale, and later events (user/assistant/tool) append
      * on top of the compacted checkpoint.
      *
+     * Clearing activeStepId mirrors the live CompactionStepResultHandler
+     * which sets activeStepId: null on success — compaction is a one-shot
+     * cycle and no AdvanceRun follows to reset the step.
+     *
      * @param array<string, mixed> $payload
      * @param list<AgentMessage>   $messages
      */
@@ -712,7 +716,62 @@ final readonly class RunStateReplayService
             }
         }
 
-        return $state;
+        return new RunState(
+            runId: $state->runId,
+            status: $state->status,
+            version: $state->version,
+            turnNo: $state->turnNo,
+            lastSeq: $state->lastSeq,
+            isStreaming: $state->isStreaming,
+            streamingMessage: $state->streamingMessage,
+            pendingToolCalls: $state->pendingToolCalls,
+            errorMessage: $state->errorMessage,
+            messages: $state->messages,
+            activeStepId: null,
+            retryableFailure: $state->retryableFailure,
+        );
+    }
+
+    /**
+     * Handle context_compaction_failed: clears activeStepId only when
+     * the failure belongs to the currently-active compaction step
+     * (payload.step_id matches state.activeStepId).
+     *
+     * Structural failures from CompactRunHandler (before a worker was
+     * dispatched) have no step_id and preserve whatever activeStepId was
+     * already set.  Stale failures where a newer compaction's step_id
+     * differs also preserve activeStepId — clearing it would lose the
+     * identity of the in-flight step.
+     *
+     * Messages are never mutated by context_compaction_failed.
+     *
+     * @param array<string, mixed> $payload
+     */
+    private function applyContextCompactionFailed(array $payload, RunState $state): RunState
+    {
+        $payloadStepId = \is_string($payload['step_id'] ?? null) ? $payload['step_id'] : null;
+
+        // Only clear activeStepId when this failure resolves the exact
+        // compaction step that was currently active.  A different or
+        // absent step_id must be preserved.
+        $activeStepId = (null !== $payloadStepId && $payloadStepId === $state->activeStepId)
+            ? null
+            : $state->activeStepId;
+
+        return new RunState(
+            runId: $state->runId,
+            status: $state->status,
+            version: $state->version,
+            turnNo: $state->turnNo,
+            lastSeq: $state->lastSeq,
+            isStreaming: $state->isStreaming,
+            streamingMessage: $state->streamingMessage,
+            pendingToolCalls: $state->pendingToolCalls,
+            errorMessage: $state->errorMessage,
+            messages: $state->messages,
+            activeStepId: $activeStepId,
+            retryableFailure: $state->retryableFailure,
+        );
     }
 
     private function applyNoMutation(RunEvent $event, RunState $state): RunState

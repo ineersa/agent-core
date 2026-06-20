@@ -22,11 +22,12 @@ use PHPUnit\Framework\TestCase;
  *
  * Theses:
  *  - Success: emits context_compacted, replaces messages with [summary, ...tail], clears activeStepId.
- *  - Empty summary: emits context_compaction_failed reason empty_summary, preserves messages, clears activeStepId.
- *  - Model error: emits context_compaction_failed reason model_error, preserves messages, clears activeStepId.
- *  - Stale result (turnNo mismatch): emits context_compaction_failed reason stale_result, messages not replaced, clears activeStepId.
- *  - Stale result (stepId mismatch): emits context_compaction_failed reason stale_result, messages not replaced, clears activeStepId.
- *  - Terminal run emits context_compaction_failed reason stale_result, messages not replaced, clears activeStepId.
+ *  - Empty summary: emits context_compaction_failed reason empty_summary, preserves messages, clears activeStepId, payload uses messages_replaced:false.
+ *  - Model error: emits context_compaction_failed reason model_error, preserves messages, clears activeStepId, payload uses messages_replaced:false.
+ *  - Stale result (turnNo mismatch): emits context_compaction_failed reason stale_result, preserves messages AND activeStepId (clearing would lose newer in-flight step).
+ *  - Stale result (stepId mismatch): emits context_compaction_failed reason stale_result, preserves messages AND activeStepId.
+ *  - Terminal run emits context_compaction_failed reason stale_result, preserves messages AND activeStepId.
+ *  - All CompactionStepResultHandler failures include step_id for replay fidelity.
  */
 final class CompactionStepResultHandlerTest extends TestCase
 {
@@ -117,7 +118,8 @@ final class CompactionStepResultHandlerTest extends TestCase
         self::assertCount(1, $result->events);
         self::assertSame(RunEventTypeEnum::ContextCompactionFailed->value, $result->events[0]->type);
         self::assertSame('empty_summary', $result->events[0]->payload['reason']);
-        self::assertTrue($result->events[0]->payload['preserved_messages']);
+        self::assertFalse($result->events[0]->payload['messages_replaced']);
+        self::assertSame('step-1', $result->events[0]->payload['step_id']);
 
         // activeStepId cleared on terminal outcome.
         self::assertNull($result->nextState->activeStepId);
@@ -161,7 +163,8 @@ final class CompactionStepResultHandlerTest extends TestCase
         self::assertSame(RunEventTypeEnum::ContextCompactionFailed->value, $result->events[0]->type);
         self::assertSame('model_error', $result->events[0]->payload['reason']);
         self::assertSame('Connection timeout', $result->events[0]->payload['message']);
-        self::assertTrue($result->events[0]->payload['preserved_messages']);
+        self::assertFalse($result->events[0]->payload['messages_replaced']);
+        self::assertSame('step-1', $result->events[0]->payload['step_id']);
 
         // activeStepId cleared on terminal outcome.
         self::assertNull($result->nextState->activeStepId);
@@ -205,13 +208,15 @@ final class CompactionStepResultHandlerTest extends TestCase
         self::assertCount(1, $result->events);
         self::assertSame(RunEventTypeEnum::ContextCompactionFailed->value, $result->events[0]->type);
         self::assertSame('stale_result', $result->events[0]->payload['reason']);
-        self::assertSame(false, $result->events[0]->payload['messages_replaced']);
+        self::assertFalse($result->events[0]->payload['messages_replaced']);
+        self::assertSame('step-1', $result->events[0]->payload['step_id']);
 
         // Messages preserved.
         self::assertCount(\count($originalMessages), $result->nextState->messages);
 
-        // activeStepId cleared on terminal stale outcome.
-        self::assertNull($result->nextState->activeStepId);
+        // Stale mismatch preserves current activeStepId — clearing 'step-5'
+        // would lose a newer in-flight compaction's identity.
+        self::assertSame('step-5', $result->nextState->activeStepId);
     }
 
     public function testStaleResultEmitsFailedWhenTurnNoMismatch(): void
@@ -248,13 +253,15 @@ final class CompactionStepResultHandlerTest extends TestCase
         self::assertCount(1, $result->events);
         self::assertSame(RunEventTypeEnum::ContextCompactionFailed->value, $result->events[0]->type);
         self::assertSame('stale_result', $result->events[0]->payload['reason']);
-        self::assertSame(false, $result->events[0]->payload['messages_replaced']);
+        self::assertFalse($result->events[0]->payload['messages_replaced']);
+        self::assertSame('step-1', $result->events[0]->payload['step_id']);
 
         // Messages preserved.
         self::assertCount(\count($originalMessages), $result->nextState->messages);
 
-        // activeStepId cleared on terminal stale outcome.
-        self::assertNull($result->nextState->activeStepId);
+        // Stale turn mismatch preserves current activeStepId — a newer
+        // compaction may be in-flight under this turn.
+        self::assertSame('step-1', $result->nextState->activeStepId);
     }
 
     public function testResultInTerminalRunEmitsFailed(): void
@@ -299,10 +306,12 @@ final class CompactionStepResultHandlerTest extends TestCase
         self::assertCount(1, $result->events);
         self::assertSame(RunEventTypeEnum::ContextCompactionFailed->value, $result->events[0]->type);
         self::assertSame('stale_result', $result->events[0]->payload['reason']);
-        self::assertSame(false, $result->events[0]->payload['messages_replaced']);
+        self::assertFalse($result->events[0]->payload['messages_replaced']);
+        self::assertSame('step-1', $result->events[0]->payload['step_id']);
 
-        // activeStepId cleared on terminal stale outcome.
-        self::assertNull($result->nextState->activeStepId);
+        // Terminal stale preserves activeStepId — the run is already
+        // finished so there is no in-flight step to collide with.
+        self::assertSame('step-1', $result->nextState->activeStepId);
     }
 
     // ── helpers ──

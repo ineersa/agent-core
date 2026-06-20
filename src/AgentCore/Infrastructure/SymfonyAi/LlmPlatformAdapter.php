@@ -95,10 +95,13 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         ];
 
         // Resolve the effective model ref for cost calculation and any
-        // model-aware logic.  $request->model is the legacy empty-string
-        // container parameter (app.default_model), not a user override;
-        // SessionAwareModelResolver picks the real model from session
-        // metadata / provider defaults without an explicit override.
+        // model-aware logic.  Normal LLM steps pass the empty-string
+        // container parameter (app.default_model) as a sentinel —
+        // SessionAwareModelResolver interprets '' as "no override" and
+        // picks the real model from session metadata / provider defaults.
+        // Compaction and background summarization calls may pass a
+        // non-empty explicit model override, which the resolver honours
+        // directly.
         $effectiveModel = $request->model;
         if (null !== $this->modelResolver) {
             $effectiveModel = $this->modelResolver->resolve(

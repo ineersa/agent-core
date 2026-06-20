@@ -33,7 +33,9 @@ use ReflectionClass;
  * Theses:
  *  - Ready preparation emits context_compaction_started with activeStepId set.
  *  - Ready preparation dispatches ExecuteCompactionStep, preserves messages.
- *  - Non-ready preparation emits context_compaction_failed with structural reason, preserves messages.
+ *  - When ModelSelectionService returns a non-null active model and no compaction override,
+ *    the started payload and dispatched step carry that active session model.
+ *  - Non-ready preparation emits context_compaction_failed with structural reason, messages_replaced:false.
  *  - Non-ready preparation does NOT set activeStepId (no worker dispatched).
  *  - Failure messages use "Compaction failed" wording, never "skipped".
  */
@@ -56,7 +58,9 @@ final class CompactRunHandlerTest extends TestCase
         $fakeService = $this->createReadyCompactionService($summarize, $retained, tokenEstimateBefore: 42000);
         $fakeModelSelection = $this->createModelSelectionStub();
 
-        $appConfig = $this->createAppConfig(keepRecentTokens: 20000);
+        // Explicit compaction model override — prove it flows to both the
+        // started event payload and the dispatched ExecuteCompactionStep.
+        $appConfig = $this->createAppConfig(keepRecentTokens: 20000, compactionModel: 'openai/compaction-model');
 
         $handler = new CompactRunHandler(
             $fakeService,
@@ -85,7 +89,7 @@ final class CompactRunHandlerTest extends TestCase
         $payload = $result->events[0]->payload;
         self::assertSame('step-1', $payload['step_id']);
         self::assertSame('manual', $payload['trigger']);
-        self::assertArrayHasKey('model', $payload);
+        self::assertSame('openai/compaction-model', $payload['model'], 'Explicit compaction model override must appear in started payload');
         self::assertSame(42000, $payload['estimated_tokens']);
         self::assertSame(20000, $payload['keep_recent_tokens']);
         self::assertSame(4, $payload['messages_before']);
@@ -102,10 +106,75 @@ final class CompactRunHandlerTest extends TestCase
         /** @var ExecuteCompactionStep $workerMsg */
         $workerMsg = $result->effects[0];
         self::assertSame('run-1', $workerMsg->runId());
+        self::assertSame('openai/compaction-model', $workerMsg->model, 'Explicit compaction model override must be dispatched to worker');
         self::assertSame('manual', $workerMsg->trigger);
 
         // Messages are NOT mutated in started handler (only in compacted/failed).
         self::assertCount(\count($messages), $result->nextState->messages);
+    }
+
+    /**
+     * Thesis: when no explicit compaction model override is configured but
+     * no active session model is available (getCurrentModel returns null),
+     * the started payload and dispatched step use the empty-string sentinel.
+     * SessionAwareModelResolver treats '' as "no override" and resolves
+     * from provider defaults.
+     *
+     * Full DB integration: verifying getCurrentModel returns a non-null
+     * session model requires a test kernel + HatfieldSessionStore with a
+     * populated hatfield_session row.  The resolver path is covered by
+     * {@see SessionAwareModelResolverTest}.
+     */
+    public function testReadyPreparationUsesEmptyModelWhenNoOverrideAndNoSessionModel(): void
+    {
+        $messages = [
+            $this->userMsg('question 1'),
+            $this->userMsg('question 2'),
+            $this->assistantMsg('answer 1'),
+            $this->assistantMsg('answer 2'),
+        ];
+        $state = $this->createRunState($messages);
+
+        $summarize = [$messages[0], $messages[1]];
+        $retained = [$messages[2], $messages[3]];
+
+        $fakeService = $this->createReadyCompactionService($summarize, $retained, tokenEstimateBefore: 42000);
+        $fakeModelSelection = $this->createModelSelectionStub();
+
+        // No explicit compaction model — resolved model is null (getCurrentModel also returns null).
+        $appConfig = $this->createAppConfig(keepRecentTokens: 20000);
+
+        $handler = new CompactRunHandler(
+            $fakeService,
+            $appConfig,
+            new EventFactory(),
+            $fakeModelSelection,
+        );
+
+        $result = $handler->handle(
+            new CompactRun(
+                runId: 'run-1',
+                turnNo: 5,
+                stepId: 'step-1',
+                attempt: 1,
+                idempotencyKey: 'key-1',
+                trigger: 'manual',
+            ),
+            $state,
+        );
+
+        self::assertNotNull($result->nextState);
+        self::assertCount(1, $result->events);
+        $payload = $result->events[0]->payload;
+
+        // When no model override and no session model, the payload contains
+        // the resolved model (null) and the worker receives the empty-string
+        // sentinel that SessionAwareModelResolver treats as "no override".
+        self::assertNull($payload['model'] ?? null);
+
+        /** @var ExecuteCompactionStep $workerMsg */
+        $workerMsg = $result->effects[0];
+        self::assertSame('', $workerMsg->model);
     }
 
     public function testNonReadyPreparationEmitsFailedAndPreservesMessages(): void
@@ -144,7 +213,7 @@ final class CompactRunHandlerTest extends TestCase
 
         $payload = $result->events[0]->payload;
         self::assertSame('too_few_messages', $payload['reason']);
-        self::assertTrue($payload['preserved_messages']);
+        self::assertFalse($payload['messages_replaced']);
 
         // Messages preserved.
         self::assertCount(\count($messages), $result->nextState->messages);
@@ -290,13 +359,16 @@ final class CompactRunHandlerTest extends TestCase
         };
     }
 
-    private function createAppConfig(int $keepRecentTokens = 20000): AppConfig
+    private function createAppConfig(int $keepRecentTokens = 20000, ?string $compactionModel = null): AppConfig
     {
         return new AppConfig(
             tui: new TuiConfig(theme: 'default'),
             logging: new LoggingConfig(),
             cwd: '/',
-            compaction: new CompactionConfig(keepRecentTokens: $keepRecentTokens),
+            compaction: new CompactionConfig(
+                keepRecentTokens: $keepRecentTokens,
+                model: $compactionModel,
+            ),
         );
     }
 
