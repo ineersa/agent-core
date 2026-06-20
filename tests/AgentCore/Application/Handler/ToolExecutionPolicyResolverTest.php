@@ -54,7 +54,7 @@ final class ToolExecutionPolicyResolverTest extends TestCase
 
     public function testResolveFromSettings(): void
     {
-        $settings = self::createStub(ToolExecutionSettingsInterface::class);
+        $settings = $this->createStub(ToolExecutionSettingsInterface::class);
         $settings->method('defaultMode')->willReturn('sequential');
         $settings->method('defaultTimeoutSeconds')->willReturn(300);
         $settings->method('maxParallelism')->willReturn(4);

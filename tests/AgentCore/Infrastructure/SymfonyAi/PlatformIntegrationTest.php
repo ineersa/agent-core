@@ -187,19 +187,19 @@ final class PlatformIntegrationTest extends TestCase
             ),
         ));
 
-        self::assertSame(['transform_context', 'convert_to_llm', 'before_provider_request'], $calls);
-        self::assertSame('gpt-test-resolved-patched', $modelClient->capturedModel);
-        self::assertTrue($modelClient->capturedOptions['stream']);
-        self::assertSame(64, $modelClient->capturedOptions['max_tokens']);
-        self::assertSame(0.2, $modelClient->capturedOptions['temperature']);
-        self::assertSame('Search docs for turn 2', $modelClient->capturedOptions['tools'][0]['function']['description']);
-        self::assertArrayNotHasKey(PlatformInvocationMetadata::OPTION_KEY, $modelClient->capturedOptions);
+        $this->assertSame(['transform_context', 'convert_to_llm', 'before_provider_request'], $calls);
+        $this->assertSame('gpt-test-resolved-patched', $modelClient->capturedModel);
+        $this->assertTrue($modelClient->capturedOptions['stream']);
+        $this->assertSame(64, $modelClient->capturedOptions['max_tokens']);
+        $this->assertSame(0.2, $modelClient->capturedOptions['temperature']);
+        $this->assertSame('Search docs for turn 2', $modelClient->capturedOptions['tools'][0]['function']['description']);
+        $this->assertArrayNotHasKey(PlatformInvocationMetadata::OPTION_KEY, $modelClient->capturedOptions);
 
-        self::assertSame('Hello world', $response->assistantMessage?->asText());
-        self::assertNull($response->stopReason);
-        self::assertSame(7, $response->usage['input_tokens']);
-        self::assertSame(3, $response->usage['output_tokens']);
-        self::assertSame(10, $response->usage['total_tokens']);
+        $this->assertSame('Hello world', $response->assistantMessage?->asText());
+        $this->assertNull($response->stopReason);
+        $this->assertSame(7, $response->usage['input_tokens']);
+        $this->assertSame(3, $response->usage['output_tokens']);
+        $this->assertSame(10, $response->usage['total_tokens']);
     }
 
     /**
@@ -298,7 +298,7 @@ final class PlatformIntegrationTest extends TestCase
         // ModelNotFoundException from the catalog.  The
         // ProjectedSymfonyModelCatalog's parseModelName override
         // accepted "llama_cpp/flash" and resolved it to "flash".
-        self::assertNotNull($result);
+        $this->assertNotNull($result);
     }
 
     /**
@@ -443,9 +443,9 @@ final class PlatformIntegrationTest extends TestCase
             ),
         ));
 
-        self::assertSame('aborted', $response->stopReason);
-        self::assertSame('A', $response->assistantMessage?->asText());
-        self::assertSame(15, $response->usage['total_tokens']);
+        $this->assertSame('aborted', $response->stopReason);
+        $this->assertSame('A', $response->assistantMessage?->asText());
+        $this->assertSame(15, $response->usage['total_tokens']);
     }
 
     public function testTransformHookNotificationsFlowToPlatformInvocationResult(): void
@@ -528,15 +528,15 @@ final class PlatformIntegrationTest extends TestCase
 
         // The transform hook's notification must appear in the
         // PlatformInvocationResult.
-        self::assertCount(1, $response->modelNotifications);
-        self::assertSame('output_cap', $response->modelNotifications[0]['source']);
-        self::assertSame('output_capped', $response->modelNotifications[0]['kind']);
-        self::assertSame('tool_result_replace', $response->modelNotifications[0]['delivery']);
-        self::assertSame('call-def-1', $response->modelNotifications[0]['tool_call_id']);
+        $this->assertCount(1, $response->modelNotifications);
+        $this->assertSame('output_cap', $response->modelNotifications[0]['source']);
+        $this->assertSame('output_capped', $response->modelNotifications[0]['kind']);
+        $this->assertSame('tool_result_replace', $response->modelNotifications[0]['delivery']);
+        $this->assertSame('call-def-1', $response->modelNotifications[0]['tool_call_id']);
 
         // Normal (success) response.
-        self::assertNull($response->error);
-        self::assertNotNull($response->assistantMessage);
+        $this->assertNull($response->error);
+        $this->assertNotNull($response->assistantMessage);
     }
 
     public function testTransformHookNotificationsFlowOnProviderError(): void
@@ -594,9 +594,9 @@ final class PlatformIntegrationTest extends TestCase
         ));
 
         // Notifications must still be present even on error.
-        self::assertNotNull($response->error);
-        self::assertCount(1, $response->modelNotifications);
-        self::assertSame('call-err', $response->modelNotifications[0]['tool_call_id']);
+        $this->assertNotNull($response->error);
+        $this->assertCount(1, $response->modelNotifications);
+        $this->assertSame('call-err', $response->modelNotifications[0]['tool_call_id']);
     }
 
     public function testNotificationsPresentPreTransformAreNotReEmitted(): void
@@ -693,9 +693,9 @@ final class PlatformIntegrationTest extends TestCase
         ));
 
         // Only the NEW notification must be in modelNotifications.
-        self::assertCount(1, $response->modelNotifications);
-        self::assertNotSame($existingNid, $response->modelNotifications[0]['id']);
-        self::assertStringContainsString('defense', $response->modelNotifications[0]['text']);
+        $this->assertCount(1, $response->modelNotifications);
+        $this->assertNotSame($existingNid, $response->modelNotifications[0]['id']);
+        $this->assertStringContainsString('defense', $response->modelNotifications[0]['text']);
     }
 
     /**
@@ -841,9 +841,9 @@ final class PlatformIntegrationTest extends TestCase
      * Create an LlmPlatformAdapter with a fake Symfony AI backend,
      * a simple text-delta stream, and the given transform hooks.
      *
-     * @param \Closure(): iterable<mixed>             $streamFactory
-     * @param iterable<TransformContextHookInterface> $transformHooks
-     * @param iterable<ConvertToLlmHookInterface>     $convertHooks
+     * @param \Closure(): iterable<mixed>                     $streamFactory
+     * @param iterable<TransformContextHookInterface>          $transformHooks
+     * @param iterable<ConvertToLlmHookInterface>              $convertHooks
      */
     private function createAdapter(
         InMemoryRunStore $runStore,

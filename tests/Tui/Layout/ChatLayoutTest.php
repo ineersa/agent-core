@@ -83,7 +83,7 @@ final class ChatLayoutTest extends TestCase
         $editorSepIndex = null;
         $footerSepIndex = null;
         foreach ($lines as $i => $line) {
-            if (str_contains($line, '❯')) {
+            if (\str_contains($line, '❯')) {
                 $editorSepIndex = $i - 1; // line before editor prompt
             }
         }
@@ -120,8 +120,8 @@ final class ChatLayoutTest extends TestCase
 
         // Last non-empty line should contain custom footer
         $lastLine = '';
-        foreach (array_reverse($lines) as $line) {
-            if ('' !== trim($line)) {
+        foreach (\array_reverse($lines) as $line) {
+            if (\trim($line) !== '') {
                 $lastLine = $line;
                 break;
             }
@@ -145,10 +145,10 @@ final class ChatLayoutTest extends TestCase
         $foundEditor = false;
         $foundCustom = false;
         foreach ($lines as $line) {
-            if (str_contains($line, '❯')) {
+            if (\str_contains($line, '❯')) {
                 $foundEditor = true;
             }
-            if (str_contains($line, 'CUSTOM EDITOR')) {
+            if (\str_contains($line, 'CUSTOM EDITOR')) {
                 $foundCustom = true;
             }
         }
@@ -172,10 +172,10 @@ final class ChatLayoutTest extends TestCase
         $aboveIdx = null;
         $editorIdx = null;
         foreach ($lines as $i => $line) {
-            if (str_contains($line, 'WIDGET ABOVE')) {
+            if (\str_contains($line, 'WIDGET ABOVE')) {
                 $aboveIdx = $i;
             }
-            if (str_contains($line, '❯')) {
+            if (\str_contains($line, '❯')) {
                 $editorIdx = $i;
             }
         }
@@ -200,10 +200,10 @@ final class ChatLayoutTest extends TestCase
         $belowIdx = null;
         $editorIdx = null;
         foreach ($lines as $i => $line) {
-            if (str_contains($line, 'WIDGET BELOW')) {
+            if (\str_contains($line, 'WIDGET BELOW')) {
                 $belowIdx = $i;
             }
-            if (str_contains($line, '❯')) {
+            if (\str_contains($line, '❯')) {
                 $editorIdx = $i;
             }
         }
@@ -223,10 +223,10 @@ final class ChatLayoutTest extends TestCase
         $foundModel = false;
         $foundCwd = false;
         foreach ($lines as $line) {
-            if (str_contains($line, 'model') && str_contains($line, 'claude-sonnet')) {
+            if (\str_contains($line, 'model') && \str_contains($line, 'claude-sonnet')) {
                 $foundModel = true;
             }
-            if (str_contains($line, 'cwd') && str_contains($line, '/project')) {
+            if (\str_contains($line, 'cwd') && \str_contains($line, '/project')) {
                 $foundCwd = true;
             }
         }
@@ -256,7 +256,7 @@ final class ChatLayoutTest extends TestCase
         $lines = $this->layout->render($this->context);
         $foundWorking = false;
         foreach ($lines as $line) {
-            if (str_contains($line, 'Processing')) {
+            if (\str_contains($line, 'Processing')) {
                 $foundWorking = true;
             }
         }
@@ -267,7 +267,7 @@ final class ChatLayoutTest extends TestCase
         $lines = $this->layout->render($this->context);
         $foundHidden = false;
         foreach ($lines as $line) {
-            if (str_contains($line, 'Processing')) {
+            if (\str_contains($line, 'Processing')) {
                 $foundHidden = true;
             }
         }
@@ -281,7 +281,7 @@ final class ChatLayoutTest extends TestCase
         $lines = $this->layout->render($this->context);
         $found = false;
         foreach ($lines as $line) {
-            if (str_contains($line, 'Waiting')) {
+            if (\str_contains($line, 'Waiting')) {
                 $found = true;
             }
         }

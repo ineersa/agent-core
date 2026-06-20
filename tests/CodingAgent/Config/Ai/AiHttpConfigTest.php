@@ -60,22 +60,22 @@ final class AiHttpConfigTest extends TestCase
 
     public function testFromArrayResolvesEnvVar(): void
     {
-        putenv('HATFIELD_TEST_HTTP_TIMEOUT=45');
+        \putenv('HATFIELD_TEST_HTTP_TIMEOUT=45');
         try {
             $config = AiHttpConfig::fromArray(['timeout' => 'env:HATFIELD_TEST_HTTP_TIMEOUT']);
             self::assertSame(45, $config->timeout);
         } finally {
-            putenv('HATFIELD_TEST_HTTP_TIMEOUT');
+            \putenv('HATFIELD_TEST_HTTP_TIMEOUT');
         }
     }
 
     public function testFromArrayResolvesEnvVarForAllKeys(): void
     {
-        putenv('HATFIELD_TEST_HTTP_T=8');
-        putenv('HATFIELD_TEST_HTTP_D=60');
-        putenv('HATFIELD_TEST_HTTP_R=3');
-        putenv('HATFIELD_TEST_HTTP_B=500');
-        putenv('HATFIELD_TEST_HTTP_M=30000');
+        \putenv('HATFIELD_TEST_HTTP_T=8');
+        \putenv('HATFIELD_TEST_HTTP_D=60');
+        \putenv('HATFIELD_TEST_HTTP_R=3');
+        \putenv('HATFIELD_TEST_HTTP_B=500');
+        \putenv('HATFIELD_TEST_HTTP_M=30000');
         try {
             $config = AiHttpConfig::fromArray([
                 'timeout' => 'env:HATFIELD_TEST_HTTP_T',
@@ -90,18 +90,18 @@ final class AiHttpConfigTest extends TestCase
             self::assertSame(500, $config->baseDelayMs);
             self::assertSame(30000, $config->maxDelayMs);
         } finally {
-            putenv('HATFIELD_TEST_HTTP_T');
-            putenv('HATFIELD_TEST_HTTP_D');
-            putenv('HATFIELD_TEST_HTTP_R');
-            putenv('HATFIELD_TEST_HTTP_B');
-            putenv('HATFIELD_TEST_HTTP_M');
+            \putenv('HATFIELD_TEST_HTTP_T');
+            \putenv('HATFIELD_TEST_HTTP_D');
+            \putenv('HATFIELD_TEST_HTTP_R');
+            \putenv('HATFIELD_TEST_HTTP_B');
+            \putenv('HATFIELD_TEST_HTTP_M');
         }
     }
 
     public function testFromArrayEnvVarUnsetReturnsNull(): void
     {
         // Unset env — ensure the var is not set
-        putenv('HATFIELD_TEST_HTTP_NONEXISTENT');
+        \putenv('HATFIELD_TEST_HTTP_NONEXISTENT');
         $config = AiHttpConfig::fromArray(['timeout' => 'env:HATFIELD_TEST_HTTP_NONEXISTENT']);
 
         self::assertNull($config->timeout);
@@ -109,12 +109,12 @@ final class AiHttpConfigTest extends TestCase
 
     public function testFromArrayEnvVarEmptyReturnsNull(): void
     {
-        putenv('HATFIELD_TEST_HTTP_EMPTY=');
+        \putenv('HATFIELD_TEST_HTTP_EMPTY=');
         try {
             $config = AiHttpConfig::fromArray(['timeout' => 'env:HATFIELD_TEST_HTTP_EMPTY']);
             self::assertNull($config->timeout);
         } finally {
-            putenv('HATFIELD_TEST_HTTP_EMPTY');
+            \putenv('HATFIELD_TEST_HTTP_EMPTY');
         }
     }
 

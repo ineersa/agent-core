@@ -147,3 +147,5 @@ final class FailingOnceMessageBus implements MessageBusInterface
         return new Envelope($message, $stamps);
     }
 }
+
+

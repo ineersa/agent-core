@@ -36,11 +36,11 @@ final class CopyCommandHandlerTest extends TestCase
         $handler = new CopyCommandHandler($state, $copyFn);
         $result = $handler->handle(new SlashCommand('copy', '', '/copy'));
 
-        self::assertInstanceOf(TranscriptMessage::class, $result);
-        self::assertSame('Copied last model output to clipboard.', $result->text);
-        self::assertSame('system', $result->role);
-        self::assertSame('', $result->style);
-        self::assertSame('I am fine, thanks.', $capturedText);
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $this->assertSame('Copied last model output to clipboard.', $result->text);
+        $this->assertSame('system', $result->role);
+        $this->assertSame('', $result->style);
+        $this->assertSame('I am fine, thanks.', $capturedText);
     }
 
     #[Test]
@@ -59,11 +59,11 @@ final class CopyCommandHandlerTest extends TestCase
         $handler = new CopyCommandHandler($state, $copyFn);
         $result = $handler->handle(new SlashCommand('copy', '', '/copy'));
 
-        self::assertInstanceOf(TranscriptMessage::class, $result);
-        self::assertSame('Nothing to copy — no model output yet.', $result->text);
-        self::assertSame('system', $result->role);
-        self::assertSame('muted', $result->style);
-        self::assertFalse($copyCalled, 'Copy function should not be called when no assistant message exists');
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $this->assertSame('Nothing to copy — no model output yet.', $result->text);
+        $this->assertSame('system', $result->role);
+        $this->assertSame('muted', $result->style);
+        $this->assertFalse($copyCalled, 'Copy function should not be called when no assistant message exists');
     }
 
     #[Test]
@@ -86,10 +86,10 @@ final class CopyCommandHandlerTest extends TestCase
         $handler = new CopyCommandHandler($state, $copyFn);
         $result = $handler->handle(new SlashCommand('copy', '', '/copy'));
 
-        self::assertInstanceOf(TranscriptMessage::class, $result);
-        self::assertSame('Nothing to copy — no model output yet.', $result->text);
-        self::assertSame('muted', $result->style);
-        self::assertFalse($copyCalled);
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $this->assertSame('Nothing to copy — no model output yet.', $result->text);
+        $this->assertSame('muted', $result->style);
+        $this->assertFalse($copyCalled);
     }
 
     #[Test]
@@ -118,9 +118,9 @@ final class CopyCommandHandlerTest extends TestCase
         $handler = new CopyCommandHandler($state, $copyFn);
         $result = $handler->handle(new SlashCommand('copy', '', '/copy'));
 
-        self::assertInstanceOf(TranscriptMessage::class, $result);
-        self::assertSame('Copied last model output to clipboard.', $result->text);
-        self::assertSame('Third assistant — this is the last', $capturedText);
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $this->assertSame('Copied last model output to clipboard.', $result->text);
+        $this->assertSame('Third assistant — this is the last', $capturedText);
     }
 
     #[Test]
@@ -141,10 +141,10 @@ final class CopyCommandHandlerTest extends TestCase
         $handler = new CopyCommandHandler($state, $copyFn);
         $result = $handler->handle(new SlashCommand('copy', '', '/copy'));
 
-        self::assertInstanceOf(TranscriptMessage::class, $result);
-        self::assertSame('Copied last model output to clipboard.', $result->text);
-        self::assertSame('', $result->style);
-        self::assertSame('', $capturedText);
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $this->assertSame('Copied last model output to clipboard.', $result->text);
+        $this->assertSame('', $result->style);
+        $this->assertSame('', $capturedText);
     }
 
     #[Test]
@@ -162,10 +162,10 @@ final class CopyCommandHandlerTest extends TestCase
         $handler = new CopyCommandHandler($state, $copyFn);
         $result = $handler->handle(new SlashCommand('copy', '', '/copy'));
 
-        self::assertInstanceOf(TranscriptMessage::class, $result);
-        self::assertSame('Failed to copy last model output to clipboard.', $result->text);
-        self::assertSame('system', $result->role);
-        self::assertSame('muted', $result->style);
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $this->assertSame('Failed to copy last model output to clipboard.', $result->text);
+        $this->assertSame('system', $result->role);
+        $this->assertSame('muted', $result->style);
     }
 
     private function buildBlock(string $id, TranscriptBlockKindEnum $kind, int $seq, string $text): TranscriptBlock

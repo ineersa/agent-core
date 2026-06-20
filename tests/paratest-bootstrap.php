@@ -27,15 +27,16 @@ declare(strict_types=1);
  *   HATFIELD_TEST_DATABASE_PATH — per-worker SQLite path
  *   HATFIELD_CACHE_DIR      — per-worker container cache
  */
+
 $token = getenv('TEST_TOKEN') ?: '0';
 
 // ── Per-worker DB path ──
-$dbPath = 'app_test-T'.$token.'.sqlite';
+$dbPath = 'app_test-T' . $token . '.sqlite';
 putenv("HATFIELD_TEST_DATABASE_PATH={$dbPath}");
 $_ENV['HATFIELD_TEST_DATABASE_PATH'] = $dbPath;
 
 // ── Per-worker cache dir ──
-$cacheDir = '.hatfield/cache-paraT'.$token;
+$cacheDir = '.hatfield/cache-paraT' . $token;
 putenv("HATFIELD_CACHE_DIR={$cacheDir}");
 $_ENV['HATFIELD_CACHE_DIR'] = $cacheDir;
 
@@ -45,7 +46,7 @@ $_ENV['HATFIELD_CACHE_DIR'] = $cacheDir;
 // worker with a missing schema will produce confusing errors.
 $phpBin = \PHP_BINARY;
 $root = dirname(__DIR__);
-@mkdir($root.'/var/test', 0755, true);
+@mkdir($root . '/var/test', 0755, true);
 $cmd = sprintf(
     'APP_ENV=test HATFIELD_TEST_DATABASE_PATH=%s HATFIELD_CACHE_DIR=%s %s %s/bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration 2>&1',
     escapeshellarg($dbPath),
@@ -54,7 +55,7 @@ $cmd = sprintf(
     escapeshellarg($root)
 );
 exec($cmd, $output, $exitCode);
-if (0 !== $exitCode) {
-    fwrite(\STDERR, "ParaTest bootstrap (token={$token}): migration FAILED\n".implode("\n", $output)."\n");
+if ($exitCode !== 0) {
+    fwrite(\STDERR, "ParaTest bootstrap (token={$token}): migration FAILED\n" . implode("\n", $output) . "\n");
     exit($exitCode);
 }

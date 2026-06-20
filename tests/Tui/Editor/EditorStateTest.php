@@ -17,7 +17,7 @@ final class EditorStateTest extends TestCase
     {
         $state = new EditorState(['hello']);
 
-        self::assertSame(['hello'], $state->getLines());
+        $this->assertSame(['hello'], $state->getLines());
     }
 
     #[Test]
@@ -41,8 +41,8 @@ final class EditorStateTest extends TestCase
         // so callers receive an independent snapshot.
         $lines[0] = 'mutated';
 
-        self::assertSame(['a', 'b'], $state->getLines());
-        self::assertSame(['mutated', 'b'], $lines);
+        $this->assertSame(['a', 'b'], $state->getLines());
+        $this->assertSame(['mutated', 'b'], $lines);
     }
 
     #[Test]
@@ -50,7 +50,7 @@ final class EditorStateTest extends TestCase
     {
         $state = EditorState::fromText('');
 
-        self::assertSame([''], $state->getLines());
+        $this->assertSame([''], $state->getLines());
     }
 
     #[Test]
@@ -58,7 +58,7 @@ final class EditorStateTest extends TestCase
     {
         $state = EditorState::fromText('hello world');
 
-        self::assertSame(['hello world'], $state->getLines());
+        $this->assertSame(['hello world'], $state->getLines());
     }
 
     #[Test]
@@ -66,7 +66,7 @@ final class EditorStateTest extends TestCase
     {
         $state = EditorState::fromText("line1\nline2\nline3");
 
-        self::assertSame(['line1', 'line2', 'line3'], $state->getLines());
+        $this->assertSame(['line1', 'line2', 'line3'], $state->getLines());
     }
 
     #[Test]
@@ -74,7 +74,7 @@ final class EditorStateTest extends TestCase
     {
         $state = EditorState::fromText("line1\r\nline2");
 
-        self::assertSame(['line1', 'line2'], $state->getLines());
+        $this->assertSame(['line1', 'line2'], $state->getLines());
     }
 
     #[Test]
@@ -82,7 +82,7 @@ final class EditorStateTest extends TestCase
     {
         $state = EditorState::fromText("line1\rline2");
 
-        self::assertSame(['line1', 'line2'], $state->getLines());
+        $this->assertSame(['line1', 'line2'], $state->getLines());
     }
 
     #[Test]
@@ -90,7 +90,7 @@ final class EditorStateTest extends TestCase
     {
         $state = EditorState::fromText("a\r\nb\rc\nd");
 
-        self::assertSame(['a', 'b', 'c', 'd'], $state->getLines());
+        $this->assertSame(['a', 'b', 'c', 'd'], $state->getLines());
     }
 
     #[Test]
@@ -100,7 +100,7 @@ final class EditorStateTest extends TestCase
         // explode("\n", "hello\n") → ["hello", ""]
         $state = EditorState::fromText("hello\n");
 
-        self::assertSame(['hello', ''], $state->getLines());
+        $this->assertSame(['hello', ''], $state->getLines());
     }
 
     #[Test]
@@ -108,7 +108,7 @@ final class EditorStateTest extends TestCase
     {
         $state = EditorState::empty();
 
-        self::assertSame([''], $state->getLines());
+        $this->assertSame([''], $state->getLines());
     }
 
     #[Test]
@@ -116,7 +116,7 @@ final class EditorStateTest extends TestCase
     {
         $state = EditorState::fromText("a\nb\nc");
 
-        self::assertSame("a\nb\nc", $state->getText());
+        $this->assertSame("a\nb\nc", $state->getText());
     }
 
     #[Test]
@@ -124,7 +124,7 @@ final class EditorStateTest extends TestCase
     {
         $state = EditorState::empty();
 
-        self::assertSame('', $state->getText());
+        $this->assertSame('', $state->getText());
     }
 
     #[Test]
@@ -132,7 +132,7 @@ final class EditorStateTest extends TestCase
     {
         $state = EditorState::empty();
 
-        self::assertTrue($state->isEmpty());
+        $this->assertTrue($state->isEmpty());
     }
 
     #[Test]
@@ -140,7 +140,7 @@ final class EditorStateTest extends TestCase
     {
         $state = EditorState::fromText('');
 
-        self::assertTrue($state->isEmpty());
+        $this->assertTrue($state->isEmpty());
     }
 
     #[Test]
@@ -148,7 +148,7 @@ final class EditorStateTest extends TestCase
     {
         $state = EditorState::fromText('hello');
 
-        self::assertFalse($state->isEmpty());
+        $this->assertFalse($state->isEmpty());
     }
 
     #[Test]
@@ -157,7 +157,7 @@ final class EditorStateTest extends TestCase
         // Two lines with second empty → not "empty" per isEmpty()
         $state = EditorState::fromText("hello\n");
 
-        self::assertFalse($state->isEmpty());
+        $this->assertFalse($state->isEmpty());
     }
 
     #[Test]
@@ -167,8 +167,8 @@ final class EditorStateTest extends TestCase
         // This matches EditorDocument::setText("\n") behavior.
         $state = EditorState::fromText("\n");
 
-        self::assertSame(['', ''], $state->getLines());
-        self::assertFalse($state->isEmpty());
+        $this->assertSame(['', ''], $state->getLines());
+        $this->assertFalse($state->isEmpty());
     }
 
     // ─── Control byte stripping (matching EditorDocument::setText) ──
@@ -179,7 +179,7 @@ final class EditorStateTest extends TestCase
         // BEL (\x07) and other C0 controls are stripped
         $state = EditorState::fromText("hello\x07world");
 
-        self::assertSame(['helloworld'], $state->getLines());
+        $this->assertSame(['helloworld'], $state->getLines());
     }
 
     #[Test]
@@ -187,7 +187,7 @@ final class EditorStateTest extends TestCase
     {
         $state = EditorState::fromText("hi\x7fthere");
 
-        self::assertSame(['hithere'], $state->getLines());
+        $this->assertSame(['hithere'], $state->getLines());
     }
 
     #[Test]
@@ -196,7 +196,7 @@ final class EditorStateTest extends TestCase
         // TAB (\x09) and LF (\x0a) are preserved
         $state = EditorState::fromText("col1\tcol2\nline2");
 
-        self::assertSame(["col1\tcol2", 'line2'], $state->getLines());
+        $this->assertSame(["col1\tcol2", 'line2'], $state->getLines());
     }
 
     #[Test]
@@ -205,7 +205,7 @@ final class EditorStateTest extends TestCase
         // C1 controls encoded as UTF-8 \xc2[\x80-\x9f]
         $state = EditorState::fromText("hello\xc2\x80world");
 
-        self::assertSame(['helloworld'], $state->getLines());
+        $this->assertSame(['helloworld'], $state->getLines());
     }
 
     #[Test]
@@ -214,8 +214,8 @@ final class EditorStateTest extends TestCase
         // Invalid UTF-8 byte sequences are stripped via iconv
         $state = EditorState::fromText("valid\xFE\xFFtext");
 
-        self::assertStringContainsString('valid', $state->getText());
-        self::assertStringContainsString('text', $state->getText());
+        $this->assertStringContainsString('valid', $state->getText());
+        $this->assertStringContainsString('text', $state->getText());
     }
 
     #[Test]
@@ -224,7 +224,7 @@ final class EditorStateTest extends TestCase
         // If all content is control bytes, result is an empty state
         $state = EditorState::fromText("\x00\x01");
 
-        self::assertTrue($state->isEmpty());
-        self::assertSame([''], $state->getLines());
+        $this->assertTrue($state->isEmpty());
+        $this->assertSame([''], $state->getLines());
     }
 }

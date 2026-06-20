@@ -32,6 +32,49 @@ abstract class ControllerE2eTestCase extends TestCase
     protected string $runId = '';
     protected string $sessionId = '';
 
+    // ── Overridable hooks ──
+
+    /**
+     * Prefix for the temp directory name (e.g. 'test-controller').
+     */
+    abstract protected function tempDirPrefix(): string;
+
+    /**
+     * @return array{input: string[], tool_calling: bool}
+     */
+    protected function modelConfig(): array
+    {
+        return [
+            'input' => ['text'],
+            'tool_calling' => true,
+        ];
+    }
+
+    /**
+     * @return list<string> Extra CLI arguments appended to `agent --controller`.
+     *                         Default excludes bash for deterministic E2E tests.
+     */
+    protected function controllerExtraArgs(): array
+    {
+        return ['--tools-excluded=bash'];
+    }
+
+    /**
+     * @return string Extra YAML appended to the generated `.hatfield/settings.yaml`.
+     */
+    protected function extraSettingsYaml(): string
+    {
+        return '';
+    }
+
+    /**
+     * @return array<string, string> Extra lines for diagnostics output.
+     */
+    protected function extraDiagnostics(): array
+    {
+        return [];
+    }
+
     // ── Lifecycle ──
 
     protected function setUp(): void
@@ -68,49 +111,6 @@ abstract class ControllerE2eTestCase extends TestCase
         }
 
         parent::tearDown();
-    }
-
-    // ── Overridable hooks ──
-
-    /**
-     * Prefix for the temp directory name (e.g. 'test-controller').
-     */
-    abstract protected function tempDirPrefix(): string;
-
-    /**
-     * @return array{input: string[], tool_calling: bool}
-     */
-    protected function modelConfig(): array
-    {
-        return [
-            'input' => ['text'],
-            'tool_calling' => true,
-        ];
-    }
-
-    /**
-     * @return list<string> Extra CLI arguments appended to `agent --controller`.
-     *                      Default excludes bash for deterministic E2E tests.
-     */
-    protected function controllerExtraArgs(): array
-    {
-        return ['--tools-excluded=bash'];
-    }
-
-    /**
-     * @return string Extra YAML appended to the generated `.hatfield/settings.yaml`.
-     */
-    protected function extraSettingsYaml(): string
-    {
-        return '';
-    }
-
-    /**
-     * @return array<string, string> extra lines for diagnostics output
-     */
-    protected function extraDiagnostics(): array
-    {
-        return [];
     }
 
     // ── Process lifecycle ──
@@ -241,6 +241,40 @@ abstract class ControllerE2eTestCase extends TestCase
         return $this->parseBuffer($this->stdoutBuf);
     }
 
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function parseBuffer(string &$buf): array
+    {
+        $lastNewline = strrpos($buf, "\n");
+        if (false === $lastNewline) {
+            return [];
+        }
+
+        $complete = substr($buf, 0, $lastNewline + 1);
+        $buf = substr($buf, $lastNewline + 1);
+
+        $events = [];
+        foreach (explode("\n", $complete) as $line) {
+            $trimmed = trim($line);
+            if ('' === $trimmed) {
+                continue;
+            }
+
+            try {
+                /** @var array<string, mixed> $decoded */
+                $decoded = json_decode($trimmed, true, 512, \JSON_THROW_ON_ERROR);
+                if (\is_array($decoded)) {
+                    $events[] = $decoded;
+                }
+            } catch (\JsonException) {
+                $this->stderrBuf .= "\n[malformed stdout] ".$trimmed;
+            }
+        }
+
+        return $events;
+    }
+
     protected function drainStderr(): void
     {
         if (!isset($this->pipes[2]) || !\is_resource($this->pipes[2])) {
@@ -259,7 +293,6 @@ abstract class ControllerE2eTestCase extends TestCase
      * Index events by type, returning `[type => [event, ...]]`.
      *
      * @param list<array<string, mixed>> $events
-     *
      * @return array<string, list<array<string, mixed>>>
      */
     protected function indexByType(array $events): array
@@ -462,7 +495,7 @@ abstract class ControllerE2eTestCase extends TestCase
             'Run ID: '.$this->runId,
             'Controller running: '.($this->isRunning() ? 'yes' : 'no'),
             'Stderr: '.$this->stderrBuf,
-            'Events collected: '.\count($events),
+            'Events collected: '.count($events),
             'Event types: '.implode(', ', array_unique(array_map(
                 static fn (array $e): string => (string) ($e['type'] ?? 'unknown'),
                 $events,
@@ -477,13 +510,13 @@ abstract class ControllerE2eTestCase extends TestCase
 
         $messengerDb = $this->tempDir.'/.hatfield/messenger.sqlite';
         if (is_file($messengerDb)) {
-            $chunks[] = 'Messenger DB: '.filesize($messengerDb).' bytes';
+            $chunks[] = 'Messenger DB: '.\filesize($messengerDb).' bytes';
             try {
                 $db = new \PDO('sqlite:'.$messengerDb);
                 $rows = $db->query('SELECT count(*), queue_name FROM messenger_messages GROUP BY queue_name');
                 if (false !== $rows) {
                     foreach ($rows as $row) {
-                        $chunks[] = '  '.($row[0] ?? 0).' messages in '.escapeshellarg($row[1] ?? '?');
+                        $chunks[] = '  '.($row[0] ?? 0).' messages in '.\escapeshellarg($row[1] ?? '?');
                     }
                 }
             } catch (\Throwable $e) {
@@ -502,7 +535,7 @@ abstract class ControllerE2eTestCase extends TestCase
             return 'Session dir: missing';
         }
 
-        $dirs = glob($sessionsDir.'/*', \GLOB_ONLYDIR) ?: [];
+        $dirs = \glob($sessionsDir.'/*', \GLOB_ONLYDIR) ?: [];
         $lines = ['Session dir: '.$sessionsDir."\nSessions: ".implode(', ', array_map('basename', $dirs))];
 
         foreach ($dirs as $sessionDir) {
@@ -608,37 +641,4 @@ YAML;
         file_put_contents($this->tempDir.'/.hatfield/.gitignore', "*\n");
     }
 
-    /**
-     * @return list<array<string, mixed>>
-     */
-    private function parseBuffer(string &$buf): array
-    {
-        $lastNewline = strrpos($buf, "\n");
-        if (false === $lastNewline) {
-            return [];
-        }
-
-        $complete = substr($buf, 0, $lastNewline + 1);
-        $buf = substr($buf, $lastNewline + 1);
-
-        $events = [];
-        foreach (explode("\n", $complete) as $line) {
-            $trimmed = trim($line);
-            if ('' === $trimmed) {
-                continue;
-            }
-
-            try {
-                /** @var array<string, mixed> $decoded */
-                $decoded = json_decode($trimmed, true, 512, \JSON_THROW_ON_ERROR);
-                if (\is_array($decoded)) {
-                    $events[] = $decoded;
-                }
-            } catch (\JsonException) {
-                $this->stderrBuf .= "\n[malformed stdout] ".$trimmed;
-            }
-        }
-
-        return $events;
-    }
 }

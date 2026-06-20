@@ -31,7 +31,7 @@ final class StackToolExecutionContextAccessorTest extends TestCase
         $accessor = new StackToolExecutionContextAccessor();
         $context = $this->createContext('run-a', 1, 'call-1', 'test_tool');
 
-        $result = $accessor->with($context, static function () use ($accessor, $context): string {
+        $result = $accessor->with($context, function () use ($accessor, $context): string {
             self::assertSame($context, $accessor->current());
 
             return 'done';
@@ -47,7 +47,7 @@ final class StackToolExecutionContextAccessorTest extends TestCase
         $context = $this->createContext('run-a', 1, 'call-1', 'test_tool');
 
         try {
-            $accessor->with($context, static function (): never {
+            $accessor->with($context, function () use ($accessor): never {
                 throw new \RuntimeException('test error');
             });
         } catch (\RuntimeException) {
@@ -63,8 +63,8 @@ final class StackToolExecutionContextAccessorTest extends TestCase
         $outer = $this->createContext('run-a', 1, 'call-1', 'outer');
         $inner = $this->createContext('run-a', 2, 'call-2', 'inner');
 
-        $result = $accessor->with($outer, static function () use ($accessor, $inner): string {
-            return $accessor->with($inner, static function () use ($accessor): string {
+        $result = $accessor->with($outer, function () use ($accessor, $inner): string {
+            return $accessor->with($inner, function () use ($accessor): string {
                 return $accessor->requireCurrent()->toolName();
             });
         });
@@ -85,10 +85,7 @@ final class StackToolExecutionContextAccessorTest extends TestCase
             toolCallId: $toolCallId,
             toolName: $toolName,
             cancellationToken: new class implements CancellationTokenInterface {
-                public function isCancellationRequested(): bool
-                {
-                    return false;
-                }
+                public function isCancellationRequested(): bool { return false; }
             },
             timeoutSeconds: 30,
         );

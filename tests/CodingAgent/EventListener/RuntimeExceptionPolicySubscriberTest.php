@@ -18,7 +18,7 @@ class RuntimeExceptionPolicySubscriberTest extends TestCase
     {
         $exception = new \RuntimeException('test error message');
         $logger = $this->createMock(LoggerInterface::class);
-        $logger->expects(self::never())->method('error');
+        $logger->expects($this->never())->method('error');
 
         $subscriber = new RuntimeExceptionPolicySubscriber(
             new RuntimeErrorCaptureConfig(captureErrors: false),
@@ -39,11 +39,11 @@ class RuntimeExceptionPolicySubscriberTest extends TestCase
         $exception = new \RuntimeException('test error message');
 
         $logger = $this->createMock(LoggerInterface::class);
-        $logger->expects(self::once())
+        $logger->expects($this->once())
             ->method('error')
             ->with(
-                self::equalTo('Runtime exception at boundary'),
-                self::callback(static fn (array $ctx): bool => 'test.operation' === ($ctx['operation'] ?? null)
+                $this->equalTo('Runtime exception at boundary'),
+                $this->callback(static fn (array $ctx): bool => 'test.operation' === ($ctx['operation'] ?? null)
                     && 'run-abc' === ($ctx['run_id'] ?? null)
                     && $ctx['exception'] instanceof \RuntimeException
                     && 'test error message' === $ctx['exception']->getMessage()
@@ -69,7 +69,7 @@ class RuntimeExceptionPolicySubscriberTest extends TestCase
     {
         $events = RuntimeExceptionPolicySubscriber::getSubscribedEvents();
 
-        self::assertArrayHasKey(RuntimeExceptionEvent::class, $events);
-        self::assertSame(['onRuntimeException', 1024], $events[RuntimeExceptionEvent::class]);
+        $this->assertArrayHasKey(RuntimeExceptionEvent::class, $events);
+        $this->assertSame(['onRuntimeException', 1024], $events[RuntimeExceptionEvent::class]);
     }
 }

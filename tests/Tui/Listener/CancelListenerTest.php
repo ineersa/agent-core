@@ -16,9 +16,10 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\CancelListener;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
+use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
-use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
+use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\Attributes\Test;
@@ -63,7 +64,7 @@ class CancelListenerTest extends TestCase
         $this->state->activity = RunActivityStateEnum::Running;
         $this->state->handle = new RunHandle('run-123');
 
-        $this->client->expects(self::once())
+        $this->client->expects($this->once())
             ->method('cancel')
             ->with('run-123');
 
@@ -76,11 +77,11 @@ class CancelListenerTest extends TestCase
         $this->state->activity = RunActivityStateEnum::Running;
         $this->state->handle = new RunHandle('run-123');
 
-        $this->client->expects(self::once())
+        $this->client->expects($this->once())
             ->method('cancel');
         $this->dispatchCancelEvent();
 
-        self::assertSame(RunActivityStateEnum::Cancelling, $this->state->activity);
+        $this->assertSame(RunActivityStateEnum::Cancelling, $this->state->activity);
     }
 
     #[Test]
@@ -89,7 +90,7 @@ class CancelListenerTest extends TestCase
         $this->state->activity = RunActivityStateEnum::Starting;
         $this->state->handle = new RunHandle('run-456');
 
-        $this->client->expects(self::once())
+        $this->client->expects($this->once())
             ->method('cancel')
             ->with('run-456');
 
@@ -102,7 +103,7 @@ class CancelListenerTest extends TestCase
         $this->state->activity = RunActivityStateEnum::WaitingHuman;
         $this->state->handle = new RunHandle('run-789');
 
-        $this->client->expects(self::once())
+        $this->client->expects($this->once())
             ->method('cancel')
             ->with('run-789');
 
@@ -115,7 +116,7 @@ class CancelListenerTest extends TestCase
         $this->state->activity = RunActivityStateEnum::Cancelling;
         $this->state->handle = new RunHandle('run-cxl');
 
-        $this->client->expects(self::once())
+        $this->client->expects($this->once())
             ->method('cancel')
             ->with('run-cxl');
 
@@ -130,7 +131,7 @@ class CancelListenerTest extends TestCase
         $this->state->activity = RunActivityStateEnum::Idle;
         $this->state->handle = new RunHandle('run-idle');
 
-        $this->client->expects(self::never())
+        $this->client->expects($this->never())
             ->method('cancel');
 
         $this->dispatchCancelEvent();
@@ -142,7 +143,7 @@ class CancelListenerTest extends TestCase
         $this->state->activity = RunActivityStateEnum::Completed;
         $this->state->handle = new RunHandle('run-done');
 
-        $this->client->expects(self::never())
+        $this->client->expects($this->never())
             ->method('cancel');
 
         $this->dispatchCancelEvent();
@@ -154,7 +155,7 @@ class CancelListenerTest extends TestCase
         $this->state->activity = RunActivityStateEnum::Failed;
         $this->state->handle = new RunHandle('run-fail');
 
-        $this->client->expects(self::never())
+        $this->client->expects($this->never())
             ->method('cancel');
 
         $this->dispatchCancelEvent();
@@ -166,7 +167,7 @@ class CancelListenerTest extends TestCase
         $this->state->activity = RunActivityStateEnum::Cancelled;
         $this->state->handle = new RunHandle('run-cxl');
 
-        $this->client->expects(self::never())
+        $this->client->expects($this->never())
             ->method('cancel');
 
         $this->dispatchCancelEvent();
@@ -180,7 +181,7 @@ class CancelListenerTest extends TestCase
         $this->state->activity = RunActivityStateEnum::Running;
         $this->state->handle = null;
 
-        $this->client->expects(self::never())
+        $this->client->expects($this->never())
             ->method('cancel');
 
         $this->dispatchCancelEvent();
@@ -194,7 +195,7 @@ class CancelListenerTest extends TestCase
         $this->state->activity = RunActivityStateEnum::Running;
         $this->state->handle = new RunHandle('run-err');
 
-        $this->client->expects(self::once())
+        $this->client->expects($this->once())
             ->method('cancel')
             ->willThrowException(new \RuntimeException('Connection lost'));
 
@@ -202,18 +203,18 @@ class CancelListenerTest extends TestCase
         // logs error() when cancel fails in capture mode.
         $this->logger = $this->createMock(LoggerInterface::class);
         $this->logger->method('info');
-        $this->logger->expects(self::once())
+        $this->logger->expects($this->once())
             ->method('error')
             ->with(
-                self::equalTo('Cancel command failed'),
-                self::callback(static fn (array $ctx) => 'run-err' === ($ctx['run_id'] ?? null)
+                $this->equalTo('Cancel command failed'),
+                $this->callback(static fn (array $ctx) => 'run-err' === ($ctx['run_id'] ?? null)
                     && $ctx['exception'] instanceof \RuntimeException),
             );
 
         $this->dispatchCancelEvent();
 
         // Activity transitions to Failed (not Cancelling) on cancel failure.
-        self::assertSame(RunActivityStateEnum::Failed, $this->state->activity);
+        $this->assertSame(RunActivityStateEnum::Failed, $this->state->activity);
     }
 
     #[Test]
@@ -222,7 +223,7 @@ class CancelListenerTest extends TestCase
         $this->state->activity = RunActivityStateEnum::Running;
         $this->state->handle = new RunHandle('run-crash');
 
-        $this->client->expects(self::once())
+        $this->client->expects($this->once())
             ->method('cancel')
             ->willThrowException(new \RuntimeException('Connection lost'));
 
@@ -231,9 +232,9 @@ class CancelListenerTest extends TestCase
         // is rethrown directly from the catch block.
         $this->logger = $this->createMock(LoggerInterface::class);
         $this->logger->method('info');
-        $this->logger->expects(self::never())
+        $this->logger->expects($this->never())
             ->method('error');
-        $this->logger->expects(self::never())
+        $this->logger->expects($this->never())
             ->method('notice');
 
         $this->expectException(\RuntimeException::class);
@@ -276,7 +277,7 @@ class CancelListenerTest extends TestCase
         );
         $sessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
-            entityManager: self::createStub(\Doctrine\ORM\EntityManagerInterface::class),
+            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
         );
 
         $context = $this->buildTuiContext()
@@ -302,7 +303,7 @@ class CancelListenerTest extends TestCase
         // Extract and invoke the CancelEvent handler
         $dispatcher = $tui->getEventDispatcher();
         $listeners = $dispatcher->getListeners(CancelEvent::class);
-        self::assertNotEmpty($listeners, 'CancelEvent listener was not registered');
+        $this->assertNotEmpty($listeners, 'CancelEvent listener was not registered');
         ($listeners[0])(new CancelEvent(new TextWidget()));
 
         return $screen;

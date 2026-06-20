@@ -38,6 +38,27 @@ final class PromptTemplateLoaderTest extends TestCase
         TestDirectoryIsolation::removeDirectory($this->tmpDir);
     }
 
+    private function createLoader(?PromptsConfig $promptsConfig = null, ?PromptTemplatesRuntimeConfig $runtimeConfig = null): PromptTemplateLoader
+    {
+        return new PromptTemplateLoader(
+            promptsConfig: $promptsConfig ?? new PromptsConfig(),
+            runtimeConfig: $runtimeConfig ?? new PromptTemplatesRuntimeConfig(),
+            pathResolver: $this->pathResolver,
+            cwd: $this->cwd,
+            frontmatterParser: new PromptTemplateFrontmatterParser(),
+            logger: $this->logger,
+        );
+    }
+
+    private function writeFile(string $path, string $content): void
+    {
+        $dir = \dirname($path);
+        if (!is_dir($dir)) {
+            mkdir($dir, 0755, true);
+        }
+        file_put_contents($path, $content);
+    }
+
     // ─── Auto-discovery directories ───
 
     public function testAutoGlobalDirectory(): void
@@ -98,7 +119,7 @@ final class PromptTemplateLoaderTest extends TestCase
         $result = $loader->load();
 
         self::assertCount(2, $result->templates);
-        $names = array_map(static fn ($t) => $t->name, $result->templates);
+        $names = array_map(fn ($t) => $t->name, $result->templates);
         // Sorted lexically.
         self::assertSame(['alpha', 'beta'], $names);
     }
@@ -248,7 +269,7 @@ final class PromptTemplateLoaderTest extends TestCase
         $loader = $this->createLoader(new PromptsConfig([$filePath]));
         $result = $loader->load();
 
-        self::assertSame(63, mb_strlen($result->templates[0]->description));
+        self::assertSame(63, \mb_strlen($result->templates[0]->description));
         self::assertStringEndsWith('...', $result->templates[0]->description);
     }
 
@@ -320,30 +341,9 @@ final class PromptTemplateLoaderTest extends TestCase
             $msg = $record['message'];
             self::assertStringNotContainsString('Secret', $msg);
             if (isset($record['context'])) {
-                $ctxStr = json_encode($record['context'], \JSON_THROW_ON_ERROR);
+                $ctxStr = json_encode($record['context'], JSON_THROW_ON_ERROR);
                 self::assertStringNotContainsString('Secret', $ctxStr);
             }
         }
-    }
-
-    private function createLoader(?PromptsConfig $promptsConfig = null, ?PromptTemplatesRuntimeConfig $runtimeConfig = null): PromptTemplateLoader
-    {
-        return new PromptTemplateLoader(
-            promptsConfig: $promptsConfig ?? new PromptsConfig(),
-            runtimeConfig: $runtimeConfig ?? new PromptTemplatesRuntimeConfig(),
-            pathResolver: $this->pathResolver,
-            cwd: $this->cwd,
-            frontmatterParser: new PromptTemplateFrontmatterParser(),
-            logger: $this->logger,
-        );
-    }
-
-    private function writeFile(string $path, string $content): void
-    {
-        $dir = \dirname($path);
-        if (!is_dir($dir)) {
-            mkdir($dir, 0755, true);
-        }
-        file_put_contents($path, $content);
     }
 }

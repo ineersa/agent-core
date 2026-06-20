@@ -11,8 +11,8 @@ use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
-use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
 use Ineersa\AgentCore\Tests\Support\Builder\ToolCallResultBuilder;
 use PHPUnit\Framework\TestCase;
@@ -87,29 +87,29 @@ final class ToolCallResultHandlerTest extends TestCase
 
         $result = $handler->handle($message, $state);
 
-        self::assertNotNull($result->nextState);
-        self::assertSame(RunStatus::Running, $result->nextState->status);
-        self::assertSame(6, $result->nextState->version);
-        self::assertSame(8, $result->nextState->lastSeq);
-        self::assertSame([
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(RunStatus::Running, $result->nextState->status);
+        $this->assertSame(6, $result->nextState->version);
+        $this->assertSame(8, $result->nextState->lastSeq);
+        $this->assertSame([
             'tool-a' => true,
             'tool-b' => false,
         ], $result->nextState->pendingToolCalls);
 
-        self::assertCount(2, $result->events);
-        self::assertSame('tool_call_result_received', $result->events[0]->type);
-        self::assertSame('tool_execution_end', $result->events[1]->type);
+        $this->assertCount(2, $result->events);
+        $this->assertSame('tool_call_result_received', $result->events[0]->type);
+        $this->assertSame('tool_execution_end', $result->events[1]->type);
 
-        self::assertArrayHasKey('result', $result->events[1]->payload);
-        self::assertSame('A', $result->events[1]->payload['result'],
+        $this->assertArrayHasKey('result', $result->events[1]->payload);
+        $this->assertSame('A', $result->events[1]->payload['result'],
             'ToolExecutionEnd must carry the extracted result text, not fall back to "alpha completed"');
 
-        self::assertSame([], $result->effects);
-        self::assertCount(1, $result->postCommitEffects);
-        self::assertInstanceOf(ExecuteToolCall::class, $result->postCommitEffects[0]);
-        self::assertSame('tool-b', $result->postCommitEffects[0]->toolCallId);
-        self::assertSame([], $result->postCommit);
-        self::assertTrue($result->markHandled);
+        $this->assertSame([], $result->effects);
+        $this->assertCount(1, $result->postCommitEffects);
+        $this->assertInstanceOf(ExecuteToolCall::class, $result->postCommitEffects[0]);
+        $this->assertSame('tool-b', $result->postCommitEffects[0]->toolCallId);
+        $this->assertSame([], $result->postCommit);
+        $this->assertTrue($result->markHandled);
     }
 
     public function testExtractResultTextSinglePart(): void
@@ -164,8 +164,8 @@ final class ToolCallResultHandlerTest extends TestCase
 
         $result = $handler->handle($message, $state);
 
-        self::assertSame('tool_execution_end', $result->events[1]->type);
-        self::assertSame('FILE_CONTENT_SENTINEL', $result->events[1]->payload['result']);
+        $this->assertSame('tool_execution_end', $result->events[1]->type);
+        $this->assertSame('FILE_CONTENT_SENTINEL', $result->events[1]->payload['result']);
     }
 
     public function testExtractResultTextMultipleParts(): void
@@ -223,8 +223,8 @@ final class ToolCallResultHandlerTest extends TestCase
 
         $result = $handler->handle($message, $state);
 
-        self::assertSame('tool_execution_end', $result->events[1]->type);
-        self::assertSame("line one\nline two", $result->events[1]->payload['result']);
+        $this->assertSame('tool_execution_end', $result->events[1]->type);
+        $this->assertSame("line one\nline two", $result->events[1]->payload['result']);
     }
 
     public function testExtractResultTextNoTextPartsReturnsEmpty(): void
@@ -282,9 +282,9 @@ final class ToolCallResultHandlerTest extends TestCase
 
         $result = $handler->handle($message, $state);
 
-        self::assertSame('tool_execution_end', $result->events[1]->type);
-        self::assertArrayHasKey('result', $result->events[1]->payload);
-        self::assertSame('', $result->events[1]->payload['result'],
+        $this->assertSame('tool_execution_end', $result->events[1]->type);
+        $this->assertArrayHasKey('result', $result->events[1]->payload);
+        $this->assertSame('', $result->events[1]->payload['result'],
             'Non-text content parts should produce empty result, triggering the "completed" fallback');
     }
 
@@ -339,9 +339,9 @@ final class ToolCallResultHandlerTest extends TestCase
         // Should not throw despite null result.
         $result = $handler->handle($message, $state);
 
-        self::assertSame('tool_execution_end', $result->events[1]->type);
-        self::assertArrayHasKey('result', $result->events[1]->payload);
-        self::assertSame('', $result->events[1]->payload['result'],
+        $this->assertSame('tool_execution_end', $result->events[1]->type);
+        $this->assertArrayHasKey('result', $result->events[1]->payload);
+        $this->assertSame('', $result->events[1]->payload['result'],
             'Null result should produce empty string without throwing');
     }
 
@@ -398,9 +398,9 @@ final class ToolCallResultHandlerTest extends TestCase
 
         $result = $handler->handle($message, $state);
 
-        self::assertSame('tool_execution_end', $result->events[1]->type);
-        self::assertArrayHasKey('result', $result->events[1]->payload);
-        self::assertSame('', $result->events[1]->payload['result'],
+        $this->assertSame('tool_execution_end', $result->events[1]->type);
+        $this->assertArrayHasKey('result', $result->events[1]->payload);
+        $this->assertSame('', $result->events[1]->payload['result'],
             'Non-array content should produce empty string without throwing');
     }
 
@@ -457,9 +457,9 @@ final class ToolCallResultHandlerTest extends TestCase
 
         $result = $handler->handle($message, $state);
 
-        self::assertSame('tool_execution_end', $result->events[1]->type);
-        self::assertArrayHasKey('result', $result->events[1]->payload);
-        self::assertSame('', $result->events[1]->payload['result'],
+        $this->assertSame('tool_execution_end', $result->events[1]->type);
+        $this->assertArrayHasKey('result', $result->events[1]->payload);
+        $this->assertSame('', $result->events[1]->payload['result'],
             'Non-array content part should produce empty string without throwing');
     }
 
@@ -515,9 +515,9 @@ final class ToolCallResultHandlerTest extends TestCase
 
         $result = $handler->handle($message, $state);
 
-        self::assertSame('tool_execution_end', $result->events[1]->type);
-        self::assertArrayHasKey('result', $result->events[1]->payload);
-        self::assertSame('', $result->events[1]->payload['result'],
+        $this->assertSame('tool_execution_end', $result->events[1]->type);
+        $this->assertArrayHasKey('result', $result->events[1]->payload);
+        $this->assertSame('', $result->events[1]->payload['result'],
             'Missing content key should produce empty string without throwing');
     }
 
@@ -576,9 +576,9 @@ final class ToolCallResultHandlerTest extends TestCase
         // Should not throw despite isError=true.
         $result = $handler->handle($message, $state);
 
-        self::assertSame('tool_execution_end', $result->events[1]->type);
-        self::assertArrayHasKey('result', $result->events[1]->payload);
-        self::assertSame('File not found: ./missing.txt', $result->events[1]->payload['result'],
+        $this->assertSame('tool_execution_end', $result->events[1]->type);
+        $this->assertArrayHasKey('result', $result->events[1]->payload);
+        $this->assertSame('File not found: ./missing.txt', $result->events[1]->payload['result'],
             'Error results should carry the error message as result text');
     }
 
@@ -623,43 +623,43 @@ final class ToolCallResultHandlerTest extends TestCase
         $result = $handler->handle($message, $state);
 
         // Next state assertions
-        self::assertNotNull($result->nextState);
-        self::assertSame(RunStatus::Cancelled, $result->nextState->status);
-        self::assertSame(4, $result->nextState->version);
-        self::assertSame(11, $result->nextState->lastSeq);
-        self::assertSame([], $result->nextState->pendingToolCalls);
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(RunStatus::Cancelled, $result->nextState->status);
+        $this->assertSame(4, $result->nextState->version);
+        $this->assertSame(11, $result->nextState->lastSeq);
+        $this->assertSame([], $result->nextState->pendingToolCalls);
 
         // Messages: original assistant + synthetic tool
-        self::assertCount(2, $result->nextState->messages);
-        self::assertSame('assistant', $result->nextState->messages[0]->role);
-        self::assertSame('tool', $result->nextState->messages[1]->role);
-        self::assertSame('tc-cat', $result->nextState->messages[1]->toolCallId);
-        self::assertTrue($result->nextState->messages[1]->isError);
-        self::assertSame('bash', $result->nextState->messages[1]->toolName);
+        $this->assertCount(2, $result->nextState->messages);
+        $this->assertSame('assistant', $result->nextState->messages[0]->role);
+        $this->assertSame('tool', $result->nextState->messages[1]->role);
+        $this->assertSame('tc-cat', $result->nextState->messages[1]->toolCallId);
+        $this->assertTrue($result->nextState->messages[1]->isError);
+        $this->assertSame('bash', $result->nextState->messages[1]->toolName);
 
         // Events: StaleResultIgnored + ToolCallResultReceived + ToolExecutionEnd + MessageStart + MessageEnd + ToolBatchCommitted + AgentEnd
-        self::assertCount(7, $result->events);
-        self::assertSame('stale_result_ignored', $result->events[0]->type);
-        self::assertSame($message->toolCallId, $result->events[0]->payload['tool_call_id']);
-        self::assertSame('tool_call_result_received', $result->events[1]->type);
-        self::assertSame('tc-cat', $result->events[1]->payload['tool_call_id']);
-        self::assertTrue($result->events[1]->payload['is_error']);
-        self::assertSame('tool_execution_end', $result->events[2]->type);
-        self::assertSame('tc-cat', $result->events[2]->payload['tool_call_id']);
-        self::assertTrue($result->events[2]->payload['is_error']);
-        self::assertSame('Tool execution cancelled by user.', $result->events[2]->payload['result']);
-        self::assertSame('message_start', $result->events[3]->type);
-        self::assertSame('tool', $result->events[3]->payload['message_role']);
-        self::assertSame('message_end', $result->events[4]->type);
-        self::assertSame('tool', $result->events[4]->payload['message_role']);
-        self::assertSame('tc-cat', $result->events[4]->payload['tool_call_id']);
-        self::assertSame('tool_batch_committed', $result->events[5]->type);
-        self::assertSame(1, $result->events[5]->payload['count']);
-        self::assertSame('agent_end', $result->events[6]->type);
-        self::assertSame('cancelled', $result->events[6]->payload['reason']);
+        $this->assertCount(7, $result->events);
+        $this->assertSame('stale_result_ignored', $result->events[0]->type);
+        $this->assertSame($message->toolCallId, $result->events[0]->payload['tool_call_id']);
+        $this->assertSame('tool_call_result_received', $result->events[1]->type);
+        $this->assertSame('tc-cat', $result->events[1]->payload['tool_call_id']);
+        $this->assertTrue($result->events[1]->payload['is_error']);
+        $this->assertSame('tool_execution_end', $result->events[2]->type);
+        $this->assertSame('tc-cat', $result->events[2]->payload['tool_call_id']);
+        $this->assertTrue($result->events[2]->payload['is_error']);
+        $this->assertSame('Tool execution cancelled by user.', $result->events[2]->payload['result']);
+        $this->assertSame('message_start', $result->events[3]->type);
+        $this->assertSame('tool', $result->events[3]->payload['message_role']);
+        $this->assertSame('message_end', $result->events[4]->type);
+        $this->assertSame('tool', $result->events[4]->payload['message_role']);
+        $this->assertSame('tc-cat', $result->events[4]->payload['tool_call_id']);
+        $this->assertSame('tool_batch_committed', $result->events[5]->type);
+        $this->assertSame(1, $result->events[5]->payload['count']);
+        $this->assertSame('agent_end', $result->events[6]->type);
+        $this->assertSame('cancelled', $result->events[6]->payload['reason']);
 
-        self::assertSame([], $result->effects);
-        self::assertSame([], $result->postCommitEffects);
+        $this->assertSame([], $result->effects);
+        $this->assertSame([], $result->postCommitEffects);
     }
 
     public function testCancellingWithEmptyPendingCallsDoesNotSynthesize(): void
@@ -698,16 +698,16 @@ final class ToolCallResultHandlerTest extends TestCase
         $result = $handler->handle($message, $state);
 
         // Only StaleResultIgnored + AgentEnd (no synthetic messages)
-        self::assertCount(2, $result->events);
-        self::assertSame('stale_result_ignored', $result->events[0]->type);
-        self::assertSame('agent_end', $result->events[1]->type);
-        self::assertSame('cancelled', $result->events[1]->payload['reason']);
+        $this->assertCount(2, $result->events);
+        $this->assertSame('stale_result_ignored', $result->events[0]->type);
+        $this->assertSame('agent_end', $result->events[1]->type);
+        $this->assertSame('cancelled', $result->events[1]->payload['reason']);
 
         // Messages unchanged
-        self::assertCount(1, $result->nextState->messages);
-        self::assertSame('assistant', $result->nextState->messages[0]->role);
+        $this->assertCount(1, $result->nextState->messages);
+        $this->assertSame('assistant', $result->nextState->messages[0]->role);
 
-        self::assertSame(RunStatus::Cancelled, $result->nextState->status);
+        $this->assertSame(RunStatus::Cancelled, $result->nextState->status);
     }
 
     public function testCancellingWithMultiplePendingToolCallsSynthesizesAll(): void
@@ -752,42 +752,42 @@ final class ToolCallResultHandlerTest extends TestCase
         $result = $handler->handle($message, $state);
 
         // Events: StaleResultIgnored + 4-per-tool×2 + ToolBatchCommitted + AgentEnd = 11
-        self::assertCount(11, $result->events);
+        $this->assertCount(11, $result->events);
 
-        self::assertSame('stale_result_ignored', $result->events[0]->type);
+        $this->assertSame('stale_result_ignored', $result->events[0]->type);
 
         // First tool synthetic events
-        self::assertSame('tool_call_result_received', $result->events[1]->type);
-        self::assertSame('tc-read-1', $result->events[1]->payload['tool_call_id']);
-        self::assertTrue($result->events[1]->payload['is_error']);
-        self::assertSame('tool_execution_end', $result->events[2]->type);
-        self::assertSame('tc-read-1', $result->events[2]->payload['tool_call_id']);
-        self::assertSame('message_start', $result->events[3]->type);
-        self::assertSame('message_end', $result->events[4]->type);
+        $this->assertSame('tool_call_result_received', $result->events[1]->type);
+        $this->assertSame('tc-read-1', $result->events[1]->payload['tool_call_id']);
+        $this->assertTrue($result->events[1]->payload['is_error']);
+        $this->assertSame('tool_execution_end', $result->events[2]->type);
+        $this->assertSame('tc-read-1', $result->events[2]->payload['tool_call_id']);
+        $this->assertSame('message_start', $result->events[3]->type);
+        $this->assertSame('message_end', $result->events[4]->type);
 
         // Second tool synthetic events
-        self::assertSame('tool_call_result_received', $result->events[5]->type);
-        self::assertSame('tc-read-2', $result->events[5]->payload['tool_call_id']);
-        self::assertTrue($result->events[5]->payload['is_error']);
-        self::assertSame('tool_execution_end', $result->events[6]->type);
-        self::assertSame('tc-read-2', $result->events[6]->payload['tool_call_id']);
-        self::assertSame('message_start', $result->events[7]->type);
-        self::assertSame('message_end', $result->events[8]->type);
+        $this->assertSame('tool_call_result_received', $result->events[5]->type);
+        $this->assertSame('tc-read-2', $result->events[5]->payload['tool_call_id']);
+        $this->assertTrue($result->events[5]->payload['is_error']);
+        $this->assertSame('tool_execution_end', $result->events[6]->type);
+        $this->assertSame('tc-read-2', $result->events[6]->payload['tool_call_id']);
+        $this->assertSame('message_start', $result->events[7]->type);
+        $this->assertSame('message_end', $result->events[8]->type);
 
-        self::assertSame('tool_batch_committed', $result->events[9]->type);
-        self::assertSame(2, $result->events[9]->payload['count']);
-        self::assertSame('agent_end', $result->events[10]->type);
-        self::assertSame('cancelled', $result->events[10]->payload['reason']);
+        $this->assertSame('tool_batch_committed', $result->events[9]->type);
+        $this->assertSame(2, $result->events[9]->payload['count']);
+        $this->assertSame('agent_end', $result->events[10]->type);
+        $this->assertSame('cancelled', $result->events[10]->payload['reason']);
 
         // Messages: assistant + 2 synthetic tool
-        self::assertCount(3, $result->nextState->messages);
-        self::assertSame('tool', $result->nextState->messages[1]->role);
-        self::assertSame('tc-read-1', $result->nextState->messages[1]->toolCallId);
-        self::assertSame('tool', $result->nextState->messages[2]->role);
-        self::assertSame('tc-read-2', $result->nextState->messages[2]->toolCallId);
+        $this->assertCount(3, $result->nextState->messages);
+        $this->assertSame('tool', $result->nextState->messages[1]->role);
+        $this->assertSame('tc-read-1', $result->nextState->messages[1]->toolCallId);
+        $this->assertSame('tool', $result->nextState->messages[2]->role);
+        $this->assertSame('tc-read-2', $result->nextState->messages[2]->toolCallId);
 
-        self::assertSame(RunStatus::Cancelled, $result->nextState->status);
-        self::assertSame([], $result->nextState->pendingToolCalls);
+        $this->assertSame(RunStatus::Cancelled, $result->nextState->status);
+        $this->assertSame([], $result->nextState->pendingToolCalls);
     }
 
     public function testCancellingWithPartialCompleteClosesAll(): void
@@ -832,14 +832,14 @@ final class ToolCallResultHandlerTest extends TestCase
         $result = $handler->handle($message, $state);
 
         // Both pending tool call IDs get synthetic messages (batch was never committed)
-        self::assertCount(3, $result->nextState->messages);
-        self::assertSame('tool', $result->nextState->messages[1]->role);
-        self::assertSame('tc-done', $result->nextState->messages[1]->toolCallId);
-        self::assertSame('tool', $result->nextState->messages[2]->role);
-        self::assertSame('tc-pending', $result->nextState->messages[2]->toolCallId);
+        $this->assertCount(3, $result->nextState->messages);
+        $this->assertSame('tool', $result->nextState->messages[1]->role);
+        $this->assertSame('tc-done', $result->nextState->messages[1]->toolCallId);
+        $this->assertSame('tool', $result->nextState->messages[2]->role);
+        $this->assertSame('tc-pending', $result->nextState->messages[2]->toolCallId);
 
-        self::assertSame(RunStatus::Cancelled, $result->nextState->status);
-        self::assertSame([], $result->nextState->pendingToolCalls);
+        $this->assertSame(RunStatus::Cancelled, $result->nextState->status);
+        $this->assertSame([], $result->nextState->pendingToolCalls);
     }
 
     public function testCancellingSyntheticMessagesPassValidator(): void
@@ -893,7 +893,7 @@ final class ToolCallResultHandlerTest extends TestCase
         $validator = new AgentMessageToolCallSequenceValidator();
         $validator->validate($messagesAfterCancel);
 
-        self::assertCount(3, $messagesAfterCancel,
+        $this->assertCount(3, $messagesAfterCancel,
             'Cancellation + Continue produces valid assistant()->tool()->user() sequence');
     }
 }

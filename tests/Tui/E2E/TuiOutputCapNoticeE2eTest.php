@@ -30,14 +30,15 @@ use PHPUnit\Framework\TestCase;
 #[Group('tui-e2e-replay')]
 final class TuiOutputCapNoticeE2eTest extends TestCase
 {
-    /** Expected in the cap notice text sent to the model. */
-    private const CAP_NOTICE_MARKER = 'Output capped';
-    /** Sentinel that MUST NOT appear in the transcript (proves raw output hidden). */
-    private const RAW_OUTPUT_SENTINEL = 'OUTPUT_CAP_RAW_SHOULD_BE_HIDDEN_';
     private TmuxHarness $tmux;
     private string $projectRoot;
     private string $testProjectDir;
     private string $snapshotDir;
+
+    /** Expected in the cap notice text sent to the model. */
+    private const CAP_NOTICE_MARKER = 'Output capped';
+    /** Sentinel that MUST NOT appear in the transcript (proves raw output hidden). */
+    private const RAW_OUTPUT_SENTINEL = 'OUTPUT_CAP_RAW_SHOULD_BE_HIDDEN_';
 
     protected function setUp(): void
     {
@@ -49,7 +50,7 @@ final class TuiOutputCapNoticeE2eTest extends TestCase
         $this->projectRoot = ProjectDir::get();
         $this->testProjectDir = $this->createIsolatedProjectDir();
         $this->snapshotDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
-        @mkdir($this->snapshotDir, 0o777, true);
+        @\mkdir($this->snapshotDir, 0o777, true);
     }
 
     protected function tearDown(): void
@@ -166,8 +167,8 @@ final class TuiOutputCapNoticeE2eTest extends TestCase
     private function agentCommand(): string
     {
         $fixturePath = __DIR__.'/fixtures/tui-output-cap-read.json';
-        $fixtureEnv = is_file($fixturePath)
-            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.escapeshellarg($fixturePath).' '
+        $fixtureEnv = \is_file($fixturePath)
+            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.\escapeshellarg($fixturePath).' '
             : '';
 
         $projectDir = ProjectDir::get();
@@ -180,27 +181,27 @@ final class TuiOutputCapNoticeE2eTest extends TestCase
             'APP_ENV=test HATFIELD_TEST_DATABASE_PATH=%s HOME=%s %s %s %s agent '
                 .'--model=llama_cpp_test/test '
                 .'--tools-excluded=bash 2>&1',
-            escapeshellarg($dbPath),
-            escapeshellarg($this->testProjectDir.'/home'),
+            \escapeshellarg($dbPath),
+            \escapeshellarg($this->testProjectDir.'/home'),
             $fixtureEnv,
-            escapeshellarg($php),
-            escapeshellarg($script),
+            \escapeshellarg($php),
+            \escapeshellarg($script),
         );
     }
 
     private function createIsolatedProjectDir(): string
     {
         $dir = TestDirectoryIsolation::createProjectTempDir('tui-e2e-output-cap');
-        @mkdir($dir.'/.hatfield', 0o777, true);
+        @\mkdir($dir.'/.hatfield', 0o777, true);
 
         // Create an oversized test file (>500 chars with sentinel text).
         // The output cap defaults to 20,000, but we set it to 500 in settings
         // so the file is capped.  600 chars of repeating sentinel + random fill.
         $suffix = str_repeat('Y', 200);
-        $fileContent = self::RAW_OUTPUT_SENTINEL.'_'.bin2hex(random_bytes(8))."\n"
-            .str_repeat('X', 500)."\n"
+        $fileContent = self::RAW_OUTPUT_SENTINEL."_".bin2hex(random_bytes(8))."\n"
+            .str_repeat("X", 500)."\n"
             .$suffix."\n";
-        file_put_contents($dir.'/large_file.txt', $fileContent);
+        \file_put_contents($dir.'/large_file.txt', $fileContent);
 
         $settings = [
             'ai' => [
@@ -268,10 +269,10 @@ final class TuiOutputCapNoticeE2eTest extends TestCase
         ];
 
         $yaml = \Symfony\Component\Yaml\Yaml::dump($settings, 6, 4);
-        file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
+        \file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
 
-        @mkdir($dir.'/home/.hatfield', 0o777, true);
-        file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
+        @\mkdir($dir.'/home/.hatfield', 0o777, true);
+        \file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
 
         return $dir;
     }
@@ -281,6 +282,6 @@ final class TuiOutputCapNoticeE2eTest extends TestCase
         $ansi = $this->tmux->captureAnsi($pane);
         $ts = date('Ymd-His');
         $path = \sprintf('%s/%s-%s.ansi', $this->snapshotDir, $tag, $ts);
-        file_put_contents($path, $ansi);
+        \file_put_contents($path, $ansi);
     }
 }

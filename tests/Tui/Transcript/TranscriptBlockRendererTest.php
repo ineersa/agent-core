@@ -37,8 +37,8 @@ final class TranscriptBlockRendererTest extends TestCase
         $widget = new TranscriptBlockWidget();
         $lines = $widget->render($this->context);
 
-        self::assertCount(1, $lines);
-        self::assertStringContainsString('Welcome to Agent Core', $lines[0]);
+        $this->assertCount(1, $lines);
+        $this->assertStringContainsString('Welcome to Agent Core', $lines[0]);
     }
 
     public function testWidgetWithSingleBlock(): void
@@ -54,9 +54,9 @@ final class TranscriptBlockRendererTest extends TestCase
 
         $lines = $widget->render($this->context);
 
-        self::assertNotEmpty($lines);
-        self::assertStringContainsString('❯', $lines[0]);
-        self::assertStringContainsString('Hello world', $lines[0]);
+        $this->assertNotEmpty($lines);
+        $this->assertStringContainsString('❯', $lines[0]);
+        $this->assertStringContainsString('Hello world', $lines[0]);
     }
 
     public function testSetBlocksReplacesAll(): void
@@ -81,9 +81,9 @@ final class TranscriptBlockRendererTest extends TestCase
 
         $lines = $widget->render($this->context);
 
-        self::assertCount(1, $lines);
-        self::assertStringContainsString('new', $lines[0]);
-        self::assertStringNotContainsString('old', $lines[0]);
+        $this->assertCount(1, $lines);
+        $this->assertStringContainsString('new', $lines[0]);
+        $this->assertStringNotContainsString('old', $lines[0]);
     }
 
     public function testGetBlocksReturnsSetBlocks(): void
@@ -98,7 +98,7 @@ final class TranscriptBlockRendererTest extends TestCase
         $widget = new TranscriptBlockWidget();
         $widget->setBlocks([$block]);
 
-        self::assertSame([$block], $widget->getBlocks());
+        $this->assertSame([$block], $widget->getBlocks());
     }
 
     // ── Block-kind prefix / color smoke ────────────────────
@@ -137,8 +137,8 @@ final class TranscriptBlockRendererTest extends TestCase
 
         $lines = $this->renderer->renderBlock($block, $this->context);
 
-        self::assertNotEmpty($lines);
-        self::assertStringContainsString($expectedPrefix, $lines[0]);
+        $this->assertNotEmpty($lines);
+        $this->assertStringContainsString($expectedPrefix, $lines[0]);
     }
 
     // ── Streaming suffix ────────────────────────────────────
@@ -156,8 +156,8 @@ final class TranscriptBlockRendererTest extends TestCase
 
         $lines = $this->renderer->renderBlock($block, $this->context);
 
-        self::assertNotEmpty($lines);
-        self::assertStringEndsWith('...', $lines[0]);
+        $this->assertNotEmpty($lines);
+        $this->assertStringEndsWith('...', $lines[0]);
     }
 
     public function testFinalizedBlockHasNoEllipsis(): void
@@ -173,8 +173,8 @@ final class TranscriptBlockRendererTest extends TestCase
 
         $lines = $this->renderer->renderBlock($block, $this->context);
 
-        self::assertNotEmpty($lines);
-        self::assertStringNotContainsString('...', $lines[0]);
+        $this->assertNotEmpty($lines);
+        $this->assertStringNotContainsString('...', $lines[0]);
     }
 
     // ── Meta fallback for empty text ────────────────────────
@@ -192,8 +192,8 @@ final class TranscriptBlockRendererTest extends TestCase
 
         $lines = $this->renderer->renderBlock($block, $this->context);
 
-        self::assertNotEmpty($lines);
-        self::assertStringContainsString('bash', $lines[0]);
+        $this->assertNotEmpty($lines);
+        $this->assertStringContainsString('bash', $lines[0]);
     }
 
     public function testToolCallWithEmptyTextAndNoMetaShowsDefaultLabel(): void
@@ -209,8 +209,8 @@ final class TranscriptBlockRendererTest extends TestCase
 
         $lines = $this->renderer->renderBlock($block, $this->context);
 
-        self::assertNotEmpty($lines);
-        self::assertStringContainsString('Tool call', $lines[0]);
+        $this->assertNotEmpty($lines);
+        $this->assertStringContainsString('Tool call', $lines[0]);
     }
 
     public function testAssistantMessageWithEmptyTextShowsPlaceholder(): void
@@ -225,8 +225,8 @@ final class TranscriptBlockRendererTest extends TestCase
 
         $lines = $this->renderer->renderBlock($block, $this->context);
 
-        self::assertNotEmpty($lines);
-        self::assertStringContainsString('[assistant]', $lines[0]);
+        $this->assertNotEmpty($lines);
+        $this->assertStringContainsString('[assistant]', $lines[0]);
     }
 
     // ── Word wrapping ───────────────────────────────────────
@@ -244,7 +244,7 @@ final class TranscriptBlockRendererTest extends TestCase
 
         $lines = $this->renderer->renderBlock($block, $this->context->withWidth(40));
 
-        self::assertGreaterThan(1, \count($lines));
+        $this->assertGreaterThan(1, \count($lines));
     }
 
     public function testShortLineIsNotWrapped(): void
@@ -259,7 +259,7 @@ final class TranscriptBlockRendererTest extends TestCase
 
         $lines = $this->renderer->renderBlock($block, $this->context);
 
-        self::assertCount(1, $lines);
+        $this->assertCount(1, $lines);
     }
 
     // ── Collapsed blocks ────────────────────────────────────
@@ -277,8 +277,8 @@ final class TranscriptBlockRendererTest extends TestCase
 
         $lines = $this->renderer->renderBlock($block, $this->context);
 
-        self::assertNotEmpty($lines);
-        self::assertStringContainsString('hidden thoughts', $lines[0]);
+        $this->assertNotEmpty($lines);
+        $this->assertStringContainsString('hidden thoughts', $lines[0]);
     }
 
     // ── Tool result with text ───────────────────────────────
@@ -296,9 +296,9 @@ final class TranscriptBlockRendererTest extends TestCase
 
         $lines = $this->renderer->renderBlock($block, $this->context);
 
-        self::assertNotEmpty($lines);
-        self::assertStringContainsString('●', $lines[0]);
-        self::assertStringContainsString('file.txt', $lines[0]);
+        $this->assertNotEmpty($lines);
+        $this->assertStringContainsString('●', $lines[0]);
+        $this->assertStringContainsString('file.txt', $lines[0]);
     }
 
     // ── Empty text edge cases ───────────────────────────────
@@ -315,9 +315,9 @@ final class TranscriptBlockRendererTest extends TestCase
 
         $lines = $this->renderer->renderBlock($block, $this->context);
 
-        self::assertNotEmpty($lines);
+        $this->assertNotEmpty($lines);
         // should render "  · " with empty text
-        self::assertStringContainsString('·', $lines[0]);
+        $this->assertStringContainsString('·', $lines[0]);
     }
 
     public function testEmptyTextForUserMessageShowsPrefixOnly(): void
@@ -332,8 +332,8 @@ final class TranscriptBlockRendererTest extends TestCase
 
         $lines = $this->renderer->renderBlock($block, $this->context);
 
-        self::assertNotEmpty($lines);
-        self::assertStringContainsString('❯', $lines[0]);
+        $this->assertNotEmpty($lines);
+        $this->assertStringContainsString('❯', $lines[0]);
     }
 
     // ── RunId and seq have no visual rendering effect ───────
@@ -355,7 +355,7 @@ final class TranscriptBlockRendererTest extends TestCase
             text: 'hello',
         );
 
-        self::assertSame(
+        $this->assertSame(
             $this->renderer->renderBlock($blockA, $this->context),
             $this->renderer->renderBlock($blockB, $this->context),
         );
@@ -385,9 +385,9 @@ final class TranscriptBlockRendererTest extends TestCase
 
         $lines = $widget->render($this->context);
 
-        self::assertCount(2, $lines);
-        self::assertStringContainsString('prompt', $lines[0]);
-        self::assertStringContainsString('response', $lines[1]);
+        $this->assertCount(2, $lines);
+        $this->assertStringContainsString('prompt', $lines[0]);
+        $this->assertStringContainsString('response', $lines[1]);
     }
 
     // ── Custom renderer injection ──────────────────────────
@@ -411,8 +411,8 @@ final class TranscriptBlockRendererTest extends TestCase
         $widget->addBlock($block);
         $linesAfter = $widget->render($this->context);
 
-        self::assertCount(1, $linesAfter);
-        self::assertStringContainsString('✕', $linesAfter[0]);
+        $this->assertCount(1, $linesAfter);
+        $this->assertStringContainsString('✕', $linesAfter[0]);
     }
 
     // ── Theme applies color ─────────────────────────────────
@@ -436,7 +436,7 @@ final class TranscriptBlockRendererTest extends TestCase
 
         $lines = $this->renderer->renderBlock($block, $context);
 
-        self::assertNotEmpty($lines);
-        self::assertStringContainsString("\x1b[", $lines[0], 'ANSI escape codes expected');
+        $this->assertNotEmpty($lines);
+        $this->assertStringContainsString("\x1b[", $lines[0], 'ANSI escape codes expected');
     }
 }

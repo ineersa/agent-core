@@ -50,7 +50,7 @@ final class TuiJourneyE2eTest extends TestCase
         $this->projectRoot = ProjectDir::get();
         $this->testProjectDir = $this->createIsolatedProjectDir();
         $this->snapshotDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
-        @mkdir($this->snapshotDir, 0o777, true);
+        @\mkdir($this->snapshotDir, 0o777, true);
     }
 
     protected function tearDown(): void
@@ -244,7 +244,7 @@ final class TuiJourneyE2eTest extends TestCase
                 return str_contains($cap, $marker);
             },
             timeout: 5.0,
-            message: \sprintf('Marker file "%s" never appeared in captured output for !ls -1', $marker),
+            message: sprintf('Marker file "%s" never appeared in captured output for !ls -1', $marker),
             history: 2000,
         );
 
@@ -295,7 +295,7 @@ final class TuiJourneyE2eTest extends TestCase
 
         // Dismiss any completion menu before moving on.
         $this->tmux->sendKey($pane, 'Escape');
-        usleep(100_000);
+        \usleep(100_000);
         $this->tmux->sendKey($pane, 'C-u');
     }
 
@@ -417,7 +417,7 @@ final class TuiJourneyE2eTest extends TestCase
         // Model-interaction step (phase 7): the first explicit prompt submission
         // gets its response from this fixture.
         $replyFixture = __DIR__.'/fixtures/tui-simple-text-response.json';
-        if (is_file($replyFixture)) {
+        if (\is_file($replyFixture)) {
             $fixturePaths[] = $replyFixture;
         }
 
@@ -428,7 +428,7 @@ final class TuiJourneyE2eTest extends TestCase
         $script = $projectDir.'/bin/console';
 
         $fixtureEnv = '' !== $fixturePaths
-            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.escapeshellarg(implode(';', $fixturePaths)).' '
+            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.\escapeshellarg(\implode(';', $fixturePaths)).' '
             : '';
 
         // Use an isolated test DB so StartupDatabaseMigrator can auto-migrate
@@ -445,18 +445,18 @@ final class TuiJourneyE2eTest extends TestCase
             'APP_ENV=test HATFIELD_TEST_DATABASE_PATH=%s HOME=%s %s %s %s agent '
                 .'--model=llama_cpp_test/test '
                 .'--tools-excluded=bash 2>&1',
-            escapeshellarg($dbPath),
-            escapeshellarg($this->testProjectDir.'/home'),
+            \escapeshellarg($dbPath),
+            \escapeshellarg($this->testProjectDir.'/home'),
             $fixtureEnv,
-            escapeshellarg($php),
-            escapeshellarg($script),
+            \escapeshellarg($php),
+            \escapeshellarg($script),
         );
     }
 
     private function createIsolatedProjectDir(): string
     {
         $dir = TestDirectoryIsolation::createProjectTempDir('tui-e2e');
-        @mkdir($dir.'/.hatfield', 0o777, true);
+        @\mkdir($dir.'/.hatfield', 0o777, true);
 
         $settings = [
             'ai' => [
@@ -517,16 +517,16 @@ final class TuiJourneyE2eTest extends TestCase
         ];
 
         $yaml = \Symfony\Component\Yaml\Yaml::dump($settings, 6, 4);
-        file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
+        \file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
 
         // Also write for the HOME dir.
-        @mkdir($dir.'/home/.hatfield', 0o777, true);
-        file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
+        @\mkdir($dir.'/home/.hatfield', 0o777, true);
+        \file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
 
         // Create test files for file mention completion phase
         // before TUI starts, so the startup index scanner picks them up.
-        @mkdir($dir.'/home/testfiles', 0o777, true);
-        file_put_contents($dir.'/home/testfiles/alpha.txt', 'test');
+        @\mkdir($dir.'/home/testfiles', 0o777, true);
+        \file_put_contents($dir.'/home/testfiles/alpha.txt', 'test');
 
         return $dir;
     }
@@ -572,14 +572,14 @@ final class TuiJourneyE2eTest extends TestCase
 
     private function waitForBorderColorChange(TmuxPane $pane, string $previous, float $timeout = 5.0): ?string
     {
-        $deadline = microtime(true) + $timeout;
+        $deadline = \microtime(true) + $timeout;
 
-        while (microtime(true) < $deadline) {
+        while (\microtime(true) < $deadline) {
             $colour = $this->editorBorderColour($pane);
             if (null !== $colour && $colour !== $previous) {
                 return $colour;
             }
-            usleep(100_000);
+            \usleep(100_000);
         }
 
         return $this->editorBorderColour($pane);
@@ -590,6 +590,6 @@ final class TuiJourneyE2eTest extends TestCase
         $ansi = $this->tmux->captureAnsi($pane);
         $ts = date('Ymd-His');
         $path = \sprintf('%s/%s-%s.ansi', $this->snapshotDir, $tag, $ts);
-        file_put_contents($path, $ansi);
+        \file_put_contents($path, $ansi);
     }
 }

@@ -13,6 +13,16 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(DefaultTheme::class)]
 final class DefaultThemeTest extends TestCase
 {
+    private function createTheme(): DefaultTheme
+    {
+        return new DefaultTheme(new ThemePalette('test', [
+            'accent' => 'cyan',
+            'muted' => '#6a6a7a',
+            'error' => 'red',
+            'text' => '',
+        ]));
+    }
+
     public function testName(): void
     {
         $theme = $this->createTheme();
@@ -96,15 +106,5 @@ final class DefaultThemeTest extends TestCase
         $theme = new DefaultTheme($palette);
 
         self::assertSame($palette, $theme->getPalette());
-    }
-
-    private function createTheme(): DefaultTheme
-    {
-        return new DefaultTheme(new ThemePalette('test', [
-            'accent' => 'cyan',
-            'muted' => '#6a6a7a',
-            'error' => 'red',
-            'text' => '',
-        ]));
     }
 }

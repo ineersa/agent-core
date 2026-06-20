@@ -148,8 +148,7 @@ PHP);
                 public function __construct(
                     private string $fakeScript,
                     private string $dumpFlag,
-                ) {
-                }
+                ) {}
 
                 public function command(): array
                 {

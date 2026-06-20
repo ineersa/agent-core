@@ -44,7 +44,7 @@ final class TuiProviderErrorE2eTest extends TestCase
         $this->projectRoot = ProjectDir::get();
         $this->testProjectDir = $this->createIsolatedProjectDir();
         $this->snapshotDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
-        @mkdir($this->snapshotDir, 0o777, true);
+        @\mkdir($this->snapshotDir, 0o777, true);
     }
 
     protected function tearDown(): void
@@ -159,8 +159,8 @@ final class TuiProviderErrorE2eTest extends TestCase
     private function agentCommand(): string
     {
         $fixturePath = __DIR__.'/fixtures/tui-provider-rate-limit-error.json';
-        $fixtureEnv = is_file($fixturePath)
-            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.escapeshellarg($fixturePath).' '
+        $fixtureEnv = \is_file($fixturePath)
+            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.\escapeshellarg($fixturePath).' '
             : '';
 
         $projectDir = ProjectDir::get();
@@ -173,18 +173,18 @@ final class TuiProviderErrorE2eTest extends TestCase
             'APP_ENV=test HATFIELD_TEST_DATABASE_PATH=%s HOME=%s %s %s %s agent '
                 .'--model=llama_cpp_test/test '
                 .'--tools-excluded=bash 2>&1',
-            escapeshellarg($dbPath),
-            escapeshellarg($this->testProjectDir.'/home'),
+            \escapeshellarg($dbPath),
+            \escapeshellarg($this->testProjectDir.'/home'),
             $fixtureEnv,
-            escapeshellarg($php),
-            escapeshellarg($script),
+            \escapeshellarg($php),
+            \escapeshellarg($script),
         );
     }
 
     private function createIsolatedProjectDir(): string
     {
         $dir = TestDirectoryIsolation::createProjectTempDir('tui-e2e-provider-error');
-        @mkdir($dir.'/.hatfield', 0o777, true);
+        @\mkdir($dir.'/.hatfield', 0o777, true);
 
         $settings = [
             'ai' => [
@@ -245,10 +245,10 @@ final class TuiProviderErrorE2eTest extends TestCase
         ];
 
         $yaml = \Symfony\Component\Yaml\Yaml::dump($settings, 6, 4);
-        file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
+        \file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
 
-        @mkdir($dir.'/home/.hatfield', 0o777, true);
-        file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
+        @\mkdir($dir.'/home/.hatfield', 0o777, true);
+        \file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
 
         return $dir;
     }
@@ -258,7 +258,7 @@ final class TuiProviderErrorE2eTest extends TestCase
         $ansi = $this->tmux->captureAnsi($pane);
         $ts = date('Ymd-His');
         $path = \sprintf('%s/%s-%s.ansi', $this->snapshotDir, $tag, $ts);
-        file_put_contents($path, $ansi);
+        \file_put_contents($path, $ansi);
     }
 
     private function savePlainSnapshot(TmuxPane $pane, string $tag): void
@@ -266,6 +266,6 @@ final class TuiProviderErrorE2eTest extends TestCase
         $plain = $this->tmux->capturePlainWithHistory($pane, 2000);
         $ts = date('Ymd-His');
         $path = \sprintf('%s/%s-%s.txt', $this->snapshotDir, $tag, $ts);
-        file_put_contents($path, $plain);
+        \file_put_contents($path, $plain);
     }
 }

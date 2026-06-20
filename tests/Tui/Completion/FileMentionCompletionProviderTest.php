@@ -41,8 +41,8 @@ final class FileMentionCompletionProviderTest extends TestCase
             CompletionContext::forCursorAtEnd('@'),
         );
 
-        self::assertCount(1, $suggestions);
-        self::assertSame('@src/foo.php', $suggestions[0]->display);
+        $this->assertCount(1, $suggestions);
+        $this->assertSame('@src/foo.php', $suggestions[0]->display);
     }
 
     #[Test]
@@ -56,8 +56,8 @@ final class FileMentionCompletionProviderTest extends TestCase
             CompletionContext::forCursorAtEnd('hello @'),
         );
 
-        self::assertCount(1, $suggestions);
-        self::assertSame('@src/foo.php', $suggestions[0]->display);
+        $this->assertCount(1, $suggestions);
+        $this->assertSame('@src/foo.php', $suggestions[0]->display);
     }
 
     #[Test]
@@ -71,8 +71,8 @@ final class FileMentionCompletionProviderTest extends TestCase
             CompletionContext::forCursorAtEnd("line1\n@"),
         );
 
-        self::assertCount(1, $suggestions);
-        self::assertSame('@src/bar.php', $suggestions[0]->display);
+        $this->assertCount(1, $suggestions);
+        $this->assertSame('@src/bar.php', $suggestions[0]->display);
     }
 
     #[Test]
@@ -86,7 +86,7 @@ final class FileMentionCompletionProviderTest extends TestCase
             CompletionContext::forCursorAtEnd('email@example.com'),
         );
 
-        self::assertSame([], $suggestions);
+        $this->assertSame([], $suggestions);
     }
 
     #[Test]
@@ -100,7 +100,7 @@ final class FileMentionCompletionProviderTest extends TestCase
             CompletionContext::forCursorAtEnd('foo@bar'),
         );
 
-        self::assertSame([], $suggestions);
+        $this->assertSame([], $suggestions);
     }
 
     #[Test]
@@ -114,7 +114,7 @@ final class FileMentionCompletionProviderTest extends TestCase
             CompletionContext::forCursorAtEnd('src/foo'),
         );
 
-        self::assertSame([], $suggestions);
+        $this->assertSame([], $suggestions);
     }
 
     #[Test]
@@ -126,7 +126,7 @@ final class FileMentionCompletionProviderTest extends TestCase
 
         $suggestions = $provider->getSuggestions(CompletionContext::forCursorAtEnd('@'));
 
-        self::assertSame([], $suggestions);
+        $this->assertSame([], $suggestions);
     }
 
     #[Test]
@@ -139,7 +139,7 @@ final class FileMentionCompletionProviderTest extends TestCase
         // / prefix should NOT trigger file completion.
         $suggestions = $provider->getSuggestions(CompletionContext::forCursorAtEnd('/help'));
 
-        self::assertSame([], $suggestions);
+        $this->assertSame([], $suggestions);
     }
 
     // ── Quoted @ token ────────────────────────────────────────────
@@ -155,8 +155,8 @@ final class FileMentionCompletionProviderTest extends TestCase
             CompletionContext::forCursorAtEnd('@"'),
         );
 
-        self::assertCount(1, $suggestions);
-        self::assertSame('@"some dir/file.php"', $suggestions[0]->display);
+        $this->assertCount(1, $suggestions);
+        $this->assertSame('@"some dir/file.php"', $suggestions[0]->display);
     }
 
     #[Test]
@@ -171,8 +171,8 @@ final class FileMentionCompletionProviderTest extends TestCase
             CompletionContext::forCursorAtEnd('@"some'),
         );
 
-        self::assertCount(1, $suggestions);
-        self::assertSame('@"some dir/file.php"', $suggestions[0]->display);
+        $this->assertCount(1, $suggestions);
+        $this->assertSame('@"some dir/file.php"', $suggestions[0]->display);
     }
 
     // ── Non-fuzzy matching ────────────────────────────────────────
@@ -190,7 +190,7 @@ final class FileMentionCompletionProviderTest extends TestCase
             CompletionContext::forCursorAtEnd('@src/Completion'),
         );
 
-        self::assertCount(2, $suggestions);
+        $this->assertCount(2, $suggestions);
     }
 
     #[Test]
@@ -205,8 +205,8 @@ final class FileMentionCompletionProviderTest extends TestCase
             CompletionContext::forCursorAtEnd('@Listener'),
         );
 
-        self::assertCount(1, $suggestions);
-        self::assertStringContainsString('Listener', $suggestions[0]->display);
+        $this->assertCount(1, $suggestions);
+        $this->assertStringContainsString('Listener', $suggestions[0]->display);
     }
 
     #[Test]
@@ -222,7 +222,7 @@ final class FileMentionCompletionProviderTest extends TestCase
             CompletionContext::forCursorAtEnd('@'),
         );
 
-        self::assertCount(3, $suggestions);
+        $this->assertCount(3, $suggestions);
     }
 
     // ── Directory suggestions ──────────────────────────────────────
@@ -248,10 +248,10 @@ final class FileMentionCompletionProviderTest extends TestCase
             }
         }
 
-        self::assertNotNull($dirSuggestion);
-        self::assertStringEndsWith('/', $dirSuggestion->insertText);
-        self::assertStringNotContainsString(' ', trim($dirSuggestion->insertText, '/'));
-        self::assertStringEndsWith('/', $dirSuggestion->display);
+        $this->assertNotNull($dirSuggestion);
+        $this->assertStringEndsWith('/', $dirSuggestion->insertText);
+        $this->assertStringNotContainsString(' ', trim($dirSuggestion->insertText, '/'));
+        $this->assertStringEndsWith('/', $dirSuggestion->display);
     }
 
     #[Test]
@@ -265,9 +265,9 @@ final class FileMentionCompletionProviderTest extends TestCase
             CompletionContext::forCursorAtEnd('@src'),
         );
 
-        self::assertCount(1, $suggestions);
-        self::assertSame('', $suggestions[0]->description);
-        self::assertStringEndsWith(' ', $suggestions[0]->insertText);
+        $this->assertCount(1, $suggestions);
+        $this->assertSame('', $suggestions[0]->description);
+        $this->assertStringEndsWith(' ', $suggestions[0]->insertText);
     }
 
     // ── Quoting paths with spaces ─────────────────────────────────
@@ -283,9 +283,9 @@ final class FileMentionCompletionProviderTest extends TestCase
             CompletionContext::forCursorAtEnd('@some'),
         );
 
-        self::assertCount(1, $suggestions);
-        self::assertSame('@"some dir/file.php"', $suggestions[0]->display);
-        self::assertStringStartsWith('@"', $suggestions[0]->insertText);
+        $this->assertCount(1, $suggestions);
+        $this->assertSame('@"some dir/file.php"', $suggestions[0]->display);
+        $this->assertStringStartsWith('@"', $suggestions[0]->insertText);
     }
 
     #[Test]
@@ -299,8 +299,8 @@ final class FileMentionCompletionProviderTest extends TestCase
             CompletionContext::forCursorAtEnd('@src'),
         );
 
-        self::assertCount(1, $suggestions);
-        self::assertStringStartsWith('@src/foo.php', $suggestions[0]->insertText);
+        $this->assertCount(1, $suggestions);
+        $this->assertStringStartsWith('@src/foo.php', $suggestions[0]->insertText);
     }
 
     // ── Directory ranking ──────────────────────────────────────────
@@ -318,8 +318,8 @@ final class FileMentionCompletionProviderTest extends TestCase
         );
 
         // Both should appear, directory should come first due to +10 bonus.
-        self::assertCount(2, $suggestions);
-        self::assertTrue(
+        $this->assertCount(2, $suggestions);
+        $this->assertTrue(
             str_ends_with(trim($suggestions[0]->display), '/'),
             'Directory entry should appear before file entry due to scoring bonus.',
         );
@@ -339,7 +339,7 @@ final class FileMentionCompletionProviderTest extends TestCase
             CompletionContext::forCursorAtEnd('Hello @Version '),
         );
 
-        self::assertSame([], $suggestions);
+        $this->assertSame([], $suggestions);
     }
 
     #[Test]
@@ -354,7 +354,7 @@ final class FileMentionCompletionProviderTest extends TestCase
             CompletionContext::forCursorAtEnd('Hello @Version asd asd'),
         );
 
-        self::assertSame([], $suggestions);
+        $this->assertSame([], $suggestions);
     }
 
     #[Test]
@@ -369,8 +369,8 @@ final class FileMentionCompletionProviderTest extends TestCase
             CompletionContext::forCursorAtEnd('Hello @Version'),
         );
 
-        self::assertCount(1, $suggestions);
-        self::assertStringContainsString('Version', $suggestions[0]->display);
+        $this->assertCount(1, $suggestions);
+        $this->assertStringContainsString('Version', $suggestions[0]->display);
     }
 
     #[Test]
@@ -385,7 +385,7 @@ final class FileMentionCompletionProviderTest extends TestCase
             CompletionContext::forCursorAtEnd("@src\tmore"),
         );
 
-        self::assertSame([], $suggestions);
+        $this->assertSame([], $suggestions);
     }
 
     #[Test]
@@ -399,7 +399,7 @@ final class FileMentionCompletionProviderTest extends TestCase
             CompletionContext::forCursorAtEnd('@'),
         );
 
-        self::assertNotEmpty($suggestions);
+        $this->assertNotEmpty($suggestions);
     }
 
     // ── Quoted @ token closes on closing quote ───────────────────────
@@ -416,7 +416,7 @@ final class FileMentionCompletionProviderTest extends TestCase
             CompletionContext::forCursorAtEnd('@"some dir/file.php"'),
         );
 
-        self::assertSame([], $suggestions);
+        $this->assertSame([], $suggestions);
     }
 
     #[Test]
@@ -431,7 +431,7 @@ final class FileMentionCompletionProviderTest extends TestCase
             CompletionContext::forCursorAtEnd('@"some dir'),
         );
 
-        self::assertNotEmpty($suggestions);
+        $this->assertNotEmpty($suggestions);
     }
 
     // ── Multiple @ in text uses the last one ───────────────────────
@@ -448,8 +448,8 @@ final class FileMentionCompletionProviderTest extends TestCase
             CompletionContext::forCursorAtEnd('email@host.com hello @bar'),
         );
 
-        self::assertCount(1, $suggestions);
-        self::assertStringContainsString('bar', $suggestions[0]->display);
+        $this->assertCount(1, $suggestions);
+        $this->assertStringContainsString('bar', $suggestions[0]->display);
     }
 
     // ── Suggestions are capped ─────────────────────────────────────
@@ -469,8 +469,8 @@ final class FileMentionCompletionProviderTest extends TestCase
         $suggestions = $provider->getSuggestions(CompletionContext::forCursorAtEnd('@'));
 
         // Should be capped at 30 (FileMentionCompletionProvider::MAX_SUGGESTIONS).
-        self::assertLessThanOrEqual(30, \count($suggestions));
-        self::assertGreaterThan(0, \count($suggestions));
+        $this->assertLessThanOrEqual(30, \count($suggestions));
+        $this->assertGreaterThan(0, \count($suggestions));
     }
 
     // ── Replacement range ──────────────────────────────────────────
@@ -486,9 +486,9 @@ final class FileMentionCompletionProviderTest extends TestCase
             CompletionContext::forCursorAtEnd('hello @src'),
         );
 
-        self::assertCount(1, $suggestions);
-        self::assertSame(6, $suggestions[0]->replacementStart); // position of @
-        self::assertSame(4, $suggestions[0]->replacementLength); // '@src' length
+        $this->assertCount(1, $suggestions);
+        $this->assertSame(6, $suggestions[0]->replacementStart); // position of @
+        $this->assertSame(4, $suggestions[0]->replacementLength); // '@src' length
     }
 
     // ── Case-insensitive matching ──────────────────────────────────
@@ -504,7 +504,7 @@ final class FileMentionCompletionProviderTest extends TestCase
             CompletionContext::forCursorAtEnd('@foobar'),
         );
 
-        self::assertCount(1, $suggestions);
+        $this->assertCount(1, $suggestions);
     }
 
     // ── Quoted @ preserves prefix ──────────────────────────────────
@@ -520,7 +520,7 @@ final class FileMentionCompletionProviderTest extends TestCase
             CompletionContext::forCursorAtEnd('@"'),
         );
 
-        self::assertCount(1, $suggestions);
+        $this->assertCount(1, $suggestions);
 
         // Simulate how CompletionListener::applySuggestion() applies the
         // suggestion: substr_replace with the insertion text, replacement
@@ -534,9 +534,9 @@ final class FileMentionCompletionProviderTest extends TestCase
         );
 
         // The applied text must start with @ so the @ token remains visible.
-        self::assertStringStartsWith('@', $applied);
+        $this->assertStringStartsWith('@', $applied);
         // Should look like @"some dir/file.php" with trailing space.
-        self::assertSame('@"some dir/file.php" ', $applied);
+        $this->assertSame('@"some dir/file.php" ', $applied);
     }
 
     #[Test]
@@ -550,12 +550,12 @@ final class FileMentionCompletionProviderTest extends TestCase
             CompletionContext::forCursorAtEnd('@"some'),
         );
 
-        self::assertCount(1, $suggestions);
-        self::assertSame('', $suggestions[0]->description);
+        $this->assertCount(1, $suggestions);
+        $this->assertSame('', $suggestions[0]->description);
 
         // Insert text starts with @" and ends with / (no trailing space for dirs).
-        self::assertStringStartsWith('@"', $suggestions[0]->insertText);
-        self::assertStringEndsWith('/', $suggestions[0]->insertText);
+        $this->assertStringStartsWith('@"', $suggestions[0]->insertText);
+        $this->assertStringEndsWith('/', $suggestions[0]->insertText);
 
         // Verify full application preserves the @ prefix.
         $currentText = '@"some';
@@ -565,8 +565,8 @@ final class FileMentionCompletionProviderTest extends TestCase
             $suggestions[0]->replacementStart,
             $suggestions[0]->replacementLength,
         );
-        self::assertStringStartsWith('@', $applied);
-        self::assertStringEndsWith('/', $applied);
+        $this->assertStringStartsWith('@', $applied);
+        $this->assertStringEndsWith('/', $applied);
     }
 
     // ── Expanded path quoting rules ─────────────────────────────────
@@ -582,10 +582,10 @@ final class FileMentionCompletionProviderTest extends TestCase
             CompletionContext::forCursorAtEnd('@file'),
         );
 
-        self::assertCount(1, $suggestions);
-        self::assertStringStartsWith('@"', $suggestions[0]->insertText);
-        self::assertStringEndsWith('" ', $suggestions[0]->insertText);
-        self::assertStringContainsString('file(foo).php', $suggestions[0]->insertText);
+        $this->assertCount(1, $suggestions);
+        $this->assertStringStartsWith('@"', $suggestions[0]->insertText);
+        $this->assertStringEndsWith('" ', $suggestions[0]->insertText);
+        $this->assertStringContainsString('file(foo).php', $suggestions[0]->insertText);
     }
 
     #[Test]
@@ -599,8 +599,8 @@ final class FileMentionCompletionProviderTest extends TestCase
             CompletionContext::forCursorAtEnd('@file'),
         );
 
-        self::assertCount(1, $suggestions);
-        self::assertStringStartsWith('@"', $suggestions[0]->insertText);
+        $this->assertCount(1, $suggestions);
+        $this->assertStringStartsWith('@"', $suggestions[0]->insertText);
     }
 
     // ─── Helpers ────────────────────────────────────────────────────
@@ -612,7 +612,7 @@ final class FileMentionCompletionProviderTest extends TestCase
     {
         // Write a temporary index file so the reader can load it.
         $indexPath = $this->tmpDir.'/index.jsonl';
-        $handle = fopen($indexPath, 'wb');
+        $handle = fopen($indexPath, 'w');
         foreach ($entries as $entry) {
             fwrite($handle, json_encode([
                 'path' => $entry->path,

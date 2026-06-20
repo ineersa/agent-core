@@ -91,7 +91,7 @@ final class SlotBasedTuiExtensionContextTest extends TestCase
 
     public function testOnTerminalInput(): void
     {
-        $handler = static function (string $data): void {};
+        $handler = function (string $data): void {};
         $this->context->onTerminalInput($handler);
 
         $handlers = $this->registry->getInputHandlers();

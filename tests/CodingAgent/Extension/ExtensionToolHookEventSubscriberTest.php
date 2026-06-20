@@ -63,7 +63,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
 
         $contextAccessor = new StackToolExecutionContextAccessor();
         $dispatcher = new EventDispatcher();
-        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry, self::createStub(\Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface::class), getcwd() ?: '/', $contextAccessor));
+        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry, $this->createStub(\Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface::class), getcwd() ?: '/', $contextAccessor));
 
         $executor = new ToolExecutor(
             defaultMode: 'parallel',
@@ -83,22 +83,22 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
             context: ['turn_no' => 3],
         ));
 
-        self::assertSame(0, $handler->calls);
-        self::assertFalse($result->isError);
-        self::assertIsArray($result->details['raw_result'] ?? null);
-        self::assertTrue($result->details['raw_result']['denied'] ?? null);
-        self::assertSame('dangerous_command', $result->details['raw_result']['reason'] ?? null);
-        self::assertSame('safe_guard', $result->details['raw_result']['category'] ?? null);
+        $this->assertSame(0, $handler->calls);
+        $this->assertFalse($result->isError);
+        $this->assertIsArray($result->details['raw_result'] ?? null);
+        $this->assertTrue($result->details['raw_result']['denied'] ?? null);
+        $this->assertSame('dangerous_command', $result->details['raw_result']['reason'] ?? null);
+        $this->assertSame('safe_guard', $result->details['raw_result']['category'] ?? null);
 
-        self::assertInstanceOf(ToolCallContextDTO::class, $seenContext);
-        self::assertSame('call-guarded', $seenContext->toolCallId);
-        self::assertSame('guarded', $seenContext->toolName);
-        self::assertSame(['cmd' => 'rm -rf var'], $seenContext->arguments);
-        self::assertSame(7, $seenContext->orderIndex);
-        self::assertSame('run-safe', $seenContext->runId);
-        self::assertSame(3, $seenContext->turnNo);
-        self::assertNotNull($seenContext->cwd);
-        self::assertSame(30, $seenContext->metadata['timeout_seconds']);
+        $this->assertInstanceOf(ToolCallContextDTO::class, $seenContext);
+        $this->assertSame('call-guarded', $seenContext->toolCallId);
+        $this->assertSame('guarded', $seenContext->toolName);
+        $this->assertSame(['cmd' => 'rm -rf var'], $seenContext->arguments);
+        $this->assertSame(7, $seenContext->orderIndex);
+        $this->assertSame('run-safe', $seenContext->runId);
+        $this->assertSame(3, $seenContext->turnNo);
+        $this->assertNotNull($seenContext->cwd);
+        $this->assertSame(30, $seenContext->metadata['timeout_seconds']);
     }
 
     public function testToolCallHooksRunInOrderAndFirstNonAllowWins(): void
@@ -113,16 +113,16 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         $hookRegistry->addToolCallHook($this->toolCallHook(static fn (): ToolCallDecisionDTO => ToolCallDecisionDTO::block('should_not_reach')));
 
         $dispatcher = new EventDispatcher();
-        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry, self::createStub(\Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface::class), getcwd() ?: '/'));
+        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry, $this->createStub(\Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface::class), getcwd() ?: '/'));
 
         $result = (new RegistryBackedToolbox($registry, $dispatcher))->execute(
             new \Symfony\AI\Platform\Result\ToolCall('call-chain', 'chain-tool', []),
         );
 
-        self::assertSame(0, $handler->calls);
-        self::assertTrue($result->getResult()['denied'] ?? null);
-        self::assertSame('first_blocked', $result->getResult()['reason'] ?? null);
-        self::assertSame('first', $result->getResult()['from'] ?? null);
+        $this->assertSame(0, $handler->calls);
+        $this->assertTrue($result->getResult()['denied'] ?? null);
+        $this->assertSame('first_blocked', $result->getResult()['reason'] ?? null);
+        $this->assertSame('first', $result->getResult()['from'] ?? null);
     }
 
     public function testRequireApprovalWithPreAnsweredQuestionAllowsToolExecution(): void
@@ -148,7 +148,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
 
         // The requestId is generated from crc32b of the hook class + context runId + toolCallId.
         // When no context accessor provides a runId, the runId component is empty → ``.
-        $hookId = hash('crc32b', $hook::class);
+        $hookId = \hash('crc32b', $hook::class);
         $expectedRequestId = \sprintf('%s__call-approve-1', $hookId);
 
         $existingQuestion = new \Ineersa\CodingAgent\Entity\ToolQuestion();
@@ -162,7 +162,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         $existingQuestion->status = \Ineersa\CodingAgent\Entity\ToolQuestionStatusEnum::Answered;
 
         $store = $this->createMock(\Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface::class);
-        $store->expects(self::once())
+        $store->expects($this->once())
             ->method('findByRequestId')
             ->with($expectedRequestId)
             ->willReturn($existingQuestion);
@@ -175,8 +175,8 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         );
 
         // The handler must have run because resolveApprovalAnswer returns allow() for "Allow once".
-        self::assertSame('handler_ran', $result->getResult());
-        self::assertSame(1, $handler->calls);
+        $this->assertSame('handler_ran', $result->getResult());
+        $this->assertSame(1, $handler->calls);
     }
 
     public function testRequireApprovalWithPreAnsweredDenyBlocksToolExecution(): void
@@ -198,7 +198,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         });
         $hookRegistry->addToolCallHook($hook);
 
-        $hookId = hash('crc32b', $hook::class);
+        $hookId = \hash('crc32b', $hook::class);
         $expectedRequestId = \sprintf('%s__call-deny', $hookId);
 
         $existingQuestion = new \Ineersa\CodingAgent\Entity\ToolQuestion();
@@ -212,7 +212,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         $existingQuestion->status = \Ineersa\CodingAgent\Entity\ToolQuestionStatusEnum::Answered;
 
         $store = $this->createMock(\Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface::class);
-        $store->expects(self::once())
+        $store->expects($this->once())
             ->method('findByRequestId')
             ->with($expectedRequestId)
             ->willReturn($existingQuestion);
@@ -225,10 +225,10 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         );
 
         // Handler must NOT have run because resolveApprovalAnswer returns block() for "Deny".
-        self::assertSame(0, $handler->calls);
-        self::assertIsArray($result->getResult());
-        self::assertTrue($result->getResult()['denied'] ?? null);
-        self::assertSame('denied_by_test', $result->getResult()['reason'] ?? null);
+        $this->assertSame(0, $handler->calls);
+        $this->assertIsArray($result->getResult());
+        $this->assertSame(true, $result->getResult()['denied'] ?? null);
+        $this->assertSame('denied_by_test', $result->getResult()['reason'] ?? null);
     }
 
     public function testRequireApprovalWithMultipleHooksFirstRequireApprovalWinsAndProcessesPreAnswered(): void
@@ -251,7 +251,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
             return ToolCallDecisionDTO::block('should not reach');
         }));
 
-        $hookId = hash('crc32b', $hook::class);
+        $hookId = \hash('crc32b', $hook::class);
         $expectedRequestId = \sprintf('%s__call-multi', $hookId);
 
         $existingQuestion = new \Ineersa\CodingAgent\Entity\ToolQuestion();
@@ -265,7 +265,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         $existingQuestion->status = \Ineersa\CodingAgent\Entity\ToolQuestionStatusEnum::Answered;
 
         $store = $this->createMock(\Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface::class);
-        $store->expects(self::once())
+        $store->expects($this->once())
             ->method('findByRequestId')
             ->with($expectedRequestId)
             ->willReturn($existingQuestion);
@@ -278,8 +278,8 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         );
 
         // Handler must have run — resolveApprovalAnswer returns allow().
-        self::assertSame('handler_ran', $result->getResult());
-        self::assertSame(1, $handler->calls);
+        $this->assertSame('handler_ran', $result->getResult());
+        $this->assertSame(1, $handler->calls);
     }
 
     public function testEmptyHookRegistryWithContextAccessorStillPassesThrough(): void
@@ -291,7 +291,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         $hookRegistry = new ExtensionHookRegistry();
         $contextAccessor = new StackToolExecutionContextAccessor();
         $dispatcher = new EventDispatcher();
-        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry, self::createStub(\Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface::class), getcwd() ?: '/', $contextAccessor));
+        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry, $this->createStub(\Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface::class), getcwd() ?: '/', $contextAccessor));
 
         $executor = new ToolExecutor(
             defaultMode: 'parallel',
@@ -310,8 +310,8 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
             runId: 'run-empty',
         ));
 
-        self::assertFalse($result->isError);
-        self::assertSame(1, $handler->calls);
+        $this->assertFalse($result->isError);
+        $this->assertSame(1, $handler->calls);
     }
 
     /**
@@ -350,7 +350,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         );
         $hookRegistry->addToolCallHook($dummyHook);
 
-        $hookId = hash('crc32b', $dummyHook::class);
+        $hookId = \hash('crc32b', $dummyHook::class);
         $expectedRequestId = \sprintf('%s__call-dummy-1', $hookId);
 
         // Pre-answer the question with the dummy extension's own vocabulary.
@@ -365,7 +365,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         $existingQuestion->status = \Ineersa\CodingAgent\Entity\ToolQuestionStatusEnum::Answered;
 
         $store = $this->createMock(\Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface::class);
-        $store->expects(self::once())
+        $store->expects($this->once())
             ->method('findByRequestId')
             ->with($expectedRequestId)
             ->willReturn($existingQuestion);
@@ -378,8 +378,8 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         );
 
         // The handler must have run with the dummy extension's vocabulary ('Proceed' → allow).
-        self::assertSame('dummy_executed', $result->getResult());
-        self::assertSame(1, $handler->calls);
+        $this->assertSame('dummy_executed', $result->getResult());
+        $this->assertSame(1, $handler->calls);
 
         // Test the deny path with the dummy extension's vocabulary.
         $handler2 = $this->countingHandler('should_not_run');
@@ -404,7 +404,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         );
         $hookRegistry2->addToolCallHook($dummyHook2);
 
-        $hookId2 = hash('crc32b', $dummyHook2::class);
+        $hookId2 = \hash('crc32b', $dummyHook2::class);
         $expectedRequestId2 = \sprintf('%s__call-dummy-2', $hookId2);
 
         $existingQuestion2 = new \Ineersa\CodingAgent\Entity\ToolQuestion();
@@ -418,7 +418,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         $existingQuestion2->status = \Ineersa\CodingAgent\Entity\ToolQuestionStatusEnum::Answered;
 
         $store2 = $this->createMock(\Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface::class);
-        $store2->expects(self::once())
+        $store2->expects($this->once())
             ->method('findByRequestId')
             ->with($expectedRequestId2)
             ->willReturn($existingQuestion2);
@@ -431,11 +431,11 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         );
 
         // Handler must NOT have run — 'Abort' → block('dummy_denied')
-        self::assertSame(0, $handler2->calls);
-        self::assertIsArray($result2->getResult());
-        self::assertTrue($result2->getResult()['denied'] ?? null);
-        self::assertSame('dummy_denied', $result2->getResult()['reason'] ?? null);
-        self::assertStringContainsString('Aborted', $result2->getResult()['message'] ?? '');
+        $this->assertSame(0, $handler2->calls);
+        $this->assertIsArray($result2->getResult());
+        $this->assertSame(true, $result2->getResult()['denied'] ?? null);
+        $this->assertSame('dummy_denied', $result2->getResult()['reason'] ?? null);
+        $this->assertStringContainsString('Aborted', $result2->getResult()['message'] ?? '');
     }
 
     /**
@@ -463,7 +463,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
                     questionId: 'qid_ctx',
                 );
             },
-            resolveApprovalAnswer: static function (ApprovalAnswerContextDTO $context) use (&$receivedContext): ToolCallDecisionDTO {
+            resolveApprovalAnswer: function (ApprovalAnswerContextDTO $context) use (&$receivedContext): ToolCallDecisionDTO {
                 $receivedContext = $context;
 
                 return ToolCallDecisionDTO::allow();
@@ -471,7 +471,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         );
         $hookRegistry->addToolCallHook($hook);
 
-        $hookId = hash('crc32b', $hook::class);
+        $hookId = \hash('crc32b', $hook::class);
         $expectedRequestId = \sprintf('%s__call-ctx', $hookId);
 
         $existingQuestion = new \Ineersa\CodingAgent\Entity\ToolQuestion();
@@ -485,7 +485,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         $existingQuestion->status = \Ineersa\CodingAgent\Entity\ToolQuestionStatusEnum::Answered;
 
         $store = $this->createMock(\Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface::class);
-        $store->expects(self::once())
+        $store->expects($this->once())
             ->method('findByRequestId')
             ->with($expectedRequestId)
             ->willReturn($existingQuestion);
@@ -498,14 +498,14 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         );
 
         // Handler must have run (Allow once → allow).
-        self::assertSame('handler_ran', $result->getResult());
-        self::assertSame(1, $handler->calls);
+        $this->assertSame('handler_ran', $result->getResult());
+        $this->assertSame(1, $handler->calls);
 
         // The extension received runId + toolCallId as first-class DTO fields
         // without needing to stash them in details.
-        self::assertNotNull($receivedContext, 'Expected resolveApprovalAnswer to be called with context');
-        self::assertSame('run-ctx', $receivedContext->runId);
-        self::assertSame('call-ctx', $receivedContext->toolCallId);
+        $this->assertNotNull($receivedContext, 'Expected resolveApprovalAnswer to be called with context');
+        $this->assertSame('run-ctx', $receivedContext->runId);
+        $this->assertSame('call-ctx', $receivedContext->toolCallId);
     }
 
     /**
@@ -513,7 +513,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
      * ApprovalAnswerHookInterface, allowing tests to control the
      * resolveApprovalAnswer outcome without needing the real SafeGuard hook.
      *
-     * @param callable(ToolCallContextDTO): ToolCallDecisionDTO       $onToolCall
+     * @param callable(ToolCallContextDTO): ToolCallDecisionDTO $onToolCall
      * @param callable(ApprovalAnswerContextDTO): ToolCallDecisionDTO $resolveApprovalAnswer
      */
     private function approvalAwareHook(
@@ -522,7 +522,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
     ): ToolCallHookInterface&ApprovalAnswerHookInterface {
         return new class($onToolCall, $resolveApprovalAnswer) implements ToolCallHookInterface, ApprovalAnswerHookInterface {
             /**
-             * @param callable(ToolCallContextDTO): ToolCallDecisionDTO            $onToolCall
+             * @param callable(ToolCallContextDTO): ToolCallDecisionDTO $onToolCall
              * @param callable(ApprovalAnswerContextDTO): ToolCallDecisionDTO|null $resolveApprovalAnswer
              */
             public function __construct(

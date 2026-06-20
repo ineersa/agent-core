@@ -150,6 +150,6 @@ final class FooterBarWidgetTest extends TestCase
 
         self::assertCount(1, $lines);
         self::assertStringStartsWith('  ', $lines[0]);
-        self::assertLessThanOrEqual(40, mb_strlen($lines[0]));
+        self::assertLessThanOrEqual(40, \mb_strlen($lines[0]));
     }
 }

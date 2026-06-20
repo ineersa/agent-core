@@ -20,17 +20,17 @@ final class SafeGuardExtensionTest extends TestCase
     public function testExtensionImplementsHatfieldExtensionInterface(): void
     {
         $extension = new SafeGuardExtension();
-        self::assertInstanceOf(\Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface::class, $extension);
+        $this->assertInstanceOf(\Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface::class, $extension);
     }
 
     public function testRegisterCreatesHookAndCallsRegisterToolCallHook(): void
     {
         $extension = new SafeGuardExtension();
         $api = $this->createMock(ExtensionApiInterface::class);
-        $api->expects(self::once())->method('getSettings')->with('safe_guard')->willReturn([]);
-        $api->expects(self::once())->method('getCwd')->willReturn('/tmp');
-        $api->expects(self::once())->method('registerToolCallHook')
-            ->with(self::callback(static fn (ToolCallHookInterface $hook): bool => $hook instanceof SafeGuardToolCallHook));
+        $api->expects($this->once())->method('getSettings')->with('safe_guard')->willReturn([]);
+        $api->expects($this->once())->method('getCwd')->willReturn('/tmp');
+        $api->expects($this->once())->method('registerToolCallHook')
+            ->with($this->callback(static fn (ToolCallHookInterface $hook): bool => $hook instanceof SafeGuardToolCallHook));
         $extension->register($api);
     }
 
@@ -42,20 +42,20 @@ final class SafeGuardExtensionTest extends TestCase
         $capturedHook = null;
 
         $api = $this->createMock(ExtensionApiInterface::class);
-        $api->expects(self::once())->method('getSettings')->with('safe_guard')->willReturn([
+        $api->expects($this->once())->method('getSettings')->with('safe_guard')->willReturn([
             'tool_names' => ['bash' => 'shell'],
             'auto_deny_in_noninteractive' => false,
         ]);
-        $api->expects(self::once())->method('getCwd')->willReturn('/project');
-        $api->expects(self::once())->method('registerToolCallHook')
-            ->with(self::callback(static function (ToolCallHookInterface $hook) use (&$capturedHook): bool {
+        $api->expects($this->once())->method('getCwd')->willReturn('/project');
+        $api->expects($this->once())->method('registerToolCallHook')
+            ->with($this->callback(static function (ToolCallHookInterface $hook) use (&$capturedHook): bool {
                 $capturedHook = $hook;
 
                 return $hook instanceof SafeGuardToolCallHook;
             }));
         $extension->register($api);
 
-        self::assertNotNull($capturedHook, 'Expected hook to be captured');
+        $this->assertNotNull($capturedHook, 'Expected hook to be captured');
 
         // Exercise the hook with a destructive command using the custom alias 'shell'
         // and verify auto_deny_in_noninteractive=false allows RequireApproval
@@ -66,7 +66,7 @@ final class SafeGuardExtensionTest extends TestCase
             orderIndex: 0,
         ));
 
-        self::assertSame(
+        $this->assertSame(
             ToolCallDecisionKindEnum::RequireApproval,
             $dto->kind,
             'Custom alias "shell" should be recognized and auto_deny_in_noninteractive=false should return RequireApproval',
@@ -79,13 +79,13 @@ final class SafeGuardExtensionTest extends TestCase
         $api1 = $this->createMock(ExtensionApiInterface::class);
         $api1->method('getSettings')->willReturn([]);
         $api1->method('getCwd')->willReturn('/tmp');
-        $api1->expects(self::once())->method('registerToolCallHook');
+        $api1->expects($this->once())->method('registerToolCallHook');
         $extension->register($api1);
 
         $api2 = $this->createMock(ExtensionApiInterface::class);
         $api2->method('getSettings')->willReturn([]);
         $api2->method('getCwd')->willReturn('/tmp');
-        $api2->expects(self::once())->method('registerToolCallHook');
+        $api2->expects($this->once())->method('registerToolCallHook');
         $extension->register($api2);
     }
 }

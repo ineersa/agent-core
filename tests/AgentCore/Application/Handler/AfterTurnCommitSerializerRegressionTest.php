@@ -65,7 +65,7 @@ final class AfterTurnCommitSerializerRegressionTest extends TestCase
         );
 
         $normalized = $this->serializer->normalize($original);
-        self::assertIsArray($normalized, 'Normalization should produce an array');
+        $this->assertIsArray($normalized, 'Normalization should produce an array');
 
         /** @var AfterTurnCommitHookContext $restored */
         $restored = $this->serializer->denormalize(
@@ -73,17 +73,17 @@ final class AfterTurnCommitSerializerRegressionTest extends TestCase
             AfterTurnCommitHookContext::class,
         );
 
-        self::assertInstanceOf(AfterTurnCommitHookContext::class, $restored);
-        self::assertSame($original->runId, $restored->runId);
-        self::assertSame($original->turnNo, $restored->turnNo);
-        self::assertSame($original->status, $restored->status);
-        self::assertSame($original->effectsCount, $restored->effectsCount);
-        self::assertCount(\count($original->events), $restored->events);
-        self::assertContainsOnlyInstancesOf(AfterTurnCommitEventSummary::class, $restored->events);
-        self::assertSame(1, $restored->events[0]->seq);
-        self::assertSame('run_started', $restored->events[0]->type);
-        self::assertSame(5, $restored->events[1]->seq);
-        self::assertSame('agent_end', $restored->events[1]->type);
+        $this->assertInstanceOf(AfterTurnCommitHookContext::class, $restored);
+        $this->assertSame($original->runId, $restored->runId);
+        $this->assertSame($original->turnNo, $restored->turnNo);
+        $this->assertSame($original->status, $restored->status);
+        $this->assertSame($original->effectsCount, $restored->effectsCount);
+        $this->assertCount(\count($original->events), $restored->events);
+        $this->assertContainsOnlyInstancesOf(AfterTurnCommitEventSummary::class, $restored->events);
+        $this->assertSame(1, $restored->events[0]->seq);
+        $this->assertSame('run_started', $restored->events[0]->type);
+        $this->assertSame(5, $restored->events[1]->seq);
+        $this->assertSame('agent_end', $restored->events[1]->type);
     }
 
     public function testRoundTripWithEmptyEvents(): void
@@ -102,8 +102,8 @@ final class AfterTurnCommitSerializerRegressionTest extends TestCase
             AfterTurnCommitHookContext::class,
         );
 
-        self::assertInstanceOf(AfterTurnCommitHookContext::class, $restored);
-        self::assertSame([], $restored->events);
+        $this->assertInstanceOf(AfterTurnCommitHookContext::class, $restored);
+        $this->assertSame([], $restored->events);
     }
 
     public function testRoundTripWithSingleEvent(): void
@@ -124,8 +124,8 @@ final class AfterTurnCommitSerializerRegressionTest extends TestCase
             AfterTurnCommitHookContext::class,
         );
 
-        self::assertContainsOnlyInstancesOf(AfterTurnCommitEventSummary::class, $restored->events);
-        self::assertSame(42, $restored->events[0]->seq);
+        $this->assertContainsOnlyInstancesOf(AfterTurnCommitEventSummary::class, $restored->events);
+        $this->assertSame(42, $restored->events[0]->seq);
     }
 
     /**
@@ -153,7 +153,7 @@ final class AfterTurnCommitSerializerRegressionTest extends TestCase
             AfterTurnCommitHookContext::class,
         );
 
-        self::assertContainsOnlyInstancesOf(AfterTurnCommitEventSummary::class, $restored->events);
+        $this->assertContainsOnlyInstancesOf(AfterTurnCommitEventSummary::class, $restored->events);
     }
 
     public function testAfterTurnCommitEventSummaryConstructsWithSeqAndTypeOnly(): void
@@ -164,7 +164,8 @@ final class AfterTurnCommitSerializerRegressionTest extends TestCase
         // With no commit-time subscriber needing event payload data, the
         // field is removed entirely.
         $event = new AfterTurnCommitEventSummary(seq: 10, type: 'agent_command_applied');
-        self::assertSame(10, $event->seq);
-        self::assertSame('agent_command_applied', $event->type);
+        $this->assertSame(10, $event->seq);
+        $this->assertSame('agent_command_applied', $event->type);
     }
+
 }

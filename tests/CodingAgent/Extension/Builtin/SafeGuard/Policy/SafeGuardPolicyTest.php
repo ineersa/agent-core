@@ -17,11 +17,11 @@ final class SafeGuardPolicyTest extends TestCase
     {
         $policy = new SafeGuardPolicy();
 
-        self::assertSame([], $policy->allowCommandPatterns);
-        self::assertSame([], $policy->allowWriteOutsideCwd);
-        self::assertSame([], $policy->allowDestructiveInPaths);
-        self::assertSame([], $policy->protectedReadPatterns);
-        self::assertSame([], $policy->dangerousCommandPatterns);
+        $this->assertSame([], $policy->allowCommandPatterns);
+        $this->assertSame([], $policy->allowWriteOutsideCwd);
+        $this->assertSame([], $policy->allowDestructiveInPaths);
+        $this->assertSame([], $policy->protectedReadPatterns);
+        $this->assertSame([], $policy->dangerousCommandPatterns);
     }
 
     public function testAllFieldsAccepted(): void
@@ -34,11 +34,11 @@ final class SafeGuardPolicyTest extends TestCase
             dangerousCommandPatterns: ['risky-cmd'],
         );
 
-        self::assertSame(['rm -rf'], $policy->allowCommandPatterns);
-        self::assertSame(['/tmp'], $policy->allowWriteOutsideCwd);
-        self::assertSame(['/tmp'], $policy->allowDestructiveInPaths);
-        self::assertSame(['.env.local'], $policy->protectedReadPatterns);
-        self::assertSame(['risky-cmd'], $policy->dangerousCommandPatterns);
+        $this->assertSame(['rm -rf'], $policy->allowCommandPatterns);
+        $this->assertSame(['/tmp'], $policy->allowWriteOutsideCwd);
+        $this->assertSame(['/tmp'], $policy->allowDestructiveInPaths);
+        $this->assertSame(['.env.local'], $policy->protectedReadPatterns);
+        $this->assertSame(['risky-cmd'], $policy->dangerousCommandPatterns);
     }
 
     public function testAllowDestructiveInPathsFieldExistsButNotWired(): void
@@ -49,7 +49,7 @@ final class SafeGuardPolicyTest extends TestCase
             allowDestructiveInPaths: ['/tmp', '/var/tmp'],
         );
 
-        self::assertCount(2, $policy->allowDestructiveInPaths);
+        $this->assertCount(2, $policy->allowDestructiveInPaths);
     }
 
     public function testFromConfigCopiesAllFields(): void
@@ -64,12 +64,12 @@ final class SafeGuardPolicyTest extends TestCase
 
         $policy = SafeGuardPolicy::fromConfig($config);
 
-        self::assertSame(['ls -la'], $policy->allowCommandPatterns);
-        self::assertSame(['/tmp'], $policy->allowWriteOutsideCwd);
-        self::assertSame(['/safe'], $policy->allowDestructiveInPaths);
-        self::assertContains('.env.local', $policy->protectedReadPatterns);
-        self::assertContains('.extra', $policy->protectedReadPatterns);
-        self::assertSame(['risky'], $policy->dangerousCommandPatterns);
+        $this->assertSame(['ls -la'], $policy->allowCommandPatterns);
+        $this->assertSame(['/tmp'], $policy->allowWriteOutsideCwd);
+        $this->assertSame(['/safe'], $policy->allowDestructiveInPaths);
+        $this->assertContains('.env.local', $policy->protectedReadPatterns);
+        $this->assertContains('.extra', $policy->protectedReadPatterns);
+        $this->assertSame(['risky'], $policy->dangerousCommandPatterns);
     }
 
     public function testFromConfigDefaultIncludesAllProtectedReadPatterns(): void
@@ -77,9 +77,9 @@ final class SafeGuardPolicyTest extends TestCase
         $config = new SafeGuardConfig();
         $policy = SafeGuardPolicy::fromConfig($config);
 
-        self::assertContains('.env.local', $policy->protectedReadPatterns);
-        self::assertContains('auth.json', $policy->protectedReadPatterns);
-        self::assertContains('.ssh/id_', $policy->protectedReadPatterns);
-        self::assertContains('.aws/credentials', $policy->protectedReadPatterns);
+        $this->assertContains('.env.local', $policy->protectedReadPatterns);
+        $this->assertContains('auth.json', $policy->protectedReadPatterns);
+        $this->assertContains('.ssh/id_', $policy->protectedReadPatterns);
+        $this->assertContains('.aws/credentials', $policy->protectedReadPatterns);
     }
 }

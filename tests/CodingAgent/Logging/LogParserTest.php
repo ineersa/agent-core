@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Logging;
 
+use Ineersa\CodingAgent\Logging\LogEntry;
 use Ineersa\CodingAgent\Logging\LogParser;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -33,7 +34,7 @@ final class LogParserTest extends TestCase
 
     public function testParseHandlesExtraAndContext(): void
     {
-        $line = json_encode([
+        $line = \json_encode([
             'datetime' => '2026-05-18T10:00:00+00:00',
             'channel' => 'app',
             'level_name' => 'WARNING',
@@ -64,7 +65,7 @@ final class LogParserTest extends TestCase
 
     public function testParseReturnsNullForMissingDatetime(): void
     {
-        $line = json_encode([
+        $line = \json_encode([
             'channel' => 'app',
             'message' => 'No datetime',
         ], \JSON_THROW_ON_ERROR);
@@ -80,7 +81,7 @@ final class LogParserTest extends TestCase
 
     public function testParseAcceptsStringDatetime(): void
     {
-        $line = json_encode([
+        $line = \json_encode([
             'datetime' => '2026-05-20T15:30:00+00:00',
             'channel' => 'test',
             'message' => 'Hello',
@@ -95,7 +96,7 @@ final class LogParserTest extends TestCase
     public function testParseAcceptsIntegerTimestamp(): void
     {
         $ts = 1716200000;
-        $line = json_encode([
+        $line = \json_encode([
             'datetime' => $ts,
             'channel' => 'test',
             'message' => 'From timestamp',
@@ -109,7 +110,7 @@ final class LogParserTest extends TestCase
 
     public function testParseDefaultChannelAndLevel(): void
     {
-        $line = json_encode([
+        $line = \json_encode([
             'datetime' => '2026-05-18T10:00:00+00:00',
             'message' => 'Minimal entry',
         ], \JSON_THROW_ON_ERROR);
@@ -123,7 +124,7 @@ final class LogParserTest extends TestCase
 
     public function testParseSourceFileAndLineNumberOptional(): void
     {
-        $line = json_encode([
+        $line = \json_encode([
             'datetime' => '2026-05-18T10:00:00+00:00',
             'channel' => 'app',
             'message' => 'Test',
@@ -143,7 +144,7 @@ final class LogParserTest extends TestCase
     {
         return [
             'basic info entry' => [
-                json_encode([
+                \json_encode([
                     'datetime' => '2026-05-18T10:00:00+00:00',
                     'channel' => 'app',
                     'level_name' => 'INFO',
@@ -152,7 +153,7 @@ final class LogParserTest extends TestCase
                 ['channel' => 'app', 'level' => 'INFO', 'message' => 'Application started'],
             ],
             'error entry' => [
-                json_encode([
+                \json_encode([
                     'datetime' => '2026-05-18T10:01:00+00:00',
                     'channel' => 'app',
                     'level_name' => 'ERROR',

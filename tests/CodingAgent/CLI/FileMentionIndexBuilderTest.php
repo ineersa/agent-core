@@ -29,6 +29,17 @@ final class FileMentionIndexBuilderTest extends TestCase
         $this->removeDir($this->tmpDir);
     }
 
+    private function createLockFactory(): LockFactory
+    {
+        // FlockStore in the test tmp dir so locks are isolated to this test.
+        return new LockFactory(new FlockStore($this->tmpDir));
+    }
+
+    private function createLogger(): LoggerInterface
+    {
+        return $this->createStub(LoggerInterface::class);
+    }
+
     #[Test]
     public function includesFilesAndDirectories(): void
     {
@@ -41,18 +52,18 @@ final class FileMentionIndexBuilderTest extends TestCase
         $builder = new FileMentionIndexBuilder($this->tmpDir, $indexPath, logger: $this->createLogger(), lockFactory: $this->createLockFactory());
         $count = $builder->build();
 
-        self::assertGreaterThanOrEqual(3, $count);
+        $this->assertGreaterThanOrEqual(3, $count);
 
         $lines = file($indexPath, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES);
-        self::assertNotFalse($lines);
+        $this->assertNotFalse($lines);
 
         $paths = array_map(static fn (string $l): string => json_decode($l, true)['path'], $lines);
         sort($paths);
 
-        self::assertContains('src', $paths);
-        self::assertContains('src/foo.php', $paths);
-        self::assertContains('src/nested', $paths);
-        self::assertContains('src/nested/bar.php', $paths);
+        $this->assertContains('src', $paths);
+        $this->assertContains('src/foo.php', $paths);
+        $this->assertContains('src/nested', $paths);
+        $this->assertContains('src/nested/bar.php', $paths);
     }
 
     #[Test]
@@ -82,22 +93,22 @@ final class FileMentionIndexBuilderTest extends TestCase
         $count = $builder->build();
 
         $lines = file($indexPath, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES);
-        self::assertNotFalse($lines);
+        $this->assertNotFalse($lines);
 
         $paths = array_map(static fn (string $l): string => json_decode($l, true)['path'], $lines);
 
         // Included paths should appear.
-        self::assertContains('included.php', $paths);
+        $this->assertContains('included.php', $paths);
 
         // Excluded directories should NOT appear.
         foreach ($paths as $path) {
-            self::assertStringNotContainsString('vendor/', $path);
-            self::assertStringNotContainsString('node_modules/', $path);
-            self::assertStringNotContainsString('var/', $path);
-            self::assertStringNotContainsString('.git/', $path);
-            self::assertStringNotContainsString('.hatfield/sessions', $path);
-            self::assertStringNotContainsString('.hatfield/tmp', $path);
-            self::assertStringNotContainsString('.hatfield/cache', $path);
+            $this->assertStringNotContainsString('vendor/', $path);
+            $this->assertStringNotContainsString('node_modules/', $path);
+            $this->assertStringNotContainsString('var/', $path);
+            $this->assertStringNotContainsString('.git/', $path);
+            $this->assertStringNotContainsString('.hatfield/sessions', $path);
+            $this->assertStringNotContainsString('.hatfield/tmp', $path);
+            $this->assertStringNotContainsString('.hatfield/cache', $path);
         }
     }
 
@@ -110,11 +121,11 @@ final class FileMentionIndexBuilderTest extends TestCase
         $builder = new FileMentionIndexBuilder($this->tmpDir, $indexPath, logger: $this->createLogger(), lockFactory: $this->createLockFactory());
         $builder->build();
 
-        self::assertFileExists($indexPath);
+        $this->assertFileExists($indexPath);
 
         // No leftover tmp files after build.
         $tmpFiles = glob($this->tmpDir.'/*.tmp.*');
-        self::assertEmpty($tmpFiles, 'No temp files should remain after atomic rename.');
+        $this->assertEmpty($tmpFiles, 'No temp files should remain after atomic rename.');
     }
 
     #[Test]
@@ -129,8 +140,8 @@ final class FileMentionIndexBuilderTest extends TestCase
         $builder = new FileMentionIndexBuilder($this->tmpDir, $indexPath, logger: $this->createLogger(), lockFactory: $this->createLockFactory());
         $count = $builder->build();
 
-        self::assertLessThanOrEqual(50_000, $count);
-        self::assertGreaterThan(0, $count);
+        $this->assertLessThanOrEqual(50_000, $count);
+        $this->assertGreaterThan(0, $count);
     }
 
     #[Test]
@@ -144,7 +155,7 @@ final class FileMentionIndexBuilderTest extends TestCase
 
         // Manually hold the lock to simulate concurrent build.
         $lock = $lockFactory->createLock('file_mention_index.'.hash('xxh32', $indexPath), ttl: 300.0);
-        self::assertTrue($lock->acquire(false), 'Should acquire lock when no one holds it.');
+        $this->assertTrue($lock->acquire(false), 'Should acquire lock when no one holds it.');
 
         $builder = new FileMentionIndexBuilder($this->tmpDir, $indexPath, logger: $this->createLogger(), lockFactory: $lockFactory);
 
@@ -163,12 +174,12 @@ final class FileMentionIndexBuilderTest extends TestCase
 
         $builder1 = new FileMentionIndexBuilder($this->tmpDir, $indexPath, logger: $this->createLogger(), lockFactory: $lockFactory);
         $count = $builder1->build();
-        self::assertGreaterThan(0, $count);
+        $this->assertGreaterThan(0, $count);
 
         // Lock should be released — second build with same lock factory succeeds.
         $builder2 = new FileMentionIndexBuilder($this->tmpDir, $indexPath, logger: $this->createLogger(), lockFactory: $lockFactory);
         $count2 = $builder2->build();
-        self::assertGreaterThan(0, $count2);
+        $this->assertGreaterThan(0, $count2);
     }
 
     #[Test]
@@ -188,22 +199,21 @@ final class FileMentionIndexBuilderTest extends TestCase
 
         try {
             $builder->build();
-            self::fail('Expected RuntimeException for non-existent cwd.');
+            $this->fail('Expected RuntimeException for non-existent cwd.');
         } catch (\RuntimeException) {
             // Expected — build failed.
         }
 
         // Old index should still exist and be intact.
-        self::assertFileExists($indexPath);
+        $this->assertFileExists($indexPath);
         $content = file_get_contents($indexPath);
-        self::assertNotFalse($content);
-        self::assertStringContainsString('old.php', $content);
+        $this->assertNotFalse($content);
+        $this->assertStringContainsString('old.php', $content);
     }
 
     /**
      * Round-trip: builder writes index → reader reloads → provider
-     * creates suggestion → applying replacement produces expected.
-     *
+     * creates suggestion → applying replacement produces expected
      * @ path text.  Exercises the full index → completion chain.
      */
     #[Test]
@@ -221,7 +231,7 @@ final class FileMentionIndexBuilderTest extends TestCase
         $indexPath = $this->tmpDir.'/index.jsonl';
         $builder = new FileMentionIndexBuilder($this->tmpDir, $indexPath, logger: $this->createLogger(), lockFactory: $this->createLockFactory());
         $count = $builder->build();
-        self::assertGreaterThan(0, $count);
+        $this->assertGreaterThan(0, $count);
 
         // ── Reader loads the index ──
         $reader = new \Ineersa\Tui\Completion\FileMentionIndexReader($indexPath);
@@ -233,7 +243,7 @@ final class FileMentionIndexBuilderTest extends TestCase
         $suggestions = $provider->getSuggestions(
             \Ineersa\Tui\Completion\CompletionContext::forCursorAtEnd('@src/'),
         );
-        self::assertGreaterThan(0, \count($suggestions));
+        $this->assertGreaterThan(0, \count($suggestions));
 
         // Find the src/foo.php suggestion
         $foo = null;
@@ -243,9 +253,9 @@ final class FileMentionIndexBuilderTest extends TestCase
                 break;
             }
         }
-        self::assertNotNull($foo);
-        self::assertStringStartsWith('@', $foo->insertText);
-        self::assertStringEndsWith(' ', $foo->insertText);
+        $this->assertNotNull($foo);
+        $this->assertStringStartsWith('@', $foo->insertText);
+        $this->assertStringEndsWith(' ', $foo->insertText);
 
         // ── Simulate acceptance via CompletionListener ──
         $currentText = '@src/';
@@ -255,7 +265,7 @@ final class FileMentionIndexBuilderTest extends TestCase
             $foo->replacementStart,
             $foo->replacementLength,
         );
-        self::assertStringStartsWith('@', $applied);
+        $this->assertStringStartsWith('@', $applied);
 
         // ── @ directory suggestion ──
         $dirSuggs = $provider->getSuggestions(
@@ -271,14 +281,14 @@ final class FileMentionIndexBuilderTest extends TestCase
                 break;
             }
         }
-        self::assertNotNull($nestedDir);
-        self::assertStringEndsWith('/', $nestedDir->insertText);
+        $this->assertNotNull($nestedDir);
+        $this->assertStringEndsWith('/', $nestedDir->insertText);
 
         // ── Quoted path suggestion ──
         $quotedSuggs = $provider->getSuggestions(
             \Ineersa\Tui\Completion\CompletionContext::forCursorAtEnd('@"dir'),
         );
-        self::assertGreaterThan(0, \count($quotedSuggs));
+        $this->assertGreaterThan(0, \count($quotedSuggs));
 
         $quoted = null;
         foreach ($quotedSuggs as $s) {
@@ -287,8 +297,8 @@ final class FileMentionIndexBuilderTest extends TestCase
                 break;
             }
         }
-        self::assertNotNull($quoted);
-        self::assertStringStartsWith('@"', $quoted->insertText);
+        $this->assertNotNull($quoted);
+        $this->assertStringStartsWith('@"', $quoted->insertText);
 
         // Simulate acceptance of quoted suggestion.
         $quotedText = '@"dir';
@@ -298,8 +308,8 @@ final class FileMentionIndexBuilderTest extends TestCase
             $quoted->replacementStart,
             $quoted->replacementLength,
         );
-        self::assertStringStartsWith('@', $quotedApplied);
-        self::assertStringContainsString('dir with spaces', $quotedApplied);
+        $this->assertStringStartsWith('@', $quotedApplied);
+        $this->assertStringContainsString('dir with spaces', $quotedApplied);
     }
 
     #[Test]
@@ -310,36 +320,36 @@ final class FileMentionIndexBuilderTest extends TestCase
         // (e.g. var/tmp/test-* in agent-core's .gitignore).
         // The builder should skip ignoreVCSIgnored so the index is
         // not empty — the explicit exclude list handles noisy dirs.
-        $gitExec = exec('which git 2>/dev/null');
+        $gitExec = \exec('which git 2>/dev/null');
         if ('' === $gitExec) {
             self::markTestSkipped('git is not available for VCS-ignored CWD test.');
         }
 
         // ── Create a temporary git repo with a .gitignore ──
         $gitRepo = $this->tmpDir.'/parent-repo';
-        mkdir($gitRepo, 0755, true);
-        file_put_contents($gitRepo.'/.gitignore', "/ignored-scratch/\n");
+        \mkdir($gitRepo, 0755, true);
+        \file_put_contents($gitRepo.'/.gitignore', "/ignored-scratch/\n");
 
         // Init git repo so .git/ exists (which is what Finder uses to
         // detect the repo root for VcsIgnoredFilterIterator).
-        $cwd = getcwd();
-        chdir($gitRepo);
-        exec('git init -q 2>/dev/null', output: $initOut, result_code: $initCode);
-        chdir($cwd);
+        $cwd = \getcwd();
+        \chdir($gitRepo);
+        \exec('git init -q 2>/dev/null', output: $initOut, result_code: $initCode);
+        \chdir($cwd);
         if (0 !== $initCode) {
             self::markTestSkipped('git init failed in '.$gitRepo);
         }
 
         // ── Create the CWD inside the ignored directory ──
         $cwd = $gitRepo.'/ignored-scratch/my-project';
-        mkdir($cwd, 0755, true);
-        touch($cwd.'/included.php');
-        mkdir($cwd.'/vendor', 0755, true);
-        touch($cwd.'/vendor/excluded.php');
+        \mkdir($cwd, 0755, true);
+        \touch($cwd.'/included.php');
+        \mkdir($cwd.'/vendor', 0755, true);
+        \touch($cwd.'/vendor/excluded.php');
 
         // ── Verify git sees the cwd as ignored ──
-        exec(
-            'git -C '.escapeshellarg($cwd).' check-ignore . 2>/dev/null',
+        \exec(
+            'git -C '.\escapeshellarg($cwd).' check-ignore . 2>/dev/null',
             output: $ignoreOut,
             result_code: $isIgnored,
         );
@@ -351,30 +361,19 @@ final class FileMentionIndexBuilderTest extends TestCase
         $builder = new FileMentionIndexBuilder($cwd, $indexPath, logger: $this->createLogger(), lockFactory: $this->createLockFactory());
         $count = $builder->build();
 
-        self::assertGreaterThan(0, $count, 'Index must contain entries even when CWD is VCS-ignored.');
+        $this->assertGreaterThan(0, $count, 'Index must contain entries even when CWD is VCS-ignored.');
 
-        $lines = file($indexPath, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES);
-        self::assertNotFalse($lines);
-        $paths = array_map(static fn (string $l): string => json_decode($l, true)['path'], $lines);
+        $lines = \file($indexPath, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES);
+        $this->assertNotFalse($lines);
+        $paths = \array_map(static fn (string $l): string => \json_decode($l, true)['path'], $lines);
 
         // included.php should appear (not filtered by VCS ignore).
-        self::assertContains('included.php', $paths);
+        $this->assertContains('included.php', $paths);
 
         // vendor/ should NOT appear (explicit exclude).
         foreach ($paths as $path) {
-            self::assertStringNotContainsString('vendor/', $path);
+            $this->assertStringNotContainsString('vendor/', $path);
         }
-    }
-
-    private function createLockFactory(): LockFactory
-    {
-        // FlockStore in the test tmp dir so locks are isolated to this test.
-        return new LockFactory(new FlockStore($this->tmpDir));
-    }
-
-    private function createLogger(): LoggerInterface
-    {
-        return self::createStub(LoggerInterface::class);
     }
 
     private function removeDir(string $dir): void

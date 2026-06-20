@@ -77,20 +77,20 @@ final class McpToolRegistrarTest extends TestCase
         $registrar->registerForRun('run-abc');
 
         $names = $this->registry->activeToolNames();
-        self::assertContains('my_server_read', $names, 'MCP tool should appear in active names');
+        $this->assertContains('my_server_read', $names, 'MCP tool should appear in active names');
 
         $definitions = $this->registry->activeToolDefinitions();
-        self::assertCount(1, $definitions);
+        $this->assertCount(1, $definitions);
         $def = $definitions[0];
-        self::assertSame('my_server_read', $def->name);
-        self::assertSame('Read a file', $def->description);
-        self::assertSame(['type' => 'object', 'properties' => ['path' => ['type' => 'string']]], $def->parametersJsonSchema);
-        self::assertSame(ToolExecutionMode::Sequential, $def->executionMode);
+        $this->assertSame('my_server_read', $def->name);
+        $this->assertSame('Read a file', $def->description);
+        $this->assertSame(['type' => 'object', 'properties' => ['path' => ['type' => 'string']]], $def->parametersJsonSchema);
+        $this->assertSame(ToolExecutionMode::Sequential, $def->executionMode);
 
         // Handler reverse mapping
-        self::assertInstanceOf(McpToolHandler::class, $def->handler);
-        self::assertSame('my-server', $def->handler->serverName);
-        self::assertSame('read', $def->handler->mcpName);
+        $this->assertInstanceOf(McpToolHandler::class, $def->handler);
+        $this->assertSame('my-server', $def->handler->serverName);
+        $this->assertSame('read', $def->handler->mcpName);
     }
 
     public function testHandlerThrowsStructuredToolCallException(): void
@@ -105,7 +105,7 @@ final class McpToolRegistrarTest extends TestCase
 
         $this->contextAccessor->with(
             new \Ineersa\AgentCore\Application\Tool\ToolContext('run-1', 1, 'tc1', 'my_server_read', new \Ineersa\AgentCore\Contract\Hook\NullCancellationToken(), 30),
-            static fn () => ($handler)(['path' => 'test.txt']),
+            fn () => ($handler)(['path' => 'test.txt']),
         );
     }
 
@@ -125,12 +125,12 @@ final class McpToolRegistrarTest extends TestCase
         try {
             $this->contextAccessor->with(
                 new \Ineersa\AgentCore\Application\Tool\ToolContext('run-1', 1, 'tc1', 'my_server_read', new \Ineersa\AgentCore\Contract\Hook\NullCancellationToken(), 30),
-                static fn () => ($handler)([]),
+                fn () => ($handler)([]),
             );
         } catch (ToolCallException $e) {
             // The invoker translates McpClientInvocationException → retryable:true
-            self::assertTrue($e->retryable(), 'Client-layer exceptions should be retryable');
-            self::assertNotNull($e->hint());
+            $this->assertTrue($e->retryable(), 'Client-layer exceptions should be retryable');
+            $this->assertNotNull($e->hint());
         }
     }
 
@@ -162,11 +162,11 @@ final class McpToolRegistrarTest extends TestCase
         $registrar->registerForRun('run-x');
 
         $defs = $this->registry->activeToolDefinitions();
-        self::assertCount(1, $defs);
+        $this->assertCount(1, $defs);
         // Fallback description must be non-empty (registry rejects empty)
-        self::assertNotEmpty($defs[0]->description);
-        self::assertStringContainsString('MCP tool', $defs[0]->description);
-        self::assertStringContainsString('srv', $defs[0]->description);
+        $this->assertNotEmpty($defs[0]->description);
+        $this->assertStringContainsString('MCP tool', $defs[0]->description);
+        $this->assertStringContainsString('srv', $defs[0]->description);
     }
 
     public function testSkipsFailedServerEntries(): void
@@ -204,8 +204,8 @@ final class McpToolRegistrarTest extends TestCase
         $registrar->registerForRun('run-fail');
 
         $names = $this->registry->activeToolNames();
-        self::assertCount(1, $names, 'Only connected server tools should register');
-        self::assertSame('conn_tool', $names[0]);
+        $this->assertCount(1, $names, 'Only connected server tools should register');
+        $this->assertSame('conn_tool', $names[0]);
     }
 
     /* ── Test thesis 2: Missing catalog / stale cleanup ── */
@@ -217,8 +217,8 @@ final class McpToolRegistrarTest extends TestCase
 
         $registrar->registerForRun('nonexistent');
 
-        self::assertSame([], $this->registry->activeToolNames());
-        self::assertCount(0, $this->logger->records);
+        $this->assertSame([], $this->registry->activeToolNames());
+        $this->assertCount(0, $this->logger->records);
     }
 
     public function testRemovesOnlyOwnedDynamicToolsOnReRegistration(): void
@@ -249,7 +249,7 @@ final class McpToolRegistrarTest extends TestCase
         $store = $this->makeMutableStore($storeData);
         $registrar = new McpToolRegistrar($store, $this->registry, $this->makeHandlerFactory(), $this->logger);
         $registrar->registerForRun('run-1');
-        self::assertContains('srv_x', $this->registry->activeToolNames());
+        $this->assertContains('srv_x', $this->registry->activeToolNames());
 
         // Add an unrelated dynamic tool directly to the registry
         $unrelatedHandler = $this->dummyHandler();
@@ -259,7 +259,7 @@ final class McpToolRegistrarTest extends TestCase
             parametersJsonSchema: [],
             handler: $unrelatedHandler,
         );
-        self::assertContains('unrelated', $this->registry->activeToolNames());
+        $this->assertContains('unrelated', $this->registry->activeToolNames());
 
         // Second registration with a different catalog (only tool Y)
         $catalog2 = new McpToolCatalogDTO(
@@ -285,9 +285,9 @@ final class McpToolRegistrarTest extends TestCase
         $registrar->registerForRun('run-2');
 
         $names = $this->registry->activeToolNames();
-        self::assertNotContains('srv_x', $names, 'Stale MCP-owned tool should be removed');
-        self::assertContains('srv_y', $names, 'New MCP-owned tool should be registered');
-        self::assertContains('unrelated', $names, 'Unrelated dynamic tool should survive');
+        $this->assertNotContains('srv_x', $names, 'Stale MCP-owned tool should be removed');
+        $this->assertContains('srv_y', $names, 'New MCP-owned tool should be registered');
+        $this->assertContains('unrelated', $names, 'Unrelated dynamic tool should survive');
     }
 
     /* ── Test thesis 3: Collision handling ── */
@@ -336,8 +336,8 @@ final class McpToolRegistrarTest extends TestCase
         $registrar->registerForRun('run-collide');
 
         $names = $this->registry->activeToolNames();
-        self::assertContains('collision_target', $names, 'Permanent tool should remain');
-        self::assertContains('srv1_good', $names, 'Non-colliding MCP tool should register');
+        $this->assertContains('collision_target', $names, 'Permanent tool should remain');
+        $this->assertContains('srv1_good', $names, 'Non-colliding MCP tool should register');
 
         // Verify collision warning
         $warnings = array_values(array_filter(
@@ -345,14 +345,14 @@ final class McpToolRegistrarTest extends TestCase
             static fn (array $r): bool => 'warning' === $r['level']
                 && ($r['context']['mcp_event'] ?? '') === 'tool.collision',
         ));
-        self::assertCount(1, $warnings, 'Expected one collision warning');
-        self::assertSame('srv1', $warnings[0]['context']['server_name']);
-        self::assertSame('target', $warnings[0]['context']['mcp_tool_name']);
-        self::assertSame('collision_target', $warnings[0]['context']['hatfield_tool_name']);
-        self::assertSame('tool_name_collision', $warnings[0]['context']['reason']);
-        self::assertSame('run-collide', $warnings[0]['context']['run_id']);
-        self::assertSame('run-collide', $warnings[0]['context']['session_id']);
-        self::assertSame('tool.collision', $warnings[0]['context']['event_type']);
+        $this->assertCount(1, $warnings, 'Expected one collision warning');
+        $this->assertSame('srv1', $warnings[0]['context']['server_name']);
+        $this->assertSame('target', $warnings[0]['context']['mcp_tool_name']);
+        $this->assertSame('collision_target', $warnings[0]['context']['hatfield_tool_name']);
+        $this->assertSame('tool_name_collision', $warnings[0]['context']['reason']);
+        $this->assertSame('run-collide', $warnings[0]['context']['run_id']);
+        $this->assertSame('run-collide', $warnings[0]['context']['session_id']);
+        $this->assertSame('tool.collision', $warnings[0]['context']['event_type']);
     }
 
     public function testCollisionWithUnrelatedDynamicToolIsAlsoSkipped(): void
@@ -392,7 +392,7 @@ final class McpToolRegistrarTest extends TestCase
 
         // Only the unrelated dynamic should be present
         $names = $this->registry->activeToolNames();
-        self::assertSame(['existing_dynamic'], $names);
+        $this->assertSame(['existing_dynamic'], $names);
 
         // Collision warning logged
         $warnings = array_values(array_filter(
@@ -400,10 +400,10 @@ final class McpToolRegistrarTest extends TestCase
             static fn (array $r): bool => 'warning' === $r['level']
                 && ($r['context']['mcp_event'] ?? '') === 'tool.collision',
         ));
-        self::assertCount(1, $warnings);
-        self::assertSame('run-dyn-collide', $warnings[0]['context']['run_id']);
-        self::assertSame('run-dyn-collide', $warnings[0]['context']['session_id']);
-        self::assertSame('tool.collision', $warnings[0]['context']['event_type']);
+        $this->assertCount(1, $warnings);
+        $this->assertSame('run-dyn-collide', $warnings[0]['context']['run_id']);
+        $this->assertSame('run-dyn-collide', $warnings[0]['context']['session_id']);
+        $this->assertSame('tool.collision', $warnings[0]['context']['event_type']);
     }
 
     /**
@@ -466,13 +466,13 @@ final class McpToolRegistrarTest extends TestCase
         // (the collision was caught); but srv_good should be registered.
         $dynamicTools = $this->registry->getDynamicTools();
         $dynamicNames = array_map(static fn (array $t): string => $t['name'], $dynamicTools);
-        self::assertNotContains('hidden_perm', $dynamicNames, 'Hidden permanent collision should not be registered as dynamic');
+        $this->assertNotContains('hidden_perm', $dynamicNames, 'Hidden permanent collision should not be registered as dynamic');
 
         // Non-colliding MCP tool should be registered
         $names = $this->registry->activeToolNames();
         // hidden_perm is excluded from visibility but srv_good should be visible
-        self::assertNotContains('hidden_perm', $names, 'Hidden permanent should not appear in active names');
-        self::assertContains('srv_good', $names, 'Non-colliding MCP tool should register and be visible');
+        $this->assertNotContains('hidden_perm', $names, 'Hidden permanent should not appear in active names');
+        $this->assertContains('srv_good', $names, 'Non-colliding MCP tool should register and be visible');
 
         // Verify register_failed warning was logged with run_id/session_id
         $warnings = array_values(array_filter(
@@ -480,12 +480,12 @@ final class McpToolRegistrarTest extends TestCase
             static fn (array $r): bool => 'warning' === $r['level']
                 && ($r['context']['mcp_event'] ?? '') === 'tool.register_failed',
         ));
-        self::assertCount(1, $warnings, 'Expected one register_failed warning for hidden collision');
-        self::assertSame('hidden_perm', $warnings[0]['context']['hatfield_tool_name']);
-        self::assertSame('srv', $warnings[0]['context']['server_name']);
-        self::assertSame('run-hidden', $warnings[0]['context']['run_id']);
-        self::assertSame('run-hidden', $warnings[0]['context']['session_id']);
-        self::assertSame('tool.register_failed', $warnings[0]['context']['event_type']);
+        $this->assertCount(1, $warnings, 'Expected one register_failed warning for hidden collision');
+        $this->assertSame('hidden_perm', $warnings[0]['context']['hatfield_tool_name']);
+        $this->assertSame('srv', $warnings[0]['context']['server_name']);
+        $this->assertSame('run-hidden', $warnings[0]['context']['run_id']);
+        $this->assertSame('run-hidden', $warnings[0]['context']['session_id']);
+        $this->assertSame('tool.register_failed', $warnings[0]['context']['event_type']);
     }
 
     private function makeHandlerFactory(): McpToolHandlerFactory
@@ -502,32 +502,12 @@ final class McpToolRegistrarTest extends TestCase
         $resultMapper = new \Ineersa\CodingAgent\Mcp\Tool\McpResultMapper();
 
         $stubManager = new class($exception) implements \Ineersa\CodingAgent\Mcp\Client\McpConnectionManagerInterface {
-            public function __construct(private \Throwable $exception)
-            {
-            }
-
-            public function discover(string $runId, ?callable $onServerDiscovered = null): array
-            {
-                return [];
-            }
-
-            public function getClient(string $runId, string $serverName): ?\Ineersa\CodingAgent\Mcp\Client\McpClientInterface
-            {
-                return null;
-            }
-
-            public function disconnectServer(string $runId, string $serverName): void
-            {
-            }
-
-            public function disconnectAll(string $runId): void
-            {
-            }
-
-            public function callTool(string $runId, string $serverName, string $toolName, array $arguments = []): array
-            {
-                throw new \Ineersa\CodingAgent\Mcp\Client\McpClientInvocationException($this->exception->getMessage(), 0, $this->exception);
-            }
+            public function __construct(private \Throwable $exception) {}
+            public function discover(string $runId, ?callable $onServerDiscovered = null): array { return []; }
+            public function getClient(string $runId, string $serverName): ?\Ineersa\CodingAgent\Mcp\Client\McpClientInterface { return null; }
+            public function disconnectServer(string $runId, string $serverName): void {}
+            public function disconnectAll(string $runId): void {}
+            public function callTool(string $runId, string $serverName, string $toolName, array $arguments = []): array { throw new \Ineersa\CodingAgent\Mcp\Client\McpClientInvocationException($this->exception->getMessage(), 0, $this->exception); }
         };
 
         return new McpToolInvoker(

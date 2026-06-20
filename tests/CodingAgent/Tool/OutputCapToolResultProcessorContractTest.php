@@ -76,51 +76,51 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
         $processed = $processor->process($result, $toolCall);
 
         // Compact content: not the raw text.
-        self::assertNotSame($largeText, $processed->content[0]['text']);
-        self::assertStringContainsString('read completed', $processed->content[0]['text']);
+        $this->assertNotSame($largeText, $processed->content[0]['text']);
+        $this->assertStringContainsString('read completed', $processed->content[0]['text']);
 
         // Raw output must NOT be in details.
         $details = \is_array($processed->details) ? $processed->details : [];
-        self::assertArrayNotHasKey('raw_result', $details,
+        $this->assertArrayNotHasKey('raw_result', $details,
             'Raw full output must not leak into capped ToolResult details');
 
         // Safe operational metadata must be preserved.
-        self::assertArrayHasKey('mode', $details);
-        self::assertSame('parallel', $details['mode']);
-        self::assertArrayHasKey('sources', $details);
+        $this->assertArrayHasKey('mode', $details);
+        $this->assertSame('parallel', $details['mode']);
+        $this->assertArrayHasKey('sources', $details);
 
         // model_notifications must be present with exactly one notification.
-        self::assertArrayHasKey('model_notifications', $details);
+        $this->assertArrayHasKey('model_notifications', $details);
         $notifications = $details['model_notifications'];
-        self::assertIsArray($notifications);
-        self::assertCount(1, $notifications);
+        $this->assertIsArray($notifications);
+        $this->assertCount(1, $notifications);
 
         $notif = $notifications[0];
-        self::assertIsArray($notif);
-        self::assertSame('output_cap', $notif['source']);
-        self::assertSame('output_capped', $notif['kind']);
-        self::assertSame('warning', $notif['severity']);
-        self::assertSame('tool_result_replace', $notif['delivery']);
-        self::assertStringContainsString('Output capped', $notif['text']);
-        self::assertStringContainsString('./test.txt', $notif['text'],
+        $this->assertIsArray($notif);
+        $this->assertSame('output_cap', $notif['source']);
+        $this->assertSame('output_capped', $notif['kind']);
+        $this->assertSame('warning', $notif['severity']);
+        $this->assertSame('tool_result_replace', $notif['delivery']);
+        $this->assertStringContainsString('Output capped', $notif['text']);
+        $this->assertStringContainsString('./test.txt', $notif['text'],
             'Read-capped notice must reference the original file path, not the saved artifact');
-        self::assertStringContainsString('read(path:', $notif['text']);
-        self::assertStringContainsString('limit: 200', $notif['text']);
-        self::assertStringContainsString('Do not repeat the original full read or read the saved output with read', $notif['text']);
-        self::assertStringNotContainsString('head -200', $notif['text'],
+        $this->assertStringContainsString('read(path:', $notif['text']);
+        $this->assertStringContainsString('limit: 200', $notif['text']);
+        $this->assertStringContainsString('Do not repeat the original full read or read the saved output with read', $notif['text']);
+        $this->assertStringNotContainsString('head -200', $notif['text'],
             'Read-capped notice must NOT suggest shell head on saved artifact');
-        self::assertNotEmpty($notif['id']);
-        self::assertSame('call-1', $notif['tool_call_id'] ?? null);
-        self::assertSame('read', $notif['tool_name'] ?? null);
+        $this->assertNotEmpty($notif['id']);
+        $this->assertSame('call-1', $notif['tool_call_id'] ?? null);
+        $this->assertSame('read', $notif['tool_name'] ?? null);
 
         // Notification metadata has cap metrics.
-        self::assertArrayHasKey('cap', $notif['metadata']);
-        self::assertArrayHasKey('saved_path', $notif['metadata']);
+        $this->assertArrayHasKey('cap', $notif['metadata']);
+        $this->assertArrayHasKey('saved_path', $notif['metadata']);
 
         // output_cap audit metadata must be present.
-        self::assertArrayHasKey('output_cap', $details);
-        self::assertTrue($details['output_cap']['capped']);
-        self::assertSame(50, $details['output_cap']['cap']);
+        $this->assertArrayHasKey('output_cap', $details);
+        $this->assertTrue($details['output_cap']['capped']);
+        $this->assertSame(50, $details['output_cap']['cap']);
     }
 
     public function testGenericCappedResultSuggestsReadOnSavedArtifactWithOffsetLimit(): void
@@ -155,20 +155,20 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
         $processed = $processor->process($result, $toolCall);
 
         $details = \is_array($processed->details) ? $processed->details : [];
-        self::assertArrayHasKey('model_notifications', $details);
+        $this->assertArrayHasKey('model_notifications', $details);
         $notifications = $details['model_notifications'];
-        self::assertCount(1, $notifications);
+        $this->assertCount(1, $notifications);
 
         $notif = $notifications[0];
         $noticeText = $notif['text'];
 
         // Generic notice uses read + grep on saved artefact, not shell head.
-        self::assertStringContainsString('read(path:', $noticeText,
+        $this->assertStringContainsString('read(path:', $noticeText,
             'Generic cap notice must suggest read on saved artefact with offset+limit');
-        self::assertStringContainsString('limit: 200', $noticeText);
-        self::assertStringContainsString('without offset+limit', $noticeText);
-        self::assertStringContainsString('Do not rerun the original command', $noticeText);
-        self::assertStringNotContainsString('head -200', $noticeText,
+        $this->assertStringContainsString('limit: 200', $noticeText);
+        $this->assertStringContainsString('without offset+limit', $noticeText);
+        $this->assertStringContainsString('Do not rerun the original command', $noticeText);
+        $this->assertStringNotContainsString('head -200', $noticeText,
             'Generic cap notice must NOT suggest shell head (use read instead)');
     }
 
@@ -198,16 +198,16 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
         $processed = $processor->process($result, $toolCall);
 
         // Content unchanged.
-        self::assertSame($smallText, $processed->content[0]['text']);
+        $this->assertSame($smallText, $processed->content[0]['text']);
 
         // Details: raw_result preserved (no cap applied).
         $details = \is_array($processed->details) ? $processed->details : [];
-        self::assertArrayHasKey('raw_result', $details);
-        self::assertSame($smallText, $details['raw_result']);
+        $this->assertArrayHasKey('raw_result', $details);
+        $this->assertSame($smallText, $details['raw_result']);
 
         // No model_notifications added for non-capped results.
-        self::assertArrayNotHasKey('model_notifications', $details);
-        self::assertArrayNotHasKey('output_cap', $details);
+        $this->assertArrayNotHasKey('model_notifications', $details);
+        $this->assertArrayNotHasKey('output_cap', $details);
     }
 
     public function testEmptyContentPassesThrough(): void
@@ -234,7 +234,7 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
         $processed = $processor->process($result, $toolCall);
 
         // Returns unchanged.
-        self::assertSame([], $processed->content);
-        self::assertArrayHasKey('raw_result', \is_array($processed->details) ? $processed->details : []);
+        $this->assertSame([], $processed->content);
+        $this->assertArrayHasKey('raw_result', \is_array($processed->details) ? $processed->details : []);
     }
 }

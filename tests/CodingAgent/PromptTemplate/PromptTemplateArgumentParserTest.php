@@ -104,6 +104,6 @@ final class PromptTemplateArgumentParserTest extends TestCase
 
     public function testUnclosedSingleQuote(): void
     {
-        self::assertSame(['hello world'], $this->parser->parse("'hello world"));
+        self::assertSame(["hello world"], $this->parser->parse("'hello world"));
     }
 }

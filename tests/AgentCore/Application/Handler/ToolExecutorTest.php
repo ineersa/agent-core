@@ -40,11 +40,11 @@ final class ToolExecutorTest extends TestCase
             ->withMode(ToolExecutionMode::Interrupt)
             ->build());
 
-        self::assertFalse($result->isError);
-        self::assertIsArray($result->details);
-        self::assertSame('interrupt', $result->details['kind']);
-        self::assertSame('q-1', $result->details['question_id']);
-        self::assertSame('Approve deployment?', $result->details['prompt']);
+        $this->assertFalse($result->isError);
+        $this->assertIsArray($result->details);
+        $this->assertSame('interrupt', $result->details['kind']);
+        $this->assertSame('q-1', $result->details['question_id']);
+        $this->assertSame('Approve deployment?', $result->details['prompt']);
     }
 
     public function testToolExecutionIsUnavailableWithoutToolbox(): void
@@ -57,8 +57,8 @@ final class ToolExecutorTest extends TestCase
             ->withOrderIndex(0)
             ->build());
 
-        self::assertTrue($result->isError);
-        self::assertStringContainsString('execution is unavailable', $result->content[0]['text']);
+        $this->assertTrue($result->isError);
+        $this->assertStringContainsString('execution is unavailable', $result->content[0]['text']);
     }
 
     public function testRunScopedDedupeReusesTerminalToolResult(): void
@@ -86,10 +86,10 @@ final class ToolExecutorTest extends TestCase
             ->withRunId('run-stage-06')
             ->build());
 
-        self::assertSame(1, $toolbox->executions);
-        self::assertFalse($first->isError);
-        self::assertFalse($second->isError);
-        self::assertSame('run_tool_call_dedupe', $second->details['idempotency_reuse_reason']);
+        $this->assertSame(1, $toolbox->executions);
+        $this->assertFalse($first->isError);
+        $this->assertFalse($second->isError);
+        $this->assertSame('run_tool_call_dedupe', $second->details['idempotency_reuse_reason']);
     }
 
     public function testToolIdempotencyKeyReusePreventsDuplicateExternalExecution(): void
@@ -119,9 +119,9 @@ final class ToolExecutorTest extends TestCase
             ->withToolIdempotencyKey('idem-1')
             ->build());
 
-        self::assertSame(1, $toolbox->executions);
-        self::assertSame('call-2', $second->toolCallId);
-        self::assertSame('tool_idempotency_reuse', $second->details['idempotency_reuse_reason']);
+        $this->assertSame(1, $toolbox->executions);
+        $this->assertSame('call-2', $second->toolCallId);
+        $this->assertSame('tool_idempotency_reuse', $second->details['idempotency_reuse_reason']);
     }
 
     public function testSymfonyToolboxRequestedEventCanDenyExecution(): void
@@ -147,9 +147,9 @@ final class ToolExecutorTest extends TestCase
             ->withOrderIndex(0)
             ->build());
 
-        self::assertFalse($result->isError);
-        self::assertSame('Blocked by policy listener.', $result->details['raw_result']);
-        self::assertSame('Blocked by policy listener.', $result->content[0]['text']);
+        $this->assertFalse($result->isError);
+        $this->assertSame('Blocked by policy listener.', $result->details['raw_result']);
+        $this->assertSame('Blocked by policy listener.', $result->content[0]['text']);
     }
 
     public function testContextAccessorWrapsToolboxExecution(): void
@@ -179,7 +179,7 @@ final class ToolExecutorTest extends TestCase
             ->build());
 
         // Context should be available during execution (CountingToolbox checks this).
-        self::assertNull($accessor->current());
+        $this->assertNull($accessor->current());
     }
 
     /* ───────── Execution allowlist enforcement ───────── */
@@ -213,14 +213,14 @@ final class ToolExecutorTest extends TestCase
             ->withContext(['tools_ref' => 'toolset:run:r1:turn:1'])
             ->build());
 
-        self::assertTrue($result->isError);
-        self::assertSame(0, $toolbox->executions, 'Toolbox should not be called for denied tool.');
-        self::assertSame('evil_tool', $result->toolName);
-        self::assertIsArray($result->details);
-        self::assertTrue($result->details['denied']);
-        self::assertSame('not_in_active_allowlist', $result->details['reason']);
-        self::assertSame(['allowed_tool'], $result->details['available_tools']);
-        self::assertStringContainsString('is not in the active execution allowlist', $result->content[0]['text']);
+        $this->assertTrue($result->isError);
+        $this->assertSame(0, $toolbox->executions, 'Toolbox should not be called for denied tool.');
+        $this->assertSame('evil_tool', $result->toolName);
+        $this->assertIsArray($result->details);
+        $this->assertTrue($result->details['denied']);
+        $this->assertSame('not_in_active_allowlist', $result->details['reason']);
+        $this->assertSame(['allowed_tool'], $result->details['available_tools']);
+        $this->assertStringContainsString('is not in the active execution allowlist', $result->content[0]['text']);
     }
 
     public function testAllowlistAllowsToolInList(): void
@@ -252,8 +252,8 @@ final class ToolExecutorTest extends TestCase
             ->withContext(['tools_ref' => 'toolset:run:r1:turn:1'])
             ->build());
 
-        self::assertFalse($result->isError);
-        self::assertSame(1, $toolbox->executions, 'Toolbox should be called for allowed tool.');
+        $this->assertFalse($result->isError);
+        $this->assertSame(1, $toolbox->executions, 'Toolbox should be called for allowed tool.');
     }
 
     public function testAllowlistSkippedWhenNoToolsRef(): void
@@ -289,9 +289,9 @@ final class ToolExecutorTest extends TestCase
             // No context['tools_ref'] — should skip allowlist check
             ->build());
 
-        self::assertFalse($spyResolver->resolved, 'Resolver should not be called when no tools_ref in context.');
-        self::assertFalse($result->isError);
-        self::assertSame(1, $toolbox->executions);
+        $this->assertFalse($spyResolver->resolved, 'Resolver should not be called when no tools_ref in context.');
+        $this->assertFalse($result->isError);
+        $this->assertSame(1, $toolbox->executions);
     }
 
     public function testAllowlistSkippedWhenNoResolver(): void
@@ -313,8 +313,8 @@ final class ToolExecutorTest extends TestCase
             ->withContext(['tools_ref' => 'toolset:run:r1:turn:1'])
             ->build());
 
-        self::assertFalse($result->isError);
-        self::assertSame(1, $toolbox->executions);
+        $this->assertFalse($result->isError);
+        $this->assertSame(1, $toolbox->executions);
     }
 
     /* ───────── Context accessor ───────── */
@@ -338,12 +338,12 @@ final class ToolExecutorTest extends TestCase
             ->withOrderIndex(0)
             ->build());
 
-        self::assertTrue($result->isError);
-        self::assertIsArray($result->details);
-        self::assertSame('Try again with different input', $result->details['hint']);
-        self::assertFalse($result->details['retryable']);
-        self::assertStringContainsString('Something went wrong', $result->content[0]['text']);
-        self::assertStringContainsString('Try again with different input', $result->content[0]['text']);
+        $this->assertTrue($result->isError);
+        $this->assertIsArray($result->details);
+        $this->assertSame('Try again with different input', $result->details['hint']);
+        $this->assertFalse($result->details['retryable']);
+        $this->assertStringContainsString('Something went wrong', $result->content[0]['text']);
+        $this->assertStringContainsString('Try again with different input', $result->content[0]['text']);
     }
 
     public function testToolCallExceptionWithRetryableTrueProducesRetryableDetails(): void
@@ -363,10 +363,10 @@ final class ToolExecutorTest extends TestCase
             ->withOrderIndex(0)
             ->build());
 
-        self::assertTrue($result->isError);
-        self::assertTrue($result->details['retryable']);
-        self::assertNull($result->details['hint']);
-        self::assertStringContainsString('Temporary failure', $result->content[0]['text']);
+        $this->assertTrue($result->isError);
+        $this->assertTrue($result->details['retryable']);
+        $this->assertNull($result->details['hint']);
+        $this->assertStringContainsString('Temporary failure', $result->content[0]['text']);
     }
 
     public function testRegularRuntimeExceptionStillProducesPlainErrorResult(): void
@@ -386,13 +386,13 @@ final class ToolExecutorTest extends TestCase
             ->withOrderIndex(0)
             ->build());
 
-        self::assertTrue($result->isError);
-        self::assertIsArray($result->details);
-        self::assertArrayHasKey('error_type', $result->details);
-        self::assertSame(\RuntimeException::class, $result->details['error_type']);
-        self::assertArrayNotHasKey('retryable', $result->details);
-        self::assertArrayNotHasKey('hint', $result->details);
-        self::assertStringContainsString('Boom!', $result->content[0]['text']);
+        $this->assertTrue($result->isError);
+        $this->assertIsArray($result->details);
+        $this->assertArrayHasKey('error_type', $result->details);
+        $this->assertSame(\RuntimeException::class, $result->details['error_type']);
+        $this->assertArrayNotHasKey('retryable', $result->details);
+        $this->assertArrayNotHasKey('hint', $result->details);
+        $this->assertStringContainsString('Boom!', $result->content[0]['text']);
     }
 
     public function testContextAccessorSetsCorrectValues(): void
@@ -422,8 +422,8 @@ final class ToolExecutorTest extends TestCase
             }])
             ->build());
 
-        self::assertFalse($result->isError);
-        self::assertNull($accessor->current());
+        $this->assertFalse($result->isError);
+        $this->assertNull($accessor->current());
     }
 }
 

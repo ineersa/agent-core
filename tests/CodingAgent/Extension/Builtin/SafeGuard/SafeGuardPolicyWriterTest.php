@@ -41,10 +41,10 @@ final class SafeGuardPolicyWriterTest extends TestCase
         $writer = new SafeGuardPolicyWriter($this->settingsPath);
         $writer->addAllowPattern('destructive', 'rm -rf /tmp/build');
 
-        self::assertFileExists($this->settingsPath);
+        $this->assertFileExists($this->settingsPath);
         $content = file_get_contents($this->settingsPath);
-        self::assertStringContainsString('rm -rf /tmp/build', $content);
-        self::assertStringContainsString('allow_command_patterns', $content);
+        $this->assertStringContainsString('rm -rf /tmp/build', $content);
+        $this->assertStringContainsString('allow_command_patterns', $content);
     }
 
     public function testAddAllowPatternIsIdempotent(): void
@@ -56,7 +56,7 @@ final class SafeGuardPolicyWriterTest extends TestCase
         $content = file_get_contents($this->settingsPath);
 
         // Count occurrences of the pattern — should be exactly 1
-        self::assertSame(1, substr_count($content, 'rm -rf /tmp'));
+        $this->assertSame(1, substr_count($content, 'rm -rf /tmp'));
     }
 
     public function testAddAllowPatternAppendsToExisting(): void
@@ -70,8 +70,8 @@ final class SafeGuardPolicyWriterTest extends TestCase
         $writer->addAllowPattern('destructive', 'rm -rf /tmp');
 
         $content = file_get_contents($this->settingsPath);
-        self::assertStringContainsString('git push', $content);
-        self::assertStringContainsString('rm -rf /tmp', $content);
+        $this->assertStringContainsString('git push', $content);
+        $this->assertStringContainsString('rm -rf /tmp', $content);
     }
 
     public function testAddAllowPatternForWriteOutsideCwd(): void
@@ -80,8 +80,8 @@ final class SafeGuardPolicyWriterTest extends TestCase
         $writer->addAllowPattern('write_outside_cwd', '/etc/hosts');
 
         $content = file_get_contents($this->settingsPath);
-        self::assertStringContainsString('allow_write_outside_cwd', $content);
-        self::assertStringContainsString('/etc/hosts', $content);
+        $this->assertStringContainsString('allow_write_outside_cwd', $content);
+        $this->assertStringContainsString('/etc/hosts', $content);
     }
 
     public function testTreatsUnparseableYamlAsEmpty(): void
@@ -97,7 +97,7 @@ final class SafeGuardPolicyWriterTest extends TestCase
         // Unparseable YAML is treated as empty; the pattern is added
         // and the file is written with the new settings.
         $content = file_get_contents($this->settingsPath);
-        self::assertStringContainsString('rm -rf /tmp', $content);
+        $this->assertStringContainsString('rm -rf /tmp', $content);
     }
 
     public function testPreservesOtherSettings(): void
@@ -111,8 +111,8 @@ final class SafeGuardPolicyWriterTest extends TestCase
         $writer->addAllowPattern('destructive', 'rm -rf /tmp');
 
         $content = file_get_contents($this->settingsPath);
-        self::assertStringContainsString('openai', $content);
-        self::assertStringContainsString('rm -rf /tmp', $content);
+        $this->assertStringContainsString('openai', $content);
+        $this->assertStringContainsString('rm -rf /tmp', $content);
     }
 
     public function testUnknownCategoryIsNoop(): void
@@ -124,7 +124,7 @@ final class SafeGuardPolicyWriterTest extends TestCase
 
         // File unchanged
         $content = file_get_contents($this->settingsPath);
-        self::assertSame("key: value\n", $content);
+        $this->assertSame("key: value\n", $content);
     }
 
     public function testSilentlyReturnsOnWriteFailure(): void

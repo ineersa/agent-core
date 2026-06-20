@@ -46,13 +46,13 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
         ));
 
         $names = $registry->activeToolNames();
-        self::assertContains('ext_tool', $names);
+        $this->assertContains('ext_tool', $names);
 
         $lines = $registry->permanentToolLines();
-        self::assertContains('ext_tool: do extension stuff', $lines);
+        $this->assertContains('ext_tool: do extension stuff', $lines);
 
         $guidelines = $registry->permanentGuidelines();
-        self::assertContains('Use ext_tool for extension operations.', $guidelines);
+        $this->assertContains('Use ext_tool for extension operations.', $guidelines);
     }
 
     public function testRegisterToolDerivesPromptLineFromNameAndDescription(): void
@@ -69,7 +69,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
         ));
 
         $lines = $registry->permanentToolLines();
-        self::assertContains('my_tool: My custom tool', $lines);
+        $this->assertContains('my_tool: My custom tool', $lines);
     }
 
     public function testRegisterToolWithoutGuidelines(): void
@@ -84,8 +84,8 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
             handler: $this->dummyHandler(),
         ));
 
-        self::assertContains('simple_tool', $registry->activeToolNames());
-        self::assertSame([], $registry->permanentGuidelines());
+        $this->assertContains('simple_tool', $registry->activeToolNames());
+        $this->assertSame([], $registry->permanentGuidelines());
     }
 
     public function testMultipleRegistrationsOrderPreserved(): void
@@ -106,8 +106,8 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
             promptSummary: 'tool_c: third',
         ));
 
-        self::assertSame(['tool_a', 'tool_b', 'tool_c'], $registry->activeToolNames());
-        self::assertSame(
+        $this->assertSame(['tool_a', 'tool_b', 'tool_c'], $registry->activeToolNames());
+        $this->assertSame(
             ['tool_a: first', 'tool_b: second', 'tool_c: third'],
             $registry->permanentToolLines(),
         );
@@ -128,8 +128,8 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
         $bridge->registerTool($dto);
         $bridge->registerTool($dto); // identical re-registration
 
-        self::assertCount(1, $registry->activeToolNames());
-        self::assertCount(1, $registry->permanentToolLines());
+        $this->assertCount(1, $registry->activeToolNames());
+        $this->assertCount(1, $registry->permanentToolLines());
     }
 
     // ── Handler passthrough ──
@@ -147,8 +147,8 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
 
         // Handler is stored — verify through definition lookup
         $def = $registry->toolDefinition('callable_tool');
-        self::assertNotNull($def);
-        self::assertSame($handler, $def->handler);
+        $this->assertNotNull($def);
+        $this->assertSame($handler, $def->handler);
     }
 
     // ── Handler validation ──
@@ -199,7 +199,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
         ));
 
         // Deduped, first occurrence position preserved
-        self::assertSame(
+        $this->assertSame(
             ['Guideline A', 'Guideline B', 'Guideline C'],
             $registry->permanentGuidelines(),
         );
@@ -237,10 +237,10 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
 
     public function testAcceptsAnyToolRegistryImplementation(): void
     {
-        $mockHandler = self::createStub(ToolHandlerInterface::class);
+        $mockHandler = $this->createStub(ToolHandlerInterface::class);
 
         $mock = $this->createMock(ToolRegistryInterface::class);
-        $mock->expects(self::once())
+        $mock->expects($this->once())
             ->method('registerTool')
             ->with(
                 'mocked_tool',
@@ -272,7 +272,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
         $hook = $this->dummyToolCallHook();
         $bridge->registerToolCallHook($hook);
 
-        self::assertSame([$hook], $hookRegistry->toolCallHooks());
+        $this->assertSame([$hook], $hookRegistry->toolCallHooks());
     }
 
     public function testRegisterToolResultHookForwardsToRegistry(): void
@@ -283,7 +283,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
         $hook = $this->dummyToolResultHook();
         $bridge->registerToolResultHook($hook);
 
-        self::assertSame([$hook], $hookRegistry->toolResultHooks());
+        $this->assertSame([$hook], $hookRegistry->toolResultHooks());
     }
 
     public function testHookRegistrationOrderPreserved(): void
@@ -299,7 +299,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
         $bridge->registerToolCallHook($hookB);
         $bridge->registerToolCallHook($hookC);
 
-        self::assertSame([$hookA, $hookB, $hookC], $hookRegistry->toolCallHooks());
+        $this->assertSame([$hookA, $hookB, $hookC], $hookRegistry->toolCallHooks());
     }
 
     public function testToolResultHookRegistrationOrderPreserved(): void
@@ -313,7 +313,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
         $bridge->registerToolResultHook($hookA);
         $bridge->registerToolResultHook($hookB);
 
-        self::assertSame([$hookA, $hookB], $hookRegistry->toolResultHooks());
+        $this->assertSame([$hookA, $hookB], $hookRegistry->toolResultHooks());
     }
 
     public function testHooksCoexistWithToolRegistration(): void
@@ -337,11 +337,11 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
         $bridge->registerToolResultHook($resultHook);
 
         // Verify tools work
-        self::assertContains('coexist_tool', $registry->activeToolNames());
+        $this->assertContains('coexist_tool', $registry->activeToolNames());
 
         // Verify hooks are stored
-        self::assertSame([$callHook], $hookRegistry->toolCallHooks());
-        self::assertSame([$resultHook], $hookRegistry->toolResultHooks());
+        $this->assertSame([$callHook], $hookRegistry->toolCallHooks());
+        $this->assertSame([$resultHook], $hookRegistry->toolResultHooks());
     }
 
     public function testSharedHookRegistryAcrossMultipleExtensions(): void
@@ -356,9 +356,9 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
         $bridge->registerToolCallHook($ext1Hook);
         $bridge->registerToolCallHook($ext2Hook);
 
-        self::assertCount(2, $hookRegistry->toolCallHooks());
-        self::assertSame($ext1Hook, $hookRegistry->toolCallHooks()[0]);
-        self::assertSame($ext2Hook, $hookRegistry->toolCallHooks()[1]);
+        $this->assertCount(2, $hookRegistry->toolCallHooks());
+        $this->assertSame($ext1Hook, $hookRegistry->toolCallHooks()[0]);
+        $this->assertSame($ext2Hook, $hookRegistry->toolCallHooks()[1]);
     }
 
     // ── getSettings / getCwd via AppConfig ──
@@ -377,14 +377,14 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
         $bridge = $this->bridgeFor(new ToolRegistry(), appConfig: $appConfig);
 
         $settings = $bridge->getSettings('safe_guard');
-        self::assertSame(['allow_command_patterns' => ['ls -la']], $settings);
+        $this->assertSame(['allow_command_patterns' => ['ls -la']], $settings);
     }
 
     public function testGetSettingsReturnsEmptyForMissingKey(): void
     {
         $bridge = $this->bridgeFor(new ToolRegistry());
 
-        self::assertSame([], $bridge->getSettings('nonexistent'));
+        $this->assertSame([], $bridge->getSettings('nonexistent'));
     }
 
     public function testGetCwdReturnsFromAppConfig(): void
@@ -397,7 +397,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
 
         $bridge = $this->bridgeFor(new ToolRegistry(), appConfig: $appConfig);
 
-        self::assertSame('/home/some-project', $bridge->getCwd());
+        $this->assertSame('/home/some-project', $bridge->getCwd());
     }
 
     /* ───────── Private helpers ───────── */

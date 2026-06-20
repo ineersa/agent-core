@@ -52,9 +52,9 @@ final class AgentsContextDiscoveryTest extends TestCase
 
         $results = $discovery->discover();
 
-        self::assertCount(1, $results);
-        self::assertStringContainsString('AGENTS.md', $results[0]['path']);
-        self::assertSame('project context', $results[0]['content']);
+        $this->assertCount(1, $results);
+        $this->assertStringContainsString('AGENTS.md', $results[0]['path']);
+        $this->assertSame('project context', $results[0]['content']);
     }
 
     public function testFilenamePrecedenceAgentsMdOverAgentsMdUpper(): void
@@ -67,10 +67,10 @@ final class AgentsContextDiscoveryTest extends TestCase
 
         $results = $discovery->discover();
 
-        self::assertCount(1, $results);
-        self::assertStringContainsString('AGENTS.md', $results[0]['path']);
-        self::assertStringNotContainsString('AGENTS.MD', $results[0]['path']);
-        self::assertSame('lowercase wins', $results[0]['content']);
+        $this->assertCount(1, $results);
+        $this->assertStringContainsString('AGENTS.md', $results[0]['path']);
+        $this->assertStringNotContainsString('AGENTS.MD', $results[0]['path']);
+        $this->assertSame('lowercase wins', $results[0]['content']);
     }
 
     /* ───────── Global file ───────── */
@@ -85,8 +85,8 @@ final class AgentsContextDiscoveryTest extends TestCase
 
         $results = $discovery->discover();
 
-        self::assertCount(1, $results);
-        self::assertStringContainsString('global context', $results[0]['content']);
+        $this->assertCount(1, $results);
+        $this->assertStringContainsString('global context', $results[0]['content']);
     }
 
     public function testGlobalComesBeforeProject(): void
@@ -101,11 +101,11 @@ final class AgentsContextDiscoveryTest extends TestCase
 
         $results = $discovery->discover();
 
-        self::assertCount(2, $results);
+        $this->assertCount(2, $results);
         // Global first
-        self::assertStringContainsString('global context', $results[0]['content']);
+        $this->assertStringContainsString('global context', $results[0]['content']);
         // Project second
-        self::assertStringContainsString('project context', $results[1]['content']);
+        $this->assertStringContainsString('project context', $results[1]['content']);
     }
 
     /* ───────── Ancestor walking ───────── */
@@ -124,11 +124,11 @@ final class AgentsContextDiscoveryTest extends TestCase
 
         $results = $discovery->discover();
 
-        self::assertCount(2, $results);
+        $this->assertCount(2, $results);
         // Nearest ancestor first (parent)
-        self::assertStringContainsString('parent context', $results[0]['content']);
+        $this->assertStringContainsString('parent context', $results[0]['content']);
         // Farther ancestor second (grandparent/tmpDir root)
-        self::assertStringContainsString('grandparent context', $results[1]['content']);
+        $this->assertStringContainsString('grandparent context', $results[1]['content']);
     }
 
     /* ───────── Deduplication ───────── */
@@ -150,8 +150,8 @@ final class AgentsContextDiscoveryTest extends TestCase
         $results = $discovery->discover();
 
         // Should be only 1 entry since both paths resolve to same realpath.
-        self::assertCount(1, $results);
-        self::assertSame('shared context', $results[0]['content']);
+        $this->assertCount(1, $results);
+        $this->assertSame('shared context', $results[0]['content']);
     }
 
     /* ───────── Negative cases ───────── */
@@ -165,7 +165,7 @@ final class AgentsContextDiscoveryTest extends TestCase
 
         $results = $discovery->discover();
 
-        self::assertCount(0, $results);
+        $this->assertCount(0, $results);
     }
 
     public function testNoFilesReturnsEmpty(): void
@@ -174,7 +174,7 @@ final class AgentsContextDiscoveryTest extends TestCase
 
         $results = $discovery->discover();
 
-        self::assertCount(0, $results);
+        $this->assertCount(0, $results);
     }
 
     /* ───────── .agents/ folder support ───────── */
@@ -190,9 +190,9 @@ final class AgentsContextDiscoveryTest extends TestCase
 
         $results = $discovery->discover();
 
-        self::assertCount(1, $results);
-        self::assertStringContainsString('agents global context', $results[0]['content']);
-        self::assertStringContainsString('.agents/AGENTS.md', $results[0]['path']);
+        $this->assertCount(1, $results);
+        $this->assertStringContainsString('agents global context', $results[0]['content']);
+        $this->assertStringContainsString('.agents/AGENTS.md', $results[0]['path']);
     }
 
     public function testGlobalHatfieldTakesPrecedenceOverAgentsFolder(): void
@@ -208,9 +208,9 @@ final class AgentsContextDiscoveryTest extends TestCase
 
         $results = $discovery->discover();
 
-        self::assertCount(1, $results);
-        self::assertStringContainsString('hatfield global', $results[0]['content']);
-        self::assertStringContainsString('.hatfield/AGENTS.md', $results[0]['path']);
+        $this->assertCount(1, $results);
+        $this->assertStringContainsString('hatfield global', $results[0]['content']);
+        $this->assertStringContainsString('.hatfield/AGENTS.md', $results[0]['path']);
     }
 
     public function testProjectAgentsFolderDiscovery(): void
@@ -223,9 +223,9 @@ final class AgentsContextDiscoveryTest extends TestCase
 
         $results = $discovery->discover();
 
-        self::assertCount(1, $results);
-        self::assertStringContainsString('project agents context', $results[0]['content']);
-        self::assertStringContainsString('.agents/AGENTS.md', $results[0]['path']);
+        $this->assertCount(1, $results);
+        $this->assertStringContainsString('project agents context', $results[0]['content']);
+        $this->assertStringContainsString('.agents/AGENTS.md', $results[0]['path']);
     }
 
     public function testProjectHatfieldTakesPrecedenceOverAgentsFolder(): void
@@ -239,9 +239,9 @@ final class AgentsContextDiscoveryTest extends TestCase
 
         $results = $discovery->discover();
 
-        self::assertCount(1, $results);
-        self::assertStringContainsString('hatfield project', $results[0]['content']);
-        self::assertStringContainsString('.hatfield/AGENTS.md', $results[0]['path']);
+        $this->assertCount(1, $results);
+        $this->assertStringContainsString('hatfield project', $results[0]['content']);
+        $this->assertStringContainsString('.hatfield/AGENTS.md', $results[0]['path']);
     }
 
     /* ───────── Edge cases ───────── */
@@ -255,9 +255,9 @@ final class AgentsContextDiscoveryTest extends TestCase
 
         $results = $discovery->discover();
 
-        self::assertCount(1, $results);
-        self::assertStringEndsWith('AGENTS.MD', $results[0]['path']);
-        self::assertSame('uppercase only', $results[0]['content']);
+        $this->assertCount(1, $results);
+        $this->assertStringEndsWith('AGENTS.MD', $results[0]['path']);
+        $this->assertSame('uppercase only', $results[0]['content']);
     }
 
     public function testAncestorWalkTerminatesAtFilesystemRoot(): void
@@ -269,7 +269,7 @@ final class AgentsContextDiscoveryTest extends TestCase
         $results = $discovery->discover();
 
         // Should return without hanging or throwing.
-        self::assertIsArray($results);
+        $this->assertIsArray($results);
     }
 
     /* ───────── Error cases ───────── */

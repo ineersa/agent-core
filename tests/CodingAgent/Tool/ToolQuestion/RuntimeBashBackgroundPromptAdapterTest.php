@@ -34,6 +34,34 @@ use Psr\Log\LoggerInterface;
 #[CoversClass(RuntimeBashBackgroundPromptAdapter::class)]
 final class RuntimeBashBackgroundPromptAdapterTest extends TestCase
 {
+    /**
+     * Create a stub checker that always reports the process is still running.
+     */
+    private function notFinishedChecker(): BackgroundProcessStatusCheckerInterface
+    {
+        $checker = $this->createMock(BackgroundProcessStatusCheckerInterface::class);
+        $checker->method('isFinished')->willReturn(false);
+
+        return $checker;
+    }
+
+    /**
+     * Create a stub checker that reports finished after the given call count.
+     */
+    private function finishedAfterCalls(int $callsBeforeFinished): BackgroundProcessStatusCheckerInterface
+    {
+        $checker = $this->createMock(BackgroundProcessStatusCheckerInterface::class);
+        $checker->method('isFinished')
+            ->willReturnOnConsecutiveCalls(
+                ...array_merge(
+                    array_fill(0, $callsBeforeFinished, false),
+                    [true],
+                ),
+            );
+
+        return $checker;
+    }
+
     public function testNoContextReturnsFalseAndDoesNotCreateQuestion(): void
     {
         $contextAccessor = new StackToolExecutionContextAccessor();
@@ -42,7 +70,7 @@ final class RuntimeBashBackgroundPromptAdapterTest extends TestCase
         $store = $this->createMock(ToolQuestionStoreInterface::class);
         $store->expects(self::never())->method('create');
 
-        $logger = self::createStub(LoggerInterface::class);
+        $logger = $this->createStub(LoggerInterface::class);
 
         $adapter = new RuntimeBashBackgroundPromptAdapter(
             contextAccessor: $contextAccessor,
@@ -80,7 +108,7 @@ final class RuntimeBashBackgroundPromptAdapterTest extends TestCase
         // The adapter must NOT call cancel() for the accepted path.
         $store->expects(self::never())->method('cancel');
 
-        $logger = self::createStub(LoggerInterface::class);
+        $logger = $this->createStub(LoggerInterface::class);
 
         $adapter = new RuntimeBashBackgroundPromptAdapter(
             contextAccessor: $contextAccessor,
@@ -89,7 +117,7 @@ final class RuntimeBashBackgroundPromptAdapterTest extends TestCase
             processStatusChecker: $this->notFinishedChecker(),
         );
 
-        $cancellationToken = self::createStub(CancellationTokenInterface::class);
+        $cancellationToken = $this->createStub(CancellationTokenInterface::class);
         $cancellationToken->method('isCancellationRequested')->willReturn(false);
 
         $context = new ToolContext(
@@ -101,7 +129,7 @@ final class RuntimeBashBackgroundPromptAdapterTest extends TestCase
             timeoutSeconds: 30,
         );
 
-        $result = $contextAccessor->with($context, static fn (): bool => $adapter->shouldBackground(
+        $result = $contextAccessor->with($context, fn (): bool => $adapter->shouldBackground(
             command: 'echo "long running command"',
             pid: 67890,
             logPath: '/tmp/test-bash-2.log',
@@ -124,7 +152,7 @@ final class RuntimeBashBackgroundPromptAdapterTest extends TestCase
             ->willReturnOnConsecutiveCalls(null, true);
         $store->expects(self::never())->method('cancel');
 
-        $logger = self::createStub(LoggerInterface::class);
+        $logger = $this->createStub(LoggerInterface::class);
 
         $adapter = new RuntimeBashBackgroundPromptAdapter(
             contextAccessor: $contextAccessor,
@@ -133,7 +161,7 @@ final class RuntimeBashBackgroundPromptAdapterTest extends TestCase
             processStatusChecker: $this->notFinishedChecker(),
         );
 
-        $cancellationToken = self::createStub(CancellationTokenInterface::class);
+        $cancellationToken = $this->createStub(CancellationTokenInterface::class);
         $cancellationToken->method('isCancellationRequested')->willReturn(false);
 
         $context = new ToolContext(
@@ -146,7 +174,7 @@ final class RuntimeBashBackgroundPromptAdapterTest extends TestCase
         );
 
         // elapsedSeconds exactly equals timeoutSeconds → remaining=0, no deadline
-        $result = $contextAccessor->with($context, static fn (): bool => $adapter->shouldBackground(
+        $result = $contextAccessor->with($context, fn (): bool => $adapter->shouldBackground(
             command: 'sleep 1',
             pid: 11111,
             logPath: '/tmp/test-threshold.log',
@@ -175,7 +203,7 @@ final class RuntimeBashBackgroundPromptAdapterTest extends TestCase
             ->method('cancel')
             ->with($requestId);
 
-        $logger = self::createStub(LoggerInterface::class);
+        $logger = $this->createStub(LoggerInterface::class);
 
         // First call to isFinished returns true immediately (process done).
         $checker = $this->finishedAfterCalls(0);
@@ -187,7 +215,7 @@ final class RuntimeBashBackgroundPromptAdapterTest extends TestCase
             processStatusChecker: $checker,
         );
 
-        $cancellationToken = self::createStub(CancellationTokenInterface::class);
+        $cancellationToken = $this->createStub(CancellationTokenInterface::class);
         $cancellationToken->method('isCancellationRequested')->willReturn(false);
 
         $context = new ToolContext(
@@ -199,7 +227,7 @@ final class RuntimeBashBackgroundPromptAdapterTest extends TestCase
             timeoutSeconds: 30,
         );
 
-        $result = $contextAccessor->with($context, static fn (): bool => $adapter->shouldBackground(
+        $result = $contextAccessor->with($context, fn (): bool => $adapter->shouldBackground(
             command: 'sleep 60 && echo "Hello world"',
             pid: 99999,
             logPath: '/tmp/test-finish.log',
@@ -207,33 +235,5 @@ final class RuntimeBashBackgroundPromptAdapterTest extends TestCase
         ));
 
         self::assertFalse($result);
-    }
-
-    /**
-     * Create a stub checker that always reports the process is still running.
-     */
-    private function notFinishedChecker(): BackgroundProcessStatusCheckerInterface
-    {
-        $checker = $this->createMock(BackgroundProcessStatusCheckerInterface::class);
-        $checker->method('isFinished')->willReturn(false);
-
-        return $checker;
-    }
-
-    /**
-     * Create a stub checker that reports finished after the given call count.
-     */
-    private function finishedAfterCalls(int $callsBeforeFinished): BackgroundProcessStatusCheckerInterface
-    {
-        $checker = $this->createMock(BackgroundProcessStatusCheckerInterface::class);
-        $checker->method('isFinished')
-            ->willReturnOnConsecutiveCalls(
-                ...array_merge(
-                    array_fill(0, $callsBeforeFinished, false),
-                    [true],
-                ),
-            );
-
-        return $checker;
     }
 }

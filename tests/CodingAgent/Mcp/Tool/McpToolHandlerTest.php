@@ -46,10 +46,10 @@ final class McpToolHandlerTest extends TestCase
 
         $result = $this->contextAccessor->with(
             new ToolContext('run-1', 1, 'tc1', 'echo_reverse', new NullCancellationToken(), 30),
-            static fn () => $handler(['text' => 'hello']),
+            fn () => $handler(['text' => 'hello']),
         );
 
-        self::assertSame('hello from mcp', $result);
+        $this->assertSame('hello from mcp', $result);
     }
 
     // ── Test thesis 2: Handler re-wraps invoker exceptions ──
@@ -66,7 +66,7 @@ final class McpToolHandlerTest extends TestCase
 
         $this->contextAccessor->with(
             new ToolContext('run-1', 1, 'tc1', 'broken_fetch', new NullCancellationToken(), 30),
-            static fn () => $handler([]),
+            fn () => $handler([]),
         );
     }
 
@@ -78,8 +78,8 @@ final class McpToolHandlerTest extends TestCase
         $factory = new McpToolHandlerFactory($invoker);
         $handler = $factory->create('echo', 'reverse');
 
-        self::assertSame('echo', $handler->serverName);
-        self::assertSame('reverse', $handler->mcpName);
+        $this->assertSame('echo', $handler->serverName);
+        $this->assertSame('reverse', $handler->mcpName);
     }
 
     // ── Handler preserves invoker error message through re-wrap ──
@@ -94,18 +94,18 @@ final class McpToolHandlerTest extends TestCase
         try {
             $this->contextAccessor->with(
                 new ToolContext('run-1', 1, 'tc1', 'api_query', new NullCancellationToken(), 30),
-                static fn () => $handler(['q' => 'search']),
+                fn () => $handler(['q' => 'search']),
             );
-            self::fail('Expected ToolCallException');
+            $this->fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
-            self::assertStringContainsString('MCP tool "query" (server "api")', $e->getMessage());
-            self::assertStringContainsString('Server timeout', $e->getMessage());
+            $this->assertStringContainsString('MCP tool "query" (server "api")', $e->getMessage());
+            $this->assertStringContainsString('Server timeout', $e->getMessage());
             // The invoker translates McpClientInvocationException with its own hint;
             // the handler preserves whatever hint the invoker sets.
-            self::assertStringContainsString('could not complete', $e->hint());
+            $this->assertStringContainsString('could not complete', $e->hint());
             // Client-layer exceptions are translated to retryable=true
             // because connection/transport errors are often transient.
-            self::assertTrue($e->retryable());
+            $this->assertTrue($e->retryable());
         }
     }
 
@@ -114,27 +114,11 @@ final class McpToolHandlerTest extends TestCase
     private function makeInvokerWithResult(string $fakeResult): McpToolInvoker
     {
         $connectionManager = new class($fakeResult) implements McpConnectionManagerInterface {
-            public function __construct(private string $fakeResult)
-            {
-            }
-
-            public function discover(string $runId, ?callable $onServerDiscovered = null): array
-            {
-                return [];
-            }
-
-            public function getClient(string $runId, string $serverName): ?\Ineersa\CodingAgent\Mcp\Client\McpClientInterface
-            {
-                return null;
-            }
-
-            public function disconnectServer(string $runId, string $serverName): void
-            {
-            }
-
-            public function disconnectAll(string $runId): void
-            {
-            }
+            public function __construct(private string $fakeResult) {}
+            public function discover(string $runId, ?callable $onServerDiscovered = null): array { return []; }
+            public function getClient(string $runId, string $serverName): ?\Ineersa\CodingAgent\Mcp\Client\McpClientInterface { return null; }
+            public function disconnectServer(string $runId, string $serverName): void {}
+            public function disconnectAll(string $runId): void {}
 
             public function callTool(string $runId, string $serverName, string $toolName, array $arguments = []): array
             {
@@ -156,27 +140,11 @@ final class McpToolHandlerTest extends TestCase
     private function makeInvokerThatThrows(\Throwable $exception): McpToolInvoker
     {
         $connectionManager = new class($exception) implements McpConnectionManagerInterface {
-            public function __construct(private \Throwable $exception)
-            {
-            }
-
-            public function discover(string $runId, ?callable $onServerDiscovered = null): array
-            {
-                return [];
-            }
-
-            public function getClient(string $runId, string $serverName): ?\Ineersa\CodingAgent\Mcp\Client\McpClientInterface
-            {
-                return null;
-            }
-
-            public function disconnectServer(string $runId, string $serverName): void
-            {
-            }
-
-            public function disconnectAll(string $runId): void
-            {
-            }
+            public function __construct(private \Throwable $exception) {}
+            public function discover(string $runId, ?callable $onServerDiscovered = null): array { return []; }
+            public function getClient(string $runId, string $serverName): ?\Ineersa\CodingAgent\Mcp\Client\McpClientInterface { return null; }
+            public function disconnectServer(string $runId, string $serverName): void {}
+            public function disconnectAll(string $runId): void {}
 
             public function callTool(string $runId, string $serverName, string $toolName, array $arguments = []): array
             {

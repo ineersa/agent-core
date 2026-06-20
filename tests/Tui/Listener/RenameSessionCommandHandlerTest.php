@@ -23,10 +23,47 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(RenameSessionCommandHandler::class)]
 final class RenameSessionCommandHandlerTest extends TestCase
 {
+    private function createAppConfig(): AppConfig
+    {
+        return new AppConfig(
+            tui: new TuiConfig(theme: 'default'),
+            logging: new LoggingConfig(),
+            cwd: '/tmp/test-rename',
+        );
+    }
+
+    private function createSessionStoreWithSession(int $id, string $name): HatfieldSessionStore
+    {
+        $entity = new HatfieldSession();
+        $entity->id = $id;
+        $entity->name = $name;
+        $entity->cwd = '/tmp/test';
+        $entity->createdAt = new \DateTimeImmutable();
+        $entity->updatedAt = new \DateTimeImmutable();
+
+        $em = $this->createStub(EntityManagerInterface::class);
+        $em->method('find')->willReturnCallback(
+            static function (string $class, mixed $idParam) use ($id, $entity): ?HatfieldSession {
+                return HatfieldSession::class === $class && $idParam === $id ? $entity : null;
+            },
+        );
+
+        // flush() may or may not be called depending on whether the
+        // handler reaches updateMetadata().  Stub is fine since we
+        // test the return value, not flush() invocation count.
+
+        return new HatfieldSessionStore($this->createAppConfig(), $em);
+    }
+
+    private function createSwitchStub(): TuiSessionSwitchServiceInterface
+    {
+        return $this->createStub(TuiSessionSwitchServiceInterface::class);
+    }
+
     #[Test]
     public function testHandleWithNoArgsOpensPickerAndReturnsNoOp(): void
     {
-        $em = self::createStub(EntityManagerInterface::class);
+        $em = $this->createStub(EntityManagerInterface::class);
         $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em);
         $switch = $this->createSwitchStub();
         $pickerController = new SessionPickerController($sessionStore, $switch);
@@ -92,7 +129,7 @@ final class RenameSessionCommandHandlerTest extends TestCase
     #[Test]
     public function testHandleWithInvalidSessionIdReturnsError(): void
     {
-        $em = self::createStub(EntityManagerInterface::class);
+        $em = $this->createStub(EntityManagerInterface::class);
         $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em);
         $switch = $this->createSwitchStub();
         $pickerController = new SessionPickerController($sessionStore, $switch);
@@ -109,7 +146,7 @@ final class RenameSessionCommandHandlerTest extends TestCase
     #[Test]
     public function testHandleWithMalformedSessionIdReturnsError(): void
     {
-        $em = self::createStub(EntityManagerInterface::class);
+        $em = $this->createStub(EntityManagerInterface::class);
         $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em);
         $switch = $this->createSwitchStub();
         $pickerController = new SessionPickerController($sessionStore, $switch);
@@ -126,7 +163,7 @@ final class RenameSessionCommandHandlerTest extends TestCase
     #[Test]
     public function testHandleWithSessionIdZeroReturnsError(): void
     {
-        $em = self::createStub(EntityManagerInterface::class);
+        $em = $this->createStub(EntityManagerInterface::class);
         $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em);
         $switch = $this->createSwitchStub();
         $pickerController = new SessionPickerController($sessionStore, $switch);
@@ -155,42 +192,5 @@ final class RenameSessionCommandHandlerTest extends TestCase
         self::assertStringContainsString('Provide a name', $result->text);
         self::assertStringContainsString('/rename 42', $result->text);
         self::assertSame('error', $result->role);
-    }
-
-    private function createAppConfig(): AppConfig
-    {
-        return new AppConfig(
-            tui: new TuiConfig(theme: 'default'),
-            logging: new LoggingConfig(),
-            cwd: '/tmp/test-rename',
-        );
-    }
-
-    private function createSessionStoreWithSession(int $id, string $name): HatfieldSessionStore
-    {
-        $entity = new HatfieldSession();
-        $entity->id = $id;
-        $entity->name = $name;
-        $entity->cwd = '/tmp/test';
-        $entity->createdAt = new \DateTimeImmutable();
-        $entity->updatedAt = new \DateTimeImmutable();
-
-        $em = self::createStub(EntityManagerInterface::class);
-        $em->method('find')->willReturnCallback(
-            static function (string $class, mixed $idParam) use ($id, $entity): ?HatfieldSession {
-                return HatfieldSession::class === $class && $idParam === $id ? $entity : null;
-            },
-        );
-
-        // flush() may or may not be called depending on whether the
-        // handler reaches updateMetadata().  Stub is fine since we
-        // test the return value, not flush() invocation count.
-
-        return new HatfieldSessionStore($this->createAppConfig(), $em);
-    }
-
-    private function createSwitchStub(): TuiSessionSwitchServiceInterface
-    {
-        return self::createStub(TuiSessionSwitchServiceInterface::class);
     }
 }

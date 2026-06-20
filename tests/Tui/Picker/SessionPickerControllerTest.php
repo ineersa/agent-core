@@ -21,11 +21,16 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(SessionPickerController::class)]
 final class SessionPickerControllerTest extends TestCase
 {
+    private function createTheme(): DefaultTheme
+    {
+        return new DefaultTheme(new ThemePalette('test'));
+    }
+
     #[Test]
     public function testIsOpenIsFalseInitially(): void
     {
-        $switch = self::createStub(TuiSessionSwitchServiceInterface::class);
-        $em = self::createStub(EntityManagerInterface::class);
+        $switch = $this->createStub(TuiSessionSwitchServiceInterface::class);
+        $em = $this->createStub(EntityManagerInterface::class);
         $sessionStore = new HatfieldSessionStore(
             new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig()),
             $em,
@@ -142,7 +147,7 @@ final class SessionPickerControllerTest extends TestCase
             }
         };
 
-        $em = self::createStub(EntityManagerInterface::class);
+        $em = $this->createStub(EntityManagerInterface::class);
         $sessionStore = new HatfieldSessionStore(
             new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig()),
             $em,
@@ -157,8 +162,8 @@ final class SessionPickerControllerTest extends TestCase
     #[Test]
     public function testClosePickerOnUnopenedControllerIsNoOp(): void
     {
-        $switch = self::createStub(TuiSessionSwitchServiceInterface::class);
-        $em = self::createStub(EntityManagerInterface::class);
+        $switch = $this->createStub(TuiSessionSwitchServiceInterface::class);
+        $em = $this->createStub(EntityManagerInterface::class);
         $sessionStore = new HatfieldSessionStore(
             new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig()),
             $em,
@@ -174,8 +179,8 @@ final class SessionPickerControllerTest extends TestCase
     #[Test]
     public function testOpenForRenameCommandIsSafeWithoutRuntimeRefs(): void
     {
-        $switch = self::createStub(TuiSessionSwitchServiceInterface::class);
-        $em = self::createStub(EntityManagerInterface::class);
+        $switch = $this->createStub(TuiSessionSwitchServiceInterface::class);
+        $em = $this->createStub(EntityManagerInterface::class);
         $sessionStore = new HatfieldSessionStore(
             new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig()),
             $em,
@@ -192,8 +197,8 @@ final class SessionPickerControllerTest extends TestCase
     #[Test]
     public function testOpenForRenameCommandDoesNotMutateSwitch(): void
     {
-        $switch = self::createStub(TuiSessionSwitchServiceInterface::class);
-        $em = self::createStub(EntityManagerInterface::class);
+        $switch = $this->createStub(TuiSessionSwitchServiceInterface::class);
+        $em = $this->createStub(EntityManagerInterface::class);
         $sessionStore = new HatfieldSessionStore(
             new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig()),
             $em,
@@ -208,10 +213,5 @@ final class SessionPickerControllerTest extends TestCase
         $controller->openForRenameCommand();
 
         self::assertFalse($controller->isOpen());
-    }
-
-    private function createTheme(): DefaultTheme
-    {
-        return new DefaultTheme(new ThemePalette('test'));
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\E2E;
 
+use Ineersa\CodingAgent\Tests\Support\AgentTestExecutable;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -20,6 +21,7 @@ use PHPUnit\Framework\TestCase;
  *
  * Runs in an isolated project directory under var/tmp/tui-e2e-*
  * so it does NOT hit the stale project-root .hatfield/messenger.sqlite.
+ *
  */
 #[Group('tui-e2e-replay')]
 final class TuiStartupSnapshotTest extends TestCase
@@ -92,14 +94,14 @@ final class TuiStartupSnapshotTest extends TestCase
 
         if ($this->shouldUpdateSnapshots()) {
             file_put_contents($this->goldenPath, $normalized);
-            self::markTestSkipped(\sprintf(
+            self::markTestSkipped(sprintf(
                 'Golden snapshot updated: %s (commit this change)',
                 basename($this->goldenPath),
             ));
         }
 
         // Load expected golden
-        self::assertFileExists($this->goldenPath, \sprintf(
+        self::assertFileExists($this->goldenPath, sprintf(
             'Golden fixture not found: %s. Run HATFIELD_UPDATE_SNAPSHOTS=1 vendor/bin/phpunit --group tui-e2e to generate it.',
             $this->goldenPath,
         ));
@@ -109,11 +111,11 @@ final class TuiStartupSnapshotTest extends TestCase
         self::assertSame(
             $expected,
             $normalized,
-            \sprintf(
+            sprintf(
                 "TUI startup snapshot does not match golden fixture.\n"
                 ."Expected: %s\n"
                 ."Got (normalized):\n%s\n"
-                .'If this change is intentional, run HATFIELD_UPDATE_SNAPSHOTS=1 vendor/bin/phpunit --group tui-e2e',
+                ."If this change is intentional, run HATFIELD_UPDATE_SNAPSHOTS=1 vendor/bin/phpunit --group tui-e2e",
                 $this->goldenPath,
                 $normalized !== $expected ? $this->diffHint($expected, $normalized) : '(same)',
             ),
@@ -175,27 +177,27 @@ final class TuiStartupSnapshotTest extends TestCase
         $script = $this->projectRoot.'/bin/console';
 
         $startupFixture = __DIR__.'/fixtures/tui-startup-prompt-response.json';
-        $fixtureEnv = is_file($startupFixture)
-            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.escapeshellarg($startupFixture).' '
+        $fixtureEnv = \is_file($startupFixture)
+            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.\escapeshellarg($startupFixture).' '
             : '';
 
         $dbPath = 'app_test-tui-snapshot-'.bin2hex(random_bytes(4)).'.sqlite';
 
         return \sprintf(
             'APP_ENV=test HATFIELD_TEST_DATABASE_PATH=%s HOME=%s %s %s %s agent --model=llama_cpp_test/test --prompt="hello from tmux e2e" --tools-excluded=bash 2>&1',
-            escapeshellarg($dbPath),
-            escapeshellarg($this->testProjectDir.'/home'),
+            \escapeshellarg($dbPath),
+            \escapeshellarg($this->testProjectDir.'/home'),
             $fixtureEnv,
-            escapeshellarg($php),
-            escapeshellarg($script),
+            \escapeshellarg($php),
+            \escapeshellarg($script),
         );
     }
 
     private function createIsolatedProjectDir(): string
     {
         $dir = TestDirectoryIsolation::createProjectTempDir('tui-e2e', 0o777);
-        @mkdir($dir.'/.hatfield', 0o777, true);
-        @mkdir($dir.'/home/.hatfield', 0o777, true);
+        @\mkdir($dir.'/.hatfield', 0o777, true);
+        @\mkdir($dir.'/home/.hatfield', 0o777, true);
 
         $settings = [
             'ai' => [
@@ -246,34 +248,34 @@ final class TuiStartupSnapshotTest extends TestCase
         ];
 
         $yaml = \Symfony\Component\Yaml\Yaml::dump($settings, 6, 4);
-        file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
-        file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
+        \file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
+        \file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
 
         return $dir;
     }
 
     private function shouldUpdateSnapshots(): bool
     {
-        return \in_array(getenv('HATFIELD_UPDATE_SNAPSHOTS'), ['1', 'true', 'yes'], true);
+        return in_array(getenv('HATFIELD_UPDATE_SNAPSHOTS'), ['1', 'true', 'yes'], true);
     }
 
     private function diffHint(string $expected, string $actual): string
     {
         $expectedLines = explode("\n", $expected);
         $actualLines = explode("\n", $actual);
-        $maxLen = max(\count($expectedLines), \count($actualLines));
+        $maxLen = max(count($expectedLines), count($actualLines));
 
         $diff = [];
-        for ($i = 0; $i < $maxLen; ++$i) {
+        for ($i = 0; $i < $maxLen; $i++) {
             $exp = $expectedLines[$i] ?? '<<< missing >>>';
             $act = $actualLines[$i] ?? '<<< missing >>>';
             if ($exp !== $act) {
-                $diff[] = \sprintf(
+                $diff[] = sprintf(
                     '  line %3d: -"%s"',
                     $i + 1,
                     substr($exp, 0, 100),
                 );
-                $diff[] = \sprintf(
+                $diff[] = sprintf(
                     '           +"%s"',
                     substr($act, 0, 100),
                 );

@@ -19,251 +19,13 @@ use Symfony\AI\Platform\Result\ToolCall;
 
 final class ReasoningContentFeatureShaperTest extends TestCase
 {
-    private const DEEPSEEK_FEATURES = [ReasoningContentFeatureShaper::FEATURE];
     private ReasoningContentFeatureShaper $shaper;
+
+    private const DEEPSEEK_FEATURES = [ReasoningContentFeatureShaper::FEATURE];
 
     protected function setUp(): void
     {
         $this->shaper = new ReasoningContentFeatureShaper();
-    }
-
-    // ── supports() ────────────────────────────────────────────────────────
-
-    public function testSupportsWhenCompatHasFlag(): void
-    {
-        self::assertTrue($this->shaper->supports(self::DEEPSEEK_FEATURES));
-    }
-
-    public function testSupportsWhenCompatHasNoFlag(): void
-    {
-        self::assertFalse($this->shaper->supports([]));
-    }
-
-    // ── shape() ───────────────────────────────────────────────────────────
-
-    public function testNoOpWhenNoMessageBag(): void
-    {
-        $result = $this->shaper->shape(
-            'deepseek-v4-pro',
-            ['something_else' => 'value'],
-            [],
-            self::DEEPSEEK_FEATURES,
-        );
-
-        self::assertNull($result);
-    }
-
-    // ── Flag active → adds empty Thinking ─────────────────────────────────
-
-    public function testAddsEmptyThinkingToAssistantWithoutThinking(): void
-    {
-        $bag = new MessageBag(
-            $this->userMessage('Hello'),
-            $this->assistantText('Hi there'),
-            $this->userMessage('How are you?'),
-        );
-
-        $result = $this->shaper->shape(
-            'deepseek-v4-pro',
-            ['message_bag' => $bag],
-            ['stream' => true, 'reasoning_effort' => 'high'],
-            self::DEEPSEEK_FEATURES,
-        );
-
-        self::assertNotNull($result);
-        self::assertNotNull($result->input);
-        self::assertArrayHasKey('message_bag', $result->input);
-
-        /** @var MessageBag $newBag */
-        $newBag = $result->input['message_bag'];
-        $messages = $newBag->getMessages();
-
-        self::assertCount(3, $messages);
-
-        // User messages untouched
-        self::assertSame(Role::User, $messages[0]->getRole());
-        self::assertSame(Role::User, $messages[2]->getRole());
-
-        // Assistant message now has Thinking
-        self::assertSame(Role::Assistant, $messages[1]->getRole());
-        self::assertInstanceOf(AssistantMessage::class, $messages[1]);
-        self::assertTrue($messages[1]->hasThinking(), 'AssistantMessage should have Thinking block');
-        self::assertSame('Hi there', $messages[1]->asText());
-    }
-
-    // ── Existing thinking preserved ───────────────────────────────────────
-
-    public function testDoesNotDuplicateExistingThinking(): void
-    {
-        $bag = new MessageBag(
-            $this->assistantWithThinking('I considered...', 'I should respond kindly.'),
-        );
-
-        $result = $this->shaper->shape(
-            'deepseek-v4-pro',
-            ['message_bag' => $bag],
-            [],
-            self::DEEPSEEK_FEATURES,
-        );
-
-        self::assertNull($result, 'Should return null when no assistant messages needed changing');
-    }
-
-    // ── Mixed: some with thinking, some without ────────────────────────────
-
-    public function testAddsThinkingOnlyToMessagesThatLackIt(): void
-    {
-        $bag = new MessageBag(
-            $this->userMessage('Turn 1'),
-            $this->assistantWithThinking('Already has thinking', 'existing thinking'),
-            $this->userMessage('Turn 2'),
-            $this->assistantText('No thinking here'),
-        );
-
-        $result = $this->shaper->shape(
-            'deepseek-v4-pro',
-            ['message_bag' => $bag],
-            [],
-            self::DEEPSEEK_FEATURES,
-        );
-
-        self::assertNotNull($result);
-        self::assertNotNull($result->input);
-        self::assertArrayHasKey('message_bag', $result->input);
-
-        /** @var MessageBag $newBag */
-        $newBag = $result->input['message_bag'];
-        $messages = $newBag->getMessages();
-
-        self::assertCount(4, $messages);
-
-        // First assistant (Turn 1) keeps its existing thinking
-        self::assertSame(Role::Assistant, $messages[1]->getRole());
-        self::assertTrue($messages[1]->hasThinking());
-        $thinking = $messages[1]->getThinking();
-        self::assertCount(1, $thinking);
-        self::assertSame('existing thinking', $thinking[0]->getContent());
-
-        // Second assistant (Turn 2) gets new empty thinking
-        self::assertSame(Role::Assistant, $messages[3]->getRole());
-        self::assertTrue($messages[3]->hasThinking());
-        self::assertSame('No thinking here', $messages[3]->asText());
-
-        $thinking2 = $messages[3]->getThinking();
-        self::assertCount(1, $thinking2);
-        self::assertSame('', $thinking2[0]->getContent());
-        self::assertNull($thinking2[0]->getSignature());
-    }
-
-    // ── Non-assistant messages untouched ───────────────────────────────────
-
-    public function testNonAssistantMessagesUntouched(): void
-    {
-        $toolMessage = new ToolCallMessage(
-            new ToolCall('tool-call-1', 'read', ['path' => 'file.txt']),
-            'file contents',
-        );
-
-        $bag = new MessageBag(
-            $this->systemMessage('You are helpful.'),
-            $this->userMessage('Read README.md'),
-            $this->assistantText('OK'),
-            $toolMessage,
-        );
-
-        $result = $this->shaper->shape(
-            'deepseek-v4-pro',
-            ['message_bag' => $bag],
-            [],
-            self::DEEPSEEK_FEATURES,
-        );
-
-        self::assertNotNull($result);
-        self::assertNotNull($result->input);
-
-        /** @var MessageBag $newBag */
-        $newBag = $result->input['message_bag'];
-        $messages = $newBag->getMessages();
-
-        self::assertCount(4, $messages);
-
-        // system, user, tool messages unchanged
-        self::assertSame(Role::System, $messages[0]->getRole());
-        self::assertSame(Role::User, $messages[1]->getRole());
-        self::assertSame(Role::ToolCall, $messages[3]->getRole());
-
-        // Assistant gets thinking added
-        self::assertTrue($messages[2]->hasThinking());
-    }
-
-    // ── Tool calls preserved ───────────────────────────────────────────────
-
-    public function testToolCallsPreservedWhenThinkingAdded(): void
-    {
-        $bag = new MessageBag(
-            $this->userMessage('Run ls'),
-            $this->assistantWithToolCall('tool-123', 'bash'),
-        );
-
-        $result = $this->shaper->shape(
-            'deepseek-v4-pro',
-            ['message_bag' => $bag],
-            [],
-            self::DEEPSEEK_FEATURES,
-        );
-
-        self::assertNotNull($result);
-
-        /** @var MessageBag $newBag */
-        $newBag = $result->input['message_bag'];
-        $messages = $newBag->getMessages();
-
-        self::assertCount(2, $messages);
-
-        /** @var AssistantMessage $assistant */
-        $assistant = $messages[1];
-        self::assertTrue($assistant->hasThinking(), 'Should have added empty Thinking');
-        self::assertTrue($assistant->hasToolCalls(), 'Should preserve tool calls');
-
-        $toolCalls = $assistant->getToolCalls();
-        self::assertCount(1, $toolCalls);
-        self::assertSame('bash', $toolCalls[0]->getName());
-
-        // Thinking was added empty
-        $thinking = $assistant->getThinking();
-        self::assertCount(1, $thinking);
-        self::assertSame('', $thinking[0]->getContent());
-    }
-
-    public function testTextAndToolCallsPreservedWhenThinkingAdded(): void
-    {
-        $bag = new MessageBag(
-            $this->userMessage('Run ls'),
-            $this->assistantTextWithToolCall('I will run ls', 'tool-456', 'bash'),
-        );
-
-        $result = $this->shaper->shape(
-            'deepseek-v4-pro',
-            ['message_bag' => $bag],
-            [],
-            self::DEEPSEEK_FEATURES,
-        );
-
-        self::assertNotNull($result);
-
-        /** @var MessageBag $newBag */
-        $newBag = $result->input['message_bag'];
-        $messages = $newBag->getMessages();
-
-        /** @var AssistantMessage $assistant */
-        $assistant = $messages[1];
-        self::assertTrue($assistant->hasThinking());
-        self::assertSame('I will run ls', $assistant->asText());
-        self::assertTrue($assistant->hasToolCalls());
-
-        $toolCalls = $assistant->getToolCalls();
-        self::assertCount(1, $toolCalls);
-        self::assertSame('bash', $toolCalls[0]->getName());
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────
@@ -301,5 +63,244 @@ final class ReasoningContentFeatureShaperTest extends TestCase
             new Text($text),
             new ToolCall($toolCallId, $toolName, ['command' => 'ls']),
         );
+    }
+
+    // ── supports() ────────────────────────────────────────────────────────
+
+    public function testSupportsWhenCompatHasFlag(): void
+    {
+        $this->assertTrue($this->shaper->supports(self::DEEPSEEK_FEATURES));
+    }
+
+    public function testSupportsWhenCompatHasNoFlag(): void
+    {
+        $this->assertFalse($this->shaper->supports([]));
+    }
+
+    // ── shape() ───────────────────────────────────────────────────────────
+
+    public function testNoOpWhenNoMessageBag(): void
+    {
+        $result = $this->shaper->shape(
+            'deepseek-v4-pro',
+            ['something_else' => 'value'],
+            [],
+            self::DEEPSEEK_FEATURES,
+        );
+
+        $this->assertNull($result);
+    }
+
+    // ── Flag active → adds empty Thinking ─────────────────────────────────
+
+    public function testAddsEmptyThinkingToAssistantWithoutThinking(): void
+    {
+        $bag = new MessageBag(
+            $this->userMessage('Hello'),
+            $this->assistantText('Hi there'),
+            $this->userMessage('How are you?'),
+        );
+
+        $result = $this->shaper->shape(
+            'deepseek-v4-pro',
+            ['message_bag' => $bag],
+            ['stream' => true, 'reasoning_effort' => 'high'],
+            self::DEEPSEEK_FEATURES,
+        );
+
+        $this->assertNotNull($result);
+        $this->assertNotNull($result->input);
+        $this->assertArrayHasKey('message_bag', $result->input);
+
+        /** @var MessageBag $newBag */
+        $newBag = $result->input['message_bag'];
+        $messages = $newBag->getMessages();
+
+        $this->assertCount(3, $messages);
+
+        // User messages untouched
+        $this->assertSame(Role::User, $messages[0]->getRole());
+        $this->assertSame(Role::User, $messages[2]->getRole());
+
+        // Assistant message now has Thinking
+        $this->assertSame(Role::Assistant, $messages[1]->getRole());
+        $this->assertInstanceOf(AssistantMessage::class, $messages[1]);
+        $this->assertTrue($messages[1]->hasThinking(), 'AssistantMessage should have Thinking block');
+        $this->assertSame('Hi there', $messages[1]->asText());
+    }
+
+    // ── Existing thinking preserved ───────────────────────────────────────
+
+    public function testDoesNotDuplicateExistingThinking(): void
+    {
+        $bag = new MessageBag(
+            $this->assistantWithThinking('I considered...', 'I should respond kindly.'),
+        );
+
+        $result = $this->shaper->shape(
+            'deepseek-v4-pro',
+            ['message_bag' => $bag],
+            [],
+            self::DEEPSEEK_FEATURES,
+        );
+
+        $this->assertNull($result, 'Should return null when no assistant messages needed changing');
+    }
+
+    // ── Mixed: some with thinking, some without ────────────────────────────
+
+    public function testAddsThinkingOnlyToMessagesThatLackIt(): void
+    {
+        $bag = new MessageBag(
+            $this->userMessage('Turn 1'),
+            $this->assistantWithThinking('Already has thinking', 'existing thinking'),
+            $this->userMessage('Turn 2'),
+            $this->assistantText('No thinking here'),
+        );
+
+        $result = $this->shaper->shape(
+            'deepseek-v4-pro',
+            ['message_bag' => $bag],
+            [],
+            self::DEEPSEEK_FEATURES,
+        );
+
+        $this->assertNotNull($result);
+        $this->assertNotNull($result->input);
+        $this->assertArrayHasKey('message_bag', $result->input);
+
+        /** @var MessageBag $newBag */
+        $newBag = $result->input['message_bag'];
+        $messages = $newBag->getMessages();
+
+        $this->assertCount(4, $messages);
+
+        // First assistant (Turn 1) keeps its existing thinking
+        $this->assertSame(Role::Assistant, $messages[1]->getRole());
+        $this->assertTrue($messages[1]->hasThinking());
+        $thinking = $messages[1]->getThinking();
+        $this->assertCount(1, $thinking);
+        $this->assertSame('existing thinking', $thinking[0]->getContent());
+
+        // Second assistant (Turn 2) gets new empty thinking
+        $this->assertSame(Role::Assistant, $messages[3]->getRole());
+        $this->assertTrue($messages[3]->hasThinking());
+        $this->assertSame('No thinking here', $messages[3]->asText());
+
+        $thinking2 = $messages[3]->getThinking();
+        $this->assertCount(1, $thinking2);
+        $this->assertSame('', $thinking2[0]->getContent());
+        $this->assertNull($thinking2[0]->getSignature());
+    }
+
+    // ── Non-assistant messages untouched ───────────────────────────────────
+
+    public function testNonAssistantMessagesUntouched(): void
+    {
+        $toolMessage = new ToolCallMessage(
+            new ToolCall('tool-call-1', 'read', ['path' => 'file.txt']),
+            'file contents',
+        );
+
+        $bag = new MessageBag(
+            $this->systemMessage('You are helpful.'),
+            $this->userMessage('Read README.md'),
+            $this->assistantText('OK'),
+            $toolMessage,
+        );
+
+        $result = $this->shaper->shape(
+            'deepseek-v4-pro',
+            ['message_bag' => $bag],
+            [],
+            self::DEEPSEEK_FEATURES,
+        );
+
+        $this->assertNotNull($result);
+        $this->assertNotNull($result->input);
+
+        /** @var MessageBag $newBag */
+        $newBag = $result->input['message_bag'];
+        $messages = $newBag->getMessages();
+
+        $this->assertCount(4, $messages);
+
+        // system, user, tool messages unchanged
+        $this->assertSame(Role::System, $messages[0]->getRole());
+        $this->assertSame(Role::User, $messages[1]->getRole());
+        $this->assertSame(Role::ToolCall, $messages[3]->getRole());
+
+        // Assistant gets thinking added
+        $this->assertTrue($messages[2]->hasThinking());
+    }
+
+    // ── Tool calls preserved ───────────────────────────────────────────────
+
+    public function testToolCallsPreservedWhenThinkingAdded(): void
+    {
+        $bag = new MessageBag(
+            $this->userMessage('Run ls'),
+            $this->assistantWithToolCall('tool-123', 'bash'),
+        );
+
+        $result = $this->shaper->shape(
+            'deepseek-v4-pro',
+            ['message_bag' => $bag],
+            [],
+            self::DEEPSEEK_FEATURES,
+        );
+
+        $this->assertNotNull($result);
+
+        /** @var MessageBag $newBag */
+        $newBag = $result->input['message_bag'];
+        $messages = $newBag->getMessages();
+
+        $this->assertCount(2, $messages);
+
+        /** @var AssistantMessage $assistant */
+        $assistant = $messages[1];
+        $this->assertTrue($assistant->hasThinking(), 'Should have added empty Thinking');
+        $this->assertTrue($assistant->hasToolCalls(), 'Should preserve tool calls');
+
+        $toolCalls = $assistant->getToolCalls();
+        $this->assertCount(1, $toolCalls);
+        $this->assertSame('bash', $toolCalls[0]->getName());
+
+        // Thinking was added empty
+        $thinking = $assistant->getThinking();
+        $this->assertCount(1, $thinking);
+        $this->assertSame('', $thinking[0]->getContent());
+    }
+
+    public function testTextAndToolCallsPreservedWhenThinkingAdded(): void
+    {
+        $bag = new MessageBag(
+            $this->userMessage('Run ls'),
+            $this->assistantTextWithToolCall('I will run ls', 'tool-456', 'bash'),
+        );
+
+        $result = $this->shaper->shape(
+            'deepseek-v4-pro',
+            ['message_bag' => $bag],
+            [],
+            self::DEEPSEEK_FEATURES,
+        );
+
+        $this->assertNotNull($result);
+
+        /** @var MessageBag $newBag */
+        $newBag = $result->input['message_bag'];
+        $messages = $newBag->getMessages();
+
+        /** @var AssistantMessage $assistant */
+        $assistant = $messages[1];
+        $this->assertTrue($assistant->hasThinking());
+        $this->assertSame('I will run ls', $assistant->asText());
+        $this->assertTrue($assistant->hasToolCalls());
+
+        $toolCalls = $assistant->getToolCalls();
+        $this->assertCount(1, $toolCalls);
+        $this->assertSame('bash', $toolCalls[0]->getName());
     }
 }

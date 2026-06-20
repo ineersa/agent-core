@@ -16,55 +16,26 @@ use Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderFactory;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Bridge\Generic\CompletionsModel;
+use Symfony\AI\Platform\ProviderInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 final class SymfonyAiProviderFactoryTest extends TestCase
 {
-    // ── Raw stream capture writer (env-gated) ──────────────────────────
-
-    private ?string $savedCaptureEnv = null;
-    private ?string $savedCapturePathEnv = null;
-
-    protected function setUp(): void
-    {
-        parent::setUp();
-        // Save env vars so we can restore them in tearDown
-        $this->savedCaptureEnv = false !== getenv('HATFIELD_LLM_RAW_STREAM_CAPTURE') ? getenv('HATFIELD_LLM_RAW_STREAM_CAPTURE') : null;
-        $this->savedCapturePathEnv = false !== getenv('HATFIELD_LLM_RAW_STREAM_CAPTURE_PATH') ? getenv('HATFIELD_LLM_RAW_STREAM_CAPTURE_PATH') : null;
-    }
-
-    protected function tearDown(): void
-    {
-        // Restore env vars
-        if (null !== $this->savedCaptureEnv) {
-            putenv('HATFIELD_LLM_RAW_STREAM_CAPTURE='.$this->savedCaptureEnv);
-        } else {
-            putenv('HATFIELD_LLM_RAW_STREAM_CAPTURE');
-        }
-        if (null !== $this->savedCapturePathEnv) {
-            putenv('HATFIELD_LLM_RAW_STREAM_CAPTURE_PATH='.$this->savedCapturePathEnv);
-        } else {
-            putenv('HATFIELD_LLM_RAW_STREAM_CAPTURE_PATH');
-        }
-        unset($_ENV['HATFIELD_LLM_RAW_STREAM_CAPTURE'], $_ENV['HATFIELD_LLM_RAW_STREAM_CAPTURE_PATH']);
-        parent::tearDown();
-    }
-
     public function testGenericTypeBuildsProvider(): void
     {
         $appConfig = $this->appConfig();
-        $eventDispatcher = self::createStub(EventDispatcherInterface::class);
+        $eventDispatcher = $this->createStub(EventDispatcherInterface::class);
         $factory = new SymfonyAiProviderFactory($appConfig, $eventDispatcher);
 
         $providers = $factory->createProviders();
 
-        self::assertArrayHasKey('deepseek', $providers);
-        self::assertNotNull($providers['deepseek']);
+        $this->assertArrayHasKey('deepseek', $providers);
+        $this->assertNotNull($providers['deepseek']);
 
         // Verify the generic path still produces CompletionsModel
         $catalog = $providers['deepseek']->getModelCatalog();
         $model = $catalog->getModel('deepseek/deepseek-v4-pro');
-        self::assertInstanceOf(CompletionsModel::class, $model);
+        $this->assertInstanceOf(CompletionsModel::class, $model);
     }
 
     public function testCodexTypeThrowsWithoutAuthStorage(): void
@@ -113,7 +84,7 @@ final class SymfonyAiProviderFactoryTest extends TestCase
         $factory = $this->createFactory(['openai-codex' => $providerConfig]);
         $providers = $factory->createProviders();
 
-        self::assertArrayNotHasKey('openai-codex', $providers);
+        $this->assertArrayNotHasKey('openai-codex', $providers);
     }
 
     public function testCustomHttpConfigIsAcceptedByFactory(): void
@@ -148,11 +119,63 @@ final class SymfonyAiProviderFactoryTest extends TestCase
 
         $factory = new SymfonyAiProviderFactory(
             $appConfig,
-            self::createStub(EventDispatcherInterface::class),
+            $this->createStub(EventDispatcherInterface::class),
         );
 
         $providers = $factory->createProviders();
-        self::assertArrayHasKey('deepseek', $providers);
+        $this->assertArrayHasKey('deepseek', $providers);
+    }
+
+    /**
+     * @param array<string, AiProviderConfig> $providers
+     */
+    private function createFactory(array $providers): SymfonyAiProviderFactory
+    {
+        $aiConfig = new AiConfig(
+            defaultModel: 'openai-codex/gpt-5.5',
+            providers: $providers,
+        );
+
+        $appConfig = new AppConfig(
+            tui: TuiConfig::fromArray(['theme' => 'cyberpunk']),
+            logging: new LoggingConfig(),
+            catalog: new HatfieldModelCatalog($aiConfig),
+        );
+
+        return new SymfonyAiProviderFactory(
+            $appConfig,
+            $this->createStub(EventDispatcherInterface::class),
+        );
+    }
+
+    // ── Raw stream capture writer (env-gated) ──────────────────────────
+
+    private ?string $savedCaptureEnv = null;
+    private ?string $savedCapturePathEnv = null;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        // Save env vars so we can restore them in tearDown
+        $this->savedCaptureEnv = false !== getenv('HATFIELD_LLM_RAW_STREAM_CAPTURE') ? getenv('HATFIELD_LLM_RAW_STREAM_CAPTURE') : null;
+        $this->savedCapturePathEnv = false !== getenv('HATFIELD_LLM_RAW_STREAM_CAPTURE_PATH') ? getenv('HATFIELD_LLM_RAW_STREAM_CAPTURE_PATH') : null;
+    }
+
+    protected function tearDown(): void
+    {
+        // Restore env vars
+        if (null !== $this->savedCaptureEnv) {
+            putenv('HATFIELD_LLM_RAW_STREAM_CAPTURE='.$this->savedCaptureEnv);
+        } else {
+            putenv('HATFIELD_LLM_RAW_STREAM_CAPTURE');
+        }
+        if (null !== $this->savedCapturePathEnv) {
+            putenv('HATFIELD_LLM_RAW_STREAM_CAPTURE_PATH='.$this->savedCapturePathEnv);
+        } else {
+            putenv('HATFIELD_LLM_RAW_STREAM_CAPTURE_PATH');
+        }
+        unset($_ENV['HATFIELD_LLM_RAW_STREAM_CAPTURE'], $_ENV['HATFIELD_LLM_RAW_STREAM_CAPTURE_PATH']);
+        parent::tearDown();
     }
 
     public function testCaptureDisabledByDefaultDoesNotCreateFile(): void
@@ -210,7 +233,7 @@ final class SymfonyAiProviderFactoryTest extends TestCase
             // Check directory permissions are restrictive (0700)
             $dirPerms = fileperms($tmpDir) & 0o777;
             self::assertSame(0o750, $dirPerms, 'Temp dir should have 0750 permissions');
-            $captureDirPerms = fileperms(\dirname($capturePath)) & 0o777;
+            $captureDirPerms = fileperms(dirname($capturePath)) & 0o777;
             // The immediate parent is $tmpDir which we set to 0750
             self::assertSame(0o750, $captureDirPerms);
 
@@ -281,28 +304,6 @@ final class SymfonyAiProviderFactoryTest extends TestCase
         } finally {
             TestDirectoryIsolation::removeDirectory($tmpDir);
         }
-    }
-
-    /**
-     * @param array<string, AiProviderConfig> $providers
-     */
-    private function createFactory(array $providers): SymfonyAiProviderFactory
-    {
-        $aiConfig = new AiConfig(
-            defaultModel: 'openai-codex/gpt-5.5',
-            providers: $providers,
-        );
-
-        $appConfig = new AppConfig(
-            tui: TuiConfig::fromArray(['theme' => 'cyberpunk']),
-            logging: new LoggingConfig(),
-            catalog: new HatfieldModelCatalog($aiConfig),
-        );
-
-        return new SymfonyAiProviderFactory(
-            $appConfig,
-            self::createStub(EventDispatcherInterface::class),
-        );
     }
 
     /**

@@ -31,7 +31,7 @@ final class CodexOAuthProviderTest extends TestCase
         // The redirect_uri parameter must be http://localhost:<port>/auth/callback
         // to match the OpenAI Codex OAuth client registration. Hydra validates
         // exact string match — 127.0.0.1 would be rejected.
-        self::assertStringContainsString(
+        $this->assertStringContainsString(
             'redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback',
             $url,
             'Authorization URL must contain redirect_uri with localhost',
@@ -45,7 +45,7 @@ final class CodexOAuthProviderTest extends TestCase
         // OpenAI's Hydra OAuth server rejects the 'approval_prompt' parameter
         // which league/oauth2-client injects by default. The custom provider
         // strips it from the authorization URL.
-        self::assertStringNotContainsString(
+        $this->assertStringNotContainsString(
             'approval_prompt',
             $url,
             'Authorization URL must NOT contain approval_prompt parameter',
@@ -56,11 +56,11 @@ final class CodexOAuthProviderTest extends TestCase
     {
         $url = $this->provider->getAuthorizationUrl();
 
-        self::assertStringContainsString('response_type=code', $url);
-        self::assertStringContainsString('client_id=app_EMoamEEZ73f0CkXaXp7hrann', $url);
-        self::assertStringContainsString('code_challenge_method=S256', $url);
-        self::assertStringContainsString('code_challenge=', $url);
-        self::assertStringContainsString('state=', $url);
+        $this->assertStringContainsString('response_type=code', $url);
+        $this->assertStringContainsString('client_id=app_EMoamEEZ73f0CkXaXp7hrann', $url);
+        $this->assertStringContainsString('code_challenge_method=S256', $url);
+        $this->assertStringContainsString('code_challenge=', $url);
+        $this->assertStringContainsString('state=', $url);
     }
 
     public function testAuthorizationUrlContainsCustomParams(): void
@@ -72,9 +72,9 @@ final class CodexOAuthProviderTest extends TestCase
             'id_token_add_organizations' => 'true',
         ]);
 
-        self::assertStringContainsString('originator=hatfield', $url);
-        self::assertStringContainsString('codex_cli_simplified_flow=true', $url);
-        self::assertStringContainsString('id_token_add_organizations=true', $url);
+        $this->assertStringContainsString('originator=hatfield', $url);
+        $this->assertStringContainsString('codex_cli_simplified_flow=true', $url);
+        $this->assertStringContainsString('id_token_add_organizations=true', $url);
     }
 
     public function testAccessTokenRequestOmitsEmptyClientSecret(): void
@@ -85,10 +85,10 @@ final class CodexOAuthProviderTest extends TestCase
         $httpClient = $this->createMock(ClientInterface::class);
         $httpClient
             ->method('send')
-            ->willReturnCallback(static function (RequestInterface $request) use (&$capturedRequest): Response {
+            ->willReturnCallback(function (RequestInterface $request) use (&$capturedRequest): Response {
                 $capturedRequest = $request;
 
-                return new Response(200, [], json_encode([
+                return new Response(200, [], \json_encode([
                     'access_token' => 'test-access-token',
                     'refresh_token' => 'test-refresh-token',
                     'expires_in' => 3600,
@@ -110,23 +110,23 @@ final class CodexOAuthProviderTest extends TestCase
             // inspect the captured request before re-throwing
         }
 
-        self::assertNotNull($capturedRequest, 'A request should have been sent');
+        $this->assertNotNull($capturedRequest, 'A request should have been sent');
 
         $body = (string) $capturedRequest->getBody();
 
         // The client_secret parameter must NOT be present in the body
         // because Codex is a public OAuth client and Hydra rejects empty secrets
-        self::assertStringNotContainsString(
+        $this->assertStringNotContainsString(
             'client_secret',
             $body,
             'Token request body must NOT contain client_secret when empty',
         );
 
         // Verify the required fields ARE present
-        self::assertStringContainsString('grant_type=authorization_code', $body);
-        self::assertStringContainsString('client_id=app_EMoamEEZ73f0CkXaXp7hrann', $body);
-        self::assertStringContainsString('code=test-auth-code', $body);
-        self::assertStringContainsString('code_verifier=test-verifier-12345', $body);
+        $this->assertStringContainsString('grant_type=authorization_code', $body);
+        $this->assertStringContainsString('client_id=app_EMoamEEZ73f0CkXaXp7hrann', $body);
+        $this->assertStringContainsString('code=test-auth-code', $body);
+        $this->assertStringContainsString('code_verifier=test-verifier-12345', $body);
     }
 
     public function testAccessTokenRefreshRequestOmitsEmptyClientSecret(): void
@@ -136,10 +136,10 @@ final class CodexOAuthProviderTest extends TestCase
         $httpClient = $this->createMock(ClientInterface::class);
         $httpClient
             ->method('send')
-            ->willReturnCallback(static function (RequestInterface $request) use (&$capturedRequest): Response {
+            ->willReturnCallback(function (RequestInterface $request) use (&$capturedRequest): Response {
                 $capturedRequest = $request;
 
-                return new Response(200, [], json_encode([
+                return new Response(200, [], \json_encode([
                     'access_token' => 'refreshed-access-token',
                     'refresh_token' => 'new-refresh-token',
                     'expires_in' => 3600,
@@ -158,18 +158,18 @@ final class CodexOAuthProviderTest extends TestCase
             // Inspect captured request before re-throwing
         }
 
-        self::assertNotNull($capturedRequest, 'A request should have been sent');
+        $this->assertNotNull($capturedRequest, 'A request should have been sent');
 
         $body = (string) $capturedRequest->getBody();
 
-        self::assertStringNotContainsString(
+        $this->assertStringNotContainsString(
             'client_secret',
             $body,
             'Token refresh request body must NOT contain client_secret when empty',
         );
 
-        self::assertStringContainsString('grant_type=refresh_token', $body);
-        self::assertStringContainsString('client_id=app_EMoamEEZ73f0CkXaXp7hrann', $body);
-        self::assertStringContainsString('refresh_token=old-refresh-token', $body);
+        $this->assertStringContainsString('grant_type=refresh_token', $body);
+        $this->assertStringContainsString('client_id=app_EMoamEEZ73f0CkXaXp7hrann', $body);
+        $this->assertStringContainsString('refresh_token=old-refresh-token', $body);
     }
 }

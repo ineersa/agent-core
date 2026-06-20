@@ -39,7 +39,7 @@ final class McpResultMapperTest extends TestCase
             'isError' => false,
         ]);
 
-        self::assertSame('Hello MCP', $result);
+        $this->assertSame('Hello MCP', $result);
     }
 
     public function testJoinsMultipleTextBlocksWithNewline(): void
@@ -52,7 +52,7 @@ final class McpResultMapperTest extends TestCase
             'isError' => false,
         ]);
 
-        self::assertSame("First line\nSecond line", $result);
+        $this->assertSame("First line\nSecond line", $result);
     }
 
     // ── Test thesis 2: isError → ToolCallException ──
@@ -79,10 +79,10 @@ final class McpResultMapperTest extends TestCase
                 ],
                 'isError' => true,
             ]);
-            self::fail('Expected ToolCallException');
+            $this->fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
-            self::assertStringContainsString('Error detail', $e->getMessage());
-            self::assertFalse($e->retryable());
+            $this->assertStringContainsString('Error detail', $e->getMessage());
+            $this->assertFalse($e->retryable());
         }
     }
 
@@ -97,9 +97,9 @@ final class McpResultMapperTest extends TestCase
             'isError' => false,
         ]);
 
-        self::assertStringContainsString('[MCP image:', $result);
-        self::assertStringContainsString('image/png', $result);
-        self::assertStringNotContainsString('fakebytes', $result, 'Raw binary should not appear in output');
+        $this->assertStringContainsString('[MCP image:', $result);
+        $this->assertStringContainsString('image/png', $result);
+        $this->assertStringNotContainsString('fakebytes', $result, 'Raw binary should not appear in output');
     }
 
     public function testMapsAudioContentToPlaceholder(): void
@@ -111,8 +111,8 @@ final class McpResultMapperTest extends TestCase
             'isError' => false,
         ]);
 
-        self::assertStringContainsString('[MCP audio:', $result);
-        self::assertStringContainsString('audio/wav', $result);
+        $this->assertStringContainsString('[MCP audio:', $result);
+        $this->assertStringContainsString('audio/wav', $result);
     }
 
     public function testMapsResourceContentToPlaceholder(): void
@@ -124,8 +124,8 @@ final class McpResultMapperTest extends TestCase
             'isError' => false,
         ]);
 
-        self::assertStringContainsString('[MCP resource:', $result);
-        self::assertStringContainsString('file:///tmp/out.txt', $result);
+        $this->assertStringContainsString('[MCP resource:', $result);
+        $this->assertStringContainsString('file:///tmp/out.txt', $result);
     }
 
     public function testMapsUnknownContentTypeToPlaceholder(): void
@@ -137,8 +137,8 @@ final class McpResultMapperTest extends TestCase
             'isError' => false,
         ]);
 
-        self::assertStringContainsString('[MCP content:', $result);
-        self::assertStringContainsString('custom_binary', $result);
+        $this->assertStringContainsString('[MCP content:', $result);
+        $this->assertStringContainsString('custom_binary', $result);
     }
 
     // ── Test thesis 4: Empty content handling ──
@@ -150,7 +150,7 @@ final class McpResultMapperTest extends TestCase
             'isError' => false,
         ]);
 
-        self::assertSame('', $result);
+        $this->assertSame('', $result);
     }
 
     public function testEmptyContentWithIsErrorTrueThrowsToolCallException(): void
@@ -177,10 +177,10 @@ final class McpResultMapperTest extends TestCase
                 ],
                 'isError' => true,
             ]);
-            self::fail('Expected ToolCallException');
+            $this->fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
-            self::assertStringEndsWith('...', $e->getMessage());
-            self::assertLessThanOrEqual(600, \strlen($e->getMessage()));
+            $this->assertStringEndsWith('...', $e->getMessage());
+            $this->assertLessThanOrEqual(600, \strlen($e->getMessage()));
         }
     }
 
@@ -193,10 +193,10 @@ final class McpResultMapperTest extends TestCase
                 ],
                 'isError' => true,
             ]);
-            self::fail('Expected ToolCallException');
+            $this->fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
-            self::assertStringContainsString('redacted', $e->getMessage());
-            self::assertStringNotContainsString('sk-abc123secret', $e->getMessage());
+            $this->assertStringContainsString('redacted', $e->getMessage());
+            $this->assertStringNotContainsString('sk-abc123secret', $e->getMessage());
         }
     }
 
@@ -209,10 +209,10 @@ final class McpResultMapperTest extends TestCase
                 ],
                 'isError' => true,
             ]);
-            self::fail('Expected ToolCallException');
+            $this->fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
-            self::assertStringContainsString('redacted', $e->getMessage());
-            self::assertStringNotContainsString('abcdef123456', $e->getMessage());
+            $this->assertStringContainsString('redacted', $e->getMessage());
+            $this->assertStringNotContainsString('abcdef123456', $e->getMessage());
         }
     }
 
@@ -227,9 +227,9 @@ final class McpResultMapperTest extends TestCase
             'isError' => false,
         ]);
 
-        self::assertStringContainsString('[MCP resource:', $result);
-        self::assertStringContainsString('example.com', $result);
-        self::assertStringNotContainsString('user:pass', $result, 'Credentials must not appear in tool output');
+        $this->assertStringContainsString('[MCP resource:', $result);
+        $this->assertStringContainsString('example.com', $result);
+        $this->assertStringNotContainsString('user:pass', $result, 'Credentials must not appear in tool output');
     }
 
     // ── Mixed content produces correct output ──
@@ -245,8 +245,8 @@ final class McpResultMapperTest extends TestCase
             'isError' => false,
         ]);
 
-        self::assertStringContainsString('Hello', $result);
-        self::assertStringContainsString('[MCP image:', $result);
-        self::assertStringContainsString('World', $result);
+        $this->assertStringContainsString('Hello', $result);
+        $this->assertStringContainsString('[MCP image:', $result);
+        $this->assertStringContainsString('World', $result);
     }
 }

@@ -49,12 +49,12 @@ final class SafeGuardApprovalTuiE2eTest extends TestCase
         $this->testProjectDir = $this->createIsolatedProjectDir();
 
         $this->snapshotDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
-        @mkdir($this->snapshotDir, 0o777, true);
+        @\mkdir($this->snapshotDir, 0o777, true);
 
         // Compute the expected target file path (same as in the fixture deltas).
         $sessionId = pathinfo($this->testProjectDir, \PATHINFO_BASENAME);
         $this->targetOutsidePath = \dirname($this->testProjectDir).'/sg-'.$sessionId.'.txt';
-        @unlink($this->targetOutsidePath);
+        @\unlink($this->targetOutsidePath);
 
         // Write replay fixture files into the isolated project dir.
         $this->writeFixtures($sessionId);
@@ -70,6 +70,57 @@ final class SafeGuardApprovalTuiE2eTest extends TestCase
         if (isset($this->testProjectDir) && '' !== $this->testProjectDir) {
             TestDirectoryIsolation::removeDirectory($this->testProjectDir);
         }
+    }
+
+    // ── Fixture generation ────────────────────────────────────────
+
+    /**
+     * Write two replay fixtures into the isolated project dir:
+     *   1. Write tool call (path outside CWD)
+     *   2. "done" text response (post-tool assistant turn)
+     */
+    private function writeFixtures(string $sessionId): void
+    {
+        // Fixture 1: the LLM calls write with path ../sg-{sessionId}.txt
+        $path = '../sg-'.$sessionId.'.txt';
+        $callId = 'call_sg_tui_1';
+
+        $fixture1 = [
+            'model' => 'llama_cpp_test/test',
+            'provider_id' => 'llama_cpp_test',
+            'reasoning' => 'off',
+            'deltas' => [
+                ['type' => 'tool_call_start', 'id' => $callId, 'name' => 'write'],
+                ['type' => 'tool_input_delta', 'id' => $callId, 'name' => 'write', 'partial_json' => '{"path":"../sg'],
+                ['type' => 'tool_input_delta', 'id' => $callId, 'name' => 'write', 'partial_json' => '-'.$sessionId],
+                ['type' => 'tool_input_delta', 'id' => $callId, 'name' => 'write', 'partial_json' => '.txt","content":"h'],
+                ['type' => 'tool_input_delta', 'id' => $callId, 'name' => 'write', 'partial_json' => 'ello"}'],
+                ['type' => 'tool_call_complete', 'tool_calls' => [
+                    ['id' => $callId, 'name' => 'write', 'arguments' => ['path' => $path, 'content' => 'hello']],
+                ]],
+            ],
+            'stop_reason' => 'tool_call',
+        ];
+
+        // Fixture 2: the LLM returns text after the tool executes
+        $fixture2 = [
+            'model' => 'llama_cpp_test/test',
+            'provider_id' => 'llama_cpp_test',
+            'reasoning' => 'off',
+            'deltas' => [
+                ['type' => 'text', 'content' => 'The file has been written.'],
+            ],
+            'stop_reason' => 'stop',
+        ];
+
+        \file_put_contents(
+            $this->testProjectDir.'/fixture-write.json',
+            \json_encode($fixture1, \JSON_UNESCAPED_UNICODE | \JSON_UNESCAPED_SLASHES | \JSON_THROW_ON_ERROR),
+        );
+        \file_put_contents(
+            $this->testProjectDir.'/fixture-done.json',
+            \json_encode($fixture2, \JSON_UNESCAPED_UNICODE | \JSON_UNESCAPED_SLASHES | \JSON_THROW_ON_ERROR),
+        );
     }
 
     // ── The test ──────────────────────────────────────────────────
@@ -140,7 +191,7 @@ final class SafeGuardApprovalTuiE2eTest extends TestCase
                 'The write tool must create the file outside CWD after approval in the real TUI',
             );
 
-            $written = trim((string) file_get_contents($this->targetOutsidePath));
+            $written = \trim((string) \file_get_contents($this->targetOutsidePath));
             self::assertSame('hello', $written,
                 'File content must match what the LLM wrote');
 
@@ -151,61 +202,11 @@ final class SafeGuardApprovalTuiE2eTest extends TestCase
                 'Must not show blocked messaging after approval');
             self::assertStringNotContainsStringIgnoringCase('interrupt', $fullCapture,
                 'Must not show interrupt messaging after approval');
+
         } catch (\Throwable $e) {
             $this->saveAnsiSnapshot($pane, 'sg-approval-FAILURE');
             throw $e;
         }
-    }
-
-    // ── Fixture generation ────────────────────────────────────────
-
-    /**
-     * Write two replay fixtures into the isolated project dir:
-     *   1. Write tool call (path outside CWD)
-     *   2. "done" text response (post-tool assistant turn)
-     */
-    private function writeFixtures(string $sessionId): void
-    {
-        // Fixture 1: the LLM calls write with path ../sg-{sessionId}.txt
-        $path = '../sg-'.$sessionId.'.txt';
-        $callId = 'call_sg_tui_1';
-
-        $fixture1 = [
-            'model' => 'llama_cpp_test/test',
-            'provider_id' => 'llama_cpp_test',
-            'reasoning' => 'off',
-            'deltas' => [
-                ['type' => 'tool_call_start', 'id' => $callId, 'name' => 'write'],
-                ['type' => 'tool_input_delta', 'id' => $callId, 'name' => 'write', 'partial_json' => '{"path":"../sg'],
-                ['type' => 'tool_input_delta', 'id' => $callId, 'name' => 'write', 'partial_json' => '-'.$sessionId],
-                ['type' => 'tool_input_delta', 'id' => $callId, 'name' => 'write', 'partial_json' => '.txt","content":"h'],
-                ['type' => 'tool_input_delta', 'id' => $callId, 'name' => 'write', 'partial_json' => 'ello"}'],
-                ['type' => 'tool_call_complete', 'tool_calls' => [
-                    ['id' => $callId, 'name' => 'write', 'arguments' => ['path' => $path, 'content' => 'hello']],
-                ]],
-            ],
-            'stop_reason' => 'tool_call',
-        ];
-
-        // Fixture 2: the LLM returns text after the tool executes
-        $fixture2 = [
-            'model' => 'llama_cpp_test/test',
-            'provider_id' => 'llama_cpp_test',
-            'reasoning' => 'off',
-            'deltas' => [
-                ['type' => 'text', 'content' => 'The file has been written.'],
-            ],
-            'stop_reason' => 'stop',
-        ];
-
-        file_put_contents(
-            $this->testProjectDir.'/fixture-write.json',
-            json_encode($fixture1, \JSON_UNESCAPED_UNICODE | \JSON_UNESCAPED_SLASHES | \JSON_THROW_ON_ERROR),
-        );
-        file_put_contents(
-            $this->testProjectDir.'/fixture-done.json',
-            json_encode($fixture2, \JSON_UNESCAPED_UNICODE | \JSON_UNESCAPED_SLASHES | \JSON_THROW_ON_ERROR),
-        );
     }
 
     // ── Command building ──────────────────────────────────────────
@@ -217,7 +218,7 @@ final class SafeGuardApprovalTuiE2eTest extends TestCase
         $script = $projectDir.'/bin/console';
         $dbPath = 'app_test-tui-sg-'.bin2hex(random_bytes(4)).'.sqlite';
 
-        $fixturePath = implode(';', [
+        $fixturePath = \implode(';', [
             $this->testProjectDir.'/fixture-write.json',
             $this->testProjectDir.'/fixture-done.json',
         ]);
@@ -233,13 +234,13 @@ final class SafeGuardApprovalTuiE2eTest extends TestCase
             .'--tools-excluded=bash '
             .'--prompt="Write a file to ../%s/sg-%s.txt with content hello" '
             .'2>&1',
-            escapeshellarg($dbPath),
-            escapeshellarg($this->testProjectDir.'/home'),
-            escapeshellarg($fixturePath),
-            escapeshellarg($php),
-            escapeshellarg($script),
-            basename($this->testProjectDir),
-            basename($this->testProjectDir),
+            \escapeshellarg($dbPath),
+            \escapeshellarg($this->testProjectDir.'/home'),
+            \escapeshellarg($fixturePath),
+            \escapeshellarg($php),
+            \escapeshellarg($script),
+            \basename($this->testProjectDir),
+            \basename($this->testProjectDir),
         );
     }
 
@@ -248,7 +249,7 @@ final class SafeGuardApprovalTuiE2eTest extends TestCase
     private function createIsolatedProjectDir(): string
     {
         $dir = TestDirectoryIsolation::createProjectTempDir('tui-sg-approval');
-        @mkdir($dir.'/.hatfield', 0o777, true);
+        @\mkdir($dir.'/.hatfield', 0o777, true);
 
         // Settings with SafeGuard enabled, write tool tracked,
         // NO allow_write_outside_cwd patterns (so SafeGuard blocks).
@@ -311,11 +312,11 @@ final class SafeGuardApprovalTuiE2eTest extends TestCase
         ];
 
         $yaml = \Symfony\Component\Yaml\Yaml::dump($settings, 6, 4);
-        file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
+        \file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
 
         // Also write HOME dir settings (used by controller subprocess).
-        @mkdir($dir.'/home/.hatfield', 0o777, true);
-        file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
+        @\mkdir($dir.'/home/.hatfield', 0o777, true);
+        \file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
 
         return $dir;
     }
@@ -325,8 +326,8 @@ final class SafeGuardApprovalTuiE2eTest extends TestCase
     private function saveAnsiSnapshot(TmuxPane $pane, string $tag): void
     {
         $ansi = $this->tmux->captureAnsi($pane);
-        $ts = date('Ymd-His');
+        $ts = \date('Ymd-His');
         $path = \sprintf('%s/%s-%s.ansi', $this->snapshotDir, $tag, $ts);
-        file_put_contents($path, $ansi);
+        \file_put_contents($path, $ansi);
     }
 }

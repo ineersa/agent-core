@@ -72,7 +72,7 @@ final class SessionInitializerReplayTest extends TestCase
         );
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
-            entityManager: self::createStub(\Doctrine\ORM\EntityManagerInterface::class),
+            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
         );
 
         $this->eventStore = new SessionRunEventStore(
@@ -145,12 +145,12 @@ final class SessionInitializerReplayTest extends TestCase
         // Should have: UserMessage + AssistantMessage
         self::assertGreaterThanOrEqual(2, \count($blocks), 'Expected at least 2 blocks');
 
-        $userBlocks = array_filter($blocks, static fn ($b) => TranscriptBlockKindEnum::UserMessage === $b->kind);
+        $userBlocks = array_filter($blocks, static fn($b) => $b->kind === TranscriptBlockKindEnum::UserMessage);
         self::assertCount(1, $userBlocks, 'Expected 1 UserMessage block');
         $userBlock = array_values($userBlocks)[0];
         self::assertStringContainsString('Hello!', $userBlock->text);
 
-        $assistantBlocks = array_filter($blocks, static fn ($b) => TranscriptBlockKindEnum::AssistantMessage === $b->kind);
+        $assistantBlocks = array_filter($blocks, static fn($b) => $b->kind === TranscriptBlockKindEnum::AssistantMessage);
         self::assertCount(1, $assistantBlocks, 'Expected 1 AssistantMessage block');
         $assistantBlock = array_values($assistantBlocks)[0];
         self::assertStringContainsString('Hi there!', $assistantBlock->text);
@@ -163,7 +163,7 @@ final class SessionInitializerReplayTest extends TestCase
 
         // No replayed blocks should be left in streaming state
         foreach ($blocks as $block) {
-            self::assertFalse($block->streaming, \sprintf(
+            self::assertFalse($block->streaming, sprintf(
                 'Block %s should not be streaming after replay',
                 $block->kind->value,
             ));
@@ -228,7 +228,7 @@ final class SessionInitializerReplayTest extends TestCase
         $blocks = $this->sessionInit->buildInitialTranscript($state);
 
         // Verify block kinds appear in order
-        $kinds = array_map(static fn ($b) => $b->kind, $blocks);
+        $kinds = array_map(static fn($b) => $b->kind, $blocks);
 
         self::assertContains(TranscriptBlockKindEnum::UserMessage, $kinds);
         self::assertContains(TranscriptBlockKindEnum::AssistantMessage, $kinds);
@@ -274,7 +274,7 @@ final class SessionInitializerReplayTest extends TestCase
         $state = new TuiSessionState($runId, true);
         $blocks = $this->sessionInit->buildInitialTranscript($state);
 
-        $kinds = array_map(static fn ($b) => $b->kind, $blocks);
+        $kinds = array_map(static fn($b) => $b->kind, $blocks);
 
         self::assertContains(TranscriptBlockKindEnum::UserMessage, $kinds);
         // agent_command_applied(kind=cancel) → cancellation.requested (marker, no block)
@@ -314,7 +314,7 @@ final class SessionInitializerReplayTest extends TestCase
         $state = new TuiSessionState($runId, true);
         $blocks = $this->sessionInit->buildInitialTranscript($state);
 
-        $kinds = array_map(static fn ($b) => $b->kind, $blocks);
+        $kinds = array_map(static fn($b) => $b->kind, $blocks);
 
         // Should have UserMessage and at least one error-related block
         self::assertContains(TranscriptBlockKindEnum::UserMessage, $kinds);
@@ -476,7 +476,7 @@ final class SessionInitializerReplayTest extends TestCase
         self::assertSame(3, $state->lastSeq, 'lastSeq must advance to max source seq even when events are dropped');
 
         // The mapped events still produce at least the UserMessage block
-        $kinds = array_map(static fn ($b) => $b->kind, $blocks);
+        $kinds = array_map(static fn($b) => $b->kind, $blocks);
         self::assertContains(TranscriptBlockKindEnum::UserMessage, $kinds);
         self::assertNotEmpty($blocks, 'Mapped events should produce at least some blocks');
     }

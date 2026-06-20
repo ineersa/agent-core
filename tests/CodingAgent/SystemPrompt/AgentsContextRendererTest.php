@@ -47,10 +47,10 @@ Project instructions:
 </project_context>
 XML;
 
-        self::assertSame($expected, $result);
-        self::assertStringContainsString('<project_context>', $result);
-        self::assertStringContainsString('</project_context>', $result);
-        self::assertStringContainsString('<project_instructions path="/home/user/project/AGENTS.md">', $result);
+        $this->assertSame($expected, $result);
+        $this->assertStringContainsString('<project_context>', $result);
+        $this->assertStringContainsString('</project_context>', $result);
+        $this->assertStringContainsString('<project_instructions path="/home/user/project/AGENTS.md">', $result);
     }
 
     public function testRendersMultipleFilesInOrder(): void
@@ -63,26 +63,26 @@ XML;
         $result = $this->renderer->render($discovered);
 
         // Both blocks present
-        self::assertStringContainsString('Global context', $result);
-        self::assertStringContainsString('Project context', $result);
+        $this->assertStringContainsString('Global context', $result);
+        $this->assertStringContainsString('Project context', $result);
 
         // First file's block appears before second file's block
         $globalPos = strpos($result, 'Global context');
         $projectPos = strpos($result, 'Project context');
-        self::assertNotFalse($globalPos);
-        self::assertNotFalse($projectPos);
-        self::assertLessThan($projectPos, $globalPos);
+        $this->assertNotFalse($globalPos);
+        $this->assertNotFalse($projectPos);
+        $this->assertLessThan($projectPos, $globalPos);
 
         // Both path attributes present
-        self::assertStringContainsString('/home/user/.hatfield/AGENTS.md', $result);
-        self::assertStringContainsString('/home/user/project/AGENTS.md', $result);
+        $this->assertStringContainsString('/home/user/.hatfield/AGENTS.md', $result);
+        $this->assertStringContainsString('/home/user/project/AGENTS.md', $result);
     }
 
     public function testEmptyListReturnsEmptyString(): void
     {
         $result = $this->renderer->render([]);
 
-        self::assertSame('', $result);
+        $this->assertSame('', $result);
     }
 
     public function testXmlStructure(): void
@@ -94,20 +94,20 @@ XML;
         $result = $this->renderer->render($discovered);
 
         // Starts with project_context opening tag
-        self::assertStringStartsWith('<project_context>', $result);
+        $this->assertStringStartsWith('<project_context>', $result);
 
         // Ends with project_context closing tag
-        self::assertStringEndsWith('</project_context>', $result);
+        $this->assertStringEndsWith('</project_context>', $result);
 
         // Contains the description line
-        self::assertStringContainsString('Project-specific instructions and guidelines:', $result);
+        $this->assertStringContainsString('Project-specific instructions and guidelines:', $result);
 
         // Contains the project_instructions block with path attribute
-        self::assertStringContainsString('<project_instructions path="/path/to/AGENTS.md">', $result);
-        self::assertStringContainsString('</project_instructions>', $result);
+        $this->assertStringContainsString('<project_instructions path="/path/to/AGENTS.md">', $result);
+        $this->assertStringContainsString('</project_instructions>', $result);
 
         // Content is inside the block
-        self::assertStringContainsString('Instructions:', $result);
+        $this->assertStringContainsString('Instructions:', $result);
     }
 
     public function testContentWithXmlSpecialCharsIsEscaped(): void
@@ -119,11 +119,11 @@ XML;
         $result = $this->renderer->render($discovered);
 
         // XML special chars should be escaped in output
-        self::assertStringContainsString('&lt;b&gt;bold&lt;/b&gt;', $result);
-        self::assertStringContainsString('&amp;', $result);
-        self::assertStringContainsString('&quot;quoted&quot;', $result);
+        $this->assertStringContainsString('&lt;b&gt;bold&lt;/b&gt;', $result);
+        $this->assertStringContainsString('&amp;', $result);
+        $this->assertStringContainsString('&quot;quoted&quot;', $result);
         // Raw special chars should NOT appear
-        self::assertStringNotContainsString('<b>', $result);
+        $this->assertStringNotContainsString('<b>', $result);
     }
 
     public function testPathWithSpecialCharsIsEscaped(): void
@@ -135,6 +135,6 @@ XML;
         $result = $this->renderer->render($discovered);
 
         // Path attribute should have escaped &
-        self::assertStringContainsString('path="/path/to/special &amp; chars/AGENTS.md"', $result);
+        $this->assertStringContainsString('path="/path/to/special &amp; chars/AGENTS.md"', $result);
     }
 }

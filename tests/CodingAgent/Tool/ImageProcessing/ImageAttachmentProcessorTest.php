@@ -49,11 +49,11 @@ final class ImageAttachmentProcessorTest extends TestCase
 
         $result = $this->processor->process($path, 'image/png', 100, 100);
 
-        self::assertFalse($result['processed'], 'Small image should not be processed');
-        self::assertSame($path, $result['path']);
-        self::assertSame(100, $result['width']);
-        self::assertSame(100, $result['height']);
-        self::assertSame('image/png', $result['media_type']);
+        $this->assertFalse($result['processed'], 'Small image should not be processed');
+        $this->assertSame($path, $result['path']);
+        $this->assertSame(100, $result['width']);
+        $this->assertSame(100, $result['height']);
+        $this->assertSame('image/png', $result['media_type']);
     }
 
     public function testSmallJpegPassesThroughUnchanged(): void
@@ -63,8 +63,8 @@ final class ImageAttachmentProcessorTest extends TestCase
 
         $result = $this->processor->process($path, 'image/jpeg', 100, 100);
 
-        self::assertFalse($result['processed'], 'Small JPEG should not be processed');
-        self::assertSame($path, $result['path']);
+        $this->assertFalse($result['processed'], 'Small JPEG should not be processed');
+        $this->assertSame($path, $result['path']);
     }
 
     /* ── Large images get resized ── */
@@ -72,7 +72,7 @@ final class ImageAttachmentProcessorTest extends TestCase
     public function testLargePngIsResizedToMaxDimension(): void
     {
         if (!\extension_loaded('imagick') && !\extension_loaded('gd')) {
-            self::markTestSkipped('No image processing library available');
+            $this->markTestSkipped('No image processing library available');
         }
 
         $path = $this->tmpDir.'/large.png';
@@ -80,17 +80,17 @@ final class ImageAttachmentProcessorTest extends TestCase
 
         $result = $this->processor->process($path, 'image/png', 3000, 2000);
 
-        self::assertTrue($result['processed'], 'Large image should be processed');
-        self::assertNotSame($path, $result['path'], 'Processed image should be a temp file, not the original');
-        self::assertLessThanOrEqual(2000, $result['width'], 'Width must be <= maxDimension');
-        self::assertLessThanOrEqual(2000, $result['height'], 'Height must be <= maxDimension');
-        self::assertFileExists($result['path']);
+        $this->assertTrue($result['processed'], 'Large image should be processed');
+        $this->assertNotSame($path, $result['path'], 'Processed image should be a temp file, not the original');
+        $this->assertLessThanOrEqual(2000, $result['width'], 'Width must be <= maxDimension');
+        $this->assertLessThanOrEqual(2000, $result['height'], 'Height must be <= maxDimension');
+        $this->assertFileExists($result['path']);
     }
 
     public function testLargeJpegIsResizedToMaxDimension(): void
     {
         if (!\extension_loaded('imagick') && !\extension_loaded('gd')) {
-            self::markTestSkipped('No image processing library available');
+            $this->markTestSkipped('No image processing library available');
         }
 
         $path = $this->tmpDir.'/large.jpg';
@@ -98,10 +98,10 @@ final class ImageAttachmentProcessorTest extends TestCase
 
         $result = $this->processor->process($path, 'image/jpeg', 3000, 1500);
 
-        self::assertTrue($result['processed'], 'Large JPEG should be processed');
-        self::assertLessThanOrEqual(2000, $result['width']);
-        self::assertLessThanOrEqual(2000, $result['height']);
-        self::assertFileExists($result['path']);
+        $this->assertTrue($result['processed'], 'Large JPEG should be processed');
+        $this->assertLessThanOrEqual(2000, $result['width']);
+        $this->assertLessThanOrEqual(2000, $result['height']);
+        $this->assertFileExists($result['path']);
     }
 
     /* ── Aspect ratio preservation ── */
@@ -109,7 +109,7 @@ final class ImageAttachmentProcessorTest extends TestCase
     public function testAspectRatioIsPreservedAfterResize(): void
     {
         if (!\extension_loaded('imagick') && !\extension_loaded('gd')) {
-            self::markTestSkipped('No image processing library available');
+            $this->markTestSkipped('No image processing library available');
         }
 
         $path = $this->tmpDir.'/aspect.png';
@@ -117,12 +117,12 @@ final class ImageAttachmentProcessorTest extends TestCase
 
         $result = $this->processor->process($path, 'image/png', 4000, 1000);
 
-        self::assertTrue($result['processed']);
+        $this->assertTrue($result['processed']);
         // Original aspect: 4:1. After resize to fit max 2000:
         // width = 2000 (clamped), height = 1000 * (2000/4000) = 500
-        self::assertSame(2000, $result['width']);
-        self::assertSame(500, $result['height']);
-        self::assertFileExists($result['path']);
+        $this->assertSame(2000, $result['width']);
+        $this->assertSame(500, $result['height']);
+        $this->assertFileExists($result['path']);
     }
 
     /* ── Processor handles GD-only fallback ── */
@@ -130,7 +130,7 @@ final class ImageAttachmentProcessorTest extends TestCase
     public function testProcessorWorksWithGdOnly(): void
     {
         if (!\extension_loaded('gd')) {
-            self::markTestSkipped('GD not available');
+            $this->markTestSkipped('GD not available');
         }
 
         $path = $this->tmpDir.'/gd.png';
@@ -138,8 +138,8 @@ final class ImageAttachmentProcessorTest extends TestCase
 
         $result = $this->processor->process($path, 'image/png', 100, 100);
 
-        self::assertFalse($result['processed']);
-        self::assertSame($path, $result['path']);
+        $this->assertFalse($result['processed']);
+        $this->assertSame($path, $result['path']);
     }
 
     /* ── Config-driven quality candidates ── */
@@ -147,7 +147,7 @@ final class ImageAttachmentProcessorTest extends TestCase
     public function testEncodingCandidatesUseConfiguredQuality(): void
     {
         if (!\extension_loaded('imagick') && !\extension_loaded('gd')) {
-            self::markTestSkipped('No image processing library available');
+            $this->markTestSkipped('No image processing library available');
         }
 
         // Use a moderate size image that needs resize but doesn't need massive
@@ -170,16 +170,16 @@ final class ImageAttachmentProcessorTest extends TestCase
 
         $result = $processor->process($path, 'image/png', 2500, 2000);
 
-        self::assertTrue($result['processed'], 'Image should be processed with custom quality config');
-        self::assertNotSame($path, $result['path']);
-        self::assertLessThanOrEqual(2000, $result['width']);
-        self::assertLessThanOrEqual(2000, $result['height']);
+        $this->assertTrue($result['processed'], 'Image should be processed with custom quality config');
+        $this->assertNotSame($path, $result['path']);
+        $this->assertLessThanOrEqual(2000, $result['width']);
+        $this->assertLessThanOrEqual(2000, $result['height']);
     }
 
     public function testExceedsEncodedLimitWarningPresentWhenLimitTiny(): void
     {
         if (!\extension_loaded('imagick') && !\extension_loaded('gd')) {
-            self::markTestSkipped('No image processing library available');
+            $this->markTestSkipped('No image processing library available');
         }
 
         // Use a tiny encodedMaxBytes (1 byte) so the image will always exceed.
@@ -202,11 +202,11 @@ final class ImageAttachmentProcessorTest extends TestCase
 
         $result = $processor->process($path, 'image/png', 20, 20);
 
-        self::assertTrue($result['processed']);
-        self::assertArrayHasKey('exceeds_encoded_limit', $result);
-        self::assertTrue($result['exceeds_encoded_limit']);
-        self::assertArrayHasKey('warning', $result);
-        self::assertStringContainsString('may exceed provider size limits', $result['warning']);
+        $this->assertTrue($result['processed']);
+        $this->assertArrayHasKey('exceeds_encoded_limit', $result);
+        $this->assertTrue($result['exceeds_encoded_limit']);
+        $this->assertArrayHasKey('warning', $result);
+        $this->assertStringContainsString('may exceed provider size limits', $result['warning']);
     }
 
     /* ── writeCache failure robustness ── */
@@ -214,7 +214,7 @@ final class ImageAttachmentProcessorTest extends TestCase
     public function testProcessHandlesWriteCacheFailureGracefully(): void
     {
         if (!\extension_loaded('imagick') && !\extension_loaded('gd')) {
-            self::markTestSkipped('No image processing library available');
+            $this->markTestSkipped('No image processing library available');
         }
 
         // Create a file where the cache directory would be — this blocks
@@ -231,10 +231,10 @@ final class ImageAttachmentProcessorTest extends TestCase
 
         $result = $this->processor->process($path, 'image/png', 100, 100);
 
-        self::assertArrayHasKey('path', $result);
-        self::assertIsString($result['path']);
-        self::assertNotEmpty($result['path'], 'Path in result must never be null or empty');
-        self::assertFileExists($result['path'], 'If processing happened, cache file must exist');
+        $this->assertArrayHasKey('path', $result);
+        $this->assertIsString($result['path']);
+        $this->assertNotEmpty($result['path'], 'Path in result must never be null or empty');
+        $this->assertFileExists($result['path'], 'If processing happened, cache file must exist');
     }
 
     /* ── Cache cleanup ── */
@@ -242,7 +242,7 @@ final class ImageAttachmentProcessorTest extends TestCase
     public function testCleanCacheRemovesExpiredFiles(): void
     {
         if (!\extension_loaded('imagick') && !\extension_loaded('gd')) {
-            self::markTestSkipped('No image processing library available');
+            $this->markTestSkipped('No image processing library available');
         }
 
         // Use a moderate size image to trigger cache write
@@ -251,14 +251,14 @@ final class ImageAttachmentProcessorTest extends TestCase
 
         $result = $this->processor->process($path, 'image/png', 2500, 2000);
 
-        self::assertTrue($result['processed']);
-        self::assertFileExists($result['path']);
+        $this->assertTrue($result['processed']);
+        $this->assertFileExists($result['path']);
 
         // Clean with null (delete all) — should remove the cached file
         $deleted = $this->processor->cleanCache(null);
 
-        self::assertGreaterThanOrEqual(1, $deleted, 'Should delete at least one cached file');
-        self::assertFileDoesNotExist($result['path']);
+        $this->assertGreaterThanOrEqual(1, $deleted, 'Should delete at least one cached file');
+        $this->assertFileDoesNotExist($result['path']);
     }
 
     private function createPng(int $width, int $height, string $path): void

@@ -14,7 +14,7 @@ final class CodexOAuthConfigTest extends TestCase
     public function testProviderKeyForProfileWithValidNames(?string $profile, string $expectedKey): void
     {
         $key = CodexOAuthConfig::providerKeyForProfile($profile);
-        self::assertSame($expectedKey, $key);
+        $this->assertSame($expectedKey, $key);
     }
 
     /**
@@ -62,15 +62,15 @@ final class CodexOAuthConfigTest extends TestCase
     public function testProviderKeyForProfileReturnsDefaultForBlank(): void
     {
         // Blank/null/empty return default, they don't throw
-        self::assertSame('openai-codex', CodexOAuthConfig::providerKeyForProfile('   '));
-        self::assertSame('openai-codex', CodexOAuthConfig::providerKeyForProfile(''));
-        self::assertSame('openai-codex', CodexOAuthConfig::providerKeyForProfile(null));
+        $this->assertSame('openai-codex', CodexOAuthConfig::providerKeyForProfile('   '));
+        $this->assertSame('openai-codex', CodexOAuthConfig::providerKeyForProfile(''));
+        $this->assertSame('openai-codex', CodexOAuthConfig::providerKeyForProfile(null));
     }
 
     public function testProviderKeyForProfileNormalizesToLowercase(): void
     {
         $key = CodexOAuthConfig::providerKeyForProfile('MyWork');
-        self::assertSame('openai-codex-mywork', $key);
+        $this->assertSame('openai-codex-mywork', $key);
     }
 
     // -- profileFromProviderKey tests --
@@ -78,7 +78,7 @@ final class CodexOAuthConfigTest extends TestCase
     #[DataProvider('profileFromProviderKeyProvider')]
     public function testProfileFromProviderKey(string $providerKey, ?string $expectedProfile): void
     {
-        self::assertSame($expectedProfile, CodexOAuthConfig::profileFromProviderKey($providerKey));
+        $this->assertSame($expectedProfile, CodexOAuthConfig::profileFromProviderKey($providerKey));
     }
 
     /**
@@ -103,7 +103,7 @@ final class CodexOAuthConfigTest extends TestCase
     public function testAuthCommandHintForProviderKey(string $providerKey, string $expectedHint): void
     {
         $hint = CodexOAuthConfig::authCommandHintForProviderKey($providerKey);
-        self::assertSame($expectedHint, $hint);
+        $this->assertSame($expectedHint, $hint);
     }
 
     /**

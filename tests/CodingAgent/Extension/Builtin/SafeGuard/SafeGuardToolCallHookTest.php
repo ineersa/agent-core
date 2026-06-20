@@ -53,7 +53,7 @@ final class SafeGuardToolCallHookTest extends TestCase
             orderIndex: 0,
         ));
 
-        self::assertSame(ToolCallDecisionKindEnum::Allow, $dto->kind);
+        $this->assertSame(ToolCallDecisionKindEnum::Allow, $dto->kind);
     }
 
     public function testBashSudoIsBlocked(): void
@@ -65,10 +65,10 @@ final class SafeGuardToolCallHookTest extends TestCase
             orderIndex: 0,
         ));
 
-        self::assertSame(ToolCallDecisionKindEnum::Block, $dto->kind);
-        self::assertSame('hard_block', $dto->details['category']);
-        self::assertTrue($dto->details['intercepted']);
-        self::assertTrue($dto->details['denied']);
+        $this->assertSame(ToolCallDecisionKindEnum::Block, $dto->kind);
+        $this->assertSame('hard_block', $dto->details['category']);
+        $this->assertTrue($dto->details['intercepted']);
+        $this->assertTrue($dto->details['denied']);
     }
 
     public function testBashDestructiveRequiresApproval(): void
@@ -80,11 +80,11 @@ final class SafeGuardToolCallHookTest extends TestCase
             orderIndex: 0,
         ));
 
-        self::assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
-        self::assertSame('destructive', $dto->details['category']);
-        self::assertArrayHasKey('question_id', $dto->details);
-        self::assertArrayHasKey('schema', $dto->details);
-        self::assertArrayHasKey('prompt', $dto->details);
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
+        $this->assertSame('destructive', $dto->details['category']);
+        $this->assertArrayHasKey('question_id', $dto->details);
+        $this->assertArrayHasKey('schema', $dto->details);
+        $this->assertArrayHasKey('prompt', $dto->details);
     }
 
     public function testBashDangerousGitRequiresApproval(): void
@@ -96,8 +96,8 @@ final class SafeGuardToolCallHookTest extends TestCase
             orderIndex: 0,
         ));
 
-        self::assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
-        self::assertSame('dangerous_git', $dto->details['category']);
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
+        $this->assertSame('dangerous_git', $dto->details['category']);
     }
 
     public function testBashEnvExposureRequiresApproval(): void
@@ -109,8 +109,8 @@ final class SafeGuardToolCallHookTest extends TestCase
             orderIndex: 0,
         ));
 
-        self::assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
-        self::assertSame('sensitive_info', $dto->details['category']);
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
+        $this->assertSame('sensitive_info', $dto->details['category']);
     }
 
     // ── Write tool ──
@@ -124,7 +124,7 @@ final class SafeGuardToolCallHookTest extends TestCase
             orderIndex: 0,
         ));
 
-        self::assertSame(ToolCallDecisionKindEnum::Allow, $dto->kind);
+        $this->assertSame(ToolCallDecisionKindEnum::Allow, $dto->kind);
     }
 
     public function testWriteOutsideCwdRequiresApproval(): void
@@ -136,8 +136,8 @@ final class SafeGuardToolCallHookTest extends TestCase
             orderIndex: 0,
         ));
 
-        self::assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
-        self::assertSame('write_outside_cwd', $dto->details['category']);
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
+        $this->assertSame('write_outside_cwd', $dto->details['category']);
     }
 
     // ── Edit tool ──
@@ -151,7 +151,7 @@ final class SafeGuardToolCallHookTest extends TestCase
             orderIndex: 0,
         ));
 
-        self::assertSame(ToolCallDecisionKindEnum::Allow, $dto->kind);
+        $this->assertSame(ToolCallDecisionKindEnum::Allow, $dto->kind);
     }
 
     public function testEditOutsideCwdRequiresApproval(): void
@@ -163,8 +163,8 @@ final class SafeGuardToolCallHookTest extends TestCase
             orderIndex: 0,
         ));
 
-        self::assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
-        self::assertSame('write_outside_cwd', $dto->details['category']);
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
+        $this->assertSame('write_outside_cwd', $dto->details['category']);
     }
 
     // ── Read tool ──
@@ -178,7 +178,7 @@ final class SafeGuardToolCallHookTest extends TestCase
             orderIndex: 0,
         ));
 
-        self::assertSame(ToolCallDecisionKindEnum::Allow, $dto->kind);
+        $this->assertSame(ToolCallDecisionKindEnum::Allow, $dto->kind);
     }
 
     public function testReadProtectedDotEnvRequiresApproval(): void
@@ -205,8 +205,8 @@ final class SafeGuardToolCallHookTest extends TestCase
             orderIndex: 0,
         ));
 
-        self::assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
-        self::assertSame('protected_read', $dto->details['category']);
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
+        $this->assertSame('protected_read', $dto->details['category']);
     }
 
     public function testReadSshKeyRequiresApproval(): void
@@ -233,8 +233,8 @@ final class SafeGuardToolCallHookTest extends TestCase
             orderIndex: 0,
         ));
 
-        self::assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
-        self::assertSame('protected_read', $dto->details['category']);
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
+        $this->assertSame('protected_read', $dto->details['category']);
     }
 
     // ── Unknown tools ──
@@ -248,7 +248,7 @@ final class SafeGuardToolCallHookTest extends TestCase
             orderIndex: 0,
         ));
 
-        self::assertSame(ToolCallDecisionKindEnum::Allow, $dto->kind);
+        $this->assertSame(ToolCallDecisionKindEnum::Allow, $dto->kind);
     }
 
     // ── Allowlist support ──
@@ -277,7 +277,7 @@ final class SafeGuardToolCallHookTest extends TestCase
             orderIndex: 0,
         ));
 
-        self::assertSame(ToolCallDecisionKindEnum::Allow, $dto->kind);
+        $this->assertSame(ToolCallDecisionKindEnum::Allow, $dto->kind);
     }
 
     // ── Decision details ──
@@ -291,11 +291,11 @@ final class SafeGuardToolCallHookTest extends TestCase
             orderIndex: 0,
         ));
 
-        self::assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
-        self::assertArrayHasKey('category', $dto->details);
-        self::assertArrayHasKey('prompt', $dto->details);
-        self::assertArrayHasKey('schema', $dto->details);
-        self::assertArrayHasKey('question_id', $dto->details);
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
+        $this->assertArrayHasKey('category', $dto->details);
+        $this->assertArrayHasKey('prompt', $dto->details);
+        $this->assertArrayHasKey('schema', $dto->details);
+        $this->assertArrayHasKey('question_id', $dto->details);
     }
 
     // ── Approval session tracking ──
@@ -312,16 +312,16 @@ final class SafeGuardToolCallHookTest extends TestCase
             orderIndex: 0,
         ));
 
-        self::assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
-        self::assertSame('destructive', $dto->details['category']);
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
+        $this->assertSame('destructive', $dto->details['category']);
 
         // Simulate approval by the human
         $questionId = $dto->details['question_id'];
         $operationKey = $dto->details['operation_key'];
-        self::assertNotNull($operationKey);
+        $this->assertNotNull($operationKey);
 
         $this->tracker->approveByQuestionId($questionId);
-        self::assertTrue($this->tracker->isApproved($operationKey));
+        $this->assertTrue($this->tracker->isApproved($operationKey));
 
         // Second call (retry): should be allowed
         $dto2 = $this->hook->onToolCall(new ToolCallContextDTO(
@@ -331,8 +331,8 @@ final class SafeGuardToolCallHookTest extends TestCase
             orderIndex: 0,
         ));
 
-        self::assertSame(ToolCallDecisionKindEnum::Allow, $dto2->kind);
-        self::assertFalse($this->tracker->isApproved($operationKey), 'Approval should be consumed on use');
+        $this->assertSame(ToolCallDecisionKindEnum::Allow, $dto2->kind);
+        $this->assertFalse($this->tracker->isApproved($operationKey), 'Approval should be consumed on use');
     }
 
     public function testDeniedOperationIsNotApproved(): void
@@ -347,13 +347,13 @@ final class SafeGuardToolCallHookTest extends TestCase
             orderIndex: 0,
         ));
 
-        self::assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
         $operationKey = $dto->details['operation_key'];
-        self::assertNotNull($operationKey);
+        $this->assertNotNull($operationKey);
 
         // Simulate denial by the human
         $this->tracker->remove($operationKey);
-        self::assertFalse($this->tracker->isApproved($operationKey));
+        $this->assertFalse($this->tracker->isApproved($operationKey));
 
         // Second call (retry after denial): should still require approval
         $dto2 = $this->hook->onToolCall(new ToolCallContextDTO(
@@ -363,7 +363,7 @@ final class SafeGuardToolCallHookTest extends TestCase
             orderIndex: 0,
         ));
 
-        self::assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto2->kind);
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto2->kind);
     }
 
     public function testHooksHandleNonInteractiveAutoDeny(): void
@@ -388,9 +388,9 @@ final class SafeGuardToolCallHookTest extends TestCase
             orderIndex: 0,
         ));
 
-        self::assertSame(ToolCallDecisionKindEnum::Block, $dto->kind);
-        self::assertTrue($dto->details['auto_denied'] ?? false);
-        self::assertSame('destructive', $dto->details['category']);
+        $this->assertSame(ToolCallDecisionKindEnum::Block, $dto->kind);
+        $this->assertTrue($dto->details['auto_denied'] ?? false);
+        $this->assertSame('destructive', $dto->details['category']);
     }
 
     public function testHardBlockStaysBlockedInNoninteractive(): void
@@ -415,8 +415,8 @@ final class SafeGuardToolCallHookTest extends TestCase
             orderIndex: 0,
         ));
 
-        self::assertSame(ToolCallDecisionKindEnum::Block, $dto->kind);
-        self::assertSame('hard_block', $dto->details['category']);
+        $this->assertSame(ToolCallDecisionKindEnum::Block, $dto->kind);
+        $this->assertSame('hard_block', $dto->details['category']);
     }
 
     // ── onApprovalAnswered ──
@@ -433,11 +433,11 @@ final class SafeGuardToolCallHookTest extends TestCase
             orderIndex: 0,
         ));
 
-        self::assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
         $operationKey = $dto->details['operation_key'] ?? null;
-        self::assertNotNull($operationKey);
+        $this->assertNotNull($operationKey);
         $questionId = (string) ($dto->details['question_id'] ?? '');
-        self::assertNotEmpty($questionId);
+        $this->assertNotEmpty($questionId);
 
         // Human answers "Allow once" through onApprovalAnswered
         $this->hook->onApprovalAnswered(new ApprovalAnswerContextDTO(
@@ -452,7 +452,7 @@ final class SafeGuardToolCallHookTest extends TestCase
             ],
         ));
 
-        self::assertTrue($this->tracker->isApproved($operationKey), 'Tracker should mark approved after "Allow once"');
+        $this->assertTrue($this->tracker->isApproved($operationKey), 'Tracker should mark approved after "Allow once"');
 
         // Second call (retry): consumed and allowed
         $dto2 = $this->hook->onToolCall(new ToolCallContextDTO(
@@ -462,8 +462,8 @@ final class SafeGuardToolCallHookTest extends TestCase
             orderIndex: 0,
         ));
 
-        self::assertSame(ToolCallDecisionKindEnum::Allow, $dto2->kind);
-        self::assertFalse($this->tracker->isApproved($operationKey), 'Approval should be consumed after retry');
+        $this->assertSame(ToolCallDecisionKindEnum::Allow, $dto2->kind);
+        $this->assertFalse($this->tracker->isApproved($operationKey), 'Approval should be consumed after retry');
     }
 
     public function testDenyRemovesPendingAndRejectsRetry(): void
@@ -478,9 +478,9 @@ final class SafeGuardToolCallHookTest extends TestCase
             orderIndex: 0,
         ));
 
-        self::assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
         $operationKey = $dto->details['operation_key'] ?? null;
-        self::assertNotNull($operationKey);
+        $this->assertNotNull($operationKey);
         $questionId = (string) ($dto->details['question_id'] ?? '');
 
         // Human answers "Deny" through onApprovalAnswered
@@ -496,7 +496,7 @@ final class SafeGuardToolCallHookTest extends TestCase
             ],
         ));
 
-        self::assertFalse($this->tracker->isApproved($operationKey), 'Tracker should not approve after denial');
+        $this->assertFalse($this->tracker->isApproved($operationKey), 'Tracker should not approve after denial');
 
         // Second call (retry after denial): still requires approval
         $dto2 = $this->hook->onToolCall(new ToolCallContextDTO(
@@ -506,14 +506,14 @@ final class SafeGuardToolCallHookTest extends TestCase
             orderIndex: 0,
         ));
 
-        self::assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto2->kind);
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto2->kind);
     }
 
     public function testAlwaysAllowApprovesAndPersistsToPolicyFile(): void
     {
-        $tmpDir = sys_get_temp_dir().'/sg_hook_test_'.uniqid();
+        $tmpDir = sys_get_temp_dir() . '/sg_hook_test_' . uniqid();
         mkdir($tmpDir, 0o755, true);
-        $settingsPath = $tmpDir.'/settings.yaml';
+        $settingsPath = $tmpDir . '/settings.yaml';
 
         try {
             $config = new SafeGuardConfig(autoDenyInNoninteractive: false);
@@ -540,9 +540,9 @@ final class SafeGuardToolCallHookTest extends TestCase
                 orderIndex: 0,
             ));
 
-            self::assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
+            $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
             $operationKey = $dto->details['operation_key'] ?? null;
-            self::assertNotNull($operationKey);
+            $this->assertNotNull($operationKey);
             $questionId = (string) ($dto->details['question_id'] ?? '');
 
             // Human answers "Always allow" through onApprovalAnswered
@@ -558,7 +558,7 @@ final class SafeGuardToolCallHookTest extends TestCase
                 ],
             ));
 
-            self::assertTrue($tracker->isApproved($operationKey), 'Tracker should approve for next retry');
+            $this->assertTrue($tracker->isApproved($operationKey), 'Tracker should approve for next retry');
 
             // Second call: approved (consumed)
             $dto2 = $hook->onToolCall(new ToolCallContextDTO(
@@ -568,16 +568,16 @@ final class SafeGuardToolCallHookTest extends TestCase
                 orderIndex: 0,
             ));
 
-            self::assertSame(ToolCallDecisionKindEnum::Allow, $dto2->kind);
+            $this->assertSame(ToolCallDecisionKindEnum::Allow, $dto2->kind);
 
             // Policy file should contain the persisted pattern
-            self::assertFileExists($settingsPath);
+            $this->assertFileExists($settingsPath);
             $content = file_get_contents($settingsPath);
-            self::assertStringContainsString('rm -rf /tmp/build', $content);
-            self::assertStringContainsString('allow_command_patterns', $content);
-            self::assertStringNotContainsString('✅', $content, 'Emoji icon must not leak into settings.yaml');
-            self::assertStringNotContainsString('📌', $content, 'Emoji icon must not leak into settings.yaml');
-            self::assertStringNotContainsString('❌', $content, 'Emoji icon must not leak into settings.yaml');
+            $this->assertStringContainsString('rm -rf /tmp/build', $content);
+            $this->assertStringContainsString('allow_command_patterns', $content);
+            $this->assertStringNotContainsString('✅', $content, 'Emoji icon must not leak into settings.yaml');
+            $this->assertStringNotContainsString('📌', $content, 'Emoji icon must not leak into settings.yaml');
+            $this->assertStringNotContainsString('❌', $content, 'Emoji icon must not leak into settings.yaml');
         } finally {
             if (file_exists($settingsPath)) {
                 unlink($settingsPath);
@@ -598,11 +598,11 @@ final class SafeGuardToolCallHookTest extends TestCase
             orderIndex: 0,
         ));
 
-        self::assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
         $operationKey = $dto->details['operation_key'] ?? null;
-        self::assertNotNull($operationKey);
+        $this->assertNotNull($operationKey);
         $questionId = (string) ($dto->details['question_id'] ?? '');
-        self::assertNotEmpty($questionId);
+        $this->assertNotEmpty($questionId);
 
         // Answer with same questionId but empty operation_key
         $this->hook->onApprovalAnswered(new ApprovalAnswerContextDTO(
@@ -616,7 +616,7 @@ final class SafeGuardToolCallHookTest extends TestCase
         ));
 
         // Tracker should still not be approved — empty key is rejected
-        self::assertFalse($this->tracker->isApproved($operationKey), 'Empty operation_key should not approve');
+        $this->assertFalse($this->tracker->isApproved($operationKey), 'Empty operation_key should not approve');
 
         // Retry: still requires approval (approval was never granted)
         $dto2 = $this->hook->onToolCall(new ToolCallContextDTO(
@@ -626,7 +626,7 @@ final class SafeGuardToolCallHookTest extends TestCase
             orderIndex: 0,
         ));
 
-        self::assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto2->kind);
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto2->kind);
         $this->addToAssertionCount(1); // Reached without exception
     }
 
@@ -642,11 +642,11 @@ final class SafeGuardToolCallHookTest extends TestCase
             orderIndex: 0,
         ));
 
-        self::assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
         $operationKey = $dto->details['operation_key'] ?? null;
-        self::assertNotNull($operationKey);
+        $this->assertNotNull($operationKey);
         $questionId = (string) ($dto->details['question_id'] ?? '');
-        self::assertNotEmpty($questionId);
+        $this->assertNotEmpty($questionId);
 
         // Answer with same questionId but missing operation_key entirely
         $this->hook->onApprovalAnswered(new ApprovalAnswerContextDTO(
@@ -660,7 +660,7 @@ final class SafeGuardToolCallHookTest extends TestCase
         ));
 
         // Tracker should still not be approved — missing key is rejected
-        self::assertFalse($this->tracker->isApproved($operationKey), 'Missing operation_key should not approve');
+        $this->assertFalse($this->tracker->isApproved($operationKey), 'Missing operation_key should not approve');
 
         // Retry: still requires approval (approval was never granted)
         $dto2 = $this->hook->onToolCall(new ToolCallContextDTO(
@@ -670,7 +670,7 @@ final class SafeGuardToolCallHookTest extends TestCase
             orderIndex: 0,
         ));
 
-        self::assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto2->kind);
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto2->kind);
         $this->addToAssertionCount(1); // Reached without exception
     }
 
@@ -683,7 +683,7 @@ final class SafeGuardToolCallHookTest extends TestCase
             approvalContext: ['category' => 'write_outside_cwd'],
         ));
 
-        self::assertSame(ToolCallDecisionKindEnum::Allow, $outcome->kind);
+        $this->assertSame(ToolCallDecisionKindEnum::Allow, $outcome->kind);
     }
 
     public function testResolveApprovalAnswerAlwaysAllowReturnsAllow(): void
@@ -695,7 +695,7 @@ final class SafeGuardToolCallHookTest extends TestCase
             approvalContext: ['category' => 'write_outside_cwd'],
         ));
 
-        self::assertSame(ToolCallDecisionKindEnum::Allow, $outcome->kind);
+        $this->assertSame(ToolCallDecisionKindEnum::Allow, $outcome->kind);
     }
 
     public function testResolveApprovalAnswerDenyReturnsBlockWithSafeGuardReason(): void
@@ -707,9 +707,9 @@ final class SafeGuardToolCallHookTest extends TestCase
             approvalContext: ['category' => 'write_outside_cwd'],
         ));
 
-        self::assertSame(ToolCallDecisionKindEnum::Block, $outcome->kind);
-        self::assertSame('safeguard_denied', $outcome->reason);
-        self::assertStringContainsString('denied by SafeGuard', $outcome->details['message'] ?? '');
+        $this->assertSame(ToolCallDecisionKindEnum::Block, $outcome->kind);
+        $this->assertSame('safeguard_denied', $outcome->reason);
+        $this->assertStringContainsString('denied by SafeGuard', $outcome->details['message'] ?? '');
     }
 
     public function testResolveApprovalAnswerUnknownDenyReturnsBlockWithUnknownReason(): void
@@ -721,9 +721,9 @@ final class SafeGuardToolCallHookTest extends TestCase
             approvalContext: ['category' => 'write_outside_cwd'],
         ));
 
-        self::assertSame(ToolCallDecisionKindEnum::Block, $outcome->kind);
-        self::assertSame('safeguard_unknown_answer', $outcome->reason);
-        self::assertStringContainsString('unknown answer', $outcome->details['message'] ?? '');
+        $this->assertSame(ToolCallDecisionKindEnum::Block, $outcome->kind);
+        $this->assertSame('safeguard_unknown_answer', $outcome->reason);
+        $this->assertStringContainsString('unknown answer', $outcome->details['message'] ?? '');
     }
     // ─── Cancel and icon-label coverage ─────────────────────────────
 
@@ -738,9 +738,9 @@ final class SafeGuardToolCallHookTest extends TestCase
             approvalContext: ['category' => 'write_outside_cwd'],
         ));
 
-        self::assertSame(ToolCallDecisionKindEnum::Block, $outcome->kind);
-        self::assertSame('safeguard_cancelled', $outcome->reason);
-        self::assertStringContainsString('cancelled by the user', $outcome->details['message'] ?? '');
+        $this->assertSame(ToolCallDecisionKindEnum::Block, $outcome->kind);
+        $this->assertSame('safeguard_cancelled', $outcome->reason);
+        $this->assertStringContainsString('cancelled by the user', $outcome->details['message'] ?? '');
     }
 
     public function testResolveApprovalAnswerIconLabelsMapToCorrectOutcomes(): void
@@ -755,7 +755,7 @@ final class SafeGuardToolCallHookTest extends TestCase
             toolName: 'write',
             approvalContext: ['category' => 'write_outside_cwd'],
         ));
-        self::assertSame(ToolCallDecisionKindEnum::Allow, $outcome->kind);
+        $this->assertSame(ToolCallDecisionKindEnum::Allow, $outcome->kind);
 
         // '📌 Always allow' → allow
         $outcome = $this->hook->resolveApprovalAnswer(new ApprovalAnswerContextDTO(
@@ -764,7 +764,7 @@ final class SafeGuardToolCallHookTest extends TestCase
             toolName: 'write',
             approvalContext: ['category' => 'write_outside_cwd'],
         ));
-        self::assertSame(ToolCallDecisionKindEnum::Allow, $outcome->kind);
+        $this->assertSame(ToolCallDecisionKindEnum::Allow, $outcome->kind);
 
         // '❌ Block' → block
         $outcome = $this->hook->resolveApprovalAnswer(new ApprovalAnswerContextDTO(
@@ -773,8 +773,8 @@ final class SafeGuardToolCallHookTest extends TestCase
             toolName: 'write',
             approvalContext: ['category' => 'write_outside_cwd'],
         ));
-        self::assertSame(ToolCallDecisionKindEnum::Block, $outcome->kind);
-        self::assertSame('safeguard_denied', $outcome->reason);
+        $this->assertSame(ToolCallDecisionKindEnum::Block, $outcome->kind);
+        $this->assertSame('safeguard_denied', $outcome->reason);
     }
 
     public function testResolveApprovalAnswerOldLabelWithoutIconFallsThroughToUnknown(): void
@@ -789,8 +789,8 @@ final class SafeGuardToolCallHookTest extends TestCase
             approvalContext: ['category' => 'write_outside_cwd'],
         ));
 
-        self::assertSame(ToolCallDecisionKindEnum::Block, $outcome->kind);
-        self::assertSame('safeguard_unknown_answer', $outcome->reason);
+        $this->assertSame(ToolCallDecisionKindEnum::Block, $outcome->kind);
+        $this->assertSame('safeguard_unknown_answer', $outcome->reason);
     }
 
     // ─── Approval-channel availability ────────────────────────────────
@@ -808,9 +808,9 @@ final class SafeGuardToolCallHookTest extends TestCase
             orderIndex: 0,
         ));
 
-        self::assertSame(ToolCallDecisionKindEnum::Block, $dto->kind);
-        self::assertTrue((bool) ($dto->details['auto_denied'] ?? false));
-        self::assertTrue((bool) ($dto->details['denied'] ?? false));
+        $this->assertSame(ToolCallDecisionKindEnum::Block, $dto->kind);
+        $this->assertTrue((bool) ($dto->details['auto_denied'] ?? false));
+        $this->assertTrue((bool) ($dto->details['denied'] ?? false));
     }
 
     #[\PHPUnit\Framework\Attributes\BackupGlobals(true)]
@@ -818,7 +818,7 @@ final class SafeGuardToolCallHookTest extends TestCase
     {
         // Simulate interactive TUI spawning the controller with
         // HATFIELD_APPROVAL_CHANNEL=controller.
-        putenv('HATFIELD_APPROVAL_CHANNEL=controller');
+        \putenv('HATFIELD_APPROVAL_CHANNEL=controller');
 
         try {
             $hook = $this->createHook(autoDeny: true);
@@ -831,11 +831,11 @@ final class SafeGuardToolCallHookTest extends TestCase
             ));
 
             // Approval channel should override auto-deny → RequireApproval
-            self::assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
-            self::assertArrayHasKey('question_id', $dto->details);
-            self::assertNotEmpty((string) ($dto->details['question_id'] ?? ''));
+            $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
+            $this->assertArrayHasKey('question_id', $dto->details);
+            $this->assertNotEmpty((string) ($dto->details['question_id'] ?? ''));
         } finally {
-            putenv('HATFIELD_APPROVAL_CHANNEL');
+            \putenv('HATFIELD_APPROVAL_CHANNEL');
         }
     }
 
@@ -852,7 +852,7 @@ final class SafeGuardToolCallHookTest extends TestCase
             orderIndex: 0,
         ));
 
-        self::assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
     }
 
     /**

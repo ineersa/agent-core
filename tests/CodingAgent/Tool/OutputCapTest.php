@@ -33,14 +33,14 @@ final class OutputCapTest extends TestCase
         $cap = new OutputCap($this->config);
         $text = 'Hello, world!';
 
-        self::assertSame($text, $cap->process($text));
+        $this->assertSame($text, $cap->process($text));
     }
 
     public function testEmptyTextReturnsUnchanged(): void
     {
         $cap = new OutputCap($this->config);
 
-        self::assertSame('', $cap->process(''));
+        $this->assertSame('', $cap->process(''));
     }
 
     public function testTextExactlyAtCapBoundaryReturnsUnchanged(): void
@@ -49,7 +49,7 @@ final class OutputCapTest extends TestCase
         $cap = new OutputCap($cfg);
         $text = '1234567890'; // 10 chars
 
-        self::assertSame($text, $cap->process($text));
+        $this->assertSame($text, $cap->process($text));
     }
 
     /* ───────── Capping behaviour ───────── */
@@ -62,8 +62,8 @@ final class OutputCapTest extends TestCase
 
         $result = $cap->process($text);
 
-        self::assertStringContainsString('Output capped', $result);
-        self::assertStringNotContainsString($text, $result);
+        $this->assertStringContainsString('Output capped', $result);
+        $this->assertStringNotContainsString($text, $result);
     }
 
     public function testCappedNoticeContainsCharCountAndTokenEstimate(): void
@@ -75,8 +75,8 @@ final class OutputCapTest extends TestCase
         $result = $cap->process($text);
 
         // 100 chars, ~25 tokens (ceil(100/4))
-        self::assertStringContainsString('100', $result);
-        self::assertStringContainsString('25', $result);
+        $this->assertStringContainsString('100', $result);
+        $this->assertStringContainsString('25', $result);
     }
 
     public function testCappedNoticeContainsSavedPath(): void
@@ -89,15 +89,15 @@ final class OutputCapTest extends TestCase
         $result = $cap2->process(str_repeat('a', 100));
 
         // Should contain the storage dir path
-        self::assertStringContainsString($this->tmpDir, $result);
+        $this->assertStringContainsString($this->tmpDir, $result);
         // Generic notice now suggests read with offset+limit on saved output
-        self::assertStringContainsString('Do not rerun the original command', $result);
-        self::assertStringContainsString('read(path:', $result);
-        self::assertStringContainsString('limit: 200', $result);
-        self::assertStringContainsString('without offset+limit', $result);
+        $this->assertStringContainsString('Do not rerun the original command', $result);
+        $this->assertStringContainsString('read(path:', $result);
+        $this->assertStringContainsString('limit: 200', $result);
+        $this->assertStringContainsString('without offset+limit', $result);
         // Path is JSON-encoded so special characters (e.g. double quotes)
         // cannot break the notice.  Normal paths appear as read(path: \"/tmp/...\").
-        self::assertMatchesRegularExpression(
+        $this->assertMatchesRegularExpression(
             '/read\\(path: "[^"]+",/',
             $result,
         );
@@ -115,9 +115,9 @@ final class OutputCapTest extends TestCase
 
         // Extract the saved path from the notice
         $savedPath = $this->extractPathFromNotice($result);
-        self::assertNotNull($savedPath, 'Capped notice should contain a saved path');
-        self::assertFileExists($savedPath);
-        self::assertStringEqualsFile($savedPath, $text);
+        $this->assertNotNull($savedPath, 'Capped notice should contain a saved path');
+        $this->assertFileExists($savedPath);
+        $this->assertStringEqualsFile($savedPath, $text);
     }
 
     public function testPersistCreatesFileWithCorrectContent(): void
@@ -127,8 +127,8 @@ final class OutputCapTest extends TestCase
 
         $path = $cap->persist($text);
 
-        self::assertFileExists($path);
-        self::assertStringEqualsFile($path, $text);
+        $this->assertFileExists($path);
+        $this->assertStringEqualsFile($path, $text);
     }
 
     public function testPersistReturnsAbsolutePath(): void
@@ -136,8 +136,8 @@ final class OutputCapTest extends TestCase
         $cap = new OutputCap($this->config);
         $path = $cap->persist('hello');
 
-        self::assertTrue(str_starts_with($path, '/'));
-        self::assertStringContainsString($this->tmpDir, $path);
+        $this->assertTrue(str_starts_with($path, '/'));
+        $this->assertStringContainsString($this->tmpDir, $path);
     }
 
     public function testPersistCreatesParentDirectories(): void
@@ -148,8 +148,8 @@ final class OutputCapTest extends TestCase
 
         $path = $cap->persist('nested test');
 
-        self::assertFileExists($path);
-        self::assertDirectoryExists($nestedDir);
+        $this->assertFileExists($path);
+        $this->assertDirectoryExists($nestedDir);
     }
 
     public function testPersistWithSessionPrefixUsesPrefixInFilename(): void
@@ -159,9 +159,9 @@ final class OutputCapTest extends TestCase
 
         $path = $cap->persist('prefixed content');
 
-        self::assertStringContainsString('run-abc123-', $path);
-        self::assertStringContainsString($this->tmpDir, $path);
-        self::assertStringEndsWith('.txt', $path);
+        $this->assertStringContainsString('run-abc123-', $path);
+        $this->assertStringContainsString($this->tmpDir, $path);
+        $this->assertStringEndsWith('.txt', $path);
     }
 
     public function testPersistWithoutSessionPrefixUsesDatePrefixInFilename(): void
@@ -173,10 +173,10 @@ final class OutputCapTest extends TestCase
         $filename = basename($path);
         // Should start with today's date: Ymd
         $today = date('Ymd');
-        self::assertStringStartsWith($today.'-', $filename);
-        self::assertStringEndsWith('.txt', $filename);
+        $this->assertStringStartsWith($today.'-', $filename);
+        $this->assertStringEndsWith('.txt', $filename);
         // Should have random hex after prefix
-        self::assertMatchesRegularExpression('/^\d{8}-[a-f0-9]{16}\.txt$/', $filename);
+        $this->assertMatchesRegularExpression('/^\d{8}-[a-f0-9]{16}\.txt$/', $filename);
     }
 
     public function testConfigSessionPrefixUsedInFilename(): void
@@ -186,8 +186,8 @@ final class OutputCapTest extends TestCase
 
         $path = $cap->persist('content');
 
-        self::assertStringContainsString('run-abc-', $path);
-        self::assertStringContainsString($this->tmpDir, $path);
+        $this->assertStringContainsString('run-abc-', $path);
+        $this->assertStringContainsString($this->tmpDir, $path);
     }
 
     public function testPersistDirectoryPermissionsAreRestrictive(): void
@@ -198,10 +198,10 @@ final class OutputCapTest extends TestCase
 
         $path = $cap->persist('perm check');
 
-        self::assertFileExists($path);
+        $this->assertFileExists($path);
         $perms = fileperms($newDir) & 0777;
         // Should be 0750 or more restrictive — definitely not 0777
-        self::assertLessThanOrEqual(0750, $perms, 'Storage directory permissions must not exceed 0750');
+        $this->assertLessThanOrEqual(0750, $perms, 'Storage directory permissions must not exceed 0750');
     }
 
     public function testPersistThrowsOnUnwritableDirectory(): void
@@ -228,11 +228,11 @@ final class OutputCapTest extends TestCase
 
         // With a non-doc path it should be capped
         $resultCode = $cap->process($text, '/path/to/file.php');
-        self::assertStringContainsString('Output capped', $resultCode, 'Non-doc path should cap at 50');
+        $this->assertStringContainsString('Output capped', $resultCode, 'Non-doc path should cap at 50');
 
         // With a doc path it should pass through (75 < 100)
         $resultDoc = $cap->process($text, '/path/to/file.md');
-        self::assertSame($text, $resultDoc, 'Doc path should use 100-char cap');
+        $this->assertSame($text, $resultDoc, 'Doc path should use 100-char cap');
     }
 
     /** @return array<string, array{string}> */
@@ -254,7 +254,7 @@ final class OutputCapTest extends TestCase
         $text = str_repeat('b', 75);
 
         $result = $cap->process($text, "/path/to/file{$ext}");
-        self::assertSame($text, $result, "Extension {$ext} should be treated as doc-like");
+        $this->assertSame($text, $result, "Extension {$ext} should be treated as doc-like");
     }
 
     public function testNullPathUsesDefaultCap(): void
@@ -265,7 +265,7 @@ final class OutputCapTest extends TestCase
 
         // 75 > 50 → capped
         $result = $cap->process($text, null);
-        self::assertStringContainsString('Output capped', $result);
+        $this->assertStringContainsString('Output capped', $result);
     }
 
     /* ───────── Config construction ───────── */
@@ -275,7 +275,7 @@ final class OutputCapTest extends TestCase
         // OutputCap now requires an OutputCapConfig; no null-config fallback.
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir);
         $cap = new OutputCap($cfg);
-        self::assertInstanceOf(OutputCap::class, $cap);
+        $this->assertInstanceOf(OutputCap::class, $cap);
     }
 
     /* ───────── Cleanup ───────── */
@@ -290,11 +290,11 @@ final class OutputCapTest extends TestCase
         $oldPath = $cap->persist($text);
         touch($oldPath, time() - 7200); // 2 hours ago
 
-        self::assertFileExists($oldPath);
+        $this->assertFileExists($oldPath);
 
         $cap->cleanup();
 
-        self::assertFileDoesNotExist($oldPath);
+        $this->assertFileDoesNotExist($oldPath);
     }
 
     public function testCleanupPreservesRecentFiles(): void
@@ -308,7 +308,7 @@ final class OutputCapTest extends TestCase
 
         $cap->cleanup();
 
-        self::assertFileExists($freshPath);
+        $this->assertFileExists($freshPath);
     }
 
     public function testCleanupDoesNotThrowOnMissingDirectory(): void
@@ -318,7 +318,7 @@ final class OutputCapTest extends TestCase
 
         // Should not throw
         $cap->cleanup();
-        self::assertTrue(true);
+        $this->assertTrue(true);
     }
 
     public function testCleanupPreservesMixedAges(): void
@@ -332,8 +332,8 @@ final class OutputCapTest extends TestCase
 
         $cap->cleanup();
 
-        self::assertFileExists($fresh);
-        self::assertFileDoesNotExist($stalePath);
+        $this->assertFileExists($fresh);
+        $this->assertFileDoesNotExist($stalePath);
     }
 
     public function testPersistTriggersCleanupOnFirstUse(): void
@@ -350,13 +350,13 @@ final class OutputCapTest extends TestCase
         file_put_contents($oldPath, 'old data');
         touch($oldPath, time() - 7200);
 
-        self::assertFileExists($oldPath, 'Precondition: stale file should exist');
+        $this->assertFileExists($oldPath, 'Precondition: stale file should exist');
 
         // persist for the first time — should trigger cleanup and remove the stale file
         $newPath = $cap->persist('new data');
 
-        self::assertFileDoesNotExist($oldPath, 'Stale file should be cleaned up by persist()');
-        self::assertFileExists($newPath);
+        $this->assertFileDoesNotExist($oldPath, 'Stale file should be cleaned up by persist()');
+        $this->assertFileExists($newPath);
     }
 
     /* ───────── file_put_contents failure ───────── */
@@ -367,7 +367,7 @@ final class OutputCapTest extends TestCase
         // mkdir failure propagates as RuntimeException.
         // A file_put_contents failure after successful mkdir is extremely
         // rare (disk full, FS error) and not worth a dedicated test.
-        self::assertTrue(true);
+        $this->assertTrue(true);
     }
 
     /* ───────── Helpers ───────── */

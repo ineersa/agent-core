@@ -31,9 +31,9 @@ final class FileMentionIndexReaderTest extends TestCase
     {
         $reader = new FileMentionIndexReader($this->tmpDir.'/nonexistent.jsonl');
 
-        self::assertSame([], $reader->getEntries());
-        self::assertSame([], $reader->getPathsLower());
-        self::assertSame([], $reader->getBasenamesLower());
+        $this->assertSame([], $reader->getEntries());
+        $this->assertSame([], $reader->getPathsLower());
+        $this->assertSame([], $reader->getBasenamesLower());
     }
 
     #[Test]
@@ -49,11 +49,11 @@ final class FileMentionIndexReaderTest extends TestCase
         $reader = new FileMentionIndexReader($path);
         $entries = $reader->getEntries();
 
-        self::assertCount(2, $entries);
-        self::assertSame('src/foo.php', $entries[0]->path);
-        self::assertFalse($entries[0]->isDirectory);
-        self::assertSame('src/bar', $entries[1]->path);
-        self::assertTrue($entries[1]->isDirectory);
+        $this->assertCount(2, $entries);
+        $this->assertSame('src/foo.php', $entries[0]->path);
+        $this->assertFalse($entries[0]->isDirectory);
+        $this->assertSame('src/bar', $entries[1]->path);
+        $this->assertTrue($entries[1]->isDirectory);
     }
 
     #[Test]
@@ -63,7 +63,7 @@ final class FileMentionIndexReaderTest extends TestCase
         file_put_contents($path, '{"path":"first.php","dir":false}');
 
         $reader = new FileMentionIndexReader($path);
-        self::assertCount(1, $reader->getEntries());
+        $this->assertCount(1, $reader->getEntries());
 
         // Write new content and advance the file mtime so the reader
         // detects a change without relying on sleep().  file_put_contents
@@ -78,7 +78,7 @@ final class FileMentionIndexReaderTest extends TestCase
         }
 
         $entries = $reader->getEntries();
-        self::assertCount(2, $entries);
+        $this->assertCount(2, $entries);
     }
 
     #[Test]
@@ -94,9 +94,9 @@ final class FileMentionIndexReaderTest extends TestCase
         $reader = new FileMentionIndexReader($path);
         $entries = $reader->getEntries();
 
-        self::assertCount(2, $entries);
-        self::assertSame('good.php', $entries[0]->path);
-        self::assertSame('also-good.php', $entries[1]->path);
+        $this->assertCount(2, $entries);
+        $this->assertSame('good.php', $entries[0]->path);
+        $this->assertSame('also-good.php', $entries[1]->path);
     }
 
     #[Test]
@@ -111,8 +111,8 @@ final class FileMentionIndexReaderTest extends TestCase
         $reader = new FileMentionIndexReader($path);
         $entries = $reader->getEntries();
 
-        self::assertCount(1, $entries);
-        self::assertSame('good.php', $entries[0]->path);
+        $this->assertCount(1, $entries);
+        $this->assertSame('good.php', $entries[0]->path);
     }
 
     #[Test]
@@ -129,10 +129,10 @@ final class FileMentionIndexReaderTest extends TestCase
         $reader = new FileMentionIndexReader($path);
         $children = $reader->getChildren('src/Tui/Completion');
 
-        self::assertCount(2, $children);
+        $this->assertCount(2, $children);
         $names = array_map(static fn (FileMentionIndexEntryDTO $e) => $e->path, $children);
         sort($names);
-        self::assertSame(
+        $this->assertSame(
             ['src/Tui/Completion/Bar.php', 'src/Tui/Completion/Foo.php'],
             $names,
         );
@@ -148,8 +148,8 @@ final class FileMentionIndexReaderTest extends TestCase
         $pathsLower = $reader->getPathsLower();
         $basenamesLower = $reader->getBasenamesLower();
 
-        self::assertSame(['src/tui/foobar.php'], $pathsLower);
-        self::assertSame(['foobar.php'], $basenamesLower);
+        $this->assertSame(['src/tui/foobar.php'], $pathsLower);
+        $this->assertSame(['foobar.php'], $basenamesLower);
     }
 
     #[Test]
@@ -157,13 +157,13 @@ final class FileMentionIndexReaderTest extends TestCase
     {
         $reader = new FileMentionIndexReader($this->tmpDir.'/nonexistent.jsonl');
 
-        self::assertFalse($reader->isLoaded());
-        self::assertSame(-1, $reader->loadedMtime());
+        $this->assertFalse($reader->isLoaded());
+        $this->assertSame(-1, $reader->loadedMtime());
 
         // Trigger a load
         $reader->getEntries();
 
-        self::assertTrue($reader->isLoaded());
+        $this->assertTrue($reader->isLoaded());
     }
 
     private function removeDir(string $dir): void

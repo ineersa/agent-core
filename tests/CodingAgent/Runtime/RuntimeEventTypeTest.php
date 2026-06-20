@@ -19,14 +19,14 @@ final class RuntimeEventTypeTest extends TestCase
     {
         $cases = RuntimeEventTypeEnum::cases();
 
-        self::assertNotEmpty($cases, 'Enum must have at least one case');
+        $this->assertNotEmpty($cases, 'Enum must have at least one case');
 
         foreach ($cases as $case) {
-            self::assertNotEmpty(
+            $this->assertNotEmpty(
                 $case->value,
                 \sprintf('Case %s must have a non-empty string value', $case->name),
             );
-            self::assertStringContainsString(
+            $this->assertStringContainsString(
                 '.',
                 $case->value,
                 \sprintf('Case %s value "%s" must contain a dot separator', $case->name, $case->value),
@@ -123,7 +123,7 @@ final class RuntimeEventTypeTest extends TestCase
         $cases = RuntimeEventTypeEnum::cases();
 
         foreach ($expected as $expectedCase) {
-            self::assertContains(
+            $this->assertContains(
                 $expectedCase,
                 $cases,
                 \sprintf(
@@ -134,7 +134,7 @@ final class RuntimeEventTypeTest extends TestCase
             );
         }
 
-        self::assertSameSize(
+        $this->assertSameSize(
             $expected,
             $cases,
             'RuntimeEventTypeEnum enum has unexpected extra cases — update this test',
@@ -148,7 +148,7 @@ final class RuntimeEventTypeTest extends TestCase
     public function testValueStringsMatchNamingConvention(): void
     {
         foreach (RuntimeEventTypeEnum::cases() as $case) {
-            self::assertMatchesRegularExpression(
+            $this->assertMatchesRegularExpression(
                 '/^[a-z0-9_]+(\.[a-z0-9_]+)+$/',
                 $case->value,
                 \sprintf(
@@ -168,7 +168,7 @@ final class RuntimeEventTypeTest extends TestCase
         $seen = [];
 
         foreach (RuntimeEventTypeEnum::cases() as $case) {
-            self::assertArrayNotHasKey(
+            $this->assertArrayNotHasKey(
                 $case->value,
                 $seen,
                 \sprintf(
@@ -188,7 +188,7 @@ final class RuntimeEventTypeTest extends TestCase
     #[DataProvider('familyProvider')]
     public function testFamily(RuntimeEventTypeEnum $case, string $expectedFamily): void
     {
-        self::assertSame($expectedFamily, $case->family());
+        $this->assertSame($expectedFamily, $case->family());
     }
 
     /**
@@ -311,37 +311,38 @@ final class RuntimeEventTypeTest extends TestCase
      */
     public function testHelperPredicates(): void
     {
-        self::assertTrue(RuntimeEventTypeEnum::RunStarted->isLifecycle());
-        self::assertFalse(RuntimeEventTypeEnum::RunStarted->isAssistantStream());
-        self::assertFalse(RuntimeEventTypeEnum::RunStarted->isTool());
-        self::assertFalse(RuntimeEventTypeEnum::RunStarted->isHitl());
-        self::assertFalse(RuntimeEventTypeEnum::RunStarted->isCancellation());
+        $this->assertTrue(RuntimeEventTypeEnum::RunStarted->isLifecycle());
+        $this->assertFalse(RuntimeEventTypeEnum::RunStarted->isAssistantStream());
+        $this->assertFalse(RuntimeEventTypeEnum::RunStarted->isTool());
+        $this->assertFalse(RuntimeEventTypeEnum::RunStarted->isHitl());
+        $this->assertFalse(RuntimeEventTypeEnum::RunStarted->isCancellation());
 
-        self::assertTrue(RuntimeEventTypeEnum::AssistantTextDelta->isAssistantStream());
-        self::assertFalse(RuntimeEventTypeEnum::AssistantTextDelta->isLifecycle());
+        $this->assertTrue(RuntimeEventTypeEnum::AssistantTextDelta->isAssistantStream());
+        $this->assertFalse(RuntimeEventTypeEnum::AssistantTextDelta->isLifecycle());
 
-        self::assertTrue(RuntimeEventTypeEnum::ToolCallStarted->isTool());
-        self::assertTrue(RuntimeEventTypeEnum::ToolExecutionCompleted->isTool());
+        $this->assertTrue(RuntimeEventTypeEnum::ToolCallStarted->isTool());
+        $this->assertTrue(RuntimeEventTypeEnum::ToolExecutionCompleted->isTool());
 
-        self::assertTrue(RuntimeEventTypeEnum::HumanInputRequested->isHitl());
-        self::assertTrue(RuntimeEventTypeEnum::CancellationRequested->isCancellation());
+        $this->assertTrue(RuntimeEventTypeEnum::HumanInputRequested->isHitl());
+        $this->assertTrue(RuntimeEventTypeEnum::CancellationRequested->isCancellation());
 
-        self::assertTrue(RuntimeEventTypeEnum::RuntimeReady->isRuntime());
-        self::assertFalse(RuntimeEventTypeEnum::RuntimeReady->isLifecycle());
+        $this->assertTrue(RuntimeEventTypeEnum::RuntimeReady->isRuntime());
+        $this->assertFalse(RuntimeEventTypeEnum::RuntimeReady->isLifecycle());
 
-        self::assertTrue(RuntimeEventTypeEnum::ProtocolError->isProtocol());
-        self::assertFalse(RuntimeEventTypeEnum::ProtocolError->isLifecycle());
+        $this->assertTrue(RuntimeEventTypeEnum::ProtocolError->isProtocol());
+        $this->assertFalse(RuntimeEventTypeEnum::ProtocolError->isLifecycle());
 
-        self::assertTrue(RuntimeEventTypeEnum::RunResumed->isLifecycle());
-        self::assertFalse(RuntimeEventTypeEnum::RunResumed->isCancellation());
+        $this->assertTrue(RuntimeEventTypeEnum::RunResumed->isLifecycle());
+        $this->assertFalse(RuntimeEventTypeEnum::RunResumed->isCancellation());
 
-        self::assertTrue(RuntimeEventTypeEnum::ToolQuestionRequested->isToolQuestion());
-        self::assertFalse(RuntimeEventTypeEnum::ToolQuestionRequested->isLifecycle());
-        self::assertFalse(RuntimeEventTypeEnum::ToolQuestionRequested->isHitl());
+        $this->assertTrue(RuntimeEventTypeEnum::ToolQuestionRequested->isToolQuestion());
+        $this->assertFalse(RuntimeEventTypeEnum::ToolQuestionRequested->isLifecycle());
+        $this->assertFalse(RuntimeEventTypeEnum::ToolQuestionRequested->isHitl());
 
-        self::assertSame('background_process_completion', RuntimeEventTypeEnum::BackgroundProcessCompleted->family());
-        self::assertFalse(RuntimeEventTypeEnum::BackgroundProcessCompleted->isLifecycle());
-        self::assertFalse(RuntimeEventTypeEnum::BackgroundProcessCompleted->isTool());
-        self::assertFalse(RuntimeEventTypeEnum::BackgroundProcessCompleted->isHitl());
+        $this->assertSame('background_process_completion', RuntimeEventTypeEnum::BackgroundProcessCompleted->family());
+        $this->assertFalse(RuntimeEventTypeEnum::BackgroundProcessCompleted->isLifecycle());
+        $this->assertFalse(RuntimeEventTypeEnum::BackgroundProcessCompleted->isTool());
+        $this->assertFalse(RuntimeEventTypeEnum::BackgroundProcessCompleted->isHitl());
     }
+
 }

@@ -70,8 +70,8 @@ final class McpCatalogRegisteringToolSetResolverTest extends TestCase
         $wrapper = new McpCatalogRegisteringToolSetResolver($inner, $registrar, new TestLogger());
         $result = $wrapper->resolve('toolset:run:run-xyz:turn:1', turnNo: 1, runId: 'run-xyz');
 
-        self::assertContains('srv_calc', $result->toolNames, 'MCP tool should be in resolved toolNames');
-        self::assertContains('srv_calc', $result->allowListNames, 'MCP tool should be in execution allowlist');
+        $this->assertContains('srv_calc', $result->toolNames, 'MCP tool should be in resolved toolNames');
+        $this->assertContains('srv_calc', $result->allowListNames, 'MCP tool should be in execution allowlist');
     }
 
     public function testDelegatesWithoutRegistrationWhenNoRunId(): void
@@ -112,7 +112,7 @@ final class McpCatalogRegisteringToolSetResolverTest extends TestCase
         // null runId — registration should be skipped
         $result = $wrapper->resolve('toolset:run:unknown:turn:1');
 
-        self::assertSame(['perm'], $result->toolNames);
+        $this->assertSame(['perm'], $result->toolNames);
     }
 
     public function testNoOpWhenCatalogMissing(): void
@@ -140,7 +140,7 @@ final class McpCatalogRegisteringToolSetResolverTest extends TestCase
         $wrapper = new McpCatalogRegisteringToolSetResolver($inner, $registrar, new TestLogger());
         $result = $wrapper->resolve('toolset:run:no-catalog:turn:1', turnNo: 1, runId: 'no-catalog');
 
-        self::assertSame([], $result->toolNames);
+        $this->assertSame([], $result->toolNames);
     }
 
     /**
@@ -199,7 +199,7 @@ final class McpCatalogRegisteringToolSetResolverTest extends TestCase
         // Must not throw — returns inner resolver result
         $result = $wrapper->resolve('toolset:failure:turn:1', turnNo: 1, runId: 'run-fail');
 
-        self::assertSame(['perm'], $result->toolNames, 'Inner resolver result should be returned');
+        $this->assertSame(['perm'], $result->toolNames, 'Inner resolver result should be returned');
 
         // Verify structured warning was logged
         $warnings = array_values(array_filter(
@@ -207,11 +207,11 @@ final class McpCatalogRegisteringToolSetResolverTest extends TestCase
             static fn (array $r): bool => 'warning' === $r['level']
                 && ($r['context']['mcp_event'] ?? '') === 'resolver.register_failed',
         ));
-        self::assertCount(1, $warnings, 'Expected one resolver.register_failed warning');
-        self::assertSame('run-fail', $warnings[0]['context']['run_id']);
-        self::assertSame('run-fail', $warnings[0]['context']['session_id']);
-        self::assertSame('RuntimeException', $warnings[0]['context']['error_class']);
-        self::assertStringContainsString('Catalog storage I/O failure', $warnings[0]['context']['error_message']);
+        $this->assertCount(1, $warnings, 'Expected one resolver.register_failed warning');
+        $this->assertSame('run-fail', $warnings[0]['context']['run_id']);
+        $this->assertSame('run-fail', $warnings[0]['context']['session_id']);
+        $this->assertSame('RuntimeException', $warnings[0]['context']['error_class']);
+        $this->assertStringContainsString('Catalog storage I/O failure', $warnings[0]['context']['error_message']);
     }
 
     private function makeHandlerFactory(): McpToolHandlerFactory

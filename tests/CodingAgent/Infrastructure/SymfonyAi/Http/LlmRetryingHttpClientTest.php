@@ -139,7 +139,7 @@ final class LlmRetryingHttpClientTest extends TestCase
         $attempts = 0;
 
         $mock = new MockHttpClient(
-            static function (string $method, string $url, array $options) use (&$attempts): MockResponse {
+            function (string $method, string $url, array $options) use (&$attempts): MockResponse {
                 ++$attempts;
 
                 if (1 === $attempts) {
@@ -164,7 +164,7 @@ final class LlmRetryingHttpClientTest extends TestCase
     public function testRequestDoesNotRetryNonRetryableTransportError(): void
     {
         $mock = new MockHttpClient(
-            static function (): MockResponse {
+            function (): MockResponse {
                 throw new \RuntimeException('HTTP 400 Bad Request');
             },
         );

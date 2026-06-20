@@ -10,7 +10,7 @@ use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandHandler;
 
 /**
- * @internal test-only handler that always returns NoOp
+ * @internal Test-only handler that always returns NoOp.
  */
 final readonly class NoOpTestHandler implements SlashCommandHandler
 {

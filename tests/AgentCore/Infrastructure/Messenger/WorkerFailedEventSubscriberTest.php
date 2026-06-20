@@ -27,9 +27,9 @@ class WorkerFailedEventSubscriberTest extends TestCase
     public function skipsWhenRetryWillHappen(): void
     {
         $runStore = $this->createMock(RunStoreInterface::class);
-        $runStore->expects(self::never())->method('compareAndSwap');
+        $runStore->expects($this->never())->method('compareAndSwap');
         $eventStore = $this->createMock(EventStoreInterface::class);
-        $eventStore->expects(self::never())->method('append');
+        $eventStore->expects($this->never())->method('append');
         $logger = new NullLogger();
 
         $subscriber = new WorkerFailedEventSubscriber($runStore, $eventStore, $logger);
@@ -42,16 +42,16 @@ class WorkerFailedEventSubscriberTest extends TestCase
 
         $subscriber->onWorkerMessageFailed($event);
 
-        self::assertTrue(true);
+        $this->assertTrue(true);
     }
 
     #[Test]
     public function skipsNonAgentBusMessage(): void
     {
         $runStore = $this->createMock(RunStoreInterface::class);
-        $runStore->expects(self::never())->method('compareAndSwap');
+        $runStore->expects($this->never())->method('compareAndSwap');
         $eventStore = $this->createMock(EventStoreInterface::class);
-        $eventStore->expects(self::never())->method('append');
+        $eventStore->expects($this->never())->method('append');
         $logger = new NullLogger();
 
         $subscriber = new WorkerFailedEventSubscriber($runStore, $eventStore, $logger);
@@ -62,16 +62,16 @@ class WorkerFailedEventSubscriberTest extends TestCase
 
         $subscriber->onWorkerMessageFailed($event);
 
-        self::assertTrue(true);
+        $this->assertTrue(true);
     }
 
     #[Test]
     public function skipsNonRunControlTransport(): void
     {
         $runStore = $this->createMock(RunStoreInterface::class);
-        $runStore->expects(self::never())->method('compareAndSwap');
+        $runStore->expects($this->never())->method('compareAndSwap');
         $eventStore = $this->createMock(EventStoreInterface::class);
-        $eventStore->expects(self::never())->method('append');
+        $eventStore->expects($this->never())->method('append');
         $logger = new NullLogger();
 
         $subscriber = new WorkerFailedEventSubscriber($runStore, $eventStore, $logger);
@@ -82,7 +82,7 @@ class WorkerFailedEventSubscriberTest extends TestCase
 
         $subscriber->onWorkerMessageFailed($event);
 
-        self::assertTrue(true);
+        $this->assertTrue(true);
     }
 
     #[Test]
@@ -92,9 +92,9 @@ class WorkerFailedEventSubscriberTest extends TestCase
 
         $runStore = $this->createMock(RunStoreInterface::class);
         $runStore->method('get')->willReturn($runState);
-        $runStore->expects(self::never())->method('compareAndSwap');
+        $runStore->expects($this->never())->method('compareAndSwap');
         $eventStore = $this->createMock(EventStoreInterface::class);
-        $eventStore->expects(self::never())->method('append');
+        $eventStore->expects($this->never())->method('append');
         $logger = new NullLogger();
 
         $subscriber = new WorkerFailedEventSubscriber($runStore, $eventStore, $logger);
@@ -105,7 +105,7 @@ class WorkerFailedEventSubscriberTest extends TestCase
 
         $subscriber->onWorkerMessageFailed($event);
 
-        self::assertTrue(true);
+        $this->assertTrue(true);
     }
 
     #[Test]
@@ -114,9 +114,9 @@ class WorkerFailedEventSubscriberTest extends TestCase
         // StartRun failed before any state was committed (get returns null)
         $runStore = $this->createMock(RunStoreInterface::class);
         $runStore->method('get')->willReturn(null);
-        $runStore->expects(self::once())
+        $runStore->expects($this->once())
             ->method('compareAndSwap')
-            ->with(self::callback(static function (RunState $state): bool {
+            ->with($this->callback(static function (RunState $state): bool {
                 return self::RUN_ID === $state->runId
                     && RunStatus::Failed === $state->status
                     && 1 === $state->version
@@ -126,9 +126,9 @@ class WorkerFailedEventSubscriberTest extends TestCase
 
         $capturedEvent = null;
         $eventStore = $this->createMock(EventStoreInterface::class);
-        $eventStore->expects(self::once())
+        $eventStore->expects($this->once())
             ->method('append')
-            ->with(self::callback(static function (RunEvent $event) use (&$capturedEvent): bool {
+            ->with($this->callback(static function (RunEvent $event) use (&$capturedEvent): bool {
                 $capturedEvent = $event;
 
                 return self::RUN_ID === $event->runId
@@ -148,7 +148,7 @@ class WorkerFailedEventSubscriberTest extends TestCase
 
         $subscriber->onWorkerMessageFailed($event);
 
-        self::assertNotNull($capturedEvent);
+        $this->assertNotNull($capturedEvent);
     }
 
     #[Test]
@@ -167,9 +167,9 @@ class WorkerFailedEventSubscriberTest extends TestCase
         $runStore->method('get')->willReturn($existingState);
 
         $committedState = null;
-        $runStore->expects(self::once())
+        $runStore->expects($this->once())
             ->method('compareAndSwap')
-            ->with(self::callback(static function (RunState $state) use (&$committedState): bool {
+            ->with($this->callback(static function (RunState $state) use (&$committedState): bool {
                 $committedState = $state;
 
                 return self::RUN_ID === $state->runId
@@ -181,9 +181,9 @@ class WorkerFailedEventSubscriberTest extends TestCase
 
         $capturedEvent = null;
         $eventStore = $this->createMock(EventStoreInterface::class);
-        $eventStore->expects(self::once())
+        $eventStore->expects($this->once())
             ->method('append')
-            ->with(self::callback(static function (RunEvent $event) use (&$capturedEvent): bool {
+            ->with($this->callback(static function (RunEvent $event) use (&$capturedEvent): bool {
                 $capturedEvent = $event;
 
                 return self::RUN_ID === $event->runId
@@ -202,9 +202,9 @@ class WorkerFailedEventSubscriberTest extends TestCase
 
         $subscriber->onWorkerMessageFailed($event);
 
-        self::assertNotNull($capturedEvent);
-        self::assertNotNull($committedState);
-        self::assertStringContainsString('CAS conflict exhausted', $committedState->errorMessage ?? '');
+        $this->assertNotNull($capturedEvent);
+        $this->assertNotNull($committedState);
+        $this->assertStringContainsString('CAS conflict exhausted', $committedState->errorMessage ?? '');
     }
 
     #[Test]
@@ -212,13 +212,13 @@ class WorkerFailedEventSubscriberTest extends TestCase
     {
         $currentState = new RunState(runId: self::RUN_ID, status: RunStatus::Running, version: 3);
 
-        $runStore = self::createStub(RunStoreInterface::class);
+        $runStore = $this->createStub(RunStoreInterface::class);
         $runStore->method('get')->willReturn($currentState);
         // CAS fails — another process already updated state
         $runStore->method('compareAndSwap')->willReturn(false);
 
         $eventStore = $this->createMock(EventStoreInterface::class);
-        $eventStore->expects(self::never())->method('append');
+        $eventStore->expects($this->never())->method('append');
 
         $logger = new NullLogger();
 
@@ -230,7 +230,7 @@ class WorkerFailedEventSubscriberTest extends TestCase
 
         // Should not throw
         $subscriber->onWorkerMessageFailed($event);
-        self::assertTrue(true);
+        $this->assertTrue(true);
     }
 
     #[Test]
@@ -238,13 +238,13 @@ class WorkerFailedEventSubscriberTest extends TestCase
     {
         $currentState = new RunState(runId: self::RUN_ID, status: RunStatus::Running, version: 3);
 
-        $runStore = self::createStub(RunStoreInterface::class);
+        $runStore = $this->createStub(RunStoreInterface::class);
         $runStore->method('get')->willReturn($currentState);
         // CAS throws an exception
         $runStore->method('compareAndSwap')->willThrowException(new \RuntimeException('Lock acquisition failed'));
 
         $eventStore = $this->createMock(EventStoreInterface::class);
-        $eventStore->expects(self::never())->method('append');
+        $eventStore->expects($this->never())->method('append');
 
         $logger = new NullLogger();
 
@@ -256,15 +256,15 @@ class WorkerFailedEventSubscriberTest extends TestCase
 
         // Should not throw
         $subscriber->onWorkerMessageFailed($event);
-        self::assertTrue(true);
+        $this->assertTrue(true);
     }
 
     #[Test]
     public function getSubscribedEventsReturnsWorkerMessageFailedEvent(): void
     {
         $events = WorkerFailedEventSubscriber::getSubscribedEvents();
-        self::assertArrayHasKey(WorkerMessageFailedEvent::class, $events);
-        self::assertSame('onWorkerMessageFailed', $events[WorkerMessageFailedEvent::class]);
+        $this->assertArrayHasKey(WorkerMessageFailedEvent::class, $events);
+        $this->assertSame('onWorkerMessageFailed', $events[WorkerMessageFailedEvent::class]);
     }
 
     /**

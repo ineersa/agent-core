@@ -37,12 +37,12 @@ final class SkillContextRendererTest extends TestCase
 
         $output = $this->renderer->renderAvailableSkills($skills);
 
-        self::assertStringContainsString('<skills_instructions>', $output);
-        self::assertStringContainsString('<available_skills>', $output);
-        self::assertStringContainsString('<name>castor</name>', $output);
-        self::assertStringContainsString('<description>Runs Castor tasks</description>', $output);
-        self::assertStringContainsString('<location>/home/user/.hatfield/skills/castor/SKILL.md</location>', $output);
-        self::assertStringContainsString('</skills_instructions>', $output);
+        $this->assertStringContainsString('<skills_instructions>', $output);
+        $this->assertStringContainsString('<available_skills>', $output);
+        $this->assertStringContainsString('<name>castor</name>', $output);
+        $this->assertStringContainsString('<description>Runs Castor tasks</description>', $output);
+        $this->assertStringContainsString('<location>/home/user/.hatfield/skills/castor/SKILL.md</location>', $output);
+        $this->assertStringContainsString('</skills_instructions>', $output);
     }
 
     public function testRenderAvailableSkillsMultiple(): void
@@ -64,17 +64,17 @@ final class SkillContextRendererTest extends TestCase
 
         $output = $this->renderer->renderAvailableSkills($skills);
 
-        self::assertStringContainsString('<name>castor</name>', $output);
-        self::assertStringContainsString('<name>grill-me</name>', $output);
+        $this->assertStringContainsString('<name>castor</name>', $output);
+        $this->assertStringContainsString('<name>grill-me</name>', $output);
         // Both skills should appear
-        self::assertSame(2, substr_count($output, '<skill>'));
+        $this->assertSame(2, substr_count($output, '<skill>'));
     }
 
     public function testRenderAvailableSkillsEmptyReturnsEmptyString(): void
     {
         $output = $this->renderer->renderAvailableSkills([]);
 
-        self::assertSame('', $output);
+        $this->assertSame('', $output);
     }
 
     /* ───────── renderPreloadedSkill ───────── */
@@ -92,11 +92,11 @@ final class SkillContextRendererTest extends TestCase
 
         $output = $this->renderer->renderPreloadedSkill($skill, $body);
 
-        self::assertStringContainsString('<skill name="castor"', $output);
-        self::assertStringContainsString('location="/home/user/.hatfield/skills/castor/SKILL.md"', $output);
-        self::assertStringContainsString('References are relative to /home/user/.hatfield/skills/castor', $output);
-        self::assertStringContainsString('Use the `castor` command for tasks.', $output);
-        self::assertStringContainsString('</skill>', $output);
+        $this->assertStringContainsString('<skill name="castor"', $output);
+        $this->assertStringContainsString('location="/home/user/.hatfield/skills/castor/SKILL.md"', $output);
+        $this->assertStringContainsString('References are relative to /home/user/.hatfield/skills/castor', $output);
+        $this->assertStringContainsString('Use the `castor` command for tasks.', $output);
+        $this->assertStringContainsString('</skill>', $output);
     }
 
     /* ───────── XML escaping ───────── */
@@ -114,13 +114,13 @@ final class SkillContextRendererTest extends TestCase
 
         $output = $this->renderer->renderAvailableSkills($skills);
 
-        self::assertStringContainsString('test&amp;co', $output);
-        self::assertStringContainsString('&quot;tests&quot;', $output);
-        self::assertStringContainsString('&lt;scripts&gt;', $output);
-        self::assertStringContainsString('some &amp; co', $output);
+        $this->assertStringContainsString('test&amp;co', $output);
+        $this->assertStringContainsString('&quot;tests&quot;', $output);
+        $this->assertStringContainsString('&lt;scripts&gt;', $output);
+        $this->assertStringContainsString('some &amp; co', $output);
         // Ensure raw characters are NOT present
-        self::assertStringNotContainsString('test&co', $output);
-        self::assertStringNotContainsString('<scripts>', $output);
+        $this->assertStringNotContainsString('test&co', $output);
+        $this->assertStringNotContainsString('<scripts>', $output);
     }
 
     public function testPreloadXmlEscaping(): void
@@ -136,7 +136,7 @@ final class SkillContextRendererTest extends TestCase
 
         $output = $this->renderer->renderPreloadedSkill($skill, $body);
 
-        self::assertStringContainsString('foo&amp;bar', $output);
-        self::assertStringContainsString('&quot;quotes&quot;', $output);
+        $this->assertStringContainsString('foo&amp;bar', $output);
+        $this->assertStringContainsString('&quot;quotes&quot;', $output);
     }
 }

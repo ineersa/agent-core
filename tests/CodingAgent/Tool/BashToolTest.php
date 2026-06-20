@@ -8,8 +8,8 @@ use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
-use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Config\BashToolConfig;
+use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
@@ -95,11 +95,11 @@ final class BashToolTest extends IsolatedKernelTestCase
             return ($this->makeBashTool())(['command' => 'echo "hello from bash"']);
         });
 
-        self::assertStringContainsString('hello from bash', $result);
-        self::assertStringNotContainsString('timed out', $result);
-        self::assertStringNotContainsString('cancelled', $result);
-        self::assertStringNotContainsString('background', $result);
-        self::assertStringNotContainsString('failed', $result);
+        $this->assertStringContainsString('hello from bash', $result);
+        $this->assertStringNotContainsString('timed out', $result);
+        $this->assertStringNotContainsString('cancelled', $result);
+        $this->assertStringNotContainsString('background', $result);
+        $this->assertStringNotContainsString('failed', $result);
     }
 
     public function testSuccessfulCommandWithNewlines(): void
@@ -110,9 +110,9 @@ final class BashToolTest extends IsolatedKernelTestCase
             return ($this->makeBashTool())(['command' => "printf 'line1\\nline2\\nline3\\n'"]);
         });
 
-        self::assertStringContainsString('line1', $result);
-        self::assertStringContainsString('line2', $result);
-        self::assertStringContainsString('line3', $result);
+        $this->assertStringContainsString('line1', $result);
+        $this->assertStringContainsString('line2', $result);
+        $this->assertStringContainsString('line3', $result);
     }
 
     /* ── Non-zero exit code ── */
@@ -125,8 +125,8 @@ final class BashToolTest extends IsolatedKernelTestCase
             return ($this->makeBashTool())(['command' => 'echo "before error" && exit 42']);
         });
 
-        self::assertStringContainsString('exit code 42', $result);
-        self::assertStringContainsString('before error', $result);
+        $this->assertStringContainsString('exit code 42', $result);
+        $this->assertStringContainsString('before error', $result);
     }
 
     public function testNonExistentCommand(): void
@@ -137,8 +137,8 @@ final class BashToolTest extends IsolatedKernelTestCase
             return ($this->makeBashTool())(['command' => 'nonexistent_command_xyz_123']);
         });
 
-        self::assertStringContainsString('failed', $result);
-        self::assertStringContainsString('exit code', $result);
+        $this->assertStringContainsString('failed', $result);
+        $this->assertStringContainsString('exit code', $result);
     }
 
     /* ── Timeout ── */
@@ -157,8 +157,8 @@ final class BashToolTest extends IsolatedKernelTestCase
             return ($this->makeBashTool())(['command' => 'echo "partial" && sleep 10 && echo "should not see"']);
         });
 
-        self::assertStringContainsString('timed out', $result);
-        self::assertStringContainsString('partial', $result);
+        $this->assertStringContainsString('timed out', $result);
+        $this->assertStringContainsString('partial', $result);
     }
 
     /* ── Cancellation ── */
@@ -180,10 +180,10 @@ final class BashToolTest extends IsolatedKernelTestCase
     public function testCancellationStopsProcess(): void
     {
         $callCount = 0;
-        $cancellationToken = self::createStub(CancellationTokenInterface::class);
+        $cancellationToken = $this->createStub(CancellationTokenInterface::class);
         $cancellationToken
             ->method('isCancellationRequested')
-            ->willReturnCallback(static function () use (&$callCount) {
+            ->willReturnCallback(function () use (&$callCount) {
                 ++$callCount;
 
                 // First call is the pre-check in ToolRuntime::run() —
@@ -226,7 +226,7 @@ final class BashToolTest extends IsolatedKernelTestCase
             if (null !== $storedPid) {
                 $entity = $this->manager->find($storedPid, self::TEST_SESSION);
                 if (null !== $entity) {
-                    self::assertNotNull($entity->finishedAt, 'Cancelled process should be marked finished');
+                    $this->assertNotNull($entity->finishedAt, 'Cancelled process should be marked finished');
                 }
             }
         }
@@ -296,7 +296,7 @@ final class BashToolTest extends IsolatedKernelTestCase
             return ($this->makeBashTool())(['command' => 'echo "ok"', 'timeout' => 30]);
         });
 
-        self::assertStringContainsString('ok', $result);
+        $this->assertStringContainsString('ok', $result);
     }
 
     /* ── Background prompt acceptance ── */
@@ -305,13 +305,13 @@ final class BashToolTest extends IsolatedKernelTestCase
     {
         $promptAdapter = $this->createMock(BashBackgroundPromptAdapterInterface::class);
         $promptAdapter
-            ->expects(self::once())
+            ->expects($this->once())
             ->method('shouldBackground')
             ->with(
-                self::stringContains('echo "background me"'),
-                self::isInt(),
-                self::stringContains('.log'),
-                self::greaterThan(0),
+                $this->stringContains('echo "background me"'),
+                $this->isInt(),
+                $this->stringContains('.log'),
+                $this->greaterThan(0),
             )
             ->willReturn(true);
 
@@ -327,21 +327,21 @@ final class BashToolTest extends IsolatedKernelTestCase
             return ($this->makeBashTool($promptAdapter))(['command' => 'echo "background me" && sleep 10']);
         });
 
-        self::assertStringContainsString('background', $result);
-        self::assertStringContainsString('PID:', $result);
-        self::assertStringContainsString('Log:', $result);
-        self::assertStringContainsString('You will be notified', $result);
-        self::assertStringContainsString('bg_status log pid=', $result);
-        self::assertStringContainsString('bg_status stop pid=', $result);
-        self::assertStringNotContainsString('timed out', $result);
-        self::assertStringNotContainsString('cancelled', $result);
+        $this->assertStringContainsString('background', $result);
+        $this->assertStringContainsString('PID:', $result);
+        $this->assertStringContainsString('Log:', $result);
+        $this->assertStringContainsString('You will be notified', $result);
+        $this->assertStringContainsString('bg_status log pid=', $result);
+        $this->assertStringContainsString('bg_status stop pid=', $result);
+        $this->assertStringNotContainsString('timed out', $result);
+        $this->assertStringNotContainsString('cancelled', $result);
     }
 
     public function testBackgroundPromptWithAlreadyFinishedProcess(): void
     {
         $promptAdapter = $this->createMock(BashBackgroundPromptAdapterInterface::class);
         $promptAdapter
-            ->expects(self::never())
+            ->expects($this->never())
             ->method('shouldBackground');
 
         $this->bashConfig = new BashToolConfig(
@@ -356,8 +356,8 @@ final class BashToolTest extends IsolatedKernelTestCase
             return ($this->makeBashTool($promptAdapter))(['command' => 'echo "quick command"']);
         });
 
-        self::assertStringContainsString('quick command', $result);
-        self::assertStringNotContainsString('background', $result);
+        $this->assertStringContainsString('quick command', $result);
+        $this->assertStringNotContainsString('background', $result);
     }
 
     /* ── Background prompt decline (default behaviour) ── */
@@ -376,15 +376,15 @@ final class BashToolTest extends IsolatedKernelTestCase
             return ($this->makeBashTool())(['command' => 'echo "decline test"']);
         });
 
-        self::assertStringContainsString('decline test', $result);
-        self::assertStringNotContainsString('background', $result);
+        $this->assertStringContainsString('decline test', $result);
+        $this->assertStringNotContainsString('background', $result);
     }
 
     /* ── No duplicate command execution ── */
 
     public function testNoDuplicateCommandExecution(): void
     {
-        $promptAdapter = self::createStub(BashBackgroundPromptAdapterInterface::class);
+        $promptAdapter = $this->createStub(BashBackgroundPromptAdapterInterface::class);
         $promptAdapter
             ->method('shouldBackground')
             ->willReturn(true);
@@ -402,32 +402,32 @@ final class BashToolTest extends IsolatedKernelTestCase
             return ($this->makeBashTool($promptAdapter))(['command' => 'echo "background-marker-12345" && sleep 5']);
         });
 
-        self::assertStringContainsString('background', $result);
-        self::assertStringContainsString('PID:', $result);
-        self::assertStringContainsString('You will be notified', $result);
-        self::assertStringContainsString('bg_status log pid=', $result);
-        self::assertStringContainsString('bg_status stop pid=', $result);
+        $this->assertStringContainsString('background', $result);
+        $this->assertStringContainsString('PID:', $result);
+        $this->assertStringContainsString('You will be notified', $result);
+        $this->assertStringContainsString('bg_status log pid=', $result);
+        $this->assertStringContainsString('bg_status stop pid=', $result);
 
         // Extract PID from result
-        preg_match('/PID: (\d+)/', $result, $matches);
-        self::assertNotEmpty($matches, 'PID should be present in result');
+        \preg_match('/PID: (\d+)/', $result, $matches);
+        $this->assertNotEmpty($matches, 'PID should be present in result');
         $pid = (int) $matches[1];
 
         // Verify there's exactly 1 background process
         $entities = $this->manager->list(self::TEST_SESSION);
-        self::assertCount(1, $entities, 'There should be exactly one process');
+        $this->assertCount(1, $entities, 'There should be exactly one process');
 
         // Verify it's the same PID (single execution, no duplicate)
-        self::assertSame($pid, $entities[0]->pid, 'The background process should have the same PID');
+        $this->assertSame($pid, $entities[0]->pid, 'The background process should have the same PID');
 
         // Verify the process is marked as backgrounded (backgroundAt is set)
         // This confirms the markBackgrounded() call was made in BashTool.
-        self::assertNotNull($entities[0]->backgroundedAt, 'Background process should have backgroundedAt set');
+        $this->assertNotNull($entities[0]->backgroundedAt, 'Background process should have backgroundedAt set');
 
         // Verify the log contains our unique marker
-        usleep(50_000); // Brief wait for log flush
-        $logContent = file_get_contents($entities[0]->logPath);
-        self::assertStringContainsString('background-marker-12345', $logContent ?: '');
+        \usleep(50_000); // Brief wait for log flush
+        $logContent = \file_get_contents($entities[0]->logPath);
+        $this->assertStringContainsString('background-marker-12345', $logContent ?: '');
 
         // Clean up
         $this->manager->stop($pid, self::TEST_SESSION);
@@ -448,10 +448,10 @@ final class BashToolTest extends IsolatedKernelTestCase
         // the re-check finds the process completed.
         $promptAdapter = $this->createMock(BashBackgroundPromptAdapterInterface::class);
         $promptAdapter
-            ->expects(self::once())
+            ->expects($this->once())
             ->method('shouldBackground')
-            ->willReturnCallback(static function (): bool {
-                usleep(200_000); // Block while the command finishes
+            ->willReturnCallback(function (): bool {
+                \usleep(200_000); // Block while the command finishes
 
                 return true;
             });
@@ -474,9 +474,9 @@ final class BashToolTest extends IsolatedKernelTestCase
         });
 
         // Must show the completed output, not a backgrounding notice or timeout.
-        self::assertStringContainsString('Hello world', $result);
-        self::assertStringNotContainsString('Command moved to background', $result);
-        self::assertStringNotContainsString('timed out', $result);
+        $this->assertStringContainsString('Hello world', $result);
+        $this->assertStringNotContainsString('Command moved to background', $result);
+        $this->assertStringNotContainsString('timed out', $result);
     }
 
     /* ── Output capping ── */
@@ -499,8 +499,8 @@ final class BashToolTest extends IsolatedKernelTestCase
         });
 
         // Tool returns raw output; capping is centralized.
-        self::assertStringContainsString('this is a very long output', $result);
-        self::assertStringNotContainsString('Output capped', $result);
+        $this->assertStringContainsString('this is a very long output', $result);
+        $this->assertStringNotContainsString('Output capped', $result);
     }
 
     /* ── Registry exposure ── */
@@ -522,8 +522,8 @@ final class BashToolTest extends IsolatedKernelTestCase
             }
         }
 
-        self::assertNotNull($bashDef, 'bash should be registered');
-        self::assertSame($tool, $bashDef->handler);
+        $this->assertNotNull($bashDef, 'bash should be registered');
+        $this->assertSame($tool, $bashDef->handler);
     }
 
     public function testToolDefinitionProperties(): void
@@ -533,25 +533,25 @@ final class BashToolTest extends IsolatedKernelTestCase
 
         $def = $tool->definition();
 
-        self::assertSame('bash', $def->name);
-        self::assertSame($tool, $def->handler);
+        $this->assertSame('bash', $def->name);
+        $this->assertSame($tool, $def->handler);
 
         // Schema must have 'command' required
-        self::assertContains('command', $def->parametersJsonSchema['required'] ?? []);
+        $this->assertContains('command', $def->parametersJsonSchema['required'] ?? []);
         // Schema must NOT have 'run_in_background'
-        self::assertArrayNotHasKey('run_in_background', $def->parametersJsonSchema['properties'] ?? []);
+        $this->assertArrayNotHasKey('run_in_background', $def->parametersJsonSchema['properties'] ?? []);
 
         // Prompt line must NOT advertise a run_in_background parameter
-        self::assertStringNotContainsStringIgnoringCase('run_in_background', $def->promptLine);
+        $this->assertStringNotContainsStringIgnoringCase('run_in_background', $def->promptLine);
 
         // Prompt guidelines must describe user-offered (not model-controlled) backgrounding
         $guidelinesText = implode(' ', $def->promptGuidelines);
-        self::assertStringContainsStringIgnoringCase('user', $guidelinesText);
-        self::assertStringContainsStringIgnoringCase('bg_status', $guidelinesText);
+        $this->assertStringContainsStringIgnoringCase('user', $guidelinesText);
+        $this->assertStringContainsStringIgnoringCase('bg_status', $guidelinesText);
         // Guidelines must prove model-vs-user ownership: the model does not control backgrounding
-        self::assertStringContainsStringIgnoringCase('does not control', $guidelinesText);
+        $this->assertStringContainsStringIgnoringCase('does not control', $guidelinesText);
         // Guidelines must explicitly state there is no run_in_background parameter
-        self::assertStringContainsStringIgnoringCase('no run_in_background', $guidelinesText);
+        $this->assertStringContainsStringIgnoringCase('no run_in_background', $guidelinesText);
     }
 
     /* ── No-context execution (session-less) ── */
@@ -566,9 +566,9 @@ final class BashToolTest extends IsolatedKernelTestCase
         $tool = $this->makeBashTool();
         $result = ($tool)(['command' => 'echo "no context test"']);
 
-        self::assertStringContainsString('no context test', $result);
-        self::assertStringNotContainsString('timed out', $result);
-        self::assertStringNotContainsString('cancelled', $result);
+        $this->assertStringContainsString('no context test', $result);
+        $this->assertStringNotContainsString('timed out', $result);
+        $this->assertStringNotContainsString('cancelled', $result);
     }
 
     /* ── Session scoping ── */
@@ -582,10 +582,10 @@ final class BashToolTest extends IsolatedKernelTestCase
         });
 
         $entities = $this->manager->list(self::TEST_SESSION);
-        self::assertCount(1, $entities);
+        $this->assertCount(1, $entities);
 
         $otherEntities = $this->manager->list('other-session');
-        self::assertCount(0, $otherEntities);
+        $this->assertCount(0, $otherEntities);
     }
 
     /* ── Helpers ── */
@@ -626,7 +626,7 @@ final class BashToolTest extends IsolatedKernelTestCase
 
     private function withContext(string $sessionId, callable $callback): mixed
     {
-        $cancellationToken = self::createStub(CancellationTokenInterface::class);
+        $cancellationToken = $this->createStub(CancellationTokenInterface::class);
         $cancellationToken->method('isCancellationRequested')->willReturn(false);
 
         $context = new ToolContext(

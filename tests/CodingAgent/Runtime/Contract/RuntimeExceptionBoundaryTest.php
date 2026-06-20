@@ -24,9 +24,9 @@ class RuntimeExceptionBoundaryTest extends TestCase
 
         try {
             $boundary->catch($original, 'test.operation');
-            self::fail('Expected exception was not rethrown');
+            $this->fail('Expected exception was not rethrown');
         } catch (\Throwable $caught) {
-            self::assertSame($original, $caught);
+            $this->assertSame($original, $caught);
         }
     }
 
@@ -37,7 +37,7 @@ class RuntimeExceptionBoundaryTest extends TestCase
 
         // Should not throw.
         $boundary->catch(new \RuntimeException('test error'), 'test.operation');
-        self::assertTrue(true);
+        $this->assertTrue(true);
     }
 
     #[Test]
@@ -54,11 +54,11 @@ class RuntimeExceptionBoundaryTest extends TestCase
         $exception = new \RuntimeException('dispatch test');
         $boundary->catch($exception, 'test.operation', ['key' => 'value']);
 
-        self::assertCount(1, $dispatched);
-        self::assertSame($exception, $dispatched[0]->exception);
-        self::assertSame('test.operation', $dispatched[0]->operation);
-        self::assertNull($dispatched[0]->runId);
-        self::assertSame(['key' => 'value'], $dispatched[0]->context);
+        $this->assertCount(1, $dispatched);
+        $this->assertSame($exception, $dispatched[0]->exception);
+        $this->assertSame('test.operation', $dispatched[0]->operation);
+        $this->assertNull($dispatched[0]->runId);
+        $this->assertSame(['key' => 'value'], $dispatched[0]->context);
     }
 
     #[Test]
@@ -74,8 +74,8 @@ class RuntimeExceptionBoundaryTest extends TestCase
 
         $boundary->catch(new \RuntimeException('run error'), 'test.run_failed', ['run_id' => 'run-123']);
 
-        self::assertCount(1, $dispatched);
-        self::assertSame('run-123', $dispatched[0]->runId);
+        $this->assertCount(1, $dispatched);
+        $this->assertSame('run-123', $dispatched[0]->runId);
     }
 
     private function createBoundary(bool $captureErrors): RuntimeExceptionBoundary

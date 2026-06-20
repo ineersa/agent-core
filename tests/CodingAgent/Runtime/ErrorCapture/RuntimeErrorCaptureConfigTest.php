@@ -14,21 +14,21 @@ class RuntimeErrorCaptureConfigTest extends TestCase
     public function defaultConstructorEnablesCapture(): void
     {
         $config = new RuntimeErrorCaptureConfig();
-        self::assertTrue($config->captureErrors, 'captureErrors should be true by default');
+        $this->assertTrue($config->captureErrors, 'captureErrors should be true by default');
     }
 
     #[Test]
     public function trueEnablesCapture(): void
     {
         $config = new RuntimeErrorCaptureConfig(captureErrors: true);
-        self::assertTrue($config->captureErrors);
+        $this->assertTrue($config->captureErrors);
     }
 
     #[Test]
     public function falseDisablesCapture(): void
     {
         $config = new RuntimeErrorCaptureConfig(captureErrors: false);
-        self::assertFalse($config->captureErrors);
+        $this->assertFalse($config->captureErrors);
     }
 
     #[Test]
@@ -36,7 +36,7 @@ class RuntimeErrorCaptureConfigTest extends TestCase
     {
         $enabled = new RuntimeErrorCaptureConfig(captureErrors: true);
         $disabled = new RuntimeErrorCaptureConfig(captureErrors: false);
-        self::assertTrue($enabled->captureErrors);
-        self::assertFalse($disabled->captureErrors);
+        $this->assertTrue($enabled->captureErrors);
+        $this->assertFalse($disabled->captureErrors);
     }
 }

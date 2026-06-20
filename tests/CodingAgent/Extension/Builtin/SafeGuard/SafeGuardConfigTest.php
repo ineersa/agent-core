@@ -16,38 +16,38 @@ final class SafeGuardConfigTest extends TestCase
     {
         $config = new SafeGuardConfig();
 
-        self::assertSame([], $config->allowCommandPatterns);
-        self::assertSame([], $config->allowWriteOutsideCwd);
-        self::assertSame([], $config->allowDestructiveInPaths);
-        self::assertNotEmpty($config->protectedReadPatterns);
-        self::assertSame([], $config->dangerousCommandPatterns);
-        self::assertSame('bash', $config->bashToolName);
-        self::assertSame('write', $config->writeToolName);
-        self::assertSame('edit', $config->editToolName);
-        self::assertSame('read', $config->readToolName);
+        $this->assertSame([], $config->allowCommandPatterns);
+        $this->assertSame([], $config->allowWriteOutsideCwd);
+        $this->assertSame([], $config->allowDestructiveInPaths);
+        $this->assertNotEmpty($config->protectedReadPatterns);
+        $this->assertSame([], $config->dangerousCommandPatterns);
+        $this->assertSame('bash', $config->bashToolName);
+        $this->assertSame('write', $config->writeToolName);
+        $this->assertSame('edit', $config->editToolName);
+        $this->assertSame('read', $config->readToolName);
     }
 
     public function testDefaultProtectedReadPatternsIncludeAllPiDefaults(): void
     {
         $config = new SafeGuardConfig();
 
-        self::assertContains('.env.local', $config->protectedReadPatterns);
-        self::assertContains('auth.json', $config->protectedReadPatterns);
-        self::assertContains('.ssh/id_', $config->protectedReadPatterns);
-        self::assertContains('.aws/credentials', $config->protectedReadPatterns);
-        self::assertContains('.kube/config', $config->protectedReadPatterns);
-        self::assertContains('.pem', $config->protectedReadPatterns);
-        self::assertContains('service-account', $config->protectedReadPatterns);
+        $this->assertContains('.env.local', $config->protectedReadPatterns);
+        $this->assertContains('auth.json', $config->protectedReadPatterns);
+        $this->assertContains('.ssh/id_', $config->protectedReadPatterns);
+        $this->assertContains('.aws/credentials', $config->protectedReadPatterns);
+        $this->assertContains('.kube/config', $config->protectedReadPatterns);
+        $this->assertContains('.pem', $config->protectedReadPatterns);
+        $this->assertContains('service-account', $config->protectedReadPatterns);
     }
 
     public function testFromArrayEmptyDataReturnsDefaults(): void
     {
         $config = SafeGuardConfig::fromArray([]);
 
-        self::assertSame([], $config->allowCommandPatterns);
-        self::assertSame([], $config->allowWriteOutsideCwd);
-        self::assertNotEmpty($config->protectedReadPatterns);
-        self::assertSame('bash', $config->bashToolName);
+        $this->assertSame([], $config->allowCommandPatterns);
+        $this->assertSame([], $config->allowWriteOutsideCwd);
+        $this->assertNotEmpty($config->protectedReadPatterns);
+        $this->assertSame('bash', $config->bashToolName);
     }
 
     public function testFromArrayParsesAllFields(): void
@@ -66,16 +66,16 @@ final class SafeGuardConfigTest extends TestCase
             ],
         ]);
 
-        self::assertSame(['ls -la'], $config->allowCommandPatterns);
-        self::assertSame(['/tmp'], $config->allowWriteOutsideCwd);
-        self::assertSame(['/safe'], $config->allowDestructiveInPaths);
-        self::assertContains('.env.local', $config->protectedReadPatterns);
-        self::assertContains('.my-custom', $config->protectedReadPatterns);
-        self::assertSame(['risky'], $config->dangerousCommandPatterns);
-        self::assertSame('execute', $config->bashToolName);
-        self::assertSame('create_file', $config->writeToolName);
-        self::assertSame('patch_file', $config->editToolName);
-        self::assertSame('view_file', $config->readToolName);
+        $this->assertSame(['ls -la'], $config->allowCommandPatterns);
+        $this->assertSame(['/tmp'], $config->allowWriteOutsideCwd);
+        $this->assertSame(['/safe'], $config->allowDestructiveInPaths);
+        $this->assertContains('.env.local', $config->protectedReadPatterns);
+        $this->assertContains('.my-custom', $config->protectedReadPatterns);
+        $this->assertSame(['risky'], $config->dangerousCommandPatterns);
+        $this->assertSame('execute', $config->bashToolName);
+        $this->assertSame('create_file', $config->writeToolName);
+        $this->assertSame('patch_file', $config->editToolName);
+        $this->assertSame('view_file', $config->readToolName);
     }
 
     public function testProtectedReadPatternsAreAdditive(): void
@@ -84,8 +84,8 @@ final class SafeGuardConfigTest extends TestCase
             'protected_read_patterns' => ['.extra.secret'],
         ]);
 
-        self::assertContains('.env.local', $config->protectedReadPatterns);
-        self::assertContains('.extra.secret', $config->protectedReadPatterns);
+        $this->assertContains('.env.local', $config->protectedReadPatterns);
+        $this->assertContains('.extra.secret', $config->protectedReadPatterns);
     }
 
     public function testProtectedReadPatternsDeduplicate(): void
@@ -98,7 +98,7 @@ final class SafeGuardConfigTest extends TestCase
             $config->protectedReadPatterns,
             static fn (string $p): bool => '.env.local' === $p,
         );
-        self::assertCount(1, $occurrences);
+        $this->assertCount(1, $occurrences);
     }
 
     public function testNonArrayFieldsBecomeEmpty(): void
@@ -108,8 +108,8 @@ final class SafeGuardConfigTest extends TestCase
             'dangerous_command_patterns' => null,
         ]);
 
-        self::assertSame([], $config->allowCommandPatterns);
-        self::assertSame([], $config->dangerousCommandPatterns);
+        $this->assertSame([], $config->allowCommandPatterns);
+        $this->assertSame([], $config->dangerousCommandPatterns);
     }
 
     public function testEmptyStringsAreFiltered(): void
@@ -119,7 +119,7 @@ final class SafeGuardConfigTest extends TestCase
         ]);
 
         // Empty string '' is filtered, whitespace-only '  ' passes through
-        self::assertSame(['valid', '  '], $config->allowCommandPatterns);
+        $this->assertSame(['valid', '  '], $config->allowCommandPatterns);
     }
 
     public function testToolNamesDefaultWhenMissing(): void
@@ -128,9 +128,9 @@ final class SafeGuardConfigTest extends TestCase
             'tool_names' => ['bash' => 'run'],
         ]);
 
-        self::assertSame('run', $config->bashToolName);
-        self::assertSame('write', $config->writeToolName);
-        self::assertSame('edit', $config->editToolName);
-        self::assertSame('read', $config->readToolName);
+        $this->assertSame('run', $config->bashToolName);
+        $this->assertSame('write', $config->writeToolName);
+        $this->assertSame('edit', $config->editToolName);
+        $this->assertSame('read', $config->readToolName);
     }
 }

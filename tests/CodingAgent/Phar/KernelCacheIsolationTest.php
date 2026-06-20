@@ -28,12 +28,12 @@ class KernelCacheIsolationTest extends IsolatedKernelTestCase
     public function testCacheDirectoryHasNoPharSuffixInSourceMode(): void
     {
         $kernel = self::$kernel;
-        self::assertNotNull($kernel, 'Kernel must be booted by IsolatedKernelTestCase::setUp()');
+        $this->assertNotNull($kernel, 'Kernel must be booted by IsolatedKernelTestCase::setUp()');
         $cacheDir = $kernel->getCacheDir();
 
         // In source checkout (test env), the cache dir should end with /test
         // without any PHAR-specific suffix appended.
-        self::assertMatchesRegularExpression(
+        $this->assertMatchesRegularExpression(
             '#/test$#',
             $cacheDir,
             'Source-checkout cache dir should end with /test (no PHAR hash suffix). Got: '.$cacheDir
@@ -43,10 +43,10 @@ class KernelCacheIsolationTest extends IsolatedKernelTestCase
     public function testIsPharReturnsFalseInSourceMode(): void
     {
         $kernel = self::$kernel;
-        self::assertNotNull($kernel, 'Kernel must be booted');
+        $this->assertNotNull($kernel, 'Kernel must be booted');
         $ref = new \ReflectionMethod($kernel, 'isPhar');
 
-        self::assertFalse(
+        $this->assertFalse(
             $ref->invoke($kernel),
             'Source checkout must not detect PHAR mode — otherwise cache isolation logic would be wrong.'
         );
@@ -55,14 +55,14 @@ class KernelCacheIsolationTest extends IsolatedKernelTestCase
     public function testPharModeWouldProduceDifferentCachePath(): void
     {
         $kernel = self::$kernel;
-        self::assertNotNull($kernel, 'Kernel must be booted');
+        $this->assertNotNull($kernel, 'Kernel must be booted');
         $sourceCacheDir = $kernel->getCacheDir();
 
         // Simulate what getCacheDir would return if isPhar() were true.
         // The PHAR cache dir appends a hash of __FILE__ to the base path.
-        $pharCacheDir = $sourceCacheDir.'-'.substr(md5(__FILE__), 0, 8);
+        $pharCacheDir = $sourceCacheDir . '-' . substr(md5(__FILE__), 0, 8);
 
-        self::assertNotEquals(
+        $this->assertNotEquals(
             $sourceCacheDir,
             $pharCacheDir,
             'PHAR cache dir must differ from source-checkout cache dir to prevent stale-cache collisions.'
@@ -72,11 +72,11 @@ class KernelCacheIsolationTest extends IsolatedKernelTestCase
     public function testCacheDirectoryIsDeterministic(): void
     {
         $kernel = self::$kernel;
-        self::assertNotNull($kernel, 'Kernel must be booted');
+        $this->assertNotNull($kernel, 'Kernel must be booted');
 
         $dir1 = $kernel->getCacheDir();
         $dir2 = $kernel->getCacheDir();
 
-        self::assertSame($dir1, $dir2, 'Cache directory must be deterministic across repeated calls.');
+        $this->assertSame($dir1, $dir2, 'Cache directory must be deterministic across repeated calls.');
     }
 }

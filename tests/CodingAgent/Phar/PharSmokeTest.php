@@ -28,16 +28,6 @@ use Symfony\Component\Process\Process;
 #[Group('phar')]
 final class PharSmokeTest extends TestCase
 {
-    /**
-     * Default project-relative PHAR path used in skip messages.
-     *
-     * The actual path is resolved via HATFIELD_BINARY_PATH env var
-     * (set by Castor tasks) or AgentTestExecutable.  This constant mirrors
-     * the build default from .castor/helpers.php:hatfield_phar_path().
-     * Castor resolves this relative to the project root so each worktree
-     * gets its own local PHAR.
-     */
-    private const string DEFAULT_PHAR_PATH = 'var/tmp/phar/hatfield.phar';
     /** @var list<string> */
     private array $isolatedHomeDirs = [];
 
@@ -48,6 +38,47 @@ final class PharSmokeTest extends TestCase
         }
         $this->isolatedHomeDirs = [];
     }
+
+    /**
+     * Create an isolated HOME directory with no user config.
+     *
+     * The empty HOME dir prevents the PHAR subprocess from inheriting
+     * the real user's ~/.hatfield/settings.yaml, which may reference an
+     * ai.default_model whose provider definition is not available in the
+     * packaged production PHAR (e.g. llama_cpp_test/test defined in a
+     * project-level .hatfield/settings.yaml but not in the PHAR provider
+     * list).  With an empty HOME, built-in defaults apply and the PHAR
+     * picks the first available model from packaged providers.
+     */
+    private function createIsolatedHome(): string
+    {
+        $dir = sys_get_temp_dir().'/phar-smoke-home-'.bin2hex(random_bytes(6));
+        @mkdir($dir, 0755, true);
+        $this->isolatedHomeDirs[] = $dir;
+        return $dir;
+    }
+
+    /**
+     * Run a shell command with an isolated HOME.
+     */
+    private function shellExecIsolated(string $command): string
+    {
+        $home = $this->createIsolatedHome();
+        return shell_exec(
+            sprintf('HOME=%s %s', escapeshellarg($home), $command),
+        ) ?? '';
+    }
+
+    /**
+     * Default project-relative PHAR path used in skip messages.
+     *
+     * The actual path is resolved via HATFIELD_BINARY_PATH env var
+     * (set by Castor tasks) or AgentTestExecutable.  This constant mirrors
+     * the build default from .castor/helpers.php:hatfield_phar_path().
+     * Castor resolves this relative to the project root so each worktree
+     * gets its own local PHAR.
+     */
+    private const string DEFAULT_PHAR_PATH = 'var/tmp/phar/hatfield.phar';
 
     public function testPharBootingToAgentList(): void
     {
@@ -131,7 +162,7 @@ final class PharSmokeTest extends TestCase
         // Force APP_ENV=prod — the PHAR is a production artifact without dev
         // bundles. Inheriting APP_ENV=test from PHPUnit would cause
         // Class-not-found errors for test-only bundles like DAMADoctrineTestBundle.
-        $repoRoot = \dirname(__DIR__, 3);
+        $repoRoot = dirname(__DIR__, 3);
         $isolatedHome = $this->createIsolatedHome();
         $process = Process::fromShellCommandline(
             \sprintf('HOME=%s APP_ENV=prod HATFIELD_CACHE_DIR= %s %s list', escapeshellarg($isolatedHome), escapeshellarg($php), escapeshellarg($pharPath)),
@@ -180,16 +211,16 @@ final class PharSmokeTest extends TestCase
             $process = Process::fromShellCommandline(
                 \sprintf(
                     'HOME=%s APP_ENV=prod HATFIELD_CACHE_DIR= %s %s list',
-                    escapeshellarg($isolatedHome),
-                    escapeshellarg($php),
-                    escapeshellarg($pharPath),
+                    \escapeshellarg($isolatedHome),
+                    \escapeshellarg($php),
+                    \escapeshellarg($pharPath),
                 ),
                 cwd: $tmpCwd,
             );
             $process->mustRun();
 
             // Cache should have been created with a content-hash suffix.
-            $cacheDirs = glob($tmpCwd.'/.hatfield/cache/prod-*', \GLOB_ONLYDIR);
+            $cacheDirs = glob($tmpCwd.'/.hatfield/cache/prod-*', GLOB_ONLYDIR);
             self::assertNotEmpty(
                 $cacheDirs,
                 'PHAR did not create a cache directory in the isolated CWD',
@@ -219,37 +250,5 @@ final class PharSmokeTest extends TestCase
             // Clean up the isolated temp dir even on assertion failure.
             shell_exec('rm -rf '.escapeshellarg($tmpCwd));
         }
-    }
-
-    /**
-     * Create an isolated HOME directory with no user config.
-     *
-     * The empty HOME dir prevents the PHAR subprocess from inheriting
-     * the real user's ~/.hatfield/settings.yaml, which may reference an
-     * ai.default_model whose provider definition is not available in the
-     * packaged production PHAR (e.g. llama_cpp_test/test defined in a
-     * project-level .hatfield/settings.yaml but not in the PHAR provider
-     * list).  With an empty HOME, built-in defaults apply and the PHAR
-     * picks the first available model from packaged providers.
-     */
-    private function createIsolatedHome(): string
-    {
-        $dir = sys_get_temp_dir().'/phar-smoke-home-'.bin2hex(random_bytes(6));
-        @mkdir($dir, 0755, true);
-        $this->isolatedHomeDirs[] = $dir;
-
-        return $dir;
-    }
-
-    /**
-     * Run a shell command with an isolated HOME.
-     */
-    private function shellExecIsolated(string $command): string
-    {
-        $home = $this->createIsolatedHome();
-
-        return shell_exec(
-            \sprintf('HOME=%s %s', escapeshellarg($home), $command),
-        ) ?? '';
     }
 }

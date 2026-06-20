@@ -19,7 +19,7 @@
 declare(strict_types=1);
 
 // Load Composer autoload relative to this script's location within the worktree.
-$autoloadPath = __DIR__.'/../../../../vendor/autoload.php';
+$autoloadPath = __DIR__ . '/../../../../vendor/autoload.php';
 require_once $autoloadPath;
 
 // Only respond to expected paths.
@@ -51,14 +51,14 @@ if (false === $body || '' === $body) {
 
 try {
     $request = json_decode($body, true, 512, \JSON_THROW_ON_ERROR);
-} catch (JsonException) {
+} catch (\JsonException) {
     http_response_code(400);
     header('Content-Type: application/json');
     echo json_encode(['jsonrpc' => '2.0', 'error' => ['code' => -32700, 'message' => 'Parse error'], 'id' => null]);
     exit(1);
 }
 
-if (!is_array($request)) {
+if (!\is_array($request)) {
     http_response_code(400);
     header('Content-Type: application/json');
     echo json_encode(['jsonrpc' => '2.0', 'error' => ['code' => -32600, 'message' => 'Invalid Request'], 'id' => null]);
@@ -85,10 +85,10 @@ try {
         $response = [
             'jsonrpc' => '2.0',
             'id' => $id,
-            'error' => ['code' => -32601, 'message' => 'Method not found: '.$method],
+            'error' => ['code' => -32601, 'message' => 'Method not found: ' . $method],
         ];
     }
-} catch (Throwable $e) {
+} catch (\Throwable $e) {
     http_response_code(500);
     header('Content-Type: application/json');
     echo json_encode(['jsonrpc' => '2.0', 'error' => ['code' => -32603, 'message' => $e->getMessage()], 'id' => $id]);

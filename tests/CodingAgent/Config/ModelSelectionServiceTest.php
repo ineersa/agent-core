@@ -8,14 +8,14 @@ use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
-use Ineersa\CodingAgent\Config\HomeSettingsWriter;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Config\ModelSettingsPersister;
-use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Config\SessionsConfig;
+use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
+use Ineersa\CodingAgent\Config\HomeSettingsWriter;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
@@ -85,6 +85,154 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
     {
         TestDirectoryIsolation::removeDirectory($this->tempDir);
         parent::tearDown(); // clears EM via IsolatedKernelTestCase
+    }
+
+    private function buildService(array $aiData): ModelSelectionService
+    {
+        $appConfig = $this->makeAppConfig($aiData);
+        $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
+        $homeWriter = new HomeSettingsWriter($pathResolver);
+        $resolver = new ModelResolver($appConfig, $this->sessionMetaStore);
+        $persister = new ModelSettingsPersister($homeWriter, $this->sessionMetaStore);
+
+        return new ModelSelectionService($appConfig, $resolver, $persister);
+    }
+
+    private function makeAppConfig(array $aiData): AppConfig
+    {
+        $raw = ['tui' => ['theme' => 'cyberpunk']];
+        if ([] !== $aiData) {
+            $raw['ai'] = $aiData;
+        }
+
+        $ai = AiConfig::optionalFromArray($raw);
+
+        return new AppConfig(
+            tui: TuiConfig::fromArray((array) ($raw['tui'] ?? [])),
+            logging: new LoggingConfig(),
+            sessions: new SessionsConfig(),
+            ai: $ai,
+            raw: $raw,
+            catalog: null !== $ai ? new HatfieldModelCatalog($ai) : null,
+            cwd: getcwd() ?: '/',
+        );
+    }
+
+    private function writeSessionMetadata(string $sessionId, array $meta): string
+    {
+        $id = (int) $sessionId;
+        $entity = 0 !== $id
+            ? $this->entityManager->find(HatfieldSession::class, $id)
+            : null;
+
+        if (null === $entity) {
+            $entity = new HatfieldSession();
+            $entity->cwd = $this->tempDir.'/project';
+            $this->entityManager->persist($entity);
+            $this->entityManager->flush();
+        }
+
+        if (isset($meta['model']) && \is_string($meta['model'])) {
+            $entity->model = $meta['model'];
+        }
+        if (isset($meta['model_provider']) && \is_string($meta['model_provider'])) {
+            $entity->modelProvider = $meta['model_provider'];
+        }
+        if (isset($meta['model_name']) && \is_string($meta['model_name'])) {
+            $entity->modelName = $meta['model_name'];
+        }
+        if (isset($meta['reasoning']) && \is_string($meta['reasoning'])) {
+            $entity->reasoning = $meta['reasoning'];
+        }
+
+        $this->entityManager->flush();
+
+        return (string) $entity->id;
+    }
+
+    private function readSessionMetadata(string $sessionId): array
+    {
+        return $this->sessionMetaStore->readSessionMetadata($sessionId);
+    }
+
+    private function homeSettingsPath(): string
+    {
+        return $this->homeDir.'/.hatfield/settings.yaml';
+    }
+
+    /**
+     * Build service AND return the AppConfig so tests can inspect in-memory state.
+     *
+     * @return array{0: ModelSelectionService, 1: AppConfig}
+     */
+    private function buildServiceWithConfig(array $aiData): array
+    {
+        $appConfig = $this->makeAppConfig($aiData);
+        $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
+        $homeWriter = new HomeSettingsWriter($pathResolver);
+        $resolver = new ModelResolver($appConfig, $this->sessionMetaStore);
+        $persister = new ModelSettingsPersister($homeWriter, $this->sessionMetaStore);
+
+        return [
+            new ModelSelectionService($appConfig, $resolver, $persister),
+            $appConfig,
+        ];
+    }
+
+    private function standardAiData(): array
+    {
+        return [
+            'default_model' => 'deepseek/deepseek-v4-pro',
+            'default_reasoning' => 'medium',
+            'providers' => [
+                'deepseek' => [
+                    'type' => 'generic',
+                    'enabled' => true,
+                    'base_url' => 'https://api.deepseek.com',
+                    'completions_path' => '/chat/completions',
+                    'models' => [
+                        'deepseek-v4-pro' => [
+                            'id' => 'deepseek-v4-pro',
+                            'name' => 'DeepSeek V4 Pro',
+                            'context_window' => 131072,
+                            'max_tokens' => 131072,
+                            'input' => ['text'],
+                            'reasoning' => true,
+                            'thinking_level_map' => [
+                                'minimal' => 'minimal',
+                                'low' => 'low',
+                                'medium' => 'medium',
+                                'high' => 'high',
+                                'xhigh' => 'max',
+                            ],
+                        ],
+                        'deepseek-v4-flash' => [
+                            'id' => 'deepseek-v4-flash',
+                            'name' => 'DeepSeek V4 Flash',
+                            'context_window' => 131072,
+                            'max_tokens' => 131072,
+                            'input' => ['text'],
+                            'reasoning' => false,
+                        ],
+                    ],
+                ],
+                'llama_cpp' => [
+                    'type' => 'generic',
+                    'enabled' => true,
+                    'base_url' => 'http://192.168.2.38:8052/v1',
+                    'models' => [
+                        'flash' => [
+                            'id' => 'flash',
+                            'name' => 'Flash',
+                            'context_window' => 200000,
+                            'max_tokens' => 65536,
+                            'input' => ['text', 'image'],
+                            'reasoning' => false,
+                        ],
+                    ],
+                ],
+            ],
+        ];
     }
 
     // ──────────────────────────────────────────────
@@ -557,153 +705,5 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
         // AppConfig in-memory must reflect the clamp
         self::assertNotNull($appConfig->ai);
         self::assertSame('high', $service->resolveInitialReasoning(null, $this->sessionId));
-    }
-
-    private function buildService(array $aiData): ModelSelectionService
-    {
-        $appConfig = $this->makeAppConfig($aiData);
-        $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
-        $homeWriter = new HomeSettingsWriter($pathResolver);
-        $resolver = new ModelResolver($appConfig, $this->sessionMetaStore);
-        $persister = new ModelSettingsPersister($homeWriter, $this->sessionMetaStore);
-
-        return new ModelSelectionService($appConfig, $resolver, $persister);
-    }
-
-    private function makeAppConfig(array $aiData): AppConfig
-    {
-        $raw = ['tui' => ['theme' => 'cyberpunk']];
-        if ([] !== $aiData) {
-            $raw['ai'] = $aiData;
-        }
-
-        $ai = AiConfig::optionalFromArray($raw);
-
-        return new AppConfig(
-            tui: TuiConfig::fromArray((array) ($raw['tui'] ?? [])),
-            logging: new LoggingConfig(),
-            sessions: new SessionsConfig(),
-            ai: $ai,
-            raw: $raw,
-            catalog: null !== $ai ? new HatfieldModelCatalog($ai) : null,
-            cwd: getcwd() ?: '/',
-        );
-    }
-
-    private function writeSessionMetadata(string $sessionId, array $meta): string
-    {
-        $id = (int) $sessionId;
-        $entity = 0 !== $id
-            ? $this->entityManager->find(HatfieldSession::class, $id)
-            : null;
-
-        if (null === $entity) {
-            $entity = new HatfieldSession();
-            $entity->cwd = $this->tempDir.'/project';
-            $this->entityManager->persist($entity);
-            $this->entityManager->flush();
-        }
-
-        if (isset($meta['model']) && \is_string($meta['model'])) {
-            $entity->model = $meta['model'];
-        }
-        if (isset($meta['model_provider']) && \is_string($meta['model_provider'])) {
-            $entity->modelProvider = $meta['model_provider'];
-        }
-        if (isset($meta['model_name']) && \is_string($meta['model_name'])) {
-            $entity->modelName = $meta['model_name'];
-        }
-        if (isset($meta['reasoning']) && \is_string($meta['reasoning'])) {
-            $entity->reasoning = $meta['reasoning'];
-        }
-
-        $this->entityManager->flush();
-
-        return (string) $entity->id;
-    }
-
-    private function readSessionMetadata(string $sessionId): array
-    {
-        return $this->sessionMetaStore->readSessionMetadata($sessionId);
-    }
-
-    private function homeSettingsPath(): string
-    {
-        return $this->homeDir.'/.hatfield/settings.yaml';
-    }
-
-    /**
-     * Build service AND return the AppConfig so tests can inspect in-memory state.
-     *
-     * @return array{0: ModelSelectionService, 1: AppConfig}
-     */
-    private function buildServiceWithConfig(array $aiData): array
-    {
-        $appConfig = $this->makeAppConfig($aiData);
-        $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
-        $homeWriter = new HomeSettingsWriter($pathResolver);
-        $resolver = new ModelResolver($appConfig, $this->sessionMetaStore);
-        $persister = new ModelSettingsPersister($homeWriter, $this->sessionMetaStore);
-
-        return [
-            new ModelSelectionService($appConfig, $resolver, $persister),
-            $appConfig,
-        ];
-    }
-
-    private function standardAiData(): array
-    {
-        return [
-            'default_model' => 'deepseek/deepseek-v4-pro',
-            'default_reasoning' => 'medium',
-            'providers' => [
-                'deepseek' => [
-                    'type' => 'generic',
-                    'enabled' => true,
-                    'base_url' => 'https://api.deepseek.com',
-                    'completions_path' => '/chat/completions',
-                    'models' => [
-                        'deepseek-v4-pro' => [
-                            'id' => 'deepseek-v4-pro',
-                            'name' => 'DeepSeek V4 Pro',
-                            'context_window' => 131072,
-                            'max_tokens' => 131072,
-                            'input' => ['text'],
-                            'reasoning' => true,
-                            'thinking_level_map' => [
-                                'minimal' => 'minimal',
-                                'low' => 'low',
-                                'medium' => 'medium',
-                                'high' => 'high',
-                                'xhigh' => 'max',
-                            ],
-                        ],
-                        'deepseek-v4-flash' => [
-                            'id' => 'deepseek-v4-flash',
-                            'name' => 'DeepSeek V4 Flash',
-                            'context_window' => 131072,
-                            'max_tokens' => 131072,
-                            'input' => ['text'],
-                            'reasoning' => false,
-                        ],
-                    ],
-                ],
-                'llama_cpp' => [
-                    'type' => 'generic',
-                    'enabled' => true,
-                    'base_url' => 'http://192.168.2.38:8052/v1',
-                    'models' => [
-                        'flash' => [
-                            'id' => 'flash',
-                            'name' => 'Flash',
-                            'context_window' => 200000,
-                            'max_tokens' => 65536,
-                            'input' => ['text', 'image'],
-                            'reasoning' => false,
-                        ],
-                    ],
-                ],
-            ],
-        ];
     }
 }

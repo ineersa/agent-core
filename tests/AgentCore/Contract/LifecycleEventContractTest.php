@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Tests\Contract;
 
 use Ineersa\AgentCore\Domain\Event\Lifecycle\AgentEndEvent;
+use Ineersa\AgentCore\Domain\Event\LifecycleOrderValidator;
 use Ineersa\AgentCore\Domain\Event\Lifecycle\AgentStartEvent;
 use Ineersa\AgentCore\Domain\Event\Lifecycle\MessageEndEvent;
 use Ineersa\AgentCore\Domain\Event\Lifecycle\MessageStartEvent;
@@ -14,7 +15,6 @@ use Ineersa\AgentCore\Domain\Event\Lifecycle\ToolExecutionStartEvent;
 use Ineersa\AgentCore\Domain\Event\Lifecycle\ToolExecutionUpdateEvent;
 use Ineersa\AgentCore\Domain\Event\Lifecycle\TurnEndEvent;
 use Ineersa\AgentCore\Domain\Event\Lifecycle\TurnStartEvent;
-use Ineersa\AgentCore\Domain\Event\LifecycleOrderValidator;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;

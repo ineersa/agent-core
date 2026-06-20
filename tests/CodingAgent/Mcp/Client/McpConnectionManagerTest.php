@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Mcp\Client;
 
-use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Mcp\Client\McpConnectionManager;
 use Ineersa\CodingAgent\Mcp\Client\McpConnectionManagerInterface;
@@ -13,6 +12,7 @@ use Ineersa\CodingAgent\Mcp\Config\McpConfigLoader;
 use Ineersa\CodingAgent\Mcp\Config\McpConfigValidator;
 use Ineersa\CodingAgent\Mcp\Config\McpEnvInterpolator;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -58,7 +58,7 @@ class McpConnectionManagerTest extends TestCase
         TestDirectoryIsolation::createHatfieldTree($this->projectDir);
 
         // Fixture server path relative to worktree root
-        $this->fixturePath = __DIR__.'/../Fixtures/stdio-echo-server.php';
+        $this->fixturePath = __DIR__ . '/../Fixtures/stdio-echo-server.php';
 
         $pathResolver = new SettingsPathResolver(
             appRoot: $this->projectDir,
@@ -101,7 +101,7 @@ class McpConnectionManagerTest extends TestCase
         $mcpConfig = [
             'mcpServers' => [
                 'fixture' => [
-                    'command' => \PHP_BINARY,
+                    'command' => PHP_BINARY,
                     'args' => [$this->fixturePath],
                     'timeoutMs' => 10000,
                     'startupTimeoutMs' => 10000,
@@ -109,7 +109,7 @@ class McpConnectionManagerTest extends TestCase
             ],
         ];
         file_put_contents(
-            $this->projectDir.'/.hatfield/mcp.json',
+            $this->projectDir . '/.hatfield/mcp.json',
             json_encode($mcpConfig, \JSON_PRETTY_PRINT),
         );
 
@@ -120,7 +120,7 @@ class McpConnectionManagerTest extends TestCase
         self::assertSame('stdio', $results['fixture']['transport']);
 
         $tools = $results['fixture']['tools'];
-        self::assertGreaterThanOrEqual(2, \count($tools), 'Should discover at least 2 tools (echo, reverse)');
+        self::assertGreaterThanOrEqual(2, count($tools), 'Should discover at least 2 tools (echo, reverse)');
 
         // Find the echo tool
         $echoTool = $this->findTool($tools, 'echo');
@@ -137,8 +137,9 @@ class McpConnectionManagerTest extends TestCase
         // Verify structured logs
         $infoLogs = array_values(array_filter(
             $this->logger->records,
-            static fn (array $r): bool => 'info' === $r['level']
-                && ($r['context']['mcp_event'] ?? '') === 'discovery.server_connected',
+            static fn(array $r): bool =>
+                $r['level'] === 'info' &&
+                ($r['context']['mcp_event'] ?? '') === 'discovery.server_connected',
         ));
         self::assertCount(1, $infoLogs);
         self::assertSame('fixture', $infoLogs[0]['context']['server_name']);
@@ -146,8 +147,9 @@ class McpConnectionManagerTest extends TestCase
         // Verify starting log exists before connect
         $startingLogs = array_values(array_filter(
             $this->logger->records,
-            static fn (array $r): bool => 'info' === $r['level']
-                && ($r['context']['mcp_event'] ?? '') === 'discovery.server_starting',
+            static fn(array $r): bool =>
+                $r['level'] === 'info' &&
+                ($r['context']['mcp_event'] ?? '') === 'discovery.server_starting',
         ));
         self::assertCount(1, $startingLogs);
         self::assertSame('fixture', $startingLogs[0]['context']['server_name']);
@@ -170,14 +172,14 @@ class McpConnectionManagerTest extends TestCase
         $mcpConfig = [
             'mcpServers' => [
                 'broken' => [
-                    'url' => \sprintf('http://127.0.0.1:%d/mcp', $port),
+                    'url' => sprintf('http://127.0.0.1:%d/mcp', $port),
                     'timeoutMs' => 2000,
                     'startupTimeoutMs' => 2000,
                 ],
             ],
         ];
         file_put_contents(
-            $this->projectDir.'/.hatfield/mcp.json',
+            $this->projectDir . '/.hatfield/mcp.json',
             json_encode($mcpConfig, \JSON_PRETTY_PRINT),
         );
 
@@ -192,8 +194,9 @@ class McpConnectionManagerTest extends TestCase
         // Verify warning log exists for the failed server
         $warnings = array_values(array_filter(
             $this->logger->records,
-            static fn (array $r): bool => 'warning' === $r['level']
-                && ($r['context']['mcp_event'] ?? '') === 'discovery.server_failed',
+            static fn(array $r): bool =>
+                $r['level'] === 'warning' &&
+                ($r['context']['mcp_event'] ?? '') === 'discovery.server_failed',
         ));
         self::assertCount(1, $warnings);
         self::assertSame('broken', $warnings[0]['context']['server_name']);
@@ -202,8 +205,9 @@ class McpConnectionManagerTest extends TestCase
         // Verify starting log exists per server before connect attempt
         $startingLogs = array_values(array_filter(
             $this->logger->records,
-            static fn (array $r): bool => 'info' === $r['level']
-                && ($r['context']['mcp_event'] ?? '') === 'discovery.server_starting',
+            static fn(array $r): bool =>
+                $r['level'] === 'info' &&
+                ($r['context']['mcp_event'] ?? '') === 'discovery.server_starting',
         ));
         self::assertCount(1, $startingLogs);
         self::assertSame('broken', $startingLogs[0]['context']['server_name']);
@@ -226,7 +230,7 @@ class McpConnectionManagerTest extends TestCase
         $mcpConfig = [
             'mcpServers' => [
                 'fixture' => [
-                    'command' => \PHP_BINARY,
+                    'command' => PHP_BINARY,
                     'args' => [$this->fixturePath],
                     'timeoutMs' => 10000,
                     'startupTimeoutMs' => 10000,
@@ -234,7 +238,7 @@ class McpConnectionManagerTest extends TestCase
             ],
         ];
         file_put_contents(
-            $this->projectDir.'/.hatfield/mcp.json',
+            $this->projectDir . '/.hatfield/mcp.json',
             json_encode($mcpConfig, \JSON_PRETTY_PRINT),
         );
 
@@ -254,10 +258,10 @@ class McpConnectionManagerTest extends TestCase
         self::assertNotNull($port, 'No available port found for HTTP fixture');
 
         // Start PHP built-in server with the HTTP fixture script
-        $fixtureScript = __DIR__.'/../Fixtures/http-echo-server.php';
+        $fixtureScript = __DIR__ . '/../Fixtures/http-echo-server.php';
         $host = '127.0.0.1';
         $process = proc_open(
-            \sprintf('exec %s -S %s:%d %s 2>/dev/null', \PHP_BINARY, $host, $port, escapeshellarg($fixtureScript)),
+            sprintf('exec %s -S %s:%d %s 2>/dev/null', PHP_BINARY, $host, $port, escapeshellarg($fixtureScript)),
             [
                 0 => ['pipe', 'r'],
                 1 => ['pipe', 'w'],
@@ -268,7 +272,7 @@ class McpConnectionManagerTest extends TestCase
         self::assertIsResource($process, 'Failed to start HTTP fixture server');
 
         // Ensure cleanup on exit
-        $cleanup = static function () use ($process, $pipes): void {
+        $cleanup = function () use ($process, $pipes, $port): void {
             foreach ($pipes as $pipe) {
                 if (\is_resource($pipe)) {
                     @fclose($pipe);
@@ -285,7 +289,7 @@ class McpConnectionManagerTest extends TestCase
             $ready = false;
             $startTime = microtime(true);
             while ((microtime(true) - $startTime) < 10.0) {
-                $ch = curl_init(\sprintf('http://%s:%d/health', $host, $port));
+                $ch = curl_init(sprintf('http://%s:%d/health', $host, $port));
                 curl_setopt_array($ch, [
                     \CURLOPT_RETURNTRANSFER => true,
                     \CURLOPT_TIMEOUT => 1,
@@ -311,13 +315,13 @@ class McpConnectionManagerTest extends TestCase
             $mcpConfig = [
                 'mcpServers' => [
                     'http-fixture' => [
-                        'url' => \sprintf('http://%s:%d/mcp', $host, $port),
+                        'url' => sprintf('http://%s:%d/mcp', $host, $port),
                         'timeoutMs' => 10000,
                     ],
                 ],
             ];
             file_put_contents(
-                $this->projectDir.'/.hatfield/mcp.json',
+                $this->projectDir . '/.hatfield/mcp.json',
                 json_encode($mcpConfig, \JSON_PRETTY_PRINT),
             );
 
@@ -328,7 +332,7 @@ class McpConnectionManagerTest extends TestCase
             self::assertSame('http', $results['http-fixture']['transport']);
 
             $tools = $results['http-fixture']['tools'];
-            self::assertGreaterThanOrEqual(2, \count($tools), 'Should discover at least 2 tools (hello, add)');
+            self::assertGreaterThanOrEqual(2, count($tools), 'Should discover at least 2 tools (hello, add)');
 
             // Find the hello tool
             $helloTool = $this->findTool($tools, 'hello');
@@ -343,8 +347,9 @@ class McpConnectionManagerTest extends TestCase
             // Verify structured logs — transport should be http
             $infoLogs = array_values(array_filter(
                 $this->logger->records,
-                static fn (array $r): bool => 'info' === $r['level']
-                    && ($r['context']['mcp_event'] ?? '') === 'discovery.server_connected',
+                static fn(array $r): bool =>
+                    $r['level'] === 'info' &&
+                    ($r['context']['mcp_event'] ?? '') === 'discovery.server_connected',
             ));
             self::assertCount(1, $infoLogs);
             self::assertSame('http-fixture', $infoLogs[0]['context']['server_name']);
@@ -353,8 +358,9 @@ class McpConnectionManagerTest extends TestCase
             // Starting log must also be present
             $startingLogs = array_values(array_filter(
                 $this->logger->records,
-                static fn (array $r): bool => 'info' === $r['level']
-                    && ($r['context']['mcp_event'] ?? '') === 'discovery.server_starting',
+                static fn(array $r): bool =>
+                    $r['level'] === 'info' &&
+                    ($r['context']['mcp_event'] ?? '') === 'discovery.server_starting',
             ));
             self::assertCount(1, $startingLogs);
             self::assertSame('http-fixture', $startingLogs[0]['context']['server_name']);
@@ -372,7 +378,7 @@ class McpConnectionManagerTest extends TestCase
         $mcpConfig = [
             'mcpServers' => [
                 'fixture' => [
-                    'command' => \PHP_BINARY,
+                    'command' => PHP_BINARY,
                     'args' => [$this->fixturePath],
                     'timeoutMs' => 10000,
                     'startupTimeoutMs' => 10000,
@@ -380,14 +386,14 @@ class McpConnectionManagerTest extends TestCase
             ],
         ];
         file_put_contents(
-            $this->projectDir.'/.hatfield/mcp.json',
+            $this->projectDir . '/.hatfield/mcp.json',
             json_encode($mcpConfig, \JSON_PRETTY_PRINT),
         );
 
         $callbackError = new \RuntimeException('Catalog write disk full');
         $callbackCalled = false;
 
-        $results = $this->manager->discover('test-run-cb', static function (array $cumulative) use ($callbackError, &$callbackCalled): void {
+        $results = $this->manager->discover('test-run-cb', function (array $cumulative) use ($callbackError, &$callbackCalled): void {
             $callbackCalled = true;
             throw $callbackError;
         });
@@ -400,8 +406,9 @@ class McpConnectionManagerTest extends TestCase
         // Verify callback_failed warning was logged with correct attribution
         $cbWarnings = array_values(array_filter(
             $this->logger->records,
-            static fn (array $r): bool => 'warning' === $r['level']
-                && ($r['context']['mcp_event'] ?? '') === 'discovery.callback_failed',
+            static fn(array $r): bool =>
+                $r['level'] === 'warning' &&
+                ($r['context']['mcp_event'] ?? '') === 'discovery.callback_failed',
         ));
         self::assertCount(1, $cbWarnings);
         self::assertSame('test-run-cb', $cbWarnings[0]['context']['run_id']);
@@ -412,8 +419,9 @@ class McpConnectionManagerTest extends TestCase
         // Connected log must still exist — discovery result was not reclassified
         $connectedLogs = array_values(array_filter(
             $this->logger->records,
-            static fn (array $r): bool => 'info' === $r['level']
-                && ($r['context']['mcp_event'] ?? '') === 'discovery.server_connected',
+            static fn(array $r): bool =>
+                $r['level'] === 'info' &&
+                ($r['context']['mcp_event'] ?? '') === 'discovery.server_connected',
         ));
         self::assertCount(1, $connectedLogs);
 
@@ -429,20 +437,20 @@ class McpConnectionManagerTest extends TestCase
         $mcpConfig = [
             'mcpServers' => [
                 'broken' => [
-                    'url' => \sprintf('http://127.0.0.1:%d/mcp', $port),
+                    'url' => sprintf('http://127.0.0.1:%d/mcp', $port),
                     'timeoutMs' => 2000,
                     'startupTimeoutMs' => 2000,
                 ],
             ],
         ];
         file_put_contents(
-            $this->projectDir.'/.hatfield/mcp.json',
+            $this->projectDir . '/.hatfield/mcp.json',
             json_encode($mcpConfig, \JSON_PRETTY_PRINT),
         );
 
         $callbackCalled = false;
 
-        $results = $this->manager->discover('test-run-fail-cb', static function (array $cumulative) use (&$callbackCalled): void {
+        $results = $this->manager->discover('test-run-fail-cb', function (array $cumulative) use (&$callbackCalled): void {
             $callbackCalled = true;
             throw new \RuntimeException('Callback boom');
         });
@@ -455,8 +463,9 @@ class McpConnectionManagerTest extends TestCase
         // Verify callback_failed warning exists
         $cbWarnings = array_values(array_filter(
             $this->logger->records,
-            static fn (array $r): bool => 'warning' === $r['level']
-                && ($r['context']['mcp_event'] ?? '') === 'discovery.callback_failed',
+            static fn(array $r): bool =>
+                $r['level'] === 'warning' &&
+                ($r['context']['mcp_event'] ?? '') === 'discovery.callback_failed',
         ));
         self::assertCount(1, $cbWarnings);
         self::assertSame('broken', $cbWarnings[0]['context']['server_name']);
@@ -464,8 +473,9 @@ class McpConnectionManagerTest extends TestCase
         // Discovery failed log must still exist
         $failWarnings = array_values(array_filter(
             $this->logger->records,
-            static fn (array $r): bool => 'warning' === $r['level']
-                && ($r['context']['mcp_event'] ?? '') === 'discovery.server_failed',
+            static fn(array $r): bool =>
+                $r['level'] === 'warning' &&
+                ($r['context']['mcp_event'] ?? '') === 'discovery.server_failed',
         ));
         self::assertCount(1, $failWarnings);
     }
@@ -478,22 +488,22 @@ class McpConnectionManagerTest extends TestCase
         $mcpConfig = [
             'mcpServers' => [
                 'broken' => [
-                    'url' => \sprintf('http://127.0.0.1:%d/mcp', $port),
+                    'url' => sprintf('http://127.0.0.1:%d/mcp', $port),
                     'timeoutMs' => 2000,
                     'startupTimeoutMs' => 2000,
                 ],
             ],
         ];
         file_put_contents(
-            $this->projectDir.'/.hatfield/mcp.json',
+            $this->projectDir . '/.hatfield/mcp.json',
             json_encode($mcpConfig, \JSON_PRETTY_PRINT),
         );
 
         $callCount = 0;
         $lastCumulative = null;
 
-        $this->manager->discover('test-run-cb-count', static function (array $cumulative) use (&$callCount, &$lastCumulative): void {
-            ++$callCount;
+        $this->manager->discover('test-run-cb-count', function (array $cumulative) use (&$callCount, &$lastCumulative): void {
+            $callCount++;
             $lastCumulative = $cumulative;
         });
 
@@ -534,14 +544,14 @@ class McpConnectionManagerTest extends TestCase
                 self::assertStringNotContainsString(
                     $forbidden,
                     $sanitized,
-                    \sprintf('[%s] Sanitized message must not contain "%s"', $label, $forbidden),
+                    sprintf('[%s] Sanitized message must not contain "%s"', $label, $forbidden),
                 );
             }
             foreach ($tc['mustContain'] as $required) {
                 self::assertStringContainsString(
                     $required,
                     $sanitized,
-                    \sprintf('[%s] Sanitized message must contain "%s"', $label, $required),
+                    sprintf('[%s] Sanitized message must contain "%s"', $label, $required),
                 );
             }
         }
@@ -549,7 +559,6 @@ class McpConnectionManagerTest extends TestCase
 
     /**
      * @param list<array{name: string, description?: string|null, inputSchema: array}> $tools
-     *
      * @return array{name: string, description?: string|null, inputSchema: array}|null
      */
     private function findTool(array $tools, string $name): ?array
@@ -575,14 +584,12 @@ class McpConnectionManagerTest extends TestCase
         $address = stream_socket_get_name($socket, false);
         if (false === $address) {
             @fclose($socket);
-
             return null;
         }
         @fclose($socket);
 
         $parts = explode(':', $address);
         $port = (int) end($parts);
-
         return $port > 0 ? $port : null;
     }
 }

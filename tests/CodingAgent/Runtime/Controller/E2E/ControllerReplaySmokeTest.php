@@ -25,12 +25,35 @@ final class ControllerReplaySmokeTest extends ControllerReplayE2eTestCase
 {
     private string $targetPath;
 
+    protected function tempDirPrefix(): string
+    {
+        return 'test-controller-replay';
+    }
+
     protected function setUp(): void
     {
         parent::setUp();
 
         $this->targetPath = $this->tempDir.'/notes.txt';
         file_put_contents($this->targetPath, 'Hello from controller replay test');
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    protected function replayFixtures(): array
+    {
+        // Load the known-good tool-call fixture.
+        $fixturePath = __DIR__.'/fixtures/controller-tool-call-replay.json';
+        $fixture = json_decode(
+            (string) file_get_contents($fixturePath),
+            true,
+            512,
+            \JSON_THROW_ON_ERROR,
+        );
+        \PHPUnit\Framework\Assert::assertIsArray($fixture);
+
+        return [$fixture];
     }
 
     /**
@@ -122,28 +145,5 @@ final class ControllerReplaySmokeTest extends ControllerReplayE2eTestCase
         self::assertStringContainsString('tool_execution_end', $jsonlContent,
             'events.jsonl must record the completed tool execution.',
         );
-    }
-
-    protected function tempDirPrefix(): string
-    {
-        return 'test-controller-replay';
-    }
-
-    /**
-     * @return list<array<string, mixed>>
-     */
-    protected function replayFixtures(): array
-    {
-        // Load the known-good tool-call fixture.
-        $fixturePath = __DIR__.'/fixtures/controller-tool-call-replay.json';
-        $fixture = json_decode(
-            (string) file_get_contents($fixturePath),
-            true,
-            512,
-            \JSON_THROW_ON_ERROR,
-        );
-        \PHPUnit\Framework\Assert::assertIsArray($fixture);
-
-        return [$fixture];
     }
 }

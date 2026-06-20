@@ -16,6 +16,7 @@ use Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
+use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Tests\Support\Builder\AdvanceRunMessageBuilder;
@@ -55,33 +56,33 @@ final class AdvanceRunHandlerTest extends TestCase
 
         $result = $handler->handle($message, $state);
 
-        self::assertNotNull($result->nextState);
-        self::assertSame(RunStatus::Running, $result->nextState->status);
-        self::assertSame(8, $result->nextState->version);
-        self::assertSame(3, $result->nextState->turnNo);
-        self::assertSame(13, $result->nextState->lastSeq);
-        self::assertSame('turn-3-step', $result->nextState->activeStepId);
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(RunStatus::Running, $result->nextState->status);
+        $this->assertSame(8, $result->nextState->version);
+        $this->assertSame(3, $result->nextState->turnNo);
+        $this->assertSame(13, $result->nextState->lastSeq);
+        $this->assertSame('turn-3-step', $result->nextState->activeStepId);
 
-        self::assertCount(2, $result->events);
-        self::assertSame('turn_advanced', $result->events[0]->type);
-        self::assertSame('leaf_set', $result->events[1]->type);
-        self::assertSame(3, $result->events[1]->payload['turn_no']);
-        self::assertSame('continue', $result->events[1]->payload['reason']);
-        self::assertSame(3, $result->events[0]->payload['turn_no']);
-        self::assertSame(2, $result->events[0]->payload['parent_turn_no']);
+        $this->assertCount(2, $result->events);
+        $this->assertSame('turn_advanced', $result->events[0]->type);
+        $this->assertSame('leaf_set', $result->events[1]->type);
+        $this->assertSame(3, $result->events[1]->payload['turn_no']);
+        $this->assertSame('continue', $result->events[1]->payload['reason']);
+        $this->assertSame(3, $result->events[0]->payload['turn_no']);
+        $this->assertSame(2, $result->events[0]->payload['parent_turn_no']);
 
-        self::assertCount(1, $result->effects);
-        self::assertInstanceOf(ExecuteLlmStep::class, $result->effects[0]);
-        self::assertSame(3, $result->effects[0]->turnNo());
-        self::assertSame('turn-3-step', $result->effects[0]->stepId());
+        $this->assertCount(1, $result->effects);
+        $this->assertInstanceOf(ExecuteLlmStep::class, $result->effects[0]);
+        $this->assertSame(3, $result->effects[0]->turnNo());
+        $this->assertSame('turn-3-step', $result->effects[0]->stepId());
 
-        self::assertSame([], $result->postCommitEffects);
-        self::assertCount(1, $result->postCommit);
-        self::assertTrue($result->markHandled);
+        $this->assertSame([], $result->postCommitEffects);
+        $this->assertCount(1, $result->postCommit);
+        $this->assertTrue($result->markHandled);
 
         ($result->postCommit[0])();
 
-        self::assertIsArray($metrics->snapshot());
+        $this->assertIsArray($metrics->snapshot());
     }
 
     public function testCancelledRunWithFollowUpTransitionsToRunning(): void
@@ -124,20 +125,20 @@ final class AdvanceRunHandlerTest extends TestCase
         $result = $handler->handle($message, $state);
 
         // AdvanceRun should transition Cancelled → Running and advance the turn
-        self::assertNotNull($result->nextState);
-        self::assertSame(RunStatus::Running, $result->nextState->status, 'Cancelled run with pending FollowUp should transition to Running');
-        self::assertSame(2, $result->nextState->turnNo, 'Turn should advance from 1 to 2');
-        self::assertNull($result->nextState->errorMessage, 'errorMessage should be cleared when transitioning Cancelled → Running');
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(RunStatus::Running, $result->nextState->status, 'Cancelled run with pending FollowUp should transition to Running');
+        $this->assertSame(2, $result->nextState->turnNo, 'Turn should advance from 1 to 2');
+        $this->assertNull($result->nextState->errorMessage, 'errorMessage should be cleared when transitioning Cancelled → Running');
 
         // Should produce events including agent_command_applied, turn_advanced, and leaf_set
         $eventTypes = array_map(static fn ($e) => $e->type, $result->events);
-        self::assertContains('agent_command_applied', $eventTypes, 'Expected agent_command_applied event');
-        self::assertContains('turn_advanced', $eventTypes, 'Expected turn_advanced event');
-        self::assertContains('leaf_set', $eventTypes, 'Expected leaf_set event');
+        $this->assertContains('agent_command_applied', $eventTypes, 'Expected agent_command_applied event');
+        $this->assertContains('turn_advanced', $eventTypes, 'Expected turn_advanced event');
+        $this->assertContains('leaf_set', $eventTypes, 'Expected leaf_set event');
 
         // Should produce an LLM step effect (the agent will process the follow-up)
-        self::assertCount(1, $result->effects);
-        self::assertInstanceOf(ExecuteLlmStep::class, $result->effects[0]);
+        $this->assertCount(1, $result->effects);
+        $this->assertInstanceOf(ExecuteLlmStep::class, $result->effects[0]);
     }
 
     public function testHandleFirstTurnHasNullParentTurnNo(): void
@@ -169,21 +170,21 @@ final class AdvanceRunHandlerTest extends TestCase
 
         $result = $handler->handle($message, $state);
 
-        self::assertNotNull($result->nextState);
-        self::assertSame(1, $result->nextState->turnNo);
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(1, $result->nextState->turnNo);
 
         // leaf_set must be present
-        self::assertCount(2, $result->events);
-        self::assertSame('turn_advanced', $result->events[0]->type);
-        self::assertSame('leaf_set', $result->events[1]->type);
+        $this->assertCount(2, $result->events);
+        $this->assertSame('turn_advanced', $result->events[0]->type);
+        $this->assertSame('leaf_set', $result->events[1]->type);
 
         // parent_turn_no must be null for the root turn (turnNo 1)
-        self::assertArrayHasKey('parent_turn_no', $result->events[0]->payload);
-        self::assertNull($result->events[0]->payload['parent_turn_no']);
-        self::assertSame(1, $result->events[0]->payload['turn_no']);
-        self::assertSame(1, $result->events[1]->payload['turn_no']);
-        self::assertNull($result->events[1]->payload['parent_turn_no']);
-        self::assertNull($result->events[1]->payload['previous_turn_no']);
+        $this->assertArrayHasKey('parent_turn_no', $result->events[0]->payload);
+        $this->assertNull($result->events[0]->payload['parent_turn_no']);
+        $this->assertSame(1, $result->events[0]->payload['turn_no']);
+        $this->assertSame(1, $result->events[1]->payload['turn_no']);
+        $this->assertNull($result->events[1]->payload['parent_turn_no']);
+        $this->assertNull($result->events[1]->payload['previous_turn_no']);
     }
 
     public function testCancelledRunWithNoPendingCommandsIsNoOp(): void
@@ -216,9 +217,9 @@ final class AdvanceRunHandlerTest extends TestCase
         $result = $handler->handle($message, $state);
 
         // When Cancelled with no pending commands, AdvanceRun should be a no-op
-        self::assertNull($result->nextState, 'No state change when Cancelled with no pending commands');
-        self::assertSame([], $result->events);
-        self::assertSame([], $result->effects);
+        $this->assertNull($result->nextState, 'No state change when Cancelled with no pending commands');
+        $this->assertSame([], $result->events);
+        $this->assertSame([], $result->effects);
     }
 
     public function testAdvanceWithUnresolvedPendingToolCallsIsNoOp(): void
@@ -243,7 +244,7 @@ final class AdvanceRunHandlerTest extends TestCase
             ->withPendingToolCalls(['tool-call-1' => false])
             ->build();
 
-        self::assertFalse($state->pendingToolCalls['tool-call-1'], 'Precondition: tool call not completed');
+        $this->assertFalse($state->pendingToolCalls['tool-call-1'], 'Precondition: tool call not completed');
 
         $message = AdvanceRunMessageBuilder::create('run-pending-tools')
             ->withTurnNo(2)
@@ -254,10 +255,10 @@ final class AdvanceRunHandlerTest extends TestCase
         $result = $handler->handle($message, $state);
 
         // AdvanceRun must be a no-op when there are unresolved tool calls
-        self::assertNull($result->nextState, 'No state change when tool calls are still pending');
-        self::assertSame([], $result->events, 'No events when tool calls are still pending');
-        self::assertSame([], $result->effects, 'No effects when tool calls are still pending');
-        self::assertSame([], $result->postCommit, 'No post-commit callbacks when tool calls are still pending');
+        $this->assertNull($result->nextState, 'No state change when tool calls are still pending');
+        $this->assertSame([], $result->events, 'No events when tool calls are still pending');
+        $this->assertSame([], $result->effects, 'No effects when tool calls are still pending');
+        $this->assertSame([], $result->postCommit, 'No post-commit callbacks when tool calls are still pending');
     }
 
     public function testAdvanceWithMixedUnresolvedPendingToolCallsIsNoOp(): void
@@ -285,8 +286,8 @@ final class AdvanceRunHandlerTest extends TestCase
             ])
             ->build();
 
-        self::assertTrue($state->pendingToolCalls['tool-call-1'], 'Precondition: tool-call-1 completed');
-        self::assertFalse($state->pendingToolCalls['tool-call-2'], 'Precondition: tool-call-2 not completed');
+        $this->assertTrue($state->pendingToolCalls['tool-call-1'], 'Precondition: tool-call-1 completed');
+        $this->assertFalse($state->pendingToolCalls['tool-call-2'], 'Precondition: tool-call-2 not completed');
 
         $message = AdvanceRunMessageBuilder::create('run-mixed-tools')
             ->withTurnNo(2)
@@ -297,10 +298,10 @@ final class AdvanceRunHandlerTest extends TestCase
         $result = $handler->handle($message, $state);
 
         // Must be no-op when ANY tool call is unresolved
-        self::assertNull($result->nextState, 'No state change when some tool calls are still pending');
-        self::assertSame([], $result->events, 'No events when some tool calls are still pending');
-        self::assertSame([], $result->effects, 'No effects when some tool calls are still pending');
-        self::assertSame([], $result->postCommit, 'No post-commit callbacks when some tool calls are still pending');
+        $this->assertNull($result->nextState, 'No state change when some tool calls are still pending');
+        $this->assertSame([], $result->events, 'No events when some tool calls are still pending');
+        $this->assertSame([], $result->effects, 'No effects when some tool calls are still pending');
+        $this->assertSame([], $result->postCommit, 'No post-commit callbacks when some tool calls are still pending');
     }
 
     public function testAdvanceWithAllResolvedPendingToolCallsProceeds(): void
@@ -330,8 +331,8 @@ final class AdvanceRunHandlerTest extends TestCase
             ])
             ->build();
 
-        self::assertTrue($state->pendingToolCalls['tool-call-1'], 'Precondition: tool-call-1 completed');
-        self::assertTrue($state->pendingToolCalls['tool-call-2'], 'Precondition: tool-call-2 completed');
+        $this->assertTrue($state->pendingToolCalls['tool-call-1'], 'Precondition: tool-call-1 completed');
+        $this->assertTrue($state->pendingToolCalls['tool-call-2'], 'Precondition: tool-call-2 completed');
 
         $message = AdvanceRunMessageBuilder::create('run-all-resolved')
             ->withTurnNo(2)
@@ -342,10 +343,10 @@ final class AdvanceRunHandlerTest extends TestCase
         $result = $handler->handle($message, $state);
 
         // Should proceed normally when all pending tool calls are resolved
-        self::assertNotNull($result->nextState, 'State should change when all tool calls resolved');
-        self::assertNotNull($result->nextState->status);
-        self::assertNotEmpty($result->events, 'Events should be produced when tool calls resolved');
-        self::assertContains(
+        $this->assertNotNull($result->nextState, 'State should change when all tool calls resolved');
+        $this->assertNotNull($result->nextState->status);
+        $this->assertNotEmpty($result->events, 'Events should be produced when tool calls resolved');
+        $this->assertContains(
             'turn_advanced',
             array_map(static fn ($e) => $e->type, $result->events),
             'Expected turn_advanced event',

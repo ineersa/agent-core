@@ -4,6 +4,17 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
+use Ineersa\CodingAgent\Config\Ai\AiConfig;
+use Ineersa\CodingAgent\Config\Ai\AiModelReference;
+use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
+use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\HomeSettingsWriter;
+use Ineersa\CodingAgent\Config\ModelSelectionService;
+use Ineersa\CodingAgent\Config\SessionMetadataStore;
+use Ineersa\CodingAgent\Config\SettingsPathResolver;
+use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\Tui\Footer\FooterDataProvider;
+use Ineersa\Tui\Footer\FooterBarWidget;
 use Ineersa\Tui\Footer\FooterSegment;
 use Ineersa\Tui\Listener\FooterStateSegmentProvider;
 use Ineersa\Tui\Runtime\TuiSessionState;

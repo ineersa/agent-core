@@ -39,14 +39,14 @@ final class SkillRegistryTest extends TestCase
 
         $registry = new SkillRegistry([$skill]);
 
-        self::assertSame($skill, $registry->get('castor'));
+        $this->assertSame($skill, $registry->get('castor'));
     }
 
     public function testGetReturnsNullForUnknown(): void
     {
         $registry = new SkillRegistry([]);
 
-        self::assertNull($registry->get('nonexistent'));
+        $this->assertNull($registry->get('nonexistent'));
     }
 
     public function testModelInvocableFiltersDisabled(): void
@@ -71,8 +71,8 @@ final class SkillRegistryTest extends TestCase
 
         $invocable = $registry->modelInvocable();
 
-        self::assertCount(1, $invocable);
-        self::assertSame('enabled', $invocable[0]->name);
+        $this->assertCount(1, $invocable);
+        $this->assertSame('enabled', $invocable[0]->name);
     }
 
     public function testModelInvocableFiltersMissingDescription(): void
@@ -95,8 +95,8 @@ final class SkillRegistryTest extends TestCase
 
         $invocable = $registry->modelInvocable();
 
-        self::assertCount(1, $invocable);
-        self::assertSame('withdesc', $invocable[0]->name);
+        $this->assertCount(1, $invocable);
+        $this->assertSame('withdesc', $invocable[0]->name);
     }
 
     public function testReadBodyStripsFrontmatter(): void
@@ -114,9 +114,9 @@ final class SkillRegistryTest extends TestCase
         $registry = new SkillRegistry([$skill]);
         $body = $registry->readBody($skill);
 
-        self::assertStringNotContainsString('name: test', $body);
-        self::assertStringContainsString('Skill body', $body);
-        self::assertStringContainsString('Actual content', $body);
+        $this->assertStringNotContainsString('name: test', $body);
+        $this->assertStringContainsString('Skill body', $body);
+        $this->assertStringContainsString('Actual content', $body);
     }
 
     public function testReadBodyReturnsEmptyOnMissingFile(): void
@@ -131,7 +131,7 @@ final class SkillRegistryTest extends TestCase
         $registry = new SkillRegistry([$skill]);
         $body = $registry->readBody($skill);
 
-        self::assertSame('', $body);
+        $this->assertSame('', $body);
     }
 
     public function testCollisionsReturnsEmptyWhenNoCollisions(): void
@@ -145,7 +145,7 @@ final class SkillRegistryTest extends TestCase
 
         $registry = new SkillRegistry([$skill]);
 
-        self::assertSame([], $registry->collisions());
+        $this->assertSame([], $registry->collisions());
     }
 
     public function testCollisionsRecordsDiagnostics(): void
@@ -163,10 +163,10 @@ final class SkillRegistryTest extends TestCase
 
         $registry = new SkillRegistry([$skill], $collisions);
 
-        self::assertCount(1, $registry->collisions());
-        self::assertSame('myskill', $registry->collisions()[0]['name']);
-        self::assertSame('/prio/skill', $registry->collisions()[0]['winner']);
-        self::assertSame('/other/skill', $registry->collisions()[0]['ignored']);
+        $this->assertCount(1, $registry->collisions());
+        $this->assertSame('myskill', $registry->collisions()[0]['name']);
+        $this->assertSame('/prio/skill', $registry->collisions()[0]['winner']);
+        $this->assertSame('/other/skill', $registry->collisions()[0]['ignored']);
     }
 
     public function testAllReturnsAllSkills(): void
@@ -177,7 +177,7 @@ final class SkillRegistryTest extends TestCase
         $registry = new SkillRegistry([$a, $b]);
 
         $all = $registry->all();
-        self::assertCount(2, $all);
+        $this->assertCount(2, $all);
     }
 
     private function rmdirRecursive(string $path): void

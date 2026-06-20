@@ -27,6 +27,32 @@ final class OutputCapReadFileControllerTest extends ControllerE2eTestCase
     private string $largeFilePath;
     private string $sentinel;
 
+    protected function tempDirPrefix(): string
+    {
+        return 'test-output-cap';
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected function controllerExtraArgs(): array
+    {
+        return ['--tools=read'];
+    }
+
+    protected function extraSettingsYaml(): string
+    {
+        return <<<YAML
+tools:
+    output_cap:
+        path: .hatfield/tmp/output-cap
+        default_cap: 500
+        doc_cap: 500
+        retention: 86400
+        session_prefix: null
+YAML;
+    }
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -108,7 +134,7 @@ final class OutputCapReadFileControllerTest extends ControllerE2eTestCase
         // Output-cap directory must exist (it's created eagerly on first use).
         $outputCapDir = $this->tempDir.'/.hatfield/tmp/output-cap';
         if (!is_dir($outputCapDir)) {
-            fwrite(\STDERR, '[INFO] Output-cap dir not created — no tool that triggers '
+            \fwrite(\STDERR, "[INFO] Output-cap dir not created — no tool that triggers "
                 ."OutputCap executed during this run.\n");
         } else {
             $files = glob($outputCapDir.'/*.txt') ?: [];
@@ -143,7 +169,7 @@ final class OutputCapReadFileControllerTest extends ControllerE2eTestCase
                         }
 
                         if (!$foundSentinel) {
-                            fwrite(\STDERR, '[INFO] Output cap exercised but sentinel not found in '
+                            \fwrite(\STDERR, '[INFO] Output cap exercised but sentinel not found in '
                                 .'persisted cap files. Cap files: '.implode(', ', $files)."\n");
                         }
                     }
@@ -152,33 +178,8 @@ final class OutputCapReadFileControllerTest extends ControllerE2eTestCase
         }
 
         if (isset($byType['run.failed'])) {
-            fwrite(\STDERR, "[INFO] Run failed — model may have refused or timed out.\n");
+            \fwrite(\STDERR, "[INFO] Run failed — model may have refused or timed out.\n");
         }
     }
 
-    protected function tempDirPrefix(): string
-    {
-        return 'test-output-cap';
-    }
-
-    /**
-     * @return list<string>
-     */
-    protected function controllerExtraArgs(): array
-    {
-        return ['--tools=read'];
-    }
-
-    protected function extraSettingsYaml(): string
-    {
-        return <<<YAML
-tools:
-    output_cap:
-        path: .hatfield/tmp/output-cap
-        default_cap: 500
-        doc_cap: 500
-        retention: 86400
-        session_prefix: null
-YAML;
-    }
 }

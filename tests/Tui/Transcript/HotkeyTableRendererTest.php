@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Transcript;
 
 use Ineersa\Tui\Theme\DefaultTheme;
+use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Transcript\HotkeyTableRenderer;
 use PHPUnit\Framework\Attributes\CoversClass;

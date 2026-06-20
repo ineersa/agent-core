@@ -4,9 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Picker;
 
-use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Picker\PickerOverlay;
 use Ineersa\Tui\Screen\ChatScreen;
+use Symfony\Component\Tui\Widget\ContainerWidget;
+use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;

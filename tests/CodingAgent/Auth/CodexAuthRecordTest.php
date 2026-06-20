@@ -18,11 +18,11 @@ final class CodexAuthRecordTest extends TestCase
         $record = new CodexAuthRecord(
             access: 'tok',
             refresh: 'ref',
-            expires: time() + 3600, // 1 hour from now (seconds)
+            expires: \time() + 3600, // 1 hour from now (seconds)
             accountId: 'acct',
         );
 
-        self::assertFalse($record->isExpired());
+        $this->assertFalse($record->isExpired());
     }
 
     public function testPastTimestampIsExpired(): void
@@ -30,11 +30,11 @@ final class CodexAuthRecordTest extends TestCase
         $record = new CodexAuthRecord(
             access: 'tok',
             refresh: 'ref',
-            expires: time() - 3600, // 1 hour ago (seconds)
+            expires: \time() - 3600, // 1 hour ago (seconds)
             accountId: 'acct',
         );
 
-        self::assertTrue($record->isExpired());
+        $this->assertTrue($record->isExpired());
     }
 
     public function testBufferMakesFutureRecordAppearExpired(): void
@@ -43,13 +43,13 @@ final class CodexAuthRecordTest extends TestCase
         $record = new CodexAuthRecord(
             access: 'tok',
             refresh: 'ref',
-            expires: time() + 30,
+            expires: \time() + 30,
             accountId: 'acct',
         );
 
         // Buffer of 60 seconds means we declare it expired when <= 60s remain
-        self::assertTrue($record->isExpired(60), 'buffer 60 > 30 remaining = expired');
-        self::assertFalse($record->isExpired(0), 'no buffer = not expired');
+        $this->assertTrue($record->isExpired(60), 'buffer 60 > 30 remaining = expired');
+        $this->assertFalse($record->isExpired(0), 'no buffer = not expired');
     }
 
     public function testRoundTripSerialization(): void
@@ -57,7 +57,7 @@ final class CodexAuthRecordTest extends TestCase
         $record = new CodexAuthRecord(
             access: 'access-token-123',
             refresh: 'refresh-token-456',
-            expires: time() + 3600,
+            expires: \time() + 3600,
             accountId: 'chat-abc789',
             type: 'oauth',
         );
@@ -65,11 +65,11 @@ final class CodexAuthRecordTest extends TestCase
         $data = $record->toArray();
         $restored = CodexAuthRecord::fromArray($data);
 
-        self::assertSame($record->access, $restored->access);
-        self::assertSame($record->refresh, $restored->refresh);
-        self::assertSame($record->expires, $restored->expires);
-        self::assertSame($record->accountId, $restored->accountId);
-        self::assertSame('oauth', $restored->type);
+        $this->assertSame($record->access, $restored->access);
+        $this->assertSame($record->refresh, $restored->refresh);
+        $this->assertSame($record->expires, $restored->expires);
+        $this->assertSame($record->accountId, $restored->accountId);
+        $this->assertSame('oauth', $restored->type);
     }
 
     public function testFromArrayThrowsOnMissingFields(): void

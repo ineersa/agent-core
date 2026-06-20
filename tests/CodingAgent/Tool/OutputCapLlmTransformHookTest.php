@@ -62,21 +62,21 @@ final class OutputCapLlmTransformHookTest extends TestCase
             static fn (object $m): bool => $m instanceof ToolCallMessage,
         );
 
-        self::assertCount(1, $toolMessages);
+        $this->assertCount(1, $toolMessages);
 
         $toolMsg = reset($toolMessages);
-        self::assertInstanceOf(ToolCallMessage::class, $toolMsg);
+        $this->assertInstanceOf(ToolCallMessage::class, $toolMsg);
 
         $providerContent = $toolMsg->getContent();
-        self::assertIsString($providerContent);
+        $this->assertIsString($providerContent);
 
-        self::assertStringContainsString('Output capped', $providerContent);
-        self::assertStringNotContainsString($sentinel, $providerContent);
+        $this->assertStringContainsString('Output capped', $providerContent);
+        $this->assertStringNotContainsString($sentinel, $providerContent);
 
         // The persisted file must contain the full sentinel.
-        self::assertDirectoryExists($cfg->storageDir);
+        $this->assertDirectoryExists($cfg->storageDir);
         $files = glob($cfg->storageDir.'/*.txt') ?: [];
-        self::assertNotEmpty($files, 'Expected at least one persisted file');
+        $this->assertNotEmpty($files, 'Expected at least one persisted file');
 
         $foundSentinel = false;
         foreach ($files as $file) {
@@ -85,7 +85,7 @@ final class OutputCapLlmTransformHookTest extends TestCase
                 break;
             }
         }
-        self::assertTrue($foundSentinel, 'Persisted file must contain the full sentinel');
+        $this->assertTrue($foundSentinel, 'Persisted file must contain the full sentinel');
     }
 
     /* ── Details fallback capping ── */
@@ -122,14 +122,14 @@ final class OutputCapLlmTransformHookTest extends TestCase
             static fn (object $m): bool => $m instanceof ToolCallMessage,
         );
 
-        self::assertCount(1, $toolMessages);
+        $this->assertCount(1, $toolMessages);
 
         $toolMsg = reset($toolMessages);
         $providerContent = $toolMsg->getContent();
-        self::assertIsString($providerContent);
+        $this->assertIsString($providerContent);
 
-        self::assertStringContainsString('Output capped', $providerContent);
-        self::assertStringNotContainsString($sentinel, $providerContent);
+        $this->assertStringContainsString('Output capped', $providerContent);
+        $this->assertStringNotContainsString($sentinel, $providerContent);
     }
 
     /* ── Small message passes through ── */
@@ -151,9 +151,9 @@ final class OutputCapLlmTransformHookTest extends TestCase
 
         $transformed = $hook->transformContext([$message]);
 
-        self::assertCount(1, $transformed);
-        self::assertSame('tool', $transformed[0]->role);
-        self::assertSame($smallText, $transformed[0]->content[0]['text'] ?? '');
+        $this->assertCount(1, $transformed);
+        $this->assertSame('tool', $transformed[0]->role);
+        $this->assertSame($smallText, $transformed[0]->content[0]['text'] ?? '');
     }
 
     /* ── Non-tool messages are untouched ── */
@@ -181,13 +181,13 @@ final class OutputCapLlmTransformHookTest extends TestCase
 
         $transformed = $hook->transformContext([$userMsg, $assistantMsg, $systemMsg]);
 
-        self::assertCount(3, $transformed);
-        self::assertSame('user', $transformed[0]->role);
-        self::assertSame('assistant', $transformed[1]->role);
-        self::assertSame('system', $transformed[2]->role);
+        $this->assertCount(3, $transformed);
+        $this->assertSame('user', $transformed[0]->role);
+        $this->assertSame('assistant', $transformed[1]->role);
+        $this->assertSame('system', $transformed[2]->role);
 
         // Content is unchanged — even though it's way over the 10-char cap
-        self::assertSame(str_repeat('U', 500), $transformed[0]->content[0]['text'] ?? '');
+        $this->assertSame(str_repeat('U', 500), $transformed[0]->content[0]['text'] ?? '');
     }
 
     /* ── Preserves metadata fields ── */
@@ -214,18 +214,18 @@ final class OutputCapLlmTransformHookTest extends TestCase
 
         $transformed = $hook->transformContext([$message]);
 
-        self::assertCount(1, $transformed);
+        $this->assertCount(1, $transformed);
         $t = $transformed[0];
 
-        self::assertSame('tool', $t->role);
-        self::assertNotNull($t->timestamp);
-        self::assertSame($timestamp->getTimestamp(), $t->timestamp->getTimestamp());
-        self::assertSame('tool-executor', $t->name);
-        self::assertSame('call-meta', $t->toolCallId);
-        self::assertSame('meta_tool', $t->toolName);
-        self::assertSame(['raw_result' => 'meta content'], $t->details);
-        self::assertTrue($t->isError);
-        self::assertSame(['order_index' => 7], $t->metadata);
+        $this->assertSame('tool', $t->role);
+        $this->assertNotNull($t->timestamp);
+        $this->assertSame($timestamp->getTimestamp(), $t->timestamp->getTimestamp());
+        $this->assertSame('tool-executor', $t->name);
+        $this->assertSame('call-meta', $t->toolCallId);
+        $this->assertSame('meta_tool', $t->toolName);
+        $this->assertSame(['raw_result' => 'meta content'], $t->details);
+        $this->assertTrue($t->isError);
+        $this->assertSame(['order_index' => 7], $t->metadata);
     }
 
     /* ── Image ref parts are preserved ── */
@@ -255,20 +255,20 @@ final class OutputCapLlmTransformHookTest extends TestCase
 
         $transformed = $hook->transformContext([$message]);
 
-        self::assertCount(1, $transformed);
+        $this->assertCount(1, $transformed);
         $content = $transformed[0]->content;
-        self::assertCount(2, $content, 'Expected text + image_ref content parts');
+        $this->assertCount(2, $content, 'Expected text + image_ref content parts');
 
         $types = array_column($content, 'type');
-        self::assertContains('text', $types);
-        self::assertContains('image_ref', $types);
+        $this->assertContains('text', $types);
+        $this->assertContains('image_ref', $types);
 
         // Image ref data should be preserved
         foreach ($content as $part) {
             if (($part['type'] ?? '') === 'image_ref') {
-                self::assertSame('/tmp/test-image.jpg', $part['path']);
-                self::assertSame(800, $part['width']);
-                self::assertSame(600, $part['height']);
+                $this->assertSame('/tmp/test-image.jpg', $part['path']);
+                $this->assertSame(800, $part['width']);
+                $this->assertSame(600, $part['height']);
             }
         }
     }
@@ -298,12 +298,12 @@ final class OutputCapLlmTransformHookTest extends TestCase
 
         $transformed = $hook->transformContext([$message]);
 
-        self::assertCount(1, $transformed);
+        $this->assertCount(1, $transformed);
         // Content should be a single text part (combined and capped)
         $content = $transformed[0]->content;
-        self::assertCount(1, $content);
-        self::assertStringContainsString('Output capped', $content[0]['text'] ?? '');
-        self::assertStringNotContainsString($sentinel, $content[0]['text'] ?? '');
+        $this->assertCount(1, $content);
+        $this->assertStringContainsString('Output capped', $content[0]['text'] ?? '');
+        $this->assertStringNotContainsString($sentinel, $content[0]['text'] ?? '');
     }
 
     /* ── Empty tool message passes through ── */
@@ -323,8 +323,8 @@ final class OutputCapLlmTransformHookTest extends TestCase
 
         $transformed = $hook->transformContext([$message]);
 
-        self::assertCount(1, $transformed);
-        self::assertSame([], $transformed[0]->content);
+        $this->assertCount(1, $transformed);
+        $this->assertSame([], $transformed[0]->content);
     }
 
     /* ── Stable late-hook notification ID ── */
@@ -354,8 +354,8 @@ final class OutputCapLlmTransformHookTest extends TestCase
         $first = $hook->transformContext([$message]);
         $second = $hook->transformContext([$message]);
 
-        self::assertCount(1, $first);
-        self::assertCount(1, $second);
+        $this->assertCount(1, $first);
+        $this->assertCount(1, $second);
 
         $notifsA = \is_array($first[0]->metadata['model_notifications'] ?? null)
             ? $first[0]->metadata['model_notifications']
@@ -364,15 +364,15 @@ final class OutputCapLlmTransformHookTest extends TestCase
             ? $second[0]->metadata['model_notifications']
             : [];
 
-        self::assertCount(1, $notifsA);
-        self::assertCount(1, $notifsB);
+        $this->assertCount(1, $notifsA);
+        $this->assertCount(1, $notifsB);
 
-        self::assertSame($notifsA[0]['id'], $notifsB[0]['id'],
+        $this->assertSame($notifsA[0]['id'], $notifsB[0]['id'],
             'Repeated late-hook transforms must produce the same notification ID');
 
         // Saved paths differ (each invocation persists to a new random file)
         // but the notification identity is stable.
-        self::assertNotSame(
+        $this->assertNotSame(
             $notifsA[0]['metadata']['saved_path'] ?? null,
             $notifsB[0]['metadata']['saved_path'] ?? null,
             'Sanity: saved paths should differ across invocations',
@@ -414,35 +414,35 @@ final class OutputCapLlmTransformHookTest extends TestCase
 
         $toolMessages = array_filter(
             $messageBag->getMessages(),
-            static fn (object $m): bool => $m instanceof ToolCallMessage,
+            static fn (object $m): bool => $m instanceof \Symfony\AI\Platform\Message\ToolCallMessage,
         );
-        self::assertCount(1, $toolMessages);
+        $this->assertCount(1, $toolMessages);
 
         $toolMsg = reset($toolMessages);
         $providerContent = $toolMsg->getContent();
-        self::assertIsString($providerContent);
+        $this->assertIsString($providerContent);
 
         // Must cap.
-        self::assertStringContainsString('Output capped', $providerContent);
-        self::assertStringNotContainsString($sentinel, $providerContent);
+        $this->assertStringContainsString('Output capped', $providerContent);
+        $this->assertStringNotContainsString($sentinel, $providerContent);
 
         // Must reference original file, NOT saved artifact via read.
-        self::assertStringContainsString('./src/file.php', $providerContent,
+        $this->assertStringContainsString('./src/file.php', $providerContent,
             'Late-hook read notice must reference original file path');
-        self::assertStringContainsString('read(path:', $providerContent);
-        self::assertStringContainsString('offset: 42', $providerContent,
+        $this->assertStringContainsString('read(path:', $providerContent);
+        $this->assertStringContainsString('offset: 42', $providerContent,
             'Late-hook read notice must use original offset');
-        self::assertStringContainsString('limit: 200', $providerContent);
-        self::assertStringNotContainsString('head -200', $providerContent,
+        $this->assertStringContainsString('limit: 200', $providerContent);
+        $this->assertStringNotContainsString('head -200', $providerContent,
             'Late-hook read notice must NOT suggest shell head (generic path)');
 
         // The notification text in metadata should match what was sent to provider.
         $notifications = \is_array($transformed[0]->metadata['model_notifications'] ?? null)
             ? $transformed[0]->metadata['model_notifications']
             : [];
-        self::assertCount(1, $notifications);
-        self::assertStringContainsString('./src/file.php', $notifications[0]['text']);
-        self::assertStringContainsString('offset: 42', $notifications[0]['text']);
+        $this->assertCount(1, $notifications);
+        $this->assertStringContainsString('./src/file.php', $notifications[0]['text']);
+        $this->assertStringContainsString('offset: 42', $notifications[0]['text']);
     }
     /* ── Normalizer: empty content does not leak raw_result ── */
 
@@ -487,15 +487,15 @@ final class OutputCapLlmTransformHookTest extends TestCase
             }
         }
 
-        self::assertStringNotContainsString($sentinel, $contentText,
+        $this->assertStringNotContainsString($sentinel, $contentText,
             'Sentinel from details.raw_result must not leak into model-facing content text');
 
         // The model-facing text should be a compact label like 'read completed'.
-        self::assertStringContainsString('read', $contentText);
-        self::assertStringNotContainsString('RAW_SENTINEL_', $contentText);
+        $this->assertStringContainsString('read', $contentText);
+        $this->assertStringNotContainsString('RAW_SENTINEL_', $contentText);
 
         // details are preserved on the AgentMessage for persistence
-        self::assertSame($largeRaw, $message->details['details']['raw_result'] ?? null,
+        $this->assertSame($largeRaw, $message->details['details']['raw_result'] ?? null,
             'Raw result must be preserved in AgentMessage details for persistence');
     }
 

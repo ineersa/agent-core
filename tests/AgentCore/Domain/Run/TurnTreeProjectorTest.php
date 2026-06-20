@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Domain\Run;
 
+use Ineersa\AgentCore\Domain\Run\TurnTreeProjector;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
-use Ineersa\AgentCore\Domain\Run\TurnTreeProjector;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
@@ -515,7 +515,7 @@ final class TurnTreeProjectorTest extends TestCase
     {
         $payload = [
             'turn_no' => $turnNo,
-            'step_id' => 'step-'.$turnNo,
+            'step_id' => 'step-' . $turnNo,
         ];
 
         // Include parent_turn_no key for new-style streams when explicit.

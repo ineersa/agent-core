@@ -296,7 +296,7 @@ class QuestionControllerTest extends TestCase
             prompt: 'Test:',
         );
 
-        $this->coordinator->enqueue($request, static function (mixed $value) use (&$calledWith): void {
+        $this->coordinator->enqueue($request, function (mixed $value) use (&$calledWith): void {
             $calledWith = $value;
         });
 

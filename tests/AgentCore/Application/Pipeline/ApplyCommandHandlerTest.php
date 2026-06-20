@@ -9,10 +9,10 @@ use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler;
 use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
+use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
-use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -65,27 +65,27 @@ final class ApplyCommandHandlerTest extends TestCase
 
         $result = $handler->handle($message, $state);
 
-        self::assertNotNull($result->nextState);
-        self::assertSame(RunStatus::Running, $result->nextState->status);
-        self::assertSame(3, $result->nextState->version);
-        self::assertSame(6, $result->nextState->lastSeq);
-        self::assertNull($result->nextState->errorMessage);
-        self::assertFalse($result->nextState->retryableFailure);
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(RunStatus::Running, $result->nextState->status);
+        $this->assertSame(3, $result->nextState->version);
+        $this->assertSame(6, $result->nextState->lastSeq);
+        $this->assertNull($result->nextState->errorMessage);
+        $this->assertFalse($result->nextState->retryableFailure);
 
-        self::assertCount(1, $result->events);
-        self::assertSame('agent_command_applied', $result->events[0]->type);
-        self::assertSame(CoreCommandKind::Continue, $result->events[0]->payload['kind']);
+        $this->assertCount(1, $result->events);
+        $this->assertSame('agent_command_applied', $result->events[0]->type);
+        $this->assertSame(CoreCommandKind::Continue, $result->events[0]->payload['kind']);
 
-        self::assertSame([], $result->effects);
-        self::assertSame([], $result->postCommitEffects);
-        self::assertCount(1, $result->postCommit);
-        self::assertTrue($result->markHandled);
+        $this->assertSame([], $result->effects);
+        $this->assertSame([], $result->postCommitEffects);
+        $this->assertCount(1, $result->postCommit);
+        $this->assertTrue($result->markHandled);
 
         ($result->postCommit[0])();
 
-        self::assertCount(1, $commandBus->messages);
-        self::assertInstanceOf(AdvanceRun::class, $commandBus->messages[0]);
-        self::assertTrue($commandStore->has('run-apply-handler-1', 'continue-idempotency-1'));
+        $this->assertCount(1, $commandBus->messages);
+        $this->assertInstanceOf(AdvanceRun::class, $commandBus->messages[0]);
+        $this->assertTrue($commandStore->has('run-apply-handler-1', 'continue-idempotency-1'));
     }
 
     public function testFollowUpAllowedAfterCancelledRun(): void
@@ -132,17 +132,17 @@ final class ApplyCommandHandlerTest extends TestCase
         $result = $handler->handle($message, $state);
 
         // FollowUp should be accepted (queued, not rejected)
-        self::assertNotNull($result->nextState);
-        self::assertSame(RunStatus::Cancelled, $result->nextState->status, 'RunState stays Cancelled until AdvanceRun transitions it');
-        self::assertCount(1, $result->events);
-        self::assertSame('agent_command_queued', $result->events[0]->type);
-        self::assertSame(CoreCommandKind::FollowUp, $result->events[0]->payload['kind']);
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(RunStatus::Cancelled, $result->nextState->status, 'RunState stays Cancelled until AdvanceRun transitions it');
+        $this->assertCount(1, $result->events);
+        $this->assertSame('agent_command_queued', $result->events[0]->type);
+        $this->assertSame(CoreCommandKind::FollowUp, $result->events[0]->payload['kind']);
 
         // FollowUp dispatches AdvanceRun to pick up the queued message
-        self::assertCount(1, $result->postCommit);
+        $this->assertCount(1, $result->postCommit);
         ($result->postCommit[0])();
-        self::assertCount(1, $commandBus->messages);
-        self::assertInstanceOf(AdvanceRun::class, $commandBus->messages[0]);
+        $this->assertCount(1, $commandBus->messages);
+        $this->assertInstanceOf(AdvanceRun::class, $commandBus->messages[0]);
     }
 
     public function testNonFollowUpCommandRejectedAfterCancelledRun(): void
@@ -186,11 +186,11 @@ final class ApplyCommandHandlerTest extends TestCase
         $result = $handler->handle($message, $state);
 
         // Steer should still be rejected when run is Cancelled
-        self::assertNotNull($result->nextState);
-        self::assertSame(RunStatus::Cancelled, $result->nextState->status);
-        self::assertSame('Run is already cancelled.', $result->nextState->errorMessage);
-        self::assertCount(1, $result->events);
-        self::assertSame('agent_command_rejected', $result->events[0]->type);
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(RunStatus::Cancelled, $result->nextState->status);
+        $this->assertSame('Run is already cancelled.', $result->nextState->errorMessage);
+        $this->assertCount(1, $result->events);
+        $this->assertSame('agent_command_rejected', $result->events[0]->type);
     }
 
     public function testFollowUpRejectedDuringCancelling(): void
@@ -234,11 +234,11 @@ final class ApplyCommandHandlerTest extends TestCase
         $result = $handler->handle($message, $state);
 
         // FollowUp should be rejected while Cancelling is in progress
-        self::assertNotNull($result->nextState);
-        self::assertSame(RunStatus::Cancelling, $result->nextState->status);
-        self::assertStringContainsString('rejected because cancellation is in progress', $result->nextState->errorMessage ?? '');
-        self::assertCount(1, $result->events);
-        self::assertSame('agent_command_rejected', $result->events[0]->type);
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(RunStatus::Cancelling, $result->nextState->status);
+        $this->assertStringContainsString('rejected because cancellation is in progress', $result->nextState->errorMessage ?? '');
+        $this->assertCount(1, $result->events);
+        $this->assertSame('agent_command_rejected', $result->events[0]->type);
     }
 
     public function testContinueRejectedAfterCancelledRun(): void
@@ -282,11 +282,11 @@ final class ApplyCommandHandlerTest extends TestCase
         $result = $handler->handle($message, $state);
 
         // Continue should be rejected when run is Cancelled
-        self::assertNotNull($result->nextState);
-        self::assertSame(RunStatus::Cancelled, $result->nextState->status);
-        self::assertSame('Run is already cancelled.', $result->nextState->errorMessage);
-        self::assertCount(1, $result->events);
-        self::assertSame('agent_command_rejected', $result->events[0]->type);
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(RunStatus::Cancelled, $result->nextState->status);
+        $this->assertSame('Run is already cancelled.', $result->nextState->errorMessage);
+        $this->assertCount(1, $result->events);
+        $this->assertSame('agent_command_rejected', $result->events[0]->type);
     }
 
     public function testHumanResponseRejectedAfterCancelledRun(): void
@@ -330,11 +330,11 @@ final class ApplyCommandHandlerTest extends TestCase
         $result = $handler->handle($message, $state);
 
         // HumanResponse should be rejected when run is Cancelled
-        self::assertNotNull($result->nextState);
-        self::assertSame(RunStatus::Cancelled, $result->nextState->status);
-        self::assertSame('Run is already cancelled.', $result->nextState->errorMessage);
-        self::assertCount(1, $result->events);
-        self::assertSame('agent_command_rejected', $result->events[0]->type);
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(RunStatus::Cancelled, $result->nextState->status);
+        $this->assertSame('Run is already cancelled.', $result->nextState->errorMessage);
+        $this->assertCount(1, $result->events);
+        $this->assertSame('agent_command_rejected', $result->events[0]->type);
     }
 
     public function testSteerWhileRunningQueuesButDoesNotDispatchAdvanceRun(): void
@@ -380,21 +380,21 @@ final class ApplyCommandHandlerTest extends TestCase
         $result = $handler->handle($message, $state);
 
         // Steer should be queued (not rejected)
-        self::assertNotNull($result->nextState);
-        self::assertSame(RunStatus::Running, $result->nextState->status);
-        self::assertCount(1, $result->events);
-        self::assertSame('agent_command_queued', $result->events[0]->type);
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(RunStatus::Running, $result->nextState->status);
+        $this->assertCount(1, $result->events);
+        $this->assertSame('agent_command_queued', $result->events[0]->type);
 
         // NO postCommit AdvanceRun callback — the run is active,
         // so the queued command will be drained at the next safe
         // boundary (stop boundary or after tool batch).
-        self::assertCount(0, $result->postCommit,
+        $this->assertCount(0, $result->postCommit,
             'Steer while Running must not dispatch AdvanceRun — only drain at safe boundary.',
         );
 
         // Verify the command is in the store for later drain
-        self::assertTrue($commandStore->has('run-steer-while-running', 'steer-running-1'));
-        self::assertCount(1, $commandStore->pending('run-steer-while-running'));
+        $this->assertTrue($commandStore->has('run-steer-while-running', 'steer-running-1'));
+        $this->assertCount(1, $commandStore->pending('run-steer-while-running'));
     }
 
     public function testFollowUpWhileRunningQueuesButDoesNotDispatchAdvanceRun(): void
@@ -440,13 +440,13 @@ final class ApplyCommandHandlerTest extends TestCase
         $result = $handler->handle($message, $state);
 
         // FollowUp should be queued (not rejected)
-        self::assertNotNull($result->nextState);
-        self::assertSame(RunStatus::Running, $result->nextState->status);
-        self::assertCount(1, $result->events);
-        self::assertSame('agent_command_queued', $result->events[0]->type);
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(RunStatus::Running, $result->nextState->status);
+        $this->assertCount(1, $result->events);
+        $this->assertSame('agent_command_queued', $result->events[0]->type);
 
         // NO postCommit AdvanceRun — active run
-        self::assertCount(0, $result->postCommit,
+        $this->assertCount(0, $result->postCommit,
             'FollowUp while Running must not dispatch AdvanceRun.',
         );
     }
@@ -495,19 +495,19 @@ final class ApplyCommandHandlerTest extends TestCase
         $result = $handler->handle($message, $state);
 
         // FollowUp after Cancelled should still queue
-        self::assertNotNull($result->nextState);
-        self::assertSame(RunStatus::Cancelled, $result->nextState->status);
-        self::assertCount(1, $result->events);
-        self::assertSame('agent_command_queued', $result->events[0]->type);
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(RunStatus::Cancelled, $result->nextState->status);
+        $this->assertCount(1, $result->events);
+        $this->assertSame('agent_command_queued', $result->events[0]->type);
 
         // FollowUp after Cancelled SHOULD dispatch AdvanceRun to resume
-        self::assertCount(1, $result->postCommit,
+        $this->assertCount(1, $result->postCommit,
             'FollowUp after Cancelled must still dispatch AdvanceRun.',
         );
 
         ($result->postCommit[0])();
-        self::assertCount(1, $commandBus->messages);
-        self::assertInstanceOf(AdvanceRun::class, $commandBus->messages[0]);
+        $this->assertCount(1, $commandBus->messages);
+        $this->assertInstanceOf(AdvanceRun::class, $commandBus->messages[0]);
     }
 
     public function testCancelRejectsPendingSteerAndFollowUp(): void
@@ -570,31 +570,32 @@ final class ApplyCommandHandlerTest extends TestCase
         $result = $handler->handle($cancelMessage, $state);
 
         // Cancel should be applied
-        self::assertNotNull($result->nextState);
-        self::assertSame(RunStatus::Cancelling, $result->nextState->status);
-        self::assertSame(RunStatus::Running, $state->status, 'Original state unchanged');
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(RunStatus::Cancelling, $result->nextState->status);
+        $this->assertSame(RunStatus::Running, $state->status, 'Original state unchanged');
 
         // Already-applied user messages must remain intact
-        self::assertCount(2, $result->nextState->messages, 'Already-applied messages must survive cancel.');
-        self::assertSame('user', $result->nextState->messages[0]->role);
-        self::assertSame('assistant', $result->nextState->messages[1]->role);
+        $this->assertCount(2, $result->nextState->messages, 'Already-applied messages must survive cancel.');
+        $this->assertSame('user', $result->nextState->messages[0]->role);
+        $this->assertSame('assistant', $result->nextState->messages[1]->role);
 
         // Must include agent_command_applied + rejections for steer, follow_up, and continue
         $eventTypes = array_map(static fn ($e) => $e->type, $result->events);
-        self::assertContains('agent_command_applied', $eventTypes);
-        self::assertContains('agent_command_rejected', $eventTypes);
+        $this->assertContains('agent_command_applied', $eventTypes);
+        $this->assertContains('agent_command_rejected', $eventTypes);
 
         // Count rejection events: steer + follow_up (continue may not be in store but rejectPendingByKind is called for all three)
         $rejectedEvents = array_filter($result->events, static fn ($e) => 'agent_command_rejected' === $e->type);
-        self::assertCount(2, $rejectedEvents, 'Expected 2 rejection events (steer, follow_up).');
+        $this->assertCount(2, $rejectedEvents, 'Expected 2 rejection events (steer, follow_up).');
 
         $rejectedKinds = array_map(static fn ($e) => $e->payload['kind'], $rejectedEvents);
-        self::assertContains('steer', $rejectedKinds);
-        self::assertContains('follow_up', $rejectedKinds);
+        $this->assertContains('steer', $rejectedKinds);
+        $this->assertContains('follow_up', $rejectedKinds);
 
         // Verify the queued commands are no longer pending
-        self::assertCount(0, $commandStore->pending('run-cancel-stale'),
+        $this->assertCount(0, $commandStore->pending('run-cancel-stale'),
             'All stale queued commands should be rejected after cancel.',
         );
     }
 }
+

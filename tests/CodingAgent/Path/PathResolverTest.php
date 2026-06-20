@@ -29,39 +29,39 @@ final class PathResolverTest extends TestCase
 
     public function testAbsolutePathPassesThrough(): void
     {
-        self::assertSame('/etc/passwd', PathResolver::resolve('/etc/passwd'));
+        $this->assertSame('/etc/passwd', PathResolver::resolve('/etc/passwd'));
     }
 
     public function testAbsolutePathWithTrailingSlashIsNormalized(): void
     {
-        self::assertSame('/etc', PathResolver::resolve('/etc/'));
+        $this->assertSame('/etc', PathResolver::resolve('/etc/'));
     }
 
     public function testAbsolutePathWithDoubleSlashIsCollapsed(): void
     {
-        self::assertSame('/etc/passwd', PathResolver::resolve('//etc//passwd'));
+        $this->assertSame('/etc/passwd', PathResolver::resolve('//etc//passwd'));
     }
 
     public function testRootPath(): void
     {
-        self::assertSame('/', PathResolver::resolve('/'));
+        $this->assertSame('/', PathResolver::resolve('/'));
     }
 
     public function testDotSlashAbsolutePath(): void
     {
-        self::assertSame('/foo/bar', PathResolver::resolve('/foo/./bar/./baz/..'));
+        $this->assertSame('/foo/bar', PathResolver::resolve('/foo/./bar/./baz/..'));
     }
 
     public function testAboveRootIsClamped(): void
     {
-        self::assertSame('/etc', PathResolver::resolve('/../../etc'));
+        $this->assertSame('/etc', PathResolver::resolve('/../../etc'));
     }
 
     /* ──────── Relative paths ──────── */
 
     public function testRelativePathResolvesAgainstCwd(): void
     {
-        self::assertSame('/project/src/file.txt', PathResolver::resolve('src/file.txt', '/project'));
+        $this->assertSame('/project/src/file.txt', PathResolver::resolve('src/file.txt', '/project'));
     }
 
     public function testRelativePathDefaultsToGetcwd(): void
@@ -69,39 +69,39 @@ final class PathResolverTest extends TestCase
         $cwd = getcwd();
         \assert(\is_string($cwd));
 
-        self::assertSame($cwd.'/some/file', PathResolver::resolve('some/file'));
+        $this->assertSame($cwd.'/some/file', PathResolver::resolve('some/file'));
     }
 
     public function testRelativeDotSlashIsNormalized(): void
     {
-        self::assertSame('/project/src', PathResolver::resolve('./src', '/project'));
+        $this->assertSame('/project/src', PathResolver::resolve('./src', '/project'));
     }
 
     public function testRelativeDoubleDotTraversesUp(): void
     {
-        self::assertSame('/project', PathResolver::resolve('src/../', '/project'));
+        $this->assertSame('/project', PathResolver::resolve('src/../', '/project'));
     }
 
     public function testRelativeDotDotGoesAboveCwd(): void
     {
-        self::assertSame('/project/other', PathResolver::resolve('../other', '/project/src'));
+        $this->assertSame('/project/other', PathResolver::resolve('../other', '/project/src'));
     }
 
     public function testRelativeDoubleDotGoesAboveCwdParent(): void
     {
-        self::assertSame('/other', PathResolver::resolve('../../other', '/project/src'));
+        $this->assertSame('/other', PathResolver::resolve('../../other', '/project/src'));
     }
 
     public function testDotDotFromRootishRelative(): void
     {
-        self::assertSame('/', PathResolver::resolve('src/../../', '/project'));
+        $this->assertSame('/', PathResolver::resolve('src/../../', '/project'));
     }
 
     /* ──────── Empty path ──────── */
 
     public function testEmptyStringReturnsCwd(): void
     {
-        self::assertSame('/project', PathResolver::resolve('', '/project'));
+        $this->assertSame('/project', PathResolver::resolve('', '/project'));
     }
 
     /* ──────── Home directory expansion ──────── */
@@ -113,11 +113,11 @@ final class PathResolverTest extends TestCase
         $result = PathResolver::resolve('~');
 
         // Bare ~ should be normalized (not raw getenv result)
-        self::assertTrue(
+        $this->assertTrue(
             str_starts_with($result, '/'),
             'Tilde expansion must return absolute path, got "'.$result.'"',
         );
-        self::assertStringContainsString(basename($home), $result);
+        $this->assertStringContainsString(basename($home), $result);
     }
 
     public function testTildeSlashExpandsToHomeSubdirectory(): void
@@ -126,7 +126,7 @@ final class PathResolverTest extends TestCase
 
         $result = PathResolver::resolve('~/config/.hatfield');
 
-        self::assertSame($home.'/config/.hatfield', $result);
+        $this->assertSame($home.'/config/.hatfield', $result);
     }
 
     public function testTildeSlashRemovesDotDotAboveHome(): void
@@ -136,10 +136,10 @@ final class PathResolverTest extends TestCase
         $result = PathResolver::resolve('~/../etc');
 
         // $home/../etc → /etc (normalized)
-        self::assertStringEndsWith('/etc', $result);
-        self::assertStringNotContainsString('..', $result);
+        $this->assertStringEndsWith('/etc', $result);
+        $this->assertStringNotContainsString('..', $result);
         // Must not contain double slash from concatenation
-        self::assertStringNotContainsString('//', $result);
+        $this->assertStringNotContainsString('//', $result);
     }
 
     public function testTildeUserNotSupported(): void
@@ -171,7 +171,7 @@ final class PathResolverTest extends TestCase
         $cwd = getcwd();
         \assert(\is_string($cwd));
 
-        self::assertSame($cwd.'/foo', PathResolver::resolve('foo', ''));
+        $this->assertSame($cwd.'/foo', PathResolver::resolve('foo', ''));
     }
 
     public function testEmptyCwdWithEmptyPath(): void
@@ -179,7 +179,7 @@ final class PathResolverTest extends TestCase
         $cwd = getcwd();
         \assert(\is_string($cwd));
 
-        self::assertSame($cwd, PathResolver::resolve('', ''));
+        $this->assertSame($cwd, PathResolver::resolve('', ''));
     }
 
     /* ──────── Absolute-path detection ──────── */
@@ -188,28 +188,28 @@ final class PathResolverTest extends TestCase
     {
         // A path like "a:b" is a valid Unix filename, NOT absolute
         $result = PathResolver::resolve('a:b', '/project');
-        self::assertSame('/project/a:b', $result);
+        $this->assertSame('/project/a:b', $result);
     }
 
     public function testDriveColonPathIsRelativeOnUnix(): void
     {
         // C:foo without separator should be treated as relative on Unix
         $result = PathResolver::resolve('C:foo', '/project');
-        self::assertSame('/project/C:foo', $result);
+        $this->assertSame('/project/C:foo', $result);
     }
 
     public function testDriveColonSlashWindowsStyleAbsolute(): void
     {
         // C:/foo is an absolute Windows path — resolve as-is
         $result = PathResolver::resolve('C:/Users/test/file.txt');
-        self::assertSame('C:/Users/test/file.txt', $result);
+        $this->assertSame('C:/Users/test/file.txt', $result);
     }
 
     public function testDriveColonBackslashWindowsStyleAbsolute(): void
     {
         // C:\foo is an absolute Windows path — backslashes become /
         $result = PathResolver::resolve('C:\\Users\\test\\file.txt');
-        self::assertSame('C:/Users/test/file.txt', $result);
+        $this->assertSame('C:/Users/test/file.txt', $result);
     }
 
     /* ──────── Complex normalization ──────── */
@@ -217,34 +217,34 @@ final class PathResolverTest extends TestCase
     public function testComplexMixOfDotsAndSlashes(): void
     {
         $path = '/a/b/../c/./d/../../e/f/';
-        self::assertSame('/a/e/f', PathResolver::resolve($path));
+        $this->assertSame('/a/e/f', PathResolver::resolve($path));
     }
 
     public function testPathThatNormalizesToNothingRelative(): void
     {
-        self::assertSame('/', PathResolver::resolve('..', '/project'));
+        $this->assertSame('/', PathResolver::resolve('..', '/project'));
     }
 
     public function testOnlyDotsRelative(): void
     {
-        self::assertSame('/project', PathResolver::resolve('.', '/project'));
+        $this->assertSame('/project', PathResolver::resolve('.', '/project'));
     }
 
     public function testMultipleDoubleDotsAboveRootRelative(): void
     {
-        self::assertSame('/', PathResolver::resolve('../../..', '/a/b'));
+        $this->assertSame('/', PathResolver::resolve('../../..', '/a/b'));
     }
 
     public function testEmbeddedTildeNotExpanded(): void
     {
         // Tilde not at position 0 must not be expanded
-        self::assertSame('/foo/~/bar', PathResolver::resolve('/foo/~/bar'));
+        $this->assertSame('/foo/~/bar', PathResolver::resolve('/foo/~/bar'));
     }
 
     public function testDoubleTildeResolvesAsRelative(): void
     {
         // ~~ is a valid filename starting with ~, not ~user syntax
-        self::assertSame('/project/~~', PathResolver::resolve('~~', '/project'));
+        $this->assertSame('/project/~~', PathResolver::resolve('~~', '/project'));
     }
 
     /* ──────── Dot-Dot at root ──────── */
@@ -252,12 +252,12 @@ final class PathResolverTest extends TestCase
     public function testDotDotFromRootClamped(): void
     {
         // resolve('..', '/') → '/'
-        self::assertSame('/', PathResolver::resolve('..', '/'));
+        $this->assertSame('/', PathResolver::resolve('..', '/'));
     }
 
     public function testAboveRootDotDotFromRootClamped(): void
     {
-        self::assertSame('/', PathResolver::resolve('../../', '/'));
+        $this->assertSame('/', PathResolver::resolve('../../', '/'));
     }
 
     /* ──────── Helper ──────── */
