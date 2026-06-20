@@ -17,9 +17,8 @@ namespace Ineersa\AgentCore\Domain\Model;
 final class ProviderRequestOptionKeys
 {
     /**
-     * Internal option key carrying the user-facing reasoning level
-     * (off|minimal|low|medium|high|xhigh). Stripped before options reach
-     * the provider.
+     * Internal option key carrying the user-facing reasoning level.
+     * Stripped before options reach the provider.
      */
     public const string REASONING = '_hatfield_reasoning';
 

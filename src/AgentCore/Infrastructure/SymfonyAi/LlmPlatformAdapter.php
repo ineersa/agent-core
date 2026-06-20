@@ -95,10 +95,13 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         ];
 
         // Resolve the effective model ref for cost calculation and any
-        // model-aware logic.  $request->model is the legacy empty-string
-        // container parameter (app.default_model), not a user override;
-        // SessionAwareModelResolver picks the real model from session
-        // metadata / provider defaults without an explicit override.
+        // model-aware logic.  Normal LLM steps pass the empty-string
+        // container parameter (app.default_model) as a sentinel —
+        // SessionAwareModelResolver interprets '' as "no override" and
+        // picks the real model from session metadata / provider defaults.
+        // Compaction and background summarization calls may pass a
+        // non-empty explicit model override, which the resolver honours
+        // directly.
         $effectiveModel = $request->model;
         if (null !== $this->modelResolver) {
             $effectiveModel = $this->modelResolver->resolve(
@@ -124,6 +127,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             $effectiveModel,
             $requestSummary,
             $modelNotifications,
+            $request->options->streamObserverEnabled,
         );
     }
 
@@ -284,7 +288,12 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
 
     /**
      * Build Input options, propagating toolsRef, turnNo, and runId for
-     * DynamicToolDescriptionProcessor / ToolSetResolver resolution.
+     * DynamicToolDescriptionProcessor / ToolSetResolver resolution, plus
+     * ModelInvocationOptions flags (toolsEnabled, extraOptions).
+     *
+     * When toolsEnabled === false, injects tools:[] to force an empty
+     * toolbox regardless of ToolSetResolver or toolbox configuration.
+     * This guarantees no-tools mode for compaction/summarization calls.
      *
      * @return array<string, mixed>
      */
@@ -300,6 +309,21 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         }
         if (null !== $request->input->runId) {
             $options['run_id'] = $request->input->runId;
+        }
+
+        // Generic model/platform options from ModelInvocationOptions —
+        // forwarded uninterpreted.  Core-controlled flags (toolsEnabled)
+        // are applied after this merge and always win.
+        foreach ($request->options->extraOptions as $key => $value) {
+            $options[$key] = $value;
+        }
+
+        // Explicit no-tools flag: short-circuit all tool resolution by
+        // injecting an empty tool array after generic options are merged.
+        // The processor sees tools:[] and clears tool_descriptions,
+        // preventing any toolbox/ToolSetResolver fallback.
+        if (false === $request->options->toolsEnabled) {
+            $options['tools'] = [];
         }
 
         return $options;
@@ -331,11 +355,14 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         string $modelName = '',
         array $requestSummary = [],
         array $modelNotifications = [],
+        bool $streamObserverEnabled = true,
     ): PlatformInvocationResult {
         $aborted = false;
         $deltas = [];
 
-        $this->notifyStreamStart($runId, $stepId);
+        if ($streamObserverEnabled) {
+            $this->notifyStreamStart($runId, $stepId);
+        }
 
         try {
             foreach ($deferredResult->asStream() as $delta) {
@@ -346,11 +373,15 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
 
                 if ($delta instanceof DeltaInterface) {
                     $deltas[] = $delta;
-                    $this->notifyDelta($runId, $stepId, $delta);
+                    if ($streamObserverEnabled) {
+                        $this->notifyDelta($runId, $stepId, $delta);
+                    }
                 }
             }
         } catch (\Throwable $exception) {
-            $this->notifyStreamError($runId, $stepId, $exception);
+            if ($streamObserverEnabled) {
+                $this->notifyStreamError($runId, $stepId, $exception);
+            }
 
             $this->logger->warning('llm.provider.stream_error', $this->buildErrorLogContext(
                 $exception,
@@ -363,7 +394,9 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             return $this->errorResult($deltas, $exception, $deferredResult, $modelName, $requestSummary, $modelNotifications);
         }
 
-        $this->notifyStreamEnd($runId, $stepId);
+        if ($streamObserverEnabled) {
+            $this->notifyStreamEnd($runId, $stepId);
+        }
 
         if ($aborted) {
             $this->abortConnection($deferredResult);
