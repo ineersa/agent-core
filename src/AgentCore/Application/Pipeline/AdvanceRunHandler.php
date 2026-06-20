@@ -57,14 +57,18 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             return new HandlerResult();
         }
 
-        [$preparedState, $boundaryEventSpecs] = null === $this->tracer
+        $mailboxResult = null === $this->tracer
             ? $this->commandMailboxPolicy->applyPendingTurnStartCommands($state)
             : $this->tracer->inSpan('command.application.turn_start_boundary', [
                 'run_id' => $runId,
                 'turn_no' => $state->turnNo,
                 'step_id' => $state->activeStepId,
-            ], fn (): array => $this->commandMailboxPolicy->applyPendingTurnStartCommands($state))
+            ], fn (): CommandApplicationResult => $this->commandMailboxPolicy->applyPendingTurnStartCommands($state))
         ;
+
+        $preparedState = $mailboxResult->state;
+        $boundaryEventSpecs = $mailboxResult->eventSpecs;
+        $mailboxEffects = $mailboxResult->effects;
 
         if (RunStatus::Cancelling === $preparedState->status) {
             $eventSpecs = [
@@ -94,6 +98,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             return new HandlerResult(
                 nextState: $nextState,
                 events: $events,
+                effects: $mailboxEffects,
             );
         }
 
@@ -144,8 +149,38 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                 return new HandlerResult(
                     nextState: $nextState,
                     events: $events,
+                    effects: $mailboxEffects,
                 );
             }
+        }
+
+        // If the mailbox drained a compact command, do NOT advance the turn.
+        // Compaction replaces RunState.messages and the CompactRunHandler
+        // will emit its own events.  We still commit the AgentCommandApplied
+        // events from the mailbox drain, and pass the CompactRun effect
+        // through for postCommit dispatch.
+        if ([] !== $mailboxEffects) {
+            $events = $this->eventFactory->eventsFromSpecs($runId, $preparedState->turnNo, $state->lastSeq + 1, $boundaryEventSpecs);
+            $nextState = new RunState(
+                runId: $preparedState->runId,
+                status: $preparedState->status,
+                version: $state->version + 1,
+                turnNo: $preparedState->turnNo,
+                lastSeq: $state->lastSeq + \count($events),
+                isStreaming: $preparedState->isStreaming,
+                streamingMessage: $preparedState->streamingMessage,
+                pendingToolCalls: $preparedState->pendingToolCalls,
+                errorMessage: $preparedState->errorMessage,
+                messages: $preparedState->messages,
+                activeStepId: $preparedState->activeStepId,
+                retryableFailure: $preparedState->retryableFailure,
+            );
+
+            return new HandlerResult(
+                nextState: $nextState,
+                events: $events,
+                effects: $mailboxEffects,
+            );
         }
 
         $nextTurnNo = $preparedState->turnNo + 1;

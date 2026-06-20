@@ -64,6 +64,10 @@ final class RuntimeEventTranslator
             // Cancel / fallback
             RunEventTypeEnum::AgentCommandRejected->value => $this->onStatusUpdated(...),
             RunEventTypeEnum::StaleResultIgnored->value => $this->onStatusUpdated(...),
+            // Compaction
+            RunEventTypeEnum::ContextCompactionStarted->value => $this->onCompactionStarted(...),
+            RunEventTypeEnum::ContextCompacted->value => $this->onCompactionCompleted(...),
+            RunEventTypeEnum::ContextCompactionFailed->value => $this->onCompactionFailed(...),
             // Drop (internal bookkeeping)
             RunEventTypeEnum::ToolCallResultReceived->value => $this->drop(...),
             RunEventTypeEnum::ToolBatchCommitted->value => $this->drop(...),
@@ -426,6 +430,69 @@ final class RuntimeEventTranslator
             payload: [
                 self::DEBUG_RAW_TYPE => $runEvent->type,
                 self::DEBUG_RAW_PAYLOAD => $runEvent->payload,
+            ],
+        );
+    }
+
+    // ── Compaction ────────────────────────────────────────────────────────
+
+    private function onCompactionStarted(RunEvent $runEvent): RuntimeEvent
+    {
+        $p = $runEvent->payload;
+
+        return new RuntimeEvent(
+            type: RuntimeEventTypeEnum::CompactionStarted->value,
+            runId: $runEvent->runId,
+            seq: $runEvent->seq,
+            payload: [
+                'estimated_tokens_before' => $p['estimated_tokens_before'] ?? null,
+            ],
+        );
+    }
+
+    private function onCompactionCompleted(RunEvent $runEvent): RuntimeEvent
+    {
+        $p = $runEvent->payload;
+
+        return new RuntimeEvent(
+            type: RuntimeEventTypeEnum::CompactionCompleted->value,
+            runId: $runEvent->runId,
+            seq: $runEvent->seq,
+            payload: [
+                'estimated_tokens_before' => $p['estimated_tokens_before'] ?? null,
+                'estimated_tokens_after' => $p['estimated_tokens_after'] ?? null,
+                'messages_before' => $p['messages_before'] ?? null,
+                'messages_after' => $p['messages_after'] ?? null,
+            ],
+        );
+    }
+
+    private function onCompactionFailed(RunEvent $runEvent): RuntimeEvent
+    {
+        $p = $runEvent->payload;
+        $reason = (string) ($p['reason'] ?? 'Compaction failed.');
+
+        // Map internal reason strings to user-friendly messages.
+        $userMessage = match ($reason) {
+            'too_few_messages' => 'Compaction skipped: Not enough messages to compact.',
+            'below_keep_recent_tokens' => 'Compaction skipped: Token usage below threshold.',
+            'no_boundary' => 'Compaction skipped: Could not find a safe message boundary.',
+            'no_safe_boundary' => 'Compaction skipped: Could not find a safe message boundary.',
+            default => \sprintf('Compaction failed: %s', $reason),
+        };
+
+        // Special case: empty summary from the model.
+        if (str_contains($reason, 'empty summary') || str_contains($reason, 'returned an empty summary')) {
+            $userMessage = 'Compaction failed: The model returned an empty summary.';
+        }
+
+        return new RuntimeEvent(
+            type: RuntimeEventTypeEnum::CompactionFailed->value,
+            runId: $runEvent->runId,
+            seq: $runEvent->seq,
+            payload: [
+                'reason' => $reason,
+                'error' => $userMessage,
             ],
         );
     }

@@ -79,6 +79,13 @@ final class TuiSessionState
     public int $contextWindow = 0;
 
     /**
+     * Whether a manual compaction is currently in progress for the active
+     * run. Set by CompactCommandHandler and cleared by RuntimeEventPoller
+     * when a compaction.completed or compaction.failed event arrives.
+     */
+    public bool $isCompacting = false;
+
+    /**
      * Usage/token projection for the TUI footer.
      *
      * Holds both session-level accumulated metrics (inputTokens, outputTokens,

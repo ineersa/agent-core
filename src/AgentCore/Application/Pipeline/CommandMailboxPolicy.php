@@ -11,6 +11,7 @@ use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 
@@ -26,24 +27,18 @@ final readonly class CommandMailboxPolicy
     ) {
     }
 
-    /**
-     * @return array{0: RunState, 1: list<array{type: string, payload: array<string, mixed>}>}
-     */
-    public function applyPendingTurnStartCommands(RunState $state): array
+    public function applyPendingTurnStartCommands(RunState $state): CommandApplicationResult
     {
         $result = $this->applyPendingCommands($state, CommandApplicationBoundary::TurnStart);
 
-        return [$result->state, $result->eventSpecs];
+        return $result;
     }
 
-    /**
-     * @return array{0: RunState, 1: list<array{type: string, payload: array<string, mixed>}>, 2: bool}
-     */
-    public function applyPendingStopBoundaryCommands(RunState $state): array
+    public function applyPendingStopBoundaryCommands(RunState $state): CommandApplicationResult
     {
         $result = $this->applyPendingCommands($state, CommandApplicationBoundary::StopBoundary);
 
-        return [$result->state, $result->eventSpecs, $result->shouldContinue];
+        return $result;
     }
 
     /**
@@ -87,7 +82,8 @@ final readonly class CommandMailboxPolicy
      * delegate here. The CommandApplicationBoundary controls the shouldContinue
      * tracking that distinguishes stop-boundary from turn-start behavior.
      *
-     * @return CommandApplicationResult containing mutated state, event specs, and shouldContinue flag
+     * @return CommandApplicationResult containing mutated state, event specs,
+     *                                  shouldContinue flag, and outbound effects (e.g. CompactRun).
      */
     private function applyPendingCommands(RunState $state, CommandApplicationBoundary $boundary): CommandApplicationResult
     {
@@ -98,6 +94,7 @@ final readonly class CommandMailboxPolicy
 
         $messages = $state->messages;
         $eventSpecs = [];
+        $effects = [];
         $shouldContinue = false;
         $supersededSteerKeys = $this->supersededSteerKeys($pendingCommands);
 
@@ -175,6 +172,41 @@ final readonly class CommandMailboxPolicy
                 continue;
             }
 
+            // Compact command: drain at safe boundary by dispatching a
+            // CompactRun message.  The CompactRunHandler will prepare
+            // and execute the compaction as an async step.  We do NOT set
+            // shouldContinue because compaction is terminal — it does not
+            // advance the turn.
+            if (CoreCommandKind::Compact === $pendingCommand->kind) {
+                $this->commandStore->markApplied($state->runId, $pendingCommand->idempotencyKey);
+
+                $eventSpecs[] = [
+                    'type' => RunEventTypeEnum::AgentCommandApplied->value,
+                    'payload' => [
+                        'kind' => $pendingCommand->kind,
+                        'idempotency_key' => $pendingCommand->idempotencyKey,
+                        'options' => [],
+                    ],
+                ];
+
+                $customInstructions = \is_string($pendingCommand->payload['custom_instructions'] ?? null)
+                    ? $pendingCommand->payload['custom_instructions']
+                    : null;
+
+                $stepId = \sprintf('compact-%d', hrtime(true));
+                $effects[] = new CompactRun(
+                    runId: $state->runId,
+                    turnNo: $state->turnNo,
+                    stepId: $stepId,
+                    attempt: 1,
+                    idempotencyKey: hash('sha256', \sprintf('%s|%s', $state->runId, $stepId)),
+                    trigger: 'manual',
+                    customInstructions: $customInstructions,
+                );
+
+                continue;
+            }
+
             if (!CoreCommandKind::isCore($pendingCommand->kind)) {
                 $eventSpecs = [
                     ...$eventSpecs,
@@ -187,6 +219,7 @@ final readonly class CommandMailboxPolicy
             $this->copyState($state, ['messages' => $messages]),
             $eventSpecs,
             $shouldContinue,
+            $effects,
         );
     }
 

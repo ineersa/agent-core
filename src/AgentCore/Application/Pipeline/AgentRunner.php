@@ -99,6 +99,13 @@ final readonly class AgentRunner implements AgentRunnerInterface
         ]);
     }
 
+    public function compact(string $runId, ?string $customInstructions = null): void
+    {
+        $this->applyCoreCommand($runId, CoreCommandKind::Compact, [
+            'custom_instructions' => $customInstructions,
+        ]);
+    }
+
     /**
      * Serializes and dispatches a core command message.
      *

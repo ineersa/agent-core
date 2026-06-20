@@ -291,6 +291,10 @@ final class FakeCapturingAgentRunner implements AgentRunnerInterface
     {
         $this->answerHumanCalls[] = ['questionId' => $questionId, 'answer' => $answer];
     }
+
+    public function compact(string $runId, ?string $customInstructions = null): void
+    {
+    }
 }
 
 /**

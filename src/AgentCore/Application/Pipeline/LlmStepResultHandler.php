@@ -280,14 +280,18 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
                 retryableFailure: false,
             );
 
-            [$stateAfterBoundary, $boundaryEventSpecs, $shouldContinue] = null === $this->tracer
+            $mailboxResult = null === $this->tracer
                 ? $this->commandMailboxPolicy->applyPendingStopBoundaryCommands($stateAfterAssistant)
                 : $this->tracer->inSpan('command.application.stop_boundary', [
                     'run_id' => $runId,
                     'turn_no' => $state->turnNo,
                     'step_id' => $message->stepId(),
-                ], fn (): array => $this->commandMailboxPolicy->applyPendingStopBoundaryCommands($stateAfterAssistant))
+                ], fn (): CommandApplicationResult => $this->commandMailboxPolicy->applyPendingStopBoundaryCommands($stateAfterAssistant))
             ;
+
+            $stateAfterBoundary = $mailboxResult->state;
+            $boundaryEventSpecs = $mailboxResult->eventSpecs;
+            $shouldContinue = $mailboxResult->shouldContinue;
 
             $eventSpecs = [
                 ...$eventSpecs,
