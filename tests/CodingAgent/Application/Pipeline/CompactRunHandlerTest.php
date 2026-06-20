@@ -49,9 +49,9 @@ final class CompactRunHandlerTest extends TestCase
         ];
         $state = $this->createRunState($messages);
 
-        // Simulate a ready preparation.
-        $summarize = [$this->userMsg('summary input')];
-        $retained = $messages;
+        // Simulate a ready preparation: summarize first 2 messages, retain last 2.
+        $summarize = [$messages[0], $messages[1]];
+        $retained = [$messages[2], $messages[3]];
 
         $fakeService = $this->createReadyCompactionService($summarize, $retained, tokenEstimateBefore: 42000);
         $fakeModelSelection = $this->createModelSelectionStub();
@@ -83,13 +83,14 @@ final class CompactRunHandlerTest extends TestCase
         self::assertSame(RunEventTypeEnum::ContextCompactionStarted->value, $result->events[0]->type);
 
         $payload = $result->events[0]->payload;
+        self::assertSame('step-1', $payload['step_id']);
         self::assertSame('manual', $payload['trigger']);
         self::assertArrayHasKey('model', $payload);
         self::assertSame(42000, $payload['estimated_tokens']);
         self::assertSame(20000, $payload['keep_recent_tokens']);
         self::assertSame(4, $payload['messages_before']);
-        self::assertSame(1, $payload['messages_to_summarize']);
-        self::assertSame(4, $payload['messages_retained']);
+        self::assertSame(2, $payload['messages_to_summarize']);
+        self::assertSame(2, $payload['messages_retained']);
 
         // Sets activeStepId so the result handler can match the result.
         self::assertSame('step-1', $result->nextState->activeStepId);

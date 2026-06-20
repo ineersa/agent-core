@@ -284,7 +284,7 @@ final readonly class RunStateReplayService
             RunEventTypeEnum::AgentCommandQueued->value,
             RunEventTypeEnum::AgentCommandSuperseded->value,
             RunEventTypeEnum::StaleResultIgnored->value => $this->applyNoMutation($event, $state),
-            RunEventTypeEnum::ContextCompactionStarted->value => $this->applyNoMutation($event, $state),
+            RunEventTypeEnum::ContextCompactionStarted->value => $this->applyContextCompactionStarted($payload, $state),
             RunEventTypeEnum::ContextCompacted->value => $this->applyContextCompacted($payload, $state, $messages),
             RunEventTypeEnum::ContextCompactionFailed->value => $this->applyNoMutation($event, $state),
             RunEventTypeEnum::TurnBranched->value,
@@ -651,6 +651,35 @@ final readonly class RunStateReplayService
             messages: $state->messages,
             activeStepId: $state->activeStepId,
             retryableFailure: false,
+        );
+    }
+
+    /**
+     * Handle context_compaction_started: restore activeStepId from payload.step_id
+     * so that a subsequent CompactionStepResult arriving after a state rebuild is
+     * accepted by the result handler's staleness guard.
+     *
+     * Messages are not mutated — only activeStepId is restored.
+     *
+     * @param array<string, mixed> $payload
+     */
+    private function applyContextCompactionStarted(array $payload, RunState $state): RunState
+    {
+        $stepId = \is_string($payload['step_id'] ?? null) ? $payload['step_id'] : $state->activeStepId;
+
+        return new RunState(
+            runId: $state->runId,
+            status: $state->status,
+            version: $state->version,
+            turnNo: $state->turnNo,
+            lastSeq: $state->lastSeq,
+            isStreaming: $state->isStreaming,
+            streamingMessage: $state->streamingMessage,
+            pendingToolCalls: $state->pendingToolCalls,
+            errorMessage: $state->errorMessage,
+            messages: $state->messages,
+            activeStepId: $stepId,
+            retryableFailure: $state->retryableFailure,
         );
     }
 

@@ -58,13 +58,13 @@ final readonly class CompactionStepResultHandler implements RunMessageHandler
                 'payload' => [
                     'reason' => 'stale_result',
                     'message' => 'Compaction result arrived too late — the active step has moved on.',
-                    'preserved_messages' => true,
+                    'messages_replaced' => false,
                     'trigger' => $message->trigger,
                 ],
             ]]);
 
             return new HandlerResult(
-                nextState: $this->incrementState($state, $events),
+                nextState: $this->incrementState($state, $events, clearActiveStepId: true),
                 events: $events,
             );
         }
@@ -77,13 +77,13 @@ final readonly class CompactionStepResultHandler implements RunMessageHandler
                 'payload' => [
                     'reason' => 'stale_result',
                     'message' => 'Compaction result arrived after the run ended.',
-                    'preserved_messages' => true,
+                    'messages_replaced' => false,
                     'trigger' => $message->trigger,
                 ],
             ]]);
 
             return new HandlerResult(
-                nextState: $this->incrementState($state, $events),
+                nextState: $this->incrementState($state, $events, clearActiveStepId: true),
                 events: $events,
             );
         }

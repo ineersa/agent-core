@@ -952,7 +952,9 @@ final class RunStateReplayServiceTest extends TestCase
     }
 
     /**
-     * Thesis: context_compaction_started does NOT mutate messages.
+     * Thesis: context_compaction_started does NOT mutate messages
+     * but DOES restore activeStepId from payload.step_id so that
+     * a subsequent CompactionStepResult is accepted after replay.
      */
     public function testContextCompactionStartedDoesNotMutateMessages(): void
     {
@@ -964,6 +966,7 @@ final class RunStateReplayServiceTest extends TestCase
         ]);
 
         $this->appendEvent(RunEventTypeEnum::ContextCompactionStarted->value, 2, [
+            'step_id' => 'compaction-step-42',
             'trigger' => 'manual',
             'model' => 'openai/gpt-4.1-mini',
             'thinking_level' => 'low',
@@ -982,6 +985,7 @@ final class RunStateReplayServiceTest extends TestCase
         self::assertTrue($result->rebuilt);
         self::assertCount(1, $result->rebuiltState->messages, 'Messages should not be mutated by started event');
         self::assertSame('Original', $result->rebuiltState->messages[0]->content[0]['text']);
+        self::assertSame('compaction-step-42', $result->rebuiltState->activeStepId, 'Started event MUST restore activeStepId for result staleness guard');
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────

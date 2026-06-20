@@ -57,7 +57,9 @@ final readonly class CompactRunHandler implements RunMessageHandler
         $activeModelStr = $activeModel?->toString();
 
         $runtimeSettings = $this->appConfig->compaction->resolveRuntimeSettings($activeModelStr);
-        $resolvedModel = $runtimeSettings->model;
+        // Session model is the fallback when no explicit compaction model override exists.
+        // This ensures context_compaction_started/compacted always record the actual model.
+        $resolvedModel = $runtimeSettings->model ?? $activeModelStr;
         $thinkingLevel = $runtimeSettings->thinkingLevel;
 
         $preparation = $this->compactionService->prepare($state->messages);
@@ -94,6 +96,7 @@ final readonly class CompactRunHandler implements RunMessageHandler
         $startedEvents = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, [[
             'type' => RunEventTypeEnum::ContextCompactionStarted->value,
             'payload' => [
+                'step_id' => $message->stepId(),
                 'trigger' => $message->trigger,
                 'model' => $resolvedModel,
                 'thinking_level' => $thinkingLevel,
@@ -138,13 +141,6 @@ final readonly class CompactRunHandler implements RunMessageHandler
             trigger: $message->trigger,
         );
 
-        // Idempotency: when messages were already applied during this
-        // checkpoint, the result handler replays; don't re-apply.
-        // But if the handler was not reached yet (messages added by steer/
-        // follow-up after compaction started), they will be present in the
-        // new state after the handler processes. The idempotency guards
-        // in RunMessageProcessor prevent double-processing.
-
         return new HandlerResult(
             nextState: $nextState,
             events: $startedEvents,
@@ -154,9 +150,7 @@ final readonly class CompactRunHandler implements RunMessageHandler
 
     /**
      * @param list<\Ineersa\AgentCore\Domain\Event\RunEvent> $events
-     */
-    /**
-     * @param list<\Ineersa\AgentCore\Domain\Event\RunEvent> $events
+     * @param string|null                                    $activeStepId null = preserve current; non-null = override
      */
     private function incrementState(RunState $state, array $events, ?string $activeStepId = null): RunState
     {
