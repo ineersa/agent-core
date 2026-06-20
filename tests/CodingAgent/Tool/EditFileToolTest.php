@@ -194,6 +194,55 @@ final class EditFileToolTest extends TestCase
         $this->assertSame($modified, file_get_contents($targetPath));
     }
 
+    public function testSuccessChangedContextMarksOnlyAdditionLines(): void
+    {
+        $targetPath = $this->tmpDir.'/changed_markers.txt';
+        // 5-line file: lines 1-5
+        $original = "line1\nline2\nline3\nline4\nline5\n";
+        file_put_contents($targetPath, $original);
+
+        $patch = <<<'DIFF'
+--- a/file
++++ b/file
+@@ -1,5 +1,6 @@
+ line1
+ line2
++INSERTED
+ line3
+-line4
++CHANGED4
+ line5
++APPEND
+DIFF;
+
+        $expected = "line1\nline2\nINSERTED\nline3\nCHANGED4\nline5\nAPPEND\n";
+
+        $result = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+
+        $this->assertStringContainsString('Applied patch', $result);
+        $this->assertSame($expected, file_get_contents($targetPath));
+
+        // Success output must include Updated file context chunks
+        $this->assertStringContainsString('Updated file context', $result);
+
+        // The added/replacement lines (INSERTED, CHANGED4, APPEND) must be
+        // marked with →, but context lines (line1, line2, line3, line5)
+        // must NOT be marked.
+        // Check that context lines are present WITHOUT the → marker.
+        $this->assertMatchesRegularExpression('/^ (?!→)\s+\d+: line1$/m', $result);
+        $this->assertMatchesRegularExpression('/^ (?!→)\s+\d+: line2$/m', $result);
+        $this->assertMatchesRegularExpression('/^ (?!→)\s+\d+: line3$/m', $result);
+        $this->assertMatchesRegularExpression('/^ (?!→)\s+\d+: line5$/m', $result);
+
+        // Check that added lines ARE marked with →
+        $this->assertMatchesRegularExpression('/^→\s+\d+: INSERTED$/m', $result);
+        $this->assertMatchesRegularExpression('/^→\s+\d+: CHANGED4$/m', $result);
+        $this->assertMatchesRegularExpression('/^→\s+\d+: APPEND$/m', $result);
+
+        // No full diff echo
+        $this->assertStringNotContainsString('@@', $result);
+    }
+
     public function testEditReturnsNoChangesMessageForIdenticalPatch(): void
     {
         $targetPath = $this->tmpDir.'/no_change.txt';
@@ -256,7 +305,7 @@ final class EditFileToolTest extends TestCase
             $message = $e->getMessage();
 
             // Must include the all-or-nothing preface
-            $this->assertStringContainsString('No changes were applied', $message);
+            $this->assertStringContainsString('This edit attempt failed', $message);
             $this->assertStringContainsString('target file is untouched', $message);
 
             // Must NOT include confusing partial-success diagnostics
@@ -837,6 +886,42 @@ PATCH;
  line C
 --- End new file ---
 --- End file ---
+PATCH;
+
+        $expected = "line A\nCHANGED B\nline C\n";
+
+        $result = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+
+        $this->assertStringContainsString('Applied patch', $result);
+        $this->assertSame($expected, file_get_contents($targetPath));
+    }
+
+    /**
+     * Session-8 regression: a valid unified diff followed by a stray pure
+     * ``` fence line and prose / pseudo tool-call text must be normalized
+     * safely — the fence and everything after it are stripped and the
+     * valid diff portion applies correctly.
+     */
+    public function testSession8TrailingFenceAndProseStripped(): void
+    {
+        $targetPath = $this->tmpDir.'/session8_target.txt';
+        $original = "line A\nline B\nline C\n";
+        file_put_contents($targetPath, $original);
+
+        // Valid unified diff followed by a pure ``` line and prose / pseudo
+        // tool-call text — exactly the pattern observed in session 8.
+        $patch = <<<'PATCH'
+--- a/file
++++ b/file
+@@ -1,3 +1,3 @@
+ line A
+-line B
++CHANGED B
+ line C
+```
+Wait, the hunk header format is wrong...
+<function=edit>
+<parameter=path>wrong</parameter>
 PATCH;
 
         $expected = "line A\nCHANGED B\nline C\n";

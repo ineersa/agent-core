@@ -34,18 +34,157 @@ final class PatchApplier
     }
 
     /**
-     * Apply a normalized patch to a file.
+     * Apply a normalized patch inside a locked critical section.
+     *
+     * Reads the target file content under lock, normalizes the raw patch
+     * against that locked snapshot, and applies it atomically.  The same
+     * snapshot is used for normalization, GNU-patch dry-run, in-place
+     * application, no-op detection, and rollback — no TOCTOU window.
+     *
+     * @param string          $targetPath absolute path to the target file
+     * @param string          $rawPatch   raw LLM-generated patch (before normalization)
+     * @param PatchNormalizer $normalizer the normalizer service
+     *
+     * @return array{patchedContent: string, originalContent: string, normalizedPatch: string}
+     *
+     * @throws ToolCallException on validation/patch/infrastructure failures
+     */
+    public function applyWithNormalizer(
+        string $targetPath,
+        string $rawPatch,
+        PatchNormalizer $normalizer,
+    ): array {
+        $realPath = false !== ($r = realpath($targetPath)) ? $r : $targetPath;
+        $lockKey = 'edit-file-'.hash('sha256', $realPath);
+        $lock = $this->lockFactory->createLock($lockKey);
+
+        try {
+            $lock->acquire(true);
+
+            // Read target content under lock — the same snapshot used
+            // throughout: normalization, dry-run, apply, no-op, rollback.
+            $originalContent = @file_get_contents($targetPath);
+            if (false === $originalContent) {
+                throw $this->infraError('Failed to read target file under lock.', $targetPath);
+            }
+
+            // Normalize the LLM-generated patch against locked file content
+            $normalized = $normalizer->normalize($rawPatch, $originalContent);
+            $patchContent = $normalized['content'];
+            $detectedTruncation = $normalized['detectedTruncation'];
+
+            $patchFile = $this->writePatchFile($patchContent);
+            $tempOut = @tempnam(sys_get_temp_dir(), 'hatfield_out_');
+            if (false === $tempOut) {
+                @unlink($patchFile);
+                throw $this->infraError('Failed to create temp output file.', $targetPath);
+            }
+
+            try {
+                // Phase 1: dry-run
+                $drResult = $this->runPatchDryRun($realPath, $patchFile);
+
+                if (0 !== $drResult->exitCode) {
+                    $noTrailingNewline = $this->targetLacksTrailingNewline($targetPath);
+                    $failure = $this->failureFormatter->buildFailureMessage(
+                        $targetPath,
+                        $drResult->stdout, $drResult->stderr,
+                        $originalContent, $noTrailingNewline, $detectedTruncation,
+                    );
+
+                    throw new ToolCallException(\sprintf("This edit attempt failed. No changes from this attempt were applied; the target file is untouched.\n\n%s", $failure['message']), retryable: $failure['retryable'], hint: $failure['hint']);
+                }
+
+                // Phase 2: apply to temp output
+                $applyResult = $this->runPatchApply($realPath, $patchFile, $tempOut);
+
+                if (0 !== $applyResult->exitCode) {
+                    $noTrailingNewline = $this->targetLacksTrailingNewline($targetPath);
+                    $failure = $this->failureFormatter->buildFailureMessage(
+                        $targetPath,
+                        $applyResult->stdout, $applyResult->stderr,
+                        $originalContent, $noTrailingNewline, $detectedTruncation,
+                    );
+
+                    throw new ToolCallException(\sprintf("This edit attempt failed. No changes from this attempt were applied; the target file is untouched.\n\n%s", $failure['message']), retryable: $failure['retryable'], hint: $failure['hint']);
+                }
+
+                // Phase 3: read patched bytes
+                $patchedContent = @file_get_contents($tempOut);
+                if (false === $patchedContent) {
+                    throw $this->infraError('Failed to read patched output.', $targetPath);
+                }
+
+                // No-op: patched content equals original
+                if ($patchedContent === $originalContent) {
+                    return [
+                        'patchedContent' => $originalContent,
+                        'originalContent' => $originalContent,
+                        'normalizedPatch' => $patchContent,
+                    ];
+                }
+
+                // Phase 4: in-place write through target path
+                $this->writeBytesInPlace($targetPath, $patchedContent, $originalContent);
+
+                return [
+                    'patchedContent' => $patchedContent,
+                    'originalContent' => $originalContent,
+                    'normalizedPatch' => $patchContent,
+                ];
+            } finally {
+                if (is_file($patchFile)) {
+                    @unlink($patchFile);
+                }
+                if (is_file($tempOut)) {
+                    @unlink($tempOut);
+                }
+            }
+        } finally {
+            try {
+                $lock->release();
+            } catch (\Throwable $e) {
+                $this->logger->warning('Lock release failed during edit tool cleanup', [
+                    'component' => 'edit_tool',
+                    'event_type' => 'edit_tool.lock_release_failed',
+                    'exception' => $e::class,
+                    'exception_message' => $e->getMessage(),
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Apply an already-normalized patch inside a locked critical section.
+     *
+     * @deprecated Prefer applyWithNormalizer() which reads the target
+     *             content under lock.  This method exists for tests that
+     *             pre-read and pre-normalize.
      *
      * @param string $targetPath         absolute path to the target file
      * @param string $patchContent       normalized unified-diff patch
      * @param string $originalContent    snapshot of original file content before locking
      * @param bool   $detectedTruncation whether the normalizer detected a truncated hunk
      *
-     * @return array{additions: int, deletions: int, patchedContent: string, originalContent: string}
+     * @return array{patchedContent: string, originalContent: string, normalizedPatch: string}
      *
      * @throws ToolCallException on validation/patch/infrastructure failures
      */
     public function apply(
+        string $targetPath,
+        string $patchContent,
+        string $originalContent,
+        bool $detectedTruncation,
+    ): array {
+        return $this->applyInternal(
+            $targetPath, $patchContent, $originalContent, $detectedTruncation,
+        );
+    }
+
+    /**
+     * @return array{patchedContent: string, originalContent: string, normalizedPatch: string}
+     */
+    private function applyInternal(
         string $targetPath,
         string $patchContent,
         string $originalContent,
@@ -76,7 +215,7 @@ final class PatchApplier
                     $originalContent, $noTrailingNewline, $detectedTruncation,
                 );
 
-                throw new ToolCallException(\sprintf("No changes were applied: the patch did not pass validation and the target file is untouched.\n\n%s", $failure['message']), retryable: $failure['retryable'], hint: $failure['hint']);
+                throw new ToolCallException(\sprintf("This edit attempt failed. No changes from this attempt were applied; the target file is untouched.\n\n%s", $failure['message']), retryable: $failure['retryable'], hint: $failure['hint']);
             }
 
             // Phase 2: apply to temp output (target untouched)
@@ -90,7 +229,7 @@ final class PatchApplier
                     $originalContent, $noTrailingNewline, $detectedTruncation,
                 );
 
-                throw new ToolCallException($failure['message'], retryable: $failure['retryable'], hint: $failure['hint']);
+                throw new ToolCallException(\sprintf("This edit attempt failed. No changes from this attempt were applied; the target file is untouched.\n\n%s", $failure['message']), retryable: $failure['retryable'], hint: $failure['hint']);
             }
 
             // Phase 3: read patched bytes and no-op check
@@ -101,10 +240,9 @@ final class PatchApplier
 
             if ($patchedContent === $originalContent) {
                 return [
-                    'additions' => 0,
-                    'deletions' => 0,
                     'patchedContent' => $originalContent,
                     'originalContent' => $originalContent,
+                    'normalizedPatch' => $patchContent,
                 ];
             }
 
@@ -112,10 +250,9 @@ final class PatchApplier
             $this->writeBytesInPlace($targetPath, $patchedContent, $originalContent);
 
             return [
-                'additions' => 0, // Caller computes stats separately
-                'deletions' => 0,
                 'patchedContent' => $patchedContent,
                 'originalContent' => $originalContent,
+                'normalizedPatch' => $patchContent,
             ];
         } finally {
             try {

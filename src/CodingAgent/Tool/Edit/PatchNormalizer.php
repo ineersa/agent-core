@@ -44,7 +44,6 @@ final class PatchNormalizer
     public function normalize(string $patchContent, ?string $targetContent = null): array
     {
         $detectedTruncation = false;
-        $truncationRef = &$detectedTruncation; // Passed down to repairHunkCounts
 
         // 1. Strip surrounding markdown code fences (only when they wrap the whole patch)
         $patchContent = $this->stripMarkdownFences($patchContent);
@@ -64,7 +63,7 @@ final class PatchNormalizer
         }
 
         // 5. Repair hunk header counts to match actual body content
-        $patchContent = $this->repairHunkCounts($patchContent, $truncationRef);
+        $patchContent = $this->repairHunkCounts($patchContent, $detectedTruncation);
 
         return [
             'content' => $patchContent,
@@ -80,6 +79,10 @@ final class PatchNormalizer
      * Only strips when the fences surround the entire content (i.e. begin at
      * start, end at end after trimming).  Does not touch fences that appear
      * inside the patch body.
+     *
+     * Also strips a trailing pure-fence line and everything after it when the
+     * meaningful diff has already ended (session-8 regression: valid patch
+     * followed by ``` and prose/pseudo tool-call text).
      */
     private function stripMarkdownFences(string $patchContent): string
     {
@@ -91,7 +94,63 @@ final class PatchNormalizer
             return $matches[1];
         }
 
+        // Strip trailing pure-fence line and everything after it when the
+        // fence appears AFTER the diff content is complete.  This handles
+        // the case where a valid diff body is followed by a stray ```
+        // line and prose / pseudo tool-call text (session-8 pattern).
+        //
+        // Safety: a pure unprefixed ``` line is never valid diff content —
+        // only lines prefixed with space, -, +, or \ are valid hunk body
+        // lines.  A bare ``` after a complete diff hunk is a generated
+        // wrapper/trailer artifact and safe to strip.
+        $fencePos = strpos($patchContent, "\n```");
+        if (false !== $fencePos && $this->trailingFenceIsAfterCompleteDiff($patchContent, $fencePos)) {
+            $patchContent = substr($patchContent, 0, $fencePos);
+        }
+
+        // After stripping trailing fence+prose, re-check for whole-patch fences
+        // that may have been exposed by the strip.
+        $trimmed2 = trim($patchContent);
+        if (preg_match('/^```[^\n]*\n(.*)\n```\s*$/s', $trimmed2, $matches)) {
+            return $matches[1];
+        }
+
         return $patchContent;
+    }
+
+    /**
+     * Heuristic: does a trailing ``` fence appear AFTER a complete diff
+     * (at least one properly-closed hunk has been parsed before the fence)?
+     *
+     * Returns true when the portion before the fence contains a valid @@
+     * hunk header followed by diff body lines (space, -, +, or \ prefix),
+     * indicating the diff portion is already complete and the fence is a
+     * generated wrapper/trailer artifact.
+     */
+    private function trailingFenceIsAfterCompleteDiff(string $patchContent, int $fencePos): bool
+    {
+        $beforeFence = substr($patchContent, 0, $fencePos);
+
+        // Must contain at least one @@ hunk header (the diff portion exists)
+        if (!preg_match('/^@@\s/m', $beforeFence)) {
+            return false;
+        }
+
+        // The fence must appear on its own line (or with whitespace only)
+        $remainder = substr($patchContent, $fencePos);
+        if (!preg_match('/^\n```\s*(\n|$)/', $remainder)) {
+            return false;
+        }
+
+        // The text after the fence must NOT contain another diff header.
+        // If it does, the fence is between hunks — don't strip.
+        $afterFence = substr($remainder, 1); // Skip the \n before ```
+        $afterFenceBody = preg_replace('/^```\s*\n/', '', $afterFence);
+        if (preg_match('/^@@\s/m', $afterFenceBody)) {
+            return false;
+        }
+
+        return true;
     }
 
     /**
@@ -171,6 +230,11 @@ final class PatchNormalizer
 
         $totalLines = \count($lines);
 
+        // Initialised at each hunk parse; kept accessible for the
+        // close-hunk block at the end of the loop.
+        $declaredOldCountForHunk = 0;
+        $declaredNewCountForHunk = 0;
+
         // ── First pass: identify all hunks and parse their bodies ──
         $hunks = [];
         $inHunk = false;
@@ -224,9 +288,9 @@ final class PatchNormalizer
 
                 if (!$isRelaxed && preg_match($standardHeaderPattern, $line, $m)) {
                     $declaredOldStart = (int) $m[1];
-                    $declaredOldCount = '' === ($m[2] ?? '') ? 1 : (int) $m[2];
+                    $declaredOldCount = '' === $m[2] ? 1 : (int) $m[2];
                     $declaredNewStart = (int) $m[3];
-                    $declaredNewCount = '' === ($m[4] ?? '') ? 1 : (int) $m[4];
+                    $declaredNewCount = '' === $m[4] ? 1 : (int) $m[4];
                     $hunkSuffix = $m[5];
                     // Store declared counts for the standard-hunk record.
                     // Actual body counts are accumulated below separately.

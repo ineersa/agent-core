@@ -32,14 +32,22 @@ use Symfony\Component\Lock\LockFactory;
  */
 final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerInterface
 {
+    private readonly PatchApplier $applier;
+
     public function __construct(
         private readonly ToolRuntime $toolRuntime,
         private readonly LockFactory $lockFactory,
         private readonly \Psr\Log\LoggerInterface $logger,
         private readonly PatchNormalizer $normalizer = new PatchNormalizer(),
         private readonly PatchFailureFormatter $failureFormatter = new PatchFailureFormatter(),
-        private ?PatchApplier $applier = null,
+        ?PatchApplier $applier = null,
     ) {
+        $this->applier = $applier ?? new PatchApplier(
+            $this->toolRuntime,
+            $this->lockFactory,
+            $this->logger,
+            $this->failureFormatter,
+        );
     }
 
     public function __invoke(array $arguments): string
@@ -49,23 +57,14 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
         return $this->toolRuntime->run(function () use ($arguments): string {
             $targetPath = $this->resolveAndVerifyTarget($arguments['path']);
 
-            // Read current file content once for relaxed-hunk resolution.
-            $targetContent = @file_get_contents($targetPath);
-            if (false === $targetContent) {
-                throw $this->infraError('Failed to read target file for patch normalization.', $targetPath);
-            }
-
-            // Normalize the LLM-generated patch
-            $normalized = $this->normalizer->normalize($arguments['patch'], $targetContent);
-            $patchContent = $normalized['content'];
-            $detectedTruncation = $normalized['detectedTruncation'];
-
-            // Apply the patch
-            $result = $this->getApplier()->apply(
+            // Read current file content, normalize the patch, and apply
+            // under one locked critical section so the snapshot used for
+            // normalization, dry-run, apply, no-op, and rollback is the
+            // same locked snapshot that GNU patch validates/applies against.
+            $result = $this->applier->applyWithNormalizer(
                 $targetPath,
-                $patchContent,
-                $targetContent,
-                $detectedTruncation,
+                $arguments['patch'],
+                $this->normalizer,
             );
 
             // Detect no-op: patched content equals original
@@ -74,7 +73,7 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             }
 
             // Compute addition/deletion stats from the normalized patch
-            $stats = $this->computeStats($patchContent);
+            $stats = $this->computeStats($result['normalizedPatch']);
 
             // Build success message with stats + bounded changed chunks
             return $this->formatSuccess(
@@ -83,7 +82,7 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
                 $stats['deletions'],
                 $result['originalContent'],
                 $result['patchedContent'],
-                $patchContent,
+                $result['normalizedPatch'],
             );
         });
     }
@@ -125,6 +124,8 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
                 'Ensure the patch ends with a trailing newline. The tool adds one if missing, but including it avoids unexpected-EOF failures.',
                 'The target file must already exist — use the write tool to create new files.',
                 'Whitespace mismatches between the patch and the target file are handled automatically (tolerant matching).',
+                'Make ONE edit call at a time for a file and wait for its result before issuing another edit for the same file.',
+                'An error from an edit call means that specific attempt was NOT applied. Do not describe an edit attempt that returned an error as "applied" or "changed" — retry with a new patch from the current file contents.',
                 'On success, the tool returns stats and bounded updated-file chunks around the changed lines. No extra read is needed to verify the result.',
                 'If the patch produces no changes, the tool reports "No changes" without modifying the file.',
                 'If an edit fails with a stale-hunk error, the error includes a current-file context window with exact line numbers from the original file. Re-read the file with `read` and retry with a plain `@@` patch using the exact current context.',
@@ -135,6 +136,9 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
         );
     }
 
+    /**
+     * @param array{path?: scalar|null, patch?: scalar|null} $arguments
+     */
     private function validateArguments(array $arguments): void
     {
         $path = $arguments['path'] ?? null;
@@ -158,20 +162,6 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
         }
 
         return $targetPath;
-    }
-
-    /**
-     * Lazy-initialize the PatchApplier to avoid circular dependency issues
-     * (PatchApplier needs PatchFailureFormatter which is co-located in the facade).
-     */
-    private function getApplier(): PatchApplier
-    {
-        return $this->applier ??= new PatchApplier(
-            $this->toolRuntime,
-            $this->lockFactory,
-            $this->logger,
-            $this->failureFormatter,
-        );
     }
 
     /**
@@ -236,14 +226,5 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
         }
 
         return $statsLine;
-    }
-
-    private function infraError(string $context, string $targetPath): ToolCallException
-    {
-        return new ToolCallException(
-            \sprintf('[E_PATCH_INFRA] %s for "%s".', $context, $targetPath),
-            retryable: true,
-            hint: 'Check filesystem availability, permissions, and disk space.',
-        );
     }
 }
