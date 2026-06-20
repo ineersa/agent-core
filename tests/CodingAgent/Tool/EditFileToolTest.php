@@ -96,6 +96,16 @@ final class EditFileToolTest extends TestCase
         $this->assertStringContainsString('line-number prefix', strtolower($guidelinesText));
         $this->assertStringContainsString('trailing newline', strtolower($guidelinesText));
         $this->assertStringContainsString('repairs', strtolower($guidelinesText));
+
+        // Guidelines must include generic diff-marker examples for file
+        // content that itself starts with '-' or '+' (session-5 regression).
+        $this->assertStringContainsString('-foo', $guidelinesText);
+        $this->assertStringContainsString('--foo', $guidelinesText);
+        $this->assertStringContainsString('+-foo', $guidelinesText);
+
+        // Guidelines must instruct re-reading when success stats contradict intent
+        $this->assertStringContainsString('contradict', strtolower($guidelinesText));
+        $this->assertStringContainsString('re-read', strtolower($guidelinesText));
     }
 
     public function testDefinitionHasRetryGuidelines(): void
@@ -215,6 +225,46 @@ final class EditFileToolTest extends TestCase
         } catch (ToolCallException $e) {
             $this->assertStringContainsString('E_PATCH_STALE', $e->getMessage());
             $this->assertTrue($e->retryable());
+            // Original must be untouched
+            $this->assertSame($original, file_get_contents($targetPath));
+        }
+    }
+
+    /**
+     * When dry-run validation fails, the model-visible error must
+     * unambiguously state that no changes were applied — even when
+     * GNU patch might report hunks that "succeeded" with fuzz
+     * alongside failed hunks (session-5 regression).
+     */
+    public function testDryRunFailureMessageStatesNoChangesApplied(): void
+    {
+        $targetPath = $this->tmpDir.'/no_changes_msg.txt';
+        $original = "hello\nworld\n";
+        file_put_contents($targetPath, $original);
+
+        // Simple stale-hunk patch (content not in file)
+        $patchOld = "something\ncompletely\ndifferent\n";
+        $patchNew = "something\nnew\ndifferent\n";
+        $patch = $this->createUnifiedDiff($patchOld, $patchNew);
+
+        try {
+            ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+            $this->fail('Expected ToolCallException');
+        } catch (ToolCallException $e) {
+            $message = $e->getMessage();
+
+            // Must include the all-or-nothing preface
+            $this->assertStringContainsString('No changes were applied', $message);
+            $this->assertStringContainsString('dry-run validation failed', $message);
+            $this->assertStringContainsString("Any 'Hunk succeeded'", $message);
+            $this->assertStringContainsString('diagnostics only', $message);
+            $this->assertStringContainsString('target file is untouched', $message);
+
+            // Must still include stale error code
+            $this->assertStringContainsString('E_PATCH_STALE', $message);
+
+            $this->assertTrue($e->retryable());
+
             // Original must be untouched
             $this->assertSame($original, file_get_contents($targetPath));
         }
@@ -759,6 +809,39 @@ PATCH;
         $this->assertSame($expected, file_get_contents($targetPath));
     }
 
+    /**
+     * When the model appends TWO hallucinated non-diff trailers
+     * (e.g. "--- End new file ---" then "--- End file ---"), the
+     * normalizer must strip all of them so the patch applies cleanly
+     * (session-5 regression).
+     */
+    public function testMultipleTrailingArtifactsRemovedBeforePatch(): void
+    {
+        $targetPath = $this->tmpDir.'/multi_trailer_target.txt';
+        $original = "line A\nline B\nline C\n";
+        file_put_contents($targetPath, $original);
+
+        // Patch with TWO stacked trailers at the end
+        $patch = <<<'PATCH'
+--- a/file
++++ b/file
+@@ -1,3 +1,3 @@
+ line A
+-line B
++CHANGED B
+ line C
+--- End new file ---
+--- End file ---
+PATCH;
+
+        $expected = "line A\nCHANGED B\nline C\n";
+
+        $result = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+
+        $this->assertStringContainsString('Applied patch', $result);
+        $this->assertSame($expected, file_get_contents($targetPath));
+    }
+
     public function testMalformedPatchMissingHunkHeaderClassifiedAsFormat(): void
     {
         $targetPath = $this->tmpDir.'/missing_hunk_target.txt';
@@ -822,11 +905,17 @@ DIFF;
             $this->fail('Expected ToolCallException for truncated hunk');
         } catch (ToolCallException $e) {
             $message = $e->getMessage();
+            $hint = $e->hint() ?? '';
 
             // Must be classified as E_PATCH_FORMAT (truncation safety
             // prevents repair; GNU patch rejects the mismatch).
             $this->assertStringContainsString('[E_PATCH_FORMAT]', $message);
             $this->assertTrue($e->retryable());
+
+            // Hint must specifically diagnose truncation, not generic format
+            $this->assertStringContainsString('hunk header declared more lines', $hint);
+            $this->assertStringContainsString('truncated', strtolower($hint));
+            $this->assertStringContainsString('complete hunk', strtolower($hint));
 
             // File must be completely unchanged
             $this->assertSame($original, file_get_contents($targetPath));

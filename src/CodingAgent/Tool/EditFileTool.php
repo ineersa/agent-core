@@ -45,6 +45,12 @@ use Symfony\Component\Process\Process;
  */
 final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerInterface
 {
+    /**
+     * Set by the patch normalizer when it detects a likely truncated hunk.
+     * Read by buildFailureMessage to enrich E_PATCH_FORMAT diagnostics.
+     */
+    private bool $patchNormalizerDetectedTruncation = false;
+
     public function __construct(
         private readonly ToolRuntime $toolRuntime,
         private readonly LockFactory $lockFactory,
@@ -123,6 +129,8 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
                 'If an edit fails with a stale-hunk error (context mismatch), the error includes a current-file context window with exact line numbers. Re-read the file with `read` and retry with a regenerated patch using the exact current context from `cat -n`.',
                 'If an edit fails with a format error, check that the patch has proper ---/+++ headers and @@ hunk headers, ends with a newline, and contains no markdown fences or non-diff trailers.',
                 'If the target file lacks a trailing newline, the error hint will mention it. Add a trailing newline with the write tool or include "\\ No newline at end of file" markers in the patch.',
+                'In unified diff body lines, the first character is the diff marker (` ` space, `-`, or `+`). The actual file content starts after that marker. When file content itself starts with `-` or `+`, the patch line will have two adjacent marker-looking characters: unchanged ` -foo` (space + `-foo`), deletion `--foo` (minus + `-foo`), addition `+-foo` (plus + `-foo`). Similarly for content starting with `+`: unchanged ` +foo`, deletion `-+foo`, addition `++foo`.',
+                'If the edit succeeds but the addition/deletion stats contradict your intent (e.g. you intended only deletions but the result says additions > 0), immediately re-read the file with `read` and repair — do not assume the edit was correct.',
             ],
         );
     }
@@ -184,6 +192,8 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
      */
     private function normalizePatch(string $patchContent): string
     {
+        $this->patchNormalizerDetectedTruncation = false;
+
         // 1. Strip surrounding markdown code fences (only when they wrap the whole patch)
         $patchContent = $this->stripMarkdownFences($patchContent);
 
@@ -237,8 +247,19 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
     private function stripNonDiffTrailers(string $patchContent): string
     {
         // Strip trailing "--- End new file ---", "--- End of file ---", or
-        // "--- End file ---" artifacts. Case-insensitive.
-        return preg_replace('/\n--- End (?:new |of )?file ---\s*$/i', '', $patchContent);
+        // "--- End file ---" artifacts. Case-insensitive. Repeated stripping
+        // removes multiple stacked artifacts (e.g. model appends both
+        // "--- End new file ---" then "--- End file ---").
+        $pattern = '/\n--- End (?:new |of )?file ---\s*$/i';
+        $prev = $patchContent;
+
+        while (true) {
+            $next = preg_replace($pattern, '', $prev);
+            if ($next === $prev) {
+                return $next;
+            }
+            $prev = $next;
+        }
     }
 
     /**
@@ -419,6 +440,10 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
         // When at least one side actual >= declared (LLM over-count /
         // miscount is far more common than truncation), we repair safely.
         if ($actualOld < $declaredOld && $actualNew < $declaredNew) {
+            // Signal to buildFailureMessage that the patch was likely
+            // truncated — used to enrich E_PATCH_FORMAT diagnostics.
+            $this->patchNormalizerDetectedTruncation = true;
+
             // Strip all body lines for this hunk (keep the header line).
             // GNU patch reads the header, finds blank lines with no diff
             // prefix, and reports a format error → E_PATCH_FORMAT.
@@ -500,7 +525,8 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
                     $originalContent, $noTrailingNewline,
                 );
 
-                throw new ToolCallException($failure['message'], retryable: $failure['retryable'], hint: $failure['hint']);
+                $preface = "No changes were applied: dry-run validation failed before modifying the file. Any 'Hunk succeeded' lines in the output below are diagnostics only — the target file is untouched.\n\n";
+                throw new ToolCallException($preface.$failure['message'], retryable: $failure['retryable'], hint: $failure['hint']);
             }
 
             // ── Phase 2: apply to temp output (target untouched) ──
@@ -626,7 +652,6 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
         $process = new Process([
             'patch', '-u', '-F3', '-l', '-N',
             '--dry-run', '--posix',
-            '-o', '/dev/null',
             $targetPath, $patchFile,
         ]);
 
@@ -666,7 +691,7 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
         bool $noTrailingNewline,
     ): array {
         $combined = $this->combinedPatchOutput($stdout, $stderr);
-        $classification = $this->classifyPatchFailure($combined);
+        $classification = $this->classifyPatchFailure($combined, $this->patchNormalizerDetectedTruncation);
         $code = $classification['code'];
         $retryable = $classification['retryable'];
         $baseHint = $classification['baseHint'];
@@ -713,9 +738,13 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
     /**
      * Classify a patch failure from combined stdout+stderr output.
      *
+     * @param bool $normalizerDetectedTruncation set true when the patch
+     *                                           normalizer stripped a likely
+     *                                           truncated hunk body
+     *
      * @return array{code: string, retryable: bool, baseHint: string}
      */
-    private function classifyPatchFailure(string $combinedOutput): array
+    private function classifyPatchFailure(string $combinedOutput, bool $normalizerDetectedTruncation = false): array
     {
         // Stale hunk / context mismatch
         if (preg_match('/Hunk\s+#\d+\s+FAILED/i', $combinedOutput)) {
@@ -735,10 +764,14 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
         if (
             preg_match('/(?:only\s+garbage\s+was\s+found|not\s+a\s+unified\s+diff|malformed|missing\s+header|unrecognized\s+input|can\'t\s+find\s+file\s+to\s+patch|unexpected\s+end\s+of\s+(?:file|patch)|patch\s+unexpectedly\s+ends)/i', $combinedOutput)
         ) {
+            $baseHint = $normalizerDetectedTruncation
+                ? 'A hunk header declared more lines than the body contained; the patch looks truncated or the hunk counts are wrong. Re-read the file with `read` using `cat -n` for exact line numbers, then resend a complete hunk with correct counts.'
+                : 'The patch appears malformed or is not a valid unified diff. Provide a standard `diff -u` format patch with proper ---/+++ headers and @@ hunk headers. Ensure each hunk header count matches the actual body content, the patch ends with a newline, and no markdown code fences or non-diff trailer lines (e.g. `--- End new file ---`) are included. Do not copy line-number prefixes or tab/space indentation from `read` / `cat -n` output into patch context lines; use only the raw file text after the line-number separator.';
+
             return [
                 'code' => 'E_PATCH_FORMAT',
                 'retryable' => true,
-                'baseHint' => 'The patch appears malformed or is not a valid unified diff. Provide a standard `diff -u` format patch with proper ---/+++ headers and @@ hunk headers. Ensure each hunk header count matches the actual body content, the patch ends with a newline, and no markdown code fences or non-diff trailer lines (e.g. `--- End new file ---`) are included. Do not copy line-number prefixes or tab/space indentation from `read` / `cat -n` output into patch context lines; use only the raw file text after the line-number separator.',
+                'baseHint' => $baseHint,
             ];
         }
 
