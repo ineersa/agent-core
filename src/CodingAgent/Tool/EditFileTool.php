@@ -48,6 +48,7 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
     public function __construct(
         private readonly ToolRuntime $toolRuntime,
         private readonly LockFactory $lockFactory,
+        private readonly \Psr\Log\LoggerInterface $logger,
     ) {
     }
 
@@ -59,7 +60,9 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
      * @return string Success message with addition/deletion stats, or a no-op message
      *
      * @throws ToolCallException on validation failures, patch failures, or tool-level errors
-     * @throws \RuntimeException on cancellation or timeout (runtime concerns)
+     * @throws \RuntimeException on cancellation or timeout — these originate from
+     *                           {@see ToolRuntime::run()} checkpoints, not from the patch
+     *                           lifecycle itself
      */
     public function __invoke(array $arguments): string
     {
@@ -175,7 +178,6 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
      * @return array{additions: int, deletions: int}
      *
      * @throws ToolCallException on patch or infrastructure failures
-     * @throws \RuntimeException on cancellation or timeout (runtime concerns)
      */
     private function applyPatch(string $targetPath, string $patchContent): array
     {
@@ -263,8 +265,15 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             // Release the lock (safely — may fail on unacquired or broken locks).
             try {
                 $lock->release();
-            } catch (\Throwable) {
-                // Lock release failure is non-fatal during cleanup.
+            } catch (\Throwable $e) {
+                // Lock release failure is non-fatal during cleanup;
+                // logged for diagnostics per project caught-exception rule.
+                $this->logger->warning('Lock release failed during edit tool cleanup', [
+                    'component' => 'edit_tool',
+                    'event_type' => 'edit_tool.lock_release_failed',
+                    'exception' => $e::class,
+                    'exception_message' => $e->getMessage(),
+                ]);
             }
 
             // Clean up temp files
@@ -298,20 +307,19 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             return; // Success
         }
 
-        // Best-effort rollback: restore original bytes in-place.
-        // This preserves the same symlink/hardlink semantics as the
-        // successful path.
+        if (false === $written) {
+            // No bytes were written — target is untouched, rollback unnecessary.
+            throw new ToolCallException(\sprintf('[E_PATCH_WRITE] Failed to write patched content to "%s": write returned false (permission/disk error).', $targetPath), retryable: true, hint: 'Check file permissions and disk space, then retry.');
+        }
+
+        // Short write: best-effort rollback to restore original bytes in-place.
         $restored = @file_put_contents($targetPath, $originalContent, \LOCK_EX);
         $rollbackOk = false !== $restored && $restored === \strlen($originalContent);
         $rollbackStatus = $rollbackOk
             ? 'Original content restored.'
             : 'Rollback may be incomplete (write failure or short write) — verify file integrity with `read` or `git diff`.';
 
-        $detail = false === $written
-            ? 'write returned false (permission/disk error)'
-            : \sprintf('short write (%d of %d bytes)', $written, \strlen($patchedContent));
-
-        throw new ToolCallException(\sprintf('[E_PATCH_WRITE] Failed to write patched content to "%s": %s. %s', $targetPath, $detail, $rollbackStatus), retryable: true, hint: 'Check file permissions and disk space, then retry.');
+        throw new ToolCallException(\sprintf('[E_PATCH_WRITE] Failed to write patched content to "%s": short write (%d of %d bytes). %s', $targetPath, $written, \strlen($patchedContent), $rollbackStatus), retryable: true, hint: 'Check file permissions and disk space, then retry.');
     }
 
     /**
@@ -332,9 +340,8 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
      * Run patch dry-run validation.
      *
      * @return CancellableProcessResult process result; caller inspects exitCode
-     *                                  to decide success/failure
-     *
-     * @throws \RuntimeException on cancellation or timeout
+     *                                  or cancelled/timedOut flags to decide
+     *                                  success, failure, cancellation, or timeout
      */
     private function runPatchDryRun(string $targetPath, string $patchFile): CancellableProcessResult
     {
@@ -352,8 +359,8 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
      * Apply the patch to a temp output file (target file is never touched).
      *
      * @return CancellableProcessResult process result; caller inspects exitCode
-     *
-     * @throws \RuntimeException on cancellation or timeout
+     *                                  or cancelled/timedOut flags to decide
+     *                                  success, failure, cancellation, or timeout
      */
     private function runPatchApply(string $targetPath, string $patchFile, string $tempOut): CancellableProcessResult
     {
@@ -525,13 +532,11 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
         array $failedLines,
         int $contextLines = 4,
     ): string {
-        $fileLines = explode("\n", $originalContent);
-
-        // Normalise CRLF / lone-CR line endings to plain LF for display.
-        foreach ($fileLines as &$line) {
-            $line = rtrim($line, "\r");
-        }
-        unset($line);
+        // Normalise CRLF / lone-CR line endings to plain LF before
+        // splitting, so lone-CR content does not leak raw carriage
+        // returns into model-visible context.
+        $normalized = str_replace(["\r\n", "\r"], "\n", $originalContent);
+        $fileLines = explode("\n", $normalized);
 
         // Drop the trailing empty element produced by explode for
         // newline-terminated content — otherwise it becomes a phantom
@@ -546,9 +551,14 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             return '';
         }
 
-        // Build inclusive ranges to display
+        // Build inclusive ranges to display.
+        // Skip impossible ranges where the failed line number exceeds
+        // the total line count (patch targets lines beyond file end).
         $ranges = [];
         foreach ($failedLines as $line) {
+            if ($line > $totalLines) {
+                continue;
+            }
             $start = max(1, $line - $contextLines);
             $end = min($totalLines, $line + $contextLines);
             $ranges[] = [$start, $end];
@@ -591,9 +601,12 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             $totalInRanges += $size;
         }
 
-        // Build output
-        $output = '';
+        // Build output.
+        // Compute pad width once from total line count for consistent
+        // column alignment across all ranges.
         $padWidth = max(4, (int) floor(log10($totalLines)) + 1);
+        $truncated = \count($cappedRanges) < \count($merged);
+        $output = '';
         $prevEnd = 0;
         foreach ($cappedRanges as [$start, $end]) {
             if ($start > $prevEnd + 1 && '' !== $output) {
@@ -609,6 +622,10 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             }
 
             $prevEnd = $end;
+        }
+
+        if ($truncated) {
+            $output .= \sprintf("  ... (context truncated to %d lines)\n", $maxContextLines);
         }
 
         return $output;
@@ -717,11 +734,14 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             return 'No changes (patch produced identical content)';
         }
 
+        $addWord = 1 === $additions ? 'addition' : 'additions';
+        $delWord = 1 === $deletions ? 'deletion' : 'deletions';
+
         return \sprintf(
-            'Applied patch to %s (%d additions, %d deletions)',
+            'Applied patch to %s (%d %s, %d %s)',
             $targetPath,
-            $additions,
-            $deletions,
+            $additions, $addWord,
+            $deletions, $delWord,
         );
     }
 

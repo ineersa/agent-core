@@ -14,6 +14,7 @@ use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 
@@ -36,7 +37,7 @@ final class EditFileToolTest extends TestCase
         $this->lockFactory = new LockFactory(new FlockStore());
 
         $this->tmpDir = TestDirectoryIsolation::createOsTempDir('hatfield_edit_test');
-        $this->editFileTool = new EditFileTool($this->toolRuntime, $this->lockFactory);
+        $this->editFileTool = new EditFileTool($this->toolRuntime, $this->lockFactory, new NullLogger());
     }
 
     protected function tearDown(): void
@@ -578,7 +579,7 @@ DIFF;
         }
     }
 
-    /* ── CRLF normalisation test ── */
+    /* ── CRLF / lone-CR normalisation tests ── */
 
     public function testCrlfContentDoesNotLeakCarriageReturnsIntoContext(): void
     {
@@ -606,6 +607,36 @@ DIFF;
             $this->assertStringContainsString('line 01 content', $message);
 
             // Original untouched (including CRLF bytes)
+            $this->assertSame($original, file_get_contents($targetPath));
+        }
+    }
+
+    public function testLoneCrContentDoesNotLeakCarriageReturnsIntoContext(): void
+    {
+        $targetPath = $this->tmpDir.'/lone_cr_content.txt';
+
+        // File with lone-CR line endings (macOS Classic style)
+        $original = "line 01 content\rline 02 content\rline 03 content\r";
+        file_put_contents($targetPath, $original);
+
+        // Patch against foreign content to force stale-hunk failure
+        $fakeOld = "not present\nin this file\n";
+        $fakeNew = "not present\nmodified\n";
+        $patch = $this->createUnifiedDiff($fakeOld, $fakeNew);
+
+        try {
+            ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+            $this->fail('Expected ToolCallException');
+        } catch (ToolCallException $e) {
+            $message = $e->getMessage();
+
+            // Context must not expose raw carriage returns
+            $this->assertStringNotContainsString("\r", $message);
+
+            // Content must still be readable (lines preserved without CR)
+            $this->assertStringContainsString('line 01 content', $message);
+
+            // Original untouched (including CR bytes)
             $this->assertSame($original, file_get_contents($targetPath));
         }
     }
@@ -694,6 +725,52 @@ DIFF;
 
     /* ── Write failure / permission tests ── */
 
+    public function testContextTruncationMarkedWhenOutputCapped(): void
+    {
+        $targetPath = $this->tmpDir.'/many_failures.txt';
+
+        // File with 200 lines; create 8 mismatched hunks (each with
+        // 4-context-line windows = 9 lines each). Merged non-overlapping
+        // context totals 72 lines, exceeding the 60-line cap, so the
+        // final hunk(s) will be truncated and a marker emitted.
+        $lines = [];
+        for ($i = 1; $i <= 200; ++$i) {
+            $lines[] = \sprintf('line %03d data', $i);
+        }
+
+        $original = implode("\n", $lines)."\n";
+        file_put_contents($targetPath, $original);
+
+        // 8 hunks at lines 5, 20, 35, 50, 65, 80, 95, 110
+        $hunks = '';
+        foreach ([5, 20, 35, 50, 65, 80, 95, 110] as $lineno) {
+            $hunks .= \sprintf(
+                "@@ -%d,5 +%d,5 @@\n line %03d data\n line %03d data\n-removed at %d\n+added at %d\n line %03d data\n line %03d data\n",
+                $lineno, $lineno, $lineno, $lineno + 1, $lineno, $lineno, $lineno + 3, $lineno + 4,
+            );
+        }
+
+        $patch = "--- f\n+++ f\n".$hunks;
+
+        try {
+            ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+            $this->fail('Expected ToolCallException');
+        } catch (ToolCallException $e) {
+            $message = $e->getMessage();
+
+            $this->assertStringContainsString('E_PATCH_STALE', $message);
+
+            // Truncation marker should appear when lines are omitted
+            $this->assertStringContainsString('truncated', $message);
+
+            // First hunk context should be present
+            $this->assertStringContainsString('line 005 data', $message);
+
+            // Original must be untouched
+            $this->assertSame($original, file_get_contents($targetPath));
+        }
+    }
+
     public function testEditUnwritableTargetReturnsInfraError(): void
     {
         // chmod-based write-denial is ineffective under root.
@@ -719,8 +796,9 @@ DIFF;
         } catch (ToolCallException $e) {
             $message = $e->getMessage();
 
-            // The write should fail — expect a write or infrastructure code.
-            $this->assertMatchesRegularExpression('/E_PATCH_(?:WRITE|INFRA)/', $message);
+            // The write should fail — expect a write code (no rollback
+            // needed since no bytes were written).
+            $this->assertMatchesRegularExpression('/E_PATCH_WRITE/', $message);
             $this->assertTrue($e->retryable());
 
             // Original content must be restored by the rollback path.
