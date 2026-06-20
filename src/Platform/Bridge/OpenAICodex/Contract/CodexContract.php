@@ -8,7 +8,6 @@ use Symfony\AI\Platform\Bridge\OpenAICodex\Contract\Message\CodexAssistantMessag
 use Symfony\AI\Platform\Bridge\OpenAICodex\Contract\Message\CodexMessageBagNormalizer;
 use Symfony\AI\Platform\Bridge\OpenAICodex\Contract\Message\CodexUserMessageNormalizer;
 use Symfony\AI\Platform\Bridge\OpenResponses\Contract\Message\Content\TextNormalizer;
-use Symfony\AI\Platform\Bridge\OpenResponses\Contract\Message\ToolCallMessageNormalizer;
 use Symfony\AI\Platform\Contract;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
@@ -48,7 +47,6 @@ final class CodexContract extends Contract
         $codexNormalizers = [
             new CodexMessageBagNormalizer(),
             new CodexAssistantMessageNormalizer(),
-            new ToolCallMessageNormalizer(),
             new CodexUserMessageNormalizer(),
             new TextNormalizer(),
             new CodexToolNormalizer(),

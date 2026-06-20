@@ -30,8 +30,6 @@ final class CodexMessageBagNormalizer extends ModelContractNormalizer implements
     use NormalizerAwareTrait;
 
     /**
-     * @param MessageBag $data
-     *
      * @return array{
      *     input: array<string, mixed>,
      *     instructions?: string,
@@ -41,7 +39,7 @@ final class CodexMessageBagNormalizer extends ModelContractNormalizer implements
      */
     public function normalize(mixed $data, ?string $format = null, array $context = []): array
     {
-        $messages['input'] = [];
+        $messages = ['input' => []];
 
         foreach ($data->withoutSystemMessage()->getMessages() as $message) {
             $normalized = $this->normalizer->normalize($message, $format, $context);
@@ -52,11 +50,11 @@ final class CodexMessageBagNormalizer extends ModelContractNormalizer implements
                 continue;
             }
 
-            // Flatten when the normalized result is a sequential list (has
-            // numeric index 0). This handles:
+            // Flatten when the normalized result is a sequential list.
+            // array_is_list handles:
             //   - Tool-call assistant messages (return a list of function_call items)
             //   - Thinking+text assistant messages (return [reasoning_item, message_item])
-            if (\is_array($normalized) && [] !== $normalized && isset($normalized[0])) {
+            if (\is_array($normalized) && array_is_list($normalized)) {
                 $messages['input'] = array_merge($messages['input'], $normalized);
             } elseif (\is_array($normalized)) {
                 // Single associative item — append as-is (standard message shape)
@@ -67,7 +65,7 @@ final class CodexMessageBagNormalizer extends ModelContractNormalizer implements
             }
         }
 
-        if ($data->getSystemMessage()) {
+        if (null !== $data->getSystemMessage()) {
             $messages['instructions'] = $data->getSystemMessage()->getContent();
         }
 

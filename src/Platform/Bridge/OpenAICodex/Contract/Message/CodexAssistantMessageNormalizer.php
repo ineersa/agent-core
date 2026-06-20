@@ -60,7 +60,7 @@ final class CodexAssistantMessageNormalizer extends ModelContractNormalizer impl
         // carrying the full reasoning item JSON (encrypted_content). This is the
         // pi-mono pattern: reasoning is a separate top-level input item, not
         // bundled into the message content.
-        if (\is_string($thinkingSignature) && '' !== $thinkingSignature) {
+        if (null !== $thinkingSignature) {
             $output[] = json_decode($thinkingSignature, true, flags: \JSON_THROW_ON_ERROR);
         }
 

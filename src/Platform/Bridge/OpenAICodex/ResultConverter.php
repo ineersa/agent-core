@@ -237,16 +237,8 @@ final class ResultConverter implements ResultConverterInterface
 
             // response.incomplete — context limit or other truncation.
             if ('response.incomplete' === $type) {
-                $reason = $event['response']['incomplete_details']['reason'] ?? 'unknown';
-                if (!\is_string($reason) || '' === $reason) {
-                    $reason = 'unknown';
-                }
-
-                // Yield any partial tool calls accumulated so far before throwing,
-                // so the caller can still process partial results.
-                if ([] !== $toolCalls) {
-                    yield new ToolCallComplete(array_values($toolCalls));
-                }
+                $response = \is_array($event['response'] ?? null) ? $event['response'] : [];
+                $reason = $response['incomplete_details']['reason'] ?? 'unknown';
 
                 throw new RuntimeException(\sprintf('Codex stream ended incomplete (%s).', $reason));
             }
@@ -276,32 +268,30 @@ final class ResultConverter implements ResultConverterInterface
                 yield new ThinkingDelta($event['delta']);
             }
 
-            // Reasoning summary done — emit ThinkingComplete.
-            // The signature is captured from output_item.added or output_item.done
-            // events (below), NOT from this event.
-            if ('response.reasoning_summary_text.done' === $type) {
-                yield new ThinkingComplete($currentThinking ?? '', $currentThinkingSignature);
-                $currentThinking = null;
-                $currentThinkingSignature = null;
-            }
-
-            // output_item.added — capture the full reasoning item JSON when a
-            // reasoning item is added, for later replay as a separate input item.
-            // The 'item' carries encrypted_content for round-trip reasoning.
-            if ('response.output_item.added' === $type && \is_array($event['item'] ?? null)) {
-                $item = $event['item'];
-                if ('reasoning' === ($item['type'] ?? null)) {
-                    $currentThinkingSignature = json_encode(
-                        $item,
-                        \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE,
-                    );
+            // Raw reasoning text delta (non-summary variant). Same accumulation
+            // buffer as summary deltas — mixing both within a single turn is valid
+            // in the Codex Responses API (pi-mono openai-responses-shared.ts:362).
+            if ('response.reasoning_text.delta' === $type && isset($event['delta'])) {
+                if (null === $currentThinking) {
+                    $currentThinking = '';
+                    yield new ThinkingStart();
                 }
+                $currentThinking .= $event['delta'];
+                yield new ThinkingDelta($event['delta']);
             }
 
-            // output_item.done — capture the completed reasoning item signature
-            // (authoritative, may include summary). Also collect tool calls
-            // incrementally for fallback when the response.completed output array
-            // is empty.
+            // output_item.added — reasoning item started.
+            // The added item does NOT carry encrypted_content (only the done
+            // item does), so signature capture happens at output_item.done.
+            if ('response.output_item.added' === $type && \is_array($event['item'] ?? null)) {
+                // Reasoning item tracking for display handled by delta accumulation.
+            }
+
+            // output_item.done — the authoritative capture point for the
+            // reasoning signature (with encrypted_content for round-trip
+            // on the next turn) AND for finalized function calls.
+            // Matches pi-mono openai-responses-shared.ts:443-452: atomic
+            // capture of full item JSON + emit ThinkingComplete + reset.
             if ('response.output_item.done' === $type && \is_array($event['item'] ?? null)) {
                 $item = $event['item'];
                 if ('reasoning' === ($item['type'] ?? null)) {
@@ -309,6 +299,9 @@ final class ResultConverter implements ResultConverterInterface
                         $item,
                         \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE,
                     );
+                    yield new ThinkingComplete($currentThinking ?? '', $currentThinkingSignature);
+                    $currentThinking = null;
+                    $currentThinkingSignature = null;
                 } elseif ('function_call' === ($item['type'] ?? null)) {
                     $toolCall = $this->convertFunctionCall($item);
                     $toolCalls[$toolCall->getId()] = $toolCall;
@@ -342,7 +335,7 @@ final class ResultConverter implements ResultConverterInterface
     /**
      * @param array<OutputMessage|FunctionCall|Thinking> $output
      *
-     * @return list<ToolCallResult|array<OutputMessage|Thinking>|null>
+     * @return array{?ToolCallResult, array<OutputMessage|Thinking>}
      */
     private function extractFunctionCalls(array $output): array
     {

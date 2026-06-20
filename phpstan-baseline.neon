@@ -115,32 +115,8 @@ parameters:
 			path: src/Platform/Bridge/Generic/DurableResultConverter.php
 
 		-
-			message: '#^Strict comparison using \!\=\= between '''' and non\-empty\-string will always evaluate to true\.$#'
-			identifier: notIdentical.alwaysTrue
-			count: 1
-			path: src/Platform/Bridge/OpenAICodex/Contract/Message/CodexAssistantMessageNormalizer.php
-
-		-
-			message: '#^Implicit array creation is not allowed \- variable \$messages does not exist\.$#'
-			identifier: variable.implicitArray
-			count: 1
-			path: src/Platform/Bridge/OpenAICodex/Contract/Message/CodexMessageBagNormalizer.php
-
-		-
-			message: '#^Only booleans are allowed in an if condition, Symfony\\AI\\Platform\\Message\\SystemMessage\|null given\.$#'
-			identifier: if.condNotBoolean
-			count: 1
-			path: src/Platform/Bridge/OpenAICodex/Contract/Message/CodexMessageBagNormalizer.php
-
-		-
-			message: '#^Parameter \#1 \$data \(Symfony\\AI\\Platform\\Message\\MessageBag\) of method Symfony\\AI\\Platform\\Bridge\\OpenAICodex\\Contract\\Message\\CodexMessageBagNormalizer\:\:normalize\(\) should be contravariant with parameter \$data \(mixed\) of method Symfony\\Component\\Serializer\\Normalizer\\NormalizerInterface\:\:normalize\(\)$#'
-			identifier: method.childParameterType
-			count: 2
-			path: src/Platform/Bridge/OpenAICodex/Contract/Message/CodexMessageBagNormalizer.php
-
-		-
-			message: '#^Strict comparison using \!\=\= between array\{\} and non\-empty\-array\<mixed\> will always evaluate to true\.$#'
-			identifier: notIdentical.alwaysTrue
+			message: '#^Method Symfony\\AI\\Platform\\Bridge\\OpenAICodex\\Contract\\Message\\CodexMessageBagNormalizer\:\:normalize\(\) should return array\{input\: array\<string, mixed\>, instructions\?\: string\} but returns array\{input\: list, instructions\?\: mixed\}\.$#'
+			identifier: return.type
 			count: 1
 			path: src/Platform/Bridge/OpenAICodex/Contract/Message/CodexMessageBagNormalizer.php
 
