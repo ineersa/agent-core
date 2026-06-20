@@ -77,7 +77,15 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
         // Wrap core logic in cancellation checkpoints
         return $this->toolRuntime->run(function () use ($arguments): string {
             $targetPath = $this->resolveAndVerifyTarget($arguments['path']);
-            $patchContent = $this->normalizePatch($arguments['patch']);
+
+            // Read current file content once for relaxed-hunk resolution.
+            // file_get_contents follows symlinks natively — reads target content.
+            $targetContent = @file_get_contents($targetPath);
+            if (false === $targetContent) {
+                throw $this->infraError('Failed to read target file for patch normalization.', $targetPath);
+            }
+
+            $patchContent = $this->normalizePatch($arguments['patch'], $targetContent);
 
             $stats = $this->applyPatch($targetPath, $patchContent);
 
@@ -114,9 +122,9 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             promptGuidelines: [
                 'Read the current file contents with the `read` tool before generating a patch — never guess line numbers or context.',
                 'Use exact unchanged context lines from the current file. Do not modify or reformat context lines; they must match byte-for-byte.',
-                'Provide the patch in standard unified diff format (diff -u). Use `read` and its `cat -n` original line numbers to determine `@@` hunk header ranges.',
-                '`@@` hunk headers must reference the original line numbers shown by `read` via `cat -n` (e.g. `@@ -42,6 +42,8 @@`). The tool automatically repairs common hunk header count / body content mismatches, but correct counts are still best.',
-                'Keep hunks tight: include only enough unchanged context (typically 3–4 lines) for the patch to apply reliably.',
+                'Provide the patch in standard unified diff format (diff -u). Hunk headers may include line numbers/counts (e.g. `@@ -42,6 +42,8 @@`) or be written as plain `@@` when unsure — the tool resolves plain `@@` headers by locating the hunk context in the current file.',
+                'Prefer plain `@@` hunk headers without line numbers or counts. The tool computes old/new line numbers and counts from the hunk body and the current file automatically. Only use numbered headers when you are confident in the exact counts and positions.',
+                'Keep hunks tight: include enough unchanged context (typically 3–4 lines) for the tool to locate the hunk uniquely in the file. If a plain `@@` hunk matches multiple locations, add more context lines.',
                 'The patch may contain multiple hunks to edit different parts of the file.',
                 'Do NOT wrap the patch in markdown code fences (```diff, ```patch, ```).',
                 'Do NOT include non-diff trailer lines such as `--- End new file ---` or `--- End file ---`.',
@@ -180,9 +188,10 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
      * Normalize an LLM-provided patch before GNU patch processing.
      *
      * This step repairs common LLM generation mistakes — markdown fences,
-     * hallucinated non-diff trailers, missing terminal newlines, and hunk
-     * header counts that do not match the body content — so that correct
-     * diffs with cosmetic issues apply without the model needing to retry.
+     * hallucinated non-diff trailers, missing terminal newlines, relaxed
+     * hunk headers (plain @@ without counts), and hunk header counts that
+     * do not match the body content — so that correct diffs with cosmetic
+     * issues apply without the model needing to retry.
      *
      * The normalization is intentionally conservative: it only strips
      * artifacts that are never valid unified-diff syntax, and only repairs
@@ -190,7 +199,7 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
      * leading whitespace from context lines or reflow content, because
      * those could change intended semantics.
      */
-    private function normalizePatch(string $patchContent): string
+    private function normalizePatch(string $patchContent, ?string $targetContent = null): string
     {
         $this->patchNormalizerDetectedTruncation = false;
 
@@ -205,7 +214,13 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             $patchContent .= "\n";
         }
 
-        // 4. Repair hunk header counts to match actual body content
+        // 4. Resolve relaxed hunk headers (plain @@ without line numbers/counts)
+        //    before count repair, so repair sees standard headers.
+        if (null !== $targetContent) {
+            $patchContent = $this->resolveRelaxedHunks($patchContent, $targetContent);
+        }
+
+        // 5. Repair hunk header counts to match actual body content
         $patchContent = $this->repairHunkCounts($patchContent);
 
         return $patchContent;
@@ -463,6 +478,286 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             $newStart, $actualNew,
             $suffix,
         );
+    }
+
+    /* ── Relaxed hunk header resolution ── */
+
+    /**
+     * Resolve relaxed (plain @@ without line numbers/counts) hunk headers
+     * by locating the old-side block in the current target file content.
+     *
+     * Standard headers matching `@@ -a,b +c,d @@` pass through unchanged.
+     * Relaxed headers (just `@@` or `@@ optional section text`) are resolved
+     * into standard headers by:
+     * 1. Parsing the hunk body to extract old-side and new-side blocks.
+     * 2. Locating the old-side block as an exact contiguous match in the
+     *    current file content.
+     * 3. Computing oldStart, oldCount, newCount, and newStart (with
+     *    cumulative delta from prior hunks).
+     *
+     * All hunks are validated for ascending file order and non-overlap
+     * before headers are rewritten.
+     *
+     * @param string $patchContent  cleaned patch content (fences/trailers removed,
+     *                              newline ensured) with potentially-relaxed hunks
+     * @param string $targetContent current target file content
+     *
+     * @return string patch with all relaxed hunks resolved to standard
+     *                `@@ -a,b +c,d @@` headers
+     *
+     * @throws ToolCallException when a relaxed hunk old block is not found
+     *                           (stale context), matches multiple locations
+     *                           (ambiguous), or hunks overlap / are out of order
+     */
+    private function resolveRelaxedHunks(string $patchContent, string $targetContent): string
+    {
+        $standardHeaderPattern = '/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$/';
+
+        // Normalise target file content for line-level matching.
+        $targetNormalized = str_replace(["\r\n", "\r"], "\n", $targetContent);
+        $fileLines = explode("\n", $targetNormalized);
+        if ([] !== $fileLines && '' === end($fileLines)) {
+            array_pop($fileLines);
+        }
+
+        // Split patch into lines, dropping trailing explode artifact.
+        $lines = explode("\n", $patchContent);
+        if ([] !== $lines && '' === end($lines)) {
+            array_pop($lines);
+        }
+
+        $totalLines = \count($lines);
+
+        // ── First pass: identify all hunks and parse their bodies ──
+        $hunks = [];
+        $inHunk = false;
+        $isRelaxed = false;
+        $hunkHeaderIdx = -1;
+        $declaredOldStart = 0;
+        $declaredOldCount = 0;
+        $declaredNewStart = 0;
+        $declaredNewCount = 0;
+        $hunkSuffix = '';
+        /** @var list<string> */
+        $oldBlockLines = [];
+        /** @var list<string> */
+        $newBlockLines = [];
+
+        foreach ($lines as $i => $line) {
+            if (str_starts_with($line, '@@')) {
+                // Close previous hunk
+                if ($inHunk) {
+                    $hunks[] = $isRelaxed
+                        ? [
+                            'type' => 'relaxed',
+                            'headerIdx' => $hunkHeaderIdx,
+                            'bodyEndIdx' => $i,
+                            'oldBlock' => $oldBlockLines,
+                            'newBlock' => $newBlockLines,
+                        ]
+                        : [
+                            'type' => 'standard',
+                            'headerIdx' => $hunkHeaderIdx,
+                            'bodyEndIdx' => $i,
+                            'oldStart' => $declaredOldStart,
+                            'oldCount' => $declaredOldCount,
+                            'newStart' => $declaredNewStart,
+                            'newCount' => $declaredNewCount,
+                            'suffix' => $hunkSuffix,
+                        ];
+                }
+
+                $hunkHeaderIdx = $i;
+
+                if (preg_match($standardHeaderPattern, $line, $m)) {
+                    $isRelaxed = false;
+                    $declaredOldStart = (int) $m[1];
+                    $declaredOldCount = '' === $m[2] ? 1 : (int) $m[2];
+                    $declaredNewStart = (int) $m[3];
+                    $declaredNewCount = '' === $m[4] ? 1 : (int) $m[4];
+                    $hunkSuffix = $m[5];
+                } else {
+                    $isRelaxed = true;
+                    $oldBlockLines = [];
+                    $newBlockLines = [];
+                }
+
+                $inHunk = true;
+
+                continue;
+            }
+
+            if (!$inHunk) {
+                continue;
+            }
+
+            // Inside a hunk body
+            if ($isRelaxed) {
+                $firstChar = $line[0] ?? '';
+
+                if (str_starts_with($line, '\\ ')) {
+                    // \ No newline at end of file — marker, not body content.
+                } elseif (' ' === $firstChar) {
+                    $oldBlockLines[] = substr($line, 1);
+                    $newBlockLines[] = substr($line, 1);
+                } elseif ('-' === $firstChar) {
+                    $oldBlockLines[] = substr($line, 1);
+                } elseif ('+' === $firstChar) {
+                    $newBlockLines[] = substr($line, 1);
+                } elseif ('' === $firstChar || '' === $line) {
+                    // Blank line in body — treat as context (same convention
+                    // as repairHunkCounts: common LLM artifact where leading
+                    // space on blank context line was dropped).
+                    $oldBlockLines[] = '';
+                    $newBlockLines[] = '';
+                }
+                // Any other prefix (stray text) is ignored.
+            }
+            // Standard hunk bodies pass through unmodified.
+        }
+
+        // Close last hunk
+        if ($inHunk) {
+            $hunks[] = $isRelaxed
+                ? [
+                    'type' => 'relaxed',
+                    'headerIdx' => $hunkHeaderIdx,
+                    'bodyEndIdx' => $totalLines,
+                    'oldBlock' => $oldBlockLines,
+                    'newBlock' => $newBlockLines,
+                ]
+                : [
+                    'type' => 'standard',
+                    'headerIdx' => $hunkHeaderIdx,
+                    'bodyEndIdx' => $totalLines,
+                    'oldStart' => $declaredOldStart,
+                    'oldCount' => $declaredOldCount,
+                    'newStart' => $declaredNewStart,
+                    'newCount' => $declaredNewCount,
+                    'suffix' => $hunkSuffix,
+                ];
+        }
+
+        // Early return: no relaxed hunks present — nothing to resolve.
+        $hasRelaxed = false;
+        foreach ($hunks as $h) {
+            if ('relaxed' === $h['type']) {
+                $hasRelaxed = true;
+                break;
+            }
+        }
+        if (!$hasRelaxed) {
+            return $patchContent;
+        }
+
+        // ── Second pass: resolve relaxed hunks against the current file ──
+        foreach ($hunks as $idx => &$hunk) {
+            if ('relaxed' !== $hunk['type']) {
+                // Validate that the original hunk order matches the file order
+                // (standard oldStart should be ascending). Checked after
+                // relaxation below.
+                continue;
+            }
+
+            $oldBlock = $hunk['oldBlock'];
+
+            // Require at least one context line for positioning.
+            // A plain @@ with only additions and zero context is impossible
+            // to locate safely.
+            if ([] === $oldBlock) {
+                throw new ToolCallException(\sprintf('[E_PATCH_FORMAT] edit failed: a relaxed @@ hunk at patch line %d has no context or removal lines — cannot determine where to apply the change. Include at least one unchanged context line to anchor the hunk.', $hunk['headerIdx'] + 1), retryable: true, hint: 'Include at least one unchanged context line above or below the change.');
+            }
+
+            $matches = $this->findExactBlockMatch($fileLines, $oldBlock);
+
+            if ([] === $matches) {
+                // Display a few lines of the old block as context for the model
+                $preview = implode("\n", \array_slice($oldBlock, 0, 4));
+                $ellipsis = \count($oldBlock) > 4 ? "\n… (total ".\count($oldBlock).' lines)' : '';
+
+                throw new ToolCallException(\sprintf("[E_PATCH_STALE] No changes were applied: the relaxed @@ hunk at patch line %d could not be located in the current file.\n\nHunk old-side block:\n---\n%s%s\n---\n\nThe file content has changed or the hunk context does not match. Re-read the file with `read` using `cat -n` for exact line numbers, then regenerate the patch.", $hunk['headerIdx'] + 1, $preview, $ellipsis), retryable: true, hint: 'The relaxed hunk context is stale — the current file content no longer matches. Re-read the file with `read` using `cat -n` for exact line numbers, then regenerate the patch with the exact current context.');
+            }
+
+            if (\count($matches) > 1) {
+                throw new ToolCallException(\sprintf('[E_PATCH_FORMAT] No changes were applied: the relaxed @@ hunk at patch line %d matches %d locations in the target file (lines %s). The context is ambiguous. Include more unchanged context lines to make the match unique.', $hunk['headerIdx'] + 1, \count($matches), implode(', ', $matches)), retryable: true, hint: 'The provided context matches multiple locations in the file. Add more unchanged context lines above or below the change to make the match unique.');
+            }
+
+            $hunk['oldStart'] = $matches[0]; // 1-based
+            $hunk['oldCount'] = \count($oldBlock);
+            $hunk['newCount'] = \count($hunk['newBlock']);
+            $hunk['suffix'] = '';
+        }
+        unset($hunk);
+
+        // ── Third pass: validate ascending order and non-overlap ──
+        $prevEnd = 0;
+        foreach ($hunks as $idx => $hunk) {
+            $oldStart = $hunk['oldStart'];
+            $oldCount = $hunk['oldCount'];
+            $oldEnd = $oldStart + $oldCount - 1;
+
+            if ($oldStart <= $prevEnd) {
+                throw new ToolCallException(\sprintf('[E_PATCH_FORMAT] No changes were applied: hunks overlap or are out of order. Hunk %d (old lines %d-%d) conflicts with the previous range which covered up to line %d. Rearrange hunks in ascending file order without overlapping ranges.', $idx + 1, $oldStart, $oldEnd, $prevEnd), retryable: true, hint: 'Hunks must be in ascending file order and must not overlap. Rearrange the hunk order in the patch.');
+            }
+
+            $prevEnd = $oldEnd;
+        }
+
+        // ── Fourth pass: compute newStart with cumulative delta, rewrite headers ──
+        $cumulativeDelta = 0;
+        foreach ($hunks as &$hunk) {
+            $hunk['newStart'] = $hunk['oldStart'] + $cumulativeDelta;
+            $cumulativeDelta += ($hunk['newCount'] - $hunk['oldCount']);
+
+            $lines[$hunk['headerIdx']] = \sprintf(
+                '@@ -%d,%d +%d,%d @@%s',
+                $hunk['oldStart'], $hunk['oldCount'],
+                $hunk['newStart'], $hunk['newCount'],
+                $hunk['suffix'] ?? '',
+            );
+        }
+        unset($hunk);
+
+        return implode("\n", $lines)."\n";
+    }
+
+    /**
+     * Find all 1-based line positions where the block matches consecutive
+     * lines in the file content.
+     *
+     * Matching is exact byte-for-byte line comparison with NO fuzz or
+     * whitespace tolerance — the context lines in the diff must match
+     * the current file content exactly.
+     *
+     * @param list<string> $fileLines  target file lines (0-indexed array)
+     * @param list<string> $blockLines block to locate
+     *
+     * @return list<int> 1-based line numbers where the block matches
+     */
+    private function findExactBlockMatch(array $fileLines, array $blockLines): array
+    {
+        $matches = [];
+        $blockLen = \count($blockLines);
+        $fileLen = \count($fileLines);
+
+        if (0 === $blockLen) {
+            return [];
+        }
+
+        for ($i = 0; $i <= $fileLen - $blockLen; ++$i) {
+            $match = true;
+            for ($j = 0; $j < $blockLen; ++$j) {
+                if ($fileLines[$i + $j] !== $blockLines[$j]) {
+                    $match = false;
+                    break;
+                }
+            }
+            if ($match) {
+                $matches[] = $i + 1; // 1-based
+            }
+        }
+
+        return $matches;
     }
 
     /**

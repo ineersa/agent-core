@@ -95,7 +95,9 @@ final class EditFileToolTest extends TestCase
         $this->assertStringContainsString('end new file', strtolower($guidelinesText));
         $this->assertStringContainsString('line-number prefix', strtolower($guidelinesText));
         $this->assertStringContainsString('trailing newline', strtolower($guidelinesText));
-        $this->assertStringContainsString('repairs', strtolower($guidelinesText));
+        // Guidelines must mention the tool resolves/computes hunk headers
+        $this->assertStringContainsString('resolves', strtolower($guidelinesText));
+        $this->assertStringContainsString('computes', strtolower($guidelinesText));
 
         // Guidelines must include generic diff-marker examples for file
         // content that itself starts with '-' or '+' (session-5 regression).
@@ -1048,6 +1050,203 @@ DIFF;
             // File must be completely unchanged
             $this->assertSame($original, file_get_contents($targetPath));
         }
+    }
+
+    /* ── Relaxed hunk header (plain @@) tests ── */
+
+    /**
+     * A plain @@ hunk header without line numbers or counts must be
+     * resolved against the current file and applied successfully.
+     */
+    public function testRelaxedHunkAppliesAgainstCurrentFile(): void
+    {
+        $targetPath = $this->tmpDir.'/relaxed_hunk_target.txt';
+        $original = "line1\nline2\nline3\nline4\n";
+        file_put_contents($targetPath, $original);
+
+        // Relaxed hunk: plain @@, body has context + removal + addition
+        $patch = <<<'DIFF'
+--- a/file
++++ b/file
+@@
+ line1
+-line2
++CHANGED2
+ line3
+DIFF;
+
+        $expected = "line1\nCHANGED2\nline3\nline4\n";
+
+        $result = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+
+        $this->assertStringContainsString('Applied patch', $result);
+        $this->assertStringNotContainsString('@@', $result);
+        $this->assertSame($expected, file_get_contents($targetPath));
+    }
+
+    /**
+     * Multiple plain @@ hunks in one patch must all be resolved,
+     * ordered, and applied — the tool computes shifted offsets.
+     */
+    public function testMultiHunkRelaxedEditAppliesWithComputedOffsets(): void
+    {
+        $targetPath = $this->tmpDir.'/multi_relaxed_target.txt';
+        $original = "a\nb\nc\nd\ne\nf\n";
+        file_put_contents($targetPath, $original);
+
+        // Two relaxed hunks: first changes b→B at line 2, second changes e→E at line 5.
+        // After first hunk, delta is 0 (1 new - 1 old). line 5 stays at 5.
+        $patch = <<<'DIFF'
+--- a/file
++++ b/file
+@@
+ a
+-b
++B
+ c
+@@
+ d
+-e
++E
+ f
+DIFF;
+
+        $expected = "a\nB\nc\nd\nE\nf\n";
+
+        $result = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+
+        $this->assertStringContainsString('Applied patch', $result);
+        $this->assertSame($expected, file_get_contents($targetPath));
+    }
+
+    /**
+     * A relaxed hunk whose old-side block appears multiple times in the
+     * file must fail with a clear ambiguity hint.
+     */
+    public function testDuplicateOldBlockInRelaxedHunkFailsWithAmbiguityHint(): void
+    {
+        $targetPath = $this->tmpDir.'/duplicate_relaxed_target.txt';
+        // File with repeated block at lines 2-4 and 5-7
+        $original = "line1\nmarker\nrepeated\ncontext\nmarker\nrepeated\ncontext\n";
+        file_put_contents($targetPath, $original);
+
+        // Relaxed hunk whose old block matches twice
+        $patch = <<<'DIFF'
+--- a/file
++++ b/file
+@@
+ marker
+-repeated
++changed
+ context
+DIFF;
+
+        try {
+            ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+            $this->fail('Expected ToolCallException for duplicate match');
+        } catch (ToolCallException $e) {
+            $message = $e->getMessage();
+
+            $this->assertStringContainsString('[E_PATCH_FORMAT]', $message);
+            $this->assertStringContainsString('no changes were applied', strtolower($message));
+            $this->assertStringContainsString('matches', strtolower($message));
+            $this->assertStringContainsString('locations', strtolower($message));
+
+            $hint = $e->hint() ?? '';
+            $this->assertStringContainsString('more unchanged context', strtolower($hint));
+            $this->assertStringContainsString('unique', strtolower($hint));
+
+            $this->assertTrue($e->retryable());
+
+            // File must be untouched
+            $this->assertSame($original, file_get_contents($targetPath));
+        }
+    }
+
+    /**
+     * A relaxed hunk whose old-side block does NOT match any location
+     * in the file must fail as E_PATCH_STALE with no changes applied.
+     */
+    public function testUnmatchedRelaxedHunkFailsAsStale(): void
+    {
+        $targetPath = $this->tmpDir.'/unmatched_relaxed_target.txt';
+        $original = "hello\nworld\n";
+        file_put_contents($targetPath, $original);
+
+        // Relaxed hunk with context that is NOT in the file
+        $patch = <<<'DIFF'
+--- a/file
++++ b/file
+@@
+ not
+-present
++modified
+DIFF;
+
+        try {
+            ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+            $this->fail('Expected ToolCallException for unmatched relaxed hunk');
+        } catch (ToolCallException $e) {
+            $message = $e->getMessage();
+
+            $this->assertStringContainsString('[E_PATCH_STALE]', $message);
+            $this->assertStringContainsString('no changes were applied', strtolower($message));
+            $this->assertStringContainsString('could not be located', $message);
+
+            $hint = $e->hint() ?? '';
+            $this->assertStringContainsString('stale', strtolower($hint));
+            $this->assertStringContainsString('re-read', strtolower($hint));
+
+            $this->assertTrue($e->retryable());
+
+            // File must be untouched
+            $this->assertSame($original, file_get_contents($targetPath));
+        }
+    }
+
+    /**
+     * A standard counted hunk must still work alongside relaxed hunks.
+     */
+    public function testMixedStandardAndRelaxedHunksApplyTogether(): void
+    {
+        $targetPath = $this->tmpDir.'/mixed_hunk_target.txt';
+        $original = "alpha\nbeta\ngamma\n";
+        file_put_contents($targetPath, $original);
+
+        // Standard hunk: replace alpha→ALPHA at line 1
+        // Relaxed hunk: delete gamma (context "beta", removal "-gamma")
+        $patch = <<<'DIFF'
+--- a/file
++++ b/file
+@@ -1,1 +1,1 @@
+-alpha
++ALPHA
+@@
+ beta
+-gamma
+DIFF;
+
+        $expected = "ALPHA\nbeta\n";
+
+        $result = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+
+        $this->assertStringContainsString('Applied patch', $result);
+        $this->assertSame($expected, file_get_contents($targetPath));
+    }
+
+    /* ── Relaxed hunk definition / guideline tests ── */
+
+    public function testDefinitionGuidelinesMentionOptionalHunkCounts(): void
+    {
+        $definition = $this->editFileTool->definition();
+        $guidelinesText = implode(' ', $definition->promptGuidelines);
+
+        // Guidelines must mention that hunk counts/line numbers are optional
+        $this->assertStringContainsString('plain', strtolower($guidelinesText));
+        $this->assertStringContainsString('@@', $guidelinesText);
+        $this->assertStringContainsString('when unsure', strtolower($guidelinesText));
+        $this->assertStringContainsString('resolves', strtolower($guidelinesText));
+        $this->assertStringContainsString('without line numbers', strtolower($guidelinesText));
     }
 
     /* ── Symlink preservation tests ── */
