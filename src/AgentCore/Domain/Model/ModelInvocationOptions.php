@@ -32,6 +32,15 @@ final readonly class ModelInvocationOptions
          * default thinking level is used.
          */
         public ?string $thinkingLevel = null,
+
+        /**
+         * When false, the LlmStreamObserver is suppressed for this
+         * invocation — no onStreamStart/onDelta/onStreamEnd/onStreamError
+         * notifications are emitted.  This is used for compaction and
+         * other non-interactive summarization calls where stream deltas
+         * have no consumer.  Defaults to true (normal behaviour).
+         */
+        public bool $streamObserverEnabled = true,
     ) {
     }
 }

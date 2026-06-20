@@ -31,8 +31,10 @@ use ReflectionClass;
  * Contract tests for {@see CompactRunHandler}.
  *
  * Theses:
- *  - Ready preparation emits context_compaction_started, dispatches ExecuteCompactionStep, preserves messages.
+ *  - Ready preparation emits context_compaction_started with activeStepId set.
+ *  - Ready preparation dispatches ExecuteCompactionStep, preserves messages.
  *  - Non-ready preparation emits context_compaction_failed with structural reason, preserves messages.
+ *  - Non-ready preparation does NOT set activeStepId (no worker dispatched).
  *  - Failure messages use "Compaction failed" wording, never "skipped".
  */
 final class CompactRunHandlerTest extends TestCase
@@ -54,9 +56,11 @@ final class CompactRunHandlerTest extends TestCase
         $fakeService = $this->createReadyCompactionService($summarize, $retained, tokenEstimateBefore: 42000);
         $fakeModelSelection = $this->createModelSelectionStub();
 
+        $appConfig = $this->createAppConfig(keepRecentTokens: 20000);
+
         $handler = new CompactRunHandler(
             $fakeService,
-            new CompactionConfig(keepRecentTokens: 20000),
+            $appConfig,
             new EventFactory(),
             $fakeModelSelection,
         );
@@ -87,6 +91,9 @@ final class CompactRunHandlerTest extends TestCase
         self::assertSame(1, $payload['messages_to_summarize']);
         self::assertSame(4, $payload['messages_retained']);
 
+        // Sets activeStepId so the result handler can match the result.
+        self::assertSame('step-1', $result->nextState->activeStepId);
+
         // Dispatches ExecuteCompactionStep effect.
         self::assertCount(1, $result->effects);
         self::assertInstanceOf(ExecuteCompactionStep::class, $result->effects[0]);
@@ -108,9 +115,11 @@ final class CompactRunHandlerTest extends TestCase
         $fakeService = $this->createFailedCompactionService('too_few_messages');
         $fakeModelSelection = $this->createModelSelectionStub();
 
+        $appConfig = $this->createAppConfig();
+
         $handler = new CompactRunHandler(
             $fakeService,
-            new CompactionConfig(),
+            $appConfig,
             new EventFactory(),
             $fakeModelSelection,
         );
@@ -141,6 +150,9 @@ final class CompactRunHandlerTest extends TestCase
         self::assertNotEmpty($result->nextState->messages);
         self::assertSame('hi', $result->nextState->messages[0]->content[0]['text'] ?? null);
 
+        // Does NOT set activeStepId (no worker was dispatched).
+        self::assertNull($result->nextState->activeStepId);
+
         // No worker dispatched.
         self::assertEmpty($result->effects);
     }
@@ -162,9 +174,11 @@ final class CompactRunHandlerTest extends TestCase
             $fakeService = $this->createFailedCompactionService($reason);
             $fakeModelSelection = $this->createModelSelectionStub();
 
+            $appConfig = $this->createAppConfig();
+
             $handler = new CompactRunHandler(
                 $fakeService,
-                new CompactionConfig(),
+                $appConfig,
                 new EventFactory(),
                 $fakeModelSelection,
             );
@@ -273,6 +287,16 @@ final class CompactRunHandlerTest extends TestCase
                 throw new \LogicException('Not expected in this test.');
             }
         };
+    }
+
+    private function createAppConfig(int $keepRecentTokens = 20000): AppConfig
+    {
+        return new AppConfig(
+            tui: new TuiConfig(theme: 'default'),
+            logging: new LoggingConfig(),
+            cwd: '/',
+            compaction: new CompactionConfig(keepRecentTokens: $keepRecentTokens),
+        );
     }
 
     /**

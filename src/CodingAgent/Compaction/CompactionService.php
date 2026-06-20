@@ -7,7 +7,7 @@ namespace Ineersa\CodingAgent\Compaction;
 use Ineersa\AgentCore\Contract\Compaction\CompactionPrepareResult;
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
 use Ineersa\AgentCore\Contract\Compaction\CompactResult;
-use Ineersa\CodingAgent\Config\CompactionConfig;
+use Ineersa\CodingAgent\Config\AppConfig;
 
 /**
  * CodingAgent adapter that implements the AgentCore compaction contract.
@@ -20,13 +20,13 @@ final readonly class CompactionService implements CompactionServiceInterface
 {
     public function __construct(
         private SessionCompactor $sessionCompactor,
-        private CompactionConfig $compactionConfig,
+        private AppConfig $appConfig,
     ) {
     }
 
     public function prepare(array $messages): CompactionPrepareResult
     {
-        $result = $this->sessionCompactor->prepare($messages, $this->compactionConfig);
+        $result = $this->sessionCompactor->prepare($messages, $this->appConfig->compaction);
 
         if (!$result->isReady()) {
             // Map CodingAgent CompactionSkipReasonEnum to a string reason

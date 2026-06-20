@@ -45,19 +45,47 @@ final readonly class CompactionStepResultHandler implements RunMessageHandler
 
         $runId = $message->runId();
 
-        // Guard: if the stepId no longer matches the active step or the run
-        // is no longer Running, the result is stale — preserve messages.
-        if ($state->activeStepId !== $message->stepId()) {
-            // Stale — silently ignore; no event emitted (no persisted outcome).
-            // This matches the pattern used by other stale-result handlers
-            // where stale results are a safe no-op.
-            return new HandlerResult();
+        // Guard: if the turn number no longer matches or the stepId no longer
+        // matches the active step, the result is stale.  Emit a terminal
+        // context_compaction_failed event so the user-visible compaction
+        // state is resolved instead of leaving a dangling started event.
+        //
+        // Also guard against terminal run states (Completed, Failed, Cancelled)
+        // where the result arrived after the run already finished.
+        if ($state->turnNo !== $message->turnNo() || $state->activeStepId !== $message->stepId()) {
+            $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, [[
+                'type' => RunEventTypeEnum::ContextCompactionFailed->value,
+                'payload' => [
+                    'reason' => 'stale_result',
+                    'message' => 'Compaction result arrived too late — the active step has moved on.',
+                    'preserved_messages' => true,
+                    'trigger' => $message->trigger,
+                ],
+            ]]);
+
+            return new HandlerResult(
+                nextState: $this->incrementState($state, $events),
+                events: $events,
+            );
         }
 
         // If the run is in a terminal state (Completed, Failed, Cancelled),
         // the compaction result arrived too late.
         if (\in_array($state->status->value, ['completed', 'failed', 'cancelled'], true)) {
-            return new HandlerResult();
+            $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, [[
+                'type' => RunEventTypeEnum::ContextCompactionFailed->value,
+                'payload' => [
+                    'reason' => 'stale_result',
+                    'message' => 'Compaction result arrived after the run ended.',
+                    'preserved_messages' => true,
+                    'trigger' => $message->trigger,
+                ],
+            ]]);
+
+            return new HandlerResult(
+                nextState: $this->incrementState($state, $events),
+                events: $events,
+            );
         }
 
         // Error from model invocation → emit failure, preserve messages.
@@ -80,7 +108,7 @@ final readonly class CompactionStepResultHandler implements RunMessageHandler
             ]]);
 
             return new HandlerResult(
-                nextState: $this->incrementState($state, $events),
+                nextState: $this->incrementState($state, $events, clearActiveStepId: true),
                 events: $events,
             );
         }
@@ -102,7 +130,7 @@ final readonly class CompactionStepResultHandler implements RunMessageHandler
             ]]);
 
             return new HandlerResult(
-                nextState: $this->incrementState($state, $events),
+                nextState: $this->incrementState($state, $events, clearActiveStepId: true),
                 events: $events,
             );
         }
@@ -171,7 +199,7 @@ final readonly class CompactionStepResultHandler implements RunMessageHandler
             pendingToolCalls: $state->pendingToolCalls,
             errorMessage: $state->errorMessage,
             messages: $compactResult->compactedMessages,
-            activeStepId: $state->activeStepId,
+            activeStepId: null,
             retryableFailure: $state->retryableFailure,
         );
 
@@ -183,8 +211,9 @@ final readonly class CompactionStepResultHandler implements RunMessageHandler
 
     /**
      * @param list<\Ineersa\AgentCore\Domain\Event\RunEvent> $events
+     * @param bool                                           $clearActiveStepId when true, set activeStepId to null (terminal outcome)
      */
-    private function incrementState(RunState $state, array $events): RunState
+    private function incrementState(RunState $state, array $events, bool $clearActiveStepId = false): RunState
     {
         $count = \count($events);
 
@@ -199,7 +228,7 @@ final readonly class CompactionStepResultHandler implements RunMessageHandler
             pendingToolCalls: $state->pendingToolCalls,
             errorMessage: $state->errorMessage,
             messages: $state->messages,
-            activeStepId: $state->activeStepId,
+            activeStepId: $clearActiveStepId ? null : $state->activeStepId,
             retryableFailure: $state->retryableFailure,
         );
     }

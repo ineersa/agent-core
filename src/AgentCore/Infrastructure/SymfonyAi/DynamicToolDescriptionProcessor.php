@@ -39,6 +39,12 @@ final readonly class DynamicToolDescriptionProcessor implements InputProcessorIn
             $tools = $this->toolbox?->getTools() ?? [];
         }
 
+        // CompactRunHandler and ExecuteCompactionStepWorker pass tools:[]
+        // to guarantee no-tools for summarization invocations.  The empty
+        // array satisfies isToolArray([]) === true (array_reduce returns
+        // the initial true), so this branch handles both an explicit []
+        // and an empty toolbox, short-circuiting before any tool description
+        // or fallback logic runs.
         if ([] === $tools) {
             unset($options['tool_descriptions']);
             $input->setOptions($options);

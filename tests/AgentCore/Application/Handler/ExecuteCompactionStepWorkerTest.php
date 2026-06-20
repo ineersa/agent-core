@@ -21,7 +21,7 @@ use Symfony\AI\Platform\Message\Content\Text;
  * Contract tests for {@see ExecuteCompactionStepWorker}.
  *
  * Theses:
- *  - Invokes PlatformInterface with toolsEnabled:false and explicit model+thinkingLevel.
+ *  - Invokes PlatformInterface with toolsEnabled:false, streamObserverEnabled:false, and explicit model+thinkingLevel.
  *  - Dispatches CompactionStepResult with summary text on success.
  *  - Dispatches CompactionStepResult with error on model failure.
  *  - Passes explicit model string through to the returned result.
@@ -36,7 +36,7 @@ final class ExecuteCompactionStepWorkerTest extends TestCase
         // Verify the AssistantMessage returns text correctly.
         self::assertSame($responseText, $assistantMsg->asText(), 'AssistantMessage::asText() precondition');
 
-        $fakePlatform = $this->createFakePlatform($responseText, model: 'openai/gpt-4.1-mini');
+        $fakePlatform = $this->createFakePlatform($responseText, model: 'openai/gpt-4.1-mini', captureRequest: true);
         $testBus = new TestMessageBus();
 
         $worker = new ExecuteCompactionStepWorker($fakePlatform, $testBus);
@@ -67,6 +67,17 @@ final class ExecuteCompactionStepWorkerTest extends TestCase
         self::assertNull($result->error);
         self::assertSame('openai/gpt-4.1-mini', $result->model);
         self::assertSame('low', $result->thinkingLevel);
+
+        // Assert the captured ModelInvocationRequest has the correct options.
+        $captured = $fakePlatform->lastRequest;
+        self::assertNotNull($captured, 'Platform should have captured the request.');
+        self::assertSame('openai/gpt-4.1-mini', $captured->model);
+        self::assertFalse($captured->options->toolsEnabled, 'toolsEnabled must be false for compaction.');
+        self::assertFalse($captured->options->streamObserverEnabled, 'streamObserverEnabled must be false for compaction.');
+        self::assertSame('low', $captured->options->thinkingLevel);
+        // Messages are direct messages, not null.
+        self::assertNotNull($captured->input->messages);
+        self::assertIsArray($captured->input->messages);
     }
 
     public function testExplicitModelPassedInResult(): void
@@ -168,19 +179,22 @@ final class ExecuteCompactionStepWorkerTest extends TestCase
 
     // ── helpers ──
 
-    private function createFakePlatform(string $responseText, string $model = ''): PlatformInterface
+    private function createFakePlatform(string $responseText, string $model = '', bool $captureRequest = false): object
     {
-        return new class($responseText, $model) implements PlatformInterface {
-            private ?ModelInvocationRequest $lastRequest = null;
+        return new class($responseText, $model, $captureRequest) implements PlatformInterface {
+            public ?ModelInvocationRequest $lastRequest = null;
 
             public function __construct(
                 private string $responseText,
                 private string $model,
+                private bool $captureRequest,
             ) {}
 
             public function invoke(ModelInvocationRequest $request): PlatformInvocationResult
             {
-                $this->lastRequest = $request;
+                if ($this->captureRequest) {
+                    $this->lastRequest = $request;
+                }
                 $msg = new AssistantMessage(new Text($this->responseText));
 
                 return new PlatformInvocationResult(

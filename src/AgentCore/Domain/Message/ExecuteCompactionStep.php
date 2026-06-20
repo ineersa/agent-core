@@ -12,6 +12,13 @@ namespace Ineersa\AgentCore\Domain\Message;
  * all properties are scalar or array-of-scalar; complex objects like
  * AgentMessage are carried as their toArray() shapes and reconstructed
  * by the worker.
+ *
+ * Note: summarizationMessages and retainedTailMessages carry full
+ * serialized message content (toArray() output) because compaction
+ * operates on the raw conversation history, unlike ExecuteLlmStep which
+ * uses a runId-backed deferred resolution.  The serialized payload is
+ * bounded by keep_recent_tokens (~20k tokens ≈ 65KB of message JSON)
+ * and the summarization window.
  */
 final readonly class ExecuteCompactionStep extends AbstractAgentBusMessage
 {

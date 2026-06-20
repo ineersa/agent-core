@@ -24,8 +24,9 @@ use Symfony\Component\Messenger\MessageBusInterface;
  *
  * Calls PlatformInterface with direct summarization messages, explicit
  * no-tools (toolsEnabled: false), a resolved compaction model, and a
- * thinking_level override.  No stream deltas or transcript side effects
- * are produced — only canonical compaction events are persisted.
+ * thinking_level override.  Stream observer notifications are suppressed
+ * (streamObserverEnabled: false) since compaction has no interactive
+ * consumer for streaming deltas — only the final result matters.
  *
  * Dispatches a {@see CompactionStepResult} back to the command bus for
  * result handling and state mutation.
@@ -84,7 +85,7 @@ final readonly class ExecuteCompactionStepWorker
     private function execute(ExecuteCompactionStep $message): CompactionStepResult
     {
         $startedAt = hrtime(true);
-        $model = '' !== $message->model ? $message->model : '';
+        $model = $message->model;
 
         // Deserialise summarization messages from transport-safe array shapes.
         $summarizationMessages = $this->deserializeMessages($message->summarizationMessages);
@@ -111,6 +112,7 @@ final readonly class ExecuteCompactionStepWorker
                 options: new ModelInvocationOptions(
                     toolsEnabled: false,
                     thinkingLevel: $message->thinkingLevel,
+                    streamObserverEnabled: false,
                 ),
             ));
 

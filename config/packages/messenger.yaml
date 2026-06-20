@@ -22,9 +22,13 @@
 # - ExecuteToolCall → tool transport (messenger:consume tool)
 # - McpInitializeSessionCommand → mcp transport (messenger:consume mcp)
 #   MCP lifecycle messages are routed to the dedicated mcp consumer (Phase 1).
-# - Result messages (LlmStepResult, ToolCallResult) stay sync on command bus
-#   within the consumer process where the worker ran. RunOrchestrator is
-#   registered for agent.command.bus and handles results in the same process.
+# - Result messages (LlmStepResult, ToolCallResult, CompactionStepResult) stay
+#   sync on command bus within the consumer process where the worker ran.
+#   RunOrchestrator is registered for agent.command.bus and handles results
+#   in the same process.  CompactionStepResult is intentionally not routed
+#   to a transport — it is dispatched synchronously by ExecuteCompactionStepWorker
+#   via the agent.command.bus and processed by CompactionStepResultHandler
+#   in the same consumer process, mirroring LlmStepResult / ToolCallResult.
 #
 # Transient streaming deltas (thinking, text, tool-call arguments) are
 # delivered via STDOUT from the LLM consumer child process. The controller

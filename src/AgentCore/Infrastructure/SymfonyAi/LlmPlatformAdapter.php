@@ -124,6 +124,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             $effectiveModel,
             $requestSummary,
             $modelNotifications,
+            $request->options->streamObserverEnabled,
         );
     }
 
@@ -348,11 +349,14 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         string $modelName = '',
         array $requestSummary = [],
         array $modelNotifications = [],
+        bool $streamObserverEnabled = true,
     ): PlatformInvocationResult {
         $aborted = false;
         $deltas = [];
 
-        $this->notifyStreamStart($runId, $stepId);
+        if ($streamObserverEnabled) {
+            $this->notifyStreamStart($runId, $stepId);
+        }
 
         try {
             foreach ($deferredResult->asStream() as $delta) {
@@ -363,11 +367,15 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
 
                 if ($delta instanceof DeltaInterface) {
                     $deltas[] = $delta;
-                    $this->notifyDelta($runId, $stepId, $delta);
+                    if ($streamObserverEnabled) {
+                        $this->notifyDelta($runId, $stepId, $delta);
+                    }
                 }
             }
         } catch (\Throwable $exception) {
-            $this->notifyStreamError($runId, $stepId, $exception);
+            if ($streamObserverEnabled) {
+                $this->notifyStreamError($runId, $stepId, $exception);
+            }
 
             $this->logger->warning('llm.provider.stream_error', $this->buildErrorLogContext(
                 $exception,
@@ -380,7 +388,9 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             return $this->errorResult($deltas, $exception, $deferredResult, $modelName, $requestSummary, $modelNotifications);
         }
 
-        $this->notifyStreamEnd($runId, $stepId);
+        if ($streamObserverEnabled) {
+            $this->notifyStreamEnd($runId, $stepId);
+        }
 
         if ($aborted) {
             $this->abortConnection($deferredResult);

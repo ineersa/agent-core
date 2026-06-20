@@ -13,7 +13,7 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep;
 use Ineersa\AgentCore\Domain\Run\RunState;
-use Ineersa\CodingAgent\Config\CompactionConfig;
+use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 
 /**
@@ -30,7 +30,7 @@ final readonly class CompactRunHandler implements RunMessageHandler
 {
     public function __construct(
         private CompactionServiceInterface $compactionService,
-        private CompactionConfig $compactionConfig,
+        private AppConfig $appConfig,
         private EventFactory $eventFactory,
         private ModelSelectionService $modelSelectionService,
     ) {
@@ -56,7 +56,7 @@ final readonly class CompactRunHandler implements RunMessageHandler
         $activeModel = $this->modelSelectionService->getCurrentModel($runId);
         $activeModelStr = $activeModel?->toString();
 
-        $runtimeSettings = $this->compactionConfig->resolveRuntimeSettings($activeModelStr);
+        $runtimeSettings = $this->appConfig->compaction->resolveRuntimeSettings($activeModelStr);
         $resolvedModel = $runtimeSettings->model;
         $thinkingLevel = $runtimeSettings->thinkingLevel;
 
@@ -107,7 +107,7 @@ final readonly class CompactRunHandler implements RunMessageHandler
             ],
         ]]);
 
-        $nextState = $this->incrementState($state, $startedEvents);
+        $nextState = $this->incrementState($state, $startedEvents, activeStepId: $message->stepId());
 
         // Dispatch async worker for model invocation.
         // Serialize AgentMessage lists as array shapes for transport safety
@@ -155,7 +155,10 @@ final readonly class CompactRunHandler implements RunMessageHandler
     /**
      * @param list<\Ineersa\AgentCore\Domain\Event\RunEvent> $events
      */
-    private function incrementState(RunState $state, array $events): RunState
+    /**
+     * @param list<\Ineersa\AgentCore\Domain\Event\RunEvent> $events
+     */
+    private function incrementState(RunState $state, array $events, ?string $activeStepId = null): RunState
     {
         $count = \count($events);
 
@@ -170,24 +173,23 @@ final readonly class CompactRunHandler implements RunMessageHandler
             pendingToolCalls: $state->pendingToolCalls,
             errorMessage: $state->errorMessage,
             messages: $state->messages,
-            activeStepId: $state->activeStepId,
+            // null = preserve current; non-null = override. The started
+            // path passes the compaction stepId explicitly; no other path
+            // overrides, so failure paths keep activeStepId unchanged.
+            activeStepId: $activeStepId ?? $state->activeStepId,
             retryableFailure: $state->retryableFailure,
         );
     }
 
-    /**
-     * Map a structural skip reason to a human-readable message.
-     *
-     * These reasons come from CompactionSkipReasonEnum via
-     * CompactionServiceInterface, but the handler lives in CodingAgent
-     * so the mapping is local.
-     */
     /**
      * Map a structural skip reason to a human-readable failure message.
      *
      * These are NOT skips — when prepare returns not-ready, we emit
      * context_compaction_failed. The wording uses "Compaction failed"
      * or "Compaction not possible", never "skipped".
+     *
+     * Reasons come from CompactionSkipReasonEnum via CompactionServiceInterface,
+     * but the handler lives in CodingAgent so the mapping is local.
      */
     private function failureReasonToMessage(string $reason): string
     {
