@@ -276,16 +276,15 @@ final class SessionCompactor
     private function buildToolDigest(AgentMessage $toolMessage): AgentMessage
     {
         $originalText = $this->messageToText($toolMessage);
-        $charCount = (new UnicodeString($originalText))->length();
-
-        $lines = explode("\n", $originalText);
+        $text = new UnicodeString($originalText);
+        $charCount = $text->length();
         $preview = '';
 
         if ($charCount <= self::TOOL_DIGEST_PREVIEW_LENGTH * 2) {
             $preview = $originalText;
         } else {
-            $first = mb_substr($originalText, 0, self::TOOL_DIGEST_PREVIEW_LENGTH);
-            $last = mb_substr($originalText, -self::TOOL_DIGEST_PREVIEW_LENGTH);
+            $first = $text->slice(0, self::TOOL_DIGEST_PREVIEW_LENGTH)->toString();
+            $last = $text->slice(-self::TOOL_DIGEST_PREVIEW_LENGTH)->toString();
             $preview = $first."\n\n... [".($charCount - self::TOOL_DIGEST_PREVIEW_LENGTH * 2).' chars truncated] ...'."\n\n".$last;
         }
 
@@ -550,18 +549,6 @@ final class SessionCompactor
             // either partition — unknown call ID.
             if (!isset($retainedAssistantToolCallIds[$toolCallId])) {
                 return false;
-            }
-        }
-
-        // Check summarize partition's assistant tool_call_ids against
-        // retained tool results. If a summarized assistant declared a
-        // call whose result landed in the retained tail, the assistant
-        // was summarized away but its result survived — forbidden split.
-        foreach ($summarizeToolCallIds as $toolCallId => $_unused) {
-            for ($i = $boundary; $i < $count; ++$i) {
-                if ('tool' === $messages[$i]->role && $messages[$i]->toolCallId === $toolCallId) {
-                    return false;
-                }
             }
         }
 

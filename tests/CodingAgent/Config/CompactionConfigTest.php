@@ -265,12 +265,27 @@ final class CompactionConfigTest extends TestCase
             self::assertSame(140000, $runtime->compactAfterTokens);
             self::assertSame('high', $runtime->thinkingLevel);
 
-            // extractProviderId(): bare strings return empty (no accidental matching).
-            $config = new CompactionConfig(providerOverrides: ['bare' => ['compact_after_tokens' => 1]]);
-            $runtimeBare = $config->resolveRuntimeSettings('noproviderslash');
-            self::assertSame(CompactionConfig::DEFAULT_COMPACT_AFTER_TOKENS, $runtimeBare->compactAfterTokens);
         } finally {
             TestDirectoryIsolation::removeDirectory($projectDir);
         }
+    }
+
+    /**
+     * Thesis: extractProviderId() returns empty string for bare model
+     * references without a provider/ delimiter, preventing accidental
+     * matching against provider override keys.
+     *
+     * A model like 'noproviderslash' must not match a provider override
+     * keyed by 'noproviderslash' — overrides require the canonical
+     * provider/model shape.
+     */
+    public function testBareModelStringDoesNotMatchProviderOverride(): void
+    {
+        $config = new CompactionConfig(
+            providerOverrides: ['bare' => ['compact_after_tokens' => 1]],
+        );
+
+        $runtime = $config->resolveRuntimeSettings('noproviderslash');
+        self::assertSame(CompactionConfig::DEFAULT_COMPACT_AFTER_TOKENS, $runtime->compactAfterTokens);
     }
 }
