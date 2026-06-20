@@ -114,3 +114,9 @@ parameters:
 			count: 1
 			path: src/Platform/Bridge/Generic/DurableResultConverter.php
 
+		-
+			message: '#^Method Symfony\\AI\\Platform\\Bridge\\OpenAICodex\\Contract\\Message\\CodexMessageBagNormalizer\:\:normalize\(\) should return array\{input\: array\<string, mixed\>, instructions\?\: string\} but returns array\{input\: list, instructions\?\: mixed\}\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Platform/Bridge/OpenAICodex/Contract/Message/CodexMessageBagNormalizer.php
+

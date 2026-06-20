@@ -8,6 +8,7 @@ use Symfony\AI\Platform\Bridge\OpenResponses\TokenUsageExtractor;
 use Symfony\AI\Platform\Exception\AuthenticationException;
 use Symfony\AI\Platform\Exception\BadRequestException;
 use Symfony\AI\Platform\Exception\ContentFilterException;
+use Symfony\AI\Platform\Exception\IncompleteStreamException;
 use Symfony\AI\Platform\Exception\RateLimitExceededException;
 use Symfony\AI\Platform\Exception\RuntimeException;
 use Symfony\AI\Platform\Model;
@@ -203,9 +204,50 @@ final class ResultConverter implements ResultConverterInterface
     private function convertStream(RawResultInterface $result): \Generator
     {
         $currentThinking = null;
+        $currentThinkingSignature = null;
+        /** @var array<string, ToolCall> $toolCalls */
+        $toolCalls = [];
+        $sawResponseEvent = false;
+        $sawResponseCompleted = false;
 
         foreach ($result->getDataStream() as $event) {
             $type = $event['type'] ?? '';
+
+            // Per-server discovery starting log — events without a type field that
+            // only carry response.* are not response events. The stream must produce
+            // types to be considered a real response.
+            if ('' !== $type) {
+                $sawResponseEvent = true;
+            }
+
+            // Mid-stream error event — throw immediately.
+            // Fixes the silent mid-turn death bug: previously these events were
+            // silently ignored, producing a null assistant message and an HTTP 400
+            // on the subsequent turn.
+            if ('error' === $type) {
+                throw new RuntimeException($this->generateErrorMessage($this->extractStreamError($event)));
+            }
+
+            // response.failed — the response was rejected by the server.
+            if ('response.failed' === $type) {
+                $response = \is_array($event['response'] ?? null) ? $event['response'] : [];
+
+                throw new RuntimeException($this->generateErrorMessage($this->extractStreamError($response)));
+            }
+
+            // response.incomplete — context limit or other truncation.
+            if ('response.incomplete' === $type) {
+                $response = \is_array($event['response'] ?? null) ? $event['response'] : [];
+                $reason = $response['incomplete_details']['reason'] ?? 'unknown';
+
+                throw new RuntimeException(\sprintf('Codex stream ended incomplete (%s).', $reason));
+            }
+
+            // response.done — normalize to completed (Codex API uses both variants).
+            if ('response.done' === $type) {
+                $type = 'response.completed';
+                $sawResponseCompleted = true;
+            }
 
             if (isset($event['response']['usage'])) {
                 yield $this->getTokenUsageExtractor()->fromDataArray($event['response']);
@@ -215,7 +257,13 @@ final class ResultConverter implements ResultConverterInterface
                 yield new TextDelta($event['delta']);
             }
 
-            if ('response.reasoning_summary_text.delta' === $type && isset($event['delta'])) {
+            // Reasoning text deltas (both summary and raw variants).
+            // Summary: reasoning_summary_text.delta — the common path.
+            // Raw: reasoning_text.delta — when summary:none or the
+            // backend emits reasoning without a structured summary.
+            // Both share the same accumulation buffer; mixing them within
+            // a single turn is valid (pi-mono openai-responses-shared.ts:332,362).
+            if (\in_array($type, ['response.reasoning_summary_text.delta', 'response.reasoning_text.delta'], true) && isset($event['delta'])) {
                 if (null === $currentThinking) {
                     $currentThinking = '';
                     yield new ThinkingStart();
@@ -224,27 +272,62 @@ final class ResultConverter implements ResultConverterInterface
                 yield new ThinkingDelta($event['delta']);
             }
 
-            if ('response.reasoning_summary_text.done' === $type) {
-                yield new ThinkingComplete($currentThinking ?? '');
-                $currentThinking = null;
+            // output_item.added — reasoning item started.
+            // The added item does NOT carry encrypted_content (only the done
+            // item does), so signature capture happens at output_item.done.
+            if ('response.output_item.added' === $type && \is_array($event['item'] ?? null)) {
+                // Reasoning item tracking for display handled by delta accumulation.
             }
 
-            if (!str_contains($type, 'completed')) {
+            // output_item.done — the authoritative capture point for the
+            // reasoning signature (with encrypted_content for round-trip
+            // on the next turn) AND for finalized function calls.
+            // Matches pi-mono openai-responses-shared.ts:443-452: atomic
+            // capture of full item JSON + emit ThinkingComplete + reset.
+            if ('response.output_item.done' === $type && \is_array($event['item'] ?? null)) {
+                $item = $event['item'];
+                if ('reasoning' === ($item['type'] ?? null)) {
+                    $currentThinkingSignature = json_encode(
+                        $item,
+                        \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE,
+                    );
+                    yield new ThinkingComplete($currentThinking ?? '', $currentThinkingSignature);
+                    $currentThinking = null;
+                    $currentThinkingSignature = null;
+                } elseif ('function_call' === ($item['type'] ?? null)) {
+                    $toolCall = $this->convertFunctionCall($item);
+                    $toolCalls[$toolCall->getId()] = $toolCall;
+                }
+            }
+
+            // response.completed — emit final tool calls from the canonical
+            // output array (primary path), or from incrementally collected
+            // output_item.done items (fallback).
+            if ('response.completed' !== $type) {
                 continue;
             }
 
+            $sawResponseCompleted = true;
             [$toolCallResult] = $this->extractFunctionCalls($event['response'][self::KEY_OUTPUT] ?? []);
 
-            if (null !== $toolCallResult && 'response.completed' === $type) {
+            if (null !== $toolCallResult) {
                 yield new ToolCallComplete($toolCallResult->getContent());
+            } elseif ([] !== $toolCalls) {
+                yield new ToolCallComplete(array_values($toolCalls));
             }
+        }
+
+        // Stream ended without response.completed or response.done — the
+        // event loop finished cleanly but no terminal event was received.
+        if ($sawResponseEvent && !$sawResponseCompleted) {
+            throw new IncompleteStreamException('Codex stream ended before response.completed.');
         }
     }
 
     /**
      * @param array<OutputMessage|FunctionCall|Thinking> $output
      *
-     * @return list<ToolCallResult|array<OutputMessage|Thinking>|null>
+     * @return array{?ToolCallResult, array<OutputMessage|Thinking>}
      */
     private function extractFunctionCalls(array $output): array
     {
@@ -296,6 +379,47 @@ final class ResultConverter implements ResultConverterInterface
         $arguments = json_decode($toolCall['arguments'], true, flags: \JSON_THROW_ON_ERROR);
 
         return new ToolCall($toolCall['id'], $toolCall['name'], $arguments);
+    }
+
+    /**
+     * Extract structured error diagnostics from a stream event or response.
+     *
+     * Works with both top-level error events ({"type":"error","error":{...}})
+     * and response.failed events ({"type":"response.failed","response":{"error":{...}}}).
+     *
+     * @param array<string, mixed> $event
+     *
+     * @return array{code?: string|null, type?: string|null, param?: string|null, message?: string|null}
+     */
+    private function extractStreamError(array $event): array
+    {
+        if (\is_array($event['error'] ?? null)) {
+            $event = $event['error'];
+        }
+
+        return [
+            'code' => \is_string($event['code'] ?? null) ? $event['code'] : null,
+            'type' => \is_string($event['type'] ?? null) && 'error' !== $event['type'] ? $event['type'] : null,
+            'param' => \is_string($event['param'] ?? null) ? $event['param'] : null,
+            'message' => \is_string($event['message'] ?? null) ? $event['message'] : null,
+        ];
+    }
+
+    /**
+     * Build a privacy-safe error message from extracted stream error fields,
+     * following the same format as the non-stream error path.
+     *
+     * @param array{code?: string|null, type?: string|null, param?: string|null, message?: string|null} $error
+     */
+    private function generateErrorMessage(array $error): string
+    {
+        return \sprintf(
+            'Error "%s"-%s (%s): "%s".',
+            $error['code'] ?? '-',
+            $error['type'] ?? '-',
+            $error['param'] ?? '-',
+            $error['message'] ?? '-',
+        );
     }
 
     /**

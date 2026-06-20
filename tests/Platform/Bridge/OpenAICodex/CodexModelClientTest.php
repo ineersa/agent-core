@@ -370,4 +370,86 @@ final class CodexModelClientTest extends TestCase
         // Must contain new diagnostics fields
         $this->assertArrayHasKey('has_client_request_id', $loggedContext);
     }
+
+    /**
+     * When run_id is provided in options, prompt_cache_key must be set
+     * in the request body so Codex can cache the prompt across turns.
+     * Pi-mono: prompt_cache_key = sessionId.
+     */
+    public function testItSetsPromptCacheKeyFromRunId(): void
+    {
+        $resultCallback = static function (string $method, string $url, array $options): HttpResponse {
+            $body = \json_decode($options['body'], true, 512, \JSON_THROW_ON_ERROR);
+            self::assertArrayHasKey('prompt_cache_key', $body);
+            self::assertSame('session-abc-123', $body['prompt_cache_key']);
+
+            return new MockResponse();
+        };
+
+        $httpClient = new MockHttpClient([$resultCallback]);
+        $modelClient = new CodexModelClient(
+            $httpClient,
+            'https://chatgpt.com/backend-api',
+            'test-token',
+            'acct-123',
+        );
+        $modelClient->request(
+            new CodexModel('gpt-5.5'),
+            ['input' => [['role' => 'user', 'content' => 'Hello']]],
+            ['run_id' => 'session-abc-123'],
+        );
+    }
+
+    /**
+     * Without run_id, prompt_cache_key must NOT be present.
+     */
+    public function testItDoesNotSetPromptCacheKeyWithoutRunId(): void
+    {
+        $resultCallback = static function (string $method, string $url, array $options): HttpResponse {
+            $body = \json_decode($options['body'], true, 512, \JSON_THROW_ON_ERROR);
+            self::assertArrayNotHasKey('prompt_cache_key', $body);
+
+            return new MockResponse();
+        };
+
+        $httpClient = new MockHttpClient([$resultCallback]);
+        $modelClient = new CodexModelClient(
+            $httpClient,
+            'https://chatgpt.com/backend-api',
+            'test-token',
+            'acct-123',
+        );
+        $modelClient->request(
+            new CodexModel('gpt-5.5'),
+            ['input' => [['role' => 'user', 'content' => 'Hello']]],
+        );
+    }
+
+    /**
+     * Explicit prompt_cache_key from payload must NOT be overridden by run_id.
+     * run_id uses ??= so an explicit value wins.
+     */
+    public function testExplicitPromptCacheKeyOverridesRunIdValue(): void
+    {
+        $resultCallback = static function (string $method, string $url, array $options): HttpResponse {
+            $body = \json_decode($options['body'], true, 512, \JSON_THROW_ON_ERROR);
+            self::assertArrayHasKey('prompt_cache_key', $body);
+            self::assertSame('explicit-key', $body['prompt_cache_key'], 'Explicit value must win over run_id');
+
+            return new MockResponse();
+        };
+
+        $httpClient = new MockHttpClient([$resultCallback]);
+        $modelClient = new CodexModelClient(
+            $httpClient,
+            'https://chatgpt.com/backend-api',
+            'test-token',
+            'acct-123',
+        );
+        $modelClient->request(
+            new CodexModel('gpt-5.5'),
+            ['input' => [['role' => 'user', 'content' => 'Hello']], 'prompt_cache_key' => 'explicit-key'],
+            ['run_id' => 'session-abc-123'],
+        );
+    }
 }
