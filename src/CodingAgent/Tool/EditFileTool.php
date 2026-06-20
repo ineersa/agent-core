@@ -114,7 +114,7 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
                 'The patch may contain multiple hunks to edit different parts of the file.',
                 'Do NOT wrap the patch in markdown code fences (```diff, ```patch, ```).',
                 'Do NOT include non-diff trailer lines such as `--- End new file ---` or `--- End file ---`.',
-                'Do NOT include line-number prefixes, leading spaces, or leading tabs from `read` / `cat -n` output in patch context lines. Use only the raw file text after the line-number separator (e.g. after `␣␣␣␣␣42␣`).',
+                'Do NOT copy the line-number prefix or whitespace/tab separator from `read` / `cat -n` output into patch lines. Unified-diff context lines MUST start with a leading space (the ` ` prefix); that space is required — keep it. Only strip the numbered prefix and the whitespace between the line number and file text (e.g. from `    42␣file content` keep ` file content` with the leading space).',
                 'Ensure the patch ends with a trailing newline. The tool adds one if missing, but including it yourself avoids unexpected-EOF failures.',
                 'The target file must already exist — use the write tool to create new files.',
                 'Whitespace mismatches between the patch and the target file are handled automatically (tolerant matching).',
@@ -204,17 +204,19 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
     /**
      * Strip surrounding markdown code fences when the entire patch is wrapped.
      *
-     * Handles ```diff, ```patch, or bare ``` delimiters.  Only strips when
-     * the fences surround the entire content (i.e. begin at start, end at
-     * end after trimming).  Does not touch fences that appear inside the
-     * patch body.
+     * Accepts any language tag (```diff, ```patch, ```text, bare ```, etc.)
+     * because a fence that wraps the entire content is never diff content.
+     * Only strips when the fences surround the entire content (i.e. begin at
+     * start, end at end after trimming).  Does not touch fences that appear
+     * inside the patch body.
      */
     private function stripMarkdownFences(string $patchContent): string
     {
         $trimmed = trim($patchContent);
 
-        // Match: optional language tag, then content, then closing fence
-        if (preg_match('/^```(?:diff|patch)?\s*\n(.*)\n```\s*$/s', $trimmed, $matches)) {
+        // Match: optional language tag (any word chars), then content, then closing fence.
+        // Bounded to [^\n]* so we never eat into file-header lines that start with ---.
+        if (preg_match('/^```[^\n]*\n(.*)\n```\s*$/s', $trimmed, $matches)) {
             return $matches[1];
         }
 
@@ -225,18 +227,18 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
      * Strip LLM-hallucinated non-diff trailer lines from the patch.
      *
      * Targeted artifacts:
-     * - "--- End new file ---"  (and "--- End file ---") — common LLM artifact
-     *   that follows a `\ No newline at end of file` marker and is NOT
-     *   valid unified-diff syntax.
+     * - "--- End new file ---"  (and "--- End file ---", "--- End of file ---")
+     *   — common LLM artifact that follows a `\ No newline at end of file`
+     *   marker and is NOT valid unified-diff syntax.
      *
      * Only strips at the end of the patch text so legitimate content lines
      * that happen to match are not falsely removed.
      */
     private function stripNonDiffTrailers(string $patchContent): string
     {
-        // Strip trailing "--- End new file ---" or "--- End file ---" artifacts.
-        // Case-insensitive match so "End New File" variants are also covered.
-        return preg_replace('/\n--- End (?:new )?file ---\s*$/i', '', $patchContent);
+        // Strip trailing "--- End new file ---", "--- End of file ---", or
+        // "--- End file ---" artifacts. Case-insensitive.
+        return preg_replace('/\n--- End (?:new |of )?file ---\s*$/i', '', $patchContent);
     }
 
     /**
@@ -251,6 +253,23 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
      *
      * When the original header omits a count (e.g. `@@ -1 +3 @@`), a count
      * of 1 is assumed per unified-diff convention.
+     *
+     * ── Truncated-patch safety ──
+     *
+     * If BOTH the actual old-line count is strictly less than the declared
+     * old-line count AND the actual new-line count is strictly less than the
+     * declared new-line count, the hunk header is NOT repaired AND the hunk
+     * body is stripped so GNU patch rejects it as malformed/unexpected EOF.
+     * This is a conservative heuristic: having both sides under-shot suggests
+     * the patch content was truncated mid-body during LLM generation, not
+     * just miscounted.  Stripping the body ensures fail-closed: GNU patch
+     * reports a format error (`E_PATCH_FORMAT`), the file is untouched, and
+     * the model can retry with a complete patch.
+     *
+     * When at least one side's actual count is >= declared count (e.g. LLM
+     * over-estimated counts or only one side was truncated), we still repair
+     * because the mismatch is almost certainly a counting error, not a
+     * content-truncation problem.
      */
     private function repairHunkCounts(string $patchContent): string
     {
@@ -258,12 +277,22 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
         //   @@ -42,6 +42,8 @@
         //   @@ -1,20 +1,40 @@ function name
         //   @@ -1 +3 @@
+        // Captures declared counts (groups 2 and 4 are optional — omitted count defaults to 1).
         $hunkPattern = '/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$/m';
 
+        // explode produces a trailing empty string for newline-terminated
+        // input.  Drop it so it is not counted as a blank context line.
         $lines = explode("\n", $patchContent);
+        if ([] !== $lines && '' === $lines[\count($lines) - 1]) {
+            array_pop($lines);
+        }
+
+        $totalLines = \count($lines);
         $inHunk = false;
         $oldCount = 0;
         $newCount = 0;
+        $declaredOldCount = 0;
+        $declaredNewCount = 0;
         $hunkHeaderIdx = -1;
         $hunkStartOld = 0;
         $hunkStartNew = 0;
@@ -271,13 +300,13 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
 
         foreach ($lines as $i => $line) {
             if (preg_match($hunkPattern, $line, $m)) {
-                // Flush previous hunk: rewrite its header with actual counts
+                // Flush previous hunk (body ended at index $i — current header)
                 if ($inHunk) {
-                    $lines[$hunkHeaderIdx] = \sprintf(
-                        '@@ -%d,%d +%d,%d @@%s',
-                        $hunkStartOld, max(1, $oldCount),
-                        $hunkStartNew, max(1, $newCount),
-                        $hunkSuffix,
+                    $this->repairSingleHunk(
+                        $lines, $hunkHeaderIdx, $i,
+                        $hunkStartOld, $hunkStartNew, $hunkSuffix,
+                        $oldCount, $newCount,
+                        $declaredOldCount, $declaredNewCount,
                     );
                 }
 
@@ -286,6 +315,9 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
                 $hunkStartOld = (int) $m[1];
                 $hunkStartNew = (int) $m[3];
                 $hunkSuffix = $m[5];
+                // Omitted count in header defaults to 1 per unified-diff convention.
+                $declaredOldCount = isset($m[2]) ? (int) $m[2] : 1;
+                $declaredNewCount = isset($m[4]) ? (int) $m[4] : 1;
                 $oldCount = 0;
                 $newCount = 0;
 
@@ -298,8 +330,11 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
                     // where leading space on blank context line was dropped).
                     ++$oldCount;
                     ++$newCount;
-                } elseif ('\\' === ($line[0] ?? '')) {
+                } elseif (str_starts_with($line, '\\ ')) {
                     // \ No newline at end of file — marker, do not count.
+                    // Matched more specifically (starts with "\ " rather
+                    // than just "\") to avoid misclassifying content lines
+                    // that happen to start with a backslash.
                 } elseif (' ' === ($line[0] ?? '')) {
                     // Context line — counts for both old and new.
                     ++$oldCount;
@@ -315,17 +350,77 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             }
         }
 
-        // Flush the last hunk
+        // Flush the last hunk (body ended at end-of-array)
         if ($inHunk) {
-            $lines[$hunkHeaderIdx] = \sprintf(
-                '@@ -%d,%d +%d,%d @@%s',
-                $hunkStartOld, max(1, $oldCount),
-                $hunkStartNew, max(1, $newCount),
-                $hunkSuffix,
+            $this->repairSingleHunk(
+                $lines, $hunkHeaderIdx, $totalLines,
+                $hunkStartOld, $hunkStartNew, $hunkSuffix,
+                $oldCount, $newCount,
+                $declaredOldCount, $declaredNewCount,
             );
         }
 
-        return implode("\n", $lines);
+        // Re-append trailing newline that was stripped from the explode
+        // artifact so the patch ends with exactly one newline.
+        return implode("\n", $lines)."\n";
+    }
+
+    /**
+     * Rewrite a single hunk header with repaired counts, or strip its body
+     * when the truncation heuristic fires.
+     *
+     * @param string[] $lines       All patch lines (mutated in place)
+     * @param int      $hdrIdx      Index of the hunk header line
+     * @param int      $bodyEndIdx  Index of first line AFTER the hunk body
+     *                              (next hunk header, or end of array)
+     * @param int      $oldStart    Old-file start line
+     * @param int      $newStart    New-file start line
+     * @param string   $suffix      Trailing section name / text after @@
+     * @param int      $actualOld   Actual old-line count counted from body
+     * @param int      $actualNew   Actual new-line count counted from body
+     * @param int      $declaredOld Old-line count declared in header
+     * @param int      $declaredNew New-line count declared in header
+     */
+    private function repairSingleHunk(
+        array &$lines,
+        int $hdrIdx,
+        int $bodyEndIdx,
+        int $oldStart,
+        int $newStart,
+        string $suffix,
+        int $actualOld,
+        int $actualNew,
+        int $declaredOld,
+        int $declaredNew,
+    ): void {
+        // Truncation safety: when BOTH sides under-shoot vs declared counts,
+        // the patch content is likely truncated, not miscounted.  Strip the
+        // hunk body so GNU patch produces a format error (unexpected EOF /
+        // malformed) instead of applying a partial hunk with fuzz tolerance.
+        //
+        // Reference case: declared @@ -1,5 +1,5 @@ but body has only 2-3
+        // lines.  GNU patch -F3 would still apply this with fuzz, so we
+        // strip the body to ensure fail-closed.
+        //
+        // When at least one side actual >= declared (LLM over-count /
+        // miscount is far more common than truncation), we repair safely.
+        if ($actualOld < $declaredOld && $actualNew < $declaredNew) {
+            // Strip all body lines for this hunk (keep the header line).
+            // GNU patch reads the header, finds no following body, and
+            // reports a format error → E_PATCH_FORMAT.  File is untouched.
+            for ($j = $hdrIdx + 1; $j < $bodyEndIdx; ++$j) {
+                $lines[$j] = '';
+            }
+
+            return;
+        }
+
+        $lines[$hdrIdx] = \sprintf(
+            '@@ -%d,%d +%d,%d @@%s',
+            $oldStart, max(1, $actualOld),
+            $newStart, max(1, $actualNew),
+            $suffix,
+        );
     }
 
     /**

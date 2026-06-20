@@ -759,16 +759,14 @@ PATCH;
         $this->assertSame($expected, file_get_contents($targetPath));
     }
 
-    public function testTruncatedPatchUnexpectedEofClassifiedAsFormat(): void
+    public function testMalformedPatchMissingHunkHeaderClassifiedAsFormat(): void
     {
-        $targetPath = $this->tmpDir.'/eof_target.txt';
+        $targetPath = $this->tmpDir.'/missing_hunk_target.txt';
         $original = "a\nb\nc\n";
         file_put_contents($targetPath, $original);
 
         // Patch with ---/+++ headers but no @@ hunk header at all —
         // GNU patch reports "Only garbage was found in the patch input."
-        // which hits the improved E_PATCH_FORMAT regex (which now also
-        // covers "unexpected end of file" and "patch unexpectedly ends").
         // The hint must mention newline, markdown fences, and hunk counts.
         $patch = "--- a/file\n+++ b/file\nno proper hunk header\n";
 
@@ -792,6 +790,75 @@ PATCH;
             // Original must be untouched
             $this->assertSame($original, file_get_contents($targetPath));
         }
+    }
+
+    /**
+     * Truncated hunk where BOTH declared old and new counts exceed actual
+     * body content must NOT be auto-repaired — the truncation heuristic
+     * leaves the mismatch for GNU patch to reject as E_PATCH_FORMAT.
+     */
+    public function testTruncatedHunkBothSidesUnderCountRejectedAsFormat(): void
+    {
+        $targetPath = $this->tmpDir.'/truncated_hunk_target.txt';
+        // 5-line file: lines 1–5
+        $original = "line 1\nline 2\nline 3\nline 4\nline 5\n";
+        file_put_contents($targetPath, $original);
+
+        // Hunk header declares @@ -2,4 +2,4 @@ (replace 4 lines at line 2
+        // with 4 new lines) but the body only has 2 actual + lines and
+        // only context lines before them — far less than declared on both
+        // sides.  This simulates a truncated LLM output.
+        $patch = <<<'DIFF'
+--- a/file
++++ b/file
+@@ -2,4 +2,4 @@
+ line 2
+-line 3
++CHANGED 3
+DIFF;
+
+        try {
+            ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+            $this->fail('Expected ToolCallException for truncated hunk');
+        } catch (ToolCallException $e) {
+            $message = $e->getMessage();
+
+            // Must be classified as E_PATCH_FORMAT (truncation safety
+            // prevents repair; GNU patch rejects the mismatch).
+            $this->assertStringContainsString('[E_PATCH_FORMAT]', $message);
+            $this->assertTrue($e->retryable());
+
+            // File must be completely unchanged
+            $this->assertSame($original, file_get_contents($targetPath));
+        }
+    }
+
+    /**
+     * A perfectly valid unified diff (standard diff -u output) must pass
+     * through the normalizer without corruption.  If the trailing empty
+     * explode artifact were counted as a context line the repaired hunk
+     * count would be inflated by +1/+1 and could misalign.
+     *
+     * Uses real diff -u output via createUnifiedDiff() to guarantee a
+     * correct patch header and body with no count mismatches.
+     */
+    public function testPerfectlyCountedDiffNotCorruptedByNormalizer(): void
+    {
+        $targetPath = $this->tmpDir.'/perfect_diff_target.txt';
+        $original = "line 001\nline 002\nline 003\nline 004\nline 005\n";
+        file_put_contents($targetPath, $original);
+
+        // Replace lines 2-3 with new content
+        $expected = "line 001\nREPLACED 002\nREPLACED 003\nline 004\nline 005\n";
+        $patch = $this->createUnifiedDiff($original, $expected);
+
+        // Must not be empty (sanity check)
+        $this->assertNotEmpty($patch);
+
+        $result = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+
+        $this->assertStringContainsString('Applied patch', $result);
+        $this->assertSame($expected, file_get_contents($targetPath));
     }
 
     /* ── Symlink preservation tests ── */
