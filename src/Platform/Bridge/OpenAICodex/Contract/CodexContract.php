@@ -8,6 +8,7 @@ use Symfony\AI\Platform\Bridge\OpenAICodex\Contract\Message\CodexAssistantMessag
 use Symfony\AI\Platform\Bridge\OpenAICodex\Contract\Message\CodexMessageBagNormalizer;
 use Symfony\AI\Platform\Bridge\OpenAICodex\Contract\Message\CodexUserMessageNormalizer;
 use Symfony\AI\Platform\Bridge\OpenResponses\Contract\Message\Content\TextNormalizer;
+use Symfony\AI\Platform\Bridge\OpenResponses\Contract\Message\ToolCallMessageNormalizer;
 use Symfony\AI\Platform\Contract;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
@@ -42,11 +43,23 @@ final class CodexContract extends Contract
         //   - CodexUserMessageNormalizer: typed {type:'input_text', text} content
         //   - CodexToolNormalizer: adds strict:null to parameters
         //   - CodexToolCallNormalizer: adds id field alongside call_id
-        // Upstream normalizers handle MessageBag, ToolCallMessage, and Text
-        // content types identically to what Codex needs.
+        // Upstream normalizers handle Text content types identically to
+        // what Codex needs. MessageBag is handled by CodexMessageBagNormalizer
+        // (which flattens multi-item outputs unlike the upstream normalizer).
+        //
+        // The OpenResponses ToolCallMessageNormalizer is intentionally
+        // registered explicitly and must NOT be removed as a "duplicate"
+        // of the core Platform\Contract\Normalizer\Message\ToolCallMessageNormalizer
+        // appended by Contract::create().  The two share a short class name
+        // but produce different output:
+        //   - OpenResponses: {type:'function_call_output', call_id, output}
+        //   - Core:          {role:'tool', content, tool_call_id}
+        // Only the OpenResponses shape is acceptable to the Codex Responses
+        // API; the core Chat Completions shape causes HTTP 400.
         $codexNormalizers = [
             new CodexMessageBagNormalizer(),
             new CodexAssistantMessageNormalizer(),
+            new ToolCallMessageNormalizer(),
             new CodexUserMessageNormalizer(),
             new TextNormalizer(),
             new CodexToolNormalizer(),

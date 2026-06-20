@@ -232,6 +232,51 @@ final class CodexContractTest extends TestCase
         self::assertStringContainsString('"q"', $result['arguments']);
     }
 
+    // -- Tool result (function_call_output) regression guard (#182) --
+
+    /**
+     * Regression test: a ToolCallMessage (tool RESULT) must normalize to
+     * {type:'function_call_output', call_id, output} for CodexModel, NOT
+     * to {role:'tool',…}.  The Codex Responses API rejects the Chat
+     * Completions role:'tool' shape with HTTP 400.
+     *
+     * This test FAILS without the OpenResponses ToolCallMessageNormalizer
+     * registered explicitly in CodexContract::create() (the core
+     * Platform\…\ToolCallMessageNormalizer appended by Contract::create()
+     * would produce role:'tool' instead).
+     */
+    public function testToolCallMessageNormalizesToFunctionCallOutput(): void
+    {
+        $messageBag = new MessageBag(
+            Message::ofUser('Read file x'),
+            Message::ofToolCall(
+                new ToolCall('call_abc', 'read_file', ['path' => 'x']),
+                'file contents here',
+            ),
+        );
+
+        $contract = CodexContract::create();
+        $model = new CodexModel('gpt-5.5');
+
+        $payload = $contract->createRequestPayload($model, $messageBag, []);
+
+        $this->assertArrayHasKey('input', $payload);
+        $input = $payload['input'];
+
+        // Item 0: user message
+        $this->assertCount(2, $input);
+
+        // Item 1 must be the function_call_output, NOT role:'tool'
+        $toolResult = $input[1];
+        $this->assertArrayHasKey('type', $toolResult);
+        $this->assertSame('function_call_output', $toolResult['type']);
+        $this->assertSame('call_abc', $toolResult['call_id']);
+        $this->assertSame('file contents here', $toolResult['output']);
+
+        // Must NOT contain the Chat Completions shape
+        $this->assertArrayNotHasKey('role', $toolResult, 'Tool result must not use role:tool shape (Chat Completions)');
+    }
+
     // -- Thinking / reasoning round-trip via CodexAssistantMessageNormalizer --
 
     /**
