@@ -10,6 +10,10 @@ use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModel;
 use Symfony\AI\Platform\Bridge\OpenAICodex\Contract\CodexContract;
 use Symfony\AI\Platform\Bridge\OpenAICodex\Contract\CodexToolNormalizer;
 use Symfony\AI\Platform\Bridge\OpenAICodex\Contract\CodexToolCallNormalizer;
+use Symfony\AI\Platform\Bridge\OpenAICodex\Contract\Message\CodexAssistantMessageNormalizer;
+use Symfony\AI\Platform\Message\Content\Text;
+use Symfony\AI\Platform\Message\Content\Thinking;
+use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Message\Message;
 use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\AI\Platform\Result\ToolCall;
@@ -226,5 +230,198 @@ final class CodexContractTest extends TestCase
         self::assertSame('search', $result['name']);
         self::assertSame('function_call', $result['type']);
         self::assertStringContainsString('"q"', $result['arguments']);
+    }
+
+    // -- Tool result (function_call_output) regression guard (#182) --
+
+    /**
+     * Regression test: a ToolCallMessage (tool RESULT) must normalize to
+     * {type:'function_call_output', call_id, output} for CodexModel, NOT
+     * to {role:'tool',…}.  The Codex Responses API rejects the Chat
+     * Completions role:'tool' shape with HTTP 400.
+     *
+     * This test FAILS without the OpenResponses ToolCallMessageNormalizer
+     * registered explicitly in CodexContract::create() (the core
+     * Platform\…\ToolCallMessageNormalizer appended by Contract::create()
+     * would produce role:'tool' instead).
+     */
+    public function testToolCallMessageNormalizesToFunctionCallOutput(): void
+    {
+        $messageBag = new MessageBag(
+            Message::ofUser('Read file x'),
+            Message::ofToolCall(
+                new ToolCall('call_abc', 'read_file', ['path' => 'x']),
+                'file contents here',
+            ),
+        );
+
+        $contract = CodexContract::create();
+        $model = new CodexModel('gpt-5.5');
+
+        $payload = $contract->createRequestPayload($model, $messageBag, []);
+
+        $this->assertArrayHasKey('input', $payload);
+        $input = $payload['input'];
+
+        // Item 0: user message
+        $this->assertCount(2, $input);
+
+        // Item 1 must be the function_call_output, NOT role:'tool'
+        $toolResult = $input[1];
+        $this->assertArrayHasKey('type', $toolResult);
+        $this->assertSame('function_call_output', $toolResult['type']);
+        $this->assertSame('call_abc', $toolResult['call_id']);
+        $this->assertSame('file contents here', $toolResult['output']);
+
+        // Must NOT contain the Chat Completions shape
+        $this->assertArrayNotHasKey('role', $toolResult, 'Tool result must not use role:tool shape (Chat Completions)');
+    }
+
+    // -- Thinking / reasoning round-trip via CodexAssistantMessageNormalizer --
+
+    /**
+     * Regression test for #177: a thinking-only AssistantMessage with a
+     * signature must normalize to a SEPARATE reasoning input item, NOT
+     * a message item with content:null (which causes HTTP 400).
+     */
+    public function testAssistantWithThinkingSignatureEmitsReasoningItem(): void
+    {
+        $thinking = new Thinking(
+            content: 'Let me reason',
+            signature: '{"type":"reasoning","id":"rs_1","encrypted_content":"enc_xyz"}',
+        );
+        $assistantMessage = new AssistantMessage($thinking);
+
+        $normalizer = new CodexAssistantMessageNormalizer();
+        $result = $normalizer->normalize(
+            $assistantMessage,
+            null,
+            ['model' => new CodexModel('gpt-5.5')],
+        );
+
+        // Should return a reasoning item, not a message with content:null
+        $this->assertIsArray($result);
+        $this->assertArrayHasKey('type', $result);
+        $this->assertSame('reasoning', $result['type']);
+        $this->assertSame('rs_1', $result['id']);
+        $this->assertSame('enc_xyz', $result['encrypted_content']);
+    }
+
+    /**
+     * When an AssistantMessage has both text AND thinking with signature,
+     * the normalizer must emit TWO items (reasoning + message), not one.
+     */
+    public function testAssistantWithTextAndThinkingSignatureEmitsBothItems(): void
+    {
+        $thinking = new Thinking(
+            content: 'Reasoning here',
+            signature: '{"type":"reasoning","id":"rs_2","encrypted_content":"enc_abc"}',
+        );
+        $text = new Text('The answer is 42');
+        $assistantMessage = new AssistantMessage($thinking, $text);
+
+        $normalizer = new CodexAssistantMessageNormalizer();
+        $result = $normalizer->normalize(
+            $assistantMessage,
+            null,
+            ['model' => new CodexModel('gpt-5.5')],
+        );
+
+        // Should return an array of 2 items: reasoning + message
+        $this->assertIsArray($result);
+        $this->assertArrayHasKey(0, $result, 'Should be a list (numeric index 0)');
+        $this->assertArrayHasKey(1, $result, 'Should be a list with 2 items');
+        $this->assertSame('reasoning', $result[0]['type']);
+        $this->assertSame('message', $result[1]['type']);
+        $this->assertArrayHasKey('content', $result[1]);
+        $this->assertNotNull($result[1]['content'], 'Content must not be null when text is present');
+    }
+
+    /**
+     * Regression test for #177: an empty assistant message must NOT produce
+     * a content:null message item.  It must return an empty array so the
+     * MessageBag normalizer skips that turn entirely.
+     */
+    public function testEmptyAssistantMessageProducesNoInputItem(): void
+    {
+        $assistantMessage = new AssistantMessage();
+
+        $normalizer = new CodexAssistantMessageNormalizer();
+        $result = $normalizer->normalize(
+            $assistantMessage,
+            null,
+            ['model' => new CodexModel('gpt-5.5')],
+        );
+
+        // Empty array = nothing to emit (NOT content:null)
+        $this->assertSame([], $result);
+    }
+
+    /**
+     * A thinking-only message WITHOUT a signature (e.g. reasoning that
+     * was never captured in a prior turn) must also produce nothing —
+     * there is no reasoning item to replay and no text to display.
+     */
+    public function testThinkingOnlyWithoutSignatureProducesNoInputItem(): void
+    {
+        $thinking = new Thinking(
+            content: 'Reasoning without signature',
+            signature: null,
+        );
+        $assistantMessage = new AssistantMessage($thinking);
+
+        $normalizer = new CodexAssistantMessageNormalizer();
+        $result = $normalizer->normalize(
+            $assistantMessage,
+            null,
+            ['model' => new CodexModel('gpt-5.5')],
+        );
+
+        // No signature → no reasoning item. No text → no message item.
+        $this->assertSame([], $result);
+    }
+
+    /**
+     * Integration test: CodexContract with CodexMessageBagNormalizer must
+     * flatten a thinking+text assistant message into two separate input items
+     * (reasoning item + message item), not a nested array.
+     */
+    public function testThinkingWithSignatureProducesFlatInputItems(): void
+    {
+        $thinking = new Thinking(
+            content: 'Let me reason',
+            signature: '{"type":"reasoning","id":"rs_1","encrypted_content":"enc_xyz"}',
+        );
+        $text = new Text('The answer');
+
+        $messageBag = new MessageBag(
+            Message::ofUser('Hello'),
+            new AssistantMessage($thinking, $text),
+        );
+
+        $contract = CodexContract::create();
+        $model = new CodexModel('gpt-5.5');
+
+        $payload = $contract->createRequestPayload($model, $messageBag, []);
+
+        $this->assertArrayHasKey('input', $payload);
+        $input = $payload['input'];
+
+        // User message (item 0) + reasoning item (item 1) + assistant message (item 2)
+        $this->assertCount(3, $input);
+
+        // User message
+        $this->assertSame('user', $input[0]['role']);
+
+        // Reasoning item is a SEPARATE top-level input item, not nested
+        $this->assertSame('reasoning', $input[1]['type']);
+        $this->assertSame('rs_1', $input[1]['id']);
+
+        // Assistant message is the third item, with proper content (not null)
+        $this->assertSame('assistant', $input[2]['role']);
+        $this->assertSame('message', $input[2]['type']);
+        $this->assertIsArray($input[2]['content']);
+        $this->assertNotNull($input[2]['content']);
+        $this->assertNotEmpty($input[2]['content']);
     }
 }

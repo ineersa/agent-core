@@ -9,6 +9,7 @@ use Symfony\AI\Platform\Bridge\OpenAICodex\ResultConverter;
 use Symfony\AI\Platform\Exception\AuthenticationException;
 use Symfony\AI\Platform\Exception\BadRequestException;
 use Symfony\AI\Platform\Exception\ContentFilterException;
+use Symfony\AI\Platform\Exception\IncompleteStreamException;
 use Symfony\AI\Platform\Exception\RateLimitExceededException;
 use Symfony\AI\Platform\Exception\RuntimeException;
 use Symfony\AI\Platform\Result\InMemoryRawResult;
@@ -18,6 +19,7 @@ use Symfony\AI\Platform\Result\RawResultInterface;
 use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
 use Symfony\AI\Platform\Result\Stream\Delta\ThinkingComplete;
 use Symfony\AI\Platform\Result\Stream\Delta\ThinkingDelta;
+use Symfony\AI\Platform\Result\Stream\Delta\ThinkingSignature;
 use Symfony\AI\Platform\Result\Stream\Delta\ThinkingStart;
 use Symfony\AI\Platform\Result\Stream\Delta\ToolCallComplete;
 use Symfony\AI\Platform\Result\StreamResult;
@@ -537,6 +539,15 @@ final class ResultConverterTest extends TestCase
                 'type' => 'response.reasoning_summary_text.done',
             ],
             [
+                'type' => 'response.output_item.done',
+                'item' => [
+                    'type' => 'reasoning',
+                    'id' => 'rs_1',
+                    'summary' => [['type' => 'summary_text', 'text' => 'Let me think about this...']],
+                    'status' => 'completed',
+                ],
+            ],
+            [
                 'type' => 'response.output_text.delta',
                 'delta' => 'The answer is 42.',
             ],
@@ -556,6 +567,8 @@ final class ResultConverterTest extends TestCase
 
         $chunks = iterator_to_array($streamResult->getContent());
 
+        // ThinkingStart, ThinkingDelta ×2, ThinkingComplete (from output_item.done),
+        // then TextDelta.
         $this->assertCount(5, $chunks);
         $this->assertInstanceOf(ThinkingStart::class, $chunks[0]);
         $this->assertInstanceOf(ThinkingDelta::class, $chunks[1]);
@@ -564,6 +577,8 @@ final class ResultConverterTest extends TestCase
         $this->assertSame(' about this...', $chunks[2]->getThinking());
         $this->assertInstanceOf(ThinkingComplete::class, $chunks[3]);
         $this->assertSame('Let me think about this...', $chunks[3]->getThinking());
+        // Signature is the full item JSON (no encrypted_content in this fixture).
+        $this->assertNotNull($chunks[3]->getSignature());
         $this->assertInstanceOf(TextDelta::class, $chunks[4]);
         $this->assertSame('The answer is 42.', $chunks[4]->getText());
     }
@@ -670,5 +685,217 @@ final class ResultConverterTest extends TestCase
         $this->expectExceptionMessage('Rate limit exceeded. [rate_limited/rate_limit_error]: Too many requests, please retry after 60 seconds');
 
         $converter->convert(new RawHttpResult($httpResponse));
+    }
+
+    // -- Stream error handling (regression: silent mid-turn death) --
+
+    /**
+     * Regression test: 'error' events during streaming must throw immediately
+     * instead of being silently ignored (which caused a null assistant message
+     * and HTTP 400 on the next turn).
+     */
+    public function testStreamErrorEventThrowsRuntimeException(): void
+    {
+        $converter = new ResultConverter();
+        $httpResponse = $this->createStub(ResponseInterface::class);
+        $httpResponse->method('getStatusCode')->willReturn(200);
+
+        $events = [
+            ['type' => 'response.output_text.delta', 'delta' => 'Partial'],
+            ['type' => 'error', 'error' => ['code' => 'server_error', 'message' => 'Internal error']],
+        ];
+
+        $raw = new InMemoryRawResult([], $events, $httpResponse);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessageMatches('/server_error.*Internal error/');
+
+        $streamResult = $converter->convert($raw, ['stream' => true]);
+        iterator_to_array($streamResult->getContent());
+    }
+
+    /**
+     * Regression test: 'response.failed' events during streaming must throw
+     * immediately.  Previously these events were silently dropped, producing
+     * partial thinking as if the turn completed normally.
+     */
+    public function testStreamResponseFailedThrowsRuntimeException(): void
+    {
+        $converter = new ResultConverter();
+        $httpResponse = $this->createStub(ResponseInterface::class);
+        $httpResponse->method('getStatusCode')->willReturn(200);
+
+        $events = [
+            ['type' => 'response.reasoning_summary_text.delta', 'delta' => 'I think'],
+            ['type' => 'response.failed', 'response' => [
+                'error' => ['code' => 'rate_limited', 'message' => 'Rate limited'],
+            ]],
+        ];
+
+        $raw = new InMemoryRawResult([], $events, $httpResponse);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessageMatches('/rate_limited.*Rate limited/');
+
+        $streamResult = $converter->convert($raw, ['stream' => true]);
+        iterator_to_array($streamResult->getContent());
+    }
+
+    /**
+     * 'response.incomplete' events (context limit, etc.) must throw with
+     * the reason. Partial tool calls are intentionally NOT yielded — the
+     * RuntimeException propagates to LlmPlatformAdapter::consumeStream →
+     * errorResult (stopReason='error') which is short-circuited by
+     * LlmStepResultHandler::__invoke (checks error !== null, returns
+     * RunStatus::Failed with empty pendingToolCalls) before any tool
+     * dispatch, so yielding partial tool calls would be dead code.
+     */
+    public function testStreamResponseIncompleteThrowsRuntimeException(): void
+    {
+        $converter = new ResultConverter();
+        $httpResponse = $this->createStub(ResponseInterface::class);
+        $httpResponse->method('getStatusCode')->willReturn(200);
+
+        $events = [
+            ['type' => 'response.output_text.delta', 'delta' => 'Partial'],
+            ['type' => 'response.incomplete', 'response' => [
+                'incomplete_details' => ['reason' => 'max_tokens'],
+                'output' => [],
+            ]],
+        ];
+
+        $raw = new InMemoryRawResult([], $events, $httpResponse);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessageMatches('/incomplete.*max_tokens/');
+
+        $streamResult = $converter->convert($raw, ['stream' => true]);
+        iterator_to_array($streamResult->getContent());
+    }
+
+    /**
+     * A stream that produces events but never emits response.completed
+     * (or response.done) must throw IncompleteStreamException so the caller
+     * knows the response is truncated, not completed.
+     */
+    public function testStreamWithoutResponseCompletedThrowsIncompleteStreamException(): void
+    {
+        $converter = new ResultConverter();
+        $httpResponse = $this->createStub(ResponseInterface::class);
+        $httpResponse->method('getStatusCode')->willReturn(200);
+
+        $events = [
+            ['type' => 'response.output_text.delta', 'delta' => 'Hello'],
+            // No response.completed — stream just ends
+        ];
+
+        $raw = new InMemoryRawResult([], $events, $httpResponse);
+
+        $this->expectException(IncompleteStreamException::class);
+        $this->expectExceptionMessageMatches('/ended before response\.completed/');
+
+        $streamResult = $converter->convert($raw, ['stream' => true]);
+        iterator_to_array($streamResult->getContent());
+    }
+
+    /**
+     * A thinking-only stream (reasoning items, no output_text) must capture
+     * the full reasoning item JSON as the thinking signature so it survives
+     * persistence and round-trips on the next turn.
+     *
+     * Reasoning signature must be captured at response.output_item.done — the
+     * only event that carries encrypted_content.  The added item does NOT carry
+     * it, and reasoning_summary_text.done fires before encrypted_content is
+     * available.  This matches pi-mono openai-responses-shared.ts:443-452
+     * (atomic capture + emit at item.done).
+     */
+    public function testStreamThinkingOnlyCapturesReasoningSignature(): void
+    {
+        $converter = new ResultConverter();
+        $httpResponse = $this->createStub(ResponseInterface::class);
+        $httpResponse->method('getStatusCode')->willReturn(200);
+
+        // Real event order: added (no encrypted_content) → summary_part.added
+        // → summary_text.delta ×N → summary_text.done → summary_part.done
+        // → output_item.done (WITH encrypted_content).
+        $events = [
+            // Added item: NO encrypted_content (it starts in-progress).
+            ['type' => 'response.output_item.added', 'item' => [
+                'type' => 'reasoning',
+                'id' => 'rs_1',
+                'status' => 'in_progress',
+            ]],
+            ['type' => 'response.reasoning_summary_part.added', 'part' => [
+                'type' => 'summary_text',
+                'text' => '',
+            ]],
+            ['type' => 'response.reasoning_summary_text.delta', 'delta' => 'Let me think'],
+            ['type' => 'response.reasoning_summary_text.delta', 'delta' => ' about it'],
+            ['type' => 'response.reasoning_summary_text.done'],
+            ['type' => 'response.reasoning_summary_part.done'],
+            // Done item: WITH encrypted_content (the authoritative capture point).
+            ['type' => 'response.output_item.done', 'item' => [
+                'type' => 'reasoning',
+                'id' => 'rs_1',
+                'encrypted_content' => 'enc_abc123',
+                'summary' => [['type' => 'summary_text', 'text' => 'Let me think about it']],
+                'status' => 'completed',
+            ]],
+            ['type' => 'response.completed', 'response' => ['output' => []]],
+        ];
+
+        $raw = new InMemoryRawResult([], $events, $httpResponse);
+
+        $streamResult = $converter->convert($raw, ['stream' => true]);
+        $this->assertInstanceOf(StreamResult::class, $streamResult);
+
+        $chunks = iterator_to_array($streamResult->getContent());
+
+        // ThinkingStart, ThinkingDelta x2, then ThinkingComplete emitted from
+        // output_item.done (NOT from summary_text.done).
+        $this->assertInstanceOf(ThinkingStart::class, $chunks[0]);
+        $this->assertInstanceOf(ThinkingDelta::class, $chunks[1]);
+        $this->assertSame('Let me think', $chunks[1]->getThinking());
+        $this->assertInstanceOf(ThinkingDelta::class, $chunks[2]);
+        $this->assertSame(' about it', $chunks[2]->getThinking());
+        $this->assertInstanceOf(ThinkingComplete::class, $chunks[3]);
+        $this->assertSame('Let me think about it', $chunks[3]->getThinking());
+
+        // The signature must be present, round-trip through JSON, and contain
+        // encrypted_content (the key the Codex API requires on the next turn).
+        $this->assertNotNull($chunks[3]->getSignature());
+        $decoded = json_decode($chunks[3]->getSignature(), true, 512, \JSON_THROW_ON_ERROR);
+        $this->assertSame('reasoning', $decoded['type']);
+        $this->assertSame('rs_1', $decoded['id']);
+        $this->assertSame('enc_abc123', $decoded['encrypted_content']);
+        // Prove the completed item has encrypted_content (added item does not).
+        $this->assertArrayHasKey('encrypted_content', $decoded);
+    }
+
+    /**
+     * 'response.done' is used by some Codex API versions instead of
+     * 'response.completed'.  It must be normalized so downstream consumers
+     * (usage extraction, tool call emission) treat them identically.
+     */
+    public function testStreamResponseDoneNormalizedToCompleted(): void
+    {
+        $converter = new ResultConverter();
+        $httpResponse = $this->createStub(ResponseInterface::class);
+        $httpResponse->method('getStatusCode')->willReturn(200);
+
+        $events = [
+            ['type' => 'response.output_text.delta', 'delta' => 'Hello'],
+            ['type' => 'response.done', 'response' => ['output' => []]],
+        ];
+
+        $raw = new InMemoryRawResult([], $events, $httpResponse);
+
+        $streamResult = $converter->convert($raw, ['stream' => true]);
+        $this->assertInstanceOf(StreamResult::class, $streamResult);
+
+        $chunks = iterator_to_array($streamResult->getContent());
+        $this->assertInstanceOf(TextDelta::class, $chunks[0]);
+        $this->assertSame('Hello', $chunks[0]->getText());
+        // No exception — response.done was normalized to response.completed
     }
 }
