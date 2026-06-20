@@ -76,23 +76,6 @@ final class CompactionConfigTest extends TestCase
     }
 
     /**
-     * fromAppConfig extracts the compaction config from AppConfig.
-     */
-    public function testFromAppConfig(): void
-    {
-        $appConfig = new \Ineersa\CodingAgent\Config\AppConfig(
-            tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'cyberpunk'),
-            logging: new \Ineersa\CodingAgent\Config\LoggingConfig(),
-            compaction: new CompactionConfig(compactAfterTokens: 80000, keepRecentTokens: 40000),
-        );
-
-        $config = CompactionConfig::fromAppConfig($appConfig);
-
-        self::assertSame(80000, $config->compactAfterTokens);
-        self::assertSame(40000, $config->keepRecentTokens);
-    }
-
-    /**
      * resolveRuntimeSettings returns global values when no overrides apply.
      */
     public function testResolveRuntimeSettingsNoOverrides(): void
@@ -242,7 +225,7 @@ final class CompactionConfigTest extends TestCase
             );
 
             $appConfig = AppConfig::fromContainer($loader, $resources, $serializer, $projectDir);
-            $compaction = CompactionConfig::fromAppConfig($appConfig);
+            $compaction = $appConfig->compaction;
 
             // Global settings survived denormalization.
             self::assertTrue($compaction->autoEnabled);

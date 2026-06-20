@@ -150,18 +150,6 @@ final readonly class CompactionConfig
     }
 
     /**
-     * DI factory — extract compaction settings from AppConfig entity.
-     *
-     * Used by the Symfony container via services.yaml factory definition
-     * so that autowired consumers receive the same instance that lives
-     * inside AppConfig.
-     */
-    public static function fromAppConfig(AppConfig $appConfig): self
-    {
-        return $appConfig->compaction;
-    }
-
-    /**
      * Extract the provider ID from a provider/model string.
      *
      * Only the provider/model shape (e.g. 'openai/gpt-4.1') is

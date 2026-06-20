@@ -12,11 +12,14 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\CompactResultDTO;
+use Ineersa\CodingAgent\Session\CompactionBoundarySelector;
 use Ineersa\CodingAgent\Session\CompactionPreparationDTO;
 use Ineersa\CodingAgent\Session\CompactionPreparationResultDTO;
 use Ineersa\CodingAgent\Session\CompactionPromptBuilder;
 use Ineersa\CodingAgent\Session\CompactionSkipReasonEnum;
+use Ineersa\CodingAgent\Session\CompactionTokenEstimator;
 use Ineersa\CodingAgent\Session\SessionCompactor;
+use Ineersa\CodingAgent\Session\ToolResultDigestService;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
@@ -29,6 +32,9 @@ use Symfony\AI\Platform\Message\TemplateRenderer\StringTemplateRenderer;
 #[CoversClass(CompactionSkipReasonEnum::class)]
 #[CoversClass(CompactionConfig::class)]
 #[CoversClass(CompactionPromptBuilder::class)]
+#[CoversClass(CompactionBoundarySelector::class)]
+#[CoversClass(ToolResultDigestService::class)]
+#[CoversClass(CompactionTokenEstimator::class)]
 final class SessionCompactorTest extends TestCase
 {
     private SessionCompactor $compactor;
@@ -67,7 +73,19 @@ final class SessionCompactorTest extends TestCase
             $this->projectDir,
         );
 
-        $this->compactor = new SessionCompactor($promptBuilder);
+        $tokenEstimator = new CompactionTokenEstimator();
+        $digestService = new ToolResultDigestService($tokenEstimator);
+        $boundarySelector = new CompactionBoundarySelector(
+            $tokenEstimator,
+            new AgentMessageToolCallSequenceValidator(),
+        );
+
+        $this->compactor = new SessionCompactor(
+            $tokenEstimator,
+            $digestService,
+            $boundarySelector,
+            $promptBuilder,
+        );
         $this->settings = new CompactionConfig(
             autoEnabled: true,
             keepRecentTokens: 200,
@@ -539,58 +557,6 @@ final class SessionCompactorTest extends TestCase
         self::assertStringNotContainsString('Additional user instructions', $promptText);
     }
 
-    // ── Token estimation (model-facing text, no JSON) ─────────────────
-
-    /**
-     * Thesis: estimateTokens counts only model-facing text, not JSON/metadata.
-     */
-    public function testEstimateTokensIsTextOnly(): void
-    {
-        $msg = new AgentMessage(
-            role: 'user',
-            content: [['type' => 'text', 'text' => 'hello world']],
-            metadata: ['compact_summary' => true, 'large_key' => \str_repeat('x', 1000)],
-        );
-
-        $tokens = $this->compactor->estimateTokens([$msg]);
-
-        // ~11 chars for "hello world" → ceil(11/3.25) = 4 tokens
-        // If JSON was included, it would be hundreds.
-        self::assertLessThan(10, $tokens, 'Token estimate should be text-only, not JSON-envelope');
-    }
-
-    /**
-     * Thesis: A custom-role message includes the [role] prefix in estimation.
-     */
-    public function testEstimateTokensCustomRole(): void
-    {
-        $msg = new AgentMessage(
-            role: 'custom_role',
-            content: [['type' => 'text', 'text' => 'hello']],
-        );
-
-        $tokens = $this->compactor->estimateTokens([$msg]);
-
-        // '[custom_role] hello' ≈ 20 chars → ceil(20/3.25) ≈ 7
-        self::assertGreaterThan(3, $tokens, 'Custom role prefix adds to token estimate');
-        self::assertLessThan(15, $tokens);
-    }
-
-    /**
-     * Thesis: A message with no text content estimates to 0 tokens.
-     */
-    public function testEstimateTokensEmptyContent(): void
-    {
-        $msg = new AgentMessage(
-            role: 'assistant',
-            content: [],
-        );
-
-        $tokens = $this->compactor->estimateTokens([$msg]);
-
-        self::assertSame(0, $tokens);
-    }
-
     // ── Tool-result digest ───────────────────────────────────────────
 
     /**
@@ -632,17 +598,14 @@ final class SessionCompactorTest extends TestCase
             }
 
             $text = $msg->content[0]['text'] ?? '';
-            self::assertStringContainsString('[Tool result:', $text, 'Tool message should be digested');
+            self::assertStringContainsString('tool output elided before summarization', $text, 'Tool message should be digested');
             self::assertStringContainsString('tool_call_id:', $text);
-            self::assertStringContainsString('estimated tokens:', $text);
-            self::assertStringContainsString('char count:', $text);
+            self::assertStringContainsString('estimated_tokens:', $text);
+            self::assertStringContainsString('char_count:', $text);
 
             // The digest is a placeholder — original full text is truncated.
-            // The preview snippet may include the start of the original output.
-            self::assertStringContainsString('estimated tokens:', $text);
-            self::assertStringContainsString('char count:', $text);
-            self::assertStringContainsString('--- content preview ---', $text);
-            self::assertStringContainsString('--- end preview ---', $text);
+            self::assertStringContainsString('preview_start:', $text);
+            self::assertStringContainsString('preview_end:', $text);
 
             $foundDigest = true;
 

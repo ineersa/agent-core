@@ -178,11 +178,6 @@ services:
     arguments:
       - '@Ineersa\CodingAgent\Config\AppConfig'
 
-  # CompactionConfig is derived from AppConfig and autowireable.
-  Ineersa\CodingAgent\Config\CompactionConfig:
-    factory: ['Ineersa\CodingAgent\Config\CompactionConfig', 'fromAppConfig']
-    arguments:
-      - '@Ineersa\CodingAgent\Config\AppConfig'
 
   # BashToolConfig is derived from AppConfig and autowireable.
   Ineersa\CodingAgent\Config\BashToolConfig:
