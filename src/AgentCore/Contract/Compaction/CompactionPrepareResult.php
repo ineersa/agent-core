@@ -16,7 +16,7 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 final readonly class CompactionPrepareResult
 {
     /**
-     * @param list<AgentMessage>|null $messagesToSummarize Messages to be summarized away
+     * @param list<AgentMessage>|null $messagesToSummarize  Messages to be summarized away
      * @param list<AgentMessage>|null $retainedTailMessages Messages kept as-is after compaction
      */
     private function __construct(

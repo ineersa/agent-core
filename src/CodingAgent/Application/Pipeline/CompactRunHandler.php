@@ -14,6 +14,7 @@ use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\CodingAgent\Config\CompactionConfig;
+use Ineersa\CodingAgent\Config\ModelSelectionService;
 
 /**
  * Handles {@see CompactRun} messages: prepares compaction partitions,
@@ -31,6 +32,7 @@ final readonly class CompactRunHandler implements RunMessageHandler
         private CompactionServiceInterface $compactionService,
         private CompactionConfig $compactionConfig,
         private EventFactory $eventFactory,
+        private ModelSelectionService $modelSelectionService,
     ) {
     }
 
@@ -47,13 +49,14 @@ final readonly class CompactRunHandler implements RunMessageHandler
 
         $runId = $message->runId();
 
-        // Resolve runtime settings for the active session model.
-        // Since we don't have the active model stored in RunState,
-        // we resolve with null (uses CompactionConfig global defaults
-        // and provider/model overrides only; per-active-model overrides
-        // require the active model which lives in session metadata and
-        // will be wired through COMP-03 runtime transports).
-        $runtimeSettings = $this->compactionConfig->resolveRuntimeSettings(null);
+        // Resolve the active session model for compaction override resolution.
+        // session_id === run_id per AGENTS.md; ModelSelectionService reads it
+        // from session metadata so per-model/per-provider compaction overrides
+        // apply based on the currently active chat model.
+        $activeModel = $this->modelSelectionService->getCurrentModel($runId);
+        $activeModelStr = $activeModel?->toString();
+
+        $runtimeSettings = $this->compactionConfig->resolveRuntimeSettings($activeModelStr);
         $resolvedModel = $runtimeSettings->model;
         $thinkingLevel = $runtimeSettings->thinkingLevel;
 
@@ -179,14 +182,21 @@ final readonly class CompactRunHandler implements RunMessageHandler
      * CompactionServiceInterface, but the handler lives in CodingAgent
      * so the mapping is local.
      */
+    /**
+     * Map a structural skip reason to a human-readable failure message.
+     *
+     * These are NOT skips — when prepare returns not-ready, we emit
+     * context_compaction_failed. The wording uses "Compaction failed"
+     * or "Compaction not possible", never "skipped".
+     */
     private function failureReasonToMessage(string $reason): string
     {
         return match ($reason) {
-            'too_few_messages' => 'Compaction skipped: not enough messages to summarize.',
-            'below_keep_recent_tokens' => 'Compaction skipped: conversation is not large enough after retaining recent context.',
-            'no_boundary' => 'Compaction skipped: could not determine a boundary for the retained tail.',
-            'no_safe_boundary' => 'Compaction skipped: no safe boundary found without splitting tool-call results.',
-            default => 'Compaction skipped: '.$reason,
+            'too_few_messages' => 'Compaction failed: there are not enough messages to compact.',
+            'below_keep_recent_tokens' => 'Compaction failed: there is no older context outside the retained tail to summarize.',
+            'no_boundary' => 'Compaction failed: could not determine a boundary for the retained tail.',
+            'no_safe_boundary' => 'Compaction failed: no safe boundary found without splitting tool-call results.',
+            default => 'Compaction failed: '.$reason,
         };
     }
 }

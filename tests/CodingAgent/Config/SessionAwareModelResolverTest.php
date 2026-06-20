@@ -51,13 +51,14 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         parent::tearDown(); // clears EM via IsolatedKernelTestCase
     }
 
-    public function testResolveReturnsModelFromSessionMetadata(): void
+    public function testSessionMetadataUsedWhenNoExplicitModel(): void
     {
         $resolver = $this->createResolver($this->standardAiData());
         $sessionId = $this->writeSessionMetadata('sess-1', ['model' => 'llama_cpp/flash']);
 
+        // Empty defaultModel => no explicit override => session metadata model wins.
         $result = $resolver->resolve(
-            'deepseek/deepseek-v4-pro',
+            '',
             new MessageBag(),
             new ModelInvocationInput(runId: $sessionId),
             new ModelResolutionOptions(),
@@ -66,6 +67,25 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         self::assertSame('llama_cpp/flash', $result->model);
         self::assertSame('llama_cpp', $result->providerId);
         self::assertSame('medium', $result->reasoning);
+    }
+
+    public function testExplicitModelWinsOverSessionMetadata(): void
+    {
+        $resolver = $this->createResolver($this->standardAiData());
+        $sessionId = $this->writeSessionMetadata('sess-explicit', ['model' => 'llama_cpp/flash']);
+
+        // Non-empty defaultModel is an explicit override and wins over
+        // session metadata.  This is the compaction/summarization path where
+        // the caller already resolved a specific model string.
+        $result = $resolver->resolve(
+            'deepseek/deepseek-v4-pro',
+            new MessageBag(),
+            new ModelInvocationInput(runId: $sessionId),
+            new ModelResolutionOptions(),
+        );
+
+        self::assertSame('deepseek/deepseek-v4-pro', $result->model);
+        self::assertSame('deepseek', $result->providerId);
     }
 
     public function testResolveReturnsDefaultModelWhenNoSessionMetadata(): void
@@ -124,8 +144,9 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
             'name' => 'My Session',
         ]);
 
+        // Empty defaultModel => no explicit override => session metadata model wins.
         $result = $resolver->resolve(
-            'deepseek/deepseek-v4-pro',
+            '',
             new MessageBag(),
             new ModelInvocationInput(runId: $sessionId),
             new ModelResolutionOptions(),
@@ -152,16 +173,49 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         );
     }
 
-    public function testResolveReturnsReasoningFromSessionMetadata(): void
+    public function testReasoningFromSessionMetadataWhenNoExplicitOverride(): void
     {
         $resolver = $this->createResolver($this->standardAiData());
         $sessionId = $this->writeSessionMetadata('sess-2', ['model' => 'deepseek/deepseek-v4-pro', 'reasoning' => 'high']);
 
+        // Empty thinking_level in options + empty defaultModel => session reasoning wins.
         $result = $resolver->resolve(
-            'deepseek/deepseek-v4-pro',
+            '',
             new MessageBag(),
             new ModelInvocationInput(runId: $sessionId),
             new ModelResolutionOptions(),
+        );
+
+        self::assertSame('high', $result->reasoning);
+    }
+
+    public function testThinkingLevelOptionOverridesSessionReasoning(): void
+    {
+        $resolver = $this->createResolver($this->standardAiData());
+        $sessionId = $this->writeSessionMetadata('sess-3', ['model' => 'deepseek/deepseek-v4-pro', 'reasoning' => 'high']);
+
+        // thinking_level in ModelResolutionOptions overrides session reasoning.
+        $result = $resolver->resolve(
+            '',
+            new MessageBag(),
+            new ModelInvocationInput(runId: $sessionId),
+            new ModelResolutionOptions(['thinking_level' => 'low']),
+        );
+
+        self::assertSame('low', $result->reasoning);
+    }
+
+    public function testEmptyThinkingLevelDoesNotOverrideSessionReasoning(): void
+    {
+        $resolver = $this->createResolver($this->standardAiData());
+        $sessionId = $this->writeSessionMetadata('sess-4', ['model' => 'deepseek/deepseek-v4-pro', 'reasoning' => 'high']);
+
+        // Empty string thinking_level => no override => session reasoning wins.
+        $result = $resolver->resolve(
+            '',
+            new MessageBag(),
+            new ModelInvocationInput(runId: $sessionId),
+            new ModelResolutionOptions(['thinking_level' => '']),
         );
 
         self::assertSame('high', $result->reasoning);

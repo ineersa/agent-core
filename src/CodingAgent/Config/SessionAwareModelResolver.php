@@ -42,21 +42,34 @@ final class SessionAwareModelResolver implements ModelResolverInterface
         ModelInvocationInput $input,
         ModelResolutionOptions $options,
     ): ResolvedModel {
-        unset($defaultModel, $messages, $options);
+        unset($messages);
 
         $sessionId = $input->runId ?? '';
 
-        // Do NOT pass $defaultModel as $explicitModel — the event's defaultModel is the
-        // legacy container parameter (now ''), not a user override. The user's explicit
-        // choice flows through StartRunRequest → RunMetadata → session metadata and is
-        // picked up by the 2nd priority tier (session metadata).
+        // Non-empty $defaultModel is an explicit override (e.g. compaction
+        // model, background summarization). Empty string means no override —
+        // resolve from session metadata / defaults as before.  The legacy
+        // container parameter was emptied in an earlier change, so this is
+        // now a safe discriminator: empty = default path, non-empty = caller
+        // explicitly chose a model.
+        $explicitModel = '' !== $defaultModel ? $defaultModel : null;
+
         $modelRef = $this->selectionService->resolveInitialModel(
-            explicitModel: null,
+            explicitModel: $explicitModel,
             sessionId: $sessionId,
         );
 
+        // Read thinking_level from ModelResolutionOptions when non-empty.
+        // This allows compaction (and future summarization callers) to pass
+        // an explicit reasoning/thinking level override that flows through
+        // the resolver, overriding session metadata and defaults.
+        // Absent, null, or empty string => no override.
+        $explicitReasoning = \is_string($options->values['thinking_level'] ?? null) && '' !== $options->values['thinking_level']
+            ? $options->values['thinking_level']
+            : null;
+
         $reasoning = $this->selectionService->resolveInitialReasoning(
-            explicitReasoning: null,
+            explicitReasoning: $explicitReasoning,
             sessionId: $sessionId,
         );
 
