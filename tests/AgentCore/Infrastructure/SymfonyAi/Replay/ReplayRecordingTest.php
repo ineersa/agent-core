@@ -51,7 +51,7 @@ final class ReplayRecordingTest extends \PHPUnit\Framework\TestCase
     public function testRecordTextOnlyResponseFromLiveLLm(): void
     {
         if (!getenv('LLAMA_CPP_SMOKE_TEST')) {
-            $this->markTestSkipped('LLAMA_CPP_SMOKE_TEST not set — recording requires live LLM');
+            self::markTestSkipped('LLAMA_CPP_SMOKE_TEST not set — recording requires live LLM');
         }
 
         $recorder = new StreamRecorderObserver();
@@ -72,7 +72,7 @@ final class ReplayRecordingTest extends \PHPUnit\Framework\TestCase
 
         // The recording captured deltas
         $deltas = $recorder->getDeltas();
-        $this->assertNotEmpty($deltas, 'Recording should capture at least one delta');
+        self::assertNotEmpty($deltas, 'Recording should capture at least one delta');
 
         // Verify at least one text delta was captured
         $hasText = false;
@@ -82,7 +82,7 @@ final class ReplayRecordingTest extends \PHPUnit\Framework\TestCase
                 break;
             }
         }
-        $this->assertTrue($hasText, 'Recording should contain at least one text delta');
+        self::assertTrue($hasText, 'Recording should contain at least one text delta');
 
         // Build the fixture array and verify structure
         $stopReason = StreamRecorderObserver::resolveFixtureStopReason(
@@ -104,8 +104,8 @@ final class ReplayRecordingTest extends \PHPUnit\Framework\TestCase
             'recording_source' => 'llama_cpp_test/test',
         ]);
 
-        $this->assertSame('llama_cpp/test', $fixture['model']);
-        $this->assertNotEmpty($fixture['deltas']);
+        self::assertSame('llama_cpp/test', $fixture['model']);
+        self::assertNotEmpty($fixture['deltas']);
 
         // Write the fixture (to a temp location, not overwriting committed fixtures)
         $outputPath = sys_get_temp_dir().'/llm-record-fixture-'.uniqid('', true).'.json';
@@ -128,11 +128,11 @@ final class ReplayRecordingTest extends \PHPUnit\Framework\TestCase
             'recording_source' => 'llama_cpp_test/test',
         ]);
 
-        $this->assertGreaterThan(0, $bytes, 'Fixture file should be non-empty');
-        $this->assertFileExists($outputPath);
+        self::assertGreaterThan(0, $bytes, 'Fixture file should be non-empty');
+        self::assertFileExists($outputPath);
 
         // Optional: print recorded deltas for diagnostic visibility
-        echo "\n\nRecorded {$outputPath} (" . \count($deltas) . " deltas, {$bytes} bytes)\n";
+        echo "\n\nRecorded {$outputPath} (".\count($deltas)." deltas, {$bytes} bytes)\n";
     }
 
     /**
@@ -145,7 +145,7 @@ final class ReplayRecordingTest extends \PHPUnit\Framework\TestCase
     {
         $outputPath = getenv('HATFIELD_RECORD_TUI_SIMPLE_FIXTURE_PATH');
         if (!$outputPath || !getenv('LLAMA_CPP_SMOKE_TEST')) {
-            $this->markTestSkipped('HATFIELD_RECORD_TUI_SIMPLE_FIXTURE_PATH / LLAMA_CPP_SMOKE_TEST not set');
+            self::markTestSkipped('HATFIELD_RECORD_TUI_SIMPLE_FIXTURE_PATH / LLAMA_CPP_SMOKE_TEST not set');
         }
 
         $recorder = new StreamRecorderObserver();
@@ -164,7 +164,7 @@ final class ReplayRecordingTest extends \PHPUnit\Framework\TestCase
         ));
 
         $deltas = $recorder->getDeltas();
-        $this->assertNotEmpty($deltas, 'Recording should capture at least one delta');
+        self::assertNotEmpty($deltas, 'Recording should capture at least one delta');
 
         $stopReason = StreamRecorderObserver::resolveFixtureStopReason(
             $result->stopReason,
@@ -188,8 +188,8 @@ final class ReplayRecordingTest extends \PHPUnit\Framework\TestCase
             'expected_text' => null,
         ]);
 
-        $this->assertGreaterThan(0, $bytes, 'Fixture file should be non-empty');
-        echo "\nRecorded TUI simple text fixture → {$outputPath} (" . \count($deltas) . " deltas, {$bytes} bytes)\n";
+        self::assertGreaterThan(0, $bytes, 'Fixture file should be non-empty');
+        echo "\nRecorded TUI simple text fixture → {$outputPath} (".\count($deltas)." deltas, {$bytes} bytes)\n";
     }
 
     /**
@@ -202,7 +202,7 @@ final class ReplayRecordingTest extends \PHPUnit\Framework\TestCase
     {
         $outputPath = getenv('HATFIELD_RECORD_TUI_STARTUP_FIXTURE_PATH');
         if (!$outputPath || !getenv('LLAMA_CPP_SMOKE_TEST')) {
-            $this->markTestSkipped('HATFIELD_RECORD_TUI_STARTUP_FIXTURE_PATH / LLAMA_CPP_SMOKE_TEST not set');
+            self::markTestSkipped('HATFIELD_RECORD_TUI_STARTUP_FIXTURE_PATH / LLAMA_CPP_SMOKE_TEST not set');
         }
 
         $recorder = new StreamRecorderObserver();
@@ -221,7 +221,7 @@ final class ReplayRecordingTest extends \PHPUnit\Framework\TestCase
         ));
 
         $deltas = $recorder->getDeltas();
-        $this->assertNotEmpty($deltas, 'Recording should capture at least one delta');
+        self::assertNotEmpty($deltas, 'Recording should capture at least one delta');
 
         $stopReason = StreamRecorderObserver::resolveFixtureStopReason(
             $result->stopReason,
@@ -245,8 +245,8 @@ final class ReplayRecordingTest extends \PHPUnit\Framework\TestCase
             'expected_text' => null,
         ]);
 
-        $this->assertGreaterThan(0, $bytes, 'Fixture file should be non-empty');
-        echo "\nRecorded TUI startup fixture → {$outputPath} (" . \count($deltas) . " deltas, {$bytes} bytes)\n";
+        self::assertGreaterThan(0, $bytes, 'Fixture file should be non-empty');
+        echo "\nRecorded TUI startup fixture → {$outputPath} (".\count($deltas)." deltas, {$bytes} bytes)\n";
     }
 
     /**

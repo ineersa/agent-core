@@ -12,9 +12,9 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
+use PHPUnit\Framework\TestCase;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
-use PHPUnit\Framework\TestCase;
 
 final class SessionRunEventStoreTest extends TestCase
 {
@@ -39,7 +39,7 @@ final class SessionRunEventStoreTest extends TestCase
         );
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
-            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+            entityManager: self::createStub(\Doctrine\ORM\EntityManagerInterface::class),
         );
 
         $this->store = new SessionRunEventStore(
@@ -62,7 +62,7 @@ final class SessionRunEventStoreTest extends TestCase
     public function testAllForReturnsEmptyForMissingRun(): void
     {
         $events = $this->store->allFor('nonexistent');
-        $this->assertCount(0, $events);
+        self::assertCount(0, $events);
     }
 
     public function testAppendAndRetrieveSingleEvent(): void
@@ -79,15 +79,15 @@ final class SessionRunEventStoreTest extends TestCase
         $this->store->append($event);
 
         $events = $this->store->allFor($runId);
-        $this->assertCount(1, $events);
-        $this->assertSame($runId, $events[0]->runId);
-        $this->assertSame(1, $events[0]->seq);
-        $this->assertSame('run_started', $events[0]->type);
-        $this->assertSame('hello', $events[0]->payload['prompt']);
+        self::assertCount(1, $events);
+        self::assertSame($runId, $events[0]->runId);
+        self::assertSame(1, $events[0]->seq);
+        self::assertSame('run_started', $events[0]->type);
+        self::assertSame('hello', $events[0]->payload['prompt']);
 
         // Verify events.jsonl exists on disk
         $eventsPath = $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl';
-        $this->assertFileExists($eventsPath);
+        self::assertFileExists($eventsPath);
     }
 
     public function testAppendManyAndRetrieveSorted(): void
@@ -100,15 +100,15 @@ final class SessionRunEventStoreTest extends TestCase
         $this->store->appendMany([$event1, $event2, $event3]);
 
         $events = $this->store->allFor($runId);
-        $this->assertCount(3, $events);
+        self::assertCount(3, $events);
 
         // Must be sorted by seq
-        $this->assertSame(1, $events[0]->seq);
-        $this->assertSame(2, $events[1]->seq);
-        $this->assertSame(3, $events[2]->seq);
-        $this->assertSame('run_started', $events[0]->type);
-        $this->assertSame('tool_execution_start', $events[1]->type);
-        $this->assertSame('tool_execution_end', $events[2]->type);
+        self::assertSame(1, $events[0]->seq);
+        self::assertSame(2, $events[1]->seq);
+        self::assertSame(3, $events[2]->seq);
+        self::assertSame('run_started', $events[0]->type);
+        self::assertSame('tool_execution_start', $events[1]->type);
+        self::assertSame('tool_execution_end', $events[2]->type);
     }
 
     public function testEventsSurviveStoreRecreation(): void
@@ -132,7 +132,7 @@ final class SessionRunEventStoreTest extends TestCase
         );
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
-            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+            entityManager: self::createStub(\Doctrine\ORM\EntityManagerInterface::class),
         );
         $newStore = new SessionRunEventStore(
             hatfieldSessionStore: $hatfieldSessionStore,
@@ -142,8 +142,8 @@ final class SessionRunEventStoreTest extends TestCase
         );
 
         $events = $newStore->allFor($runId);
-        $this->assertCount(1, $events, 'Events must survive store recreation');
-        $this->assertSame('agent_start', $events[0]->type);
+        self::assertCount(1, $events, 'Events must survive store recreation');
+        self::assertSame('agent_start', $events[0]->type);
     }
 
     public function testEmbeddedRunIdMustMatchDirectory(): void
@@ -174,13 +174,13 @@ final class SessionRunEventStoreTest extends TestCase
         $eventsA = $this->store->allFor($runA);
         $eventsB = $this->store->allFor($runB);
 
-        $this->assertCount(1, $eventsA);
-        $this->assertSame('run_started', $eventsA[0]->type);
-        $this->assertSame($runA, $eventsA[0]->runId);
+        self::assertCount(1, $eventsA);
+        self::assertSame('run_started', $eventsA[0]->type);
+        self::assertSame($runA, $eventsA[0]->runId);
 
-        $this->assertCount(1, $eventsB);
-        $this->assertSame('agent_start', $eventsB[0]->type);
-        $this->assertSame($runB, $eventsB[0]->runId);
+        self::assertCount(1, $eventsB);
+        self::assertSame('agent_start', $eventsB[0]->type);
+        self::assertSame($runB, $eventsB[0]->runId);
     }
 
     public function testCorruptJsonLineWithMissingRequiredFieldsThrows(): void
@@ -242,9 +242,9 @@ final class SessionRunEventStoreTest extends TestCase
         // Should succeed — incompatible schema follows the documented
         // compatibility policy and the original event is returned.
         $events = $this->store->allFor($runId);
-        $this->assertCount(1, $events);
-        $this->assertSame(1, $events[0]->seq);
-        $this->assertSame('run_started', $events[0]->type);
+        self::assertCount(1, $events);
+        self::assertSame(1, $events[0]->seq);
+        self::assertSame('run_started', $events[0]->type);
     }
 
     private function rmDir(string $dir): void

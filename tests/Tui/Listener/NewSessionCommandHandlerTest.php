@@ -55,7 +55,7 @@ final class NewSessionCommandHandlerTest extends TestCase
     #[Test]
     public function testHandleReturnsNoOpWithArgsIgnored(): void
     {
-        $switch = $this->createStub(TuiSessionSwitchServiceInterface::class);
+        $switch = self::createStub(TuiSessionSwitchServiceInterface::class);
         $handler = new NewSessionCommandHandler($switch);
 
         // /new with extra args — handler ignores them

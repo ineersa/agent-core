@@ -51,51 +51,51 @@ final class EditFileToolTest extends TestCase
     {
         $definition = $this->editFileTool->definition();
 
-        $this->assertSame('edit', $definition->name);
+        self::assertSame('edit', $definition->name);
     }
 
     public function testDefinitionHasDescription(): void
     {
         $definition = $this->editFileTool->definition();
 
-        $this->assertNotEmpty($definition->description);
+        self::assertNotEmpty($definition->description);
     }
 
     public function testDefinitionHandlerIsInvokable(): void
     {
         $definition = $this->editFileTool->definition();
 
-        $this->assertTrue(method_exists($definition->handler, '__invoke'));
+        self::assertIsCallable($definition->handler);
     }
 
     public function testDefinitionHasPromptLine(): void
     {
         $definition = $this->editFileTool->definition();
 
-        $this->assertNotEmpty($definition->promptLine);
-        $this->assertStringContainsString('edit', $definition->promptLine);
+        self::assertNotEmpty($definition->promptLine);
+        self::assertStringContainsString('edit', $definition->promptLine);
     }
 
     public function testDefinitionHasGuidelines(): void
     {
         $definition = $this->editFileTool->definition();
 
-        $this->assertNotEmpty($definition->promptGuidelines);
+        self::assertNotEmpty($definition->promptGuidelines);
 
         // Guidelines must describe unified diff, read line numbers, and @@ hunk headers
         $guidelinesText = implode(' ', $definition->promptGuidelines);
-        $this->assertStringContainsString('unified diff', strtolower($guidelinesText));
-        $this->assertStringContainsString('read', strtolower($guidelinesText));
-        $this->assertStringContainsString('cat -n', $guidelinesText);
-        $this->assertStringContainsString('line number', strtolower($guidelinesText));
-        $this->assertStringContainsString('@@', $guidelinesText);
+        self::assertStringContainsString('unified diff', strtolower($guidelinesText));
+        self::assertStringContainsString('read', strtolower($guidelinesText));
+        self::assertStringContainsString('cat -n', $guidelinesText);
+        self::assertStringContainsString('line number', strtolower($guidelinesText));
+        self::assertStringContainsString('@@', $guidelinesText);
 
         // Guidelines must warn against common LLM mistakes observed in smoke testing
-        $this->assertStringContainsString('markdown code fences', strtolower($guidelinesText));
-        $this->assertStringContainsString('end new file', strtolower($guidelinesText));
-        $this->assertStringContainsString('line-number prefix', strtolower($guidelinesText));
-        $this->assertStringContainsString('trailing newline', strtolower($guidelinesText));
-        $this->assertStringContainsString('repairs', strtolower($guidelinesText));
+        self::assertStringContainsString('markdown code fences', strtolower($guidelinesText));
+        self::assertStringContainsString('end new file', strtolower($guidelinesText));
+        self::assertStringContainsString('line-number prefix', strtolower($guidelinesText));
+        self::assertStringContainsString('trailing newline', strtolower($guidelinesText));
+        self::assertStringContainsString('repairs', strtolower($guidelinesText));
     }
 
     public function testDefinitionHasRetryGuidelines(): void
@@ -104,10 +104,10 @@ final class EditFileToolTest extends TestCase
         $guidelinesText = implode(' ', $definition->promptGuidelines);
 
         // Guidelines must instruct re-reading on failure and retry from current context
-        $this->assertStringContainsString('read the current file', strtolower($guidelinesText));
-        $this->assertStringContainsString('retry', strtolower($guidelinesText));
-        $this->assertStringContainsString('trailing newline', strtolower($guidelinesText));
-        $this->assertStringContainsString('current context', strtolower($guidelinesText));
+        self::assertStringContainsString('read the current file', strtolower($guidelinesText));
+        self::assertStringContainsString('retry', strtolower($guidelinesText));
+        self::assertStringContainsString('trailing newline', strtolower($guidelinesText));
+        self::assertStringContainsString('current context', strtolower($guidelinesText));
     }
 
     public function testDefinitionJsonSchemaHasPathAndPatch(): void
@@ -115,21 +115,24 @@ final class EditFileToolTest extends TestCase
         $definition = $this->editFileTool->definition();
         $schema = $definition->parametersJsonSchema;
 
-        $this->assertArrayHasKey('type', $schema);
-        $this->assertSame('object', $schema['type']);
-        $this->assertArrayHasKey('properties', $schema);
-        $this->assertArrayHasKey('path', $schema['properties']);
-        $this->assertArrayHasKey('patch', $schema['properties']);
-        $this->assertArrayHasKey('required', $schema);
-        $this->assertContains('path', $schema['required']);
-        $this->assertContains('patch', $schema['required']);
-        $this->assertArrayHasKey('additionalProperties', $schema);
-        $this->assertFalse($schema['additionalProperties']);
+        self::assertArrayHasKey('type', $schema);
+        self::assertSame('object', $schema['type']);
+        self::assertArrayHasKey('properties', $schema);
+        self::assertArrayHasKey('path', $schema['properties']);
+        self::assertArrayHasKey('patch', $schema['properties']);
+        self::assertArrayHasKey('required', $schema);
+        self::assertContains('path', $schema['required']);
+        self::assertContains('patch', $schema['required']);
+        self::assertArrayHasKey('additionalProperties', $schema);
+        self::assertFalse($schema['additionalProperties']);
     }
 
     public function testDefinitionImplementsHatfieldToolProviderInterface(): void
     {
-        $this->assertTrue(method_exists($this->editFileTool, 'definition'));
+        // EditFileTool implements HatfieldToolProviderInterface.
+        // Verify definition() returns a DTO with the handler set to the same instance.
+        $dto = $this->editFileTool->definition();
+        self::assertSame($this->editFileTool, $dto->handler);
     }
 
     /* ── ToolRegistry integration test ── */
@@ -142,7 +145,7 @@ final class EditFileToolTest extends TestCase
 
         $toolNames = array_map(static fn ($t) => $t->getName(), $tools);
 
-        $this->assertContains('edit', $toolNames);
+        self::assertContains('edit', $toolNames);
     }
 
     /* ── __invoke() success tests ── */
@@ -158,12 +161,12 @@ final class EditFileToolTest extends TestCase
 
         $result = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
 
-        $this->assertStringContainsString('Applied patch', $result);
-        $this->assertStringContainsString('single_hunk.txt', $result);
-        $this->assertStringContainsString('1 addition', $result);
-        $this->assertStringContainsString('1 deletion', $result);
-        $this->assertStringNotContainsString('@@', $result); // No full diff echo
-        $this->assertSame($newContent, file_get_contents($targetPath));
+        self::assertStringContainsString('Applied patch', $result);
+        self::assertStringContainsString('single_hunk.txt', $result);
+        self::assertStringContainsString('1 addition', $result);
+        self::assertStringContainsString('1 deletion', $result);
+        self::assertStringNotContainsString('@@', $result); // No full diff echo
+        self::assertSame($newContent, file_get_contents($targetPath));
     }
 
     public function testEditAppliesMultiHunkPatch(): void
@@ -177,9 +180,9 @@ final class EditFileToolTest extends TestCase
 
         $result = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
 
-        $this->assertStringContainsString('Applied patch', $result);
-        $this->assertStringNotContainsString('@@', $result); // No full diff echo
-        $this->assertSame($modified, file_get_contents($targetPath));
+        self::assertStringContainsString('Applied patch', $result);
+        self::assertStringNotContainsString('@@', $result); // No full diff echo
+        self::assertSame($modified, file_get_contents($targetPath));
     }
 
     public function testEditReturnsNoChangesMessageForIdenticalPatch(): void
@@ -193,8 +196,8 @@ final class EditFileToolTest extends TestCase
 
         $result = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
 
-        $this->assertStringContainsString('No changes', $result);
-        $this->assertSame($original, file_get_contents($targetPath));
+        self::assertStringContainsString('No changes', $result);
+        self::assertSame($original, file_get_contents($targetPath));
     }
 
     /* ── __invoke() stale-hunk failure tests ── */
@@ -211,12 +214,12 @@ final class EditFileToolTest extends TestCase
 
         try {
             ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
-            $this->fail('Expected ToolCallException');
+            self::fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
-            $this->assertStringContainsString('E_PATCH_STALE', $e->getMessage());
-            $this->assertTrue($e->retryable());
+            self::assertStringContainsString('E_PATCH_STALE', $e->getMessage());
+            self::assertTrue($e->retryable());
             // Original must be untouched
-            $this->assertSame($original, file_get_contents($targetPath));
+            self::assertSame($original, file_get_contents($targetPath));
         }
     }
 
@@ -239,26 +242,26 @@ final class EditFileToolTest extends TestCase
 
         try {
             ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
-            $this->fail('Expected ToolCallException');
+            self::fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
             $message = $e->getMessage();
 
             // Must include error code
-            $this->assertStringContainsString('E_PATCH_STALE', $message);
+            self::assertStringContainsString('E_PATCH_STALE', $message);
 
             // Must be retryable
-            $this->assertTrue($e->retryable());
+            self::assertTrue($e->retryable());
 
             // Must include current file context with line numbers
-            $this->assertStringContainsString('Current file context', $message);
+            self::assertStringContainsString('Current file context', $message);
 
             // The hint should reference reading the file and regenerating
             $hint = $e->hint() ?? '';
-            $this->assertStringContainsString('read', strtolower($hint));
-            $this->assertStringContainsString('cat -n', $hint);
+            self::assertStringContainsString('read', strtolower($hint));
+            self::assertStringContainsString('cat -n', $hint);
 
             // Original file must be untouched
-            $this->assertSame($original, file_get_contents($targetPath));
+            self::assertSame($original, file_get_contents($targetPath));
         }
     }
 
@@ -281,19 +284,19 @@ final class EditFileToolTest extends TestCase
 
         try {
             ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
-            $this->fail('Expected ToolCallException');
+            self::fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
             $message = $e->getMessage();
 
             // The error message should NOT contain content from far-away lines
-            $this->assertStringNotContainsString('line 080:', $message);
-            $this->assertStringNotContainsString('line 100:', $message);
+            self::assertStringNotContainsString('line 080:', $message);
+            self::assertStringNotContainsString('line 100:', $message);
 
             // Message length should be bounded (not dumping the whole file)
-            $this->assertLessThan(5000, \strlen($message));
+            self::assertLessThan(5000, \strlen($message));
 
             // Original must be untouched
-            $this->assertSame($original, file_get_contents($targetPath));
+            self::assertSame($original, file_get_contents($targetPath));
         }
     }
 
@@ -330,30 +333,30 @@ DIFF;
 
         try {
             ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
-            $this->fail('Expected ToolCallException');
+            self::fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
             $message = $e->getMessage();
 
             // Must include stale error code
-            $this->assertStringContainsString('E_PATCH_STALE', $message);
+            self::assertStringContainsString('E_PATCH_STALE', $message);
 
             // Context window should include lines near the failure (around 48)
-            $this->assertStringContainsString('Current file context', $message);
+            self::assertStringContainsString('Current file context', $message);
 
             // Lines near the failed hunk must actually appear
-            $this->assertStringContainsString('line 048 content', $message);
-            $this->assertStringContainsString('line 049 content', $message);
-            $this->assertStringContainsString('line 051 content', $message);
+            self::assertStringContainsString('line 048 content', $message);
+            self::assertStringContainsString('line 049 content', $message);
+            self::assertStringContainsString('line 051 content', $message);
 
             // Failed line must be marked with → in context output
-            $this->assertStringContainsString("\u{2192}", $message);
+            self::assertStringContainsString("\u{2192}", $message);
 
             // Lines far from the failure must NOT appear
-            $this->assertStringNotContainsString('line 001', $message);
-            $this->assertStringNotContainsString('line 100', $message);
+            self::assertStringNotContainsString('line 001', $message);
+            self::assertStringNotContainsString('line 100', $message);
 
             // Original must be untouched
-            $this->assertSame($original, file_get_contents($targetPath));
+            self::assertSame($original, file_get_contents($targetPath));
         }
     }
 
@@ -371,23 +374,23 @@ DIFF;
 
         try {
             ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
-            $this->fail('Expected ToolCallException');
+            self::fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
             $message = $e->getMessage();
 
             // Must include format error code specifically (garbage input is
             // detected deterministically on GNU patch 2.7.5+).
-            $this->assertStringContainsString('[E_PATCH_FORMAT]', $message);
+            self::assertStringContainsString('[E_PATCH_FORMAT]', $message);
 
             // Must not include current-file context for format errors
-            $this->assertStringNotContainsString('Current file context', $message);
+            self::assertStringNotContainsString('Current file context', $message);
 
             // Must be retryable with hint about proper format
-            $this->assertTrue($e->retryable());
-            $this->assertStringContainsString('unified diff', strtolower($e->hint() ?? ''));
+            self::assertTrue($e->retryable());
+            self::assertStringContainsString('unified diff', strtolower($e->hint() ?? ''));
 
             // Original must be untouched
-            $this->assertSame($original, file_get_contents($targetPath));
+            self::assertSame($original, file_get_contents($targetPath));
         }
     }
 
@@ -408,23 +411,23 @@ DIFF;
 
         // First apply: should succeed.
         $result1 = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
-        $this->assertStringContainsString('Applied patch', $result1);
-        $this->assertSame($modified, file_get_contents($targetPath));
+        self::assertStringContainsString('Applied patch', $result1);
+        self::assertSame($modified, file_get_contents($targetPath));
 
         // Second apply of the same patch: should be detected as already applied.
         try {
             ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
-            $this->fail('Expected ToolCallException for already-applied patch');
+            self::fail('Expected ToolCallException for already-applied patch');
         } catch (ToolCallException $e) {
             $message = $e->getMessage();
-            $this->assertStringContainsString('[E_PATCH_NOOP]', $message);
-            $this->assertTrue($e->retryable());
+            self::assertStringContainsString('[E_PATCH_NOOP]', $message);
+            self::assertTrue($e->retryable());
 
             $hint = $e->hint() ?? '';
-            $this->assertStringContainsString('already applied', strtolower($hint));
+            self::assertStringContainsString('already applied', strtolower($hint));
 
             // File must remain unchanged from the first apply
-            $this->assertSame($modified, file_get_contents($targetPath));
+            self::assertSame($modified, file_get_contents($targetPath));
         }
     }
 
@@ -503,8 +506,8 @@ DIFF;
 
         $result = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
 
-        $this->assertStringContainsString('Applied patch', $result);
-        $this->assertSame($patchNew, file_get_contents($targetPath));
+        self::assertStringContainsString('Applied patch', $result);
+        self::assertSame($patchNew, file_get_contents($targetPath));
     }
 
     /* ── Cancellation tests ── */
@@ -530,7 +533,7 @@ DIFF;
             },
         );
 
-        $this->assertSame($originalContent, file_get_contents($targetPath));
+        self::assertSame($originalContent, file_get_contents($targetPath));
     }
 
     /* ── Trailing newline regression tests ── */
@@ -546,8 +549,8 @@ DIFF;
 
         $result = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
 
-        $this->assertStringContainsString('Applied patch', $result);
-        $this->assertSame($newContent, file_get_contents($targetPath));
+        self::assertStringContainsString('Applied patch', $result);
+        self::assertSame($newContent, file_get_contents($targetPath));
     }
 
     public function testEditTargetNotEndingWithNewlineIncludesEnrichedHint(): void
@@ -567,22 +570,22 @@ DIFF;
 
         try {
             ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
-            $this->fail('Expected ToolCallException');
+            self::fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
             $hint = $e->hint() ?? '';
 
             // Deterministic: the file lacks a trailing newline, and the
             // stale-hunk path always includes the newline hint.
-            $this->assertStringContainsString('does not end with a newline', $hint);
-            $this->assertStringContainsString('trailing newline', $hint);
+            self::assertStringContainsString('does not end with a newline', $hint);
+            self::assertStringContainsString('trailing newline', $hint);
 
             // The hint should also include stale guidance (prepended)
-            $this->assertStringContainsString('read', strtolower($hint));
+            self::assertStringContainsString('read', strtolower($hint));
 
-            $this->assertTrue($e->retryable());
+            self::assertTrue($e->retryable());
 
             // Original must be untouched
-            $this->assertSame($original, file_get_contents($targetPath));
+            self::assertSame($original, file_get_contents($targetPath));
         }
     }
 
@@ -603,18 +606,18 @@ DIFF;
 
         try {
             ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
-            $this->fail('Expected ToolCallException');
+            self::fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
             $message = $e->getMessage();
 
             // Context must not expose raw carriage returns
-            $this->assertStringNotContainsString("\r", $message);
+            self::assertStringNotContainsString("\r", $message);
 
             // Content must still be readable (lines preserved without CR)
-            $this->assertStringContainsString('line 01 content', $message);
+            self::assertStringContainsString('line 01 content', $message);
 
             // Original untouched (including CRLF bytes)
-            $this->assertSame($original, file_get_contents($targetPath));
+            self::assertSame($original, file_get_contents($targetPath));
         }
     }
 
@@ -633,18 +636,18 @@ DIFF;
 
         try {
             ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
-            $this->fail('Expected ToolCallException');
+            self::fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
             $message = $e->getMessage();
 
             // Context must not expose raw carriage returns
-            $this->assertStringNotContainsString("\r", $message);
+            self::assertStringNotContainsString("\r", $message);
 
             // Content must still be readable (lines preserved without CR)
-            $this->assertStringContainsString('line 01 content', $message);
+            self::assertStringContainsString('line 01 content', $message);
 
             // Original untouched (including CR bytes)
-            $this->assertSame($original, file_get_contents($targetPath));
+            self::assertSame($original, file_get_contents($targetPath));
         }
     }
 
@@ -681,14 +684,14 @@ DIFF;
 
         $result = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
 
-        $this->assertStringContainsString('Applied patch', $result);
+        self::assertStringContainsString('Applied patch', $result);
 
         // Verify the repaired hunk applied correctly
         $expected = "line 01\nREPLACEMENT 02\nREPLACEMENT 03\nEXTRA 04\nEXTRA 05\nEXTRA 06\n";
         for ($i = 4; $i <= 20; ++$i) {
             $expected .= \sprintf("line %02d\n", $i);
         }
-        $this->assertSame($expected, file_get_contents($targetPath));
+        self::assertSame($expected, file_get_contents($targetPath));
     }
 
     public function testMultiHunkCountMismatchAllRepaired(): void
@@ -721,10 +724,10 @@ DIFF;
 
         $result = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
 
-        $this->assertStringContainsString('Applied patch', $result);
+        self::assertStringContainsString('Applied patch', $result);
 
         $expected = "L01 content\nL02 content\nCHANGED L03\nL04 content\nL05 content\nL06 content\nL07 content\nCHANGED L08\nCHANGED L09\nL10 content\n";
-        $this->assertSame($expected, file_get_contents($targetPath));
+        self::assertSame($expected, file_get_contents($targetPath));
     }
 
     public function testPatchWrappedInMarkdownFenceAndTrailersIsNormalized(): void
@@ -755,8 +758,8 @@ PATCH;
 
         $result = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
 
-        $this->assertStringContainsString('Applied patch', $result);
-        $this->assertSame($expected, file_get_contents($targetPath));
+        self::assertStringContainsString('Applied patch', $result);
+        self::assertSame($expected, file_get_contents($targetPath));
     }
 
     public function testTruncatedPatchUnexpectedEofClassifiedAsFormat(): void
@@ -774,23 +777,23 @@ PATCH;
 
         try {
             ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
-            $this->fail('Expected ToolCallException');
+            self::fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
             $message = $e->getMessage();
 
             // Must be classified as format, not stale
-            $this->assertStringContainsString('[E_PATCH_FORMAT]', $message);
+            self::assertStringContainsString('[E_PATCH_FORMAT]', $message);
 
             // Hint should mention newline, fences/trailers, and hunk counts
             $hint = $e->hint() ?? '';
-            $this->assertStringContainsString('newline', strtolower($hint));
-            $this->assertStringContainsString('markdown', strtolower($hint));
-            $this->assertStringContainsString('hunk', strtolower($hint));
+            self::assertStringContainsString('newline', strtolower($hint));
+            self::assertStringContainsString('markdown', strtolower($hint));
+            self::assertStringContainsString('hunk', strtolower($hint));
 
-            $this->assertTrue($e->retryable());
+            self::assertTrue($e->retryable());
 
             // Original must be untouched
-            $this->assertSame($original, file_get_contents($targetPath));
+            self::assertSame($original, file_get_contents($targetPath));
         }
     }
 
@@ -806,13 +809,11 @@ PATCH;
         // Create a symlink pointing to it
         $linkPath = $this->tmpDir.'/link_to_target.txt';
         if (!@symlink($realPath, $linkPath)) {
-            $this->markTestSkipped('symlink() not available on this platform.');
-
-            return;
+            self::markTestSkipped('symlink() not available on this platform.');
         }
 
-        $this->assertTrue(is_link($linkPath), 'Symlink was not created');
-        $this->assertSame($realPath, readlink($linkPath));
+        self::assertTrue(is_link($linkPath), 'Symlink was not created');
+        self::assertSame($realPath, readlink($linkPath));
 
         // Edit through the symlink
         $newContent = "original line 1\nmodified line 2\noriginal line 3\n";
@@ -820,19 +821,19 @@ PATCH;
 
         $result = ($this->editFileTool)(['path' => $linkPath, 'patch' => $patch]);
 
-        $this->assertStringContainsString('Applied patch', $result);
+        self::assertStringContainsString('Applied patch', $result);
 
         // Symlink must still be a symlink
-        $this->assertTrue(is_link($linkPath), 'Symlink was replaced with a regular file');
+        self::assertTrue(is_link($linkPath), 'Symlink was replaced with a regular file');
 
         // readlink must still point to the real target
-        $this->assertSame($realPath, readlink($linkPath));
+        self::assertSame($realPath, readlink($linkPath));
 
         // Target content must be updated
-        $this->assertSame($newContent, file_get_contents($realPath));
+        self::assertSame($newContent, file_get_contents($realPath));
 
         // Reading through symlink must show updated content
-        $this->assertSame($newContent, file_get_contents($linkPath));
+        self::assertSame($newContent, file_get_contents($linkPath));
     }
 
     /* ── Hardlink preservation tests ── */
@@ -847,15 +848,13 @@ PATCH;
 
         // Create a hardlink
         if (!@link($path1, $path2)) {
-            $this->markTestSkipped('link() not available on this platform (may require same filesystem).');
-
-            return;
+            self::markTestSkipped('link() not available on this platform (may require same filesystem).');
         }
 
         // Both paths should share the same inode
         $ino1 = stat($path1)['ino'];
         $ino2 = stat($path2)['ino'];
-        $this->assertSame($ino1, $ino2, 'Hardlinks do not share inode');
+        self::assertSame($ino1, $ino2, 'Hardlinks do not share inode');
 
         // Edit path2
         $newContent = "hardlink line 1\nmodified line 2\nhardlink line 3\n";
@@ -863,17 +862,17 @@ PATCH;
 
         $result = ($this->editFileTool)(['path' => $path2, 'patch' => $patch]);
 
-        $this->assertStringContainsString('Applied patch', $result);
+        self::assertStringContainsString('Applied patch', $result);
 
         // Both paths must show updated content
-        $this->assertSame($newContent, file_get_contents($path1), 'Hardlink path1 content not updated');
-        $this->assertSame($newContent, file_get_contents($path2), 'Hardlink path2 content not updated');
+        self::assertSame($newContent, file_get_contents($path1), 'Hardlink path1 content not updated');
+        self::assertSame($newContent, file_get_contents($path2), 'Hardlink path2 content not updated');
 
         // Both paths must still share the same inode (in-place write preserves inode)
         $newIno1 = stat($path1)['ino'];
         $newIno2 = stat($path2)['ino'];
-        $this->assertSame($newIno1, $newIno2, 'Inodes diverged after edit');
-        $this->assertSame($ino1, $newIno1, 'Inode changed — hardlink identity not preserved');
+        self::assertSame($newIno1, $newIno2, 'Inodes diverged after edit');
+        self::assertSame($ino1, $newIno1, 'Inode changed — hardlink identity not preserved');
     }
 
     /* ── Write failure / permission tests ── */
@@ -907,20 +906,20 @@ PATCH;
 
         try {
             ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
-            $this->fail('Expected ToolCallException');
+            self::fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
             $message = $e->getMessage();
 
-            $this->assertStringContainsString('E_PATCH_STALE', $message);
+            self::assertStringContainsString('E_PATCH_STALE', $message);
 
             // Truncation marker should appear when lines are omitted
-            $this->assertStringContainsString('truncated', $message);
+            self::assertStringContainsString('truncated', $message);
 
             // First hunk context should be present
-            $this->assertStringContainsString('line 005 data', $message);
+            self::assertStringContainsString('line 005 data', $message);
 
             // Original must be untouched
-            $this->assertSame($original, file_get_contents($targetPath));
+            self::assertSame($original, file_get_contents($targetPath));
         }
     }
 
@@ -928,9 +927,7 @@ PATCH;
     {
         // chmod-based write-denial is ineffective under root.
         if (0 === posix_getuid()) {
-            $this->markTestSkipped('Cannot reliably deny writes when running as root.');
-
-            return;
+            self::markTestSkipped('Cannot reliably deny writes when running as root.');
         }
 
         $targetPath = $this->tmpDir.'/unwritable.txt';
@@ -945,17 +942,17 @@ PATCH;
             // but fails on in-place write because the file is read-only.
             $patch = "--- a/file\n+++ b/file\n@@ -1 +1 @@\n-content\n+new content\n";
             ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
-            $this->fail('Expected ToolCallException');
+            self::fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
             $message = $e->getMessage();
 
             // The write should fail — expect a write code (no rollback
             // needed since no bytes were written).
-            $this->assertMatchesRegularExpression('/E_PATCH_WRITE/', $message);
-            $this->assertTrue($e->retryable());
+            self::assertMatchesRegularExpression('/E_PATCH_WRITE/', $message);
+            self::assertTrue($e->retryable());
 
             // Original content must be restored by the rollback path.
-            $this->assertSame($original, file_get_contents($targetPath));
+            self::assertSame($original, file_get_contents($targetPath));
         } finally {
             // Restore write permission for cleanup
             @chmod($targetPath, 0o644);
@@ -999,7 +996,7 @@ PATCH;
 
     private function createToken(bool $cancelled): CancellationTokenInterface
     {
-        $token = $this->createStub(CancellationTokenInterface::class);
+        $token = self::createStub(CancellationTokenInterface::class);
         $token->method('isCancellationRequested')->willReturn($cancelled);
 
         return $token;
@@ -1016,5 +1013,4 @@ PATCH;
             timeoutSeconds: 30,
         );
     }
-
 }

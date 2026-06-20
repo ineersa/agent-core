@@ -53,7 +53,7 @@ final class SessionInitializerTest extends TestCase
         );
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
-            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+            entityManager: self::createStub(\Doctrine\ORM\EntityManagerInterface::class),
         );
 
         $this->eventStore = new SessionRunEventStore(

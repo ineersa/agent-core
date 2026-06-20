@@ -25,30 +25,6 @@ use Symfony\Component\Tui\Tui;
 #[CoversClass(TuiSessionSwitchService::class)]
 final class SessionSwitchServiceTest extends TestCase
 {
-    private function createCoordinator(): QuestionCoordinator
-    {
-        return new QuestionCoordinator();
-    }
-
-    private function createController(QuestionCoordinator $coordinator): QuestionController
-    {
-        return new QuestionController($coordinator);
-    }
-
-    private function createService(
-        ?QuestionCoordinator $coordinator = null,
-        ?QuestionController $controller = null,
-        ?TranscriptProjectorInterface $projector = null,
-        ?LoggerInterface $logger = null,
-    ): TuiSessionSwitchService {
-        return new TuiSessionSwitchService(
-            $coordinator ?? $this->createCoordinator(),
-            $controller ?? $this->createController($coordinator ?? $this->createCoordinator()),
-            $projector ?? $this->createStub(TranscriptProjectorInterface::class),
-            $logger ?? $this->createStub(LoggerInterface::class),
-        );
-    }
-
     public function testHasPendingSwitchIsFalseInitially(): void
     {
         $service = $this->createService();
@@ -67,11 +43,11 @@ final class SessionSwitchServiceTest extends TestCase
     {
         $coordinator = $this->createCoordinator();
         $controller = $this->createController($coordinator);
-        $projector = $this->createStub(TranscriptProjectorInterface::class);
+        $projector = self::createStub(TranscriptProjectorInterface::class);
         $tui = new Tui();
 
-        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, $this->createStub(LoggerInterface::class));
-        $service->bindForIteration($tui, $this->createStub(AgentSessionClient::class), new TuiSessionState('old', false));
+        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, self::createStub(LoggerInterface::class));
+        $service->bindForIteration($tui, self::createStub(AgentSessionClient::class), new TuiSessionState('old', false));
 
         $service->requestResume('42');
 
@@ -92,11 +68,11 @@ final class SessionSwitchServiceTest extends TestCase
     {
         $coordinator = $this->createCoordinator();
         $controller = $this->createController($coordinator);
-        $projector = $this->createStub(TranscriptProjectorInterface::class);
+        $projector = self::createStub(TranscriptProjectorInterface::class);
         $tui = new Tui();
 
-        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, $this->createStub(LoggerInterface::class));
-        $service->bindForIteration($tui, $this->createStub(AgentSessionClient::class), new TuiSessionState('old', false));
+        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, self::createStub(LoggerInterface::class));
+        $service->bindForIteration($tui, self::createStub(AgentSessionClient::class), new TuiSessionState('old', false));
 
         $service->requestNewDraft();
 
@@ -115,11 +91,11 @@ final class SessionSwitchServiceTest extends TestCase
     {
         $coordinator = $this->createCoordinator();
         $controller = $this->createController($coordinator);
-        $projector = $this->createStub(TranscriptProjectorInterface::class);
+        $projector = self::createStub(TranscriptProjectorInterface::class);
         $tui = new Tui();
 
-        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, $this->createStub(LoggerInterface::class));
-        $service->bindForIteration($tui, $this->createStub(AgentSessionClient::class), new TuiSessionState('old', false));
+        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, self::createStub(LoggerInterface::class));
+        $service->bindForIteration($tui, self::createStub(AgentSessionClient::class), new TuiSessionState('old', false));
 
         $req = new StartRunRequest(prompt: 'from /new', runId: '');
         $service->requestNewDraft($req);
@@ -147,11 +123,11 @@ final class SessionSwitchServiceTest extends TestCase
         ));
 
         $controller = $this->createController($coordinator);
-        $projector = $this->createStub(TranscriptProjectorInterface::class);
+        $projector = self::createStub(TranscriptProjectorInterface::class);
         $tui = new Tui();
 
-        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, $this->createStub(LoggerInterface::class));
-        $service->bindForIteration($tui, $this->createStub(AgentSessionClient::class), new TuiSessionState('old', false));
+        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, self::createStub(LoggerInterface::class));
+        $service->bindForIteration($tui, self::createStub(AgentSessionClient::class), new TuiSessionState('old', false));
 
         $service->requestNewDraft();
 
@@ -173,7 +149,7 @@ final class SessionSwitchServiceTest extends TestCase
     {
         $coordinator = $this->createCoordinator();
         $controller = $this->createController($coordinator);
-        $projector = $this->createStub(TranscriptProjectorInterface::class);
+        $projector = self::createStub(TranscriptProjectorInterface::class);
         $tui = new Tui();
 
         $client = $this->createMock(AgentSessionClient::class);
@@ -184,7 +160,7 @@ final class SessionSwitchServiceTest extends TestCase
         $state = new TuiSessionState('old', false);
         $state->handle = new RunHandle('old-run-id', 'running');
 
-        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, $this->createStub(LoggerInterface::class));
+        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, self::createStub(LoggerInterface::class));
         $service->bindForIteration($tui, $client, $state);
 
         $service->requestResume('42');
@@ -198,14 +174,14 @@ final class SessionSwitchServiceTest extends TestCase
     {
         $coordinator = $this->createCoordinator();
         $controller = $this->createController($coordinator);
-        $projector = $this->createStub(TranscriptProjectorInterface::class);
+        $projector = self::createStub(TranscriptProjectorInterface::class);
         $tui = new Tui();
 
         $state = new TuiSessionState('old', false);
         // No handle — no active run
 
-        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, $this->createStub(LoggerInterface::class));
-        $service->bindForIteration($tui, $this->createStub(AgentSessionClient::class), $state);
+        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, self::createStub(LoggerInterface::class));
+        $service->bindForIteration($tui, self::createStub(AgentSessionClient::class), $state);
 
         // Should not throw
         $service->requestResume('42');
@@ -223,8 +199,8 @@ final class SessionSwitchServiceTest extends TestCase
 
         $tui = new Tui();
 
-        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, $this->createStub(LoggerInterface::class));
-        $service->bindForIteration($tui, $this->createStub(AgentSessionClient::class), new TuiSessionState('old', false));
+        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, self::createStub(LoggerInterface::class));
+        $service->bindForIteration($tui, self::createStub(AgentSessionClient::class), new TuiSessionState('old', false));
 
         $service->requestResume('42');
     }
@@ -252,7 +228,7 @@ final class SessionSwitchServiceTest extends TestCase
     {
         $coordinator = $this->createCoordinator();
         $controller = $this->createController($coordinator);
-        $projector = $this->createStub(TranscriptProjectorInterface::class);
+        $projector = self::createStub(TranscriptProjectorInterface::class);
         $tui = new Tui();
 
         $client = $this->createMock(AgentSessionClient::class);
@@ -263,7 +239,7 @@ final class SessionSwitchServiceTest extends TestCase
         $state->handle = new RunHandle('old-run-id', 'completed');
         $state->activity = $activity;
 
-        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, $this->createStub(LoggerInterface::class));
+        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, self::createStub(LoggerInterface::class));
         $service->bindForIteration($tui, $client, $state);
 
         $service->requestResume('42');
@@ -279,7 +255,7 @@ final class SessionSwitchServiceTest extends TestCase
     {
         $coordinator = $this->createCoordinator();
         $controller = $this->createController($coordinator);
-        $projector = $this->createStub(TranscriptProjectorInterface::class);
+        $projector = self::createStub(TranscriptProjectorInterface::class);
         $tui = new Tui();
 
         $client = $this->createMock(AgentSessionClient::class);
@@ -290,7 +266,7 @@ final class SessionSwitchServiceTest extends TestCase
         $state->handle = new RunHandle('old-run-id', 'completed');
         $state->activity = $activity;
 
-        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, $this->createStub(LoggerInterface::class));
+        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, self::createStub(LoggerInterface::class));
         $service->bindForIteration($tui, $client, $state);
 
         $service->requestNewDraft();
@@ -305,7 +281,7 @@ final class SessionSwitchServiceTest extends TestCase
     {
         $coordinator = $this->createCoordinator();
         $controller = $this->createController($coordinator);
-        $projector = $this->createStub(TranscriptProjectorInterface::class);
+        $projector = self::createStub(TranscriptProjectorInterface::class);
         $tui = new Tui();
 
         // Client whose cancel() throws — simulating a terminal run that
@@ -338,5 +314,29 @@ final class SessionSwitchServiceTest extends TestCase
         $target = $service->consumePendingSwitch();
         self::assertNotNull($target);
         self::assertSame('42', $target->sessionId);
+    }
+
+    private function createCoordinator(): QuestionCoordinator
+    {
+        return new QuestionCoordinator();
+    }
+
+    private function createController(QuestionCoordinator $coordinator): QuestionController
+    {
+        return new QuestionController($coordinator);
+    }
+
+    private function createService(
+        ?QuestionCoordinator $coordinator = null,
+        ?QuestionController $controller = null,
+        ?TranscriptProjectorInterface $projector = null,
+        ?LoggerInterface $logger = null,
+    ): TuiSessionSwitchService {
+        return new TuiSessionSwitchService(
+            $coordinator ?? $this->createCoordinator(),
+            $controller ?? $this->createController($coordinator ?? $this->createCoordinator()),
+            $projector ?? self::createStub(TranscriptProjectorInterface::class),
+            $logger ?? self::createStub(LoggerInterface::class),
+        );
     }
 }

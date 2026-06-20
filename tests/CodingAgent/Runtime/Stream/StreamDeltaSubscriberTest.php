@@ -10,8 +10,6 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Runtime\Stream\AssistantTextStreamSubscriber;
 use Ineersa\CodingAgent\Runtime\Stream\AssistantThinkingStreamSubscriber;
 use Ineersa\CodingAgent\Runtime\Stream\LlmStreamDispatchObserver;
-use Ineersa\CodingAgent\Runtime\Stream\RuntimeStreamDeltaEvent;
-use Ineersa\CodingAgent\Runtime\Stream\RuntimeStreamLifecycleEvent;
 use Ineersa\CodingAgent\Runtime\Stream\ToolCallStreamSubscriber;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
@@ -47,7 +45,9 @@ final class StreamDeltaSubscriberTest extends TestCase
 
         $sink = new class($this->captured) implements RuntimeEventSinkInterface {
             /** @param list<RuntimeEvent> $captured */
-            public function __construct(private array &$captured) {}
+            public function __construct(private array &$captured)
+            {
+            }
 
             public function emit(RuntimeEvent $event): void
             {
@@ -100,7 +100,7 @@ final class StreamDeltaSubscriberTest extends TestCase
         $this->observer->onDelta('run-1', 'step-1', new TextDelta('Hello'));
         $this->observer->onDelta('run-1', 'step-1', new TextDelta(' World'));
 
-        $events = \array_values(\array_filter(
+        $events = array_values(array_filter(
             $this->captured,
             static fn (RuntimeEvent $e): bool => RuntimeEventTypeEnum::AssistantTextDelta->value === $e->type,
         ));
@@ -131,7 +131,7 @@ final class StreamDeltaSubscriberTest extends TestCase
         $this->observer->onDelta('run-1', 'step-1', new ThinkingStart());
         $this->observer->onDelta('run-1', 'step-1', new ThinkingDelta('ponder...'));
 
-        $events = \array_values(\array_filter(
+        $events = array_values(array_filter(
             $this->captured,
             static fn (RuntimeEvent $e): bool => RuntimeEventTypeEnum::AssistantThinkingDelta->value === $e->type,
         ));
@@ -148,7 +148,7 @@ final class StreamDeltaSubscriberTest extends TestCase
 
         $this->observer->onDelta('run-1', 'step-1', new ThinkingDelta('lonely thought'));
 
-        $types = \array_map(static fn (RuntimeEvent $e): string => $e->type, $this->captured);
+        $types = array_map(static fn (RuntimeEvent $e): string => $e->type, $this->captured);
 
         self::assertContains(RuntimeEventTypeEnum::AssistantThinkingStarted->value, $types);
         self::assertContains(RuntimeEventTypeEnum::AssistantThinkingDelta->value, $types);

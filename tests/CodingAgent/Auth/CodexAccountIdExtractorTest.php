@@ -9,23 +9,6 @@ use PHPUnit\Framework\TestCase;
 
 final class CodexAccountIdExtractorTest extends TestCase
 {
-    /**
-     * Build a valid JWT with the given payload.
-     */
-    private static function createJwt(array $payload): string
-    {
-        $header = self::base64urlEncode(\json_encode(['alg' => 'RS256', 'typ' => 'JWT']));
-        $body = self::base64urlEncode(\json_encode($payload));
-        $sig = self::base64urlEncode('fake-signature');
-
-        return $header.'.'.$body.'.'.$sig;
-    }
-
-    private static function base64urlEncode(string $data): string
-    {
-        return \rtrim(\strtr(\base64_encode($data), '+/', '-_'), '=');
-    }
-
     public function testExtractsAccountIdFromValidJwt(): void
     {
         $jwt = self::createJwt([
@@ -36,7 +19,7 @@ final class CodexAccountIdExtractorTest extends TestCase
 
         $result = CodexAccountIdExtractor::extract($jwt);
 
-        $this->assertSame('chat-abc123def456', $result);
+        self::assertSame('chat-abc123def456', $result);
     }
 
     public function testReturnsNullWhenClaimPathMissing(): void
@@ -47,7 +30,7 @@ final class CodexAccountIdExtractorTest extends TestCase
 
         $result = CodexAccountIdExtractor::extract($jwt);
 
-        $this->assertNull($result);
+        self::assertNull($result);
     }
 
     public function testReturnsNullWhenAccountIdMissing(): void
@@ -60,26 +43,26 @@ final class CodexAccountIdExtractorTest extends TestCase
 
         $result = CodexAccountIdExtractor::extract($jwt);
 
-        $this->assertNull($result);
+        self::assertNull($result);
     }
 
     public function testReturnsNullOnMalformedToken(): void
     {
         $result = CodexAccountIdExtractor::extract('not-a-jwt');
-        $this->assertNull($result);
+        self::assertNull($result);
     }
 
     public function testReturnsNullOnEmptyToken(): void
     {
         $result = CodexAccountIdExtractor::extract('');
-        $this->assertNull($result);
+        self::assertNull($result);
     }
 
     public function testReturnsNullOnInvalidBase64Payload(): void
     {
         $jwt = 'header.!!!invalid-base64!!.signature';
         $result = CodexAccountIdExtractor::extract($jwt);
-        $this->assertNull($result);
+        self::assertNull($result);
     }
 
     public function testReturnsNullOnNonJsonPayload(): void
@@ -89,6 +72,23 @@ final class CodexAccountIdExtractorTest extends TestCase
 
         $result = CodexAccountIdExtractor::extract($jwt);
 
-        $this->assertNull($result);
+        self::assertNull($result);
+    }
+
+    /**
+     * Build a valid JWT with the given payload.
+     */
+    private static function createJwt(array $payload): string
+    {
+        $header = self::base64urlEncode(json_encode(['alg' => 'RS256', 'typ' => 'JWT']));
+        $body = self::base64urlEncode(json_encode($payload));
+        $sig = self::base64urlEncode('fake-signature');
+
+        return $header.'.'.$body.'.'.$sig;
+    }
+
+    private static function base64urlEncode(string $data): string
+    {
+        return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
     }
 }

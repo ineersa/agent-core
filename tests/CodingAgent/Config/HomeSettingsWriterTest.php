@@ -10,7 +10,6 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Yaml\Yaml;
 
-
 class HomeSettingsWriterTest extends TestCase
 {
     private string $tmpDir;
@@ -20,8 +19,8 @@ class HomeSettingsWriterTest extends TestCase
     protected function setUp(): void
     {
         $this->tmpDir = TestDirectoryIsolation::createProjectTempDir('hatfield_writer');
-        \mkdir($this->tmpDir . '/.hatfield', 0o755, true);
-        $this->file = $this->tmpDir . '/.hatfield/settings.yaml';
+        mkdir($this->tmpDir.'/.hatfield', 0o755, true);
+        $this->file = $this->tmpDir.'/.hatfield/settings.yaml';
         $pathResolver = new SettingsPathResolver('/app', $this->tmpDir);
         $this->writer = new HomeSettingsWriter($pathResolver);
     }
@@ -29,22 +28,6 @@ class HomeSettingsWriterTest extends TestCase
     protected function tearDown(): void
     {
         TestDirectoryIsolation::removeDirectory($this->tmpDir);
-    }
-
-    private function write(string $content): void
-    {
-        \file_put_contents($this->file, $content);
-    }
-
-    private function read(): string
-    {
-        return (string) \file_get_contents($this->file);
-    }
-
-    /** @return array<string, mixed> */
-    private function parse(): array
-    {
-        return Yaml::parseFile($this->file) ?? [];
     }
 
     // ── writeDefaultModel ──────────────────────────────────────────────
@@ -239,5 +222,19 @@ class HomeSettingsWriterTest extends TestCase
         $writer->writeDefaultModel('x');
     }
 
+    private function write(string $content): void
+    {
+        file_put_contents($this->file, $content);
+    }
 
+    private function read(): string
+    {
+        return (string) file_get_contents($this->file);
+    }
+
+    /** @return array<string, mixed> */
+    private function parse(): array
+    {
+        return Yaml::parseFile($this->file) ?? [];
+    }
 }

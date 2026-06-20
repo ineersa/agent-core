@@ -35,50 +35,6 @@ final class ToolQuestionStoreTest extends IsolatedKernelTestCase
         $this->em = $container->get('doctrine.orm.default_entity_manager');
     }
 
-    // ── Helpers ─────────────────────────────────────────────────────────
-
-    /**
-     * Create a fresh ToolQuestion entity with unique identifiers for isolated testing.
-     */
-    private function createQuestion(string $prefix = 'store-test'): ToolQuestion
-    {
-        $requestId = \sprintf('%s-%s', $prefix, \uniqid('', true));
-        $runId = \sprintf('run-%s', \uniqid('', true));
-
-        return ToolQuestion::create(
-            requestId: $requestId,
-            runId: $runId,
-            toolCallId: \sprintf('tc-%s', \uniqid('', true)),
-            toolName: 'bash',
-            pid: 12345,
-            logPath: '/tmp/test-tool-question.log',
-            commandPreview: 'echo "test command"',
-            prompt: 'Move command to the background?',
-            kind: 'confirm',
-        );
-    }
-
-    /**
-     * Use DBAL/ORM DQL to force a ToolQuestion's created_at backward in time.
-     * Lifecycle callbacks override constructor values at persist time, so we
-     * must UPDATE after persist.
-     */
-    private function forceCreatedAt(ToolQuestion $question, \DateTimeImmutable $newCreatedAt): void
-    {
-        $this->em->createQueryBuilder()
-            ->update(ToolQuestion::class, 'tq')
-            ->set('tq.createdAt', ':newCreatedAt')
-            ->set('tq.updatedAt', ':newUpdatedAt')
-            ->where('tq.requestId = :requestId')
-            ->setParameter('newCreatedAt', $newCreatedAt)
-            ->setParameter('newUpdatedAt', $newCreatedAt)
-            ->setParameter('requestId', $question->requestId)
-            ->getQuery()
-            ->execute();
-
-        $this->em->clear();
-    }
-
     // ── Test: create / find / poll lifecycle ────────────────────────────
 
     public function testCreateAndPollAnswerLifecycle(): void
@@ -101,7 +57,7 @@ final class ToolQuestionStoreTest extends IsolatedKernelTestCase
         // findUnemittedPendingQuestions includes it.
         $unemitted = $this->store->findUnemittedPendingQuestions();
         self::assertNotEmpty($unemitted);
-        $foundPending = \array_filter(
+        $foundPending = array_filter(
             $unemitted,
             static fn (ToolQuestion $tq): bool => $tq->requestId === $requestId,
         );
@@ -115,7 +71,7 @@ final class ToolQuestionStoreTest extends IsolatedKernelTestCase
 
         // findUnemittedPendingQuestions no longer includes it.
         $unemittedAfter = $this->store->findUnemittedPendingQuestions();
-        $stillPending = \array_filter(
+        $stillPending = array_filter(
             $unemittedAfter,
             static fn (ToolQuestion $tq): bool => $tq->requestId === $requestId,
         );
@@ -194,7 +150,7 @@ final class ToolQuestionStoreTest extends IsolatedKernelTestCase
         // Cleanup: cancel pending rows created before 30 minutes ago.
         $cutoff = new \DateTimeImmutable('-30 minutes');
         $cleanupTime = new \DateTimeImmutable();
-        \usleep(1); // ensure cleanup timestamp is distinct from Q2 creation
+        usleep(1); // ensure cleanup timestamp is distinct from Q2 creation
         $count = $this->store->cancelPendingQuestionsCreatedBefore($cutoff);
 
         // Only Q1 was old+pending.
@@ -209,12 +165,12 @@ final class ToolQuestionStoreTest extends IsolatedKernelTestCase
         // Q1: answeredAt and updatedAt should be set to cleanup time (approximate).
         self::assertNotNull($q1After->answeredAt, 'Cancelled question must have answeredAt set');
         // Allow some tolerance since DQL UPDATE and entity read happen at slightly different times.
-        $diff = \abs($q1After->answeredAt->getTimestamp() - $cleanupTime->getTimestamp());
+        $diff = abs($q1After->answeredAt->getTimestamp() - $cleanupTime->getTimestamp());
         self::assertLessThanOrEqual(5, $diff, 'answeredAt should be close to cleanup time');
 
         // DQL UPDATE sets updatedAt explicitly via the query.
         self::assertNotNull($q1After->updatedAt, 'Cancelled question must have updatedAt set');
-        $diffUpd = \abs($q1After->updatedAt->getTimestamp() - $cleanupTime->getTimestamp());
+        $diffUpd = abs($q1After->updatedAt->getTimestamp() - $cleanupTime->getTimestamp());
         self::assertLessThanOrEqual(5, $diffUpd, 'updatedAt should be close to cleanup time');
 
         // Q2: still pending.
@@ -289,5 +245,49 @@ final class ToolQuestionStoreTest extends IsolatedKernelTestCase
         // IS NULL, so a re-marked question with non-null emittedAt is
         // still excluded from the unemitted result set.
         self::assertNotNull($afterSecond->emittedAt);
+    }
+
+    // ── Helpers ─────────────────────────────────────────────────────────
+
+    /**
+     * Create a fresh ToolQuestion entity with unique identifiers for isolated testing.
+     */
+    private function createQuestion(string $prefix = 'store-test'): ToolQuestion
+    {
+        $requestId = \sprintf('%s-%s', $prefix, uniqid('', true));
+        $runId = \sprintf('run-%s', uniqid('', true));
+
+        return ToolQuestion::create(
+            requestId: $requestId,
+            runId: $runId,
+            toolCallId: \sprintf('tc-%s', uniqid('', true)),
+            toolName: 'bash',
+            pid: 12345,
+            logPath: '/tmp/test-tool-question.log',
+            commandPreview: 'echo "test command"',
+            prompt: 'Move command to the background?',
+            kind: 'confirm',
+        );
+    }
+
+    /**
+     * Use DBAL/ORM DQL to force a ToolQuestion's created_at backward in time.
+     * Lifecycle callbacks override constructor values at persist time, so we
+     * must UPDATE after persist.
+     */
+    private function forceCreatedAt(ToolQuestion $question, \DateTimeImmutable $newCreatedAt): void
+    {
+        $this->em->createQueryBuilder()
+            ->update(ToolQuestion::class, 'tq')
+            ->set('tq.createdAt', ':newCreatedAt')
+            ->set('tq.updatedAt', ':newUpdatedAt')
+            ->where('tq.requestId = :requestId')
+            ->setParameter('newCreatedAt', $newCreatedAt)
+            ->setParameter('newUpdatedAt', $newCreatedAt)
+            ->setParameter('requestId', $question->requestId)
+            ->getQuery()
+            ->execute();
+
+        $this->em->clear();
     }
 }

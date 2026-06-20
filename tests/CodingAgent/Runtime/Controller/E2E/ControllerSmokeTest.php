@@ -17,11 +17,6 @@ use PHPUnit\Framework\Attributes\Group;
 #[Group('llm-real')]
 final class ControllerSmokeTest extends ControllerE2eTestCase
 {
-    protected function tempDirPrefix(): string
-    {
-        return 'test-controller';
-    }
-
     public function testControllerSpawnAndCompleteRun(): void
     {
         $this->spawnController();
@@ -72,5 +67,10 @@ final class ControllerSmokeTest extends ControllerE2eTestCase
 
         $sessionDir = $this->tempDir.'/.hatfield/sessions/'.$this->runId;
         $this->assertSessionArtifactsExist($sessionDir, $events);
+    }
+
+    protected function tempDirPrefix(): string
+    {
+        return 'test-controller';
     }
 }

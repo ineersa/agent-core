@@ -11,26 +11,14 @@ use Symfony\Component\HttpClient\Response\MockResponse;
 
 final class CodexSseStreamTest extends TestCase
 {
-    /**
-     * @param array<string, mixed> $responseHeaders
-     */
-    private function streamResponse(string $body, array $responseHeaders = []): \Generator
-    {
-        $httpClient = new MockHttpClient([new MockResponse($body, ['http_code' => 200] + $responseHeaders)]);
-        $response = $httpClient->request('GET', 'https://example.com/test');
-        $stream = new CodexSseStream();
-
-        return $stream->stream($response);
-    }
-
     public function testParsesSingleSseEvent(): void
     {
         $body = "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"status\":\"in_progress\"}}\n\n";
-        $events = \iterator_to_array($this->streamResponse($body));
+        $events = iterator_to_array($this->streamResponse($body));
 
-        $this->assertCount(1, $events);
-        $this->assertSame('response.created', $events[0]['type']);
-        $this->assertSame('resp_1', $events[0]['response']['id']);
+        self::assertCount(1, $events);
+        self::assertSame('response.created', $events[0]['type']);
+        self::assertSame('resp_1', $events[0]['response']['id']);
     }
 
     public function testParsesMultipleSseEvents(): void
@@ -39,13 +27,13 @@ final class CodexSseStreamTest extends TestCase
             ."event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"Hello\"}\n\n"
             ."event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"status\":\"completed\"}}\n\n";
 
-        $events = \iterator_to_array($this->streamResponse($body));
+        $events = iterator_to_array($this->streamResponse($body));
 
-        $this->assertCount(3, $events);
-        $this->assertSame('response.created', $events[0]['type']);
-        $this->assertSame('response.output_text.delta', $events[1]['type']);
-        $this->assertSame('Hello', $events[1]['delta']);
-        $this->assertSame('response.completed', $events[2]['type']);
+        self::assertCount(3, $events);
+        self::assertSame('response.created', $events[0]['type']);
+        self::assertSame('response.output_text.delta', $events[1]['type']);
+        self::assertSame('Hello', $events[1]['delta']);
+        self::assertSame('response.completed', $events[2]['type']);
     }
 
     public function testSkipsEventWithDoneSentinel(): void
@@ -53,36 +41,36 @@ final class CodexSseStreamTest extends TestCase
         $body = "event: response.created\ndata: {\"type\":\"response.created\"}\n\n"
             ."event: done\ndata: [DONE]\n\n";
 
-        $events = \iterator_to_array($this->streamResponse($body));
+        $events = iterator_to_array($this->streamResponse($body));
 
-        $this->assertCount(1, $events);
-        $this->assertSame('response.created', $events[0]['type']);
+        self::assertCount(1, $events);
+        self::assertSame('response.created', $events[0]['type']);
     }
 
     public function testHandlesCrLfNewlines(): void
     {
         $body = "event: response.created\r\ndata: {\"type\":\"response.created\"}\r\n\r\n";
 
-        $events = \iterator_to_array($this->streamResponse($body));
+        $events = iterator_to_array($this->streamResponse($body));
 
-        $this->assertCount(1, $events);
-        $this->assertSame('response.created', $events[0]['type']);
+        self::assertCount(1, $events);
+        self::assertSame('response.created', $events[0]['type']);
     }
 
     public function testHandlesEmptyBody(): void
     {
-        $events = \iterator_to_array($this->streamResponse(''));
+        $events = iterator_to_array($this->streamResponse(''));
 
-        $this->assertCount(0, $events);
+        self::assertCount(0, $events);
     }
 
     public function testHandlesBodyWithOnlyComments(): void
     {
         $body = ": comment line\n: another comment\n\n";
 
-        $events = \iterator_to_array($this->streamResponse($body));
+        $events = iterator_to_array($this->streamResponse($body));
 
-        $this->assertCount(0, $events);
+        self::assertCount(0, $events);
     }
 
     public function testThrowsOnInvalidJsonInData(): void
@@ -94,7 +82,7 @@ final class CodexSseStreamTest extends TestCase
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessageMatches('/Failed to decode SSE data/');
 
-        \iterator_to_array($gen);
+        iterator_to_array($gen);
     }
 
     public function testThrowsOnBodyExceedingMaxSize(): void
@@ -107,17 +95,29 @@ final class CodexSseStreamTest extends TestCase
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessageMatches('/maximum allowed size/');
 
-        \iterator_to_array($gen);
+        iterator_to_array($gen);
     }
 
     public function testHandlesResponseWithToolCallEvent(): void
     {
         $body = "event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"status\":\"completed\",\"output\":[{\"type\":\"function_call\",\"id\":\"call_123\",\"name\":\"get_weather\",\"arguments\":\"{\\\"city\\\":\\\"Berlin\\\"}\"}]}}\n\n";
 
-        $events = \iterator_to_array($this->streamResponse($body));
+        $events = iterator_to_array($this->streamResponse($body));
 
-        $this->assertCount(1, $events);
-        $this->assertSame('response.completed', $events[0]['type']);
-        $this->assertSame('call_123', $events[0]['response']['output'][0]['id']);
+        self::assertCount(1, $events);
+        self::assertSame('response.completed', $events[0]['type']);
+        self::assertSame('call_123', $events[0]['response']['output'][0]['id']);
+    }
+
+    /**
+     * @param array<string, mixed> $responseHeaders
+     */
+    private function streamResponse(string $body, array $responseHeaders = []): \Generator
+    {
+        $httpClient = new MockHttpClient([new MockResponse($body, ['http_code' => 200] + $responseHeaders)]);
+        $response = $httpClient->request('GET', 'https://example.com/test');
+        $stream = new CodexSseStream();
+
+        return $stream->stream($response);
     }
 }

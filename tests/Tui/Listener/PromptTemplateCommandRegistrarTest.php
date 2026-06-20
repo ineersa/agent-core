@@ -37,21 +37,12 @@ final class PromptTemplateCommandRegistrarTest extends TestCase
     protected function setUp(): void
     {
         $this->registry = new SlashCommandRegistry();
-        $this->catalog = $this->createStub(PromptTemplateCatalogInterface::class);
+        $this->catalog = self::createStub(PromptTemplateCatalogInterface::class);
         $this->tui = new Tui();
         $this->state = new TuiSessionState('test-session');
         $theme = new DefaultTheme(new ThemePalette('test'));
         $promptEditor = new PromptEditor();
         $this->screen = new ChatScreen($theme, 'test-session', $promptEditor);
-    }
-
-    private function buildContext(): TuiRuntimeContext
-    {
-        return $this->buildTuiContext()
-            ->withTui($this->tui)
-            ->withState($this->state)
-            ->withScreen($this->screen)
-            ->build();
     }
 
     #[Test]
@@ -91,7 +82,7 @@ final class PromptTemplateCommandRegistrarTest extends TestCase
 
         // Metadata appears in allMetadata()
         $all = $this->registry->allMetadata();
-        $names = array_map(fn ($m) => $m->name, $all);
+        $names = array_map(static fn ($m) => $m->name, $all);
         self::assertContains('review', $names);
     }
 
@@ -217,5 +208,14 @@ final class PromptTemplateCommandRegistrarTest extends TestCase
     public function getPriorityReturnsNegative100(): void
     {
         self::assertSame(-100, PromptTemplateCommandRegistrar::getPriority());
+    }
+
+    private function buildContext(): TuiRuntimeContext
+    {
+        return $this->buildTuiContext()
+            ->withTui($this->tui)
+            ->withState($this->state)
+            ->withScreen($this->screen)
+            ->build();
     }
 }

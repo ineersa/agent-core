@@ -33,7 +33,7 @@ class ChatScreenTest extends TestCase
     {
         parent::setUp();
 
-        $terminal = $this->createStub(TerminalInterface::class);
+        $terminal = self::createStub(TerminalInterface::class);
         $terminal->method('getColumns')->willReturn(120);
         $terminal->method('getRows')->willReturn(40);
         $terminal->method('isKittyProtocolActive')->willReturn(false);
@@ -186,38 +186,6 @@ class ChatScreenTest extends TestCase
         self::assertCount($initialCount - 1, $childrenAfter, 'Root should have one fewer child after overlay removal');
     }
 
-    // ── Helpers ──
-
-    /**
-     * Reflect into the Tui's private $root container and return its children.
-     *
-     * @return list<AbstractWidget>
-     */
-    private function getRootChildren(): array
-    {
-        $tuiRef = new \ReflectionClass($this->tui);
-        $rootProp = $tuiRef->getProperty('root');
-        /** @var ContainerWidget $root */
-        $root = $rootProp->getValue($this->tui);
-
-        return array_values($root->all());
-    }
-
-    /**
-     * Reflect into ChatScreen to read footer segments.
-     *
-     * @return list<FooterSegment>
-     */
-    private function getFooterSegments(): array
-    {
-        $screenRef = new \ReflectionClass($this->screen);
-        $fdProp = $screenRef->getProperty('footerDataProvider');
-        /** @var FooterDataProvider $fd */
-        $fd = $fdProp->getValue($this->screen);
-
-        return $fd->getSegments();
-    }
-
     // ── Session ID update ──
 
     #[Test]
@@ -280,6 +248,38 @@ class ChatScreenTest extends TestCase
         );
     }
 
+    // ── Helpers ──
+
+    /**
+     * Reflect into the Tui's private $root container and return its children.
+     *
+     * @return list<AbstractWidget>
+     */
+    private function getRootChildren(): array
+    {
+        $tuiRef = new \ReflectionClass($this->tui);
+        $rootProp = $tuiRef->getProperty('root');
+        /** @var ContainerWidget $root */
+        $root = $rootProp->getValue($this->tui);
+
+        return array_values($root->all());
+    }
+
+    /**
+     * Reflect into ChatScreen to read footer segments.
+     *
+     * @return list<FooterSegment>
+     */
+    private function getFooterSegments(): array
+    {
+        $screenRef = new \ReflectionClass($this->screen);
+        $fdProp = $screenRef->getProperty('footerDataProvider');
+        /** @var FooterDataProvider $fd */
+        $fd = $fdProp->getValue($this->screen);
+
+        return $fd->getSegments();
+    }
+
     /**
      * Return a real ChatScreen-compatible theme for constructing
      * additional screens without leaking the setUp instance.
@@ -287,14 +287,46 @@ class ChatScreenTest extends TestCase
     private function getTestTheme(): TuiTheme
     {
         return new readonly class implements TuiTheme {
-            public function name(): string { return 'test'; }
-            public function color(ThemeColorEnum $color, string $text): string { return $text; }
-            public function accent(string $text): string { return $text; }
-            public function text(string $text): string { return $text; }
-            public function muted(string $text): string { return $text; }
-            public function success(string $text): string { return $text; }
-            public function warning(string $text): string { return $text; }
-            public function error(string $text): string { return $text; }
+            public function name(): string
+            {
+                return 'test';
+            }
+
+            public function color(ThemeColorEnum $color, string $text): string
+            {
+                return $text;
+            }
+
+            public function accent(string $text): string
+            {
+                return $text;
+            }
+
+            public function text(string $text): string
+            {
+                return $text;
+            }
+
+            public function muted(string $text): string
+            {
+                return $text;
+            }
+
+            public function success(string $text): string
+            {
+                return $text;
+            }
+
+            public function warning(string $text): string
+            {
+                return $text;
+            }
+
+            public function error(string $text): string
+            {
+                return $text;
+            }
+
             public function getPalette(): \Ineersa\Tui\Theme\ThemePalette
             {
                 return new \Ineersa\Tui\Theme\ThemePalette(name: 'test', colors: []);

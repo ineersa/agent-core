@@ -8,8 +8,8 @@ use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Infrastructure\Storage\CacheCommandStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use PHPUnit\Framework\Attributes\CoversClass;
-use Psr\Cache\CacheItemPoolInterface;
 use Psr\Cache\CacheItemInterface;
+use Psr\Cache\CacheItemPoolInterface;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Lock\LockFactory;
 
@@ -86,7 +86,7 @@ final class CacheCommandStoreTest extends KernelTestCase
         $inMemoryA->enqueue($command);
 
         // Instance B should NOT see the command enqueued in instance A.
-        $this->assertEmpty(
+        self::assertEmpty(
             $inMemoryB->pending('test-cross-mem'),
             'InMemoryCommandStore fails cross-instance visibility — this is the bug CacheCommandStore fixes',
         );
@@ -106,14 +106,14 @@ final class CacheCommandStoreTest extends KernelTestCase
         );
 
         $enqueued = $this->storeA->enqueue($command);
-        $this->assertTrue($enqueued, 'Should enqueue successfully');
+        self::assertTrue($enqueued, 'Should enqueue successfully');
 
         // Instance B sees the command.
         $pending = $this->storeB->pending('test-cross-1');
-        $this->assertCount(1, $pending);
-        $this->assertSame('steer', $pending[0]->kind);
-        $this->assertSame('key-1', $pending[0]->idempotencyKey);
-        $this->assertSame(['text' => 'steer message'], $pending[0]->payload);
+        self::assertCount(1, $pending);
+        self::assertSame('steer', $pending[0]->kind);
+        self::assertSame('key-1', $pending[0]->idempotencyKey);
+        self::assertSame(['text' => 'steer message'], $pending[0]->payload);
     }
 
     public function testCrossInstanceHasVisible(): void
@@ -126,7 +126,7 @@ final class CacheCommandStoreTest extends KernelTestCase
 
         $this->storeA->enqueue($command);
 
-        $this->assertTrue($this->storeB->has('test-cross-1', 'key-2'));
+        self::assertTrue($this->storeB->has('test-cross-1', 'key-2'));
     }
 
     public function testCrossInstanceCountPendingVisible(): void
@@ -142,7 +142,7 @@ final class CacheCommandStoreTest extends KernelTestCase
             idempotencyKey: 'key-count-2',
         ));
 
-        $this->assertSame(2, $this->storeB->countPending('test-cross-1'));
+        self::assertSame(2, $this->storeB->countPending('test-cross-1'));
     }
 
     public function testCrossInstanceRejectPendingByKindVisible(): void
@@ -161,13 +161,13 @@ final class CacheCommandStoreTest extends KernelTestCase
         // Reject steers from instance A.
         $rejected = $this->storeA->rejectPendingByKind('test-cross-1', 'steer', 'cancelled');
 
-        $this->assertCount(1, $rejected);
-        $this->assertSame('steer', $rejected[0]->kind);
+        self::assertCount(1, $rejected);
+        self::assertSame('steer', $rejected[0]->kind);
 
         // Instance B sees only the follow_up still pending.
         $pending = $this->storeB->pending('test-cross-1');
-        $this->assertCount(1, $pending);
-        $this->assertSame('follow_up', $pending[0]->kind);
+        self::assertCount(1, $pending);
+        self::assertSame('follow_up', $pending[0]->kind);
     }
 
     public function testCrossInstanceMarkAppliedVisible(): void
@@ -183,9 +183,9 @@ final class CacheCommandStoreTest extends KernelTestCase
         $this->storeB->markApplied('test-cross-1', 'key-mark-applied');
 
         // Instance A sees it as no longer pending.
-        $this->assertEmpty($this->storeA->pending('test-cross-1'));
+        self::assertEmpty($this->storeA->pending('test-cross-1'));
         // Instance B confirms it's still tracked (has = true) but not pending.
-        $this->assertTrue($this->storeB->has('test-cross-1', 'key-mark-applied'));
+        self::assertTrue($this->storeB->has('test-cross-1', 'key-mark-applied'));
     }
 
     public function testCrossInstanceMarkRejectedVisible(): void
@@ -200,8 +200,8 @@ final class CacheCommandStoreTest extends KernelTestCase
         $this->storeB->markRejected('test-cross-1', 'key-mark-rejected', 'abandoned');
 
         // Instance A confirms it's no longer pending.
-        $this->assertEmpty($this->storeA->pending('test-cross-1'));
-        $this->assertTrue($this->storeA->has('test-cross-1', 'key-mark-rejected'));
+        self::assertEmpty($this->storeA->pending('test-cross-1'));
+        self::assertTrue($this->storeA->has('test-cross-1', 'key-mark-rejected'));
     }
 
     public function testCrossInstanceMarkSupersededVisible(): void
@@ -215,7 +215,7 @@ final class CacheCommandStoreTest extends KernelTestCase
 
         $this->storeB->markSuperseded('test-cross-1', 'key-mark-superseded', 'replaced');
 
-        $this->assertEmpty($this->storeA->pending('test-cross-1'));
+        self::assertEmpty($this->storeA->pending('test-cross-1'));
     }
 
     public function testIdempotencyKeyDeduplicationWorksCrossInstance(): void
@@ -226,10 +226,10 @@ final class CacheCommandStoreTest extends KernelTestCase
             idempotencyKey: 'dup-key',
         );
 
-        $this->assertTrue($this->storeA->enqueue($comm));
+        self::assertTrue($this->storeA->enqueue($comm));
 
         // Duplicate enqueue from different instance should fail.
-        $this->assertFalse($this->storeB->enqueue($comm));
+        self::assertFalse($this->storeB->enqueue($comm));
     }
 
     public function testPendingFifoOrder(): void
@@ -246,9 +246,9 @@ final class CacheCommandStoreTest extends KernelTestCase
         ));
 
         $pending = $this->storeA->pending('test-cross-2');
-        $this->assertCount(2, $pending);
-        $this->assertSame('order-1', $pending[0]->idempotencyKey, 'FIFO: first in, first out');
-        $this->assertSame('order-2', $pending[1]->idempotencyKey);
+        self::assertCount(2, $pending);
+        self::assertSame('order-1', $pending[0]->idempotencyKey, 'FIFO: first in, first out');
+        self::assertSame('order-2', $pending[1]->idempotencyKey);
     }
 
     /**

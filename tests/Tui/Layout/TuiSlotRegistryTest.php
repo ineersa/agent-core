@@ -4,17 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Layout;
 
-use Ineersa\Tui\Extension\SlotBasedTuiExtensionContext;
 use Ineersa\Tui\Footer\FooterBarWidget;
 use Ineersa\Tui\Footer\FooterDataProvider;
-use Ineersa\Tui\Footer\FooterSegment;
-use Ineersa\Tui\Footer\FooterSegmentProvider;
 use Ineersa\Tui\Header\HeaderWidget;
-use Ineersa\Tui\Layout\ChatLayout;
 use Ineersa\Tui\Layout\TuiSlotRegistry;
-use Ineersa\Tui\Status\WorkingStatusWidget;
-use Ineersa\Tui\Transcript\PendingMessagesWidget;
-use Ineersa\Tui\Transcript\TranscriptWidget;
 use Ineersa\Tui\Widget\TuiRenderContext;
 use Ineersa\Tui\Widget\TuiWidget;
 use Ineersa\Tui\Widget\WidgetPlacementEnum;
@@ -144,8 +137,8 @@ final class TuiSlotRegistryTest extends TestCase
 
     public function testInputHandlers(): void
     {
-        $h1 = function (string $data): void {};
-        $h2 = function (string $data): void {};
+        $h1 = static function (string $data): void {};
+        $h2 = static function (string $data): void {};
 
         $this->registry->addInputHandler($h1);
         $this->registry->addInputHandler($h2);

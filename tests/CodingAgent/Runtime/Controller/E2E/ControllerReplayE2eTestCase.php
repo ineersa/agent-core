@@ -41,27 +41,10 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
  */
 abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
 {
-    /** @var list<int> PIDs of tracked child processes */
-    private array $trackedPids = [];
-
     /** @var list<array<string, mixed>> One fixture per expected LLM call */
     protected array $replayFixtures = [];
-
-    /**
-     * Subclasses MUST override to return at least one fixture.
-     *
-     * @return list<array<string, mixed>>
-     */
-    abstract protected function replayFixtures(): array;
-
-    /**
-     * @return array<string, string> Extra env vars passed to the
-     *         controller subprocess (added to the replay-aware defaults).
-     */
-    protected function replayExtraEnv(): array
-    {
-        return [];
-    }
+    /** @var list<int> PIDs of tracked child processes */
+    private array $trackedPids = [];
 
     // ── Lifecycle ──
 
@@ -99,6 +82,22 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
         }
 
         \PHPUnit\Framework\TestCase::tearDown();
+    }
+
+    /**
+     * Subclasses MUST override to return at least one fixture.
+     *
+     * @return list<array<string, mixed>>
+     */
+    abstract protected function replayFixtures(): array;
+
+    /**
+     * @return array<string, string> extra env vars passed to the
+     *                               controller subprocess (added to the replay-aware defaults)
+     */
+    protected function replayExtraEnv(): array
+    {
+        return [];
     }
 
     // ── Process lifecycle with ownership ─────────────────────────
@@ -218,6 +217,29 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
         }
     }
 
+    // ── Override: override stopProcess so the live-LLM teardown helpers
+    //    use our ownership-aware version instead.
+
+    protected function stopProcess(): void
+    {
+        // Called by ControllerE2eTestCase::tearDown().
+        // We override to delegate to our ownership-aware version.
+        $this->stopProcessWithOwnership();
+    }
+
+    protected function collectDiagnostics(array $events): string
+    {
+        $parentDiag = parent::collectDiagnostics($events);
+
+        $ownershipLines = [
+            'Tracked PIDs: '.('' !== implode(', ', $this->trackedPids)
+                ? implode(', ', $this->trackedPids) : '(none)'),
+            'Fixture count: '.\count($this->replayFixtures),
+        ];
+
+        return $parentDiag."\n".implode("\n", $ownershipLines)."\n";
+    }
+
     /**
      * Terminate the controller process group and assert no survivors.
      *
@@ -301,7 +323,7 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
                 $cmdline = (string) @file_get_contents("/proc/{$pid}/cmdline");
                 $names[] = "  PID {$pid}: ".($cmdline ?: '(unknown)');
             }
-            \fwrite(\STDERR, "[WARNING] Process ownership: ".count($survivors)
+            fwrite(\STDERR, '[WARNING] Process ownership: '.\count($survivors)
                 ." tracked PIDs still alive after teardown:\n"
                 .implode("\n", $names)."\n");
         }
@@ -372,28 +394,5 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
         }
 
         return $pids;
-    }
-
-    // ── Override: override stopProcess so the live-LLM teardown helpers
-    //    use our ownership-aware version instead.
-
-    protected function stopProcess(): void
-    {
-        // Called by ControllerE2eTestCase::tearDown().
-        // We override to delegate to our ownership-aware version.
-        $this->stopProcessWithOwnership();
-    }
-
-    protected function collectDiagnostics(array $events): string
-    {
-        $parentDiag = parent::collectDiagnostics($events);
-
-        $ownershipLines = [
-            'Tracked PIDs: '.('' !== implode(', ', $this->trackedPids)
-                ? implode(', ', $this->trackedPids) : '(none)'),
-            'Fixture count: '.count($this->replayFixtures),
-        ];
-
-        return $parentDiag."\n".implode("\n", $ownershipLines)."\n";
     }
 }

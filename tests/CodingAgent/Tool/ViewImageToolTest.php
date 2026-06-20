@@ -72,36 +72,36 @@ final class ViewImageToolTest extends TestCase
     {
         $definition = $this->viewImageTool->definition();
 
-        $this->assertSame('view_image', $definition->name);
+        self::assertSame('view_image', $definition->name);
     }
 
     public function testDefinitionHasDescription(): void
     {
         $definition = $this->viewImageTool->definition();
 
-        $this->assertNotEmpty($definition->description);
+        self::assertNotEmpty($definition->description);
     }
 
     public function testDefinitionHandlerIsInvokable(): void
     {
         $definition = $this->viewImageTool->definition();
 
-        $this->assertTrue(method_exists($definition->handler, '__invoke'));
+        self::assertTrue(method_exists($definition->handler, '__invoke'));
     }
 
     public function testDefinitionHasPromptLine(): void
     {
         $definition = $this->viewImageTool->definition();
 
-        $this->assertNotEmpty($definition->promptLine);
-        $this->assertStringContainsString('view_image', $definition->promptLine);
+        self::assertNotEmpty($definition->promptLine);
+        self::assertStringContainsString('view_image', $definition->promptLine);
     }
 
     public function testDefinitionHasGuidelines(): void
     {
         $definition = $this->viewImageTool->definition();
 
-        $this->assertNotEmpty($definition->promptGuidelines);
+        self::assertNotEmpty($definition->promptGuidelines);
     }
 
     public function testDefinitionJsonSchemaHasPathOnly(): void
@@ -109,21 +109,21 @@ final class ViewImageToolTest extends TestCase
         $definition = $this->viewImageTool->definition();
         $schema = $definition->parametersJsonSchema;
 
-        $this->assertArrayHasKey('type', $schema);
-        $this->assertSame('object', $schema['type']);
-        $this->assertArrayHasKey('properties', $schema);
-        $this->assertArrayHasKey('path', $schema['properties']);
-        $this->assertArrayNotHasKey('content', $schema['properties']);
-        $this->assertArrayHasKey('required', $schema);
-        $this->assertContains('path', $schema['required']);
-        $this->assertCount(1, $schema['required']);
-        $this->assertArrayHasKey('additionalProperties', $schema);
-        $this->assertFalse($schema['additionalProperties']);
+        self::assertArrayHasKey('type', $schema);
+        self::assertSame('object', $schema['type']);
+        self::assertArrayHasKey('properties', $schema);
+        self::assertArrayHasKey('path', $schema['properties']);
+        self::assertArrayNotHasKey('content', $schema['properties']);
+        self::assertArrayHasKey('required', $schema);
+        self::assertContains('path', $schema['required']);
+        self::assertCount(1, $schema['required']);
+        self::assertArrayHasKey('additionalProperties', $schema);
+        self::assertFalse($schema['additionalProperties']);
     }
 
     public function testDefinitionImplementsHatfieldToolProviderInterface(): void
     {
-        $this->assertTrue(method_exists($this->viewImageTool, 'definition'));
+        self::assertTrue(method_exists($this->viewImageTool, 'definition'));
     }
 
     /* ── ToolRegistry integration test ── */
@@ -136,7 +136,7 @@ final class ViewImageToolTest extends TestCase
 
         $toolNames = array_map(static fn ($t) => $t->getName(), $tools);
 
-        $this->assertContains('view_image', $toolNames);
+        self::assertContains('view_image', $toolNames);
     }
 
     /* ── __invoke() success tests (metadata only, no base64/data_url) ── */
@@ -149,18 +149,18 @@ final class ViewImageToolTest extends TestCase
         $result = ($this->viewImageTool)(['path' => $imagePath]);
 
         // Must be a compact metadata array — no base64, no data_url
-        $this->assertIsArray($result);
-        $this->assertSame('view_image', $result['type']);
-        $this->assertSame('image/png', $result['media_type']);
-        $this->assertSame($imagePath, $result['path']);
-        $this->assertGreaterThan(0, $result['bytes']);
-        $this->assertSame(1, $result['width']);
-        $this->assertSame(1, $result['height']);
+        self::assertIsArray($result);
+        self::assertSame('view_image', $result['type']);
+        self::assertSame('image/png', $result['media_type']);
+        self::assertSame($imagePath, $result['path']);
+        self::assertGreaterThan(0, $result['bytes']);
+        self::assertSame(1, $result['width']);
+        self::assertSame(1, $result['height']);
 
         // Verify NO base64 or data_url in the result
-        $this->assertArrayNotHasKey('base64', $result, 'Tool must not return base64');
-        $this->assertArrayNotHasKey('data_url', $result, 'Tool must not return data_url');
-        $this->assertArrayNotHasKey('output_cap_path', $result, 'Tool must not use OutputCap for images');
+        self::assertArrayNotHasKey('base64', $result, 'Tool must not return base64');
+        self::assertArrayNotHasKey('data_url', $result, 'Tool must not return data_url');
+        self::assertArrayNotHasKey('output_cap_path', $result, 'Tool must not use OutputCap for images');
     }
 
     public function testViewGifImageReturnsMetadataOnly(): void
@@ -170,11 +170,11 @@ final class ViewImageToolTest extends TestCase
 
         $result = ($this->viewImageTool)(['path' => $imagePath]);
 
-        $this->assertSame('image/gif', $result['media_type']);
-        $this->assertSame(1, $result['width']);
-        $this->assertSame(1, $result['height']);
-        $this->assertArrayNotHasKey('base64', $result);
-        $this->assertArrayNotHasKey('data_url', $result);
+        self::assertSame('image/gif', $result['media_type']);
+        self::assertSame(1, $result['width']);
+        self::assertSame(1, $result['height']);
+        self::assertArrayNotHasKey('base64', $result);
+        self::assertArrayNotHasKey('data_url', $result);
     }
 
     public function testViewJpegImageReturnsMetadataOnly(): void
@@ -184,17 +184,17 @@ final class ViewImageToolTest extends TestCase
 
         $result = ($this->viewImageTool)(['path' => $imagePath]);
 
-        $this->assertSame('image/jpeg', $result['media_type']);
-        $this->assertSame(1, $result['width']);
-        $this->assertSame(1, $result['height']);
-        $this->assertArrayNotHasKey('base64', $result);
-        $this->assertArrayNotHasKey('data_url', $result);
+        self::assertSame('image/jpeg', $result['media_type']);
+        self::assertSame(1, $result['width']);
+        self::assertSame(1, $result['height']);
+        self::assertArrayNotHasKey('base64', $result);
+        self::assertArrayNotHasKey('data_url', $result);
     }
 
     public function testViewWebpImageReturnsMetadataOnly(): void
     {
         if (!\function_exists('imagewebp')) {
-            $this->markTestSkipped('GD WebP support not available.');
+            self::markTestSkipped('GD WebP support not available.');
         }
 
         $imagePath = $this->tmpDir.'/test.webp';
@@ -202,9 +202,9 @@ final class ViewImageToolTest extends TestCase
 
         $result = ($this->viewImageTool)(['path' => $imagePath]);
 
-        $this->assertSame('image/webp', $result['media_type']);
-        $this->assertArrayNotHasKey('base64', $result);
-        $this->assertArrayNotHasKey('data_url', $result);
+        self::assertSame('image/webp', $result['media_type']);
+        self::assertArrayNotHasKey('base64', $result);
+        self::assertArrayNotHasKey('data_url', $result);
     }
 
     public function testViewImageWithRelativePathResolvesAgainstCwd(): void
@@ -218,10 +218,10 @@ final class ViewImageToolTest extends TestCase
 
         $result = ($this->viewImageTool)(['path' => $relative]);
 
-        $this->assertSame('image/png', $result['media_type']);
-        $this->assertSame(1, $result['width']);
-        $this->assertSame(1, $result['height']);
-        $this->assertArrayNotHasKey('base64', $result);
+        self::assertSame('image/png', $result['media_type']);
+        self::assertSame(1, $result['width']);
+        self::assertSame(1, $result['height']);
+        self::assertArrayNotHasKey('base64', $result);
     }
 
     /* ── Magic-byte detection tests (not extension-only) ── */
@@ -236,7 +236,7 @@ final class ViewImageToolTest extends TestCase
 
         $result = ($this->viewImageTool)(['path' => $misnamed]);
 
-        $this->assertSame('image/png', $result['media_type']);
+        self::assertSame('image/png', $result['media_type']);
     }
 
     public function testDetectsGifByMagicBytesNotExtension(): void
@@ -249,7 +249,7 @@ final class ViewImageToolTest extends TestCase
 
         $result = ($this->viewImageTool)(['path' => $misnamed]);
 
-        $this->assertSame('image/gif', $result['media_type']);
+        self::assertSame('image/gif', $result['media_type']);
     }
 
     /* ── Unsupported file type rejection ── */
@@ -326,7 +326,7 @@ final class ViewImageToolTest extends TestCase
 
         $result = $tool(['path' => $imagePath]);
 
-        $this->assertSame('image/png', $result['media_type']);
+        self::assertSame('image/png', $result['media_type']);
     }
 
     /* ── Dimension enforcement ── */
@@ -421,7 +421,7 @@ final class ViewImageToolTest extends TestCase
         $imagePath = $this->tmpDir.'/stale.png';
         $this->createPng1x1($imagePath);
 
-        $token = $this->createStub(CancellationTokenInterface::class);
+        $token = self::createStub(CancellationTokenInterface::class);
         $token->method('isCancellationRequested')->willReturnOnConsecutiveCalls(false, true);
 
         $this->expectException(\RuntimeException::class);
@@ -460,7 +460,7 @@ final class ViewImageToolTest extends TestCase
         $registry = new ToolRegistry([$tool]);
         $toolbox = new RegistryBackedToolbox($registry);
 
-        $tokenCancelledFirst = $this->createStub(CancellationTokenInterface::class);
+        $tokenCancelledFirst = self::createStub(CancellationTokenInterface::class);
         $tokenCancelledFirst->method('isCancellationRequested')->willReturn(false);
 
         $executor = ToolExecutor::fromSettings(
@@ -492,20 +492,20 @@ final class ViewImageToolTest extends TestCase
         $toolResult = $executor->execute($toolCall);
 
         // 1. ToolResult content should contain metadata JSON, not base64
-        $this->assertFalse($toolResult->isError, 'Tool result should not be an error: '.($toolResult->content[0]['text'] ?? 'no content'));
+        self::assertFalse($toolResult->isError, 'Tool result should not be an error: '.($toolResult->content[0]['text'] ?? 'no content'));
 
         $contentText = $toolResult->content[0]['text'] ?? '';
-        $this->assertJson($contentText);
+        self::assertJson($contentText);
 
         $parsed = json_decode($contentText, true);
-        $this->assertIsArray($parsed);
-        $this->assertSame('view_image', $parsed['type']);
-        $this->assertSame('image/png', $parsed['media_type']);
-        $this->assertSame(1, $parsed['width']);
-        $this->assertSame(1, $parsed['height']);
+        self::assertIsArray($parsed);
+        self::assertSame('view_image', $parsed['type']);
+        self::assertSame('image/png', $parsed['media_type']);
+        self::assertSame(1, $parsed['width']);
+        self::assertSame(1, $parsed['height']);
         // Verify no base64 in the text content
-        $this->assertArrayNotHasKey('base64', $parsed, 'Text content must not contain base64');
-        $this->assertArrayNotHasKey('data_url', $parsed, 'Text content must not contain data_url');
+        self::assertArrayNotHasKey('base64', $parsed, 'Text content must not contain base64');
+        self::assertArrayNotHasKey('data_url', $parsed, 'Text content must not contain data_url');
 
         // 2. Build the domain ToolCallResult (simulating ExecuteToolCallWorker)
         $domainResult = new ToolCallResult(
@@ -532,11 +532,11 @@ final class ViewImageToolTest extends TestCase
         $agentMessage = $normalizer->toolMessage($domainResult);
 
         // The AgentMessage content should have two parts: text + image_ref
-        $this->assertCount(2, $agentMessage->content, 'AgentMessage should have text + image_ref content parts');
-        $this->assertSame('text', $agentMessage->content[0]['type']);
-        $this->assertSame('image_ref', $agentMessage->content[1]['type'], 'Second content part must be image_ref');
-        $this->assertSame($imagePath, $agentMessage->content[1]['path']);
-        $this->assertSame('image/png', $agentMessage->content[1]['media_type']);
+        self::assertCount(2, $agentMessage->content, 'AgentMessage should have text + image_ref content parts');
+        self::assertSame('text', $agentMessage->content[0]['type']);
+        self::assertSame('image_ref', $agentMessage->content[1]['type'], 'Second content part must be image_ref');
+        self::assertSame($imagePath, $agentMessage->content[1]['path']);
+        self::assertSame('image/png', $agentMessage->content[1]['media_type']);
 
         // 4. Run through AgentMessageConverter::toMessageBag()
         $converter = new AgentMessageConverter();
@@ -544,23 +544,23 @@ final class ViewImageToolTest extends TestCase
 
         $messages = $messageBag->getMessages();
         // Should have 2 messages: ToolCallMessage + UserMessage (with Image)
-        $this->assertCount(2, $messages, 'MessageBag should contain 2 messages (tool result + image attachment)');
+        self::assertCount(2, $messages, 'MessageBag should contain 2 messages (tool result + image attachment)');
 
         // First message: ToolCallMessage with text content
         $toolCallMsg = $messages[0];
-        $this->assertSame('tool', $toolCallMsg->getRole()->value);
+        self::assertSame('tool', $toolCallMsg->getRole()->value);
         $toolContent = $toolCallMsg->getContent();
         // Use non-slash substrings to avoid JSON encoding escaping issues
-        $this->assertStringContainsString('media_type', $toolContent, 'Tool message should contain image metadata');
-        $this->assertStringContainsString('view_image', $toolContent, 'Tool message should reference view_image');
+        self::assertStringContainsString('media_type', $toolContent, 'Tool message should contain image metadata');
+        self::assertStringContainsString('view_image', $toolContent, 'Tool message should reference view_image');
 
         // Second message: UserMessage with real Image content
         $imageMsg = $messages[1];
-        $this->assertSame('user', $imageMsg->getRole()->value);
-        $this->assertInstanceOf(UserMessage::class, $imageMsg);
+        self::assertSame('user', $imageMsg->getRole()->value);
+        self::assertInstanceOf(UserMessage::class, $imageMsg);
 
         // Verify the UserMessage contains an Image content object
-        $this->assertTrue($imageMsg->hasImageContent(), 'UserMessage must have image content after conversion');
+        self::assertTrue($imageMsg->hasImageContent(), 'UserMessage must have image content after conversion');
 
         // Find the Image content object in the message content parts
         $foundImage = null;
@@ -570,11 +570,11 @@ final class ViewImageToolTest extends TestCase
                 break;
             }
         }
-        $this->assertNotNull($foundImage, 'UserMessage should contain an Image content object');
-        $this->assertSame('image/png', $foundImage->getFormat());
+        self::assertNotNull($foundImage, 'UserMessage should contain an Image content object');
+        self::assertSame('image/png', $foundImage->getFormat());
         // Verify it can produce a valid data URL (lazy-read works)
         $dataUrl = $foundImage->asDataUrl();
-        $this->assertStringStartsWith('data:image/png;base64,', $dataUrl);
+        self::assertStringStartsWith('data:image/png;base64,', $dataUrl);
     }
 
     public function testPipelineDoesNotPersistBase64InSerializedState(): void
@@ -622,17 +622,17 @@ final class ViewImageToolTest extends TestCase
         $serialized = $agentMessage->toArray();
 
         $serializedJson = json_encode($serialized);
-        $this->assertIsString($serializedJson);
+        self::assertIsString($serializedJson);
 
         // The serialized JSON must NOT contain base64 image data or data URLs
-        $this->assertStringNotContainsString('base64,', $serializedJson, 'Serialized state must not contain base64 image data');
-        $this->assertStringNotContainsString('data:image/', $serializedJson, 'Serialized state must not contain data URLs');
+        self::assertStringNotContainsString('base64,', $serializedJson, 'Serialized state must not contain base64 image data');
+        self::assertStringNotContainsString('data:image/', $serializedJson, 'Serialized state must not contain data URLs');
 
         // The serialized JSON SHOULD contain image_ref metadata
-        $this->assertStringContainsString('image_ref', $serializedJson, 'Serialized state should contain image_ref type');
+        self::assertStringContainsString('image_ref', $serializedJson, 'Serialized state should contain image_ref type');
         // Use non-slash substrings to avoid JSON encoding escaping issues
-        $this->assertStringContainsString('image_ref', $serializedJson, 'Serialized state should contain image_ref');
-        $this->assertStringContainsString('png', $serializedJson, 'Serialized state should contain file extension');
+        self::assertStringContainsString('image_ref', $serializedJson, 'Serialized state should contain image_ref');
+        self::assertStringContainsString('png', $serializedJson, 'Serialized state should contain file extension');
     }
 
     /* ── AgentMessageConverter image_ref edge cases ── */
@@ -673,7 +673,7 @@ final class ViewImageToolTest extends TestCase
             $agentMessage->content,
             static fn (array $part): bool => 'image_ref' === ($part['type'] ?? null),
         );
-        $this->assertCount(0, $imageRefParts, 'Non-image tool should not have image_ref content parts');
+        self::assertCount(0, $imageRefParts, 'Non-image tool should not have image_ref content parts');
     }
 
     public function testSyntheticImageMessagesAreDeferredUntilAfterConsecutiveToolBatch(): void
@@ -712,12 +712,12 @@ final class ViewImageToolTest extends TestCase
 
         $messages = $converter->toMessageBag([$viewImageMessage, $writeMessage])->getMessages();
 
-        $this->assertCount(3, $messages);
-        $this->assertSame('tool', $messages[0]->getRole()->value);
-        $this->assertSame('tool', $messages[1]->getRole()->value);
-        $this->assertSame('user', $messages[2]->getRole()->value);
-        $this->assertInstanceOf(UserMessage::class, $messages[2]);
-        $this->assertTrue($messages[2]->hasImageContent());
+        self::assertCount(3, $messages);
+        self::assertSame('tool', $messages[0]->getRole()->value);
+        self::assertSame('tool', $messages[1]->getRole()->value);
+        self::assertSame('user', $messages[2]->getRole()->value);
+        self::assertInstanceOf(UserMessage::class, $messages[2]);
+        self::assertTrue($messages[2]->hasImageContent());
     }
 
     public function testImageRefWithMissingFileProducesTextPlaceholder(): void
@@ -756,19 +756,19 @@ final class ViewImageToolTest extends TestCase
         $messages = $messageBag->getMessages();
 
         // Should still have 2 messages (tool call + placeholder text)
-        $this->assertCount(2, $messages);
+        self::assertCount(2, $messages);
 
         // Second message should be a text-only user message, not an Image
         $secondMsg = $messages[1];
-        $this->assertSame('user', $secondMsg->getRole()->value);
+        self::assertSame('user', $secondMsg->getRole()->value);
         // UserMessage::getContent() returns ContentInterface[]; use asText() for string
         $secondText = $secondMsg instanceof UserMessage
             ? ($secondMsg->asText() ?? '')
             : (string) $secondMsg->getContent();
-        $this->assertStringContainsString('deleted', $secondText);
+        self::assertStringContainsString('deleted', $secondText);
         // When file is missing, hasImageContent should be false
         if ($secondMsg instanceof UserMessage) {
-            $this->assertFalse($secondMsg->hasImageContent(), 'Deleted file should not produce image content');
+            self::assertFalse($secondMsg->hasImageContent(), 'Deleted file should not produce image content');
         }
     }
 
@@ -776,7 +776,7 @@ final class ViewImageToolTest extends TestCase
 
     public function testImageGatingHookStripsImageRefForNonVisionModel(): void
     {
-        $checker = $this->createStub(ImageCapabilityCheckerInterface::class);
+        $checker = self::createStub(ImageCapabilityCheckerInterface::class);
         $checker->method('supportsImages')->willReturn(false);
 
         $converter = new AgentMessageConverter();
@@ -808,18 +808,18 @@ final class ViewImageToolTest extends TestCase
 
         // Should have 1 message: the ToolCallMessage with text placeholder
         // (no synthetic UserMessage since image_ref was stripped by the hook)
-        $this->assertCount(1, $messages);
+        self::assertCount(1, $messages);
 
         $msg = $messages[0];
-        $this->assertSame('tool', $msg->getRole()->value);
+        self::assertSame('tool', $msg->getRole()->value);
 
         $msgText = $msg->getContent();
-        $this->assertStringContainsString('does not support images', $msgText);
+        self::assertStringContainsString('does not support images', $msgText);
     }
 
     public function testImageGatingHookPassesThroughForVisionModel(): void
     {
-        $checker = $this->createStub(ImageCapabilityCheckerInterface::class);
+        $checker = self::createStub(ImageCapabilityCheckerInterface::class);
         $checker->method('supportsImages')->willReturn(true);
 
         $converter = new AgentMessageConverter();
@@ -849,16 +849,16 @@ final class ViewImageToolTest extends TestCase
         $messageBag = $hook->convertToLlm([$agentMessage], null, 'some/vision-model');
         $messages = $messageBag->getMessages();
 
-        $this->assertCount(2, $messages);
+        self::assertCount(2, $messages);
 
         $secondMsg = $messages[1];
-        $this->assertInstanceOf(UserMessage::class, $secondMsg);
-        $this->assertTrue($secondMsg->hasImageContent(), 'Vision model must receive Image content');
+        self::assertInstanceOf(UserMessage::class, $secondMsg);
+        self::assertTrue($secondMsg->hasImageContent(), 'Vision model must receive Image content');
     }
 
     public function testImageGatingHookStripsImageRefForEmptyModelName(): void
     {
-        $checker = $this->createStub(ImageCapabilityCheckerInterface::class);
+        $checker = self::createStub(ImageCapabilityCheckerInterface::class);
         // Empty model name short-circuits to false before checker is called.
         $checker->method('supportsImages')->willReturn(true);
 
@@ -890,17 +890,17 @@ final class ViewImageToolTest extends TestCase
         $messages = $messageBag->getMessages();
 
         // Should have 1 message: the ToolCallMessage with text placeholder
-        $this->assertCount(1, $messages);
+        self::assertCount(1, $messages);
 
         $msg = $messages[0];
-        $this->assertSame('tool', $msg->getRole()->value);
+        self::assertSame('tool', $msg->getRole()->value);
     }
 
     public function testImageGatingHookPreservesTextContentParts(): void
     {
         // Verify the hook doesn't strip text-only content parts from messages
         // that have no image_ref.
-        $checker = $this->createStub(ImageCapabilityCheckerInterface::class);
+        $checker = self::createStub(ImageCapabilityCheckerInterface::class);
         $checker->method('supportsImages')->willReturn(false);
 
         $converter = new AgentMessageConverter();
@@ -920,15 +920,15 @@ final class ViewImageToolTest extends TestCase
         $messages = $messageBag->getMessages();
 
         // Should have exactly 1 message (just the tool call, no synthetic image message)
-        $this->assertCount(1, $messages);
-        $this->assertSame('tool', $messages[0]->getRole()->value);
+        self::assertCount(1, $messages);
+        self::assertSame('tool', $messages[0]->getRole()->value);
     }
 
     /* ── Vision capability check throws clear error ── */
 
     public function testThrowsWhenActiveModelHasNoVisionCapability(): void
     {
-        $visionCheck = $this->createStub(RunVisionCheckService::class);
+        $visionCheck = self::createStub(RunVisionCheckService::class);
         $visionCheck->method('isModelVisionCapable')->willReturn(false);
 
         $tool = new ViewImageTool(
@@ -942,7 +942,7 @@ final class ViewImageToolTest extends TestCase
         $imagePath = $this->tmpDir.'/test-vision.png';
         $this->createPng1x1($imagePath);
 
-        $context = $this->contextWithToken($this->createStub(CancellationTokenInterface::class));
+        $context = $this->contextWithToken(self::createStub(CancellationTokenInterface::class));
 
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('does not support image input');
@@ -963,7 +963,7 @@ final class ViewImageToolTest extends TestCase
         $imagePath = $this->tmpDir.'/test-no-checker.png';
         $this->createPng1x1($imagePath);
 
-        $context = $this->contextWithToken($this->createStub(CancellationTokenInterface::class));
+        $context = $this->contextWithToken(self::createStub(CancellationTokenInterface::class));
         $this->contextAccessor->with($context, static function () use ($tool, $imagePath): void {
             $result = $tool(['path' => $imagePath]);
             self::assertSame('image/png', $result['media_type'], 'Tool should succeed when vision check is skipped');
@@ -996,7 +996,7 @@ final class ViewImageToolTest extends TestCase
     private function createWebp1x1(string $path): void
     {
         if (!\function_exists('imagewebp')) {
-            $this->markTestSkipped('GD WebP support not available.');
+            self::markTestSkipped('GD WebP support not available.');
         }
 
         $img = imagecreatetruecolor(1, 1);
@@ -1016,7 +1016,7 @@ final class ViewImageToolTest extends TestCase
 
     private function createToken(bool $cancelled): CancellationTokenInterface
     {
-        $token = $this->createStub(CancellationTokenInterface::class);
+        $token = self::createStub(CancellationTokenInterface::class);
         $token->method('isCancellationRequested')->willReturn($cancelled);
 
         return $token;

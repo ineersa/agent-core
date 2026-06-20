@@ -29,66 +29,9 @@ use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
  */
 final class PromptTemplateExpansionInProcessTest extends PerMethodIsolatedKernelTestCase
 {
-    /** @var FakeCapturingAgentRunner */
     private FakeCapturingAgentRunner $spyRunner;
 
-    /** @var FakeCapturingToolExecutor */
     private FakeCapturingToolExecutor $spyToolExecutor;
-
-    protected function afterKernelBoot(): void
-    {
-        // Install spies before any test code resolves the real services.
-        $this->spyRunner = new FakeCapturingAgentRunner();
-        $this->spyToolExecutor = new FakeCapturingToolExecutor();
-
-        self::getContainer()->set(AgentRunnerInterface::class, $this->spyRunner);
-        self::getContainer()->set(ToolExecutorInterface::class, $this->spyToolExecutor);
-    }
-
-    // ── Helpers ───────────────────────────────────────────────────
-
-    private function writeTemplate(string $name, string $content): void
-    {
-        // Write to the isolated project dir's .hatfield/prompts/
-        $dir = $this->isolatedCwd().'/.hatfield/prompts';
-        if (!is_dir($dir)) {
-            mkdir($dir, 0o755, true);
-        }
-        file_put_contents($dir.'/'.$name.'.md', $content);
-    }
-
-    private function client(): InProcessAgentSessionClient
-    {
-        /** @var InProcessAgentSessionClient */
-        return self::getContainer()->get(InProcessAgentSessionClient::class);
-    }
-
-    private function userMessageTexts(StartRunInput $input): array
-    {
-        $texts = [];
-        foreach ($input->messages as $msg) {
-            if ('user' === $msg->role) {
-                foreach ($msg->content as $block) {
-                    if (\is_array($block) && 'text' === ($block['type'] ?? '')) {
-                        $texts[] = (string) ($block['text'] ?? '');
-                    }
-                }
-            }
-        }
-
-        return $texts;
-    }
-
-    private function msgText(AgentMessage $msg): string
-    {
-        foreach ($msg->content as $block) {
-            if (\is_array($block) && 'text' === ($block['type'] ?? '')) {
-                return (string) ($block['text'] ?? '');
-            }
-        }
-
-        return '';
-    }
 
     // ── start() expansion ──────────────────────────────────────────
 
@@ -234,6 +177,61 @@ final class PromptTemplateExpansionInProcessTest extends PerMethodIsolatedKernel
 
         self::assertNotNull($this->spyToolExecutor->lastToolCall);
         self::assertSame('/review rm -rf', $this->spyToolExecutor->lastToolCall->arguments['command']);
+    }
+
+    protected function afterKernelBoot(): void
+    {
+        // Install spies before any test code resolves the real services.
+        $this->spyRunner = new FakeCapturingAgentRunner();
+        $this->spyToolExecutor = new FakeCapturingToolExecutor();
+
+        self::getContainer()->set(AgentRunnerInterface::class, $this->spyRunner);
+        self::getContainer()->set(ToolExecutorInterface::class, $this->spyToolExecutor);
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────
+
+    private function writeTemplate(string $name, string $content): void
+    {
+        // Write to the isolated project dir's .hatfield/prompts/
+        $dir = $this->isolatedCwd().'/.hatfield/prompts';
+        if (!is_dir($dir)) {
+            mkdir($dir, 0o755, true);
+        }
+        file_put_contents($dir.'/'.$name.'.md', $content);
+    }
+
+    private function client(): InProcessAgentSessionClient
+    {
+        /* @var InProcessAgentSessionClient */
+        return self::getContainer()->get(InProcessAgentSessionClient::class);
+    }
+
+    private function userMessageTexts(StartRunInput $input): array
+    {
+        $texts = [];
+        foreach ($input->messages as $msg) {
+            if ('user' === $msg->role) {
+                foreach ($msg->content as $block) {
+                    if (\is_array($block) && 'text' === ($block['type'] ?? '')) {
+                        $texts[] = (string) ($block['text'] ?? '');
+                    }
+                }
+            }
+        }
+
+        return $texts;
+    }
+
+    private function msgText(AgentMessage $msg): string
+    {
+        foreach ($msg->content as $block) {
+            if (\is_array($block) && 'text' === ($block['type'] ?? '')) {
+                return (string) ($block['text'] ?? '');
+            }
+        }
+
+        return '';
     }
 }
 

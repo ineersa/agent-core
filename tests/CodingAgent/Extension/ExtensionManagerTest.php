@@ -54,9 +54,9 @@ final class ExtensionManagerTest extends TestCase
         $bridge->registerTool($dto1);
         $bridge->registerTool($dto2);
 
-        $this->assertCount(2, $bridge->getRegistrations());
-        $this->assertSame('tool_a', $bridge->getRegistrations()[0]->name);
-        $this->assertSame('tool_b', $bridge->getRegistrations()[1]->name);
+        self::assertCount(2, $bridge->getRegistrations());
+        self::assertSame('tool_a', $bridge->getRegistrations()[0]->name);
+        self::assertSame('tool_b', $bridge->getRegistrations()[1]->name);
     }
 
     public function testBridgeDrainClearsRegistrations(): void
@@ -67,16 +67,16 @@ final class ExtensionManagerTest extends TestCase
         );
 
         $drained = $bridge->drainRegistrations();
-        $this->assertCount(1, $drained);
-        $this->assertSame('tool_x', $drained[0]->name);
-        $this->assertCount(0, $bridge->getRegistrations());
+        self::assertCount(1, $drained);
+        self::assertSame('tool_x', $drained[0]->name);
+        self::assertCount(0, $bridge->getRegistrations());
     }
 
     public function testBridgeEmptyDrainReturnsEmptyArray(): void
     {
         $bridge = new ExtensionApiBridge();
-        $this->assertSame([], $bridge->drainRegistrations());
-        $this->assertSame([], $bridge->getRegistrations());
+        self::assertSame([], $bridge->drainRegistrations());
+        self::assertSame([], $bridge->getRegistrations());
     }
 
     // ── ExtensionApiBridge hook methods ──
@@ -90,9 +90,9 @@ final class ExtensionManagerTest extends TestCase
         $bridge->registerToolCallHook($hookA);
         $bridge->registerToolCallHook($hookB);
 
-        $this->assertCount(2, $bridge->getToolCallHooks());
-        $this->assertSame($hookA, $bridge->getToolCallHooks()[0]);
-        $this->assertSame($hookB, $bridge->getToolCallHooks()[1]);
+        self::assertCount(2, $bridge->getToolCallHooks());
+        self::assertSame($hookA, $bridge->getToolCallHooks()[0]);
+        self::assertSame($hookB, $bridge->getToolCallHooks()[1]);
     }
 
     public function testBridgeCollectsToolResultHooks(): void
@@ -104,9 +104,9 @@ final class ExtensionManagerTest extends TestCase
         $bridge->registerToolResultHook($hookA);
         $bridge->registerToolResultHook($hookB);
 
-        $this->assertCount(2, $bridge->getToolResultHooks());
-        $this->assertSame($hookA, $bridge->getToolResultHooks()[0]);
-        $this->assertSame($hookB, $bridge->getToolResultHooks()[1]);
+        self::assertCount(2, $bridge->getToolResultHooks());
+        self::assertSame($hookA, $bridge->getToolResultHooks()[0]);
+        self::assertSame($hookB, $bridge->getToolResultHooks()[1]);
     }
 
     public function testBridgeHooksCoexistWithTools(): void
@@ -117,9 +117,9 @@ final class ExtensionManagerTest extends TestCase
         $bridge->registerToolCallHook($this->dummyToolCallHook('hook_x'));
         $bridge->registerToolResultHook($this->dummyToolResultHook('result_x'));
 
-        $this->assertCount(1, $bridge->getRegistrations());
-        $this->assertCount(1, $bridge->getToolCallHooks());
-        $this->assertCount(1, $bridge->getToolResultHooks());
+        self::assertCount(1, $bridge->getRegistrations());
+        self::assertCount(1, $bridge->getToolCallHooks());
+        self::assertCount(1, $bridge->getToolResultHooks());
     }
 
     // ── Tests: ExtensionManager ──
@@ -133,7 +133,7 @@ final class ExtensionManagerTest extends TestCase
         $manager = new ExtensionManager($config, $bridge, $logger);
         $manager->loadExtensions();
 
-        $this->assertCount(0, $bridge->getRegistrations());
+        self::assertCount(0, $bridge->getRegistrations());
     }
 
     public function testLoadExtensionsRequiresAutoloadWhenPresent(): void
@@ -187,8 +187,8 @@ PHP;
         $manager = new ExtensionManager($config, $bridge, $logger);
         $manager->loadExtensions();
 
-        $this->assertCount(1, $bridge->getRegistrations());
-        $this->assertSame('sample_tool', $bridge->getRegistrations()[0]->name);
+        self::assertCount(1, $bridge->getRegistrations());
+        self::assertSame('sample_tool', $bridge->getRegistrations()[0]->name);
     }
 
     public function testLoadExtensionsSkipsMissingClass(): void
@@ -203,9 +203,9 @@ PHP;
         $manager = new ExtensionManager($config, $bridge, $logger);
         $manager->loadExtensions();
 
-        $this->assertCount(0, $bridge->getRegistrations());
-        $this->assertCount(1, $logger->warnings);
-        $this->assertStringContainsString('not found', $logger->warnings[0]);
+        self::assertCount(0, $bridge->getRegistrations());
+        self::assertCount(1, $logger->warnings);
+        self::assertStringContainsString('not found', $logger->warnings[0]);
     }
 
     public function testLoadExtensionsSkipsNonHatfieldExtension(): void
@@ -239,9 +239,9 @@ PHP
         $manager = new ExtensionManager($config, $bridge, $logger);
         $manager->loadExtensions();
 
-        $this->assertCount(0, $bridge->getRegistrations());
-        $this->assertCount(1, $logger->warnings);
-        $this->assertStringContainsString('does not implement HatfieldExtensionInterface', $logger->warnings[0]);
+        self::assertCount(0, $bridge->getRegistrations());
+        self::assertCount(1, $logger->warnings);
+        self::assertStringContainsString('does not implement HatfieldExtensionInterface', $logger->warnings[0]);
     }
 
     public function testLoadExtensionsContinuesAfterSingleFailure(): void
@@ -340,10 +340,10 @@ PHP
         // Both good extensions should have registered their tools
         // despite the middleware failure
         $names = array_map(static fn (ToolRegistrationDTO $dto): string => $dto->name, $bridge->getRegistrations());
-        $this->assertContains('good_tool', $names);
-        $this->assertContains('another_tool', $names);
-        $this->assertCount(2, $bridge->getRegistrations());
-        $this->assertGreaterThanOrEqual(1, $logger->errors);
+        self::assertContains('good_tool', $names);
+        self::assertContains('another_tool', $names);
+        self::assertCount(2, $bridge->getRegistrations());
+        self::assertGreaterThanOrEqual(1, $logger->errors);
     }
 
     public function testLoadExtensionsEmptyListLoadsNothing(): void
@@ -358,7 +358,7 @@ PHP
         $manager = new ExtensionManager($config, $bridge, $logger);
         $manager->loadExtensions();
 
-        $this->assertCount(0, $bridge->getRegistrations());
+        self::assertCount(0, $bridge->getRegistrations());
     }
 
     public function testLoadExtensionsWithoutAutoloadStillLoadsKnownClasses(): void
@@ -377,7 +377,7 @@ PHP
         $manager = new ExtensionManager($config, $bridge, $logger);
         $manager->loadExtensions();
 
-        $this->assertCount(0, $bridge->getRegistrations());
+        self::assertCount(0, $bridge->getRegistrations());
     }
 
     public function testLoadExtensionsWithHookRegistration(): void
@@ -441,12 +441,12 @@ PHP
         $manager->loadExtensions();
 
         // Verify tool registration
-        $this->assertCount(1, $bridge->getRegistrations());
-        $this->assertSame('hook_ext_tool', $bridge->getRegistrations()[0]->name);
+        self::assertCount(1, $bridge->getRegistrations());
+        self::assertSame('hook_ext_tool', $bridge->getRegistrations()[0]->name);
 
         // Verify hook registrations
-        $this->assertCount(1, $bridge->getToolCallHooks());
-        $this->assertCount(1, $bridge->getToolResultHooks());
+        self::assertCount(1, $bridge->getToolCallHooks());
+        self::assertCount(1, $bridge->getToolResultHooks());
     }
 
     // ── Helpers ──

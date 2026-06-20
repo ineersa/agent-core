@@ -8,8 +8,6 @@ use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Contract\SpanProviderInterface;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\AbstractLogger;
-use Psr\Log\LoggerInterface;
-use Stringable;
 
 final class RunTracerTest extends TestCase
 {
@@ -18,7 +16,7 @@ final class RunTracerTest extends TestCase
         $logger = new TraceLogger();
         $tracer = new RunTracer($logger);
 
-        $result = $tracer->inSpan('test.noop', [], fn (): string => 'hello');
+        $result = $tracer->inSpan('test.noop', [], static fn (): string => 'hello');
 
         self::assertSame('hello', $result);
 
@@ -37,7 +35,7 @@ final class RunTracerTest extends TestCase
         $result = $tracer->inSpan('test.operation', [
             'run_id' => 'run-1',
             'turn_no' => 3,
-        ], fn (): string => 'result');
+        ], static fn (): string => 'result');
 
         self::assertSame('result', $result);
 
@@ -64,7 +62,7 @@ final class RunTracerTest extends TestCase
         $this->expectException(\RuntimeException::class);
 
         try {
-            $tracer->inSpan('test.error', ['run_id' => 'run-1'], function (): never {
+            $tracer->inSpan('test.error', ['run_id' => 'run-1'], static function (): never {
                 throw new \RuntimeException('test error');
             });
         } finally {
@@ -84,8 +82,8 @@ final class RunTracerTest extends TestCase
         $provider = new FakeSpanProvider();
         $tracer = new RunTracer($logger, $provider);
 
-        $result = $tracer->inSpan('parent', ['run_id' => 'run-1'], function () use ($tracer): string {
-            $inner = $tracer->inSpan('child', ['step_id' => 'step-1'], fn (): string => 'done');
+        $result = $tracer->inSpan('parent', ['run_id' => 'run-1'], static function () use ($tracer): string {
+            $inner = $tracer->inSpan('child', ['step_id' => 'step-1'], static fn (): string => 'done');
 
             return 'parent-'.$inner;
         });
@@ -108,7 +106,7 @@ final class RunTracerTest extends TestCase
         $provider = new FakeSpanProvider();
         $tracer = new RunTracer($logger, $provider);
 
-        $tracer->inSpan('root.op', ['run_id' => 'run-1'], fn (): string => 'ok', root: true);
+        $tracer->inSpan('root.op', ['run_id' => 'run-1'], static fn (): string => 'ok', root: true);
 
         $startRecord = $logger->records[0];
         self::assertNull($startRecord['context']['parent_span_id']);
@@ -120,7 +118,7 @@ final class TraceLogger extends AbstractLogger
     /** @var list<array{message: string, context: array<string, mixed>}> */
     public array $records = [];
 
-    public function log($level, Stringable|string $message, array $context = []): void
+    public function log($level, \Stringable|string $message, array $context = []): void
     {
         unset($level);
 

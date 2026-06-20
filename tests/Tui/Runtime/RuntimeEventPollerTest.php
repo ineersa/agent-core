@@ -6,13 +6,13 @@ namespace Ineersa\Tests\Tui\Runtime;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
-use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
-use Ineersa\Tui\Runtime\RuntimeEventPoller;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
+use Ineersa\Tui\Runtime\RuntimeEventPoller;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\MockObject\MockObject;
@@ -53,7 +53,7 @@ final class RuntimeEventPollerTest extends TestCase
             $this->projector,
             $this->logger,
             new RuntimeExceptionBoundary(
-                $this->createStub(EventDispatcherInterface::class),
+                self::createStub(EventDispatcherInterface::class),
             ),
         );
     }
@@ -388,8 +388,7 @@ final class RuntimeEventPollerTest extends TestCase
             ->method('send')
             ->with(
                 'test-run',
-                self::callback(static fn ($cmd): bool =>
-                    $cmd instanceof UserCommand
+                self::callback(static fn ($cmd): bool => $cmd instanceof UserCommand
                     && 'follow_up' === $cmd->type
                     && 'Continue after cancel' === $cmd->text
                 ),

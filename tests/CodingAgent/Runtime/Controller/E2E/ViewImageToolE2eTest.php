@@ -18,24 +18,6 @@ final class ViewImageToolE2eTest extends ControllerE2eTestCase
 {
     private string $imagePath;
 
-    protected function tempDirPrefix(): string
-    {
-        return 'test-view-image';
-    }
-
-    protected function modelConfig(): array
-    {
-        return [
-            'input' => ['text', 'image'],
-            'tool_calling' => true,
-        ];
-    }
-
-    protected function extraDiagnostics(): array
-    {
-        return ['Image path' => $this->imagePath ?? '(none)'];
-    }
-
     protected function setUp(): void
     {
         parent::setUp();
@@ -146,7 +128,7 @@ final class ViewImageToolE2eTest extends ControllerE2eTestCase
             $text = $event['payload']['text'] ?? '';
             if (\is_string($text)
                 && str_contains($text, '[Tool result image:')
-                && stripos($text, 'does not support images') !== false
+                && false !== stripos($text, 'does not support images')
             ) {
                 $gatingPlaceholderFound = true;
                 break;
@@ -160,5 +142,23 @@ final class ViewImageToolE2eTest extends ControllerE2eTestCase
 
         $sessionDir = $this->tempDir.'/.hatfield/sessions/'.$this->runId;
         $this->assertSessionArtifactsExist($sessionDir, $events);
+    }
+
+    protected function tempDirPrefix(): string
+    {
+        return 'test-view-image';
+    }
+
+    protected function modelConfig(): array
+    {
+        return [
+            'input' => ['text', 'image'],
+            'tool_calling' => true,
+        ];
+    }
+
+    protected function extraDiagnostics(): array
+    {
+        return ['Image path' => $this->imagePath ?? '(none)'];
     }
 }

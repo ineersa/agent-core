@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Logging;
 
-use Ineersa\CodingAgent\Logging\LogEntry;
 use Ineersa\CodingAgent\Logging\LogFilter;
 use Ineersa\CodingAgent\Logging\LogParser;
 use Ineersa\CodingAgent\Logging\LogReader;
@@ -69,13 +68,13 @@ final class LogReaderTest extends TestCase
     public function testReadFilesYieldsParsedEntries(): void
     {
         $lines = [
-            \json_encode([
+            json_encode([
                 'datetime' => '2026-05-18T10:00:00+00:00',
                 'channel' => 'app',
                 'level_name' => 'INFO',
                 'message' => 'First message',
             ], \JSON_THROW_ON_ERROR),
-            \json_encode([
+            json_encode([
                 'datetime' => '2026-05-18T10:01:00+00:00',
                 'channel' => 'app',
                 'level_name' => 'WARNING',
@@ -97,13 +96,13 @@ final class LogReaderTest extends TestCase
     public function testReadFilesFiltersByLevel(): void
     {
         $lines = [
-            \json_encode([
+            json_encode([
                 'datetime' => '2026-05-18T10:00:00+00:00',
                 'channel' => 'app',
                 'level_name' => 'INFO',
                 'message' => 'Info message',
             ], \JSON_THROW_ON_ERROR),
-            \json_encode([
+            json_encode([
                 'datetime' => '2026-05-18T10:01:00+00:00',
                 'channel' => 'app',
                 'level_name' => 'ERROR',
@@ -124,8 +123,8 @@ final class LogReaderTest extends TestCase
     {
         $lines = [];
         for ($i = 0; $i < 50; ++$i) {
-            $lines[] = \json_encode([
-                'datetime' => '2026-05-18T10:00:'.sprintf('%02d', $i).'+00:00',
+            $lines[] = json_encode([
+                'datetime' => '2026-05-18T10:00:'.\sprintf('%02d', $i).'+00:00',
                 'channel' => 'app',
                 'level_name' => 'INFO',
                 'message' => "Message {$i}",
@@ -144,7 +143,7 @@ final class LogReaderTest extends TestCase
     {
         $lines = [
             'not json',
-            \json_encode([
+            json_encode([
                 'datetime' => '2026-05-18T10:00:00+00:00',
                 'channel' => 'app',
                 'level_name' => 'INFO',
@@ -177,8 +176,8 @@ final class LogReaderTest extends TestCase
     {
         $lines = [];
         for ($i = 0; $i < 20; ++$i) {
-            $lines[] = \json_encode([
-                'datetime' => '2026-05-18T10:00:'.sprintf('%02d', $i).'+00:00',
+            $lines[] = json_encode([
+                'datetime' => '2026-05-18T10:00:'.\sprintf('%02d', $i).'+00:00',
                 'channel' => 'app',
                 'level_name' => 'INFO',
                 'message' => "Message {$i}",
@@ -199,14 +198,14 @@ final class LogReaderTest extends TestCase
     {
         $lines = [];
         for ($i = 0; $i < 10; ++$i) {
-            $lines[] = \json_encode([
-                'datetime' => '2026-05-18T10:00:'.sprintf('%02d', $i).'+00:00',
+            $lines[] = json_encode([
+                'datetime' => '2026-05-18T10:00:'.\sprintf('%02d', $i).'+00:00',
                 'channel' => 'app',
                 'level_name' => 'INFO',
                 'message' => "Info {$i}",
             ], \JSON_THROW_ON_ERROR);
         }
-        $lines[] = \json_encode([
+        $lines[] = json_encode([
             'datetime' => '2026-05-18T10:00:11+00:00',
             'channel' => 'app',
             'level_name' => 'ERROR',

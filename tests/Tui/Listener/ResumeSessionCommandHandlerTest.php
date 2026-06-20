@@ -23,67 +23,11 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(ResumeSessionCommandHandler::class)]
 final class ResumeSessionCommandHandlerTest extends TestCase
 {
-    private function createAppConfig(): AppConfig
-    {
-        return new AppConfig(
-            tui: new TuiConfig(theme: 'default'),
-            logging: new LoggingConfig(),
-            cwd: '/tmp/test-resume',
-        );
-    }
-
-    private function createEntityManagerWithSession(int $id, string $name): EntityManagerInterface
-    {
-        $entity = new HatfieldSession();
-        $entity->id = $id;
-        $entity->name = $name;
-        $entity->cwd = '/tmp/test';
-        $entity->createdAt = new \DateTimeImmutable();
-        $entity->updatedAt = new \DateTimeImmutable();
-
-        $em = $this->createMock(EntityManagerInterface::class);
-        $em->expects(static::atLeastOnce())
-            ->method('find')
-            ->with(HatfieldSession::class, $id)
-            ->willReturn($entity);
-
-        return $em;
-    }
-
-    private function createSwitchSpy(): object
-    {
-        return new class implements TuiSessionSwitchServiceInterface {
-            public ?string $resumedSessionId = null;
-
-            public function bindForIteration(
-                \Symfony\Component\Tui\Tui $tui,
-                \Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient $client,
-                \Ineersa\Tui\Runtime\TuiSessionState $state,
-            ): void {
-            }
-
-            public function requestResume(string $sessionId): void
-            {
-                $this->resumedSessionId = $sessionId;
-            }
-
-            public function requestNewDraft(
-                ?\Ineersa\CodingAgent\Runtime\Contract\StartRunRequest $request = null,
-            ): void {
-            }
-
-            public function hasPendingSwitch(): bool
-            {
-                return false;
-            }
-        };
-    }
-
     #[Test]
     public function testHandleWithNoArgsOpensPickerAndReturnsNoOp(): void
     {
         $switch = $this->createSwitchSpy();
-        $em = $this->createStub(EntityManagerInterface::class);
+        $em = self::createStub(EntityManagerInterface::class);
         $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em);
         $pickerController = new SessionPickerController($sessionStore, $switch);
 
@@ -118,7 +62,7 @@ final class ResumeSessionCommandHandlerTest extends TestCase
     {
         $switch = $this->createSwitchSpy();
         // EntityManager as stub — find() returns null for any ID
-        $em = $this->createStub(EntityManagerInterface::class);
+        $em = self::createStub(EntityManagerInterface::class);
         $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em);
         $pickerController = new SessionPickerController($sessionStore, $switch);
 
@@ -136,7 +80,7 @@ final class ResumeSessionCommandHandlerTest extends TestCase
     public function testHandleWithMalformedSessionIdReturnsError(): void
     {
         $switch = $this->createSwitchSpy();
-        $em = $this->createStub(EntityManagerInterface::class);
+        $em = self::createStub(EntityManagerInterface::class);
         $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em);
         $pickerController = new SessionPickerController($sessionStore, $switch);
 
@@ -154,7 +98,7 @@ final class ResumeSessionCommandHandlerTest extends TestCase
     public function testHandleWithSessionIdZeroReturnsError(): void
     {
         $switch = $this->createSwitchSpy();
-        $em = $this->createStub(EntityManagerInterface::class);
+        $em = self::createStub(EntityManagerInterface::class);
         $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em);
         $pickerController = new SessionPickerController($sessionStore, $switch);
 
@@ -166,5 +110,61 @@ final class ResumeSessionCommandHandlerTest extends TestCase
         self::assertStringContainsString('0', $result->text);
         self::assertSame('error', $result->role);
         self::assertNull($switch->resumedSessionId, 'Switch should NOT be called for session 0');
+    }
+
+    private function createAppConfig(): AppConfig
+    {
+        return new AppConfig(
+            tui: new TuiConfig(theme: 'default'),
+            logging: new LoggingConfig(),
+            cwd: '/tmp/test-resume',
+        );
+    }
+
+    private function createEntityManagerWithSession(int $id, string $name): EntityManagerInterface
+    {
+        $entity = new HatfieldSession();
+        $entity->id = $id;
+        $entity->name = $name;
+        $entity->cwd = '/tmp/test';
+        $entity->createdAt = new \DateTimeImmutable();
+        $entity->updatedAt = new \DateTimeImmutable();
+
+        $em = $this->createMock(EntityManagerInterface::class);
+        $em->expects(self::atLeastOnce())
+            ->method('find')
+            ->with(HatfieldSession::class, $id)
+            ->willReturn($entity);
+
+        return $em;
+    }
+
+    private function createSwitchSpy(): object
+    {
+        return new class implements TuiSessionSwitchServiceInterface {
+            public ?string $resumedSessionId = null;
+
+            public function bindForIteration(
+                \Symfony\Component\Tui\Tui $tui,
+                \Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient $client,
+                \Ineersa\Tui\Runtime\TuiSessionState $state,
+            ): void {
+            }
+
+            public function requestResume(string $sessionId): void
+            {
+                $this->resumedSessionId = $sessionId;
+            }
+
+            public function requestNewDraft(
+                ?\Ineersa\CodingAgent\Runtime\Contract\StartRunRequest $request = null,
+            ): void {
+            }
+
+            public function hasPendingSwitch(): bool
+            {
+                return false;
+            }
+        };
     }
 }

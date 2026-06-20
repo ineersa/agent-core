@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace Ineersa\Platform\Tests\Bridge\Generic;
 
 use Ineersa\Platform\Bridge\Generic\DurableResultConverter;
-use Symfony\AI\Platform\Exception\IncompleteStreamException;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\AI\Platform\Exception\IncompleteStreamException;
 use Symfony\AI\Platform\Result\RawHttpResult;
 use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
 use Symfony\AI\Platform\Result\Stream\Delta\ToolCallComplete;
@@ -71,7 +71,6 @@ final class DurableResultConverterTest extends TestCase
             $this->chunk(['choices' => [['finish_reason' => 'tool_calls']]]),
         ]));
 
-
         self::assertInstanceOf(ToolCallStart::class, $deltas[0]);
         self::assertSame('call_abc', $deltas[0]->getId());
         self::assertSame('bash', $deltas[0]->getName());
@@ -127,7 +126,6 @@ final class DurableResultConverterTest extends TestCase
             $this->chunk(['choices' => [['finish_reason' => 'tool_calls']]]),
         ]));
 
-
         // Collect the ToolCallComplete
         $complete = null;
         foreach ($deltas as $delta) {
@@ -171,7 +169,6 @@ final class DurableResultConverterTest extends TestCase
             $this->chunk(['choices' => [['finish_reason' => 'stop']]]),
         ]));
 
-
         // No ToolCallStart or ToolCallComplete should appear for empty-ID starts
         $hasToolCallStart = false;
         $hasToolCallComplete = false;
@@ -201,7 +198,6 @@ final class DurableResultConverterTest extends TestCase
             ]]]),
             $this->chunk(['choices' => [['finish_reason' => 'stop']]]),
         ]));
-
 
         $toolInputDeltas = [];
         foreach ($deltas as $delta) {
@@ -244,7 +240,6 @@ final class DurableResultConverterTest extends TestCase
             ]]]),
             $this->chunk(['choices' => [['finish_reason' => 'tool_calls']]]),
         ]));
-
 
         $complete = null;
         foreach ($deltas as $delta) {
@@ -294,7 +289,6 @@ final class DurableResultConverterTest extends TestCase
             $this->chunk(['choices' => [['finish_reason' => 'tool_calls']]]),
         ]));
 
-
         // The first ToolCallStart should appear when the ID arrives
         $starts = array_filter($deltas, static fn ($d) => $d instanceof ToolCallStart);
         self::assertCount(1, $starts);
@@ -332,7 +326,6 @@ final class DurableResultConverterTest extends TestCase
             $this->chunk(['choices' => [['finish_reason' => 'stop']]]),
         ]));
 
-
         $textDeltas = array_filter($deltas, static fn ($d) => $d instanceof TextDelta);
         self::assertCount(2, $textDeltas);
 
@@ -363,7 +356,6 @@ final class DurableResultConverterTest extends TestCase
             ]]]),
             $this->chunk(['choices' => [['finish_reason' => 'tool_calls']]]),
         ]));
-
 
         $complete = null;
         foreach ($deltas as $delta) {
@@ -403,7 +395,6 @@ final class DurableResultConverterTest extends TestCase
             ]]]),
             $this->chunk(['choices' => [['finish_reason' => 'tool_calls']]]),
         ]));
-
 
         $complete = null;
         foreach ($deltas as $delta) {
@@ -749,7 +740,7 @@ final class DurableResultConverterTest extends TestCase
      * Create a RawHttpResult configured for streaming mode, with a mock HTTP 200 response.
      *
      * @param list<array<string, mixed>> $chunks Raw SSE data chunks representing
-     *                                          individual SSE "data:" payloads
+     *                                           individual SSE "data:" payloads
      */
     private function streamResult(array $chunks): RawHttpResult
     {
@@ -757,12 +748,34 @@ final class DurableResultConverterTest extends TestCase
         // mocks for ResponseInterface add internal state that interferes
         // with the converter's error-handling path when status code is 200.
         $response = new class implements ResponseInterface {
-            public function getStatusCode(): int { return 200; }
-            public function getHeaders(bool $throw = true): array { return []; }
-            public function getContent(bool $throw = true): string { return ''; }
-            public function toArray(bool $throw = true): array { return ['choices' => []]; }
-            public function cancel(): void {}
-            public function getInfo(?string $type = null): mixed { return null; }
+            public function getStatusCode(): int
+            {
+                return 200;
+            }
+
+            public function getHeaders(bool $throw = true): array
+            {
+                return [];
+            }
+
+            public function getContent(bool $throw = true): string
+            {
+                return '';
+            }
+
+            public function toArray(bool $throw = true): array
+            {
+                return ['choices' => []];
+            }
+
+            public function cancel(): void
+            {
+            }
+
+            public function getInfo(?string $type = null): mixed
+            {
+                return null;
+            }
         };
 
         // Return chunked data simulating SSE -> getDataStream().
@@ -770,7 +783,9 @@ final class DurableResultConverterTest extends TestCase
             $response,
             new class($chunks) implements \Symfony\AI\Platform\Result\Stream\HttpStreamInterface {
                 /** @param list<array<string, mixed>> $chunks */
-                public function __construct(private readonly array $chunks) {}
+                public function __construct(private readonly array $chunks)
+                {
+                }
 
                 public function stream(ResponseInterface $response): iterable
                 {

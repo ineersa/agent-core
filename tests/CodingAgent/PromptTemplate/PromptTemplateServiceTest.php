@@ -11,8 +11,8 @@ use Ineersa\CodingAgent\PromptTemplate\PromptTemplateArgumentParser;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateFrontmatterParser;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateLoader;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateService;
-use Ineersa\CodingAgent\PromptTemplate\PromptTemplateSubstitutor;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
+use Ineersa\CodingAgent\PromptTemplate\PromptTemplateSubstitutor;
 use Ineersa\CodingAgent\Runtime\Contract\PromptTemplateCommand;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
@@ -55,15 +55,6 @@ final class PromptTemplateServiceTest extends TestCase
     protected function tearDown(): void
     {
         TestDirectoryIsolation::removeDirectory($this->tmpDir);
-    }
-
-    private function writeFile(string $path, string $content): void
-    {
-        $dir = \dirname($path);
-        if (!is_dir($dir)) {
-            mkdir($dir, 0755, true);
-        }
-        file_put_contents($path, $content);
     }
 
     // ─── Catalog ───
@@ -267,5 +258,14 @@ final class PromptTemplateServiceTest extends TestCase
         );
 
         self::assertSame('Hello World User!', $this->service->expandPromptTemplate('/greet "World User"'));
+    }
+
+    private function writeFile(string $path, string $content): void
+    {
+        $dir = \dirname($path);
+        if (!is_dir($dir)) {
+            mkdir($dir, 0755, true);
+        }
+        file_put_contents($path, $content);
     }
 }

@@ -22,23 +22,23 @@ class McpSdkClientAdapterTest extends TestCase
 {
     public function testCallToolReturnsIsErrorTrue(): void
     {
-        $sdkClient = $this->createStub(SdkClient::class);
+        $sdkClient = self::createStub(SdkClient::class);
         $sdkClient->method('callTool')->willReturn(
             CallToolResult::error([new TextContent('something went wrong')]),
         );
 
-        $adapter = new McpSdkClientAdapter($sdkClient, $this->createStub(TransportInterface::class));
+        $adapter = new McpSdkClientAdapter($sdkClient, self::createStub(TransportInterface::class));
         $result = $adapter->callTool('failing');
 
-        $this->assertTrue($result['isError']);
-        $this->assertCount(1, $result['content']);
-        $this->assertSame('text', $result['content'][0]['type']);
-        $this->assertSame('something went wrong', $result['content'][0]['text']);
+        self::assertTrue($result['isError']);
+        self::assertCount(1, $result['content']);
+        self::assertSame('text', $result['content'][0]['type']);
+        self::assertSame('something went wrong', $result['content'][0]['text']);
     }
 
     public function testCallToolReturnsIsErrorFalse(): void
     {
-        $sdkClient = $this->createStub(SdkClient::class);
+        $sdkClient = self::createStub(SdkClient::class);
         $sdkClient->method('callTool')->willReturn(
             new CallToolResult(
                 content: [new TextContent('success')],
@@ -46,62 +46,62 @@ class McpSdkClientAdapterTest extends TestCase
             ),
         );
 
-        $adapter = new McpSdkClientAdapter($sdkClient, $this->createStub(TransportInterface::class));
+        $adapter = new McpSdkClientAdapter($sdkClient, self::createStub(TransportInterface::class));
         $result = $adapter->callTool('ok-tool');
 
-        $this->assertFalse($result['isError']);
-        $this->assertCount(1, $result['content']);
-        $this->assertSame('text', $result['content'][0]['type']);
-        $this->assertSame('success', $result['content'][0]['text']);
+        self::assertFalse($result['isError']);
+        self::assertCount(1, $result['content']);
+        self::assertSame('text', $result['content'][0]['type']);
+        self::assertSame('success', $result['content'][0]['text']);
     }
 
     public function testCallToolMapsTextContent(): void
     {
-        $sdkClient = $this->createStub(SdkClient::class);
+        $sdkClient = self::createStub(SdkClient::class);
         $sdkClient->method('callTool')->willReturn(
             new CallToolResult([new TextContent('hello world')]),
         );
 
-        $adapter = new McpSdkClientAdapter($sdkClient, $this->createStub(TransportInterface::class));
+        $adapter = new McpSdkClientAdapter($sdkClient, self::createStub(TransportInterface::class));
         $result = $adapter->callTool('echo');
 
-        $this->assertSame('text', $result['content'][0]['type']);
-        $this->assertSame('hello world', $result['content'][0]['text']);
+        self::assertSame('text', $result['content'][0]['type']);
+        self::assertSame('hello world', $result['content'][0]['text']);
     }
 
     public function testCallToolMapsImageContent(): void
     {
-        $sdkClient = $this->createStub(SdkClient::class);
+        $sdkClient = self::createStub(SdkClient::class);
         $sdkClient->method('callTool')->willReturn(
             new CallToolResult([new ImageContent('base64data', 'image/png')]),
         );
 
-        $adapter = new McpSdkClientAdapter($sdkClient, $this->createStub(TransportInterface::class));
+        $adapter = new McpSdkClientAdapter($sdkClient, self::createStub(TransportInterface::class));
         $result = $adapter->callTool('screenshot');
 
-        $this->assertSame('image', $result['content'][0]['type']);
-        $this->assertSame('base64data', $result['content'][0]['data']);
-        $this->assertSame('image/png', $result['content'][0]['mimeType']);
+        self::assertSame('image', $result['content'][0]['type']);
+        self::assertSame('base64data', $result['content'][0]['data']);
+        self::assertSame('image/png', $result['content'][0]['mimeType']);
     }
 
     public function testCallToolMapsAudioContent(): void
     {
-        $sdkClient = $this->createStub(SdkClient::class);
+        $sdkClient = self::createStub(SdkClient::class);
         $sdkClient->method('callTool')->willReturn(
             new CallToolResult([new AudioContent('base64audio', 'audio/wav')]),
         );
 
-        $adapter = new McpSdkClientAdapter($sdkClient, $this->createStub(TransportInterface::class));
+        $adapter = new McpSdkClientAdapter($sdkClient, self::createStub(TransportInterface::class));
         $result = $adapter->callTool('listen');
 
-        $this->assertSame('audio', $result['content'][0]['type']);
-        $this->assertSame('base64audio', $result['content'][0]['data']);
-        $this->assertSame('audio/wav', $result['content'][0]['mimeType']);
+        self::assertSame('audio', $result['content'][0]['type']);
+        self::assertSame('base64audio', $result['content'][0]['data']);
+        self::assertSame('audio/wav', $result['content'][0]['mimeType']);
     }
 
     public function testCallToolMapsEmbeddedResourceText(): void
     {
-        $sdkClient = $this->createStub(SdkClient::class);
+        $sdkClient = self::createStub(SdkClient::class);
         $resource = EmbeddedResource::fromText(
             uri: 'file:///app/readme.md',
             text: '# Hello',
@@ -109,18 +109,18 @@ class McpSdkClientAdapterTest extends TestCase
         );
         $sdkClient->method('callTool')->willReturn(new CallToolResult([$resource]));
 
-        $adapter = new McpSdkClientAdapter($sdkClient, $this->createStub(TransportInterface::class));
+        $adapter = new McpSdkClientAdapter($sdkClient, self::createStub(TransportInterface::class));
         $result = $adapter->callTool('read');
 
-        $this->assertSame('resource', $result['content'][0]['type']);
-        $this->assertSame('file:///app/readme.md', $result['content'][0]['resource']['uri']);
-        $this->assertSame('# Hello', $result['content'][0]['resource']['text']);
-        $this->assertSame('text/markdown', $result['content'][0]['resource']['mimeType']);
+        self::assertSame('resource', $result['content'][0]['type']);
+        self::assertSame('file:///app/readme.md', $result['content'][0]['resource']['uri']);
+        self::assertSame('# Hello', $result['content'][0]['resource']['text']);
+        self::assertSame('text/markdown', $result['content'][0]['resource']['mimeType']);
     }
 
     public function testCallToolMapsEmbeddedResourceBlob(): void
     {
-        $sdkClient = $this->createStub(SdkClient::class);
+        $sdkClient = self::createStub(SdkClient::class);
         $resource = EmbeddedResource::fromBlob(
             uri: 'file:///app/binary.dat',
             base64Blob: 'aGVsbG8=',
@@ -128,18 +128,18 @@ class McpSdkClientAdapterTest extends TestCase
         );
         $sdkClient->method('callTool')->willReturn(new CallToolResult([$resource]));
 
-        $adapter = new McpSdkClientAdapter($sdkClient, $this->createStub(TransportInterface::class));
+        $adapter = new McpSdkClientAdapter($sdkClient, self::createStub(TransportInterface::class));
         $result = $adapter->callTool('fetch');
 
-        $this->assertSame('resource', $result['content'][0]['type']);
-        $this->assertSame('file:///app/binary.dat', $result['content'][0]['resource']['uri']);
-        $this->assertSame('aGVsbG8=', $result['content'][0]['resource']['blob']);
-        $this->assertSame('application/octet-stream', $result['content'][0]['resource']['mimeType']);
+        self::assertSame('resource', $result['content'][0]['type']);
+        self::assertSame('file:///app/binary.dat', $result['content'][0]['resource']['uri']);
+        self::assertSame('aGVsbG8=', $result['content'][0]['resource']['blob']);
+        self::assertSame('application/octet-stream', $result['content'][0]['resource']['mimeType']);
     }
 
     public function testCallToolMapsMultipleContentTypesTogether(): void
     {
-        $sdkClient = $this->createStub(SdkClient::class);
+        $sdkClient = self::createStub(SdkClient::class);
         $sdkClient->method('callTool')->willReturn(
             CallToolResult::error([
                 new TextContent('text part'),
@@ -149,22 +149,22 @@ class McpSdkClientAdapterTest extends TestCase
             ]),
         );
 
-        $adapter = new McpSdkClientAdapter($sdkClient, $this->createStub(TransportInterface::class));
+        $adapter = new McpSdkClientAdapter($sdkClient, self::createStub(TransportInterface::class));
         $result = $adapter->callTool('multi');
 
-        $this->assertTrue($result['isError']);
-        $this->assertCount(4, $result['content']);
+        self::assertTrue($result['isError']);
+        self::assertCount(4, $result['content']);
 
-        $this->assertSame('text', $result['content'][0]['type']);
-        $this->assertSame('text part', $result['content'][0]['text']);
+        self::assertSame('text', $result['content'][0]['type']);
+        self::assertSame('text part', $result['content'][0]['text']);
 
-        $this->assertSame('audio', $result['content'][1]['type']);
+        self::assertSame('audio', $result['content'][1]['type']);
 
-        $this->assertSame('resource', $result['content'][2]['type']);
-        $this->assertArrayHasKey('text', $result['content'][2]['resource']);
+        self::assertSame('resource', $result['content'][2]['type']);
+        self::assertArrayHasKey('text', $result['content'][2]['resource']);
 
-        $this->assertSame('resource', $result['content'][3]['type']);
-        $this->assertArrayHasKey('blob', $result['content'][3]['resource']);
+        self::assertSame('resource', $result['content'][3]['type']);
+        self::assertArrayHasKey('blob', $result['content'][3]['resource']);
     }
 
     public function testCallToolThrowsForUnsupportedContentType(): void
@@ -182,10 +182,10 @@ class McpSdkClientAdapterTest extends TestCase
             }
         };
 
-        $sdkClient = $this->createStub(SdkClient::class);
+        $sdkClient = self::createStub(SdkClient::class);
         $sdkClient->method('callTool')->willReturn(new CallToolResult([$unknownContent]));
 
-        $adapter = new McpSdkClientAdapter($sdkClient, $this->createStub(TransportInterface::class));
+        $adapter = new McpSdkClientAdapter($sdkClient, self::createStub(TransportInterface::class));
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Unsupported MCP content type: "custom-unknown-type"');

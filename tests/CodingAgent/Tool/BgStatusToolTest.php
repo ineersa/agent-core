@@ -8,12 +8,12 @@ use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
-use Ineersa\CodingAgent\Tool\OutputCap;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Ineersa\CodingAgent\Tool\BgStatusTool;
+use Ineersa\CodingAgent\Tool\OutputCap;
 use Psr\Log\NullLogger;
 
 /**
@@ -107,13 +107,13 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
         $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'list']));
 
         $data = json_decode($result, true, 512, \JSON_THROW_ON_ERROR);
-        $this->assertIsArray($data);
-        $this->assertArrayHasKey('processes', $data);
-        $this->assertCount(1, $data['processes']);
-        $this->assertStringContainsString('bg process', $data['processes'][0]['command']);
-        $this->assertArrayHasKey('pid', $data['processes'][0]);
-        $this->assertArrayHasKey('log_path', $data['processes'][0]);
-        $this->assertArrayHasKey('hint', $data);
+        self::assertIsArray($data);
+        self::assertArrayHasKey('processes', $data);
+        self::assertCount(1, $data['processes']);
+        self::assertStringContainsString('bg process', $data['processes'][0]['command']);
+        self::assertArrayHasKey('pid', $data['processes'][0]);
+        self::assertArrayHasKey('log_path', $data['processes'][0]);
+        self::assertArrayHasKey('hint', $data);
     }
 
     public function testListEmpty(): void
@@ -121,10 +121,10 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
         $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'list']));
 
         $data = json_decode($result, true, 512, \JSON_THROW_ON_ERROR);
-        $this->assertIsArray($data);
-        $this->assertArrayHasKey('processes', $data);
-        $this->assertEmpty($data['processes']);
-        $this->assertArrayHasKey('hint', $data);
+        self::assertIsArray($data);
+        self::assertArrayHasKey('processes', $data);
+        self::assertEmpty($data['processes']);
+        self::assertArrayHasKey('hint', $data);
     }
 
     /* ── log action ── */
@@ -137,8 +137,8 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
 
         $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'log', 'pid' => $started->pid]));
 
-        $this->assertStringContainsString('hello from bg', $result);
-        $this->assertStringContainsString('BEGIN LOG', $result);
+        self::assertStringContainsString('hello from bg', $result);
+        self::assertStringContainsString('BEGIN LOG', $result);
     }
 
     public function testLogThrowsOnMissingPid(): void
@@ -164,8 +164,8 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
 
         $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'stop', 'pid' => $started->pid]));
 
-        $this->assertStringContainsString('PID '.$started->pid, $result);
-        $this->assertStringContainsString('stopped', $result);
+        self::assertStringContainsString('PID '.$started->pid, $result);
+        self::assertStringContainsString('stopped', $result);
     }
 
     public function testStopAlreadyFinished(): void
@@ -175,7 +175,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
 
         $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'stop', 'pid' => $started->pid]));
 
-        $this->assertStringContainsString('already finished', $result);
+        self::assertStringContainsString('already finished', $result);
     }
 
     /* ── definition() ── */
@@ -183,7 +183,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
     public function testDefinitionReturnsToolDefinition(): void
     {
         $definition = $this->tool->definition();
-        $this->assertSame('bg_status', $definition->name);
+        self::assertSame('bg_status', $definition->name);
     }
 
     /* ── Invalid action ── */
@@ -210,10 +210,10 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
         $commandsA = array_column($dataA['processes'], 'command');
         $commandsB = array_column($dataB['processes'], 'command');
 
-        $this->assertContains('echo "A-for-test-B"', $commandsA);
-        $this->assertNotContains('echo "B-for-test-A"', $commandsA);
-        $this->assertContains('echo "B-for-test-A"', $commandsB);
-        $this->assertNotContains('echo "A-for-test-B"', $commandsB);
+        self::assertContains('echo "A-for-test-B"', $commandsA);
+        self::assertNotContains('echo "B-for-test-A"', $commandsA);
+        self::assertContains('echo "B-for-test-A"', $commandsB);
+        self::assertNotContains('echo "A-for-test-B"', $commandsB);
     }
 
     /* ── log cap regression ── */
@@ -245,13 +245,12 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
         $started = $this->withContext(self::TEST_SESSION, fn () => $this->manager->start($command, self::TEST_SESSION));
         usleep(100_000);
 
-        $result = $this->withContext(self::TEST_SESSION, fn (): string => $lowCapTool(['action' => 'log', 'pid' => $started->pid]));
+        $result = $this->withContext(self::TEST_SESSION, static fn (): string => $lowCapTool(['action' => 'log', 'pid' => $started->pid]));
 
         // Tool returns raw output; capping is centralized.
-        $this->assertStringNotContainsString('Output capped', $result);
-        $this->assertStringContainsString($sentinel, $result, 'Large log must not be silently dropped by the tool');
+        self::assertStringNotContainsString('Output capped', $result);
+        self::assertStringContainsString($sentinel, $result, 'Large log must not be silently dropped by the tool');
     }
-
 
     /* ── Error: missing action ── */
 
@@ -286,5 +285,4 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
 
         return $this->contextAccessor->with($toolContext, $callback);
     }
-
 }

@@ -29,9 +29,9 @@ final class ProviderCompatibilityRequestShaperTest extends TestCase
             'stream' => true,
         ]);
 
-        $this->assertArrayNotHasKey(ProviderRequestOptionKeys::REASONING, $result['options']);
-        $this->assertArrayNotHasKey(ProviderRequestOptionKeys::REASONING_OPTIONS, $result['options']);
-        $this->assertArrayHasKey('stream', $result['options']);
+        self::assertArrayNotHasKey(ProviderRequestOptionKeys::REASONING, $result['options']);
+        self::assertArrayNotHasKey(ProviderRequestOptionKeys::REASONING_OPTIONS, $result['options']);
+        self::assertArrayHasKey('stream', $result['options']);
     }
 
     public function testStripsCompatFeaturesKey(): void
@@ -42,7 +42,7 @@ final class ProviderCompatibilityRequestShaperTest extends TestCase
             ProviderRequestOptionKeys::COMPAT_FEATURES => [ZaiToolStreamFeatureShaper::FEATURE],
         ]);
 
-        $this->assertArrayNotHasKey(ProviderRequestOptionKeys::COMPAT_FEATURES, $result['options']);
+        self::assertArrayNotHasKey(ProviderRequestOptionKeys::COMPAT_FEATURES, $result['options']);
     }
 
     // ──────────────────────────────────────────────
@@ -58,8 +58,8 @@ final class ProviderCompatibilityRequestShaperTest extends TestCase
             ProviderRequestOptionKeys::COMPAT_FEATURES => [ZaiToolStreamFeatureShaper::FEATURE],
         ]);
 
-        $this->assertArrayHasKey('tool_stream', $result['options']);
-        $this->assertTrue($result['options']['tool_stream']);
+        self::assertArrayHasKey('tool_stream', $result['options']);
+        self::assertTrue($result['options']['tool_stream']);
     }
 
     public function testSkipsNonMatchingFeatureShapers(): void
@@ -71,7 +71,7 @@ final class ProviderCompatibilityRequestShaperTest extends TestCase
             ProviderRequestOptionKeys::COMPAT_FEATURES => [], // no flags
         ]);
 
-        $this->assertArrayNotHasKey('tool_stream', $result['options']);
+        self::assertArrayNotHasKey('tool_stream', $result['options']);
     }
 
     public function testMultipleFeatureShapersChain(): void
@@ -103,10 +103,10 @@ final class ProviderCompatibilityRequestShaperTest extends TestCase
             ],
         ]);
 
-        $this->assertArrayHasKey('tool_stream', $result['options']);
-        $this->assertTrue($result['options']['tool_stream']);
-        $this->assertArrayHasKey('reasoning_content_injected', $result['options']);
-        $this->assertTrue($result['options']['reasoning_content_injected']);
+        self::assertArrayHasKey('tool_stream', $result['options']);
+        self::assertTrue($result['options']['tool_stream']);
+        self::assertArrayHasKey('reasoning_content_injected', $result['options']);
+        self::assertTrue($result['options']['reasoning_content_injected']);
     }
 
     // ──────────────────────────────────────────────
@@ -119,9 +119,9 @@ final class ProviderCompatibilityRequestShaperTest extends TestCase
 
         $result = $shaper->shape('test-model', ['key' => 'value'], []);
 
-        $this->assertSame('test-model', $result['model']);
-        $this->assertSame(['key' => 'value'], $result['input']);
-        $this->assertIsArray($result['options']);
+        self::assertSame('test-model', $result['model']);
+        self::assertSame(['key' => 'value'], $result['input']);
+        self::assertIsArray($result['options']);
     }
 
     // ──────────────────────────────────────────────
@@ -162,9 +162,9 @@ final class ProviderCompatibilityRequestShaperTest extends TestCase
             ProviderRequestOptionKeys::REASONING_OPTIONS => ['enable_thinking' => true],
         ]);
 
-        $this->assertArrayHasKey('enable_thinking', $result['options']);
-        $this->assertTrue($result['options']['enable_thinking']);
-        $this->assertArrayNotHasKey(ProviderRequestOptionKeys::REASONING_OPTIONS, $result['options']);
+        self::assertArrayHasKey('enable_thinking', $result['options']);
+        self::assertTrue($result['options']['enable_thinking']);
+        self::assertArrayNotHasKey(ProviderRequestOptionKeys::REASONING_OPTIONS, $result['options']);
     }
 }
 

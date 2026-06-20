@@ -67,7 +67,7 @@ class McpConfigLoaderTest extends TestCase
         $loader = $this->createLoader();
         $config = $loader->load();
 
-        $this->assertCount(0, $config->servers);
+        self::assertCount(0, $config->servers);
     }
 
     public function testEmptyConfigWhenFilesAreEmptyObjects(): void
@@ -77,7 +77,7 @@ class McpConfigLoaderTest extends TestCase
         $loader = $this->createLoader();
         $config = $loader->load();
 
-        $this->assertCount(0, $config->servers);
+        self::assertCount(0, $config->servers);
     }
 
     // ─── Global config loads STDIO and HTTP ───
@@ -97,17 +97,17 @@ class McpConfigLoaderTest extends TestCase
         $loader = $this->createLoader();
         $config = $loader->load();
 
-        $this->assertCount(1, $config->servers);
-        $this->assertArrayHasKey('filesystem', $config->servers);
+        self::assertCount(1, $config->servers);
+        self::assertArrayHasKey('filesystem', $config->servers);
 
         $srv = $config->servers['filesystem'];
-        $this->assertTrue($srv->enabled);
-        $this->assertSame('npx', $srv->command);
-        $this->assertSame(['-y', '@modelcontextprotocol/server-filesystem', '.'], $srv->args);
-        $this->assertSame(McpTransportTypeEnum::STDIO, $srv->transportType);
+        self::assertTrue($srv->enabled);
+        self::assertSame('npx', $srv->command);
+        self::assertSame(['-y', '@modelcontextprotocol/server-filesystem', '.'], $srv->args);
+        self::assertSame(McpTransportTypeEnum::STDIO, $srv->transportType);
         // cwd '.' resolved against project dir becomes absolute
-        $this->assertNotSame('.', $srv->cwd);
-        $this->assertStringStartsWith('/', $srv->cwd ?? '');
+        self::assertNotSame('.', $srv->cwd);
+        self::assertStringStartsWith('/', $srv->cwd ?? '');
     }
 
     public function testGlobalConfigLoadsHttpServer(): void
@@ -126,14 +126,14 @@ class McpConfigLoaderTest extends TestCase
         $loader = $this->createLoader();
         $config = $loader->load();
 
-        $this->assertCount(1, $config->servers);
-        $this->assertArrayHasKey('github', $config->servers);
+        self::assertCount(1, $config->servers);
+        self::assertArrayHasKey('github', $config->servers);
 
         $srv = $config->servers['github'];
-        $this->assertTrue($srv->enabled);
-        $this->assertSame('https://api.githubcopilot.com/mcp', $srv->url);
-        $this->assertSame(McpTransportTypeEnum::HTTP, $srv->transportType);
-        $this->assertSame('Bearer test-token-value', $srv->headers['Authorization']);
+        self::assertTrue($srv->enabled);
+        self::assertSame('https://api.githubcopilot.com/mcp', $srv->url);
+        self::assertSame(McpTransportTypeEnum::HTTP, $srv->transportType);
+        self::assertSame('Bearer test-token-value', $srv->headers['Authorization']);
     }
 
     // ─── Project overrides global (whole-server replacement) ───
@@ -164,11 +164,11 @@ class McpConfigLoaderTest extends TestCase
         $loader = $this->createLoader();
         $config = $loader->load();
 
-        $this->assertCount(1, $config->servers);
+        self::assertCount(1, $config->servers);
         $srv = $config->servers['filesystem'];
-        $this->assertSame('node', $srv->command);
-        $this->assertSame(['server.js'], $srv->args);
-        $this->assertSame([], $srv->env);  // old env did NOT survive
+        self::assertSame('node', $srv->command);
+        self::assertSame(['server.js'], $srv->args);
+        self::assertSame([], $srv->env);  // old env did NOT survive
     }
 
     // ─── Disable inherited server ───
@@ -196,7 +196,7 @@ class McpConfigLoaderTest extends TestCase
         $config = $loader->load();
 
         // The server should be absent (disabled and removed)
-        $this->assertCount(0, $config->servers);
+        self::assertCount(0, $config->servers);
     }
 
     // ─── Non-inherited disable-only fails ───
@@ -238,7 +238,7 @@ class McpConfigLoaderTest extends TestCase
         $config = $loader->load();
 
         // Should be absent (disabled means removed from final config)
-        $this->assertCount(0, $config->servers);
+        self::assertCount(0, $config->servers);
     }
 
     // ─── Invalid command+url ───
@@ -302,8 +302,8 @@ class McpConfigLoaderTest extends TestCase
         $config = $loader->load();
 
         $srv = $config->servers['test-server'];
-        $this->assertSame('test-token-value', $srv->env['TOKEN']);
-        $this->assertSame('test-api-key', $srv->env['KEY']);
+        self::assertSame('test-token-value', $srv->env['TOKEN']);
+        self::assertSame('test-api-key', $srv->env['KEY']);
     }
 
     // ─── Header interpolation succeeds ───
@@ -325,7 +325,7 @@ class McpConfigLoaderTest extends TestCase
         $config = $loader->load();
 
         $srv = $config->servers['test-server'];
-        $this->assertSame('Bearer test-token-value', $srv->headers['Authorization']);
+        self::assertSame('Bearer test-token-value', $srv->headers['Authorization']);
     }
 
     // ─── Missing env var fails ───
@@ -393,12 +393,12 @@ class McpConfigLoaderTest extends TestCase
 
         try {
             $loader->load();
-            $this->fail('Expected RuntimeException was not thrown.');
+            self::fail('Expected RuntimeException was not thrown.');
         } catch (\RuntimeException $e) {
             $msg = $e->getMessage();
-            $this->assertStringContainsString('my-server', $msg);
-            $this->assertStringContainsString('NONEXISTENT_SECRET', $msg);
-            $this->assertStringContainsString('headers.X-Key', $msg);
+            self::assertStringContainsString('my-server', $msg);
+            self::assertStringContainsString('NONEXISTENT_SECRET', $msg);
+            self::assertStringContainsString('headers.X-Key', $msg);
             // Must NOT leak the secret value (which doesn't exist anyway, but the
             // error message pattern should not include surrounding values)
         }
@@ -421,8 +421,8 @@ class McpConfigLoaderTest extends TestCase
         $config = $loader->load();
 
         $srv = $config->servers['test-server'];
-        $this->assertStringEndsWith('/subdir', $srv->cwd ?? '');
-        $this->assertStringStartsWith('/', $srv->cwd ?? '');
+        self::assertStringEndsWith('/subdir', $srv->cwd ?? '');
+        self::assertStringStartsWith('/', $srv->cwd ?? '');
     }
 
     // ─── Project adds new server alongside global ones ───
@@ -448,9 +448,9 @@ class McpConfigLoaderTest extends TestCase
         $loader = $this->createLoader();
         $config = $loader->load();
 
-        $this->assertCount(2, $config->servers);
-        $this->assertArrayHasKey('global-server', $config->servers);
-        $this->assertArrayHasKey('project-server', $config->servers);
+        self::assertCount(2, $config->servers);
+        self::assertArrayHasKey('global-server', $config->servers);
+        self::assertArrayHasKey('project-server', $config->servers);
     }
 
     // ─── Unknown field is rejected ───
@@ -510,18 +510,18 @@ class McpConfigLoaderTest extends TestCase
         $loader = $this->createLoader();
         $config = $loader->load();
 
-        $this->assertCount(2, $config->servers);
+        self::assertCount(2, $config->servers);
 
         $stdio = $config->servers['stdio-server'];
-        $this->assertSame(McpTransportTypeEnum::STDIO, $stdio->transportType);
-        $this->assertSame(15000, $stdio->timeoutMs);
-        $this->assertSame(10000, $stdio->startupTimeoutMs);
+        self::assertSame(McpTransportTypeEnum::STDIO, $stdio->transportType);
+        self::assertSame(15000, $stdio->timeoutMs);
+        self::assertSame(10000, $stdio->startupTimeoutMs);
 
         $http = $config->servers['http-server'];
-        $this->assertSame(McpTransportTypeEnum::HTTP, $http->transportType);
-        $this->assertSame(60000, $http->timeoutMs);
-        $this->assertSame(['unsafe_tool'], $http->excludeTools);
-        $this->assertSame(['unsafe_tool'], $http->excludeTools);
+        self::assertSame(McpTransportTypeEnum::HTTP, $http->transportType);
+        self::assertSame(60000, $http->timeoutMs);
+        self::assertSame(['unsafe_tool'], $http->excludeTools);
+        self::assertSame(['unsafe_tool'], $http->excludeTools);
     }
 
     // ─── Edge case: mcpServers present but wrong type ───

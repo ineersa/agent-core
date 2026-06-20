@@ -38,7 +38,7 @@ final class SessionRunStoreTest extends TestCase
         mkdir($this->projectDir, 0777, true);
         mkdir($this->projectDir.'/.hatfield/sessions', 0777, true);
 
-        $this->entityManager = $this->createStub(EntityManagerInterface::class);
+        $this->entityManager = self::createStub(EntityManagerInterface::class);
 
         $serializer = new Serializer(
             [new DateTimeNormalizer(), new BackedEnumNormalizer(), new ObjectNormalizer()],
@@ -73,7 +73,7 @@ final class SessionRunStoreTest extends TestCase
 
     public function testGetReturnsNullForMissingRun(): void
     {
-        $this->assertNull($this->store->get('nonexistent'));
+        self::assertNull($this->store->get('nonexistent'));
     }
 
     public function testCompareAndSwapCreatesStateAndCanBeRetrieved(): void
@@ -82,17 +82,17 @@ final class SessionRunStoreTest extends TestCase
         $state = new RunState(runId: $runId, status: RunStatus::Queued, version: 1);
 
         $result = $this->store->compareAndSwap($state, 0);
-        $this->assertTrue($result, 'CAS should succeed for new run');
+        self::assertTrue($result, 'CAS should succeed for new run');
 
         $loaded = $this->store->get($runId);
-        $this->assertNotNull($loaded);
-        $this->assertSame($runId, $loaded->runId);
-        $this->assertSame(RunStatus::Queued, $loaded->status);
-        $this->assertSame(1, $loaded->version);
+        self::assertNotNull($loaded);
+        self::assertSame($runId, $loaded->runId);
+        self::assertSame(RunStatus::Queued, $loaded->status);
+        self::assertSame(1, $loaded->version);
 
         // Verify state.json exists on disk
         $statePath = $this->projectDir.'/.hatfield/sessions/'.$runId.'/state.json';
-        $this->assertFileExists($statePath);
+        self::assertFileExists($statePath);
     }
 
     public function testCompareAndSwapFailsOnVersionMismatch(): void
@@ -102,21 +102,21 @@ final class SessionRunStoreTest extends TestCase
 
         // First CAS: version 0 → creates
         $result1 = $this->store->compareAndSwap($stateV1, 0);
-        $this->assertTrue($result1);
+        self::assertTrue($result1);
 
         // Same state applied with wrong expected version
         $result2 = $this->store->compareAndSwap($stateV1, 0);
-        $this->assertFalse($result2, 'CAS should fail because version is now 1');
+        self::assertFalse($result2, 'CAS should fail because version is now 1');
 
         // Correct expected version
         $stateV2 = new RunState(runId: $runId, status: RunStatus::Running, version: 2);
         $result3 = $this->store->compareAndSwap($stateV2, 1);
-        $this->assertTrue($result3);
+        self::assertTrue($result3);
 
         $loaded = $this->store->get($runId);
-        $this->assertNotNull($loaded);
-        $this->assertSame(RunStatus::Running, $loaded->status);
-        $this->assertSame(2, $loaded->version);
+        self::assertNotNull($loaded);
+        self::assertSame(RunStatus::Running, $loaded->status);
+        self::assertSame(2, $loaded->version);
     }
 
     public function testGetAfterRecreationSurvives(): void
@@ -149,11 +149,11 @@ final class SessionRunStoreTest extends TestCase
         );
 
         $loaded = $newStore->get($runId);
-        $this->assertNotNull($loaded, 'State must survive store recreation');
-        $this->assertSame($runId, $loaded->runId);
-        $this->assertSame(RunStatus::Running, $loaded->status);
-        $this->assertSame(3, $loaded->version);
-        $this->assertSame(2, $loaded->turnNo);
+        self::assertNotNull($loaded, 'State must survive store recreation');
+        self::assertSame($runId, $loaded->runId);
+        self::assertSame(RunStatus::Running, $loaded->status);
+        self::assertSame(3, $loaded->version);
+        self::assertSame(2, $loaded->turnNo);
     }
 
     public function testGetReturnsNullForEmptyFile(): void
@@ -168,18 +168,18 @@ final class SessionRunStoreTest extends TestCase
 
         // Empty file should be treated as "no state yet", not corrupt.
         $loaded = $this->store->get($runId);
-        $this->assertNull($loaded, 'Empty state.json must return null, not throw');
+        self::assertNull($loaded, 'Empty state.json must return null, not throw');
 
         // CAS should still work starting from version 0
         $state = new RunState(runId: $runId, status: RunStatus::Running, version: 1);
         $result = $this->store->compareAndSwap($state, 0);
-        $this->assertTrue($result, 'CAS should succeed starting from version 0 on empty file');
+        self::assertTrue($result, 'CAS should succeed starting from version 0 on empty file');
 
         // Verify state was written and can be read back
         $loaded = $this->store->get($runId);
-        $this->assertNotNull($loaded);
-        $this->assertSame(RunStatus::Running, $loaded->status);
-        $this->assertSame(1, $loaded->version);
+        self::assertNotNull($loaded);
+        self::assertSame(RunStatus::Running, $loaded->status);
+        self::assertSame(1, $loaded->version);
     }
 
     public function testGetReturnsNullForWhitespaceOnlyFile(): void
@@ -192,7 +192,7 @@ final class SessionRunStoreTest extends TestCase
 
         // Whitespace-only file should also be treated as "no state yet"
         $loaded = $this->store->get($runId);
-        $this->assertNull($loaded, 'Whitespace-only state.json must return null');
+        self::assertNull($loaded, 'Whitespace-only state.json must return null');
     }
 
     public function testEmbeddedRunIdMustMatchDirectory(): void
@@ -222,15 +222,15 @@ final class SessionRunStoreTest extends TestCase
         // Run is recent, should not be stale
         $future = new \DateTimeImmutable('+10 minutes');
         $stale = $this->store->findRunningStaleBefore($future);
-        $this->assertNotEmpty($stale);
-        $this->assertSame($runId, $stale[0]->runId);
+        self::assertNotEmpty($stale);
+        self::assertSame($runId, $stale[0]->runId);
 
         // Completed runs are not returned as stale
         $completedState = new RunState(runId: $runId, status: RunStatus::Completed, version: 2);
         $this->store->compareAndSwap($completedState, 1);
 
         $staleAfterComplete = $this->store->findRunningStaleBefore($future);
-        $this->assertEmpty($staleAfterComplete, 'Completed runs should not be returned as stale');
+        self::assertEmpty($staleAfterComplete, 'Completed runs should not be returned as stale');
     }
 
     private function rmDir(string $dir): void

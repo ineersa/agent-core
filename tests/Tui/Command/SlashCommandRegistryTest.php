@@ -4,11 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Command;
 
-use Ineersa\Tui\Command\ClearScreenCommand;
 use Ineersa\Tui\Command\ClearTranscript;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\ExitApplication;
-use Ineersa\Tui\Command\ExitTuiCommand;
 use Ineersa\Tui\Command\NoOp;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandHandler;

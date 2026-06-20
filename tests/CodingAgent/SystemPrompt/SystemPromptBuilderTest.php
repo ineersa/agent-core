@@ -57,25 +57,25 @@ final class SystemPromptBuilderTest extends TestCase
 
         // The built-in config/SYSTEM.md is used when no override exists.
         // Verify key structural elements are present.
-        $this->assertStringContainsString('expert coding assistant', strtolower($result));
-        $this->assertStringContainsString('<available_tools>', $result);
-        $this->assertStringContainsString('</available_tools>', $result);
-        $this->assertStringContainsString('<guidelines>', $result);
-        $this->assertStringContainsString('</guidelines>', $result);
-        $this->assertStringContainsString('<context_channels>', $result);
+        self::assertStringContainsString('expert coding assistant', strtolower($result));
+        self::assertStringContainsString('<available_tools>', $result);
+        self::assertStringContainsString('</available_tools>', $result);
+        self::assertStringContainsString('<guidelines>', $result);
+        self::assertStringContainsString('</guidelines>', $result);
+        self::assertStringContainsString('<context_channels>', $result);
 
         // Verify placeholders are replaced (empty values from empty registry)
-        $this->assertStringNotContainsString('{available_tools_list}', $result);
-        $this->assertStringNotContainsString('{registered_guidelines}', $result);
-        $this->assertStringNotContainsString('{appends_part}', $result);
-        $this->assertStringNotContainsString('{date}', $result);
-        $this->assertStringNotContainsString('{cwd}', $result);
+        self::assertStringNotContainsString('{available_tools_list}', $result);
+        self::assertStringNotContainsString('{registered_guidelines}', $result);
+        self::assertStringNotContainsString('{appends_part}', $result);
+        self::assertStringNotContainsString('{date}', $result);
+        self::assertStringNotContainsString('{cwd}', $result);
 
         // Verify date is present (any date in Y-m-d format)
-        $this->assertMatchesRegularExpression('/\d{4}-\d{2}-\d{2}/', $result);
+        self::assertMatchesRegularExpression('/\d{4}-\d{2}-\d{2}/', $result);
 
         // Verify CWD is present
-        $this->assertStringContainsString($this->tmpDir, $result);
+        self::assertStringContainsString($this->tmpDir, $result);
     }
 
     public function testBuiltInTemplateDoesNotContainHardcodedToolUsageBlock(): void
@@ -87,8 +87,8 @@ final class SystemPromptBuilderTest extends TestCase
 
         $result = $builder->build();
 
-        $this->assertStringNotContainsString('<tool_usage>', $result);
-        $this->assertStringNotContainsString('</tool_usage>', $result);
+        self::assertStringNotContainsString('<tool_usage>', $result);
+        self::assertStringNotContainsString('</tool_usage>', $result);
     }
 
     public function testBuiltInTemplateWithRegisteredTools(): void
@@ -99,12 +99,12 @@ final class SystemPromptBuilderTest extends TestCase
         $result = $builder->build();
 
         // Tool lines should appear in <available_tools>
-        $this->assertStringContainsString('- read: Read file contents', $result);
-        $this->assertStringContainsString('- write: Write file contents', $result);
+        self::assertStringContainsString('- read: Read file contents', $result);
+        self::assertStringContainsString('- write: Write file contents', $result);
 
         // Guidelines should appear in <guidelines>
-        $this->assertStringContainsString('Use read for files', $result);
-        $this->assertStringContainsString('Use write for files', $result);
+        self::assertStringContainsString('Use read for files', $result);
+        self::assertStringContainsString('Use write for files', $result);
     }
 
     public function testToolsListAndGuidelinesDeduped(): void
@@ -131,12 +131,12 @@ final class SystemPromptBuilderTest extends TestCase
         $result = $builder->build();
 
         // Deduped lines: '- read: Read file contents' appears only once
-        $this->assertSame(1, substr_count($result, '- read: Read file contents'));
+        self::assertSame(1, substr_count($result, '- read: Read file contents'));
 
         // Deduped guidelines: 'Read files with cat -n' appears only once
-        $this->assertSame(1, substr_count($result, 'Read files with cat -n'));
+        self::assertSame(1, substr_count($result, 'Read files with cat -n'));
         // 'Use read for text files' appears once
-        $this->assertSame(1, substr_count($result, 'Use read for text files'));
+        self::assertSame(1, substr_count($result, 'Use read for text files'));
     }
 
     /* ───────── Template override precedence ───────── */
@@ -150,10 +150,10 @@ final class SystemPromptBuilderTest extends TestCase
 
         $result = $builder->build();
 
-        $this->assertStringContainsString('Custom project system prompt.', $result);
-        $this->assertStringNotContainsString('expert coding assistant', strtolower($result));
-        $this->assertStringContainsString(date('Y-m-d'), $result);
-        $this->assertStringContainsString($this->tmpDir, $result);
+        self::assertStringContainsString('Custom project system prompt.', $result);
+        self::assertStringNotContainsString('expert coding assistant', strtolower($result));
+        self::assertStringContainsString(date('Y-m-d'), $result);
+        self::assertStringContainsString($this->tmpDir, $result);
     }
 
     public function testHomeOverrideReplacesBuiltInWhenNoProjectOverride(): void
@@ -178,9 +178,9 @@ final class SystemPromptBuilderTest extends TestCase
 
             $result = $builder->build();
 
-            $this->assertStringContainsString('Home system prompt.', $result);
-            $this->assertStringNotContainsString('expert coding assistant', strtolower($result));
-            $this->assertStringContainsString(date('Y-m-d'), $result);
+            self::assertStringContainsString('Home system prompt.', $result);
+            self::assertStringNotContainsString('expert coding assistant', strtolower($result));
+            self::assertStringContainsString(date('Y-m-d'), $result);
         } finally {
             putenv('HOME='.($oldHome ?: ''));
         }
@@ -202,8 +202,8 @@ final class SystemPromptBuilderTest extends TestCase
 
             $result = $builder->build();
 
-            $this->assertStringContainsString('Project system prompt.', $result);
-            $this->assertStringNotContainsString('Home system prompt.', $result);
+            self::assertStringContainsString('Project system prompt.', $result);
+            self::assertStringNotContainsString('Home system prompt.', $result);
         } finally {
             putenv('HOME='.($oldHome ?: ''));
         }
@@ -224,12 +224,12 @@ final class SystemPromptBuilderTest extends TestCase
         $result = $builder->build();
 
         // Append content should be rendered
-        $this->assertStringContainsString('Append content.', $result);
-        $this->assertStringContainsString(date('Y-m-d'), $result);
-        $this->assertStringContainsString($this->tmpDir, $result);
+        self::assertStringContainsString('Append content.', $result);
+        self::assertStringContainsString(date('Y-m-d'), $result);
+        self::assertStringContainsString($this->tmpDir, $result);
 
         // Built-in content should still be present
-        $this->assertStringContainsString('expert coding assistant', strtolower($result));
+        self::assertStringContainsString('expert coding assistant', strtolower($result));
     }
 
     public function testBothHomeAndProjectAppendTemplatesMerged(): void
@@ -252,15 +252,15 @@ final class SystemPromptBuilderTest extends TestCase
             $result = $builder->build();
 
             // Home append appears first, then project append
-            $this->assertStringContainsString('Home append: '.$this->tmpDir, $result);
-            $this->assertStringContainsString('Project append: '.$this->tmpDir, $result);
+            self::assertStringContainsString('Home append: '.$this->tmpDir, $result);
+            self::assertStringContainsString('Project append: '.$this->tmpDir, $result);
 
             // Home content appears before project content
             $homePos = strpos($result, 'Home append:');
             $projectPos = strpos($result, 'Project append:');
-            $this->assertNotFalse($homePos);
-            $this->assertNotFalse($projectPos);
-            $this->assertLessThan($projectPos, $homePos);
+            self::assertNotFalse($homePos);
+            self::assertNotFalse($projectPos);
+            self::assertLessThan($projectPos, $homePos);
         } finally {
             putenv('HOME='.($oldHome ?: ''));
         }
@@ -279,7 +279,7 @@ final class SystemPromptBuilderTest extends TestCase
         $result = $builder->build();
 
         // {appends_part} in append content should be empty (no recursion)
-        $this->assertStringContainsString('Append with appends_part placeholder: []', $result);
+        self::assertStringContainsString('Append with appends_part placeholder: []', $result);
     }
 
     public function testNoAppendTemplatesResultsInEmptyAppendsPart(): void
@@ -289,7 +289,7 @@ final class SystemPromptBuilderTest extends TestCase
         $result = $builder->build();
 
         // {appends_part} in the built-in template should be replaced with empty string
-        $this->assertStringNotContainsString('{appends_part}', $result);
+        self::assertStringNotContainsString('{appends_part}', $result);
     }
 
     /* ───────── Placeholder substitution ───────── */
@@ -315,11 +315,11 @@ final class SystemPromptBuilderTest extends TestCase
 
         $result = $builder->build();
 
-        $this->assertStringContainsString('Tools: [- read: Read file contents'."\n".'- write: Write file contents]', $result);
-        $this->assertStringContainsString('Guidelines: [Use read for files'."\n".'Use write for files]', $result);
-        $this->assertStringContainsString('Appends: [Extra guidelines: ignore]', $result);
-        $this->assertStringContainsString('Date: ['.date('Y-m-d').']', $result);
-        $this->assertStringContainsString('CWD: ['.$this->tmpDir.']', $result);
+        self::assertStringContainsString('Tools: [- read: Read file contents'."\n".'- write: Write file contents]', $result);
+        self::assertStringContainsString('Guidelines: [Use read for files'."\n".'Use write for files]', $result);
+        self::assertStringContainsString('Appends: [Extra guidelines: ignore]', $result);
+        self::assertStringContainsString('Date: ['.date('Y-m-d').']', $result);
+        self::assertStringContainsString('CWD: ['.$this->tmpDir.']', $result);
     }
 
     public function testPlaceholdersAreSubstitutedInOverrideTemplate(): void
@@ -333,7 +333,7 @@ final class SystemPromptBuilderTest extends TestCase
 
         $result = $builder->build();
 
-        $this->assertStringContainsString(date('Y-m-d').' at '.$this->tmpDir.' with tools []', $result);
+        self::assertStringContainsString(date('Y-m-d').' at '.$this->tmpDir.' with tools []', $result);
     }
 
     /* ───────── CWD handling ───────── */
@@ -352,9 +352,9 @@ final class SystemPromptBuilderTest extends TestCase
         $result = $builder->build();
 
         // CWD in output should not have trailing slash
-        $this->assertStringContainsString('CWD: '.$this->tmpDir, $result);
-        $this->assertStringNotContainsString('CWD: '.$this->tmpDir.'/', $result);
-        $this->assertStringNotContainsString('//.hatfield', $result);
+        self::assertStringContainsString('CWD: '.$this->tmpDir, $result);
+        self::assertStringNotContainsString('CWD: '.$this->tmpDir.'/', $result);
+        self::assertStringNotContainsString('//.hatfield', $result);
     }
 
     public function testCwdFromConfigUsedForTemplateResolution(): void
@@ -369,7 +369,7 @@ final class SystemPromptBuilderTest extends TestCase
         // CWD comes from AppConfig (set to tmpDir in createBuilder).
         $result = $builder->build();
 
-        $this->assertStringContainsString('CWD: '.$this->tmpDir, $result);
+        self::assertStringContainsString('CWD: '.$this->tmpDir, $result);
     }
 
     public function testEmptyCwdThrows(): void
@@ -415,10 +415,10 @@ final class SystemPromptBuilderTest extends TestCase
 
         // The system prompt starts with the built-in content (no override).
         // It should be non-empty.
-        $this->assertNotEmpty($systemPromptText);
+        self::assertNotEmpty($systemPromptText);
 
         // Should begin with the SYSTEM.md content (role: 'system' message)
-        $this->assertStringContainsString('expert coding assistant', strtolower($systemPromptText));
+        self::assertStringContainsString('expert coding assistant', strtolower($systemPromptText));
     }
 
     public function testToolGuidanceComesFromRegistryMetadataNotHardcodedBlock(): void
@@ -457,17 +457,17 @@ final class SystemPromptBuilderTest extends TestCase
         $result = $builder->build();
 
         // Registry promptLines must appear in the rendered prompt (via {available_tools_list})
-        $this->assertStringContainsString('cat -n line numbers', $result);
-        $this->assertStringContainsString('unified diff patches', $result);
-        $this->assertStringContainsString('runs shell commands', $result);
+        self::assertStringContainsString('cat -n line numbers', $result);
+        self::assertStringContainsString('unified diff patches', $result);
+        self::assertStringContainsString('runs shell commands', $result);
 
         // Registry guidelines must appear in the rendered prompt (via {registered_guidelines})
-        $this->assertStringContainsString('edit @@ hunk headers', $result);
-        $this->assertStringContainsString('standard unified diffs', $result);
-        $this->assertStringContainsString('move to background', $result);
+        self::assertStringContainsString('edit @@ hunk headers', $result);
+        self::assertStringContainsString('standard unified diffs', $result);
+        self::assertStringContainsString('move to background', $result);
 
         // The built-in template must NOT have a hardcoded <tool_usage> block
-        $this->assertStringNotContainsString('<tool_usage>', $result);
+        self::assertStringNotContainsString('<tool_usage>', $result);
     }
 
     /* ───────── Private helpers ───────── */

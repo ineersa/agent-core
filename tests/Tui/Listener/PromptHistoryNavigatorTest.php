@@ -28,8 +28,8 @@ final class PromptHistoryNavigatorTest extends TestCase
     {
         $result = $this->navigator->previous([]);
 
-        $this->assertNull($result);
-        $this->assertFalse($this->navigator->isNavigating());
+        self::assertNull($result);
+        self::assertFalse($this->navigator->isNavigating());
     }
 
     #[Test]
@@ -37,14 +37,14 @@ final class PromptHistoryNavigatorTest extends TestCase
     {
         $result = $this->navigator->next([]);
 
-        $this->assertNull($result);
-        $this->assertFalse($this->navigator->isNavigating());
+        self::assertNull($result);
+        self::assertFalse($this->navigator->isNavigating());
     }
 
     #[Test]
     public function isNotNavigatingInitially(): void
     {
-        $this->assertFalse($this->navigator->isNavigating());
+        self::assertFalse($this->navigator->isNavigating());
     }
 
     // ─── Single user message ──────────────────────────────────
@@ -58,8 +58,8 @@ final class PromptHistoryNavigatorTest extends TestCase
 
         $result = $this->navigator->previous($blocks);
 
-        $this->assertSame('hello world', $result);
-        $this->assertTrue($this->navigator->isNavigating());
+        self::assertSame('hello world', $result);
+        self::assertTrue($this->navigator->isNavigating());
     }
 
     #[Test]
@@ -72,8 +72,8 @@ final class PromptHistoryNavigatorTest extends TestCase
         $this->navigator->previous($blocks); // first — returns text
         $result = $this->navigator->previous($blocks); // second — no earlier message
 
-        $this->assertNull($result);
-        $this->assertTrue($this->navigator->isNavigating()); // still at the first one
+        self::assertNull($result);
+        self::assertTrue($this->navigator->isNavigating()); // still at the first one
     }
 
     // ─── Multiple user messages ───────────────────────────────
@@ -90,19 +90,19 @@ final class PromptHistoryNavigatorTest extends TestCase
 
         // First Up — newest prompt (index 3)
         $text = $this->navigator->previous($blocks);
-        $this->assertSame('third prompt', $text);
+        self::assertSame('third prompt', $text);
 
         // Second Up — next older (index 2)
         $text = $this->navigator->previous($blocks);
-        $this->assertSame('second prompt', $text);
+        self::assertSame('second prompt', $text);
 
         // Third Up — oldest (index 0)
         $text = $this->navigator->previous($blocks);
-        $this->assertSame('first prompt', $text);
+        self::assertSame('first prompt', $text);
 
         // Fourth Up — nothing older
         $text = $this->navigator->previous($blocks);
-        $this->assertNull($text);
+        self::assertNull($text);
     }
 
     #[Test]
@@ -122,10 +122,10 @@ final class PromptHistoryNavigatorTest extends TestCase
 
         // Now walk forward
         $text = $this->navigator->next($blocks);
-        $this->assertSame('second prompt', $text);
+        self::assertSame('second prompt', $text);
 
         $text = $this->navigator->next($blocks);
-        $this->assertSame('third prompt', $text);
+        self::assertSame('third prompt', $text);
     }
 
     // ─── Non-user blocks are skipped ──────────────────────────
@@ -141,7 +141,7 @@ final class PromptHistoryNavigatorTest extends TestCase
 
         $result = $this->navigator->previous($blocks);
 
-        $this->assertSame('my prompt', $result);
+        self::assertSame('my prompt', $result);
     }
 
     #[Test]
@@ -160,7 +160,7 @@ final class PromptHistoryNavigatorTest extends TestCase
 
         // Next should skip the assistant and system blocks
         $text = $this->navigator->next($blocks);
-        $this->assertSame('prompt 2', $text);
+        self::assertSame('prompt 2', $text);
     }
 
     // ─── Down past newest exits navigation ───────────────────
@@ -173,12 +173,12 @@ final class PromptHistoryNavigatorTest extends TestCase
         ];
 
         $this->navigator->previous($blocks); // shows prompt 1
-        $this->assertTrue($this->navigator->isNavigating());
+        self::assertTrue($this->navigator->isNavigating());
 
         $result = $this->navigator->next($blocks); // past newest
 
-        $this->assertNull($result);
-        $this->assertFalse($this->navigator->isNavigating());
+        self::assertNull($result);
+        self::assertFalse($this->navigator->isNavigating());
     }
 
     // ─── Exit navigation ──────────────────────────────────────
@@ -191,14 +191,14 @@ final class PromptHistoryNavigatorTest extends TestCase
         ];
 
         $this->navigator->previous($blocks);
-        $this->assertTrue($this->navigator->isNavigating());
+        self::assertTrue($this->navigator->isNavigating());
 
         $this->navigator->exitNavigation();
-        $this->assertFalse($this->navigator->isNavigating());
+        self::assertFalse($this->navigator->isNavigating());
 
         // After exiting, next Up starts fresh from newest
         $result = $this->navigator->previous($blocks);
-        $this->assertSame('prompt 1', $result);
+        self::assertSame('prompt 1', $result);
     }
 
     // ─── Up at oldest stays in place ─────────────────────────
@@ -216,13 +216,13 @@ final class PromptHistoryNavigatorTest extends TestCase
         $this->navigator->previous($blocks); // index 2 (newer)
         $this->navigator->previous($blocks); // index 0 (oldest)
 
-        $this->assertSame(0, $this->navigator->currentBlockIndex());
+        self::assertSame(0, $this->navigator->currentBlockIndex());
 
         // Up again — no older message, cursor stays at 0
         $result = $this->navigator->previous($blocks);
-        $this->assertNull($result);
-        $this->assertSame(0, $this->navigator->currentBlockIndex());
-        $this->assertTrue($this->navigator->isNavigating());
+        self::assertNull($result);
+        self::assertSame(0, $this->navigator->currentBlockIndex());
+        self::assertTrue($this->navigator->isNavigating());
     }
 
     // ─── No user blocks at all ────────────────────────────────
@@ -237,8 +237,8 @@ final class PromptHistoryNavigatorTest extends TestCase
 
         $result = $this->navigator->previous($blocks);
 
-        $this->assertNull($result);
-        $this->assertFalse($this->navigator->isNavigating());
+        self::assertNull($result);
+        self::assertFalse($this->navigator->isNavigating());
     }
 
     // ─── currentBlockIndex for diagnostics ────────────────────
@@ -246,7 +246,7 @@ final class PromptHistoryNavigatorTest extends TestCase
     #[Test]
     public function currentBlockIndexIsNullWhenNotNavigating(): void
     {
-        $this->assertNull($this->navigator->currentBlockIndex());
+        self::assertNull($this->navigator->currentBlockIndex());
     }
 
     #[Test]
@@ -259,7 +259,7 @@ final class PromptHistoryNavigatorTest extends TestCase
 
         $this->navigator->previous($blocks); // index 1 (newest)
 
-        $this->assertSame(1, $this->navigator->currentBlockIndex());
+        self::assertSame(1, $this->navigator->currentBlockIndex());
     }
 
     // ─── Helpers ──────────────────────────────────────────────

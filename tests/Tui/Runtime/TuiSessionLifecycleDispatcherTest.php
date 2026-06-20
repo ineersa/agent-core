@@ -15,23 +15,13 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(TuiSessionLifecycleDispatcher::class)]
 final class TuiSessionLifecycleDispatcherTest extends TestCase
 {
-    private function sessionStartedEvent(string $sessionId = 'test-session'): TuiSessionLifecycleEventDTO
-    {
-        return new TuiSessionLifecycleEventDTO(
-            type: TuiSessionLifecycleEventTypeEnum::SessionStarted,
-            sessionId: $sessionId,
-            isDraft: false,
-            resuming: false,
-        );
-    }
-
     #[Test]
     public function testDispatchCallsSingleSubscriber(): void
     {
         $dispatcher = new TuiSessionLifecycleDispatcher();
 
         $called = false;
-        $dispatcher->subscribe(function (TuiSessionLifecycleEventDTO $event) use (&$called): void {
+        $dispatcher->subscribe(static function (TuiSessionLifecycleEventDTO $event) use (&$called): void {
             $called = true;
         });
 
@@ -46,13 +36,13 @@ final class TuiSessionLifecycleDispatcherTest extends TestCase
         $dispatcher = new TuiSessionLifecycleDispatcher();
 
         $order = [];
-        $dispatcher->subscribe(function (TuiSessionLifecycleEventDTO $event) use (&$order): void {
+        $dispatcher->subscribe(static function (TuiSessionLifecycleEventDTO $event) use (&$order): void {
             $order[] = 'first';
         });
-        $dispatcher->subscribe(function (TuiSessionLifecycleEventDTO $event) use (&$order): void {
+        $dispatcher->subscribe(static function (TuiSessionLifecycleEventDTO $event) use (&$order): void {
             $order[] = 'second';
         });
-        $dispatcher->subscribe(function (TuiSessionLifecycleEventDTO $event) use (&$order): void {
+        $dispatcher->subscribe(static function (TuiSessionLifecycleEventDTO $event) use (&$order): void {
             $order[] = 'third';
         });
 
@@ -67,7 +57,7 @@ final class TuiSessionLifecycleDispatcherTest extends TestCase
         $dispatcher = new TuiSessionLifecycleDispatcher();
 
         $receivedType = null;
-        $dispatcher->subscribe(function (TuiSessionLifecycleEventDTO $event) use (&$receivedType): void {
+        $dispatcher->subscribe(static function (TuiSessionLifecycleEventDTO $event) use (&$receivedType): void {
             $receivedType = $event->type;
         });
 
@@ -89,7 +79,7 @@ final class TuiSessionLifecycleDispatcherTest extends TestCase
         $dispatcher = new TuiSessionLifecycleDispatcher();
 
         $captured = null;
-        $dispatcher->subscribe(function (TuiSessionLifecycleEventDTO $event) use (&$captured): void {
+        $dispatcher->subscribe(static function (TuiSessionLifecycleEventDTO $event) use (&$captured): void {
             $captured = $event;
         });
 
@@ -129,10 +119,10 @@ final class TuiSessionLifecycleDispatcherTest extends TestCase
     {
         $dispatcher = new TuiSessionLifecycleDispatcher();
 
-        $dispatcher->subscribe(function (TuiSessionLifecycleEventDTO $event): void {
+        $dispatcher->subscribe(static function (TuiSessionLifecycleEventDTO $event): void {
             throw new \RuntimeException('First subscriber error');
         });
-        $dispatcher->subscribe(function (TuiSessionLifecycleEventDTO $event): void {
+        $dispatcher->subscribe(static function (TuiSessionLifecycleEventDTO $event): void {
             self::fail('Second subscriber must NOT be reached after first throw.');
         });
 
@@ -146,12 +136,12 @@ final class TuiSessionLifecycleDispatcherTest extends TestCase
     public function testFreshDispatcherHasNoSubscribersFromPriorInstance(): void
     {
         $first = new TuiSessionLifecycleDispatcher();
-        $first->subscribe(function (TuiSessionLifecycleEventDTO $event): void {});
+        $first->subscribe(static function (TuiSessionLifecycleEventDTO $event): void {});
 
         $second = new TuiSessionLifecycleDispatcher();
 
         $secondCalled = false;
-        $second->subscribe(function (TuiSessionLifecycleEventDTO $event) use (&$secondCalled): void {
+        $second->subscribe(static function (TuiSessionLifecycleEventDTO $event) use (&$secondCalled): void {
             $secondCalled = true;
         });
 
@@ -166,7 +156,7 @@ final class TuiSessionLifecycleDispatcherTest extends TestCase
         $dispatcher = new TuiSessionLifecycleDispatcher();
 
         $captured = null;
-        $dispatcher->subscribe(function (TuiSessionLifecycleEventDTO $event) use (&$captured): void {
+        $dispatcher->subscribe(static function (TuiSessionLifecycleEventDTO $event) use (&$captured): void {
             $captured = $event;
         });
 
@@ -184,5 +174,15 @@ final class TuiSessionLifecycleDispatcherTest extends TestCase
         self::assertSame('', $captured->sessionId);
         self::assertTrue($captured->isDraft);
         self::assertFalse($captured->resuming);
+    }
+
+    private function sessionStartedEvent(string $sessionId = 'test-session'): TuiSessionLifecycleEventDTO
+    {
+        return new TuiSessionLifecycleEventDTO(
+            type: TuiSessionLifecycleEventTypeEnum::SessionStarted,
+            sessionId: $sessionId,
+            isDraft: false,
+            resuming: false,
+        );
     }
 }

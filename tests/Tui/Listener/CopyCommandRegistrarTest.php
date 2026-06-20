@@ -4,10 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
-use Ineersa\CodingAgent\Config\AppConfig;
-use Ineersa\CodingAgent\Config\LoggingConfig;
-use Ineersa\CodingAgent\Config\TuiConfig;
-use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandRegistry;
@@ -16,8 +12,8 @@ use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\CopyCommandRegistrar;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
-use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Screen\ChatScreen;
+use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\Attributes\Test;
@@ -52,16 +48,16 @@ final class CopyCommandRegistrarTest extends TestCase
         $registrar->register($context);
 
         // Command is registered
-        $this->assertTrue($registry->has('copy'));
-        $this->assertTrue($registry->has('cp'));
+        self::assertTrue($registry->has('copy'));
+        self::assertTrue($registry->has('cp'));
 
         // Metadata is correct
         $meta = $registry->getMetadata('copy');
-        $this->assertInstanceOf(CommandMetadata::class, $meta);
-        $this->assertSame('copy', $meta->name);
-        $this->assertContains('cp', $meta->aliases);
-        $this->assertSame('Copy the last model output to the clipboard', $meta->description);
-        $this->assertSame('/copy', $meta->usage);
+        self::assertInstanceOf(CommandMetadata::class, $meta);
+        self::assertSame('copy', $meta->name);
+        self::assertContains('cp', $meta->aliases);
+        self::assertSame('Copy the last model output to the clipboard', $meta->description);
+        self::assertSame('/copy', $meta->usage);
     }
 
     #[Test]
@@ -76,9 +72,9 @@ final class CopyCommandRegistrarTest extends TestCase
 
         $result = $registry->execute(new SlashCommand('help', '', '/help'));
 
-        $this->assertInstanceOf(TranscriptMessage::class, $result);
-        $this->assertStringContainsString('/copy', $result->text);
-        $this->assertStringContainsString('Copy the last model output to the clipboard', $result->text);
+        self::assertInstanceOf(TranscriptMessage::class, $result);
+        self::assertStringContainsString('/copy', $result->text);
+        self::assertStringContainsString('Copy the last model output to the clipboard', $result->text);
     }
 
     #[Test]
@@ -94,9 +90,9 @@ final class CopyCommandRegistrarTest extends TestCase
         // With no assistant message, /cp should show "nothing to copy"
         $result = $registry->execute(new SlashCommand('cp', '', '/cp'));
 
-        $this->assertInstanceOf(TranscriptMessage::class, $result);
-        $this->assertStringContainsString('Nothing to copy', $result->text);
-        $this->assertSame('muted', $result->style);
+        self::assertInstanceOf(TranscriptMessage::class, $result);
+        self::assertStringContainsString('Nothing to copy', $result->text);
+        self::assertSame('muted', $result->style);
     }
 
     #[Test]
@@ -110,16 +106,16 @@ final class CopyCommandRegistrarTest extends TestCase
 
         // First registration
         $registrar->register($context);
-        $this->assertTrue($registry->has('copy'));
+        self::assertTrue($registry->has('copy'));
 
         // Second registration — should replace handler without throwing
         $registrar->register($context);
-        $this->assertTrue($registry->has('copy'));
+        self::assertTrue($registry->has('copy'));
 
         // Verify the command still works after re-registration
         $result = $registry->execute(new SlashCommand('copy', '', '/copy'));
-        $this->assertInstanceOf(TranscriptMessage::class, $result);
-        $this->assertStringContainsString('Nothing to copy', $result->text);
+        self::assertInstanceOf(TranscriptMessage::class, $result);
+        self::assertStringContainsString('Nothing to copy', $result->text);
     }
 
     private function buildContext(TuiSessionState $state): TuiRuntimeContext

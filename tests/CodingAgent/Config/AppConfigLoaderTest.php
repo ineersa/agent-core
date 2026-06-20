@@ -15,6 +15,7 @@ class AppConfigLoaderTest extends TestCase
     private AppConfigLoader $loader;
     private SettingsPathResolver $pathResolver;
     private string $defaultsPath;
+
     protected function setUp(): void
     {
         $this->tmpDir = sys_get_temp_dir().'/hatfield_test_'.bin2hex(random_bytes(8));

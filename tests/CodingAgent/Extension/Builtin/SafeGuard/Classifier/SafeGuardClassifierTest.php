@@ -37,8 +37,8 @@ final class SafeGuardClassifierTest extends TestCase
 
         $decision = $this->classifier->classify('bash', ['command' => 'sudo id'], $this->cwd, $policy);
 
-        $this->assertSame(SafeGuardDecisionKind::HardBlock, $decision->kind);
-        $this->assertSame('bash', $decision->toolName);
+        self::assertSame(SafeGuardDecisionKind::HardBlock, $decision->kind);
+        self::assertSame('bash', $decision->toolName);
     }
 
     public function testBashDestructive(): void
@@ -47,7 +47,7 @@ final class SafeGuardClassifierTest extends TestCase
 
         $decision = $this->classifier->classify('bash', ['command' => 'rm -rf /tmp'], $this->cwd, $policy);
 
-        $this->assertSame(SafeGuardDecisionKind::Destructive, $decision->kind);
+        self::assertSame(SafeGuardDecisionKind::Destructive, $decision->kind);
     }
 
     public function testBashSafeCommandIsAllowed(): void
@@ -56,7 +56,7 @@ final class SafeGuardClassifierTest extends TestCase
 
         $decision = $this->classifier->classify('bash', ['command' => 'ls -la'], $this->cwd, $policy);
 
-        $this->assertSame(SafeGuardDecisionKind::Allow, $decision->kind);
+        self::assertSame(SafeGuardDecisionKind::Allow, $decision->kind);
     }
 
     public function testBashAllowlistBypassesDestructive(): void
@@ -67,7 +67,7 @@ final class SafeGuardClassifierTest extends TestCase
 
         $decision = $this->classifier->classify('bash', ['command' => 'rm -rf /tmp/cached'], $this->cwd, $policy);
 
-        $this->assertSame(SafeGuardDecisionKind::Allow, $decision->kind);
+        self::assertSame(SafeGuardDecisionKind::Allow, $decision->kind);
     }
 
     public function testBashCustomDangerous(): void
@@ -78,7 +78,7 @@ final class SafeGuardClassifierTest extends TestCase
 
         $decision = $this->classifier->classify('bash', ['command' => 'my-risky-tool --force'], $this->cwd, $policy);
 
-        $this->assertSame(SafeGuardDecisionKind::CustomDangerous, $decision->kind);
+        self::assertSame(SafeGuardDecisionKind::CustomDangerous, $decision->kind);
     }
 
     public function testBashEmptyCommandIsAllowed(): void
@@ -87,7 +87,7 @@ final class SafeGuardClassifierTest extends TestCase
 
         $decision = $this->classifier->classify('bash', [], $this->cwd, $policy);
 
-        $this->assertSame(SafeGuardDecisionKind::Allow, $decision->kind);
+        self::assertSame(SafeGuardDecisionKind::Allow, $decision->kind);
     }
 
     // ── Write / Edit tool ──
@@ -98,7 +98,7 @@ final class SafeGuardClassifierTest extends TestCase
 
         $decision = $this->classifier->classify('write', ['path' => 'src/test.php'], $this->cwd, $policy);
 
-        $this->assertSame(SafeGuardDecisionKind::Allow, $decision->kind);
+        self::assertSame(SafeGuardDecisionKind::Allow, $decision->kind);
     }
 
     public function testWriteOutsideCwdIsFlagged(): void
@@ -107,7 +107,7 @@ final class SafeGuardClassifierTest extends TestCase
 
         $decision = $this->classifier->classify('write', ['path' => '/etc/hosts'], $this->cwd, $policy);
 
-        $this->assertSame(SafeGuardDecisionKind::WriteOutsideCwd, $decision->kind);
+        self::assertSame(SafeGuardDecisionKind::WriteOutsideCwd, $decision->kind);
     }
 
     public function testWriteOutsideCwdAllowlistedIsAllowed(): void
@@ -118,7 +118,7 @@ final class SafeGuardClassifierTest extends TestCase
 
         $decision = $this->classifier->classify('write', ['path' => '/etc/hosts'], $this->cwd, $policy);
 
-        $this->assertSame(SafeGuardDecisionKind::Allow, $decision->kind);
+        self::assertSame(SafeGuardDecisionKind::Allow, $decision->kind);
     }
 
     public function testEditInsideCwdIsAllowed(): void
@@ -127,7 +127,7 @@ final class SafeGuardClassifierTest extends TestCase
 
         $decision = $this->classifier->classify('edit', ['path' => 'README.md'], $this->cwd, $policy);
 
-        $this->assertSame(SafeGuardDecisionKind::Allow, $decision->kind);
+        self::assertSame(SafeGuardDecisionKind::Allow, $decision->kind);
     }
 
     public function testEditOutsideCwdIsFlagged(): void
@@ -136,7 +136,7 @@ final class SafeGuardClassifierTest extends TestCase
 
         $decision = $this->classifier->classify('edit', ['path' => '/etc/hostname'], $this->cwd, $policy);
 
-        $this->assertSame(SafeGuardDecisionKind::WriteOutsideCwd, $decision->kind);
+        self::assertSame(SafeGuardDecisionKind::WriteOutsideCwd, $decision->kind);
     }
 
     public function testWriteWithAtPrefixIsHandled(): void
@@ -146,7 +146,7 @@ final class SafeGuardClassifierTest extends TestCase
 
         $decision = $this->classifier->classify('write', ['path' => '@src/test.php'], $this->cwd, $policy);
 
-        $this->assertSame(SafeGuardDecisionKind::Allow, $decision->kind);
+        self::assertSame(SafeGuardDecisionKind::Allow, $decision->kind);
     }
 
     public function testWriteEmptyPathIsAllowed(): void
@@ -155,7 +155,7 @@ final class SafeGuardClassifierTest extends TestCase
 
         $decision = $this->classifier->classify('write', ['path' => ''], $this->cwd, $policy);
 
-        $this->assertSame(SafeGuardDecisionKind::Allow, $decision->kind);
+        self::assertSame(SafeGuardDecisionKind::Allow, $decision->kind);
     }
 
     public function testWritePathMissingIsAllowed(): void
@@ -164,7 +164,7 @@ final class SafeGuardClassifierTest extends TestCase
 
         $decision = $this->classifier->classify('write', [], $this->cwd, $policy);
 
-        $this->assertSame(SafeGuardDecisionKind::Allow, $decision->kind);
+        self::assertSame(SafeGuardDecisionKind::Allow, $decision->kind);
     }
 
     // ── Read tool ──
@@ -175,7 +175,7 @@ final class SafeGuardClassifierTest extends TestCase
 
         $decision = $this->classifier->classify('read', ['path' => 'src/main.php'], $this->cwd, $policy);
 
-        $this->assertSame(SafeGuardDecisionKind::Allow, $decision->kind);
+        self::assertSame(SafeGuardDecisionKind::Allow, $decision->kind);
     }
 
     public function testReadProtectedFileIsFlagged(): void
@@ -186,7 +186,7 @@ final class SafeGuardClassifierTest extends TestCase
 
         $decision = $this->classifier->classify('read', ['path' => '.env.local'], $this->cwd, $policy);
 
-        $this->assertSame(SafeGuardDecisionKind::ProtectedRead, $decision->kind);
+        self::assertSame(SafeGuardDecisionKind::ProtectedRead, $decision->kind);
     }
 
     public function testReadSshKeyIsFlagged(): void
@@ -197,7 +197,7 @@ final class SafeGuardClassifierTest extends TestCase
 
         $decision = $this->classifier->classify('read', ['path' => '/home/user/.ssh/id_rsa'], $this->cwd, $policy);
 
-        $this->assertSame(SafeGuardDecisionKind::ProtectedRead, $decision->kind);
+        self::assertSame(SafeGuardDecisionKind::ProtectedRead, $decision->kind);
     }
 
     public function testReadWithAtPrefixIsHandled(): void
@@ -208,7 +208,7 @@ final class SafeGuardClassifierTest extends TestCase
 
         $decision = $this->classifier->classify('read', ['path' => '@.env.local'], $this->cwd, $policy);
 
-        $this->assertSame(SafeGuardDecisionKind::ProtectedRead, $decision->kind);
+        self::assertSame(SafeGuardDecisionKind::ProtectedRead, $decision->kind);
     }
 
     // ── Unknown tools ──
@@ -219,7 +219,7 @@ final class SafeGuardClassifierTest extends TestCase
 
         $decision = $this->classifier->classify('view_image', ['path' => '/secret/file.png'], $this->cwd, $policy);
 
-        $this->assertSame(SafeGuardDecisionKind::Allow, $decision->kind);
+        self::assertSame(SafeGuardDecisionKind::Allow, $decision->kind);
     }
 
     // ── Configurable tool names ──
@@ -234,16 +234,16 @@ final class SafeGuardClassifierTest extends TestCase
 
         // Default classifier still matches 'bash'
         $decision = $this->classifier->classify('bash', ['command' => 'rm -rf /'], $this->cwd, $policy);
-        $this->assertSame(SafeGuardDecisionKind::Destructive, $decision->kind);
+        self::assertSame(SafeGuardDecisionKind::Destructive, $decision->kind);
 
         // Custom classifier matches 'execute' as the bash tool
         $decision = $classifier->classify('execute', ['command' => 'rm -rf /'], $this->cwd, $policy);
-        $this->assertSame(SafeGuardDecisionKind::Destructive, $decision->kind);
-        $this->assertSame('execute', $decision->toolName);
+        self::assertSame(SafeGuardDecisionKind::Destructive, $decision->kind);
+        self::assertSame('execute', $decision->toolName);
 
         // Custom classifier does NOT match 'bash' anymore (it uses 'execute')
         $decision = $classifier->classify('bash', ['command' => 'rm -rf /'], $this->cwd, $policy);
-        $this->assertSame(SafeGuardDecisionKind::Allow, $decision->kind);
+        self::assertSame(SafeGuardDecisionKind::Allow, $decision->kind);
     }
 
     // ── Decision convenience methods ──
@@ -252,13 +252,13 @@ final class SafeGuardClassifierTest extends TestCase
     {
         $decision = SafeGuardDecision::allow('bash');
 
-        $this->assertTrue($decision->isAllowed());
+        self::assertTrue($decision->isAllowed());
     }
 
     public function testBlockDecisionIsNotAllowed(): void
     {
         $decision = SafeGuardDecision::block(SafeGuardDecisionKind::HardBlock, 'no', 'bash');
 
-        $this->assertFalse($decision->isAllowed());
+        self::assertFalse($decision->isAllowed());
     }
 }

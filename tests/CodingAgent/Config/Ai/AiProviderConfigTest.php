@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Config\Ai;
 
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
-use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 final class AiProviderConfigTest extends TestCase
@@ -17,7 +16,7 @@ final class AiProviderConfigTest extends TestCase
             'auth_key' => 'openai-codex-work',
         ], 'test-codex');
 
-        $this->assertSame('openai-codex-work', $config->authKey);
+        self::assertSame('openai-codex-work', $config->authKey);
     }
 
     public function testFromArrayAuthKeyDefaultsToNull(): void
@@ -26,7 +25,7 @@ final class AiProviderConfigTest extends TestCase
             'type' => 'codex',
         ], 'test-codex');
 
-        $this->assertNull($config->authKey);
+        self::assertNull($config->authKey);
     }
 
     public function testFromArrayEmptyAuthKeyParsesAsEmptyString(): void
@@ -37,6 +36,6 @@ final class AiProviderConfigTest extends TestCase
         ], 'test-codex');
 
         // fromArray casts to string, so empty string is set
-        $this->assertSame('', $config->authKey);
+        self::assertSame('', $config->authKey);
     }
 }

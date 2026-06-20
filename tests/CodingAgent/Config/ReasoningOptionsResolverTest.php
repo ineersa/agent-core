@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Config;
 
-use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiCompatibility;
+use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelDefinition;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
@@ -15,56 +15,6 @@ use PHPUnit\Framework\TestCase;
 
 class ReasoningOptionsResolverTest extends TestCase
 {
-    // ── Helpers ───────────────────────────────────────────────────────────
-
-    private function resolverForProviders(array $providers): ReasoningOptionsResolver
-    {
-        $aiConfig = new AiConfig(
-            defaultModel: 'test/test-model',
-            defaultReasoning: 'medium',
-            providers: $providers,
-        );
-
-        return new ReasoningOptionsResolver(new HatfieldModelCatalog($aiConfig));
-    }
-
-    private function modelRef(string $providerId, string $modelName): AiModelReference
-    {
-        return new AiModelReference($providerId, $modelName);
-    }
-
-    private function model(array $overrides = []): AiModelDefinition
-    {
-        return new AiModelDefinition(
-            id: $overrides['id'] ?? 'test-model',
-            reasoning: $overrides['reasoning'] ?? true,
-            thinkingLevelMap: $overrides['thinkingLevelMap'] ?? [
-                'minimal' => 'low',
-                'low' => 'medium',
-                'medium' => 'medium',
-                'high' => 'high',
-                'xhigh' => 'max',
-            ],
-            compatibility: $overrides['compatibility'] ?? null,
-            name: $overrides['name'] ?? null,
-            contextWindow: $overrides['contextWindow'] ?? null,
-            maxTokens: $overrides['maxTokens'] ?? null,
-            input: $overrides['input'] ?? [],
-            toolCalling: $overrides['toolCalling'] ?? false,
-        );
-    }
-
-    private function provider(string $id, AiModelDefinition $model, ?AiCompatibility $compat = null): AiProviderConfig
-    {
-        return new AiProviderConfig(
-            id: $id,
-            enabled: true,
-            baseUrl: 'https://example.com',
-            compatibility: $compat,
-            models: [$model->id => $model],
-        );
-    }
-
     // ── Off / invalid levels ──────────────────────────────────────────────
 
     public function testOffLevelReturnsEmpty(): void
@@ -514,6 +464,55 @@ class ReasoningOptionsResolverTest extends TestCase
         self::assertSame(
             ['reasoning_effort' => 'high'],
             $resolver->resolve($this->modelRef('deepseek', 'deepseek-v4-pro'), 'MEDIUM'),
+        );
+    }
+    // ── Helpers ───────────────────────────────────────────────────────────
+
+    private function resolverForProviders(array $providers): ReasoningOptionsResolver
+    {
+        $aiConfig = new AiConfig(
+            defaultModel: 'test/test-model',
+            defaultReasoning: 'medium',
+            providers: $providers,
+        );
+
+        return new ReasoningOptionsResolver(new HatfieldModelCatalog($aiConfig));
+    }
+
+    private function modelRef(string $providerId, string $modelName): AiModelReference
+    {
+        return new AiModelReference($providerId, $modelName);
+    }
+
+    private function model(array $overrides = []): AiModelDefinition
+    {
+        return new AiModelDefinition(
+            id: $overrides['id'] ?? 'test-model',
+            reasoning: $overrides['reasoning'] ?? true,
+            thinkingLevelMap: $overrides['thinkingLevelMap'] ?? [
+                'minimal' => 'low',
+                'low' => 'medium',
+                'medium' => 'medium',
+                'high' => 'high',
+                'xhigh' => 'max',
+            ],
+            compatibility: $overrides['compatibility'] ?? null,
+            name: $overrides['name'] ?? null,
+            contextWindow: $overrides['contextWindow'] ?? null,
+            maxTokens: $overrides['maxTokens'] ?? null,
+            input: $overrides['input'] ?? [],
+            toolCalling: $overrides['toolCalling'] ?? false,
+        );
+    }
+
+    private function provider(string $id, AiModelDefinition $model, ?AiCompatibility $compat = null): AiProviderConfig
+    {
+        return new AiProviderConfig(
+            id: $id,
+            enabled: true,
+            baseUrl: 'https://example.com',
+            compatibility: $compat,
+            models: [$model->id => $model],
         );
     }
 }

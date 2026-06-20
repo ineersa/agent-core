@@ -18,8 +18,8 @@ use Ineersa\Tui\Listener\SessionCommandRegistrar;
 use Ineersa\Tui\Picker\SessionPickerController;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
-use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Screen\ChatScreen;
+use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\Attributes\Test;
@@ -41,26 +41,6 @@ final class SessionCommandRegistrarTest extends TestCase
     {
         $this->removeDir($this->tmpDir);
         parent::tearDown();
-    }
-
-    private function buildContextAndPicker(TuiSessionState $state): array
-    {
-        $registry = new SlashCommandRegistry();
-
-        $sessionStore = new HatfieldSessionStore(
-            appConfig: new AppConfig(
-                tui: new TuiConfig(theme: 'default'),
-                logging: new LoggingConfig(),
-                cwd: $this->tmpDir,
-            ),
-            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-        );
-        $picker = new SessionPickerController(
-            $sessionStore,
-            $this->createStub(\Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface::class),
-        );
-
-        return [$registry, $picker];
     }
 
     #[Test]
@@ -176,6 +156,26 @@ final class SessionCommandRegistrarTest extends TestCase
         // Verify commands still work after re-registration
         $result = $registry->execute(new SlashCommand('new', '', '/new'));
         self::assertInstanceOf(NoOp::class, $result);
+    }
+
+    private function buildContextAndPicker(TuiSessionState $state): array
+    {
+        $registry = new SlashCommandRegistry();
+
+        $sessionStore = new HatfieldSessionStore(
+            appConfig: new AppConfig(
+                tui: new TuiConfig(theme: 'default'),
+                logging: new LoggingConfig(),
+                cwd: $this->tmpDir,
+            ),
+            entityManager: self::createStub(\Doctrine\ORM\EntityManagerInterface::class),
+        );
+        $picker = new SessionPickerController(
+            $sessionStore,
+            self::createStub(\Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface::class),
+        );
+
+        return [$registry, $picker];
     }
 
     private function buildContext(TuiSessionState $state, SessionPickerController $picker): TuiRuntimeContext

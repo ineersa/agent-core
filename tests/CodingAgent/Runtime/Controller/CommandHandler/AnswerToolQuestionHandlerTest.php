@@ -211,7 +211,7 @@ final class AnswerToolQuestionHandlerTest extends TestCase
 /**
  * Inline spy implementation of ToolQuestionStoreInterface for testing.
  */
-final class SpyToolQuestionStore implements \Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface
+final class SpyToolQuestionStore implements ToolQuestionStoreInterface
 {
     public ?string $lastRequestId = null;
     public ?bool $lastAnswer = null;

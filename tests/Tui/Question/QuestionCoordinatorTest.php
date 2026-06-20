@@ -15,28 +15,6 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(QuestionCoordinator::class)]
 final class QuestionCoordinatorTest extends TestCase
 {
-    // ─── Helpers ───────────────────────────────────────────────────────
-
-    private function tuiRequest(string $id, string $prompt = 'Test?'): QuestionRequest
-    {
-        return new QuestionRequest(
-            requestId: $id,
-            source: QuestionSource::Tui,
-            kind: QuestionKind::Text,
-            prompt: $prompt,
-        );
-    }
-
-    private function agentCoreRequest(string $id, string $prompt = 'Test?'): QuestionRequest
-    {
-        return new QuestionRequest(
-            requestId: $id,
-            source: QuestionSource::AgentCore,
-            kind: QuestionKind::Text,
-            prompt: $prompt,
-        );
-    }
-
     // ─── Enqueue / activation ──────────────────────────────────────────
 
     public function testEnqueueActivatesFirstRequest(): void
@@ -171,7 +149,7 @@ final class QuestionCoordinatorTest extends TestCase
         $request = $this->tuiRequest('r1');
         $received = null;
 
-        $coordinator->enqueue($request, function (mixed $value) use (&$received): void {
+        $coordinator->enqueue($request, static function (mixed $value) use (&$received): void {
             $received = $value;
         });
 
@@ -187,7 +165,7 @@ final class QuestionCoordinatorTest extends TestCase
         $request = $this->agentCoreRequest('r1');
         $received = null;
 
-        $coordinator->enqueue($request, function (mixed $value) use (&$received): void {
+        $coordinator->enqueue($request, static function (mixed $value) use (&$received): void {
             $received = $value;
         });
 
@@ -204,7 +182,7 @@ final class QuestionCoordinatorTest extends TestCase
         $coordinator = new QuestionCoordinator();
         $called = false;
 
-        $coordinator->enqueue($this->tuiRequest('r1'), function () use (&$called): void {
+        $coordinator->enqueue($this->tuiRequest('r1'), static function () use (&$called): void {
             $called = true;
         });
 
@@ -219,7 +197,7 @@ final class QuestionCoordinatorTest extends TestCase
         $coordinator = new QuestionCoordinator();
         $called = false;
 
-        $coordinator->enqueue($this->tuiRequest('r1'), function () use (&$called): void {
+        $coordinator->enqueue($this->tuiRequest('r1'), static function () use (&$called): void {
             $called = true;
         });
 
@@ -239,8 +217,8 @@ final class QuestionCoordinatorTest extends TestCase
 
         $coordinator->enqueue(
             $request,
-            onAnswer: function (): void {},
-            onCancel: function () use (&$cancelFired): void {
+            onAnswer: static function (): void {},
+            onCancel: static function () use (&$cancelFired): void {
                 $cancelFired = true;
             },
         );
@@ -260,7 +238,7 @@ final class QuestionCoordinatorTest extends TestCase
 
         $coordinator->enqueue(
             $r1,
-            onCancel: function () use (&$cancelFired): void {
+            onCancel: static function () use (&$cancelFired): void {
                 $cancelFired = true;
             },
         );
@@ -280,7 +258,7 @@ final class QuestionCoordinatorTest extends TestCase
 
         $coordinator->enqueue(
             $this->agentCoreRequest('r1'),
-            onCancel: function (): void {
+            onCancel: static function (): void {
                 throw new \RuntimeException('Callback explosion');
             },
         );
@@ -307,13 +285,13 @@ final class QuestionCoordinatorTest extends TestCase
 
         $coordinator->enqueue(
             $this->agentCoreRequest('r1'),
-            onCancel: function () use (&$cancelled): void {
+            onCancel: static function () use (&$cancelled): void {
                 $cancelled[] = 'r1';
             },
         );
         $coordinator->enqueue(
             $this->agentCoreRequest('r2'),
-            onCancel: function () use (&$cancelled): void {
+            onCancel: static function () use (&$cancelled): void {
                 $cancelled[] = 'r2';
             },
         );
@@ -330,13 +308,13 @@ final class QuestionCoordinatorTest extends TestCase
         $coordinator = new QuestionCoordinator();
         $results = [];
 
-        $coordinator->enqueue($this->tuiRequest('r1'), function (mixed $v) use (&$results): void {
+        $coordinator->enqueue($this->tuiRequest('r1'), static function (mixed $v) use (&$results): void {
             $results[] = "r1:$v";
         });
-        $coordinator->enqueue($this->tuiRequest('r2'), function (mixed $v) use (&$results): void {
+        $coordinator->enqueue($this->tuiRequest('r2'), static function (mixed $v) use (&$results): void {
             $results[] = "r2:$v";
         });
-        $coordinator->enqueue($this->tuiRequest('r3'), function (mixed $v) use (&$results): void {
+        $coordinator->enqueue($this->tuiRequest('r3'), static function (mixed $v) use (&$results): void {
             $results[] = "r3:$v";
         });
 
@@ -355,13 +333,13 @@ final class QuestionCoordinatorTest extends TestCase
         $coordinator = new QuestionCoordinator();
         $results = [];
 
-        $coordinator->enqueue($this->tuiRequest('r1'), function (mixed $v) use (&$results): void {
+        $coordinator->enqueue($this->tuiRequest('r1'), static function (mixed $v) use (&$results): void {
             $results[] = "r1:$v";
         });
-        $coordinator->enqueue($this->agentCoreRequest('r2'), function (mixed $v) use (&$results): void {
+        $coordinator->enqueue($this->agentCoreRequest('r2'), static function (mixed $v) use (&$results): void {
             $results[] = "r2:$v";
         });
-        $coordinator->enqueue($this->tuiRequest('r3'), function (mixed $v) use (&$results): void {
+        $coordinator->enqueue($this->tuiRequest('r3'), static function (mixed $v) use (&$results): void {
             $results[] = "r3:$v";
         });
 
@@ -522,10 +500,10 @@ final class QuestionCoordinatorTest extends TestCase
 
         $coordinator->enqueue(
             $this->tuiRequest('r1'),
-            onAnswer: function () use (&$answerFired): void {
+            onAnswer: static function () use (&$answerFired): void {
                 $answerFired = true;
             },
-            onCancel: function () use (&$cancelFired): void {
+            onCancel: static function () use (&$cancelFired): void {
                 $cancelFired = true;
             },
         );
@@ -555,5 +533,26 @@ final class QuestionCoordinatorTest extends TestCase
         // After reset, the same ID can be re-enqueued without triggering the duplicate guard
         $coordinator->enqueue($this->tuiRequest('r1'));
         self::assertTrue($coordinator->hasRequest('r1'));
+    }
+    // ─── Helpers ───────────────────────────────────────────────────────
+
+    private function tuiRequest(string $id, string $prompt = 'Test?'): QuestionRequest
+    {
+        return new QuestionRequest(
+            requestId: $id,
+            source: QuestionSource::Tui,
+            kind: QuestionKind::Text,
+            prompt: $prompt,
+        );
+    }
+
+    private function agentCoreRequest(string $id, string $prompt = 'Test?'): QuestionRequest
+    {
+        return new QuestionRequest(
+            requestId: $id,
+            source: QuestionSource::AgentCore,
+            kind: QuestionKind::Text,
+            prompt: $prompt,
+        );
     }
 }

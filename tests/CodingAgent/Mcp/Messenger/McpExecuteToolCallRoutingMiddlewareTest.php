@@ -67,8 +67,8 @@ final class McpExecuteToolCallRoutingMiddlewareTest extends TestCase
         $result = $middleware->handle($envelope, new TestStack());
 
         $stamp = $result->last(TransportNamesStamp::class);
-        $this->assertNotNull($stamp, 'Expected TransportNamesStamp for MCP tool');
-        $this->assertSame(['mcp'], $stamp->getTransportNames());
+        self::assertNotNull($stamp, 'Expected TransportNamesStamp for MCP tool');
+        self::assertSame(['mcp'], $stamp->getTransportNames());
     }
 
     // ── Test thesis 2: Non-MCP tool passes through ──
@@ -93,7 +93,7 @@ final class McpExecuteToolCallRoutingMiddlewareTest extends TestCase
 
         $result = $middleware->handle($envelope, new TestStack());
 
-        $this->assertNull($result->last(TransportNamesStamp::class), 'Non-MCP tool should not be stamped');
+        self::assertNull($result->last(TransportNamesStamp::class), 'Non-MCP tool should not be stamped');
     }
 
     // ── Non-ExecuteToolCall messages pass through ──
@@ -106,7 +106,7 @@ final class McpExecuteToolCallRoutingMiddlewareTest extends TestCase
 
         $result = $middleware->handle($envelope, new TestStack());
 
-        $this->assertNull($result->last(TransportNamesStamp::class));
+        self::assertNull($result->last(TransportNamesStamp::class));
     }
 
     // ── ReceivedStamp skip ──
@@ -131,8 +131,8 @@ final class McpExecuteToolCallRoutingMiddlewareTest extends TestCase
 
         $result = $middleware->handle($envelope, new TestStack());
 
-        $this->assertNotNull($result->last(ReceivedStamp::class));
-        $this->assertNull($result->last(TransportNamesStamp::class), 'Already-consumed message should not be stamped');
+        self::assertNotNull($result->last(ReceivedStamp::class));
+        self::assertNull($result->last(TransportNamesStamp::class), 'Already-consumed message should not be stamped');
     }
 
     // ── Existing TransportNamesStamp skip ──
@@ -158,8 +158,8 @@ final class McpExecuteToolCallRoutingMiddlewareTest extends TestCase
         $result = $middleware->handle($envelope, new TestStack());
 
         $stamp = $result->last(TransportNamesStamp::class);
-        $this->assertNotNull($stamp);
-        $this->assertSame(['tool'], $stamp->getTransportNames(), 'Existing stamp should not be overwritten');
+        self::assertNotNull($stamp);
+        self::assertSame(['tool'], $stamp->getTransportNames(), 'Existing stamp should not be overwritten');
     }
 
     // ── Test thesis 3: Missing catalog is a no-op ──
@@ -184,7 +184,7 @@ final class McpExecuteToolCallRoutingMiddlewareTest extends TestCase
 
         $result = $middleware->handle($envelope, new TestStack());
 
-        $this->assertNull($result->last(TransportNamesStamp::class));
+        self::assertNull($result->last(TransportNamesStamp::class));
     }
 
     // ── Test thesis 4: Catalog read failure is re-thrown ──
@@ -192,7 +192,10 @@ final class McpExecuteToolCallRoutingMiddlewareTest extends TestCase
     public function testRethrowsCatalogReadFailure(): void
     {
         $failingStore = new class implements McpToolCatalogStoreInterface {
-            public function write(string $runId, McpToolCatalogDTO $catalog): void {}
+            public function write(string $runId, McpToolCatalogDTO $catalog): void
+            {
+            }
+
             public function read(string $runId): ?McpToolCatalogDTO
             {
                 throw new \RuntimeException('Catalog I/O failure');
@@ -217,7 +220,7 @@ final class McpExecuteToolCallRoutingMiddlewareTest extends TestCase
         $this->expectExceptionMessage('Catalog I/O failure');
         $middleware->handle($envelope, new TestStack());
 
-        $this->assertGreaterThanOrEqual(1, \count($this->logger->records), 'Catalog read failure should be logged');
+        self::assertGreaterThanOrEqual(1, \count($this->logger->records), 'Catalog read failure should be logged');
     }
 
     // ── Only tools from CONNECTED servers are stamped ──
@@ -261,7 +264,7 @@ final class McpExecuteToolCallRoutingMiddlewareTest extends TestCase
 
         $result = $middleware->handle($envelope, new TestStack());
 
-        $this->assertNull($result->last(TransportNamesStamp::class), 'Tools from failed servers should not be stamped');
+        self::assertNull($result->last(TransportNamesStamp::class), 'Tools from failed servers should not be stamped');
     }
 
     // ── Helper methods ──
@@ -296,8 +299,14 @@ final class McpExecuteToolCallRoutingMiddlewareTest extends TestCase
     {
         $store = new class($storeData) implements McpToolCatalogStoreInterface {
             /** @param array<string, McpToolCatalogDTO> $data */
-            public function __construct(private array $data) {}
-            public function write(string $runId, McpToolCatalogDTO $catalog): void {}
+            public function __construct(private array $data)
+            {
+            }
+
+            public function write(string $runId, McpToolCatalogDTO $catalog): void
+            {
+            }
+
             public function read(string $runId): ?McpToolCatalogDTO
             {
                 return $this->data[$runId] ?? null;

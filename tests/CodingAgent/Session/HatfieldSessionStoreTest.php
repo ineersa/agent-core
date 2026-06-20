@@ -303,7 +303,7 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         // Create multiple sessions and verify all are returned;
         // the catalog query no longer applies a max-result cap.
         $ids = [];
-        for ($i = 0; $i < 3; $i++) {
+        for ($i = 0; $i < 3; ++$i) {
             $ids[] = $this->store->createSession("session {$i}");
         }
 
@@ -453,6 +453,7 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
 
     /**
      * @param list<array<string, mixed>> $list
+     *
      * @return array<string, mixed>
      */
     private function findRow(array $list, string $sessionId): array

@@ -7,13 +7,13 @@ namespace Ineersa\Tui\Tests\Picker;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
-use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\HomeSettingsWriter;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Config\ModelSettingsPersister;
 use Ineersa\CodingAgent\Config\SessionMetadataStore;
+use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
@@ -65,7 +65,7 @@ class ModelPickerControllerTest extends TestCase
         $items = ModelPickerController::buildItemsStatic($service, $state, $this->createTheme());
 
         // At least 2 models configured
-        self::assertGreaterThanOrEqual(2, count($items));
+        self::assertGreaterThanOrEqual(2, \count($items));
 
         // First item should be the favorite
         self::assertStringContainsString('llama_cpp/flash', $items[0]['label']);
@@ -117,7 +117,7 @@ class ModelPickerControllerTest extends TestCase
 
         $items = FavoritePickerController::buildFavoritesItems($service, $this->createTheme());
 
-        self::assertGreaterThanOrEqual(2, count($items));
+        self::assertGreaterThanOrEqual(2, \count($items));
 
         $favFound = false;
         foreach ($items as $item) {
@@ -136,7 +136,7 @@ class ModelPickerControllerTest extends TestCase
 
         $items = FavoritePickerController::buildFavoritesItems($service, $this->createTheme());
 
-        self::assertGreaterThanOrEqual(2, count($items));
+        self::assertGreaterThanOrEqual(2, \count($items));
 
         foreach ($items as $item) {
             $label = $item['label'];
@@ -206,7 +206,7 @@ class ModelPickerControllerTest extends TestCase
                 logging: new LoggingConfig(),
                 cwd: $this->tempDir.'/project',
             ),
-            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+            entityManager: self::createStub(\Doctrine\ORM\EntityManagerInterface::class),
         );
         $sessionMetaStore = new SessionMetadataStore($hatfieldSessionStore);
 

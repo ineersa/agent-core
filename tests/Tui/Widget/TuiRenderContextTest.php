@@ -13,11 +13,6 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(TuiRenderContext::class)]
 final class TuiRenderContextTest extends TestCase
 {
-    private function createTheme(): DefaultTheme
-    {
-        return new DefaultTheme(new ThemePalette('test', ['accent' => 'cyan', 'muted' => '#888', 'error' => 'red']));
-    }
-
     public function testDefaultDimensions(): void
     {
         $context = new TuiRenderContext();
@@ -73,5 +68,10 @@ final class TuiRenderContextTest extends TestCase
 
         self::assertSame('test', $context->theme->name());
         self::assertSame('other', $modified->theme->name());
+    }
+
+    private function createTheme(): DefaultTheme
+    {
+        return new DefaultTheme(new ThemePalette('test', ['accent' => 'cyan', 'muted' => '#888', 'error' => 'red']));
     }
 }

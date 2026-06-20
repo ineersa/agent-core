@@ -11,68 +11,6 @@ use PHPUnit\Framework\TestCase;
 
 class HatfieldModelCatalogTest extends TestCase
 {
-    private function createCatalog(): HatfieldModelCatalog
-    {
-        $aiConfig = AiConfig::fromArray([
-            'default_model' => 'deepseek/deepseek-v4-pro',
-            'default_reasoning' => 'medium',
-            'providers' => [
-                'deepseek' => [
-                    'type' => 'generic',
-                    'enabled' => true,
-                    'base_url' => 'https://api.deepseek.com',
-                    'models' => [
-                        'deepseek-v4-pro' => [
-                            'name' => 'DeepSeek V4 Pro',
-                            'context_window' => 1000000,
-                        ],
-                        'deepseek-v4-flash' => [
-                            'name' => 'DeepSeek V4 Flash',
-                            'context_window' => 1000000,
-                        ],
-                    ],
-                ],
-                'llama_cpp' => [
-                    'type' => 'generic',
-                    'enabled' => true,
-                    'base_url' => 'http://192.168.2.38:8052/v1',
-                    'api_key' => 'dummy',
-                    'models' => [
-                        'flash' => [
-                            'name' => 'flash',
-                            'context_window' => 200000,
-                        ],
-                    ],
-                ],
-                'zai' => [
-                    'type' => 'generic',
-                    'enabled' => true,
-                    'base_url' => 'https://api.z.ai/api/coding/paas/v4',
-                    'models' => [
-                        'glm-5.1' => [
-                            'name' => 'GLM 5.1',
-                            'context_window' => 200000,
-                        ],
-                        'glm-5v-turbo' => [
-                            'name' => 'GLM 5V Turbo',
-                            'context_window' => 200000,
-                        ],
-                    ],
-                ],
-                'disabled' => [
-                    'type' => 'generic',
-                    'enabled' => false,
-                    'base_url' => 'https://disabled.example.com',
-                    'models' => [
-                        'hidden' => ['name' => 'Hidden Model'],
-                    ],
-                ],
-            ],
-        ]);
-
-        return new HatfieldModelCatalog($aiConfig);
-    }
-
     public function testGetProvider(): void
     {
         $catalog = $this->createCatalog();
@@ -242,5 +180,67 @@ class HatfieldModelCatalogTest extends TestCase
         self::assertSame('deepseek/deepseek-v4-pro', $config->defaultModel);
         self::assertSame('medium', $config->defaultReasoning);
         self::assertCount(4, $config->providers);
+    }
+
+    private function createCatalog(): HatfieldModelCatalog
+    {
+        $aiConfig = AiConfig::fromArray([
+            'default_model' => 'deepseek/deepseek-v4-pro',
+            'default_reasoning' => 'medium',
+            'providers' => [
+                'deepseek' => [
+                    'type' => 'generic',
+                    'enabled' => true,
+                    'base_url' => 'https://api.deepseek.com',
+                    'models' => [
+                        'deepseek-v4-pro' => [
+                            'name' => 'DeepSeek V4 Pro',
+                            'context_window' => 1000000,
+                        ],
+                        'deepseek-v4-flash' => [
+                            'name' => 'DeepSeek V4 Flash',
+                            'context_window' => 1000000,
+                        ],
+                    ],
+                ],
+                'llama_cpp' => [
+                    'type' => 'generic',
+                    'enabled' => true,
+                    'base_url' => 'http://192.168.2.38:8052/v1',
+                    'api_key' => 'dummy',
+                    'models' => [
+                        'flash' => [
+                            'name' => 'flash',
+                            'context_window' => 200000,
+                        ],
+                    ],
+                ],
+                'zai' => [
+                    'type' => 'generic',
+                    'enabled' => true,
+                    'base_url' => 'https://api.z.ai/api/coding/paas/v4',
+                    'models' => [
+                        'glm-5.1' => [
+                            'name' => 'GLM 5.1',
+                            'context_window' => 200000,
+                        ],
+                        'glm-5v-turbo' => [
+                            'name' => 'GLM 5V Turbo',
+                            'context_window' => 200000,
+                        ],
+                    ],
+                ],
+                'disabled' => [
+                    'type' => 'generic',
+                    'enabled' => false,
+                    'base_url' => 'https://disabled.example.com',
+                    'models' => [
+                        'hidden' => ['name' => 'Hidden Model'],
+                    ],
+                ],
+            ],
+        ]);
+
+        return new HatfieldModelCatalog($aiConfig);
     }
 }

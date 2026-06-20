@@ -243,7 +243,7 @@ class SessionFileMcpToolCatalogStoreTest extends TestCase
 
         $this->store->write($runId, $catalog);
 
-        $catalogPath = $this->projectDir . '/.hatfield/sessions/' . $runId . '/mcp-tools.json';
+        $catalogPath = $this->projectDir.'/.hatfield/sessions/'.$runId.'/mcp-tools.json';
         self::assertFileExists($catalogPath, 'Catalog file should exist at the expected session path');
 
         $content = file_get_contents($catalogPath);

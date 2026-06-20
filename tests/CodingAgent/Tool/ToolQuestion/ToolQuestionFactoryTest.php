@@ -68,7 +68,7 @@ final class ToolQuestionFactoryTest extends TestCase
             toolName: 'bash',
             pid: 12345,
             logPath: '/tmp/test.log',
-            commandPreview: \str_repeat('x', 201),
+            commandPreview: str_repeat('x', 201),
             prompt: 'Test prompt?',
         );
     }
@@ -82,12 +82,12 @@ final class ToolQuestionFactoryTest extends TestCase
             toolName: 'bash',
             pid: 12345,
             logPath: '/tmp/test.log',
-            commandPreview: \str_repeat('x', 200),
+            commandPreview: str_repeat('x', 200),
             prompt: 'Test prompt?',
         );
 
         self::assertSame('test-max-preview', $q->requestId);
-        self::assertSame(200, \mb_strlen($q->commandPreview));
+        self::assertSame(200, mb_strlen($q->commandPreview));
     }
 
     public function testCreateWithEmptyRunIdThrows(): void

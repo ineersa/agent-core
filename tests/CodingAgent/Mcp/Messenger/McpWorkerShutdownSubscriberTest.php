@@ -41,15 +41,15 @@ class McpWorkerShutdownSubscriberTest extends TestCase
      */
     public function testDisconnectAllCalledForMcpTransport(): void
     {
-        $receiver = $this->createStub(ReceiverInterface::class);
-        $bus = $this->createStub(MessageBusInterface::class);
+        $receiver = self::createStub(ReceiverInterface::class);
+        $bus = self::createStub(MessageBusInterface::class);
         $worker = new Worker(['mcp' => $receiver], $bus);
 
         $event = new WorkerStoppedEvent($worker);
 
         /** @var McpConnectionManagerInterface&\PHPUnit\Framework\MockObject\MockObject $connectionManager */
         $connectionManager = $this->createMock(McpConnectionManagerInterface::class);
-        $connectionManager->expects($this->once())
+        $connectionManager->expects(self::once())
             ->method('disconnectAll')
             ->with('test-run-id');
 
@@ -64,15 +64,15 @@ class McpWorkerShutdownSubscriberTest extends TestCase
      */
     public function testNoOpForNonMcpTransport(): void
     {
-        $receiver = $this->createStub(ReceiverInterface::class);
-        $bus = $this->createStub(MessageBusInterface::class);
+        $receiver = self::createStub(ReceiverInterface::class);
+        $bus = self::createStub(MessageBusInterface::class);
         $worker = new Worker(['tool' => $receiver], $bus);
 
         $event = new WorkerStoppedEvent($worker);
 
         /** @var McpConnectionManagerInterface&\PHPUnit\Framework\MockObject\MockObject $connectionManager */
         $connectionManager = $this->createMock(McpConnectionManagerInterface::class);
-        $connectionManager->expects($this->never())
+        $connectionManager->expects(self::never())
             ->method('disconnectAll');
 
         $_SERVER['HATFIELD_SESSION_ID'] = 'test-run-id';
@@ -86,15 +86,15 @@ class McpWorkerShutdownSubscriberTest extends TestCase
      */
     public function testNoOpWhenSessionIdMissing(): void
     {
-        $receiver = $this->createStub(ReceiverInterface::class);
-        $bus = $this->createStub(MessageBusInterface::class);
+        $receiver = self::createStub(ReceiverInterface::class);
+        $bus = self::createStub(MessageBusInterface::class);
         $worker = new Worker(['mcp' => $receiver], $bus);
 
         $event = new WorkerStoppedEvent($worker);
 
         /** @var McpConnectionManagerInterface&\PHPUnit\Framework\MockObject\MockObject $connectionManager */
         $connectionManager = $this->createMock(McpConnectionManagerInterface::class);
-        $connectionManager->expects($this->never())
+        $connectionManager->expects(self::never())
             ->method('disconnectAll');
 
         // Ensure no env var leaks from process
@@ -103,9 +103,9 @@ class McpWorkerShutdownSubscriberTest extends TestCase
         $subscriber = new McpWorkerShutdownSubscriber($connectionManager, $this->logger);
         $subscriber($event);
 
-        $this->assertCount(1, $this->logger->records);
-        $this->assertSame('warning', $this->logger->records[0]['level']);
-        $this->assertSame('worker.shutdown.no_session_id', $this->logger->records[0]['context']['mcp_event']);
+        self::assertCount(1, $this->logger->records);
+        self::assertSame('warning', $this->logger->records[0]['level']);
+        self::assertSame('worker.shutdown.no_session_id', $this->logger->records[0]['context']['mcp_event']);
     }
 
     /**
@@ -113,15 +113,15 @@ class McpWorkerShutdownSubscriberTest extends TestCase
      */
     public function testNoOpWhenSessionIdIsUnknown(): void
     {
-        $receiver = $this->createStub(ReceiverInterface::class);
-        $bus = $this->createStub(MessageBusInterface::class);
+        $receiver = self::createStub(ReceiverInterface::class);
+        $bus = self::createStub(MessageBusInterface::class);
         $worker = new Worker(['mcp' => $receiver], $bus);
 
         $event = new WorkerStoppedEvent($worker);
 
         /** @var McpConnectionManagerInterface&\PHPUnit\Framework\MockObject\MockObject $connectionManager */
         $connectionManager = $this->createMock(McpConnectionManagerInterface::class);
-        $connectionManager->expects($this->never())
+        $connectionManager->expects(self::never())
             ->method('disconnectAll');
 
         $_SERVER['HATFIELD_SESSION_ID'] = 'unknown';
@@ -129,9 +129,9 @@ class McpWorkerShutdownSubscriberTest extends TestCase
         $subscriber = new McpWorkerShutdownSubscriber($connectionManager, $this->logger);
         $subscriber($event);
 
-        $this->assertCount(1, $this->logger->records);
-        $this->assertSame('warning', $this->logger->records[0]['level']);
-        $this->assertSame('worker.shutdown.no_session_id', $this->logger->records[0]['context']['mcp_event']);
+        self::assertCount(1, $this->logger->records);
+        self::assertSame('warning', $this->logger->records[0]['level']);
+        self::assertSame('worker.shutdown.no_session_id', $this->logger->records[0]['context']['mcp_event']);
     }
 
     /**
@@ -140,8 +140,8 @@ class McpWorkerShutdownSubscriberTest extends TestCase
      */
     public function testDisconnectAllFailureLogsWarningAndDoesNotThrow(): void
     {
-        $receiver = $this->createStub(ReceiverInterface::class);
-        $bus = $this->createStub(MessageBusInterface::class);
+        $receiver = self::createStub(ReceiverInterface::class);
+        $bus = self::createStub(MessageBusInterface::class);
         $worker = new Worker(['mcp' => $receiver], $bus);
 
         $event = new WorkerStoppedEvent($worker);
@@ -150,7 +150,7 @@ class McpWorkerShutdownSubscriberTest extends TestCase
 
         /** @var McpConnectionManagerInterface&\PHPUnit\Framework\MockObject\MockObject $connectionManager */
         $connectionManager = $this->createMock(McpConnectionManagerInterface::class);
-        $connectionManager->expects($this->once())
+        $connectionManager->expects(self::once())
             ->method('disconnectAll')
             ->with('test-run-id')
             ->willThrowException($disconnectError);
@@ -162,16 +162,16 @@ class McpWorkerShutdownSubscriberTest extends TestCase
         // Must not throw — the subscriber catches and logs.
         $subscriber($event);
 
-        $this->assertCount(2, $this->logger->records);
+        self::assertCount(2, $this->logger->records);
         // First log: disconnecting (info, before the try/catch that fails)
-        $this->assertSame('info', $this->logger->records[0]['level']);
-        $this->assertSame('worker.shutdown.disconnecting', $this->logger->records[0]['context']['mcp_event']);
+        self::assertSame('info', $this->logger->records[0]['level']);
+        self::assertSame('worker.shutdown.disconnecting', $this->logger->records[0]['context']['mcp_event']);
         // Second log: disconnect failure (warning, from catch block)
-        $this->assertSame('warning', $this->logger->records[1]['level']);
-        $this->assertSame('worker.shutdown.disconnect_failed', $this->logger->records[1]['context']['mcp_event']);
-        $this->assertSame('RuntimeException', $this->logger->records[1]['context']['error_class']);
-        $this->assertSame('connection lost during shutdown', $this->logger->records[1]['context']['error_message']);
-        $this->assertSame('test-run-id', $this->logger->records[1]['context']['run_id']);
-        $this->assertSame('mcp', $this->logger->records[1]['context']['component']);
+        self::assertSame('warning', $this->logger->records[1]['level']);
+        self::assertSame('worker.shutdown.disconnect_failed', $this->logger->records[1]['context']['mcp_event']);
+        self::assertSame('RuntimeException', $this->logger->records[1]['context']['error_class']);
+        self::assertSame('connection lost during shutdown', $this->logger->records[1]['context']['error_message']);
+        self::assertSame('test-run-id', $this->logger->records[1]['context']['run_id']);
+        self::assertSame('mcp', $this->logger->records[1]['context']['component']);
     }
 }

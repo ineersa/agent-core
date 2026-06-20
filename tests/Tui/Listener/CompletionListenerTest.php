@@ -18,8 +18,8 @@ use Ineersa\Tui\Listener\CompletionListener;
 use Ineersa\Tui\Listener\CompletionMenu;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
-use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Screen\ChatScreen;
+use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -64,7 +64,7 @@ final class CompletionListenerTest extends TestCase
         $this->tui->handleInput("\t");
 
         // Editor text must be unchanged (menu open, not yet accepted)
-        $this->assertSame('/he', $this->editor->getText());
+        self::assertSame('/he', $this->editor->getText());
     }
 
     #[Test]
@@ -75,7 +75,7 @@ final class CompletionListenerTest extends TestCase
         $this->tui->handleInput("\t");
 
         // Editor text unchanged — no completion triggered
-        $this->assertSame('hello', $this->editor->getText());
+        self::assertSame('hello', $this->editor->getText());
     }
 
     // ── Tab accepts selected suggestion ───────────────────────────
@@ -87,11 +87,11 @@ final class CompletionListenerTest extends TestCase
 
         // First Tab: open menu
         $this->tui->handleInput("\t");
-        $this->assertSame('/he', $this->editor->getText());
+        self::assertSame('/he', $this->editor->getText());
 
         // Second Tab: accept selected (first = /help)
         $this->tui->handleInput("\t");
-        $this->assertSame('/help ', $this->editor->getText());
+        self::assertSame('/help ', $this->editor->getText());
     }
 
     #[Test]
@@ -110,7 +110,7 @@ final class CompletionListenerTest extends TestCase
         // Built-in commands sorted alphabetically: /clear, /exit, /help
         // Index 0: /clear, index 1: /exit, index 2: /help
         // Down twice = index 2 = /help
-        $this->assertSame('/help ', $this->editor->getText());
+        self::assertSame('/help ', $this->editor->getText());
     }
 
     #[Test]
@@ -127,7 +127,7 @@ final class CompletionListenerTest extends TestCase
         // Accept
         $this->tui->handleInput("\t");
 
-        $this->assertSame('/hotkeys ', $this->editor->getText());
+        self::assertSame('/hotkeys ', $this->editor->getText());
     }
 
     // ── Multiline: slash after newline does not trigger ────────────
@@ -177,7 +177,7 @@ final class CompletionListenerTest extends TestCase
         $this->tui->handleInput("\x1b");
 
         // Editor text unchanged — menu was closed without clearing
-        $this->assertSame('/he', $this->editor->getText());
+        self::assertSame('/he', $this->editor->getText());
     }
 
     #[Test]
@@ -189,7 +189,7 @@ final class CompletionListenerTest extends TestCase
         $this->tui->handleInput("\x1b");
 
         // Editor text unchanged (Escape passed through to editor)
-        $this->assertSame('/he', $this->editor->getText());
+        self::assertSame('/he', $this->editor->getText());
     }
 
     // ── Up/Down navigation ────────────────────────────────────────
@@ -209,7 +209,7 @@ final class CompletionListenerTest extends TestCase
         $this->tui->handleInput("\t");
         // Built-ins alphabetical: /clear (0), /exit (1), /help (2)
         // Down once = index 1 = /exit
-        $this->assertSame('/exit ', $this->editor->getText());
+        self::assertSame('/exit ', $this->editor->getText());
     }
 
     #[Test]
@@ -226,7 +226,7 @@ final class CompletionListenerTest extends TestCase
         // Accept — wraps to last (/hotkeys)
         $this->tui->handleInput("\t");
 
-        $this->assertSame('/hotkeys ', $this->editor->getText());
+        self::assertSame('/hotkeys ', $this->editor->getText());
     }
 
     #[Test]
@@ -243,7 +243,7 @@ final class CompletionListenerTest extends TestCase
         // Accept — index 1 = /exit
         $this->tui->handleInput("\t");
 
-        $this->assertSame('/exit ', $this->editor->getText());
+        self::assertSame('/exit ', $this->editor->getText());
     }
 
     // ── Up/Down passes through when menu closed ──────────────────
@@ -258,7 +258,7 @@ final class CompletionListenerTest extends TestCase
         $this->tui->handleInput("\x1b[A");
 
         // Editor text unchanged (Up handled by editor cursor movement or history)
-        $this->assertSame('/he', $this->editor->getText());
+        self::assertSame('/he', $this->editor->getText());
     }
 
     #[Test]
@@ -269,7 +269,7 @@ final class CompletionListenerTest extends TestCase
         $this->tui->handleInput("\x1b[B");
 
         // Editor text unchanged
-        $this->assertSame('/he', $this->editor->getText());
+        self::assertSame('/he', $this->editor->getText());
     }
 
     // ── Shift+Tab not stolen ──────────────────────────────────────
@@ -291,7 +291,7 @@ final class CompletionListenerTest extends TestCase
         $this->tui->handleInput("\x1b[Z");
 
         // Editor text unchanged
-        $this->assertSame('/', $this->editor->getText());
+        self::assertSame('/', $this->editor->getText());
     }
 
     // ── Live completion opens on slash typing ─────────────────────
@@ -305,7 +305,7 @@ final class CompletionListenerTest extends TestCase
         // Editor must still receive the '/' character.
         $this->tui->handleInput('/');
 
-        $this->assertSame('/', $this->editor->getText());
+        self::assertSame('/', $this->editor->getText());
     }
 
     #[Test]
@@ -318,11 +318,11 @@ final class CompletionListenerTest extends TestCase
         $this->tui->handleInput('h');
 
         // Editor has '/h' inserted naturally.
-        $this->assertSame('/h', $this->editor->getText());
+        self::assertSame('/h', $this->editor->getText());
 
         // Tab should accept the first (and only) suggestion /help.
         $this->tui->handleInput("\t");
-        $this->assertSame('/help ', $this->editor->getText());
+        self::assertSame('/help ', $this->editor->getText());
     }
 
     #[Test]
@@ -334,11 +334,11 @@ final class CompletionListenerTest extends TestCase
         $this->tui->handleInput('/');
         $this->tui->handleInput('e');
 
-        $this->assertSame('/e', $this->editor->getText());
+        self::assertSame('/e', $this->editor->getText());
 
         // Tab accepts the matching suggestion.
         $this->tui->handleInput("\t");
-        $this->assertSame('/exit ', $this->editor->getText());
+        self::assertSame('/exit ', $this->editor->getText());
     }
 
     #[Test]
@@ -350,11 +350,11 @@ final class CompletionListenerTest extends TestCase
         $this->tui->handleInput('h');
         $this->tui->handleInput('e');
 
-        $this->assertSame('he', $this->editor->getText());
+        self::assertSame('he', $this->editor->getText());
 
         // Tab on non-slash text must not trigger completion.
         $this->tui->handleInput("\t");
-        $this->assertSame('he', $this->editor->getText());
+        self::assertSame('he', $this->editor->getText());
     }
 
     #[Test]
@@ -366,12 +366,12 @@ final class CompletionListenerTest extends TestCase
         $this->tui->handleInput('/');
         $this->tui->handleInput('h');
 
-        $this->assertSame('/h', $this->editor->getText());
+        self::assertSame('/h', $this->editor->getText());
 
         // Backspace removes 'h' — predicted text is '/' which still matches.
         $this->tui->handleInput("\x7f");
 
-        $this->assertSame('/', $this->editor->getText());
+        self::assertSame('/', $this->editor->getText());
     }
 
     #[Test]
@@ -381,16 +381,16 @@ final class CompletionListenerTest extends TestCase
 
         // Type '/' — live completion opens.
         $this->tui->handleInput('/');
-        $this->assertSame('/', $this->editor->getText());
+        self::assertSame('/', $this->editor->getText());
 
         // Backspace to empty — predicted text '' has no slash context,
         // overlay must close.
         $this->tui->handleInput("\x7f");
-        $this->assertSame('', $this->editor->getText());
+        self::assertSame('', $this->editor->getText());
 
         // Verify completion is closed: Tab on empty does nothing.
         $this->tui->handleInput("\t");
-        $this->assertSame('', $this->editor->getText());
+        self::assertSame('', $this->editor->getText());
     }
 
     #[Test]
@@ -406,11 +406,11 @@ final class CompletionListenerTest extends TestCase
         $this->tui->handleInput('p');
 
         // Editor has '/help' exactly as typed — not '/help '.
-        $this->assertSame('/help', $this->editor->getText());
+        self::assertSame('/help', $this->editor->getText());
 
         // Tab still accepts and inserts trailing space.
         $this->tui->handleInput("\t");
-        $this->assertSame('/help ', $this->editor->getText());
+        self::assertSame('/help ', $this->editor->getText());
     }
 
     #[Test]
@@ -427,7 +427,7 @@ final class CompletionListenerTest extends TestCase
 
         // Tab accepts the navigated (not first) suggestion.
         $this->tui->handleInput("\t");
-        $this->assertSame('/exit ', $this->editor->getText());
+        self::assertSame('/exit ', $this->editor->getText());
     }
 
     #[Test]
@@ -443,7 +443,7 @@ final class CompletionListenerTest extends TestCase
         $this->tui->handleInput('x');
 
         // Text should be "/x" (cursor was after '/' from natural typing)
-        $this->assertSame('/x', $this->editor->getText());
+        self::assertSame('/x', $this->editor->getText());
     }
 
     #[Test]
@@ -460,7 +460,7 @@ final class CompletionListenerTest extends TestCase
         $this->tui->handleInput("\t");
 
         // Editor text unchanged after Tab (no suggestions for "/x")
-        $this->assertSame('/x', $this->editor->getText());
+        self::assertSame('/x', $this->editor->getText());
     }
 
     // ── Alias acceptance inserts canonical ────────────────────────
@@ -477,7 +477,7 @@ final class CompletionListenerTest extends TestCase
         // Accept first suggestion (should be /exit)
         $this->tui->handleInput("\t");
 
-        $this->assertSame('/exit ', $this->editor->getText());
+        self::assertSame('/exit ', $this->editor->getText());
     }
 
     // ── Enter accepts + submits ───────────────────────────────────
@@ -499,7 +499,7 @@ final class CompletionListenerTest extends TestCase
 
         // Tab: open menu
         $this->tui->handleInput("\t");
-        $this->assertSame('/he', $this->editor->getText());
+        self::assertSame('/he', $this->editor->getText());
 
         // Enter: accept first suggestion (/help) + let Enter propagate to
         // EditorWidget → submit fires.
@@ -508,10 +508,10 @@ final class CompletionListenerTest extends TestCase
         // Editor text was set to '/help ' by completion acceptance.
         // SubmitListener would normally extract() and clear, but in this
         // fixture only EditorWidget's raw SubmitEvent fires.
-        $this->assertSame('/help ', $this->editor->getText());
+        self::assertSame('/help ', $this->editor->getText());
 
         // onSubmit callback received the completed command text.
-        $this->assertSame('/help ', $submittedText);
+        self::assertSame('/help ', $submittedText);
     }
 
     #[Test]
@@ -538,8 +538,8 @@ final class CompletionListenerTest extends TestCase
         // Enter: accept /help + submit
         $this->tui->handleInput("\n");
 
-        $this->assertSame('/help ', $this->editor->getText());
-        $this->assertSame('/help ', $submittedText);
+        self::assertSame('/help ', $this->editor->getText());
+        self::assertSame('/help ', $submittedText);
     }
 
     #[Test]
@@ -560,8 +560,8 @@ final class CompletionListenerTest extends TestCase
         $this->tui->handleInput("\n");
 
         // Completion has no menu open — Enter passes through.
-        $this->assertSame('hello', $this->editor->getText());
-        $this->assertSame('hello', $submittedText);
+        self::assertSame('hello', $this->editor->getText());
+        self::assertSame('hello', $submittedText);
     }
 
     // ── Cursor at end after acceptance ────────────────────────────
@@ -579,14 +579,14 @@ final class CompletionListenerTest extends TestCase
         $this->tui->handleInput("\x1b[B"); // down → /help
         $this->tui->handleInput("\t");   // accept
 
-        $this->assertSame('/help ', $this->editor->getText());
+        self::assertSame('/help ', $this->editor->getText());
 
         // Type additional arguments — must appear AFTER the command.
         $this->tui->handleInput('f');
         $this->tui->handleInput('o');
         $this->tui->handleInput('o');
 
-        $this->assertSame('/help foo', $this->editor->getText());
+        self::assertSame('/help foo', $this->editor->getText());
     }
 
     #[Test]
@@ -602,14 +602,14 @@ final class CompletionListenerTest extends TestCase
         // Enter: accept /exit + submit propagates
         $this->tui->handleInput("\n");
 
-        $this->assertSame('/exit ', $this->editor->getText());
+        self::assertSame('/exit ', $this->editor->getText());
 
         // Type args after Enter-submit acceptance
         $this->tui->handleInput('a');
         $this->tui->handleInput('r');
         $this->tui->handleInput('g');
 
-        $this->assertSame('/exit arg', $this->editor->getText());
+        self::assertSame('/exit arg', $this->editor->getText());
     }
 
     // ── Command execution not invoked on Tab ──────────────────────
@@ -651,7 +651,7 @@ final class CompletionListenerTest extends TestCase
         $provider = new SlashCommandCompletionProvider($registry);
         $listener = new CompletionListener($provider);
 
-        $client = $this->createStub(AgentSessionClient::class);
+        $client = self::createStub(AgentSessionClient::class);
         $state = new TuiSessionState('test-session');
         $appConfig = new AppConfig(
             tui: new TuiConfig(theme: 'default'),
@@ -660,7 +660,7 @@ final class CompletionListenerTest extends TestCase
         );
         $sessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
-            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+            entityManager: self::createStub(\Doctrine\ORM\EntityManagerInterface::class),
         );
         $isolatedContext = new TuiRuntimeContext(
             tui: $isolatedTui,
@@ -669,7 +669,7 @@ final class CompletionListenerTest extends TestCase
             screen: $isolatedScreen,
             sessionStore: $sessionStore,
             ticks: new \Ineersa\Tui\Runtime\TuiTickDispatcher(),
-            switch: $this->createStub(\Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface::class),
+            switch: self::createStub(\Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface::class),
             lifecycle: new \Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher(),
         );
         $listener->register($isolatedContext);
@@ -680,8 +680,8 @@ final class CompletionListenerTest extends TestCase
         $isolatedTui->handleInput("\t");
         $isolatedTui->handleInput("\t");
 
-        $this->assertFalse($callCount->called, 'Slash command handler must not be invoked via Tab completion.');
-        $this->assertSame('/testcmd ', $isolatedEditor->getText());
+        self::assertFalse($callCount->called, 'Slash command handler must not be invoked via Tab completion.');
+        self::assertSame('/testcmd ', $isolatedEditor->getText());
     }
 
     // ── Ctrl+C / Ctrl+D tears down completion overlay ────────────
@@ -706,14 +706,14 @@ final class CompletionListenerTest extends TestCase
         }
 
         // The key must not crash or throw after overlay close.
-        $this->assertNull($exception, 'Ctrl+C must not throw when completion overlay closes.');
+        self::assertNull($exception, 'Ctrl+C must not throw when completion overlay closes.');
 
         // Re-open and accept to verify state machine is still healthy.
         $this->editor->typeText('/');
         $this->tui->handleInput("\t");
         $this->tui->handleInput("\t");
         // First alphabetical suggestion is /clear
-        $this->assertStringStartsWith('/clear', $this->editor->getText());
+        self::assertStringStartsWith('/clear', $this->editor->getText());
     }
 
     #[Test]
@@ -734,14 +734,14 @@ final class CompletionListenerTest extends TestCase
             $exception = $e;
         }
 
-        $this->assertNull($exception, 'Ctrl+D must not throw when completion overlay closes.');
+        self::assertNull($exception, 'Ctrl+D must not throw when completion overlay closes.');
 
         // Re-open and accept to verify state machine is still healthy.
         $this->editor->typeText('/');
         $this->tui->handleInput("\t");
         $this->tui->handleInput("\t");
         // First alphabetical suggestion is /clear
-        $this->assertStringStartsWith('/clear', $this->editor->getText());
+        self::assertStringStartsWith('/clear', $this->editor->getText());
     }
 
     #[Test]
@@ -760,7 +760,7 @@ final class CompletionListenerTest extends TestCase
             $exception = $e;
         }
 
-        $this->assertNull($exception, 'Ctrl+C with no completion open must not throw.');
+        self::assertNull($exception, 'Ctrl+C with no completion open must not throw.');
     }
 
     // ── Overlay lifecycle (open/close is idempotent) ──────────────
@@ -783,7 +783,7 @@ final class CompletionListenerTest extends TestCase
         // Accept: should still work and insert /help
         $this->tui->handleInput("\t");
 
-        $this->assertSame('/help ', $this->editor->getText());
+        self::assertSame('/help ', $this->editor->getText());
 
         // Close should still work after acceptance
         // (no-op since already closed, but shouldn't throw)
@@ -791,7 +791,7 @@ final class CompletionListenerTest extends TestCase
         $this->tui->handleInput("\t");
         $this->tui->handleInput("\x1b");
 
-        $this->assertSame('/', $this->editor->getText());
+        self::assertSame('/', $this->editor->getText());
     }
 
     // ── @ file mention completion ──────────────────────────────────
@@ -834,16 +834,16 @@ final class CompletionListenerTest extends TestCase
             );
             $sessionStore = new HatfieldSessionStore(
                 appConfig: $appConfig,
-                entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+                entityManager: self::createStub(\Doctrine\ORM\EntityManagerInterface::class),
             );
             $context = new TuiRuntimeContext(
                 tui: $isolatedTui,
-                client: $this->createStub(AgentSessionClient::class),
+                client: self::createStub(AgentSessionClient::class),
                 state: new TuiSessionState('test-session'),
                 screen: $isolatedScreen,
                 sessionStore: $sessionStore,
                 ticks: new \Ineersa\Tui\Runtime\TuiTickDispatcher(),
-                switch: $this->createStub(\Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface::class),
+                switch: self::createStub(\Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface::class),
                 lifecycle: new \Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher(),
             );
             $listener->register($context);
@@ -855,7 +855,7 @@ final class CompletionListenerTest extends TestCase
             // Tab again should accept the first suggestion.
             $isolatedTui->handleInput("\t");
 
-            $this->assertStringStartsWith('@src/', $isolatedEditor->getText());
+            self::assertStringStartsWith('@src/', $isolatedEditor->getText());
         } finally {
             @unlink($indexPath);
             @rmdir($tmpDir);
@@ -895,16 +895,16 @@ final class CompletionListenerTest extends TestCase
             );
             $sessionStore = new HatfieldSessionStore(
                 appConfig: $appConfig,
-                entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+                entityManager: self::createStub(\Doctrine\ORM\EntityManagerInterface::class),
             );
             $context = new TuiRuntimeContext(
                 tui: $isolatedTui,
-                client: $this->createStub(AgentSessionClient::class),
+                client: self::createStub(AgentSessionClient::class),
                 state: new TuiSessionState('test-session'),
                 screen: $isolatedScreen,
                 sessionStore: $sessionStore,
                 ticks: new \Ineersa\Tui\Runtime\TuiTickDispatcher(),
-                switch: $this->createStub(\Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface::class),
+                switch: self::createStub(\Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface::class),
                 lifecycle: new \Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher(),
             );
             $listener->register($context);
@@ -912,11 +912,11 @@ final class CompletionListenerTest extends TestCase
             // Typing @ should open completion live.
             $isolatedEditor->typeText('');
             // handleInput("@") both inserts @ and triggers live completion.
-            $isolatedTui->handleInput("@");
+            $isolatedTui->handleInput('@');
 
             // Tab should accept.
             $isolatedTui->handleInput("\t");
-            $this->assertStringStartsWith('@my-file.php', $isolatedEditor->getText());
+            self::assertStringStartsWith('@my-file.php', $isolatedEditor->getText());
         } finally {
             @unlink($indexPath);
             @rmdir($tmpDir);
@@ -952,16 +952,16 @@ final class CompletionListenerTest extends TestCase
             );
             $sessionStore = new HatfieldSessionStore(
                 appConfig: $appConfig,
-                entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+                entityManager: self::createStub(\Doctrine\ORM\EntityManagerInterface::class),
             );
             $context = new TuiRuntimeContext(
                 tui: $isolatedTui,
-                client: $this->createStub(AgentSessionClient::class),
+                client: self::createStub(AgentSessionClient::class),
                 state: new TuiSessionState('test-session'),
                 screen: $isolatedScreen,
                 sessionStore: $sessionStore,
                 ticks: new \Ineersa\Tui\Runtime\TuiTickDispatcher(),
-                switch: $this->createStub(\Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface::class),
+                switch: self::createStub(\Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface::class),
                 lifecycle: new \Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher(),
             );
             $listener->register($context);
@@ -972,7 +972,7 @@ final class CompletionListenerTest extends TestCase
 
             // Escape closes without clearing.
             $isolatedTui->handleInput("\x1b");
-            $this->assertSame('@', $isolatedEditor->getText());
+            self::assertSame('@', $isolatedEditor->getText());
         } finally {
             @unlink($indexPath);
             @rmdir($tmpDir);
@@ -998,7 +998,7 @@ final class CompletionListenerTest extends TestCase
             $reader = new \Ineersa\Tui\Completion\FileMentionIndexReader($indexPath);
             $fileProvider = new \Ineersa\Tui\Completion\FileMentionCompletionProvider($reader);
 
-            $isolatedTui = new \Symfony\Component\Tui\Tui();
+            $isolatedTui = new Tui();
             $isolatedEditor = new PromptEditor();
             $theme = new DefaultTheme(new ThemePalette('default'));
             $isolatedScreen = new ChatScreen($theme, 'test-session', $isolatedEditor);
@@ -1014,16 +1014,16 @@ final class CompletionListenerTest extends TestCase
             );
             $sessionStore = new HatfieldSessionStore(
                 appConfig: $appConfig,
-                entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+                entityManager: self::createStub(\Doctrine\ORM\EntityManagerInterface::class),
             );
             $context = new TuiRuntimeContext(
                 tui: $isolatedTui,
-                client: $this->createStub(AgentSessionClient::class),
+                client: self::createStub(AgentSessionClient::class),
                 state: new TuiSessionState('test-session'),
                 screen: $isolatedScreen,
                 sessionStore: $sessionStore,
                 ticks: new \Ineersa\Tui\Runtime\TuiTickDispatcher(),
-                switch: $this->createStub(\Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface::class),
+                switch: self::createStub(\Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface::class),
                 lifecycle: new \Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher(),
             );
             $listener->register($context);
@@ -1037,10 +1037,10 @@ final class CompletionListenerTest extends TestCase
             $isolatedTui->handleInput("\t");
 
             // Editor must retain the preceding multiline content.
-            $this->assertStringContainsString('Hello', $isolatedEditor->getText());
-            $this->assertStringContainsString('@src/', $isolatedEditor->getText());
+            self::assertStringContainsString('Hello', $isolatedEditor->getText());
+            self::assertStringContainsString('@src/', $isolatedEditor->getText());
             // The editor must NOT be empty or collapsed to a single line.
-            $this->assertStringNotContainsString("Hello@", $isolatedEditor->getText());
+            self::assertStringNotContainsString('Hello@', $isolatedEditor->getText());
         } finally {
             @unlink($indexPath);
             @rmdir($tmpDir);

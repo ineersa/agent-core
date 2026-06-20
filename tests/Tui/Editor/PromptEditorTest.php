@@ -25,8 +25,8 @@ final class PromptEditorTest extends TestCase
     #[Test]
     public function defaultsToEmpty(): void
     {
-        $this->assertTrue($this->editor->isEmpty());
-        $this->assertSame('', $this->editor->getText());
+        self::assertTrue($this->editor->isEmpty());
+        self::assertSame('', $this->editor->getText());
     }
 
     #[Test]
@@ -34,8 +34,8 @@ final class PromptEditorTest extends TestCase
     {
         $widget = $this->editor->getWidget();
 
-        $this->assertInstanceOf(\Symfony\Component\Tui\Widget\EditorWidget::class, $widget);
-        $this->assertSame('', $widget->getText());
+        self::assertInstanceOf(\Symfony\Component\Tui\Widget\EditorWidget::class, $widget);
+        self::assertSame('', $widget->getText());
     }
 
     // ─── Configuration ───────────────────────────────────────────
@@ -45,7 +45,7 @@ final class PromptEditorTest extends TestCase
     {
         $result = $this->editor->setMinVisibleLines(1)->setMaxVisibleLines(20);
 
-        $this->assertSame($this->editor, $result);
+        self::assertSame($this->editor, $result);
     }
 
     // ─── setText / getText ──────────────────────────────────────
@@ -55,8 +55,8 @@ final class PromptEditorTest extends TestCase
     {
         $this->editor->setText('hello');
 
-        $this->assertSame('hello', $this->editor->getText());
-        $this->assertFalse($this->editor->isEmpty());
+        self::assertSame('hello', $this->editor->getText());
+        self::assertFalse($this->editor->isEmpty());
     }
 
     #[Test]
@@ -64,7 +64,7 @@ final class PromptEditorTest extends TestCase
     {
         $this->editor->setText("line1\nline2\nline3");
 
-        $this->assertSame("line1\nline2\nline3", $this->editor->getText());
+        self::assertSame("line1\nline2\nline3", $this->editor->getText());
     }
 
     #[Test]
@@ -73,18 +73,18 @@ final class PromptEditorTest extends TestCase
         $this->editor->setText('content');
         $this->editor->setText('');
 
-        $this->assertTrue($this->editor->isEmpty());
-        $this->assertSame('', $this->editor->getText());
+        self::assertTrue($this->editor->isEmpty());
+        self::assertSame('', $this->editor->getText());
     }
 
     #[Test]
     public function setTextOverwritesWidget(): void
     {
         $this->editor->setText('first');
-        $this->assertSame('first', $this->editor->getWidget()->getText());
+        self::assertSame('first', $this->editor->getWidget()->getText());
 
         $this->editor->setText('second');
-        $this->assertSame('second', $this->editor->getWidget()->getText());
+        self::assertSame('second', $this->editor->getWidget()->getText());
     }
 
     // ─── clear ──────────────────────────────────────────────────
@@ -95,8 +95,8 @@ final class PromptEditorTest extends TestCase
         $this->editor->setText("multi\nline");
         $this->editor->clear();
 
-        $this->assertTrue($this->editor->isEmpty());
-        $this->assertSame('', $this->editor->getText());
+        self::assertTrue($this->editor->isEmpty());
+        self::assertSame('', $this->editor->getText());
     }
 
     // ─── isEmpty ────────────────────────────────────────────────
@@ -104,7 +104,7 @@ final class PromptEditorTest extends TestCase
     #[Test]
     public function isEmptyTrueByDefault(): void
     {
-        $this->assertTrue($this->editor->isEmpty());
+        self::assertTrue($this->editor->isEmpty());
     }
 
     #[Test]
@@ -112,7 +112,7 @@ final class PromptEditorTest extends TestCase
     {
         $this->editor->setText('x');
 
-        $this->assertFalse($this->editor->isEmpty());
+        self::assertFalse($this->editor->isEmpty());
     }
 
     #[Test]
@@ -121,7 +121,7 @@ final class PromptEditorTest extends TestCase
         $this->editor->setText('content');
         $this->editor->clear();
 
-        $this->assertTrue($this->editor->isEmpty());
+        self::assertTrue($this->editor->isEmpty());
     }
 
     // ─── extract ─────────────────────────────────────────────────
@@ -132,9 +132,9 @@ final class PromptEditorTest extends TestCase
         $this->editor->setText('submit me');
         $text = $this->editor->extract();
 
-        $this->assertSame('submit me', $text);
-        $this->assertTrue($this->editor->isEmpty());
-        $this->assertSame('', $this->editor->getText());
+        self::assertSame('submit me', $text);
+        self::assertTrue($this->editor->isEmpty());
+        self::assertSame('', $this->editor->getText());
     }
 
     #[Test]
@@ -142,8 +142,8 @@ final class PromptEditorTest extends TestCase
     {
         $text = $this->editor->extract();
 
-        $this->assertSame('', $text);
-        $this->assertTrue($this->editor->isEmpty());
+        self::assertSame('', $text);
+        self::assertTrue($this->editor->isEmpty());
     }
 
     #[Test]
@@ -152,8 +152,8 @@ final class PromptEditorTest extends TestCase
         $this->editor->setText("line1\nline2");
         $text = $this->editor->extract();
 
-        $this->assertSame("line1\nline2", $text);
-        $this->assertSame('', $this->editor->getText());
+        self::assertSame("line1\nline2", $text);
+        self::assertSame('', $this->editor->getText());
     }
 
     // ─── getState ────────────────────────────────────────────────
@@ -164,7 +164,7 @@ final class PromptEditorTest extends TestCase
         $this->editor->setText('hello');
         $state = $this->editor->getState();
 
-        $this->assertSame('hello', $state->getText());
+        self::assertSame('hello', $state->getText());
     }
 
     #[Test]
@@ -172,8 +172,8 @@ final class PromptEditorTest extends TestCase
     {
         $state = $this->editor->getState();
 
-        $this->assertTrue($state->isEmpty());
-        $this->assertSame([''], $state->getLines());
+        self::assertTrue($state->isEmpty());
+        self::assertSame([''], $state->getLines());
     }
 
     #[Test]
@@ -182,8 +182,8 @@ final class PromptEditorTest extends TestCase
         $this->editor->setText("a\nb\nc");
         $state = $this->editor->getState();
 
-        $this->assertSame(['a', 'b', 'c'], $state->getLines());
-        $this->assertSame("a\nb\nc", $state->getText());
+        self::assertSame(['a', 'b', 'c'], $state->getLines());
+        self::assertSame("a\nb\nc", $state->getText());
     }
 
     #[Test]
@@ -193,12 +193,12 @@ final class PromptEditorTest extends TestCase
         $state = $this->editor->getState();
 
         // EditorState is readonly — this is a snapshot, not a reference
-        $this->assertInstanceOf(EditorState::class, $state);
-        $this->assertSame('hello', $state->getText());
+        self::assertInstanceOf(EditorState::class, $state);
+        self::assertSame('hello', $state->getText());
 
         // Modifying the editor does not affect the snapshot
         $this->editor->setText('world');
-        $this->assertSame('hello', $state->getText());
+        self::assertSame('hello', $state->getText());
     }
 
     // ─── getWidget ───────────────────────────────────────────────
@@ -209,7 +209,7 @@ final class PromptEditorTest extends TestCase
         $w1 = $this->editor->getWidget();
         $w2 = $this->editor->getWidget();
 
-        $this->assertSame($w1, $w2);
+        self::assertSame($w1, $w2);
     }
 
     #[Test]
@@ -218,8 +218,8 @@ final class PromptEditorTest extends TestCase
         $this->editor->setText('via prompt editor');
 
         // Same text visible through both PromptEditor and raw widget
-        $this->assertSame('via prompt editor', $this->editor->getText());
-        $this->assertSame('via prompt editor', $this->editor->getWidget()->getText());
+        self::assertSame('via prompt editor', $this->editor->getText());
+        self::assertSame('via prompt editor', $this->editor->getWidget()->getText());
     }
 
     // ─── typeText ────────────────────────────────────────────────
@@ -229,7 +229,7 @@ final class PromptEditorTest extends TestCase
     {
         $this->editor->typeText('/help');
 
-        $this->assertSame('/help', $this->editor->getText());
+        self::assertSame('/help', $this->editor->getText());
     }
 
     #[Test]
@@ -237,7 +237,7 @@ final class PromptEditorTest extends TestCase
     {
         $this->editor->typeText("Hello\n\n@");
 
-        $this->assertSame("Hello\n\n@", $this->editor->getText());
+        self::assertSame("Hello\n\n@", $this->editor->getText());
     }
 
     // ─── acceptCompletion ────────────────────────────────────────
@@ -256,7 +256,7 @@ final class PromptEditorTest extends TestCase
             insertText: '/help ',
         );
 
-        $this->assertSame('/help ', $this->editor->getText());
+        self::assertSame('/help ', $this->editor->getText());
     }
 
     #[Test]
@@ -278,7 +278,7 @@ final class PromptEditorTest extends TestCase
         $this->editor->getWidget()->handleInput('o');
         $this->editor->getWidget()->handleInput('o');
 
-        $this->assertSame('/help foo', $this->editor->getText());
+        self::assertSame('/help foo', $this->editor->getText());
     }
 
     #[Test]
@@ -293,9 +293,9 @@ final class PromptEditorTest extends TestCase
             insertText: '@src/file.php ',
         );
 
-        $this->assertSame("Hello\n\n@src/file.php ", $this->editor->getText());
-        $this->assertStringContainsString('Hello', $this->editor->getText());
-        $this->assertStringContainsString('@src/file.php', $this->editor->getText());
+        self::assertSame("Hello\n\n@src/file.php ", $this->editor->getText());
+        self::assertStringContainsString('Hello', $this->editor->getText());
+        self::assertStringContainsString('@src/file.php', $this->editor->getText());
     }
 
     #[Test]
@@ -310,7 +310,7 @@ final class PromptEditorTest extends TestCase
             insertText: '42 ',
         );
 
-        $this->assertSame('/rename 42 ', $this->editor->getText());
+        self::assertSame('/rename 42 ', $this->editor->getText());
     }
 
     #[Test]
@@ -327,7 +327,7 @@ final class PromptEditorTest extends TestCase
             insertText: '/help ',
         );
 
-        $this->assertSame('/help ', $this->editor->getText());
+        self::assertSame('/help ', $this->editor->getText());
     }
 
     #[Test]
@@ -344,6 +344,6 @@ final class PromptEditorTest extends TestCase
         );
 
         // "abc" + "X" + "def"
-        $this->assertSame('abcXdef', $this->editor->getText());
+        self::assertSame('abcXdef', $this->editor->getText());
     }
 }

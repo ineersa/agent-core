@@ -71,26 +71,26 @@ final class LlmStepResultHandlerTest extends TestCase
 
         $result = $handler->handle($message, $state);
 
-        $this->assertNotNull($result->nextState);
-        $this->assertSame(RunStatus::Running, $result->nextState->status);
-        $this->assertSame(4, $result->nextState->version);
-        $this->assertSame(6, $result->nextState->lastSeq);
-        $this->assertSame(['tool-call-1' => false], $result->nextState->pendingToolCalls);
+        self::assertNotNull($result->nextState);
+        self::assertSame(RunStatus::Running, $result->nextState->status);
+        self::assertSame(4, $result->nextState->version);
+        self::assertSame(6, $result->nextState->lastSeq);
+        self::assertSame(['tool-call-1' => false], $result->nextState->pendingToolCalls);
 
-        $this->assertCount(2, $result->events);
-        $this->assertSame('llm_step_completed', $result->events[0]->type);
-        $this->assertSame('tool_execution_start', $result->events[1]->type);
+        self::assertCount(2, $result->events);
+        self::assertSame('llm_step_completed', $result->events[0]->type);
+        self::assertSame('tool_execution_start', $result->events[1]->type);
 
-        $this->assertSame([], $result->effects);
-        $this->assertSame([], $result->postCommitEffects);
-        $this->assertCount(1, $result->postCommit);
-        $this->assertTrue($result->markHandled);
+        self::assertSame([], $result->effects);
+        self::assertSame([], $result->postCommitEffects);
+        self::assertCount(1, $result->postCommit);
+        self::assertTrue($result->markHandled);
 
         ($result->postCommit[0])();
 
-        $this->assertCount(1, $executionBus->messages);
-        $this->assertInstanceOf(ExecuteToolCall::class, $executionBus->messages[0]);
-        $this->assertSame('tool-call-1', $executionBus->messages[0]->toolCallId);
+        self::assertCount(1, $executionBus->messages);
+        self::assertInstanceOf(ExecuteToolCall::class, $executionBus->messages[0]);
+        self::assertSame('tool-call-1', $executionBus->messages[0]->toolCallId);
     }
 
     public function testAbortedDoesNotAppendAssistantMessageToState(): void
@@ -146,34 +146,34 @@ final class LlmStepResultHandlerTest extends TestCase
         $result = $handler->handle($message, $state);
 
         // State must transition to Cancelled
-        $this->assertNotNull($result->nextState);
-        $this->assertSame(RunStatus::Cancelled, $result->nextState->status);
+        self::assertNotNull($result->nextState);
+        self::assertSame(RunStatus::Cancelled, $result->nextState->status);
 
         // The aborted assistant message must NOT be appended to messages
-        $this->assertCount(
+        self::assertCount(
             \count($existingMessages),
             $result->nextState->messages,
             'Aborted assistant message must not be appended to state messages.',
         );
-        $this->assertSame($existingMessages[0]->content, $result->nextState->messages[0]->content,
+        self::assertSame($existingMessages[0]->content, $result->nextState->messages[0]->content,
             'Existing messages must remain unchanged.',
         );
 
         // Events: llm_step_aborted + agent_end
-        $this->assertCount(2, $result->events);
-        $this->assertSame('llm_step_aborted', $result->events[0]->type);
-        $this->assertSame('agent_end', $result->events[1]->type);
+        self::assertCount(2, $result->events);
+        self::assertSame('llm_step_aborted', $result->events[0]->type);
+        self::assertSame('agent_end', $result->events[1]->type);
 
         // LlmStepAborted must carry sanitized assistant metadata
         $abortedPayload = $result->events[0]->payload['aborted_assistant'] ?? null;
-        $this->assertNotNull($abortedPayload, 'LlmStepAborted must carry aborted_assistant metadata.');
-        $this->assertTrue($abortedPayload['present']);
-        $this->assertTrue($abortedPayload['has_tool_calls']);
-        $this->assertSame(1, $abortedPayload['tool_call_count']);
-        $this->assertSame(['aborted-tool-1'], $abortedPayload['tool_call_ids']);
-        $this->assertSame(\strlen('Partial output before abort'), $abortedPayload['text_length'], 'Text length should match.');
-        $this->assertNotNull($abortedPayload['text_sha256']);
-        $this->assertFalse($abortedPayload['has_thinking']);
+        self::assertNotNull($abortedPayload, 'LlmStepAborted must carry aborted_assistant metadata.');
+        self::assertTrue($abortedPayload['present']);
+        self::assertTrue($abortedPayload['has_tool_calls']);
+        self::assertSame(1, $abortedPayload['tool_call_count']);
+        self::assertSame(['aborted-tool-1'], $abortedPayload['tool_call_ids']);
+        self::assertSame(\strlen('Partial output before abort'), $abortedPayload['text_length'], 'Text length should match.');
+        self::assertNotNull($abortedPayload['text_sha256']);
+        self::assertFalse($abortedPayload['has_thinking']);
     }
 
     public function testAbortedWithOnlyTextDoesNotAppendMessage(): void
@@ -222,27 +222,25 @@ final class LlmStepResultHandlerTest extends TestCase
 
         $result = $handler->handle($message, $state);
 
-        $this->assertNotNull($result->nextState);
-        $this->assertSame(RunStatus::Cancelled, $result->nextState->status);
+        self::assertNotNull($result->nextState);
+        self::assertSame(RunStatus::Cancelled, $result->nextState->status);
 
         // No assistant message appended (even text-only aborted output)
-        $this->assertCount(
+        self::assertCount(
             \count($existingMessages),
             $result->nextState->messages,
             'Aborted text-only assistant must not be appended to messages.',
         );
 
-        $this->assertCount(2, $result->events);
-        $this->assertSame('llm_step_aborted', $result->events[0]->type);
+        self::assertCount(2, $result->events);
+        self::assertSame('llm_step_aborted', $result->events[0]->type);
 
         $abortedPayload = $result->events[0]->payload['aborted_assistant'] ?? null;
-        $this->assertNotNull($abortedPayload);
-        $this->assertTrue($abortedPayload['present']);
-        $this->assertFalse($abortedPayload['has_tool_calls']);
-        $this->assertSame(0, $abortedPayload['tool_call_count']);
-        $this->assertSame([], $abortedPayload['tool_call_ids']);
-        $this->assertNotNull($abortedPayload['text_sha256']);
+        self::assertNotNull($abortedPayload);
+        self::assertTrue($abortedPayload['present']);
+        self::assertFalse($abortedPayload['has_tool_calls']);
+        self::assertSame(0, $abortedPayload['tool_call_count']);
+        self::assertSame([], $abortedPayload['tool_call_ids']);
+        self::assertNotNull($abortedPayload['text_sha256']);
     }
 }
-
-

@@ -11,7 +11,7 @@ return (new PhpCsFixer\Config())
         'fopen_flags' => ['b_mode' => true],
         'protected_to_private' => false,
         'declare_strict_types' => true,
-        'php_unit_test_case_static_method_calls' => ['call_type' => 'this'],
+        'php_unit_test_case_static_method_calls' => ['call_type' => 'self'],
         'ordered_class_elements' => [
             'order' => [
                 'use_trait',
@@ -35,7 +35,7 @@ return (new PhpCsFixer\Config())
     ->setRiskyAllowed(true)
     ->setFinder(
         (new PhpCsFixer\Finder())
-            ->in([__DIR__.'/src', __DIR__.'/.castor'])
+            ->in([__DIR__.'/src', __DIR__.'/tests', __DIR__.'/.castor'])
             ->append([__FILE__, __DIR__.'/castor.php'])
             ->exclude('var')
     )

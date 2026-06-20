@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\Tests\Tui\Completion;
 
-use Ineersa\Tui\Completion\CompletionProviderRegistry;
 use Ineersa\Tui\Completion\CompletionContext;
-use Ineersa\Tui\Completion\CompletionSuggestion;
 use Ineersa\Tui\Completion\CompletionProvider;
+use Ineersa\Tui\Completion\CompletionProviderRegistry;
+use Ineersa\Tui\Completion\CompletionSuggestion;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -31,8 +31,8 @@ final class CompletionProviderRegistryTest extends TestCase
         $registry = new CompletionProviderRegistry($providers);
         $result = $registry->getSuggestions(CompletionContext::forCursorAtEnd('/test'));
 
-        $this->assertCount(1, $result);
-        $this->assertSame('one ', $result[0]->insertText);
+        self::assertCount(1, $result);
+        self::assertSame('one ', $result[0]->insertText);
     }
 
     #[Test]
@@ -48,8 +48,8 @@ final class CompletionProviderRegistryTest extends TestCase
         $registry = new CompletionProviderRegistry($providers);
         $result = $registry->getSuggestions(CompletionContext::forCursorAtEnd('/test'));
 
-        $this->assertCount(1, $result);
-        $this->assertSame('hit ', $result[0]->insertText);
+        self::assertCount(1, $result);
+        self::assertSame('hit ', $result[0]->insertText);
     }
 
     #[Test]
@@ -63,7 +63,7 @@ final class CompletionProviderRegistryTest extends TestCase
         $registry = new CompletionProviderRegistry($providers);
         $result = $registry->getSuggestions(CompletionContext::forCursorAtEnd('/test'));
 
-        $this->assertSame([], $result);
+        self::assertSame([], $result);
     }
 
     #[Test]
@@ -72,7 +72,7 @@ final class CompletionProviderRegistryTest extends TestCase
         $registry = new CompletionProviderRegistry([]);
         $result = $registry->getSuggestions(CompletionContext::forCursorAtEnd('/test'));
 
-        $this->assertSame([], $result);
+        self::assertSame([], $result);
     }
 
     // ─── Helpers ──────────────────────────────────────────────────

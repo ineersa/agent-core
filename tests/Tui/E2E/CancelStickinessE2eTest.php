@@ -32,7 +32,7 @@ final class CancelStickinessE2eTest extends TestCase
     protected function setUp(): void
     {
         if (!TmuxHarness::isAvailable()) {
-            $this->markTestSkipped('tmux is not installed. Skipping TUI e2e tests.');
+            self::markTestSkipped('tmux is not installed. Skipping TUI e2e tests.');
         }
 
         $this->tmux = new TmuxHarness();
@@ -126,13 +126,13 @@ final class CancelStickinessE2eTest extends TestCase
             // Assert Cancelling is present before checking that Working
             // does NOT follow it. If Cancelling is absent, the subsequent
             // guard would silently skip the assertion (0 assertions = risky).
-            $this->assertNotFalse(
+            self::assertNotFalse(
                 $cancellingPos,
                 'Cancelling must appear in capture — cancel did not render in the TUI',
             );
 
             $afterCancelling = mb_substr($capture, $cancellingPos);
-            $this->assertStringNotContainsString(
+            self::assertStringNotContainsString(
                 '◐ Working',
                 $afterCancelling,
                 'Footer must NOT show "Working" after "Cancelling" — late deltas must not regress the status',

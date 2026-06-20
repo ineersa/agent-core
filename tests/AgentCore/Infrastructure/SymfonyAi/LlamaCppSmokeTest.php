@@ -30,11 +30,11 @@ use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ProjectedSymfonyModelCatalog;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use PHPUnit\Framework\Attributes\Group;
-use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Psr\Log\NullLogger;
 use Symfony\AI\Platform\Bridge\Generic\Factory as GenericFactory;
 use Symfony\AI\Platform\Platform;
 use Symfony\AI\Platform\ProviderInterface;
+use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Yaml\Yaml;
 
@@ -48,17 +48,6 @@ use Symfony\Component\Yaml\Yaml;
 #[Group('llm-real')]
 final class LlamaCppSmokeTest extends KernelTestCase
 {
-    protected static function createKernel(array $options = []): \Ineersa\CodingAgent\Kernel
-    {
-        // Use debug from options (default false) to prevent Symfony ErrorHandler
-        // from registering exception handlers that trigger PHPUnit's risky
-        // 'did not remove its own exception handlers' warning.
-        return new \Ineersa\CodingAgent\Kernel(
-            $options['environment'] ?? 'test',
-            $options['debug'] ?? false,
-        );
-    }
-
     /** Set to true after setUp() successfully boots the kernel, to guard
      * restore_exception_handler() in tearDown() against the skipped case
      * where no handler was pushed. */
@@ -75,7 +64,7 @@ final class LlamaCppSmokeTest extends KernelTestCase
         parent::setUp();
 
         if (false === getenv('LLAMA_CPP_SMOKE_TEST') || '' === getenv('LLAMA_CPP_SMOKE_TEST')) {
-            $this->markTestSkipped(
+            self::markTestSkipped(
                 'LLAMA_CPP_SMOKE_TEST is not set. Run `castor test:llm-real` or set '
                 .'LLAMA_CPP_SMOKE_TEST=1 to enable the real llama.cpp smoke test.'
             );
@@ -156,9 +145,9 @@ final class LlamaCppSmokeTest extends KernelTestCase
         $eventDispatcher = new EventDispatcher();
 
         $providerConfig = $appConfig->catalog?->getProvider($llamaCppProviderKey);
-        $this->assertNotNull($providerConfig, 'Expected '.$llamaCppProviderKey.' provider in test AppConfig');
+        self::assertNotNull($providerConfig, 'Expected '.$llamaCppProviderKey.' provider in test AppConfig');
         $modelDefinition = $providerConfig->models[$modelName] ?? null;
-        $this->assertNotNull($modelDefinition, 'Expected configured llama_cpp model in test AppConfig');
+        self::assertNotNull($modelDefinition, 'Expected configured llama_cpp model in test AppConfig');
 
         // ── Build the real Platform with a live Provider ──
         $provider = GenericFactory::createProvider(
@@ -237,14 +226,14 @@ final class LlamaCppSmokeTest extends KernelTestCase
                 ),
             ));
         } catch (\Throwable $e) {
-            $this->fail('Real llama.cpp invocation failed: '.$e->getMessage()."\n".$this->collectSessionDiagnostics());
+            self::fail('Real llama.cpp invocation failed: '.$e->getMessage()."\n".$this->collectSessionDiagnostics());
         }
 
         // ── Assertions ──
-        $this->assertNotNull($result->assistantMessage, 'Expected a non-null assistant message');
+        self::assertNotNull($result->assistantMessage, 'Expected a non-null assistant message');
         $text = $result->assistantMessage->asText();
-        $this->assertNotEmpty($text, 'Expected non-empty assistant text from llama.cpp');
-        $this->assertStringContainsString(
+        self::assertNotEmpty($text, 'Expected non-empty assistant text from llama.cpp');
+        self::assertStringContainsString(
             'hello',
             strtolower($text),
             'Expected llama.cpp response to contain "hello" for the deterministic prompt. Response: '.$text,
@@ -252,16 +241,27 @@ final class LlamaCppSmokeTest extends KernelTestCase
 
         // Verify usage if the provider returned it (do not fail if absent)
         if (isset($result->usage['total_tokens'])) {
-            $this->assertGreaterThan(0, $result->usage['total_tokens']);
+            self::assertGreaterThan(0, $result->usage['total_tokens']);
         }
         if (isset($result->usage['input_tokens'])) {
-            $this->assertGreaterThan(0, $result->usage['input_tokens']);
+            self::assertGreaterThan(0, $result->usage['input_tokens']);
         }
 
         // Session metadata is still intact — model resolution used it correctly
         $meta = $this->sessionMetaStore->readSessionMetadata($this->sessionId);
-        $this->assertSame($modelRef, $meta['model'] ?? null,
+        self::assertSame($modelRef, $meta['model'] ?? null,
             'Session metadata model should be preserved after invocation');
+    }
+
+    protected static function createKernel(array $options = []): \Ineersa\CodingAgent\Kernel
+    {
+        // Use debug from options (default false) to prevent Symfony ErrorHandler
+        // from registering exception handlers that trigger PHPUnit's risky
+        // 'did not remove its own exception handlers' warning.
+        return new \Ineersa\CodingAgent\Kernel(
+            $options['environment'] ?? 'test',
+            $options['debug'] ?? false,
+        );
     }
 
     // ── Helpers ──
@@ -277,7 +277,7 @@ final class LlamaCppSmokeTest extends KernelTestCase
         $homeWriter = new HomeSettingsWriter($pathResolver);
         $selectionService = new ModelSelectionService($appConfig, new \Ineersa\CodingAgent\Config\ModelResolver($appConfig, $this->sessionMetaStore), new \Ineersa\CodingAgent\Config\ModelSettingsPersister($homeWriter, $this->sessionMetaStore));
         $catalog = $appConfig->catalog
-            ?? new \Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog(new \Ineersa\CodingAgent\Config\Ai\AiConfig(defaultModel: '', defaultReasoning: 'medium', providers: []));
+            ?? new HatfieldModelCatalog(new AiConfig(defaultModel: '', defaultReasoning: 'medium', providers: []));
 
         return new SessionAwareModelResolver($selectionService, $catalog);
     }
@@ -390,7 +390,7 @@ final class LlamaCppSmokeTest extends KernelTestCase
 
         $baseUrl = getenv('LLAMA_CPP_BASE_URL') ?: (string) ($provider['base_url'] ?? '');
         if ('' === $baseUrl) {
-            $this->markTestSkipped(
+            self::markTestSkipped(
                 'No '.$providerKey.' base URL configured. Set LLAMA_CPP_BASE_URL or configure '
                 .'ai.providers.'.$providerKey.'.base_url in .hatfield/settings.yaml.'
             );

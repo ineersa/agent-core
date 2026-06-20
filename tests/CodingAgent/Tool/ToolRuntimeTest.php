@@ -38,7 +38,7 @@ final class ToolRuntimeTest extends TestCase
             fn (): string => $this->toolRuntime->run(static fn (): string => 'completed'),
         );
 
-        $this->assertSame('completed', $result);
+        self::assertSame('completed', $result);
     }
 
     public function testRunThrowsWhenCancelledBefore(): void
@@ -58,7 +58,7 @@ final class ToolRuntimeTest extends TestCase
     public function testRunThrowsWhenCancelledAfter(): void
     {
         $token = $this->createMock(CancellationTokenInterface::class);
-        $token->expects($this->exactly(2))
+        $token->expects(self::exactly(2))
             ->method('isCancellationRequested')
             ->willReturnOnConsecutiveCalls(false, true);
 
@@ -77,7 +77,7 @@ final class ToolRuntimeTest extends TestCase
         // No context on the stack — current() returns null.
         $result = $this->toolRuntime->run(static fn (): string => 'ok');
 
-        $this->assertSame('ok', $result);
+        self::assertSame('ok', $result);
     }
 
     /* ────────── runCancellableProcess() tests ────────── */
@@ -97,10 +97,10 @@ final class ToolRuntimeTest extends TestCase
             ),
         );
 
-        $this->assertSame('hello', $result->stdout);
-        $this->assertSame(0, $result->exitCode);
-        $this->assertFalse($result->cancelled);
-        $this->assertFalse($result->timedOut);
+        self::assertSame('hello', $result->stdout);
+        self::assertSame(0, $result->exitCode);
+        self::assertFalse($result->cancelled);
+        self::assertFalse($result->timedOut);
     }
 
     public function testCancellableProcessCancelled(): void
@@ -118,8 +118,8 @@ final class ToolRuntimeTest extends TestCase
             ),
         );
 
-        $this->assertTrue($result->cancelled, 'Process should be marked cancelled');
-        $this->assertFalse($result->timedOut);
+        self::assertTrue($result->cancelled, 'Process should be marked cancelled');
+        self::assertFalse($result->timedOut);
     }
 
     public function testCancellableProcessTimeout(): void
@@ -138,8 +138,8 @@ final class ToolRuntimeTest extends TestCase
             ),
         );
 
-        $this->assertTrue($result->timedOut, 'Process should be marked timed out');
-        $this->assertFalse($result->cancelled);
+        self::assertTrue($result->timedOut, 'Process should be marked timed out');
+        self::assertFalse($result->cancelled);
     }
 
     public function testCancellableProcessWithoutContext(): void
@@ -154,10 +154,10 @@ final class ToolRuntimeTest extends TestCase
             pollIntervalMicros: 1000,
         );
 
-        $this->assertSame('no_context', $result->stdout);
-        $this->assertSame(0, $result->exitCode);
-        $this->assertFalse($result->cancelled);
-        $this->assertFalse($result->timedOut);
+        self::assertSame('no_context', $result->stdout);
+        self::assertSame(0, $result->exitCode);
+        self::assertFalse($result->cancelled);
+        self::assertFalse($result->timedOut);
     }
 
     /* ────────── CancellableProcessResult DTO tests ────────── */
@@ -174,27 +174,27 @@ final class ToolRuntimeTest extends TestCase
 
         $array = $result->toArray();
 
-        $this->assertSame('out', $array['stdout']);
-        $this->assertSame('err', $array['stderr']);
-        $this->assertSame(0, $array['exit_code']);
-        $this->assertFalse($array['cancelled']);
-        $this->assertFalse($array['timed_out']);
+        self::assertSame('out', $array['stdout']);
+        self::assertSame('err', $array['stderr']);
+        self::assertSame(0, $array['exit_code']);
+        self::assertFalse($array['cancelled']);
+        self::assertFalse($array['timed_out']);
     }
 
     public function testCancellableProcessResultDefaultValues(): void
     {
         $result = new CancellableProcessResult();
 
-        $this->assertSame('', $result->stdout);
-        $this->assertSame('', $result->stderr);
-        $this->assertNull($result->exitCode);
-        $this->assertFalse($result->cancelled);
-        $this->assertFalse($result->timedOut);
+        self::assertSame('', $result->stdout);
+        self::assertSame('', $result->stderr);
+        self::assertNull($result->exitCode);
+        self::assertFalse($result->cancelled);
+        self::assertFalse($result->timedOut);
     }
 
     private function createToken(bool $cancelled): CancellationTokenInterface
     {
-        $token = $this->createStub(CancellationTokenInterface::class);
+        $token = self::createStub(CancellationTokenInterface::class);
         $token->method('isCancellationRequested')->willReturn($cancelled);
 
         return $token;

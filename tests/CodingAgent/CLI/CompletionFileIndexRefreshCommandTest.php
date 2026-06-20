@@ -6,7 +6,6 @@ namespace Ineersa\CodingAgent\Tests\CLI;
 
 use Ineersa\CodingAgent\CLI\CompletionFileIndexRefreshCommand;
 use Ineersa\CodingAgent\CLI\FileMentionIndexBuilder;
-use Ineersa\CodingAgent\CLI\FileMentionIndexLockHeldException;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -32,28 +31,6 @@ final class CompletionFileIndexRefreshCommandTest extends TestCase
         $this->removeDir($this->tmpDir);
     }
 
-    private function createLockFactory(): LockFactory
-    {
-        return new LockFactory(new FlockStore($this->tmpDir));
-    }
-
-    private function createLogger(): LoggerInterface
-    {
-        return $this->createStub(LoggerInterface::class);
-    }
-
-    private function createCommand(string $cwd, string $indexPath, ?LockFactory $lockFactory = null): Command
-    {
-        $builder = new FileMentionIndexBuilder(
-            $cwd,
-            $indexPath,
-            logger: $this->createLogger(),
-            lockFactory: $lockFactory ?? $this->createLockFactory(),
-        );
-
-        return new CompletionFileIndexRefreshCommand($builder, $this->createLogger());
-    }
-
     #[Test]
     public function successWritesNoOutputAndReturnsSuccess(): void
     {
@@ -66,8 +43,8 @@ final class CompletionFileIndexRefreshCommandTest extends TestCase
 
         $exitCode = $tester->execute([]);
 
-        $this->assertSame(Command::SUCCESS, $exitCode);
-        $this->assertEmpty($tester->getDisplay(), 'Should write no stdout output.');
+        self::assertSame(Command::SUCCESS, $exitCode);
+        self::assertEmpty($tester->getDisplay(), 'Should write no stdout output.');
     }
 
     #[Test]
@@ -83,15 +60,15 @@ final class CompletionFileIndexRefreshCommandTest extends TestCase
             'file_mention_index.'.hash('xxh32', $indexPath),
             ttl: 300.0,
         );
-        $this->assertTrue($lock->acquire(false), 'Should pre-acquire lock.');
+        self::assertTrue($lock->acquire(false), 'Should pre-acquire lock.');
 
         $command = $this->createCommand($this->tmpDir, $indexPath, $lockFactory);
         $tester = new CommandTester($command);
 
         $exitCode = $tester->execute([]);
 
-        $this->assertSame(Command::SUCCESS, $exitCode);
-        $this->assertEmpty($tester->getDisplay(), 'Should write no stdout output on lock-held skip.');
+        self::assertSame(Command::SUCCESS, $exitCode);
+        self::assertEmpty($tester->getDisplay(), 'Should write no stdout output on lock-held skip.');
     }
 
     #[Test]
@@ -107,8 +84,30 @@ final class CompletionFileIndexRefreshCommandTest extends TestCase
 
         $exitCode = $tester->execute([]);
 
-        $this->assertSame(Command::FAILURE, $exitCode);
-        $this->assertEmpty($tester->getDisplay(), 'Should write no stdout output on failure.');
+        self::assertSame(Command::FAILURE, $exitCode);
+        self::assertEmpty($tester->getDisplay(), 'Should write no stdout output on failure.');
+    }
+
+    private function createLockFactory(): LockFactory
+    {
+        return new LockFactory(new FlockStore($this->tmpDir));
+    }
+
+    private function createLogger(): LoggerInterface
+    {
+        return self::createStub(LoggerInterface::class);
+    }
+
+    private function createCommand(string $cwd, string $indexPath, ?LockFactory $lockFactory = null): Command
+    {
+        $builder = new FileMentionIndexBuilder(
+            $cwd,
+            $indexPath,
+            logger: $this->createLogger(),
+            lockFactory: $lockFactory ?? $this->createLockFactory(),
+        );
+
+        return new CompletionFileIndexRefreshCommand($builder, $this->createLogger());
     }
 
     private function removeDir(string $dir): void

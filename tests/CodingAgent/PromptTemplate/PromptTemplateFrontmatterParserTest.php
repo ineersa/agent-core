@@ -16,11 +16,6 @@ final class PromptTemplateFrontmatterParserTest extends TestCase
         $this->parser = new PromptTemplateFrontmatterParser();
     }
 
-    private function parse(string $raw, string $filePath = '/test/template.md'): array
-    {
-        return $this->parser->parse($raw, $filePath);
-    }
-
     public function testValidFrontmatterAndTrimmedBody(): void
     {
         $raw = "---\ndescription: Review code\n---\n\nReview the changes carefully.\n";
@@ -133,5 +128,10 @@ final class PromptTemplateFrontmatterParserTest extends TestCase
         self::assertSame('Git review', $result['description']);
         // Unknown keys ignored, no diagnostics for valid YAML.
         self::assertEmpty($result['diagnostics']);
+    }
+
+    private function parse(string $raw, string $filePath = '/test/template.md'): array
+    {
+        return $this->parser->parse($raw, $filePath);
     }
 }

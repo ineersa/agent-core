@@ -20,8 +20,8 @@ final class CodexAuthStorageTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->tmpDir = \sys_get_temp_dir().'/hatfield-auth-test-'.\bin2hex(\random_bytes(8));
-        @\mkdir($this->tmpDir.'/.hatfield', 0755, true);
+        $this->tmpDir = sys_get_temp_dir().'/hatfield-auth-test-'.bin2hex(random_bytes(8));
+        @mkdir($this->tmpDir.'/.hatfield', 0755, true);
 
         $store = new FlockStore($this->tmpDir);
         $lockFactory = new LockFactory($store);
@@ -31,12 +31,12 @@ final class CodexAuthStorageTest extends TestCase
 
     protected function tearDown(): void
     {
-        $path = $this->tmpDir.'/' . CodexOAuthConfig::AUTH_FILE;
-        if (\file_exists($path)) {
-            @\unlink($path);
+        $path = $this->tmpDir.'/'.CodexOAuthConfig::AUTH_FILE;
+        if (file_exists($path)) {
+            @unlink($path);
         }
-        @\rmdir($this->tmpDir.'/.hatfield');
-        @\rmdir($this->tmpDir);
+        @rmdir($this->tmpDir.'/.hatfield');
+        @rmdir($this->tmpDir);
     }
 
     public function testSaveAndLoadRoundTrip(): void
@@ -44,7 +44,7 @@ final class CodexAuthStorageTest extends TestCase
         $record = new CodexAuthRecord(
             access: 'test-access-token',
             refresh: 'test-refresh-token',
-            expires: \time() + 3600, // 1 hour from now (seconds)
+            expires: time() + 3600, // 1 hour from now (seconds)
             accountId: 'chat-abc123',
         );
 
@@ -52,17 +52,17 @@ final class CodexAuthStorageTest extends TestCase
 
         $loaded = $this->storage->loadCredentials('openai-codex');
 
-        $this->assertNotNull($loaded);
-        $this->assertSame('test-access-token', $loaded->access);
-        $this->assertSame('test-refresh-token', $loaded->refresh);
-        $this->assertSame('chat-abc123', $loaded->accountId);
-        $this->assertFalse($loaded->isExpired());
+        self::assertNotNull($loaded);
+        self::assertSame('test-access-token', $loaded->access);
+        self::assertSame('test-refresh-token', $loaded->refresh);
+        self::assertSame('chat-abc123', $loaded->accountId);
+        self::assertFalse($loaded->isExpired());
     }
 
     public function testMissingFileReturnsNull(): void
     {
         $loaded = $this->storage->loadCredentials('openai-codex');
-        $this->assertNull($loaded);
+        self::assertNull($loaded);
     }
 
     public function testExpiredRecordWithoutRefresherReturnsExpired(): void
@@ -72,7 +72,7 @@ final class CodexAuthStorageTest extends TestCase
         $expiredRecord = new CodexAuthRecord(
             access: 'expired-access',
             refresh: 'i-will-be-refreshed',
-            expires: \time() - 3600, // already expired (seconds)
+            expires: time() - 3600, // already expired (seconds)
             accountId: 'chat-old',
         );
 
@@ -80,9 +80,9 @@ final class CodexAuthStorageTest extends TestCase
 
         $loaded = $this->storage->loadCredentials('openai-codex');
 
-        $this->assertNotNull($loaded);
-        $this->assertTrue($loaded->isExpired());
-        $this->assertSame('expired-access', $loaded->access);
+        self::assertNotNull($loaded);
+        self::assertTrue($loaded->isExpired());
+        self::assertSame('expired-access', $loaded->access);
     }
 
     public function testExpiredRecordWithRefresherThrowsOnRefreshFailure(): void
@@ -93,7 +93,7 @@ final class CodexAuthStorageTest extends TestCase
         $expiredRecord = new CodexAuthRecord(
             access: 'expired-access',
             refresh: 'invalid-refresh-token',
-            expires: \time() - 3600,
+            expires: time() - 3600,
             accountId: 'chat-old',
         );
 
@@ -110,7 +110,7 @@ final class CodexAuthStorageTest extends TestCase
         $expiredRecord = new CodexAuthRecord(
             access: 'expired-access-raw',
             refresh: 'some-refresh',
-            expires: \time() - 3600,
+            expires: time() - 3600,
             accountId: 'chat-raw',
         );
 
@@ -120,15 +120,15 @@ final class CodexAuthStorageTest extends TestCase
         // loadCredentialsRaw should return the raw record without attempting refresh
         $raw = $storageWithRefresh->loadCredentialsRaw('openai-codex');
 
-        $this->assertNotNull($raw);
-        $this->assertSame('expired-access-raw', $raw->access);
-        $this->assertTrue($raw->isExpired());
+        self::assertNotNull($raw);
+        self::assertSame('expired-access-raw', $raw->access);
+        self::assertTrue($raw->isExpired());
     }
 
     public function testMultipleProviderKeysCoexist(): void
     {
-        $record1 = new CodexAuthRecord('tok1', 'ref1', \time() + 3600, 'acct1');
-        $record2 = new CodexAuthRecord('tok2', 'ref2', \time() + 3600, 'acct2');
+        $record1 = new CodexAuthRecord('tok1', 'ref1', time() + 3600, 'acct1');
+        $record2 = new CodexAuthRecord('tok2', 'ref2', time() + 3600, 'acct2');
 
         $this->storage->saveCredentials('openai-codex', $record1);
         $this->storage->saveCredentials('other-provider', $record2);
@@ -136,25 +136,25 @@ final class CodexAuthStorageTest extends TestCase
         $loaded1 = $this->storage->loadCredentials('openai-codex');
         $loaded2 = $this->storage->loadCredentials('other-provider');
 
-        $this->assertSame('tok1', $loaded1?->access);
-        $this->assertSame('tok2', $loaded2?->access);
+        self::assertSame('tok1', $loaded1?->access);
+        self::assertSame('tok2', $loaded2?->access);
     }
 
     public function testRemoveCredentials(): void
     {
-        $record = new CodexAuthRecord('tok', 'ref', \time() + 3600, 'acct');
+        $record = new CodexAuthRecord('tok', 'ref', time() + 3600, 'acct');
         $this->storage->saveCredentials('openai-codex', $record);
         $this->storage->removeCredentials('openai-codex');
 
         $loaded = $this->storage->loadCredentials('openai-codex');
-        $this->assertNull($loaded);
+        self::assertNull($loaded);
     }
 
     public function testCorruptJsonThrowsRuntimeException(): void
     {
         $dir = $this->tmpDir.'/.hatfield';
         $path = $dir.'/auth.json';
-        @\file_put_contents($path, '{corrupt-json');
+        @file_put_contents($path, '{corrupt-json');
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Corrupt auth.json');
@@ -164,7 +164,7 @@ final class CodexAuthStorageTest extends TestCase
     public function testLoadCredentialsRawReturnsNullOnMissingFile(): void
     {
         $raw = $this->storage->loadCredentialsRaw('nonexistent');
-        $this->assertNull($raw);
+        self::assertNull($raw);
     }
 
     public function testExpiredProfileRecordWithFailingRefresherShowsProfileHint(): void
@@ -187,7 +187,7 @@ final class CodexAuthStorageTest extends TestCase
         $expiredRecord = new CodexAuthRecord(
             access: 'expired-access',
             refresh: 'invalid-refresh-token',
-            expires: \time() - 3600,
+            expires: time() - 3600,
             accountId: 'chat-old',
         );
 
@@ -217,7 +217,7 @@ final class CodexAuthStorageTest extends TestCase
         $expiredRecord = new CodexAuthRecord(
             access: 'expired-access',
             refresh: 'invalid-refresh-token',
-            expires: \time() - 3600,
+            expires: time() - 3600,
             accountId: 'chat-old',
         );
 
@@ -229,7 +229,7 @@ final class CodexAuthStorageTest extends TestCase
         try {
             $storageWithRefresh->loadCredentials('openai-codex');
         } catch (\RuntimeException $e) {
-            $this->assertStringNotContainsString('--auth-profile=', $e->getMessage());
+            self::assertStringNotContainsString('--auth-profile=', $e->getMessage());
             throw $e;
         }
     }

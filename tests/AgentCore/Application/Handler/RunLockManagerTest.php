@@ -63,11 +63,11 @@ final class RunLockManagerTest extends TestCase
         $outerRan = false;
         $innerRan = false;
 
-        $manager->synchronized('reentrant-run', function () use ($manager, &$outerRan, &$innerRan): void {
+        $manager->synchronized('reentrant-run', static function () use ($manager, &$outerRan, &$innerRan): void {
             $outerRan = true;
 
             // Nested call for the SAME runId — must not deadlock.
-            $manager->synchronized('reentrant-run', function () use (&$innerRan): void {
+            $manager->synchronized('reentrant-run', static function () use (&$innerRan): void {
                 $innerRan = true;
             });
         });

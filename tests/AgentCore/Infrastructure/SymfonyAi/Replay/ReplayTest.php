@@ -13,17 +13,9 @@ use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
-use Ineersa\AgentCore\Infrastructure\SymfonyAi\ModelResolverRoutingSubscriber;
-use Ineersa\CodingAgent\Config\Ai\AiConfig;
-use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
-use Ineersa\CodingAgent\Config\AppConfig;
-use Ineersa\CodingAgent\Config\LoggingConfig;
-use Ineersa\CodingAgent\Config\SessionsConfig;
-use Ineersa\CodingAgent\Config\TuiConfig;
 use Psr\Log\NullLogger;
 use Symfony\AI\Platform\Message\Content\Text;
 use Symfony\AI\Platform\Message\Content\Thinking;
-use Symfony\AI\Platform\Message\Content\ToolCall as ToolCallContent;
 use Symfony\AI\Platform\ModelCatalog\FallbackModelCatalog;
 use Symfony\AI\Platform\Platform;
 use Symfony\AI\Platform\Provider;
@@ -65,18 +57,18 @@ final class ReplayTest extends \PHPUnit\Framework\TestCase
         ));
 
         // Assistant message contains fixture text
-        $this->assertNotNull($result->assistantMessage);
-        $this->assertSame(
+        self::assertNotNull($result->assistantMessage);
+        self::assertSame(
             $fixture['expected_text'],
             $result->assistantMessage->asText(),
         );
 
         // No tool calls in a text-only fixture
-        $this->assertFalse($result->assistantMessage->hasToolCalls());
+        self::assertFalse($result->assistantMessage->hasToolCalls());
 
         // Usage matches fixture
-        $this->assertSame($fixture['usage']['input_tokens'], $result->usage['input_tokens']);
-        $this->assertSame($fixture['usage']['output_tokens'], $result->usage['output_tokens']);
+        self::assertSame($fixture['usage']['input_tokens'], $result->usage['input_tokens']);
+        self::assertSame($fixture['usage']['output_tokens'], $result->usage['output_tokens']);
     }
 
     /**
@@ -104,28 +96,28 @@ final class ReplayTest extends \PHPUnit\Framework\TestCase
             ),
         ));
 
-        $this->assertNotNull($result->assistantMessage);
+        self::assertNotNull($result->assistantMessage);
 
         // Tool call is present
-        $this->assertTrue(
+        self::assertTrue(
             $result->assistantMessage->hasToolCalls(),
             'Assistant message should contain tool calls from fixture',
         );
 
         $toolCalls = $result->assistantMessage->getToolCalls();
-        $this->assertCount(1, $toolCalls);
-        $this->assertSame('call_abc123', $toolCalls[0]->getId());
-        $this->assertSame('read', $toolCalls[0]->getName());
-        $this->assertSame(
+        self::assertCount(1, $toolCalls);
+        self::assertSame('call_abc123', $toolCalls[0]->getId());
+        self::assertSame('read', $toolCalls[0]->getName());
+        self::assertSame(
             ['path' => './notes.txt'],
             $toolCalls[0]->getArguments(),
         );
 
         // Stop reason reflects tool call
-        $this->assertSame('tool_call', $result->stopReason);
+        self::assertSame('tool_call', $result->stopReason);
 
         // Text content is also present (model produced text after tool call)
-        $this->assertSame($fixture['expected_text'], $result->assistantMessage->asText());
+        self::assertSame($fixture['expected_text'], $result->assistantMessage->asText());
     }
 
     /**
@@ -156,8 +148,8 @@ final class ReplayTest extends \PHPUnit\Framework\TestCase
             ),
         ));
 
-        $this->assertNotNull($result->assistantMessage);
-        $this->assertTrue(
+        self::assertNotNull($result->assistantMessage);
+        self::assertTrue(
             $result->assistantMessage->hasThinking(),
             'Assistant message should contain thinking content',
         );
@@ -185,7 +177,7 @@ final class ReplayTest extends \PHPUnit\Framework\TestCase
             ),
         ));
 
-        $this->assertNull($result->assistantMessage);
+        self::assertNull($result->assistantMessage);
     }
 
     /**
@@ -208,20 +200,20 @@ final class ReplayTest extends \PHPUnit\Framework\TestCase
         $recorder->onStreamEnd('run-1', 'step-1');
 
         $deltas = $recorder->getDeltas();
-        $this->assertCount(6, $deltas);
+        self::assertCount(6, $deltas);
 
-        $this->assertSame('text', $deltas[0]['type']);
-        $this->assertSame('Hello', $deltas[0]['content']);
+        self::assertSame('text', $deltas[0]['type']);
+        self::assertSame('Hello', $deltas[0]['content']);
 
-        $this->assertSame('tool_call_start', $deltas[1]['type']);
-        $this->assertSame('call_1', $deltas[1]['id']);
-        $this->assertSame('read', $deltas[1]['name']);
+        self::assertSame('tool_call_start', $deltas[1]['type']);
+        self::assertSame('call_1', $deltas[1]['id']);
+        self::assertSame('read', $deltas[1]['name']);
 
-        $this->assertSame('tool_input_delta', $deltas[2]['type']);
-        $this->assertSame('{"path', $deltas[2]['partial_json']);
+        self::assertSame('tool_input_delta', $deltas[2]['type']);
+        self::assertSame('{"path', $deltas[2]['partial_json']);
 
-        $this->assertSame('tool_call_complete', $deltas[5]['type']);
-        $this->assertSame('read', $deltas[5]['tool_calls'][0]['name']);
+        self::assertSame('tool_call_complete', $deltas[5]['type']);
+        self::assertSame('read', $deltas[5]['tool_calls'][0]['name']);
 
         // Verify buildFixture assembles correctly
         $fixture = $recorder->buildFixture([
@@ -230,8 +222,8 @@ final class ReplayTest extends \PHPUnit\Framework\TestCase
             'usage' => ['input_tokens' => 10, 'output_tokens' => 20, 'total_tokens' => 30],
             'stop_reason' => 'tool_call',
         ]);
-        $this->assertSame('test/model', $fixture['model']);
-        $this->assertCount(6, $fixture['deltas']);
+        self::assertSame('test/model', $fixture['model']);
+        self::assertCount(6, $fixture['deltas']);
     }
 
     /**
@@ -252,14 +244,14 @@ final class ReplayTest extends \PHPUnit\Framework\TestCase
                 'usage' => ['input_tokens' => 1, 'output_tokens' => 1, 'total_tokens' => 2],
                 'stop_reason' => 'stop',
             ]);
-            $this->assertGreaterThan(0, $bytes);
+            self::assertGreaterThan(0, $bytes);
 
             // Round-trip: load it back
             $loaded = json_decode(file_get_contents($tmpFile), true);
-            $this->assertIsArray($loaded);
-            $this->assertSame('test/model', $loaded['model']);
-            $this->assertCount(1, $loaded['deltas']);
-            $this->assertSame('text', $loaded['deltas'][0]['type']);
+            self::assertIsArray($loaded);
+            self::assertSame('test/model', $loaded['model']);
+            self::assertCount(1, $loaded['deltas']);
+            self::assertSame('text', $loaded['deltas'][0]['type']);
         } finally {
             if (file_exists($tmpFile)) {
                 unlink($tmpFile);
@@ -339,10 +331,10 @@ final class ReplayTest extends \PHPUnit\Framework\TestCase
     private function loadFixture(string $name): array
     {
         $path = __DIR__.'/../../../Fixtures/traces/'.$name;
-        $this->assertFileExists($path, 'Fixture file not found: '.$path);
+        self::assertFileExists($path, 'Fixture file not found: '.$path);
 
         $data = json_decode(file_get_contents($path), true);
-        $this->assertIsArray($data, 'Fixture must be valid JSON');
+        self::assertIsArray($data, 'Fixture must be valid JSON');
 
         return $data;
     }

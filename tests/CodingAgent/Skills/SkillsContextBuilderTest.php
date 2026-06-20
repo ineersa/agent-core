@@ -43,10 +43,10 @@ final class SkillsContextBuilderTest extends TestCase
         $builder = $this->createBuilder(cwd: $this->tmpDir);
         $output = $builder->build();
 
-        $this->assertStringContainsString('<skills_instructions>', $output);
-        $this->assertStringContainsString('<available_skills>', $output);
-        $this->assertStringContainsString('<name>castor</name>', $output);
-        $this->assertStringContainsString('<description>Runs Castor tasks</description>', $output);
+        self::assertStringContainsString('<skills_instructions>', $output);
+        self::assertStringContainsString('<available_skills>', $output);
+        self::assertStringContainsString('<name>castor</name>', $output);
+        self::assertStringContainsString('<description>Runs Castor tasks</description>', $output);
     }
 
     public function testBuildReturnsEmptyWhenNoSkills(): void
@@ -54,7 +54,7 @@ final class SkillsContextBuilderTest extends TestCase
         $builder = $this->createBuilder(cwd: $this->tmpDir);
         $output = $builder->build();
 
-        $this->assertSame('', $output);
+        self::assertSame('', $output);
     }
 
     public function testBuildIncludesPreloadedSkills(): void
@@ -74,9 +74,9 @@ final class SkillsContextBuilderTest extends TestCase
         $output = $builder->build();
 
         // Should have both available skills and the preloaded skill body
-        $this->assertStringContainsString('<available_skills>', $output);
-        $this->assertStringContainsString('<skill name="castor"', $output);
-        $this->assertStringContainsString('Actual content', $output);
+        self::assertStringContainsString('<available_skills>', $output);
+        self::assertStringContainsString('<skill name="castor"', $output);
+        self::assertStringContainsString('Actual content', $output);
     }
 
     public function testBuildPreloadOrderMatchesCliOrder(): void
@@ -97,14 +97,14 @@ final class SkillsContextBuilderTest extends TestCase
         $output = $builder->build();
 
         // Both skill blocks should appear
-        $this->assertSame(2, substr_count($output, '<skill name='));
+        self::assertSame(2, substr_count($output, '<skill name='));
 
         // Verify ordering: first preload appears before second preload
         $posFirst = strpos($output, 'First body');
         $posSecond = strpos($output, 'Second body');
-        $this->assertNotFalse($posFirst);
-        $this->assertNotFalse($posSecond);
-        $this->assertLessThan($posSecond, $posFirst);
+        self::assertNotFalse($posFirst);
+        self::assertNotFalse($posSecond);
+        self::assertLessThan($posSecond, $posFirst);
     }
 
     public function testBuildPreloadSkipsUnknown(): void
@@ -119,7 +119,7 @@ final class SkillsContextBuilderTest extends TestCase
         $output = $builder->build();
 
         // Should be empty since no skills exist
-        $this->assertSame('', $output);
+        self::assertSame('', $output);
     }
 
     public function testPreloadDisabledSkill(): void
@@ -139,12 +139,12 @@ final class SkillsContextBuilderTest extends TestCase
         $output = $builder->build();
 
         // Should NOT have <available_skills> (skill is model-invocation disabled)
-        $this->assertStringNotContainsString('<available_skills>', $output);
+        self::assertStringNotContainsString('<available_skills>', $output);
 
         // Should have the preloaded <skill> block with body content
-        $this->assertStringContainsString('<skill name="noinvoke"', $output);
-        $this->assertStringContainsString('Noinvoke body', $output);
-        $this->assertStringContainsString('This skill cannot be auto-invoked', $output);
+        self::assertStringContainsString('<skill name="noinvoke"', $output);
+        self::assertStringContainsString('Noinvoke body', $output);
+        self::assertStringContainsString('This skill cannot be auto-invoked', $output);
     }
 
     /* ───────── Private helpers ───────── */

@@ -23,14 +23,14 @@ final class TestDirectoryIsolationTest extends TestCase
     public function testCreateOsTempDir(): void
     {
         $this->tempDir = TestDirectoryIsolation::createOsTempDir('test-isolation');
-        $this->assertDirectoryExists($this->tempDir);
+        self::assertDirectoryExists($this->tempDir);
     }
 
     public function testCreateProjectTempDir(): void
     {
         $this->tempDir = TestDirectoryIsolation::createProjectTempDir('test-project');
-        $this->assertDirectoryExists($this->tempDir);
-        $this->assertStringContainsString('var/tmp', $this->tempDir);
+        self::assertDirectoryExists($this->tempDir);
+        self::assertStringContainsString('var/tmp', $this->tempDir);
     }
 
     public function testCreateHatfieldTree(): void
@@ -39,10 +39,10 @@ final class TestDirectoryIsolationTest extends TestCase
 
         TestDirectoryIsolation::createHatfieldTree($this->tempDir);
 
-        $this->assertDirectoryExists($this->tempDir.'/.hatfield');
-        $this->assertFileExists($this->tempDir.'/.hatfield/.gitignore');
-        $this->assertFileExists($this->tempDir.'/.hatfield/settings.yaml');
-        $this->assertDirectoryDoesNotExist($this->tempDir.'/.hatfield/sessions');
+        self::assertDirectoryExists($this->tempDir.'/.hatfield');
+        self::assertFileExists($this->tempDir.'/.hatfield/.gitignore');
+        self::assertFileExists($this->tempDir.'/.hatfield/settings.yaml');
+        self::assertDirectoryDoesNotExist($this->tempDir.'/.hatfield/sessions');
     }
 
     public function testCreateHatfieldTreeWithSessions(): void
@@ -51,8 +51,8 @@ final class TestDirectoryIsolationTest extends TestCase
 
         TestDirectoryIsolation::createHatfieldTree($this->tempDir, withSessions: true);
 
-        $this->assertDirectoryExists($this->tempDir.'/.hatfield');
-        $this->assertDirectoryExists($this->tempDir.'/.hatfield/sessions');
+        self::assertDirectoryExists($this->tempDir.'/.hatfield');
+        self::assertDirectoryExists($this->tempDir.'/.hatfield/sessions');
     }
 
     public function testRemoveDirectory(): void
@@ -64,7 +64,7 @@ final class TestDirectoryIsolationTest extends TestCase
 
         TestDirectoryIsolation::removeDirectory($dir);
 
-        $this->assertDirectoryDoesNotExist($dir);
+        self::assertDirectoryDoesNotExist($dir);
     }
 
     public function testEnsureDirectoryCreatesNewDirectory(): void
@@ -74,7 +74,7 @@ final class TestDirectoryIsolationTest extends TestCase
 
         TestDirectoryIsolation::ensureDirectory($sub);
 
-        $this->assertDirectoryExists($sub);
+        self::assertDirectoryExists($sub);
     }
 
     public function testEnsureDirectorySkipsExisting(): void
@@ -83,7 +83,7 @@ final class TestDirectoryIsolationTest extends TestCase
 
         TestDirectoryIsolation::ensureDirectory($this->tempDir);
         // Should not throw
-        $this->assertDirectoryExists($this->tempDir);
+        self::assertDirectoryExists($this->tempDir);
     }
 
     public function testEnsureDirectoryThrowsOnFile(): void
@@ -101,7 +101,7 @@ final class TestDirectoryIsolationTest extends TestCase
     public function testRemoveDirectoryDoesNotThrowOnMissing(): void
     {
         // Must not throw
-        TestDirectoryIsolation::removeDirectory('/tmp/nonexistent-dir-'.\bin2hex(\random_bytes(4)));
-        $this->assertTrue(true);
+        TestDirectoryIsolation::removeDirectory('/tmp/nonexistent-dir-'.bin2hex(random_bytes(4)));
+        self::assertTrue(true);
     }
 }

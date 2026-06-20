@@ -28,7 +28,7 @@ final class SymfonyAiProviderRegistryTest extends TestCase
 
     public function testGetReturnsNullForUnknownProvider(): void
     {
-        $factory = new EmptyStubFactory($this->appConfig, $this->createStub(EventDispatcherInterface::class));
+        $factory = new EmptyStubFactory($this->appConfig, self::createStub(EventDispatcherInterface::class));
         $registry = new SymfonyAiProviderRegistry($factory);
 
         self::assertNull($registry->get('nonexistent'));
@@ -36,10 +36,10 @@ final class SymfonyAiProviderRegistryTest extends TestCase
 
     public function testGetReturnsProviderById(): void
     {
-        $provider = $this->createStub(ProviderInterface::class);
+        $provider = self::createStub(ProviderInterface::class);
         $factory = new FixedProviderFactory(
             $this->appConfig,
-            $this->createStub(EventDispatcherInterface::class),
+            self::createStub(EventDispatcherInterface::class),
             ['deepseek' => $provider],
         );
 
@@ -50,11 +50,11 @@ final class SymfonyAiProviderRegistryTest extends TestCase
 
     public function testAllReturnsAllProviders(): void
     {
-        $deepseek = $this->createStub(ProviderInterface::class);
-        $zai = $this->createStub(ProviderInterface::class);
+        $deepseek = self::createStub(ProviderInterface::class);
+        $zai = self::createStub(ProviderInterface::class);
         $factory = new FixedProviderFactory(
             $this->appConfig,
-            $this->createStub(EventDispatcherInterface::class),
+            self::createStub(EventDispatcherInterface::class),
             ['deepseek' => $deepseek, 'zai' => $zai],
         );
 
@@ -68,7 +68,7 @@ final class SymfonyAiProviderRegistryTest extends TestCase
 
     public function testLazyInitializationOnlyCallsFactoryOnce(): void
     {
-        $factory = new CountingCallsFactory($this->appConfig, $this->createStub(EventDispatcherInterface::class));
+        $factory = new CountingCallsFactory($this->appConfig, self::createStub(EventDispatcherInterface::class));
 
         $registry = new SymfonyAiProviderRegistry($factory);
         $registry->all();
@@ -80,7 +80,7 @@ final class SymfonyAiProviderRegistryTest extends TestCase
 }
 
 /**
- * @internal Test helper — extends SymfonyAiProviderFactory to return empty providers.
+ * @internal test helper — extends SymfonyAiProviderFactory to return empty providers
  */
 final class EmptyStubFactory extends SymfonyAiProviderFactory
 {
@@ -96,7 +96,7 @@ final class EmptyStubFactory extends SymfonyAiProviderFactory
 }
 
 /**
- * @internal Test helper — extends SymfonyAiProviderFactory to return fixed providers.
+ * @internal test helper — extends SymfonyAiProviderFactory to return fixed providers
  */
 final class FixedProviderFactory extends SymfonyAiProviderFactory
 {
@@ -116,7 +116,7 @@ final class FixedProviderFactory extends SymfonyAiProviderFactory
 }
 
 /**
- * @internal Test helper — extends SymfonyAiProviderFactory to count calls.
+ * @internal test helper — extends SymfonyAiProviderFactory to count calls
  */
 final class CountingCallsFactory extends SymfonyAiProviderFactory
 {

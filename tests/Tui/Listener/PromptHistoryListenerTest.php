@@ -4,16 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
-use Ineersa\CodingAgent\Config\AppConfig;
-use Ineersa\CodingAgent\Config\LoggingConfig;
-use Ineersa\CodingAgent\Config\TuiConfig;
-use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
-use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\PromptHistoryListener;
-use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
@@ -57,8 +51,8 @@ final class PromptHistoryListenerTest extends TestCase
         // Send Up arrow (cursor_up) when editor is empty
         $this->editor->getWidget()->handleInput("\x1b[A");
 
-        $this->assertSame('second prompt', $this->editor->getText());
-        $this->assertFalse($this->editor->isEmpty());
+        self::assertSame('second prompt', $this->editor->getText());
+        self::assertFalse($this->editor->isEmpty());
     }
 
     #[Test]
@@ -75,19 +69,19 @@ final class PromptHistoryListenerTest extends TestCase
 
         // First Up — newest
         $this->editor->getWidget()->handleInput("\x1b[A");
-        $this->assertSame('newest prompt', $this->editor->getText());
+        self::assertSame('newest prompt', $this->editor->getText());
 
         // Second Up — middle
         $this->editor->getWidget()->handleInput("\x1b[A");
-        $this->assertSame('middle prompt', $this->editor->getText());
+        self::assertSame('middle prompt', $this->editor->getText());
 
         // Third Up — oldest
         $this->editor->getWidget()->handleInput("\x1b[A");
-        $this->assertSame('oldest prompt', $this->editor->getText());
+        self::assertSame('oldest prompt', $this->editor->getText());
 
         // Fourth Up — nothing older, stays at oldest
         $this->editor->getWidget()->handleInput("\x1b[A");
-        $this->assertSame('oldest prompt', $this->editor->getText());
+        self::assertSame('oldest prompt', $this->editor->getText());
     }
 
     // ─── Down walks forward / clears at end ───────────────────
@@ -109,7 +103,7 @@ final class PromptHistoryListenerTest extends TestCase
         // Down to go forward
         $this->editor->getWidget()->handleInput("\x1b[B"); // prompt 2
 
-        $this->assertSame('prompt 2', $this->editor->getText());
+        self::assertSame('prompt 2', $this->editor->getText());
     }
 
     #[Test]
@@ -123,12 +117,12 @@ final class PromptHistoryListenerTest extends TestCase
 
         // Up to recall
         $this->editor->getWidget()->handleInput("\x1b[A");
-        $this->assertSame('only prompt', $this->editor->getText());
+        self::assertSame('only prompt', $this->editor->getText());
 
         // Down past newest — clears
         $this->editor->getWidget()->handleInput("\x1b[B");
-        $this->assertTrue($this->editor->isEmpty());
-        $this->assertSame('', $this->editor->getText());
+        self::assertTrue($this->editor->isEmpty());
+        self::assertSame('', $this->editor->getText());
     }
 
     #[Test]
@@ -141,8 +135,8 @@ final class PromptHistoryListenerTest extends TestCase
         // Down on empty editor with no history — falls through to editor
         $this->editor->getWidget()->handleInput("\x1b[B");
 
-        $this->assertTrue($this->editor->isEmpty());
-        $this->assertSame('', $this->editor->getText());
+        self::assertTrue($this->editor->isEmpty());
+        self::assertSame('', $this->editor->getText());
     }
 
     // ─── Typing normal input exits history mode ───────────────
@@ -158,14 +152,14 @@ final class PromptHistoryListenerTest extends TestCase
 
         // Up to recall
         $this->editor->getWidget()->handleInput("\x1b[A");
-        $this->assertSame('previous prompt', $this->editor->getText());
+        self::assertSame('previous prompt', $this->editor->getText());
 
         // Type a character while the recalled history text is still in the
         // editor.  The onInput callback sees a non-Up/Down key and exits
         // navigation.  Then the editor widget handles the key normally,
         // inserting it.  Editor now has "previous promptx".
         $this->editor->getWidget()->handleInput('x');
-        $this->assertStringContainsString('previous prompt', $this->editor->getText());
+        self::assertStringContainsString('previous prompt', $this->editor->getText());
 
         // Now press Up again while editor is NOT empty — should NOT
         // recall history (navigation was exited).
@@ -175,7 +169,7 @@ final class PromptHistoryListenerTest extends TestCase
         // movement within the editor, not as history navigation.
         // In a real TUI, the cursor would move up a line (within the editor).
         // In this test without a real render context, the text stays the same.
-        $this->assertSame($beforeUp, $this->editor->getText());
+        self::assertSame($beforeUp, $this->editor->getText());
     }
 
     // ─── Up does not intercept when editor has content ────────
@@ -198,7 +192,7 @@ final class PromptHistoryListenerTest extends TestCase
         // Text should be unchanged — the up was handled by the editor's
         // cursor movement (which in a test without real TUI may not visibly
         // change text, but it shouldn't have been consumed by history)
-        $this->assertSame('hello', $this->editor->getText());
+        self::assertSame('hello', $this->editor->getText());
     }
 
     // ─── No user blocks means no history ──────────────────────
@@ -215,7 +209,7 @@ final class PromptHistoryListenerTest extends TestCase
 
         $this->editor->getWidget()->handleInput("\x1b[A");
 
-        $this->assertTrue($this->editor->isEmpty());
+        self::assertTrue($this->editor->isEmpty());
     }
 
     // ─── Down variant escape sequence ─────────────────────────
@@ -230,11 +224,11 @@ final class PromptHistoryListenerTest extends TestCase
         $this->registerListener();
 
         $this->editor->getWidget()->handleInput("\x1b[A"); // recall
-        $this->assertSame('a prompt', $this->editor->getText());
+        self::assertSame('a prompt', $this->editor->getText());
 
         // Alternate down sequence \x1bOB
         $this->editor->getWidget()->handleInput("\x1bOB");
-        $this->assertTrue($this->editor->isEmpty());
+        self::assertTrue($this->editor->isEmpty());
     }
 
     // ─── Up with alternate escape sequence ────────────────────
@@ -251,7 +245,7 @@ final class PromptHistoryListenerTest extends TestCase
         // Alternate up sequence \x1bOA
         $this->editor->getWidget()->handleInput("\x1bOA");
 
-        $this->assertSame('my prompt', $this->editor->getText());
+        self::assertSame('my prompt', $this->editor->getText());
     }
 
     // ─── Up at oldest multiline prompt is consumed as no-op ──
@@ -268,12 +262,12 @@ final class PromptHistoryListenerTest extends TestCase
 
         // Recall the only (and oldest) prompt
         $this->editor->getWidget()->handleInput("\x1b[A");
-        $this->assertSame($multiline, $this->editor->getText());
+        self::assertSame($multiline, $this->editor->getText());
 
         // Press Up again — at oldest, should be consumed as no-op
         // (not let through to editor cursor movement within multiline text)
         $this->editor->getWidget()->handleInput("\x1b[A");
-        $this->assertSame($multiline, $this->editor->getText());
+        self::assertSame($multiline, $this->editor->getText());
     }
 
     // ─── Multiline prompts are preserved ──────────────────────
@@ -290,7 +284,7 @@ final class PromptHistoryListenerTest extends TestCase
 
         $this->editor->getWidget()->handleInput("\x1b[A");
 
-        $this->assertSame($multiline, $this->editor->getText());
+        self::assertSame($multiline, $this->editor->getText());
     }
 
     // ─── Resume: history seeded from transcript blocks ─────────
@@ -309,11 +303,11 @@ final class PromptHistoryListenerTest extends TestCase
 
         // First Up — newest user message
         $this->editor->getWidget()->handleInput("\x1b[A");
-        $this->assertSame('another old prompt', $this->editor->getText());
+        self::assertSame('another old prompt', $this->editor->getText());
 
         // Second Up — older user message
         $this->editor->getWidget()->handleInput("\x1b[A");
-        $this->assertSame('prompt from before', $this->editor->getText());
+        self::assertSame('prompt from before', $this->editor->getText());
     }
 
     // ─── History survival across transcript updates ───────────
@@ -330,7 +324,7 @@ final class PromptHistoryListenerTest extends TestCase
 
         // Recall it
         $this->editor->getWidget()->handleInput("\x1b[A");
-        $this->assertSame('initial prompt', $this->editor->getText());
+        self::assertSame('initial prompt', $this->editor->getText());
 
         // Exit navigation
         $this->editor->clear();
@@ -343,7 +337,7 @@ final class PromptHistoryListenerTest extends TestCase
         // But first, the editor needs to be empty for Up to intercept.
         $this->editor->clear();
         $this->editor->getWidget()->handleInput("\x1b[A");
-        $this->assertSame('new prompt', $this->editor->getText());
+        self::assertSame('new prompt', $this->editor->getText());
     }
 
     // ─── Helpers ────────────────────────────────────────────────

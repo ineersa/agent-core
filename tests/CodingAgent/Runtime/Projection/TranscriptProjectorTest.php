@@ -51,7 +51,7 @@ final class TranscriptProjectorTest extends TestCase
 
     public function testInitialStateHasEmptyBlocks(): void
     {
-        $this->assertSame([], $this->projector->blocks());
+        self::assertSame([], $this->projector->blocks());
     }
 
     // ── Reset ────────────────────────────────────────────────────────────────
@@ -63,11 +63,11 @@ final class TranscriptProjectorTest extends TestCase
             'message_id' => 'a1', 'block_id' => 'b1',
         ]);
 
-        $this->assertNotEmpty($this->projector->blocks());
+        self::assertNotEmpty($this->projector->blocks());
 
         $this->projector->reset();
 
-        $this->assertSame([], $this->projector->blocks());
+        self::assertSame([], $this->projector->blocks());
     }
 
     public function testResetThenReacceptProducesSameSeq(): void
@@ -79,7 +79,7 @@ final class TranscriptProjectorTest extends TestCase
         $this->accept('user.message_submitted', ['message_id' => 'u1', 'text' => 'A']);
         $seqAfterReset = $this->projector->blocks()[0]->seq;
 
-        $this->assertSame($seqAfterFirst, $seqAfterReset, 'Reset must renumber blocks from 0');
+        self::assertSame($seqAfterFirst, $seqAfterReset, 'Reset must renumber blocks from 0');
     }
 
     // ── User message ─────────────────────────────────────────────────────────
@@ -89,12 +89,12 @@ final class TranscriptProjectorTest extends TestCase
         $this->accept('user.message_submitted', ['message_id' => 'msg_1', 'text' => 'Hello, world!']);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(1, $blocks);
-        $this->assertSame('msg_1', $blocks[0]->id);
-        $this->assertSame(TranscriptBlockKindEnum::UserMessage, $blocks[0]->kind);
-        $this->assertSame('Hello, world!', $blocks[0]->text);
-        $this->assertFalse($blocks[0]->streaming);
-        $this->assertSame(0, $blocks[0]->seq);
+        self::assertCount(1, $blocks);
+        self::assertSame('msg_1', $blocks[0]->id);
+        self::assertSame(TranscriptBlockKindEnum::UserMessage, $blocks[0]->kind);
+        self::assertSame('Hello, world!', $blocks[0]->text);
+        self::assertFalse($blocks[0]->streaming);
+        self::assertSame(0, $blocks[0]->seq);
     }
 
     public function testUserMessageEmptyText(): void
@@ -102,8 +102,8 @@ final class TranscriptProjectorTest extends TestCase
         $this->accept('user.message_submitted', ['message_id' => 'm_empty']);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(1, $blocks);
-        $this->assertSame('', $blocks[0]->text);
+        self::assertCount(1, $blocks);
+        self::assertSame('', $blocks[0]->text);
     }
 
     public function testMultipleUserMessages(): void
@@ -112,11 +112,11 @@ final class TranscriptProjectorTest extends TestCase
         $this->accept('user.message_submitted', ['message_id' => 'u2', 'text' => 'Q2']);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(2, $blocks);
-        $this->assertSame('u1', $blocks[0]->id);
-        $this->assertSame('u2', $blocks[1]->id);
-        $this->assertSame(0, $blocks[0]->seq);
-        $this->assertSame(1, $blocks[1]->seq);
+        self::assertCount(2, $blocks);
+        self::assertSame('u1', $blocks[0]->id);
+        self::assertSame('u2', $blocks[1]->id);
+        self::assertSame(0, $blocks[0]->seq);
+        self::assertSame(1, $blocks[1]->seq);
     }
 
     public function testRunStartedWithUserMessagesProjectsInitialPromptBlocks(): void
@@ -129,11 +129,11 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(1, $blocks);
-        $this->assertSame(TranscriptBlockKindEnum::UserMessage, $blocks[0]->kind);
-        $this->assertSame('initial_run_1_0', $blocks[0]->id);
-        $this->assertSame('Write a README', $blocks[0]->text);
-        $this->assertFalse($blocks[0]->streaming);
+        self::assertCount(1, $blocks);
+        self::assertSame(TranscriptBlockKindEnum::UserMessage, $blocks[0]->kind);
+        self::assertSame('initial_run_1_0', $blocks[0]->id);
+        self::assertSame('Write a README', $blocks[0]->text);
+        self::assertFalse($blocks[0]->streaming);
     }
 
     public function testRunStartedWithMultipleUserMessages(): void
@@ -147,11 +147,11 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(2, $blocks);
-        $this->assertSame('init_1', $blocks[0]->id);
-        $this->assertSame('init_2', $blocks[1]->id);
-        $this->assertSame(TranscriptBlockKindEnum::UserMessage, $blocks[0]->kind);
-        $this->assertSame(TranscriptBlockKindEnum::UserMessage, $blocks[1]->kind);
+        self::assertCount(2, $blocks);
+        self::assertSame('init_1', $blocks[0]->id);
+        self::assertSame('init_2', $blocks[1]->id);
+        self::assertSame(TranscriptBlockKindEnum::UserMessage, $blocks[0]->kind);
+        self::assertSame(TranscriptBlockKindEnum::UserMessage, $blocks[1]->kind);
     }
 
     public function testRunStartedWithoutUserMessagesCreatesNoUserBlocks(): void
@@ -163,7 +163,7 @@ final class TranscriptProjectorTest extends TestCase
         // RunLifecycleProjectionSubscriber may add a System block for run start.
         $blocks = $this->projector->blocks();
         $kinds = array_map(static fn (TranscriptBlock $b) => $b->kind, $blocks);
-        $this->assertNotContains(TranscriptBlockKindEnum::UserMessage, $kinds, 'No UserMessage blocks without user_messages payload');
+        self::assertNotContains(TranscriptBlockKindEnum::UserMessage, $kinds, 'No UserMessage blocks without user_messages payload');
     }
 
     // ── Assistant text stream ─────────────────────────────────────────────────
@@ -179,12 +179,12 @@ final class TranscriptProjectorTest extends TestCase
         $this->accept('assistant.text_delta', ['block_id' => 'a1_t0', 'text' => 'world!']);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(1, $blocks);
-        $this->assertSame('a1_t0', $blocks[0]->id);
-        $this->assertSame(TranscriptBlockKindEnum::AssistantMessage, $blocks[0]->kind);
-        $this->assertSame('Hello, world!', $blocks[0]->text);
-        $this->assertTrue($blocks[0]->streaming);
-        $this->assertSame('a1', $blocks[0]->meta['message_id']);
+        self::assertCount(1, $blocks);
+        self::assertSame('a1_t0', $blocks[0]->id);
+        self::assertSame(TranscriptBlockKindEnum::AssistantMessage, $blocks[0]->kind);
+        self::assertSame('Hello, world!', $blocks[0]->text);
+        self::assertTrue($blocks[0]->streaming);
+        self::assertSame('a1', $blocks[0]->meta['message_id']);
     }
 
     public function testAssistantTextCompletedFinalizesBlock(): void
@@ -198,9 +198,9 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(1, $blocks);
-        $this->assertFalse($blocks[0]->streaming, 'Block should be finalized');
-        $this->assertSame('Hey there', $blocks[0]->text);
+        self::assertCount(1, $blocks);
+        self::assertFalse($blocks[0]->streaming, 'Block should be finalized');
+        self::assertSame('Hey there', $blocks[0]->text);
     }
 
     // ── Assistant thinking stream ────────────────────────────────────────────
@@ -214,13 +214,13 @@ final class TranscriptProjectorTest extends TestCase
         $this->accept('assistant.thinking_delta', ['block_id' => 'a1_th0', 'thinking' => ' done.']);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(1, $blocks);
-        $this->assertSame('a1_th0', $blocks[0]->id);
-        $this->assertSame(TranscriptBlockKindEnum::AssistantThinking, $blocks[0]->kind);
-        $this->assertSame('Let me think... done.', $blocks[0]->text);
-        $this->assertTrue($blocks[0]->streaming);
-        $this->assertTrue($blocks[0]->collapsed);
-        $this->assertSame(1, $blocks[0]->meta['content_index']);
+        self::assertCount(1, $blocks);
+        self::assertSame('a1_th0', $blocks[0]->id);
+        self::assertSame(TranscriptBlockKindEnum::AssistantThinking, $blocks[0]->kind);
+        self::assertSame('Let me think... done.', $blocks[0]->text);
+        self::assertTrue($blocks[0]->streaming);
+        self::assertTrue($blocks[0]->collapsed);
+        self::assertSame(1, $blocks[0]->meta['content_index']);
     }
 
     public function testAssistantThinkingCompletedFinalizesBlock(): void
@@ -234,9 +234,9 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(1, $blocks);
-        $this->assertFalse($blocks[0]->streaming);
-        $this->assertSame('Hmm, interesting.', $blocks[0]->text);
+        self::assertCount(1, $blocks);
+        self::assertFalse($blocks[0]->streaming);
+        self::assertSame('Hmm, interesting.', $blocks[0]->text);
     }
 
     public function testThinkingBlockIsCollapsedByDefault(): void
@@ -245,7 +245,7 @@ final class TranscriptProjectorTest extends TestCase
             'message_id' => 'a1', 'block_id' => 'th1',
         ]);
 
-        $this->assertTrue($this->projector->blocks()[0]->collapsed);
+        self::assertTrue($this->projector->blocks()[0]->collapsed);
     }
 
     public function testTextBlockIsNotCollapsed(): void
@@ -254,7 +254,7 @@ final class TranscriptProjectorTest extends TestCase
             'message_id' => 'a1', 'block_id' => 't1',
         ]);
 
-        $this->assertFalse($this->projector->blocks()[0]->collapsed);
+        self::assertFalse($this->projector->blocks()[0]->collapsed);
     }
 
     // ── Interleaved text + thinking ──────────────────────────────────────────
@@ -277,13 +277,13 @@ final class TranscriptProjectorTest extends TestCase
         $this->accept('assistant.message_completed', ['message_id' => 'a1']);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(2, $blocks);
-        $this->assertSame(TranscriptBlockKindEnum::AssistantThinking, $blocks[0]->kind);
-        $this->assertSame('Analyzing the request.', $blocks[0]->text);
-        $this->assertFalse($blocks[0]->streaming);
-        $this->assertSame(TranscriptBlockKindEnum::AssistantMessage, $blocks[1]->kind);
-        $this->assertSame('The answer is 42.', $blocks[1]->text);
-        $this->assertFalse($blocks[1]->streaming);
+        self::assertCount(2, $blocks);
+        self::assertSame(TranscriptBlockKindEnum::AssistantThinking, $blocks[0]->kind);
+        self::assertSame('Analyzing the request.', $blocks[0]->text);
+        self::assertFalse($blocks[0]->streaming);
+        self::assertSame(TranscriptBlockKindEnum::AssistantMessage, $blocks[1]->kind);
+        self::assertSame('The answer is 42.', $blocks[1]->text);
+        self::assertFalse($blocks[1]->streaming);
     }
 
     // ── message_completed and message_failed ─────────────────────────────────
@@ -295,11 +295,11 @@ final class TranscriptProjectorTest extends TestCase
         ]);
         $this->accept('assistant.text_delta', ['block_id' => 'a1_t0', 'text' => 'Streaming...']);
 
-        $this->assertTrue($this->projector->blocks()[0]->streaming);
+        self::assertTrue($this->projector->blocks()[0]->streaming);
 
         $this->accept('assistant.message_completed', ['message_id' => 'a1']);
 
-        $this->assertFalse($this->projector->blocks()[0]->streaming);
+        self::assertFalse($this->projector->blocks()[0]->streaming);
     }
 
     public function testMessageFailedFinalizesStreamingAndAppendsErrorBlock(): void
@@ -314,14 +314,14 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(2, $blocks);
-        $this->assertSame('a1_t0', $blocks[0]->id);
-        $this->assertSame('Partial text...', $blocks[0]->text);
-        $this->assertFalse($blocks[0]->streaming);
-        $this->assertSame(TranscriptBlockKindEnum::Error, $blocks[1]->kind);
-        $this->assertSame('API rate limit exceeded', $blocks[1]->text);
-        $this->assertSame('a1', $blocks[1]->meta['message_id']);
-        $this->assertSame('provider_error', $blocks[1]->meta['stop_reason']);
+        self::assertCount(2, $blocks);
+        self::assertSame('a1_t0', $blocks[0]->id);
+        self::assertSame('Partial text...', $blocks[0]->text);
+        self::assertFalse($blocks[0]->streaming);
+        self::assertSame(TranscriptBlockKindEnum::Error, $blocks[1]->kind);
+        self::assertSame('API rate limit exceeded', $blocks[1]->text);
+        self::assertSame('a1', $blocks[1]->meta['message_id']);
+        self::assertSame('provider_error', $blocks[1]->meta['stop_reason']);
     }
 
     public function testMessageFailedWithoutStreamingBlocks(): void
@@ -331,9 +331,9 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(1, $blocks);
-        $this->assertSame(TranscriptBlockKindEnum::Error, $blocks[0]->kind);
-        $this->assertSame('Timeout', $blocks[0]->text);
+        self::assertCount(1, $blocks);
+        self::assertSame(TranscriptBlockKindEnum::Error, $blocks[0]->kind);
+        self::assertSame('Timeout', $blocks[0]->text);
     }
 
     public function testErrorBlockFromMessageFailedIsNotStreaming(): void
@@ -343,9 +343,9 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(1, $blocks);
-        $this->assertFalse($blocks[0]->streaming);
-        $this->assertFalse($blocks[0]->collapsed);
+        self::assertCount(1, $blocks);
+        self::assertFalse($blocks[0]->streaming);
+        self::assertFalse($blocks[0]->collapsed);
     }
 
     // ── Assistant meta ───────────────────────────────────────────────────────
@@ -358,8 +358,8 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        $this->assertSame('claude/sonnet-4', $blocks[0]->meta['model']);
-        $this->assertSame('stop', $blocks[0]->meta['stop_reason']);
+        self::assertSame('claude/sonnet-4', $blocks[0]->meta['model']);
+        self::assertSame('stop', $blocks[0]->meta['stop_reason']);
     }
 
     // ── Message marker ───────────────────────────────────────────────────────
@@ -368,7 +368,7 @@ final class TranscriptProjectorTest extends TestCase
     {
         $this->accept('assistant.message_started', ['message_id' => 'a1']);
 
-        $this->assertSame([], $this->projector->blocks(), 'message_started alone does not create blocks');
+        self::assertSame([], $this->projector->blocks(), 'message_started alone does not create blocks');
     }
 
     // ── Canonical message reconstruction (replay from events.jsonl) ──────────
@@ -383,21 +383,21 @@ final class TranscriptProjectorTest extends TestCase
 
         $blocks = $this->projector->blocks();
         // Expect: thinking block, then text block
-        $this->assertCount(2, $blocks);
+        self::assertCount(2, $blocks);
 
         $thinkBlock = $blocks[0];
-        $this->assertSame('think_step_1', $thinkBlock->id);
-        $this->assertSame(TranscriptBlockKindEnum::AssistantThinking, $thinkBlock->kind);
-        $this->assertSame('Let me think about this carefully.', $thinkBlock->text);
-        $this->assertFalse($thinkBlock->streaming, 'Reconstructed thinking must be non-streaming');
-        $this->assertTrue($thinkBlock->collapsed, 'Reconstructed thinking must be collapsed');
-        $this->assertSame('step_1', $thinkBlock->meta['message_id']);
+        self::assertSame('think_step_1', $thinkBlock->id);
+        self::assertSame(TranscriptBlockKindEnum::AssistantThinking, $thinkBlock->kind);
+        self::assertSame('Let me think about this carefully.', $thinkBlock->text);
+        self::assertFalse($thinkBlock->streaming, 'Reconstructed thinking must be non-streaming');
+        self::assertTrue($thinkBlock->collapsed, 'Reconstructed thinking must be collapsed');
+        self::assertSame('step_1', $thinkBlock->meta['message_id']);
 
         $msgBlock = $blocks[1];
-        $this->assertSame('msg_step_1', $msgBlock->id);
-        $this->assertSame(TranscriptBlockKindEnum::AssistantMessage, $msgBlock->kind);
-        $this->assertSame('I will help you.', $msgBlock->text);
-        $this->assertFalse($msgBlock->streaming);
+        self::assertSame('msg_step_1', $msgBlock->id);
+        self::assertSame(TranscriptBlockKindEnum::AssistantMessage, $msgBlock->kind);
+        self::assertSame('I will help you.', $msgBlock->text);
+        self::assertFalse($msgBlock->streaming);
     }
 
     public function testMessageCompletedReconstructsThinkingOnlyWhenTextEmpty(): void
@@ -411,10 +411,10 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(1, $blocks, 'Only the thinking block — no text block when text is empty');
-        $this->assertSame('think_step_2', $blocks[0]->id);
-        $this->assertSame(TranscriptBlockKindEnum::AssistantThinking, $blocks[0]->kind);
-        $this->assertSame('I need to call the read tool.', $blocks[0]->text);
+        self::assertCount(1, $blocks, 'Only the thinking block — no text block when text is empty');
+        self::assertSame('think_step_2', $blocks[0]->id);
+        self::assertSame(TranscriptBlockKindEnum::AssistantThinking, $blocks[0]->kind);
+        self::assertSame('I need to call the read tool.', $blocks[0]->text);
     }
 
     public function testMessageCompletedReconstructsToolCallBlocksFromCanonicalToolCalls(): void
@@ -432,16 +432,16 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(1, $blocks);
+        self::assertCount(1, $blocks);
         $toolCallBlock = $blocks[0];
-        $this->assertSame('tool_call_call_abc123', $toolCallBlock->id);
-        $this->assertSame(TranscriptBlockKindEnum::ToolCall, $toolCallBlock->kind);
-        $this->assertStringContainsString('read', $toolCallBlock->text);
-        $this->assertStringContainsString('path: "/tmp/file.txt"', $toolCallBlock->text);
-        $this->assertFalse($toolCallBlock->streaming, 'Reconstructed tool call must be non-streaming');
-        $this->assertSame('call_abc123', $toolCallBlock->meta['tool_call_id']);
-        $this->assertSame('read', $toolCallBlock->meta['tool_name']);
-        $this->assertSame('step_3', $toolCallBlock->meta['message_id']);
+        self::assertSame('tool_call_call_abc123', $toolCallBlock->id);
+        self::assertSame(TranscriptBlockKindEnum::ToolCall, $toolCallBlock->kind);
+        self::assertStringContainsString('read', $toolCallBlock->text);
+        self::assertStringContainsString('path: "/tmp/file.txt"', $toolCallBlock->text);
+        self::assertFalse($toolCallBlock->streaming, 'Reconstructed tool call must be non-streaming');
+        self::assertSame('call_abc123', $toolCallBlock->meta['tool_call_id']);
+        self::assertSame('read', $toolCallBlock->meta['tool_name']);
+        self::assertSame('step_3', $toolCallBlock->meta['message_id']);
     }
 
     public function testMessageCompletedSkipsToolCallReconstructionWhenBlockExists(): void
@@ -457,7 +457,7 @@ final class TranscriptProjectorTest extends TestCase
             'tool_name' => 'bash',
             'arguments' => ['command' => 'ls'],
         ]);
-        $this->assertCount(1, $this->projector->blocks());
+        self::assertCount(1, $this->projector->blocks());
         $existingText = $this->projector->blocks()[0]->text;
 
         // Now a canonical message_completed arrives with the same tool_call_id.
@@ -474,8 +474,8 @@ final class TranscriptProjectorTest extends TestCase
             $this->projector->blocks(),
             static fn (TranscriptBlock $b) => TranscriptBlockKindEnum::ToolCall === $b->kind,
         ));
-        $this->assertCount(1, $toolCallBlocks, 'Must not create duplicate tool-call block');
-        $this->assertSame($existingText, $toolCallBlocks[0]->text);
+        self::assertCount(1, $toolCallBlocks, 'Must not create duplicate tool-call block');
+        self::assertSame($existingText, $toolCallBlocks[0]->text);
     }
 
     public function testMessageCompletedSkipsThinkingReconstructionWhenBlockExists(): void
@@ -504,8 +504,8 @@ final class TranscriptProjectorTest extends TestCase
             $this->projector->blocks(),
             static fn (TranscriptBlock $b) => TranscriptBlockKindEnum::AssistantThinking === $b->kind,
         ));
-        $this->assertCount(1, $thinkingBlocks, 'Must not create duplicate thinking block');
-        $this->assertSame('Live thinking done.', $thinkingBlocks[0]->text,
+        self::assertCount(1, $thinkingBlocks, 'Must not create duplicate thinking block');
+        self::assertSame('Live thinking done.', $thinkingBlocks[0]->text,
             'Existing streaming-originated thinking text must be preserved');
     }
 
@@ -527,16 +527,16 @@ final class TranscriptProjectorTest extends TestCase
 
         $blocks = $this->projector->blocks();
         // Expected order reflecting live projection: thinking → text → tool-call
-        $this->assertCount(3, $blocks);
+        self::assertCount(3, $blocks);
 
-        $this->assertSame(TranscriptBlockKindEnum::AssistantThinking, $blocks[0]->kind);
-        $this->assertSame('think_step_full', $blocks[0]->id);
+        self::assertSame(TranscriptBlockKindEnum::AssistantThinking, $blocks[0]->kind);
+        self::assertSame('think_step_full', $blocks[0]->id);
 
-        $this->assertSame(TranscriptBlockKindEnum::AssistantMessage, $blocks[1]->kind);
-        $this->assertSame('msg_step_full', $blocks[1]->id);
+        self::assertSame(TranscriptBlockKindEnum::AssistantMessage, $blocks[1]->kind);
+        self::assertSame('msg_step_full', $blocks[1]->id);
 
-        $this->assertSame(TranscriptBlockKindEnum::ToolCall, $blocks[2]->kind);
-        $this->assertSame('tool_call_call_read_1', $blocks[2]->id);
+        self::assertSame(TranscriptBlockKindEnum::ToolCall, $blocks[2]->kind);
+        self::assertSame('tool_call_call_read_1', $blocks[2]->id);
     }
 
     // ── Tool call lifecycle ──────────────────────────────────────────────────
@@ -548,14 +548,14 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(1, $blocks);
+        self::assertCount(1, $blocks);
         $block = $blocks[0];
-        $this->assertSame('tool_call_tc_01', $block->id);
-        $this->assertSame(TranscriptBlockKindEnum::ToolCall, $block->kind);
-        $this->assertSame('read', $block->text);
-        $this->assertTrue($block->streaming);
-        $this->assertSame('tc_01', $block->meta['tool_call_id']);
-        $this->assertSame('read', $block->meta['tool_name']);
+        self::assertSame('tool_call_tc_01', $block->id);
+        self::assertSame(TranscriptBlockKindEnum::ToolCall, $block->kind);
+        self::assertSame('read', $block->text);
+        self::assertTrue($block->streaming);
+        self::assertSame('tc_01', $block->meta['tool_call_id']);
+        self::assertSame('read', $block->meta['tool_name']);
     }
 
     public function testToolCallArgumentsDeltaAppendsText(): void
@@ -571,8 +571,8 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $block = $this->projector->blocks()[0];
-        $this->assertSame('bash{"command": "ls -la"}', $block->text);
-        $this->assertTrue($block->streaming);
+        self::assertSame('bash{"command": "ls -la"}', $block->text);
+        self::assertTrue($block->streaming);
     }
 
     public function testToolCallArgumentsDeltaIgnoresUnknownToolCallId(): void
@@ -581,7 +581,7 @@ final class TranscriptProjectorTest extends TestCase
             'tool_call_id' => 'nosuch', 'delta' => 'xyz',
         ]);
 
-        $this->assertCount(0, $this->projector->blocks());
+        self::assertCount(0, $this->projector->blocks());
     }
 
     public function testToolCallArgumentsCompletedFinalizesBlock(): void
@@ -600,9 +600,9 @@ final class TranscriptProjectorTest extends TestCase
         $block = $this->projector->blocks()[0];
         // Finalized text should use the canonical formatted args, not
         // the raw streaming JSON deltas concatenated with formatted args.
-        $this->assertSame('bash(cmd: "ls")', $block->text);
-        $this->assertFalse($block->streaming);
-        $this->assertSame(['cmd' => 'ls'], $block->meta['arguments']);
+        self::assertSame('bash(cmd: "ls")', $block->text);
+        self::assertFalse($block->streaming);
+        self::assertSame(['cmd' => 'ls'], $block->meta['arguments']);
     }
 
     public function testToolCallArgumentsCompletedWithoutStartedCreatesBlock(): void
@@ -613,12 +613,12 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(1, $blocks);
+        self::assertCount(1, $blocks);
         $block = $blocks[0];
-        $this->assertSame('tool_call_tc_99', $block->id);
-        $this->assertSame(TranscriptBlockKindEnum::ToolCall, $block->kind);
-        $this->assertSame('write(path: "/tmp/x", content: "hello")', $block->text);
-        $this->assertFalse($block->streaming);
+        self::assertSame('tool_call_tc_99', $block->id);
+        self::assertSame(TranscriptBlockKindEnum::ToolCall, $block->kind);
+        self::assertSame('write(path: "/tmp/x", content: "hello")', $block->text);
+        self::assertFalse($block->streaming);
     }
 
     public function testToolCallArgumentsCompletedEmptyArgsRemovesBlock(): void
@@ -629,7 +629,7 @@ final class TranscriptProjectorTest extends TestCase
         $this->accept('tool_call.started', [
             'tool_call_id' => 'tc_empty', 'tool_name' => 'bash',
         ]);
-        $this->assertCount(1, $this->projector->blocks());
+        self::assertCount(1, $this->projector->blocks());
 
         // Empty arguments → suppress the block so the user does not see
         // a fake "bash()" entry that was never really executed.
@@ -638,7 +638,7 @@ final class TranscriptProjectorTest extends TestCase
             'arguments' => [],
         ]);
 
-        $this->assertCount(0, $this->projector->blocks(),
+        self::assertCount(0, $this->projector->blocks(),
             'Empty-argument tool calls must be suppressed');
     }
 
@@ -651,7 +651,7 @@ final class TranscriptProjectorTest extends TestCase
             'arguments' => [],
         ]);
 
-        $this->assertCount(0, $this->projector->blocks(),
+        self::assertCount(0, $this->projector->blocks(),
             'Empty-argument completed must not create a block');
     }
 
@@ -669,38 +669,38 @@ final class TranscriptProjectorTest extends TestCase
             'tool_call_id' => 'tc_read_valid', 'tool_name' => 'read',
         ]);
 
-        $this->assertCount(3, $this->projector->blocks());
+        self::assertCount(3, $this->projector->blocks());
 
         // Empty parallel call → suppressed.
         $this->accept('tool_call.arguments_completed', [
             'tool_call_id' => 'tc_read_empty', 'tool_name' => 'read',
             'arguments' => [],
         ]);
-        $this->assertCount(2, $this->projector->blocks());
+        self::assertCount(2, $this->projector->blocks());
 
         // Valid bash call.
         $this->accept('tool_call.arguments_completed', [
             'tool_call_id' => 'tc_bash', 'tool_name' => 'bash',
             'arguments' => ['command' => 'ls'],
         ]);
-        $this->assertCount(2, $this->projector->blocks());
+        self::assertCount(2, $this->projector->blocks());
 
         // Valid read call.
         $this->accept('tool_call.arguments_completed', [
             'tool_call_id' => 'tc_read_valid', 'tool_name' => 'read',
             'arguments' => ['path' => '/tmp/x'],
         ]);
-        $this->assertCount(2, $this->projector->blocks());
+        self::assertCount(2, $this->projector->blocks());
 
         // The remaining blocks should be the two valid calls, ordered
         // by their original tool_call.started sequence.
         $blocks = $this->projector->blocks();
-        $this->assertSame('tool_call_tc_bash', $blocks[0]->id);
-        $this->assertSame('bash(command: "ls")', $blocks[0]->text);
-        $this->assertFalse($blocks[0]->streaming);
-        $this->assertSame('tool_call_tc_read_valid', $blocks[1]->id);
-        $this->assertSame('read(path: "/tmp/x")', $blocks[1]->text);
-        $this->assertFalse($blocks[1]->streaming);
+        self::assertSame('tool_call_tc_bash', $blocks[0]->id);
+        self::assertSame('bash(command: "ls")', $blocks[0]->text);
+        self::assertFalse($blocks[0]->streaming);
+        self::assertSame('tool_call_tc_read_valid', $blocks[1]->id);
+        self::assertSame('read(path: "/tmp/x")', $blocks[1]->text);
+        self::assertFalse($blocks[1]->streaming);
     }
 
     // ── Orphan cleanup ───────────────────────────────────────────────────────
@@ -734,17 +734,17 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         // Before TurnStarted, both ToolCall blocks still exist.
-        $this->assertCount(3, $this->projector->blocks());
+        self::assertCount(3, $this->projector->blocks());
 
         // TurnStarted triggers orphan cleanup.
         $this->accept('turn.started', ['turn_no' => 2]);
 
         // Only the executed ToolCall and its ToolResult remain.
         $blocks = $this->projector->blocks();
-        $this->assertCount(2, $blocks,
+        self::assertCount(2, $blocks,
             'Orphaned ToolCall block without matching ToolResult must be removed');
-        $this->assertSame('tool_call_tc_a', $blocks[0]->id);
-        $this->assertSame('tool_result_tc_a', $blocks[1]->id);
+        self::assertSame('tool_call_tc_a', $blocks[0]->id);
+        self::assertSame('tool_result_tc_a', $blocks[1]->id);
     }
 
     public function testTurnStartedKeepsMultipleExecutedToolCalls(): void
@@ -779,12 +779,12 @@ final class TranscriptProjectorTest extends TestCase
             'tool_call_id' => 'tc_2', 'result' => 'data',
         ]);
 
-        $this->assertCount(4, $this->projector->blocks());
+        self::assertCount(4, $this->projector->blocks());
 
         $this->accept('turn.started', ['turn_no' => 2]);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(4, $blocks,
+        self::assertCount(4, $blocks,
             'Both executed ToolCall blocks plus their ToolResults must remain');
     }
 
@@ -805,8 +805,8 @@ final class TranscriptProjectorTest extends TestCase
 
         // ToolCall block must survive because no ToolResult exists to
         // drive the orphan check.
-        $this->assertCount(1, $this->projector->blocks());
-        $this->assertSame('tool_call_tc_streaming', $this->projector->blocks()[0]->id);
+        self::assertCount(1, $this->projector->blocks());
+        self::assertSame('tool_call_tc_streaming', $this->projector->blocks()[0]->id);
     }
 
     public function testRunCompletedRemovesOrphanedToolCalls(): void
@@ -835,10 +835,10 @@ final class TranscriptProjectorTest extends TestCase
         $this->accept('run.completed', ['reason' => 'completed']);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(2, $blocks,
+        self::assertCount(2, $blocks,
             'RunCompleted must remove orphaned ToolCall block');
-        $this->assertSame('tool_call_tc_valid', $blocks[0]->id);
-        $this->assertSame('tool_result_tc_valid', $blocks[1]->id);
+        self::assertSame('tool_call_tc_valid', $blocks[0]->id);
+        self::assertSame('tool_result_tc_valid', $blocks[1]->id);
     }
 
     public function testToolExecutionStartedRemovesPhantomStreamingToolCallBlocks(): void
@@ -863,12 +863,12 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         // Before execution starts, both blocks exist (read is still streaming).
-        $this->assertCount(2, $this->projector->blocks());
+        self::assertCount(2, $this->projector->blocks());
         $blocks = $this->projector->blocks();
-        $this->assertSame('tool_call_tc_read', $blocks[0]->id);
-        $this->assertTrue($blocks[0]->streaming, 'read block must be streaming — never completed');
-        $this->assertSame('tool_call_tc_bash', $blocks[1]->id);
-        $this->assertFalse($blocks[1]->streaming, 'bash block must be finalized');
+        self::assertSame('tool_call_tc_read', $blocks[0]->id);
+        self::assertTrue($blocks[0]->streaming, 'read block must be streaming — never completed');
+        self::assertSame('tool_call_tc_bash', $blocks[1]->id);
+        self::assertFalse($blocks[1]->streaming, 'bash block must be finalized');
 
         // Tool execution starts for bash → phantom read block must be removed.
         $this->accept('tool_execution.started', [
@@ -876,13 +876,13 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(2, $blocks,
+        self::assertCount(2, $blocks,
             'Phantom streaming read block must be removed; only finalized bash + ToolResult remain');
-        $this->assertSame('tool_call_tc_bash', $blocks[0]->id,
+        self::assertSame('tool_call_tc_bash', $blocks[0]->id,
             'Only the finalized bash ToolCall block must survive');
-        $this->assertSame('tool_result_tc_bash', $blocks[1]->id,
+        self::assertSame('tool_result_tc_bash', $blocks[1]->id,
             'ToolResult block for bash must exist');
-        $this->assertSame('bash(command: "ls -la")', $blocks[0]->text);
+        self::assertSame('bash(command: "ls -la")', $blocks[0]->text);
     }
 
     public function testToolExecutionStartedDoesNotRemoveFinalizedParallelToolCalls(): void
@@ -912,11 +912,11 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(3, $blocks,
+        self::assertCount(3, $blocks,
             'Both finalized ToolCall blocks + tc_first ToolResult must remain');
-        $this->assertSame('tool_call_tc_first', $blocks[0]->id);
-        $this->assertSame('tool_call_tc_second', $blocks[1]->id);
-        $this->assertSame('tool_result_tc_first', $blocks[2]->id);
+        self::assertSame('tool_call_tc_first', $blocks[0]->id);
+        self::assertSame('tool_call_tc_second', $blocks[1]->id);
+        self::assertSame('tool_result_tc_first', $blocks[2]->id);
     }
 
     public function testToolExecutionStartedDoesNotRemoveStreamingWhenNoFinalizedCallExists(): void
@@ -929,7 +929,7 @@ final class TranscriptProjectorTest extends TestCase
             'tool_call_id' => 'tc_stream', 'tool_name' => 'bash',
         ]);
 
-        $this->assertTrue($this->projector->blocks()[0]->streaming);
+        self::assertTrue($this->projector->blocks()[0]->streaming);
 
         // tool_execution.started for a different hypothetical tool —
         // but no ToolCall block is finalized yet, so the guard prevents
@@ -939,10 +939,10 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(2, $blocks,
+        self::assertCount(2, $blocks,
             'Streaming ToolCall must survive when no finalized call exists');
-        $this->assertSame('tool_call_tc_stream', $blocks[0]->id);
-        $this->assertTrue($blocks[0]->streaming);
+        self::assertSame('tool_call_tc_stream', $blocks[0]->id);
+        self::assertTrue($blocks[0]->streaming);
     }
 
     // ── Tool execution lifecycle ─────────────────────────────────────────────
@@ -954,12 +954,12 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(1, $blocks);
+        self::assertCount(1, $blocks);
         $block = $blocks[0];
-        $this->assertSame('tool_result_tc_01', $block->id);
-        $this->assertSame(TranscriptBlockKindEnum::ToolResult, $block->kind);
-        $this->assertSame('Running…', $block->text);
-        $this->assertTrue($block->streaming);
+        self::assertSame('tool_result_tc_01', $block->id);
+        self::assertSame(TranscriptBlockKindEnum::ToolResult, $block->kind);
+        self::assertSame('Running…', $block->text);
+        self::assertTrue($block->streaming);
     }
 
     public function testToolExecutionOutputDeltaAppendsText(): void
@@ -975,7 +975,7 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $block = $this->projector->blocks()[0];
-        $this->assertSame("Running…line 1\nline 2", $block->text);
+        self::assertSame("Running…line 1\nline 2", $block->text);
     }
 
     public function testToolExecutionCompletedFinalizesResultBlock(): void
@@ -989,13 +989,13 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(1, $blocks);
+        self::assertCount(1, $blocks);
         $block = $blocks[0];
-        $this->assertSame(TranscriptBlockKindEnum::ToolResult, $block->kind);
-        $this->assertSame("total 0\ndrwxr-xr-x", $block->text);
-        $this->assertFalse($block->streaming);
-        $this->assertFalse($block->meta['is_error']);
-        $this->assertSame(42, $block->meta['duration_ms']);
+        self::assertSame(TranscriptBlockKindEnum::ToolResult, $block->kind);
+        self::assertSame("total 0\ndrwxr-xr-x", $block->text);
+        self::assertFalse($block->streaming);
+        self::assertFalse($block->meta['is_error']);
+        self::assertSame(42, $block->meta['duration_ms']);
     }
 
     public function testToolExecutionCompletedWithoutStartCreatesBlock(): void
@@ -1005,10 +1005,10 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(1, $blocks);
+        self::assertCount(1, $blocks);
         $block = $blocks[0];
-        $this->assertSame('done', $block->text);
-        $this->assertFalse($block->streaming);
+        self::assertSame('done', $block->text);
+        self::assertFalse($block->streaming);
     }
 
     public function testToolExecutionCompletedWithoutResultReplacesRunningWithToolName(): void
@@ -1019,7 +1019,7 @@ final class TranscriptProjectorTest extends TestCase
         $this->accept('tool_execution.started', [
             'tool_call_id' => 'tc_replay', 'tool_name' => 'read',
         ]);
-        $this->assertSame('Running…', $this->projector->blocks()[0]->text);
+        self::assertSame('Running…', $this->projector->blocks()[0]->text);
 
         $this->accept('tool_execution.completed', [
             'tool_call_id' => 'tc_replay',
@@ -1027,10 +1027,10 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $block = $this->projector->blocks()[0];
-        $this->assertFalse($block->streaming);
-        $this->assertStringContainsString('read', $block->text,
+        self::assertFalse($block->streaming);
+        self::assertStringContainsString('read', $block->text,
             'Must fall back to tool name when result is empty and text was Running…');
-        $this->assertStringNotContainsString('Running…', $block->text,
+        self::assertStringNotContainsString('Running…', $block->text,
             'Must NOT leave Running… as final text');
     }
 
@@ -1045,7 +1045,7 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $block = $this->projector->blocks()[0];
-        $this->assertSame('file1.txt  file2.txt', $block->text,
+        self::assertSame('file1.txt  file2.txt', $block->text,
             'Explicit result must be preserved, not replaced by tool name');
     }
 
@@ -1059,9 +1059,9 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $block = $this->projector->blocks()[0];
-        $this->assertSame(TranscriptBlockKindEnum::ToolResult, $block->kind);
-        $this->assertSame('command not found: xyz', $block->text);
-        $this->assertTrue($block->meta['is_error']);
+        self::assertSame(TranscriptBlockKindEnum::ToolResult, $block->kind);
+        self::assertSame('command not found: xyz', $block->text);
+        self::assertTrue($block->meta['is_error']);
     }
 
     public function testToolExecutionCancelledMarksAsCancelled(): void
@@ -1074,9 +1074,9 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $block = $this->projector->blocks()[0];
-        $this->assertTrue($block->meta['cancelled']);
-        $this->assertFalse($block->meta['timed_out']);
-        $this->assertSame('Cancelled', $block->text);
+        self::assertTrue($block->meta['cancelled']);
+        self::assertFalse($block->meta['timed_out']);
+        self::assertSame('Cancelled', $block->text);
     }
 
     public function testToolExecutionCancelledWithTimeout(): void
@@ -1086,8 +1086,8 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $block = $this->projector->blocks()[0];
-        $this->assertTrue($block->meta['timed_out']);
-        $this->assertSame('Timed out', $block->text);
+        self::assertTrue($block->meta['timed_out']);
+        self::assertSame('Timed out', $block->text);
     }
 
     // ── HITL ─────────────────────────────────────────────────────────────────
@@ -1101,15 +1101,15 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(1, $blocks);
+        self::assertCount(1, $blocks);
         $block = $blocks[0];
-        $this->assertSame('hitl_q_01', $block->id);
-        $this->assertSame(TranscriptBlockKindEnum::Question, $block->kind);
-        $this->assertSame('What is the answer?', $block->text);
-        $this->assertFalse($block->streaming);
-        $this->assertSame('q_01', $block->meta['question_id']);
-        $this->assertSame('pending', $block->meta['status']);
-        $this->assertSame(['type' => 'string'], $block->meta['schema']);
+        self::assertSame('hitl_q_01', $block->id);
+        self::assertSame(TranscriptBlockKindEnum::Question, $block->kind);
+        self::assertSame('What is the answer?', $block->text);
+        self::assertFalse($block->streaming);
+        self::assertSame('q_01', $block->meta['question_id']);
+        self::assertSame('pending', $block->meta['status']);
+        self::assertSame(['type' => 'string'], $block->meta['schema']);
     }
 
     public function testHumanInputRequestedWithToolCallInfo(): void
@@ -1121,8 +1121,8 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $block = $this->projector->blocks()[0];
-        $this->assertSame('tc_42', $block->meta['tool_call_id']);
-        $this->assertSame('ask_human', $block->meta['tool_name']);
+        self::assertSame('tc_42', $block->meta['tool_call_id']);
+        self::assertSame('ask_human', $block->meta['tool_name']);
     }
 
     public function testHumanInputAnsweredUpdatesBlock(): void
@@ -1136,9 +1136,9 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $block = $this->projector->blocks()[0];
-        $this->assertSame('answered', $block->meta['status']);
-        $this->assertSame('Alice', $block->meta['answer']);
-        $this->assertStringContainsString('→ Alice', $block->text);
+        self::assertSame('answered', $block->meta['status']);
+        self::assertSame('Alice', $block->meta['answer']);
+        self::assertStringContainsString('→ Alice', $block->text);
     }
 
     public function testHumanInputAnsweredIgnoresUnknownQuestion(): void
@@ -1147,7 +1147,7 @@ final class TranscriptProjectorTest extends TestCase
             'question_id' => 'nosuch', 'answer' => 'x',
         ]);
 
-        $this->assertCount(0, $this->projector->blocks());
+        self::assertCount(0, $this->projector->blocks());
     }
 
     public function testHumanInputRejectedUpdatesBlock(): void
@@ -1159,8 +1159,8 @@ final class TranscriptProjectorTest extends TestCase
         $this->accept('human_input.rejected', ['question_id' => 'q_01']);
 
         $block = $this->projector->blocks()[0];
-        $this->assertSame('rejected', $block->meta['status']);
-        $this->assertStringContainsString('(rejected)', $block->text);
+        self::assertSame('rejected', $block->meta['status']);
+        self::assertStringContainsString('(rejected)', $block->text);
     }
 
     // ── Approval ─────────────────────────────────────────────────────────────
@@ -1173,13 +1173,13 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(1, $blocks);
+        self::assertCount(1, $blocks);
         $block = $blocks[0];
-        $this->assertSame('approval_appr_01', $block->id);
-        $this->assertSame(TranscriptBlockKindEnum::Approval, $block->kind);
-        $this->assertStringContainsString('Delete all files?', $block->text);
-        $this->assertSame('pending', $block->meta['status']);
-        $this->assertSame('tc_99', $block->meta['tool_call_id']);
+        self::assertSame('approval_appr_01', $block->id);
+        self::assertSame(TranscriptBlockKindEnum::Approval, $block->kind);
+        self::assertStringContainsString('Delete all files?', $block->text);
+        self::assertSame('pending', $block->meta['status']);
+        self::assertSame('tc_99', $block->meta['tool_call_id']);
     }
 
     public function testApprovalApprovedUpdatesBlock(): void
@@ -1190,8 +1190,8 @@ final class TranscriptProjectorTest extends TestCase
         $this->accept('approval.approved', ['request_id' => 'appr_01']);
 
         $block = $this->projector->blocks()[0];
-        $this->assertSame('approved', $block->meta['status']);
-        $this->assertStringEndsWith('✓', $block->text);
+        self::assertSame('approved', $block->meta['status']);
+        self::assertStringEndsWith('✓', $block->text);
     }
 
     public function testApprovalRejectedUpdatesBlock(): void
@@ -1202,15 +1202,15 @@ final class TranscriptProjectorTest extends TestCase
         $this->accept('approval.rejected', ['request_id' => 'appr_01']);
 
         $block = $this->projector->blocks()[0];
-        $this->assertSame('rejected', $block->meta['status']);
-        $this->assertStringEndsWith('✗', $block->text);
+        self::assertSame('rejected', $block->meta['status']);
+        self::assertStringEndsWith('✗', $block->text);
     }
 
     public function testApprovalApprovedIgnoresUnknownRequest(): void
     {
         $this->accept('approval.approved', ['request_id' => 'nosuch']);
 
-        $this->assertCount(0, $this->projector->blocks());
+        self::assertCount(0, $this->projector->blocks());
     }
 
     // ── Cancellation ─────────────────────────────────────────────────────────
@@ -1219,7 +1219,7 @@ final class TranscriptProjectorTest extends TestCase
     {
         $this->accept('cancellation.requested', ['reason' => 'user_cancelled']);
 
-        $this->assertCount(0, $this->projector->blocks());
+        self::assertCount(0, $this->projector->blocks());
     }
 
     public function testOperationCancelledCreatesCancelledBlock(): void
@@ -1229,13 +1229,13 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(1, $blocks);
+        self::assertCount(1, $blocks);
         $block = $blocks[0];
-        $this->assertSame(TranscriptBlockKindEnum::Cancelled, $block->kind);
-        $this->assertStringContainsString('tool', $block->text);
-        $this->assertStringContainsString('op_42', $block->text);
-        $this->assertSame('timeout', $block->meta['reason']);
-        $this->assertFalse($block->streaming);
+        self::assertSame(TranscriptBlockKindEnum::Cancelled, $block->kind);
+        self::assertStringContainsString('tool', $block->text);
+        self::assertStringContainsString('op_42', $block->text);
+        self::assertSame('timeout', $block->meta['reason']);
+        self::assertFalse($block->streaming);
     }
 
     public function testTurnCancelledRemovesStreamingBlocksAndCreatesCancelledBlock(): void
@@ -1248,16 +1248,16 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        $this->assertTrue($blocks[0]->streaming, 'ToolCall block should be streaming');
-        $this->assertTrue($blocks[1]->streaming, 'ToolResult block should be streaming');
+        self::assertTrue($blocks[0]->streaming, 'ToolCall block should be streaming');
+        self::assertTrue($blocks[1]->streaming, 'ToolResult block should be streaming');
 
         $this->accept('turn.cancelled', ['reason' => 'user_cancelled']);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(1, $blocks, 'Only the cancellation block should remain; streaming blocks must be removed');
-        $this->assertSame(TranscriptBlockKindEnum::Cancelled, $blocks[0]->kind);
-        $this->assertStringContainsString('turn cancelled', $blocks[0]->text);
-        $this->assertFalse($blocks[0]->streaming);
+        self::assertCount(1, $blocks, 'Only the cancellation block should remain; streaming blocks must be removed');
+        self::assertSame(TranscriptBlockKindEnum::Cancelled, $blocks[0]->kind);
+        self::assertStringContainsString('turn cancelled', $blocks[0]->text);
+        self::assertFalse($blocks[0]->streaming);
     }
 
     public function testRunCancelledRemovesStreamingBlocksAndCreatesCancelledBlock(): void
@@ -1272,12 +1272,12 @@ final class TranscriptProjectorTest extends TestCase
         $this->accept('run.cancelled', ['reason' => 'provider_aborted']);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(1, $blocks, 'Only the cancellation block should remain; streaming blocks must be removed');
+        self::assertCount(1, $blocks, 'Only the cancellation block should remain; streaming blocks must be removed');
 
         $cancelBlock = $blocks[0];
-        $this->assertSame(TranscriptBlockKindEnum::Cancelled, $cancelBlock->kind);
-        $this->assertStringContainsString('run cancelled', $cancelBlock->text);
-        $this->assertStringContainsString('provider_aborted', $cancelBlock->text);
+        self::assertSame(TranscriptBlockKindEnum::Cancelled, $cancelBlock->kind);
+        self::assertStringContainsString('run cancelled', $cancelBlock->text);
+        self::assertStringContainsString('provider_aborted', $cancelBlock->text);
     }
 
     public function testTurnCancelledDoesNotAffectNonStreamingBlocks(): void
@@ -1290,9 +1290,9 @@ final class TranscriptProjectorTest extends TestCase
         $this->accept('turn.cancelled', ['reason' => 'user_cancelled']);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(2, $blocks);
-        $this->assertSame(TranscriptBlockKindEnum::Question, $blocks[0]->kind);
-        $this->assertFalse($blocks[0]->streaming);
+        self::assertCount(2, $blocks);
+        self::assertSame(TranscriptBlockKindEnum::Question, $blocks[0]->kind);
+        self::assertFalse($blocks[0]->streaming);
     }
 
     // ── Cancellation run-scoping ─────────────────────────────────────────────
@@ -1309,8 +1309,8 @@ final class TranscriptProjectorTest extends TestCase
             'tool_call_id' => 'tc_02', 'tool_name' => 'read',
         ], 'run_other');
 
-        $this->assertTrue($this->projector->blocks()[0]->streaming);
-        $this->assertTrue($this->projector->blocks()[1]->streaming);
+        self::assertTrue($this->projector->blocks()[0]->streaming);
+        self::assertTrue($this->projector->blocks()[1]->streaming);
 
         // Cancel turn on run_1 only
         $this->accept('turn.cancelled', ['reason' => 'user_cancelled'], self::RUN_ID);
@@ -1318,11 +1318,11 @@ final class TranscriptProjectorTest extends TestCase
         $blocks = $this->projector->blocks();
         // run_1 streaming block is removed; cancellation block added.
         // run_other block remains streaming, still at its original position.
-        $this->assertCount(2, $blocks, 'Cancellation block for run_1 + run_other streaming block');
-        $this->assertSame(TranscriptBlockKindEnum::ToolCall, $blocks[0]->kind, 'Other-run block keeps original position');
-        $this->assertSame('run_other', $blocks[0]->runId, 'Other-run block must survive');
-        $this->assertTrue($blocks[0]->streaming, 'Other-run block should remain streaming');
-        $this->assertSame(TranscriptBlockKindEnum::Cancelled, $blocks[1]->kind, 'Cancellation block appended at end');
+        self::assertCount(2, $blocks, 'Cancellation block for run_1 + run_other streaming block');
+        self::assertSame(TranscriptBlockKindEnum::ToolCall, $blocks[0]->kind, 'Other-run block keeps original position');
+        self::assertSame('run_other', $blocks[0]->runId, 'Other-run block must survive');
+        self::assertTrue($blocks[0]->streaming, 'Other-run block should remain streaming');
+        self::assertSame(TranscriptBlockKindEnum::Cancelled, $blocks[1]->kind, 'Cancellation block appended at end');
     }
 
     // ── Sequence ordering ────────────────────────────────────────────────────
@@ -1341,10 +1341,10 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(3, $blocks);
-        $this->assertSame(TranscriptBlockKindEnum::ToolCall, $blocks[0]->kind);
-        $this->assertSame(TranscriptBlockKindEnum::Question, $blocks[1]->kind);
-        $this->assertSame(TranscriptBlockKindEnum::Approval, $blocks[2]->kind);
+        self::assertCount(3, $blocks);
+        self::assertSame(TranscriptBlockKindEnum::ToolCall, $blocks[0]->kind);
+        self::assertSame(TranscriptBlockKindEnum::Question, $blocks[1]->kind);
+        self::assertSame(TranscriptBlockKindEnum::Approval, $blocks[2]->kind);
     }
 
     public function testBlockUpdatesPreservePosition(): void
@@ -1362,10 +1362,10 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(2, $blocks);
-        $this->assertSame(TranscriptBlockKindEnum::ToolCall, $blocks[0]->kind);
-        $this->assertStringContainsString('args', $blocks[0]->text);
-        $this->assertSame(TranscriptBlockKindEnum::Question, $blocks[1]->kind);
+        self::assertCount(2, $blocks);
+        self::assertSame(TranscriptBlockKindEnum::ToolCall, $blocks[0]->kind);
+        self::assertStringContainsString('args', $blocks[0]->text);
+        self::assertSame(TranscriptBlockKindEnum::Question, $blocks[1]->kind);
     }
 
     public function testBlocksHaveMonotonicSeqNumbers(): void
@@ -1382,10 +1382,10 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(3, $blocks);
-        $this->assertSame(0, $blocks[0]->seq);
-        $this->assertSame(1, $blocks[1]->seq);
-        $this->assertSame(2, $blocks[2]->seq);
+        self::assertCount(3, $blocks);
+        self::assertSame(0, $blocks[0]->seq);
+        self::assertSame(1, $blocks[1]->seq);
+        self::assertSame(2, $blocks[2]->seq);
     }
 
     public function testSeqIsMonotonicFullSuite(): void
@@ -1400,9 +1400,9 @@ final class TranscriptProjectorTest extends TestCase
         $this->accept('assistant.message_failed', ['message_id' => 'a1']);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(4, $blocks);
+        self::assertCount(4, $blocks);
         for ($i = 0; $i < \count($blocks); ++$i) {
-            $this->assertSame($i, $blocks[$i]->seq, "Block at index $i should have seq=$i");
+            self::assertSame($i, $blocks[$i]->seq, "Block at index $i should have seq=$i");
         }
     }
 
@@ -1438,18 +1438,18 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(2, $blocks);
+        self::assertCount(2, $blocks);
 
         $callBlock = $blocks[0];
-        $this->assertSame(TranscriptBlockKindEnum::ToolCall, $callBlock->kind);
-        $this->assertFalse($callBlock->streaming);
-        $this->assertSame(['cmd' => 'ls'], $callBlock->meta['arguments']);
+        self::assertSame(TranscriptBlockKindEnum::ToolCall, $callBlock->kind);
+        self::assertFalse($callBlock->streaming);
+        self::assertSame(['cmd' => 'ls'], $callBlock->meta['arguments']);
 
         $resultBlock = $blocks[1];
-        $this->assertSame(TranscriptBlockKindEnum::ToolResult, $resultBlock->kind);
-        $this->assertFalse($resultBlock->streaming);
-        $this->assertSame("file1.txt\nfile2.txt", $resultBlock->text);
-        $this->assertSame(150, $resultBlock->meta['duration_ms']);
+        self::assertSame(TranscriptBlockKindEnum::ToolResult, $resultBlock->kind);
+        self::assertFalse($resultBlock->streaming);
+        self::assertSame("file1.txt\nfile2.txt", $resultBlock->text);
+        self::assertSame(150, $resultBlock->meta['duration_ms']);
     }
 
     public function testFullHitlRoundTrip(): void
@@ -1460,16 +1460,16 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(1, $blocks);
-        $this->assertSame('pending', $blocks[0]->meta['status']);
+        self::assertCount(1, $blocks);
+        self::assertSame('pending', $blocks[0]->meta['status']);
 
         $this->accept('human_input.answered', [
             'question_id' => 'q_01', 'answer' => 'Bob',
         ]);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(1, $blocks);
-        $this->assertSame('answered', $blocks[0]->meta['status']);
+        self::assertCount(1, $blocks);
+        self::assertSame('answered', $blocks[0]->meta['status']);
     }
 
     public function testFullApprovalRoundTrip(): void
@@ -1479,14 +1479,14 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(1, $blocks);
-        $this->assertSame('pending', $blocks[0]->meta['status']);
+        self::assertCount(1, $blocks);
+        self::assertSame('pending', $blocks[0]->meta['status']);
 
         $this->accept('approval.approved', ['request_id' => 'appr_01']);
 
         $blocks = $this->projector->blocks();
-        $this->assertSame('approved', $blocks[0]->meta['status']);
-        $this->assertStringEndsWith('✓', $blocks[0]->text);
+        self::assertSame('approved', $blocks[0]->meta['status']);
+        self::assertStringEndsWith('✓', $blocks[0]->text);
     }
 
     public function testMultipleToolCallsAreIndependent(): void
@@ -1499,17 +1499,17 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(2, $blocks);
-        $this->assertSame('tool_call_tc_01', $blocks[0]->id);
-        $this->assertSame('tool_call_tc_02', $blocks[1]->id);
+        self::assertCount(2, $blocks);
+        self::assertSame('tool_call_tc_01', $blocks[0]->id);
+        self::assertSame('tool_call_tc_02', $blocks[1]->id);
 
         $this->accept('tool_call.arguments_delta', [
             'tool_call_id' => 'tc_01', 'delta' => 'first_args',
         ]);
 
         $blocks = $this->projector->blocks();
-        $this->assertStringContainsString('first_args', $blocks[0]->text);
-        $this->assertSame('write', $blocks[1]->text);
+        self::assertStringContainsString('first_args', $blocks[0]->text);
+        self::assertSame('write', $blocks[1]->text);
     }
 
     // ── Edge cases (ignored / no-op events) ──────────────────────────────────
@@ -1521,17 +1521,19 @@ final class TranscriptProjectorTest extends TestCase
         // don't affect blocks they don't own.
         if ('assistant.text_delta' === $type && 'oops' === ($payload['delta'] ?? '')) {
             $this->accept($type, $payload);
-            $this->assertSame([], $this->projector->blocks());
+            self::assertSame([], $this->projector->blocks());
+
             return;
         }
         if ('assistant.text_completed' === $type) {
             $this->accept($type, $payload);
-            $this->assertSame([], $this->projector->blocks());
+            self::assertSame([], $this->projector->blocks());
+
             return;
         }
 
         $this->accept($type, $payload);
-        $this->assertSame([], $this->projector->blocks(), "{$type} should produce no blocks");
+        self::assertSame([], $this->projector->blocks(), "{$type} should produce no blocks");
     }
 
     /** @return iterable<string, array{string, array<string,mixed>}> */
@@ -1556,7 +1558,7 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $after = $this->projector->blocks()[0];
-        $this->assertSame($before->text, $after->text, 'Empty delta should not change block text');
+        self::assertSame($before->text, $after->text, 'Empty delta should not change block text');
     }
 
     public function testReplayProducesSameBlocks(): void
@@ -1589,16 +1591,16 @@ final class TranscriptProjectorTest extends TestCase
         }
         $second = $this->projector->blocks();
 
-        $this->assertCount(\count($first), $second);
+        self::assertCount(\count($first), $second);
 
         foreach ($first as $i => $block) {
-            $this->assertSame($block->id, $second[$i]->id, "Block id at index $i");
-            $this->assertSame($block->kind, $second[$i]->kind, "Block kind at index $i");
-            $this->assertSame($block->text, $second[$i]->text, "Block text at index $i");
-            $this->assertSame($block->streaming, $second[$i]->streaming, "Block streaming at index $i");
-            $this->assertSame($block->collapsed, $second[$i]->collapsed, "Block collapsed at index $i");
-            $this->assertSame($block->meta, $second[$i]->meta, "Block meta at index $i");
-            $this->assertSame($block->seq, $second[$i]->seq, "Block seq at index $i");
+            self::assertSame($block->id, $second[$i]->id, "Block id at index $i");
+            self::assertSame($block->kind, $second[$i]->kind, "Block kind at index $i");
+            self::assertSame($block->text, $second[$i]->text, "Block text at index $i");
+            self::assertSame($block->streaming, $second[$i]->streaming, "Block streaming at index $i");
+            self::assertSame($block->collapsed, $second[$i]->collapsed, "Block collapsed at index $i");
+            self::assertSame($block->meta, $second[$i]->meta, "Block meta at index $i");
+            self::assertSame($block->seq, $second[$i]->seq, "Block seq at index $i");
         }
     }
 
@@ -1616,11 +1618,11 @@ final class TranscriptProjectorTest extends TestCase
 
         $blocks = $this->projector->blocks();
         // Streaming tool_call is removed by turn.cancelled; only user + cancel remain.
-        $this->assertCount(2, $blocks);
+        self::assertCount(2, $blocks);
 
         $cancelBlock = $blocks[1];
         // ID should contain the seq number
-        $this->assertStringContainsString((string) $cancelBlock->seq, $cancelBlock->id,
+        self::assertStringContainsString((string) $cancelBlock->seq, $cancelBlock->id,
             'Cancelled block ID suffix must match its own seq number');
     }
 
@@ -1636,13 +1638,13 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(2, $blocks);
+        self::assertCount(2, $blocks);
 
         $errorBlock = $blocks[1];
-        $this->assertSame(TranscriptBlockKindEnum::Error, $errorBlock->kind);
-        $this->assertStringContainsString('Run failed', $errorBlock->text);
-        $this->assertStringContainsString('CAS conflict exhausted', $errorBlock->text);
-        $this->assertSame('CAS conflict exhausted after 3 attempts', $errorBlock->meta['error']);
+        self::assertSame(TranscriptBlockKindEnum::Error, $errorBlock->kind);
+        self::assertStringContainsString('Run failed', $errorBlock->text);
+        self::assertStringContainsString('CAS conflict exhausted', $errorBlock->text);
+        self::assertSame('CAS conflict exhausted after 3 attempts', $errorBlock->meta['error']);
     }
 
     public function testRunFailedRemovesStreamingBlocks(): void
@@ -1655,8 +1657,8 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(1, $blocks, 'Should have one streaming block before run.failed');
-        $this->assertTrue($blocks[0]->streaming);
+        self::assertCount(1, $blocks, 'Should have one streaming block before run.failed');
+        self::assertTrue($blocks[0]->streaming);
 
         $this->accept('run.failed', [
             'reason' => 'failed',
@@ -1665,8 +1667,8 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(1, $blocks, 'Only the error block should remain; streaming block must be removed');
-        $this->assertSame(TranscriptBlockKindEnum::Error, $blocks[0]->kind);
+        self::assertCount(1, $blocks, 'Only the error block should remain; streaming block must be removed');
+        self::assertSame(TranscriptBlockKindEnum::Error, $blocks[0]->kind);
     }
 
     public function testRunCompletedCreatesNoBlock(): void
@@ -1676,8 +1678,8 @@ final class TranscriptProjectorTest extends TestCase
 
         $blocks = $this->projector->blocks();
         // Only the user message block; run.completed creates none.
-        $this->assertCount(1, $blocks);
-        $this->assertSame(TranscriptBlockKindEnum::UserMessage, $blocks[0]->kind);
+        self::assertCount(1, $blocks);
+        self::assertSame(TranscriptBlockKindEnum::UserMessage, $blocks[0]->kind);
     }
 
     public function testRunCompletedDoesNotClobberExistingBlocks(): void
@@ -1688,12 +1690,12 @@ final class TranscriptProjectorTest extends TestCase
         $this->accept('assistant.text_completed', ['message_id' => 'a1', 'block_id' => 'b1']);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(2, $blocks, 'User + finalized assistant block');
+        self::assertCount(2, $blocks, 'User + finalized assistant block');
 
         $this->accept('run.completed', ['reason' => 'completed']);
 
         $blocksAfter = $this->projector->blocks();
-        $this->assertCount(2, $blocksAfter, 'No extra blocks after run.completed');
+        self::assertCount(2, $blocksAfter, 'No extra blocks after run.completed');
     }
 
     // ── Model notification ─────────────────────────────────────────────────
@@ -1721,24 +1723,24 @@ final class TranscriptProjectorTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(1, $blocks);
+        self::assertCount(1, $blocks);
 
         $block = $blocks[0];
-        $this->assertSame(TranscriptBlockKindEnum::System, $block->kind);
+        self::assertSame(TranscriptBlockKindEnum::System, $block->kind);
 
         // Exact model-facing text is what the TUI shows — no paraphrase.
-        $this->assertStringStartsWith('[Output capped:', $block->text);
-        $this->assertStringContainsString('Saved full output', $block->text);
+        self::assertStringStartsWith('[Output capped:', $block->text);
+        self::assertStringContainsString('Saved full output', $block->text);
 
         // Severity drives TUI icon/color — no text-parsing from renderer.
-        $this->assertSame('warning', $block->meta['severity']);
-        $this->assertSame('output_cap', $block->meta['source']);
-        $this->assertSame('output_capped', $block->meta['kind']);
-        $this->assertSame('call-1', $block->meta['tool_call_id']);
+        self::assertSame('warning', $block->meta['severity']);
+        self::assertSame('output_cap', $block->meta['source']);
+        self::assertSame('output_capped', $block->meta['kind']);
+        self::assertSame('call-1', $block->meta['tool_call_id']);
 
         // Producer metadata is available for detail views.
-        $this->assertIsArray($block->meta['producer_metadata']);
-        $this->assertSame(100, $block->meta['producer_metadata']['cap']);
+        self::assertIsArray($block->meta['producer_metadata']);
+        self::assertSame(100, $block->meta['producer_metadata']['cap']);
     }
 
     public function testModelNotificationWithToolResultReplaceCompactsToolResult(): void
@@ -1752,9 +1754,9 @@ final class TranscriptProjectorTest extends TestCase
 
         // Verify the ToolResult block has the original text.
         $blocks = $this->projector->blocks();
-        $this->assertCount(1, $blocks);
-        $this->assertSame(TranscriptBlockKindEnum::ToolResult, $blocks[0]->kind);
-        $this->assertSame('Full raw output that should be replaced by the notification', $blocks[0]->text);
+        self::assertCount(1, $blocks);
+        self::assertSame(TranscriptBlockKindEnum::ToolResult, $blocks[0]->kind);
+        self::assertSame('Full raw output that should be replaced by the notification', $blocks[0]->text);
 
         // Now emit a model_notification with delivery=tool_result_replace
         // targeting the same tool_call_id.
@@ -1771,19 +1773,19 @@ final class TranscriptProjectorTest extends TestCase
 
         // Two blocks: the System notification and the compacted ToolResult.
         $blocks = $this->projector->blocks();
-        $this->assertCount(2, $blocks);
+        self::assertCount(2, $blocks);
 
         // Block 0: ToolResult (created first, compacted by notification).
-        $this->assertSame(TranscriptBlockKindEnum::ToolResult, $blocks[0]->kind);
-        $this->assertSame('read completed', $blocks[0]->text);
-        $this->assertTrue($blocks[0]->meta['compact_label'] ?? false, 'compact_label meta must be true');
+        self::assertSame(TranscriptBlockKindEnum::ToolResult, $blocks[0]->kind);
+        self::assertSame('read completed', $blocks[0]->text);
+        self::assertTrue($blocks[0]->meta['compact_label'] ?? false, 'compact_label meta must be true');
 
         // Block 1: System notification with exact text.
-        $this->assertSame(TranscriptBlockKindEnum::System, $blocks[1]->kind);
-        $this->assertStringStartsWith('[Output capped:', $blocks[1]->text);
-        $this->assertSame('warning', $blocks[1]->meta['severity']);
-        $this->assertSame('output_cap', $blocks[1]->meta['source']);
-        $this->assertSame('call-compact', $blocks[1]->meta['tool_call_id']);
+        self::assertSame(TranscriptBlockKindEnum::System, $blocks[1]->kind);
+        self::assertStringStartsWith('[Output capped:', $blocks[1]->text);
+        self::assertSame('warning', $blocks[1]->meta['severity']);
+        self::assertSame('output_cap', $blocks[1]->meta['source']);
+        self::assertSame('call-compact', $blocks[1]->meta['tool_call_id']);
     }
 
     public function testModelNotificationWithoutDeliveryDoesNotCompactToolResult(): void
@@ -1808,15 +1810,15 @@ final class TranscriptProjectorTest extends TestCase
 
         // Two blocks: ToolResult unchanged + System notification.
         $blocks = $this->projector->blocks();
-        $this->assertCount(2, $blocks);
+        self::assertCount(2, $blocks);
 
         // ToolResult must still have original text (not compacted).
-        $this->assertSame(TranscriptBlockKindEnum::ToolResult, $blocks[0]->kind);
-        $this->assertSame('Normal shell output that should remain visible', $blocks[0]->text);
+        self::assertSame(TranscriptBlockKindEnum::ToolResult, $blocks[0]->kind);
+        self::assertSame('Normal shell output that should remain visible', $blocks[0]->text);
 
         // System notification must be present.
-        $this->assertSame(TranscriptBlockKindEnum::System, $blocks[1]->kind);
-        $this->assertSame('Free-standing informational nudge', $blocks[1]->text);
+        self::assertSame(TranscriptBlockKindEnum::System, $blocks[1]->kind);
+        self::assertSame('Free-standing informational nudge', $blocks[1]->text);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

@@ -25,10 +25,10 @@ final class CompletionStateTest extends TestCase
     #[Test]
     public function startsClosed(): void
     {
-        $this->assertFalse($this->state->isOpen());
-        $this->assertNull($this->state->selected());
-        $this->assertSame([], $this->state->getSuggestions());
-        $this->assertSame(0, $this->state->getSelectedIndex());
+        self::assertFalse($this->state->isOpen());
+        self::assertNull($this->state->selected());
+        self::assertSame([], $this->state->getSuggestions());
+        self::assertSame(0, $this->state->getSelectedIndex());
     }
 
     #[Test]
@@ -38,11 +38,11 @@ final class CompletionStateTest extends TestCase
 
         $this->state->open($suggestions);
 
-        $this->assertTrue($this->state->isOpen());
-        $this->assertSame($suggestions, $this->state->getSuggestions());
-        $this->assertSame(0, $this->state->getSelectedIndex());
-        $this->assertNotNull($this->state->selected());
-        $this->assertSame('/help', $this->state->selected()->display);
+        self::assertTrue($this->state->isOpen());
+        self::assertSame($suggestions, $this->state->getSuggestions());
+        self::assertSame(0, $this->state->getSelectedIndex());
+        self::assertNotNull($this->state->selected());
+        self::assertSame('/help', $this->state->selected()->display);
     }
 
     #[Test]
@@ -50,8 +50,8 @@ final class CompletionStateTest extends TestCase
     {
         $this->state->open([]);
 
-        $this->assertFalse($this->state->isOpen());
-        $this->assertNull($this->state->selected());
+        self::assertFalse($this->state->isOpen());
+        self::assertNull($this->state->selected());
     }
 
     #[Test]
@@ -60,9 +60,9 @@ final class CompletionStateTest extends TestCase
         $this->state->open($this->createSuggestions(['/help']));
         $this->state->close();
 
-        $this->assertFalse($this->state->isOpen());
-        $this->assertNull($this->state->selected());
-        $this->assertSame([], $this->state->getSuggestions());
+        self::assertFalse($this->state->isOpen());
+        self::assertNull($this->state->selected());
+        self::assertSame([], $this->state->getSuggestions());
     }
 
     // ── Navigation ────────────────────────────────────────────────
@@ -73,17 +73,17 @@ final class CompletionStateTest extends TestCase
         $this->state->open($this->createSuggestions(['/help', '/exit', '/clear']));
 
         // First item selected (index 0)
-        $this->assertSame('/help', $this->state->selected()->display);
+        self::assertSame('/help', $this->state->selected()->display);
 
         $this->state->moveNext();
-        $this->assertSame('/exit', $this->state->selected()->display);
+        self::assertSame('/exit', $this->state->selected()->display);
 
         $this->state->moveNext();
-        $this->assertSame('/clear', $this->state->selected()->display);
+        self::assertSame('/clear', $this->state->selected()->display);
 
         // Wrap around to first
         $this->state->moveNext();
-        $this->assertSame('/help', $this->state->selected()->display);
+        self::assertSame('/help', $this->state->selected()->display);
     }
 
     #[Test]
@@ -93,13 +93,13 @@ final class CompletionStateTest extends TestCase
 
         // First item selected, previous wraps to last
         $this->state->movePrevious();
-        $this->assertSame('/clear', $this->state->selected()->display);
+        self::assertSame('/clear', $this->state->selected()->display);
 
         $this->state->movePrevious();
-        $this->assertSame('/exit', $this->state->selected()->display);
+        self::assertSame('/exit', $this->state->selected()->display);
 
         $this->state->movePrevious();
-        $this->assertSame('/help', $this->state->selected()->display);
+        self::assertSame('/help', $this->state->selected()->display);
     }
 
     #[Test]
@@ -107,8 +107,8 @@ final class CompletionStateTest extends TestCase
     {
         $this->state->moveNext();
 
-        $this->assertFalse($this->state->isOpen());
-        $this->assertSame(0, $this->state->getSelectedIndex());
+        self::assertFalse($this->state->isOpen());
+        self::assertSame(0, $this->state->getSelectedIndex());
     }
 
     #[Test]
@@ -116,8 +116,8 @@ final class CompletionStateTest extends TestCase
     {
         $this->state->movePrevious();
 
-        $this->assertFalse($this->state->isOpen());
-        $this->assertSame(0, $this->state->getSelectedIndex());
+        self::assertFalse($this->state->isOpen());
+        self::assertSame(0, $this->state->getSelectedIndex());
     }
 
     #[Test]
@@ -126,10 +126,10 @@ final class CompletionStateTest extends TestCase
         $this->state->open($this->createSuggestions(['/only']));
 
         $this->state->moveNext();
-        $this->assertSame('/only', $this->state->selected()->display);
+        self::assertSame('/only', $this->state->selected()->display);
 
         $this->state->movePrevious();
-        $this->assertSame('/only', $this->state->selected()->display);
+        self::assertSame('/only', $this->state->selected()->display);
     }
 
     // ── Accept ────────────────────────────────────────────────────
@@ -142,14 +142,14 @@ final class CompletionStateTest extends TestCase
 
         $accepted = $this->state->acceptSelected();
 
-        $this->assertNotNull($accepted);
-        $this->assertSame('/help', $accepted->display);
+        self::assertNotNull($accepted);
+        self::assertSame('/help', $accepted->display);
     }
 
     #[Test]
     public function acceptSelectedReturnsNullWhenClosed(): void
     {
-        $this->assertNull($this->state->acceptSelected());
+        self::assertNull($this->state->acceptSelected());
     }
 
     #[Test]
@@ -161,7 +161,7 @@ final class CompletionStateTest extends TestCase
         $this->state->moveNext(); // index 2: /clear
 
         $accepted = $this->state->acceptSelected();
-        $this->assertSame('/clear', $accepted->display);
+        self::assertSame('/clear', $accepted->display);
     }
 
     // ── Re-open ───────────────────────────────────────────────────
@@ -171,15 +171,15 @@ final class CompletionStateTest extends TestCase
     {
         $this->state->open($this->createSuggestions(['/help', '/exit']));
         $this->state->moveNext(); // Select /exit
-        $this->assertSame('/exit', $this->state->selected()->display);
+        self::assertSame('/exit', $this->state->selected()->display);
 
         $this->state->close();
-        $this->assertFalse($this->state->isOpen());
+        self::assertFalse($this->state->isOpen());
 
         $this->state->open($this->createSuggestions(['/clear', '/model']));
-        $this->assertTrue($this->state->isOpen());
-        $this->assertSame(0, $this->state->getSelectedIndex());
-        $this->assertSame('/clear', $this->state->selected()->display);
+        self::assertTrue($this->state->isOpen());
+        self::assertSame(0, $this->state->getSelectedIndex());
+        self::assertSame('/clear', $this->state->selected()->display);
     }
 
     // ── Helpers ────────────────────────────────────────────────────

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Symfony\AI\Platform\Bridge\OpenAICodex\Tests;
 
+use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Bridge\OpenAICodex\ResultConverter;
 use Symfony\AI\Platform\Exception\AuthenticationException;
@@ -27,7 +28,6 @@ use Symfony\AI\Platform\Result\ToolCallResult;
 use Symfony\AI\Platform\TokenUsage\TokenUsage;
 use Symfony\Contracts\HttpClient\Exception\ClientExceptionInterface;
 use Symfony\Contracts\HttpClient\ResponseInterface;
-use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 
 #[AllowMockObjectsWithoutExpectations]
 final class ResultConverterTest extends TestCase
@@ -51,8 +51,8 @@ final class ResultConverterTest extends TestCase
 
         $result = $converter->convert(new RawHttpResult($httpResponse));
 
-        $this->assertInstanceOf(TextResult::class, $result);
-        $this->assertSame('Hello world', $result->getContent());
+        self::assertInstanceOf(TextResult::class, $result);
+        self::assertSame('Hello world', $result->getContent());
     }
 
     public function testConvertToolCallResult(): void
@@ -72,12 +72,12 @@ final class ResultConverterTest extends TestCase
 
         $result = $converter->convert(new RawHttpResult($httpResponse));
 
-        $this->assertInstanceOf(ToolCallResult::class, $result);
+        self::assertInstanceOf(ToolCallResult::class, $result);
         $toolCalls = $result->getContent();
-        $this->assertCount(1, $toolCalls);
-        $this->assertSame('call_123', $toolCalls[0]->getId());
-        $this->assertSame('test_function', $toolCalls[0]->getName());
-        $this->assertSame(['arg1' => 'value1'], $toolCalls[0]->getArguments());
+        self::assertCount(1, $toolCalls);
+        self::assertSame('call_123', $toolCalls[0]->getId());
+        self::assertSame('test_function', $toolCalls[0]->getName());
+        self::assertSame(['arg1' => 'value1'], $toolCalls[0]->getArguments());
     }
 
     public function testConvertMultipleMessagesIntoMultiPartResult(): void
@@ -107,11 +107,11 @@ final class ResultConverterTest extends TestCase
 
         $result = $converter->convert(new RawHttpResult($httpResponse));
 
-        $this->assertInstanceOf(MultiPartResult::class, $result);
+        self::assertInstanceOf(MultiPartResult::class, $result);
         $output = $result->getContent();
-        $this->assertCount(2, $output);
-        $this->assertSame('Part 1', $output[0]->getContent());
-        $this->assertSame('Part 2', $output[1]->getContent());
+        self::assertCount(2, $output);
+        self::assertSame('Part 1', $output[0]->getContent());
+        self::assertSame('Part 2', $output[1]->getContent());
     }
 
     public function testConvertReasoningPlusMessageIntoMultiPartResult(): void
@@ -141,13 +141,13 @@ final class ResultConverterTest extends TestCase
 
         $result = $converter->convert(new RawHttpResult($httpResponse));
 
-        $this->assertInstanceOf(MultiPartResult::class, $result);
+        self::assertInstanceOf(MultiPartResult::class, $result);
         $parts = $result->getContent();
-        $this->assertCount(2, $parts);
-        $this->assertInstanceOf(ThinkingResult::class, $parts[0]);
-        $this->assertSame('Let me work through this.', $parts[0]->getContent());
-        $this->assertInstanceOf(TextResult::class, $parts[1]);
-        $this->assertSame('{"answer": 42}', $parts[1]->getContent());
+        self::assertCount(2, $parts);
+        self::assertInstanceOf(ThinkingResult::class, $parts[0]);
+        self::assertSame('Let me work through this.', $parts[0]->getContent());
+        self::assertInstanceOf(TextResult::class, $parts[1]);
+        self::assertSame('{"answer": 42}', $parts[1]->getContent());
     }
 
     public function testConvertReasoningEmitsOneThinkingResultPerSummaryChunk(): void
@@ -178,15 +178,15 @@ final class ResultConverterTest extends TestCase
 
         $result = $converter->convert(new RawHttpResult($httpResponse));
 
-        $this->assertInstanceOf(MultiPartResult::class, $result);
+        self::assertInstanceOf(MultiPartResult::class, $result);
         $parts = $result->getContent();
-        $this->assertCount(3, $parts);
-        $this->assertInstanceOf(ThinkingResult::class, $parts[0]);
-        $this->assertSame('First, I subtract 7.', $parts[0]->getContent());
-        $this->assertInstanceOf(ThinkingResult::class, $parts[1]);
-        $this->assertSame('Then I divide by 8.', $parts[1]->getContent());
-        $this->assertInstanceOf(TextResult::class, $parts[2]);
-        $this->assertSame('x = -3.75', $parts[2]->getContent());
+        self::assertCount(3, $parts);
+        self::assertInstanceOf(ThinkingResult::class, $parts[0]);
+        self::assertSame('First, I subtract 7.', $parts[0]->getContent());
+        self::assertInstanceOf(ThinkingResult::class, $parts[1]);
+        self::assertSame('Then I divide by 8.', $parts[1]->getContent());
+        self::assertInstanceOf(TextResult::class, $parts[2]);
+        self::assertSame('x = -3.75', $parts[2]->getContent());
     }
 
     public function testConvertReasoningWithoutSummaryIsDropped(): void
@@ -214,8 +214,8 @@ final class ResultConverterTest extends TestCase
 
         $result = $converter->convert(new RawHttpResult($httpResponse));
 
-        $this->assertInstanceOf(TextResult::class, $result);
-        $this->assertSame('final', $result->getContent());
+        self::assertInstanceOf(TextResult::class, $result);
+        self::assertSame('final', $result->getContent());
     }
 
     public function testConvertRefusalResult(): void
@@ -237,9 +237,9 @@ final class ResultConverterTest extends TestCase
 
         $result = $converter->convert(new RawHttpResult($httpResponse));
 
-        $this->assertInstanceOf(TextResult::class, $result);
-        $this->assertStringContainsString('refused to generate', $result->getContent());
-        $this->assertStringContainsString('I cannot help with that request.', $result->getContent());
+        self::assertInstanceOf(TextResult::class, $result);
+        self::assertStringContainsString('refused to generate', $result->getContent());
+        self::assertStringContainsString('I cannot help with that request.', $result->getContent());
     }
 
     public function testContentFilterException(): void
@@ -247,7 +247,7 @@ final class ResultConverterTest extends TestCase
         $converter = new ResultConverter();
         $httpResponse = $this->createMock(ResponseInterface::class);
 
-        $httpResponse->expects($this->exactly(1))
+        $httpResponse->expects(self::exactly(1))
             ->method('toArray')
             ->willReturnCallback(static function ($throw = true) {
                 if ($throw) {
@@ -428,24 +428,24 @@ final class ResultConverterTest extends TestCase
 
         $streamResult = $converter->convert($raw, ['stream' => true]);
 
-        $this->assertInstanceOf(StreamResult::class, $streamResult);
+        self::assertInstanceOf(StreamResult::class, $streamResult);
 
         $chunks = [];
         foreach ($streamResult->getContent() as $part) {
             $chunks[] = $part;
         }
 
-        $this->assertInstanceOf(TextDelta::class, $chunks[0]);
-        $this->assertSame('Hello', $chunks[0]->getText());
-        $this->assertInstanceOf(TextDelta::class, $chunks[1]);
-        $this->assertSame(' world', $chunks[1]->getText());
+        self::assertInstanceOf(TextDelta::class, $chunks[0]);
+        self::assertSame('Hello', $chunks[0]->getText());
+        self::assertInstanceOf(TextDelta::class, $chunks[1]);
+        self::assertSame(' world', $chunks[1]->getText());
 
-        $this->assertInstanceOf(TokenUsage::class, $chunks[2]);
-        $this->assertSame(11, $chunks[2]->getPromptTokens());
-        $this->assertSame(7, $chunks[2]->getCompletionTokens());
-        $this->assertSame(2, $chunks[2]->getThinkingTokens());
-        $this->assertSame(3, $chunks[2]->getCachedTokens());
-        $this->assertSame(18, $chunks[2]->getTotalTokens());
+        self::assertInstanceOf(TokenUsage::class, $chunks[2]);
+        self::assertSame(11, $chunks[2]->getPromptTokens());
+        self::assertSame(7, $chunks[2]->getCompletionTokens());
+        self::assertSame(2, $chunks[2]->getThinkingTokens());
+        self::assertSame(3, $chunks[2]->getCachedTokens());
+        self::assertSame(18, $chunks[2]->getTotalTokens());
     }
 
     public function testStreamWithToolCalls(): void
@@ -501,27 +501,27 @@ final class ResultConverterTest extends TestCase
 
         $streamResult = $converter->convert($raw, ['stream' => true]);
 
-        $this->assertInstanceOf(StreamResult::class, $streamResult);
+        self::assertInstanceOf(StreamResult::class, $streamResult);
 
         $chunks = [];
         foreach ($streamResult->getContent() as $part) {
             $chunks[] = $part;
         }
 
-        $this->assertCount(1, $chunks);
-        $this->assertInstanceOf(ToolCallComplete::class, $chunks[0]);
+        self::assertCount(1, $chunks);
+        self::assertInstanceOf(ToolCallComplete::class, $chunks[0]);
         $toolCalls = $chunks[0]->getToolCalls();
-        $this->assertCount(1, $toolCalls);
-        $this->assertSame('call_456', $toolCalls[0]->getId());
-        $this->assertSame('get_weather', $toolCalls[0]->getName());
-        $this->assertSame(['city' => 'Berlin'], $toolCalls[0]->getArguments());
+        self::assertCount(1, $toolCalls);
+        self::assertSame('call_456', $toolCalls[0]->getId());
+        self::assertSame('get_weather', $toolCalls[0]->getName());
+        self::assertSame(['city' => 'Berlin'], $toolCalls[0]->getArguments());
     }
 
     public function testStreamWithReasoningContent(): void
     {
         $converter = new ResultConverter();
 
-        $httpResponse = $this->createStub(ResponseInterface::class);
+        $httpResponse = self::createStub(ResponseInterface::class);
         $httpResponse->method('getStatusCode')->willReturn(200);
 
         $events = [
@@ -552,20 +552,20 @@ final class ResultConverterTest extends TestCase
 
         $streamResult = $converter->convert($raw, ['stream' => true]);
 
-        $this->assertInstanceOf(StreamResult::class, $streamResult);
+        self::assertInstanceOf(StreamResult::class, $streamResult);
 
         $chunks = iterator_to_array($streamResult->getContent());
 
-        $this->assertCount(5, $chunks);
-        $this->assertInstanceOf(ThinkingStart::class, $chunks[0]);
-        $this->assertInstanceOf(ThinkingDelta::class, $chunks[1]);
-        $this->assertSame('Let me think', $chunks[1]->getThinking());
-        $this->assertInstanceOf(ThinkingDelta::class, $chunks[2]);
-        $this->assertSame(' about this...', $chunks[2]->getThinking());
-        $this->assertInstanceOf(ThinkingComplete::class, $chunks[3]);
-        $this->assertSame('Let me think about this...', $chunks[3]->getThinking());
-        $this->assertInstanceOf(TextDelta::class, $chunks[4]);
-        $this->assertSame('The answer is 42.', $chunks[4]->getText());
+        self::assertCount(5, $chunks);
+        self::assertInstanceOf(ThinkingStart::class, $chunks[0]);
+        self::assertInstanceOf(ThinkingDelta::class, $chunks[1]);
+        self::assertSame('Let me think', $chunks[1]->getThinking());
+        self::assertInstanceOf(ThinkingDelta::class, $chunks[2]);
+        self::assertSame(' about this...', $chunks[2]->getThinking());
+        self::assertInstanceOf(ThinkingComplete::class, $chunks[3]);
+        self::assertSame('Let me think about this...', $chunks[3]->getThinking());
+        self::assertInstanceOf(TextDelta::class, $chunks[4]);
+        self::assertSame('The answer is 42.', $chunks[4]->getText());
     }
 
     public function testThrowsBadRequestWithCodeTypeParamOnStructuredError(): void

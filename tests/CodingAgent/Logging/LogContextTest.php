@@ -23,35 +23,35 @@ final class LogContextTest extends TestCase
     public function testDelegatesToRunLogContext(): void
     {
         LogContext::enter(['run_id' => 'run-1', 'component' => 'test']);
-        $this->assertSame('run-1', RunLogContext::current()['run_id']);
-        $this->assertSame('test', RunLogContext::current()['component']);
+        self::assertSame('run-1', RunLogContext::current()['run_id']);
+        self::assertSame('test', RunLogContext::current()['component']);
 
         LogContext::leave();
-        $this->assertSame([], RunLogContext::current());
+        self::assertSame([], RunLogContext::current());
     }
 
     public function testScopedDelegation(): void
     {
         $result = LogContext::scoped(
             ['run_id' => 'run-1'],
-            fn (): string => 'ok',
+            static fn (): string => 'ok',
         );
 
-        $this->assertSame('ok', $result);
-        $this->assertSame([], RunLogContext::current());
+        self::assertSame('ok', $result);
+        self::assertSame([], RunLogContext::current());
     }
 
     public function testReset(): void
     {
         LogContext::enter(['run_id' => 'run-1']);
         LogContext::reset();
-        $this->assertSame([], RunLogContext::current());
+        self::assertSame([], RunLogContext::current());
     }
 
     public function testCurrentReturnsSameAsRunLogContext(): void
     {
         RunLogContext::enter(['run_id' => 'run-1']);
-        $this->assertSame(LogContext::current(), RunLogContext::current());
+        self::assertSame(LogContext::current(), RunLogContext::current());
         RunLogContext::leave();
     }
 }

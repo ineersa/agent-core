@@ -17,7 +17,6 @@ use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Application\Pipeline\LlmStepResultHandler;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
-
 use Ineersa\AgentCore\Application\Pipeline\RunOrchestrator;
 use Ineersa\AgentCore\Application\Pipeline\StartRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
@@ -74,7 +73,7 @@ final class CommandMailboxPolicyTest extends TestCase
         ));
 
         $state = $fixture->runStore->get($runId);
-        $this->assertNotNull($state);
+        self::assertNotNull($state);
 
         $userMessages = array_values(array_filter(
             $state->messages,
@@ -82,8 +81,8 @@ final class CommandMailboxPolicyTest extends TestCase
                 && 'user' === $message->role,
         ));
 
-        $this->assertCount(2, $userMessages);
-        $this->assertSame('latest steer', $userMessages[1]->content[0]['text']);
+        self::assertCount(2, $userMessages);
+        self::assertSame('latest steer', $userMessages[1]->content[0]['text']);
 
         $events = $fixture->eventStore->allFor($runId);
 
@@ -98,8 +97,8 @@ final class CommandMailboxPolicyTest extends TestCase
                 && 'steer-2' === ($event->payload['idempotency_key'] ?? null),
         ));
 
-        $this->assertCount(1, $superseded);
-        $this->assertCount(1, $applied);
+        self::assertCount(1, $superseded);
+        self::assertCount(1, $applied);
     }
 
     public function testQueueCapRejectsNonCancelCommands(): void
@@ -129,8 +128,8 @@ final class CommandMailboxPolicyTest extends TestCase
                 && 'cap-follow-up-1' === ($event->payload['idempotency_key'] ?? null),
         ));
 
-        $this->assertCount(1, $rejections);
-        $this->assertStringContainsString('mailbox cap', (string) $rejections[0]->payload['reason']);
+        self::assertCount(1, $rejections);
+        self::assertStringContainsString('mailbox cap', (string) $rejections[0]->payload['reason']);
     }
 
     public function testContinueIsRejectedWhenCancellationAlreadyInProgress(): void
@@ -185,11 +184,11 @@ final class CommandMailboxPolicyTest extends TestCase
                 && 'continue-1' === ($event->payload['idempotency_key'] ?? null),
         ));
 
-        $this->assertCount(1, $continueRejections);
+        self::assertCount(1, $continueRejections);
 
         $state = $fixture->runStore->get($runId);
-        $this->assertNotNull($state);
-        $this->assertSame(RunStatus::Cancelling, $state->status);
+        self::assertNotNull($state);
+        self::assertSame(RunStatus::Cancelling, $state->status);
     }
 
     public function testContinueSchedulesAdvanceForRetryableFailureWithValidLastRole(): void
@@ -229,15 +228,15 @@ final class CommandMailboxPolicyTest extends TestCase
         ));
 
         $state = $fixture->runStore->get($runId);
-        $this->assertNotNull($state);
-        $this->assertSame(RunStatus::Running, $state->status);
+        self::assertNotNull($state);
+        self::assertSame(RunStatus::Running, $state->status);
 
         $advanceCommands = array_values(array_filter(
             $fixture->commandBus->messages,
             static fn (object $message): bool => $message instanceof AdvanceRun,
         ));
 
-        $this->assertCount(1, $advanceCommands);
+        self::assertCount(1, $advanceCommands);
     }
 
     public function testStopBoundaryReturnsShouldContinueTrueWhenFollowUpApplied(): void
@@ -284,9 +283,9 @@ final class CommandMailboxPolicyTest extends TestCase
         ));
 
         $state = $fixture->runStore->get($runId);
-        $this->assertNotNull($state);
+        self::assertNotNull($state);
         // shouldContinue=true keeps the run Running
-        $this->assertSame(RunStatus::Running, $state->status);
+        self::assertSame(RunStatus::Running, $state->status);
 
         $events = $fixture->eventStore->allFor($runId);
         $appliedFollowUp = array_values(array_filter(
@@ -294,7 +293,7 @@ final class CommandMailboxPolicyTest extends TestCase
             static fn (\Ineersa\AgentCore\Domain\Event\RunEvent $event): bool => 'agent_command_applied' === $event->type
                 && 'follow-up-1' === ($event->payload['idempotency_key'] ?? null),
         ));
-        $this->assertCount(1, $appliedFollowUp);
+        self::assertCount(1, $appliedFollowUp);
 
         // shouldContinue should have dispatched a follow-up AdvanceRun
         $advanceCommands = array_values(array_filter(
@@ -303,7 +302,7 @@ final class CommandMailboxPolicyTest extends TestCase
         ));
         // Only one from stop-boundary shouldContinue (ApplyCommandHandler no
         // longer dispatches AdvanceRun while the run is active).
-        $this->assertCount(1, $advanceCommands);
+        self::assertCount(1, $advanceCommands);
     }
 
     public function testStopBoundaryReturnsShouldContinueTrueWhenSteerApplied(): void
@@ -338,9 +337,9 @@ final class CommandMailboxPolicyTest extends TestCase
         ));
 
         $state = $fixture->runStore->get($runId);
-        $this->assertNotNull($state);
+        self::assertNotNull($state);
         // shouldContinue=true keeps the run Running
-        $this->assertSame(RunStatus::Running, $state->status, 'Run should remain Running after steer at stop boundary');
+        self::assertSame(RunStatus::Running, $state->status, 'Run should remain Running after steer at stop boundary');
 
         // Verify steer command was applied
         $events = $fixture->eventStore->allFor($runId);
@@ -349,7 +348,7 @@ final class CommandMailboxPolicyTest extends TestCase
             static fn (\Ineersa\AgentCore\Domain\Event\RunEvent $event): bool => 'agent_command_applied' === $event->type
                 && 'stop-steer-1' === ($event->payload['idempotency_key'] ?? null),
         ));
-        $this->assertCount(1, $appliedSteer);
+        self::assertCount(1, $appliedSteer);
 
         // Verify follow-up AdvanceRun was dispatched
         $advanceCommands = array_values(array_filter(
@@ -358,7 +357,7 @@ final class CommandMailboxPolicyTest extends TestCase
         ));
         // Only one from stop-boundary shouldContinue (ApplyCommandHandler no
         // longer dispatches AdvanceRun while the run is active).
-        $this->assertCount(1, $advanceCommands);
+        self::assertCount(1, $advanceCommands);
     }
 
     public function testStopBoundaryReturnsFalseWhenNoCommandsPending(): void
@@ -391,16 +390,16 @@ final class CommandMailboxPolicyTest extends TestCase
         ));
 
         $state = $fixture->runStore->get($runId);
-        $this->assertNotNull($state);
+        self::assertNotNull($state);
         // shouldContinue=false should complete the run
-        $this->assertSame(RunStatus::Completed, $state->status);
+        self::assertSame(RunStatus::Completed, $state->status);
 
         // No follow-up AdvanceRun should have been dispatched
         $advanceCommands = array_values(array_filter(
             $fixture->commandBus->messages,
             static fn (object $message): bool => $message instanceof AdvanceRun,
         ));
-        $this->assertCount(0, $advanceCommands);
+        self::assertCount(0, $advanceCommands);
     }
 
     private function createFixture(int $maxPendingCommands = 100, string $steerDrainMode = 'one_at_a_time'): CommandMailboxFixture
@@ -558,4 +557,3 @@ final readonly class CommandMailboxFixture
     ) {
     }
 }
-

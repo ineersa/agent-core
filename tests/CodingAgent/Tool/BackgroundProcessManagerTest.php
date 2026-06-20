@@ -62,16 +62,16 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->createManager();
         $result = $this->manager->start('echo "hello"', self::TEST_SESSION);
 
-        $this->assertInstanceOf(StartResult::class, $result);
-        $this->assertGreaterThan(0, $result->id);
-        $this->assertGreaterThan(0, $result->pid);
+        self::assertInstanceOf(StartResult::class, $result);
+        self::assertGreaterThan(0, $result->id);
+        self::assertGreaterThan(0, $result->pid);
         if (null !== $result->pgid) {
-            $this->assertGreaterThan(0, $result->pgid);
-            $this->assertSame($result->pid, $result->pgid);
+            self::assertGreaterThan(0, $result->pgid);
+            self::assertSame($result->pid, $result->pgid);
         }
-        $this->assertSame('running', $result->status);
-        $this->assertStringContainsString(self::TEST_SESSION, $result->sessionId);
-        $this->assertFileExists($result->logPath);
+        self::assertSame('running', $result->status);
+        self::assertStringContainsString(self::TEST_SESSION, $result->sessionId);
+        self::assertFileExists($result->logPath);
 
         $this->manager->shutdownCleanup();
     }
@@ -88,13 +88,13 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
 
         $entities = $this->manager->list();
 
-        $this->assertCount(2, $entities);
+        self::assertCount(2, $entities);
 
         usort($entities, static fn (BackgroundProcess $a, BackgroundProcess $b): int => $a->pid <=> $b->pid);
 
-        $this->assertSame('running', $entities[0]->status->value);
-        $this->assertSame('finished', $entities[1]->status->value);
-        $this->assertSame(0, $entities[1]->exitCode);
+        self::assertSame('running', $entities[0]->status->value);
+        self::assertSame('finished', $entities[1]->status->value);
+        self::assertSame(0, $entities[1]->exitCode);
 
         $this->manager->shutdownCleanup();
     }
@@ -110,11 +110,11 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
 
         $logResult = $this->manager->readLogTail($result->pid);
 
-        $this->assertInstanceOf(LogTailResult::class, $logResult);
-        $this->assertSame($result->pid, $logResult->pid);
-        $this->assertFalse($logResult->truncated);
-        $this->assertStringContainsString('line1', $logResult->content);
-        $this->assertStringContainsString('line2', $logResult->content);
+        self::assertInstanceOf(LogTailResult::class, $logResult);
+        self::assertSame($result->pid, $logResult->pid);
+        self::assertFalse($logResult->truncated);
+        self::assertStringContainsString('line1', $logResult->content);
+        self::assertStringContainsString('line2', $logResult->content);
 
         $this->manager->shutdownCleanup();
     }
@@ -148,12 +148,12 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
 
         $stopResult = $this->manager->stop($result->pid);
 
-        $this->assertInstanceOf(StopResult::class, $stopResult);
-        $this->assertTrue($stopResult->stoppedByUser);
-        $this->assertFalse($stopResult->alreadyFinished);
-        $this->assertSame('term', $stopResult->signalSent);
-        $this->assertFileExists($sentinel);
-        $this->assertStringContainsString('term_received', file_get_contents($sentinel));
+        self::assertInstanceOf(StopResult::class, $stopResult);
+        self::assertTrue($stopResult->stoppedByUser);
+        self::assertFalse($stopResult->alreadyFinished);
+        self::assertSame('term', $stopResult->signalSent);
+        self::assertFileExists($sentinel);
+        self::assertStringContainsString('term_received', file_get_contents($sentinel));
     }
 
     public function testStopEscalatesToKill(): void
@@ -163,9 +163,9 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
 
         $stopResult = $this->manager->stop($result->pid);
 
-        $this->assertTrue($stopResult->stoppedByUser);
-        $this->assertFalse($stopResult->alreadyFinished);
-        $this->assertSame('term+kill', $stopResult->signalSent);
+        self::assertTrue($stopResult->stoppedByUser);
+        self::assertFalse($stopResult->alreadyFinished);
+        self::assertSame('term+kill', $stopResult->signalSent);
     }
 
     public function testStopOnAlreadyFinishedProcess(): void
@@ -177,8 +177,8 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
 
         $stopResult = $this->manager->stop($result->pid);
 
-        $this->assertTrue($stopResult->alreadyFinished);
-        $this->assertFalse($stopResult->stoppedByUser);
+        self::assertTrue($stopResult->alreadyFinished);
+        self::assertFalse($stopResult->stoppedByUser);
     }
 
     public function testStopThrowsOnUnknownPid(): void
@@ -201,10 +201,10 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         usleep(200_000);
 
         $count = $this->manager->cleanupStale();
-        $this->assertSame(1, $count);
+        self::assertSame(1, $count);
 
-        $this->assertFileDoesNotExist($result->logPath);
-        $this->assertCount(0, $this->manager->list());
+        self::assertFileDoesNotExist($result->logPath);
+        self::assertCount(0, $this->manager->list());
     }
 
     /* ── shutdownCleanup() ── */
@@ -216,17 +216,17 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
 
         $count = $this->manager->shutdownCleanup();
 
-        $this->assertSame(1, $count);
+        self::assertSame(1, $count);
 
         foreach ($this->manager->list() as $p) {
-            $this->assertNotNull($p->finishedAt);
+            self::assertNotNull($p->finishedAt);
         }
     }
 
     public function testShutdownCleanupWithNoRunningProcesses(): void
     {
         $this->createManager();
-        $this->assertSame(0, $this->manager->shutdownCleanup());
+        self::assertSame(0, $this->manager->shutdownCleanup());
     }
 
     /* ── Session scoping ── */
@@ -240,10 +240,10 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         usleep(200_000);
 
         $sessionA = $this->manager->list('session-A');
-        $this->assertCount(1, $sessionA);
-        $this->assertSame('session-A', $sessionA[0]->sessionId);
+        self::assertCount(1, $sessionA);
+        self::assertSame('session-A', $sessionA[0]->sessionId);
 
-        $this->assertCount(2, $this->manager->list());
+        self::assertCount(2, $this->manager->list());
 
         $this->manager->shutdownCleanup();
     }

@@ -18,11 +18,6 @@ final class WriteFileToolE2eTest extends ControllerE2eTestCase
 {
     private string $targetPath;
 
-    protected function tempDirPrefix(): string
-    {
-        return 'test-write-file';
-    }
-
     protected function setUp(): void
     {
         parent::setUp();
@@ -87,5 +82,10 @@ final class WriteFileToolE2eTest extends ControllerE2eTestCase
 
         $sessionDir = $this->tempDir.'/.hatfield/sessions/'.$this->runId;
         $this->assertSessionArtifactsExist($sessionDir, $events);
+    }
+
+    protected function tempDirPrefix(): string
+    {
+        return 'test-write-file';
     }
 }

@@ -15,7 +15,7 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(RuntimeEvent::class)]
 final class JsonlCodecTest extends TestCase
 {
-    public function test_encode_and_decode_command(): void
+    public function testEncodeAndDecodeCommand(): void
     {
         $command = new RuntimeCommand(
             id: 'cmd_1',
@@ -32,7 +32,7 @@ final class JsonlCodecTest extends TestCase
         self::assertSame('Hello', $decoded->payload['prompt']);
     }
 
-    public function test_encode_and_decode_event(): void
+    public function testEncodeAndDecodeEvent(): void
     {
         $event = new RuntimeEvent(
             type: 'message_delta',
@@ -51,7 +51,7 @@ final class JsonlCodecTest extends TestCase
         self::assertSame('Hello world', $decoded->payload['text']);
     }
 
-    public function test_encode_roundtrip_preserves_all_fields(): void
+    public function testEncodeRoundtripPreservesAllFields(): void
     {
         $event = new RuntimeEvent(
             type: 'run_started',
@@ -70,7 +70,7 @@ final class JsonlCodecTest extends TestCase
         self::assertSame($event->payload, $decoded->payload);
     }
 
-    public function test_decode_command_with_runId(): void
+    public function testDecodeCommandWithRunId(): void
     {
         $line = "{\"v\":1,\"id\":\"cmd_2\",\"type\":\"user_message\",\"runId\":\"run_123\",\"payload\":{\"text\":\"Hi\"}}\n";
         $command = JsonlCodec::decodeCommand($line);
@@ -81,7 +81,7 @@ final class JsonlCodecTest extends TestCase
         self::assertSame('Hi', $command->payload['text']);
     }
 
-    public function test_decode_event_without_newline(): void
+    public function testDecodeEventWithoutNewline(): void
     {
         $line = '{"v":1,"type":"run_finished","runId":"run_123","seq":99,"payload":{}}';
         $event = JsonlCodec::decodeEvent($line);
@@ -91,27 +91,27 @@ final class JsonlCodecTest extends TestCase
         self::assertSame(99, $event->seq);
     }
 
-    public function test_decode_empty_line_throws(): void
+    public function testDecodeEmptyLineThrows(): void
     {
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Empty line');
         JsonlCodec::decodeEvent('');
     }
 
-    public function test_decode_whitespace_line_throws(): void
+    public function testDecodeWhitespaceLineThrows(): void
     {
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Empty line');
         JsonlCodec::decodeEvent("   \n");
     }
 
-    public function test_decode_invalid_json_throws(): void
+    public function testDecodeInvalidJsonThrows(): void
     {
         $this->expectException(\JsonException::class);
         JsonlCodec::decodeEvent("not json\n");
     }
 
-    public function test_command_with_null_runId(): void
+    public function testCommandWithNullRunId(): void
     {
         $command = new RuntimeCommand(
             id: 'cmd_3',

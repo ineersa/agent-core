@@ -16,12 +16,12 @@ final class ApprovalSessionTrackerTest extends TestCase
     public function testMarkPendingAndApproveByQuestionId(): void
     {
         $tracker = new ApprovalSessionTracker();
-        $this->assertFalse($tracker->isApproved('bash:rm -rf /tmp'));
+        self::assertFalse($tracker->isApproved('bash:rm -rf /tmp'));
 
         $tracker->markPending('q-1', 'bash:rm -rf /tmp');
         $tracker->approveByQuestionId('q-1');
 
-        $this->assertTrue($tracker->isApproved('bash:rm -rf /tmp'));
+        self::assertTrue($tracker->isApproved('bash:rm -rf /tmp'));
     }
 
     public function testApproveByQuestionIdForUnknownQuestionIsNoop(): void
@@ -29,37 +29,37 @@ final class ApprovalSessionTrackerTest extends TestCase
         $tracker = new ApprovalSessionTracker();
         $tracker->approveByQuestionId('nonexistent');
         // No error, nothing approved
-        $this->assertFalse($tracker->isApproved('key1'));
+        self::assertFalse($tracker->isApproved('key1'));
     }
 
     public function testApproveAndConsume(): void
     {
         $tracker = new ApprovalSessionTracker();
 
-        $this->assertFalse($tracker->isApproved('bash:rm -rf /tmp'));
-        $this->assertFalse($tracker->consumeApproval('bash:rm -rf /tmp'));
+        self::assertFalse($tracker->isApproved('bash:rm -rf /tmp'));
+        self::assertFalse($tracker->consumeApproval('bash:rm -rf /tmp'));
 
         $tracker->approve('bash:rm -rf /tmp');
-        $this->assertTrue($tracker->isApproved('bash:rm -rf /tmp'));
+        self::assertTrue($tracker->isApproved('bash:rm -rf /tmp'));
 
         // consume returns true and removes
-        $this->assertTrue($tracker->consumeApproval('bash:rm -rf /tmp'));
-        $this->assertFalse($tracker->isApproved('bash:rm -rf /tmp'));
+        self::assertTrue($tracker->consumeApproval('bash:rm -rf /tmp'));
+        self::assertFalse($tracker->isApproved('bash:rm -rf /tmp'));
 
         // second consume returns false
-        $this->assertFalse($tracker->consumeApproval('bash:rm -rf /tmp'));
+        self::assertFalse($tracker->consumeApproval('bash:rm -rf /tmp'));
     }
 
     public function testRemoveCleansUpApprovedState(): void
     {
         $tracker = new ApprovalSessionTracker();
         $tracker->approve('key1');
-        $this->assertTrue($tracker->isApproved('key1'));
+        self::assertTrue($tracker->isApproved('key1'));
 
         $tracker->remove('key1');
 
-        $this->assertFalse($tracker->isApproved('key1'));
-        $this->assertFalse($tracker->consumeApproval('key1'));
+        self::assertFalse($tracker->isApproved('key1'));
+        self::assertFalse($tracker->consumeApproval('key1'));
     }
 
     public function testRemoveCleansUpPendingState(): void
@@ -70,7 +70,7 @@ final class ApprovalSessionTrackerTest extends TestCase
 
         // Removing pending → approveByQuestionId should be a noop
         $tracker->approveByQuestionId('q-1');
-        $this->assertFalse($tracker->isApproved('key1'));
+        self::assertFalse($tracker->isApproved('key1'));
     }
 
     public function testRemoveByQuestionId(): void
@@ -80,18 +80,18 @@ final class ApprovalSessionTrackerTest extends TestCase
         $tracker->removeByQuestionId('q-1');
 
         $tracker->approveByQuestionId('q-1');
-        $this->assertFalse($tracker->isApproved('key1'));
+        self::assertFalse($tracker->isApproved('key1'));
     }
 
     public function testConsumeApprovalReturnsFalseForUnknownKey(): void
     {
         $tracker = new ApprovalSessionTracker();
-        $this->assertFalse($tracker->consumeApproval('nonexistent'));
+        self::assertFalse($tracker->consumeApproval('nonexistent'));
     }
 
     public function testIsApprovedReturnsFalseForUnknownKey(): void
     {
         $tracker = new ApprovalSessionTracker();
-        $this->assertFalse($tracker->isApproved('nonexistent'));
+        self::assertFalse($tracker->isApproved('nonexistent'));
     }
 }

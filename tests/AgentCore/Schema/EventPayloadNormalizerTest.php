@@ -31,7 +31,7 @@ final class EventPayloadNormalizerTest extends TestCase
         ];
 
         $result = $this->normalizer->denormalizeRunEvent($payload);
-        $this->assertNull($result, 'Incompatible schema version should return null');
+        self::assertNull($result, 'Incompatible schema version should return null');
     }
 
     #[Test]
@@ -43,7 +43,7 @@ final class EventPayloadNormalizerTest extends TestCase
         ];
 
         $result = $this->normalizer->denormalizeRunEvent($payload);
-        $this->assertNull($result, 'Missing required fields should return null');
+        self::assertNull($result, 'Missing required fields should return null');
     }
 
     #[Test]
@@ -78,11 +78,11 @@ final class EventPayloadNormalizerTest extends TestCase
         ];
 
         $event = $this->normalizer->denormalizeRunEvent($payload);
-        $this->assertNotNull($event);
-        $this->assertSame('test-run', $event->runId);
-        $this->assertSame(1, $event->seq);
-        $this->assertSame('run_started', $event->type);
-        $this->assertSame('hello', $event->payload['prompt']);
+        self::assertNotNull($event);
+        self::assertSame('test-run', $event->runId);
+        self::assertSame(1, $event->seq);
+        self::assertSame('run_started', $event->type);
+        self::assertSame('hello', $event->payload['prompt']);
     }
 
     #[Test]
@@ -98,8 +98,8 @@ final class EventPayloadNormalizerTest extends TestCase
         ];
 
         $event = $this->normalizer->denormalizeRunEvent($payload);
-        $this->assertNotNull($event);
-        $this->assertSame('legacy-run', $event->runId);
+        self::assertNotNull($event);
+        self::assertSame('legacy-run', $event->runId);
     }
 
     #[Test]
@@ -123,15 +123,15 @@ final class EventPayloadNormalizerTest extends TestCase
             payload: ['result' => 'ok'],
         );
 
-        $this->assertArrayHasKey('schema_version', $normalized);
-        $this->assertSame('roundtrip-run', $normalized['run_id']);
+        self::assertArrayHasKey('schema_version', $normalized);
+        self::assertSame('roundtrip-run', $normalized['run_id']);
 
         $denormalized = $normalizer->denormalizeRunEvent($normalized);
-        $this->assertNotNull($denormalized);
-        $this->assertSame('roundtrip-run', $denormalized->runId);
-        $this->assertSame(42, $denormalized->seq);
-        $this->assertSame(2, $denormalized->turnNo);
-        $this->assertSame('tool_result', $denormalized->type);
-        $this->assertSame('ok', $denormalized->payload['result']);
+        self::assertNotNull($denormalized);
+        self::assertSame('roundtrip-run', $denormalized->runId);
+        self::assertSame(42, $denormalized->seq);
+        self::assertSame(2, $denormalized->turnNo);
+        self::assertSame('tool_result', $denormalized->type);
+        self::assertSame('ok', $denormalized->payload['result']);
     }
 }

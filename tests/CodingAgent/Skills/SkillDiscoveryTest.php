@@ -44,10 +44,10 @@ final class SkillDiscoveryTest extends TestCase
 
         $skills = $discovery->discover();
 
-        $this->assertCount(1, $skills);
-        $this->assertSame('castor', $skills[0]->name);
-        $this->assertSame('Runs Castor tasks', $skills[0]->description);
-        $this->assertSame($skillDir, $skills[0]->skillDirectory);
+        self::assertCount(1, $skills);
+        self::assertSame('castor', $skills[0]->name);
+        self::assertSame('Runs Castor tasks', $skills[0]->description);
+        self::assertSame($skillDir, $skills[0]->skillDirectory);
     }
 
     public function testDiscoversSkillFromAgentsDir(): void
@@ -60,8 +60,8 @@ final class SkillDiscoveryTest extends TestCase
 
         $skills = $discovery->discover();
 
-        $this->assertCount(1, $skills);
-        $this->assertSame('foo', $skills[0]->name);
+        self::assertCount(1, $skills);
+        self::assertSame('foo', $skills[0]->name);
     }
 
     public function testHatfieldTakesPrecedence(): void
@@ -80,9 +80,9 @@ final class SkillDiscoveryTest extends TestCase
         // Both should be discovered... no wait, same name, different paths.
         // First discovered wins. Since auto-discovery scans cwd/.hatfield first,
         // then cwd/.agents, .hatfield wins.
-        $this->assertCount(1, $skills);
-        $this->assertSame('myskill', $skills[0]->name);
-        $this->assertStringContainsString('.hatfield', $skills[0]->skillDirectory);
+        self::assertCount(1, $skills);
+        self::assertSame('myskill', $skills[0]->name);
+        self::assertStringContainsString('.hatfield', $skills[0]->skillDirectory);
     }
 
     public function testAdditionalPathsOverrideAutoDiscovery(): void
@@ -106,9 +106,9 @@ final class SkillDiscoveryTest extends TestCase
         $skills = $discovery->discover();
 
         // Additional paths are checked first, so the extra one wins
-        $this->assertCount(1, $skills);
-        $this->assertSame('myskill', $skills[0]->name);
-        $this->assertStringContainsString('extra-skills', $skills[0]->skillDirectory);
+        self::assertCount(1, $skills);
+        self::assertSame('myskill', $skills[0]->name);
+        self::assertStringContainsString('extra-skills', $skills[0]->skillDirectory);
     }
 
     public function testNoSkillsDisablesAutoDiscovery(): void
@@ -132,9 +132,9 @@ final class SkillDiscoveryTest extends TestCase
         $skills = $discovery->discover();
 
         // With noSkills=true, only the additional path skill is found
-        $this->assertCount(1, $skills);
-        $this->assertSame('myskill', $skills[0]->name);
-        $this->assertStringContainsString('extra-skills', $skills[0]->skillDirectory);
+        self::assertCount(1, $skills);
+        self::assertSame('myskill', $skills[0]->name);
+        self::assertStringContainsString('extra-skills', $skills[0]->skillDirectory);
     }
 
     public function testRecursionStopsAtSkillRoot(): void
@@ -150,8 +150,8 @@ final class SkillDiscoveryTest extends TestCase
         $skills = $discovery->discover();
 
         // Only the root-level skill should be found
-        $this->assertCount(1, $skills);
-        $this->assertSame('myskill', $skills[0]->name);
+        self::assertCount(1, $skills);
+        self::assertSame('myskill', $skills[0]->name);
     }
 
     public function testDirectoryContainingSkillMd(): void
@@ -170,8 +170,8 @@ final class SkillDiscoveryTest extends TestCase
 
         $skills = $discovery->discover();
 
-        $this->assertCount(1, $skills);
-        $this->assertSame('direct', $skills[0]->name);
+        self::assertCount(1, $skills);
+        self::assertSame('direct', $skills[0]->name);
     }
 
     public function testMissingDescriptionExcludesFromRegistryButStillDiscovered(): void
@@ -184,9 +184,9 @@ final class SkillDiscoveryTest extends TestCase
         $skills = $discovery->discover();
 
         // Skill is still discovered (has a name), but description is empty
-        $this->assertCount(1, $skills);
-        $this->assertSame('nodesc', $skills[0]->name);
-        $this->assertSame('', $skills[0]->description);
+        self::assertCount(1, $skills);
+        self::assertSame('nodesc', $skills[0]->name);
+        self::assertSame('', $skills[0]->description);
     }
 
     public function testDisableModelInvocation(): void
@@ -198,8 +198,8 @@ final class SkillDiscoveryTest extends TestCase
         $discovery = $this->createDiscovery(cwd: $this->tmpDir);
         $skills = $discovery->discover();
 
-        $this->assertCount(1, $skills);
-        $this->assertFalse($skills[0]->modelInvocationEnabled);
+        self::assertCount(1, $skills);
+        self::assertFalse($skills[0]->modelInvocationEnabled);
     }
 
     public function testNameDefaultsToDirName(): void
@@ -211,8 +211,8 @@ final class SkillDiscoveryTest extends TestCase
         $discovery = $this->createDiscovery(cwd: $this->tmpDir);
         $skills = $discovery->discover();
 
-        $this->assertCount(1, $skills);
-        $this->assertSame('defaultname', $skills[0]->name);
+        self::assertCount(1, $skills);
+        self::assertSame('defaultname', $skills[0]->name);
     }
 
     public function testCollisionRecordsDiagnostics(): void
@@ -237,9 +237,9 @@ final class SkillDiscoveryTest extends TestCase
         $skills = $discovery->discover();
 
         // Additional path checked first, so prio wins
-        $this->assertCount(1, $skills);
-        $this->assertSame('myskill', $skills[0]->name);
-        $this->assertStringContainsString('prio', $skills[0]->skillDirectory);
+        self::assertCount(1, $skills);
+        self::assertSame('myskill', $skills[0]->name);
+        self::assertStringContainsString('prio', $skills[0]->skillDirectory);
     }
 
     public function testDiscoversFromHomeHatfieldSkills(): void
@@ -254,9 +254,9 @@ final class SkillDiscoveryTest extends TestCase
 
         $skills = $discovery->discover();
 
-        $this->assertCount(1, $skills);
-        $this->assertSame('homeskill', $skills[0]->name);
-        $this->assertStringContainsString('home', $skills[0]->skillDirectory);
+        self::assertCount(1, $skills);
+        self::assertSame('homeskill', $skills[0]->name);
+        self::assertStringContainsString('home', $skills[0]->skillDirectory);
     }
 
     public function testMalformedFrontmatterFallsBackToDefaults(): void
@@ -270,10 +270,10 @@ final class SkillDiscoveryTest extends TestCase
         $skills = $discovery->discover();
 
         // Skill is still discovered; name defaults to directory name since YAML parsing fails
-        $this->assertCount(1, $skills);
-        $this->assertSame('badfront', $skills[0]->name);
-        $this->assertSame('', $skills[0]->description);
-        $this->assertTrue($skills[0]->modelInvocationEnabled);
+        self::assertCount(1, $skills);
+        self::assertSame('badfront', $skills[0]->name);
+        self::assertSame('', $skills[0]->description);
+        self::assertTrue($skills[0]->modelInvocationEnabled);
     }
 
     public function testEmptyCwdThrows(): void
@@ -304,24 +304,24 @@ final class SkillDiscoveryTest extends TestCase
     {
         $content = "---\nname: test\ndescription: Test\n---\n\n# Body\n\nContent here";
         $stripped = SkillDiscovery::stripFrontmatter($content);
-        $this->assertStringNotContainsString('name: test', $stripped);
-        $this->assertStringContainsString('# Body', $stripped);
-        $this->assertStringContainsString('Content here', $stripped);
+        self::assertStringNotContainsString('name: test', $stripped);
+        self::assertStringContainsString('# Body', $stripped);
+        self::assertStringContainsString('Content here', $stripped);
     }
 
     public function testStripFrontmatterWithDots(): void
     {
         $content = "---\nname: test\n...\n\nBody";
         $stripped = SkillDiscovery::stripFrontmatter($content);
-        $this->assertStringNotContainsString('name: test', $stripped);
-        $this->assertSame(trim("\n\nBody"), trim($stripped));
+        self::assertStringNotContainsString('name: test', $stripped);
+        self::assertSame(trim("\n\nBody"), trim($stripped));
     }
 
     public function testStripFrontmatterNoFrontmatter(): void
     {
         $content = "# Just a heading\n\nPlain markdown without frontmatter";
         $stripped = SkillDiscovery::stripFrontmatter($content);
-        $this->assertSame($content, $stripped);
+        self::assertSame($content, $stripped);
     }
 
     /* ───────── Private helpers ───────── */

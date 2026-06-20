@@ -148,7 +148,7 @@ final class ActivityStateMachineTest extends TestCase
     {
         $event = new RuntimeEvent(type: $eventType, runId: 'test', seq: 1);
         $result = ActivityStateMachine::transition($current, $event);
-        $this->assertSame($expected, $result);
+        self::assertSame($expected, $result);
     }
 
     #[DataProvider('provideWaitingHumanTransitions')]
@@ -156,7 +156,7 @@ final class ActivityStateMachineTest extends TestCase
     {
         $event = new RuntimeEvent(type: $eventType, runId: 'test', seq: 1);
         $result = ActivityStateMachine::transition($current, $event);
-        $this->assertSame($expected, $result);
+        self::assertSame($expected, $result);
     }
 
     #[DataProvider('provideCancellingTransitions')]
@@ -164,7 +164,7 @@ final class ActivityStateMachineTest extends TestCase
     {
         $event = new RuntimeEvent(type: $eventType, runId: 'test', seq: 1);
         $result = ActivityStateMachine::transition($current, $event);
-        $this->assertSame($expected, $result);
+        self::assertSame($expected, $result);
     }
 
     #[DataProvider('provideTerminalTransitions')]
@@ -172,7 +172,7 @@ final class ActivityStateMachineTest extends TestCase
     {
         $event = new RuntimeEvent(type: $eventType, runId: 'test', seq: 1);
         $result = ActivityStateMachine::transition($current, $event);
-        $this->assertSame($expected, $result);
+        self::assertSame($expected, $result);
     }
 
     #[DataProvider('provideDefaultTransitions')]
@@ -180,7 +180,7 @@ final class ActivityStateMachineTest extends TestCase
     {
         $event = new RuntimeEvent(type: $eventType, runId: 'test', seq: 1);
         $result = ActivityStateMachine::transition($current, $event);
-        $this->assertSame($expected, $result);
+        self::assertSame($expected, $result);
     }
 
     public function testTerminalGuardPreventsOverride(): void
@@ -196,7 +196,7 @@ final class ActivityStateMachineTest extends TestCase
 
         foreach ($terminalStates as $terminal) {
             $result = ActivityStateMachine::transition($terminal, $event);
-            $this->assertSame($terminal, $result, 'Terminal state must not be overridden');
+            self::assertSame($terminal, $result, 'Terminal state must not be overridden');
         }
     }
 
@@ -204,28 +204,28 @@ final class ActivityStateMachineTest extends TestCase
     {
         $event = new RuntimeEvent(type: RuntimeEventTypeEnum::RunStarted->value, runId: 'test', seq: 1);
         $result = ActivityStateMachine::transition(RunActivityStateEnum::Idle, $event);
-        $this->assertSame(RunActivityStateEnum::Running, $result);
+        self::assertSame(RunActivityStateEnum::Running, $result);
     }
 
     public function testStartingToRunning(): void
     {
         $event = new RuntimeEvent(type: RuntimeEventTypeEnum::TurnStarted->value, runId: 'test', seq: 1);
         $result = ActivityStateMachine::transition(RunActivityStateEnum::Starting, $event);
-        $this->assertSame(RunActivityStateEnum::Running, $result);
+        self::assertSame(RunActivityStateEnum::Running, $result);
     }
 
     public function testCompletedIsStickyEvenForRunStarted(): void
     {
         $event = new RuntimeEvent(type: RuntimeEventTypeEnum::RunStarted->value, runId: 'test', seq: 1);
         $result = ActivityStateMachine::transition(RunActivityStateEnum::Completed, $event);
-        $this->assertSame(RunActivityStateEnum::Completed, $result);
+        self::assertSame(RunActivityStateEnum::Completed, $result);
     }
 
     public function testCancelledIsSticky(): void
     {
         $event = new RuntimeEvent(type: RuntimeEventTypeEnum::RunStarted->value, runId: 'test', seq: 1);
         $result = ActivityStateMachine::transition(RunActivityStateEnum::Cancelled, $event);
-        $this->assertSame(RunActivityStateEnum::Cancelled, $result);
+        self::assertSame(RunActivityStateEnum::Cancelled, $result);
     }
 
     // ── Cancelling stickiness tests (issue #151 cosmetic flicker fix) ──
@@ -261,7 +261,7 @@ final class ActivityStateMachineTest extends TestCase
     {
         $event = new RuntimeEvent(type: $eventType, runId: 'test', seq: 1);
         $result = ActivityStateMachine::transition($current, $event);
-        $this->assertSame($expected, $result, "Cancelling should stay Cancelling on $eventType");
+        self::assertSame($expected, $result, "Cancelling should stay Cancelling on $eventType");
     }
 
     /** @return iterable<array{string, RunActivityStateEnum, RunActivityStateEnum}> */
@@ -304,7 +304,7 @@ final class ActivityStateMachineTest extends TestCase
     {
         $event = new RuntimeEvent(type: $eventType, runId: 'test', seq: 1);
         $result = ActivityStateMachine::transition($current, $event);
-        $this->assertSame($expected, $result, "Cancelling should allow $eventType transition");
+        self::assertSame($expected, $result, "Cancelling should allow $eventType transition");
     }
 
     /**
@@ -320,7 +320,7 @@ final class ActivityStateMachineTest extends TestCase
         ] as $type) {
             $event = new RuntimeEvent(type: $type, runId: 'test', seq: 1);
             $result = ActivityStateMachine::transition(RunActivityStateEnum::Cancelling, $event);
-            $this->assertSame(RunActivityStateEnum::Cancelling, $result, "Repeat $type should stay Cancelling");
+            self::assertSame(RunActivityStateEnum::Cancelling, $result, "Repeat $type should stay Cancelling");
         }
     }
 
@@ -331,6 +331,6 @@ final class ActivityStateMachineTest extends TestCase
     {
         $event = new RuntimeEvent(type: 'some_random_internal_event', runId: 'test', seq: 1);
         $result = ActivityStateMachine::transition(RunActivityStateEnum::Cancelling, $event);
-        $this->assertSame(RunActivityStateEnum::Cancelling, $result);
+        self::assertSame(RunActivityStateEnum::Cancelling, $result);
     }
 }
