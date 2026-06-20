@@ -311,19 +311,19 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             $options['run_id'] = $request->input->runId;
         }
 
-        // Explicit no-tools flag: short-circuit all tool resolution by
-        // injecting an empty tool array before DynamicToolDescriptionProcessor
-        // runs.  The processor sees tools:[] and clears tool_descriptions,
-        // preventing any toolbox/ToolSetResolver fallback.
-        if (false === $request->options->toolsEnabled) {
-            $options['tools'] = [];
-        }
-
         // Generic model/platform options from ModelInvocationOptions —
         // forwarded uninterpreted.  Core-controlled flags (toolsEnabled)
         // are applied after this merge and always win.
         foreach ($request->options->extraOptions as $key => $value) {
             $options[$key] = $value;
+        }
+
+        // Explicit no-tools flag: short-circuit all tool resolution by
+        // injecting an empty tool array after generic options are merged.
+        // The processor sees tools:[] and clears tool_descriptions,
+        // preventing any toolbox/ToolSetResolver fallback.
+        if (false === $request->options->toolsEnabled) {
+            $options['tools'] = [];
         }
 
         return $options;
