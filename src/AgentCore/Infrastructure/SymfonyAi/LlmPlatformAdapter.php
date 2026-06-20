@@ -284,7 +284,12 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
 
     /**
      * Build Input options, propagating toolsRef, turnNo, and runId for
-     * DynamicToolDescriptionProcessor / ToolSetResolver resolution.
+     * DynamicToolDescriptionProcessor / ToolSetResolver resolution, plus
+     * ModelInvocationOptions flags (toolsEnabled, thinkingLevel).
+     *
+     * When toolsEnabled === false, injects tools:[] to force an empty
+     * toolbox regardless of ToolSetResolver or toolbox configuration.
+     * This guarantees no-tools mode for compaction/summarization calls.
      *
      * @return array<string, mixed>
      */
@@ -300,6 +305,18 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         }
         if (null !== $request->input->runId) {
             $options['run_id'] = $request->input->runId;
+        }
+
+        // Explicit no-tools flag: short-circuit all tool resolution by
+        // injecting an empty tool array before DynamicToolDescriptionProcessor
+        // runs.  The processor sees tools:[] and clears tool_descriptions,
+        // preventing any toolbox/ToolSetResolver fallback.
+        if (false === $request->options->toolsEnabled) {
+            $options['tools'] = [];
+        }
+
+        if (null !== $request->options->thinkingLevel) {
+            $options['thinking_level'] = $request->options->thinkingLevel;
         }
 
         return $options;

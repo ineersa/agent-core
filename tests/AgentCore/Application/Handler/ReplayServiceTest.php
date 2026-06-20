@@ -563,6 +563,66 @@ final class ReplayServiceTest extends TestCase
         self::assertNotContains('ABANDONED response', $messageTexts, 'Abandoned branch messages must be excluded');
     }
 
+    // ── Context compaction hot prompt replay ──────────────────────────────────
+
+    /**
+     * Thesis: context_compacted replaces hot prompt messages from
+     * payload.messages, and later events append on top of the replacement.
+     * The ReplayService already handles payload.messages replacement
+     * generically; this test proves context_compacted specifically.
+     */
+    public function testContextCompactedReplacesHotPromptMessages(): void
+    {
+        $eventStore = new RunEventStore();
+        $hotPromptStore = new HotPromptStateStore();
+        $replayService = new ReplayService($eventStore, $hotPromptStore);
+        $runId = 'run-hot-prompt-compacted';
+
+        // Original messages (3 user messages).
+        $this->appendTo($eventStore, $runId, RunEventTypeEnum::RunStarted->value, 1, 0, [
+            'step_id' => 'init',
+            'payload' => ['messages' => [
+                ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Message 1']]],
+                ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Message 2']]],
+                ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Message 3']]],
+            ]],
+        ]);
+
+        // context_compacted replaces with 1 summary message.
+        $this->appendTo($eventStore, $runId, RunEventTypeEnum::ContextCompacted->value, 2, 0, [
+            'summary_text' => 'Summary of first 3 messages',
+            'messages' => [[
+                'role' => 'user',
+                'content' => [['type' => 'text', 'text' => '<summary>Summary of first 3 messages</summary>']],
+                'metadata' => ['compact_summary' => true],
+            ]],
+            'estimated_tokens_before' => 300,
+            'estimated_tokens_after' => 100,
+            'messages_compacted' => 3,
+            'messages_retained' => 0,
+            'first_retained_index' => 3,
+            'model' => 'openai/gpt-4.1-mini',
+        ]);
+
+        // New user message after compaction.
+        $this->appendTo($eventStore, $runId, RunEventTypeEnum::AgentCommandApplied->value, 3, 0, [
+            'kind' => 'steer',
+            'message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'New message after compaction']]],
+        ]);
+
+        $rebuiltState = $replayService->rebuildHotPromptState($runId);
+
+        self::assertCount(2, $rebuiltState->messages, 'Should have summary + new user message');
+        self::assertTrue(
+            $rebuiltState->messages[0]['metadata']['compact_summary'] ?? false,
+            'First message should be compact summary',
+        );
+        self::assertSame(
+            'New message after compaction',
+            $rebuiltState->messages[1]['content'][0]['text'],
+        );
+    }
+
     // ── Helper ──────────────────────────────────────────────────────────────
 
     /**

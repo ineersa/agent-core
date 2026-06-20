@@ -411,6 +411,25 @@ services:
     arguments:
       $projectDir: '%kernel.project_dir%'
 
+  # ─── Compaction pipeline (COMP-02) ───
+
+  # Compaction service: CodingAgent adapter implementing the AgentCore contract.
+  # Autowiring resolves SessionCompactor and CompactionConfig; the interface
+  # alias lets AgentCore pipeline code depend on the contract.
+  Ineersa\CodingAgent\Compaction\CompactionService: ~
+
+  Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface:
+    alias: Ineersa\CodingAgent\Compaction\CompactionService
+
+  # Compaction worker: async model invocation for summarization.
+  # @see ExecuteLlmStepWorker for the parallel LLM-step pattern.
+  # $commandBus is explicitly bound to agent.command.bus so the worker
+  # dispatches CompactionStepResult back to the orchestrator within the
+  # same consumer process.
+  Ineersa\AgentCore\Application\Handler\ExecuteCompactionStepWorker:
+    arguments:
+      $commandBus: '@agent.command.bus'
+
   # ToolRegistry — concrete CodingAgent registry for permanent/dynamic tools.
   # Tagged built-in providers are seeded during registry construction.
   Ineersa\CodingAgent\Tool\ToolRegistry:

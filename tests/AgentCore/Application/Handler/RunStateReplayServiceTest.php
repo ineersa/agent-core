@@ -866,6 +866,124 @@ final class RunStateReplayServiceTest extends TestCase
         self::assertSame(0, $result->rebuiltState->turnNo, 'leaf_set/turn_branched must not advance turn');
     }
 
+    // ── Compaction event replay ────────────────────────────────────────────
+
+    /**
+     * Thesis: context_compacted replaces the message accumulator wholesale
+     * from payload.messages. Later events (user message) append on top of
+     * the compacted checkpoint, proving the replacement is authoritative.
+     */
+    public function testContextCompactedReplacesMessages(): void
+    {
+        $user1 = ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Original message 1']]];
+        $user2 = ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Original message 2']]];
+
+        // Sequence: run_started (with 2 original messages) → context_compacted
+        // (replaces with 1 summary) → agent_command_applied (appends new user)
+        $this->appendEvent(RunEventTypeEnum::RunStarted->value, 1, [
+            'payload' => ['messages' => [$user1, $user2]],
+            'step_id' => 'init',
+        ]);
+
+        $summaryMsg = ['role' => 'user', 'content' => [['type' => 'text', 'text' => '<summary>Compacted content</summary>']], 'metadata' => ['compact_summary' => true]];
+
+        $this->appendEvent(RunEventTypeEnum::ContextCompacted->value, 2, [
+            'summary_text' => 'Compacted content',
+            'messages' => [$summaryMsg],
+            'estimated_tokens_before' => 10000,
+            'estimated_tokens_after' => 2000,
+            'messages_compacted' => 2,
+            'messages_retained' => 0,
+            'first_retained_index' => 2,
+            'model' => 'openai/gpt-4.1-mini',
+            'thinking_level' => 'low',
+            'trigger' => 'manual',
+        ]);
+
+        $this->appendEvent(RunEventTypeEnum::AgentCommandApplied->value, 3, [
+            'kind' => 'steer',
+            'message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'New message after compaction']]],
+        ]);
+
+        $state = RunState::queued($this->runId);
+        $result = $this->service->rebuildIfStale($state, $this->runId);
+
+        self::assertTrue($result->rebuilt);
+        self::assertCount(2, $result->rebuiltState->messages, 'Should have summary + new user message after compaction');
+        self::assertSame('user', $result->rebuiltState->messages[0]->role);
+        self::assertTrue(($result->rebuiltState->messages[0]->metadata['compact_summary'] ?? false), 'First message should be compact summary');
+        self::assertSame('user', $result->rebuiltState->messages[1]->role);
+        self::assertSame('New message after compaction', $result->rebuiltState->messages[1]->content[0]['text']);
+    }
+
+    /**
+     * Thesis: context_compaction_failed does NOT replace messages.
+     * Prior messages survive unchanged, and later events append normally.
+     */
+    public function testContextCompactionFailedPreservesMessages(): void
+    {
+        $userMsg = ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Original message']]];
+
+        $this->appendEvent(RunEventTypeEnum::RunStarted->value, 1, [
+            'payload' => ['messages' => [$userMsg]],
+            'step_id' => 'init',
+        ]);
+
+        $this->appendEvent(RunEventTypeEnum::ContextCompactionFailed->value, 2, [
+            'reason' => 'empty_summary',
+            'message' => 'Compaction failed: empty summary.',
+            'preserved_messages' => true,
+            'model' => 'openai/gpt-4.1-mini',
+            'trigger' => 'manual',
+        ]);
+
+        $this->appendEvent(RunEventTypeEnum::AgentCommandApplied->value, 3, [
+            'kind' => 'steer',
+            'message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Follow-up']]],
+        ]);
+
+        $state = RunState::queued($this->runId);
+        $result = $this->service->rebuildIfStale($state, $this->runId);
+
+        self::assertTrue($result->rebuilt);
+        self::assertCount(2, $result->rebuiltState->messages, 'Original message should survive + new follow-up');
+        self::assertSame('Original message', $result->rebuiltState->messages[0]->content[0]['text']);
+        self::assertSame('Follow-up', $result->rebuiltState->messages[1]->content[0]['text']);
+    }
+
+    /**
+     * Thesis: context_compaction_started does NOT mutate messages.
+     */
+    public function testContextCompactionStartedDoesNotMutateMessages(): void
+    {
+        $userMsg = ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Original']]];
+
+        $this->appendEvent(RunEventTypeEnum::RunStarted->value, 1, [
+            'payload' => ['messages' => [$userMsg]],
+            'step_id' => 'init',
+        ]);
+
+        $this->appendEvent(RunEventTypeEnum::ContextCompactionStarted->value, 2, [
+            'trigger' => 'manual',
+            'model' => 'openai/gpt-4.1-mini',
+            'thinking_level' => 'low',
+            'estimated_tokens' => 50000,
+            'keep_recent_tokens' => 20000,
+            'messages_before' => 10,
+            'messages_to_summarize' => 7,
+            'messages_retained' => 3,
+            'first_retained_index' => 7,
+            'prior_summary_present' => false,
+        ]);
+
+        $state = RunState::queued($this->runId);
+        $result = $this->service->rebuildIfStale($state, $this->runId);
+
+        self::assertTrue($result->rebuilt);
+        self::assertCount(1, $result->rebuiltState->messages, 'Messages should not be mutated by started event');
+        self::assertSame('Original', $result->rebuiltState->messages[0]->content[0]['text']);
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────────
 
     /**

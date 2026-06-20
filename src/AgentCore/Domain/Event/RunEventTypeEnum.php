@@ -39,6 +39,10 @@ enum RunEventTypeEnum: string
     case ToolCallResultReceived = 'tool_call_result_received';
     case ToolBatchCommitted = 'tool_batch_committed';
     case ModelNotification = 'model_notification';
+    // ── Compaction events ──────────────────────────────────────────────
+    case ContextCompactionStarted = 'context_compaction_started';
+    case ContextCompacted = 'context_compacted';
+    case ContextCompactionFailed = 'context_compaction_failed';
     // ── Turn tree metadata (append-only canonical) ───────────────────────
     case TurnBranched = 'turn_branched';
     case LeafSet = 'leaf_set';

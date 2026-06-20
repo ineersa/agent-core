@@ -7,6 +7,8 @@ namespace Ineersa\AgentCore\Application\Pipeline;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
+use Ineersa\AgentCore\Domain\Message\CompactionStepResult;
+use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
@@ -20,6 +22,8 @@ final readonly class RunOrchestrator
     private const string ScopeAdvanceRun = 'command.advance';
     private const string ScopeLlmResult = 'result.llm';
     private const string ScopeToolResult = 'result.tool';
+    private const string ScopeCompactRun = 'command.compact';
+    private const string ScopeCompactionResult = 'result.compaction';
 
     public function __construct(
         private RunMessageProcessor $runMessageProcessor,
@@ -140,6 +144,53 @@ final readonly class RunOrchestrator
                 'turn_no' => $message->turnNo(),
                 'step_id' => $message->stepId(),
                 'tool_call_id' => $message->toolCallId,
+            ], $handle, root: true);
+        });
+    }
+
+    /**
+     * Handles CompactRun message to initiate compaction.
+     */
+    #[AsMessageHandler(bus: 'agent.command.bus')]
+    public function onCompactRun(CompactRun $message): void
+    {
+        $this->withLogContext($message->runId(), 'command.compact', function () use ($message): void {
+            $handle = fn () => $this->runMessageProcessor->process(self::ScopeCompactRun, $message);
+
+            if (null === $this->tracer) {
+                $handle();
+
+                return;
+            }
+
+            $this->tracer->inSpan('command.compact', [
+                'run_id' => $message->runId(),
+                'turn_no' => $message->turnNo(),
+                'step_id' => $message->stepId(),
+                'trigger' => $message->trigger,
+            ], $handle, root: true);
+        });
+    }
+
+    /**
+     * Processes CompactionStepResult message to finalize compaction.
+     */
+    #[AsMessageHandler(bus: 'agent.command.bus')]
+    public function onCompactionStepResult(CompactionStepResult $message): void
+    {
+        $this->withLogContext($message->runId(), 'result.compaction', function () use ($message): void {
+            $handle = fn () => $this->runMessageProcessor->process(self::ScopeCompactionResult, $message);
+
+            if (null === $this->tracer) {
+                $handle();
+
+                return;
+            }
+
+            $this->tracer->inSpan('result.compaction', [
+                'run_id' => $message->runId(),
+                'turn_no' => $message->turnNo(),
+                'step_id' => $message->stepId(),
             ], $handle, root: true);
         });
     }

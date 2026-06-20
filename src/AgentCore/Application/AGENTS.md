@@ -11,6 +11,9 @@ This README is an architecture map (not an index).
 - `ToolCallResult` -> `RunOrchestrator::onToolCallResult()` on `agent.command.bus`
 - `ExecuteLlmStep` -> `ExecuteLlmStepWorker::__invoke()` on `agent.execution.bus`
 - `ExecuteToolCall` -> `ExecuteToolCallWorker::__invoke()` on `agent.execution.bus`
+- `CompactRun` -> `RunOrchestrator::onCompactRun()` on `agent.command.bus`
+- `CompactionStepResult` -> `RunOrchestrator::onCompactionStepResult()` on `agent.command.bus`
+- `ExecuteCompactionStep` -> `ExecuteCompactionStepWorker::__invoke()` on `agent.execution.bus`
 
 Note: `CollectToolBatch` is routed to `agent.execution.bus` in `config/messenger.php`, but there is currently no `AsMessageHandler` consumer for this message in `src/`.
 
@@ -37,6 +40,15 @@ Note: `CollectToolBatch` is routed to `agent.execution.bus` in `config/messenger
 - `ToolCallResult`
   - dispatched by: `ExecuteToolCallWorker::__invoke()`
   - handled by: `RunOrchestrator::onToolCallResult()` -> `RunMessageProcessor` -> `ToolCallResultHandler`
+- `CompactRun`
+  - dispatched by: runtime/TUI compaction trigger (COMP-03)
+  - handled by: `RunOrchestrator::onCompactRun()` -> `RunMessageProcessor` -> `CompactRunHandler`
+- `ExecuteCompactionStep`
+  - dispatched by: `CompactRunHandler` through `RunMessageProcessor`/`RunCommit` effect dispatch
+  - handled by: `ExecuteCompactionStepWorker::__invoke()`
+- `CompactionStepResult`
+  - dispatched by: `ExecuteCompactionStepWorker::__invoke()`
+  - handled by: `RunOrchestrator::onCompactionStepResult()` -> `RunMessageProcessor` -> `CompactionStepResultHandler`
 
 ## Event -> listener (application side)
 

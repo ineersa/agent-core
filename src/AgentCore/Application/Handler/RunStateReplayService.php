@@ -284,6 +284,9 @@ final readonly class RunStateReplayService
             RunEventTypeEnum::AgentCommandQueued->value,
             RunEventTypeEnum::AgentCommandSuperseded->value,
             RunEventTypeEnum::StaleResultIgnored->value => $this->applyNoMutation($event, $state),
+            RunEventTypeEnum::ContextCompactionStarted->value => $this->applyNoMutation($event, $state),
+            RunEventTypeEnum::ContextCompacted->value => $this->applyContextCompacted($payload, $state, $messages),
+            RunEventTypeEnum::ContextCompactionFailed->value => $this->applyNoMutation($event, $state),
             RunEventTypeEnum::TurnBranched->value,
             RunEventTypeEnum::LeafSet->value => $this->applyNoMutation($event, $state),
             default => $this->applyNoMutation($event, $state),
@@ -649,6 +652,38 @@ final readonly class RunStateReplayService
             activeStepId: $state->activeStepId,
             retryableFailure: false,
         );
+    }
+
+    /**
+     * Handle context_compacted: replace messages from payload.messages
+     * with the full compacted message list.  The by-ref $messages accumulator
+     * is replaced wholesale, and later events (user/assistant/tool) append
+     * on top of the compacted checkpoint.
+     *
+     * @param array<string, mixed> $payload
+     * @param list<AgentMessage>   $messages
+     */
+    private function applyContextCompacted(array $payload, RunState $state, array &$messages): RunState
+    {
+        $rawMessages = \is_array($payload['messages'] ?? null) ? $payload['messages'] : [];
+
+        // Replace the message accumulator with the compacted checkpoint.
+        // Each entry is an AgentMessage::toArray() shape — replay
+        // reconstructs via AgentMessage::fromPayload().
+        $messages = [];
+
+        foreach ($rawMessages as $rawMessage) {
+            if (!\is_array($rawMessage)) {
+                continue;
+            }
+
+            $msg = AgentMessage::fromPayload($rawMessage);
+            if (null !== $msg) {
+                $messages[] = $msg;
+            }
+        }
+
+        return $state;
     }
 
     private function applyNoMutation(RunEvent $event, RunState $state): RunState
