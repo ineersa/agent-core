@@ -221,8 +221,11 @@ final class CompactionStepResultHandlerTest extends TestCase
 
     public function testStaleResultEmitsFailedWhenTurnNoMismatch(): void
     {
+        // Fixture models a newer in-flight compaction B (step-5) while
+        // stale result A (step-1) arrives on a different turn.  The guard
+        // must preserve the current active step, not clear it.
         $originalMessages = [$this->userMsg('hi')];
-        $state = $this->createRunState($originalMessages, turnNo: 10, activeStepId: 'step-1');
+        $state = $this->createRunState($originalMessages, turnNo: 10, activeStepId: 'step-5');
 
         $fakeService = $this->createNoOpStub();
         $handler = new CompactionStepResultHandler($fakeService, new EventFactory());
@@ -231,7 +234,7 @@ final class CompactionStepResultHandlerTest extends TestCase
             new CompactionStepResult(
                 runId: 'run-1',
                 turnNo: 5, // different from state.turnNo
-                stepId: 'step-1',
+                stepId: 'step-1', // different from state.activeStepId 'step-5'
                 attempt: 1,
                 idempotencyKey: 'key-1',
                 summaryText: 'summary text',
@@ -260,8 +263,8 @@ final class CompactionStepResultHandlerTest extends TestCase
         self::assertCount(\count($originalMessages), $result->nextState->messages);
 
         // Stale turn mismatch preserves current activeStepId — a newer
-        // compaction may be in-flight under this turn.
-        self::assertSame('step-1', $result->nextState->activeStepId);
+        // compaction B (step-5) is in-flight and must not be cleared.
+        self::assertSame('step-5', $result->nextState->activeStepId);
     }
 
     public function testResultInTerminalRunEmitsFailed(): void

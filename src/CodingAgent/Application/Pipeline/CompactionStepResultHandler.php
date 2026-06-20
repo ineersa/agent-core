@@ -225,6 +225,12 @@ final readonly class CompactionStepResultHandler implements RunMessageHandler
     /**
      * @param list<\Ineersa\AgentCore\Domain\Event\RunEvent> $events
      * @param bool                                           $clearActiveStepId when true, set activeStepId to null (terminal outcome)
+     *
+     * NOTE: this uses a boolean clear flag (false=preserve, true=clear),
+     * which inverts CompactRunHandler::incrementState()'s nullable-string
+     * semantics (null=preserve, non-null=override). The flag form is used
+     * because model_error/empty_summary/success paths genuinely clear the
+     * step while stale_result paths genuinely preserve it.
      */
     private function incrementState(RunState $state, array $events, bool $clearActiveStepId = false): RunState
     {

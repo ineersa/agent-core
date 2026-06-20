@@ -735,13 +735,18 @@ final readonly class RunStateReplayService
     /**
      * Handle context_compaction_failed: clears activeStepId only when
      * the failure belongs to the currently-active compaction step
-     * (payload.step_id matches state.activeStepId).
+     * (payload.step_id matches state.activeStepId) AND the reason is not
+     * stale_result.
      *
-     * Structural failures from CompactRunHandler (before a worker was
-     * dispatched) have no step_id and preserve whatever activeStepId was
-     * already set.  Stale failures where a newer compaction's step_id
-     * differs also preserve activeStepId — clearing it would lose the
-     * identity of the in-flight step.
+     * Dual-emitter semantics:
+     * - CompactRunHandler structural failures (before worker dispatch)
+     *   have no step_id; they preserve whatever activeStepId was already set.
+     * - CompactionStepResultHandler post-start failures include step_id.
+     *   success/model_error/empty_summary clear the matched step.
+     *   stale_result preserves activeStepId even when step_id matches —
+     *   the live handler treats stale as non-current, and clearing would
+     *   lose a newer in-flight compaction's identity.
+     * - Stale failures with a different step_id also preserve activeStepId.
      *
      * Messages are never mutated by context_compaction_failed.
      *
@@ -750,11 +755,16 @@ final readonly class RunStateReplayService
     private function applyContextCompactionFailed(array $payload, RunState $state): RunState
     {
         $payloadStepId = \is_string($payload['step_id'] ?? null) ? $payload['step_id'] : null;
+        $reason = \is_string($payload['reason'] ?? null) ? $payload['reason'] : null;
 
-        // Only clear activeStepId when this failure resolves the exact
-        // compaction step that was currently active.  A different or
-        // absent step_id must be preserved.
-        $activeStepId = (null !== $payloadStepId && $payloadStepId === $state->activeStepId)
+        // Clear activeStepId only when this failure resolves the exact
+        // compaction step that was currently active AND is not a stale
+        // result.  stale_result is always non-current — the live handler
+        // preserves activeStepId because the handleable step (the one
+        // whose id still matches the state) is different.
+        $activeStepId = (null !== $payloadStepId
+            && $payloadStepId === $state->activeStepId
+            && 'stale_result' !== $reason)
             ? null
             : $state->activeStepId;
 

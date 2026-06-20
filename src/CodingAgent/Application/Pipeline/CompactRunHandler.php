@@ -151,6 +151,12 @@ final readonly class CompactRunHandler implements RunMessageHandler
     /**
      * @param list<\Ineersa\AgentCore\Domain\Event\RunEvent> $events
      * @param string|null                                    $activeStepId null = preserve current; non-null = override
+     *
+     * NOTE: null semantics differ from CompactionStepResultHandler::incrementState(),
+     * which uses a boolean clearActiveStepId flag (false=preserve, true=clear).
+     * Here null means "don't touch" because the started path passes the new
+     * compaction stepId explicitly; no other path overrides, so failure paths
+     * keep activeStepId unchanged.
      */
     private function incrementState(RunState $state, array $events, ?string $activeStepId = null): RunState
     {
@@ -167,9 +173,6 @@ final readonly class CompactRunHandler implements RunMessageHandler
             pendingToolCalls: $state->pendingToolCalls,
             errorMessage: $state->errorMessage,
             messages: $state->messages,
-            // null = preserve current; non-null = override. The started
-            // path passes the compaction stepId explicitly; no other path
-            // overrides, so failure paths keep activeStepId unchanged.
             activeStepId: $activeStepId ?? $state->activeStepId,
             retryableFailure: $state->retryableFailure,
         );

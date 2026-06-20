@@ -933,7 +933,7 @@ final class RunStateReplayServiceTest extends TestCase
         $this->appendEvent(RunEventTypeEnum::ContextCompactionFailed->value, 2, [
             'reason' => 'empty_summary',
             'message' => 'Compaction failed: empty summary.',
-            'preserved_messages' => true,
+            'messages_replaced' => false,
             'model' => 'openai/gpt-4.1-mini',
             'trigger' => 'manual',
         ]);
@@ -1028,6 +1028,51 @@ final class RunStateReplayServiceTest extends TestCase
 
         self::assertTrue($result->rebuilt);
         self::assertNull($result->rebuiltState->activeStepId, 'Matching step_id failure must clear activeStepId');
+        self::assertCount(1, $result->rebuiltState->messages, 'Messages preserved');
+        self::assertSame('Original', $result->rebuiltState->messages[0]->content[0]['text']);
+    }
+
+    /**
+     * Thesis: context_compaction_failed with stale_result reason preserves
+     * activeStepId even when step_id matches — the live handler treats
+     * stale as non-current, so replay must mirror that.
+     */
+    public function testContextCompactionFailedStaleResultPreservesActiveStepIdWhenStepIdMatches(): void
+    {
+        $this->appendEvent(RunEventTypeEnum::RunStarted->value, 1, [
+            'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Original']]]]],
+            'step_id' => 'init',
+        ]);
+
+        $this->appendEvent(RunEventTypeEnum::ContextCompactionStarted->value, 2, [
+            'step_id' => 'compaction-X',
+            'trigger' => 'manual',
+            'model' => 'openai/gpt-4.1-mini',
+            'thinking_level' => 'low',
+            'estimated_tokens' => 50000,
+            'keep_recent_tokens' => 20000,
+            'messages_before' => 10,
+            'messages_to_summarize' => 7,
+            'messages_retained' => 3,
+            'first_retained_index' => 7,
+            'prior_summary_present' => false,
+        ]);
+
+        // stale_result with matching step_id — step_id === activeStepId
+        // but reason is stale_result; live handler preserves activeStepId.
+        $this->appendEvent(RunEventTypeEnum::ContextCompactionFailed->value, 3, [
+            'reason' => 'stale_result',
+            'message' => 'Compaction result arrived too late.',
+            'messages_replaced' => false,
+            'step_id' => 'compaction-X',
+            'trigger' => 'manual',
+        ]);
+
+        $state = RunState::queued($this->runId);
+        $result = $this->service->rebuildIfStale($state, $this->runId);
+
+        self::assertTrue($result->rebuilt);
+        self::assertSame('compaction-X', $result->rebuiltState->activeStepId, 'Stale result must preserve activeStepId even when step_id matches');
         self::assertCount(1, $result->rebuiltState->messages, 'Messages preserved');
         self::assertSame('Original', $result->rebuiltState->messages[0]->content[0]['text']);
     }
