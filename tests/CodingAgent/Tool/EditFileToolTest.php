@@ -861,6 +861,111 @@ DIFF;
         $this->assertSame($expected, file_get_contents($targetPath));
     }
 
+    /**
+     * A zero-count hunk (pure insertion, e.g. @@ -X,0 +Y,N @@) must
+     * pass through the normalizer uncorrupted — the earlier max(1,…)
+     * flooring would rewrite 0→1 and change insertion-at-position to
+     * modification-of, breaking the edit semantics.
+     *
+     * GNU patch zero-count convention: @@ -N,0 +N,M @@ inserts M
+     * new lines at old position N.  @@ -1,0 +1,2 @@ inserts 2 lines
+     * after line 1 (before line 2).
+     */
+    public function testZeroCountInsertionHunkIsPreserved(): void
+    {
+        $targetPath = $this->tmpDir.'/zero_count_insert_target.txt';
+        $original = "line 1\nline 2\n";
+        file_put_contents($targetPath, $original);
+
+        // Insert 2 lines after line 1 (before line 2): @@ -1,0 +1,2 @@
+        // actualOld=0, actualNew=2, declaredOld=0, declaredNew=2
+        $patch = <<<'DIFF'
+--- a/file
++++ b/file
+@@ -1,0 +1,2 @@
++INSERTED A
++INSERTED B
+DIFF;
+
+        $result = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+
+        $this->assertStringContainsString('Applied patch', $result);
+
+        $expected = "line 1\nINSERTED A\nINSERTED B\nline 2\n";
+        $this->assertSame($expected, file_get_contents($targetPath));
+    }
+
+    /**
+     * Zero-count deletion hunk must also pass through uncorrupted.
+     */
+    public function testZeroCountDeletionHunkIsPreserved(): void
+    {
+        $targetPath = $this->tmpDir.'/zero_count_delete_target.txt';
+        $original = "keep\nremove1\nremove2\nkeep\n";
+        file_put_contents($targetPath, $original);
+
+        // Remove 2 lines starting at line 2: @@ -2,2 +2,0 @@
+        $patch = <<<'DIFF'
+--- a/file
++++ b/file
+@@ -2,2 +2,0 @@
+-remove1
+-remove2
+DIFF;
+
+        $result = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+
+        $this->assertStringContainsString('Applied patch', $result);
+
+        $expected = "keep\nkeep\n";
+        $this->assertSame($expected, file_get_contents($targetPath));
+    }
+
+    /**
+     * Truncation heuristic must reject when both sides under-shoot even
+     * when the TOTAL body line count equals the declared per-side count
+     * (N === declared).  This is the boundary where a naive blank-body
+     * strip might have been tempted to match blank context lines — the
+     * test proves the strip produces malformed rejection regardless.
+     */
+    public function testTruncatedHunkWithEqualBodyLineCountRejected(): void
+    {
+        $targetPath = $this->tmpDir.'/equal_body_trunc_target.txt';
+        $original = "line1\nline2\nline3\n";
+        file_put_contents($targetPath, $original);
+
+        // Hunk declares @@ -2,2 +2,2 @@ but body has 3 lines totalling
+        // actualOld=2, actualNew=2 vs declaredOld=2, declaredNew=2 — wait,
+        // this is perfectly counted (2==2 && 2==2), not the boundary case.
+        //
+        // The reviewer's N==declared boundary: declared old/new counts
+        // (e.g. 3,3) exceed the actual side counts (e.g. 2,2) while the
+        // body line count (3) happens to equal the declared count.
+        // Body: 1 context + 1 removal + 1 addition = 3 lines.
+        $patch = <<<'DIFF'
+--- a/file
++++ b/file
+@@ -1,3 +1,3 @@
+ line1
+-line2
++CHANGED2
+DIFF;
+
+        try {
+            ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+            $this->fail('Expected ToolCallException for boundary truncated hunk');
+        } catch (ToolCallException $e) {
+            $message = $e->getMessage();
+
+            // Must be classified as E_PATCH_FORMAT (not stale, not success)
+            $this->assertStringContainsString('[E_PATCH_FORMAT]', $message);
+            $this->assertTrue($e->retryable());
+
+            // File must be completely unchanged
+            $this->assertSame($original, file_get_contents($targetPath));
+        }
+    }
+
     /* ── Symlink preservation tests ── */
 
     public function testEditViaSymlinkPreservesSymlinkAndUpdatesTarget(): void

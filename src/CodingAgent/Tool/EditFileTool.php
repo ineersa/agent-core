@@ -393,21 +393,35 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
         int $declaredOld,
         int $declaredNew,
     ): void {
+        // Perfectly-counted hunk — including zero-count hunks (e.g. pure
+        // insertion @@ -1,0 +1,3 @@ or pure deletion @@ -1,3 +1,0 @@).
+        // No repair needed; leave header and body untouched.
+        if ($actualOld === $declaredOld && $actualNew === $declaredNew) {
+            return;
+        }
+
         // Truncation safety: when BOTH sides under-shoot vs declared counts,
-        // the patch content is likely truncated, not miscounted.  Strip the
-        // hunk body so GNU patch produces a format error (unexpected EOF /
-        // malformed) instead of applying a partial hunk with fuzz tolerance.
+        // the patch content is likely truncated, not miscounted.  We cannot
+        // simply leave the mismatch for GNU patch because GNU patch -F3
+        // applies partial hunks with fuzz tolerance (verified behaviour:
+        // declared @@ -2,4 +2,4 @@ with 3 body lines → "Hunk #1 succeeded
+        // at 2 with fuzz 2").  That would silently apply an incomplete edit.
         //
-        // Reference case: declared @@ -1,5 +1,5 @@ but body has only 2-3
-        // lines.  GNU patch -F3 would still apply this with fuzz, so we
-        // strip the body to ensure fail-closed.
+        // Instead, strip the hunk body to empty lines.  GNU patch treats
+        // blank body lines (lines with no space/-/+/\ prefix) as a format
+        // error ("malformed patch at line N") regardless of file content —
+        // blank context matching cannot silently no-op.
+        //
+        // Reference case: declared @@ -1,5 +1,5 @@ but body has only 2–3
+        // lines.  GNU patch -F3 would apply this with fuzz; stripping the
+        // body forces a format error → E_PATCH_FORMAT.  File is untouched.
         //
         // When at least one side actual >= declared (LLM over-count /
         // miscount is far more common than truncation), we repair safely.
         if ($actualOld < $declaredOld && $actualNew < $declaredNew) {
             // Strip all body lines for this hunk (keep the header line).
-            // GNU patch reads the header, finds no following body, and
-            // reports a format error → E_PATCH_FORMAT.  File is untouched.
+            // GNU patch reads the header, finds blank lines with no diff
+            // prefix, and reports a format error → E_PATCH_FORMAT.
             for ($j = $hdrIdx + 1; $j < $bodyEndIdx; ++$j) {
                 $lines[$j] = '';
             }
@@ -415,10 +429,13 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             return;
         }
 
+        // Safe repair: at least one side actual >= declared.  Rewrite
+        // the hunk header with actual counts, preserving zero-count
+        // hunks (e.g. pure insertion with declared 0,0 stays 0,0).
         $lines[$hdrIdx] = \sprintf(
             '@@ -%d,%d +%d,%d @@%s',
-            $oldStart, max(1, $actualOld),
-            $newStart, max(1, $actualNew),
+            $oldStart, $actualOld,
+            $newStart, $actualNew,
             $suffix,
         );
     }
