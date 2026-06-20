@@ -164,7 +164,9 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
      * snapshot → dry-run → temp-apply → in-place write.
      *
      * The lock key is derived from the real path so that edits to the
-     * same inode (via different hardlink names) are serialized.
+     * same file are serialized. The Symfony Lock is advisory and covers
+     * same-tool edits through the same symlink target; external writers
+     * and other tools are not globally excluded.
      *
      * In-place write preserves symlinks (follows the link to update the
      * target) and hardlinks (writes through the original path so all
@@ -202,6 +204,10 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             }
 
             // ── Phase 1: dry-run ──
+            // Retained even though Phase 2 also writes only to temp: the
+            // dry-run provides earlier, clearer failure classification
+            // (distinguishing stale/malformed/noop before any write phase)
+            // and defense-in-depth — no content is generated if validation fails.
             // Use the real (resolved) path for patch commands since GNU patch
             // refuses to operate on symlinks ("is not a regular file").
             $drResult = $this->runPatchDryRun($realPath, $patchFile);
@@ -295,13 +301,17 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
         // Best-effort rollback: restore original bytes in-place.
         // This preserves the same symlink/hardlink semantics as the
         // successful path.
-        @file_put_contents($targetPath, $originalContent, \LOCK_EX);
+        $restored = @file_put_contents($targetPath, $originalContent, \LOCK_EX);
+        $rollbackOk = false !== $restored && $restored === \strlen($originalContent);
+        $rollbackStatus = $rollbackOk
+            ? 'Original content restored.'
+            : 'Rollback may be incomplete (write failure or short write) — verify file integrity with `read` or `git diff`.';
 
         $detail = false === $written
             ? 'write returned false (permission/disk error)'
             : \sprintf('short write (%d of %d bytes)', $written, \strlen($patchedContent));
 
-        throw new ToolCallException(\sprintf('[E_PATCH_WRITE] Failed to write patched content to "%s": %s. Original content restored.', $targetPath, $detail), retryable: true, hint: 'Check file permissions and disk space, then retry.');
+        throw new ToolCallException(\sprintf('[E_PATCH_WRITE] Failed to write patched content to "%s": %s. %s', $targetPath, $detail, $rollbackStatus), retryable: true, hint: 'Check file permissions and disk space, then retry.');
     }
 
     /**
@@ -453,7 +463,11 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             ];
         }
 
-        // hunk succeeded count mismatch (partial success)
+        // Partial success — some hunks applied, some failed or were
+        // ignored. GNU patch reports this as "N out of M hunks FAILED"
+        // or "ignored". Retained as a defensive branch covering outputs
+        // where only some hunks mismatch while others apply cleanly;
+        // classified as stale so the model retries with current context.
         if (preg_match('/(\d+)\s+out\s+of\s+(\d+)\s+hunks?\s+(?:FAILED|ignored)/i', $combinedOutput)) {
             return [
                 'code' => 'E_PATCH_STALE',
@@ -512,6 +526,12 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
         int $contextLines = 4,
     ): string {
         $fileLines = explode("\n", $originalContent);
+
+        // Normalise CRLF / lone-CR line endings to plain LF for display.
+        foreach ($fileLines as &$line) {
+            $line = rtrim($line, "\r");
+        }
+        unset($line);
 
         // Drop the trailing empty element produced by explode for
         // newline-terminated content — otherwise it becomes a phantom
@@ -573,6 +593,7 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
 
         // Build output
         $output = '';
+        $padWidth = max(4, (int) floor(log10($totalLines)) + 1);
         $prevEnd = 0;
         foreach ($cappedRanges as [$start, $end]) {
             if ($start > $prevEnd + 1 && '' !== $output) {
@@ -580,7 +601,7 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             }
 
             for ($i = $start; $i <= $end; ++$i) {
-                $lineNum = str_pad((string) $i, max(4, (int) floor(log10($end)) + 1), ' ', \STR_PAD_LEFT);
+                $lineNum = str_pad((string) $i, $padWidth, ' ', \STR_PAD_LEFT);
                 $marker = \in_array($i, $failedLines, true) ? '→' : ' ';
                 // fileLines is 0-indexed
                 $lineContent = $fileLines[$i - 1] ?? '';

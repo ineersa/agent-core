@@ -332,6 +332,14 @@ DIFF;
             // Context window should include lines near the failure (around 48)
             $this->assertStringContainsString('Current file context', $message);
 
+            // Lines near the failed hunk must actually appear
+            $this->assertStringContainsString('line 048 content', $message);
+            $this->assertStringContainsString('line 049 content', $message);
+            $this->assertStringContainsString('line 051 content', $message);
+
+            // Failed line must be marked with → in context output
+            $this->assertStringContainsString("\u{2192}", $message);
+
             // Lines far from the failure must NOT appear
             $this->assertStringNotContainsString('line 001', $message);
             $this->assertStringNotContainsString('line 100', $message);
@@ -566,6 +574,38 @@ DIFF;
             $this->assertTrue($e->retryable());
 
             // Original must be untouched
+            $this->assertSame($original, file_get_contents($targetPath));
+        }
+    }
+
+    /* ── CRLF normalisation test ── */
+
+    public function testCrlfContentDoesNotLeakCarriageReturnsIntoContext(): void
+    {
+        $targetPath = $this->tmpDir.'/crlf_content.txt';
+
+        // File with CRLF line endings
+        $original = "line 01 content\r\nline 02 content\r\nline 03 content\r\n";
+        file_put_contents($targetPath, $original);
+
+        // Patch against foreign content to force stale-hunk failure
+        $fakeOld = "not present\nin this file\n";
+        $fakeNew = "not present\nmodified\n";
+        $patch = $this->createUnifiedDiff($fakeOld, $fakeNew);
+
+        try {
+            ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+            $this->fail('Expected ToolCallException');
+        } catch (ToolCallException $e) {
+            $message = $e->getMessage();
+
+            // Context must not expose raw carriage returns
+            $this->assertStringNotContainsString("\r", $message);
+
+            // Content must still be readable (lines preserved without CR)
+            $this->assertStringContainsString('line 01 content', $message);
+
+            // Original untouched (including CRLF bytes)
             $this->assertSame($original, file_get_contents($targetPath));
         }
     }
