@@ -178,6 +178,7 @@ services:
     arguments:
       - '@Ineersa\CodingAgent\Config\AppConfig'
 
+
   # BashToolConfig is derived from AppConfig and autowireable.
   Ineersa\CodingAgent\Config\BashToolConfig:
     factory: ['Ineersa\CodingAgent\Config\BashToolConfig', 'fromAppConfig']
@@ -402,6 +403,11 @@ services:
   Symfony\AI\Platform\Message\TemplateRenderer\StringTemplateRenderer: ~
 
   Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder:
+    arguments:
+      $projectDir: '%kernel.project_dir%'
+
+  # ─── Compaction prompt builder ───
+  Ineersa\CodingAgent\Compaction\CompactionPromptBuilder:
     arguments:
       $projectDir: '%kernel.project_dir%'
 

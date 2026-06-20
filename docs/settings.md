@@ -133,6 +133,83 @@ Files are stored under `logging.path`. The default of 14 keeps two weeks of logs
 
 **Default:** `14`
 
+---
+
+### `compaction.auto_enabled`
+
+Controls auto-compaction only. Manual `/compact` is always available.
+
+**Default:** `true`
+
+### `compaction.compact_after_tokens`
+
+Flat token threshold for auto-compaction trigger. When the estimated
+context exceeds this threshold, auto-compaction is triggered.
+Per-provider and per-model overrides allow per-model thresholds.
+
+**Default:** `120000`
+
+### `compaction.keep_recent_tokens`
+
+Approximate number of newest tokens to retain raw after compaction.
+Messages are kept whole — the cut never splits a message — so the actual
+retained token count may modestly exceed this target when the nearest safe
+boundary is further back (to avoid splitting tool-call groups).
+
+**Default:** `20000`
+
+### `compaction.model`
+
+Summarization model override in `provider/model` format (e.g.
+`llama_cpp/flash`). When `null`, the active session model is used.
+
+**Default:** `null`
+
+### `compaction.thinking_level`
+
+Thinking/reasoning level for summarization calls. Typical values:
+`off`, `minimal`, `low`, `medium`, `high`, `xhigh`. When `null`,
+the session's active thinking level is used.
+
+**Default:** `null`
+
+### `compaction.provider_overrides`
+
+Per-provider compaction override settings. Keys are provider IDs
+(e.g. `openai`, `llama_cpp`). Each entry may set `compact_after_tokens`,
+`model`, and/or `thinking_level`.
+
+**Default:** `{}`
+
+### `compaction.model_overrides`
+
+Per-model compaction override settings. Keys are `provider/model`
+strings (e.g. `openai/gpt-4.1`). Each entry may set `compact_after_tokens`,
+`model`, and/or `thinking_level`. Model overrides win over provider
+overrides, which win over global settings.
+
+**Default:** `{}`
+
+**Example:**
+```yaml
+compaction:
+    auto_enabled: true
+    compact_after_tokens: 120000
+    keep_recent_tokens: 20000
+    model: null
+    thinking_level: null
+    provider_overrides:
+        openai:
+            compact_after_tokens: 120000
+            model: openai/gpt-4.1-mini
+            thinking_level: low
+    model_overrides:
+        openai/gpt-4.1:
+            compact_after_tokens: 140000
+            model: openai/gpt-4.1-mini
+            thinking_level: off
+```
+
 ## Environment variables
 
 ### `HATFIELD_CAPTURE_ERRORS`

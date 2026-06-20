@@ -24,6 +24,8 @@ use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
  *  - extensions ExtensionsConfig (enabled list)
  *  - tools      ToolsConfig (execution, output_cap, background_process, image, …)
  *  - ai         AiConfig (provider and model configuration)
+ *  - prompts    PromptsConfig (custom system/user prompt overrides)
+ *  - compaction CompactionConfig (auto_enabled, compact_after_tokens, keep_recent_tokens, model, thinking_level, provider_overrides, model_overrides)
  *
  * The raw array is kept for forward compatibility with config keys
  * that do not yet have a typed DTO. Production consumers must use
@@ -40,6 +42,7 @@ final class AppConfig
         public ToolsConfig $tools = new ToolsConfig(),
         public ?AiConfig $ai = null,
         public PromptsConfig $prompts = new PromptsConfig(),
+        public CompactionConfig $compaction = new CompactionConfig(),
         /** @var array<string, mixed> Raw merged data for forward compatibility */
         public array $raw = [],
         public ?HatfieldModelCatalog $catalog = null,
@@ -98,6 +101,10 @@ final class AppConfig
             ),
             ai: $ai,
             prompts: PromptsConfig::fromRaw($data['prompts'] ?? []),
+            compaction: $denormalizer->denormalize(
+                (array) ($data['compaction'] ?? []),
+                CompactionConfig::class,
+            ),
             raw: $data,
             catalog: $catalog,
             cwd: $cwd,
