@@ -934,14 +934,9 @@ DIFF;
         $original = "line1\nline2\nline3\n";
         file_put_contents($targetPath, $original);
 
-        // Hunk declares @@ -2,2 +2,2 @@ but body has 3 lines totalling
-        // actualOld=2, actualNew=2 vs declaredOld=2, declaredNew=2 — wait,
-        // this is perfectly counted (2==2 && 2==2), not the boundary case.
-        //
-        // The reviewer's N==declared boundary: declared old/new counts
-        // (e.g. 3,3) exceed the actual side counts (e.g. 2,2) while the
-        // body line count (3) happens to equal the declared count.
-        // Body: 1 context + 1 removal + 1 addition = 3 lines.
+        // Boundary case where declared counts (3,3) exceed actual side
+        // counts (2,2) but the body line count (3) equals the declared
+        // count.  Body: 1 context + 1 removal + 1 addition = 3 lines.
         $patch = <<<'DIFF'
 --- a/file
 +++ b/file

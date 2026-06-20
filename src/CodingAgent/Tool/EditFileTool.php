@@ -316,8 +316,8 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
                 $hunkStartNew = (int) $m[3];
                 $hunkSuffix = $m[5];
                 // Omitted count in header defaults to 1 per unified-diff convention.
-                $declaredOldCount = isset($m[2]) ? (int) $m[2] : 1;
-                $declaredNewCount = isset($m[4]) ? (int) $m[4] : 1;
+                $declaredOldCount = '' === $m[2] ? 1 : (int) $m[2];
+                $declaredNewCount = '' === $m[4] ? 1 : (int) $m[4];
                 $oldCount = 0;
                 $newCount = 0;
 
