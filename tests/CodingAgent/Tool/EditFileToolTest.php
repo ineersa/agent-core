@@ -82,18 +82,18 @@ final class EditFileToolTest extends TestCase
 
         $this->assertNotEmpty($definition->promptGuidelines);
 
-        // Guidelines must describe unified diff, read line numbers, and @@ hunk headers
+        // Guidelines must describe unified diff, use plain @@, and mention hunk header resolution
         $guidelinesText = implode(' ', $definition->promptGuidelines);
         $this->assertStringContainsString('unified diff', strtolower($guidelinesText));
         $this->assertStringContainsString('read', strtolower($guidelinesText));
-        $this->assertStringContainsString('cat -n', $guidelinesText);
-        $this->assertStringContainsString('line number', strtolower($guidelinesText));
+        // Must NOT mention cat -n (model has read tool with line numbers)
+        $this->assertStringNotContainsString('cat -n', $guidelinesText);
+        $this->assertStringContainsString('plain `@@`', $guidelinesText);
         $this->assertStringContainsString('@@', $guidelinesText);
 
         // Guidelines must warn against common LLM mistakes observed in smoke testing
         $this->assertStringContainsString('markdown code fences', strtolower($guidelinesText));
         $this->assertStringContainsString('end new file', strtolower($guidelinesText));
-        $this->assertStringContainsString('line-number prefix', strtolower($guidelinesText));
         $this->assertStringContainsString('trailing newline', strtolower($guidelinesText));
         // Guidelines must mention the tool resolves/computes hunk headers
         $this->assertStringContainsString('resolves', strtolower($guidelinesText));
@@ -234,9 +234,9 @@ final class EditFileToolTest extends TestCase
 
     /**
      * When dry-run validation fails, the model-visible error must
-     * unambiguously state that no changes were applied — even when
-     * GNU patch might report hunks that "succeeded" with fuzz
-     * alongside failed hunks (session-5 regression).
+     * unambiguously state that no changes were applied and NOT
+     * include confusing GNU patch partial-success diagnostics
+     * (Hunk succeeded, offset, fuzz) — session-5/7 regression.
      */
     public function testDryRunFailureMessageStatesNoChangesApplied(): void
     {
@@ -257,10 +257,13 @@ final class EditFileToolTest extends TestCase
 
             // Must include the all-or-nothing preface
             $this->assertStringContainsString('No changes were applied', $message);
-            $this->assertStringContainsString('dry-run validation failed', $message);
-            $this->assertStringContainsString("Any 'Hunk succeeded'", $message);
-            $this->assertStringContainsString('diagnostics only', $message);
             $this->assertStringContainsString('target file is untouched', $message);
+
+            // Must NOT include confusing partial-success diagnostics
+            $this->assertStringNotContainsString("Hunk succeeded", $message);
+            $this->assertStringNotContainsString('diagnostics only', $message);
+            $this->assertStringNotContainsString('offset', strtolower($message));
+            $this->assertStringNotContainsString('fuzz', strtolower($message));
 
             // Must still include stale error code
             $this->assertStringContainsString('E_PATCH_STALE', $message);
@@ -304,10 +307,10 @@ final class EditFileToolTest extends TestCase
             // Must include current file context with line numbers
             $this->assertStringContainsString('Current file context', $message);
 
-            // The hint should reference reading the file and regenerating
+            // The hint should reference reading the file with `read` (no cat -n)
             $hint = $e->hint() ?? '';
             $this->assertStringContainsString('read', strtolower($hint));
-            $this->assertStringContainsString('cat -n', $hint);
+            $this->assertStringNotContainsString('cat -n', $hint);
 
             // Original file must be untouched
             $this->assertSame($original, file_get_contents($targetPath));
@@ -914,10 +917,10 @@ DIFF;
             $this->assertStringContainsString('[E_PATCH_FORMAT]', $message);
             $this->assertTrue($e->retryable());
 
-            // Hint must specifically diagnose truncation, not generic format
-            $this->assertStringContainsString('hunk header declared more lines', $hint);
+            // Hint must specifically diagnose truncation and recommend plain @@
             $this->assertStringContainsString('truncated', strtolower($hint));
-            $this->assertStringContainsString('complete hunk', strtolower($hint));
+            $this->assertStringContainsString('plain `@@`', $hint);
+            $this->assertStringNotContainsString('cat -n', $hint);
 
             // File must be completely unchanged
             $this->assertSame($original, file_get_contents($targetPath));
@@ -1193,7 +1196,7 @@ DIFF;
 
             $this->assertStringContainsString('[E_PATCH_STALE]', $message);
             $this->assertStringContainsString('no changes were applied', strtolower($message));
-            $this->assertStringContainsString('could not be located', $message);
+            $this->assertStringContainsString('was not found', $message);
 
             $hint = $e->hint() ?? '';
             $this->assertStringContainsString('stale', strtolower($hint));
@@ -1285,11 +1288,14 @@ DIFF;
         $guidelinesText = implode(' ', $definition->promptGuidelines);
 
         // Guidelines must mention that hunk counts/line numbers are optional
+        // and plain @@ is the default (not "when unsure" fallback)
         $this->assertStringContainsString('plain', strtolower($guidelinesText));
         $this->assertStringContainsString('@@', $guidelinesText);
-        $this->assertStringContainsString('when unsure', strtolower($guidelinesText));
+        $this->assertStringContainsString('as the default', strtolower($guidelinesText));
         $this->assertStringContainsString('resolves', strtolower($guidelinesText));
         $this->assertStringContainsString('without line numbers', strtolower($guidelinesText));
+        // Must NOT have contradictory "when unsure" language
+        $this->assertStringNotContainsString('when unsure', strtolower($guidelinesText));
     }
 
     /* ── Symlink preservation tests ── */
