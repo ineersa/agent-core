@@ -71,7 +71,7 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
         // Wrap core logic in cancellation checkpoints
         return $this->toolRuntime->run(function () use ($arguments): string {
             $targetPath = $this->resolveAndVerifyTarget($arguments['path']);
-            $patchContent = $arguments['patch'];
+            $patchContent = $this->normalizePatch($arguments['patch']);
 
             $stats = $this->applyPatch($targetPath, $patchContent);
 
@@ -109,15 +109,19 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
                 'Read the current file contents with the `read` tool before generating a patch — never guess line numbers or context.',
                 'Use exact unchanged context lines from the current file. Do not modify or reformat context lines; they must match byte-for-byte.',
                 'Provide the patch in standard unified diff format (diff -u). Use `read` and its `cat -n` original line numbers to determine `@@` hunk header ranges.',
-                '`@@` hunk headers must reference the original line numbers shown by `read` via `cat -n` (e.g. `@@ -42,6 +42,8 @@`).',
+                '`@@` hunk headers must reference the original line numbers shown by `read` via `cat -n` (e.g. `@@ -42,6 +42,8 @@`). The tool automatically repairs common hunk header count / body content mismatches, but correct counts are still best.',
                 'Keep hunks tight: include only enough unchanged context (typically 3–4 lines) for the patch to apply reliably.',
                 'The patch may contain multiple hunks to edit different parts of the file.',
+                'Do NOT wrap the patch in markdown code fences (```diff, ```patch, ```).',
+                'Do NOT include non-diff trailer lines such as `--- End new file ---` or `--- End file ---`.',
+                'Do NOT include line-number prefixes, leading spaces, or leading tabs from `read` / `cat -n` output in patch context lines. Use only the raw file text after the line-number separator (e.g. after `␣␣␣␣␣42␣`).',
+                'Ensure the patch ends with a trailing newline. The tool adds one if missing, but including it yourself avoids unexpected-EOF failures.',
                 'The target file must already exist — use the write tool to create new files.',
                 'Whitespace mismatches between the patch and the target file are handled automatically (tolerant matching).',
                 'On success, the tool returns only the file path and addition/deletion stats. Do NOT echo or expect the full applied diff back.',
                 'If the patch produces no changes, the tool reports "No changes" without modifying the file.',
                 'If an edit fails with a stale-hunk error (context mismatch), the error includes a current-file context window with exact line numbers. Re-read the file with `read` and retry with a regenerated patch using the exact current context from `cat -n`.',
-                'If an edit fails with a format error, check that the patch has proper ---/+++ headers and @@ hunk headers in standard unified diff format.',
+                'If an edit fails with a format error, check that the patch has proper ---/+++ headers and @@ hunk headers, ends with a newline, and contains no markdown fences or non-diff trailers.',
                 'If the target file lacks a trailing newline, the error hint will mention it. Add a trailing newline with the write tool or include "\\ No newline at end of file" markers in the patch.',
             ],
         );
@@ -160,6 +164,168 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
         }
 
         return $targetPath;
+    }
+
+    /* ── Patch normalization (LLM-generated diff repair) ── */
+
+    /**
+     * Normalize an LLM-provided patch before GNU patch processing.
+     *
+     * This step repairs common LLM generation mistakes — markdown fences,
+     * hallucinated non-diff trailers, missing terminal newlines, and hunk
+     * header counts that do not match the body content — so that correct
+     * diffs with cosmetic issues apply without the model needing to retry.
+     *
+     * The normalization is intentionally conservative: it only strips
+     * artifacts that are never valid unified-diff syntax, and only repairs
+     * hunk counts when the body lines are unambiguous.  It does NOT strip
+     * leading whitespace from context lines or reflow content, because
+     * those could change intended semantics.
+     */
+    private function normalizePatch(string $patchContent): string
+    {
+        // 1. Strip surrounding markdown code fences (only when they wrap the whole patch)
+        $patchContent = $this->stripMarkdownFences($patchContent);
+
+        // 2. Strip known non-diff hallucinated trailer artifacts
+        $patchContent = $this->stripNonDiffTrailers($patchContent);
+
+        // 3. Ensure the patch ends with a newline (avoids unexpected-EOF from GNU patch)
+        if ('' !== $patchContent && !str_ends_with($patchContent, "\n")) {
+            $patchContent .= "\n";
+        }
+
+        // 4. Repair hunk header counts to match actual body content
+        $patchContent = $this->repairHunkCounts($patchContent);
+
+        return $patchContent;
+    }
+
+    /**
+     * Strip surrounding markdown code fences when the entire patch is wrapped.
+     *
+     * Handles ```diff, ```patch, or bare ``` delimiters.  Only strips when
+     * the fences surround the entire content (i.e. begin at start, end at
+     * end after trimming).  Does not touch fences that appear inside the
+     * patch body.
+     */
+    private function stripMarkdownFences(string $patchContent): string
+    {
+        $trimmed = trim($patchContent);
+
+        // Match: optional language tag, then content, then closing fence
+        if (preg_match('/^```(?:diff|patch)?\s*\n(.*)\n```\s*$/s', $trimmed, $matches)) {
+            return $matches[1];
+        }
+
+        return $patchContent;
+    }
+
+    /**
+     * Strip LLM-hallucinated non-diff trailer lines from the patch.
+     *
+     * Targeted artifacts:
+     * - "--- End new file ---"  (and "--- End file ---") — common LLM artifact
+     *   that follows a `\ No newline at end of file` marker and is NOT
+     *   valid unified-diff syntax.
+     *
+     * Only strips at the end of the patch text so legitimate content lines
+     * that happen to match are not falsely removed.
+     */
+    private function stripNonDiffTrailers(string $patchContent): string
+    {
+        // Strip trailing "--- End new file ---" or "--- End file ---" artifacts.
+        // Case-insensitive match so "End New File" variants are also covered.
+        return preg_replace('/\n--- End (?:new )?file ---\s*$/i', '', $patchContent);
+    }
+
+    /**
+     * Repair unified-diff hunk header counts to match actual body content.
+     *
+     * For each hunk, counts context (` `), removal (`-`), and addition (`+`)
+     * lines in the body and rewrites the `@@ -oldStart,oldCount +newStart,newCount @@`
+     * header with the actual counts.  `\ No newline at end of file` marker
+     * lines are ignored.  Empty/blank lines within hunks are treated as
+     * context (a common LLM artifact where the leading space on blank lines
+     * was dropped).
+     *
+     * When the original header omits a count (e.g. `@@ -1 +3 @@`), a count
+     * of 1 is assumed per unified-diff convention.
+     */
+    private function repairHunkCounts(string $patchContent): string
+    {
+        // Matches hunk headers like:
+        //   @@ -42,6 +42,8 @@
+        //   @@ -1,20 +1,40 @@ function name
+        //   @@ -1 +3 @@
+        $hunkPattern = '/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$/m';
+
+        $lines = explode("\n", $patchContent);
+        $inHunk = false;
+        $oldCount = 0;
+        $newCount = 0;
+        $hunkHeaderIdx = -1;
+        $hunkStartOld = 0;
+        $hunkStartNew = 0;
+        $hunkSuffix = '';
+
+        foreach ($lines as $i => $line) {
+            if (preg_match($hunkPattern, $line, $m)) {
+                // Flush previous hunk: rewrite its header with actual counts
+                if ($inHunk) {
+                    $lines[$hunkHeaderIdx] = \sprintf(
+                        '@@ -%d,%d +%d,%d @@%s',
+                        $hunkStartOld, max(1, $oldCount),
+                        $hunkStartNew, max(1, $newCount),
+                        $hunkSuffix,
+                    );
+                }
+
+                $inHunk = true;
+                $hunkHeaderIdx = $i;
+                $hunkStartOld = (int) $m[1];
+                $hunkStartNew = (int) $m[3];
+                $hunkSuffix = $m[5];
+                $oldCount = 0;
+                $newCount = 0;
+
+                continue;
+            }
+
+            if ($inHunk) {
+                if ('' === $line) {
+                    // Blank line — treat as context (common LLM artifact
+                    // where leading space on blank context line was dropped).
+                    ++$oldCount;
+                    ++$newCount;
+                } elseif ('\\' === ($line[0] ?? '')) {
+                    // \ No newline at end of file — marker, do not count.
+                } elseif (' ' === ($line[0] ?? '')) {
+                    // Context line — counts for both old and new.
+                    ++$oldCount;
+                    ++$newCount;
+                } elseif ('-' === ($line[0] ?? '')) {
+                    // Removal line — counts for old.
+                    ++$oldCount;
+                } elseif ('+' === ($line[0] ?? '')) {
+                    // Addition line — counts for new.
+                    ++$newCount;
+                }
+                // Any other prefix (e.g. stray text) is ignored for counting.
+            }
+        }
+
+        // Flush the last hunk
+        if ($inHunk) {
+            $lines[$hunkHeaderIdx] = \sprintf(
+                '@@ -%d,%d +%d,%d @@%s',
+                $hunkStartOld, max(1, $oldCount),
+                $hunkStartNew, max(1, $newCount),
+                $hunkSuffix,
+            );
+        }
+
+        return implode("\n", $lines);
     }
 
     /**
@@ -448,14 +614,19 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             ];
         }
 
-        // Malformed / not a unified diff
+        // Malformed / not a unified diff — includes unexpected-EOF,
+        // garbage input, missing headers, and hunk count mismatches
+        // reported as malformed by GNU patch.
+        // Checked AFTER stale-hunk so that output containing both "Hunk
+        // FAILED" and "unexpected end" still classifies as stale (the
+        // stale context is the primary actionable signal).
         if (
-            preg_match('/(?:only\s+garbage\s+was\s+found|not\s+a\s+unified\s+diff|malformed|missing\s+header|unrecognized\s+input|can\'t\s+find\s+file\s+to\s+patch)/i', $combinedOutput)
+            preg_match('/(?:only\s+garbage\s+was\s+found|not\s+a\s+unified\s+diff|malformed|missing\s+header|unrecognized\s+input|can\'t\s+find\s+file\s+to\s+patch|unexpected\s+end\s+of\s+(?:file|patch)|patch\s+unexpectedly\s+ends)/i', $combinedOutput)
         ) {
             return [
                 'code' => 'E_PATCH_FORMAT',
                 'retryable' => true,
-                'baseHint' => 'The patch appears malformed or is not a valid unified diff. Provide a standard `diff -u` format patch with proper ---/+++ headers and @@ hunk headers. Each hunk must have correct line-number ranges.',
+                'baseHint' => 'The patch appears malformed or is not a valid unified diff. Provide a standard `diff -u` format patch with proper ---/+++ headers and @@ hunk headers. Ensure each hunk header count matches the actual body content, the patch ends with a newline, and no markdown code fences or non-diff trailer lines (e.g. `--- End new file ---`) are included. Do not copy line-number prefixes or tab/space indentation from `read` / `cat -n` output into patch context lines; use only the raw file text after the line-number separator.',
             ];
         }
 

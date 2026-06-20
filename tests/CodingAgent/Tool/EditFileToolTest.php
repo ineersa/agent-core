@@ -89,6 +89,13 @@ final class EditFileToolTest extends TestCase
         $this->assertStringContainsString('cat -n', $guidelinesText);
         $this->assertStringContainsString('line number', strtolower($guidelinesText));
         $this->assertStringContainsString('@@', $guidelinesText);
+
+        // Guidelines must warn against common LLM mistakes observed in smoke testing
+        $this->assertStringContainsString('markdown code fences', strtolower($guidelinesText));
+        $this->assertStringContainsString('end new file', strtolower($guidelinesText));
+        $this->assertStringContainsString('line-number prefix', strtolower($guidelinesText));
+        $this->assertStringContainsString('trailing newline', strtolower($guidelinesText));
+        $this->assertStringContainsString('repairs', strtolower($guidelinesText));
     }
 
     public function testDefinitionHasRetryGuidelines(): void
@@ -637,6 +644,152 @@ DIFF;
             $this->assertStringContainsString('line 01 content', $message);
 
             // Original untouched (including CR bytes)
+            $this->assertSame($original, file_get_contents($targetPath));
+        }
+    }
+
+    /* ── Patch normalization / auto-repair tests ── */
+
+    public function testHunkCountMismatchIsAutoRepairedAndApplied(): void
+    {
+        // 20-line target file
+        $targetPath = $this->tmpDir.'/hunk_repair_target.txt';
+        $lines = [];
+        for ($i = 1; $i <= 20; ++$i) {
+            $lines[] = \sprintf('line %02d', $i);
+        }
+
+        $original = implode("\n", $lines)."\n";
+        file_put_contents($targetPath, $original);
+
+        // Patch with intentionally WRONG hunk header counts.
+        // Header says @@ -1,3 +1,10 @@ (10 new lines) but the body only
+        // has 5 added lines (+ actual 3-context = 5 new, 3-context+3-removed = 6 old).
+        $patch = <<<'DIFF'
+--- a/file
++++ b/file
+@@ -1,3 +1,10 @@
+ line 01
+-line 02
+-line 03
++REPLACEMENT 02
++REPLACEMENT 03
++EXTRA 04
++EXTRA 05
++EXTRA 06
+DIFF;
+
+        $result = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+
+        $this->assertStringContainsString('Applied patch', $result);
+
+        // Verify the repaired hunk applied correctly
+        $expected = "line 01\nREPLACEMENT 02\nREPLACEMENT 03\nEXTRA 04\nEXTRA 05\nEXTRA 06\n";
+        for ($i = 4; $i <= 20; ++$i) {
+            $expected .= \sprintf("line %02d\n", $i);
+        }
+        $this->assertSame($expected, file_get_contents($targetPath));
+    }
+
+    public function testMultiHunkCountMismatchAllRepaired(): void
+    {
+        // 10-line target file
+        $targetPath = $this->tmpDir.'/multi_hunk_repair_target.txt';
+        $lines = [];
+        for ($i = 1; $i <= 10; ++$i) {
+            $lines[] = \sprintf('L%02d content', $i);
+        }
+
+        $original = implode("\n", $lines)."\n";
+        file_put_contents($targetPath, $original);
+
+        // Patch with two hunks, both with wrong counts
+        $patch = <<<'DIFF'
+--- a/file
++++ b/file
+@@ -2,2 +2,99 @@
+ L02 content
+-L03 content
++CHANGED L03
+@@ -7,3 +7,50 @@
+ L07 content
+-L08 content
+-L09 content
++CHANGED L08
++CHANGED L09
+DIFF;
+
+        $result = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+
+        $this->assertStringContainsString('Applied patch', $result);
+
+        $expected = "L01 content\nL02 content\nCHANGED L03\nL04 content\nL05 content\nL06 content\nL07 content\nCHANGED L08\nCHANGED L09\nL10 content\n";
+        $this->assertSame($expected, file_get_contents($targetPath));
+    }
+
+    public function testPatchWrappedInMarkdownFenceAndTrailersIsNormalized(): void
+    {
+        $targetPath = $this->tmpDir.'/fence_trailer_target.txt';
+        $original = "line1\nline2\nline3\nline4\n";
+        file_put_contents($targetPath, $original);
+
+        // Patch wrapped in markdown fence, ending with hallucinated
+        // "--- End new file ---" trailer and missing a final newline
+        // before the closing fence.
+        $patch = <<<'PATCH'
+```diff
+--- a/file
++++ b/file
+@@ -1,4 +1,5 @@
+ line1
+-line2
++CHANGED2
+ line3
+ line4
++EXTRA5
+--- End new file ---
+```
+PATCH;
+
+        $expected = "line1\nCHANGED2\nline3\nline4\nEXTRA5\n";
+
+        $result = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+
+        $this->assertStringContainsString('Applied patch', $result);
+        $this->assertSame($expected, file_get_contents($targetPath));
+    }
+
+    public function testTruncatedPatchUnexpectedEofClassifiedAsFormat(): void
+    {
+        $targetPath = $this->tmpDir.'/eof_target.txt';
+        $original = "a\nb\nc\n";
+        file_put_contents($targetPath, $original);
+
+        // Patch with ---/+++ headers but no @@ hunk header at all —
+        // GNU patch reports "Only garbage was found in the patch input."
+        // which hits the improved E_PATCH_FORMAT regex (which now also
+        // covers "unexpected end of file" and "patch unexpectedly ends").
+        // The hint must mention newline, markdown fences, and hunk counts.
+        $patch = "--- a/file\n+++ b/file\nno proper hunk header\n";
+
+        try {
+            ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+            $this->fail('Expected ToolCallException');
+        } catch (ToolCallException $e) {
+            $message = $e->getMessage();
+
+            // Must be classified as format, not stale
+            $this->assertStringContainsString('[E_PATCH_FORMAT]', $message);
+
+            // Hint should mention newline, fences/trailers, and hunk counts
+            $hint = $e->hint() ?? '';
+            $this->assertStringContainsString('newline', strtolower($hint));
+            $this->assertStringContainsString('markdown', strtolower($hint));
+            $this->assertStringContainsString('hunk', strtolower($hint));
+
+            $this->assertTrue($e->retryable());
+
+            // Original must be untouched
             $this->assertSame($original, file_get_contents($targetPath));
         }
     }
