@@ -18,7 +18,7 @@ use Symfony\Component\Serializer\Attribute\SerializedName;
  * Hydrated from the compaction section of Hatfield merged config via
  * Symfony Serializer denormalization.
  *
- * @see SessionCompactor
+ * @see \Ineersa\CodingAgent\Compaction\SessionCompactor
  */
 final readonly class CompactionConfig
 {

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Tests\Session;
+namespace Ineersa\CodingAgent\Tests\Compaction;
 
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
@@ -11,15 +11,15 @@ use Ineersa\CodingAgent\Config\CompactionConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
-use Ineersa\CodingAgent\Session\CompactResultDTO;
-use Ineersa\CodingAgent\Session\CompactionBoundarySelector;
-use Ineersa\CodingAgent\Session\CompactionPreparationDTO;
-use Ineersa\CodingAgent\Session\CompactionPreparationResultDTO;
-use Ineersa\CodingAgent\Session\CompactionPromptBuilder;
-use Ineersa\CodingAgent\Session\CompactionSkipReasonEnum;
-use Ineersa\CodingAgent\Session\CompactionTokenEstimator;
-use Ineersa\CodingAgent\Session\SessionCompactor;
-use Ineersa\CodingAgent\Session\ToolResultDigestService;
+use Ineersa\CodingAgent\Compaction\CompactResultDTO;
+use Ineersa\CodingAgent\Compaction\CompactionBoundarySelector;
+use Ineersa\CodingAgent\Compaction\CompactionPreparationDTO;
+use Ineersa\CodingAgent\Compaction\CompactionPreparationResultDTO;
+use Ineersa\CodingAgent\Compaction\CompactionPromptBuilder;
+use Ineersa\CodingAgent\Compaction\CompactionSkipReasonEnum;
+use Ineersa\CodingAgent\Compaction\CompactionTokenEstimator;
+use Ineersa\CodingAgent\Compaction\SessionCompactor;
+use Ineersa\CodingAgent\Compaction\ToolResultDigestService;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;

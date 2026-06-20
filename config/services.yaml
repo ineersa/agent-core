@@ -407,7 +407,7 @@ services:
       $projectDir: '%kernel.project_dir%'
 
   # ─── Compaction prompt builder ───
-  Ineersa\CodingAgent\Session\CompactionPromptBuilder:
+  Ineersa\CodingAgent\Compaction\CompactionPromptBuilder:
     arguments:
       $projectDir: '%kernel.project_dir%'
 

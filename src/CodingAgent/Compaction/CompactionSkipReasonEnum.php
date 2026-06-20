@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Session;
+namespace Ineersa\CodingAgent\Compaction;
 
 /**
  * Reason why SessionCompactor::prepare() skipped compaction.

@@ -99,7 +99,8 @@ final class AgentMessageToolCallSequenceValidator
      * (non-string id) are silently skipped, matching AgentMessageConverter's
      * behavior.
      *
-     * Shared implementation used by this validator and by SessionCompactor
+     * Shared implementation used by this validator and by
+     * \Ineersa\CodingAgent\Compaction\SessionCompactor
      * for cut-point safety checks.
      *
      * @return list<string>

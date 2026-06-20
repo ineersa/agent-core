@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Tests\Session;
+namespace Ineersa\CodingAgent\Tests\Compaction;
 
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
-use Ineersa\CodingAgent\Session\CompactionTokenEstimator;
-use Ineersa\CodingAgent\Session\ToolResultDigestService;
+use Ineersa\CodingAgent\Compaction\CompactionTokenEstimator;
+use Ineersa\CodingAgent\Compaction\ToolResultDigestService;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
