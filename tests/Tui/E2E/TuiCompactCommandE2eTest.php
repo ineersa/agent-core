@@ -182,6 +182,27 @@ final class TuiCompactCommandE2eTest extends TestCase
                 'Second /compact must show "already in progress" message',
             );
 
+            // ── Phase 6: Wait for compaction failure block ──
+            // After a tiny 2-message conversation, token usage is below
+            // keepRecentTokens (20000 default), so prepare() returns
+            // BelowKeepRecentTokens.  The RuntimeEventTranslator maps this
+            // to a user-visible message.  This assertion proves the full
+            // runtime event/projection pipeline: core event → runtime event
+            // → CompactionProjectionSubscriber → visible TUI transcript.
+            $failureCapture = $this->tmux->waitForCallback(
+                $pane,
+                static fn (string $cap): bool => str_contains($cap, 'Token usage below threshold'),
+                timeout: 15.0,
+                message: 'Compaction failure block not shown in TUI',
+                history: 2000,
+            );
+
+            self::assertStringContainsString(
+                'Token usage below threshold',
+                $failureCapture,
+                '/compact with small conversation must project visible failure block via runtime events',
+            );
+
             // Save ANSI snapshot for inspection.
             $this->saveAnsiSnapshot($pane, 'compact-success');
 
