@@ -208,6 +208,8 @@ final readonly class RunMessageProcessor
             'Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler' => 'runtime',
             'Ineersa\AgentCore\Application\Pipeline\LlmStepResultHandler' => 'llm',
             'Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler' => 'tool',
+            'Ineersa\CodingAgent\Application\Pipeline\CompactRunHandler' => 'compaction',
+            'Ineersa\CodingAgent\Application\Pipeline\CompactionStepResultHandler' => 'compaction',
             default => 'runtime',
         };
     }

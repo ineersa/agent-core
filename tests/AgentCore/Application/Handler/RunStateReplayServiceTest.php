@@ -866,6 +866,300 @@ final class RunStateReplayServiceTest extends TestCase
         self::assertSame(0, $result->rebuiltState->turnNo, 'leaf_set/turn_branched must not advance turn');
     }
 
+    // ── Compaction event replay ────────────────────────────────────────────
+
+    /**
+     * Thesis: context_compacted replaces the message accumulator wholesale
+     * from payload.messages. Later events (user message) append on top of
+     * the compacted checkpoint, proving the replacement is authoritative.
+     */
+    public function testContextCompactedReplacesMessages(): void
+    {
+        $user1 = ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Original message 1']]];
+        $user2 = ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Original message 2']]];
+
+        // Sequence: run_started (with 2 original messages) → context_compacted
+        // (replaces with 1 summary) → agent_command_applied (appends new user)
+        $this->appendEvent(RunEventTypeEnum::RunStarted->value, 1, [
+            'payload' => ['messages' => [$user1, $user2]],
+            'step_id' => 'init',
+        ]);
+
+        $summaryMsg = ['role' => 'user', 'content' => [['type' => 'text', 'text' => '<summary>Compacted content</summary>']], 'metadata' => ['compact_summary' => true]];
+
+        $this->appendEvent(RunEventTypeEnum::ContextCompacted->value, 2, [
+            'summary_text' => 'Compacted content',
+            'messages' => [$summaryMsg],
+            'estimated_tokens_before' => 10000,
+            'estimated_tokens_after' => 2000,
+            'messages_compacted' => 2,
+            'messages_retained' => 0,
+            'first_retained_index' => 2,
+            'model' => 'openai/gpt-4.1-mini',
+            'thinking_level' => 'low',
+            'trigger' => 'manual',
+        ]);
+
+        $this->appendEvent(RunEventTypeEnum::AgentCommandApplied->value, 3, [
+            'kind' => 'steer',
+            'message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'New message after compaction']]],
+        ]);
+
+        $state = RunState::queued($this->runId);
+        $result = $this->service->rebuildIfStale($state, $this->runId);
+
+        self::assertTrue($result->rebuilt);
+        self::assertCount(2, $result->rebuiltState->messages, 'Should have summary + new user message after compaction');
+        self::assertSame('user', $result->rebuiltState->messages[0]->role);
+        self::assertTrue(($result->rebuiltState->messages[0]->metadata['compact_summary'] ?? false), 'First message should be compact summary');
+        self::assertSame('user', $result->rebuiltState->messages[1]->role);
+        self::assertSame('New message after compaction', $result->rebuiltState->messages[1]->content[0]['text']);
+        self::assertNull($result->rebuiltState->activeStepId, 'context_compacted must clear activeStepId — compaction is one-shot, no AdvanceRun follows');
+    }
+
+    /**
+     * Thesis: context_compaction_failed does NOT replace messages.
+     * Prior messages survive unchanged, and later events append normally.
+     */
+    public function testContextCompactionFailedPreservesMessages(): void
+    {
+        $userMsg = ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Original message']]];
+
+        $this->appendEvent(RunEventTypeEnum::RunStarted->value, 1, [
+            'payload' => ['messages' => [$userMsg]],
+            'step_id' => 'init',
+        ]);
+
+        $this->appendEvent(RunEventTypeEnum::ContextCompactionFailed->value, 2, [
+            'reason' => 'empty_summary',
+            'message' => 'Compaction failed: empty summary.',
+            'messages_replaced' => false,
+            'model' => 'openai/gpt-4.1-mini',
+            'trigger' => 'manual',
+        ]);
+
+        $this->appendEvent(RunEventTypeEnum::AgentCommandApplied->value, 3, [
+            'kind' => 'steer',
+            'message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Follow-up']]],
+        ]);
+
+        $state = RunState::queued($this->runId);
+        $result = $this->service->rebuildIfStale($state, $this->runId);
+
+        self::assertTrue($result->rebuilt);
+        self::assertCount(2, $result->rebuiltState->messages, 'Original message should survive + new follow-up');
+        self::assertSame('Original message', $result->rebuiltState->messages[0]->content[0]['text']);
+        self::assertSame('Follow-up', $result->rebuiltState->messages[1]->content[0]['text']);
+    }
+
+    /**
+     * Thesis: context_compaction_started does NOT mutate messages
+     * but DOES restore activeStepId from payload.step_id so that
+     * a subsequent CompactionStepResult is accepted after replay.
+     */
+    public function testContextCompactionStartedDoesNotMutateMessages(): void
+    {
+        $userMsg = ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Original']]];
+
+        $this->appendEvent(RunEventTypeEnum::RunStarted->value, 1, [
+            'payload' => ['messages' => [$userMsg]],
+            'step_id' => 'init',
+        ]);
+
+        $this->appendEvent(RunEventTypeEnum::ContextCompactionStarted->value, 2, [
+            'step_id' => 'compaction-step-42',
+            'trigger' => 'manual',
+            'model' => 'openai/gpt-4.1-mini',
+            'thinking_level' => 'low',
+            'estimated_tokens' => 50000,
+            'keep_recent_tokens' => 20000,
+            'messages_before' => 10,
+            'messages_to_summarize' => 7,
+            'messages_retained' => 3,
+            'first_retained_index' => 7,
+            'prior_summary_present' => false,
+        ]);
+
+        $state = RunState::queued($this->runId);
+        $result = $this->service->rebuildIfStale($state, $this->runId);
+
+        self::assertTrue($result->rebuilt);
+        self::assertCount(1, $result->rebuiltState->messages, 'Messages should not be mutated by started event');
+        self::assertSame('Original', $result->rebuiltState->messages[0]->content[0]['text']);
+        self::assertSame('compaction-step-42', $result->rebuiltState->activeStepId, 'Started event MUST restore activeStepId for result staleness guard');
+    }
+
+    /**
+     * Thesis: context_compaction_failed with matching step_id clears activeStepId
+     * (emitted by CompactionStepResultHandler for model_error/empty_summary).
+     */
+    public function testContextCompactionFailedClearsActiveStepIdWhenStepIdMatches(): void
+    {
+        $this->appendEvent(RunEventTypeEnum::RunStarted->value, 1, [
+            'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Original']]]]],
+            'step_id' => 'init',
+        ]);
+
+        $this->appendEvent(RunEventTypeEnum::ContextCompactionStarted->value, 2, [
+            'step_id' => 'compaction-X',
+            'trigger' => 'manual',
+            'model' => 'openai/gpt-4.1-mini',
+            'thinking_level' => 'low',
+            'estimated_tokens' => 50000,
+            'keep_recent_tokens' => 20000,
+            'messages_before' => 10,
+            'messages_to_summarize' => 7,
+            'messages_retained' => 3,
+            'first_retained_index' => 7,
+            'prior_summary_present' => false,
+        ]);
+
+        $this->appendEvent(RunEventTypeEnum::ContextCompactionFailed->value, 3, [
+            'reason' => 'model_error',
+            'message' => 'Compaction failed: model error.',
+            'messages_replaced' => false,
+            'step_id' => 'compaction-X',
+            'model' => 'openai/gpt-4.1-mini',
+            'trigger' => 'manual',
+        ]);
+
+        $state = RunState::queued($this->runId);
+        $result = $this->service->rebuildIfStale($state, $this->runId);
+
+        self::assertTrue($result->rebuilt);
+        self::assertNull($result->rebuiltState->activeStepId, 'Matching step_id failure must clear activeStepId');
+        self::assertCount(1, $result->rebuiltState->messages, 'Messages preserved');
+        self::assertSame('Original', $result->rebuiltState->messages[0]->content[0]['text']);
+    }
+
+    /**
+     * Thesis: context_compaction_failed with stale_result reason preserves
+     * activeStepId even when step_id matches — the live handler treats
+     * stale as non-current, so replay must mirror that.
+     */
+    public function testContextCompactionFailedStaleResultPreservesActiveStepIdWhenStepIdMatches(): void
+    {
+        $this->appendEvent(RunEventTypeEnum::RunStarted->value, 1, [
+            'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Original']]]]],
+            'step_id' => 'init',
+        ]);
+
+        $this->appendEvent(RunEventTypeEnum::ContextCompactionStarted->value, 2, [
+            'step_id' => 'compaction-X',
+            'trigger' => 'manual',
+            'model' => 'openai/gpt-4.1-mini',
+            'thinking_level' => 'low',
+            'estimated_tokens' => 50000,
+            'keep_recent_tokens' => 20000,
+            'messages_before' => 10,
+            'messages_to_summarize' => 7,
+            'messages_retained' => 3,
+            'first_retained_index' => 7,
+            'prior_summary_present' => false,
+        ]);
+
+        // stale_result with matching step_id — step_id === activeStepId
+        // but reason is stale_result; live handler preserves activeStepId.
+        $this->appendEvent(RunEventTypeEnum::ContextCompactionFailed->value, 3, [
+            'reason' => 'stale_result',
+            'message' => 'Compaction result arrived too late.',
+            'messages_replaced' => false,
+            'step_id' => 'compaction-X',
+            'trigger' => 'manual',
+        ]);
+
+        $state = RunState::queued($this->runId);
+        $result = $this->service->rebuildIfStale($state, $this->runId);
+
+        self::assertTrue($result->rebuilt);
+        self::assertSame('compaction-X', $result->rebuiltState->activeStepId, 'Stale result must preserve activeStepId even when step_id matches');
+        self::assertCount(1, $result->rebuiltState->messages, 'Messages preserved');
+        self::assertSame('Original', $result->rebuiltState->messages[0]->content[0]['text']);
+    }
+
+    /**
+     * Thesis: context_compaction_failed with different step_id preserves activeStepId
+     * (stale result for old compaction A when B is active).
+     */
+    public function testContextCompactionFailedPreservesActiveStepIdWhenStepIdDiffers(): void
+    {
+        $this->appendEvent(RunEventTypeEnum::RunStarted->value, 1, [
+            'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Original']]]]],
+            'step_id' => 'init',
+        ]);
+
+        $this->appendEvent(RunEventTypeEnum::ContextCompactionStarted->value, 2, [
+            'step_id' => 'compaction-B', // B is in-flight
+            'trigger' => 'manual',
+            'model' => 'openai/gpt-4.1-mini',
+            'thinking_level' => 'low',
+            'estimated_tokens' => 50000,
+            'keep_recent_tokens' => 20000,
+            'messages_before' => 10,
+            'messages_to_summarize' => 7,
+            'messages_retained' => 3,
+            'first_retained_index' => 7,
+            'prior_summary_present' => false,
+        ]);
+
+        // Stale failure from compaction A arrives — step_id differs from active compaction-B.
+        $this->appendEvent(RunEventTypeEnum::ContextCompactionFailed->value, 3, [
+            'reason' => 'stale_result',
+            'message' => 'Compaction result arrived too late.',
+            'messages_replaced' => false,
+            'step_id' => 'compaction-A', // different from active compaction-B
+            'trigger' => 'manual',
+        ]);
+
+        $state = RunState::queued($this->runId);
+        $result = $this->service->rebuildIfStale($state, $this->runId);
+
+        self::assertTrue($result->rebuilt);
+        self::assertSame('compaction-B', $result->rebuiltState->activeStepId, 'Different step_id failure must preserve current activeStepId');
+        self::assertCount(1, $result->rebuiltState->messages, 'Messages preserved');
+    }
+
+    /**
+     * Thesis: context_compaction_failed without step_id (structural failure
+     * from CompactRunHandler) preserves activeStepId — no in-flight step was started.
+     */
+    public function testContextCompactionFailedPreservesActiveStepIdWhenNoStepId(): void
+    {
+        $this->appendEvent(RunEventTypeEnum::RunStarted->value, 1, [
+            'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Original']]]]],
+            'step_id' => 'init',
+        ]);
+
+        $this->appendEvent(RunEventTypeEnum::ContextCompactionStarted->value, 2, [
+            'step_id' => 'compaction-B',
+            'trigger' => 'manual',
+            'model' => 'openai/gpt-4.1-mini',
+            'thinking_level' => 'low',
+            'estimated_tokens' => 50000,
+            'keep_recent_tokens' => 20000,
+            'messages_before' => 10,
+            'messages_to_summarize' => 7,
+            'messages_retained' => 3,
+            'first_retained_index' => 7,
+            'prior_summary_present' => false,
+        ]);
+
+        // Structural failure without step_id (from CompactRunHandler).
+        $this->appendEvent(RunEventTypeEnum::ContextCompactionFailed->value, 3, [
+            'reason' => 'too_few_messages',
+            'message' => 'Compaction failed: too few messages.',
+            'messages_replaced' => false,
+            'trigger' => 'manual',
+        ]);
+
+        $state = RunState::queued($this->runId);
+        $result = $this->service->rebuildIfStale($state, $this->runId);
+
+        self::assertTrue($result->rebuilt);
+        self::assertSame('compaction-B', $result->rebuiltState->activeStepId, 'No step_id failure must preserve activeStepId');
+        self::assertCount(1, $result->rebuiltState->messages, 'Messages preserved');
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────────
 
     /**

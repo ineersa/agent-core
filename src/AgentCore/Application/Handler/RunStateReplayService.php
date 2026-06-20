@@ -284,6 +284,9 @@ final readonly class RunStateReplayService
             RunEventTypeEnum::AgentCommandQueued->value,
             RunEventTypeEnum::AgentCommandSuperseded->value,
             RunEventTypeEnum::StaleResultIgnored->value => $this->applyNoMutation($event, $state),
+            RunEventTypeEnum::ContextCompactionStarted->value => $this->applyContextCompactionStarted($payload, $state),
+            RunEventTypeEnum::ContextCompacted->value => $this->applyContextCompacted($payload, $state, $messages),
+            RunEventTypeEnum::ContextCompactionFailed->value => $this->applyContextCompactionFailed($payload, $state),
             RunEventTypeEnum::TurnBranched->value,
             RunEventTypeEnum::LeafSet->value => $this->applyNoMutation($event, $state),
             default => $this->applyNoMutation($event, $state),
@@ -648,6 +651,136 @@ final readonly class RunStateReplayService
             messages: $state->messages,
             activeStepId: $state->activeStepId,
             retryableFailure: false,
+        );
+    }
+
+    /**
+     * Handle context_compaction_started: restore activeStepId from payload.step_id
+     * so that a subsequent CompactionStepResult arriving after a state rebuild is
+     * accepted by the result handler's staleness guard.
+     *
+     * Messages are not mutated — only activeStepId is restored.
+     *
+     * @param array<string, mixed> $payload
+     */
+    private function applyContextCompactionStarted(array $payload, RunState $state): RunState
+    {
+        $stepId = \is_string($payload['step_id'] ?? null) ? $payload['step_id'] : $state->activeStepId;
+
+        return new RunState(
+            runId: $state->runId,
+            status: $state->status,
+            version: $state->version,
+            turnNo: $state->turnNo,
+            lastSeq: $state->lastSeq,
+            isStreaming: $state->isStreaming,
+            streamingMessage: $state->streamingMessage,
+            pendingToolCalls: $state->pendingToolCalls,
+            errorMessage: $state->errorMessage,
+            messages: $state->messages,
+            activeStepId: $stepId,
+            retryableFailure: $state->retryableFailure,
+        );
+    }
+
+    /**
+     * Handle context_compacted: replace messages from payload.messages
+     * with the full compacted message list.  The by-ref $messages accumulator
+     * is replaced wholesale, and later events (user/assistant/tool) append
+     * on top of the compacted checkpoint.
+     *
+     * Clearing activeStepId mirrors the live CompactionStepResultHandler
+     * which sets activeStepId: null on success — compaction is a one-shot
+     * cycle and no AdvanceRun follows to reset the step.
+     *
+     * @param array<string, mixed> $payload
+     * @param list<AgentMessage>   $messages
+     */
+    private function applyContextCompacted(array $payload, RunState $state, array &$messages): RunState
+    {
+        $rawMessages = \is_array($payload['messages'] ?? null) ? $payload['messages'] : [];
+
+        // Replace the message accumulator with the compacted checkpoint.
+        // Each entry is an AgentMessage::toArray() shape — replay
+        // reconstructs via AgentMessage::fromPayload().
+        $messages = [];
+
+        foreach ($rawMessages as $rawMessage) {
+            if (!\is_array($rawMessage)) {
+                continue;
+            }
+
+            $msg = AgentMessage::fromPayload($rawMessage);
+            if (null !== $msg) {
+                $messages[] = $msg;
+            }
+        }
+
+        return new RunState(
+            runId: $state->runId,
+            status: $state->status,
+            version: $state->version,
+            turnNo: $state->turnNo,
+            lastSeq: $state->lastSeq,
+            isStreaming: $state->isStreaming,
+            streamingMessage: $state->streamingMessage,
+            pendingToolCalls: $state->pendingToolCalls,
+            errorMessage: $state->errorMessage,
+            messages: $state->messages,
+            activeStepId: null,
+            retryableFailure: $state->retryableFailure,
+        );
+    }
+
+    /**
+     * Handle context_compaction_failed: clears activeStepId only when
+     * the failure belongs to the currently-active compaction step
+     * (payload.step_id matches state.activeStepId) AND the reason is not
+     * stale_result.
+     *
+     * Dual-emitter semantics:
+     * - CompactRunHandler structural failures (before worker dispatch)
+     *   have no step_id; they preserve whatever activeStepId was already set.
+     * - CompactionStepResultHandler post-start failures include step_id.
+     *   success/model_error/empty_summary clear the matched step.
+     *   stale_result preserves activeStepId even when step_id matches —
+     *   the live handler treats stale as non-current, and clearing would
+     *   lose a newer in-flight compaction's identity.
+     * - Stale failures with a different step_id also preserve activeStepId.
+     *
+     * Messages are never mutated by context_compaction_failed.
+     *
+     * @param array<string, mixed> $payload
+     */
+    private function applyContextCompactionFailed(array $payload, RunState $state): RunState
+    {
+        $payloadStepId = \is_string($payload['step_id'] ?? null) ? $payload['step_id'] : null;
+        $reason = \is_string($payload['reason'] ?? null) ? $payload['reason'] : null;
+
+        // Clear activeStepId only when this failure resolves the exact
+        // compaction step that was currently active AND is not a stale
+        // result.  stale_result is always non-current — the live handler
+        // preserves activeStepId because the handleable step (the one
+        // whose id still matches the state) is different.
+        $activeStepId = (null !== $payloadStepId
+            && $payloadStepId === $state->activeStepId
+            && 'stale_result' !== $reason)
+            ? null
+            : $state->activeStepId;
+
+        return new RunState(
+            runId: $state->runId,
+            status: $state->status,
+            version: $state->version,
+            turnNo: $state->turnNo,
+            lastSeq: $state->lastSeq,
+            isStreaming: $state->isStreaming,
+            streamingMessage: $state->streamingMessage,
+            pendingToolCalls: $state->pendingToolCalls,
+            errorMessage: $state->errorMessage,
+            messages: $state->messages,
+            activeStepId: $activeStepId,
+            retryableFailure: $state->retryableFailure,
         );
     }
 
