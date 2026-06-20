@@ -34,7 +34,8 @@ use Symfony\Component\Process\Process;
  * Tradeoff: in-place write preserves symlinks and hardlinks but is not
  * crash-atomic like temp-output + rename. Most real usage has git as
  * backup/recovery, and cancellation is only checked between phases, not
- * mid-write (file_put_contents with LOCK_EX completes as a single syscall).
+ * mid-write (file_put_contents with LOCK_EX completes as a single
+ * non-checkpointed PHP call).
  *
  * Cancellation behavior:
  * - Cancellation before the final in-place write leaves the target untouched.
@@ -183,14 +184,17 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             throw $this->infraError('Failed to create temp output file.', $targetPath);
         }
 
-        // Lock key: derived from real path so edits to the same inode
-        // (via symlinks or hardlinks) are serialised.
+        // Lock key: derived from real path so symlinks to the same target
+        // serialize. Distinct hardlink names do not share a lock key via
+        // realpath() (each name resolves to its own path), but the final
+        // in-place write serializes them at the write level and link
+        // identity is preserved.
         $realPath = false !== ($r = realpath($targetPath)) ? $r : $targetPath;
         $lockKey = 'edit-file-'.hash('sha256', $realPath);
         $lock = $this->lockFactory->createLock($lockKey);
-        $lock->acquire(true); // blocking — consistent with project flock pattern
 
         try {
+            $lock->acquire(true); // blocking — consistent with project flock pattern
             // Snapshot original bytes (reads through symlinks to target content)
             $originalContent = @file_get_contents($targetPath);
             if (false === $originalContent) {
@@ -205,8 +209,8 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             if (0 !== $drResult->exitCode) {
                 $noTrailingNewline = $this->targetLacksTrailingNewline($targetPath);
                 $failure = $this->buildFailureMessage(
-                    $targetPath, $patchFile, $patchContent,
-                    $drResult->stdout, $drResult->stderr, $drResult->exitCode,
+                    $targetPath,
+                    $drResult->stdout, $drResult->stderr,
                     $originalContent, $noTrailingNewline,
                 );
 
@@ -219,8 +223,8 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             if (0 !== $applyResult->exitCode) {
                 $noTrailingNewline = $this->targetLacksTrailingNewline($targetPath);
                 $failure = $this->buildFailureMessage(
-                    $targetPath, $patchFile, $patchContent,
-                    $applyResult->stdout, $applyResult->stderr, $applyResult->exitCode,
+                    $targetPath,
+                    $applyResult->stdout, $applyResult->stderr,
                     $originalContent, $noTrailingNewline,
                 );
 
@@ -243,18 +247,19 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             // semantics and hardlink inode identity.
             $this->writeBytesInPlace($targetPath, $patchedContent, $originalContent);
 
+            $stats = $this->computeStats($patchContent);
+
             return [
-                'additions' => $this->computeStats($patchContent)['additions'],
-                'deletions' => $this->computeStats($patchContent)['deletions'],
+                'additions' => $stats['additions'],
+                'deletions' => $stats['deletions'],
             ];
-        } catch (ToolCallException $e) {
-            throw $e;
-        } catch (\RuntimeException $e) {
-            // Cancellation/timeout: target was never touched before
-            // the in-place write, so it remains unchanged.
-            throw $e;
         } finally {
-            $lock->release();
+            // Release the lock (safely — may fail on unacquired or broken locks).
+            try {
+                $lock->release();
+            } catch (\Throwable) {
+                // Lock release failure is non-fatal during cleanup.
+            }
 
             // Clean up temp files
             if (is_file($patchFile)) {
@@ -360,11 +365,8 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
      */
     private function buildFailureMessage(
         string $targetPath,
-        string $patchFile,
-        string $patchContent,
         string $stdout,
         string $stderr,
-        ?int $exitCode,
         string $originalContent,
         bool $noTrailingNewline,
     ): array {
@@ -510,6 +512,14 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
         int $contextLines = 4,
     ): string {
         $fileLines = explode("\n", $originalContent);
+
+        // Drop the trailing empty element produced by explode for
+        // newline-terminated content — otherwise it becomes a phantom
+        // extra line that skews model-visible line counts.
+        if ([] !== $fileLines && '' === end($fileLines)) {
+            array_pop($fileLines);
+        }
+
         $totalLines = \count($fileLines);
 
         if (0 === $totalLines || [] === $failedLines) {

@@ -277,13 +277,64 @@ final class EditFileToolTest extends TestCase
         } catch (ToolCallException $e) {
             $message = $e->getMessage();
 
-            // The error message should NOT contain content from line 50+
-            // or line 80+ (far away from the failed hunk area)
+            // The error message should NOT contain content from far-away lines
             $this->assertStringNotContainsString('line 080:', $message);
             $this->assertStringNotContainsString('line 100:', $message);
 
             // Message length should be bounded (not dumping the whole file)
             $this->assertLessThan(5000, \strlen($message));
+
+            // Original must be untouched
+            $this->assertSame($original, file_get_contents($targetPath));
+        }
+    }
+
+    /**
+     * Force a stale hunk failure centred on line ~49 and assert that
+     * the context window shows nearby lines but NOT the extremes.
+     */
+    public function testStaleHunkContextCenteredOnFailedLine(): void
+    {
+        $targetPath = $this->tmpDir.'/midfile_context.txt';
+
+        // File with 100 unique lines
+        $lines = [];
+        for ($i = 1; $i <= 100; ++$i) {
+            $lines[] = \sprintf('line %03d content', $i);
+        }
+
+        $original = implode("\n", $lines)."\n";
+        file_put_contents($targetPath, $original);
+
+        // Create a patch whose context lines match near line 48-52 but the
+        // removed line does not match, so GNU patch reports "Hunk #1 FAILED at 48."
+        $patch = <<<'DIFF'
+--- f
++++ f
+@@ -48,5 +48,5 @@
+ line 048 content
+ line 049 content
+-this line will NOT match
++this is new line
+ line 051 content
+ line 052 content
+DIFF;
+
+        try {
+            ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+            $this->fail('Expected ToolCallException');
+        } catch (ToolCallException $e) {
+            $message = $e->getMessage();
+
+            // Must include stale error code
+            $this->assertStringContainsString('E_PATCH_STALE', $message);
+
+            // Context window should include lines near the failure (around 48)
+            $this->assertStringContainsString('Current file context', $message);
+
+            // Lines far from the failure must NOT appear
+            $this->assertStringNotContainsString('line 001', $message);
+            $this->assertStringNotContainsString('line 100', $message);
 
             // Original must be untouched
             $this->assertSame($original, file_get_contents($targetPath));
@@ -298,7 +349,8 @@ final class EditFileToolTest extends TestCase
         $original = "a\nb\nc\n";
         file_put_contents($targetPath, $original);
 
-        // Completely invalid patch (not a diff at all)
+        // GNU patch reports "Only garbage was found in the patch input."
+        // for input with no diff headers or hunk markers.
         $patch = "this is not a patch\njust random text\nno headers\nnohunks\n";
 
         try {
@@ -307,17 +359,56 @@ final class EditFileToolTest extends TestCase
         } catch (ToolCallException $e) {
             $message = $e->getMessage();
 
-            // Must include format error code (or could be stale if patch
-            // tries to match, but the classification should detect garbage)
-            $this->assertMatchesRegularExpression('/E_PATCH_(?:FORMAT|STALE)/', $message);
+            // Must include format error code specifically (garbage input is
+            // detected deterministically on GNU patch 2.7.5+).
+            $this->assertStringContainsString('[E_PATCH_FORMAT]', $message);
 
             // Must not include current-file context for format errors
-            if (\str_contains($message, 'E_PATCH_FORMAT')) {
-                $this->assertStringNotContainsString('Current file context', $message);
-            }
+            $this->assertStringNotContainsString('Current file context', $message);
+
+            // Must be retryable with hint about proper format
+            $this->assertTrue($e->retryable());
+            $this->assertStringContainsString('unified diff', strtolower($e->hint() ?? ''));
 
             // Original must be untouched
             $this->assertSame($original, file_get_contents($targetPath));
+        }
+    }
+
+    /* ── __invoke() no-op / already-applied tests ── */
+
+    public function testAlreadyAppliedPatchReturnsNoopCode(): void
+    {
+        $targetPath = $this->tmpDir.'/already_applied.txt';
+
+        // Create and apply a patch, then re-apply the same patch —
+        // GNU patch -N detects "Reversed (or previously applied) patch
+        // detected!  Skipping patch." and exits 1.
+        $original = "line1\nline2\nline3\n";
+        file_put_contents($targetPath, $original);
+
+        $modified = "line1\nCHANGED\nline3\n";
+        $patch = $this->createUnifiedDiff($original, $modified);
+
+        // First apply: should succeed.
+        $result1 = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+        $this->assertStringContainsString('Applied patch', $result1);
+        $this->assertSame($modified, file_get_contents($targetPath));
+
+        // Second apply of the same patch: should be detected as already applied.
+        try {
+            ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+            $this->fail('Expected ToolCallException for already-applied patch');
+        } catch (ToolCallException $e) {
+            $message = $e->getMessage();
+            $this->assertStringContainsString('[E_PATCH_NOOP]', $message);
+            $this->assertTrue($e->retryable());
+
+            $hint = $e->hint() ?? '';
+            $this->assertStringContainsString('already applied', strtolower($hint));
+
+            // File must remain unchanged from the first apply
+            $this->assertSame($modified, file_get_contents($targetPath));
         }
     }
 
@@ -446,35 +537,37 @@ DIFF;
     public function testEditTargetNotEndingWithNewlineIncludesEnrichedHint(): void
     {
         $targetPath = $this->tmpDir.'/no_trailing_newline.txt';
-        $original = "context line that matches\nlast line without newline";
+
+        // File without trailing newline, with content that does NOT match
+        // the patch.  This guarantees a stale-hunk failure so the trailing-
+        // newline hint is always observable.
+        $original = "some content here\nlast line without newline";
         file_put_contents($targetPath, $original);
 
-        $oldWithNewline = "context line that matches\nlast line without newline\n";
-        $newWithNewline = "context line that matches\nmodified last line\n";
-        $patch = $this->createUnifiedDiff($oldWithNewline, $newWithNewline);
+        // Patch against completely different content — always fails.
+        $fakeOld = "completely different\ncontent here\n";
+        $fakeNew = "completely different\nmodified version\n";
+        $patch = $this->createUnifiedDiff($fakeOld, $fakeNew);
 
         try {
-            $result = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+            ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+            $this->fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
-            $message = $e->getMessage();
-            $hint = $e->hint();
-            $combined = $message.' '.($hint ?? '');
+            $hint = $e->hint() ?? '';
 
-            // Verify the hint mentions trailing newline and actionable guidance
-            if ($this->targetLacksTrailingNewline($targetPath)) {
-                $this->assertStringContainsString('does not end with a newline', $hint ?? '');
-                $this->assertStringContainsString('trailing newline', $hint ?? '');
-                $this->assertTrue($e->retryable());
-            }
+            // Deterministic: the file lacks a trailing newline, and the
+            // stale-hunk path always includes the newline hint.
+            $this->assertStringContainsString('does not end with a newline', $hint);
+            $this->assertStringContainsString('trailing newline', $hint);
 
+            // The hint should also include stale guidance (prepended)
+            $this->assertStringContainsString('read', strtolower($hint));
+
+            $this->assertTrue($e->retryable());
+
+            // Original must be untouched
             $this->assertSame($original, file_get_contents($targetPath));
-
-            return;
         }
-
-        // If no exception was thrown (patch -l succeeded despite missing newline),
-        // this is acceptable (defense-in-depth).
-        $this->assertStringContainsString('Applied patch', $result);
     }
 
     /* ── Symlink preservation tests ── */
@@ -563,6 +656,13 @@ DIFF;
 
     public function testEditUnwritableTargetReturnsInfraError(): void
     {
+        // chmod-based write-denial is ineffective under root.
+        if (0 === posix_getuid()) {
+            $this->markTestSkipped('Cannot reliably deny writes when running as root.');
+
+            return;
+        }
+
         $targetPath = $this->tmpDir.'/unwritable.txt';
         $original = "content\n";
         file_put_contents($targetPath, $original);
@@ -571,13 +671,20 @@ DIFF;
         chmod($targetPath, 0o444);
 
         try {
+            // Patch that would succeed on dry-run (context matches exactly)
+            // but fails on in-place write because the file is read-only.
             $patch = "--- a/file\n+++ b/file\n@@ -1 +1 @@\n-content\n+new content\n";
             ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
             $this->fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
             $message = $e->getMessage();
-            $this->assertMatchesRegularExpression('/E_PATCH_(?:WRITE|INFRA|STALE)/', $message);
+
+            // The write should fail — expect a write or infrastructure code.
+            $this->assertMatchesRegularExpression('/E_PATCH_(?:WRITE|INFRA)/', $message);
             $this->assertTrue($e->retryable());
+
+            // Original content must be restored by the rollback path.
+            $this->assertSame($original, file_get_contents($targetPath));
         } finally {
             // Restore write permission for cleanup
             @chmod($targetPath, 0o644);
@@ -639,29 +746,4 @@ DIFF;
         );
     }
 
-    /**
-     * Test helper: check if a file lacks a trailing newline.
-     */
-    private function targetLacksTrailingNewline(string $targetPath): bool
-    {
-        if (!is_file($targetPath) || !is_readable($targetPath)) {
-            return false;
-        }
-
-        $handle = @fopen($targetPath, 'r');
-        if (false === $handle) {
-            return false;
-        }
-
-        if (-1 === fseek($handle, -1, \SEEK_END)) {
-            fclose($handle);
-
-            return false;
-        }
-
-        $lastByte = fread($handle, 1);
-        fclose($handle);
-
-        return "\n" !== $lastByte;
-    }
 }
