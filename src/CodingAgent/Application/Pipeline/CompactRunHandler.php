@@ -62,6 +62,13 @@ final readonly class CompactRunHandler implements RunMessageHandler
         $resolvedModel = $runtimeSettings->model ?? $activeModelStr;
         $thinkingLevel = $runtimeSettings->thinkingLevel;
 
+        // Build opaque model options bag for the async worker.
+        // AgentCore passes this uninterpreted to the platform.
+        // CodingAgent owns the semantics of keys like 'thinking_level'.
+        $modelOptions = null !== $thinkingLevel && '' !== $thinkingLevel
+            ? ['thinking_level' => $thinkingLevel]
+            : [];
+
         $preparation = $this->compactionService->prepare($state->messages);
 
         if (!$preparation->isReady()) {
@@ -131,7 +138,7 @@ final readonly class CompactRunHandler implements RunMessageHandler
             attempt: 1,
             idempotencyKey: hash('sha256', \sprintf('%s|compaction|%d|%s', $runId, $state->turnNo, $message->stepId())),
             model: $resolvedModel ?? '', // Empty string => adapter resolves from defaults
-            thinkingLevel: $thinkingLevel,
+            modelOptions: $modelOptions,
             summarizationMessages: $serializedSummarization,
             retainedTailMessages: $serializedRetained,
             messagesCompacted: $preparation->messagesCompacted,

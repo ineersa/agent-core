@@ -289,7 +289,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
     /**
      * Build Input options, propagating toolsRef, turnNo, and runId for
      * DynamicToolDescriptionProcessor / ToolSetResolver resolution, plus
-     * ModelInvocationOptions flags (toolsEnabled, thinkingLevel).
+     * ModelInvocationOptions flags (toolsEnabled, extraOptions).
      *
      * When toolsEnabled === false, injects tools:[] to force an empty
      * toolbox regardless of ToolSetResolver or toolbox configuration.
@@ -319,8 +319,11 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             $options['tools'] = [];
         }
 
-        if (null !== $request->options->thinkingLevel) {
-            $options['thinking_level'] = $request->options->thinkingLevel;
+        // Generic model/platform options from ModelInvocationOptions —
+        // forwarded uninterpreted.  Core-controlled flags (toolsEnabled)
+        // are applied after this merge and always win.
+        foreach ($request->options->extraOptions as $key => $value) {
+            $options[$key] = $value;
         }
 
         return $options;

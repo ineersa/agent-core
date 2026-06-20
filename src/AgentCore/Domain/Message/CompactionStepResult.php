@@ -29,7 +29,7 @@ final readonly class CompactionStepResult extends AbstractAgentBusMessage
      * @param int                        $tokenEstimateBefore  Token estimate before compaction
      * @param string                     $trigger              Trigger source ('manual' or 'auto')
      * @param string                     $model                Resolved compaction model ref used for invocation
-     * @param string|null                $thinkingLevel        Thinking level used for invocation
+     * @param array<string, mixed>       $modelOptions         Opaque model/platform options echoed back from the step (e.g. thinking_level)
      */
     public function __construct(
         string $runId,
@@ -46,7 +46,7 @@ final readonly class CompactionStepResult extends AbstractAgentBusMessage
         public int $tokenEstimateBefore,
         public string $trigger,
         public string $model,
-        public ?string $thinkingLevel,
+        public array $modelOptions,
     ) {
         parent::__construct($runId, $turnNo, $stepId, $attempt, $idempotencyKey);
     }

@@ -24,7 +24,7 @@ use Symfony\Component\Messenger\MessageBusInterface;
  *
  * Calls PlatformInterface with direct summarization messages, explicit
  * no-tools (toolsEnabled: false), a resolved compaction model, and a
- * thinking_level override.  Stream observer notifications are suppressed
+ * model-option override.  Stream observer notifications are suppressed
  * (streamObserverEnabled: false) since compaction has no interactive
  * consumer for streaming deltas — only the final result matters.
  *
@@ -111,7 +111,7 @@ final readonly class ExecuteCompactionStepWorker
                 ),
                 options: new ModelInvocationOptions(
                     toolsEnabled: false,
-                    thinkingLevel: $message->thinkingLevel,
+                    extraOptions: $message->modelOptions,
                     streamObserverEnabled: false,
                 ),
             ));
@@ -163,7 +163,7 @@ final readonly class ExecuteCompactionStepWorker
                 tokenEstimateBefore: $message->tokenEstimateBefore,
                 trigger: $message->trigger,
                 model: $model,
-                thinkingLevel: $message->thinkingLevel,
+                modelOptions: $message->modelOptions,
             );
         } catch (\Throwable $exception) {
             $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
@@ -194,7 +194,7 @@ final readonly class ExecuteCompactionStepWorker
                 tokenEstimateBefore: $message->tokenEstimateBefore,
                 trigger: $message->trigger,
                 model: $model,
-                thinkingLevel: $message->thinkingLevel,
+                modelOptions: $message->modelOptions,
             );
         } finally {
             RunLogContext::leave();

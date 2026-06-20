@@ -29,7 +29,7 @@ final readonly class ExecuteCompactionStep extends AbstractAgentBusMessage
      * @param int                        $attempt               Retry attempt counter
      * @param string                     $idempotencyKey        Deterministic dedup key
      * @param string                     $model                 Resolved compaction model ref (provider/model)
-     * @param string|null                $thinkingLevel         Thinking/reasoning level override (null = session default)
+     * @param array<string, mixed>       $modelOptions          Opaque model/platform options (e.g. thinking_level); forwarded uninterpreted
      * @param list<array<string, mixed>> $summarizationMessages Serialized AgentMessage shapes for the summarization LLM call
      * @param list<array<string, mixed>> $retainedTailMessages  Serialized AgentMessage shapes kept as-is (retained tail)
      * @param int                        $messagesCompacted     Number of messages being summarized away
@@ -45,7 +45,7 @@ final readonly class ExecuteCompactionStep extends AbstractAgentBusMessage
         int $attempt,
         string $idempotencyKey,
         public string $model,
-        public ?string $thinkingLevel,
+        public array $modelOptions,
         public array $summarizationMessages,
         public array $retainedTailMessages,
         public int $messagesCompacted,

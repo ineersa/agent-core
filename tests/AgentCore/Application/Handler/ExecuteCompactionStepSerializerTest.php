@@ -44,7 +44,7 @@ final class ExecuteCompactionStepSerializerTest extends TestCase
             attempt: 1,
             idempotencyKey: 'key-1',
             model: 'openai/gpt-4.1-mini',
-            thinkingLevel: 'low',
+            modelOptions: ['thinking_level' => 'low'],
             summarizationMessages: $summarizationMessages,
             retainedTailMessages: $retainedTailMessages,
             messagesCompacted: 10,
@@ -72,7 +72,7 @@ final class ExecuteCompactionStepSerializerTest extends TestCase
         self::assertSame(1, $decoded->attempt());
         self::assertSame('key-1', $decoded->idempotencyKey());
         self::assertSame('openai/gpt-4.1-mini', $decoded->model);
-        self::assertSame('low', $decoded->thinkingLevel);
+        self::assertSame(['thinking_level' => 'low'], $decoded->modelOptions);
         self::assertSame(10, $decoded->messagesCompacted);
         self::assertSame(5, $decoded->messagesRetained);
         self::assertSame(10, $decoded->firstRetainedIndex);
@@ -97,7 +97,7 @@ final class ExecuteCompactionStepSerializerTest extends TestCase
             attempt: 1,
             idempotencyKey: 'key-2',
             model: '',
-            thinkingLevel: null,
+            modelOptions: [],
             summarizationMessages: [],
             retainedTailMessages: [],
             messagesCompacted: 0,
@@ -115,7 +115,7 @@ final class ExecuteCompactionStepSerializerTest extends TestCase
         self::assertSame([], $decoded->summarizationMessages);
         self::assertSame([], $decoded->retainedTailMessages);
         self::assertSame('auto', $decoded->trigger);
-        self::assertNull($decoded->thinkingLevel);
+        self::assertSame([], $decoded->modelOptions);
     }
 
     private function createSerializer(): Serializer

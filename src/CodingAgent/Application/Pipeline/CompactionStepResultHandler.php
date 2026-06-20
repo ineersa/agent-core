@@ -110,7 +110,7 @@ final readonly class CompactionStepResultHandler implements RunMessageHandler
                     'messages_replaced' => false,
                     'step_id' => $message->stepId(),
                     'model' => $message->model,
-                    'thinking_level' => $message->thinkingLevel,
+                    'thinking_level' => $message->modelOptions['thinking_level'] ?? null,
                     'trigger' => $message->trigger,
                 ],
             ]]);
@@ -133,7 +133,7 @@ final readonly class CompactionStepResultHandler implements RunMessageHandler
                     'messages_replaced' => false,
                     'step_id' => $message->stepId(),
                     'model' => $message->model,
-                    'thinking_level' => $message->thinkingLevel,
+                    'thinking_level' => $message->modelOptions['thinking_level'] ?? null,
                     'trigger' => $message->trigger,
                 ],
             ]]);
@@ -195,7 +195,7 @@ final readonly class CompactionStepResultHandler implements RunMessageHandler
                 'messages_retained' => $compactResult->messagesRetained,
                 'first_retained_index' => $compactResult->firstRetainedIndex,
                 'model' => $message->model,
-                'thinking_level' => $message->thinkingLevel,
+                'thinking_level' => $message->modelOptions['thinking_level'] ?? null,
                 'trigger' => $message->trigger,
             ],
         ]]);

@@ -21,7 +21,7 @@ use Symfony\AI\Platform\Message\Content\Text;
  * Contract tests for {@see ExecuteCompactionStepWorker}.
  *
  * Theses:
- *  - Invokes PlatformInterface with toolsEnabled:false, streamObserverEnabled:false, and explicit model+thinkingLevel.
+ *  - Invokes PlatformInterface with toolsEnabled:false, streamObserverEnabled:false, and explicit model+modelOptions.
  *  - Dispatches CompactionStepResult with summary text on success.
  *  - Dispatches CompactionStepResult with error on model failure.
  *  - Passes explicit model string through to the returned result.
@@ -47,7 +47,7 @@ final class ExecuteCompactionStepWorkerTest extends TestCase
             attempt: 1,
             idempotencyKey: 'key-1',
             model: 'openai/gpt-4.1-mini',
-            thinkingLevel: 'low',
+            modelOptions: ['thinking_level' => 'low'],
             summarizationMessages: [],
             retainedTailMessages: [],
             messagesCompacted: 10,
@@ -66,7 +66,7 @@ final class ExecuteCompactionStepWorkerTest extends TestCase
         self::assertSame('summary text', $result->summaryText);
         self::assertNull($result->error);
         self::assertSame('openai/gpt-4.1-mini', $result->model);
-        self::assertSame('low', $result->thinkingLevel);
+        self::assertSame(['thinking_level' => 'low'], $result->modelOptions);
 
         // Assert the captured ModelInvocationRequest has the correct options.
         $captured = $fakePlatform->lastRequest;
@@ -74,7 +74,7 @@ final class ExecuteCompactionStepWorkerTest extends TestCase
         self::assertSame('openai/gpt-4.1-mini', $captured->model);
         self::assertFalse($captured->options->toolsEnabled, 'toolsEnabled must be false for compaction.');
         self::assertFalse($captured->options->streamObserverEnabled, 'streamObserverEnabled must be false for compaction.');
-        self::assertSame('low', $captured->options->thinkingLevel);
+        self::assertSame('low', $captured->options->extraOptions['thinking_level'] ?? null);
         // Messages are direct messages, not null.
         self::assertNotNull($captured->input->messages);
         self::assertIsArray($captured->input->messages);
@@ -93,7 +93,7 @@ final class ExecuteCompactionStepWorkerTest extends TestCase
             attempt: 1,
             idempotencyKey: 'key-2',
             model: 'llama_cpp/flash',
-            thinkingLevel: null,
+            modelOptions: [],
             summarizationMessages: [],
             retainedTailMessages: [],
             messagesCompacted: 0,
@@ -108,7 +108,7 @@ final class ExecuteCompactionStepWorkerTest extends TestCase
         /** @var CompactionStepResult $result */
         $result = $testBus->messages[0];
         self::assertSame('llama_cpp/flash', $result->model);
-        self::assertNull($result->thinkingLevel);
+        self::assertSame([], $result->modelOptions);
     }
 
     public function testModelErrorDispatchesResultWithError(): void
@@ -125,7 +125,7 @@ final class ExecuteCompactionStepWorkerTest extends TestCase
             attempt: 1,
             idempotencyKey: 'key-3',
             model: '',
-            thinkingLevel: null,
+            modelOptions: [],
             summarizationMessages: [],
             retainedTailMessages: [],
             messagesCompacted: 0,
@@ -158,7 +158,7 @@ final class ExecuteCompactionStepWorkerTest extends TestCase
             attempt: 1,
             idempotencyKey: 'key-4',
             model: '',
-            thinkingLevel: null,
+            modelOptions: [],
             summarizationMessages: [],
             retainedTailMessages: [],
             messagesCompacted: 0,

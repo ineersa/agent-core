@@ -63,7 +63,7 @@ final class CompactionStepResultHandlerTest extends TestCase
                 tokenEstimateBefore: 50000,
                 trigger: 'manual',
                 model: 'openai/gpt-4.1-mini',
-                thinkingLevel: 'low',
+                modelOptions: ['thinking_level' => 'low'],
             ),
             $state,
         );
@@ -109,7 +109,7 @@ final class CompactionStepResultHandlerTest extends TestCase
                 tokenEstimateBefore: 50000,
                 trigger: 'manual',
                 model: 'openai/gpt-4.1-mini',
-                thinkingLevel: null,
+                modelOptions: [],
             ),
             $state,
         );
@@ -153,7 +153,7 @@ final class CompactionStepResultHandlerTest extends TestCase
                 tokenEstimateBefore: 50000,
                 trigger: 'manual',
                 model: 'openai/gpt-4.1-mini',
-                thinkingLevel: null,
+                modelOptions: [],
             ),
             $state,
         );
@@ -198,7 +198,7 @@ final class CompactionStepResultHandlerTest extends TestCase
                 tokenEstimateBefore: 50000,
                 trigger: 'manual',
                 model: 'openai/gpt-4.1-mini',
-                thinkingLevel: null,
+                modelOptions: [],
             ),
             $state,
         );
@@ -246,7 +246,7 @@ final class CompactionStepResultHandlerTest extends TestCase
                 tokenEstimateBefore: 50000,
                 trigger: 'manual',
                 model: 'openai/gpt-4.1-mini',
-                thinkingLevel: null,
+                modelOptions: [],
             ),
             $state,
         );
@@ -299,7 +299,7 @@ final class CompactionStepResultHandlerTest extends TestCase
                 tokenEstimateBefore: 50000,
                 trigger: 'manual',
                 model: 'openai/gpt-4.1-mini',
-                thinkingLevel: null,
+                modelOptions: [],
             ),
             $state,
         );

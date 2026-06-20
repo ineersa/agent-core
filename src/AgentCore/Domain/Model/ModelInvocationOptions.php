@@ -25,13 +25,18 @@ final readonly class ModelInvocationOptions
         public ?bool $toolsEnabled = null,
 
         /**
-         * Thinking/reasoning level override for this invocation.
-         * When non-null, the value is forwarded to the platform as
-         * the thinking_level option.  Typical values: off, minimal,
-         * low, medium, high, xhigh.  When null, the session/model
-         * default thinking level is used.
+         * Additional model/provider/platform options forwarded to the
+         * platform uninterpreted.  Keys like 'thinking_level',
+         * 'reasoning_effort', etc. are passed through without
+         * AgentCore knowledge of their semantics.
+         *
+         * Core-controlled flags (toolsEnabled, streamObserverEnabled)
+         * are NOT part of this bag — they are applied after extraOptions
+         * and always win over any key that appears here.
+         *
+         * @var array<string, mixed>
          */
-        public ?string $thinkingLevel = null,
+        public array $extraOptions = [],
 
         /**
          * When false, the LlmStreamObserver is suppressed for this
