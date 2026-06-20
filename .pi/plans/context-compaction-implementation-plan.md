@@ -58,20 +58,26 @@ Repeated compaction works because the previous summary message is part of the cu
    - The prompt asks for a handoff summary, not a rigid section-by-section report.
    - It includes one repeated-compaction instruction: incorporate prior summaries if present.
 
-5. **Auto-compaction uses a reserve-token policy.**
+5. **Auto-compaction uses a compact-after-tokens flat threshold.**
    - Auto trigger condition:
 
 ```text
-estimatedContextTokens > contextWindow - reserveTokens
+estimatedContextTokens > compact_after_tokens
 ```
 
-   - Initial defaults:
+   - Default threshold: 120000 tokens.
+   - Supports per-provider and per-model overrides for testing and tuning.
+   - Initial settings:
 
 ```yaml
 compaction:
-    enabled: true
-    reserve_tokens: 16384
+    auto_enabled: true
+    compact_after_tokens: 120000
     keep_recent_tokens: 20000
+    model: null
+    thinking_level: null
+    provider_overrides: {}
+    model_overrides: {}
 ```
 
 ## 4. Repository integration points
@@ -149,15 +155,45 @@ Relevant files:
 
 Add `/compact [custom instructions]` as a slash command.
 
-### 4.8 Existing compactor stub
+### 4.8 Existing compactor services
 
-`src/CodingAgent/Session/SessionCompactor.php`
+`src/CodingAgent/Compaction/` (namespace `Ineersa\CodingAgent\Compaction`)
 
-This file already exists as a stub and should become the main service for compaction preparation, cut-point selection, prompt construction, and compacted message construction.
+Production classes already implemented in COMP-01:
+
+- `SessionCompactor` — orchestrator for preparation, summarization message construction, and compacted message construction.
+- `CompactionBoundarySelector` — safe cut-point algorithm using `AgentMessageToolCallSequenceValidator`.
+- `CompactionTokenEstimator` — approximate token estimation using model-facing text (UnicodeString length / 3.25).
+- `ToolResultDigestService` — deterministic tool-result digestion before summarization.
+- `CompactionPromptBuilder` — loads `config/COMPACTION.md` with precedence (project > home > built-in) and renders via Symfony AI `StringTemplateRenderer`.
+- `CompactionPreparationDTO`, `CompactionPreparationResultDTO`, `CompactResultDTO` — data transfer objects.
+- `CompactionSkipReasonEnum` — skip reasons for `prepare()` result.
+
+Tests: `tests/CodingAgent/Compaction/SessionCompactorTest.php`, `tests/CodingAgent/Compaction/CompactionTokenEstimatorTest.php`, `tests/CodingAgent/Compaction/ToolResultDigestServiceTest.php`.
+
+Settings: `CompactionConfig` on `AppConfig::$compaction` (`src/CodingAgent/Config/CompactionConfig.php`, tests at `tests/CodingAgent/Config/CompactionConfigTest.php`).
 
 ## 5. Prompt specification
 
-### 5.1 Summarization system message
+### 5.1 Prompt template
+
+The compaction prompt is file-backed: built-in `config/COMPACTION.md`, with precedence:
+
+1. `<project>/.hatfield/COMPACTION.md` (project-level override)
+2. `~/.hatfield/COMPACTION.md` (home-level override)
+3. `config/COMPACTION.md` (built-in default)
+
+There is no `APPEND_COMPACTION.md`.
+
+The template uses Symfony AI `StringTemplateRenderer` and supports context placeholders:
+- `{date}` — current date
+- `{cwd}` — current working directory (for relative path resolution)
+- `{custom_instructions_part}` — injected custom instructions from `/compact`
+- `{summary_prefix}` — injected summary prefix wrapper
+
+Implementation: `CompactionPromptBuilder` renders the resolved template file and injects placeholders. The resulting system message and user message are returned as the summarization message list.
+
+### 5.2 Summarization system message (from COMPACTION.md)
 
 ```text
 You are a context summarization assistant. Read the conversation and produce only a handoff summary.
@@ -165,7 +201,7 @@ You are a context summarization assistant. Read the conversation and produce onl
 Do not continue the conversation. Do not answer questions from the conversation. Do not call tools. Output only the summary text.
 ```
 
-### 5.2 Summarization user prompt
+### 5.3 Summarization user prompt (from COMPACTION.md)
 
 ```text
 You are performing a CONTEXT CHECKPOINT COMPACTION. Create a handoff summary for another LLM that will resume the task.
@@ -181,7 +217,7 @@ If a prior compaction summary exists in the conversation, incorporate it and pre
 Be concise, structured, and focused on helping the next LLM seamlessly continue the work.
 ```
 
-### 5.3 Custom instruction handling
+### 5.4 Custom instruction handling
 
 If the user runs:
 
@@ -198,7 +234,7 @@ summarize only database decisions
 
 Custom instructions should narrow or emphasize the summary. They should not remove the base requirements to preserve progress, decisions, constraints, next steps, and critical references.
 
-### 5.4 Injected summary prefix
+### 5.5 Injected summary prefix
 
 The compact summary is injected into future LLM context as a user-role message:
 
@@ -220,39 +256,37 @@ The injected message must have metadata:
 
 Add compaction settings to `config/hatfield.defaults.yaml` and document them in `docs/settings.md`.
 
-Initial settings:
+Actual settings (implemented in COMP-01):
 
 ```yaml
 compaction:
-    enabled: true
-    reserve_tokens: 16384
+    auto_enabled: true
+    compact_after_tokens: 120000
     keep_recent_tokens: 20000
-    max_summary_tokens: null
     model: null
+    thinking_level: null
+    provider_overrides: {}
+    model_overrides: {}
 ```
 
 Field meanings:
 
 | Setting | Meaning |
 |---|---|
-| `enabled` | Enables manual compaction and, later, auto-compaction. |
-| `reserve_tokens` | Tokens reserved for the next model response. Used by auto trigger policy. |
+| `auto_enabled` | Controls auto-compaction only. Manual `/compact` is always available regardless of this flag. |
+| `compact_after_tokens` | Flat auto-trigger threshold. When estimated context tokens exceed this value, auto-compaction is triggered. |
 | `keep_recent_tokens` | Approximate number of newest tokens to retain raw after compaction. |
-| `max_summary_tokens` | Optional cap for summary generation. If null, use `floor(reserve_tokens * 0.8)`. |
 | `model` | Override for the summarization model. `null` uses the active session model. When set, use format `provider/model`, e.g. `llama_cpp/flash`. |
+| `thinking_level` | Optional thinking/reasoning-effort level for the summarization model call. |
+| `provider_overrides` | Map of provider name → compaction config override (e.g. `compact_after_tokens` per provider). |
+| `model_overrides` | Map of `provider/model` string → compaction config override (e.g. `compact_after_tokens` per model). |
 
-Auto-compaction phase may later add:
+Per-provider and per-model overrides use the same field subset (any of `compact_after_tokens`, `model`, `thinking_level`). Resolution: model override > provider override > global.
 
-```yaml
-compaction:
-    auto_enabled: true
-```
-
-Auto trigger policy remains:
-
-```text
-estimatedContextTokens > contextWindow - reserveTokens
-```
+Removed/obsolete settings (do NOT implement):
+- `enabled` — replaced by `auto_enabled`; manual compaction is always available.
+- `reserve_tokens` — replaced by flat `compact_after_tokens` threshold.
+- `max_summary_tokens` — removed entirely.
 
 Do not introduce percentage-threshold, minimum-turn, or cooldown settings in the initial implementation.
 
@@ -395,14 +429,14 @@ Algorithm:
 3. Walk backward from newest to oldest, accumulating approximate tokens.
 4. Stop after accumulating at least `keep_recent_tokens`.
 5. Move the boundary to a safe cut point.
-6. Return:
+6. Return a `CompactionPreparationResultDTO` with success/skip details:
 
 ```text
-messagesToSummarize = messages[0 .. boundary-1]
-retainedTailMessages = messages[boundary .. end]
+On success: result with preparation (messagesToSummarize, retainedTailMessages, tokenEstimateBefore, etc.) and skipReason = null.
+On skip: result with skipReason enum (Disabled, BelowThreshold, NoSafeBoundary, InvalidSequence, NothingToCompact, TooShort) and null preparation.
 ```
 
-If all messages fit inside `keep_recent_tokens`, return no preparation and do not compact.
+If all messages fit inside `keep_recent_tokens`, return skip reason `BelowThreshold` and do not compact.
 
 ## 10. Safe cut-point rules
 
@@ -426,19 +460,27 @@ Future enhancement:
 
 - Split-turn compaction: if a very large turn crosses the boundary, summarize the old prefix and retain the recent suffix. This is not required for Phase 1.
 
-## 11. `SessionCompactor` service
+## 11. Compaction services (implemented)
 
-Implement `src/CodingAgent/Session/SessionCompactor.php` as the algorithm and prompt-construction service.
+Implemented under `Ineersa\CodingAgent\Compaction` / `src/CodingAgent/Compaction` (COMP-01).
 
-Suggested responsibilities:
+### 11.1 `SessionCompactor` (orchestrator)
 
 ```php
 final class SessionCompactor
 {
+    public function __construct(
+        private CompactionConfig $config,
+        private CompactionTokenEstimator $tokenEstimator,
+        private CompactionBoundarySelector $boundarySelector,
+        private ToolResultDigestService $toolResultDigestService,
+        private CompactionPromptBuilder $promptBuilder,
+    ) {}
+
     public function prepare(
         array $messages,
-        CompactionSettingsDTO $settings,
-    ): ?CompactionPreparationDTO;
+        ?string $activeModel,
+    ): CompactionPreparationResultDTO;
 
     public function buildSummarizationMessages(
         CompactionPreparationDTO $preparation,
@@ -452,37 +494,34 @@ final class SessionCompactor
 }
 ```
 
-Keep algorithmic code unit-testable without a real LLM.
+`prepare()` returns `CompactionPreparationResultDTO` with:
+- `?CompactionPreparationDTO $preparation` — null on skip.
+- `CompactionSkipReasonEnum $skipReason` — reason when preparation is null.
 
-Suggested DTOs:
+Skip reasons: `Disabled`, `BelowThreshold`, `NoSafeBoundary`, `InvalidSequence`, `NothingToCompact`.
 
-```php
-CompactionSettingsDTO
-  - enabled: bool
-  - reserveTokens: int
-  - keepRecentTokens: int
-  - maxSummaryTokens: ?int
-  - model: ?string
+### 11.2 `CompactionTokenEstimator`
 
-CompactionPreparationDTO
-  - messagesToSummarize: list<AgentMessage>
-  - retainedTailMessages: list<AgentMessage>
-  - tokenEstimateBefore: int
-  - messagesCompacted: int
-  - messagesRetained: int
-  - firstRetainedIndex: int
-  - priorSummaryPresent: bool
+Estimates tokens using model-facing text only — no JSON envelope. Computes `ceil(UnicodeString::length(modelFacingText) / 3.25)`.
 
-CompactResultDTO
-  - summaryText: string
-  - summaryMessage: AgentMessage
-  - compactedMessages: list<AgentMessage>
-  - tokenEstimateBefore: int
-  - tokenEstimateAfter: int
-  - messagesCompacted: int
-  - messagesRetained: int
-  - firstRetainedIndex: int
-```
+### 11.3 `CompactionBoundarySelector`
+
+Safe cut-point algorithm using `AgentMessageToolCallSequenceValidator` for two-layer safety: cross-boundary assistant/tool-call integrity and independent partition validity.
+
+### 11.4 `ToolResultDigestService`
+
+Deterministic tool-result digestion before summarization. Digest fields: tool id/name, command, exit_code (numeric-normalized), status, token/char counts, full_output path when present, important_lines_detected, preview_start/preview_end.
+
+### 11.5 `CompactionPromptBuilder`
+
+Loads `COMPACTION.md` with precedence (project > home > built-in), renders via Symfony AI `StringTemplateRenderer` with context placeholders `{date}`, `{cwd}`, `{custom_instructions_part}`, `{summary_prefix}`.
+
+### 11.6 DTOs
+
+- `CompactionPreparationDTO` — preparation data (messagesToSummarize, retainedTailMessages, estimates, counts).
+- `CompactionPreparationResultDTO` — wrapper around optional preparation + skip reason.
+- `CompactResultDTO` — compacted result (summaryText, summaryMessage, compactedMessages, estimates).
+- `CompactionSkipReasonEnum` — skip reason enum.
 
 ## 12. Summarization model call
 
@@ -501,10 +540,13 @@ $platform->invoke(new ModelInvocationRequest(
 ));
 ```
 
-Model resolution:
+Model resolution (via `CompactionConfig::resolveRuntimeSettings(activeModel)`):
 
-- If `settings.model` is a non-null string, parse as `provider/model` and use that provider and model.
+- If `settings.model` is non-null, parse as `provider/model` and use that provider and model.
 - If `settings.model` is null, use the active session provider and model.
+- If `settings.thinking_level` is non-null, apply it to the summarization call.
+- Per-provider and per-model overrides (`provider_overrides`, `model_overrides`) are resolved by `resolveRuntimeSettings()`: model override > provider override > global.
+- The resolved `CompactionRuntimeSettingsDTO` provides `model`, `thinkingLevel`, and `compactAfterTokens`.
 - The resolved model is passed as `$compactionModel` in the `ModelInvocationRequest`.
 
 Requirements:
@@ -719,21 +761,23 @@ Manual compaction comes first. Auto-compaction reuses the same service and event
 ### 17.1 Trigger policy
 
 ```php
-shouldCompact(contextTokens, contextWindow, reserveTokens): bool
+shouldCompact(estimatedContextTokens, compactAfterTokens): bool
 {
-    return $contextTokens > ($contextWindow - $reserveTokens);
+    return $estimatedContextTokens > $compactAfterTokens;
 }
 ```
+
+The `compactAfterTokens` value comes from `CompactionConfig::resolveRuntimeSettings()`, which supports per-provider and per-model overrides. Global default: 120000.
 
 ### 17.2 Trigger points
 
 Add auto checks at two points:
 
-1. **After agent end / after turn commit**
+1. **After turn commit**
    - Use hot prompt token estimate.
    - If over threshold, schedule compaction.
 
-2. **Before LLM call / before prompt submission**
+2. **Before LLM call**
    - Last guard before model invocation.
    - If over threshold, compact first, then continue the turn.
 
@@ -781,18 +825,23 @@ Required tests:
 
 ### 19.1 Unit tests
 
-`tests/CodingAgent/Session/SessionCompactorTest.php`
+`tests/CodingAgent/Compaction/SessionCompactorTest.php`
 
 Cover:
 
 - preparation no-op for short sessions,
 - preparation with long session,
+- `prepare()` skip reasons (Disabled, BelowThreshold, NoSafeBoundary, etc.),
 - summary message prefix exact text,
 - custom instruction prompt exact text,
 - prior compact summary included in summarization input,
 - token estimate before/after.
 
-`tests/CodingAgent/Session/CutPointAlgorithmTest.php`
+`tests/CodingAgent/Compaction/CompactionTokenEstimatorTest.php`
+
+`tests/CodingAgent/Compaction/ToolResultDigestServiceTest.php`
+
+`tests/CodingAgent/Compaction/CutPointAlgorithmTest.php` (if split from SessionCompactorTest)
 
 Cover:
 
@@ -860,12 +909,12 @@ Each task is a medium-sized implementation slice with its own task file, accepta
 | Task | File | Scope | Dependencies | Parallel OK? |
 |---|---|---|---|---|
 | **COMP-00** | `tasks/TODO/comp-00-replay-foundation.md` | Fix replay `assistant_message` mismatch; add replay coverage for normal and full-message-list replacement semantics. | None | With COMP-01 |
-| **COMP-01** | `tasks/TODO/comp-01-compactor-service-settings-prompt.md` | Compaction settings DTO, `SessionCompactor` preparation/safe-cut/prompt/result algorithms, DTOs. | None | With COMP-00 |
+| **COMP-01** | `tasks/TODO/comp-01-compactor-service-settings-prompt.md` | ✅ DONE. Compaction settings (`CompactionConfig` with `auto_enabled`, `compact_after_tokens`, `keep_recent_tokens`, `model`, `thinking_level`, provider/model overrides). `SessionCompactor` split into `CompactionTokenEstimator`, `CompactionBoundarySelector`, `ToolResultDigestService`, `CompactionPromptBuilder`. File-backed `COMPACTION.md` prompt. All under `Ineersa\CodingAgent\Compaction`. | None | With COMP-00 |
 | **COMP-02** | `tasks/TODO/comp-02-core-compaction-pipeline-events.md` | Core pipeline handler, all three mandatory events, no-tools model invocation, `RunState.messages` replacement, replay integration. | COMP-00, COMP-01 | After both land |
 | **COMP-03** | `tasks/TODO/comp-03-runtime-transports-and-tui-compact-command.md` | `AgentSessionClient::compact()` for both runtimes, JSONL protocol, HeadlessController routing, TUI `/compact` slash command, active-run queuing. | COMP-02 | With COMP-04 |
 | **COMP-04** | `tasks/TODO/comp-04-compaction-hooks-and-observability.md` | Before-compaction hook contracts, hook result DTOs, after-compaction event observation, structured logging, TUI event projection. | COMP-02 | With COMP-03 |
 | **COMP-05** | `tasks/TODO/comp-05-manual-compaction-e2e-validation-docs.md` | LLM smoke test, settings/user docs, E2E validation, Phase 1 acceptance checklist sign-off. | COMP-02, COMP-03, COMP-04 | After all three land |
-| **COMP-06** | `tasks/TODO/comp-06-auto-compaction-reserve-token-policy.md` | Auto-compaction trigger policy, after-turn and pre-LLM-call checks, overflow recovery, circuit breaker. Phase 2. | COMP-05 | After Phase 1 ships |
+| **COMP-06** | `tasks/TODO/comp-06-auto-compaction-reserve-token-policy.md` | Auto-compaction using `compact_after_tokens` threshold (default 120000) with per-provider/per-model overrides. After-turn and pre-LLM-call checks, overflow recovery, circuit breaker. Phase 2. | COMP-05 | After Phase 1 ships |
 
 ### 21.2 Execution graph
 
@@ -901,8 +950,7 @@ Wave 4 (Phase 2)
 
 ### Phase 0: Replay prerequisite
 
-- Fix or account for `assistant_message` replay mismatch.
-- Add replay tests proving normal assistant messages are reconstructed from events.
+- ✅ COMP-00 DONE — Fixed `assistant_message` replay mismatch. Replay now consumes canonical `payload.assistant_message` and supports full `payload.messages` replacement for `context_compacted` checkpoints.
 
 Acceptance:
 
@@ -912,10 +960,10 @@ Acceptance:
 
 Implement:
 
-- compaction settings including configurable `model` override,
-- `SessionCompactor` preparation and message construction,
-- summarization prompt construction,
-- no-tools model invocation with model resolution from settings,
+- compaction settings including configurable `model` override, `thinking_level`, per-provider/per-model overrides (✅ COMP-01 already done — `CompactionConfig` on `AppConfig::$compaction`),
+- `SessionCompactor` and sibling services: `CompactionTokenEstimator`, `CompactionBoundarySelector`, `ToolResultDigestService`, `CompactionPromptBuilder` (✅ COMP-01 already done),
+- summarization prompt via file-backed `config/COMPACTION.md` with precedence (✅ COMP-01 already done),
+- no-tools model invocation with model resolution including `thinking_level` from `CompactionConfig::resolveRuntimeSettings()`,
 - core compaction command/pipeline,
 - all three mandatory events: `context_compaction_started`, `context_compacted`, `context_compaction_failed`,
 - `RunState.messages` replacement,
@@ -946,14 +994,14 @@ Acceptance:
 
 Implement:
 
-- after-turn threshold check,
+- after-turn threshold check using `compact_after_tokens` (default 120000) with per-provider/per-model overrides,
 - pre-LLM-call threshold check,
 - optional overflow recovery with one-attempt guard,
 - auto compaction events and TUI feedback.
 
 Acceptance:
 
-- Long sessions compact automatically when estimated tokens exceed `contextWindow - reserveTokens`.
+- Long sessions compact automatically when estimated tokens exceed `compact_after_tokens`.
 - Auto-compaction does not loop indefinitely.
 - Manual `/compact` still works.
 
