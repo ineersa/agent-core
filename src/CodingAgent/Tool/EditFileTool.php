@@ -542,6 +542,8 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
         $oldBlockLines = [];
         /** @var list<string> */
         $newBlockLines = [];
+        $actualOldCount = 0;
+        $actualNewCount = 0;
 
         foreach ($lines as $i => $line) {
             if (str_starts_with($line, '@@')) {
@@ -560,9 +562,9 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
                             'headerIdx' => $hunkHeaderIdx,
                             'bodyEndIdx' => $i,
                             'oldStart' => $declaredOldStart,
-                            'oldCount' => $declaredOldCount,
+                            'oldCount' => $actualOldCount,
                             'newStart' => $declaredNewStart,
-                            'newCount' => $declaredNewCount,
+                            'newCount' => $actualNewCount,
                             'suffix' => $hunkSuffix,
                         ];
                 }
@@ -576,6 +578,8 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
                     $declaredNewStart = (int) $m[3];
                     $declaredNewCount = '' === $m[4] ? 1 : (int) $m[4];
                     $hunkSuffix = $m[5];
+                    $actualOldCount = 0;
+                    $actualNewCount = 0;
                 } else {
                     $isRelaxed = true;
                     $oldBlockLines = [];
@@ -611,9 +615,28 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
                     $oldBlockLines[] = '';
                     $newBlockLines[] = '';
                 }
-                // Any other prefix (stray text) is ignored.
+            // Any other prefix (stray text) is ignored.
+            } else {
+                // Standard hunk body — count actual lines for overlap
+                // validation and cumulative delta (same convention as
+                // repairHunkCounts).  Declared counts are often wrong
+                // (LLM miscounts) and must not drive ordering/delta logic.
+                if ('' === $line) {
+                    // Blank line — treat as context (common LLM artifact
+                    // where leading space on blank context line was dropped).
+                    ++$actualOldCount;
+                    ++$actualNewCount;
+                } elseif (str_starts_with($line, '\\ ')) {
+                    // \ No newline at end of file — marker, do not count.
+                } elseif (' ' === ($line[0] ?? '')) {
+                    ++$actualOldCount;
+                    ++$actualNewCount;
+                } elseif ('-' === ($line[0] ?? '')) {
+                    ++$actualOldCount;
+                } elseif ('+' === ($line[0] ?? '')) {
+                    ++$actualNewCount;
+                }
             }
-            // Standard hunk bodies pass through unmodified.
         }
 
         // Close last hunk
@@ -631,9 +654,9 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
                     'headerIdx' => $hunkHeaderIdx,
                     'bodyEndIdx' => $totalLines,
                     'oldStart' => $declaredOldStart,
-                    'oldCount' => $declaredOldCount,
+                    'oldCount' => $actualOldCount,
                     'newStart' => $declaredNewStart,
-                    'newCount' => $declaredNewCount,
+                    'newCount' => $actualNewCount,
                     'suffix' => $hunkSuffix,
                 ];
         }

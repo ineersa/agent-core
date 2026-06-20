@@ -1094,15 +1094,17 @@ DIFF;
         $original = "a\nb\nc\nd\ne\nf\n";
         file_put_contents($targetPath, $original);
 
-        // Two relaxed hunks: first changes b→B at line 2, second changes e→E at line 5.
-        // After first hunk, delta is 0 (1 new - 1 old). line 5 stays at 5.
+        // First relaxed hunk: insert NEW after line 1 (a→a,NEW).
+        // old block = ["a","b"] (context around insertion point), new block = ["a","NEW","b"].
+        // delta = +1.  Second relaxed hunk at original line 5 (e→E):
+        // after insertion, e is at line 6.  Tool must compute shifted newStart.
         $patch = <<<'DIFF'
 --- a/file
 +++ b/file
 @@
  a
--b
-+B
++NEW
+ b
  c
 @@
  d
@@ -1111,7 +1113,7 @@ DIFF;
  f
 DIFF;
 
-        $expected = "a\nB\nc\nd\nE\nf\n";
+        $expected = "a\nNEW\nb\nc\nd\nE\nf\n";
 
         $result = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
 
@@ -1227,6 +1229,47 @@ DIFF;
 DIFF;
 
         $expected = "ALPHA\nbeta\n";
+
+        $result = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+
+        $this->assertStringContainsString('Applied patch', $result);
+        $this->assertSame($expected, file_get_contents($targetPath));
+    }
+
+    /**
+     * A miscounted standard hunk before a relaxed hunk must not falsely
+     * report overlap.  The tool should use actual body counts, not declared
+     * header counts, for ordering/overlap validation and cumulative delta.
+     *
+     * Regresion: resolveRelaxedHunks() used declared counts (e.g. old=5
+     * from @@ -1,5 +1,1 @@) for validation before repairHunkCounts() could
+     * fix the miscount.  A declared old=5 with body having only 1 old line
+     * falsely claimed oldEnd=5, causing overlap with a relaxed hunk at old
+     * line 4.
+     */
+    public function testMiscountedStandardHunkBeforeRelaxedHunkDoesNotFalselyOverlap(): void
+    {
+        $targetPath = $this->tmpDir.'/miscounted_std_before_relaxed.txt';
+        $original = "a\nb\nc\nd\ne\nf\n";
+        file_put_contents($targetPath, $original);
+
+        // Standard hunk at line 1: declares old=5,new=1 but body has only
+        // 1 old line and 1 new line (common LLM miscount).  Before fix,
+        // this claimed old lines 1-5 and rejected the relaxed hunk at line 4.
+        $patch = <<<'DIFF'
+--- a/file
++++ b/file
+@@ -1,5 +1,1 @@
+-a
++A
+@@
+ d
+-e
++E
+ f
+DIFF;
+
+        $expected = "A\nb\nc\nd\nE\nf\n";
 
         $result = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
 
