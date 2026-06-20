@@ -585,10 +585,11 @@ final class PatchFailureFormatter
                     $changed[$hunk['newStart'] + $localPos] = true;
                 }
             } else {
-                // Use the first match position.  In practice there is typically
-                // exactly one match; when there are multiple, using the first
-                // is reasonable (GNU patch picks the first or nearest match).
-                $actualOldStart = $matches[0];
+                // Pick the match nearest the declared oldStart so arrows
+                // land on the actual patched lines when duplicate blocks
+                // exist in the file.  GNU patch applies near the declared
+                // line number, not the first match.
+                $actualOldStart = $this->nearestMatch($matches, $hunk['oldStart']);
                 $actualNewStart = $actualOldStart + $cumulativeDelta;
 
                 foreach ($addLocalPositions as $localPos) {
@@ -642,6 +643,31 @@ final class PatchFailureFormatter
         }
 
         return $matches;
+    }
+
+    /**
+     * From a list of 1-based match positions, pick the one nearest a
+     * target line number (the declared oldStart).
+     *
+     * @param int[] $matches 1-based match positions (must be non-empty)
+     * @param int   $target  declared oldStart line number
+     *
+     * @return int 1-based position of the nearest match
+     */
+    private function nearestMatch(array $matches, int $target): int
+    {
+        $best = $matches[0];
+        $bestDist = abs($target - $best);
+
+        for ($i = 1, $len = \count($matches); $i < $len; ++$i) {
+            $dist = abs($target - $matches[$i]);
+            if ($dist < $bestDist) {
+                $bestDist = $dist;
+                $best = $matches[$i];
+            }
+        }
+
+        return $best;
     }
 
     /**

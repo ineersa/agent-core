@@ -354,6 +354,59 @@ DIFF;
         $this->assertStringNotContainsString('/dev/null', $result);
     }
 
+    /**
+     * When the old-side block appears multiple times in the file and a
+     * numbered hunk header declares oldStart near the later occurrence,
+     * success context arrows must mark the lines at the later (nearest)
+     * match — not the first occurrence.
+     *
+     * File has duplicate "hello\nworld" blocks at lines 2-3 and 5-6.
+     * The hunk declares oldStart=5, targeting the later block.  Arrows
+     * must appear around line 6 (the added line after the second
+     * block), not around line 3.
+     */
+    public function testSuccessChangedContextUsesNearestMatchWhenDuplicateBlocksExist(): void
+    {
+        $targetPath = $this->tmpDir.'/dup_markers.txt';
+
+        // "hello\nworld" appears twice: lines 2-3 and 5-6.
+        $original = "unique_a\nhello\nworld\nunique_b\nhello\nworld\nunique_c\n";
+        file_put_contents($targetPath, $original);
+
+        // Declared oldStart=5 targets the second occurrence.
+        $patch = <<<'DIFF'
+--- a/file
++++ b/file
+@@ -5,2 +5,3 @@
+ hello
+ world
++INSERTED
+DIFF;
+
+        // After: unique_a, hello, world, unique_b, hello, world, INSERTED, unique_c
+        $expected = "unique_a\nhello\nworld\nunique_b\nhello\nworld\nINSERTED\nunique_c\n";
+
+        $result = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+
+        $this->assertStringContainsString('Applied patch', $result);
+        $this->assertSame($expected, file_get_contents($targetPath));
+
+        // INSERTED must be at line 7 (after second world), NOT at line 4
+        $this->assertMatchesRegularExpression('/^→\s+7: INSERTED$/m', $result);
+
+        // Context lines around the second block must NOT carry →
+        $this->assertMatchesRegularExpression('/^ (?!→)\s+4: unique_b$/m', $result);
+        $this->assertMatchesRegularExpression('/^ (?!→)\s+5: hello$/m', $result);
+        $this->assertMatchesRegularExpression('/^ (?!→)\s+6: world$/m', $result);
+        $this->assertMatchesRegularExpression('/^ (?!→)\s+8: unique_c$/m', $result);
+
+        // No Hunk succeeded / fuzz / offset / dev/null leaked into success output
+        $this->assertStringNotContainsString('Hunk succeeded', $result);
+        $this->assertStringNotContainsString('fuzz', $result);
+        $this->assertStringNotContainsString('offset', $result);
+        $this->assertStringNotContainsString('/dev/null', $result);
+    }
+
     public function testEditReturnsNoChangesMessageForIdenticalPatch(): void
     {
         $targetPath = $this->tmpDir.'/no_change.txt';
