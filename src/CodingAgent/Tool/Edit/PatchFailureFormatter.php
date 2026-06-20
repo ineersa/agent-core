@@ -338,7 +338,7 @@ final class PatchFailureFormatter
         // Parse hunks to find which new-side lines are actual additions
         // (+ lines) vs context (space-prefixed).  Only addition lines
         // are marked with → in the output; context lines are unmarked.
-        $changedSet = $this->parseNewSideAdditionLines($normalizedPatchContent);
+        $changedSet = $this->parseNewSideAdditionLines($normalizedPatchContent, $originalContent);
 
         if ([] === $changedSet) {
             // If there are no additions (deletion-only hunks), still provide
@@ -424,19 +424,32 @@ final class PatchFailureFormatter
      * Parse the normalized patch to find all new-side line numbers that
      * correspond to addition (+) lines in hunk bodies.
      *
+     * When $originalContent is provided, matches each hunk's old-side
+     * block against it to compute actual applied positions — correct even
+     * when GNU patch applies with fuzz/offset that shifts the final
+     * positions away from the declared @@ header numbers.  Without
+     * originalContent, falls back to declared header positions.
+     *
      * Each addition line in a hunk body (prefixed with + but not +++) gets
      * mapped to its final line number in the patched file by tracking the
      * cumulative delta across hunks.
      *
      * @return array<int, true> line-number => true for each addition line
      */
-    private function parseNewSideAdditionLines(string $normalizedPatchContent): array
+    private function parseNewSideAdditionLines(string $normalizedPatchContent, string $originalContent = ''): array
     {
         $lines = explode("\n", $normalizedPatchContent);
         if ([] !== $lines && '' === end($lines)) {
             array_pop($lines);
         }
 
+        // When original content is available, use actual block matching
+        // to compute line numbers — accounts for GNU patch offset/fuzz.
+        if ('' !== $originalContent) {
+            return $this->parseNewSideAdditionLinesWithMatching($lines, $originalContent);
+        }
+
+        // Fallback: use declared header positions.
         $changed = [];
         $inHunk = false;
         $newStart = 0;
@@ -469,6 +482,166 @@ final class PatchFailureFormatter
         }
 
         return $changed;
+    }
+
+    /**
+     * Compute actual new-side line numbers by matching each hunk's
+     * old-side block against the original file content.
+     *
+     * This accounts for GNU patch fuzz/offset: declared @@ -start
+     * may differ from the actual match position in the original file.
+     * By re-deriving actual positions from the original content, arrow
+     * markers in success output always land on the right lines.
+     *
+     * @param string[] $patchLines      normalized patch lines (already CRLF-normalized, no trailing empty element)
+     * @param string   $originalContent raw original file content before edit
+     *
+     * @return array<int, true>
+     */
+    private function parseNewSideAdditionLinesWithMatching(array $patchLines, string $originalContent): array
+    {
+        $origNormalized = str_replace(["\r\n", "\r"], "\n", $originalContent);
+        $origFileLines = explode("\n", $origNormalized);
+        if ([] !== $origFileLines && '' === end($origFileLines)) {
+            array_pop($origFileLines);
+        }
+
+        // Parse hunks: collect header info and body lines.
+        $hunks = [];
+        $currentHunk = null;
+        foreach ($patchLines as $line) {
+            if (preg_match('/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/m', $line, $m)) {
+                if (null !== $currentHunk) {
+                    $hunks[] = $currentHunk;
+                }
+                $currentHunk = [
+                    'oldStart' => (int) $m[1],
+                    'newStart' => (int) $m[3],
+                    'bodyLines' => [],
+                    'additions' => 0,
+                    'deletions' => 0,
+                ];
+
+                continue;
+            }
+
+            if (null !== $currentHunk) {
+                $firstChar = $line[0] ?? '';
+                $currentHunk['bodyLines'][] = $line;
+                if ('+' === $firstChar && !str_starts_with($line, '+++')) {
+                    ++$currentHunk['additions'];
+                } elseif ('-' === $firstChar && !str_starts_with($line, '---')) {
+                    ++$currentHunk['deletions'];
+                }
+            }
+        }
+        if (null !== $currentHunk) {
+            $hunks[] = $currentHunk;
+        }
+
+        $changed = [];
+        $cumulativeDelta = 0;
+
+        foreach ($hunks as $hunk) {
+            // Build old-side block: context (space) + deletion (-) lines,
+            // stripping the first character (diff marker) to get the
+            // actual file content for matching.
+            $oldBlock = [];
+            $addLocalPositions = []; // local positions within this hunk's new-side (0-based)
+            $ctxCount = 0;
+
+            foreach ($hunk['bodyLines'] as $bodyLine) {
+                $firstChar = $bodyLine[0] ?? '';
+                if (' ' === $firstChar || '' === $bodyLine) {
+                    $oldBlock[] = '' === $bodyLine ? '' : substr($bodyLine, 1);
+                    ++$ctxCount;
+                } elseif ('-' === $firstChar) {
+                    $oldBlock[] = substr($bodyLine, 1);
+                } elseif ('+' === $firstChar && !str_starts_with($bodyLine, '+++')) {
+                    $addLocalPositions[] = $ctxCount;
+                    ++$ctxCount;
+                } elseif (str_starts_with($bodyLine, '\\ ')) {
+                    // \ No newline marker — don't advance.
+                }
+            }
+
+            if (0 === \count($addLocalPositions)) {
+                // Deletion-only hunk — advance cumulative delta and skip.
+                $cumulativeDelta += $hunk['additions'] - $hunk['deletions'];
+
+                continue;
+            }
+
+            // Find where the old-side block actually matched in the original file.
+            $matches = $this->findExactBlockMatch($origFileLines, $oldBlock);
+
+            if ([] === $matches) {
+                // No match found — fall back to declared header line numbers
+                // for this hunk.  This should be vanishingly rare since the
+                // patch was already applied successfully (GNU patch found a
+                // match).  Possible in edge cases like patching a file that
+                // was concurrently modified outside the lock.
+                foreach ($addLocalPositions as $localPos) {
+                    $changed[$hunk['newStart'] + $localPos] = true;
+                }
+            } else {
+                // Use the first match position.  In practice there is typically
+                // exactly one match; when there are multiple, using the first
+                // is reasonable (GNU patch picks the first or nearest match).
+                $actualOldStart = $matches[0];
+                $actualNewStart = $actualOldStart + $cumulativeDelta;
+
+                foreach ($addLocalPositions as $localPos) {
+                    $changed[$actualNewStart + $localPos] = true;
+                }
+            }
+
+            $cumulativeDelta += $hunk['additions'] - $hunk['deletions'];
+        }
+
+        return $changed;
+    }
+
+    /**
+     * Find exact contiguous matches of $blockLines in $fileLines.
+     *
+     * Each entry in $blockLines is raw file content (no diff prefix).
+     * Empty strings match empty lines.  Returns 1-based start positions
+     * of all matches.
+     *
+     * @param string[] $fileLines  normalised file content lines (no trailing empty element, no CR)
+     * @param string[] $blockLines raw block content lines
+     *
+     * @return int[] 1-based start positions
+     */
+    private function findExactBlockMatch(array $fileLines, array $blockLines): array
+    {
+        $fileCount = \count($fileLines);
+        $blockLen = \count($blockLines);
+
+        if (0 === $blockLen || $blockLen > $fileCount) {
+            return [];
+        }
+
+        $matches = [];
+
+        for ($i = 0; $i <= $fileCount - $blockLen; ++$i) {
+            $match = true;
+
+            for ($j = 0; $j < $blockLen; ++$j) {
+                if (($fileLines[$i + $j] ?? null) !== $blockLines[$j]) {
+                    $match = false;
+
+                    break;
+                }
+            }
+
+            if ($match) {
+                $matches[] = $i + 1; // 1-based
+            }
+        }
+
+        return $matches;
     }
 
     /**

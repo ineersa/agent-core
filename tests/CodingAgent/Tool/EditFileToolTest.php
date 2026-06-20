@@ -243,6 +243,117 @@ DIFF;
         $this->assertStringNotContainsString('@@', $result);
     }
 
+    /**
+     * When a hunk header's old-start is offset from the actual match
+     * position (GNU patch -F3 fuzz), success output must mark the
+     * actual added/replacement lines — not the lines implied by the
+     * declared header numbers.
+     *
+     * Here the file has "X\na\nb\nc\nd\n" and the patch declares
+     * @@ -1,3 +1,3 @@ for the block "a\nb\nc", but that block only
+     * matches at positions 2-4 (after "X").  GNU patch applies with
+     * an offset of 1.  The arrows must mark the actual patched-file
+     * positions (3 and 5), not positions 2 and 4 derived from the
+     * declared +1 start.
+     */
+    public function testSuccessChangedContextHandlesOffsetFromDeclaredHeader(): void
+    {
+        $targetPath = $this->tmpDir.'/offset_markers.txt';
+        // File: line1 = "X" (anchor that forces offset)
+        //       lines 2-5 = a, b, c, d
+        $original = "X\na\nb\nc\nd\n";
+        file_put_contents($targetPath, $original);
+
+        // Patch declares @@ -1,3 +1,3 @@ but the old-side block
+        // (a\nb\nc) only appears at positions 2-4.  The declared
+        // old-start (1) is wrong by 1 line.
+        $patch = <<<'DIFF'
+--- a/file
++++ b/file
+@@ -1,3 +1,3 @@
+ a
++INSERTED
+ b
+-c
++CHANGED
+DIFF;
+
+        // Expected result after patch applied at match position 2:
+        // X, a, INSERTED, b, CHANGED, d
+        $expected = "X\na\nINSERTED\nb\nCHANGED\nd\n";
+
+        $result = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+
+        $this->assertStringContainsString('Applied patch', $result);
+        $this->assertSame($expected, file_get_contents($targetPath));
+
+        // Context lines (a, b, d) must NOT be marked with →
+        $this->assertMatchesRegularExpression('/^ (?!→)\s+\d+: a$/m', $result);
+        $this->assertMatchesRegularExpression('/^ (?!→)\s+\d+: b$/m', $result);
+        $this->assertMatchesRegularExpression('/^ (?!→)\s+\d+: d$/m', $result);
+
+        // Actual addition lines (INSERTED at line 3, CHANGED at line 5)
+        // must be marked with → at their real positions.
+        $this->assertMatchesRegularExpression('/^→\s+3: INSERTED$/m', $result);
+        $this->assertMatchesRegularExpression('/^→\s+5: CHANGED$/m', $result);
+
+        // The context line 'a' at position 2 must NOT get a → marker
+        // (it is context, not an addition).
+        $this->assertStringNotContainsString('→  2:', $result);
+    }
+
+    /**
+     * Cross-check: trailing markdown-fence stripping must not corrupt
+     * arrow placement regardless of whether the header is offset.
+     *
+     * File has 8 lines, patch adds one line with a trailing ``` that
+     * the normalizer strips.  Arrows must mark the actual addition.
+     */
+    public function testSuccessChangedContextNotCorruptedByTrailingFenceNormalization(): void
+    {
+        $targetPath = $this->tmpDir.'/trailing_fence.txt';
+
+        // 8-line file: lines 1-8, each ending with \n
+        $original = "a\nb\nc\nd\ne\nf\ng\nh\n";
+        file_put_contents($targetPath, $original);
+
+        // Patch adds 'INSERTED' after line 2, with trailing ``` fence.
+        // Header @@ -1,3 +1,4 @@ is correct for b,c context + INSERTED.
+        $patch = <<<'DIFF'
+--- a/file
++++ b/file
+@@ -1,3 +1,4 @@
+ a
+ b
++INSERTED
+ c
+ d
+```
+DIFF;
+
+        // After applying: a, b, INSERTED, c, d, e, f, g, h
+        $expected = "a\nb\nINSERTED\nc\nd\ne\nf\ng\nh\n";
+
+        $result = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+
+        $this->assertStringContainsString('Applied patch', $result);
+        $this->assertSame($expected, file_get_contents($targetPath));
+
+        // INSERTED at line 3 must be marked with →
+        $this->assertMatchesRegularExpression('/^→\s+3: INSERTED$/m', $result);
+
+        // Context lines 'a', 'b', 'c', 'd' must NOT carry →
+        $this->assertMatchesRegularExpression('/^ (?!→)\s+1: a$/m', $result);
+        $this->assertMatchesRegularExpression('/^ (?!→)\s+2: b$/m', $result);
+        $this->assertMatchesRegularExpression('/^ (?!→)\s+4: c$/m', $result);
+
+        // No Hunk succeeded / fuzz / offset / dev/null leaked into success output
+        $this->assertStringNotContainsString('Hunk succeeded', $result);
+        $this->assertStringNotContainsString('fuzz', $result);
+        $this->assertStringNotContainsString('offset', $result);
+        $this->assertStringNotContainsString('/dev/null', $result);
+    }
+
     public function testEditReturnsNoChangesMessageForIdenticalPatch(): void
     {
         $targetPath = $this->tmpDir.'/no_change.txt';
