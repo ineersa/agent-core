@@ -18,7 +18,7 @@ use Symfony\Component\String\UnicodeString;
  *   - tool name, tool_call_id
  *   - command (when detectable from details) and exit code
  *   - status (ERROR/ok/exit code N)
- *   - estimated tokens and character count
+ *   - estimated_tokens and char_count
  *   - bounded preview_start / preview_end snippets
  *   - full_output blob path when detectable
  *   - important_lines_detected (FAIL, ERROR, Exception, Traceback, Fatal,
@@ -79,7 +79,10 @@ final class ToolResultDigestService
         $exitCode = null;
 
         if (\is_array($toolMessage->details) && isset($toolMessage->details['exit_code'])) {
-            $exitCode = $toolMessage->details['exit_code'];
+            $raw = $toolMessage->details['exit_code'];
+            // Normalize numeric strings to int so string '0' is not
+            // misreported as a non-zero exit code.
+            $exitCode = is_numeric($raw) ? (int) $raw : $raw;
             if (0 !== $exitCode) {
                 $status = 'exit code '.$exitCode;
             }
