@@ -22,7 +22,7 @@ use Symfony\Component\Lock\LockFactory;
  * Key behaviors:
  * - Accepts plain @@ hunk headers (recommended default) — the tool resolves
  *   old/new line numbers and counts from the hunk body and current file.
- * - Numbered headers (@@ -42,6 +42,8 @@) are accepted but not recommended.
+ * - Numbered headers are accepted but not recommended.
  * - All-or-nothing: on failure, no changes are made to the file.
  * - On success, returns compact stats plus bounded post-apply changed chunks
  *   so the model can verify without extra reads.
@@ -111,10 +111,18 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             executionMode: ToolExecutionMode::Sequential,
             promptLine: 'edit path patch — apply a unified diff patch to an existing file',
             promptGuidelines: [
-                'Use the latest exact file context you already have. For a first edit on a file, or when your context is missing/stale, use a targeted `read` with both `offset` and `limit` for the relevant region — not a full-file read. After a successful edit, the result includes updated context around changed lines — use that for follow-up edits when sufficient. For follow-up edits on the same file: do not re-read the full file just because there is a new instruction; rely on prior read output and edit success contexts unless they do not cover the new target region. Do not re-read the whole file just to verify.',
+                'Use the latest exact file context you already have. For a first edit on a file, or when your context is missing/stale, use a targeted `read` with both `offset` and `limit` for the relevant region — not a full-file read. After a successful edit, the result includes updated context around changed lines — use that for follow-up edits when sufficient. For follow-up edits on the same file: do not re-read the full file just because there is a new instruction; rely on prior read output and edit success contexts. When they do not cover the new target region, use a targeted `read` with both `offset` and `limit` for that region. Avoid full-file reads — use them only when you cannot determine which lines to target.',
                 'Use exact unchanged context lines from the current file. Do not modify or reformat context lines; they must match byte-for-byte.',
-                'Use plain `@@` hunk headers without line numbers or counts as the default. The edit tool resolves and computes old/new line numbers, counts, and positions from the hunk body and the current file automatically. Do not calculate @@ header line numbers or counts yourself.',
-                'Numbered unified-diff headers (e.g. `@@ -42,6 +42,8 @@`) are only for literal copied `diff -u` tool output. When writing a patch yourself, always use plain `@@` — never calculate or write numbered headers yourself.',
+                'Use plain `@@` hunk headers without line numbers or counts as the default. The edit tool resolves and computes old/new line numbers, counts, and positions from the hunk body and the current file automatically. Plain `@@` means you do not need line numbers at all — do not read a file just to find line numbers. Do not calculate @@ header line numbers or counts yourself.',
+                'Numbered unified-diff headers are only supported when copied from literal `diff -u` tool output. When writing a patch yourself, always use plain `@@` — never calculate or write numbered headers yourself.',
+                'Minimal patch template using plain `@@` (the tool resolves line numbers and counts automatically):
+--- a/path
++++ b/path
+@@
+ unchanged context
+-old line
++new line
+ unchanged context',
                 'Keep hunks tight: include enough unchanged context (typically 3–4 lines) for the tool to locate the hunk uniquely in the file. If a plain `@@` hunk matches multiple locations, add more context lines.',
                 'The patch may contain multiple hunks to edit different parts of the file.',
                 'The patch must have `--- a/path` and `+++ b/path` headers, then hunk(s). Do NOT wrap the patch in markdown code fences (```diff, ```patch, ```).',
@@ -128,9 +136,10 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
                 'An error from an edit call means that specific attempt was NOT applied. Do not describe an edit attempt that returned an error as "applied" or "changed" — retry with a new patch from the current file contents.',
                 'On success, the tool returns stats and bounded updated-file chunks around the changed lines. Use that context for follow-up edits. Do not re-read the whole file just to verify a successful edit. If you need more surrounding context, use `read` with `offset` and `limit` for the relevant region instead of a full-file read.',
                 'If the patch produces no changes, the tool reports "No changes" without modifying the file.',
-                'If an edit fails with a stale-hunk error, the error includes a current-file context window with exact line numbers from the original file. Use that context or a targeted `read` with `offset`/`limit` for the affected region, then retry with a plain `@@` patch using the exact current context. Prefer targeted reads; full-file reads are only needed when the file is small or the relevant region is unknown.',
+                'If an edit fails with a stale-hunk error, the error includes a current-file context window with exact line numbers from the original file. Use that context or a targeted `read` with `offset`/`limit` for the affected region, then retry with a plain `@@` patch using the exact current context. Prefer targeted reads — do not fall back to a full-file read unless you have no idea which lines are affected.',
                 'If an edit fails with a format error, check that the patch has ---/+++ headers, plain `@@` hunk headers, a trailing newline, and no markdown fences or non-diff trailers. Do not try to fix malformed patches — regenerate with plain `@@` and exact context.',
                 'If the target file lacks a trailing newline, the error hint will mention it. Add a trailing newline with the write tool or include "\\ No newline at end of file" markers in the patch.',
+                'If you intend to change an existing line, include BOTH a line to remove (`-old line`) and a line to add (`+new line`). A context line (leading space) is only verification — it will NEVER be modified. If the edit succeeds but the returned stats or context show only new lines (additions) when you expected a replacement, you probably wrote the changed line as context instead of `+new line` — inspect the returned context and fix the missing `-`/`+` pair.',
                 'If the edit succeeds but the addition/deletion stats contradict your intent (e.g. you intended only deletions but the result says additions > 0), re-read the affected region with `read` `offset`/`limit` and verify — do not assume the edit was correct.',
             ],
         );

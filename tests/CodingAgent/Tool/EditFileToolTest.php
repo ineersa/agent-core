@@ -91,7 +91,8 @@ final class EditFileToolTest extends TestCase
         // Must NOT mention cat -n (model has read tool with line numbers)
         $this->assertStringNotContainsString('cat -n', $guidelinesText);
         $this->assertStringContainsString('plain `@@`', $guidelinesText);
-        $this->assertStringContainsString('@@', $guidelinesText);
+        // Must NOT show numbered header example (model should not anchor on it)
+        $this->assertStringNotContainsString('@@ -42', $guidelinesText);
 
         // Guidelines must warn against common LLM mistakes observed in smoke testing
         $this->assertStringContainsString('markdown code fences', strtolower($guidelinesText));
@@ -115,6 +116,20 @@ final class EditFileToolTest extends TestCase
         $this->assertStringContainsString('both `offset` and `limit`', $guidelinesText);
         // Guidelines must tell model not to re-read full file on same-file follow-ups
         $this->assertStringContainsString('do not re-read the full file', strtolower($guidelinesText));
+
+        // Guidelines must include concrete plain-@@ patch template
+        $this->assertStringContainsString('Minimal patch template', $guidelinesText);
+        $this->assertStringContainsString('-old line', $guidelinesText);
+        $this->assertStringContainsString('+new line', $guidelinesText);
+
+        // Guidelines must say plain @@ means no line numbers needed
+        $this->assertStringContainsString('do not need line numbers', strtolower($guidelinesText));
+
+        // Guidelines must include explicit line-change `-old`/`+new` pair guidance
+        $this->assertStringContainsString('NEVER be modified', $guidelinesText);
+
+        // Guidelines must NOT include "file is small" full-read permission
+        $this->assertStringNotContainsString('file is small', strtolower($guidelinesText));
     }
 
     public function testDefinitionHasRetryGuidelines(): void
@@ -540,6 +555,8 @@ DIFF;
             $this->assertStringContainsString('offset', strtolower($hint));
             $this->assertStringContainsString('limit', strtolower($hint));
             $this->assertStringNotContainsString('cat -n', $hint);
+            // Hint must NOT include "file is small" full-read permission
+            $this->assertStringNotContainsString('file is small', strtolower($hint));
 
             // Original file must be untouched
             $this->assertSame($original, file_get_contents($targetPath));
@@ -1661,6 +1678,8 @@ DIFF;
             // Hint must advise targeted read (not broad re-read)
             $this->assertStringContainsString('`read`', $hint);
             $this->assertStringContainsString('offset', strtolower($hint));
+            // Hint must NOT include "file is small" full-read permission
+            $this->assertStringNotContainsString('file is small', strtolower($hint));
 
             $this->assertTrue($e->retryable());
 
@@ -1756,6 +1775,13 @@ DIFF;
         $this->assertStringContainsString('without line numbers', strtolower($guidelinesText));
         // Must NOT have contradictory "when unsure" language
         $this->assertStringNotContainsString('when unsure', strtolower($guidelinesText));
+        // Must NOT show numbered header example
+        $this->assertStringNotContainsString('@@ -42', $guidelinesText);
+        // Must include concrete template (not just abstract mention)
+        $this->assertStringContainsString('-old line', $guidelinesText);
+        $this->assertStringContainsString('+new line', $guidelinesText);
+        // Must explicitly say no line numbers needed
+        $this->assertStringContainsString('do not need line numbers', strtolower($guidelinesText));
     }
 
     /* ── Symlink preservation tests ── */
