@@ -18,7 +18,7 @@ final class CommandBoundaryTest extends TestCase
     public function testCoreCommandKindAllOrderedList(): void
     {
         self::assertSame(
-            ['steer', 'follow_up', 'cancel', 'human_response', 'continue'],
+            ['steer', 'follow_up', 'cancel', 'human_response', 'continue', 'compact'],
             CoreCommandKind::ALL,
         );
     }
@@ -40,6 +40,7 @@ final class CommandBoundaryTest extends TestCase
             'cancel' => [CoreCommandKind::Cancel, true],
             'human_response' => [CoreCommandKind::HumanResponse, true],
             'continue' => [CoreCommandKind::Continue, true],
+            'compact' => [CoreCommandKind::Compact, true],
             'ext_custom' => ['ext_custom', false],
             'unknown' => ['unknown', false],
             'empty_string' => ['', false],
