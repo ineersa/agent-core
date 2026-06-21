@@ -33,7 +33,7 @@ final class PatchFailureFormatter
             return [
                 'code' => 'E_PATCH_STALE',
                 'retryable' => true,
-                'baseHint' => 'The patch context does not match the current file content. Re-read the file with `read` and regenerate the patch using plain `@@` hunk headers with the exact current context lines.',
+                'baseHint' => 'The patch context does not match the current file content. Use the provided current-file context window below as the exact content, or use a targeted `read` with `offset` and `limit` around the affected region. Then regenerate using plain `@@` hunk headers with the exact current context. Use a full-file read only when the file is small or the relevant region is unknown.',
             ];
         }
 
@@ -80,7 +80,7 @@ final class PatchFailureFormatter
             return [
                 'code' => 'E_PATCH_STALE',
                 'retryable' => true,
-                'baseHint' => 'Some hunks failed to apply. The patch is all-or-nothing — no changes were made. Re-read the file with `read` and regenerate the patch using plain `@@` hunk headers with exact current context.',
+                'baseHint' => 'Some hunks failed to apply. The patch is all-or-nothing — no changes were made. Use the provided current-file context window below, or use a targeted `read` with `offset` and `limit` around the affected region. Then regenerate using plain `@@` hunk headers with exact current context.',
             ];
         }
 
@@ -88,7 +88,7 @@ final class PatchFailureFormatter
         return [
             'code' => 'E_PATCH_STALE',
             'retryable' => true,
-            'baseHint' => 'The patch could not be applied. Re-read the file with `read` and regenerate the patch using plain `@@` hunk headers with exact current context.',
+            'baseHint' => 'The patch could not be applied. Use a targeted `read` with `offset` and `limit` around the affected region, or use the provided current-file context window if present. Then regenerate using plain `@@` hunk headers with exact current context. Use a full-file read only when the file is small or the relevant region is unknown.',
         ];
     }
 

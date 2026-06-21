@@ -401,7 +401,7 @@ final class PatchNormalizer
                 if ([] === $match) {
                     // No match: stale context
                     $preview = implode("\n", \array_slice($oldBlock, 0, 4));
-                    throw new ToolCallException("[E_PATCH_STALE] edit failed: no changes were applied — a plain @@ hunk old block was not found in the current file. Re-read the file with `read` and regenerate the patch using exact current context lines.\n\nOld block (first 4 lines):\n{$preview}", retryable: true, hint: 'The plain @@ hunk stale-context block was not found in the current file. Re-read the file with `read` and retry using the exact current context from the latest read output.');
+                    throw new ToolCallException("[E_PATCH_STALE] edit failed: no changes were applied — a plain @@ hunk old block was not found in the current file. Use a targeted `read` with `offset` and `limit` around the affected region, then regenerate using exact current context lines. Use a full-file read only when the file is small or the relevant region is unknown.\n\nOld block (first 4 lines):\n{$preview}", retryable: true, hint: 'The plain @@ hunk stale-context block was not found in the current file. Use a targeted `read` with `offset` and `limit` around the affected region, then retry using the exact current context from the latest read output. Use a full-file read only when the file is small or the relevant region is unknown.');
                 }
 
                 if (\count($match) > 1) {

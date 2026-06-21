@@ -110,6 +110,11 @@ final class EditFileToolTest extends TestCase
         // Guidelines must instruct re-reading when success stats contradict intent
         $this->assertStringContainsString('contradict', strtolower($guidelinesText));
         $this->assertStringContainsString('re-read', strtolower($guidelinesText));
+
+        // Guidelines must instruct using both offset and limit for targeted reads
+        $this->assertStringContainsString('both `offset` and `limit`', $guidelinesText);
+        // Guidelines must tell model not to re-read full file on same-file follow-ups
+        $this->assertStringContainsString('do not re-read the full file', strtolower($guidelinesText));
     }
 
     public function testDefinitionHasRetryGuidelines(): void
@@ -117,14 +122,18 @@ final class EditFileToolTest extends TestCase
         $definition = $this->editFileTool->definition();
         $guidelinesText = implode(' ', $definition->promptGuidelines);
 
-        // Guidelines must instruct reading on stale/missing context, retry from current context
-        $this->assertStringContainsString('read the file', strtolower($guidelinesText));
+        // Guidelines must mention read tool and reading behavior
+        $this->assertStringContainsString('`read`', $guidelinesText);
         $this->assertStringContainsString('retry', strtolower($guidelinesText));
         $this->assertStringContainsString('trailing newline', strtolower($guidelinesText));
         $this->assertStringContainsString('current context', strtolower($guidelinesText));
         // Must NOT suggest full-file reads unconditionally before every edit
         $this->assertStringContainsString('do not re-read the whole file', strtolower($guidelinesText));
         $this->assertStringContainsString('offset', strtolower($guidelinesText));
+        // Must also mention limit for targeted reads (offset+limit together)
+        $this->assertStringContainsString('limit', strtolower($guidelinesText));
+        // Must warn against numbered headers for self-written patches
+        $this->assertStringContainsString('never calculate or write numbered headers', strtolower($guidelinesText));
     }
 
     public function testDefinitionJsonSchemaHasPathAndPatch(): void
@@ -525,9 +534,11 @@ DIFF;
             // Must include current file context with line numbers
             $this->assertStringContainsString('Current file context', $message);
 
-            // The hint should reference reading the file with `read` (no cat -n)
+            // The hint should advise targeted read with offset/limit, not broad full-file re-read
             $hint = $e->hint() ?? '';
             $this->assertStringContainsString('read', strtolower($hint));
+            $this->assertStringContainsString('offset', strtolower($hint));
+            $this->assertStringContainsString('limit', strtolower($hint));
             $this->assertStringNotContainsString('cat -n', $hint);
 
             // Original file must be untouched
@@ -1647,7 +1658,9 @@ DIFF;
 
             $hint = $e->hint() ?? '';
             $this->assertStringContainsString('stale', strtolower($hint));
-            $this->assertStringContainsString('re-read', strtolower($hint));
+            // Hint must advise targeted read (not broad re-read)
+            $this->assertStringContainsString('`read`', $hint);
+            $this->assertStringContainsString('offset', strtolower($hint));
 
             $this->assertTrue($e->retryable());
 
