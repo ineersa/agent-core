@@ -55,34 +55,18 @@ final readonly class CompactionStepResultHandler implements RunMessageHandler
         // stale result A arrives).  The active step is only cleared when
         // the result genuinely matches the current step (success/error paths).
         //
-        // Also guard against terminal run states (Completed, Failed, Cancelled)
-        // where the result arrived after the run already finished.
+        // NOTE: run status alone is NOT a staleness signal.  Manual compaction
+        // is commonly triggered on a Completed run — CompactRunHandler sets
+        // activeStepId while the run stays Completed, and the matching async
+        // result must be accepted.  Correlation (turnNo + stepId/activeStepId)
+        // is the true staleness guard: turnNo advances on new conversation
+        // turns, and activeStepId changes when a newer compaction starts.
         if ($state->turnNo !== $message->turnNo() || $state->activeStepId !== $message->stepId()) {
             $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, [[
                 'type' => RunEventTypeEnum::ContextCompactionFailed->value,
                 'payload' => [
                     'reason' => 'stale_result',
                     'message' => 'Compaction result arrived too late — the active step has moved on.',
-                    'messages_replaced' => false,
-                    'step_id' => $message->stepId(),
-                    'trigger' => $message->trigger,
-                ],
-            ]]);
-
-            return new HandlerResult(
-                nextState: $this->incrementState($state, $events, clearActiveStepId: false),
-                events: $events,
-            );
-        }
-
-        // If the run is in a terminal state (Completed, Failed, Cancelled),
-        // the compaction result arrived too late.
-        if (\in_array($state->status->value, ['completed', 'failed', 'cancelled'], true)) {
-            $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, [[
-                'type' => RunEventTypeEnum::ContextCompactionFailed->value,
-                'payload' => [
-                    'reason' => 'stale_result',
-                    'message' => 'Compaction result arrived after the run ended.',
                     'messages_replaced' => false,
                     'step_id' => $message->stepId(),
                     'trigger' => $message->trigger,
