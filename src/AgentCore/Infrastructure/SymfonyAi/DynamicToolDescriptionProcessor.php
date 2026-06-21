@@ -40,13 +40,24 @@ final readonly class DynamicToolDescriptionProcessor implements InputProcessorIn
         }
 
         // Callers may pass tools:[] to guarantee no-tools for invocations
-        // that must not use tools (e.g. summarization).  The empty
-        // array satisfies isToolArray([]) === true (array_reduce returns
-        // the initial true), so this branch handles both an explicit []
-        // and an empty toolbox, short-circuiting before any tool description
-        // or fallback logic runs.
+        // that must not use tools (e.g. summarization, compaction).
+        // This branch handles both an explicit [] and an empty toolbox.
+        //
+        // 'tool_descriptions' is always removed when there are no tools.
+        // 'tools' is only removed when the ORIGINAL value was explicitly
+        // empty (before toolbox fallback).  This preserves resolver-provided
+        // flat string names when the toolbox is unavailable — those names
+        // are intentionally non-empty and should not be destroyed by the
+        // empty-tools guard.
+        //
+        // Strict OpenAI-compatible providers (vLLM, Runpod proxy) reject
+        // requests containing an empty tools array, so the explicit []
+        // path must omit 'tools' entirely.
         if ([] === $tools) {
             unset($options['tool_descriptions']);
+            if ([] === $currentTools) {
+                unset($options['tools']);
+            }
             $input->setOptions($options);
 
             return;

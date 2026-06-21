@@ -227,6 +227,48 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
         self::assertSame('bash', $options['tools'][1]->getName());
     }
 
+    /* ───────── Empty-tools / no-tools path ───────── */
+
+    /**
+     * When callers pass tools:[] for invocations that must not use tools
+     * (e.g. summarization/compaction), the processor must remove BOTH
+     * 'tools' and 'tool_descriptions' from options. Strict OpenAI-compatible
+     * providers (e.g. vLLM, Runpod proxy) reject requests with an empty
+     * tools array.
+     */
+    public function testEmptyToolsArrayRemovesBothToolsAndToolDescriptions(): void
+    {
+        $processor = new DynamicToolDescriptionProcessor($this->toolbox);
+        $input = new Input('test-model', new \Symfony\AI\Platform\Message\MessageBag(), [
+            'tools' => [],
+            'tool_descriptions' => ['read' => 'should be removed'],
+        ]);
+
+        $processor->processInput($input);
+
+        $options = $input->getOptions();
+        self::assertArrayNotHasKey('tools', $options, 'Empty tools array MUST be removed so strict providers do not reject the request');
+        self::assertArrayNotHasKey('tool_descriptions', $options, 'Tool descriptions MUST be removed when tools are empty');
+    }
+
+    /**
+     * When no toolbox is available and a resolver short-circuits with an
+     * empty active set, the processor also removes 'tools' and
+     * 'tool_descriptions' from options.
+     */
+    public function testEmptyToolsWithoutToolboxRemovesToolsOption(): void
+    {
+        $processor = new DynamicToolDescriptionProcessor(toolbox: null);
+        $input = new Input('test-model', new \Symfony\AI\Platform\Message\MessageBag(), [
+            'tools' => [],
+        ]);
+
+        $processor->processInput($input);
+
+        $options = $input->getOptions();
+        self::assertArrayNotHasKey('tools', $options);
+    }
+
     /* ───────── Helpers ───────── */
 
     /**
