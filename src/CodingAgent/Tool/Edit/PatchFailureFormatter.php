@@ -20,10 +20,13 @@ final class PatchFailureFormatter
      * @param bool   $normalizerDetectedTruncation set true when the patch
      *                                             normalizer detected a likely
      *                                             truncated hunk body
+     * @param string $truncationDetails            declared-vs-actual hunk count
+     *                                             details from the normalizer
+     *                                             (empty when not applicable)
      *
      * @return array{code: string, retryable: bool, baseHint: string}
      */
-    public function classifyFailure(string $combinedOutput, bool $normalizerDetectedTruncation = false): array
+    public function classifyFailure(string $combinedOutput, bool $normalizerDetectedTruncation = false, string $truncationDetails = ''): array
     {
         // Stale hunk / context mismatch
         if (preg_match('/Hunk\s+#\d+\s+FAILED/i', $combinedOutput)) {
@@ -43,9 +46,12 @@ final class PatchFailureFormatter
         if (
             preg_match('/(?:only\s+garbage\s+was\s+found|not\s+a\s+unified\s+diff|malformed|missing\s+header|unrecognized\s+input|can\'t\s+find\s+file\s+to\s+patch|unexpected\s+end\s+of\s+(?:file|patch)|patch\s+unexpectedly\s+ends)/i', $combinedOutput)
         ) {
-            $baseHint = $normalizerDetectedTruncation
-                ? 'The hunk body was incomplete (likely truncated). Retry with a plain `@@` hunk header and exact context copied from the latest `read` output. Do not calculate line numbers or counts — use plain `@@`.'
-                : 'The patch appears malformed or is not a valid unified diff. Use plain `@@` hunk headers without line numbers or counts. Ensure the patch has ---/+++ headers, ends with a newline, and contains no markdown code fences or non-diff trailer lines (e.g. `--- End new file ---`). Do not copy line-number prefixes from `read` output into patch context lines; use only the raw file text.';
+            if ($normalizerDetectedTruncation) {
+                $countsPart = '' !== $truncationDetails ? ' '.$truncationDetails : '';
+                $baseHint = 'The hunk body was incomplete (likely truncated).'.$countsPart.' Retry with exactly `@@` as the hunk header — do not use numbered headers. Copy only the exact context from the latest `read` output.';
+            } else {
+                $baseHint = 'The patch appears malformed or is not a valid unified diff. Use plain `@@` hunk headers without line numbers or counts. Ensure the patch has ---/+++ headers, ends with a newline, and contains no markdown code fences or non-diff trailer lines (e.g. `--- End new file ---`). Do not copy line-number prefixes from `read` output into patch context lines; use only the raw file text.';
+            }
 
             return [
                 'code' => 'E_PATCH_FORMAT',
@@ -148,10 +154,11 @@ final class PatchFailureFormatter
         string $originalContent,
         bool $noTrailingNewline,
         bool $detectedTruncation,
+        string $truncationDetails = '',
     ): array {
         $combined = $this->combinedPatchOutput($stdout, $stderr);
         $sanitized = $this->sanitizeFailureOutput($combined);
-        $classification = $this->classifyFailure($combined, $detectedTruncation);
+        $classification = $this->classifyFailure($combined, $detectedTruncation, $truncationDetails);
         $code = $classification['code'];
         $retryable = $classification['retryable'];
         $baseHint = $classification['baseHint'];

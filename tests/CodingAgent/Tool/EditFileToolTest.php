@@ -1166,9 +1166,14 @@ DIFF;
             $this->assertStringContainsString('[E_PATCH_FORMAT]', $message);
             $this->assertTrue($e->retryable());
 
-            // Hint must specifically diagnose truncation and recommend plain @@
+            // Hint must specifically diagnose truncation and recommend
+            // exactly @@ as the hunk header; must also include declared-vs-actual
+            // count details.
             $this->assertStringContainsString('truncated', strtolower($hint));
-            $this->assertStringContainsString('plain `@@`', $hint);
+            $this->assertStringContainsString('`@@`', $hint);
+            $this->assertStringContainsString('do not use numbered headers', $hint);
+            $this->assertStringContainsString('Numbered hunk header declared 4 old / 4 new lines', $hint);
+            $this->assertStringContainsString('2 old / 2 new lines', $hint);
             $this->assertStringNotContainsString('cat -n', $hint);
 
             // File must be completely unchanged
@@ -1298,6 +1303,123 @@ DIFF;
             // Must be classified as E_PATCH_FORMAT (not stale, not success)
             $this->assertStringContainsString('[E_PATCH_FORMAT]', $message);
             $this->assertTrue($e->retryable());
+
+            // File must be completely unchanged
+            $this->assertSame($original, file_get_contents($targetPath));
+        }
+    }
+
+    /**
+     * Session 10 regression: a numbered hunk header with over-declared
+     * counts (e.g. @@ -2,7 +2,7 @@ when body has only 5 old / 5 new lines)
+     * must be repaired when the old-side block matches the current file,
+     * the body has trailing context, and the match is near the declared
+     * oldStart.  The tool should succeed instead of failing with
+     * E_PATCH_FORMAT.
+     *
+     * This reproduces the exact session-10 method-rename scenario.
+     */
+    public function testNumberedHunkOverDeclaredCountsRepairedViaOldBlockMatch(): void
+    {
+        // Recreate session-10 DummyService.php structure (simplified).
+        $targetPath = $this->tmpDir.'/numbered_overdeclared_target.txt';
+        $original = <<<'PHP'
+final class DummyService
+{
+    private const DEFAULT_LIMIT = 25;
+
+    public function summarize(array $items): string
+    {
+        $lines = [];
+
+        foreach ($items as $index => $item) {
+            $trimmed = trim((string) $item);
+            if ($trimmed === '') {
+                continue;
+            }
+            $lines[] = sprintf('- item %d: %s', $index + 1, $trimmed);
+        }
+
+        return implode("\n", $lines);
+    }
+}
+PHP;
+        file_put_contents($targetPath, $original);
+
+        // Session-10 exact error pattern: numbered hunk declares
+        // @@ -3,7 +3,7 @@ but body has only 5 old / 5 new lines.
+        // (3 context + 1 removal + 1 addition).  Body has trailing
+        // context after the +/- change.
+        $patch = <<<'DIFF'
+--- a/file
++++ b/file
+@@ -3,7 +3,7 @@ final class DummyService
+     private const DEFAULT_LIMIT = 25;
+
+-    public function summarize(array $items): string
++    public function summarizeItems(array $items): string
+     {
+         $lines = [];
+DIFF;
+
+        $result = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+
+        // Must succeed (not fail with E_PATCH_FORMAT truncation).
+        $this->assertStringContainsString('Applied patch', $result);
+        $this->assertStringNotContainsString('[E_PATCH_FORMAT]', $result);
+
+        // Method must be renamed.
+        $actual = file_get_contents($targetPath);
+        $this->assertStringContainsString('summarizeItems', $actual);
+        $this->assertStringNotContainsString('public function summarize(', $actual);
+
+        // Rest of the file must be intact.
+        $this->assertStringContainsString('private const DEFAULT_LIMIT', $actual);
+        $this->assertStringContainsString('foreach ($items as $index => $item)', $actual);
+    }
+
+    /**
+     * Safety test: a numbered hunk with both sides under-declared that
+     * ends with a change line (+ or -) instead of trailing context must
+     * still fail closed with E_PATCH_FORMAT.  Such a body is more likely
+     * genuinely truncated than just miscounted.
+     */
+    public function testNumberedHunkEndingWithChangeLineStillFailsClosed(): void
+    {
+        $targetPath = $this->tmpDir.'/ending_with_change_target.txt';
+        $original = "line 1\nline 2\nline 3\nline 4\n";
+        file_put_contents($targetPath, $original);
+
+        // Declared @@ -2,4 +2,4 @@ but body has only 3 lines and ends
+        // with a + change line (no trailing context).  actualOld=2, actualNew=2.
+        $patch = <<<'DIFF'
+--- a/file
++++ b/file
+@@ -2,4 +2,4 @@
+ line 2
+-line 3
++NEW LINE 3
+DIFF;
+
+        try {
+            ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+            $this->fail('Expected ToolCallException for truncated hunk ending with change');
+        } catch (ToolCallException $e) {
+            $message = $e->getMessage();
+            $hint = $e->hint() ?? '';
+
+            // Must be classified as E_PATCH_FORMAT (fail closed).
+            $this->assertStringContainsString('[E_PATCH_FORMAT]', $message);
+            $this->assertTrue($e->retryable());
+
+            // Hint must include the declared-vs-actual count details
+            // and instruct to use exactly @@ (not numbered headers).
+            $this->assertStringContainsString('truncated', strtolower($hint));
+            $this->assertStringContainsString('Numbered hunk header declared 4 old / 4 new lines', $hint);
+            $this->assertStringContainsString('2 old / 2 new lines', $hint);
+            $this->assertStringContainsString('exactly `@@`', $hint);
+            $this->assertStringContainsString('do not use numbered headers', $hint);
+            $this->assertStringNotContainsString('cat -n', $hint);
 
             // File must be completely unchanged
             $this->assertSame($original, file_get_contents($targetPath));

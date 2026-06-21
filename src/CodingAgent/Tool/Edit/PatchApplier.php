@@ -72,6 +72,7 @@ final class PatchApplier
             $normalized = $normalizer->normalize($rawPatch, $originalContent);
             $patchContent = $normalized['content'];
             $detectedTruncation = $normalized['detectedTruncation'];
+            $truncationDetails = $normalized['truncationDetails'] ?? '';
 
             $patchFile = $this->writePatchFile($patchContent);
             $tempOut = @tempnam(sys_get_temp_dir(), 'hatfield_out_');
@@ -90,6 +91,7 @@ final class PatchApplier
                         $targetPath,
                         $drResult->stdout, $drResult->stderr,
                         $originalContent, $noTrailingNewline, $detectedTruncation,
+                        $truncationDetails,
                     );
 
                     throw new ToolCallException(\sprintf("This edit attempt failed. No changes from this attempt were applied; the target file is untouched.\n\n%s", $failure['message']), retryable: $failure['retryable'], hint: $failure['hint']);
@@ -104,6 +106,7 @@ final class PatchApplier
                         $targetPath,
                         $applyResult->stdout, $applyResult->stderr,
                         $originalContent, $noTrailingNewline, $detectedTruncation,
+                        $truncationDetails,
                     );
 
                     throw new ToolCallException(\sprintf("This edit attempt failed. No changes from this attempt were applied; the target file is untouched.\n\n%s", $failure['message']), retryable: $failure['retryable'], hint: $failure['hint']);
