@@ -206,6 +206,7 @@ After compaction, the `task-workflow` skill documents next steps. Use `task_list
 ## Docs map
 
 - `docs/settings.md` — Hatfield settings
+- `docs/compaction.md` — context compaction guide, `/compact` command, settings, events, hooks, validation
 - `docs/session-storage.md` — sessions, replay, locking, resume/fork design
 - `docs/tui-architecture.md` — layout, widgets, slots, themes
 - `docs/tui-testing.md` — tmux testing, snapshots, keybindings
