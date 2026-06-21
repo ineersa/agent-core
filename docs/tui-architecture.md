@@ -614,6 +614,55 @@ tmux info | grep 'Ms:'           # terminfo clipboard capability present?
 > `/copy` may report success (the tmux buffer was loaded) while the local
 > terminal clipboard remains unchanged.
 
+## Compaction command
+
+`/compact [custom instructions]` (alias `/cmp`) triggers context compaction
+through the runtime client.  Registered via `CompactCommandRegistrar`
+(`src/Tui/Listener/CompactCommandRegistrar.php`), a `TuiListenerRegistrar`
+that wires `CompactCommandHandler` (`src/Tui/Listener/CompactCommandHandler.php`)
+per iteration.
+
+### Handler flow
+
+1. **Validation:** Rejects with `No active session to compact.` if no `runId`
+   is present, or `Compaction already in progress.` if `TuiSessionState::isCompacting`
+   is already `true`.
+2. **Queueing proxy:** Sets `isCompacting = true` before calling
+   `AgentSessionClient::compact()` so repeated `/compact` commands are
+   immediately rejected.  If compaction is requested during an active run,
+   the core command mailbox queues the compact command until the next safe
+   turn boundary.
+3. **Progress display:** Returns a `TranscriptMessage` with
+   `"Compacting conversation..."` which is projected through
+   `CompactionProjectionSubscriber` as a streaming `System` transcript block.
+
+### Runtime-to-TUI flow
+
+```text
+Core events:  context_compaction_started / context_compacted / context_compaction_failed
+      │
+      ├─ RuntimeEventTranslator (src/CodingAgent/Runtime/Protocol/)
+      │   translates to RuntimeEventTypeEnum::{CompactionStarted, CompactionCompleted, CompactionFailed}
+      │
+      ├─ RuntimeEventPoller (src/Tui/Runtime/RuntimeEventPoller.php)
+      │   polls runtime events, dispatches to TranscriptProjector
+      │   clears TuiSessionState::isCompacting on completed/failed
+      │
+      └─ CompactionProjectionSubscriber (src/CodingAgent/Runtime/ProjectionPipeline/)
+          projects transcript blocks:
+          • started  → "Compacting conversation..." (streaming System)
+          • completed → "⧉ Conversation compacted. Token estimate: 142k → 38k." (System)
+          • failed   → "✕ Compaction failed: <reason>" (Error)
+```
+
+`isCompacting` is set synchronously by `CompactCommandHandler` and cleared
+asynchronously by `RuntimeEventPoller` on `compaction.completed` or
+`compaction.failed` events.  This creates a natural window where repeated
+`/compact` commands are gated.
+
+See [Context Compaction](compaction.md) for the full compaction guide, settings,
+events, hooks, failure handling, prompt template, and validation coverage.
+
 ## Session commands
 
 `/new`, `/resume`, and `/rename` are registered via `SessionCommandRegistrar`

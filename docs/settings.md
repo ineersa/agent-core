@@ -135,6 +135,8 @@ Files are stored under `logging.path`. The default of 14 keeps two weeks of logs
 
 ---
 
+See [Context Compaction](compaction.md) for the full compaction guide, manual `/compact` behavior, events, hooks, failure handling, and validation coverage.
+
 ### `compaction.auto_enabled`
 
 Controls auto-compaction only. Manual `/compact` is always available.
