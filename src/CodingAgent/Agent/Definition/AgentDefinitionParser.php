@@ -262,9 +262,11 @@ final class AgentDefinitionParser
             if ('' === trim($tool)) {
                 throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "tools[%d]" must not be empty.', $filePath, $i));
             }
+            if (trim($tool) !== $tool) {
+                throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "tools[%d]" must not have leading or trailing whitespace, got "%s".', $filePath, $i, $tool));
+            }
         }
 
-        /* @var list<string> */
         return $tools;
     }
 
@@ -343,9 +345,14 @@ final class AgentDefinitionParser
             if (!\is_string($item)) {
                 throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "%s[%d]" must be a string, got %s.', $filePath, $field, $i, \gettype($item)));
             }
+            if ('' === trim($item)) {
+                throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "%s[%d]" must not be empty.', $filePath, $field, $i));
+            }
+            if (trim($item) !== $item) {
+                throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "%s[%d]" must not have leading or trailing whitespace, got "%s".', $filePath, $field, $i, $item));
+            }
         }
 
-        /* @var list<string> */
         return $value;
     }
 
@@ -434,8 +441,13 @@ final class AgentDefinitionParser
 
         $mcp = $frontmatter['mcp'];
 
+        // Explicit null is equivalent to absent.
+        if (null === $mcp) {
+            return new McpPolicyDTO(mode: McpAgentModeEnum::None, tools: []);
+        }
+
         if (!\is_array($mcp)) {
-            throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "mcp" must be an object (mapping), got %s.', $filePath, \gettype($mcp)));
+            throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "mcp" must be an object (mapping) or null, got %s.', $filePath, \gettype($mcp)));
         }
 
         // Validate mcp sub-fields
@@ -446,20 +458,22 @@ final class AgentDefinitionParser
             }
         }
 
-        // mode
-        if (!\array_key_exists('mode', $mcp)) {
-            return new McpPolicyDTO(mode: McpAgentModeEnum::None, tools: []);
-        }
-
-        $modeRaw = $mcp['mode'];
-        if (!\is_string($modeRaw)) {
-            throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "mcp.mode" must be a string, got %s.', $filePath, \gettype($modeRaw)));
-        }
-
-        $mode = McpAgentModeEnum::tryFrom($modeRaw);
-        if (null === $mode) {
-            $allowed = array_map(static fn (McpAgentModeEnum $e) => $e->value, McpAgentModeEnum::cases());
-            throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "mcp.mode" must be one of [%s], got "%s".', $filePath, implode(', ', $allowed), $modeRaw));
+        // Determine mode: explicit value, or default None.
+        $mode = McpAgentModeEnum::None;
+        if (\array_key_exists('mode', $mcp)) {
+            $modeRaw = $mcp['mode'];
+            if (null === $modeRaw) {
+                $mode = McpAgentModeEnum::None;
+            } elseif (!\is_string($modeRaw)) {
+                throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "mcp.mode" must be a string, got %s.', $filePath, \gettype($modeRaw)));
+            } else {
+                $parsedMode = McpAgentModeEnum::tryFrom($modeRaw);
+                if (null === $parsedMode) {
+                    $allowed = array_map(static fn (McpAgentModeEnum $e) => $e->value, McpAgentModeEnum::cases());
+                    throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "mcp.mode" must be one of [%s], got "%s".', $filePath, implode(', ', $allowed), $modeRaw));
+                }
+                $mode = $parsedMode;
+            }
         }
 
         // tools
@@ -467,22 +481,29 @@ final class AgentDefinitionParser
         if (\array_key_exists('tools', $mcp)) {
             $toolsRaw = $mcp['tools'];
 
-            if (!\is_array($toolsRaw)) {
+            if (null === $toolsRaw) {
+                $tools = [];
+            } elseif (!\is_array($toolsRaw)) {
                 throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "mcp.tools" must be an array, got %s.', $filePath, \gettype($toolsRaw)));
-            }
-
-            if ([] !== $toolsRaw && !array_is_list($toolsRaw)) {
-                throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "mcp.tools" must be a list (sequential array).', $filePath));
-            }
-
-            foreach ($toolsRaw as $i => $tool) {
-                if (!\is_string($tool)) {
-                    throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "mcp.tools[%d]" must be a string, got %s.', $filePath, $i, \gettype($tool)));
+            } else {
+                if ([] !== $toolsRaw && !array_is_list($toolsRaw)) {
+                    throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "mcp.tools" must be a list (sequential array).', $filePath));
                 }
-            }
 
-            /* @var list<string> */
-            $tools = $toolsRaw;
+                foreach ($toolsRaw as $i => $tool) {
+                    if (!\is_string($tool)) {
+                        throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "mcp.tools[%d]" must be a string, got %s.', $filePath, $i, \gettype($tool)));
+                    }
+                    if ('' === trim($tool)) {
+                        throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "mcp.tools[%d]" must not be empty.', $filePath, $i));
+                    }
+                    if (trim($tool) !== $tool) {
+                        throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "mcp.tools[%d]" must not have leading or trailing whitespace, got "%s".', $filePath, $i, $tool));
+                    }
+                }
+
+                $tools = $toolsRaw;
+            }
         }
 
         // Cross-field MCP invariants

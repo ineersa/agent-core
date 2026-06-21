@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Agent\Definition\Tests;
+namespace Ineersa\CodingAgent\Tests\Agent\Definition;
 
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionParser;
@@ -12,6 +12,7 @@ use Ineersa\CodingAgent\Agent\Definition\AgentTypeEnum;
 use Ineersa\CodingAgent\Agent\Definition\McpAgentModeEnum;
 use Ineersa\CodingAgent\Agent\Definition\McpPolicyDTO;
 use Ineersa\CodingAgent\Agent\Definition\SystemPromptModeEnum;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -880,5 +881,211 @@ final class AgentDefinitionParserTest extends TestCase
 
         $dto = $this->parse($content);
         self::assertSame('my-custom-agent-2', $dto->name);
+    }
+
+    // -----------------------------------------------------------------
+    //  Reviewer fixes: closing delimiter, BOM, explicit nulls, whitespace
+    // -----------------------------------------------------------------
+
+    public function testBomStrippedBeforeFrontmatterCheck(): void
+    {
+        $yaml = "name: bom-test\ndescription: BOM test\ntype: scout\ntools:\n  - read\n";
+        $content = "\xEF\xBB\xBF---\n{$yaml}---\n\nBody with BOM";
+
+        $dto = $this->parse($content);
+        self::assertSame('bom-test', $dto->name);
+        self::assertSame('Body with BOM', $dto->instructions);
+    }
+
+    public function testClosingDelimiterNotMatchedMidToken(): void
+    {
+        // "---body" on a line should NOT be treated as a closing delimiter.
+        $content = "---\nname: dash-body\ndescription: Mid-token dash\ntype: scout\ntools:\n  - read\n---body\n\nReal body";
+
+        // Should throw: no valid closing delimiter found (frontmatter runs to end).
+        $this->expectException(AgentDefinitionValidationException::class);
+        $this->expectExceptionMessageMatches('/[Nn]o closing delimiter/');
+
+        $this->parser->parseContent($content, '/test/dash-body.md');
+    }
+
+    public function testMcpExplicitNullTreatedAsDefault(): void
+    {
+        $content = $this->wrapContent([
+            'name' => 'mcp-null',
+            'description' => 'Explicit null MCP',
+            'type' => 'scout',
+            'tools' => ['read'],
+            'mcp' => null,
+        ]);
+
+        $dto = $this->parse($content);
+        self::assertSame(McpAgentModeEnum::None, $dto->mcp->mode);
+        self::assertSame([], $dto->mcp->tools);
+    }
+
+    public function testMcpToolsWithoutModeRejected(): void
+    {
+        // mcp.tools present but mcp.mode omitted → non-specific mode,
+        // tools not allowed.
+        $content = $this->wrapContent([
+            'name' => 'tools-no-mode',
+            'description' => 'MCP tools without mode',
+            'type' => 'scout',
+            'tools' => ['read'],
+            'mcp' => ['tools' => ['context7__query-docs']],
+        ]);
+
+        $this->expectException(AgentDefinitionValidationException::class);
+        $this->expectExceptionMessageMatches('/"mcp.tools" is set but "mcp.mode" is "none"/');
+
+        $this->parse($content, '/test/tools-no-mode.md');
+    }
+
+    public function testParseFileWithRealFilePopulatesPathAndDirectory(): void
+    {
+        $tmpDir = TestDirectoryIsolation::createProjectTempDir('agent-def-test');
+        try {
+            $filePath = $tmpDir.'/real-agent.md';
+            file_put_contents($filePath, $this->wrapContent([
+                'name' => 'real-file',
+                'description' => 'From real file',
+                'type' => 'scout',
+                'tools' => ['read'],
+            ], 'Real instructions'));
+
+            $dto = $this->parser->parseFile($filePath);
+
+            self::assertSame('real-file', $dto->name);
+            self::assertSame('Real instructions', $dto->instructions);
+            self::assertSame($filePath, $dto->sourcePath);
+            self::assertSame($tmpDir, $dto->sourceDirectory);
+        } finally {
+            TestDirectoryIsolation::removeDirectory($tmpDir);
+        }
+    }
+
+    public function testToolsEntryWithLeadingWhitespaceRejected(): void
+    {
+        $content = $this->wrapContent([
+            'name' => 'ws-tool',
+            'description' => 'Whitespace tool',
+            'type' => 'scout',
+            'tools' => ['read', '  ide_find_file'],
+        ]);
+
+        $this->expectException(AgentDefinitionValidationException::class);
+        $this->expectExceptionMessageMatches('/must not have leading or trailing whitespace/');
+
+        $this->parse($content, '/test/ws-tool.md');
+    }
+
+    public function testToolsEntryWithTrailingWhitespaceRejected(): void
+    {
+        $content = $this->wrapContent([
+            'name' => 'ws-tool-t',
+            'description' => 'Trailing whitespace',
+            'type' => 'scout',
+            'tools' => ['read  '],
+        ]);
+
+        $this->expectException(AgentDefinitionValidationException::class);
+        $this->expectExceptionMessageMatches('/must not have leading or trailing whitespace/');
+
+        $this->parse($content, '/test/ws-tool-t.md');
+    }
+
+    public function testMcpToolsEntryWhitespaceOnlyRejected(): void
+    {
+        $content = $this->wrapContent([
+            'name' => 'mcp-ws',
+            'description' => 'MCP whitespace tool',
+            'type' => 'scout',
+            'tools' => ['read'],
+            'mcp' => [
+                'mode' => 'specific',
+                'tools' => ['  '],
+            ],
+        ]);
+
+        $this->expectException(AgentDefinitionValidationException::class);
+        $this->expectExceptionMessageMatches('/"mcp.tools\[0\]" must not be empty/');
+
+        $this->parse($content, '/test/mcp-ws.md');
+    }
+
+    public function testMcpToolsEntryWithSurroundingWhitespaceRejected(): void
+    {
+        $content = $this->wrapContent([
+            'name' => 'mcp-ws2',
+            'description' => 'MCP surrounding ws',
+            'type' => 'scout',
+            'tools' => ['read'],
+            'mcp' => [
+                'mode' => 'specific',
+                'tools' => [' context7__query-docs '],
+            ],
+        ]);
+
+        $this->expectException(AgentDefinitionValidationException::class);
+        $this->expectExceptionMessageMatches('/"mcp.tools\[0\]" must not have leading or trailing whitespace/');
+
+        $this->parse($content, '/test/mcp-ws2.md');
+    }
+
+    public function testSkillsEntryWhitespaceOnlyRejected(): void
+    {
+        $content = $this->wrapContent([
+            'name' => 'skills-ws',
+            'description' => 'Skills whitespace',
+            'type' => 'scout',
+            'tools' => ['read'],
+            'skills' => ['   '],
+        ]);
+
+        $this->expectException(AgentDefinitionValidationException::class);
+        $this->expectExceptionMessageMatches('/"skills\[0\]" must not be empty/');
+
+        $this->parse($content, '/test/skills-ws.md');
+    }
+
+    public function testSkillsEntryWithSurroundingWhitespaceRejected(): void
+    {
+        $content = $this->wrapContent([
+            'name' => 'skills-ws2',
+            'description' => 'Skills surrounding ws',
+            'type' => 'scout',
+            'tools' => ['read'],
+            'skills' => [' testing '],
+        ]);
+
+        $this->expectException(AgentDefinitionValidationException::class);
+        $this->expectExceptionMessageMatches('/"skills\[0\]" must not have leading or trailing whitespace/');
+
+        $this->parse($content, '/test/skills-ws2.md');
+    }
+
+    public function testMcpModeNullTreatedAsNone(): void
+    {
+        // mcp.mode: null should default to None.
+        $content = $this->wrapContent([
+            'name' => 'mcp-mode-null',
+            'description' => 'MCP mode null',
+            'type' => 'scout',
+            'tools' => ['read'],
+            'mcp' => ['mode' => null],
+        ]);
+
+        $dto = $this->parse($content);
+        self::assertSame(McpAgentModeEnum::None, $dto->mcp->mode);
+        self::assertSame([], $dto->mcp->tools);
+    }
+
+    public function testParseFileThrowsForNonExistentFile(): void
+    {
+        $this->expectException(AgentDefinitionValidationException::class);
+        $this->expectExceptionMessageMatches('/file not found/');
+
+        $this->parser->parseFile('/nonexistent/agent.md');
     }
 }

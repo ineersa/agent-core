@@ -41,6 +41,11 @@ final class AgentFrontmatterParser
         // Normalize line endings: CRLF and CR to LF.
         $content = str_replace(["\r\n", "\r"], "\n", $raw);
 
+        // Strip UTF-8 BOM (U+FEFF) if present, before checking for opening delimiter.
+        if (str_starts_with($content, "\xEF\xBB\xBF")) {
+            $content = substr($content, 3);
+        }
+
         $openDelimiter = '---';
 
         // Frontmatter only if the content starts with the opening delimiter.
@@ -92,6 +97,10 @@ final class AgentFrontmatterParser
      * Find the closing frontmatter delimiter line.
      *
      * Searches for "\n---" or "\n..." at the start of a line.
+     * The delimiter must appear as its own line: after the three chars,
+     * the next character must be a newline or EOF (not another char that
+     * would make the delimiter part of a longer word such as "---body").
+     *
      * Returns the position of the "\n" character that precedes the closing
      * delimiter, or null if not found.
      */
@@ -103,7 +112,14 @@ final class AgentFrontmatterParser
             $afterNewline = substr($content, $newline + 1, 3);
 
             if ('---' === $afterNewline || '...' === $afterNewline) {
-                return $newline;
+                // The next character after the 3-char delimiter must be
+                // a newline, EOF, or whitespace (so "---body" does not
+                // match as a closing delimiter).
+                $nextCharPos = $newline + 4;
+                if ($nextCharPos >= \strlen($content) || "\n" === $content[$nextCharPos] || ' ' === $content[$nextCharPos] || "\t" === $content[$nextCharPos]) {
+                    return $newline;
+                }
+                // Delimiter is part of a longer token; keep searching.
             }
 
             $pos = $newline + 1;
