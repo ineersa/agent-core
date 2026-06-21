@@ -170,6 +170,8 @@ final readonly class CompactRunHandler implements RunMessageHandler
                 'hook_reason' => $hookResult->cancelReason,
             ]);
 
+            $sanitisedCancelMetadata = $this->hookDispatcher->sanitiseMetadata($hookResult->metadata);
+
             $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, [[
                 'type' => RunEventTypeEnum::ContextCompactionFailed->value,
                 'payload' => [
@@ -178,7 +180,7 @@ final readonly class CompactRunHandler implements RunMessageHandler
                     'messages_replaced' => false,
                     'trigger' => $message->trigger,
                     'cancelled' => true,
-                    'hook_metadata' => $hookResult->metadata,
+                    'hook_metadata' => $sanitisedCancelMetadata,
                 ],
             ]]);
 

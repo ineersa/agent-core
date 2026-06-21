@@ -572,8 +572,9 @@ final class CompactRunHandlerTest extends TestCase
     }
 
     /**
-     * Thesis: when a hook cancels with metadata, the metadata appears in
-     * the context_compaction_failed event payload.
+     * Thesis: when a hook cancels with metadata that includes unsafe values
+     * (objects, resources), the sanitised cancel payload retains only JSON-safe
+     * scalars/nulls/maps while dropping unsafe entries.
      */
     public function testHookCancelMetadataPresentInFailedPayload(): void
     {
@@ -586,12 +587,28 @@ final class CompactRunHandlerTest extends TestCase
             tokenEstimateBefore: 100,
         );
 
-        $cancelHook = new class implements BeforeCompactionHookInterface {
+        // Include both safe and unsafe metadata values so the test proves
+        // sanitiseMetadata() strips objects/Closures while keeping scalars.
+        $unsafeObject = new \stdClass();
+        $unsafeObject->key = 'should-be-dropped';
+        $unsafeClosure = fn () => 'also-unsafe';
+
+        $cancelHook = new class($unsafeObject, $unsafeClosure) implements BeforeCompactionHookInterface {
+            public function __construct(
+                private object $unsafeObject,
+                private \Closure $unsafeClosure,
+            ) {}
+
             public function beforeCompaction(CompactionHookContextDTO $context): CompactionHookResultDTO
             {
                 return new CompactionHookResultDTO(
                     cancelReason: 'rate-limited',
-                    metadata: ['limit_type' => 'daily', 'reset_at' => 86400],
+                    metadata: [
+                        'limit_type' => 'daily',
+                        'reset_at' => 86400,
+                        'unsafe_object' => $this->unsafeObject,
+                        'unsafe_closure' => $this->unsafeClosure,
+                    ],
                 );
             }
         };
@@ -618,8 +635,17 @@ final class CompactRunHandlerTest extends TestCase
 
         $payload = $result->events[0]->payload;
         $this->assertArrayHasKey('hook_metadata', $payload);
+
+        // Safe scalars survive sanitisation.
         $this->assertSame('daily', $payload['hook_metadata']['limit_type'] ?? null);
         $this->assertSame(86400, $payload['hook_metadata']['reset_at'] ?? null);
+
+        // Unsafe values (object, Closure) are stripped by sanitiseMetadata().
+        $this->assertArrayNotHasKey('unsafe_object', $payload['hook_metadata'],
+            'Object metadata must be dropped from cancel payload.');
+        $this->assertArrayNotHasKey('unsafe_closure', $payload['hook_metadata'],
+            'Closure metadata must be dropped from cancel payload.');
+
         $this->assertStringContainsString('hook_cancelled:', $payload['reason']);
         $this->assertTrue($payload['cancelled'] ?? false, 'Hook-cancelled payload must carry cancelled=true.');
     }
