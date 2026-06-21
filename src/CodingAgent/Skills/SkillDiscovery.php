@@ -46,12 +46,11 @@ final class SkillDiscovery
     /** @var list<array{winner: string, ignored: string, name: string}> */
     private array $collisions = [];
 
-    private MarkdownFrontmatterExtractor $sharedExtractor;
-
     public function __construct(
         private readonly SkillsConfig $config,
         private readonly SettingsPathResolver $pathResolver,
         private readonly AppConfig $appConfig,
+        private readonly MarkdownFrontmatterExtractor $extractor,
         private ?LoggerInterface $logger = null,
     ) {
     }
@@ -263,7 +262,7 @@ final class SkillDiscovery
      */
     private function parseFrontmatter(string $content): array
     {
-        $extraction = $this->createExtractor()->extract($content);
+        $extraction = $this->extractor->extract($content);
 
         if (null === $extraction['yamlBlock']) {
             return [];
@@ -282,11 +281,6 @@ final class SkillDiscovery
 
             return [];
         }
-    }
-
-    private function createExtractor(): MarkdownFrontmatterExtractor
-    {
-        return $this->sharedExtractor ??= new MarkdownFrontmatterExtractor();
     }
 
     /**

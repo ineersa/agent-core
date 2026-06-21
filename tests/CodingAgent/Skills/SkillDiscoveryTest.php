@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\Skills\SkillsConfig;
 use PHPUnit\Framework\TestCase;
@@ -290,6 +291,7 @@ final class SkillDiscoveryTest extends TestCase
             config: $config,
             pathResolver: $pathResolver,
             appConfig: $appConfig,
+            extractor: new MarkdownFrontmatterExtractor(),
         );
 
         $this->expectException(\RuntimeException::class);
@@ -347,6 +349,7 @@ final class SkillDiscoveryTest extends TestCase
                 logging: new LoggingConfig(),
                 cwd: $cwd ?? $this->tmpDir,
             ),
+            extractor: new MarkdownFrontmatterExtractor(),
         );
     }
 
