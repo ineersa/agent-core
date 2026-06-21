@@ -106,6 +106,18 @@ final class AgentFrontmatterDTO
     #[Assert\Callback]
     public function validateCrossField(ExecutionContextInterface $context): void
     {
+        if (!array_is_list($this->tools)) {
+            $context->buildViolation('Must be a list (sequential array), got associative array.')
+                ->atPath('tools')
+                ->addViolation();
+        }
+
+        if (!array_is_list($this->skills)) {
+            $context->buildViolation('Must be a list (sequential array), got associative array.')
+                ->atPath('skills')
+                ->addViolation();
+        }
+
         if (!$this->backgroundAllowed && !$this->foregroundAllowed) {
             $context->buildViolation('"backgroundAllowed" and "foregroundAllowed" cannot both be false — the agent would never be launchable.')
                 ->atPath('backgroundAllowed')

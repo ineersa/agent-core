@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Definition;
 
 use Symfony\Component\Validator\Constraints as Assert;
+use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
 /**
  * MCP frontmatter sub-DTO — the "mcp" key in agent definition YAML.
@@ -32,5 +33,15 @@ final class McpFrontmatterDTO
         ])]
         public readonly array $tools = [],
     ) {
+    }
+
+    #[Assert\Callback]
+    public function validateShape(ExecutionContextInterface $context): void
+    {
+        if (!array_is_list($this->tools)) {
+            $context->buildViolation('Must be a list (sequential array), got associative array.')
+                ->atPath('tools')
+                ->addViolation();
+        }
     }
 }

@@ -143,7 +143,7 @@ final class AgentDefinitionParser
         } catch (\TypeError $e) {
             $message = $e->getMessage();
             $field = 'a field';
-            if (preg_match('/Argument #\d+ \\(\\$\w+\\)/', $message, $matches)) {
+            if (preg_match('/Argument #\d+ \\((\$\w+)\\)/', $message, $matches)) {
                 $field = '"'.ltrim($matches[1], '$').'"';
             }
 

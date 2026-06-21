@@ -18,9 +18,10 @@ namespace Ineersa\CodingAgent\Markdown;
  *    opening delimiter line must be a real delimiter line, not a prefix of
  *    a longer token such as "---title").
  *  - The closing delimiter is "\n---" or "\n..." at the start of a line.
- *    The delimiter must be on its own line: after the three chars the next
- *    character must be newline, space, tab, or EOF.  A token such as
- *    "---body" is not treated as a closing delimiter.
+ *    The delimiter must be on its own line: the rest of the line after
+ *    the three delimiter characters must be empty or whitespace-only.
+ *    A token such as "---body" or "--- extra junk" is not treated as
+ *    a closing delimiter.
  *  - The YAML block is everything between the delimiters (trimmed).
  *  - The body is everything after the closing delimiter line (trimmed).
  *

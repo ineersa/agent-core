@@ -1207,4 +1207,50 @@ final class AgentDefinitionParserTest extends TestCase
 
         $this->parser->parseContent($raw, '/test/bad-dot-close.md');
     }
+
+    // -----------------------------------------------------------------
+    //  List-shape enforcement: mapping/associative arrays rejected
+    // -----------------------------------------------------------------
+
+    public function testToolsAssociativeMapRejected(): void
+    {
+        // tools: { read: read } is an associative map, not a list.
+        $content = $this->wrapContent([
+            'name' => 'tools-map',
+            'description' => 'Associative tools',
+            'tools' => ['read' => 'read'],
+        ]);
+
+        $this->expectException(AgentDefinitionValidationException::class);
+        $this->expectExceptionMessageMatches('/"tools".*list.*associative/');
+
+        $this->parser->parseContent($content, '/test/tools-map.md');
+    }
+
+    public function testSkillsAssociativeMapRejected(): void
+    {
+        // skills: { foo: bar } is an associative map, not a list.
+        $content = $this->wrapContent([
+            'name' => 'skills-map',
+            'description' => 'Associative skills',
+            'tools' => ['read'],
+            'skills' => ['testing' => 'testing'],
+        ]);
+
+        $this->expectException(AgentDefinitionValidationException::class);
+        $this->expectExceptionMessageMatches('/"skills".*list.*associative/');
+
+        $this->parser->parseContent($content, '/test/skills-map.md');
+    }
+
+    public function testMcpToolsAssociativeMapRejected(): void
+    {
+        // mcp.tools: { read: read } is an associative map, not a list.
+        $raw = "---\nname: mcp-tools-map\ndescription: MCP tools map\ntools:\n  - read\nmcp:\n  mode: specific\n  tools:\n    read: read\n---\n";
+
+        $this->expectException(AgentDefinitionValidationException::class);
+        $this->expectExceptionMessageMatches('/"mcp\.tools".*list.*associative/');
+
+        $this->parser->parseContent($raw, '/test/mcp-tools-map.md');
+    }
 }
