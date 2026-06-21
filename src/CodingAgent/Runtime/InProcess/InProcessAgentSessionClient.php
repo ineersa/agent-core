@@ -13,6 +13,9 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
+use Ineersa\CodingAgent\Config\Ai\AiModelReference;
+use Ineersa\CodingAgent\Config\ModelResolver;
+use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Mcp\McpSessionLifecycleDispatcher;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateService;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
@@ -49,6 +52,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         private readonly AgentsContextRenderer $agentsContextRenderer,
         private readonly SkillsContextBuilder $skillsContextBuilder,
         private readonly PromptTemplateService $promptTemplateService,
+        private readonly SessionMetadataStore $sessionMetaStore,
         private readonly ?RuntimeEventSinkInterface $transientSink = null,
         private readonly ?ToolQuestionStoreInterface $toolQuestionStore = null,
         private readonly ToolQuestionAnswerResolver $answerResolver = new ToolQuestionAnswerResolver(),
@@ -114,6 +118,31 @@ final class InProcessAgentSessionClient implements AgentSessionClient
                 role: 'user',
                 content: [['type' => 'text', 'text' => $prompt]],
             );
+        }
+
+        // Persist session-scoped model/reasoning selection so resume restores it.
+        // Session-start is NOT a global-default change (unlike /model mid-session,
+        // which intentionally also updates the home default via ModelSettingsPersister).
+        // Guard: only persist when a session row already exists ($request->runId !== ''),
+        // since HatfieldSessionStore::updateMetadata() is a no-op for unknown sessions
+        // and sessions are created lazily by createSession()/SessionInitializer before start().
+        $sessionId = $request->runId;
+        if ('' !== $sessionId) {
+            $metaFields = [];
+            if (null !== $request->model) {
+                $ref = AiModelReference::tryParse($request->model);
+                if (null !== $ref) {
+                    $metaFields['model'] = $ref->toString();
+                    $metaFields['model_provider'] = $ref->providerId;
+                    $metaFields['model_name'] = $ref->modelName;
+                }
+            }
+            if (null !== $request->reasoning && \in_array($request->reasoning, ModelResolver::LEVELS, true)) {
+                $metaFields['reasoning'] = $request->reasoning;
+            }
+            if ([] !== $metaFields) {
+                $this->sessionMetaStore->writeSessionMetadata($sessionId, $metaFields);
+            }
         }
 
         $input = new StartRunInput(
