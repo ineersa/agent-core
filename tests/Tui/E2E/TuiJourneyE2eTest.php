@@ -71,7 +71,8 @@ final class TuiJourneyE2eTest extends TestCase
      *  5. File @ completion preserves multiline content
      *  6. Model interaction via replay fixture (no live LLM)
      *  7. !! double-bang rejection proof
-     *  8. Clean exit via Ctrl+D
+     *  8. /export slash command proof
+     *  9. Clean exit via Ctrl+D
      *
      * Ctrl+J newline is tested separately in HotkeySmokeTest
      * (it is sensitive to terminal configuration and a race
@@ -95,6 +96,7 @@ final class TuiJourneyE2eTest extends TestCase
             $this->journeyPhase5FileCompletion($pane);
             $this->journeyPhase6ModelInteractionReplay($pane);
             $this->journeyPhase7DoubleBangRejection($pane);
+            $this->journeyPhase8ExportCommand($pane);
 
             $this->tmux->sendKey($pane, 'C-d');
         } catch (\Throwable $e) {
@@ -391,6 +393,39 @@ final class TuiJourneyE2eTest extends TestCase
             $footerCapture,
             'Footer must show cache-hit percentage (↻ 78%) when replay fixture provides cache telemetry',
         );
+    }
+
+    /**
+     * Phase 8: /export slash command exports a session file.
+     */
+    private function journeyPhase8ExportCommand(TmuxPane $pane): void
+    {
+        $this->tmux->sendKey($pane, 'C-u'); // Clear editor
+        $this->tmux->sendLiteral($pane, '/export');
+        $this->tmux->sendKey($pane, 'Enter');
+
+        // Wait for export confirmation in history
+        $capture = $this->tmux->waitForCallback(
+            $pane,
+            static fn (string $cap): bool => str_contains($cap, 'exported'),
+            timeout: 5.0,
+            message: '/export confirmation message never appeared',
+            history: 2000,
+        );
+
+        self::assertStringContainsString('Session exported to:', $capture);
+
+        // Verify the exported HTML file exists in the isolated test directory
+        // The default path is hatfield-session-<id>.html in cwd
+        $sessionGlob = $this->testProjectDir.'/hatfield-session-*.html';
+        $files = glob($sessionGlob);
+        self::assertNotEmpty($files, 'Expected an exported session HTML file in test directory');
+        self::assertCount(1, $files, 'Expected exactly one exported session HTML file');
+
+        $html = file_get_contents($files[0]);
+        self::assertStringContainsString('Hatfield Session', $html);
+        self::assertStringContainsString('<!DOCTYPE html>', $html);
+        self::assertStringNotContainsString('<script>', $html, 'HTML export must not contain unescaped <script> tags');
     }
 
     /**
