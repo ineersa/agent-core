@@ -292,6 +292,7 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
             $stateAfterBoundary = $mailboxResult->state;
             $boundaryEventSpecs = $mailboxResult->eventSpecs;
             $shouldContinue = $mailboxResult->shouldContinue;
+            $mailboxEffects = $mailboxResult->effects;
 
             $eventSpecs = [
                 ...$eventSpecs,
@@ -336,6 +337,7 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
             return new HandlerResult(
                 nextState: $nextState,
                 events: $events,
+                effects: $mailboxEffects,
                 postCommit: $postCommit,
             );
         }

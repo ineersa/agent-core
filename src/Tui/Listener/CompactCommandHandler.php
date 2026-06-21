@@ -50,11 +50,21 @@ final class CompactCommandHandler implements SlashCommandHandler
 
         $customInstructions = '' !== $command->args ? $command->args : null;
 
-        $this->client->compact($runId, $customInstructions);
-
-        // Mark compacting state so repeated /compact commands are
-        // rejected until the compaction completes or fails.
+        // Set compacting state before the side-effect so repeated
+        // /compact commands are immediately rejected.
         $this->state->isCompacting = true;
+
+        try {
+            $this->client->compact($runId, $customInstructions);
+        } catch (\Throwable $e) {
+            $this->state->isCompacting = false;
+
+            return new TranscriptMessage(
+                \sprintf('Compaction failed: %s', $e->getMessage()),
+                'system',
+                'error',
+            );
+        }
 
         return new TranscriptMessage(
             'Compacting conversation...',

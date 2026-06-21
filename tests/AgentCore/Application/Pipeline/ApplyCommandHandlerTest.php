@@ -14,6 +14,7 @@ use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
+use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
@@ -595,6 +596,135 @@ final class ApplyCommandHandlerTest extends TestCase
         // Verify the queued commands are no longer pending
         $this->assertCount(0, $commandStore->pending('run-cancel-stale'),
             'All stale queued commands should be rejected after cancel.',
+        );
+    }
+
+    /**
+     * Terminal compact must mark applied and dispatch CompactRun
+     * immediately — no enqueue.  This prevents duplicate compact
+     * when the pending command is drained by a future mailbox cycle.
+     */
+    public function testCompactOnTerminalRunMarksAppliedNotQueued(): void
+    {
+        $commandStore = new InMemoryCommandStore();
+        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandMailboxPolicy = new CommandMailboxPolicy(
+            commandStore: $commandStore,
+            commandRouter: $commandRouter,
+        );
+
+        $commandBus = new TestMessageBus();
+
+        $handler = new ApplyCommandHandler(
+            commandStore: $commandStore,
+            commandRouter: $commandRouter,
+            commandMailboxPolicy: $commandMailboxPolicy,
+            eventFactory: new EventFactory(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            maxPendingCommands: 10,
+            commandBus: $commandBus,
+        );
+
+        $state = new RunState(
+            runId: 'run-terminal-compact',
+            status: RunStatus::Completed,
+            version: 3,
+            turnNo: 5,
+            lastSeq: 10,
+            messages: [
+                new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'Hello']]),
+                new AgentMessage(role: 'assistant', content: [['type' => 'text', 'text' => 'Hi']]),
+            ],
+        );
+
+        $message = new ApplyCommand(
+            runId: 'run-terminal-compact',
+            turnNo: 5,
+            stepId: 'compact-step-1',
+            attempt: 1,
+            idempotencyKey: 'compact-terminal-ik-1',
+            kind: CoreCommandKind::Compact,
+            payload: ['custom_instructions' => 'Be brief.'],
+        );
+
+        $result = $handler->handle($message, $state);
+
+        // Terminal path: mark applied immediately, not queued
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(RunStatus::Completed, $result->nextState->status,
+            'Terminal compact must not change run status.',
+        );
+
+        // Event must be agent_command_applied (not agent_command_queued)
+        $this->assertCount(1, $result->events);
+        $this->assertSame('agent_command_applied', $result->events[0]->type,
+            'Terminal compact must emit agent_command_applied, not agent_command_queued.',
+        );
+        $this->assertSame('compact', $result->events[0]->payload['kind']);
+
+        // CompactRun must be dispatched via post-commit callback
+        $this->assertCount(1, $result->postCommit,
+            'Terminal compact must include a post-commit CompactRun dispatch.',
+        );
+        ($result->postCommit[0])();
+        $this->assertCount(1, $commandBus->messages);
+        $this->assertInstanceOf(CompactRun::class, $commandBus->messages[0]);
+        $this->assertSame('run-terminal-compact', $commandBus->messages[0]->runId());
+
+        // No pending command left in store (would cause duplicate drain)
+        $this->assertCount(0, $commandStore->pending('run-terminal-compact'),
+            'Terminal compact must not leave a pending command in the store.',
+        );
+    }
+
+    /**
+     * Idempotency: compact applied call with same idempotencyKey is no-op.
+     */
+    public function testCompactTerminalIdempotency(): void
+    {
+        $commandStore = new InMemoryCommandStore();
+        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandMailboxPolicy = new CommandMailboxPolicy(
+            commandStore: $commandStore,
+            commandRouter: $commandRouter,
+        );
+
+        $handler = new ApplyCommandHandler(
+            commandStore: $commandStore,
+            commandRouter: $commandRouter,
+            commandMailboxPolicy: $commandMailboxPolicy,
+            eventFactory: new EventFactory(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            maxPendingCommands: 10,
+        );
+
+        $state = new RunState(
+            runId: 'run-compact-idempotent',
+            status: RunStatus::Completed,
+            version: 3,
+            turnNo: 5,
+            lastSeq: 10,
+            messages: [],
+        );
+
+        $message = new ApplyCommand(
+            runId: 'run-compact-idempotent',
+            turnNo: 5,
+            stepId: 'compact-step-2',
+            attempt: 1,
+            idempotencyKey: 'compact-idem-1',
+            kind: CoreCommandKind::Compact,
+            payload: [],
+        );
+
+        // First call — applied
+        $result1 = $handler->handle($message, $state);
+        $this->assertNotNull($result1->nextState);
+
+        // Second call — idempotent no-op
+        $result2 = $handler->handle($message, $result1->nextState ?? $state);
+        $this->assertNull($result2->nextState,
+            'Second compact with same idempotency key must be a no-op.',
         );
     }
 }

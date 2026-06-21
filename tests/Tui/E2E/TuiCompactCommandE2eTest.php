@@ -162,7 +162,7 @@ final class TuiCompactCommandE2eTest extends TestCase
                 '/compact with active session must show progress message',
             );
 
-            // ── Phase 5: /compact with custom instructions ──
+            // ── Phase 5: /compact re-entrancy guard ──
             $this->tmux->sendKey($pane, 'C-u');
             usleep(100_000);
             $this->tmux->sendLiteral($pane, '/compact Focus on key points.');
@@ -189,16 +189,21 @@ final class TuiCompactCommandE2eTest extends TestCase
             // to a user-visible message.  This assertion proves the full
             // runtime event/projection pipeline: core event → runtime event
             // → CompactionProjectionSubscriber → visible TUI transcript.
+            //
+            // The RuntimeEventTranslator wording mirrors
+            // CompactRunHandler::failureReasonToMessage().  Assert a stable
+            // substring rather than the full message so rewording doesn't
+            // break the test.
             $failureCapture = $this->tmux->waitForCallback(
                 $pane,
-                static fn (string $cap): bool => str_contains($cap, 'Token usage below threshold'),
+                static fn (string $cap): bool => str_contains($cap, 'no older context'),
                 timeout: 15.0,
                 message: 'Compaction failure block not shown in TUI',
                 history: 2000,
             );
 
             self::assertStringContainsString(
-                'Token usage below threshold',
+                'no older context',
                 $failureCapture,
                 '/compact with small conversation must project visible failure block via runtime events',
             );

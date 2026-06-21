@@ -398,20 +398,68 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
     }
 
     /**
-     * Enqueue a compact command and optionally dispatch CompactRun immediately.
+     * Apply a compact command.
      *
-     * When the run is active (Running or Cancelling), the compact command
-     * is queued as a PendingCommand and drained at the next safe boundary
-     * by CommandMailboxPolicy (via AdvanceRunHandler at the stop-boundary
-     * or turn-start boundary).
+     * Active run (Running / Cancelling): enqueue as PendingCommand for
+     * mailbox drain at the next safe boundary (stop-boundary via
+     * LlmStepResultHandler or turn-start via AdvanceRunHandler).
+     * CommandMailboxPolicy will markApplied on drain.
      *
-     * When the run is in a terminal/safe state, CompactRun is dispatched
-     * immediately through the command bus post-commit callback.
+     * Terminal/safe state: mark applied immediately and dispatch
+     * CompactRun via post-commit callback.  No enqueue so the command
+     * cannot be drained again on a future mailbox cycle — mirroring
+     * applyContinueCommand / applyHumanResponseCommand.
      */
     private function applyCompactCommand(RunState $state, ApplyCommand $message): HandlerResult
     {
         $runId = $message->runId();
+        $isActive = \in_array($state->status, [RunStatus::Running, RunStatus::Cancelling], true);
 
+        if (!$isActive) {
+            // Terminal/safe boundary: apply immediately.
+            $this->commandStore->markApplied($runId, $message->idempotencyKey());
+
+            $nextState = new RunState(
+                runId: $state->runId,
+                status: $state->status,
+                version: $state->version + 1,
+                turnNo: $state->turnNo,
+                lastSeq: $state->lastSeq + 1,
+                isStreaming: $state->isStreaming,
+                streamingMessage: $state->streamingMessage,
+                pendingToolCalls: $state->pendingToolCalls,
+                errorMessage: $state->errorMessage,
+                messages: $state->messages,
+                activeStepId: $state->activeStepId,
+                retryableFailure: $state->retryableFailure,
+            );
+
+            $appliedEvent = $this->eventFactory->event(
+                runId: $runId,
+                seq: $nextState->lastSeq,
+                turnNo: $nextState->turnNo,
+                type: RunEventTypeEnum::AgentCommandApplied->value,
+                payload: [
+                    'kind' => $message->kind,
+                    'idempotency_key' => $message->idempotencyKey(),
+                    'options' => [],
+                ],
+            );
+
+            $postCommit = [];
+            $compactCallback = $this->compactCallback($runId, $message->payload['custom_instructions'] ?? null);
+            if (null !== $compactCallback) {
+                $postCommit[] = $compactCallback;
+            }
+
+            return new HandlerResult(
+                nextState: $nextState,
+                events: [$appliedEvent],
+                postCommit: $postCommit,
+            );
+        }
+
+        // Active run: enqueue for next safe-boundary drain.
         $pendingCommand = new PendingCommand(
             runId: $runId,
             kind: $message->kind,
@@ -450,24 +498,9 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             ],
         );
 
-        // Queue-drain boundary: only dispatch an immediate CompactRun when
-        // the run is at a safe/terminal boundary (Completed, Failed,
-        // Cancelled, WaitingHuman).  If the run is active (Running or
-        // Cancelling), the queued command will be drained at the next
-        // stop boundary by CommandMailboxPolicy.
-        $postCommit = [];
-        $isActive = \in_array($state->status, [RunStatus::Running, RunStatus::Cancelling], true);
-        if (!$isActive) {
-            $compactCallback = $this->compactCallback($runId, $message->payload['custom_instructions'] ?? null);
-            if (null !== $compactCallback) {
-                $postCommit[] = $compactCallback;
-            }
-        }
-
         return new HandlerResult(
             nextState: $nextState,
             events: [$queuedEvent],
-            postCommit: $postCommit,
         );
     }
 

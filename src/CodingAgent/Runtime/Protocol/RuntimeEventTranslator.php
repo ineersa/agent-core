@@ -440,12 +440,16 @@ final class RuntimeEventTranslator
     {
         $p = $runEvent->payload;
 
+        // CompactRunHandler emits 'estimated_tokens' (singular).
+        // Normalise to 'estimated_tokens_before' for downstream consumers.
+        $estimatedTokens = $p['estimated_tokens'] ?? $p['estimated_tokens_before'] ?? null;
+
         return new RuntimeEvent(
             type: RuntimeEventTypeEnum::CompactionStarted->value,
             runId: $runEvent->runId,
             seq: $runEvent->seq,
             payload: [
-                'estimated_tokens_before' => $p['estimated_tokens_before'] ?? null,
+                'estimated_tokens_before' => $estimatedTokens,
             ],
         );
     }
@@ -473,11 +477,13 @@ final class RuntimeEventTranslator
         $reason = (string) ($p['reason'] ?? 'Compaction failed.');
 
         // Map internal reason strings to user-friendly messages.
+        // Wording mirrors CompactRunHandler::failureReasonToMessage().
+        // These are structural failures (prep-not-ready), not skips.
         $userMessage = match ($reason) {
-            'too_few_messages' => 'Compaction skipped: Not enough messages to compact.',
-            'below_keep_recent_tokens' => 'Compaction skipped: Token usage below threshold.',
-            'no_boundary' => 'Compaction skipped: Could not find a safe message boundary.',
-            'no_safe_boundary' => 'Compaction skipped: Could not find a safe message boundary.',
+            'too_few_messages' => 'Compaction failed: there are not enough messages to compact.',
+            'below_keep_recent_tokens' => 'Compaction failed: there is no older context outside the retained tail to summarize.',
+            'no_boundary' => 'Compaction failed: could not determine a boundary for the retained tail.',
+            'no_safe_boundary' => 'Compaction failed: no safe boundary found without splitting tool-call results.',
             default => \sprintf('Compaction failed: %s', $reason),
         };
 

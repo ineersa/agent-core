@@ -105,11 +105,23 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
         // When pending commands (steer/follow-up) added new messages while
         // the run was Completed or Failed, transition to Running and proceed
         // to the next turn — don't bail out early.
+        //
+        // Compact commands are excluded from this transition: compaction
+        // replaces messages in-place and should not advance the run turn.
+        // Compact-specific effects are handled by the effects guard below.
         if (\in_array($preparedState->status, [RunStatus::Completed, RunStatus::Failed, RunStatus::Cancelled, RunStatus::WaitingHuman], true)) {
-            // If pending commands produced boundary events (messages were
-            // added), the run is no longer terminal — continue to the
-            // turn-advance path below.
-            if ([] !== $boundaryEventSpecs && \in_array($preparedState->status, [RunStatus::Completed, RunStatus::Failed, RunStatus::Cancelled], true)) {
+            // Check for boundary events that are NOT solely from compact
+            // (steer/follow-up/continue produce message-adding events).
+            $hasMessageProducingCommand = false;
+            foreach ($boundaryEventSpecs as $spec) {
+                $kind = (string) ($spec['payload']['kind'] ?? '');
+                if ('compact' !== $kind) {
+                    $hasMessageProducingCommand = true;
+                    break;
+                }
+            }
+
+            if ($hasMessageProducingCommand && [] !== $boundaryEventSpecs && \in_array($preparedState->status, [RunStatus::Completed, RunStatus::Failed, RunStatus::Cancelled], true)) {
                 $preparedState = new RunState(
                     runId: $preparedState->runId,
                     status: RunStatus::Running,

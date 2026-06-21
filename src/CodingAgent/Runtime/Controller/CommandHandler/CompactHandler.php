@@ -4,20 +4,22 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Controller\CommandHandler;
 
+use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
-use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 
 /**
- * Handles compact commands via Symfony EventDispatcher.
+ * Handles compact JSONL commands from the parent TUI/controller process.
  */
 #[AsEventListener(event: ControllerCommandEvent::class)]
 final readonly class CompactHandler
 {
     public function __construct(
-        private readonly InProcessAgentSessionClient $client,
+        private readonly AgentSessionClient $client,
         private readonly LoggerInterface $logger = new NullLogger(),
     ) {
     }
@@ -31,6 +33,13 @@ final readonly class CompactHandler
         $command = $event->command;
         $runId = $command->runId ?? '';
         if ('' === $runId) {
+            $event->emit(new RuntimeEvent(
+                type: RuntimeEventTypeEnum::ProtocolError->value,
+                runId: '',
+                seq: 0,
+                payload: ['error' => 'compact requires runId'],
+            ));
+
             return;
         }
 
