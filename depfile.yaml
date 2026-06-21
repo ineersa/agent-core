@@ -250,6 +250,11 @@ parameters:
         - type: directory
           value: src/CodingAgent/SystemPrompt/.*
 
+    - name: AppAgent
+      collectors:
+        - type: directory
+          value: src/CodingAgent/Agent/.*
+
     - name: AppSkills
       collectors:
         - type: directory
@@ -527,6 +532,9 @@ parameters:
       - AgentCore
       - SymfonyAiPlatform
       - SymfonyEventDispatcher
+
+    AppAgent:
+      - SymfonyYaml
 
     AppSkills:
       - AppConfig
