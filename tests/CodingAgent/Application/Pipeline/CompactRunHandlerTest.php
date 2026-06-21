@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Application\Pipeline;
 
-use Ineersa\AgentCore\Application\Pipeline\HandlerResult;
 use Ineersa\AgentCore\Contract\Compaction\CompactionPrepareResult;
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
+use Ineersa\AgentCore\Contract\Compaction\CompactResult;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
@@ -15,6 +15,10 @@ use Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Application\Pipeline\CompactRunHandler;
+use Ineersa\CodingAgent\Compaction\BeforeCompactionHookInterface;
+use Ineersa\CodingAgent\Compaction\CompactionHookContextDTO;
+use Ineersa\CodingAgent\Compaction\CompactionHookDispatcher;
+use Ineersa\CodingAgent\Compaction\CompactionHookResultDTO;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\CompactionConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
@@ -23,9 +27,7 @@ use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Config\ModelSettingsPersister;
 use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Config\TuiConfig;
-use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
-use ReflectionClass;
 
 /**
  * Contract tests for {@see CompactRunHandler}.
@@ -67,6 +69,7 @@ final class CompactRunHandlerTest extends TestCase
             $appConfig,
             new EventFactory(),
             $fakeModelSelection,
+            new CompactionHookDispatcher([]),
         );
 
         $result = $handler->handle(
@@ -82,35 +85,35 @@ final class CompactRunHandlerTest extends TestCase
         );
 
         // Emits context_compaction_started.
-        self::assertNotNull($result->nextState);
-        self::assertCount(1, $result->events);
-        self::assertSame(RunEventTypeEnum::ContextCompactionStarted->value, $result->events[0]->type);
+        $this->assertNotNull($result->nextState);
+        $this->assertCount(1, $result->events);
+        $this->assertSame(RunEventTypeEnum::ContextCompactionStarted->value, $result->events[0]->type);
 
         $payload = $result->events[0]->payload;
-        self::assertSame('step-1', $payload['step_id']);
-        self::assertSame('manual', $payload['trigger']);
-        self::assertSame('openai/compaction-model', $payload['model'], 'Explicit compaction model override must appear in started payload');
-        self::assertSame(42000, $payload['estimated_tokens']);
-        self::assertSame(20000, $payload['keep_recent_tokens']);
-        self::assertSame(4, $payload['messages_before']);
-        self::assertSame(2, $payload['messages_to_summarize']);
-        self::assertSame(2, $payload['messages_retained']);
+        $this->assertSame('step-1', $payload['step_id']);
+        $this->assertSame('manual', $payload['trigger']);
+        $this->assertSame('openai/compaction-model', $payload['model'], 'Explicit compaction model override must appear in started payload');
+        $this->assertSame(42000, $payload['estimated_tokens']);
+        $this->assertSame(20000, $payload['keep_recent_tokens']);
+        $this->assertSame(4, $payload['messages_before']);
+        $this->assertSame(2, $payload['messages_to_summarize']);
+        $this->assertSame(2, $payload['messages_retained']);
 
         // Sets activeStepId so the result handler can match the result.
-        self::assertSame('step-1', $result->nextState->activeStepId);
+        $this->assertSame('step-1', $result->nextState->activeStepId);
 
         // Dispatches ExecuteCompactionStep effect.
-        self::assertCount(1, $result->effects);
-        self::assertInstanceOf(ExecuteCompactionStep::class, $result->effects[0]);
+        $this->assertCount(1, $result->effects);
+        $this->assertInstanceOf(ExecuteCompactionStep::class, $result->effects[0]);
 
         /** @var ExecuteCompactionStep $workerMsg */
         $workerMsg = $result->effects[0];
-        self::assertSame('run-1', $workerMsg->runId());
-        self::assertSame('openai/compaction-model', $workerMsg->model, 'Explicit compaction model override must be dispatched to worker');
-        self::assertSame('manual', $workerMsg->trigger);
+        $this->assertSame('run-1', $workerMsg->runId());
+        $this->assertSame('openai/compaction-model', $workerMsg->model, 'Explicit compaction model override must be dispatched to worker');
+        $this->assertSame('manual', $workerMsg->trigger);
 
         // Messages are NOT mutated in started handler (only in compacted/failed).
-        self::assertCount(\count($messages), $result->nextState->messages);
+        $this->assertCount(\count($messages), $result->nextState->messages);
     }
 
     /**
@@ -149,6 +152,7 @@ final class CompactRunHandlerTest extends TestCase
             $appConfig,
             new EventFactory(),
             $fakeModelSelection,
+            new CompactionHookDispatcher([]),
         );
 
         $result = $handler->handle(
@@ -163,18 +167,18 @@ final class CompactRunHandlerTest extends TestCase
             $state,
         );
 
-        self::assertNotNull($result->nextState);
-        self::assertCount(1, $result->events);
+        $this->assertNotNull($result->nextState);
+        $this->assertCount(1, $result->events);
         $payload = $result->events[0]->payload;
 
         // When no model override and no session model, the payload contains
         // the resolved model (null) and the worker receives the empty-string
         // sentinel that SessionAwareModelResolver treats as "no override".
-        self::assertNull($payload['model'] ?? null);
+        $this->assertNull($payload['model'] ?? null);
 
         /** @var ExecuteCompactionStep $workerMsg */
         $workerMsg = $result->effects[0];
-        self::assertSame('', $workerMsg->model);
+        $this->assertSame('', $workerMsg->model);
     }
 
     public function testNonReadyPreparationEmitsFailedAndPreservesMessages(): void
@@ -192,6 +196,7 @@ final class CompactRunHandlerTest extends TestCase
             $appConfig,
             new EventFactory(),
             $fakeModelSelection,
+            new CompactionHookDispatcher([]),
         );
 
         $result = $handler->handle(
@@ -207,24 +212,24 @@ final class CompactRunHandlerTest extends TestCase
         );
 
         // Emits context_compaction_failed.
-        self::assertNotNull($result->nextState);
-        self::assertCount(1, $result->events);
-        self::assertSame(RunEventTypeEnum::ContextCompactionFailed->value, $result->events[0]->type);
+        $this->assertNotNull($result->nextState);
+        $this->assertCount(1, $result->events);
+        $this->assertSame(RunEventTypeEnum::ContextCompactionFailed->value, $result->events[0]->type);
 
         $payload = $result->events[0]->payload;
-        self::assertSame('too_few_messages', $payload['reason']);
-        self::assertFalse($payload['messages_replaced']);
+        $this->assertSame('too_few_messages', $payload['reason']);
+        $this->assertFalse($payload['messages_replaced']);
 
         // Messages preserved.
-        self::assertCount(\count($messages), $result->nextState->messages);
-        self::assertNotEmpty($result->nextState->messages);
-        self::assertSame('hi', $result->nextState->messages[0]->content[0]['text'] ?? null);
+        $this->assertCount(\count($messages), $result->nextState->messages);
+        $this->assertNotEmpty($result->nextState->messages);
+        $this->assertSame('hi', $result->nextState->messages[0]->content[0]['text'] ?? null);
 
         // Does NOT set activeStepId (no worker was dispatched).
-        self::assertNull($result->nextState->activeStepId);
+        $this->assertNull($result->nextState->activeStepId);
 
         // No worker dispatched.
-        self::assertEmpty($result->effects);
+        $this->assertEmpty($result->effects);
     }
 
     public function testFailureMessagesUseFailedWordingNotSkipped(): void
@@ -251,6 +256,7 @@ final class CompactRunHandlerTest extends TestCase
                 $appConfig,
                 new EventFactory(),
                 $fakeModelSelection,
+                new CompactionHookDispatcher([]),
             );
 
             $result = $handler->handle(
@@ -268,13 +274,380 @@ final class CompactRunHandlerTest extends TestCase
             $payload = $result->events[0]->payload;
 
             // Must use "failed" wording, never "skipped".
-            self::assertStringContainsString(
+            $this->assertStringContainsString(
                 $expectedSubstring,
                 $payload['message'],
                 \sprintf('Reason "%s" should contain "%s", got: %s', $reason, $expectedSubstring, $payload['message']),
             );
-            self::assertStringNotContainsString('skipped', $payload['message'], 'Message must not contain "skipped".');
+            $this->assertStringNotContainsString('skipped', $payload['message'], 'Message must not contain "skipped".');
         }
+    }
+
+    // ── Hook integration tests ──
+
+    /**
+     * Thesis: when a before-compaction hook cancels, the handler emits
+     * context_compaction_failed with reason prefixed 'hook_cancelled:',
+     * does NOT set activeStepId, and dispatches NO worker effects.
+     */
+    public function testHookCancelEmitsFailedWithNoWorkerDispatch(): void
+    {
+        $messages = [
+            $this->userMsg('question 1'),
+            $this->userMsg('question 2'),
+        ];
+        $state = $this->createRunState($messages);
+
+        $fakeService = $this->createReadyCompactionService(
+            [$messages[0]],
+            [$messages[1]],
+            tokenEstimateBefore: 5000,
+        );
+
+        $cancelHook = new class implements BeforeCompactionHookInterface {
+            public function beforeCompaction(CompactionHookContextDTO $context): CompactionHookResultDTO
+            {
+                return CompactionHookResultDTO::cancel('SafeGuard: session blocked.');
+            }
+        };
+
+        $handler = new CompactRunHandler(
+            $fakeService,
+            $this->createAppConfig(),
+            new EventFactory(),
+            $this->createModelSelectionStub(),
+            new CompactionHookDispatcher([$cancelHook]),
+        );
+
+        $result = $handler->handle(
+            new CompactRun(
+                runId: 'run-1',
+                turnNo: 5,
+                stepId: 'step-1',
+                attempt: 1,
+                idempotencyKey: 'key-1',
+                trigger: 'manual',
+            ),
+            $state,
+        );
+
+        $this->assertNotNull($result->nextState);
+        $this->assertCount(1, $result->events);
+        $this->assertSame(RunEventTypeEnum::ContextCompactionFailed->value, $result->events[0]->type);
+
+        $payload = $result->events[0]->payload;
+        $this->assertStringContainsString('hook_cancelled:', $payload['reason']);
+        $this->assertStringContainsString('SafeGuard: session blocked.', $payload['message']);
+        $this->assertFalse($payload['messages_replaced']);
+        $this->assertTrue($payload['cancelled'] ?? false, 'Hook-cancelled payload must carry cancelled=true.');
+
+        // No worker dispatched.
+        $this->assertEmpty($result->effects);
+
+        // activeStepId NOT set (null means preserve, so unchanged from initial null).
+        $this->assertNull($result->nextState->activeStepId);
+
+        // Messages preserved.
+        $this->assertCount(\count($messages), $result->nextState->messages);
+    }
+
+    /**
+     * Thesis: when a hook provides a replacement summary, the handler skips
+     * the LLM call entirely, emits context_compaction_started + context_compacted,
+     * rewrites RunState.messages, and dispatches NO worker.
+     */
+    public function testHookReplacementSummaryEmitsStartedAndCompactedWithoutWorker(): void
+    {
+        $messages = [
+            $this->userMsg('question 1'),
+            $this->userMsg('question 2'),
+        ];
+        $state = $this->createRunState($messages);
+
+        $summarize = [$messages[0]];
+        $retained = [$messages[1]];
+
+        $replacementText = 'Custom replacement summary from hook.';
+        $compactedMessages = [
+            new AgentMessage('user', [['type' => 'text', 'text' => $replacementText]], metadata: ['compact_summary' => true]),
+            ...$retained,
+        ];
+
+        $fakeService = $this->createReadyCompactionServiceWithBuildCompactedMessages(
+            summarizeMessages: $summarize,
+            retainedMessages: $retained,
+            compactedMessages: $compactedMessages,
+            tokenEstimateBefore: 5000,
+            tokenEstimateAfter: 2000,
+        );
+
+        $replaceHook = new class($replacementText) implements BeforeCompactionHookInterface {
+            public function __construct(private string $text)
+            {
+            }
+
+            public function beforeCompaction(CompactionHookContextDTO $context): CompactionHookResultDTO
+            {
+                return CompactionHookResultDTO::replaceSummary($this->text);
+            }
+        };
+
+        $handler = new CompactRunHandler(
+            $fakeService,
+            $this->createAppConfig(),
+            new EventFactory(),
+            $this->createModelSelectionStub(),
+            new CompactionHookDispatcher([$replaceHook]),
+        );
+
+        $result = $handler->handle(
+            new CompactRun(
+                runId: 'run-1',
+                turnNo: 5,
+                stepId: 'step-1',
+                attempt: 1,
+                idempotencyKey: 'key-1',
+                trigger: 'manual',
+            ),
+            $state,
+        );
+
+        // Two events: started + compacted.
+        $this->assertNotNull($result->nextState);
+        $this->assertCount(2, $result->events);
+        $this->assertSame(RunEventTypeEnum::ContextCompactionStarted->value, $result->events[0]->type);
+        $this->assertSame(RunEventTypeEnum::ContextCompacted->value, $result->events[1]->type);
+
+        // Started payload includes replacement_summary=true and the same base
+        // schema fields as the normal async path (keep_recent_tokens, prior_summary_present).
+        $startedPayload = $result->events[0]->payload;
+        $this->assertTrue($startedPayload['replacement_summary'] ?? false);
+        $this->assertSame(20000, $startedPayload['keep_recent_tokens'] ?? null);
+        $this->assertFalse($startedPayload['prior_summary_present'] ?? true);
+
+        // Compacted payload contains the replacement summary text.
+        $compactedPayload = $result->events[1]->payload;
+        $this->assertSame($replacementText, $compactedPayload['summary_text']);
+        $this->assertTrue($compactedPayload['replacement_summary'] ?? false);
+
+        // Messages replaced with compacted list.
+        $this->assertSame($compactedMessages, $result->nextState->messages);
+
+        // No worker dispatched.
+        $this->assertEmpty($result->effects);
+
+        // activeStepId cleared on compacted state.
+        $this->assertNull($result->nextState->activeStepId);
+    }
+
+    /**
+     * Thesis: when a hook appends additional instructions, they reach
+     * buildSummarizationMessages alongside the original custom instructions.
+     */
+    public function testHookAdditionalInstructionsPassedToSummarizationBuilder(): void
+    {
+        $messages = [
+            $this->userMsg('question 1'),
+            $this->userMsg('question 2'),
+        ];
+        $state = $this->createRunState($messages);
+
+        $receivedInstructions = null;
+
+        $fakeService = new class($receivedInstructions) implements CompactionServiceInterface {
+            public ?string $receivedInstructions = null;
+
+            public function prepare(array $messages): CompactionPrepareResult
+            {
+                return CompactionPrepareResult::ready(
+                    messagesToSummarize: \array_slice($messages, 0, 1),
+                    retainedTailMessages: \array_slice($messages, 1),
+                    tokenEstimateBefore: 5000,
+                    messagesCompacted: 1,
+                    messagesRetained: 1,
+                    firstRetainedIndex: 1,
+                    priorSummaryPresent: false,
+                );
+            }
+
+            public function buildSummarizationMessages(CompactionPrepareResult $result, ?string $customInstructions): array
+            {
+                $this->receivedInstructions = $customInstructions;
+
+                return [];
+            }
+
+            public function buildCompactedMessages(string $summaryText, CompactionPrepareResult $result): CompactResult
+            {
+                throw new \LogicException('Not expected in this test.');
+            }
+        };
+
+        $hook = new class implements BeforeCompactionHookInterface {
+            public function beforeCompaction(CompactionHookContextDTO $context): CompactionHookResultDTO
+            {
+                return new CompactionHookResultDTO(
+                    additionalInstructions: 'Hook instruction: focus on database decisions.',
+                );
+            }
+        };
+
+        $handler = new CompactRunHandler(
+            $fakeService,
+            $this->createAppConfig(),
+            new EventFactory(),
+            $this->createModelSelectionStub(),
+            new CompactionHookDispatcher([$hook]),
+        );
+
+        $handler->handle(
+            new CompactRun(
+                runId: 'run-1',
+                turnNo: 5,
+                stepId: 'step-1',
+                attempt: 1,
+                idempotencyKey: 'key-1',
+                trigger: 'manual',
+                customInstructions: 'Original instruction.',
+            ),
+            $state,
+        );
+
+        $this->assertNotNull($fakeService->receivedInstructions);
+        $this->assertStringContainsString('Original instruction.', $fakeService->receivedInstructions);
+        $this->assertStringContainsString('Hook instruction: focus on database decisions.', $fakeService->receivedInstructions);
+    }
+
+    /**
+     * Thesis: hook metadata is present in context_compaction_started payload
+     * when compaction proceeds normally (async LLM path).
+     */
+    public function testHookMetadataPresentInStartedPayload(): void
+    {
+        $messages = [
+            $this->userMsg('question 1'),
+            $this->userMsg('question 2'),
+        ];
+        $state = $this->createRunState($messages);
+
+        $fakeService = $this->createReadyCompactionService(
+            [$messages[0]],
+            [$messages[1]],
+            tokenEstimateBefore: 5000,
+        );
+
+        $hook = new class implements BeforeCompactionHookInterface {
+            public function beforeCompaction(CompactionHookContextDTO $context): CompactionHookResultDTO
+            {
+                return new CompactionHookResultDTO(
+                    metadata: ['hook_name' => 'test-hook', 'hook_version' => 2],
+                );
+            }
+        };
+
+        $handler = new CompactRunHandler(
+            $fakeService,
+            $this->createAppConfig(),
+            new EventFactory(),
+            $this->createModelSelectionStub(),
+            new CompactionHookDispatcher([$hook]),
+        );
+
+        $result = $handler->handle(
+            new CompactRun(
+                runId: 'run-1',
+                turnNo: 5,
+                stepId: 'step-1',
+                attempt: 1,
+                idempotencyKey: 'key-1',
+                trigger: 'manual',
+            ),
+            $state,
+        );
+
+        $payload = $result->events[0]->payload;
+        $this->assertArrayHasKey('hook_metadata', $payload);
+        $this->assertSame('test-hook', $payload['hook_metadata']['hook_name'] ?? null);
+        $this->assertSame(2, $payload['hook_metadata']['hook_version'] ?? null);
+    }
+
+    /**
+     * Thesis: when a hook cancels with metadata that includes unsafe values
+     * (objects, resources), the sanitised cancel payload retains only JSON-safe
+     * scalars/nulls/maps while dropping unsafe entries.
+     */
+    public function testHookCancelMetadataPresentInFailedPayload(): void
+    {
+        $messages = [$this->userMsg('hi')];
+        $state = $this->createRunState($messages);
+
+        $fakeService = $this->createReadyCompactionService(
+            [$messages[0]],
+            [],
+            tokenEstimateBefore: 100,
+        );
+
+        // Include both safe and unsafe metadata values so the test proves
+        // sanitiseMetadata() strips objects/Closures while keeping scalars.
+        $unsafeObject = new \stdClass();
+        $unsafeObject->key = 'should-be-dropped';
+        $unsafeClosure = fn () => 'also-unsafe';
+
+        $cancelHook = new class($unsafeObject, $unsafeClosure) implements BeforeCompactionHookInterface {
+            public function __construct(
+                private object $unsafeObject,
+                private \Closure $unsafeClosure,
+            ) {}
+
+            public function beforeCompaction(CompactionHookContextDTO $context): CompactionHookResultDTO
+            {
+                return new CompactionHookResultDTO(
+                    cancelReason: 'rate-limited',
+                    metadata: [
+                        'limit_type' => 'daily',
+                        'reset_at' => 86400,
+                        'unsafe_object' => $this->unsafeObject,
+                        'unsafe_closure' => $this->unsafeClosure,
+                    ],
+                );
+            }
+        };
+
+        $handler = new CompactRunHandler(
+            $fakeService,
+            $this->createAppConfig(),
+            new EventFactory(),
+            $this->createModelSelectionStub(),
+            new CompactionHookDispatcher([$cancelHook]),
+        );
+
+        $result = $handler->handle(
+            new CompactRun(
+                runId: 'run-1',
+                turnNo: 5,
+                stepId: 'step-1',
+                attempt: 1,
+                idempotencyKey: 'key-1',
+                trigger: 'manual',
+            ),
+            $state,
+        );
+
+        $payload = $result->events[0]->payload;
+        $this->assertArrayHasKey('hook_metadata', $payload);
+
+        // Safe scalars survive sanitisation.
+        $this->assertSame('daily', $payload['hook_metadata']['limit_type'] ?? null);
+        $this->assertSame(86400, $payload['hook_metadata']['reset_at'] ?? null);
+
+        // Unsafe values (object, Closure) are stripped by sanitiseMetadata().
+        $this->assertArrayNotHasKey('unsafe_object', $payload['hook_metadata'],
+            'Object metadata must be dropped from cancel payload.');
+        $this->assertArrayNotHasKey('unsafe_closure', $payload['hook_metadata'],
+            'Closure metadata must be dropped from cancel payload.');
+
+        $this->assertStringContainsString('hook_cancelled:', $payload['reason']);
+        $this->assertTrue($payload['cancelled'] ?? false, 'Hook-cancelled payload must carry cancelled=true.');
     }
 
     // ── helpers ──
@@ -310,7 +683,8 @@ final class CompactRunHandlerTest extends TestCase
                 private array $summarizeMessages,
                 private array $retainedMessages,
                 private int $tokenEstimateBefore,
-            ) {}
+            ) {
+            }
 
             public function prepare(array $messages): CompactionPrepareResult
             {
@@ -330,7 +704,7 @@ final class CompactRunHandlerTest extends TestCase
                 return $this->summarizeMessages;
             }
 
-            public function buildCompactedMessages(string $summaryText, CompactionPrepareResult $result): \Ineersa\AgentCore\Contract\Compaction\CompactResult
+            public function buildCompactedMessages(string $summaryText, CompactionPrepareResult $result): CompactResult
             {
                 throw new \LogicException('Not expected in this test.');
             }
@@ -340,7 +714,9 @@ final class CompactRunHandlerTest extends TestCase
     private function createFailedCompactionService(string $failureReason): CompactionServiceInterface
     {
         return new class($failureReason) implements CompactionServiceInterface {
-            public function __construct(private string $failureReason) {}
+            public function __construct(private string $failureReason)
+            {
+            }
 
             public function prepare(array $messages): CompactionPrepareResult
             {
@@ -352,9 +728,74 @@ final class CompactRunHandlerTest extends TestCase
                 throw new \LogicException('Not expected in this test.');
             }
 
-            public function buildCompactedMessages(string $summaryText, CompactionPrepareResult $result): \Ineersa\AgentCore\Contract\Compaction\CompactResult
+            public function buildCompactedMessages(string $summaryText, CompactionPrepareResult $result): CompactResult
             {
                 throw new \LogicException('Not expected in this test.');
+            }
+        };
+    }
+
+    /**
+     * Creates a fake CompactionServiceInterface that returns a ready preparation
+     * AND supports buildCompactedMessages (needed for replacement summary hook tests).
+     *
+     * @param list<AgentMessage> $summarizeMessages
+     * @param list<AgentMessage> $retainedMessages
+     * @param list<AgentMessage> $compactedMessages Messages returned by buildCompactedMessages
+     */
+    private function createReadyCompactionServiceWithBuildCompactedMessages(
+        array $summarizeMessages,
+        array $retainedMessages,
+        array $compactedMessages,
+        int $tokenEstimateBefore = 50000,
+        int $tokenEstimateAfter = 30000,
+    ): CompactionServiceInterface {
+        return new class($summarizeMessages, $retainedMessages, $compactedMessages, $tokenEstimateBefore, $tokenEstimateAfter) implements CompactionServiceInterface {
+            public function __construct(
+                private array $summarizeMessages,
+                private array $retainedMessages,
+                private array $compactedMessages,
+                private int $tokenEstimateBefore,
+                private int $tokenEstimateAfter,
+            ) {
+            }
+
+            public function prepare(array $messages): CompactionPrepareResult
+            {
+                return CompactionPrepareResult::ready(
+                    messagesToSummarize: $this->summarizeMessages,
+                    retainedTailMessages: $this->retainedMessages,
+                    tokenEstimateBefore: $this->tokenEstimateBefore,
+                    messagesCompacted: \count($this->summarizeMessages),
+                    messagesRetained: \count($this->retainedMessages),
+                    firstRetainedIndex: 0,
+                    priorSummaryPresent: false,
+                );
+            }
+
+            public function buildSummarizationMessages(CompactionPrepareResult $result, ?string $customInstructions): array
+            {
+                return $this->summarizeMessages;
+            }
+
+            public function buildCompactedMessages(string $summaryText, CompactionPrepareResult $result): CompactResult
+            {
+                return new CompactResult(
+                    summaryText: $summaryText,
+                    summaryMessage: $this->compactedMessages[0],
+                    compactedMessages: $this->compactedMessages,
+                    tokenEstimateBefore: $this->tokenEstimateBefore,
+                    tokenEstimateAfter: $this->tokenEstimateAfter,
+                    messagesCompacted: \count($this->summarizeMessages),
+                    messagesRetained: \count($this->retainedMessages),
+                    firstRetainedIndex: [] !== $this->retainedMessages ? $this->retainedIndexFromMessages() : 0,
+                );
+            }
+
+            private function retainedIndexFromMessages(): int
+            {
+                // For test simplicity: count summarize messages as the offset.
+                return \count($this->summarizeMessages);
             }
         };
     }
@@ -394,13 +835,13 @@ final class CompactRunHandlerTest extends TestCase
         );
 
         // SessionMetadataStore is never accessed (catalog null → early return).
-        $sessionMetaRc = new ReflectionClass(SessionMetadataStore::class);
+        $sessionMetaRc = new \ReflectionClass(SessionMetadataStore::class);
         $sessionMetaStore = $sessionMetaRc->newInstanceWithoutConstructor();
 
         $modelResolver = new ModelResolver($appConfig, $sessionMetaStore);
 
         // ModelSettingsPersister is never accessed by getCurrentModel().
-        $persisterRc = new ReflectionClass(ModelSettingsPersister::class);
+        $persisterRc = new \ReflectionClass(ModelSettingsPersister::class);
         $persister = $persisterRc->newInstanceWithoutConstructor();
 
         return new ModelSelectionService($appConfig, $modelResolver, $persister);

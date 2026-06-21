@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Pipeline\HandlerResult;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageHandler;
+use Ineersa\AgentCore\Contract\Compaction\CompactionPrepareResult;
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -13,13 +14,20 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep;
 use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Infrastructure\RunLogContext;
+use Ineersa\CodingAgent\Compaction\CompactionHookContextDTO;
+use Ineersa\CodingAgent\Compaction\CompactionHookDispatcher;
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\CompactionRuntimeSettingsDTO;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 
 /**
  * Handles {@see CompactRun} messages: prepares compaction partitions,
- * emits started/failed events, and dispatches an async
- * {@see ExecuteCompactionStep} for model invocation when ready.
+ * invokes before-compaction hooks, emits started/failed events, and
+ * dispatches an async {@see ExecuteCompactionStep} for model invocation
+ * when ready.
  *
  * Lives in CodingAgent because it depends on CompactionServiceInterface
  * which is implemented by the CodingAgent compaction layer. The handler
@@ -33,6 +41,8 @@ final readonly class CompactRunHandler implements RunMessageHandler
         private AppConfig $appConfig,
         private EventFactory $eventFactory,
         private ModelSelectionService $modelSelectionService,
+        private CompactionHookDispatcher $hookDispatcher,
+        private LoggerInterface $logger = new NullLogger(),
     ) {
     }
 
@@ -57,25 +67,62 @@ final readonly class CompactRunHandler implements RunMessageHandler
         $activeModelStr = $activeModel?->toString();
 
         $runtimeSettings = $this->appConfig->compaction->resolveRuntimeSettings($activeModelStr);
-        // Session model is the fallback when no explicit compaction model override exists.
-        // This ensures context_compaction_started/compacted always record the actual model.
-        $resolvedModel = $runtimeSettings->model ?? $activeModelStr;
         $thinkingLevel = $runtimeSettings->thinkingLevel;
 
         // Build opaque model options bag for the async worker.
-        // AgentCore passes this uninterpreted to the platform.
-        // CodingAgent owns the semantics of keys like 'thinking_level'.
         $modelOptions = null !== $thinkingLevel && '' !== $thinkingLevel
             ? ['thinking_level' => $thinkingLevel]
             : [];
 
+        RunLogContext::enter([
+            'run_id' => $runId,
+            'session_id' => $runId,
+            'component' => 'compaction',
+        ]);
+
+        try {
+            return $this->handleCompaction($message, $state, $runId, $activeModelStr, $runtimeSettings, $thinkingLevel, $modelOptions);
+        } finally {
+            RunLogContext::leave();
+        }
+    }
+
+    /**
+     * Core compaction logic after model resolution and context setup.
+     *
+     * Separated from handle() so RunLogContext scoping wraps only the
+     * compaction path, not the model resolution preamble.
+     *
+     * @param array<string, mixed> $modelOptions Opaque model options bag for the async worker
+     */
+    private function handleCompaction(
+        CompactRun $message,
+        RunState $state,
+        string $runId,
+        ?string $activeModelStr,
+        CompactionRuntimeSettingsDTO $runtimeSettings,
+        ?string $thinkingLevel,
+        array $modelOptions,
+    ): HandlerResult {
+        $this->logger->info('Compaction preparation started.', [
+            'event_type' => 'compaction.prepare.started',
+            'run_id' => $runId,
+            'turn_no' => $state->turnNo,
+            'messages_total' => \count($state->messages),
+            'trigger' => $message->trigger,
+        ]);
+
         $preparation = $this->compactionService->prepare($state->messages);
 
         if (!$preparation->isReady()) {
-            // Structural failure — emit context_compaction_failed and
-            // preserve messages. No model call was started.
             $failureReason = $preparation->failureReason ?? 'unknown';
             $userMessage = $this->failureReasonToMessage($failureReason);
+
+            $this->logger->info('Compaction preparation failed.', [
+                'event_type' => 'compaction.prepare.failed',
+                'run_id' => $runId,
+                'reason' => $failureReason,
+            ]);
 
             $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, [[
                 'type' => RunEventTypeEnum::ContextCompactionFailed->value,
@@ -93,13 +140,100 @@ final readonly class CompactRunHandler implements RunMessageHandler
             );
         }
 
-        // Build summarization messages for the model call.
-        $summarizationMessages = $this->compactionService->buildSummarizationMessages(
-            $preparation,
-            $message->customInstructions,
+        $resolvedModel = $runtimeSettings->model ?? $activeModelStr;
+
+        // ── Before-compaction hooks ──
+        // Build safe scalar context — no raw AgentMessage lists exposed.
+        $hookContext = new CompactionHookContextDTO(
+            runId: $runId,
+            turnNo: $state->turnNo,
+            trigger: $message->trigger,
+            tokenEstimateBefore: $preparation->tokenEstimateBefore,
+            messagesCompacted: $preparation->messagesCompacted,
+            messagesRetained: $preparation->messagesRetained,
+            firstRetainedIndex: $preparation->firstRetainedIndex,
+            priorSummaryPresent: $preparation->priorSummaryPresent,
+            customInstructions: $message->customInstructions,
+            resolvedModel: $resolvedModel,
+            thinkingLevel: $thinkingLevel,
         );
 
-        // Emit context_compaction_started.
+        $hookResult = $this->hookDispatcher->dispatch($hookContext);
+
+        // Hook cancel: emit context_compaction_failed, no worker dispatch.
+        if ($hookResult->cancels()) {
+            $cancelReason = 'hook_cancelled: '.$hookResult->cancelReason;
+
+            $this->logger->info('Compaction cancelled by before-compaction hook.', [
+                'event_type' => 'compaction.hook.cancelled',
+                'run_id' => $runId,
+                'hook_reason' => $hookResult->cancelReason,
+            ]);
+
+            $sanitisedCancelMetadata = $this->hookDispatcher->sanitiseMetadata($hookResult->metadata);
+
+            $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, [[
+                'type' => RunEventTypeEnum::ContextCompactionFailed->value,
+                'payload' => [
+                    'reason' => $cancelReason,
+                    'message' => 'Compaction cancelled: '.$hookResult->cancelReason,
+                    'messages_replaced' => false,
+                    'trigger' => $message->trigger,
+                    'cancelled' => true,
+                    'hook_metadata' => $sanitisedCancelMetadata,
+                ],
+            ]]);
+
+            return new HandlerResult(
+                nextState: $this->incrementState($state, $events),
+                events: $events,
+            );
+        }
+
+        // Effective custom instructions: original + hook additional.
+        $effectiveInstructions = $message->customInstructions;
+        if ($hookResult->hasAdditionalInstructions()) {
+            $effectiveInstructions = null !== $effectiveInstructions
+                ? $effectiveInstructions."\n".$hookResult->additionalInstructions
+                : $hookResult->additionalInstructions;
+        }
+
+        // Replacement summary: skip LLM, build compacted messages directly.
+        // Sanitise metadata before it enters event payloads even in the
+        // replacement path (no transport, but event payload is persisted).
+        if ($hookResult->hasReplacementSummary()) {
+            return $this->handleReplacementSummary(
+                runId: $runId,
+                state: $state,
+                message: $message,
+                preparation: $preparation,
+                replacementSummary: $hookResult->replacementSummary,
+                thinkingLevel: $thinkingLevel,
+                resolvedModel: $resolvedModel,
+                hookMetadata: $this->hookDispatcher->sanitiseMetadata($hookResult->metadata),
+                runtimeSettings: $runtimeSettings,
+            );
+        }
+
+        // ── Normal async LLM path ──
+
+        // Sanitise hook metadata before it enters transport/event payloads.
+        $sanitisedHookMetadata = $this->hookDispatcher->sanitiseMetadata($hookResult->metadata);
+
+        $summarizationMessages = $this->compactionService->buildSummarizationMessages(
+            $preparation,
+            $effectiveInstructions,
+        );
+
+        $this->logger->info('Dispatching compaction worker.', [
+            'event_type' => 'compaction.started',
+            'run_id' => $runId,
+            'turn_no' => $state->turnNo,
+            'model' => $resolvedModel,
+            'estimated_tokens' => $preparation->tokenEstimateBefore,
+            'messages_to_summarize' => $preparation->messagesCompacted,
+        ]);
+
         $startedEvents = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, [[
             'type' => RunEventTypeEnum::ContextCompactionStarted->value,
             'payload' => [
@@ -114,12 +248,12 @@ final readonly class CompactRunHandler implements RunMessageHandler
                 'messages_retained' => $preparation->messagesRetained,
                 'first_retained_index' => $preparation->firstRetainedIndex,
                 'prior_summary_present' => $preparation->priorSummaryPresent,
+                'hook_metadata' => $sanitisedHookMetadata,
             ],
         ]]);
 
         $nextState = $this->incrementState($state, $startedEvents, activeStepId: $message->stepId());
 
-        // Dispatch async worker for model invocation.
         // Serialize AgentMessage lists as array shapes for transport safety
         // (the llm transport uses default Symfony Serializer, not PhpSerializer).
         $serializedSummarization = array_map(
@@ -137,7 +271,7 @@ final readonly class CompactRunHandler implements RunMessageHandler
             stepId: $message->stepId(),
             attempt: 1,
             idempotencyKey: hash('sha256', \sprintf('%s|compaction|%d|%s', $runId, $state->turnNo, $message->stepId())),
-            model: $resolvedModel ?? '', // Empty string => adapter resolves from defaults
+            model: $resolvedModel ?? '',
             modelOptions: $modelOptions,
             summarizationMessages: $serializedSummarization,
             retainedTailMessages: $serializedRetained,
@@ -146,6 +280,7 @@ final readonly class CompactRunHandler implements RunMessageHandler
             firstRetainedIndex: $preparation->firstRetainedIndex,
             tokenEstimateBefore: $preparation->tokenEstimateBefore,
             trigger: $message->trigger,
+            hookMetadata: [] !== $sanitisedHookMetadata ? $sanitisedHookMetadata : null,
         );
 
         return new HandlerResult(
@@ -156,14 +291,116 @@ final readonly class CompactRunHandler implements RunMessageHandler
     }
 
     /**
+     * Handle a hook-provided replacement summary: skip the LLM call,
+     * build compacted messages from the replacement text, and emit
+     * context_compaction_started → context_compacted with hook metadata.
+     *
+     * The replacement summary path still emits the mandatory lifecycle
+     * events (started + compacted) and rewrites RunState.messages, but
+     * never dispatches an ExecuteCompactionStep worker.
+     *
+     * @param array<string, mixed> $hookMetadata Sanitised JSON-safe metadata from hooks
+     */
+    private function handleReplacementSummary(
+        string $runId,
+        RunState $state,
+        CompactRun $message,
+        CompactionPrepareResult $preparation,
+        string $replacementSummary,
+        ?string $thinkingLevel,
+        ?string $resolvedModel,
+        array $hookMetadata,
+        CompactionRuntimeSettingsDTO $runtimeSettings,
+    ): HandlerResult {
+        $this->logger->info('Using hook-provided replacement summary, skipping LLM call.', [
+            'event_type' => 'compaction.hook.replacement_summary',
+            'run_id' => $runId,
+            'summary_length' => \strlen($replacementSummary),
+        ]);
+
+        // Emit context_compaction_started with replacement flag.
+        // Schema matches the normal async path: includes keep_recent_tokens
+        // and prior_summary_present for consistent event payload shape.
+        $startedEvents = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, [[
+            'type' => RunEventTypeEnum::ContextCompactionStarted->value,
+            'payload' => [
+                'step_id' => $message->stepId(),
+                'trigger' => $message->trigger,
+                'model' => $resolvedModel,
+                'thinking_level' => $thinkingLevel,
+                'estimated_tokens' => $preparation->tokenEstimateBefore,
+                'keep_recent_tokens' => $runtimeSettings->keepRecentTokens,
+                'messages_before' => \count($state->messages),
+                'messages_to_summarize' => $preparation->messagesCompacted,
+                'messages_retained' => $preparation->messagesRetained,
+                'first_retained_index' => $preparation->firstRetainedIndex,
+                'prior_summary_present' => $preparation->priorSummaryPresent,
+                'hook_metadata' => $hookMetadata,
+                'replacement_summary' => true,
+            ],
+        ]]);
+
+        $afterStartState = $this->incrementState($state, $startedEvents, activeStepId: $message->stepId());
+
+        // Build compacted messages from the replacement summary.
+        $compactResult = $this->compactionService->buildCompactedMessages(
+            $replacementSummary,
+            $preparation,
+        );
+
+        $serializedMessages = array_map(
+            static fn (AgentMessage $msg): array => $msg->toArray(),
+            $compactResult->compactedMessages,
+        );
+
+        $compactedEvents = $this->eventFactory->eventsFromSpecs(
+            $runId,
+            $state->turnNo,
+            $afterStartState->lastSeq + 1,
+            [[
+                'type' => RunEventTypeEnum::ContextCompacted->value,
+                'payload' => [
+                    'summary_text' => $replacementSummary,
+                    'messages' => $serializedMessages,
+                    'estimated_tokens_before' => $compactResult->tokenEstimateBefore,
+                    'estimated_tokens_after' => $compactResult->tokenEstimateAfter,
+                    'messages_compacted' => $compactResult->messagesCompacted,
+                    'messages_retained' => $compactResult->messagesRetained,
+                    'first_retained_index' => $compactResult->firstRetainedIndex,
+                    'model' => $resolvedModel,
+                    'thinking_level' => $thinkingLevel,
+                    'trigger' => $message->trigger,
+                    'hook_metadata' => $hookMetadata,
+                    'replacement_summary' => true,
+                ],
+            ]],
+        );
+
+        // Replace RunState.messages with compacted messages.
+        $nextState = new RunState(
+            runId: $afterStartState->runId,
+            status: $afterStartState->status,
+            version: $afterStartState->version + 1,
+            turnNo: $afterStartState->turnNo,
+            lastSeq: $afterStartState->lastSeq + \count($compactedEvents),
+            isStreaming: $afterStartState->isStreaming,
+            streamingMessage: $afterStartState->streamingMessage,
+            pendingToolCalls: $afterStartState->pendingToolCalls,
+            errorMessage: $afterStartState->errorMessage,
+            messages: $compactResult->compactedMessages,
+            activeStepId: null,
+            retryableFailure: $afterStartState->retryableFailure,
+        );
+
+        return new HandlerResult(
+            nextState: $nextState,
+            events: array_merge($startedEvents, $compactedEvents),
+        );
+    }
+
+    /**
      * @param list<\Ineersa\AgentCore\Domain\Event\RunEvent> $events
      * @param string|null                                    $activeStepId null = preserve current; non-null = override
-     *
-     * NOTE: null semantics differ from CompactionStepResultHandler::incrementState(),
-     * which uses a boolean clearActiveStepId flag (false=preserve, true=clear).
-     * Here null means "don't touch" because the started path passes the new
-     * compaction stepId explicitly; no other path overrides, so failure paths
-     * keep activeStepId unchanged.
      */
     private function incrementState(RunState $state, array $events, ?string $activeStepId = null): RunState
     {
@@ -187,13 +424,6 @@ final readonly class CompactRunHandler implements RunMessageHandler
 
     /**
      * Map a structural skip reason to a human-readable failure message.
-     *
-     * These are NOT skips — when prepare returns not-ready, we emit
-     * context_compaction_failed. The wording uses "Compaction failed"
-     * or "Compaction not possible", never "skipped".
-     *
-     * Reasons come from CompactionSkipReasonEnum via CompactionServiceInterface,
-     * but the handler lives in CodingAgent so the mapping is local.
      */
     private function failureReasonToMessage(string $reason): string
     {
