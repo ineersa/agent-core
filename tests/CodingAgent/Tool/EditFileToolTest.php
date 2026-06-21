@@ -82,8 +82,12 @@ final class EditFileToolTest extends TestCase
 
         $this->assertNotEmpty($definition->promptGuidelines);
 
-        // Tool description must describe the tool as applying a unified diff patch
-        $this->assertStringContainsString('unified diff', strtolower($definition->description));
+        // Tool description must lead with the plain-@@ patch shape, not
+        // generic unified-diff wording that anchors models on numbered hunks.
+        $this->assertStringContainsString('plain-@@ patch', strtolower($definition->description));
+        $this->assertStringContainsString('plain-@@ patch', strtolower($definition->promptLine));
+        $this->assertStringNotContainsString('unified diff patch', strtolower($definition->description));
+        $this->assertStringNotContainsString('unified diff patch', strtolower($definition->promptLine));
 
         // Guidelines must use plain @@, mention hunk header resolution
         $guidelinesText = implode(' ', $definition->promptGuidelines);
@@ -685,7 +689,7 @@ DIFF;
 
             // Must be retryable with hint about proper format
             $this->assertTrue($e->retryable());
-            $this->assertStringContainsString('unified diff', strtolower($e->hint() ?? ''));
+            $this->assertStringContainsString('plain-@@ patch', strtolower($e->hint() ?? ''));
 
             // Original must be untouched
             $this->assertSame($original, file_get_contents($targetPath));

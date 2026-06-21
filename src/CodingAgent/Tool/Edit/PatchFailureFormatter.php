@@ -37,7 +37,7 @@ final class PatchFailureFormatter
             ];
         }
 
-        // Malformed / not a unified diff — includes unexpected-EOF,
+        // Malformed / not a plain-@@ patch — includes unexpected-EOF,
         // garbage input, missing headers, and hunk count mismatches
         // reported as malformed by GNU patch.
         // Checked AFTER stale-hunk so that output containing both "Hunk
@@ -50,7 +50,7 @@ final class PatchFailureFormatter
                 $countsPart = '' !== $truncationDetails ? ' '.$truncationDetails : '';
                 $baseHint = 'The hunk body was incomplete (likely truncated).'.$countsPart.' Retry with exactly `@@` as the hunk header — do not use numbered headers. Copy only the exact context from the latest `read` output.';
             } else {
-                $baseHint = 'The patch appears malformed or is not a valid unified diff. Use plain `@@` hunk headers without line numbers or counts. Ensure the patch has ---/+++ headers, ends with a newline, and contains no markdown code fences or non-diff trailer lines (e.g. `--- End new file ---`). Do not copy line-number prefixes from `read` output into patch context lines; use only the raw file text.';
+                $baseHint = 'The patch appears malformed or is not a valid plain-@@ patch. Use plain `@@` hunk headers without line numbers or counts. Ensure the patch has ---/+++ headers, ends with a newline, and contains no markdown code fences or non-diff trailer lines (e.g. `--- End new file ---`). Do not copy line-number prefixes from `read` output into patch context lines; use only the raw file text.';
             }
 
             return [
