@@ -233,4 +233,9 @@ final class ShellCommandSpyClient implements AgentSessionClient
         ++$this->completeRunCalls;
         $this->lastCompletedRunId = $runId;
     }
+
+    public function compact(string $runId, ?string $customInstructions = null): void
+    {
+        throw new \RuntimeException('Unexpected compact()');
+    }
 }

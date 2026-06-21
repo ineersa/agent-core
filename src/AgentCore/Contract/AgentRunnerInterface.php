@@ -20,4 +20,6 @@ interface AgentRunnerInterface
     public function cancel(string $runId, ?string $reason = null): void;
 
     public function answerHuman(string $runId, string $questionId, mixed $answer): void;
+
+    public function compact(string $runId, ?string $customInstructions = null): void;
 }

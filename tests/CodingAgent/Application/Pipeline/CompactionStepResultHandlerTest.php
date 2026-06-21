@@ -26,7 +26,7 @@ use PHPUnit\Framework\TestCase;
  *  - Model error: emits context_compaction_failed reason model_error, preserves messages, clears activeStepId, payload uses messages_replaced:false.
  *  - Stale result (turnNo mismatch): emits context_compaction_failed reason stale_result, preserves messages AND activeStepId (clearing would lose newer in-flight step).
  *  - Stale result (stepId mismatch): emits context_compaction_failed reason stale_result, preserves messages AND activeStepId.
- *  - Terminal run emits context_compaction_failed reason stale_result, preserves messages AND activeStepId.
+ *  - Completed run with matching turnNo + activeStepId: result accepted (NOT stale_result), messages replaced, status stays Completed.
  *  - All CompactionStepResultHandler failures include step_id for replay fidelity.
  */
 final class CompactionStepResultHandlerTest extends TestCase
@@ -267,20 +267,30 @@ final class CompactionStepResultHandlerTest extends TestCase
         self::assertSame('step-5', $result->nextState->activeStepId);
     }
 
-    public function testResultInTerminalRunEmitsFailed(): void
+    public function testMatchingResultOnCompletedRunProcessesNormally(): void
     {
-        $messages = [$this->userMsg('hi')];
+        // Manual /compact on a completed run: activeStepId matches stepId,
+        // turnNo matches, and run status is Completed.  The matching async
+        // result must be accepted — terminal run status alone is not staleness.
+        $originalMessages = [
+            $this->userMsg('old question'),
+            $this->assistantMsg('old answer'),
+        ];
         $state = new RunState(
             runId: 'run-1',
             status: RunStatus::Completed,
             version: 10,
             turnNo: 5,
             lastSeq: 20,
-            messages: $messages,
+            messages: $originalMessages,
             activeStepId: 'step-1',
         );
 
-        $fakeService = $this->createNoOpStub();
+        $summaryMsg = $this->userMsg('Summary of prior context.');
+        $retained = [$this->userMsg('recent question'), $this->assistantMsg('recent answer')];
+        $compactedMessages = [$summaryMsg, ...$retained];
+
+        $fakeService = $this->stubCompactionService($compactedMessages);
         $handler = new CompactionStepResultHandler($fakeService, new EventFactory());
 
         $result = $handler->handle(
@@ -290,31 +300,35 @@ final class CompactionStepResultHandlerTest extends TestCase
                 stepId: 'step-1',
                 attempt: 1,
                 idempotencyKey: 'key-1',
-                summaryText: 'summary text',
+                summaryText: 'Summary of prior context.',
                 error: null,
-                retainedTailMessages: [],
-                messagesCompacted: 0,
-                messagesRetained: 0,
+                retainedTailMessages: array_map(static fn ($m) => $m->toArray(), $retained),
+                messagesCompacted: 1,
+                messagesRetained: 2,
                 firstRetainedIndex: 0,
                 tokenEstimateBefore: 50000,
                 trigger: 'manual',
                 model: 'openai/gpt-4.1-mini',
-                modelOptions: [],
+                modelOptions: ['thinking_level' => 'low'],
             ),
             $state,
         );
 
-        // Terminal run → emits context_compaction_failed stale_result.
+        // Completed run with matching correlation → accepted (NOT stale_result).
         self::assertNotNull($result->nextState);
         self::assertCount(1, $result->events);
-        self::assertSame(RunEventTypeEnum::ContextCompactionFailed->value, $result->events[0]->type);
-        self::assertSame('stale_result', $result->events[0]->payload['reason']);
-        self::assertFalse($result->events[0]->payload['messages_replaced']);
-        self::assertSame('step-1', $result->events[0]->payload['step_id']);
+        self::assertSame(RunEventTypeEnum::ContextCompacted->value, $result->events[0]->type);
+        self::assertNotEquals('stale_result', $result->events[0]->payload['reason'] ?? null);
 
-        // Terminal stale preserves activeStepId — the run is already
-        // finished so there is no in-flight step to collide with.
-        self::assertSame('step-1', $result->nextState->activeStepId);
+        // Messages replaced with compacted list.
+        self::assertCount(\count($compactedMessages), $result->nextState->messages);
+        self::assertSame('Summary of prior context.', $result->nextState->messages[0]->content[0]['text'] ?? null);
+
+        // activeStepId cleared on terminal outcome.
+        self::assertNull($result->nextState->activeStepId);
+
+        // Run status stays Completed — compaction does not restart the run.
+        self::assertSame(RunStatus::Completed, $result->nextState->status);
     }
 
     // ── helpers ──

@@ -55,8 +55,12 @@ final readonly class CompactionStepResultHandler implements RunMessageHandler
         // stale result A arrives).  The active step is only cleared when
         // the result genuinely matches the current step (success/error paths).
         //
-        // Also guard against terminal run states (Completed, Failed, Cancelled)
-        // where the result arrived after the run already finished.
+        // NOTE: run status alone is NOT a staleness signal.  Manual compaction
+        // is commonly triggered on a Completed run — CompactRunHandler sets
+        // activeStepId while the run stays Completed, and the matching async
+        // result must be accepted.  Correlation (turnNo + stepId/activeStepId)
+        // is the true staleness guard: turnNo advances on new conversation
+        // turns, and activeStepId changes when a newer compaction starts.
         if ($state->turnNo !== $message->turnNo() || $state->activeStepId !== $message->stepId()) {
             $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, [[
                 'type' => RunEventTypeEnum::ContextCompactionFailed->value,
@@ -75,38 +79,24 @@ final readonly class CompactionStepResultHandler implements RunMessageHandler
             );
         }
 
-        // If the run is in a terminal state (Completed, Failed, Cancelled),
-        // the compaction result arrived too late.
-        if (\in_array($state->status->value, ['completed', 'failed', 'cancelled'], true)) {
-            $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, [[
-                'type' => RunEventTypeEnum::ContextCompactionFailed->value,
-                'payload' => [
-                    'reason' => 'stale_result',
-                    'message' => 'Compaction result arrived after the run ended.',
-                    'messages_replaced' => false,
-                    'step_id' => $message->stepId(),
-                    'trigger' => $message->trigger,
-                ],
-            ]]);
-
-            return new HandlerResult(
-                nextState: $this->incrementState($state, $events, clearActiveStepId: false),
-                events: $events,
-            );
-        }
-
         // Error from model invocation → emit failure, preserve messages.
+        // Prefer the sanitised user_message from the error classifier
+        // (LlmPlatformAdapter::errorResult() → LlmProviderErrorClassifier)
+        // to avoid surfacing raw provider exception text in the TUI.
+        // The raw message is still stored for diagnostics/logging.
         if (null !== $message->error) {
             $reason = 'model_error';
-            $errorMessage = \is_string($message->error['message'] ?? null)
-                ? $message->error['message']
-                : 'Summarization model call failed.';
+            $userMessage = \is_string($message->error['user_message'] ?? null) && '' !== $message->error['user_message']
+                ? $message->error['user_message']
+                : (\is_string($message->error['message'] ?? null) && '' !== $message->error['message']
+                    ? $message->error['message']
+                    : 'Summarization model call failed.');
 
             $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, [[
                 'type' => RunEventTypeEnum::ContextCompactionFailed->value,
                 'payload' => [
                     'reason' => $reason,
-                    'message' => $errorMessage,
+                    'message' => $userMessage,
                     'messages_replaced' => false,
                     'step_id' => $message->stepId(),
                     'model' => $message->model,

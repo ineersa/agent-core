@@ -86,6 +86,10 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
             public function completeRun(string $runId): void
             {
             }
+
+            public function compact(string $runId, ?string $customInstructions = null): void
+            {
+            }
         };
 
         $this->tmpDir = sys_get_temp_dir().'/hatfield_poller_test_'.bin2hex(random_bytes(8));

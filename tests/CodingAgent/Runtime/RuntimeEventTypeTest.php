@@ -116,6 +116,11 @@ final class RuntimeEventTypeTest extends TestCase
             // Background process completion
             RuntimeEventTypeEnum::BackgroundProcessCompleted,
 
+            // Compaction
+            RuntimeEventTypeEnum::CompactionStarted,
+            RuntimeEventTypeEnum::CompactionCompleted,
+            RuntimeEventTypeEnum::CompactionFailed,
+
             // Model notification
             RuntimeEventTypeEnum::ModelNotification,
         ];
@@ -304,6 +309,16 @@ final class RuntimeEventTypeTest extends TestCase
         yield RuntimeEventTypeEnum::ToolQuestionRequested->name => [RuntimeEventTypeEnum::ToolQuestionRequested, 'tool_question'];
 
         yield RuntimeEventTypeEnum::BackgroundProcessCompleted->name => [RuntimeEventTypeEnum::BackgroundProcessCompleted, 'background_process_completion'];
+
+        $compaction = [
+            RuntimeEventTypeEnum::CompactionStarted,
+            RuntimeEventTypeEnum::CompactionCompleted,
+            RuntimeEventTypeEnum::CompactionFailed,
+        ];
+
+        foreach ($compaction as $case) {
+            yield $case->name => [$case, 'compaction'];
+        }
     }
 
     /**

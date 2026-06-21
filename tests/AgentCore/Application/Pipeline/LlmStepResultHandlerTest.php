@@ -11,8 +11,11 @@ use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Application\Pipeline\LlmStepResultHandler;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor;
+use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
+use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
+use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -242,6 +245,92 @@ final class LlmStepResultHandlerTest extends TestCase
         $this->assertSame(0, $abortedPayload['tool_call_count']);
         $this->assertSame([], $abortedPayload['tool_call_ids']);
         $this->assertNotNull($abortedPayload['text_sha256']);
+    }
+
+    /**
+     * Stop-boundary mailbox drain must carry CompactRun effects through
+     * the HandlerResult so they are dispatched by RunCommit, not dropped.
+     *
+     * Without this fix, a queued compact during an active run is silently
+     * discarded at the no-tool-call stop boundary.
+     */
+    public function testStopBoundaryMailboxEffectsContainPendingCompact(): void
+    {
+        $executionBus = new TestMessageBus();
+        $stepDispatcher = new StepDispatcher($executionBus);
+
+        $commandStore = new InMemoryCommandStore();
+
+        // Pre-queue a compact command so the mailbox drains it
+        $commandStore->enqueue(new PendingCommand(
+            runId: 'run-stop-boundary-compact',
+            kind: CoreCommandKind::Compact,
+            idempotencyKey: 'compact-queued-ik',
+            payload: ['custom_instructions' => 'Summarize.'],
+        ));
+
+        $handler = new LlmStepResultHandler(
+            toolBatchCollector: new ToolBatchCollector(),
+            commandMailboxPolicy: new CommandMailboxPolicy(
+                commandStore: $commandStore,
+                commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+            ),
+            eventFactory: new EventFactory(),
+            toolCallExtractor: new ToolCallExtractor(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            stepDispatcher: $stepDispatcher,
+        );
+
+        $state = new RunState(
+            runId: 'run-stop-boundary-compact',
+            status: RunStatus::Running,
+            version: 3,
+            turnNo: 1,
+            lastSeq: 4,
+            activeStepId: 'turn-1-step',
+        );
+
+        // No-tool-call result triggers the stop-boundary mailbox drain
+        $message = new LlmStepResult(
+            runId: 'run-stop-boundary-compact',
+            turnNo: 1,
+            stepId: 'turn-1-step',
+            attempt: 1,
+            idempotencyKey: 'llm-no-tools-1',
+            assistantMessage: SymfonyAiTestMessages::assistantText('All done.'),
+            usage: ['total_tokens' => 5],
+            stopReason: 'end_turn',
+            error: null,
+        );
+
+        $result = $handler->handle($message, $state);
+
+        $this->assertNotNull($result->nextState);
+
+        // The mailbox drained a compact — should produce effects
+        $this->assertNotEmpty($result->effects,
+            'Stop-boundary mailbox drain must not drop CompactRun effects.',
+        );
+
+        // At least one effect should be a CompactRun
+        $hasCompactRun = false;
+        foreach ($result->effects as $effect) {
+            if ($effect instanceof CompactRun) {
+                $hasCompactRun = true;
+                $this->assertSame('run-stop-boundary-compact', $effect->runId());
+                $this->assertSame('manual', $effect->trigger);
+                $this->assertSame('Summarize.', $effect->customInstructions);
+                break;
+            }
+        }
+        $this->assertTrue($hasCompactRun,
+            'Stop-boundary effects must include the CompactRun dispatched from the mailbox drain.',
+        );
+
+        // Compact command should be marked applied in the store
+        $this->assertCount(0, $commandStore->pending('run-stop-boundary-compact'),
+            'Compact command must be drained (marked applied) from the store.',
+        );
     }
 }
 

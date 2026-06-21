@@ -108,6 +108,12 @@ enum RuntimeEventTypeEnum: string
     case ProtocolError = 'protocol.error';
     case RunResumed = 'run.resumed';
 
+    // ── Compaction ────────────────────────────────────────────────────
+
+    case CompactionStarted = 'compaction.started';
+    case CompactionCompleted = 'compaction.completed';
+    case CompactionFailed = 'compaction.failed';
+
     // ── Model notification ────────────────────────────────────────────
 
     case ModelNotification = 'model.notification';
@@ -156,6 +162,9 @@ enum RuntimeEventTypeEnum: string
             self::BackgroundProcessCompleted => 'background_process_completion',
 
             self::ModelNotification => 'notification',
+
+            self::CompactionStarted, self::CompactionCompleted,
+            self::CompactionFailed => 'compaction',
 
             self::ModelChanged, self::ReasoningChanged, self::UsageUpdated,
             self::ContextUpdated, self::CostUpdated => 'metadata',

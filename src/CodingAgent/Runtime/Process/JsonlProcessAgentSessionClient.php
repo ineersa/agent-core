@@ -287,6 +287,25 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         $this->writeCommandWithRetry($cmd);
     }
 
+    public function compact(string $runId, ?string $customInstructions = null): void
+    {
+        $this->activeRunId = $runId;
+        $this->ensureProcessRunning();
+
+        $payload = array_filter([
+            'custom_instructions' => $customInstructions,
+        ], static fn (mixed $v): bool => null !== $v);
+
+        $cmd = new RuntimeCommand(
+            id: uniqid('cmd_', true),
+            type: 'compact',
+            runId: $runId,
+            payload: $payload,
+        );
+
+        $this->writeCommandWithRetry($cmd);
+    }
+
     public function shellExecute(string $command, string $sessionId, string $cwd): RunHandle
     {
         $this->activeRunId = $sessionId;

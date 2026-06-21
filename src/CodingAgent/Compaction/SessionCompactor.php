@@ -18,14 +18,17 @@ use Ineersa\CodingAgent\Config\CompactionConfig;
  * It does NOT call any LLM or platform — COMP-02 handles model invocation.
  *
  * Preparation algorithm:
- *   1. Estimate total tokens from model-facing text (no JSON).
- *   2. Walk backward from newest to oldest, accumulating tokens until
+ *   1. Extract immutable prologue (all leading system/user-context messages).
+ *   2. Compute full token estimate for reporting (including prologue);
+ *      compute body-only estimate for threshold and boundary decisions.
+ *   3. Walk backward from newest to oldest, accumulating tokens until
  *      keepRecentTokens is reached.
- *   3. Move the boundary to a safe cut point.
- *   4. Return rich result or skip reason.
+ *   4. Move the boundary to a safe cut point (bounded user-boundary preference).
+ *   5. Reassemble: prologue + body prefix → summarization; prologue + body tail → retained.
+ *   6. Return rich result or skip reason.
  *
  * Safe cut rules:
- *   - Prefer cutting before a user message.
+ *   - Prefer cutting before a user message within a bounded search window.
  *   - Never retain a tool result whose assistant tool call was summarized away.
  *   - Never summarize an assistant tool-call message while retaining its tool results.
  *   - Assistant/tool-call groups are indivisible.
@@ -37,6 +40,8 @@ final class SessionCompactor
     private const string SUMMARY_PREFIX = "The conversation history before this point was compacted into the following handoff summary. Use it as prior context, not as a new user request.\n\n<summary>\n";
     private const string SUMMARY_SUFFIX = "\n</summary>";
 
+    // ── Preparation ───────────────────────────────────────────────────
+
     public function __construct(
         private readonly CompactionTokenEstimator $tokenEstimator,
         private readonly ToolResultDigestService $digestService,
@@ -45,10 +50,18 @@ final class SessionCompactor
     ) {
     }
 
-    // ── Preparation ───────────────────────────────────────────────────
-
     /**
      * Prepare compaction partitions for a message list.
+     *
+     * Extracts the immutable prologue (leading `system` and `user-context`
+     * messages) before boundary selection.  The prologue is never summarized
+     * or replaced — it remains at the front of every compacted message list
+     * for prompt-cache locality and correctness.
+     *
+     * Boundary selection runs only on the compactable body (messages after
+     * the prologue).  The summarization LLM sees only body messages plus the
+     * summarization prompt; it is never asked to summarize system prompts or
+     * injected agent-instruction context.
      *
      * Returns a rich result object — either a usable preparation or
      * a specific skip reason — so the future pipeline (COMP-02) can
@@ -60,26 +73,54 @@ final class SessionCompactor
      */
     public function prepare(array $messages, CompactionConfig $settings): CompactionPreparationResultDTO
     {
-        $count = \count($messages);
+        // ── Extract immutable prologue ────────────────────────────
+        //
+        // Leading `system` and `user-context` messages carry injected
+        // agent instructions, skills, AGENTS.md context, etc.  These
+        // are not part of the conversation and must never be summarized
+        // away or replaced.  They remain at the front of every compacted
+        // message list for prompt-cache locality.
+        $prologueCount = 0;
+        $prologue = [];
+        $totalMessages = \count($messages);
+        for ($i = 0; $i < $totalMessages; ++$i) {
+            $role = $messages[$i]->role;
+            if ('system' === $role || 'user-context' === $role) {
+                $prologue[] = $messages[$i];
+                ++$prologueCount;
+            } else {
+                break;
+            }
+        }
 
-        // Nothing to compact with 0 or 1 messages.
-        if ($count < 2) {
+        // Compactable body starts after the prologue.
+        $body = \array_slice($messages, $prologueCount);
+        $bodyCount = \count($body);
+
+        // Nothing to compact with 0 or 1 body messages.
+        if ($bodyCount < 2) {
             return CompactionPreparationResultDTO::skipped(
                 CompactionSkipReasonEnum::TooFewMessages,
             );
         }
 
-        $totalEstimate = $this->tokenEstimator->estimateTokens($messages);
+        // Full pre-compaction token estimate used for user-visible
+        // before/after reporting (includes immutable prologue).
+        $fullTokenEstimate = $this->tokenEstimator->estimateTokens($messages);
 
-        // No need to compact if the entire session fits within keepRecentTokens.
-        if ($totalEstimate <= $settings->keepRecentTokens) {
+        // Body-only estimate used for BelowKeepRecentTokens decision
+        // and boundary selection — prologue is immutable and not reducible.
+        $bodyTokenEstimate = $this->tokenEstimator->estimateTokens($body);
+
+        // No need to compact if the compactable body fits within keepRecentTokens.
+        if ($bodyTokenEstimate <= $settings->keepRecentTokens) {
             return CompactionPreparationResultDTO::skipped(
                 CompactionSkipReasonEnum::BelowKeepRecentTokens,
             );
         }
 
         // Walk backward accumulating tokens until we retain at least keepRecentTokens.
-        $boundary = $this->boundarySelector->findBoundary($messages, $settings->keepRecentTokens);
+        $boundary = $this->boundarySelector->findBoundary($body, $settings->keepRecentTokens);
 
         if (null === $boundary) {
             return CompactionPreparationResultDTO::skipped(
@@ -88,7 +129,7 @@ final class SessionCompactor
         }
 
         // Move the boundary to a safe cut point.
-        $safeBoundary = $this->boundarySelector->findSafeBoundary($messages, $boundary);
+        $safeBoundary = $this->boundarySelector->findSafeBoundary($body, $boundary);
 
         if (null === $safeBoundary) {
             return CompactionPreparationResultDTO::skipped(
@@ -96,8 +137,16 @@ final class SessionCompactor
             );
         }
 
-        $messagesToSummarize = \array_slice($messages, 0, $safeBoundary);
-        $retainedTail = \array_slice($messages, $safeBoundary);
+        // Compactable region: body messages before the safe boundary.
+        $messagesToSummarize = \array_slice($body, 0, $safeBoundary);
+
+        // Retained region: prologue (immutable) + body tail after boundary.
+        $retainedBodyTail = \array_slice($body, $safeBoundary);
+        $retainedTail = [...$prologue, ...$retainedBodyTail];
+
+        // firstRetainedIndex is the global index (prologue offset + body cut)
+        // pointing to the first non-prologue message in the retained tail.
+        $globalFirstRetainedIndex = $prologueCount + $safeBoundary;
 
         $priorSummaryPresent = $this->detectPriorCompactSummary($messagesToSummarize);
 
@@ -105,10 +154,10 @@ final class SessionCompactor
             new CompactionPreparationDTO(
                 messagesToSummarize: $messagesToSummarize,
                 retainedTailMessages: $retainedTail,
-                tokenEstimateBefore: $totalEstimate,
+                tokenEstimateBefore: $fullTokenEstimate,
                 messagesCompacted: \count($messagesToSummarize),
                 messagesRetained: \count($retainedTail),
-                firstRetainedIndex: $safeBoundary,
+                firstRetainedIndex: $globalFirstRetainedIndex,
                 priorSummaryPresent: $priorSummaryPresent,
             ),
         );
@@ -157,8 +206,16 @@ final class SessionCompactor
     /**
      * Build the compacted message list from a summarization result.
      *
+     * The assembly order is:
+     *   [prologue..., summaryMessage, retainedBodyTail...]
+     *
+     * Prologue (leading system/user-context messages embedded as a prefix
+     * in retainedTailMessages) is extracted and placed before the summary
+     * so the full system prompt and agent-instruction context remain at the
+     * front for prompt-cache locality.
+     *
      * Returns a CompactResultDTO containing:
-     *   - The full compacted message list: [summaryMessage, ...retainedTail]
+     *   - The full compacted message list
      *   - The injected summary message with compact_summary metadata
      *   - Before/after token estimates
      *
@@ -177,9 +234,26 @@ final class SessionCompactor
             metadata: ['compact_summary' => true],
         );
 
+        // Separate immutable prologue from the retained body tail.
+        // Prologue messages (system / user-context) travel as a prefix
+        // in retainedTailMessages and are re-placed before the summary.
+        $prologue = [];
+        $bodyTail = [];
+        $inPrologue = true;
+
+        foreach ($preparation->retainedTailMessages as $msg) {
+            if ($inPrologue && ('system' === $msg->role || 'user-context' === $msg->role)) {
+                $prologue[] = $msg;
+            } else {
+                $inPrologue = false;
+                $bodyTail[] = $msg;
+            }
+        }
+
         $compactedMessages = [
+            ...$prologue,
             $summaryMessage,
-            ...$preparation->retainedTailMessages,
+            ...$bodyTail,
         ];
 
         $tokenEstimateAfter = $this->tokenEstimator->estimateTokens($compactedMessages);
