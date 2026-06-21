@@ -7,66 +7,91 @@ namespace Ineersa\CodingAgent\Tool;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Path\PathResolver;
-use Symfony\Component\Process\Process;
+use Ineersa\CodingAgent\Tool\Edit\PatchApplier;
+use Ineersa\CodingAgent\Tool\Edit\PatchFailureFormatter;
+use Ineersa\CodingAgent\Tool\Edit\PatchNormalizer;
+use Symfony\Component\Lock\LockFactory;
 
 /**
- * Edit an existing file by applying a unified diff patch.
+ * Edit an existing file by applying a plain-@@ patch.
  *
- * Implements both HatfieldToolProviderInterface for automatic registration
- * as a permanent tool and ToolHandlerInterface for execution.
+ * Thin orchestration facade that delegates to focused Edit sub-namespace
+ * services for patch normalization, application, failure formatting, and
+ * success rendering.
  *
- * Uses a two-pass approach around GNU patch for safety:
- * 1. Dry-run validation (--dry-run --posix) — never touches the target.
- * 2. Apply with -o temp output — patches a temp copy, then atomically
- *    renames it to the target on success.
- *
- * Features:
+ * Key behaviors:
+ * - Accepts plain @@ hunk headers (recommended default) — the tool resolves
+ *   old/new line numbers and counts from the hunk body and current file.
+ * - Numbered headers are accepted but not recommended.
+ * - All-or-nothing: on failure, no changes are made to the file.
+ * - On success, returns compact stats plus bounded post-apply changed chunks
+ *   so the model can verify without extra reads.
  * - Whitespace-tolerant matching via patch -l flag.
- * - 3-line fuzz tolerance via patch -F3 flag.
- * - Forward-only application via patch -N flag.
- * - Original file is never modified until a successful apply + rename.
- * - Cancellation before the final rename leaves the original untouched.
+ * - Symlink and hardlink identity preserved via in-place byte writes.
+ * - Symfony Lock (flock) around the critical section.
  */
 final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerInterface
 {
+    private readonly PatchApplier $applier;
+
     public function __construct(
         private readonly ToolRuntime $toolRuntime,
+        private readonly LockFactory $lockFactory,
+        private readonly \Psr\Log\LoggerInterface $logger,
+        private readonly PatchNormalizer $normalizer = new PatchNormalizer(),
+        private readonly PatchFailureFormatter $failureFormatter = new PatchFailureFormatter(),
+        ?PatchApplier $applier = null,
     ) {
+        $this->applier = $applier ?? new PatchApplier(
+            $this->toolRuntime,
+            $this->lockFactory,
+            $this->logger,
+            $this->failureFormatter,
+        );
     }
 
-    /**
-     * Execute the edit tool.
-     *
-     * @param array<string, mixed> $arguments Must contain 'path' (string) and 'patch' (string)
-     *
-     * @return string Success message with addition/deletion stats, or a no-op message
-     *
-     * @throws ToolCallException on validation failures, patch failures, or tool-level errors
-     * @throws \RuntimeException on cancellation or timeout (runtime concerns)
-     */
     public function __invoke(array $arguments): string
     {
         $this->validateArguments($arguments);
 
-        // Wrap core logic in cancellation checkpoints
         return $this->toolRuntime->run(function () use ($arguments): string {
             $targetPath = $this->resolveAndVerifyTarget($arguments['path']);
-            $patchContent = $arguments['patch'];
 
-            $stats = $this->applyPatch($targetPath, $patchContent);
+            // Read current file content, normalize the patch, and apply
+            // under one locked critical section so the snapshot used for
+            // normalization, dry-run, apply, no-op, and rollback is the
+            // same locked snapshot that GNU patch validates/applies against.
+            $result = $this->applier->applyWithNormalizer(
+                $targetPath,
+                $arguments['patch'],
+                $this->normalizer,
+            );
 
-            return $this->formatSuccess($targetPath, $stats['additions'], $stats['deletions']);
+            // Detect no-op: patched content equals original
+            if ($result['patchedContent'] === $result['originalContent']) {
+                return 'No changes (patch produced identical content)';
+            }
+
+            // Compute addition/deletion stats from the normalized patch
+            $stats = $this->computeStats($result['normalizedPatch']);
+
+            // Build success message with stats + bounded changed chunks
+            return $this->formatSuccess(
+                $targetPath,
+                $stats['additions'],
+                $stats['deletions'],
+                $result['originalContent'],
+                $result['patchedContent'],
+                $result['normalizedPatch'],
+            );
         });
     }
 
-    /**
-     * Return the tool definition for automatic provider registration.
-     */
     public function definition(): ToolDefinitionDTO
     {
         return new ToolDefinitionDTO(
             name: 'edit',
-            description: 'Apply a unified diff patch to an existing file. The target file must exist; use the write tool for new files.',
+            description: 'Apply a plain-@@ patch to an existing file. The target file must exist; use the write tool for new files.',
             parametersJsonSchema: [
                 'type' => 'object',
                 'properties' => [
@@ -76,7 +101,7 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
                     ],
                     'patch' => [
                         'type' => 'string',
-                        'description' => 'Unified diff in standard format',
+                        'description' => 'Plain-@@ patch content. Include ---/+++ file headers and @@ hunks; the tool resolves line numbers/counts automatically.',
                     ],
                 ],
                 'required' => ['path', 'patch'],
@@ -84,25 +109,44 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             ],
             handler: $this,
             executionMode: ToolExecutionMode::Sequential,
-            promptLine: 'edit path patch — apply a unified diff patch to an existing file; file must already exist, use write for new files',
+            promptLine: 'edit path patch — apply a plain-@@ patch to an existing file',
             promptGuidelines: [
-                'Provide the patch in standard unified diff format (diff -u). Use `read` and its `cat -n` original line numbers to determine `@@` hunk header ranges.',
-                '`@@` hunk headers must reference the original line numbers shown by `read` via `cat -n` (e.g. `@@ -42,6 +42,8 @@`).',
+                'Use the latest exact file context you already have. For a first edit on a file, or when your context is missing/stale, use a targeted `read` with both `offset` and `limit` for the relevant region — not a full-file read. After a successful edit, the result includes updated context around changed lines — use that for follow-up edits when sufficient. For follow-up edits on the same file: do not re-read the full file just because there is a new instruction; rely on prior read output and edit success contexts. When they do not cover the new target region, use a targeted `read` with both `offset` and `limit` for that region. Avoid full-file reads — use them only when you cannot determine which lines to target.',
+                'Use exact unchanged context lines from the current file. Do not modify or reformat context lines; they must match byte-for-byte.',
+                'Use plain `@@` hunk headers without line numbers or counts as the default. The edit tool resolves and computes old/new line numbers, counts, and positions from the hunk body and the current file automatically. Plain `@@` means you do not need line numbers at all — do not read a file just to find line numbers. Do not calculate @@ header line numbers or counts yourself.',
+                'Numbered hunk headers are only supported when copied from literal external diff output generated by a tool. When writing a patch yourself, always use plain `@@` — never calculate or write numbered headers yourself.',
+                'Minimal patch template using plain `@@` (the tool resolves line numbers and counts automatically):
+--- a/path
++++ b/path
+@@
+ unchanged context
+-old line
++new line
+ unchanged context',
+                'Keep hunks tight: include enough unchanged context (typically 3–4 lines) for the tool to locate the hunk uniquely in the file. If a plain `@@` hunk matches multiple locations, add more context lines.',
                 'The patch may contain multiple hunks to edit different parts of the file.',
+                'The patch must have `--- a/path` and `+++ b/path` headers, then hunk(s). Do NOT wrap the patch in markdown code fences (```diff, ```patch, ```).',
+                'Do NOT include non-diff trailer lines such as `--- End new file ---` or `--- End file ---`.',
+                'Unified-diff body lines: the first character is the diff marker (` ` space, `-`, or `+`). The actual file content starts after that marker. Context lines start with a leading space — do not strip it. When file content itself starts with `-` or `+`, the patch line will show two adjacent marker-looking characters: unchanged ` -foo`, deletion `--foo`, addition `+-foo`. Similarly for `+`: unchanged ` +foo`, deletion `-+foo`, addition `++foo`.',
+                'Do NOT copy the line-number prefix or whitespace/tab separator from `read` output into patch lines. Use only the raw file text after the line-number separator, with the correct diff prefix.',
+                'Ensure the patch ends with a trailing newline. The tool adds one if missing, but including it avoids unexpected-EOF failures.',
                 'The target file must already exist — use the write tool to create new files.',
                 'Whitespace mismatches between the patch and the target file are handled automatically (tolerant matching).',
-                'Returns a summary of additions and deletions applied.',
+                'Make ONE edit call at a time for a file and wait for its result before issuing another edit for the same file.',
+                'An error from an edit call means that specific attempt was NOT applied. Do not describe an edit attempt that returned an error as "applied" or "changed" — retry with a new patch from the current file contents.',
+                'On success, the tool returns stats and bounded updated-file chunks around the changed lines. Use that context for follow-up edits. Do not re-read the whole file just to verify a successful edit. If you need more surrounding context, use `read` with `offset` and `limit` for the relevant region instead of a full-file read.',
                 'If the patch produces no changes, the tool reports "No changes" without modifying the file.',
+                'If an edit fails with a stale-hunk error, the error includes a current-file context window with exact line numbers from the original file. Use that context or a targeted `read` with `offset`/`limit` for the affected region, then retry with a plain `@@` patch using the exact current context. Prefer targeted reads — do not fall back to a full-file read unless you have no idea which lines are affected.',
+                'If an edit fails with a format error, check that the patch has ---/+++ headers, plain `@@` hunk headers, a trailing newline, and no markdown fences or non-diff trailers. Do not try to fix malformed patches — regenerate with plain `@@` and exact context.',
+                'If the target file lacks a trailing newline, the error hint will mention it. Add a trailing newline with the write tool or include "\\ No newline at end of file" markers in the patch.',
+                'If you intend to change an existing line, include BOTH a line to remove (`-old line`) and a line to add (`+new line`). A context line (leading space) is only verification — it will NEVER be modified. If the edit succeeds but the returned stats or context show only new lines (additions) when you expected a replacement, you probably wrote the changed line as context instead of `+new line` — inspect the returned context and fix the missing `-`/`+` pair.',
+                'If the edit succeeds but the addition/deletion stats contradict your intent (e.g. you intended only deletions but the result says additions > 0), re-read the affected region with `read` `offset`/`limit` and verify — do not assume the edit was correct.',
             ],
         );
     }
 
     /**
-     * Validate that required arguments exist and have correct types.
-     *
-     * @param array<string, mixed> $arguments
-     *
-     * @throws ToolCallException when arguments are missing or invalid
+     * @param array{path?: scalar|null, patch?: scalar|null} $arguments
      */
     private function validateArguments(array $arguments): void
     {
@@ -114,17 +158,10 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
         }
 
         if (!\is_string($patch) || '' === $patch) {
-            throw new ToolCallException('The "patch" argument is required and must be a non-empty string.', retryable: false, hint: 'Provide a unified diff in standard format.');
+            throw new ToolCallException('The "patch" argument is required and must be a non-empty string.', retryable: false, hint: 'Provide a plain-@@ patch with ---/+++ file headers.');
         }
     }
 
-    /**
-     * Resolve the path and verify the target file exists and is readable.
-     *
-     * @return string Absolute path to the target file
-     *
-     * @throws ToolCallException when the file does not exist or is not readable
-     */
     private function resolveAndVerifyTarget(string $path): string
     {
         $targetPath = PathResolver::resolve($path);
@@ -134,181 +171,6 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
         }
 
         return $targetPath;
-    }
-
-    /**
-     * Orchestrate the full patch lifecycle: write temp file, dry-run, apply,
-     * check no-op, atomic rename, and stats.
-     *
-     * @return array{additions: int, deletions: int}
-     *
-     * @throws ToolCallException on patch or infrastructure failures
-     * @throws \RuntimeException on cancellation or timeout (runtime concerns)
-     */
-    private function applyPatch(string $targetPath, string $patchContent): array
-    {
-        $patchFile = $this->writePatchFile($patchContent);
-        $tempOut = tempnam(sys_get_temp_dir(), 'hatfield_out_');
-
-        try {
-            $this->dryRun($targetPath, $patchFile);
-            $this->applyPatches($targetPath, $patchFile, $tempOut);
-
-            $patchedContent = @file_get_contents($tempOut);
-            if (false === $patchedContent) {
-                throw new ToolCallException('Failed to read patched output file.', retryable: true, hint: 'Check file system availability and try again.');
-            }
-
-            // Early return if patch produced identical content — no need to rename
-            $originalContent = @file_get_contents($targetPath);
-            if (false !== $originalContent && $patchedContent === $originalContent) {
-                return ['additions' => 0, 'deletions' => 0];
-            }
-
-            // Atomic replace
-            if (!@rename($tempOut, $targetPath)) {
-                throw new ToolCallException(\sprintf('Failed to replace original file "%s" with patched version.', $targetPath), retryable: true, hint: 'Check file permissions and try again. The original file was not modified.');
-            }
-            $tempOut = null; // Prevent double-cleanup in finally
-
-            return [
-                'additions' => $this->computeStats($patchContent)['additions'],
-                'deletions' => $this->computeStats($patchContent)['deletions'],
-            ];
-        } finally {
-            // Clean up temp files
-            if (is_file($patchFile)) {
-                @unlink($patchFile);
-            }
-            if (null !== $tempOut && is_file($tempOut)) {
-                @unlink($tempOut);
-            }
-        }
-    }
-
-    /**
-     * Write patch content to a temp file.
-     *
-     * @return string Path to the temp patch file
-     *
-     * @throws ToolCallException when temp file creation or write fails
-     */
-    private function writePatchFile(string $patchContent): string
-    {
-        $patchFile = tempnam(sys_get_temp_dir(), 'hatfield_patch_');
-
-        if (false === $patchFile) {
-            throw new ToolCallException('Failed to create temp file for patch content.', retryable: true, hint: 'Check disk space and temp directory permissions.');
-        }
-
-        $written = @file_put_contents($patchFile, $patchContent);
-        if (false === $written) {
-            // Clean up on write failure
-            if (is_file($patchFile)) {
-                @unlink($patchFile);
-            }
-            throw new ToolCallException('Failed to write patch content to temp file.', retryable: true, hint: 'Check disk space and temp directory permissions.');
-        }
-
-        return $patchFile;
-    }
-
-    /**
-     * Run patch dry-run validation.
-     *
-     * @throws ToolCallException when the patch does not apply
-     * @throws \RuntimeException on cancellation or timeout
-     */
-    private function dryRun(string $targetPath, string $patchFile): void
-    {
-        $process = new Process([
-            'patch', '-u', '-F3', '-l', '-N',
-            '--dry-run', '--posix',
-            '-o', '/dev/null',
-            $targetPath, $patchFile,
-        ]);
-
-        $result = $this->toolRuntime->runCancellableProcess($process);
-
-        if ($result->cancelled) {
-            throw new \RuntimeException('Tool execution was cancelled during patch dry-run.');
-        }
-
-        if ($result->timedOut) {
-            throw new \RuntimeException('Patch dry-run timed out.');
-        }
-
-        if (0 !== $result->exitCode) {
-            $errorOutput = '' !== $result->stderr ? $result->stderr : $result->stdout;
-            $hint = 'Check that the patch context matches the file content and the diff is in unified format.';
-
-            if ($this->targetLacksTrailingNewline($targetPath)) {
-                $hint = 'The target file does not end with a newline. Unified diff context lines normally expect newline-terminated text; add a trailing newline with the write tool or include a "\\ No newline at end of file" marker in the patch.';
-            }
-
-            throw new ToolCallException(\sprintf('Patch dry-run failed for "%s": %s', $targetPath, $errorOutput), retryable: true, hint: $hint);
-        }
-    }
-
-    /**
-     * Check whether a regular file is non-empty and does not end with "\n".
-     *
-     * Unreadable files, directories, or empty files return false because
-     * resolveAndVerifyTarget() already checked readability and the caller
-     * handles other failure paths.
-     */
-    private function targetLacksTrailingNewline(string $targetPath): bool
-    {
-        if (!is_file($targetPath) || !is_readable($targetPath)) {
-            return false; // Graceful degradation: caller already checked readability
-        }
-
-        $handle = @fopen($targetPath, 'rb');
-        if (false === $handle) {
-            return false; // Graceful degradation: file was readable, now is not
-        }
-
-        // Seek to the last byte
-        if (-1 === fseek($handle, -1, \SEEK_END)) {
-            fclose($handle);
-
-            return false; // Empty file (or seek failed) — no trailing newline concern
-        }
-
-        $lastByte = fread($handle, 1);
-        fclose($handle);
-
-        return "\n" !== $lastByte;
-    }
-
-    /**
-     * Apply the patch to a temp output file.
-     *
-     * @throws ToolCallException when the patch application fails
-     * @throws \RuntimeException on cancellation or timeout
-     */
-    private function applyPatches(string $targetPath, string $patchFile, string $tempOut): void
-    {
-        $process = new Process([
-            'patch', '-u', '-F3', '-l', '-N',
-            '-o', $tempOut,
-            $targetPath, $patchFile,
-        ]);
-
-        $result = $this->toolRuntime->runCancellableProcess($process);
-
-        if ($result->cancelled) {
-            throw new \RuntimeException('Tool execution was cancelled during patch application.');
-        }
-
-        if ($result->timedOut) {
-            throw new \RuntimeException('Patch application timed out.');
-        }
-
-        if (0 !== $result->exitCode) {
-            $errorOutput = '' !== $result->stderr ? $result->stderr : $result->stdout;
-            throw new ToolCallException(\sprintf('Patch application failed for "%s": %s', $targetPath, $errorOutput), retryable: true, hint: 'Retry the edit operation.');
-        }
     }
 
     /**
@@ -341,19 +203,37 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
     }
 
     /**
-     * Format the success message. If no changes were made, return a no-op message.
+     * Format the success message with stats and bounded post-apply changed chunks.
      */
-    private function formatSuccess(string $targetPath, int $additions, int $deletions): string
-    {
-        if (0 === $additions && 0 === $deletions) {
-            return 'No changes (patch produced identical content)';
+    private function formatSuccess(
+        string $targetPath,
+        int $additions,
+        int $deletions,
+        string $originalContent,
+        string $patchedContent,
+        string $normalizedPatch,
+    ): string {
+        $addWord = 1 === $additions ? 'addition' : 'additions';
+        $delWord = 1 === $deletions ? 'deletion' : 'deletions';
+
+        $statsLine = \sprintf(
+            'Applied patch to %s (%d %s, %d %s)',
+            $targetPath,
+            $additions, $addWord,
+            $deletions, $delWord,
+        );
+
+        // Build bounded post-apply changed chunks
+        $changedContext = $this->failureFormatter->buildChangedContexts(
+            $originalContent,
+            $patchedContent,
+            $normalizedPatch,
+        );
+
+        if ('' !== $changedContext) {
+            return $statsLine."\n\nUpdated file context:\n".$changedContext;
         }
 
-        return \sprintf(
-            'Applied patch to %s (%d additions, %d deletions)',
-            $targetPath,
-            $additions,
-            $deletions,
-        );
+        return $statsLine;
     }
 }
