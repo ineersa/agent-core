@@ -18,8 +18,9 @@ use Ineersa\CodingAgent\Config\CompactionConfig;
  * It does NOT call any LLM or platform — COMP-02 handles model invocation.
  *
  * Preparation algorithm:
- *   1. Extract immutable prologue (leading system/user-context messages).
- *   2. Estimate total tokens from model-facing text on the compactable body (no JSON).
+ *   1. Extract immutable prologue (all leading system/user-context messages).
+ *   2. Compute full token estimate for reporting (including prologue);
+ *      compute body-only estimate for threshold and boundary decisions.
  *   3. Walk backward from newest to oldest, accumulating tokens until
  *      keepRecentTokens is reached.
  *   4. Move the boundary to a safe cut point (bounded user-boundary preference).
@@ -40,13 +41,6 @@ final class SessionCompactor
     private const string SUMMARY_SUFFIX = "\n</summary>";
 
     // ── Preparation ───────────────────────────────────────────────────
-
-    /**
-     * Maximum consecutive leading messages with role `system` or
-     * `user-context` that are treated as immutable prologue and
-     * excluded from compaction.
-     */
-    private const int MAX_PROLOGUE_MESSAGES = 16;
 
     public function __construct(
         private readonly CompactionTokenEstimator $tokenEstimator,
@@ -88,8 +82,8 @@ final class SessionCompactor
         // message list for prompt-cache locality.
         $prologueCount = 0;
         $prologue = [];
-        $maxPrologue = min(self::MAX_PROLOGUE_MESSAGES, \count($messages));
-        for ($i = 0; $i < $maxPrologue; ++$i) {
+        $totalMessages = \count($messages);
+        for ($i = 0; $i < $totalMessages; ++$i) {
             $role = $messages[$i]->role;
             if ('system' === $role || 'user-context' === $role) {
                 $prologue[] = $messages[$i];
@@ -110,10 +104,16 @@ final class SessionCompactor
             );
         }
 
-        $totalEstimate = $this->tokenEstimator->estimateTokens($body);
+        // Full pre-compaction token estimate used for user-visible
+        // before/after reporting (includes immutable prologue).
+        $fullTokenEstimate = $this->tokenEstimator->estimateTokens($messages);
+
+        // Body-only estimate used for BelowKeepRecentTokens decision
+        // and boundary selection — prologue is immutable and not reducible.
+        $bodyTokenEstimate = $this->tokenEstimator->estimateTokens($body);
 
         // No need to compact if the compactable body fits within keepRecentTokens.
-        if ($totalEstimate <= $settings->keepRecentTokens) {
+        if ($bodyTokenEstimate <= $settings->keepRecentTokens) {
             return CompactionPreparationResultDTO::skipped(
                 CompactionSkipReasonEnum::BelowKeepRecentTokens,
             );
@@ -154,7 +154,7 @@ final class SessionCompactor
             new CompactionPreparationDTO(
                 messagesToSummarize: $messagesToSummarize,
                 retainedTailMessages: $retainedTail,
-                tokenEstimateBefore: $totalEstimate,
+                tokenEstimateBefore: $fullTokenEstimate,
                 messagesCompacted: \count($messagesToSummarize),
                 messagesRetained: \count($retainedTail),
                 firstRetainedIndex: $globalFirstRetainedIndex,

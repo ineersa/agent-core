@@ -961,6 +961,116 @@ final class SessionCompactorTest extends TestCase
         );
     }
 
+    // ── Token estimate before reporting ────────────────────────────
+
+    /**
+     * Thesis: tokenEstimateBefore reports the FULL pre-compaction token
+     * count (including immutable prologue), not the body-only estimate
+     * used for threshold/boundary decisions.
+     *
+     * Without the fix, tokenEstimateBefore would be body-only, making
+     * the user-visible before/after token metrics asymmetric (before =
+     * body-only, after = prologue + compacted).
+     */
+    public function testTokenEstimateBeforeIsFullPreCompactionEstimate(): void
+    {
+        $systemMsg = $this->makeMessage('system', 'You are a coding assistant.');
+        $contextMsg = $this->makeMessage('user-context', '<skills>...</skills>');
+
+        $messages = [
+            $systemMsg,
+            $contextMsg,
+        ];
+        $messages = array_merge($messages, $this->makeLongConversation(15));
+
+        $estimator = new CompactionTokenEstimator();
+        $fullEstimate = $estimator->estimateTokens($messages);
+
+        $result = $this->compactor->prepare($messages, $this->settings);
+
+        $this->assertTrue($result->isReady(), 'Should produce preparation');
+        $prep = $result->preparation;
+        $this->assertNotNull($prep);
+
+        $this->assertSame(
+            $fullEstimate,
+            $prep->tokenEstimateBefore,
+            'tokenEstimateBefore must be the full pre-compaction estimate including prologue',
+        );
+    }
+
+    // ── Prologue no arbitrary cap ────────────────────────────────────
+
+    /**
+     * Thesis: All consecutive leading system and user-context messages
+     * are preserved as immutable prologue, not capped at 16.
+     *
+     * Without the fix (MAX_PROLOGUE_MESSAGES = 16), messages 17+
+     * of a long prologue would leak into the summarization partition
+     * or be treated as compactable body.
+     */
+    public function testPrologueWithMoreThanSixteenMessagesNotCapped(): void
+    {
+        $prologueCount = 25;
+        $messages = [];
+
+        // Build 25 consecutive leading prologue messages.
+        for ($i = 0; $i < 12; ++$i) {
+            $messages[] = $this->makeMessage('system', "System instruction line {$i}. ".str_repeat('pad ', 10));
+        }
+
+        for ($i = 0; $i < 13; ++$i) {
+            $messages[] = $this->makeMessage('user-context', "Context instruction line {$i}. ".str_repeat('pad ', 10));
+        }
+
+        // Enough body to trigger compaction.
+        $messages = array_merge($messages, $this->makeLongConversation(20));
+
+        $result = $this->compactor->prepare($messages, $this->settings);
+
+        $this->assertTrue($result->isReady(), 'Should produce preparation');
+        $prep = $result->preparation;
+        $this->assertNotNull($prep);
+
+        // All 25 prologue messages must be in retainedTailMessages.
+        $prologueInRetained = 0;
+
+        foreach ($prep->retainedTailMessages as $msg) {
+            if ('system' === $msg->role || 'user-context' === $msg->role) {
+                ++$prologueInRetained;
+            } else {
+                break;
+            }
+        }
+
+        $this->assertSame(
+            $prologueCount,
+            $prologueInRetained,
+            'All 25 prologue messages must be retained at the front',
+        );
+
+        // None must leak into messagesToSummarize.
+        foreach ($prep->messagesToSummarize as $msg) {
+            $this->assertNotSame('system', $msg->role, 'No system message in summarization partition');
+            $this->assertNotSame('user-context', $msg->role, 'No user-context message in summarization partition');
+        }
+
+        // firstRetainedIndex must be at least the prologue count
+        // (prologue offset + body safe boundary).
+        $this->assertGreaterThanOrEqual(
+            $prologueCount,
+            $prep->firstRetainedIndex,
+            'firstRetainedIndex must be >= prologue count',
+        );
+
+        // All messages accounted for.
+        $this->assertSame(
+            \count($messages),
+            $prep->messagesCompacted + $prep->messagesRetained,
+            'All messages accounted for (compacted + retained = total)',
+        );
+    }
+
     // ── Bounded user-boundary preference ─────────────────────────────
 
     /**
