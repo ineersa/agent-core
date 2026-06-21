@@ -382,6 +382,26 @@ final class AgentDefinitionDiscoveryTest extends TestCase
         self::assertSame($catalog1, $catalog2);
     }
 
+    public function testDisabledDiscoveryReturnsEmptyCatalog(): void
+    {
+        // Put a valid definition in a configured path so there would be
+        // things to discover if the enabled flag were ignored.
+        $configuredDir = $this->tempDir.'/configured';
+        $this->createValidDefinition($configuredDir.'/should-be-skipped.md', 'skipped', []);
+
+        // Also put an invalid file in the built-in directory to prove parsing
+        // is never attempted when disabled.
+        file_put_contents($this->appRoot.'/config/agents/malformed.md', "---\nincomplete\n");
+
+        // enabled=false with a nonexistent path to prove diagnostics are suppressed
+        $config = new AgentsConfig(enabled: false, paths: ['/nonexistent/path/agent.md']);
+        $discovery = $this->createDiscovery($config);
+        $catalog = $discovery->discover();
+
+        self::assertCount(0, $catalog->all(), 'Catalog must be empty when agents.enabled is false');
+        self::assertCount(0, $catalog->diagnostics(), 'No diagnostics expected when discovery is disabled');
+    }
+
     public function testMultipleDefinitionsDiscovered(): void
     {
         $this->createValidDefinition($this->cwd.'/.agents/alpha.md', 'alpha', ['description' => 'Alpha agent']);

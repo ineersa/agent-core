@@ -61,6 +61,12 @@ final class AgentDefinitionDiscovery
             return $this->cachedCatalog;
         }
 
+        if (!$this->agentsConfig->enabled) {
+            $this->cachedCatalog = new AgentDefinitionCatalog(definitions: [], diagnostics: []);
+
+            return $this->cachedCatalog;
+        }
+
         $homeDir = $this->pathResolver->getHomeDir();
         $cwd = rtrim($this->cwd, '/');
 
