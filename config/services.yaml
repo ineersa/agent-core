@@ -114,6 +114,11 @@ services:
       $denormalizer: '@Symfony\Component\Serializer\SerializerInterface'
       $cwd: '%app.cwd%'
 
+  Ineersa\CodingAgent\Config\CompactionConfig:
+    factory: ['Ineersa\CodingAgent\Config\CompactionConfig', 'fromAppConfig']
+    arguments:
+      - '@Ineersa\CodingAgent\Config\AppConfig'
+
   # ─── Prompt Templates ───
 
   Ineersa\CodingAgent\Config\PromptsConfig:

@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Contract\Compaction\CompactionPrepareResult;
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\CompactionStepResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -26,7 +27,7 @@ use Psr\Log\NullLogger;
  * Lives in CodingAgent because it depends on CompactionServiceInterface
  * for building the compacted message list.
  */
-final readonly class CompactionStepResultHandler implements RunMessageHandler
+final class CompactionStepResultHandler implements RunMessageHandler
 {
     public function __construct(
         private CompactionServiceInterface $compactionService,
@@ -251,9 +252,27 @@ final readonly class CompactionStepResultHandler implements RunMessageHandler
             retryableFailure: $state->retryableFailure,
         );
 
+        // When compaction was auto-triggered (not manual /compact), dispatch
+        // an AdvanceRun so the LLM turn can continue after compaction completes.
+        // Without this, the pre-LLM guard in AdvanceRunHandler consumes the
+        // AdvanceRun and replaces it with CompactRun — leaving the run stuck
+        // after compaction with no pending continuation.
+        $effects = [];
+        if ('auto' === $message->trigger) {
+            $continueStepId = \sprintf('advance-%d', hrtime(true));
+            $effects[] = new AdvanceRun(
+                runId: $runId,
+                turnNo: $state->turnNo,
+                stepId: $continueStepId,
+                attempt: 1,
+                idempotencyKey: hash('sha256', \sprintf('%s|advance|%d|%s', $runId, $state->turnNo, $continueStepId)),
+            );
+        }
+
         return new HandlerResult(
             nextState: $nextState,
             events: $events,
+            effects: $effects,
         );
     }
 

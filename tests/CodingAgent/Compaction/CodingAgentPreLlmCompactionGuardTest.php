@@ -136,4 +136,50 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
     {
         self::assertInstanceOf(PreLlmCompactionGuardInterface::class, $this->guard);
     }
+
+    /**
+     * Thesis: after the guard returns true once for a given run+turnNo,
+     * subsequent calls with the same run+turnNo return false — preventing
+     * infinite AdvanceRun → compact → AdvanceRun loops.
+     */
+    public function testOneShotDedupPreventsRepeatedCompactionForSameTurn(): void
+    {
+        $messages = [
+            $this->makeTextMessage('user', str_repeat('x', 200)), // ~62 tokens > 50
+        ];
+
+        // First call → true (no dedup yet).
+        self::assertTrue(
+            $this->guard->shouldCompactBeforeLlmStep('run-1', 1, $messages, null),
+            'First call should trigger compaction',
+        );
+
+        // Second call with same run+turnNo → false (dedup hit).
+        self::assertFalse(
+            $this->guard->shouldCompactBeforeLlmStep('run-1', 1, $messages, null),
+            'Second call with same run+turnNo should be blocked by dedup',
+        );
+    }
+
+    /**
+     * Thesis: the dedup is keyed by (runId, turnNo); a different turnNo
+     * is a fresh evaluation and should NOT be blocked.
+     */
+    public function testDedupIsPerTurnNo(): void
+    {
+        $messages = [
+            $this->makeTextMessage('user', str_repeat('x', 200)), // ~62 tokens > 50
+        ];
+
+        // Turn 1 → true.
+        self::assertTrue(
+            $this->guard->shouldCompactBeforeLlmStep('run-1', 1, $messages, null),
+        );
+
+        // Same run, different turn → true (fresh evaluation).
+        self::assertTrue(
+            $this->guard->shouldCompactBeforeLlmStep('run-1', 2, $messages, null),
+            'Different turnNo should not be blocked by dedup',
+        );
+    }
 }
