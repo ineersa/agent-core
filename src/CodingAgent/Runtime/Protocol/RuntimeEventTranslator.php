@@ -477,20 +477,18 @@ final class RuntimeEventTranslator
         $reason = (string) ($p['reason'] ?? 'Compaction failed.');
 
         // Map internal reason strings to user-friendly messages.
-        // Wording mirrors CompactRunHandler::failureReasonToMessage().
-        // These are structural failures (prep-not-ready), not skips.
+        // Wording mirrors CompactRunHandler::failureReasonToMessage()
+        // for prep-not-ready structural failures.  Model-output failures
+        // (empty_summary, model_error) are handled here or by their
+        // own producer message field.
         $userMessage = match ($reason) {
             'too_few_messages' => 'Compaction failed: there are not enough messages to compact.',
             'below_keep_recent_tokens' => 'Compaction failed: there is no older context outside the retained tail to summarize.',
             'no_boundary' => 'Compaction failed: could not determine a boundary for the retained tail.',
             'no_safe_boundary' => 'Compaction failed: no safe boundary found without splitting tool-call results.',
+            'empty_summary' => 'Compaction failed: The model returned an empty summary.',
             default => \sprintf('Compaction failed: %s', $reason),
         };
-
-        // Special case: empty summary from the model.
-        if (str_contains($reason, 'empty summary') || str_contains($reason, 'returned an empty summary')) {
-            $userMessage = 'Compaction failed: The model returned an empty summary.';
-        }
 
         return new RuntimeEvent(
             type: RuntimeEventTypeEnum::CompactionFailed->value,

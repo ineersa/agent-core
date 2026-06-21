@@ -663,6 +663,27 @@ final class RuntimeEventMapperTest extends TestCase
         self::assertSame('stale_result_ignored', $result->payload['debug.raw_type']);
     }
 
+    // ── Compaction ───────────────────────────────────────────────────────────
+
+    public function testNormalizesCompactionFailedEmptySummary(): void
+    {
+        $event = $this->runEvent('context_compaction_failed', [
+            'reason' => 'empty_summary',
+            'message' => 'Compaction failed: summarization model returned an empty summary.',
+            'messages_replaced' => false,
+        ]);
+
+        $result = $this->mapper->toRuntimeEvent($event);
+
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::CompactionFailed->value, $result->type);
+        self::assertSame('empty_summary', $result->payload['reason']);
+        self::assertSame(
+            'Compaction failed: The model returned an empty summary.',
+            $result->payload['error'],
+        );
+    }
+
     // ── Unknown event normalization ──────────────────────────────────────────
 
     public function testNormalizesUnknownEventToStatusUpdatedWithDebug(): void

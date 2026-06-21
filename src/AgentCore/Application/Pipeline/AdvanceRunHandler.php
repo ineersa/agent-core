@@ -112,16 +112,16 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
         if (\in_array($preparedState->status, [RunStatus::Completed, RunStatus::Failed, RunStatus::Cancelled, RunStatus::WaitingHuman], true)) {
             // Check for boundary events that are NOT solely from compact
             // (steer/follow-up/continue produce message-adding events).
-            $hasMessageProducingCommand = false;
+            $hasNonCompactBoundaryEvent = false;
             foreach ($boundaryEventSpecs as $spec) {
                 $kind = (string) ($spec['payload']['kind'] ?? '');
                 if ('compact' !== $kind) {
-                    $hasMessageProducingCommand = true;
+                    $hasNonCompactBoundaryEvent = true;
                     break;
                 }
             }
 
-            if ($hasMessageProducingCommand && [] !== $boundaryEventSpecs && \in_array($preparedState->status, [RunStatus::Completed, RunStatus::Failed, RunStatus::Cancelled], true)) {
+            if ($hasNonCompactBoundaryEvent && [] !== $boundaryEventSpecs && \in_array($preparedState->status, [RunStatus::Completed, RunStatus::Failed, RunStatus::Cancelled], true)) {
                 $preparedState = new RunState(
                     runId: $preparedState->runId,
                     status: RunStatus::Running,

@@ -405,9 +405,10 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
      * LlmStepResultHandler or turn-start via AdvanceRunHandler).
      * CommandMailboxPolicy will markApplied on drain.
      *
-     * Terminal/safe state: mark applied immediately and dispatch
-     * CompactRun via post-commit callback.  No enqueue so the command
-     * cannot be drained again on a future mailbox cycle — mirroring
+     * Non-active state (Completed / Failed / Cancelled / WaitingHuman /
+     * Queued): mark applied immediately and dispatch CompactRun via
+     * post-commit callback.  No enqueue so the command cannot be
+     * drained again on a future mailbox cycle — mirroring
      * applyContinueCommand / applyHumanResponseCommand.
      */
     private function applyCompactCommand(RunState $state, ApplyCommand $message): HandlerResult
