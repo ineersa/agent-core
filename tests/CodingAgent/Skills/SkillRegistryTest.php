@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Skills;
 
+use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\Skills\SkillDefinition;
 use Ineersa\CodingAgent\Skills\SkillRegistry;
 use PHPUnit\Framework\TestCase;
@@ -37,14 +38,14 @@ final class SkillRegistryTest extends TestCase
             skillDirectory: '/path/to',
         );
 
-        $registry = new SkillRegistry([$skill]);
+        $registry = new SkillRegistry([$skill], extractor: new MarkdownFrontmatterExtractor());
 
         $this->assertSame($skill, $registry->get('castor'));
     }
 
     public function testGetReturnsNullForUnknown(): void
     {
-        $registry = new SkillRegistry([]);
+        $registry = new SkillRegistry([], extractor: new MarkdownFrontmatterExtractor());
 
         $this->assertNull($registry->get('nonexistent'));
     }
@@ -67,7 +68,7 @@ final class SkillRegistryTest extends TestCase
             modelInvocationEnabled: false,
         );
 
-        $registry = new SkillRegistry([$enabled, $disabled]);
+        $registry = new SkillRegistry([$enabled, $disabled], extractor: new MarkdownFrontmatterExtractor());
 
         $invocable = $registry->modelInvocable();
 
@@ -91,7 +92,7 @@ final class SkillRegistryTest extends TestCase
             skillDirectory: '/b',
         );
 
-        $registry = new SkillRegistry([$withDesc, $withoutDesc]);
+        $registry = new SkillRegistry([$withDesc, $withoutDesc], extractor: new MarkdownFrontmatterExtractor());
 
         $invocable = $registry->modelInvocable();
 
@@ -111,7 +112,7 @@ final class SkillRegistryTest extends TestCase
             skillDirectory: $this->tmpDir,
         );
 
-        $registry = new SkillRegistry([$skill]);
+        $registry = new SkillRegistry([$skill], extractor: new MarkdownFrontmatterExtractor());
         $body = $registry->readBody($skill);
 
         $this->assertStringNotContainsString('name: test', $body);
@@ -128,7 +129,7 @@ final class SkillRegistryTest extends TestCase
             skillDirectory: '/nonexistent',
         );
 
-        $registry = new SkillRegistry([$skill]);
+        $registry = new SkillRegistry([$skill], extractor: new MarkdownFrontmatterExtractor());
         $body = $registry->readBody($skill);
 
         $this->assertSame('', $body);
@@ -143,7 +144,7 @@ final class SkillRegistryTest extends TestCase
             skillDirectory: '/a',
         );
 
-        $registry = new SkillRegistry([$skill]);
+        $registry = new SkillRegistry([$skill], extractor: new MarkdownFrontmatterExtractor());
 
         $this->assertSame([], $registry->collisions());
     }
@@ -161,7 +162,7 @@ final class SkillRegistryTest extends TestCase
             skillDirectory: '/prio/skill',
         );
 
-        $registry = new SkillRegistry([$skill], $collisions);
+        $registry = new SkillRegistry([$skill], extractor: new MarkdownFrontmatterExtractor(), collisions: $collisions);
 
         $this->assertCount(1, $registry->collisions());
         $this->assertSame('myskill', $registry->collisions()[0]['name']);
@@ -174,7 +175,7 @@ final class SkillRegistryTest extends TestCase
         $a = new SkillDefinition(name: 'a', description: '', skillFile: '/a/SKILL.md', skillDirectory: '/a');
         $b = new SkillDefinition(name: 'b', description: '', skillFile: '/b/SKILL.md', skillDirectory: '/b');
 
-        $registry = new SkillRegistry([$a, $b]);
+        $registry = new SkillRegistry([$a, $b], extractor: new MarkdownFrontmatterExtractor());
 
         $all = $registry->all();
         $this->assertCount(2, $all);

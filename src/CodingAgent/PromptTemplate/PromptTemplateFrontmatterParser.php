@@ -4,17 +4,19 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\PromptTemplate;
 
+use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Symfony\Component\Yaml\Yaml;
 
 /**
  * Parses YAML frontmatter from Markdown prompt-template files.
  *
+ * Uses the shared {@see MarkdownFrontmatterExtractor} for delimiter scanning
+ * and adds prompt-template-specific graceful degradation on invalid/missing
+ * frontmatter.
+ *
  * Behaviour:
- *  - Normalizes CRLF and CR to LF before parsing.
- *  - Frontmatter exists only if content starts with "---" and a closing
- *    "\n---" delimiter is found after offset 3.
- *  - The YAML block is everything between the delimiters.
- *  - The body is the trimmed text after the closing delimiter.
+ *  - Normalizes CRLF and CR to LF before parsing (via shared extractor).
+ *  - UTF-8 BOM is stripped (via shared extractor).
  *  - If no valid frontmatter, metadata is empty and body is the normalized
  *    original content.
  *  - Unknown frontmatter keys (including Pi's argument-hint) are ignored;
@@ -26,6 +28,11 @@ use Symfony\Component\Yaml\Yaml;
  */
 final class PromptTemplateFrontmatterParser
 {
+    public function __construct(
+        private readonly MarkdownFrontmatterExtractor $extractor,
+    ) {
+    }
+
     /**
      * Parse frontmatter and body from raw file content.
      *
@@ -36,48 +43,25 @@ final class PromptTemplateFrontmatterParser
      */
     public function parse(string $raw, string $filePath): array
     {
-        // Normalize line endings: CRLF and CR to LF.
-        $content = str_replace(["\r\n", "\r"], "\n", $raw);
+        $extraction = $this->extractor->extract($raw);
 
-        $delimiter = '---';
-
-        // Frontmatter only if the content starts with the delimiter.
-        if (!str_starts_with($content, $delimiter)) {
+        // No valid frontmatter → return body as-is with empty metadata.
+        if (null === $extraction['yamlBlock']) {
             return [
-                'body' => $content,
+                'body' => $extraction['body'],
                 'description' => '',
                 'diagnostics' => [],
             ];
         }
-
-        // Search for closing delimiter after offset 3.
-        $closePos = strpos($content, "\n".$delimiter, 3);
-
-        if (false === $closePos) {
-            // Starts with --- but no closing delimiter: treat as body, no frontmatter.
-            return [
-                'body' => $content,
-                'description' => '',
-                'diagnostics' => [],
-            ];
-        }
-
-        $yamlString = substr($content, 3, $closePos - 3);
-        $body = substr($content, $closePos + 4); // skip "\n---"
-
-        // Normalize: trim whitespace from the body.
-        $body = trim($body);
 
         $description = '';
         $diagnostics = [];
+        $yamlBlock = $extraction['yamlBlock'];
 
-        // Parse YAML frontmatter.
-        $yamlString = trim($yamlString);
-        if ('' !== $yamlString) {
+        if ('' !== $yamlBlock) {
             try {
-                $parsed = Yaml::parse($yamlString);
+                $parsed = Yaml::parse($yamlBlock);
                 if (\is_array($parsed)) {
-                    // Only extract description; ignore unknown keys.
                     if (isset($parsed['description']) && \is_string($parsed['description']) && '' !== trim($parsed['description'])) {
                         $description = trim($parsed['description']);
                     }
@@ -94,7 +78,7 @@ final class PromptTemplateFrontmatterParser
         }
 
         return [
-            'body' => $body,
+            'body' => $extraction['body'],
             'description' => $description,
             'diagnostics' => $diagnostics,
         ];

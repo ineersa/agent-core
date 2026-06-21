@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\PromptsConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateArgumentParser;
+use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateFrontmatterParser;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateLoader;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateService;
@@ -41,7 +42,7 @@ final class PromptTemplateServiceTest extends TestCase
             runtimeConfig: new PromptTemplatesRuntimeConfig(),
             pathResolver: $pathResolver,
             cwd: $this->cwd,
-            frontmatterParser: new PromptTemplateFrontmatterParser(),
+            frontmatterParser: new PromptTemplateFrontmatterParser(new MarkdownFrontmatterExtractor()),
             logger: $this->logger,
         );
 
@@ -80,7 +81,7 @@ final class PromptTemplateServiceTest extends TestCase
                 runtimeConfig: new PromptTemplatesRuntimeConfig(),
                 pathResolver: new SettingsPathResolver('/app', $this->homeDir),
                 cwd: $this->cwd,
-                frontmatterParser: new PromptTemplateFrontmatterParser(),
+                frontmatterParser: new PromptTemplateFrontmatterParser(new MarkdownFrontmatterExtractor()),
                 logger: $this->logger,
             ),
             new PromptTemplateArgumentParser(),
@@ -105,7 +106,7 @@ final class PromptTemplateServiceTest extends TestCase
                 runtimeConfig: new PromptTemplatesRuntimeConfig(),
                 pathResolver: new SettingsPathResolver('/app', $this->homeDir),
                 cwd: $this->cwd,
-                frontmatterParser: new PromptTemplateFrontmatterParser(),
+                frontmatterParser: new PromptTemplateFrontmatterParser(new MarkdownFrontmatterExtractor()),
                 logger: $this->logger,
             ),
             new PromptTemplateArgumentParser(),
@@ -143,7 +144,7 @@ final class PromptTemplateServiceTest extends TestCase
                 runtimeConfig: new PromptTemplatesRuntimeConfig(),
                 pathResolver: new SettingsPathResolver('/app', $this->homeDir),
                 cwd: $this->cwd,
-                frontmatterParser: new PromptTemplateFrontmatterParser(),
+                frontmatterParser: new PromptTemplateFrontmatterParser(new MarkdownFrontmatterExtractor()),
                 logger: $this->logger,
             ),
             new PromptTemplateArgumentParser(),
@@ -174,7 +175,7 @@ final class PromptTemplateServiceTest extends TestCase
                 runtimeConfig: new PromptTemplatesRuntimeConfig(),
                 pathResolver: new SettingsPathResolver('/app', $this->homeDir),
                 cwd: $this->cwd,
-                frontmatterParser: new PromptTemplateFrontmatterParser(),
+                frontmatterParser: new PromptTemplateFrontmatterParser(new MarkdownFrontmatterExtractor()),
                 logger: $this->logger,
             ),
             new PromptTemplateArgumentParser(),
@@ -194,7 +195,7 @@ final class PromptTemplateServiceTest extends TestCase
                 runtimeConfig: new PromptTemplatesRuntimeConfig(),
                 pathResolver: new SettingsPathResolver('/app', $this->homeDir),
                 cwd: $this->cwd,
-                frontmatterParser: new PromptTemplateFrontmatterParser(),
+                frontmatterParser: new PromptTemplateFrontmatterParser(new MarkdownFrontmatterExtractor()),
                 logger: $this->logger,
             ),
             new PromptTemplateArgumentParser(),
@@ -217,7 +218,7 @@ final class PromptTemplateServiceTest extends TestCase
                 runtimeConfig: new PromptTemplatesRuntimeConfig(),
                 pathResolver: new SettingsPathResolver('/app', $this->homeDir),
                 cwd: $this->cwd,
-                frontmatterParser: new PromptTemplateFrontmatterParser(),
+                frontmatterParser: new PromptTemplateFrontmatterParser(new MarkdownFrontmatterExtractor()),
                 logger: $this->logger,
             ),
             new PromptTemplateArgumentParser(),
@@ -239,7 +240,7 @@ final class PromptTemplateServiceTest extends TestCase
                 runtimeConfig: new PromptTemplatesRuntimeConfig(),
                 pathResolver: new SettingsPathResolver('/app', $this->homeDir),
                 cwd: $this->cwd,
-                frontmatterParser: new PromptTemplateFrontmatterParser(),
+                frontmatterParser: new PromptTemplateFrontmatterParser(new MarkdownFrontmatterExtractor()),
                 logger: $this->logger,
             ),
             new PromptTemplateArgumentParser(),
@@ -259,7 +260,7 @@ final class PromptTemplateServiceTest extends TestCase
                 runtimeConfig: new PromptTemplatesRuntimeConfig(),
                 pathResolver: new SettingsPathResolver('/app', $this->homeDir),
                 cwd: $this->cwd,
-                frontmatterParser: new PromptTemplateFrontmatterParser(),
+                frontmatterParser: new PromptTemplateFrontmatterParser(new MarkdownFrontmatterExtractor()),
                 logger: $this->logger,
             ),
             new PromptTemplateArgumentParser(),

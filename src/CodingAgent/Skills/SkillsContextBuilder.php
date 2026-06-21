@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Skills;
 
+use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -16,6 +17,7 @@ final readonly class SkillsContextBuilder
         private readonly SkillDiscovery $discovery,
         private readonly SkillsConfig $config,
         private readonly SkillContextRenderer $renderer,
+        private readonly MarkdownFrontmatterExtractor $extractor,
         private ?LoggerInterface $logger = null,
     ) {
     }
@@ -31,7 +33,7 @@ final readonly class SkillsContextBuilder
     {
         $discovered = $this->discovery->discover();
         $collisions = $this->discovery->getCollisions();
-        $registry = new SkillRegistry($discovered, $collisions);
+        $registry = new SkillRegistry($discovered, extractor: $this->extractor, collisions: $collisions);
 
         $parts = [];
 

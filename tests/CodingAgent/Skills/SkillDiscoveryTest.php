@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\Skills\SkillsConfig;
 use PHPUnit\Framework\TestCase;
@@ -290,38 +291,13 @@ final class SkillDiscoveryTest extends TestCase
             config: $config,
             pathResolver: $pathResolver,
             appConfig: $appConfig,
+            extractor: new MarkdownFrontmatterExtractor(),
         );
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('CWD is not configured');
 
         $discovery->discover();
-    }
-
-    /* ───────── stripFrontmatter ───────── */
-
-    public function testStripFrontmatter(): void
-    {
-        $content = "---\nname: test\ndescription: Test\n---\n\n# Body\n\nContent here";
-        $stripped = SkillDiscovery::stripFrontmatter($content);
-        $this->assertStringNotContainsString('name: test', $stripped);
-        $this->assertStringContainsString('# Body', $stripped);
-        $this->assertStringContainsString('Content here', $stripped);
-    }
-
-    public function testStripFrontmatterWithDots(): void
-    {
-        $content = "---\nname: test\n...\n\nBody";
-        $stripped = SkillDiscovery::stripFrontmatter($content);
-        $this->assertStringNotContainsString('name: test', $stripped);
-        $this->assertSame(trim("\n\nBody"), trim($stripped));
-    }
-
-    public function testStripFrontmatterNoFrontmatter(): void
-    {
-        $content = "# Just a heading\n\nPlain markdown without frontmatter";
-        $stripped = SkillDiscovery::stripFrontmatter($content);
-        $this->assertSame($content, $stripped);
     }
 
     /* ───────── Private helpers ───────── */
@@ -347,6 +323,7 @@ final class SkillDiscoveryTest extends TestCase
                 logging: new LoggingConfig(),
                 cwd: $cwd ?? $this->tmpDir,
             ),
+            extractor: new MarkdownFrontmatterExtractor(),
         );
     }
 
