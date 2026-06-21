@@ -223,6 +223,117 @@ final class TuiCompactCommandE2eTest extends TestCase
         }
     }
 
+    /**
+     * Full async compaction lifecycle E2E proof.
+     *
+     * This test exercises the actual worker/result path — NOT the
+     * pre-model structural failure — and would have caught the
+     * stale_result regression (COMP-03 bug fix d6a5a7dfd).
+     *
+     * Chain:
+     *  1. Submit prompt → fixture #1 (assistant text response).
+     *  2. Send /compact → fixture #2 (compaction summarization).
+     *  3. Assert "⧉ Conversation compacted" appears after async result.
+     *
+     * Uses isolated project dir with compaction.keep_recent_tokens=10
+     * so compaction actually runs (not below-threshold failure) on a
+     * small conversation.
+     */
+    public function testCompactAsyncSuccessWithReplay(): void
+    {
+        // Use a compactable project dir so compaction actually runs
+        // instead of failing with below_keep_recent_tokens.
+        $this->testProjectDir = $this->createIsolatedProjectDirCompactable();
+        $this->snapshotDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
+        @\mkdir($this->snapshotDir, 0o777, true);
+
+        $pane = $this->tmux->startDetached(
+            command: $this->agentCommandWithChainedFixtures(),
+            prefix: 'tui-compact-async',
+            width: 120,
+            height: 60,
+            cwd: $this->testProjectDir,
+        );
+
+        try {
+            // Wait for TUI startup (logo visible).
+            $this->tmux->waitForCaptureContains($pane, '█', 10.0);
+            usleep(500_000);
+
+            // ── Phase 1: Submit prompt → fixture #1 response ──
+            $this->tmux->sendKey($pane, 'C-u');
+            usleep(100_000);
+            $prompt = 'Respond with exactly: OK.';
+            $this->tmux->sendLiteral($pane, $prompt);
+            $this->tmux->sendKey($pane, 'Enter');
+
+            // Wait for assistant ◇ block.
+            $this->tmux->waitForCallback(
+                $pane,
+                static fn (string $cap): bool => str_contains($cap, '◇')
+                    || str_contains($cap, '✕'),
+                timeout: 15.0,
+                message: 'Assistant response block did not appear',
+                history: 2000,
+            );
+
+            // ── Phase 2: /compact → async worker must accept result ──
+            $this->tmux->sendKey($pane, 'C-u');
+            usleep(100_000);
+            $this->tmux->sendLiteral($pane, '/compact');
+            $this->tmux->sendKey($pane, 'Enter');
+
+            // Assert progress block appears immediately.
+            $this->tmux->waitForCallback(
+                $pane,
+                static fn (string $cap): bool => str_contains($cap, 'Compacting conversation'),
+                timeout: 10.0,
+                message: 'Compacting conversation progress not shown',
+                history: 2000,
+            );
+
+            // ── Phase 3: Assert async compaction succeeded ──
+            // The messenger:consume llm worker picks up ExecuteCompactionStep
+            // and serves fixture #2.  CompactionStepResult returns to
+            // CompactionStepResultHandler which emits context_compacted.
+            // RuntimeEventTranslator → CompactionCompleted →
+            // CompactionProjectionSubscriber → visible "⧉ Conversation compacted."
+            $compactCapture = $this->tmux->waitForCallback(
+                $pane,
+                static fn (string $cap): bool => str_contains($cap, 'Conversation compacted'),
+                timeout: 20.0,
+                message: 'Compaction success block never appeared',
+                history: 2000,
+            );
+
+            self::assertStringContainsString(
+                'Conversation compacted',
+                $compactCapture,
+                '/compact must produce visible success block after async compaction',
+            );
+
+            // Prove it did NOT show stale_result or model_error.
+            self::assertStringNotContainsString(
+                'stale_result',
+                $compactCapture,
+                'Compaction success must not contain stale_result',
+            );
+
+            // Save ANSI snapshot for inspection.
+            $this->saveAnsiSnapshot($pane, 'compact-async-success');
+
+            // Clean exit.
+            $this->tmux->sendKey($pane, 'C-d');
+        } catch (\Throwable $e) {
+            $this->saveAnsiSnapshot($pane, 'compact-async-FAILURE');
+            try {
+                $this->tmux->sendKey($pane, 'C-d');
+            } catch (\Throwable) {
+            }
+            throw $e;
+        }
+    }
+
     // ── Helpers ───────────────────────────────────────────────────
 
     private function agentCommand(): string
@@ -232,6 +343,42 @@ final class TuiCompactCommandE2eTest extends TestCase
             ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.\escapeshellarg($fixturePath).' '
             : '';
 
+        return $this->buildAgentCommand($fixtureEnv);
+    }
+
+    /**
+     * Build agent command with chained replay fixtures for async compaction.
+     *
+     * Fixture 1: initial assistant response (tui-startup-prompt-response.json).
+     * Fixture 2: compaction summarization response (tui-compaction-summary-response.json).
+     *
+     * Uses the ControllerReplayHttpClientFactory multi-fixture support
+     * (fixture paths joined with semicolon). The factory cycles through
+     * them in order: first LLM call → fixture 1, second LLM call → fixture 2.
+     */
+    private function agentCommandWithChainedFixtures(): string
+    {
+        $fixturePaths = [];
+
+        $promptFixture = $this->projectRoot.'/tests/Tui/E2E/fixtures/tui-startup-prompt-response.json';
+        if (\is_file($promptFixture)) {
+            $fixturePaths[] = $promptFixture;
+        }
+
+        $compactFixture = $this->projectRoot.'/tests/Tui/E2E/fixtures/tui-compaction-summary-response.json';
+        if (\is_file($compactFixture)) {
+            $fixturePaths[] = $compactFixture;
+        }
+
+        $fixtureEnv = '' !== $fixturePaths
+            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.\escapeshellarg(\implode(';', $fixturePaths)).' '
+            : '';
+
+        return $this->buildAgentCommand($fixtureEnv);
+    }
+
+    private function buildAgentCommand(string $fixtureEnv): string
+    {
         $php = \PHP_BINARY;
         $script = $this->projectRoot.'/bin/console';
 
@@ -250,6 +397,28 @@ final class TuiCompactCommandE2eTest extends TestCase
     }
 
     private function createIsolatedProjectDir(): string
+    {
+        return $this->createIsolatedProjectDirWithSettings([]);
+    }
+
+    /**
+     * Create isolated project dir with compaction.keep_recent_tokens=10
+     * so compaction actually runs on a small conversation (not below-threshold).
+     */
+    private function createIsolatedProjectDirCompactable(): string
+    {
+        return $this->createIsolatedProjectDirWithSettings([
+            'compaction' => [
+                'keep_recent_tokens' => 10,
+                'auto_enabled' => false,
+            ],
+        ]);
+    }
+
+    /**
+     * @param array<string, mixed> $extraSettings merged into the base settings
+     */
+    private function createIsolatedProjectDirWithSettings(array $extraSettings): string
     {
         $dir = TestDirectoryIsolation::createProjectTempDir('tui-e2e-compact');
         @\mkdir($dir.'/.hatfield', 0o777, true);
@@ -312,6 +481,8 @@ final class TuiCompactCommandE2eTest extends TestCase
             ],
         ];
 
+        $settings = $this->buildBaseSettings($extraSettings);
+
         $yaml = \Symfony\Component\Yaml\Yaml::dump($settings, 6, 4);
         \file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
 
@@ -319,6 +490,76 @@ final class TuiCompactCommandE2eTest extends TestCase
         \file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
 
         return $dir;
+    }
+
+    /**
+     * Build the base settings array, merging in extra keys.
+     *
+     * @param array<string, mixed> $extra
+     *
+     * @return array<string, mixed>
+     */
+    private function buildBaseSettings(array $extra): array
+    {
+        $settings = [
+            'ai' => [
+                'default_model' => 'llama_cpp_test/test',
+                'default_reasoning' => 'off',
+                'providers' => [
+                    'llama_cpp_test' => [
+                        'type' => 'generic',
+                        'enabled' => true,
+                        'base_url' => 'http://192.168.2.38:9052/v1',
+                        'api' => 'openai-completions',
+                        'api_key' => 'dummy',
+                        'completions_path' => '/chat/completions',
+                        'supports_completions' => true,
+                        'supports_embeddings' => false,
+                        'supports_thinking_levels' => true,
+                        'models' => [
+                            'test' => [
+                                'name' => 'test',
+                                'context_window' => 32768,
+                                'max_tokens' => 32768,
+                                'input' => ['text', 'image'],
+                                'tool_calling' => true,
+                                'reasoning' => true,
+                                'thinking_level_map' => [
+                                    'off' => '0',
+                                    'minimal' => '0',
+                                    'low' => '0',
+                                    'medium' => '0',
+                                    'high' => '0',
+                                    'xhigh' => '0',
+                                ],
+                                'cost' => ['input' => 0, 'output' => 0],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+            'extensions' => [
+                'enabled' => [
+                    'Ineersa\\CodingAgent\\Extension\\Builtin\\SafeGuard\\SafeGuardExtension',
+                ],
+                'settings' => [
+                    'safe_guard' => [
+                        'tool_names' => [
+                            'bash' => 'bash',
+                            'write' => 'write',
+                            'edit' => 'edit',
+                            'read' => 'read',
+                        ],
+                        'allow_command_patterns' => ['^ls\b', '^printf\b', '^echo\b'],
+                        'allow_write_outside_cwd' => [],
+                        'protected_read_patterns' => [],
+                        'dangerous_command_patterns' => [],
+                    ],
+                ],
+            ],
+        ];
+
+        return array_merge_recursive($settings, $extra);
     }
 
     private function saveAnsiSnapshot(TmuxPane $pane, string $tag): void

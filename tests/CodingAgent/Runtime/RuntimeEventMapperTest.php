@@ -684,6 +684,47 @@ final class RuntimeEventMapperTest extends TestCase
         );
     }
 
+    public function testNormalizesCompactionFailedModelErrorWithProducerMessage(): void
+    {
+        $event = $this->runEvent('context_compaction_failed', [
+            'reason' => 'model_error',
+            'message' => 'HTTP/2 400 returned for "https://example.com/v1/chat/completions".',
+            'messages_replaced' => false,
+        ]);
+
+        $result = $this->mapper->toRuntimeEvent($event);
+
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::CompactionFailed->value, $result->type);
+        self::assertSame('model_error', $result->payload['reason']);
+        self::assertStringContainsString(
+            'HTTP/2 400',
+            $result->payload['error'],
+        );
+        self::assertStringStartsWith(
+            'Compaction failed:',
+            $result->payload['error'],
+        );
+    }
+
+    public function testNormalizesCompactionFailedModelErrorWithoutMessage(): void
+    {
+        $event = $this->runEvent('context_compaction_failed', [
+            'reason' => 'model_error',
+            'messages_replaced' => false,
+        ]);
+
+        $result = $this->mapper->toRuntimeEvent($event);
+
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::CompactionFailed->value, $result->type);
+        self::assertSame('model_error', $result->payload['reason']);
+        self::assertStringContainsString(
+            'unexpected error',
+            $result->payload['error'],
+        );
+    }
+
     // ── Unknown event normalization ──────────────────────────────────────────
 
     public function testNormalizesUnknownEventToStatusUpdatedWithDebug(): void

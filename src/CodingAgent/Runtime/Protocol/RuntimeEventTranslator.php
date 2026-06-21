@@ -478,15 +478,18 @@ final class RuntimeEventTranslator
 
         // Map internal reason strings to user-friendly messages.
         // Wording mirrors CompactRunHandler::failureReasonToMessage()
-        // for prep-not-ready structural failures.  Model-output failures
-        // (empty_summary, model_error) are handled here or by their
-        // own producer message field.
+        // for prep-not-ready structural failures.
+        //
+        // model_error surfaces the producer error message (e.g. HTTP status)
+        // rather than the raw reason code.  The producer already strips
+        // prompts/tool output/env keys; the message is safe for display.
         $userMessage = match ($reason) {
             'too_few_messages' => 'Compaction failed: there are not enough messages to compact.',
             'below_keep_recent_tokens' => 'Compaction failed: there is no older context outside the retained tail to summarize.',
             'no_boundary' => 'Compaction failed: could not determine a boundary for the retained tail.',
             'no_safe_boundary' => 'Compaction failed: no safe boundary found without splitting tool-call results.',
             'empty_summary' => 'Compaction failed: The model returned an empty summary.',
+            'model_error' => $this->compactionModelErrorMessage($p),
             'stale_result' => 'Compaction result is no longer relevant — the conversation has moved on.',
             default => \sprintf('Compaction failed: %s', $reason),
         };
@@ -578,5 +581,34 @@ final class RuntimeEventTranslator
         }
 
         return implode('', $parts);
+    }
+
+    /**
+     * Build a user-visible error message for compaction model_error results.
+     *
+     * Prefers the producer error message (e.g. HTTP status line) when
+     * available and non-empty.  The producer already strips prompts,
+     * tool output, and environment values; the raw message is safe for
+     * display.  Falls back to a generic message when the error detail is
+     * missing or empty.
+     *
+     * @param array<string, mixed> $p The raw context_compaction_failed payload
+     */
+    private function compactionModelErrorMessage(array $p): string
+    {
+        $detail = \is_string($p['message'] ?? null) ? trim($p['message']) : '';
+
+        if ('' !== $detail) {
+            // If the producer message already starts with "Compaction failed:"
+            // (e.g. from CompactionStepResultHandler's empty_summary path),
+            // use it verbatim.  Otherwise prefix it.
+            if (str_starts_with($detail, 'Compaction failed')) {
+                return $detail;
+            }
+
+            return \sprintf('Compaction failed: %s', $detail);
+        }
+
+        return 'Compaction failed: The summarization model returned an unexpected error.';
     }
 }
