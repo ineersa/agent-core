@@ -48,4 +48,17 @@ interface AgentSessionClient
      * working status transitions from Running to Completed.
      */
     public function completeRun(string $runId): void;
+
+    /**
+     * Request compaction of the conversation for the given run.
+     *
+     * For active runs, the request queues until the next safe boundary
+     * (after tool results or at turn start). For idle/terminal runs,
+     * compaction starts immediately.
+     *
+     * @param string      $runId              The run to compact
+     * @param string|null $customInstructions Optional custom instructions
+     *                                        passed to the summarization model
+     */
+    public function compact(string $runId, ?string $customInstructions = null): void;
 }

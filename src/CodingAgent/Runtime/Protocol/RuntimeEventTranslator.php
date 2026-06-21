@@ -64,6 +64,10 @@ final class RuntimeEventTranslator
             // Cancel / fallback
             RunEventTypeEnum::AgentCommandRejected->value => $this->onStatusUpdated(...),
             RunEventTypeEnum::StaleResultIgnored->value => $this->onStatusUpdated(...),
+            // Compaction
+            RunEventTypeEnum::ContextCompactionStarted->value => $this->onCompactionStarted(...),
+            RunEventTypeEnum::ContextCompacted->value => $this->onCompactionCompleted(...),
+            RunEventTypeEnum::ContextCompactionFailed->value => $this->onCompactionFailed(...),
             // Drop (internal bookkeeping)
             RunEventTypeEnum::ToolCallResultReceived->value => $this->drop(...),
             RunEventTypeEnum::ToolBatchCommitted->value => $this->drop(...),
@@ -430,6 +434,76 @@ final class RuntimeEventTranslator
         );
     }
 
+    // ── Compaction ────────────────────────────────────────────────────────
+
+    private function onCompactionStarted(RunEvent $runEvent): RuntimeEvent
+    {
+        $p = $runEvent->payload;
+
+        // CompactRunHandler emits 'estimated_tokens' (singular).
+        // Normalise to 'estimated_tokens_before' for downstream consumers.
+        $estimatedTokens = $p['estimated_tokens'] ?? $p['estimated_tokens_before'] ?? null;
+
+        return new RuntimeEvent(
+            type: RuntimeEventTypeEnum::CompactionStarted->value,
+            runId: $runEvent->runId,
+            seq: $runEvent->seq,
+            payload: [
+                'estimated_tokens_before' => $estimatedTokens,
+            ],
+        );
+    }
+
+    private function onCompactionCompleted(RunEvent $runEvent): RuntimeEvent
+    {
+        $p = $runEvent->payload;
+
+        return new RuntimeEvent(
+            type: RuntimeEventTypeEnum::CompactionCompleted->value,
+            runId: $runEvent->runId,
+            seq: $runEvent->seq,
+            payload: [
+                'estimated_tokens_before' => $p['estimated_tokens_before'] ?? null,
+                'estimated_tokens_after' => $p['estimated_tokens_after'] ?? null,
+                'messages_before' => $p['messages_before'] ?? null,
+                'messages_after' => $p['messages_after'] ?? null,
+            ],
+        );
+    }
+
+    private function onCompactionFailed(RunEvent $runEvent): RuntimeEvent
+    {
+        $p = $runEvent->payload;
+        $reason = (string) ($p['reason'] ?? 'Compaction failed.');
+
+        // Map internal reason strings to user-friendly messages.
+        // Wording mirrors CompactRunHandler::failureReasonToMessage()
+        // for prep-not-ready structural failures.
+        //
+        // model_error prefers the sanitised user_message from the error
+        // classifier (produced by CompactionStepResultHandler).
+        $userMessage = match ($reason) {
+            'too_few_messages' => 'Compaction failed: there are not enough messages to compact.',
+            'below_keep_recent_tokens' => 'Compaction failed: there is no older context outside the retained tail to summarize.',
+            'no_boundary' => 'Compaction failed: could not determine a boundary for the retained tail.',
+            'no_safe_boundary' => 'Compaction failed: no safe boundary found without splitting tool-call results.',
+            'empty_summary' => 'Compaction failed: The model returned an empty summary.',
+            'model_error' => $this->compactionModelErrorMessage($p),
+            'stale_result' => 'Compaction result is no longer relevant — the conversation has moved on.',
+            default => \sprintf('Compaction failed: %s', $reason),
+        };
+
+        return new RuntimeEvent(
+            type: RuntimeEventTypeEnum::CompactionFailed->value,
+            runId: $runEvent->runId,
+            seq: $runEvent->seq,
+            payload: [
+                'reason' => $reason,
+                'error' => $userMessage,
+            ],
+        );
+    }
+
     // ── Drop ───────────────────────────────────────────────────────────────
 
     private function drop(RunEvent $runEvent): null
@@ -506,5 +580,41 @@ final class RuntimeEventTranslator
         }
 
         return implode('', $parts);
+    }
+
+    /**
+     * Build a user-visible error message for compaction model_error results.
+     *
+     * Prefers the sanitised user_message from the error classifier (stored
+     * by CompactionStepResultHandler) when present and non-empty.  Falls
+     * back to the raw producer message (capped by the worker), then to a
+     * generic fallback.
+     *
+     * @param array<string, mixed> $p The raw context_compaction_failed payload
+     */
+    private function compactionModelErrorMessage(array $p): string
+    {
+        // Prefer sanitised user_message from the error classifier.
+        // CompactionStepResultHandler stores this in the 'message' key
+        // (not in a separate 'user_message' key — the compaction payload
+        // is flat, unlike the LlmStepFailed->error array shape).
+        // The value in 'message' is already the classifier's user_message
+        // when available, or a capped raw message with generic wrapper when
+        // the classifier was not run (worker catch path).
+        $detail = \is_string($p['message'] ?? null) ? trim($p['message']) : '';
+
+        if ('' !== $detail) {
+            // The message is already a full display string from
+            // CompactionStepResultHandler (classifier user_message or
+            // worker fallback).  Use it verbatim.
+            if (str_starts_with($detail, 'Compaction failed')) {
+                return $detail;
+            }
+
+            // Bare diagnostic — prefix for display consistency.
+            return \sprintf('Compaction failed: %s', $detail);
+        }
+
+        return 'Compaction failed: The summarization model returned an unexpected error.';
     }
 }

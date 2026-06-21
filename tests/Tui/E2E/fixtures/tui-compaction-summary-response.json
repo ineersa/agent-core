@@ -1,0 +1,13 @@
+{
+    "$schema": "Compaction summarization reply fixture for replay-backed TUI E2E",
+    "model": "llama_cpp_test/test",
+    "deltas": [
+        {"type": "text", "content": "The user asked about the current date and the assistant confirmed it is June 20, 2026."}
+    ],
+    "stop_reason": "stop",
+    "usage": {
+        "input_tokens": 5000,
+        "output_tokens": 25,
+        "total_tokens": 5025
+    }
+}

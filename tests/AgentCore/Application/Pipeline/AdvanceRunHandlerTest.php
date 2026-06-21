@@ -15,6 +15,7 @@ use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -351,5 +352,141 @@ final class AdvanceRunHandlerTest extends TestCase
             array_map(static fn ($e) => $e->type, $result->events),
             'Expected turn_advanced event',
         );
+    }
+
+    /**
+     * A compact drained on a Completed run must NOT transition the run
+     * to Running.  Compaction replaces messages in place and should not
+     * advance the turn.  The CompactRun effect is still passed through.
+     */
+    public function testCompactOnCompletedRunDoesNotTransitionToRunning(): void
+    {
+        $commandStore = new InMemoryCommandStore();
+
+        // Pre-queue a compact command
+        $commandStore->enqueue(new PendingCommand(
+            runId: 'run-compact-completed',
+            kind: CoreCommandKind::Compact,
+            idempotencyKey: 'compact-completed-ik',
+            payload: [],
+            options: new CommandCancellationOptions(safe: false),
+        ));
+
+        $commandMailboxPolicy = new CommandMailboxPolicy(
+            commandStore: $commandStore,
+            commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+        );
+
+        $handler = new AdvanceRunHandler(
+            commandMailboxPolicy: $commandMailboxPolicy,
+            eventFactory: new EventFactory(),
+        );
+
+        $state = RunStateBuilder::create('run-compact-completed')
+            ->withStatus(RunStatus::Completed)
+            ->withVersion(3)
+            ->withTurnNo(1)
+            ->withLastSeq(10)
+            ->build();
+
+        $message = AdvanceRunMessageBuilder::create('run-compact-completed')
+            ->withTurnNo(1)
+            ->withStepId('turn-2-step')
+            ->withIdempotencyKey('advance-compact-1')
+            ->build();
+
+        $result = $handler->handle($message, $state);
+
+        // Must NOT transition to Running — compact does not advance the turn
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(RunStatus::Completed, $result->nextState->status,
+            'Compact on Completed run must NOT transition to Running.',
+        );
+
+        // Should produce agent_command_applied events (compact drained)
+        $eventTypes = array_map(static fn ($e) => $e->type, $result->events);
+        $this->assertContains('agent_command_applied', $eventTypes,
+            'Compact drain must emit agent_command_applied event.',
+        );
+
+        // Must NOT produce turn_advanced or leaf_set — compact doesn't advance
+        $this->assertNotContains('turn_advanced', $eventTypes,
+            'Compact drain must NOT produce turn_advanced event.',
+        );
+        $this->assertNotContains('leaf_set', $eventTypes,
+            'Compact drain must NOT produce leaf_set event.',
+        );
+
+        // The CompactRun effect must be passed through
+        $this->assertNotEmpty($result->effects,
+            'CompactRun effect must be included in the result.',
+        );
+        $hasCompactEffect = false;
+        foreach ($result->effects as $effect) {
+            if ($effect instanceof CompactRun) {
+                $hasCompactEffect = true;
+                $this->assertSame('run-compact-completed', $effect->runId());
+                break;
+            }
+        }
+        $this->assertTrue($hasCompactEffect,
+            'Effects must include a CompactRun message.',
+        );
+
+        // Compact command should be drained from the store
+        $this->assertCount(0, $commandStore->pending('run-compact-completed'),
+            'Compact command must be drained (marked applied).',
+        );
+    }
+
+    /**
+     * A steer on a Completed run SHOULD transition to Running and advance
+     * the turn (regression guard: compact guard must not block steer).
+     */
+    public function testSteerOnCompletedRunStillTransitionsToRunning(): void
+    {
+        $commandStore = new InMemoryCommandStore();
+
+        // Pre-queue a steer command (message-producing)
+        $commandStore->enqueue(new PendingCommand(
+            runId: 'run-steer-completed',
+            kind: CoreCommandKind::Steer,
+            idempotencyKey: 'steer-completed-ik',
+            payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Continue please.']]]],
+            options: new CommandCancellationOptions(safe: false),
+        ));
+
+        $commandMailboxPolicy = new CommandMailboxPolicy(
+            commandStore: $commandStore,
+            commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+        );
+
+        $handler = new AdvanceRunHandler(
+            commandMailboxPolicy: $commandMailboxPolicy,
+            eventFactory: new EventFactory(),
+        );
+
+        $state = RunStateBuilder::create('run-steer-completed')
+            ->withStatus(RunStatus::Completed)
+            ->withVersion(3)
+            ->withTurnNo(1)
+            ->withLastSeq(10)
+            ->build();
+
+        $message = AdvanceRunMessageBuilder::create('run-steer-completed')
+            ->withTurnNo(1)
+            ->withStepId('turn-2-step')
+            ->withIdempotencyKey('advance-steer-1')
+            ->build();
+
+        $result = $handler->handle($message, $state);
+
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(RunStatus::Running, $result->nextState->status,
+            'Steer on Completed run MUST transition to Running.',
+        );
+
+        // Should advance the turn
+        $this->assertSame(2, $result->nextState->turnNo, 'Steer should advance the turn.');
     }
 }

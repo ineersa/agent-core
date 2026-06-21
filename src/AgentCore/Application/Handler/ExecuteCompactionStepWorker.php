@@ -169,12 +169,20 @@ final readonly class ExecuteCompactionStepWorker
             $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
             $this->metrics?->recordLlmLatency($durationMs, true);
 
+            $rawMessage = $exception->getMessage();
+
             $this->logger->warning('compaction.request.failed', [
                 'duration_ms' => round($durationMs, 3),
                 'event_type' => 'compaction.request.failed',
                 'error_type' => $exception::class,
-                'error_message' => mb_substr($exception->getMessage(), 0, 500),
+                'error_message' => mb_substr($rawMessage, 0, 500),
             ]);
+
+            // Build a safe error array for the context_compaction_failed payload.
+            // The raw exception message may contain sensitive data (URLs, prompts);
+            // the sanitised user_message is surfaced in the TUI while the full
+            // detail is logged above.
+            $cappedMessage = mb_substr($rawMessage, 0, 200);
 
             return new CompactionStepResult(
                 runId: $message->runId(),
@@ -185,7 +193,8 @@ final readonly class ExecuteCompactionStepWorker
                 summaryText: null,
                 error: [
                     'type' => $exception::class,
-                    'message' => $exception->getMessage(),
+                    'message' => $cappedMessage,
+                    'user_message' => \sprintf('Compaction failed: The summarization model call could not be completed. %s', '' !== $cappedMessage ? '(Detail: '.$cappedMessage.')' : ''),
                 ],
                 retainedTailMessages: $message->retainedTailMessages,
                 messagesCompacted: $message->messagesCompacted,

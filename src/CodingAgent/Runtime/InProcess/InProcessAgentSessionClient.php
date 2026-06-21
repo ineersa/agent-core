@@ -250,6 +250,11 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         ));
     }
 
+    public function compact(string $runId, ?string $customInstructions = null): void
+    {
+        $this->runner->compact($runId, $customInstructions);
+    }
+
     /**
      * Handle an answer_tool_question command by writing the answer
      * to the ToolQuestionStore. The blocked tool worker polls the store

@@ -663,6 +663,77 @@ final class RuntimeEventMapperTest extends TestCase
         self::assertSame('stale_result_ignored', $result->payload['debug.raw_type']);
     }
 
+    // ── Compaction ───────────────────────────────────────────────────────────
+
+    public function testNormalizesCompactionFailedEmptySummary(): void
+    {
+        $event = $this->runEvent('context_compaction_failed', [
+            'reason' => 'empty_summary',
+            'message' => 'Compaction failed: summarization model returned an empty summary.',
+            'messages_replaced' => false,
+        ]);
+
+        $result = $this->mapper->toRuntimeEvent($event);
+
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::CompactionFailed->value, $result->type);
+        self::assertSame('empty_summary', $result->payload['reason']);
+        self::assertSame(
+            'Compaction failed: The model returned an empty summary.',
+            $result->payload['error'],
+        );
+    }
+
+    /**
+     * The translator reads the message from the compaction-failed payload.
+     * When CompactionStepResultHandler sets message to the classifier's
+     * user_message, the translator preserves it.  The handler now prefers
+     * user_message from LlmProviderErrorClassifier, so the raw provider
+     * exception text is never surfaced.
+     */
+    public function testNormalizesCompactionFailedModelErrorWithClassifierMessage(): void
+    {
+        // Simulates what CompactionStepResultHandler now stores in 'message':
+        // the sanitised user_message from LlmProviderErrorClassifier.
+        $event = $this->runEvent('context_compaction_failed', [
+            'reason' => 'model_error',
+            'message' => 'LLM provider rejected the request (HTTP 400): Request body is malformed...',
+            'messages_replaced' => false,
+        ]);
+
+        $result = $this->mapper->toRuntimeEvent($event);
+
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::CompactionFailed->value, $result->type);
+        self::assertSame('model_error', $result->payload['reason']);
+        self::assertStringStartsWith(
+            'Compaction failed:',
+            $result->payload['error'],
+        );
+        self::assertStringContainsString(
+            'LLM provider rejected',
+            $result->payload['error'],
+        );
+    }
+
+    public function testNormalizesCompactionFailedModelErrorWithoutMessage(): void
+    {
+        $event = $this->runEvent('context_compaction_failed', [
+            'reason' => 'model_error',
+            'messages_replaced' => false,
+        ]);
+
+        $result = $this->mapper->toRuntimeEvent($event);
+
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::CompactionFailed->value, $result->type);
+        self::assertSame('model_error', $result->payload['reason']);
+        self::assertStringContainsString(
+            'unexpected error',
+            $result->payload['error'],
+        );
+    }
+
     // ── Unknown event normalization ──────────────────────────────────────────
 
     public function testNormalizesUnknownEventToStatusUpdatedWithDebug(): void

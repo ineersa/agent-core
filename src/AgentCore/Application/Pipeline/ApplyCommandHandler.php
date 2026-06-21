@@ -14,6 +14,7 @@ use Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
+use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
@@ -95,6 +96,10 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
 
         if (CoreCommandKind::HumanResponse === $message->kind) {
             return $this->applyHumanResponseCommand($state, $message, $routedCommand->options);
+        }
+
+        if (CoreCommandKind::Compact === $message->kind) {
+            return $this->applyCompactCommand($state, $message);
         }
 
         $pendingCommand = new PendingCommand(
@@ -392,6 +397,114 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         );
     }
 
+    /**
+     * Apply a compact command.
+     *
+     * Active run (Running / Cancelling): enqueue as PendingCommand for
+     * mailbox drain at the next safe boundary (stop-boundary via
+     * LlmStepResultHandler or turn-start via AdvanceRunHandler).
+     * CommandMailboxPolicy will markApplied on drain.
+     *
+     * Non-active state (Completed / Failed / Cancelled / WaitingHuman /
+     * Queued): mark applied immediately and dispatch CompactRun via
+     * post-commit callback.  No enqueue so the command cannot be
+     * drained again on a future mailbox cycle — mirroring
+     * applyContinueCommand / applyHumanResponseCommand.
+     */
+    private function applyCompactCommand(RunState $state, ApplyCommand $message): HandlerResult
+    {
+        $runId = $message->runId();
+        $isActive = \in_array($state->status, [RunStatus::Running, RunStatus::Cancelling], true);
+
+        if (!$isActive) {
+            // Terminal/safe boundary: apply immediately.
+            $this->commandStore->markApplied($runId, $message->idempotencyKey());
+
+            $nextState = new RunState(
+                runId: $state->runId,
+                status: $state->status,
+                version: $state->version + 1,
+                turnNo: $state->turnNo,
+                lastSeq: $state->lastSeq + 1,
+                isStreaming: $state->isStreaming,
+                streamingMessage: $state->streamingMessage,
+                pendingToolCalls: $state->pendingToolCalls,
+                errorMessage: $state->errorMessage,
+                messages: $state->messages,
+                activeStepId: $state->activeStepId,
+                retryableFailure: $state->retryableFailure,
+            );
+
+            $appliedEvent = $this->eventFactory->event(
+                runId: $runId,
+                seq: $nextState->lastSeq,
+                turnNo: $nextState->turnNo,
+                type: RunEventTypeEnum::AgentCommandApplied->value,
+                payload: [
+                    'kind' => $message->kind,
+                    'idempotency_key' => $message->idempotencyKey(),
+                    'options' => [],
+                ],
+            );
+
+            $postCommit = [];
+            $compactCallback = $this->compactCallback($runId, $message->payload['custom_instructions'] ?? null);
+            if (null !== $compactCallback) {
+                $postCommit[] = $compactCallback;
+            }
+
+            return new HandlerResult(
+                nextState: $nextState,
+                events: [$appliedEvent],
+                postCommit: $postCommit,
+            );
+        }
+
+        // Active run: enqueue for next safe-boundary drain.
+        $pendingCommand = new PendingCommand(
+            runId: $runId,
+            kind: $message->kind,
+            idempotencyKey: $message->idempotencyKey(),
+            payload: $message->payload,
+        );
+
+        if (!$this->commandStore->enqueue($pendingCommand)) {
+            return new HandlerResult();
+        }
+
+        $nextState = new RunState(
+            runId: $state->runId,
+            status: $state->status,
+            version: $state->version + 1,
+            turnNo: $state->turnNo,
+            lastSeq: $state->lastSeq + 1,
+            isStreaming: $state->isStreaming,
+            streamingMessage: $state->streamingMessage,
+            pendingToolCalls: $state->pendingToolCalls,
+            errorMessage: $state->errorMessage,
+            messages: $state->messages,
+            activeStepId: $state->activeStepId,
+            retryableFailure: $state->retryableFailure,
+        );
+
+        $queuedEvent = $this->eventFactory->event(
+            runId: $runId,
+            seq: $nextState->lastSeq,
+            turnNo: $nextState->turnNo,
+            type: RunEventTypeEnum::AgentCommandQueued->value,
+            payload: [
+                'kind' => $message->kind,
+                'idempotency_key' => $message->idempotencyKey(),
+                'options' => [],
+            ],
+        );
+
+        return new HandlerResult(
+            nextState: $nextState,
+            events: [$queuedEvent],
+        );
+    }
+
     private function followUpAdvanceCallback(string $runId, string $prefix): ?callable
     {
         if (null === $this->commandBus) {
@@ -411,6 +524,31 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 ));
             } catch (ExceptionInterface $exception) {
                 throw new \RuntimeException('Failed to dispatch follow-up AdvanceRun command.', previous: $exception);
+            }
+        };
+    }
+
+    private function compactCallback(string $runId, ?string $customInstructions = null): ?callable
+    {
+        if (null === $this->commandBus) {
+            return null;
+        }
+
+        return function () use ($runId, $customInstructions): void {
+            $stepId = \sprintf('compact-%d', hrtime(true));
+
+            try {
+                $this->commandBus->dispatch(new CompactRun(
+                    runId: $runId,
+                    turnNo: 0,
+                    stepId: $stepId,
+                    attempt: 1,
+                    idempotencyKey: hash('sha256', \sprintf('%s|%s', $runId, $stepId)),
+                    trigger: 'manual',
+                    customInstructions: $customInstructions,
+                ));
+            } catch (ExceptionInterface $exception) {
+                throw new \RuntimeException('Failed to dispatch CompactRun command.', previous: $exception);
             }
         };
     }

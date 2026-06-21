@@ -74,8 +74,14 @@ final class CompactionBoundarySelector
      * Find a safe boundary at or before the given tentative boundary.
      *
      * Walks backward from tentativeBoundary, preferring cuts before user
-     * messages. Falls back to any safe cut point if no user boundary exists
-     * within range.
+     * messages within a bounded window. Once the window is exhausted,
+     * returns the best nearby safe boundary (closest to the target) rather
+     * than walking all the way back to the oldest user message.
+     *
+     * The user-preference window prevents the pathological case where a
+     * single-user-turn tool-heavy session collapses all the way to the
+     * oldest user message when many safe assistant/tool-group boundaries
+     * exist closer to the target cut point.
      *
      * @param list<AgentMessage> $messages
      * @param int                $tentativeBoundary Index of the first retained message
@@ -88,19 +94,38 @@ final class CompactionBoundarySelector
             return null;
         }
 
+        // Maximum distance from the tentative boundary within which we
+        // will prefer a user-role boundary over a safe assistant/tool-group
+        // boundary.  Beyond this window the best safe boundary (closest
+        // to the target) is accepted regardless of role.
+        $userPreferenceWindow = 20;
+
         $fallback = null;
 
         for ($candidate = $tentativeBoundary; $candidate >= 1; --$candidate) {
+            $distanceFromTarget = $tentativeBoundary - $candidate;
+
+            // Past the user-preference window and we have a viable
+            // fallback — stop walking.  Accepting the nearest safe
+            // boundary prevents useless collapse to the oldest user
+            // message when many safe assistant/tool-group boundaries
+            // exist near the target.
+            if ($distanceFromTarget > $userPreferenceWindow && null !== $fallback) {
+                return $fallback;
+            }
+
             if (!$this->isSafeCutPoint($messages, $candidate)) {
                 continue;
             }
 
-            if ('user' === $messages[$candidate]->role) {
-                return $candidate;
-            }
-
+            // Track the best (closest to target) safe boundary.
             if (null === $fallback) {
                 $fallback = $candidate;
+            }
+
+            // Prefer user boundaries only within the preference window.
+            if ('user' === $messages[$candidate]->role && $distanceFromTarget <= $userPreferenceWindow) {
+                return $candidate;
             }
         }
 

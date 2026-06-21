@@ -97,6 +97,14 @@ final class RuntimeEventPoller
                     $state->usage->accumulate($runtimeEvent);
                 }
 
+                // Clear the isCompacting flag when compaction completes or fails.
+                if (
+                    RuntimeEventTypeEnum::CompactionCompleted->value === $runtimeEvent->type
+                    || RuntimeEventTypeEnum::CompactionFailed->value === $runtimeEvent->type
+                ) {
+                    $state->isCompacting = false;
+                }
+
                 $state->activity = ActivityStateMachine::transition($state->activity, $runtimeEvent);
 
                 // Auto-dispatch a queued follow-up when cancellation completes.
