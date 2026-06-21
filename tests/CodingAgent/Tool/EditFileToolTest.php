@@ -1315,13 +1315,6 @@ DIFF;
     }
 
     /**
-     * Session 10 regression: a numbered hunk header with over-declared
-     * counts (e.g. @@ -2,7 +2,7 @@ when body has only 5 old / 5 new lines)
-     * must be repaired when the old-side block matches the current file,
-     * the body has trailing context, and the match is near the declared
-     * oldStart.  The tool should succeed instead of failing with
-     * E_PATCH_FORMAT.
-     *
      * Session-10 regression: a numbered hunk with inflated counts must
      * fail closed with E_PATCH_FORMAT and clear declared-vs-actual
      * messaging — never silently auto-repair (auto-repair can partial-apply
