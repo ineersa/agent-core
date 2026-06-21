@@ -480,9 +480,8 @@ final class RuntimeEventTranslator
         // Wording mirrors CompactRunHandler::failureReasonToMessage()
         // for prep-not-ready structural failures.
         //
-        // model_error surfaces the producer error message (e.g. HTTP status)
-        // rather than the raw reason code.  The producer already strips
-        // prompts/tool output/env keys; the message is safe for display.
+        // model_error prefers the sanitised user_message from the error
+        // classifier (produced by CompactionStepResultHandler).
         $userMessage = match ($reason) {
             'too_few_messages' => 'Compaction failed: there are not enough messages to compact.',
             'below_keep_recent_tokens' => 'Compaction failed: there is no older context outside the retained tail to summarize.',
@@ -586,26 +585,33 @@ final class RuntimeEventTranslator
     /**
      * Build a user-visible error message for compaction model_error results.
      *
-     * Prefers the producer error message (e.g. HTTP status line) when
-     * available and non-empty.  The producer already strips prompts,
-     * tool output, and environment values; the raw message is safe for
-     * display.  Falls back to a generic message when the error detail is
-     * missing or empty.
+     * Prefers the sanitised user_message from the error classifier (stored
+     * by CompactionStepResultHandler) when present and non-empty.  Falls
+     * back to the raw producer message (capped by the worker), then to a
+     * generic fallback.
      *
      * @param array<string, mixed> $p The raw context_compaction_failed payload
      */
     private function compactionModelErrorMessage(array $p): string
     {
+        // Prefer sanitised user_message from the error classifier.
+        // CompactionStepResultHandler stores this in the 'message' key
+        // (not in a separate 'user_message' key — the compaction payload
+        // is flat, unlike the LlmStepFailed->error array shape).
+        // The value in 'message' is already the classifier's user_message
+        // when available, or a capped raw message with generic wrapper when
+        // the classifier was not run (worker catch path).
         $detail = \is_string($p['message'] ?? null) ? trim($p['message']) : '';
 
         if ('' !== $detail) {
-            // If the producer message already starts with "Compaction failed:"
-            // (e.g. from CompactionStepResultHandler's empty_summary path),
-            // use it verbatim.  Otherwise prefix it.
+            // The message is already a full display string from
+            // CompactionStepResultHandler (classifier user_message or
+            // worker fallback).  Use it verbatim.
             if (str_starts_with($detail, 'Compaction failed')) {
                 return $detail;
             }
 
+            // Bare diagnostic — prefix for display consistency.
             return \sprintf('Compaction failed: %s', $detail);
         }
 

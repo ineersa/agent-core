@@ -684,11 +684,20 @@ final class RuntimeEventMapperTest extends TestCase
         );
     }
 
-    public function testNormalizesCompactionFailedModelErrorWithProducerMessage(): void
+    /**
+     * The translator reads the message from the compaction-failed payload.
+     * When CompactionStepResultHandler sets message to the classifier's
+     * user_message, the translator preserves it.  The handler now prefers
+     * user_message from LlmProviderErrorClassifier, so the raw provider
+     * exception text is never surfaced.
+     */
+    public function testNormalizesCompactionFailedModelErrorWithClassifierMessage(): void
     {
+        // Simulates what CompactionStepResultHandler now stores in 'message':
+        // the sanitised user_message from LlmProviderErrorClassifier.
         $event = $this->runEvent('context_compaction_failed', [
             'reason' => 'model_error',
-            'message' => 'HTTP/2 400 returned for "https://example.com/v1/chat/completions".',
+            'message' => 'LLM provider rejected the request (HTTP 400): Request body is malformed...',
             'messages_replaced' => false,
         ]);
 
@@ -697,12 +706,12 @@ final class RuntimeEventMapperTest extends TestCase
         self::assertNotNull($result);
         self::assertSame(RuntimeEventTypeEnum::CompactionFailed->value, $result->type);
         self::assertSame('model_error', $result->payload['reason']);
-        self::assertStringContainsString(
-            'HTTP/2 400',
-            $result->payload['error'],
-        );
         self::assertStringStartsWith(
             'Compaction failed:',
+            $result->payload['error'],
+        );
+        self::assertStringContainsString(
+            'LLM provider rejected',
             $result->payload['error'],
         );
     }

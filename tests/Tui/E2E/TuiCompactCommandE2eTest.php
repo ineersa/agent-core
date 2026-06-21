@@ -423,64 +423,6 @@ final class TuiCompactCommandE2eTest extends TestCase
         $dir = TestDirectoryIsolation::createProjectTempDir('tui-e2e-compact');
         @\mkdir($dir.'/.hatfield', 0o777, true);
 
-        $settings = [
-            'ai' => [
-                'default_model' => 'llama_cpp_test/test',
-                'default_reasoning' => 'off',
-                'providers' => [
-                    'llama_cpp_test' => [
-                        'type' => 'generic',
-                        'enabled' => true,
-                        'base_url' => 'http://192.168.2.38:9052/v1',
-                        'api' => 'openai-completions',
-                        'api_key' => 'dummy',
-                        'completions_path' => '/chat/completions',
-                        'supports_completions' => true,
-                        'supports_embeddings' => false,
-                        'supports_thinking_levels' => true,
-                        'models' => [
-                            'test' => [
-                                'name' => 'test',
-                                'context_window' => 32768,
-                                'max_tokens' => 32768,
-                                'input' => ['text', 'image'],
-                                'tool_calling' => true,
-                                'reasoning' => true,
-                                'thinking_level_map' => [
-                                    'off' => '0',
-                                    'minimal' => '0',
-                                    'low' => '0',
-                                    'medium' => '0',
-                                    'high' => '0',
-                                    'xhigh' => '0',
-                                ],
-                                'cost' => ['input' => 0, 'output' => 0],
-                            ],
-                        ],
-                    ],
-                ],
-            ],
-            'extensions' => [
-                'enabled' => [
-                    'Ineersa\\CodingAgent\\Extension\\Builtin\\SafeGuard\\SafeGuardExtension',
-                ],
-                'settings' => [
-                    'safe_guard' => [
-                        'tool_names' => [
-                            'bash' => 'bash',
-                            'write' => 'write',
-                            'edit' => 'edit',
-                            'read' => 'read',
-                        ],
-                        'allow_command_patterns' => ['^ls\b', '^printf\b', '^echo\b'],
-                        'allow_write_outside_cwd' => [],
-                        'protected_read_patterns' => [],
-                        'dangerous_command_patterns' => [],
-                    ],
-                ],
-            ],
-        ];
-
         $settings = $this->buildBaseSettings($extraSettings);
 
         $yaml = \Symfony\Component\Yaml\Yaml::dump($settings, 6, 4);

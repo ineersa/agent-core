@@ -80,17 +80,23 @@ final readonly class CompactionStepResultHandler implements RunMessageHandler
         }
 
         // Error from model invocation → emit failure, preserve messages.
+        // Prefer the sanitised user_message from the error classifier
+        // (LlmPlatformAdapter::errorResult() → LlmProviderErrorClassifier)
+        // to avoid surfacing raw provider exception text in the TUI.
+        // The raw message is still stored for diagnostics/logging.
         if (null !== $message->error) {
             $reason = 'model_error';
-            $errorMessage = \is_string($message->error['message'] ?? null)
-                ? $message->error['message']
-                : 'Summarization model call failed.';
+            $userMessage = \is_string($message->error['user_message'] ?? null) && '' !== $message->error['user_message']
+                ? $message->error['user_message']
+                : (\is_string($message->error['message'] ?? null) && '' !== $message->error['message']
+                    ? $message->error['message']
+                    : 'Summarization model call failed.');
 
             $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, [[
                 'type' => RunEventTypeEnum::ContextCompactionFailed->value,
                 'payload' => [
                     'reason' => $reason,
-                    'message' => $errorMessage,
+                    'message' => $userMessage,
                     'messages_replaced' => false,
                     'step_id' => $message->stepId(),
                     'model' => $message->model,
