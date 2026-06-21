@@ -172,7 +172,8 @@ final class AgentDefinitionParser
         $propertyPath = $violation->getPropertyPath();
         $message = $violation->getMessage();
 
-        throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "%s": %s', $filePath, $propertyPath ?: 'a field', $message));
+        $path = '' !== $propertyPath ? $propertyPath : 'a field';
+        throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "%s": %s', $filePath, $path, $message));
     }
 
     /**
@@ -184,8 +185,9 @@ final class AgentDefinitionParser
      */
     private function mapToDefinition(AgentFrontmatterDTO $dto, string $body, string $filePath): AgentDefinitionDTO
     {
-        $mcpMode = McpAgentModeEnum::from($dto->mcp?->mode ?? 'none');
-        $mcpTools = array_values($dto->mcp?->tools ?? []);
+        $mcp = $dto->mcp;
+        $mcpMode = null === $mcp ? McpAgentModeEnum::None : McpAgentModeEnum::from($mcp->mode ?? 'none');
+        $mcpTools = null === $mcp ? [] : array_values($mcp->tools);
 
         return new AgentDefinitionDTO(
             name: trim($dto->name),

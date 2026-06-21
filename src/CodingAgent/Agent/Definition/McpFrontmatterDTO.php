@@ -16,6 +16,9 @@ use Symfony\Component\Validator\Context\ExecutionContextInterface;
  */
 final class McpFrontmatterDTO
 {
+    /**
+     * @param list<string> $tools
+     */
     public function __construct(
         #[Assert\Choice(
             choices: ['none', 'specific', 'all'],

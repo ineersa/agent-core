@@ -21,6 +21,10 @@ use Symfony\Component\Validator\Context\ExecutionContextInterface;
  */
 final class AgentFrontmatterDTO
 {
+    /**
+     * @param list<string> $tools
+     * @param list<string> $skills
+     */
     public function __construct(
         // --- Required fields ---
 
