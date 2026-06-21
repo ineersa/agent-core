@@ -19,7 +19,7 @@ use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 
 /**
  * @covers \Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient::start
@@ -30,19 +30,41 @@ use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
  * start() writes nothing and resolveInitialModel falls through to the
  * global default.
  *
- * Uses {@see PerMethodIsolatedKernelTestCase} (per-method kernel boot)
- * because we override AgentRunnerInterface via Container::set(), which
- * mutates the live container.
+ * Uses {@see IsolatedKernelTestCase} (per-class kernel boot, the
+ * project-preferred base for DB tests).  The spy runner is re-installed
+ * in {@see setUp()} each test method because the container is shared
+ * across methods with per-class boot.  No test overrides the container's
+ * ModelResolver — the start-time default is verified via the container's
+ * own resolver against manually-built resolvers with different defaults.
  */
-final class StartRunPersistsSessionModelTest extends PerMethodIsolatedKernelTestCase
+final class StartRunPersistsSessionModelTest extends IsolatedKernelTestCase
 {
     /** @var FakeNoopAgentRunner */
     private FakeNoopAgentRunner $spyRunner;
 
-    protected function afterKernelBoot(): void
+    public static function setUpBeforeClass(): void
     {
-        $this->spyRunner = new FakeNoopAgentRunner();
-        self::getContainer()->set(AgentRunnerInterface::class, $this->spyRunner);
+        parent::setUpBeforeClass();
+
+        // Replace AgentRunnerInterface with a spy BEFORE any test
+        // accesses it.  With IsolatedKernelTestCase (per-class boot,
+        // shared container), services can only be replaced before
+        // first access — after that TestContainer rejects replacements.
+        // setUpBeforeClass runs before any test method, so the spy is
+        // in place before the first client() resolution.
+        self::getContainer()->set(AgentRunnerInterface::class, new FakeNoopAgentRunner());
+    }
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // Fetch the spy runner installed in setUpBeforeClass.  The
+        // container is shared across methods, so this returns the
+        // same spy instance each time.  lastStartInput is overwritten
+        // by each start() call, so no per-method re-install is needed.
+        /** @var FakeNoopAgentRunner */
+        $this->spyRunner = self::getContainer()->get(AgentRunnerInterface::class);
     }
 
     // ── Helpers ───────────────────────────────────────────────────
@@ -293,29 +315,20 @@ final class StartRunPersistsSessionModelTest extends PerMethodIsolatedKernelTest
     // (simulating resume with a different global default) must return
     // the PERSISTED value — not the new global default.
     //
-    // This test overrides the container's ModelResolver with a
-    // catalog-bearing instance so that start() can resolve the effective
-    // model/reasoning (with the default test container, AppConfig.catalog
-    // is null, so nothing would be resolved).  The override is scoped
-    // to this method because PerMethodIsolatedKernelTestCase boots a
-    // fresh kernel per test, and Container::set() applies before the
-    // first client resolution.
+    // Instead of overriding the container's ModelResolver (which fails
+    // with per-class kernel boot because the resolver is already
+    // initialized by earlier tests), this test uses the container's
+    // natural resolver to discover the resolved default, then builds
+    // a second resolver with intentionally different defaults to prove
+    // the persisted start-time value wins.
 
     public function testStartWithNoExplicitModelLocksInResolvedDefaultForResume(): void
     {
         $cwd = $this->isolatedCwd();
-
-        // Override ModelResolver so the container's client sees a real catalog.
-        $startAppConfig = $this->makeAppConfig($cwd);
-        self::getContainer()->set(ModelResolver::class, new ModelResolver(
-            $startAppConfig,
-            $this->sessionMetaStore(),
-        ));
-
         $sessionId = $this->createSession($cwd);
 
-        // Start WITH a catalog but WITHOUT an explicit model — the resolved
-        // default (deepseek/deepseek-v4-pro) must be locked in.
+        // Start WITHOUT an explicit model — the resolved default
+        // (whatever the container's catalog provides) must be locked in.
         $this->client()->start(new StartRunRequest(
             prompt: 'hi',
             runId: $sessionId,
@@ -325,23 +338,35 @@ final class StartRunPersistsSessionModelTest extends PerMethodIsolatedKernelTest
         self::assertNotNull($this->spyRunner->lastStartInput,
             'Runner must have been called');
 
-        // Assert the resolved default WAS persisted.
+        // Use the container's natural ModelResolver to find out what
+        // default was resolved — the same resolution path start() used.
+        /** @var ModelResolver $containerResolver */
+        $containerResolver = self::getContainer()->get(ModelResolver::class);
+        $expectedRef = $containerResolver->resolveInitialModel(null, $sessionId);
+        self::assertNotNull($expectedRef,
+            'Container resolver must resolve a default model when a catalog is available');
+        $expectedReasoning = $containerResolver->resolveInitialReasoning(null, $sessionId);
+        self::assertNotEmpty($expectedReasoning);
+
+        // Assert the resolved defaults WERE persisted.
         $meta = $this->sessionMetaStore()->readSessionMetadata($sessionId);
-        self::assertSame('deepseek/deepseek-v4-pro', $meta['model'] ?? null,
+        self::assertSame($expectedRef->toString(), $meta['model'] ?? null,
             'resolved global-default model must be persisted even without --model flag');
-        self::assertSame('deepseek', $meta['model_provider'] ?? null);
-        self::assertSame('deepseek-v4-pro', $meta['model_name'] ?? null);
-        self::assertSame('medium', $meta['reasoning'] ?? null,
+        self::assertSame($expectedRef->providerId, $meta['model_provider'] ?? null);
+        self::assertSame($expectedRef->modelName, $meta['model_name'] ?? null);
+        self::assertSame($expectedReasoning, $meta['reasoning'] ?? null,
             'resolved default reasoning must be persisted');
 
         // Now simulate a global-default change: build a resolver whose
-        // catalog default is llama_cpp/flash (DIFFERENT from the persisted
-        // deepseek/deepseek-v4-pro).  The resolver shares the same
-        // SessionMetadataStore, so it reads the persisted metadata.
+        // catalog default is DIFFERENT from the persisted value.
+        $differentModel = $expectedRef->toString() === 'llama_cpp/flash'
+            ? 'deepseek/deepseek-v4-pro'
+            : 'llama_cpp/flash';
+        $differentReasoning = $expectedReasoning === 'medium' ? 'high' : 'medium';
         $changedDefaultResolver = $this->buildModelResolverWithDefault(
             $cwd,
-            'llama_cpp/flash',
-            'high',
+            $differentModel,
+            $differentReasoning,
         );
 
         // resolveInitialModel must return the PERSISTED start-time default,
@@ -349,11 +374,11 @@ final class StartRunPersistsSessionModelTest extends PerMethodIsolatedKernelTest
         // the new default would silently take over.
         $resolved = $changedDefaultResolver->resolveInitialModel(null, $sessionId);
         self::assertNotNull($resolved);
-        self::assertSame('deepseek/deepseek-v4-pro', $resolved->toString(),
+        self::assertSame($expectedRef->toString(), $resolved->toString(),
             'Resolved model must come from session metadata (start-time default), not new global default');
 
         $resolvedReasoning = $changedDefaultResolver->resolveInitialReasoning(null, $sessionId);
-        self::assertSame('medium', $resolvedReasoning,
+        self::assertSame($expectedReasoning, $resolvedReasoning,
             'Resolved reasoning must come from session metadata, not new global default');
     }
 
