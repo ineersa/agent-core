@@ -55,6 +55,25 @@ final class LlmProviderErrorClassifier
     ];
 
     /**
+     * Context-overflow indicator patterns found in provider error messages
+     * when the request exceeds the model's context window.
+     */
+    private const array CONTEXT_OVERFLOW_PATTERNS = [
+        'context length',
+        'maximum context',
+        'context window',
+        'token limit',
+        'too many tokens',
+        'reduce the length',
+        'input length',
+        'context_length_exceeded',
+        "this model's maximum context",
+        'maximum context length',
+        'max context length',
+        'context token limit',
+    ];
+
+    /**
      * Classify an LLM provider error and return an enhanced error array.
      *
      * The input is the error array produced by {@see LlmPlatformAdapter::errorResult()}
@@ -102,6 +121,35 @@ final class LlmProviderErrorClassifier
         unset($result['response_body_preview']);
 
         return $result;
+    }
+
+    /**
+     * Determine whether a classified error indicates a context-overflow condition
+     * (the prompt exceeds the model's context window).
+     *
+     * Called after {@see classify()} so the error array includes the
+     * classification fields (error_category, user_message, etc.).
+     *
+     * @param array<string, mixed> $classifiedError
+     */
+    public function isContextOverflow(array $classifiedError): bool
+    {
+        $category = $classifiedError['error_category'] ?? self::CATEGORY_UNKNOWN;
+
+        // Context overflow typically surfaces as a bad-request (400)
+        // or a server error (500) from the provider.  Auth, rate-limit,
+        // quota/billing, timeout, and network errors are not overflow.
+        if (!\in_array($category, [self::CATEGORY_BAD_REQUEST, self::CATEGORY_SERVER, self::CATEGORY_PROVIDER], true)) {
+            return false;
+        }
+
+        // Search the raw message and any provider-supplied response text.
+        $message = (string) ($classifiedError['message'] ?? '');
+        $responseMessage = (string) ($classifiedError['response_error_message'] ?? '');
+        $responseBody = (string) ($classifiedError['response_body_preview'] ?? '');
+        $allText = implode(' ', array_filter([$message, $responseMessage, $responseBody], static fn (string $v): bool => '' !== $v));
+
+        return self::matchesAny($allText, self::CONTEXT_OVERFLOW_PATTERNS);
     }
 
     /**
