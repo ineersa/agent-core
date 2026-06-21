@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\PromptTemplate\Tests;
 
+use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateFrontmatterParser;
 use PHPUnit\Framework\TestCase;
 
@@ -13,7 +14,7 @@ final class PromptTemplateFrontmatterParserTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->parser = new PromptTemplateFrontmatterParser();
+        $this->parser = new PromptTemplateFrontmatterParser(new MarkdownFrontmatterExtractor());
     }
 
     private function parse(string $raw, string $filePath = '/test/template.md'): array

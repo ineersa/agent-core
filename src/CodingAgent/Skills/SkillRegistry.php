@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Skills;
 
+use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -26,6 +27,7 @@ final class SkillRegistry
      */
     public function __construct(
         array $skills,
+        private readonly MarkdownFrontmatterExtractor $extractor,
         array $collisions = [],
         private ?LoggerInterface $logger = null,
     ) {
@@ -92,6 +94,8 @@ final class SkillRegistry
             return '';
         }
 
-        return SkillDiscovery::stripFrontmatter($content);
+        $extraction = $this->extractor->extract($content);
+
+        return $extraction['body'];
     }
 }

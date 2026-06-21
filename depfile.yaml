@@ -220,6 +220,11 @@ parameters:
         - type: classNameRegex
           value: '#^Symfony\\\\Component\\\\Serializer\\\\#i'
 
+    - name: SymfonyValidator
+      collectors:
+        - type: classNameRegex
+          value: '#^Symfony\\\\Component\\\\Validator\\\\#i'
+
     - name: SymfonyYaml
       collectors:
         - type: classNameRegex
@@ -249,6 +254,16 @@ parameters:
       collectors:
         - type: directory
           value: src/CodingAgent/SystemPrompt/.*
+
+    - name: AppAgent
+      collectors:
+        - type: directory
+          value: src/CodingAgent/Agent/.*
+
+    - name: AppMarkdown
+      collectors:
+        - type: directory
+          value: src/CodingAgent/Markdown/.*
 
     - name: AppSkills
       collectors:
@@ -456,6 +471,7 @@ parameters:
     AppPromptTemplate:
       - AppConfig
       - AppRuntimeContract
+      - AppMarkdown
       - SymfonyYaml
 
     AppConfig:
@@ -528,8 +544,15 @@ parameters:
       - SymfonyAiPlatform
       - SymfonyEventDispatcher
 
+    AppAgent:
+      - AppMarkdown
+      - SymfonyYaml
+      - SymfonySerializer
+      - SymfonyValidator
+
     AppSkills:
       - AppConfig
+      - AppMarkdown
       - SymfonyYaml
 
     AppSystemPrompt:
@@ -592,5 +615,6 @@ parameters:
     SymfonyFinder: ~
     SymfonyScheduler: ~
     SymfonySerializer: ~
+    SymfonyValidator: ~
     SymfonyYaml: ~
     ForbiddenHttp: ~
