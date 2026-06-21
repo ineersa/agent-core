@@ -339,7 +339,7 @@ HTML;
                 $html .= '  <div class="turn-label">Turn '.$turnNo.'</div>'."\n";
             }
 
-            $html .= $this->renderEvent($type, $payload, $toolNames);
+            $html .= $this->renderEvent($event, $toolNames);
         }
 
         if ($currentTurn >= 0) {
@@ -352,14 +352,23 @@ HTML;
     /**
      * Render a single event into its HTML representation.
      *
-     * @param array<string, mixed>  $payload
+     * Every event produces an event card with metadata and the full event
+     * JSON in an escaped <pre> block (mandatory per task spec).  Known
+     * event types additionally receive a human-friendly readable summary.
+     *
+     * @param array<string, mixed>  $event
      * @param array<string, string> $toolNames tool_call_id → tool_name map
      */
-    private function renderEvent(string $type, array $payload, array $toolNames = []): string
+    private function renderEvent(array $event, array $toolNames = []): string
     {
-        return match ($type) {
+        $type = self::strFromArray($event, 'type');
+        $seq = self::intFromArray($event, 'seq');
+        $ts = self::strFromArray($event, 'ts');
+        $payload = \is_array($event['payload'] ?? null) ? $event['payload'] : [];
+
+        // Friendly readable summary (may be empty for unknown / turn-advanced events).
+        $readable = match ($type) {
             'run_started' => $this->renderRunStarted($payload),
-            'turn_advanced' => '',
             'llm_step_completed' => $this->renderAssistantMessage($payload),
             'llm_step_failed' => $this->renderAssistantFailed($payload),
             'llm_step_aborted' => $this->renderTurnCancelled($payload),
@@ -368,6 +377,42 @@ HTML;
             'agent_end' => $this->renderAgentEnd($payload),
             default => '',
         };
+
+        // Full event JSON (escaped) — mandatory per task spec.
+        $rawJson = json_encode($event, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES);
+        if (!\is_string($rawJson)) {
+            $rawJson = json_encode($event, \JSON_UNESCAPED_SLASHES);
+            if (!\is_string($rawJson)) {
+                $rawJson = '{}';
+            }
+        }
+        $escapedJson = self::escapeHtml($rawJson);
+
+        $html = '  <div class="event event-'.self::escapeHtml($type).'">'."\n";
+
+        // Metadata header.
+        $html .= '    <div class="event-meta">';
+        $html .= '<span class="event-type">'.self::escapeHtml($type).'</span>';
+        $html .= ' <span class="event-seq">seq '.$seq.'</span>';
+        if ('' !== $ts) {
+            $html .= ' <span class="event-ts">'.self::escapeHtml($ts).'</span>';
+        }
+        $html .= "</div>\n";
+
+        // Friendly readable content.
+        if ('' !== $readable) {
+            $html .= $readable;
+        }
+
+        // Full event JSON in collapsible details block.
+        $html .= '    <details class="event-raw">'."\n";
+        $html .= '      <summary>Raw event</summary>'."\n";
+        $html .= '      <pre class="event-json">'.$escapedJson."</pre>\n";
+        $html .= "    </details>\n";
+
+        $html .= "  </div>\n";
+
+        return $html;
     }
 
     /**
@@ -678,6 +723,73 @@ body {
 }
 .tool-error .tool-output {
     color: #ff6b6b;
+}
+/* Event card */
+.event {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0;
+    margin-bottom: 0.5rem;
+    overflow: hidden;
+}
+.event:last-child { margin-bottom: 0; }
+.event-meta {
+    background: var(--surface-alt);
+    padding: 0.25rem 0.75rem;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+.event-type {
+    font-weight: 600;
+    color: var(--accent);
+    font-family: var(--mono);
+}
+.event-seq {
+    color: var(--text-muted);
+}
+.event-ts {
+    color: var(--text-muted);
+    margin-left: auto;
+}
+/* Readable summary inside event card — inherit existing message/tool styles */
+.event .message,
+.event .tool-call,
+.event .tool-result {
+    border: none;
+    border-bottom: 1px solid var(--border);
+    background: transparent;
+}
+.event .message:last-child,
+.event .tool-call:last-child,
+.event .tool-result:last-child {
+    border-bottom: none;
+}
+.event-raw summary {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0.25rem 0.75rem;
+}
+.event-raw summary:hover {
+    color: var(--accent-dim);
+}
+.event-json {
+    margin: 0 0.75rem 0.5rem;
+    padding: 0.75rem;
+    background: var(--code-bg);
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    white-space: pre-wrap;
+    overflow-x: auto;
+    max-height: 500px;
+    overflow-y: auto;
+    color: var(--text-muted);
+    line-height: 1.4;
 }
 .export-footer {
     margin-top: 3rem;

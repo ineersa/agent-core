@@ -363,6 +363,144 @@ final class ExportCommandHandlerTest extends TestCase
         $this->assertStringContainsString('List files', $html);
     }
 
+    // ── Complete event representation ─────────────────────────────────────
+
+    #[Test]
+    public function htmlIncludesRawEventJsonForEveryEvent(): void
+    {
+        $this->setupEventsFile('test-session', [
+            $this->makeEvent(1, 1, 'run_started', [
+                'step_id' => 's1',
+                'user_messages' => [['role' => 'user', 'content' => 'Hello']],
+            ]),
+            $this->makeEvent(2, 1, 'turn_advanced', ['turn_no' => 1]),
+            $this->makeEvent(3, 1, 'llm_step_completed', [
+                'step_id' => 's2',
+                'text' => 'Response.',
+                'stop_reason' => 'end_turn',
+            ]),
+            $this->makeEvent(4, 1, 'agent_end', ['reason' => 'completed']),
+        ]);
+
+        $path = $this->projectDir.'/raw-json-events.html';
+        $handler = $this->createHandler('test-session');
+        $handler->handle(new SlashCommand('export', $path, '/export '.$path));
+
+        $html = file_get_contents($path);
+
+        // Every event must produce a "Raw event" details block.
+        $rawEventCount = substr_count($html, '<summary>Raw event</summary>');
+        $this->assertSame(4, $rawEventCount, 'Every JSONL line must produce a Raw event block');
+
+        // Each event card must include the type in metadata and the full event JSON.
+        $this->assertStringContainsString('<span class="event-type">run_started</span>', $html);
+        $this->assertStringContainsString('<span class="event-type">turn_advanced</span>', $html);
+        $this->assertStringContainsString('<span class="event-type">llm_step_completed</span>', $html);
+        $this->assertStringContainsString('<span class="event-type">agent_end</span>', $html);
+
+        // Full JSON must be present in escaped <pre> blocks.
+        $this->assertStringContainsString('<pre class="event-json">', $html);
+    }
+
+    #[Test]
+    public function htmlIncludesUserMessagesContent(): void
+    {
+        $this->setupEventsFile('test-session', [
+            $this->makeEvent(1, 1, 'run_started', [
+                'step_id' => 's1',
+                'user_messages' => [
+                    ['role' => 'user', 'content' => 'What is the capital of France?'],
+                ],
+            ]),
+            $this->makeEvent(2, 1, 'llm_step_completed', [
+                'step_id' => 's2',
+                'text' => 'The capital of France is Paris.',
+                'stop_reason' => 'end_turn',
+            ]),
+        ]);
+
+        $path = $this->projectDir.'/user-messages-content.html';
+        $handler = $this->createHandler('test-session');
+        $handler->handle(new SlashCommand('export', $path, '/export '.$path));
+
+        $html = file_get_contents($path);
+
+        // User message content must appear in both the friendly rendering
+        // and the raw JSON block.
+        $this->assertStringContainsString('What is the capital of France?', $html);
+        // Assistant text must appear.
+        $this->assertStringContainsString('The capital of France is Paris.', $html);
+    }
+
+    #[Test]
+    public function htmlIncludesSystemInstructionContent(): void
+    {
+        $instructionText = '## AGENTS.md instructions
+
+You are a helpful assistant.
+
+### Skills registry
+- testing: Run tests
+- castor: Task runner';
+
+        $this->setupEventsFile('test-session', [
+            $this->makeEvent(1, 1, 'run_started', [
+                'step_id' => 's1',
+                'user_messages' => [
+                    ['role' => 'system', 'content' => $instructionText],
+                    ['role' => 'user', 'content' => 'Hello'],
+                ],
+            ]),
+        ]);
+
+        $path = $this->projectDir.'/instruction-content.html';
+        $handler = $this->createHandler('test-session');
+        $handler->handle(new SlashCommand('export', $path, '/export '.$path));
+
+        $html = file_get_contents($path);
+
+        // Instruction/AGENTS.md/skills registry content must appear in the HTML.
+        // It appears in the friendly rendering (run_started extracts all user_messages
+        // regardless of role) and in the full JSON block.
+        $this->assertStringContainsString('AGENTS.md instructions', $html);
+        $this->assertStringContainsString('Skills registry', $html);
+        $this->assertStringContainsString('You are a helpful assistant.', $html);
+    }
+
+    #[Test]
+    public function htmlIncludesNonStandardEventAsRawJson(): void
+    {
+        // Events with types not explicitly handled by the friendly renderer
+        // must still appear as event cards with full JSON.
+        $this->setupEventsFile('test-session', [
+            $this->makeEvent(1, 1, 'context_compacted', [
+                'compacted_entries' => 5,
+                'summary' => 'Previous conversation compacted.',
+            ]),
+            $this->makeEvent(2, 1, 'model_notification', [
+                'message' => 'Rate limit approaching.',
+            ]),
+        ]);
+
+        $path = $this->projectDir.'/non-standard-events.html';
+        $handler = $this->createHandler('test-session');
+        $handler->handle(new SlashCommand('export', $path, '/export '.$path));
+
+        $html = file_get_contents($path);
+
+        // Every event must get a Raw event block.
+        $rawEventCount = substr_count($html, '<summary>Raw event</summary>');
+        $this->assertSame(2, $rawEventCount, 'Even non-standard events must produce Raw event blocks');
+
+        // Event cards with the correct type in metadata.
+        $this->assertStringContainsString('<span class="event-type">context_compacted</span>', $html);
+        $this->assertStringContainsString('<span class="event-type">model_notification</span>', $html);
+
+        // The full JSON for the non-standard event must be present (escaped).
+        $this->assertStringContainsString('Previous conversation compacted.', $html);
+        $this->assertStringContainsString('Rate limit approaching.', $html);
+    }
+
     // ── Thinking block rendering ───────────────────────────────────────────
 
     #[Test]
