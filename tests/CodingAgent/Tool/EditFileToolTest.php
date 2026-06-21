@@ -134,6 +134,27 @@ final class EditFileToolTest extends TestCase
 
         // Guidelines must NOT include "file is small" full-read permission
         $this->assertStringNotContainsString('file is small', strtolower($guidelinesText));
+
+        // Quick path guideline must be first and contain the winning path
+        $this->assertStringContainsString('Quick path', $guidelinesText);
+        $this->assertStringContainsString('→', $guidelinesText);
+        $this->assertStringContainsString('-current line', $guidelinesText);
+        $this->assertStringContainsString('+desired line', $guidelinesText);
+
+        // Quick path must appear before the stale-hunk detailed guidance
+        $quickIdx = null;
+        $staleIdx = null;
+        foreach ($definition->promptGuidelines as $idx => $guideline) {
+            if (str_starts_with($guideline, 'Quick path')) {
+                $quickIdx = $idx;
+            }
+            if (str_contains($guideline, 'If an edit fails with a stale-hunk error')) {
+                $staleIdx = $idx;
+            }
+        }
+        $this->assertNotNull($quickIdx, 'Quick path guideline must exist');
+        $this->assertNotNull($staleIdx, 'Stale-hunk guideline must exist');
+        $this->assertLessThan($staleIdx, $quickIdx, 'Quick path must appear before stale-hunk error guidance');
     }
 
     public function testDefinitionHasRetryGuidelines(): void
