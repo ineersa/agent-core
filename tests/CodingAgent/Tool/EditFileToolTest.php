@@ -1684,6 +1684,9 @@ DIFF;
             $this->assertStringContainsString('offset', strtolower($hint));
             // Hint must NOT include "file is small" full-read permission
             $this->assertStringNotContainsString('file is small', strtolower($hint));
+            // Hint must diagnose changed-line-as-context mistake (session-15 regression)
+            $this->assertStringContainsString('changed line as context', strtolower($hint));
+            $this->assertStringContainsString('context lines must match', strtolower($hint));
 
             $this->assertTrue($e->retryable());
 
