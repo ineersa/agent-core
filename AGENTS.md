@@ -205,6 +205,7 @@ After compaction, the `task-workflow` skill documents next steps. Use `task_list
 
 ## Docs map
 
+- `docs/agents.md` — agent definitions, discovery, catalog, built-in agents
 - `docs/settings.md` — Hatfield settings
 - `docs/compaction.md` — context compaction guide, `/compact` command, settings, events, hooks, validation
 - `docs/session-storage.md` — sessions, replay, locking, resume/fork design

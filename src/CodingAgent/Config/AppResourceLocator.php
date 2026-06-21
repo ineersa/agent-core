@@ -40,6 +40,14 @@ final readonly class AppResourceLocator
     }
 
     /**
+     * Absolute path to the built-in agents definitions directory.
+     */
+    public function getBuiltinAgentsPath(): string
+    {
+        return $this->appRoot.'/config/agents';
+    }
+
+    /**
      * The application installation root directory.
      */
     public function getAppRoot(): string

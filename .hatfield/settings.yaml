@@ -197,6 +197,19 @@ logging:
       max_files: 2
 
 # ---------------------------------------------------------------------------
+# Agent definitions
+# ---------------------------------------------------------------------------
+#
+# Uncomment and adjust to add custom agent definition paths or disable
+# agent discovery entirely.
+#
+# agents:
+#     enabled: true
+#     paths:
+#         - ~/shared/agents/custom-reviewer.md
+#         - .hatfield/team-agents
+
+# ---------------------------------------------------------------------------
 # Compaction
 # ---------------------------------------------------------------------------
 #
