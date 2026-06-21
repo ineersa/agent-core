@@ -18,6 +18,9 @@ namespace Ineersa\CodingAgent\Compaction;
  */
 final class CompactionHookResultDTO
 {
+    /**
+     * @param array<string, mixed> $metadata JSON-safe hook metadata
+     */
     public function __construct(
         public ?string $cancelReason = null,
         public ?string $replacementSummary = null,

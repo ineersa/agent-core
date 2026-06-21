@@ -292,6 +292,8 @@ final readonly class CompactRunHandler implements RunMessageHandler
      * The replacement summary path still emits the mandatory lifecycle
      * events (started + compacted) and rewrites RunState.messages, but
      * never dispatches an ExecuteCompactionStep worker.
+     *
+     * @param array<string, mixed> $hookMetadata JSON-safe metadata from hooks
      */
     private function handleReplacementSummary(
         string $runId,
