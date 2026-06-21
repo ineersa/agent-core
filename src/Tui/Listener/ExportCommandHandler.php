@@ -391,9 +391,9 @@ HTML;
      * JSON in an escaped <pre> block (mandatory per task spec).  Known
      * event types additionally receive a human-friendly readable summary.
      *
-     * @param array<string, mixed>          $event
-     * @param array<string, string>         $toolNames tool_call_id → tool_name map
-     * @param array<string, mixed>          $toolArgs  tool_call_id → arguments map
+     * @param array<string, mixed>  $event
+     * @param array<string, string> $toolNames tool_call_id → tool_name map
+     * @param array<string, mixed>  $toolArgs  tool_call_id → arguments map
      */
     private function renderEvent(array $event, array $toolNames = [], array $toolArgs = []): string
     {
@@ -576,8 +576,8 @@ HTML;
      * Render a tool_execution_start event with optional arguments from the
      * cross-reference map built during renderEvents.
      *
-     * @param array<string, mixed>        $payload
-     * @param array<string, mixed>        $toolArgs tool_call_id → arguments map
+     * @param array<string, mixed> $payload
+     * @param array<string, mixed> $toolArgs tool_call_id → arguments map
      */
     private function renderToolStart(array $payload, array $toolArgs = []): string
     {
@@ -598,6 +598,7 @@ HTML;
         if (!$hasArgs) {
             $html .= '    <div class="tool-call-header">'.$summary."</div>\n";
             $html .= "  </div>\n";
+
             return $html;
         }
 
@@ -804,7 +805,7 @@ HTML;
             $html .= '    <div class="message-role">'.self::escapeHtml($role).'</div>'."\n";
 
             // Long system/context instructions get details/summary treatment.
-            $contentLen = \mb_strlen($content);
+            $contentLen = mb_strlen($content);
             if ($contentLen > 500 && \in_array($role, ['system', 'developer', 'user-context'], true)) {
                 $html .= '    <details class="instruction-block" open>'."\n";
                 $label = match ($role) {
@@ -812,7 +813,7 @@ HTML;
                     'developer' => 'Developer instructions',
                     default => 'Context', // user-context (only remaining option)
                 };
-                $html .= '      <summary>'.self::escapeHtml($label).' ('.\number_format($contentLen).' chars)</summary>'."\n";
+                $html .= '      <summary>'.self::escapeHtml($label).' ('.number_format($contentLen).' chars)</summary>'."\n";
                 $html .= '      <div class="message-content">'.self::escapeHtml($content).'</div>'."\n";
                 $html .= "    </details>\n";
             } else {
@@ -842,7 +843,7 @@ HTML;
             }
         }
 
-        return \implode('', $parts);
+        return implode('', $parts);
     }
 
     /**
@@ -863,13 +864,13 @@ HTML;
         $html = '    <div class="usage-stats">'."\n";
         $html .= '      <span class="usage-label">Tokens:</span>';
         if ($inputTokens > 0) {
-            $html .= ' <span class="usage-item">in: '.\number_format($inputTokens).'</span>';
+            $html .= ' <span class="usage-item">in: '.number_format($inputTokens).'</span>';
         }
         if ($outputTokens > 0) {
-            $html .= ' <span class="usage-item">out: '.\number_format($outputTokens).'</span>';
+            $html .= ' <span class="usage-item">out: '.number_format($outputTokens).'</span>';
         }
         if ($totalTokens > 0) {
-            $html .= ' <span class="usage-item">total: '.\number_format($totalTokens).'</span>';
+            $html .= ' <span class="usage-item">total: '.number_format($totalTokens).'</span>';
         }
         $html .= "\n    </div>\n";
 
