@@ -13,6 +13,8 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\CompactionStepResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 
 /**
  * Handles {@see CompactionStepResult} messages from async compaction workers.
@@ -29,6 +31,7 @@ final readonly class CompactionStepResultHandler implements RunMessageHandler
     public function __construct(
         private CompactionServiceInterface $compactionService,
         private EventFactory $eventFactory,
+        private LoggerInterface $logger = new NullLogger(),
     ) {
     }
 
@@ -62,6 +65,16 @@ final readonly class CompactionStepResultHandler implements RunMessageHandler
         // is the true staleness guard: turnNo advances on new conversation
         // turns, and activeStepId changes when a newer compaction starts.
         if ($state->turnNo !== $message->turnNo() || $state->activeStepId !== $message->stepId()) {
+            $this->logger->info('Compaction result is stale — discarding.', [
+                'component' => 'compaction',
+                'event_type' => 'compaction.stale_result',
+                'run_id' => $runId,
+                'step_id' => $message->stepId(),
+                'state_turn_no' => $state->turnNo,
+                'result_turn_no' => $message->turnNo(),
+                'active_step_id' => $state->activeStepId,
+            ]);
+
             $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, [[
                 'type' => RunEventTypeEnum::ContextCompactionFailed->value,
                 'payload' => [
@@ -85,6 +98,16 @@ final readonly class CompactionStepResultHandler implements RunMessageHandler
         // to avoid surfacing raw provider exception text in the TUI.
         // The raw message is still stored for diagnostics/logging.
         if (null !== $message->error) {
+            $this->logger->error('Compaction model invocation failed.', [
+                'component' => 'compaction',
+                'event_type' => 'compaction.failed',
+                'run_id' => $runId,
+                'step_id' => $message->stepId(),
+                'error_code' => $message->error['code'] ?? 'unknown',
+                'retryable' => (bool) ($message->error['retryable'] ?? false),
+                // Do NOT log raw error message — may contain provider URLs.
+                'has_user_message' => isset($message->error['user_message']) && '' !== $message->error['user_message'],
+            ]);
             $reason = 'model_error';
             $userMessage = \is_string($message->error['user_message'] ?? null) && '' !== $message->error['user_message']
                 ? $message->error['user_message']
@@ -115,6 +138,13 @@ final readonly class CompactionStepResultHandler implements RunMessageHandler
         $summaryText = \is_string($message->summaryText) ? trim($message->summaryText) : '';
 
         if ('' === $summaryText) {
+            $this->logger->info('Compaction produced an empty summary.', [
+                'component' => 'compaction',
+                'event_type' => 'compaction.failed',
+                'run_id' => $runId,
+                'reason' => 'empty_summary',
+                'step_id' => $message->stepId(),
+            ]);
             $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, [[
                 'type' => RunEventTypeEnum::ContextCompactionFailed->value,
                 'payload' => [
@@ -135,6 +165,16 @@ final readonly class CompactionStepResultHandler implements RunMessageHandler
         }
 
         // Success: build compacted messages and replace RunState.messages.
+
+        $this->logger->info('Compaction applied successfully.', [
+            'component' => 'compaction',
+            'event_type' => 'compaction.applied',
+            'run_id' => $runId,
+            'step_id' => $message->stepId(),
+            'summary_length' => \strlen($summaryText),
+            'messages_compacted' => $message->messagesCompacted,
+            'messages_retained' => $message->messagesRetained,
+        ]);
         // Deserialize retained tail messages from transport-safe array shapes.
         $retainedTail = [];
         foreach ($message->retainedTailMessages as $raw) {
