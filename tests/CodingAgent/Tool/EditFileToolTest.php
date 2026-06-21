@@ -99,8 +99,8 @@ final class EditFileToolTest extends TestCase
         $this->assertStringNotContainsString('@@ -42', $guidelinesText);
 
         // Guidelines must warn against common LLM mistakes observed in smoke testing
-        $this->assertStringContainsString('markdown code fences', strtolower($guidelinesText));
-        $this->assertStringContainsString('end new file', strtolower($guidelinesText));
+        $this->assertStringContainsString('markdown fences', strtolower($guidelinesText));
+        $this->assertStringContainsString('End file', $guidelinesText);
         $this->assertStringContainsString('trailing newline', strtolower($guidelinesText));
         // Guidelines must mention the tool resolves/computes hunk headers
         $this->assertStringContainsString('resolves', strtolower($guidelinesText));
@@ -122,15 +122,15 @@ final class EditFileToolTest extends TestCase
         $this->assertStringContainsString('do not re-read the full file', strtolower($guidelinesText));
 
         // Guidelines must include concrete plain-@@ patch template
-        $this->assertStringContainsString('Minimal patch template', $guidelinesText);
-        $this->assertStringContainsString('-old line', $guidelinesText);
-        $this->assertStringContainsString('+new line', $guidelinesText);
+        $this->assertStringContainsString('Patch shape', $guidelinesText);
+        $this->assertStringContainsString('-current line', $guidelinesText);
+        $this->assertStringContainsString('+desired line', $guidelinesText);
 
         // Guidelines must say plain @@ means no line numbers needed
-        $this->assertStringContainsString('do not need line numbers', strtolower($guidelinesText));
+        $this->assertStringContainsString('do not read just to find line numbers', strtolower($guidelinesText));
 
         // Guidelines must include explicit line-change `-old`/`+new` pair guidance
-        $this->assertStringContainsString('NEVER be modified', $guidelinesText);
+        $this->assertStringContainsString('are never modified', $guidelinesText);
 
         // Guidelines must NOT include "file is small" full-read permission
         $this->assertStringNotContainsString('file is small', strtolower($guidelinesText));
@@ -141,20 +141,24 @@ final class EditFileToolTest extends TestCase
         $this->assertStringContainsString('-current line', $guidelinesText);
         $this->assertStringContainsString('+desired line', $guidelinesText);
 
-        // Quick path must appear before the stale-hunk detailed guidance
+        // Quick path must appear before the detailed behavioral guidance
         $quickIdx = null;
-        $staleIdx = null;
+        $detailIdx = null;
         foreach ($definition->promptGuidelines as $idx => $guideline) {
             if (str_starts_with($guideline, 'Quick path')) {
                 $quickIdx = $idx;
             }
-            if (str_contains($guideline, 'If an edit fails with a stale-hunk error')) {
-                $staleIdx = $idx;
+            if (str_starts_with($guideline, 'One edit call')) {
+                $detailIdx = $idx;
             }
         }
         $this->assertNotNull($quickIdx, 'Quick path guideline must exist');
-        $this->assertNotNull($staleIdx, 'Stale-hunk guideline must exist');
-        $this->assertLessThan($staleIdx, $quickIdx, 'Quick path must appear before stale-hunk error guidance');
+        $this->assertNotNull($detailIdx, 'Detail guideline must exist');
+        $this->assertLessThan($detailIdx, $quickIdx, 'Quick path must appear before detailed behavioral guidance');
+
+        // Guidelines are injected into the system prompt and must stay concise
+        $this->assertLessThanOrEqual(11, count($definition->promptGuidelines), 'Guidelines must stay at 11 or fewer items');
+        $this->assertLessThanOrEqual(2500, strlen(implode('', $definition->promptGuidelines)), 'Guidelines must stay under 2500 total chars for system prompt brevity');
     }
 
     public function testDefinitionHasRetryGuidelines(): void
@@ -168,7 +172,7 @@ final class EditFileToolTest extends TestCase
         $this->assertStringContainsString('trailing newline', strtolower($guidelinesText));
         $this->assertStringContainsString('current context', strtolower($guidelinesText));
         // Must NOT suggest full-file reads unconditionally before every edit
-        $this->assertStringContainsString('do not re-read the whole file', strtolower($guidelinesText));
+        $this->assertStringContainsString('do not re-read the full file', strtolower($guidelinesText));
         $this->assertStringContainsString('offset', strtolower($guidelinesText));
         // Must also mention limit for targeted reads (offset+limit together)
         $this->assertStringContainsString('limit', strtolower($guidelinesText));
@@ -1806,10 +1810,10 @@ DIFF;
         // Must NOT show numbered header example
         $this->assertStringNotContainsString('@@ -42', $guidelinesText);
         // Must include concrete template (not just abstract mention)
-        $this->assertStringContainsString('-old line', $guidelinesText);
-        $this->assertStringContainsString('+new line', $guidelinesText);
+        $this->assertStringContainsString('-current line', $guidelinesText);
+        $this->assertStringContainsString('+desired line', $guidelinesText);
         // Must explicitly say no line numbers needed
-        $this->assertStringContainsString('do not need line numbers', strtolower($guidelinesText));
+        $this->assertStringContainsString('do not read just to find line numbers', strtolower($guidelinesText));
     }
 
     /* ── Symlink preservation tests ── */
