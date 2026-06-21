@@ -97,7 +97,7 @@ Hatfield ships with four built-in agent definitions:
 |---|---|---|---|
 | `scout` | Fast read-only codebase reconnaissance | read, ide_find_file, ide_search_text, ide_file_structure, semantic-search | parallelAllowed, backgroundAllowed |
 | `reviewer` | Code review and correctness analysis | read, ide_find_file, ide_search_text, ide_file_structure, ide_find_references, ide_call_hierarchy, ide_type_hierarchy, semantic-search | parallelAllowed |
-| `researcher` | External research and documentation lookup | read, websearch__*, context7__* | parallelAllowed, has web/docs tools |
+| `researcher` | External research and documentation lookup | read, websearch__*, context7__* | parallelAllowed, has web/docs tools (docs use wildcard shorthand; built-in definition enumerates concrete tool IDs) |
 | `worker` | General-purpose implementation | read, write, edit, bash, bg_status, ide_find_file, ide_search_text, ide_file_structure, semantic-search | parallelAllowed: false, has mutation tools |
 
 All built-in agents:

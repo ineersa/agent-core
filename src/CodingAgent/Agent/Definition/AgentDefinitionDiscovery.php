@@ -208,6 +208,12 @@ final class AgentDefinitionDiscovery
         } elseif (is_file($path)) {
             if (str_ends_with(basename($path), '.md')) {
                 $this->loadFile($path, $definitionsByName, $diagnostics);
+            } else {
+                $diagnostics[] = new AgentDefinitionDiagnosticDTO(
+                    type: 'invalid_path',
+                    message: \sprintf('Configured agent path is not a .md file: %s', $path),
+                    path: $path,
+                );
             }
         }
     }
@@ -239,6 +245,22 @@ final class AgentDefinitionDiscovery
                 $this->logger->warning('Agent definition parse error: {error}', [
                     'error' => $e->getMessage(),
                     'path' => $filePath,
+                ]);
+            }
+
+            return;
+        } catch (\Throwable $e) {
+            $diagnostics[] = new AgentDefinitionDiagnosticDTO(
+                type: 'invalid_definition',
+                message: \sprintf('Unexpected error parsing agent definition "%s": %s', $filePath, $e->getMessage()),
+                path: $filePath,
+            );
+
+            if (null !== $this->logger) {
+                $this->logger->warning('Unexpected agent definition error: {error}', [
+                    'error' => $e->getMessage(),
+                    'path' => $filePath,
+                    'exception' => $e,
                 ]);
             }
 

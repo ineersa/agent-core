@@ -279,11 +279,29 @@ final class AgentDefinitionDiscoveryTest extends TestCase
         self::assertStringContainsString('/nonexistent/path/agent.md', $diagnostics[0]->message);
     }
 
+    public function testConfiguredNonMdFileProducesInvalidPathDiagnostic(): void
+    {
+        // Create a non-.md file and point agents.paths at it.
+        $configuredFile = $this->tempDir.'/not-a-def.txt';
+        file_put_contents($configuredFile, 'plain text, not markdown');
+
+        $config = new AgentsConfig(enabled: true, paths: [$configuredFile]);
+        $discovery = $this->createDiscovery($config);
+        $catalog = $discovery->discover();
+
+        // Should have an invalid_path diagnostic, not silently skipped.
+        $diagnostics = $catalog->diagnostics();
+        self::assertCount(1, $diagnostics);
+        self::assertSame('invalid_path', $diagnostics[0]->type);
+        self::assertSame($configuredFile, $diagnostics[0]->path);
+        self::assertStringContainsString('not a .md file', $diagnostics[0]->message);
+    }
+
     public function testInvalidDefinitionProducesDiagnostic(): void
     {
         $dir = $this->cwd.'/.agents';
         mkdir($dir, 0755, true);
-        // This file has an unknown field "type" which AgentDefinitionParser rejects
+        // This file has an unknown field "invalid" which AgentDefinitionParser rejects
         file_put_contents($dir.'/bad.md', "---\ninvalid: true\n---\nbad body\n");
 
         $discovery = $this->createDiscovery();

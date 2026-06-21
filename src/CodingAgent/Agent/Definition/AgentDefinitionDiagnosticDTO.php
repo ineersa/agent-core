@@ -19,7 +19,7 @@ namespace Ineersa\CodingAgent\Agent\Definition;
 final readonly class AgentDefinitionDiagnosticDTO
 {
     public function __construct(
-        /** Diagnostic type: collision|invalid_definition|missing_path */
+        /** Diagnostic type: collision|invalid_definition|invalid_path|missing_path */
         public string $type,
         /** Human-readable message describing the diagnostic. */
         public string $message,
