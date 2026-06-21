@@ -111,7 +111,7 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             executionMode: ToolExecutionMode::Sequential,
             promptLine: 'edit path patch — apply a unified diff patch to an existing file',
             promptGuidelines: [
-                'Read the current file contents with the `read` tool before generating a unified diff patch — never guess line numbers or context.',
+                'Use the latest exact file context you already have. Read the file (preferably with `offset`/`limit` for the relevant region) before the first edit or when your context is missing/stale. After a successful edit, the result includes updated context around changed lines — use that for follow-up edits when sufficient; do not re-read the whole file just to verify.',
                 'Use exact unchanged context lines from the current file. Do not modify or reformat context lines; they must match byte-for-byte.',
                 'Use plain `@@` hunk headers without line numbers or counts as the default. The edit tool resolves and computes old/new line numbers, counts, and positions from the hunk body and the current file automatically. Do not calculate @@ header line numbers or counts yourself.',
                 'Numbered unified-diff headers (e.g. `@@ -42,6 +42,8 @@`) are accepted but not recommended; prefer plain `@@`. Only use numbered headers when copying from actual `diff -u` output.',
@@ -126,12 +126,12 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
                 'Whitespace mismatches between the patch and the target file are handled automatically (tolerant matching).',
                 'Make ONE edit call at a time for a file and wait for its result before issuing another edit for the same file.',
                 'An error from an edit call means that specific attempt was NOT applied. Do not describe an edit attempt that returned an error as "applied" or "changed" — retry with a new patch from the current file contents.',
-                'On success, the tool returns stats and bounded updated-file chunks around the changed lines. No extra read is needed to verify the result.',
+                'On success, the tool returns stats and bounded updated-file chunks around the changed lines. Use that context for follow-up edits. Do not re-read the whole file just to verify a successful edit. If you need more surrounding context, use `read` with `offset` and `limit` for the relevant region instead of a full-file read.',
                 'If the patch produces no changes, the tool reports "No changes" without modifying the file.',
-                'If an edit fails with a stale-hunk error, the error includes a current-file context window with exact line numbers from the original file. Re-read the file with `read` and retry with a plain `@@` patch using the exact current context.',
+                'If an edit fails with a stale-hunk error, the error includes a current-file context window with exact line numbers from the original file. Use that context or a targeted `read` with `offset`/`limit` for the affected region, then retry with a plain `@@` patch using the exact current context. Prefer targeted reads; full-file reads are only needed when the file is small or the relevant region is unknown.',
                 'If an edit fails with a format error, check that the patch has ---/+++ headers, plain `@@` hunk headers, a trailing newline, and no markdown fences or non-diff trailers. Do not try to fix malformed patches — regenerate with plain `@@` and exact context.',
                 'If the target file lacks a trailing newline, the error hint will mention it. Add a trailing newline with the write tool or include "\\ No newline at end of file" markers in the patch.',
-                'If the edit succeeds but the addition/deletion stats contradict your intent (e.g. you intended only deletions but the result says additions > 0), immediately re-read the file with `read` and repair — do not assume the edit was correct.',
+                'If the edit succeeds but the addition/deletion stats contradict your intent (e.g. you intended only deletions but the result says additions > 0), re-read the affected region with `read` `offset`/`limit` and verify — do not assume the edit was correct.',
             ],
         );
     }

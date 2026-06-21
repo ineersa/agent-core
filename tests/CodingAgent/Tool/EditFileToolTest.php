@@ -82,9 +82,11 @@ final class EditFileToolTest extends TestCase
 
         $this->assertNotEmpty($definition->promptGuidelines);
 
-        // Guidelines must describe unified diff, use plain @@, and mention hunk header resolution
+        // Tool description must describe the tool as applying a unified diff patch
+        $this->assertStringContainsString('unified diff', strtolower($definition->description));
+
+        // Guidelines must use plain @@, mention hunk header resolution
         $guidelinesText = implode(' ', $definition->promptGuidelines);
-        $this->assertStringContainsString('unified diff', strtolower($guidelinesText));
         $this->assertStringContainsString('read', strtolower($guidelinesText));
         // Must NOT mention cat -n (model has read tool with line numbers)
         $this->assertStringNotContainsString('cat -n', $guidelinesText);
@@ -115,11 +117,14 @@ final class EditFileToolTest extends TestCase
         $definition = $this->editFileTool->definition();
         $guidelinesText = implode(' ', $definition->promptGuidelines);
 
-        // Guidelines must instruct re-reading on failure and retry from current context
-        $this->assertStringContainsString('read the current file', strtolower($guidelinesText));
+        // Guidelines must instruct reading on stale/missing context, retry from current context
+        $this->assertStringContainsString('read the file', strtolower($guidelinesText));
         $this->assertStringContainsString('retry', strtolower($guidelinesText));
         $this->assertStringContainsString('trailing newline', strtolower($guidelinesText));
         $this->assertStringContainsString('current context', strtolower($guidelinesText));
+        // Must NOT suggest full-file reads unconditionally before every edit
+        $this->assertStringContainsString('do not re-read the whole file', strtolower($guidelinesText));
+        $this->assertStringContainsString('offset', strtolower($guidelinesText));
     }
 
     public function testDefinitionJsonSchemaHasPathAndPatch(): void
@@ -1317,9 +1322,13 @@ DIFF;
      * oldStart.  The tool should succeed instead of failing with
      * E_PATCH_FORMAT.
      *
-     * This reproduces the exact session-10 method-rename scenario.
+     * Session-10 regression: a numbered hunk with inflated counts must
+     * fail closed with E_PATCH_FORMAT and clear declared-vs-actual
+     * messaging — never silently auto-repair (auto-repair can partial-apply
+     * genuinely truncated patches whose body ends on a context line).
+     * The model must retry with plain @@ instead.
      */
-    public function testNumberedHunkOverDeclaredCountsRepairedViaOldBlockMatch(): void
+    public function testNumberedHunkOverDeclaredCountsRejectedAsFormatWithDeclaredCountHint(): void
     {
         // Recreate session-10 DummyService.php structure (simplified).
         $targetPath = $this->tmpDir.'/numbered_overdeclared_target.txt';
@@ -1362,20 +1371,31 @@ PHP;
          $lines = [];
 DIFF;
 
-        $result = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+        try {
+            ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+            $this->fail('Expected ToolCallException for over-declared numbered hunk');
+        } catch (ToolCallException $e) {
+            $message = $e->getMessage();
+            $hint = $e->hint() ?? '';
 
-        // Must succeed (not fail with E_PATCH_FORMAT truncation).
-        $this->assertStringContainsString('Applied patch', $result);
-        $this->assertStringNotContainsString('[E_PATCH_FORMAT]', $result);
+            // Must be classified as E_PATCH_FORMAT (fail closed, not auto-repaired).
+            $this->assertStringContainsString('[E_PATCH_FORMAT]', $message);
+            $this->assertTrue($e->retryable());
 
-        // Method must be renamed.
-        $actual = file_get_contents($targetPath);
-        $this->assertStringContainsString('summarizeItems', $actual);
-        $this->assertStringNotContainsString('public function summarize(', $actual);
+            // Hint must include the declared-vs-actual count details
+            // and recommend plain @@ (not numbered headers).
+            $this->assertStringContainsString('truncated', strtolower($hint));
+            $this->assertStringContainsString('Numbered hunk header declared 7 old / 7 new lines', $hint);
+            $this->assertStringContainsString('5 old / 5 new lines', $hint);
+            $this->assertStringContainsString('`@@`', $hint);
+            $this->assertStringContainsString('do not use numbered headers', $hint);
+            $this->assertStringNotContainsString('cat -n', $hint);
 
-        // Rest of the file must be intact.
-        $this->assertStringContainsString('private const DEFAULT_LIMIT', $actual);
-        $this->assertStringContainsString('foreach ($items as $index => $item)', $actual);
+            // File must be completely unchanged
+            $actual = file_get_contents($targetPath);
+            $this->assertSame($original, $actual);
+            $this->assertStringNotContainsString('summarizeItems', $actual);
+        }
     }
 
     /**
@@ -1422,6 +1442,69 @@ DIFF;
             $this->assertStringNotContainsString('cat -n', $hint);
 
             // File must be completely unchanged
+            $this->assertSame($original, file_get_contents($targetPath));
+        }
+    }
+
+
+    /**
+     * Reviewer regression: a both-sides-under-declared numbered hunk whose
+     * body ends on a context line AND whose old-side block matches the file
+     * must STILL fail closed — not be silently partially applied.
+     *
+     * Concrete: file = line1..line5, patch declares @@ -2,4 +2,4 @@
+     * but body only has line2, -line3, +X, line4 (4 paren lines — 2 context,
+     * 1 removal, 1 addition).  actualOld=3, actualNew=3.  The old-side
+     * block [line2, line3, line4] matches the file at line 2.  This
+     * must be rejected: a truncated generation that happens to land on
+     * a context line is indistinguishable from an over-declared header,
+     * and auto-repair would silently drop the intended line 5 → Y change.
+     *
+     * @group high
+     */
+    public function testTruncatedBothSidesUnderShotEndingOnContextLineStillFailsClosed(): void
+    {
+        $targetPath = $this->tmpDir . '/truncated_ends_on_context_target.txt';
+        // 5-line file: lines 1–5
+        $original = "line 1\nline 2\nline 3\nline 4\nline 5\n";
+        file_put_contents($targetPath, $original);
+
+        // Declared @@ -2,4 +2,4 @@ but body has only 4 paren lines:
+        // actualOld=3, actualNew=3 — both under declared 4/4.
+        // Last body line " line 4" is context — passes trailing-context
+        // heuristic, but the patch is genuinely truncated (model intended
+        // to also change line 5).
+        $patch = <<<'DIFF'
+--- a/file
++++ b/file
+@@ -2,4 +2,4 @@
+ line 2
+-line 3
++X
+ line 4
+DIFF;
+
+        try {
+            ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+            $this->fail('Expected ToolCallException for truncated hunk ending on context line');
+        } catch (ToolCallException $e) {
+            $message = $e->getMessage();
+            $hint = $e->hint() ?? '';
+
+            // Must be classified as E_PATCH_FORMAT — fail closed, NOT repaired.
+            $this->assertStringContainsString('[E_PATCH_FORMAT]', $message);
+            $this->assertTrue($e->retryable());
+
+            // Hint must include the specific declared-vs-actual counts
+            // and recommend plain @@ (not numbered headers).
+            $this->assertStringContainsString('truncated', strtolower($hint));
+            $this->assertStringContainsString('Numbered hunk header declared 4 old / 4 new lines', $hint);
+            $this->assertStringContainsString('3 old / 3 new lines', $hint);
+            $this->assertStringContainsString('`@@`', $hint);
+            $this->assertStringContainsString('do not use numbered headers', $hint);
+            $this->assertStringNotContainsString('cat -n', $hint);
+
+            // File must be completely unchanged — no silent partial application!
             $this->assertSame($original, file_get_contents($targetPath));
         }
     }

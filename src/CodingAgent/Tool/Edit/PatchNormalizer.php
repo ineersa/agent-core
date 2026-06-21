@@ -36,13 +36,10 @@ final class PatchNormalizer
      * @param string      $patchContent  raw LLM-generated patch
      * @param string|null $targetContent current target file content (required for relaxed hunk resolution)
      *
-     * @return array{content: string, detectedTruncation: bool}
+     * @return array{content: string, detectedTruncation: bool, truncationDetails: string}
      *
      * @throws ToolCallException when a relaxed hunk block is not found,
      *                           matches multiple locations, or hunks overlap
-     */
-    /**
-     * @return array{content: string, detectedTruncation: bool, truncationDetails: string}
      */
     public function normalize(string $patchContent, ?string $targetContent = null): array
     {
@@ -67,10 +64,7 @@ final class PatchNormalizer
         }
 
         // 5. Repair hunk header counts to match actual body content.
-        //    Pass target content so over-declared numbered hunks can be
-        //    repaired by matching the old-side block against the file
-        //    (session-10: model emits numbered headers with inflated counts).
-        $patchContent = $this->repairHunkCounts($patchContent, $targetContent, $detectedTruncation, $truncationDetails);
+        $patchContent = $this->repairHunkCounts($patchContent, $detectedTruncation, $truncationDetails);
 
         return [
             'content' => $patchContent,
@@ -511,35 +505,6 @@ final class PatchNormalizer
         return $matches;
     }
 
-    /**
-     * Pick the match position nearest a target line number.
-     *
-     * When the old-side block matches multiple locations, GNU patch
-     * applies near the declared oldStart — not the first match.  This
-     * mirrors that behavior so numbered hunks with inflated counts
-     * land on the intended location.
-     *
-     * @param int[] $matches 1-based match positions (non-empty)
-     * @param int   $target  declared oldStart line number
-     *
-     * @return int 1-based position nearest $target
-     */
-    private function nearestMatch(array $matches, int $target): int
-    {
-        $best = $matches[0];
-        $bestDist = abs($best - $target);
-
-        for ($k = 1, $len = \count($matches); $k < $len; ++$k) {
-            $dist = abs($matches[$k] - $target);
-            if ($dist < $bestDist) {
-                $bestDist = $dist;
-                $best = $matches[$k];
-            }
-        }
-
-        return $best;
-    }
-
     /* ── Hunk count repair ── */
 
     /**
@@ -572,14 +537,13 @@ final class PatchNormalizer
      * because the mismatch is almost certainly a counting error, not a
      * content-truncation problem.
      *
-     * @param string      $patchContent       normalized patch content (relaxed hunks resolved)
-     * @param string|null $targetContent      current target file content (for safe over-declared repair)
-     * @param bool        $detectedTruncation output flag set true when truncation is detected
-     * @param string      $truncationDetails  output: declared-vs-actual count info for failure messaging
+     * @param string $patchContent       normalized patch content (relaxed hunks resolved)
+     * @param bool   $detectedTruncation output flag set true when truncation is detected
+     * @param string $truncationDetails  output: declared-vs-actual count info for failure messaging
      *
      * @return string patch with repaired hunk counts
      */
-    private function repairHunkCounts(string $patchContent, ?string $targetContent, bool &$detectedTruncation, string &$truncationDetails = ''): string
+    private function repairHunkCounts(string $patchContent, bool &$detectedTruncation, string &$truncationDetails = ''): string
     {
         // Matches hunk headers like:
         //   @@ -42,6 +42,8 @@
@@ -616,7 +580,6 @@ final class PatchNormalizer
                         $oldCount, $newCount,
                         $declaredOldCount, $declaredNewCount,
                         $detectedTruncation,
-                        $targetContent,
                         $truncationDetails,
                     );
                 }
@@ -669,7 +632,6 @@ final class PatchNormalizer
                 $oldCount, $newCount,
                 $declaredOldCount, $declaredNewCount,
                 $detectedTruncation,
-                $targetContent,
                 $truncationDetails,
             );
         }
@@ -683,20 +645,19 @@ final class PatchNormalizer
      * Rewrite a single hunk header with repaired counts, or strip its body
      * when the truncation heuristic fires.
      *
-     * @param string[]    $lines              All patch lines (mutated in place)
-     * @param int         $hdrIdx             Index of the hunk header line
-     * @param int         $bodyEndIdx         Index of first line AFTER the hunk body
-     *                                        (next hunk header, or end of array)
-     * @param int         $oldStart           Old-file start line
-     * @param int         $newStart           New-file start line
-     * @param string      $suffix             Trailing section name / text after @@
-     * @param int         $actualOld          Actual old-line count counted from body
-     * @param int         $actualNew          Actual new-line count counted from body
-     * @param int         $declaredOld        Old-line count declared in header
-     * @param int         $declaredNew        New-line count declared in header
-     * @param bool        $detectedTruncation output flag set true when truncation is detected
-     * @param string|null $targetContent      current target file content (null when not available)
-     * @param string      $truncationDetails  output: declared-vs-actual count info for failure messaging
+     * @param string[] $lines              All patch lines (mutated in place)
+     * @param int      $hdrIdx             Index of the hunk header line
+     * @param int      $bodyEndIdx         Index of first line AFTER the hunk body
+     *                                     (next hunk header, or end of array)
+     * @param int      $oldStart           Old-file start line
+     * @param int      $newStart           New-file start line
+     * @param string   $suffix             Trailing section name / text after @@
+     * @param int      $actualOld          Actual old-line count counted from body
+     * @param int      $actualNew          Actual new-line count counted from body
+     * @param int      $declaredOld        Old-line count declared in header
+     * @param int      $declaredNew        New-line count declared in header
+     * @param bool     $detectedTruncation output flag set true when truncation is detected
+     * @param string   $truncationDetails  output: declared-vs-actual count info for failure messaging
      */
     private function repairSingleHunk(
         array &$lines,
@@ -710,7 +671,6 @@ final class PatchNormalizer
         int $declaredOld,
         int $declaredNew,
         bool &$detectedTruncation,
-        ?string $targetContent = null,
         string &$truncationDetails = '',
     ): void {
         // Perfectly-counted hunk — including zero-count hunks (e.g. pure
@@ -739,78 +699,22 @@ final class PatchNormalizer
         // When at least one side actual >= declared (LLM over-count /
         // miscount is far more common than truncation), we repair safely.
         if ($actualOld < $declaredOld && $actualNew < $declaredNew) {
-            // Build the declared-vs-actual detail string for failure messaging
-            // (used by PatchFailureFormatter when the repair attempt does not
-            // succeed or when target content is unavailable).
-            $truncationDetails = \sprintf(
-                'Numbered hunk header declared %d old / %d new lines, but the hunk body contains %d old / %d new lines.',
-                $declaredOld, $declaredNew, $actualOld, $actualNew,
-            );
-
-            // Attempt safe repair when target content is available.
-            if (null !== $targetContent && '' !== $targetContent) {
-                // Safety predicate: body must appear structurally complete.
-                // A body that ends immediately after a - or + change line
-                // (no trailing context) is more likely genuinely truncated
-                // than just miscounted.  Require at least one context or
-                // blank line after the last +/- change.
-                $lastBodyIdx = $bodyEndIdx - 1;
-                $lastBodyLine = $lines[$lastBodyIdx] ?? '';
-                $firstChar = '' === $lastBodyLine ? '' : ($lastBodyLine[0] ?? '');
-                $hasTrailingContext = '' === $lastBodyLine || ' ' === $firstChar;
-
-                if ($hasTrailingContext) {
-                    // Build old-side block from body lines (context + removals).
-                    // Blank lines are included as context (matching the counting
-                    // convention above).
-                    $oldBlock = [];
-                    for ($j = $hdrIdx + 1; $j < $bodyEndIdx; ++$j) {
-                        $line = $lines[$j];
-                        $pfx = $line[0] ?? '';
-                        if ('' === $line || ' ' === $pfx || '-' === $pfx) {
-                            $oldBlock[] = $line;
-                        }
-                    }
-
-                    if ([] !== $oldBlock) {
-                        $targetNormalized = str_replace(["\r\n", "\r"], "\n", $targetContent);
-                        $fileLines = explode("\n", $targetNormalized);
-                        if ([] !== $fileLines && '' === end($fileLines)) {
-                            array_pop($fileLines);
-                        }
-
-                        $match = $this->findExactBlockMatch($fileLines, $oldBlock);
-
-                        if ([] !== $match) {
-                            // Pick match nearest declared oldStart so numbered
-                            // hunks behave like normal patch intent near the
-                            // declared position (consistent with
-                            // PatchFailureFormatter nearest-match for
-                            // success-context arrows).
-                            $actualOldStart = $this->nearestMatch($match, $oldStart);
-                            $actualNewStart = $newStart + ($actualOldStart - $oldStart);
-
-                            // Repair header with actual counts and computed positions.
-                            $lines[$hdrIdx] = \sprintf(
-                                '@@ -%d,%d +%d,%d @@%s',
-                                $actualOldStart, $actualOld,
-                                $actualNewStart, $actualNew,
-                                $suffix,
-                            );
-
-                            // Clear truncation flags — repair was safe.
-                            $detectedTruncation = false;
-                            $truncationDetails = '';
-
-                            return;
-                        }
-                    }
-                }
+            // Both sides under-declared — possible truncation.  Build the
+            // declared-vs-actual detail string for failure messaging first,
+            // then fail closed (never attempt auto-repair, because the
+            // trailing-context heuristic is too weak to reliably distinguish
+            // over-declaration from genuine truncation — a truncated generation
+            // that happens to land on a context line would be silently
+            // partially applied if repaired).
+            if ('' === $truncationDetails) {
+                $truncationDetails = \sprintf(
+                    'Numbered hunk header declared %d old / %d new lines, but the hunk body contains %d old / %d new lines.',
+                    $declaredOld, $declaredNew, $actualOld, $actualNew,
+                );
             }
 
-            // Could not repair safely: either no target content, no trailing
-            // context (likely genuinely truncated), or old-block did not match.
-            // Fall through to original fail-closed body-strip safety.
+            // OR-accumulate (do not clear earlier truncation flags from
+            // previous hunks — last-write-wins would drop their details).
             $detectedTruncation = true;
 
             // Strip all body lines for this hunk (keep the header line).
