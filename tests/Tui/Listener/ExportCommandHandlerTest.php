@@ -528,6 +528,322 @@ You are a helpful assistant.
         $this->assertStringContainsString('Hmm, let me reason about this', $html);
     }
 
+    // ── Real events.jsonl format (nested payload) ──────────────────────────
+
+    #[Test]
+    public function rendersMessagesFromNestedPayloadFormat(): void
+    {
+        // Real events.jsonl stores messages at payload.payload.messages
+        // with content as typed blocks [{type: 'text', text: '...'}].
+        // Long system messages (>500 chars) get a labelled details/summary section.
+        $instructionText = str_repeat('You are an assistant. Follow the rules. ', 15);
+        $userText = 'Hello world';
+
+        $this->setupEventsFile('test-session', [
+            $this->makeEvent(1, 1, 'run_started', [
+                'step_id' => 's1',
+                'payload' => [
+                    'messages' => [
+                        ['role' => 'system', 'content' => [['type' => 'text', 'text' => $instructionText]]],
+                        ['role' => 'user-context', 'content' => [['type' => 'text', 'text' => 'Context info']]],
+                        ['role' => 'user', 'content' => [['type' => 'text', 'text' => $userText]]],
+                    ],
+                ],
+            ]),
+            $this->makeEvent(2, 1, 'llm_step_completed', [
+                'step_id' => 's2',
+                'text' => 'Response.',
+                'stop_reason' => 'end_turn',
+            ]),
+        ]);
+
+        $path = $this->projectDir.'/nested-messages.html';
+        $handler = $this->createHandler('test-session');
+        $handler->handle(new SlashCommand('export', $path, '/export '.$path));
+
+        $html = file_get_contents($path);
+
+        // System instruction should be visible with long-content treatment.
+        $this->assertStringContainsString('System instructions', $html);
+        $this->assertStringContainsString($instructionText, $html);
+
+        // User-context role.
+        $this->assertStringContainsString('Context info', $html);
+
+        // User message.
+        $this->assertStringContainsString($userText, $html);
+        $this->assertStringContainsString('<div class="message-role">user</div>', $html);
+    }
+
+    #[Test]
+    public function rendersThinkingFromAssistantMessageDetails(): void
+    {
+        // Real events.jsonl stores thinking at
+        // payload.assistant_message.details.thinking.
+        $this->setupEventsFile('test-session', [
+            $this->makeEvent(1, 1, 'run_started', [
+                'step_id' => 's1',
+                'user_messages' => [['role' => 'user', 'content' => 'Think']],
+            ]),
+            $this->makeEvent(2, 1, 'llm_step_completed', [
+                'step_id' => 's2',
+                'text' => 'Answer.',
+                'stop_reason' => 'end_turn',
+                'assistant_message' => [
+                    'role' => 'assistant',
+                    'details' => ['thinking' => 'Let me reason step by step...'],
+                ],
+            ]),
+        ]);
+
+        $path = $this->projectDir.'/thinking-nested.html';
+        $handler = $this->createHandler('test-session');
+        $handler->handle(new SlashCommand('export', $path, '/export '.$path));
+
+        $html = file_get_contents($path);
+        $this->assertStringContainsString('Thinking', $html);
+        $this->assertStringContainsString('Let me reason step by step', $html);
+        // Should be in a thinking-block details.
+        $this->assertStringContainsString('class="thinking-block"', $html);
+    }
+
+    #[Test]
+    public function rendersUsageTokenStats(): void
+    {
+        $this->setupEventsFile('test-session', [
+            $this->makeEvent(1, 1, 'run_started', [
+                'step_id' => 's1',
+                'user_messages' => [['role' => 'user', 'content' => 'Hi']],
+            ]),
+            $this->makeEvent(2, 1, 'llm_step_completed', [
+                'step_id' => 's2',
+                'text' => 'Response.',
+                'stop_reason' => 'end_turn',
+                'usage' => ['input_tokens' => 7214, 'output_tokens' => 59, 'total_tokens' => 7273],
+            ]),
+        ]);
+
+        $path = $this->projectDir.'/usage-stats.html';
+        $handler = $this->createHandler('test-session');
+        $handler->handle(new SlashCommand('export', $path, '/export '.$path));
+
+        $html = file_get_contents($path);
+
+        $this->assertStringContainsString('Tokens:', $html);
+        $this->assertStringContainsString('in: 7,214', $html);
+        $this->assertStringContainsString('out: 59', $html);
+        $this->assertStringContainsString('total: 7,273', $html);
+        $this->assertStringContainsString('usage-stats', $html);
+    }
+
+    #[Test]
+    public function rendersToolCallArgumentsFromAssistantMessage(): void
+    {
+        // Tool call args come from llm_step_completed.assistant_message.tool_calls.
+        $this->setupEventsFile('test-session', [
+            $this->makeEvent(1, 1, 'run_started', [
+                'step_id' => 's1',
+                'user_messages' => [['role' => 'user', 'content' => 'Run tool']],
+            ]),
+            $this->makeEvent(2, 1, 'llm_step_completed', [
+                'step_id' => 's2',
+                'text' => 'Calling tool...',
+                'stop_reason' => 'tool_call',
+                'usage' => ['input_tokens' => 100, 'output_tokens' => 20, 'total_tokens' => 120],
+                'assistant_message' => [
+                    'tool_calls' => [
+                        ['id' => 'call_abc', 'name' => 'bash', 'arguments' => '{"command":"ls -la"}'],
+                        ['id' => 'call_def', 'name' => 'read', 'arguments' => '{"path":"/tmp/file.txt"}'],
+                    ],
+                ],
+            ]),
+            $this->makeEvent(3, 1, 'tool_execution_start', [
+                'tool_call_id' => 'call_abc',
+                'tool_name' => 'bash',
+                'order_index' => 0,
+            ]),
+            $this->makeEvent(4, 1, 'tool_execution_end', [
+                'tool_call_id' => 'call_abc',
+                'order_index' => 0,
+                'is_error' => false,
+                'result' => 'total 8',
+            ]),
+        ]);
+
+        $path = $this->projectDir.'/tool-args.html';
+        $handler = $this->createHandler('test-session');
+        $handler->handle(new SlashCommand('export', $path, '/export '.$path));
+
+        $html = file_get_contents($path);
+
+        // Inline tool calls in assistant message should show name and args.
+        $this->assertStringContainsString('📎 bash', $html);
+        $this->assertStringContainsString('📎 read', $html);
+        $this->assertStringContainsString('ls -la', $html);
+        $this->assertStringContainsString('file.txt', $html);
+        $this->assertStringContainsString('tool-call-inline', $html);
+        $this->assertStringContainsString('pretty-json', $html);
+
+        // tool_execution_start should also show args from the cross-reference map.
+        $this->assertStringContainsString('tool-args', $html);
+    }
+
+    #[Test]
+    public function rendersAgentCommandAppliedAsUserMessage(): void
+    {
+        // Subsequent turns' user messages appear as agent_command_applied.
+        $this->setupEventsFile('test-session', [
+            $this->makeEvent(1, 1, 'run_started', [
+                'step_id' => 's1',
+                'user_messages' => [['role' => 'user', 'content' => 'First message']],
+            ]),
+            $this->makeEvent(2, 1, 'llm_step_completed', [
+                'step_id' => 's2',
+                'text' => 'Response 1.',
+                'stop_reason' => 'end_turn',
+            ]),
+            $this->makeEvent(3, 1, 'agent_command_applied', [
+                'kind' => 'follow_up',
+                'text' => 'What about the capital of Spain?',
+            ]),
+        ]);
+
+        $path = $this->projectDir.'/agent-command-applied.html';
+        $handler = $this->createHandler('test-session');
+        $handler->handle(new SlashCommand('export', $path, '/export '.$path));
+
+        $html = file_get_contents($path);
+
+        $this->assertStringContainsString('First message', $html);
+        $this->assertStringContainsString('What about the capital of Spain?', $html);
+        // The follow-up should be labelled as 'user'.
+        $this->assertStringContainsString('message-user', $html);
+    }
+
+    #[Test]
+    public function rendersModelNotification(): void
+    {
+        $this->setupEventsFile('test-session', [
+            $this->makeEvent(1, 1, 'run_started', [
+                'step_id' => 's1',
+                'user_messages' => [['role' => 'user', 'content' => 'Hi']],
+            ]),
+            $this->makeEvent(2, 1, 'model_notification', [
+                'kind' => 'delivery',
+                'text' => 'Tool call sent to bash.',
+                'tool_name' => 'bash',
+            ]),
+        ]);
+
+        $path = $this->projectDir.'/model-notification.html';
+        $handler = $this->createHandler('test-session');
+        $handler->handle(new SlashCommand('export', $path, '/export '.$path));
+
+        $html = file_get_contents($path);
+
+        $this->assertStringContainsString('notification (delivery)', $html);
+        $this->assertStringContainsString('Tool call sent to bash.', $html);
+    }
+
+    #[Test]
+    public function genericRendererSurfacesTextField(): void
+    {
+        // An event type not in the match table with a 'text' key.
+        $this->setupEventsFile('test-session', [
+            $this->makeEvent(1, 1, 'run_started', [
+                'step_id' => 's1',
+                'user_messages' => [['role' => 'user', 'content' => 'Hi']],
+            ]),
+            $this->makeEvent(2, 1, 'agent_command_rejected', [
+                'text' => 'Command was rejected.',
+                'kind' => 'rejected',
+            ]),
+            $this->makeEvent(3, 1, 'agent_command_queued', [
+                'text' => 'Command queued for processing.',
+                'kind' => 'follow_up',
+            ]),
+        ]);
+
+        $path = $this->projectDir.'/generic-render.html';
+        $handler = $this->createHandler('test-session');
+        $handler->handle(new SlashCommand('export', $path, '/export '.$path));
+
+        $html = file_get_contents($path);
+
+        // Both events should surface their text in readable form.
+        $this->assertStringContainsString('Command was rejected.', $html);
+        $this->assertStringContainsString('Command queued for processing.', $html);
+
+        // But they should still have raw JSON blocks.
+        $rawCount = substr_count($html, '<summary>Raw event</summary>');
+        $this->assertSame(3, $rawCount);
+    }
+
+    #[Test]
+    public function escapingPreservedInReadableSections(): void
+    {
+        // XSS must be prevented in ALL rendered sections, not just raw JSON.
+        $this->setupEventsFile('test-session', [
+            $this->makeEvent(1, 1, 'run_started', [
+                'step_id' => 's1',
+                'user_messages' => [['role' => 'user', 'content' => '<script>evil()</script>']],
+            ]),
+            $this->makeEvent(2, 1, 'llm_step_completed', [
+                'step_id' => 's2',
+                'text' => '<iframe src=evil>',
+                'stop_reason' => 'end_turn',
+                'assistant_message' => [
+                    'details' => ['thinking' => '<script>think_evil()</script>'],
+                    'tool_calls' => [
+                        ['id' => 'xss1', 'name' => 'bash', 'arguments' => '{"cmd":"<img onerror=alert(1)>"}'],
+                    ],
+                ],
+                'usage' => ['input_tokens' => 1, 'output_tokens' => 1, 'total_tokens' => 2],
+            ]),
+            $this->makeEvent(3, 1, 'tool_execution_start', [
+                'tool_call_id' => 'xss1',
+                'tool_name' => 'bash',
+                'order_index' => 0,
+            ]),
+            $this->makeEvent(4, 1, 'tool_execution_end', [
+                'tool_call_id' => 'xss1',
+                'order_index' => 0,
+                'is_error' => false,
+                'result' => '<svg onload=alert(1)>',
+            ]),
+            $this->makeEvent(5, 1, 'agent_command_applied', [
+                'kind' => 'follow_up',
+                'text' => '<b>bold attempt</b>',
+            ]),
+            $this->makeEvent(6, 1, 'model_notification', [
+                'kind' => 'delivery',
+                'text' => '<marquee>bad</marquee>',
+            ]),
+        ]);
+
+        $path = $this->projectDir.'/escape-all-sections.html';
+        $handler = $this->createHandler('test-session');
+        $handler->handle(new SlashCommand('export', $path, '/export '.$path));
+
+        $html = file_get_contents($path);
+
+        // No raw script tags anywhere in the output.
+        $this->assertStringNotContainsString('<script>', $html);
+        // No raw iframe.
+        $this->assertStringNotContainsString('<iframe', $html);
+        // No raw svg onload.
+        $this->assertStringNotContainsString('<svg onload', $html);
+        // No raw marquee.
+        $this->assertStringNotContainsString('<marquee>', $html);
+        // No unescaped angle brackets.
+        $this->assertStringNotContainsString('<b>bold attempt</b>', $html);
+
+        // Escaped versions should appear.
+        $this->assertStringContainsString('&lt;script&gt;', $html);
+        $this->assertStringContainsString('&lt;iframe', $html);
+        $this->assertStringContainsString('&lt;b&gt;', $html);
+    }
+
     // ── Helpers ────────────────────────────────────────────────────────────
 
     /**
