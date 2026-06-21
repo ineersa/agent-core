@@ -150,17 +150,6 @@ final class SkillDiscovery
     }
 
     /**
-     * Strip YAML frontmatter from SKILL.md content, returning the body only.
-     */
-    public static function stripFrontmatter(string $content): string
-    {
-        $extractor = new MarkdownFrontmatterExtractor();
-        $extraction = $extractor->extract($content);
-
-        return $extraction['body'];
-    }
-
-    /**
      * Recursively scan a directory for skill roots (directories containing SKILL.md).
      *
      * @return list<string> Absolute paths to skill root directories

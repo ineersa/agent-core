@@ -300,32 +300,6 @@ final class SkillDiscoveryTest extends TestCase
         $discovery->discover();
     }
 
-    /* ───────── stripFrontmatter ───────── */
-
-    public function testStripFrontmatter(): void
-    {
-        $content = "---\nname: test\ndescription: Test\n---\n\n# Body\n\nContent here";
-        $stripped = SkillDiscovery::stripFrontmatter($content);
-        $this->assertStringNotContainsString('name: test', $stripped);
-        $this->assertStringContainsString('# Body', $stripped);
-        $this->assertStringContainsString('Content here', $stripped);
-    }
-
-    public function testStripFrontmatterWithDots(): void
-    {
-        $content = "---\nname: test\n...\n\nBody";
-        $stripped = SkillDiscovery::stripFrontmatter($content);
-        $this->assertStringNotContainsString('name: test', $stripped);
-        $this->assertSame(trim("\n\nBody"), trim($stripped));
-    }
-
-    public function testStripFrontmatterNoFrontmatter(): void
-    {
-        $content = "# Just a heading\n\nPlain markdown without frontmatter";
-        $stripped = SkillDiscovery::stripFrontmatter($content);
-        $this->assertSame($content, $stripped);
-    }
-
     /* ───────── Private helpers ───────── */
 
     private function createDiscovery(

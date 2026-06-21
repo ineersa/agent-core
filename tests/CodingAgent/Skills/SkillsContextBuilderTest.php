@@ -176,6 +176,7 @@ final class SkillsContextBuilderTest extends TestCase
             discovery: $discovery,
             config: $skillsConfig,
             renderer: new SkillContextRenderer(),
+            extractor: new MarkdownFrontmatterExtractor(),
         );
     }
 
