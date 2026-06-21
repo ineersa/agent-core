@@ -11,14 +11,20 @@ use PHPUnit\Framework\Attributes\Group;
  *
  * Thesis: the compaction LLM request path (ExecuteCompactionStepWorker →
  * PlatformInterface → llama_cpp_test/test) produces a valid completions
- * response that results in context_compacted → compaction.completed
- * runtime event. The test exercises the full async pipeline: controller
- * subprocess, messenger consumer, LLM worker, result routing, and
- * RuntimeEventTranslator.
+ * response that flows through the full async pipeline — controller
+ * subprocess, messenger consumer, LLM worker, result routing,
+ * RuntimeEventTranslator — and results in compaction.completed (not
+ * compaction.failed) with structural proof in persisted session artifacts
+ * that messages were actually replaced.
  *
  * This test would have caught the Runpod HTTP/2 400 regression because
- * a malformed request that causes model_error would produce
- * compaction.failed instead of compaction.completed.
+ * a malformed request that causes model_error produces compaction.failed
+ * instead of compaction.completed, and the context_compacted event is
+ * absent from events.jsonl.
+ *
+ * Token before/after comparison is deliberately NOT asserted — with
+ * immutable prologue retention the summary can be larger than a tiny
+ * session's compacted body prefix.  Structural proof is more robust.
  */
 #[Group('llm-real')]
 final class CompactionLiveSmokeTest extends ControllerE2eTestCase
@@ -162,10 +168,78 @@ YAML;
 
         self::assertNotNull($estimatedBefore, 'compaction.completed must report estimated_tokens_before');
         self::assertNotNull($estimatedAfter, 'compaction.completed must report estimated_tokens_after');
+        self::assertGreaterThan(0, $estimatedBefore, 'estimated_tokens_before must be positive');
+        self::assertGreaterThan(0, $estimatedAfter, 'estimated_tokens_after must be positive');
+
+        // ── Phase 4: Structural proof from persisted session artifacts ──
+        //
+        // The runtime compaction.completed event proves the external
+        // contract (no model_error).  Session artifacts prove the
+        // internal pipeline: context_compacted was emitted, the
+        // compacted message list was persisted, and a compact_summary
+        // marker exists in the replaced messages.
+
+        $sessionDir = $this->tempDir.'/.hatfield/sessions/'.$this->sessionId;
+        $this->assertSessionArtifactsExist($sessionDir, $compactEvents);
+
+        $eventsPath = $sessionDir.'/events.jsonl';
+        self::assertFileExists($eventsPath, 'Session events.jsonl must exist');
+
+        $coreEvents = [];
+        foreach (\file($eventsPath, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES) as $line) {
+            $evt = \json_decode($line, true, 512, \JSON_THROW_ON_ERROR);
+            if (\is_array($evt)) {
+                $coreEvents[] = $evt;
+            }
+        }
+
+        $compactedCoreEvents = \array_filter(
+            $coreEvents,
+            static fn (array $e): bool => ($e['type'] ?? '') === 'context_compacted',
+        );
+
+        self::assertNotEmpty(
+            $compactedCoreEvents,
+            'events.jsonl must contain a context_compacted event — the compaction pipeline must produce a core event'
+            ."\n".$this->collectDiagnostics($compactEvents),
+        );
+
+        $contextCompacted = \reset($compactedCoreEvents);
+        $cp = $contextCompacted['payload'] ?? [];
+
+        // Messages were actually replaced.
         self::assertGreaterThan(
-            $estimatedAfter,
-            $estimatedBefore,
-            'Token estimate should decrease after compaction (before > after)',
+            0,
+            $cp['messages_compacted'] ?? 0,
+            'context_compacted must report messages_compacted > 0 — messages must be replaced',
+        );
+        self::assertNotEmpty(
+            $cp['summary_text'] ?? '',
+            'context_compacted must carry non-empty summary_text from the model',
+        );
+
+        // The compacted messages array carries the compact_summary marker.
+        $compactedMessages = $cp['messages'] ?? [];
+        self::assertNotEmpty(
+            $compactedMessages,
+            'context_compacted must carry the compacted messages array',
+        );
+
+        $foundSummaryMarker = false;
+        foreach ($compactedMessages as $msg) {
+            if (!\is_array($msg)) {
+                continue;
+            }
+            $metadata = $msg['metadata'] ?? [];
+            if (true === ($metadata['compact_summary'] ?? null)) {
+                $foundSummaryMarker = true;
+                break;
+            }
+        }
+
+        self::assertTrue(
+            $foundSummaryMarker,
+            'Compacted messages must contain a compact_summary marker — the summary was injected',
         );
     }
 
