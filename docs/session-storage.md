@@ -188,6 +188,28 @@ projected events.
 No separate transcript.jsonl file is written. Transcript blocks are a derived
 projection of the canonical event stream and are never persisted independently.
 
+### Compaction replay and resume semantics
+
+Context compaction stores a checkpoint event (`context_compacted`) that carries
+the full replacement message list in `payload.messages`.  Replay treats this as
+a complete replacement snapshot:
+
+1.  Events before `context_compacted` build the original message list.
+2.  `context_compacted` **replaces** the message list with `payload.messages`
+    — the full new compacted list (summary message + retained tail).
+3.  Later events append new messages normally on top of the compacted list.
+
+The summary message carries `metadata: {"compact_summary": true}` so the
+compacted origin is identifiable in the message list.  Repeated compaction
+works because the prior summary message becomes part of the current list and
+is incorporated into the new summary.
+
+Failed compaction events (`context_compaction_failed`) do **not** replace
+messages.  The payload uses `messages_replaced: false` and the original
+message list is preserved unchanged.  `state.json` is rebuildable from
+`events.jsonl` at any time — after a compaction, replay reconstructs the
+compacted state exactly.
+
 ## ID rules and integrity checks
 
 1. **Directory name is canonical.** The directory under `.hatfield/sessions/`
