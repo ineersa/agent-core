@@ -23,7 +23,6 @@ final readonly class AgentDefinitionDTO
     public function __construct(
         public string $name,
         public string $description,
-        public AgentTypeEnum $type,
         public array $tools,
         public McpPolicyDTO $mcp,
         public ?string $model = null,

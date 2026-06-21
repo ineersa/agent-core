@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\PromptTemplate\Tests;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\PromptsConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
+use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateFrontmatterParser;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateLoader;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
@@ -45,7 +46,7 @@ final class PromptTemplateLoaderTest extends TestCase
             runtimeConfig: $runtimeConfig ?? new PromptTemplatesRuntimeConfig(),
             pathResolver: $this->pathResolver,
             cwd: $this->cwd,
-            frontmatterParser: new PromptTemplateFrontmatterParser(),
+            frontmatterParser: new PromptTemplateFrontmatterParser(new MarkdownFrontmatterExtractor()),
             logger: $this->logger,
         );
     }

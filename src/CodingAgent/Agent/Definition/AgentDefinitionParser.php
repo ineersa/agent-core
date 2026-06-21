@@ -4,34 +4,38 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Definition;
 
+use Symfony\Component\Serializer\Exception\MissingConstructorArgumentsException;
+use Symfony\Component\Serializer\Exception\NotNormalizableValueException;
+use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
+use Symfony\Component\Validator\ConstraintViolationInterface;
+use Symfony\Component\Validator\Validator\ValidatorInterface;
+
 /**
  * Parses and validates a single agent definition Markdown file.
  *
  * Reads the file (or accepts raw content), extracts YAML frontmatter via
- * {@see AgentFrontmatterParser}, validates every field against the schema,
- * applies defaults, and returns a fully-typed {@see AgentDefinitionDTO}.
+ * {@see AgentFrontmatterParser}, checks for unknown fields, denormalizes
+ * into {@see AgentFrontmatterDTO} using Symfony Serializer, validates with
+ * Symfony Validator, and maps the result into a final {@see AgentDefinitionDTO}.
  *
- * Rules:
- *  - Unknown top-level frontmatter fields are rejected with an actionable error.
- *  - Required fields must be present and of the correct type.
- *  - No type coercion: "3" is not an int, "true" is not a bool.
- *  - Every error message includes the file path and field name.
+ * Rules (enforced by Serializer + Validator, not manual is_* checks):
+ *  - Unknown top-level frontmatter fields are rejected (known-key check).
+ *  - Required fields must be present and of the correct type (Validator).
+ *  - No type coercion (Serializer type enforcement disabled).
+ *  - Every error message includes the file path and field property path.
  *
  * @internal
  */
 final class AgentDefinitionParser
 {
-    /** Valid reasoning/thinking levels. */
-    private const VALID_THINKING = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'];
-
+    /** Allowed top-level YAML fields (kept in sync with AgentFrontmatterDTO properties). */
     private const ALLOWED_FIELDS = [
         'name',
         'description',
-        'type',
+        'tools',
         'model',
         'thinking',
-        'tools',
-        'mcp',
         'skills',
         'inheritProjectContext',
         'inheritAgentsMd',
@@ -42,10 +46,16 @@ final class AgentDefinitionParser
         'parallelAllowed',
         'disabled',
         'handoffFormat',
+        'mcp',
     ];
 
+    /** Allowed MCP sub-fields (kept in sync with McpFrontmatterDTO properties). */
+    private const ALLOWED_MCP_FIELDS = ['mode', 'tools'];
+
     public function __construct(
-        private readonly AgentFrontmatterParser $frontmatterParser = new AgentFrontmatterParser(),
+        private readonly AgentFrontmatterParser $frontmatterParser,
+        private readonly DenormalizerInterface $denormalizer,
+        private readonly ValidatorInterface $validator,
     ) {
     }
 
@@ -80,441 +90,177 @@ final class AgentDefinitionParser
      */
     public function parseContent(string $raw, string $filePath): AgentDefinitionDTO
     {
+        // 1. Extract frontmatter array from Markdown
         $parsed = $this->frontmatterParser->parse($raw, $filePath);
-
         $frontmatter = $parsed['frontmatter'];
         $body = $parsed['body'];
 
-        // --- Unknown field check ---
-        $this->checkUnknownFields($frontmatter, $filePath);
+        // 2. Denormalize frontmatter array → AgentFrontmatterDTO (rejects unknown fields)
+        $frontmatterDto = $this->denormalizeFrontmatter($frontmatter, $filePath);
 
-        // --- Required fields ---
-        $name = $this->validateName($frontmatter, $filePath);
-        $description = $this->validateDescription($frontmatter, $filePath);
-        $type = $this->validateType($frontmatter, $filePath);
-        $tools = $this->validateTools($frontmatter, $filePath);
+        // 3. Validate with Symfony Validator
+        $this->validateFrontmatterDto($frontmatterDto, $filePath);
 
-        // --- Optional fields with defaults ---
-        $model = $this->validateOptionalString('model', $frontmatter, $filePath);
-        $thinking = $this->validateThinking($frontmatter, $filePath);
-        $skills = $this->validateOptionalStringList('skills', $frontmatter, $filePath);
-        $inheritProjectContext = $this->validateOptionalBool('inheritProjectContext', $frontmatter, $filePath, true);
-        $inheritAgentsMd = $this->validateOptionalBool('inheritAgentsMd', $frontmatter, $filePath, true);
-        $systemPromptMode = $this->validateSystemPromptMode($frontmatter, $filePath);
-        $maxDepth = $this->validateMaxDepth($frontmatter, $filePath);
-        $backgroundAllowed = $this->validateOptionalBool('backgroundAllowed', $frontmatter, $filePath, true);
-        $foregroundAllowed = $this->validateOptionalBool('foregroundAllowed', $frontmatter, $filePath, true);
-        $parallelAllowed = $this->validateOptionalBool('parallelAllowed', $frontmatter, $filePath, false);
-        $disabled = $this->validateOptionalBool('disabled', $frontmatter, $filePath, false);
-        $handoffFormat = $this->validateOptionalString('handoffFormat', $frontmatter, $filePath);
-        $mcp = $this->validateMcp($frontmatter, $filePath);
+        // 4. Cross-field invariants (not expressible as property-level Validator constraints)
+        $this->checkCrossFieldInvariants($frontmatterDto, $filePath);
 
-        // --- Cross-field invariants ---
-        if (!$backgroundAllowed && !$foregroundAllowed) {
+        // 5. Map to final AgentDefinitionDTO (trim strings, convert enums)
+        return $this->mapToDefinition($frontmatterDto, $body, $filePath);
+    }
+
+    /**
+     * Denormalize the frontmatter array into a typed DTO.
+     *
+     * Rejects unknown fields before denormalization.  Uses Symfony Serializer
+     * with DISABLE_TYPE_ENFORCEMENT=true to avoid silent scalar coercion.
+     *
+     * @param array<string, mixed> $frontmatter
+     *
+     * @throws AgentDefinitionValidationException
+     */
+    private function denormalizeFrontmatter(array $frontmatter, string $filePath): AgentFrontmatterDTO
+    {
+        // Reject unknown top-level fields
+        foreach (array_keys($frontmatter) as $key) {
+            if (!\in_array($key, self::ALLOWED_FIELDS, true)) {
+                throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): unknown field "%s".', $filePath, $key));
+            }
+        }
+
+        // Reject optional list fields when they are not arrays
+        foreach (['skills'] as $listField) {
+            if (\array_key_exists($listField, $frontmatter) && !\is_array($frontmatter[$listField])) {
+                throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "%s" must be an array, got %s.', $filePath, $listField, \gettype($frontmatter[$listField])));
+            }
+        }
+
+        // Reject mcp when it is not null, not an array/mapping
+        if (\array_key_exists('mcp', $frontmatter) && null !== $frontmatter['mcp'] && !\is_array($frontmatter['mcp'])) {
+            throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "mcp" must be an object (mapping) or null, got %s.', $filePath, \gettype($frontmatter['mcp'])));
+        }
+
+        // Reject unknown MCP sub-fields
+        if (isset($frontmatter['mcp']) && \is_array($frontmatter['mcp'])) {
+            foreach (array_keys($frontmatter['mcp']) as $mcpKey) {
+                if (!\in_array($mcpKey, self::ALLOWED_MCP_FIELDS, true)) {
+                    throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): unknown field "mcp.%s".', $filePath, $mcpKey));
+                }
+            }
+        }
+
+        // Trim string fields where the DTO expects clean values
+        if (isset($frontmatter['name']) && \is_string($frontmatter['name'])) {
+            $frontmatter['name'] = trim($frontmatter['name']);
+        }
+
+        try {
+            return $this->denormalizer->denormalize(
+                $frontmatter,
+                AgentFrontmatterDTO::class,
+                context: [
+                    AbstractObjectNormalizer::DISABLE_TYPE_ENFORCEMENT => true,
+                ],
+            );
+        } catch (MissingConstructorArgumentsException $e) {
+            $missingArgs = $e->getMissingConstructorArguments();
+            $first = reset($missingArgs);
+
+            throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "%s" is required.', $filePath, ltrim((string) $first, '$')));
+        } catch (NotNormalizableValueException $e) {
+            throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): %s must be of type %s.', $filePath, $e->getPath() ?? 'a field', implode('|', $e->getExpectedTypes() ?? [])));
+        } catch (\TypeError $e) {
+            $message = $e->getMessage();
+            $field = 'a field';
+            if (preg_match('/Argument #\d+ \((\$\w+)\)/', $message, $matches)) {
+                $field = '"'.ltrim($matches[1], '$').'"';
+            }
+
+            throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): %s has an invalid type.', $filePath, $field));
+        }
+    }
+
+    /**
+     * Validate the denormalized DTO using Symfony Validator.
+     *
+     * @throws AgentDefinitionValidationException
+     */
+    private function validateFrontmatterDto(AgentFrontmatterDTO $dto, string $filePath): void
+    {
+        $violations = $this->validator->validate($dto);
+
+        if (0 === $violations->count()) {
+            return;
+        }
+
+        /** @var ConstraintViolationInterface $violation */
+        $violation = $violations->get(0);
+        $propertyPath = $violation->getPropertyPath();
+        $message = $violation->getMessage();
+
+        throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "%s": %s', $filePath, $propertyPath ?: 'a field', $message));
+    }
+
+    /**
+     * Cross-field invariants that cannot be expressed as property-level
+     * Validator constraints.
+     *
+     * @throws AgentDefinitionValidationException
+     */
+    private function checkCrossFieldInvariants(AgentFrontmatterDTO $dto, string $filePath): void
+    {
+        // backgroundAllowed and foregroundAllowed cannot both be false.
+        if (!$dto->backgroundAllowed && !$dto->foregroundAllowed) {
             throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "backgroundAllowed" and "foregroundAllowed" cannot both be false — the agent would never be launchable.', $filePath));
         }
 
-        $sourceDir = \dirname($filePath);
+        // MCP invariants
+        if (null !== $dto->mcp) {
+            $mcp = $dto->mcp;
+            $mcpMode = $mcp->mode ?? 'none';
+
+            // mode=specific requires non-empty tools
+            if ('specific' === $mcpMode && [] === $mcp->tools) {
+                throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "mcp.mode" is "specific" but "mcp.tools" is empty — at least one tool must be listed.', $filePath));
+            }
+
+            // tools set but mode is not specific
+            if ('specific' !== $mcpMode && [] !== $mcp->tools) {
+                throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "mcp.tools" is set but "mcp.mode" is "%s". Tools are only meaningful when mode is "specific". Remove "mcp.tools" or set "mcp.mode" to "specific".', $filePath, $mcpMode));
+            }
+        }
+    }
+
+    /**
+     * Map the validated frontmatter DTO into the final AgentDefinitionDTO.
+     *
+     * Handles trimming of string fields and conversion of enum-like strings
+     * into proper enum objects.
+     */
+    private function mapToDefinition(AgentFrontmatterDTO $dto, string $body, string $filePath): AgentDefinitionDTO
+    {
+        $mcpMode = McpAgentModeEnum::from($dto->mcp?->mode ?? 'none');
+        $mcpTools = array_values(array_map(trim(...), $dto->mcp?->tools ?? []));
 
         return new AgentDefinitionDTO(
-            name: $name,
-            description: $description,
-            type: $type,
-            model: $model,
-            thinking: $thinking,
-            tools: $tools,
-            mcp: $mcp,
-            skills: $skills,
-            inheritProjectContext: $inheritProjectContext,
-            inheritAgentsMd: $inheritAgentsMd,
-            systemPromptMode: $systemPromptMode,
-            maxDepth: $maxDepth,
-            backgroundAllowed: $backgroundAllowed,
-            foregroundAllowed: $foregroundAllowed,
-            parallelAllowed: $parallelAllowed,
-            disabled: $disabled,
-            handoffFormat: $handoffFormat,
+            name: trim($dto->name),
+            description: trim($dto->description),
+            tools: array_values(array_map(trim(...), $dto->tools)),
+            mcp: new McpPolicyDTO(mode: $mcpMode, tools: $mcpTools),
+            model: null !== $dto->model ? trim($dto->model) : null,
+            thinking: null !== $dto->thinking ? trim($dto->thinking) : null,
+            skills: array_values(array_map(trim(...), $dto->skills)),
+            inheritProjectContext: $dto->inheritProjectContext,
+            inheritAgentsMd: $dto->inheritAgentsMd,
+            systemPromptMode: SystemPromptModeEnum::from($dto->systemPromptMode),
+            maxDepth: $dto->maxDepth,
+            backgroundAllowed: $dto->backgroundAllowed,
+            foregroundAllowed: $dto->foregroundAllowed,
+            parallelAllowed: $dto->parallelAllowed,
+            disabled: $dto->disabled,
+            handoffFormat: null !== $dto->handoffFormat ? trim($dto->handoffFormat) : null,
             instructions: $body,
             sourcePath: $filePath,
-            sourceDirectory: $sourceDir,
+            sourceDirectory: \dirname($filePath),
         );
-    }
-
-    // --- Unknown field guard ---
-
-    /**
-     * @param array<string, mixed> $frontmatter
-     */
-    private function checkUnknownFields(array $frontmatter, string $filePath): void
-    {
-        foreach (array_keys($frontmatter) as $key) {
-            if (!\in_array($key, self::ALLOWED_FIELDS, true)) {
-                throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): unknown field "%s". Allowed fields: %s.', $filePath, $key, implode(', ', self::ALLOWED_FIELDS)));
-            }
-        }
-    }
-
-    // --- Required field validators ---
-
-    /**
-     * @param array<string, mixed> $frontmatter
-     */
-    private function validateName(array $frontmatter, string $filePath): string
-    {
-        if (!\array_key_exists('name', $frontmatter)) {
-            throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "name" is required.', $filePath));
-        }
-
-        $name = $frontmatter['name'];
-
-        if (!\is_string($name)) {
-            throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "name" must be a string, got %s.', $filePath, \gettype($name)));
-        }
-
-        $trimmed = trim($name);
-        if ('' === $trimmed) {
-            throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "name" must not be empty.', $filePath));
-        }
-
-        if (!preg_match('/^[a-z][a-z0-9-]{0,47}$/', $trimmed)) {
-            throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "name" must be lowercase alphanumeric with hyphens (e.g. "my-agent"), got "%s".', $filePath, $trimmed));
-        }
-
-        return $trimmed;
-    }
-
-    /**
-     * @param array<string, mixed> $frontmatter
-     */
-    private function validateDescription(array $frontmatter, string $filePath): string
-    {
-        if (!\array_key_exists('description', $frontmatter)) {
-            throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "description" is required.', $filePath));
-        }
-
-        $desc = $frontmatter['description'];
-
-        if (!\is_string($desc)) {
-            throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "description" must be a string, got %s.', $filePath, \gettype($desc)));
-        }
-
-        $trimmed = trim($desc);
-        if ('' === $trimmed) {
-            throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "description" must not be empty.', $filePath));
-        }
-
-        return $trimmed;
-    }
-
-    /**
-     * @param array<string, mixed> $frontmatter
-     */
-    private function validateType(array $frontmatter, string $filePath): AgentTypeEnum
-    {
-        if (!\array_key_exists('type', $frontmatter)) {
-            throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "type" is required.', $filePath));
-        }
-
-        $type = $frontmatter['type'];
-
-        if (!\is_string($type)) {
-            throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "type" must be a string, got %s.', $filePath, \gettype($type)));
-        }
-
-        $agentType = AgentTypeEnum::tryFrom($type);
-        if (null === $agentType) {
-            $allowed = array_map(static fn (AgentTypeEnum $e) => $e->value, AgentTypeEnum::cases());
-            throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "type" must be one of [%s], got "%s".', $filePath, implode(', ', $allowed), $type));
-        }
-
-        return $agentType;
-    }
-
-    /**
-     * @param array<string, mixed> $frontmatter
-     *
-     * @return list<string>
-     */
-    private function validateTools(array $frontmatter, string $filePath): array
-    {
-        if (!\array_key_exists('tools', $frontmatter)) {
-            throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "tools" is required.', $filePath));
-        }
-
-        $tools = $frontmatter['tools'];
-
-        if (!\is_array($tools)) {
-            throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "tools" must be an array, got %s.', $filePath, \gettype($tools)));
-        }
-
-        if ([] === $tools) {
-            throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "tools" must be a non-empty list of strings.', $filePath));
-        }
-
-        if (!array_is_list($tools)) {
-            throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "tools" must be a list (sequential array).', $filePath));
-        }
-
-        foreach ($tools as $i => $tool) {
-            if (!\is_string($tool)) {
-                throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "tools[%d]" must be a string, got %s.', $filePath, $i, \gettype($tool)));
-            }
-            if ('' === trim($tool)) {
-                throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "tools[%d]" must not be empty.', $filePath, $i));
-            }
-            if (trim($tool) !== $tool) {
-                throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "tools[%d]" must not have leading or trailing whitespace, got "%s".', $filePath, $i, $tool));
-            }
-        }
-
-        return $tools;
-    }
-
-    // --- Optional field validators ---
-
-    /**
-     * @param array<string, mixed> $frontmatter
-     */
-    private function validateOptionalString(string $field, array $frontmatter, string $filePath): ?string
-    {
-        if (!\array_key_exists($field, $frontmatter)) {
-            return null;
-        }
-
-        $value = $frontmatter[$field];
-        if (null === $value) {
-            return null;
-        }
-
-        if (!\is_string($value)) {
-            throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "%s" must be a string or null, got %s.', $filePath, $field, \gettype($value)));
-        }
-
-        $trimmed = trim($value);
-        if ('' === $trimmed) {
-            throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "%s" must not be empty.', $filePath, $field));
-        }
-
-        return $trimmed;
-    }
-
-    /**
-     * @param array<string, mixed> $frontmatter
-     */
-    private function validateOptionalBool(string $field, array $frontmatter, string $filePath, bool $default): bool
-    {
-        if (!\array_key_exists($field, $frontmatter)) {
-            return $default;
-        }
-
-        $value = $frontmatter[$field];
-
-        if (!\is_bool($value)) {
-            throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "%s" must be a boolean (true/false), got %s.', $filePath, $field, \gettype($value)));
-        }
-
-        return $value;
-    }
-
-    /**
-     * @param array<string, mixed> $frontmatter
-     *
-     * @return list<string>
-     */
-    private function validateOptionalStringList(string $field, array $frontmatter, string $filePath): array
-    {
-        if (!\array_key_exists($field, $frontmatter)) {
-            return [];
-        }
-
-        $value = $frontmatter[$field];
-
-        if (!\is_array($value)) {
-            throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "%s" must be an array, got %s.', $filePath, $field, \gettype($value)));
-        }
-
-        if ([] === $value) {
-            return [];
-        }
-
-        if (!array_is_list($value)) {
-            throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "%s" must be a list (sequential array).', $filePath, $field));
-        }
-
-        foreach ($value as $i => $item) {
-            if (!\is_string($item)) {
-                throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "%s[%d]" must be a string, got %s.', $filePath, $field, $i, \gettype($item)));
-            }
-            if ('' === trim($item)) {
-                throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "%s[%d]" must not be empty.', $filePath, $field, $i));
-            }
-            if (trim($item) !== $item) {
-                throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "%s[%d]" must not have leading or trailing whitespace, got "%s".', $filePath, $field, $i, $item));
-            }
-        }
-
-        return $value;
-    }
-
-    /**
-     * @param array<string, mixed> $frontmatter
-     */
-    private function validateThinking(array $frontmatter, string $filePath): ?string
-    {
-        if (!\array_key_exists('thinking', $frontmatter)) {
-            return null;
-        }
-
-        $value = $frontmatter['thinking'];
-        if (null === $value) {
-            return null;
-        }
-
-        if (!\is_string($value)) {
-            throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "thinking" must be a string or null, got %s.', $filePath, \gettype($value)));
-        }
-
-        $trimmed = trim($value);
-        if (!\in_array($trimmed, self::VALID_THINKING, true)) {
-            throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "thinking" must be one of [%s], got "%s".', $filePath, implode(', ', self::VALID_THINKING), $trimmed));
-        }
-
-        return $trimmed;
-    }
-
-    /**
-     * @param array<string, mixed> $frontmatter
-     */
-    private function validateSystemPromptMode(array $frontmatter, string $filePath): SystemPromptModeEnum
-    {
-        if (!\array_key_exists('systemPromptMode', $frontmatter)) {
-            return SystemPromptModeEnum::Replace;
-        }
-
-        $value = $frontmatter['systemPromptMode'];
-
-        if (!\is_string($value)) {
-            throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "systemPromptMode" must be a string, got %s.', $filePath, \gettype($value)));
-        }
-
-        $mode = SystemPromptModeEnum::tryFrom($value);
-        if (null === $mode) {
-            $allowed = array_map(static fn (SystemPromptModeEnum $e) => $e->value, SystemPromptModeEnum::cases());
-            throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "systemPromptMode" must be one of [%s], got "%s".', $filePath, implode(', ', $allowed), $value));
-        }
-
-        return $mode;
-    }
-
-    /**
-     * @param array<string, mixed> $frontmatter
-     */
-    private function validateMaxDepth(array $frontmatter, string $filePath): int
-    {
-        if (!\array_key_exists('maxDepth', $frontmatter)) {
-            return 1;
-        }
-
-        $value = $frontmatter['maxDepth'];
-
-        if (!\is_int($value)) {
-            throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "maxDepth" must be an integer, got %s.', $filePath, \gettype($value)));
-        }
-
-        if ($value < 0 || $value > 5) {
-            throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "maxDepth" must be between 0 and 5, got %d.', $filePath, $value));
-        }
-
-        return $value;
-    }
-
-    // --- MCP validation ---
-
-    /**
-     * @param array<string, mixed> $frontmatter
-     */
-    private function validateMcp(array $frontmatter, string $filePath): McpPolicyDTO
-    {
-        if (!\array_key_exists('mcp', $frontmatter)) {
-            return new McpPolicyDTO(mode: McpAgentModeEnum::None, tools: []);
-        }
-
-        $mcp = $frontmatter['mcp'];
-
-        // Explicit null is equivalent to absent.
-        if (null === $mcp) {
-            return new McpPolicyDTO(mode: McpAgentModeEnum::None, tools: []);
-        }
-
-        if (!\is_array($mcp)) {
-            throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "mcp" must be an object (mapping) or null, got %s.', $filePath, \gettype($mcp)));
-        }
-
-        // Validate mcp sub-fields
-        $knownMcpFields = ['mode', 'tools'];
-        foreach (array_keys($mcp) as $key) {
-            if (!\in_array($key, $knownMcpFields, true)) {
-                throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): unknown field "mcp.%s". Allowed MCP fields: %s.', $filePath, $key, implode(', ', $knownMcpFields)));
-            }
-        }
-
-        // Determine mode: explicit value, or default None.
-        $mode = McpAgentModeEnum::None;
-        if (\array_key_exists('mode', $mcp)) {
-            $modeRaw = $mcp['mode'];
-            if (null === $modeRaw) {
-                $mode = McpAgentModeEnum::None;
-            } elseif (!\is_string($modeRaw)) {
-                throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "mcp.mode" must be a string, got %s.', $filePath, \gettype($modeRaw)));
-            } else {
-                $parsedMode = McpAgentModeEnum::tryFrom($modeRaw);
-                if (null === $parsedMode) {
-                    $allowed = array_map(static fn (McpAgentModeEnum $e) => $e->value, McpAgentModeEnum::cases());
-                    throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "mcp.mode" must be one of [%s], got "%s".', $filePath, implode(', ', $allowed), $modeRaw));
-                }
-                $mode = $parsedMode;
-            }
-        }
-
-        // tools
-        $tools = [];
-        if (\array_key_exists('tools', $mcp)) {
-            $toolsRaw = $mcp['tools'];
-
-            if (null === $toolsRaw) {
-                $tools = [];
-            } elseif (!\is_array($toolsRaw)) {
-                throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "mcp.tools" must be an array, got %s.', $filePath, \gettype($toolsRaw)));
-            } else {
-                if ([] !== $toolsRaw && !array_is_list($toolsRaw)) {
-                    throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "mcp.tools" must be a list (sequential array).', $filePath));
-                }
-
-                foreach ($toolsRaw as $i => $tool) {
-                    if (!\is_string($tool)) {
-                        throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "mcp.tools[%d]" must be a string, got %s.', $filePath, $i, \gettype($tool)));
-                    }
-                    if ('' === trim($tool)) {
-                        throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "mcp.tools[%d]" must not be empty.', $filePath, $i));
-                    }
-                    if (trim($tool) !== $tool) {
-                        throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "mcp.tools[%d]" must not have leading or trailing whitespace, got "%s".', $filePath, $i, $tool));
-                    }
-                }
-
-                $tools = $toolsRaw;
-            }
-        }
-
-        // Cross-field MCP invariants
-        if (McpAgentModeEnum::Specific === $mode && [] === $tools) {
-            throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "mcp.mode" is "specific" but "mcp.tools" is empty or missing — at least one tool must be listed.', $filePath));
-        }
-
-        if (McpAgentModeEnum::Specific !== $mode && [] !== $tools) {
-            throw new AgentDefinitionValidationException(\sprintf('Agent definition ("%s"): "mcp.tools" is set but "mcp.mode" is "%s". Tools are only meaningful when mode is "specific". Remove "mcp.tools" or set "mcp.mode" to "specific".', $filePath, $mode->value));
-        }
-
-        return new McpPolicyDTO(mode: $mode, tools: $tools);
     }
 }
