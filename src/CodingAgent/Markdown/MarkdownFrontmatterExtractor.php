@@ -55,7 +55,7 @@ final class MarkdownFrontmatterExtractor
         }
 
         // Frontmatter only if content starts with a valid opening delimiter line:
-        // "---" followed by newline or EOF.
+        // "---" followed by EOF, newline, or only whitespace until newline/EOF.
         if (!str_starts_with($content, self::OPENING_DELIMITER)) {
             return [
                 'yamlBlock' => null,
@@ -67,9 +67,14 @@ final class MarkdownFrontmatterExtractor
 
         $afterOpening = substr($content, 3);
 
-        // The character after "---" must be "\n" or EOF for it to be a real
-        // frontmatter delimiter line (reject "---title").
-        if ('' !== $afterOpening && "\n" !== $afterOpening[0]) {
+        // The rest of the opening delimiter line must be empty or whitespace-only
+        // (reject "---title" and "--- extra junk").
+        $openingLineEnd = strpos($afterOpening, "\n");
+        $restOfOpeningLine = false !== $openingLineEnd
+            ? substr($afterOpening, 0, $openingLineEnd)
+            : $afterOpening;
+
+        if ('' !== trim($restOfOpeningLine)) {
             return [
                 'yamlBlock' => null,
                 'body' => $content,
@@ -110,8 +115,9 @@ final class MarkdownFrontmatterExtractor
      * Find the closing frontmatter delimiter line.
      *
      * Searches for "\n---" or "\n..." at the start of a line.
-     * The delimiter must appear as its own line: after the three chars,
-     * the next character must be a newline, space, tab, or EOF.
+     * The delimiter must appear as its own real delimiter line: after the
+     * three chars the rest of the line must be empty or whitespace-only
+     * (reject "---body" and "--- extra junk").
      *
      * Returns the position of the "\n" character that precedes the closing
      * delimiter, or null if not found.
@@ -124,12 +130,13 @@ final class MarkdownFrontmatterExtractor
             $afterNewline = substr($content, $newline + 1, 3);
 
             if (\in_array($afterNewline, self::CLOSING_DELIMITERS, true)) {
-                $nextCharPos = $newline + 4;
-                if ($nextCharPos >= \strlen($content)
-                    || "\n" === $content[$nextCharPos]
-                    || ' ' === $content[$nextCharPos]
-                    || "\t" === $content[$nextCharPos]
-                ) {
+                // Verify the rest of the delimiter line is whitespace-only.
+                $lineEnd = strpos($content, "\n", $newline + 1);
+                $restOfLine = false !== $lineEnd
+                    ? substr($content, $newline + 4, $lineEnd - $newline - 4)
+                    : substr($content, $newline + 4);
+
+                if ('' === trim($restOfLine)) {
                     return $newline;
                 }
             }

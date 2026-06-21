@@ -16,6 +16,8 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\PropertyAccess\PropertyAccess;
 use Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor;
+use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
+use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 use Symfony\Component\Serializer\Serializer;
 use Symfony\Component\Serializer\SerializerInterface;
@@ -42,8 +44,10 @@ final class AgentDefinitionParserTest extends TestCase
     {
         $reflectionExtractor = new ReflectionExtractor();
 
+        $classMetadataFactory = new ClassMetadataFactory(new AttributeLoader());
+
         $objectNormalizer = new ObjectNormalizer(
-            classMetadataFactory: null,
+            classMetadataFactory: $classMetadataFactory,
             nameConverter: null,
             propertyAccessor: PropertyAccess::createPropertyAccessor(),
             propertyTypeExtractor: $reflectionExtractor,
@@ -590,11 +594,9 @@ final class AgentDefinitionParserTest extends TestCase
         $this->parser->parseContent($content, '/test/all-with-tools.md');
     }
 
-    public function testBoolFieldRejectsString(): void
+    public function testBoolFieldRejectsNonCoercibleValue(): void
     {
-        // PHP typed properties coerce strings to bools (e.g. 'yes' → true),
-        // so string values are accepted by the property-level coercion.
-        // This test verifies that non-coercible values (arrays) are rejected.
+        // Serializer with strict type enforcement rejects arrays for bool properties.
         $content = $this->wrapContent([
             'name' => 'string-bool',
             'description' => 'Array for bool',
@@ -603,14 +605,14 @@ final class AgentDefinitionParserTest extends TestCase
         ]);
 
         $this->expectException(AgentDefinitionValidationException::class);
+        $this->expectExceptionMessageMatches('/must be of type bool/');
 
         $this->parser->parseContent($content, '/test/string-bool.md');
     }
 
-    public function testParallelAllowedRejectsString(): void
+    public function testParallelAllowedRejectsNonCoercibleValue(): void
     {
-        // YAML parses 'true' as a bool; PHP property coercion handles
-        // non-matching types. Use a non-coercible value instead.
+        // Serializer with strict type enforcement rejects arrays for bool properties.
         $content = $this->wrapContent([
             'name' => 'string-parallel',
             'description' => 'Array for bool',
@@ -619,24 +621,25 @@ final class AgentDefinitionParserTest extends TestCase
         ]);
 
         $this->expectException(AgentDefinitionValidationException::class);
+        $this->expectExceptionMessageMatches('/must be of type bool/');
 
         $this->parser->parseContent($content, '/test/string-parallel.md');
     }
 
     public function testDisabledRejectsInt(): void
     {
-        // PHP coerces 1 → true for bool properties, so Type constraint passes.
-        // This test verifies that 'tools' as a string is still rejected.
+        // Serializer with strict type enforcement rejects int for bool.
         $content = $this->wrapContent([
             'name' => 'int-disabled',
-            'description' => 'Valid disabled',
+            'description' => 'Int for bool',
             'tools' => ['read'],
             'disabled' => 1,
         ]);
 
-        // PHP coerces 1 → true, and Validator accepts it.
-        $dto = $this->parser->parseContent($content, '/test/int-disabled.md');
-        self::assertTrue($dto->disabled);
+        $this->expectException(AgentDefinitionValidationException::class);
+        $this->expectExceptionMessageMatches('/disabled.*must be of type bool/');
+
+        $this->parser->parseContent($content, '/test/int-disabled.md');
     }
 
     public function testBothLaunchModesFalseThrows(): void
@@ -743,17 +746,17 @@ final class AgentDefinitionParserTest extends TestCase
 
     public function testMaxDepthRejectsString(): void
     {
-        // PHP coerces numeric strings to int for typed properties, so
-        // '3' → 3 passes. Use a non-numeric string to prove rejection.
+        // Serializer with strict type enforcement rejects quoted strings for int,
+        // even numeric strings like "3" that PHP would otherwise coerce.
         $content = $this->wrapContent([
             'name' => 'string-depth',
             'description' => 'String depth',
             'tools' => ['read'],
-            'maxDepth' => 'three',
+            'maxDepth' => '3',
         ]);
 
         $this->expectException(AgentDefinitionValidationException::class);
-        $this->expectExceptionMessageMatches('/maxDepth.*invalid type/');
+        $this->expectExceptionMessageMatches('/maxDepth.*must be of type int/');
 
         $this->parser->parseContent($content, '/test/string-depth.md');
     }
@@ -934,33 +937,38 @@ final class AgentDefinitionParserTest extends TestCase
 
     public function testToolsEntryWithLeadingWhitespaceRejected(): void
     {
-        // In YAML, a quoted string with leading whitespace like '  read' would
-        // be preserved. The validator's NotBlank(normalizer: 'trim') lets this
-        // pass but trims for the NotBlank check. The Serializer/Validator
-        // approach accepts it, then the parser trims it on mapping.
-        // This test verifies the value is trimmed on output.
-        $dto = $this->parse([
+        // Leading whitespace in tool entries must be rejected, not silently trimmed.
+        $content = $this->wrapContent([
             'name' => 'ws-tool',
             'description' => 'Whitespace tool',
             'tools' => ['  read'],
         ]);
 
-        self::assertSame(['read'], $dto->tools);
+        $this->expectException(AgentDefinitionValidationException::class);
+        $this->expectExceptionMessageMatches('/tools\[0\].*must not have leading or trailing whitespace/');
+
+        $this->parser->parseContent($content, '/test/ws-tool.md');
     }
 
     public function testToolsEntryWithTrailingWhitespaceRejected(): void
     {
-        $dto = $this->parse([
+        // Trailing whitespace in tool entries must be rejected, not silently trimmed.
+        $content = $this->wrapContent([
             'name' => 'ws-tool-trailing',
             'description' => 'Trailing whitespace tool',
             'tools' => ['read  '],
         ]);
 
-        self::assertSame(['read'], $dto->tools);
+        $this->expectException(AgentDefinitionValidationException::class);
+        $this->expectExceptionMessageMatches('/tools\[0\].*must not have leading or trailing whitespace/');
+
+        $this->parser->parseContent($content, '/test/ws-tool-trailing.md');
     }
 
     public function testMcpToolsEntryWhitespaceOnlyRejected(): void
     {
+        // Whitespace-only entries trigger the leading/trailing whitespace Regex
+        // (the NotBlank without normalizer:trim lets non-falsy whitespace through).
         $content = $this->wrapContent([
             'name' => 'mcp-ws-only',
             'description' => 'MCP whitespace-only tool',
@@ -969,25 +977,30 @@ final class AgentDefinitionParserTest extends TestCase
         ]);
 
         $this->expectException(AgentDefinitionValidationException::class);
-        $this->expectExceptionMessageMatches('/mcp\.tools\[0\].*must not be empty/');
+        $this->expectExceptionMessageMatches('/mcp\.tools\[0\].*must not have leading or trailing whitespace/');
 
         $this->parser->parseContent($content, '/test/mcp-ws-only.md');
     }
 
     public function testMcpToolsEntryWithSurroundingWhitespaceRejected(): void
     {
-        $dto = $this->parse([
+        // Surrounding whitespace in mcp.tools entries must be rejected.
+        $content = $this->wrapContent([
             'name' => 'mcp-ws-surround',
             'description' => 'MCP tool with surrounding whitespace',
             'tools' => ['read'],
             'mcp' => ['mode' => 'specific', 'tools' => ['  context7__query-docs  ']],
         ]);
 
-        self::assertSame(['context7__query-docs'], $dto->mcp->tools);
+        $this->expectException(AgentDefinitionValidationException::class);
+        $this->expectExceptionMessageMatches('/mcp\.tools\[0\].*must not have leading or trailing whitespace/');
+
+        $this->parser->parseContent($content, '/test/mcp-ws-surround.md');
     }
 
     public function testSkillsEntryWhitespaceOnlyRejected(): void
     {
+        // Whitespace-only entries trigger the leading/trailing whitespace Regex.
         $content = $this->wrapContent([
             'name' => 'skills-ws-only',
             'description' => 'Skills whitespace-only',
@@ -996,21 +1009,25 @@ final class AgentDefinitionParserTest extends TestCase
         ]);
 
         $this->expectException(AgentDefinitionValidationException::class);
-        $this->expectExceptionMessageMatches('/skills\[0\].*must not be empty/');
+        $this->expectExceptionMessageMatches('/skills\[0\].*must not have leading or trailing whitespace/');
 
         $this->parser->parseContent($content, '/test/skills-ws-only.md');
     }
 
     public function testSkillsEntryWithSurroundingWhitespaceRejected(): void
     {
-        $dto = $this->parse([
+        // Surrounding whitespace in skills entries must be rejected.
+        $content = $this->wrapContent([
             'name' => 'skills-ws-surround',
             'description' => 'Skills with surrounding whitespace',
             'tools' => ['read'],
             'skills' => ['  testing  '],
         ]);
 
-        self::assertSame(['testing'], $dto->skills);
+        $this->expectException(AgentDefinitionValidationException::class);
+        $this->expectExceptionMessageMatches('/skills\[0\].*must not have leading or trailing whitespace/');
+
+        $this->parser->parseContent($content, '/test/skills-ws-surround.md');
     }
 
     public function testMcpModeNullTreatedAsNone(): void
@@ -1088,5 +1105,106 @@ final class AgentDefinitionParserTest extends TestCase
         ]);
 
         self::assertSame('trimmed description', $dto->description);
+    }
+
+    // -----------------------------------------------------------------
+    //  Coercion rejection: Serializer MUST reject type mismatches
+    // -----------------------------------------------------------------
+
+    public function testInheritProjectContextRejectsQuotedYesString(): void
+    {
+        // "yes" in YAML quotes is a string, not the YAML boolean true.
+        // Strict type enforcement must reject string for bool.
+        $content = $this->wrapContent([
+            'name' => 'coerce-bool',
+            'description' => 'String yes for bool',
+            'tools' => ['read'],
+            'inheritProjectContext' => 'yes',
+        ]);
+
+        $this->expectException(AgentDefinitionValidationException::class);
+        $this->expectExceptionMessageMatches('/inheritProjectContext.*must be of type bool/');
+
+        $this->parser->parseContent($content, '/test/coerce-bool-yes.md');
+    }
+
+    public function testParallelAllowedRejectsQuotedFalseString(): void
+    {
+        // "false" in YAML quotes is a string, not the YAML boolean false.
+        // Strict type enforcement must reject string for bool.
+        $content = $this->wrapContent([
+            'name' => 'coerce-parallel',
+            'description' => 'String false for bool',
+            'tools' => ['read'],
+            'parallelAllowed' => 'false',
+        ]);
+
+        $this->expectException(AgentDefinitionValidationException::class);
+        $this->expectExceptionMessageMatches('/parallelAllowed.*must be of type bool/');
+
+        $this->parser->parseContent($content, '/test/coerce-parallel-false.md');
+    }
+
+    public function testBackgroundAllowedRejectsQuotedTrueString(): void
+    {
+        // "true" in YAML quotes is a string, not the YAML boolean true.
+        // Strict type enforcement must reject string for bool.
+        $content = $this->wrapContent([
+            'name' => 'coerce-bg',
+            'description' => 'String true for bool',
+            'tools' => ['read'],
+            'backgroundAllowed' => 'true',
+        ]);
+
+        $this->expectException(AgentDefinitionValidationException::class);
+        $this->expectExceptionMessageMatches('/backgroundAllowed.*must be of type bool/');
+
+        $this->parser->parseContent($content, '/test/coerce-bg-true.md');
+    }
+
+    // -----------------------------------------------------------------
+    //  Delimiter-line tightening: real delimiter lines only
+    // -----------------------------------------------------------------
+
+    public function testOpeningDelimiterWithTrailingWhitespaceAccepted(): void
+    {
+        // "---  " (spaces after opening delimiter) is a real delimiter line.
+        $raw = "---  \nname: ws-open\ndescription: Trailing whitespace on opening line\ntools:\n  - read\n---\nbody\n";
+
+        $dto = $this->rawParse($raw);
+        self::assertSame('ws-open', $dto->name);
+        self::assertSame('body', $dto->instructions);
+    }
+
+    public function testClosingDelimiterWithTrailingJunkRejected(): void
+    {
+        // "--- extra junk" on a closing line is NOT a real delimiter.
+        $raw = "---\nname: bad-close\ndescription: Closing line has junk\ntools:\n  - read\n--- extra junk\nbody\n";
+
+        $this->expectException(AgentDefinitionValidationException::class);
+        $this->expectExceptionMessageMatches('/no closing delimiter/');
+
+        $this->parser->parseContent($raw, '/test/bad-close.md');
+    }
+
+    public function testClosingDelimiterWithTrailingWhitespaceAccepted(): void
+    {
+        // "---  " (spaces after closing delimiter) is a real delimiter line.
+        $raw = "---\nname: ws-close\ndescription: Trailing whitespace on closing line\ntools:\n  - read\n---  \nbody\n";
+
+        $dto = $this->rawParse($raw);
+        self::assertSame('ws-close', $dto->name);
+        self::assertSame('body', $dto->instructions);
+    }
+
+    public function testDotsClosingDelimiterWithTrailingJunkRejected(): void
+    {
+        // "... extra junk" is not a real delimiter.
+        $raw = "---\nname: bad-dot-close\ndescription: Dots closing with junk\ntools:\n  - read\n... extra junk\nbody\n";
+
+        $this->expectException(AgentDefinitionValidationException::class);
+        $this->expectExceptionMessageMatches('/no closing delimiter/');
+
+        $this->parser->parseContent($raw, '/test/bad-dot-close.md');
     }
 }

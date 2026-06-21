@@ -24,9 +24,10 @@ final class McpFrontmatterDTO
 
         #[Assert\All([
             new Assert\Type('string', '"mcp.tools[{{ index }}]" must be a string.'),
-            new Assert\NotBlank(
-                normalizer: 'trim',
-                message: '"mcp.tools[{{ index }}]" must not be empty.',
+            new Assert\NotBlank(message: '"mcp.tools[{{ index }}]" must not be empty.'),
+            new Assert\Regex(
+                pattern: '/^\\S+(\\s+\\S+)*$/',
+                message: '"mcp.tools[{{ index }}]" must not have leading or trailing whitespace.',
             ),
         ])]
         public readonly array $tools = [],

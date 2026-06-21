@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Definition;
 
 use Symfony\Component\Validator\Constraints as Assert;
+use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
 /**
  * Normalized frontmatter DTO — the raw YAML fields after denormalization
@@ -36,9 +37,10 @@ final class AgentFrontmatterDTO
         #[Assert\Count(min: 1, minMessage: '"tools" must be a non-empty list of strings.')]
         #[Assert\All([
             new Assert\Type('string', '"tools[{{ index }}]" must be a string.'),
-            new Assert\NotBlank(
-                normalizer: 'trim',
-                message: '"tools[{{ index }}]" must not be empty.',
+            new Assert\NotBlank(message: '"tools[{{ index }}]" must not be empty.'),
+            new Assert\Regex(
+                pattern: '/^\\S+(\\s+\\S+)*$/',
+                message: '"tools[{{ index }}]" must not have leading or trailing whitespace.',
             ),
         ])]
         public readonly array $tools,
@@ -55,9 +57,10 @@ final class AgentFrontmatterDTO
 
         #[Assert\All([
             new Assert\Type('string', '"skills[{{ index }}]" must be a string.'),
-            new Assert\NotBlank(
-                normalizer: 'trim',
-                message: '"skills[{{ index }}]" must not be empty.',
+            new Assert\NotBlank(message: '"skills[{{ index }}]" must not be empty.'),
+            new Assert\Regex(
+                pattern: '/^\\S+(\\s+\\S+)*$/',
+                message: '"skills[{{ index }}]" must not have leading or trailing whitespace.',
             ),
         ])]
         public readonly array $skills = [],
@@ -98,5 +101,31 @@ final class AgentFrontmatterDTO
         #[Assert\Valid]
         public readonly ?McpFrontmatterDTO $mcp = null,
     ) {
+    }
+
+    #[Assert\Callback]
+    public function validateCrossField(ExecutionContextInterface $context): void
+    {
+        if (!$this->backgroundAllowed && !$this->foregroundAllowed) {
+            $context->buildViolation('"backgroundAllowed" and "foregroundAllowed" cannot both be false — the agent would never be launchable.')
+                ->atPath('backgroundAllowed')
+                ->addViolation();
+        }
+
+        if (null !== $this->mcp) {
+            $mcpMode = $this->mcp->mode ?? 'none';
+
+            if ('specific' === $mcpMode && [] === $this->mcp->tools) {
+                $context->buildViolation('"mcp.mode" is "specific" but "mcp.tools" is empty — at least one tool must be listed.')
+                    ->atPath('mcp.tools')
+                    ->addViolation();
+            }
+
+            if ('specific' !== $mcpMode && [] !== $this->mcp->tools) {
+                $context->buildViolation(\sprintf('"mcp.tools" is set but "mcp.mode" is "%s". Tools are only meaningful when mode is "specific". Remove "mcp.tools" or set "mcp.mode" to "specific".', $mcpMode))
+                    ->atPath('mcp.tools')
+                    ->addViolation();
+            }
+        }
     }
 }
