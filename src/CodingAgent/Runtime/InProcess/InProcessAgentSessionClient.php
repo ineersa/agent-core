@@ -53,6 +53,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         private readonly SkillsContextBuilder $skillsContextBuilder,
         private readonly PromptTemplateService $promptTemplateService,
         private readonly SessionMetadataStore $sessionMetaStore,
+        private readonly ModelResolver $modelResolver,
         private readonly ?RuntimeEventSinkInterface $transientSink = null,
         private readonly ?ToolQuestionStoreInterface $toolQuestionStore = null,
         private readonly ToolQuestionAnswerResolver $answerResolver = new ToolQuestionAnswerResolver(),
@@ -126,19 +127,34 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         // Guard: only persist when a session row already exists ($request->runId !== ''),
         // since HatfieldSessionStore::updateMetadata() is a no-op for unknown sessions
         // and sessions are created lazily by createSession()/SessionInitializer before start().
+        //
+        // Two-tier resolution mirrors what the LLM worker uses on turn 1 via
+        // SessionAwareModelResolver → ModelResolver.  Explicit request values
+        // (--model / /new --model) take the fast catalog-free parse path; when
+        // absent, the effective model/reasoning is resolved via ModelResolver so
+        // the session is pinned to what the first turn actually used.  This makes
+        // resume stable even if the global default later changes.
         $sessionId = $request->runId;
         if ('' !== $sessionId) {
-            $metaFields = [];
-            if (null !== $request->model) {
-                $ref = AiModelReference::tryParse($request->model);
-                if (null !== $ref) {
-                    $metaFields['model'] = $ref->toString();
-                    $metaFields['model_provider'] = $ref->providerId;
-                    $metaFields['model_name'] = $ref->modelName;
-                }
-            }
+            $modelRef = null !== $request->model
+                ? AiModelReference::tryParse($request->model)
+                : $this->modelResolver->resolveInitialModel(null, $sessionId);
+
+            $reasoning = null;
             if (null !== $request->reasoning && \in_array($request->reasoning, ModelResolver::LEVELS, true)) {
-                $metaFields['reasoning'] = $request->reasoning;
+                $reasoning = $request->reasoning;
+            } else {
+                $reasoning = $this->modelResolver->resolveInitialReasoning(null, $sessionId);
+            }
+
+            $metaFields = [];
+            if (null !== $modelRef) {
+                $metaFields['model'] = $modelRef->toString();
+                $metaFields['model_provider'] = $modelRef->providerId;
+                $metaFields['model_name'] = $modelRef->modelName;
+            }
+            if ('' !== $reasoning) {
+                $metaFields['reasoning'] = $reasoning;
             }
             if ([] !== $metaFields) {
                 $this->sessionMetaStore->writeSessionMetadata($sessionId, $metaFields);
