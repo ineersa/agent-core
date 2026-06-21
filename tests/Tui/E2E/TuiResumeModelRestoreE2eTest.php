@@ -67,11 +67,11 @@ final class TuiResumeModelRestoreE2eTest extends TestCase
     {
         // ── Phase 1: Start TUI with --model and --prompt ──
         //
-        // The --model=llama_cpp_test/test flag passes through to
+        // The --model=llama_cpp_test/alpha flag passes through to
         // StartRunRequest.model, which the fixed start() persists
         // to the session DB row.
         $pane1 = $this->tmux->startDetached(
-            command: $this->firstAgentCommand(),
+            command: $this->firstAgentCommand('llama_cpp_test/alpha'),
             prefix: 'tui-model-resume-create',
             width: 120,
             height: 60,
@@ -169,18 +169,22 @@ final class TuiResumeModelRestoreE2eTest extends TestCase
                 self::assertStringContainsString($this->sessionId, $resumedPane,
                     'Session ID must appear after resume');
 
-                // C) The model name (short form) must appear in the footer.
-                //    FooterStateSegmentProvider shows the model name from
-                //    TuiSessionState.footerModel, which FooterStateInitializer
-                //    seeds from session metadata on resume.
-                //    shortModelName('llama_cpp_test/test') === 'test'.
-                self::assertStringContainsString('test', $resumedPane,
-                    'Footer must show the session-selected model (test) after resume');
-
-                // D) The global default (which is different) must NOT win.
-                //    Our isolated config has a different model set as default
-                //    to prove session metadata takes precedence.
-                self::assertStringNotContainsString('deepseek-v4-pro', $resumedPane,
+                // C) The footer model segment (around ◆) must show the
+                //    session-selected model 'alpha', NOT the global default
+                //    'default'.  shortModelName('llama_cpp_test/alpha') === 'alpha'.
+                //    Extracting only the footer segment eliminates false positives
+                //    from transcript text that happens to contain the same substring.
+                $footerPos = strpos($resumedPane, '◆');
+                self::assertNotFalse($footerPos,
+                    'Footer model marker ◆ must be visible after resume');
+                $footerSegment = substr($resumedPane, (int)$footerPos);
+                $newlinePos = strpos($footerSegment, "\n");
+                if (false !== $newlinePos) {
+                    $footerSegment = substr($footerSegment, 0, (int)$newlinePos);
+                }
+                self::assertStringContainsString('alpha', $footerSegment,
+                    'Footer must show the session-selected model (alpha) after resume');
+                self::assertStringNotContainsString('default', $footerSegment,
                     'Footer must NOT show the global default model on resume');
 
                 // E) Idle status — proves TUI is alive.
@@ -214,7 +218,7 @@ final class TuiResumeModelRestoreE2eTest extends TestCase
     /**
      * Command for the first TUI launch: creates a session with model.
      */
-    private function firstAgentCommand(): string
+    private function firstAgentCommand(string $model = 'llama_cpp_test/alpha'): string
     {
         $fixturePath = __DIR__.'/fixtures/tui-resume-minimal.json';
         if (!\is_file($fixturePath)) {
@@ -229,7 +233,7 @@ final class TuiResumeModelRestoreE2eTest extends TestCase
                 .'HOME=%s '
                 .'HATFIELD_LLM_REPLAY_FIXTURE_PATH=%s '
                 .'%s %s agent '
-                .'--model=llama_cpp_test/test '
+                .'--model='.\escapeshellarg($model).' '
                 .'--prompt=hi '
                 .'--tools-excluded=bash '
                 .'2>&1',
@@ -272,10 +276,11 @@ final class TuiResumeModelRestoreE2eTest extends TestCase
         $dir = TestDirectoryIsolation::createProjectTempDir('tui-e2e');
         @\mkdir($dir.'/.hatfield', 0o777, true);
 
-        // Two providers: llama_cpp_test (with model 'test') and
+        // Two providers: llama_cpp_test (with model 'alpha') and
         // a fictitious 'other' provider as the default.  This proves
-        // the session-scoped model (llama_cpp_test/test) wins over
-        // the global default (other/default).
+        // the session-scoped model (llama_cpp_test/alpha) wins over
+        // the global default (other/default).  'alpha' is chosen to
+        // avoid collision with transcript text like "test harness".
         $settings = [
             'ai' => [
                 'default_model' => 'other/default',
@@ -292,8 +297,8 @@ final class TuiResumeModelRestoreE2eTest extends TestCase
                         'supports_embeddings' => false,
                         'supports_thinking_levels' => true,
                         'models' => [
-                            'test' => [
-                                'name' => 'test',
+                            'alpha' => [
+                                'name' => 'alpha',
                                 'context_window' => 32768,
                                 'max_tokens' => 32768,
                                 'input' => ['text', 'image'],

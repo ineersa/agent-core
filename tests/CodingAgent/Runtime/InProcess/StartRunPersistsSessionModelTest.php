@@ -31,9 +31,10 @@ use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
  * global default.
  *
  * Uses {@see IsolatedKernelTestCase} (per-class kernel boot, the
- * project-preferred base for DB tests).  The spy runner is re-installed
- * in {@see setUp()} each test method because the container is shared
- * across methods with per-class boot.  No test overrides the container's
+ * project-preferred base for DB tests).  The spy runner is installed
+ * once in {@see setUpBeforeClass()} before any service access
+ * (TestContainer rejects replacements of already-initialized services);
+ * {@see setUp()} only fetches the shared instance.  No test overrides the container's
  * ModelResolver — the start-time default is verified via the container's
  * own resolver against manually-built resolvers with different defaults.
  */
@@ -194,8 +195,11 @@ final class StartRunPersistsSessionModelTest extends IsolatedKernelTestCase
 
         self::assertNotNull($this->spyRunner->lastStartInput,
             'Runner must still be called even when no session row exists');
-        // No session row means updateMetadata is a no-op — nothing to assert
-        // beyond "no crash".
+
+        // No metadata must be written when no session row exists.
+        $meta = $this->hatfieldSessionStore()->loadMetadata('');
+        self::assertEmpty($meta,
+            'No session metadata must be written for an empty session ID');
     }
 
     public function testStartPersistsResolvedDefaultModelWhenNoExplicitModelGiven(): void
