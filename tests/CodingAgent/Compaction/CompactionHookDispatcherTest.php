@@ -8,8 +8,8 @@ use Ineersa\CodingAgent\Compaction\BeforeCompactionHookInterface;
 use Ineersa\CodingAgent\Compaction\CompactionHookContextDTO;
 use Ineersa\CodingAgent\Compaction\CompactionHookDispatcher;
 use Ineersa\CodingAgent\Compaction\CompactionHookResultDTO;
-use Ineersa\CodingAgent\Compaction\CompactionPreparationDTO;
 use PHPUnit\Framework\TestCase;
+use stdClass;
 
 /**
  * Contract tests for {@see CompactionHookDispatcher} aggregation semantics.
@@ -48,8 +48,7 @@ final class CompactionHookDispatcherTest extends TestCase
             }
         };
 
-        $neverCalled = false;
-        $lateHook = new class($neverCalled) implements BeforeCompactionHookInterface {
+        $lateHook = new class implements BeforeCompactionHookInterface {
             public bool $called = false;
 
             public function beforeCompaction(CompactionHookContextDTO $context): CompactionHookResultDTO
@@ -227,18 +226,75 @@ final class CompactionHookDispatcherTest extends TestCase
             runId: 'run-1',
             turnNo: 5,
             trigger: 'manual',
-            preparation: new CompactionPreparationDTO(
-                messagesToSummarize: [],
-                retainedTailMessages: [],
-                tokenEstimateBefore: 10000,
-                messagesCompacted: 5,
-                messagesRetained: 3,
-                firstRetainedIndex: 0,
-                priorSummaryPresent: false,
-            ),
+            tokenEstimateBefore: 10000,
+            messagesCompacted: 5,
+            messagesRetained: 3,
+            firstRetainedIndex: 0,
+            priorSummaryPresent: false,
             customInstructions: null,
             resolvedModel: 'openai/gpt-4',
             thinkingLevel: null,
         );
+    }
+
+    /**
+     * Thesis: {@see CompactionHookDispatcher::sanitiseMetadata()} drops
+     * objects, resources, and closures while preserving null, scalars, and
+     * nested arrays.  This prevents non-serialisable hook metadata from
+     * breaking event persistence.
+     */
+    public function testSanitiseMetadataDropsUnsafeValues(): void
+    {
+        $dispatcher = new CompactionHookDispatcher([]);
+
+        $fh = \fopen('php://memory', 'r');
+        \assert(false !== $fh);
+
+        try {
+            $raw = [
+                'scalar_int' => 42,
+                'scalar_string' => 'hello',
+                'scalar_bool' => true,
+                'null_val' => null,
+                'list' => [1, 2, 3],
+                'map' => ['nested' => 'ok', 'deep' => [true, false]],
+                'object' => new stdClass(),
+                'resource' => $fh,
+            ];
+
+            $safe = $dispatcher->sanitiseMetadata($raw);
+
+            $this->assertSame(42, $safe['scalar_int']);
+            $this->assertSame('hello', $safe['scalar_string']);
+            $this->assertTrue($safe['scalar_bool']);
+            $this->assertNull($safe['null_val']);
+            $this->assertSame([1, 2, 3], $safe['list']);
+            $this->assertSame(['nested' => 'ok', 'deep' => [true, false]], $safe['map']);
+            $this->assertArrayNotHasKey('object', $safe, 'stdClass must be dropped.');
+            $this->assertArrayNotHasKey('resource', $safe, 'resource must be dropped.');
+        } finally {
+            \fclose($fh);
+        }
+    }
+
+    /**
+     * Thesis: {@see CompactionHookDispatcher::sanitiseMetadata()} preserves
+     * non-string keys in nested arrays (lists) but drops non-string top-level
+     * keys so the output is always a string-keyed map.
+     */
+    public function testSanitiseMetadataDropsNonStringTopLevelKeys(): void
+    {
+        $dispatcher = new CompactionHookDispatcher([]);
+
+        $safe = $dispatcher->sanitiseMetadata([
+            0 => 'zero',
+            'key' => 'value',
+            1 => 'one',
+        ]);
+
+        // Non-string top-level keys are skipped; only string keys survive.
+        $this->assertArrayNotHasKey(0, $safe);
+        $this->assertArrayNotHasKey(1, $safe);
+        $this->assertSame('value', $safe['key']);
     }
 }

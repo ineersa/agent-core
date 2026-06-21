@@ -17,8 +17,8 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Ineersa\CodingAgent\Compaction\CompactionHookContextDTO;
 use Ineersa\CodingAgent\Compaction\CompactionHookDispatcher;
-use Ineersa\CodingAgent\Compaction\CompactionPreparationDTO;
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\CompactionRuntimeSettingsDTO;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -67,7 +67,6 @@ final readonly class CompactRunHandler implements RunMessageHandler
         $activeModelStr = $activeModel?->toString();
 
         $runtimeSettings = $this->appConfig->compaction->resolveRuntimeSettings($activeModelStr);
-        $resolvedModel = $runtimeSettings->model ?? $activeModelStr;
         $thinkingLevel = $runtimeSettings->thinkingLevel;
 
         // Build opaque model options bag for the async worker.
@@ -101,7 +100,7 @@ final readonly class CompactRunHandler implements RunMessageHandler
         RunState $state,
         string $runId,
         ?string $activeModelStr,
-        object $runtimeSettings,
+        CompactionRuntimeSettingsDTO $runtimeSettings,
         ?string $thinkingLevel,
         array $modelOptions,
     ): HandlerResult {
@@ -144,19 +143,16 @@ final readonly class CompactRunHandler implements RunMessageHandler
         $resolvedModel = $runtimeSettings->model ?? $activeModelStr;
 
         // ── Before-compaction hooks ──
+        // Build safe scalar context — no raw AgentMessage lists exposed.
         $hookContext = new CompactionHookContextDTO(
             runId: $runId,
             turnNo: $state->turnNo,
             trigger: $message->trigger,
-            preparation: new CompactionPreparationDTO(
-                messagesToSummarize: $preparation->messagesToSummarize ?? [],
-                retainedTailMessages: $preparation->retainedTailMessages ?? [],
-                tokenEstimateBefore: $preparation->tokenEstimateBefore,
-                messagesCompacted: $preparation->messagesCompacted,
-                messagesRetained: $preparation->messagesRetained,
-                firstRetainedIndex: $preparation->firstRetainedIndex,
-                priorSummaryPresent: $preparation->priorSummaryPresent,
-            ),
+            tokenEstimateBefore: $preparation->tokenEstimateBefore,
+            messagesCompacted: $preparation->messagesCompacted,
+            messagesRetained: $preparation->messagesRetained,
+            firstRetainedIndex: $preparation->firstRetainedIndex,
+            priorSummaryPresent: $preparation->priorSummaryPresent,
             customInstructions: $message->customInstructions,
             resolvedModel: $resolvedModel,
             thinkingLevel: $thinkingLevel,
@@ -181,6 +177,7 @@ final readonly class CompactRunHandler implements RunMessageHandler
                     'message' => 'Compaction cancelled: '.$hookResult->cancelReason,
                     'messages_replaced' => false,
                     'trigger' => $message->trigger,
+                    'cancelled' => true,
                     'hook_metadata' => $hookResult->metadata,
                 ],
             ]]);
@@ -200,6 +197,8 @@ final readonly class CompactRunHandler implements RunMessageHandler
         }
 
         // Replacement summary: skip LLM, build compacted messages directly.
+        // Sanitise metadata before it enters event payloads even in the
+        // replacement path (no transport, but event payload is persisted).
         if ($hookResult->hasReplacementSummary()) {
             return $this->handleReplacementSummary(
                 runId: $runId,
@@ -209,11 +208,15 @@ final readonly class CompactRunHandler implements RunMessageHandler
                 replacementSummary: $hookResult->replacementSummary,
                 thinkingLevel: $thinkingLevel,
                 resolvedModel: $resolvedModel,
-                hookMetadata: $hookResult->metadata,
+                hookMetadata: $this->hookDispatcher->sanitiseMetadata($hookResult->metadata),
+                runtimeSettings: $runtimeSettings,
             );
         }
 
         // ── Normal async LLM path ──
+
+        // Sanitise hook metadata before it enters transport/event payloads.
+        $sanitisedHookMetadata = $this->hookDispatcher->sanitiseMetadata($hookResult->metadata);
 
         $summarizationMessages = $this->compactionService->buildSummarizationMessages(
             $preparation,
@@ -243,7 +246,7 @@ final readonly class CompactRunHandler implements RunMessageHandler
                 'messages_retained' => $preparation->messagesRetained,
                 'first_retained_index' => $preparation->firstRetainedIndex,
                 'prior_summary_present' => $preparation->priorSummaryPresent,
-                'hook_metadata' => $hookResult->metadata,
+                'hook_metadata' => $sanitisedHookMetadata,
             ],
         ]]);
 
@@ -275,6 +278,7 @@ final readonly class CompactRunHandler implements RunMessageHandler
             firstRetainedIndex: $preparation->firstRetainedIndex,
             tokenEstimateBefore: $preparation->tokenEstimateBefore,
             trigger: $message->trigger,
+            hookMetadata: [] !== $sanitisedHookMetadata ? $sanitisedHookMetadata : null,
         );
 
         return new HandlerResult(
@@ -293,7 +297,7 @@ final readonly class CompactRunHandler implements RunMessageHandler
      * events (started + compacted) and rewrites RunState.messages, but
      * never dispatches an ExecuteCompactionStep worker.
      *
-     * @param array<string, mixed> $hookMetadata JSON-safe metadata from hooks
+     * @param array<string, mixed> $hookMetadata Sanitised JSON-safe metadata from hooks
      */
     private function handleReplacementSummary(
         string $runId,
@@ -304,6 +308,7 @@ final readonly class CompactRunHandler implements RunMessageHandler
         ?string $thinkingLevel,
         ?string $resolvedModel,
         array $hookMetadata,
+        CompactionRuntimeSettingsDTO $runtimeSettings,
     ): HandlerResult {
         $this->logger->info('Using hook-provided replacement summary, skipping LLM call.', [
             'event_type' => 'compaction.hook.replacement_summary',
@@ -312,6 +317,8 @@ final readonly class CompactRunHandler implements RunMessageHandler
         ]);
 
         // Emit context_compaction_started with replacement flag.
+        // Schema matches the normal async path: includes keep_recent_tokens
+        // and prior_summary_present for consistent event payload shape.
         $startedEvents = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, [[
             'type' => RunEventTypeEnum::ContextCompactionStarted->value,
             'payload' => [
@@ -320,10 +327,12 @@ final readonly class CompactRunHandler implements RunMessageHandler
                 'model' => $resolvedModel,
                 'thinking_level' => $thinkingLevel,
                 'estimated_tokens' => $preparation->tokenEstimateBefore,
+                'keep_recent_tokens' => $runtimeSettings->keepRecentTokens,
                 'messages_before' => \count($state->messages),
                 'messages_to_summarize' => $preparation->messagesCompacted,
                 'messages_retained' => $preparation->messagesRetained,
                 'first_retained_index' => $preparation->firstRetainedIndex,
+                'prior_summary_present' => $preparation->priorSummaryPresent,
                 'hook_metadata' => $hookMetadata,
                 'replacement_summary' => true,
             ],

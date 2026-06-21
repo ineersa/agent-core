@@ -66,6 +66,7 @@ final readonly class CompactionStepResultHandler implements RunMessageHandler
         // turns, and activeStepId changes when a newer compaction starts.
         if ($state->turnNo !== $message->turnNo() || $state->activeStepId !== $message->stepId()) {
             $this->logger->info('Compaction result is stale — discarding.', [
+                'session_id' => $runId,
                 'component' => 'compaction',
                 'event_type' => 'compaction.stale_result',
                 'run_id' => $runId,
@@ -99,6 +100,7 @@ final readonly class CompactionStepResultHandler implements RunMessageHandler
         // The raw message is still stored for diagnostics/logging.
         if (null !== $message->error) {
             $this->logger->error('Compaction model invocation failed.', [
+                'session_id' => $runId,
                 'component' => 'compaction',
                 'event_type' => 'compaction.failed',
                 'run_id' => $runId,
@@ -139,6 +141,7 @@ final readonly class CompactionStepResultHandler implements RunMessageHandler
 
         if ('' === $summaryText) {
             $this->logger->info('Compaction produced an empty summary.', [
+                'session_id' => $runId,
                 'component' => 'compaction',
                 'event_type' => 'compaction.failed',
                 'run_id' => $runId,
@@ -167,6 +170,7 @@ final readonly class CompactionStepResultHandler implements RunMessageHandler
         // Success: build compacted messages and replace RunState.messages.
 
         $this->logger->info('Compaction applied successfully.', [
+            'session_id' => $runId,
             'component' => 'compaction',
             'event_type' => 'compaction.applied',
             'run_id' => $runId,
@@ -227,6 +231,7 @@ final readonly class CompactionStepResultHandler implements RunMessageHandler
                 'model' => $message->model,
                 'thinking_level' => $message->modelOptions['thinking_level'] ?? null,
                 'trigger' => $message->trigger,
+                'hook_metadata' => $message->hookMetadata,
             ],
         ]]);
 

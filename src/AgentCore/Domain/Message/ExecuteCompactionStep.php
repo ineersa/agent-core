@@ -37,6 +37,7 @@ final readonly class ExecuteCompactionStep extends AbstractAgentBusMessage
      * @param int                        $firstRetainedIndex    Original index of first retained message
      * @param int                        $tokenEstimateBefore   Token estimate before compaction
      * @param string                     $trigger               Trigger source ('manual' or 'auto')
+     * @param array<string, mixed>|null  $hookMetadata          Sanitised hook metadata to attach to context_compacted payload
      */
     public function __construct(
         string $runId,
@@ -53,6 +54,7 @@ final readonly class ExecuteCompactionStep extends AbstractAgentBusMessage
         public int $firstRetainedIndex,
         public int $tokenEstimateBefore,
         public string $trigger,
+        public ?array $hookMetadata = null,
     ) {
         parent::__construct($runId, $turnNo, $stepId, $attempt, $idempotencyKey);
     }

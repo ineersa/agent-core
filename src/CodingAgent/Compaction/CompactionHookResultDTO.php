@@ -7,14 +7,19 @@ namespace Ineersa\CodingAgent\Compaction;
 /**
  * Result from a single {@see BeforeCompactionHookInterface::beforeCompaction()} call.
  *
- * Aggregated by {@see CompactionHookDispatcher} across all registered hooks.
+ * Aggregated (mutably merged) by {@see CompactionHookDispatcher} across all
+ * registered hooks.  The DTO is also the mutable aggregation container itself —
+ * the dispatcher instantiates one empty instance and merges each hook result
+ * into it.  Convenience factories ({@see continue()}, {@see cancel()},
+ * {@see replaceSummary()}) produce single-hook results.
  *
  * Semantics:
  *  - cancelReason: non-null → stop iterating, emit context_compaction_failed.
  *  - replacementSummary: non-empty non-null → skip LLM, use this text as summary;
  *    only the first non-empty replacement is kept.
  *  - additionalInstructions: appended to existing custom instructions.
- *  - metadata: shallow-merged across hooks; must be JSON-safe (scalar/list/map).
+ *  - metadata: shallow-merged across hooks; must be JSON-safe (scalar/list/map)
+ *    after passing through {@see CompactionHookDispatcher::sanitiseMetadata()}.
  */
 final class CompactionHookResultDTO
 {

@@ -339,6 +339,7 @@ final class CompactRunHandlerTest extends TestCase
         $this->assertStringContainsString('hook_cancelled:', $payload['reason']);
         $this->assertStringContainsString('SafeGuard: session blocked.', $payload['message']);
         $this->assertFalse($payload['messages_replaced']);
+        $this->assertTrue($payload['cancelled'] ?? false, 'Hook-cancelled payload must carry cancelled=true.');
 
         // No worker dispatched.
         $this->assertEmpty($result->effects);
@@ -417,9 +418,12 @@ final class CompactRunHandlerTest extends TestCase
         $this->assertSame(RunEventTypeEnum::ContextCompactionStarted->value, $result->events[0]->type);
         $this->assertSame(RunEventTypeEnum::ContextCompacted->value, $result->events[1]->type);
 
-        // Started payload includes replacement_summary=true.
+        // Started payload includes replacement_summary=true and the same base
+        // schema fields as the normal async path (keep_recent_tokens, prior_summary_present).
         $startedPayload = $result->events[0]->payload;
         $this->assertTrue($startedPayload['replacement_summary'] ?? false);
+        $this->assertSame(20000, $startedPayload['keep_recent_tokens'] ?? null);
+        $this->assertFalse($startedPayload['prior_summary_present'] ?? true);
 
         // Compacted payload contains the replacement summary text.
         $compactedPayload = $result->events[1]->payload;
@@ -617,6 +621,7 @@ final class CompactRunHandlerTest extends TestCase
         $this->assertSame('daily', $payload['hook_metadata']['limit_type'] ?? null);
         $this->assertSame(86400, $payload['hook_metadata']['reset_at'] ?? null);
         $this->assertStringContainsString('hook_cancelled:', $payload['reason']);
+        $this->assertTrue($payload['cancelled'] ?? false, 'Hook-cancelled payload must carry cancelled=true.');
     }
 
     // ── helpers ──

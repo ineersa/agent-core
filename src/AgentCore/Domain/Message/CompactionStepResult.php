@@ -30,6 +30,7 @@ final readonly class CompactionStepResult extends AbstractAgentBusMessage
      * @param string                     $trigger              Trigger source ('manual' or 'auto')
      * @param string                     $model                Resolved compaction model ref used for invocation
      * @param array<string, mixed>       $modelOptions         Opaque model/platform options echoed back from the step (e.g. thinking_level)
+     * @param array<string, mixed>|null  $hookMetadata         Sanitised hook metadata echoed from the step for context_compacted payload
      */
     public function __construct(
         string $runId,
@@ -47,6 +48,7 @@ final readonly class CompactionStepResult extends AbstractAgentBusMessage
         public string $trigger,
         public string $model,
         public array $modelOptions,
+        public ?array $hookMetadata = null,
     ) {
         parent::__construct($runId, $turnNo, $stepId, $attempt, $idempotencyKey);
     }

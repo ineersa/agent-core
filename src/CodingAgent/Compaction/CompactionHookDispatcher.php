@@ -16,10 +16,12 @@ use Psr\Log\NullLogger;
  * Aggregation rules:
  *  - cancel: first hook that cancels wins — remaining hooks are skipped.
  *  - replacement summary: first non-empty replacement summary wins; later
- *    replacement summaries are ignored. Once a replacement is found, hooks
- *    continue ONLY for cancel and additional instructions.
+ *    replacement summaries are ignored.  Metadata and additional instructions
+ *    from later hooks (including the replacement hook itself) continue to merge
+ *    so that a hook can both replace the summary AND contribute metadata.
  *  - additional instructions: each hook's instructions are appended in order.
- *  - metadata: shallow-merged in order (later keys overwrite earlier).
+ *  - metadata: shallow-merged in order (later keys overwrite earlier);
+ *    sanitised before event persistence via {@see sanitiseMetadata()}.
  *  - exceptions from a single hook are caught, logged as warnings, and do NOT
  *    stop later hooks from running.
  */
@@ -84,5 +86,80 @@ final readonly class CompactionHookDispatcher
         }
 
         return $merged;
+    }
+
+    /**
+     * Sanitise hook metadata so only JSON-safe values reach event payloads
+     * and persistence.  Objects, resources, and closures are dropped;
+     * null, scalars, and array(list/map) values are retained.  Arrays are
+     * recursed into so nested maps stay safe.
+     *
+     * Callers should pass hook metadata through this before attaching it
+     * to any event payload or serialised transport message.
+     *
+     * @param array<string, mixed> $metadata Raw hook metadata (may contain objects etc)
+     *
+     * @return array<string, mixed> Sanitised metadata (only JSON-safe values)
+     */
+    public function sanitiseMetadata(array $metadata): array
+    {
+        if ([] === $metadata) {
+            return [];
+        }
+
+        $safe = [];
+
+        foreach ($metadata as $key => $value) {
+            if (!\is_string($key)) {
+                // Skip non-string keys — event payloads expect string-keyed maps.
+                continue;
+            }
+
+            if (null === $value || \is_scalar($value)) {
+                $safe[$key] = $value;
+
+                continue;
+            }
+
+            if (\is_array($value)) {
+                $safe[$key] = $this->sanitiseMetadataArray($value);
+
+                continue;
+            }
+
+            // Drop objects, resources, closures, and anything else.
+        }
+
+        return $safe;
+    }
+
+    /**
+     * Recursively sanitise an array value (list or map) to be JSON-safe.
+     *
+     * @param array<mixed> $value
+     *
+     * @return array<mixed>
+     */
+    private function sanitiseMetadataArray(array $value): array
+    {
+        $safe = [];
+
+        foreach ($value as $key => $item) {
+            if (null === $item || \is_scalar($item)) {
+                $safe[$key] = $item;
+
+                continue;
+            }
+
+            if (\is_array($item)) {
+                $safe[$key] = $this->sanitiseMetadataArray($item);
+
+                continue;
+            }
+
+            // Drop non-serialisable entries.
+        }
+
+        return $safe;
     }
 }
