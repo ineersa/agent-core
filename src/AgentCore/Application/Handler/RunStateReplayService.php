@@ -964,6 +964,19 @@ final readonly class RunStateReplayService
             ? $payload['details']
             : null;
 
+        // Filter thinking-only assistant messages (no content, no tool
+        // calls, reasoning present in details). These were erroneously
+        // persisted from provider reasoning-only responses (e.g. DeepSeek
+        // when max_tokens is exhausted mid-thinking) and cannot be
+        // replayed as valid conversation turns — providers reject
+        // {content: null, reasoning_content: "..."}.
+        if ([] === $rawToolCalls
+            && null !== $details
+            && \is_string($details['thinking'] ?? null)
+        ) {
+            return null;
+        }
+
         return new AgentMessage(
             role: 'assistant',
             content: [],

@@ -1476,4 +1476,132 @@ final class RunStateReplayServiceTest extends TestCase
             createdAt: new \DateTimeImmutable(),
         ));
     }
+
+    // ── Thinking-only assistant message replay ─────────────────────────────
+
+    /**
+     * Subject: thinking-only assistant messages (content: null, no
+     * tool_calls, details.thinking present) must NOT be replayed as
+     * state messages. They were erroneously persisted before
+     * ExecuteLlmStepWorker started converting reasoning-only provider
+     * responses to errors, and replaying them into the message history
+     * causes provider 400 "content or tool_calls must be set".
+     */
+    public function testThinkingOnlyAssistantNotReplayed(): void
+    {
+        $this->appendEvent(RunEventTypeEnum::RunStarted->value, 1, [
+            'step_id' => 'step-init',
+            'payload' => ['messages' => []],
+        ]);
+
+        $this->appendEvent(RunEventTypeEnum::TurnAdvanced->value, 2, [
+            'step_id' => 'step-1',
+            'turn_no' => 1,
+        ]);
+
+        // A thinking-only assistant message: role=assistant, content=null,
+        // no tool_calls, but reasoning/thinking in details.
+        $this->appendEvent(RunEventTypeEnum::LlmStepCompleted->value, 3, [
+            'step_id' => 'step-1',
+            'assistant_message' => [
+                'role' => 'assistant',
+                'content' => null,
+                'details' => [
+                    'thinking' => 'The user wants me to respond but I ran out of tokens mid-reasoning.',
+                ],
+            ],
+        ]);
+
+        $state = RunState::queued($this->runId);
+        $result = $this->service->rebuildIfStale($state, $this->runId);
+
+        self::assertTrue($result->rebuilt);
+
+        // No assistant message must appear in state messages.
+        $messages = $result->rebuiltState->messages;
+        self::assertCount(
+            0,
+            $messages,
+            'Thinking-only assistant message must not be replayed into state messages.',
+        );
+    }
+
+    /**
+     * Subject: tool-call-only assistant messages (no text content,
+     * but tool_calls present) must still be replayed normally.
+     */
+    public function testToolCallOnlyAssistantStillReplayed(): void
+    {
+        $this->appendEvent(RunEventTypeEnum::RunStarted->value, 1, [
+            'step_id' => 'step-init',
+            'payload' => ['messages' => []],
+        ]);
+
+        $this->appendEvent(RunEventTypeEnum::TurnAdvanced->value, 2, [
+            'step_id' => 'step-1',
+            'turn_no' => 1,
+        ]);
+
+        $this->appendEvent(RunEventTypeEnum::LlmStepCompleted->value, 3, [
+            'step_id' => 'step-1',
+            'assistant_message' => [
+                'role' => 'assistant',
+                'content' => null,
+                'tool_calls' => [
+                    [
+                        'id' => 'call-1',
+                        'name' => 'search',
+                        'arguments' => ['query' => 'test'],
+                    ],
+                ],
+            ],
+        ]);
+
+        $state = RunState::queued($this->runId);
+        $result = $this->service->rebuildIfStale($state, $this->runId);
+
+        self::assertTrue($result->rebuilt);
+        $messages = $result->rebuiltState->messages;
+        self::assertCount(1, $messages, 'Tool-call-only assistant message must be replayed.');
+        self::assertSame('assistant', $messages[0]->role);
+        self::assertSame('call-1', $messages[0]->metadata['tool_calls'][0]['id']);
+    }
+
+    /**
+     * Subject: text-bearing assistant messages with thinking must
+     * still be replayed normally (the thinking is in details, but
+     * content carries text).
+     */
+    public function testTextWithThinkingAssistantStillReplayed(): void
+    {
+        $this->appendEvent(RunEventTypeEnum::RunStarted->value, 1, [
+            'step_id' => 'step-init',
+            'payload' => ['messages' => []],
+        ]);
+
+        $this->appendEvent(RunEventTypeEnum::TurnAdvanced->value, 2, [
+            'step_id' => 'step-1',
+            'turn_no' => 1,
+        ]);
+
+        $this->appendEvent(RunEventTypeEnum::LlmStepCompleted->value, 3, [
+            'step_id' => 'step-1',
+            'assistant_message' => [
+                'role' => 'assistant',
+                'content' => [['type' => 'text', 'text' => 'Here is the answer.']],
+                'details' => [
+                    'thinking' => 'I should explain this carefully.',
+                ],
+            ],
+        ]);
+
+        $state = RunState::queued($this->runId);
+        $result = $this->service->rebuildIfStale($state, $this->runId);
+
+        self::assertTrue($result->rebuilt);
+        $messages = $result->rebuiltState->messages;
+        self::assertCount(1, $messages, 'Text+thinking message must be replayed.');
+        self::assertSame('assistant', $messages[0]->role);
+        self::assertSame('Here is the answer.', $messages[0]->content[0]['text']);
+    }
 }

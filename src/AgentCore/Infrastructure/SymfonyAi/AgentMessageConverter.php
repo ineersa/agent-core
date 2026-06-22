@@ -100,6 +100,24 @@ final class AgentMessageConverter
         $textContent = $this->contentToText($message->content);
         $imageRefParts = $this->extractImageRefParts($message->content);
 
+        // Skip thinking-only assistant messages (no text, no tool calls)
+        // that were erroneously persisted from provider reasoning-only
+        // responses. These cannot be serialized as valid provider
+        // requests — DeepSeek rejects {content: null, reasoning_content:
+        // "..."} because content or tool_calls must be set.
+        //
+        // This is the replay/resume safety net for sessions that were
+        // recorded before ExecuteLlmStepWorker started converting
+        // thinking-only responses to errors.
+        if ('assistant' === $message->role
+            && '' === $textContent
+            && [] === ($message->metadata['tool_calls'] ?? [])
+            && null !== $message->details
+            && \is_string($message->details['thinking'] ?? null)
+        ) {
+            return [];
+        }
+
         $converted = match ($message->role) {
             'system' => [Message::forSystem($textContent)],
             'assistant' => [$this->buildAssistantMessage($textContent, $message)],

@@ -104,6 +104,33 @@ final readonly class ExecuteLlmStepWorker
                 ], $invoke)
             ;
 
+            // Thinking-only assistant messages (no text content, no
+            // tool calls) are not valid conversation turns. Providers
+            // like DeepSeek can produce reasoning-only responses when
+            // max_tokens is exhausted mid-thinking, and replaying these
+            // empty messages causes HTTP 400 "content or tool_calls
+            // must be set". Convert to an error before metrics/logging
+            // so it counts as a failure.
+            $assistantMessage = $response->assistantMessage;
+            if (null !== $assistantMessage
+                && null === $response->error
+                && !$assistantMessage->hasToolCalls()
+                && null === $assistantMessage->asText()
+            ) {
+                $response = new PlatformInvocationResult(
+                    assistantMessage: null,
+                    deltas: $response->deltas,
+                    usage: $response->usage,
+                    stopReason: $response->stopReason,
+                    error: [
+                        'type' => 'empty_assistant_content',
+                        'message' => 'LLM provider returned reasoning without a final assistant response.',
+                        'retryable' => false,
+                    ],
+                    modelNotifications: $response->modelNotifications,
+                );
+            }
+
             $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
 
             // Detect fully empty platform response BEFORE metrics and
