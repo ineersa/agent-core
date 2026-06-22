@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Contract\Compaction\CompactionPrepareResult;
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep;
@@ -281,6 +282,7 @@ final readonly class CompactRunHandler implements RunMessageHandler
             firstRetainedIndex: $preparation->firstRetainedIndex,
             tokenEstimateBefore: $preparation->tokenEstimateBefore,
             trigger: $message->trigger,
+            continueAfterCompaction: $message->continueAfterCompaction,
             hookMetadata: [] !== $sanitisedHookMetadata ? $sanitisedHookMetadata : null,
         );
 
@@ -377,10 +379,13 @@ final readonly class CompactRunHandler implements RunMessageHandler
             ]],
         );
 
-        // Replacement summary is a successful compaction: resolve Compacting
-        // back to Running (auto trigger continues the turn) or Completed
-        // (manual trigger leaves the run terminal so the user can follow-up).
-        $finalStatus = 'auto' === $message->trigger ? RunStatus::Running : RunStatus::Completed;
+        // Replacement summary is a successful compaction: resolve Compacting.
+        // - continueAfterCompaction: the compaction held a pending LLM turn
+        //   (pre-LLM guard path) → Running and emit AdvanceRun so the
+        //   conversation continues.
+        // - Otherwise: maintenance compaction (after-turn hook, manual) →
+        //   Completed (the run was already terminal before compaction).
+        $finalStatus = $message->continueAfterCompaction ? RunStatus::Running : RunStatus::Completed;
 
         // Replace RunState.messages with compacted messages.
         $nextState = new RunState(
@@ -398,9 +403,23 @@ final readonly class CompactRunHandler implements RunMessageHandler
             retryableFailure: $afterStartState->retryableFailure,
         );
 
+        // Pre-LLM guard replacement must continue the LLM turn.
+        $effects = [];
+        if ($message->continueAfterCompaction) {
+            $continueStepId = \sprintf('advance-%d', hrtime(true));
+            $effects[] = new AdvanceRun(
+                runId: $runId,
+                turnNo: $nextState->turnNo,
+                stepId: $continueStepId,
+                attempt: 1,
+                idempotencyKey: hash('sha256', \sprintf('%s|advance|%d|%s', $runId, $nextState->turnNo, $continueStepId)),
+            );
+        }
+
         return new HandlerResult(
             nextState: $nextState,
             events: array_merge($startedEvents, $compactedEvents),
+            effects: $effects,
         );
     }
 

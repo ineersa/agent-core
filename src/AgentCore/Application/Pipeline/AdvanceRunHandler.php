@@ -259,6 +259,10 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             if ($shouldCompact) {
                 $compactStepId = \sprintf('compact-%d', hrtime(true));
 
+                // Pre-LLM guard: this compaction is holding a pending LLM turn.
+                // After successful compaction, the conversation must continue
+                // (AdvanceRun effect) so the LLM turn can proceed on the
+                // compacted context.
                 $compactEffect = new CompactRun(
                     runId: $runId,
                     turnNo: $nextTurnNo,
@@ -266,6 +270,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                     attempt: 1,
                     idempotencyKey: hash('sha256', \sprintf('%s|compact|%d|%s', $runId, $nextTurnNo, $compactStepId)),
                     trigger: 'auto',
+                    continueAfterCompaction: true,
                 );
 
                 // Emit boundary events only — do NOT emit TurnAdvanced

@@ -136,13 +136,15 @@ final class CompactionStepResultHandler implements RunMessageHandler
                     'model' => $message->model,
                     'thinking_level' => $message->modelOptions['thinking_level'] ?? null,
                     'trigger' => $message->trigger,
+                    'continue_after_compaction' => $message->continueAfterCompaction,
                 ],
             ]]);
 
-            // Resolve Compacting status: auto compaction failure leaves
-            // the run ready to continue (the pre-LLM guard won't re-fire
-            // due to turn-level dedup); manual failure returns to terminal.
-            $errorFinalStatus = 'auto' === $message->trigger
+            // Resolve Compacting status: when the compaction was holding
+            // a pending LLM turn (continueAfterCompaction, pre-LLM guard),
+            // the run stays Running so the turn can proceed.  Maintenance
+            // compaction (after-turn hook, manual) returns to terminal.
+            $errorFinalStatus = $message->continueAfterCompaction
                 ? RunStatus::Running
                 : RunStatus::Completed;
 
@@ -174,11 +176,12 @@ final class CompactionStepResultHandler implements RunMessageHandler
                     'model' => $message->model,
                     'thinking_level' => $message->modelOptions['thinking_level'] ?? null,
                     'trigger' => $message->trigger,
+                    'continue_after_compaction' => $message->continueAfterCompaction,
                 ],
             ]]);
 
             // Resolve Compacting status: same policy as model_error path.
-            $emptyFinalStatus = 'auto' === $message->trigger
+            $emptyFinalStatus = $message->continueAfterCompaction
                 ? RunStatus::Running
                 : RunStatus::Completed;
 
@@ -252,13 +255,17 @@ final class CompactionStepResultHandler implements RunMessageHandler
                 'model' => $message->model,
                 'thinking_level' => $message->modelOptions['thinking_level'] ?? null,
                 'trigger' => $message->trigger,
+                'continue_after_compaction' => $message->continueAfterCompaction,
                 'hook_metadata' => $message->hookMetadata,
             ],
         ]]);
 
-        // Resolve Compacting: auto trigger → Running (AdvanceRun will
-        // continue the turn below), manual trigger → Completed (terminal).
-        $finalStatus = 'auto' === $message->trigger
+        // Resolve Compacting based on continuation intent, NOT trigger.
+        // - continueAfterCompaction: the compaction was holding a pending LLM
+        //   turn (pre-LLM guard path) → Running so the turn can continue.
+        // - maintenance (after-turn hook, manual): the run was already
+        //   terminal before compaction → Completed.
+        $finalStatus = $message->continueAfterCompaction
             ? RunStatus::Running
             : RunStatus::Completed;
 
@@ -278,13 +285,12 @@ final class CompactionStepResultHandler implements RunMessageHandler
             retryableFailure: $state->retryableFailure,
         );
 
-        // When compaction was auto-triggered (not manual /compact), dispatch
-        // an AdvanceRun so the LLM turn can continue after compaction completes.
-        // Without this, the pre-LLM guard in AdvanceRunHandler consumes the
-        // AdvanceRun and replaces it with CompactRun — leaving the run stuck
-        // after compaction with no pending continuation.
+        // Continue the LLM turn ONLY when the compaction was holding a
+        // pending turn open (pre-LLM guard path).  After-turn maintenance
+        // and manual /compact must NOT auto-continue — the run is already
+        // terminal and the user is expected to follow-up manually.
         $effects = [];
-        if ('auto' === $message->trigger) {
+        if ($message->continueAfterCompaction) {
             $continueStepId = \sprintf('advance-%d', hrtime(true));
             $effects[] = new AdvanceRun(
                 runId: $runId,

@@ -727,7 +727,8 @@ final readonly class RunStateReplayService
         }
 
         $trigger = \is_string($payload['trigger'] ?? null) ? $payload['trigger'] : 'manual';
-        $finalStatus = 'auto' === $trigger ? RunStatus::Running : RunStatus::Completed;
+        $continueAfterCompaction = (bool) ($payload['continue_after_compaction'] ?? false);
+        $finalStatus = $continueAfterCompaction ? RunStatus::Running : RunStatus::Completed;
 
         return new RunState(
             runId: $state->runId,
@@ -796,13 +797,17 @@ final readonly class RunStateReplayService
 
         // Resolve Compacting status: the terminal failure event ends the
         // compaction lifecycle.
-        // - Step_id matches AND not stale: terminal resolution — use trigger.
+        // - Step_id matches AND not stale: terminal resolution — use
+        //   continue_after_compaction flag to distinguish pre-LLM guard
+        //   failures (stay Running so turn can proceed) from maintenance
+        //   failures (return to Completed).
         // - stale_result or step_id mismatch: always resolve to Running.
         //   The live handler treats stale as non-current without looking at
         //   trigger; mismatch means a newer compaction is in flight.
+        $continueAfterCompaction = (bool) ($payload['continue_after_compaction'] ?? false);
         $isTerminal = $payloadStepId === $state->activeStepId && 'stale_result' !== $reason;
         $resolveCompacting = RunStatus::Compacting === $state->status
-            ? ($isTerminal && 'auto' !== $trigger ? RunStatus::Completed : RunStatus::Running)
+            ? ($isTerminal && !$continueAfterCompaction ? RunStatus::Completed : RunStatus::Running)
             : null;
 
         // Step_id matches AND not stale → clear the step (compaction

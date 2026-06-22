@@ -339,8 +339,10 @@ final class CompactionStepResultHandlerTest extends TestCase
      * Without this, the pre-LLM guard in AdvanceRunHandler would consume
      * the AdvanceRun and replace it with CompactRun — leaving the run
      * stuck after compaction with no pending continuation.
+     *
+     * continueAfterCompaction=true signals the pre-LLM guard path.
      */
-    public function testAutoTriggerSuccessIncludesAdvanceRunEffect(): void
+    public function testPreLlmAutoTriggerSuccessIncludesAdvanceRunEffect(): void
     {
         $originalMessages = [
             $this->userMsg('old question'),
@@ -369,7 +371,8 @@ final class CompactionStepResultHandlerTest extends TestCase
                 messagesRetained: 2,
                 firstRetainedIndex: 0,
                 tokenEstimateBefore: 50000,
-                trigger: 'auto',  // <— auto trigger
+                trigger: 'auto',
+                continueAfterCompaction: true,
                 model: 'openai/gpt-4.1-mini',
                 modelOptions: ['thinking_level' => 'low'],
             ),
@@ -389,6 +392,63 @@ final class CompactionStepResultHandlerTest extends TestCase
         $advanceRun = $result->effects[0];
         self::assertSame('run-1', $advanceRun->runId());
         self::assertSame(5, $advanceRun->turnNo());
+
+        // Status must be Running (holding a pending LLM turn).
+        self::assertSame(RunStatus::Running, $result->nextState->status);
+    }
+
+    /**
+     * Thesis: after-turn auto compaction success must NOT dispatch
+     * AdvanceRun — the run was already terminal and the user must drive
+     * the next turn.  The run stays Completed.
+     */
+    public function testAfterTurnAutoTriggerSuccessDoesNotIncludeAdvanceRunEffect(): void
+    {
+        $originalMessages = [
+            $this->userMsg('old question'),
+            $this->assistantMsg('old answer'),
+        ];
+        $state = $this->createRunState($originalMessages, turnNo: 5, activeStepId: 'step-1');
+
+        $summaryMsg = $this->userMsg('Summary.');
+        $retained = [$this->userMsg('recent'), $this->assistantMsg('recent answer')];
+        $compactedMessages = [$summaryMsg, ...$retained];
+
+        $fakeService = $this->stubCompactionService($compactedMessages);
+        $handler = new CompactionStepResultHandler($fakeService, new EventFactory());
+
+        $result = $handler->handle(
+            new CompactionStepResult(
+                runId: 'run-1',
+                turnNo: 5,
+                stepId: 'step-1',
+                attempt: 1,
+                idempotencyKey: 'key-1',
+                summaryText: 'Summary.',
+                error: null,
+                retainedTailMessages: array_map(static fn ($m) => $m->toArray(), $retained),
+                messagesCompacted: 1,
+                messagesRetained: 2,
+                firstRetainedIndex: 0,
+                tokenEstimateBefore: 50000,
+                trigger: 'auto',
+                continueAfterCompaction: false,  // after-turn maintenance
+                model: 'openai/gpt-4.1-mini',
+                modelOptions: ['thinking_level' => 'low'],
+            ),
+            $state,
+        );
+
+        // ContextCompacted event emitted.
+        self::assertNotNull($result->nextState);
+        self::assertCount(1, $result->events);
+        self::assertSame(RunEventTypeEnum::ContextCompacted->value, $result->events[0]->type);
+
+        // Effects must NOT include an AdvanceRun — after-turn auto must not continue.
+        self::assertCount(0, $result->effects, 'After-turn auto must not auto-advance the run');
+
+        // Status must be Completed — the run was already terminal.
+        self::assertSame(RunStatus::Completed, $result->nextState->status);
     }
 
     /**
@@ -441,10 +501,10 @@ final class CompactionStepResultHandlerTest extends TestCase
     }
 
     /**
-     * Thesis: auto-triggered compaction failure (e.g., model_error) must
+     * Thesis: pre-LLM auto-triggered compaction failure (e.g., model_error) must
      * NOT include an AdvanceRun.  Only successful compaction continues.
      */
-    public function testAutoTriggerFailureDoesNotIncludeAdvanceRunEffect(): void
+    public function testPreLlmAutoTriggerFailureDoesNotIncludeAdvanceRunEffect(): void
     {
         $originalMessages = [$this->userMsg('hi')];
         $state = $this->createRunState($originalMessages, turnNo: 5, activeStepId: 'step-1');
@@ -466,7 +526,8 @@ final class CompactionStepResultHandlerTest extends TestCase
                 messagesRetained: 1,
                 firstRetainedIndex: 0,
                 tokenEstimateBefore: 50000,
-                trigger: 'auto',  // <— auto trigger, but failed
+                trigger: 'auto',
+                continueAfterCompaction: true,  // pre-LLM guard
                 model: 'openai/gpt-4.1-mini',
                 modelOptions: [],
             ),
@@ -482,13 +543,13 @@ final class CompactionStepResultHandlerTest extends TestCase
     }
 
     /**
-     * Thesis: auto trigger success resolves Compacting → Running.
+     * Thesis: pre-LLM auto trigger success resolves Compacting → Running.
      *
-     * When auto-compaction succeeds from a Compacting state, the run must
-     * transition to Running so the dispatched AdvanceRun can continue the
-     * LLM turn normally.
+     * When pre-LLM auto-compaction succeeds (continueAfterCompaction=true),
+     * the run must transition to Running so the dispatched AdvanceRun can
+     * continue the LLM turn normally.
      */
-    public function testAutoTriggerSuccessResolvesCompactingToRunning(): void
+    public function testPreLlmAutoTriggerSuccessResolvesCompactingToRunning(): void
     {
         $originalMessages = [
             $this->userMsg('old'),
@@ -517,6 +578,7 @@ final class CompactionStepResultHandlerTest extends TestCase
                 firstRetainedIndex: 0,
                 tokenEstimateBefore: 50000,
                 trigger: 'auto',
+                continueAfterCompaction: true,
                 model: 'openai/gpt-4.1-mini',
                 modelOptions: [],
             ),
@@ -525,10 +587,61 @@ final class CompactionStepResultHandlerTest extends TestCase
 
         self::assertNotNull($result->nextState);
         self::assertSame(RunStatus::Running, $result->nextState->status,
-            'Auto trigger success must resolve Compacting to Running');
+            'Pre-LLM auto trigger success must resolve Compacting to Running');
         self::assertNull($result->nextState->activeStepId);
         self::assertCount(1, $result->effects);
         self::assertInstanceOf(AdvanceRun::class, $result->effects[0]);
+    }
+
+    /**
+     * Thesis: after-turn auto trigger success resolves Compacting → Completed.
+     *
+     * When after-turn auto-compaction succeeds (continueAfterCompaction=false),
+     * the run was already terminal — compaction is maintenance and must NOT
+     * auto-continue.
+     */
+    public function testAfterTurnAutoTriggerSuccessResolvesCompactingToCompleted(): void
+    {
+        $originalMessages = [
+            $this->userMsg('old'),
+            $this->assistantMsg('answer'),
+        ];
+        $state = $this->createCompactingState($originalMessages, activeStepId: 'step-1');
+
+        $summaryMsg = $this->userMsg('summary');
+        $compactedMessages = [$summaryMsg, ...$originalMessages];
+
+        $fakeService = $this->stubCompactionService($compactedMessages);
+        $handler = new CompactionStepResultHandler($fakeService, new EventFactory());
+
+        $result = $handler->handle(
+            new CompactionStepResult(
+                runId: 'run-1',
+                turnNo: 5,
+                stepId: 'step-1',
+                attempt: 1,
+                idempotencyKey: 'key-1',
+                summaryText: 'summary text',
+                error: null,
+                retainedTailMessages: array_map(static fn ($m) => $m->toArray(), $originalMessages),
+                messagesCompacted: 1,
+                messagesRetained: 2,
+                firstRetainedIndex: 0,
+                tokenEstimateBefore: 50000,
+                trigger: 'auto',
+                continueAfterCompaction: false,  // after-turn maintenance
+                model: 'openai/gpt-4.1-mini',
+                modelOptions: [],
+            ),
+            $state,
+        );
+
+        self::assertNotNull($result->nextState);
+        self::assertSame(RunStatus::Completed, $result->nextState->status,
+            'After-turn auto trigger success must resolve Compacting to Completed');
+        self::assertNull($result->nextState->activeStepId);
+        self::assertCount(0, $result->effects,
+            'After-turn auto must not dispatch AdvanceRun');
     }
 
     /**
@@ -588,7 +701,7 @@ final class CompactionStepResultHandlerTest extends TestCase
      * turn can attempt the LLM step without compaction.  The pre-LLM
      * guard's turn-level dedup prevents immediate re-fire.
      */
-    public function testAutoTriggerFailureResolvesCompactingToRunning(): void
+    public function testPreLlmAutoTriggerFailureResolvesCompactingToRunning(): void
     {
         $state = $this->createCompactingState([
             $this->userMsg('q'),
@@ -612,6 +725,7 @@ final class CompactionStepResultHandlerTest extends TestCase
                 firstRetainedIndex: 0,
                 tokenEstimateBefore: 50000,
                 trigger: 'auto',
+                continueAfterCompaction: true,
                 model: 'openai/gpt-4.1-mini',
                 modelOptions: [],
             ),
@@ -620,7 +734,49 @@ final class CompactionStepResultHandlerTest extends TestCase
 
         self::assertNotNull($result->nextState);
         self::assertSame(RunStatus::Running, $result->nextState->status,
-            'Auto trigger failure must resolve Compacting to Running');
+            'Pre-LLM auto trigger failure must resolve Compacting to Running');
+        self::assertNull($result->nextState->activeStepId);
+    }
+
+    /**
+     * Thesis: after-turn auto trigger failure resolves Compacting → Completed.
+     * When continueAfterCompaction=false, the failure is terminal — the run
+     * was already done and maintenance compaction failed.
+     */
+    public function testAfterTurnAutoTriggerFailureResolvesCompactingToCompleted(): void
+    {
+        $state = $this->createCompactingState([
+            $this->userMsg('q'),
+            $this->assistantMsg('a'),
+        ], activeStepId: 'step-1');
+
+        $handler = new CompactionStepResultHandler($this->createNoOpStub(), new EventFactory());
+
+        $result = $handler->handle(
+            new CompactionStepResult(
+                runId: 'run-1',
+                turnNo: 5,
+                stepId: 'step-1',
+                attempt: 1,
+                idempotencyKey: 'key-1',
+                summaryText: null,
+                error: ['type' => 'HttpException', 'message' => 'timeout'],
+                retainedTailMessages: [],
+                messagesCompacted: 0,
+                messagesRetained: 0,
+                firstRetainedIndex: 0,
+                tokenEstimateBefore: 50000,
+                trigger: 'auto',
+                continueAfterCompaction: false,  // after-turn maintenance
+                model: 'openai/gpt-4.1-mini',
+                modelOptions: [],
+            ),
+            $state,
+        );
+
+        self::assertNotNull($result->nextState);
+        self::assertSame(RunStatus::Completed, $result->nextState->status,
+            'After-turn auto trigger failure must resolve Compacting to Completed');
         self::assertNull($result->nextState->activeStepId);
     }
 
