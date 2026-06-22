@@ -36,23 +36,13 @@ use Symfony\Component\Messenger\MessageBusInterface;
  *  - Provider context tokens ≤ threshold (or no provider measurement)
  *  - In-process dedup per run (prevents double dispatch within a single process
  *    between async compaction dispatch and lifecycle commit)
+ *  - Commits containing AgentCommandQueued or AgentCommandApplied
+ *    (races pending follow-up command with auto-compaction)
  */
 final class AutoCompactionHookSubscriber implements HookSubscriberInterface
 {
     /** @var array<string, true> Run IDs with an in-flight auto dispatch (in-process dedup) */
     private array $inFlight = [];
-
-    /**
-     * Run IDs where a compaction lifecycle commit has been observed.
-     *
-     * Prevents the hook from re-dispatching auto-compaction after the
-     * pre-LLM guard path already handled it (or after a prior hook
-     * dispatch completed).  Cleared when a new user turn starts
-     * (run_started event in the commit).
-     *
-     * @var array<string, true>
-     */
-    private array $compactionResolved = [];
 
     public function __construct(
         private readonly RunStoreInterface $runStore,
@@ -67,14 +57,11 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
     {
         $runId = $context->runId;
 
-        // Guard: fresh user turn — clear any prior compaction-resolved
-        // flag and skip evaluation.  StartRun commits signal a new user
-        // prompt cycle; auto-compaction should fire after the turn
-        // completes (effectsCount=0) or via the pre-LLM guard, never at
-        // the start of a new turn.
+        // Guard: fresh user turn — skip evaluation.  StartRun commits
+        // signal a new user prompt cycle; auto-compaction should fire after
+        // the turn completes (effectsCount=0) or via the pre-LLM guard,
+        // never at the start of a new turn.
         if ($this->containsEventType($context, RunEventTypeEnum::RunStarted->value)) {
-            unset($this->compactionResolved[$runId]);
-
             return $context;
         }
 
@@ -87,13 +74,6 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
             // Clear the in-process dedup flag — lifecycle commit signals
             // the async compaction has resolved.
             unset($this->inFlight[$runId]);
-
-            // Mark compaction as resolved for this logical user turn.
-            // Prevents the hook from re-dispatching after the turn
-            // continues (the continuation AdvanceRun may advance the
-            // turnNo, and the subsequent stable commit would otherwise
-            // re-trigger auto-compaction).
-            $this->compactionResolved[$runId] = true;
 
             return $context;
         }
@@ -164,12 +144,19 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
             return $context;
         }
 
-        // Guard: when a prior auto-compaction lifecycle commit has been
-        // observed (via containsCompactionLifecycle), skip further
-        // auto-compaction evaluations for this logical user turn — the
-        // pre-LLM guard or an earlier hook dispatch already handled it.
-        // Cleared when run_started signals a new user prompt.
-        if (isset($this->compactionResolved[$runId])) {
+        // Guard: skip commits that contain AgentCommandQueued or
+        // AgentCommandApplied.  These commits have effectsCount=0 but
+        // may schedule AdvanceRun via a postCommit callback (the
+        // ApplyCommandHandler schedules the follow-up AdvanceRun as a
+        // postCommit, not via HandlerResult effects).  Dispatching
+        // auto-compaction here would race the pending AdvanceRun and
+        // dead-end the user turn (session 9: compaction won the race,
+        // continueAfterCompaction=false, user command never resumed).
+        //
+        // The pre-LLM guard in AdvanceRunHandler may still compact
+        // with continueAfterCompaction=true if token pressure warrants
+        // before the next LLM step; that preserves the user turn.
+        if ($this->containsUserCommandCommit($context)) {
             return $context;
         }
 
@@ -258,6 +245,30 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
     {
         foreach ($context->events as $event) {
             if ($event->type === $type) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Returns true when the commit contains a user command event
+     * (AgentCommandQueued or AgentCommandApplied).
+     *
+     * These commits have effectsCount=0 but may schedule AdvanceRun
+     * via postCommit callbacks — dispensing auto-compaction here would
+     * race the pending command processing.
+     */
+    private function containsUserCommandCommit(AfterTurnCommitHookContext $context): bool
+    {
+        $userCommandTypes = [
+            RunEventTypeEnum::AgentCommandQueued->value,
+            RunEventTypeEnum::AgentCommandApplied->value,
+        ];
+
+        foreach ($context->events as $event) {
+            if (\in_array($event->type, $userCommandTypes, true)) {
                 return true;
             }
         }

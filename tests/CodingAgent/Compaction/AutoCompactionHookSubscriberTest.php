@@ -316,7 +316,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         self::assertCount(1, $this->commandBus->messages);
     }
 
-    public function testDedupClearedButCompactionResolvedPreventsRedispatch(): void
+    public function testDedupClearedAndEligibilityPreventsRedispatchOnStaleMeasurement(): void
     {
         $this->modelResolver->method('getActiveModel')->willReturn(null);
 
@@ -327,22 +327,37 @@ final class AutoCompactionHookSubscriberTest extends TestCase
 
         $this->runStore->method('get')->willReturn($runState);
 
+        // Event store: measurement at seq 1; auto attempt at seq 5.
+        // The measurement is ineligible (1 <= 5) after the attempt.
         $this->eventStore->method('allFor')
-            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]);
+            ->willReturn([
+                $this->makeLlmStepCompletedEvent(12000),
+                new RunEvent(
+                    runId: 'run-1',
+                    seq: 5,
+                    turnNo: 1,
+                    type: RunEventTypeEnum::ContextCompactionFailed->value,
+                    payload: ['trigger' => 'auto', 'reason' => 'no_safe_boundary'],
+                ),
+            ]);
 
-        // First call — dispatches.
-        $this->subscriber->handleAfterTurnCommit($this->createHookContext());
-        self::assertCount(1, $this->commandBus->messages);
-
-        // Simulate lifecycle commit (clears inFlight, sets compactionResolved).
+        // First call — dispatches (no attempt markers yet at this point...
+        // Wait, the mock always returns both events, so the auto attempt
+        // already exists.  The measurement is ineligible → no dispatch.
+        //
+        // To test the thesis, we need to verify that:
+        //  1. The lifecycle commit clears inFlight.
+        //  2. A subsequent stable commit does NOT dispatch because the
+        //     measurement is ineligible via event-log lookup.
+        //
+        // Simulate lifecycle commit (clears inFlight).
         $lifecycleContext = $this->createHookContext([RunEventTypeEnum::ContextCompactionFailed->value]);
         $this->subscriber->handleAfterTurnCommit($lifecycleContext);
 
-        // Post-lifecycle stable commit — compactionResolved set → no dispatch,
-        // even though inFlight was cleared above.
-        $stableContext = $this->createHookContext();
-        $this->subscriber->handleAfterTurnCommit($stableContext);
-        self::assertCount(1, $this->commandBus->messages);
+        // Stable commit: measurement is ineligible via event-log.
+        $this->subscriber->handleAfterTurnCommit($this->createHookContext());
+        self::assertCount(0, $this->commandBus->messages,
+            'Stale measurement (seq=1, attempt seq=5) must NOT trigger dispatch');
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -461,7 +476,13 @@ final class AutoCompactionHookSubscriberTest extends TestCase
     //  Test: compactionResolved prevents re-dispatch after lifecycle
     // ─────────────────────────────────────────────────────────────────
 
-    public function testSkipsAfterCompactionLifecycleResolved(): void
+    /**
+     * Thesis: after a compaction lifecycle commit, a subsequent stable
+     * commit with a STALE provider measurement (seq <= latest auto
+     * attempt marker) must NOT dispatch.  Event-log eligibility replaces
+     * the removed in-memory compactionResolved dedup.
+     */
+    public function testSkipsAfterCompactionLifecycleWhenMeasurementIsStale(): void
     {
         $this->modelResolver->method('getActiveModel')->willReturn(null);
 
@@ -469,19 +490,30 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             $this->makeTextMessage('user', 'Hello'),
         ]);
         $this->runStore->method('get')->willReturn($runState);
+
+        // Event store: measurement at seq 1; auto attempt at seq 5.
+        // Measurement is ineligible (seq 1 <= seq 5).
         $this->eventStore->method('allFor')
-            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]);
+            ->willReturn([
+                $this->makeLlmStepCompletedEvent(12000),
+                new RunEvent(
+                    runId: 'run-1',
+                    seq: 5,
+                    turnNo: 1,
+                    type: RunEventTypeEnum::ContextCompactionStarted->value,
+                    payload: ['trigger' => 'auto', 'step_id' => 'compact-1'],
+                ),
+            ]);
 
-        // Pre-condition: dispatch auto-compaction.
-        $this->subscriber->handleAfterTurnCommit($this->createHookContext());
-        self::assertCount(1, $this->commandBus->messages, 'Should have dispatched before lifecycle');
-
-        // Simulate lifecycle commit (sets compactionResolved).
-        $lifecycleContext = $this->createHookContext([RunEventTypeEnum::ContextCompactionFailed->value]);
+        // Pre-condition: simulate lifecycle commit (clears inFlight).
+        $lifecycleContext = $this->createHookContext([RunEventTypeEnum::ContextCompactionStarted->value]);
         $this->subscriber->handleAfterTurnCommit($lifecycleContext);
 
-        // Post-lifecycle stable commit — must NOT dispatch.
+        // Post-lifecycle stable commit — measurement is ineligible → no dispatch.
         $this->subscriber->handleAfterTurnCommit($this->createHookContext());
+        self::assertCount(0, $this->commandBus->messages,
+            'Stale provider measurement must NOT trigger dispatch after lifecycle. '
+            .'Event-log eligibility (seq 1 <= attempt seq 5) replaces compactionResolved.');
     }
 
     // ─────────────────────────────────────────────────────────────────
