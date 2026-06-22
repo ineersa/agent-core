@@ -119,52 +119,6 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
     }
 
     /**
-     * Thesis: Shell commands with completeAfter=true (subsequent !cmd on
-     * a completed run) must NOT produce agent_end — the run is already
-     * completed and writing a second AgentEnd would interfere with
-     * follow-up command processing by removing (or double-writing)
-     * the terminal event and confusing the event drain cursor lifecycle.
-     *
-     * Regression: the prior design wrote a second AgentEnd for completeAfter,
-     * which caused the RuntimeEventEmitter drain cursor to be removed,
-     * preventing follow-up AdvanceRun events from being forwarded to
-     * stdout (issue #183 live-path hang).
-     */
-    public function testCompleteAfterDoesNotWriteAgentEnd(): void
-    {
-        $eventStore = $this->createEventStore();
-        $toolExecutor = $this->createToolExecutor('complete-after-output');
-
-        $worker = new ExecuteShellToolCallWorker($toolExecutor, $eventStore);
-        $worker(new ExecuteShellToolCall(
-            runId: 'run-complete-after',
-            toolCallId: 'sh_tc_3',
-            commandText: 'echo done',
-            standalone: false,
-            completeAfter: true,
-        ));
-
-        // completeAfter must produce exactly 2 events (tool_exec_start + end).
-        // No AgentEnd — the run is already completed from the prior turn.
-        self::assertCount(2, $this->appendedEvents, 'completeAfter shell must produce 2 events (no AgentEnd).');
-
-        // Seq 1: tool_execution_start
-        self::assertSame(1, $this->appendedEvents[0]->seq);
-        self::assertSame(RunEventTypeEnum::ToolExecutionStart->value, $this->appendedEvents[0]->type);
-
-        // Seq 2: tool_execution_end
-        self::assertSame(2, $this->appendedEvents[1]->seq);
-        self::assertSame(RunEventTypeEnum::ToolExecutionEnd->value, $this->appendedEvents[1]->type);
-
-        // No AgentEnd event — the run stays completed, ready for follow-up.
-        self::assertNotContains(
-            RunEventTypeEnum::AgentEnd->value,
-            array_map(static fn (RunEvent $e): string => $e->type, $this->appendedEvents),
-            'completeAfter must not write AgentEnd — the run is already completed.',
-        );
-    }
-
-    /**
      * Creates an in-memory EventStore that collects appended events for assertion.
      */
     private function createEventStore(): EventStoreInterface

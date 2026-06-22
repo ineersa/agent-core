@@ -248,6 +248,60 @@ final class RunStateReplayServiceTest extends TestCase
         self::assertSame([], $rebuiltState->pendingToolCalls);
     }
 
+    // ── Shell-only tool execution replay ──────────────────────────────────
+
+    /**
+     * Thesis: A shell tool_execution_start (registers tool_call_id => false)
+     * followed by tool_execution_end (resolves to true), with NO LLM step
+     * events, produces a RunState with zero unresolved tool calls.
+     *
+     * Before the applyToolExecutionEnd handler was added (issue #183), the
+     * shell's pending tool call would stay unresolved, causing
+     * AdvanceRunHandler to bail with an empty HandlerResult on follow-up
+     * commands — making the run appear dead.
+     */
+    public function testToolExecutionEndResolvesPendingShellToolCallWithoutLlmStep(): void
+    {
+        // Shell command metadata (tool_call_id prefix 'sh_' is the convention
+        // used by ShellCommandHandler).
+        $this->appendEvent(RunEventTypeEnum::RunStarted->value, 1, [
+            'step_id' => 'sh-step',
+            'payload' => ['messages' => []],
+        ]);
+
+        $this->appendEvent(RunEventTypeEnum::ToolExecutionStart->value, 2, [
+            'tool_call_id' => 'sh_shell_1',
+            'tool_name' => 'bash',
+        ]);
+
+        // tool_execution_end resolves the pending call — the fix.
+        $this->appendEvent(RunEventTypeEnum::ToolExecutionEnd->value, 3, [
+            'tool_call_id' => 'sh_shell_1',
+            'is_error' => false,
+        ]);
+
+        $state = RunState::queued($this->runId);
+        $result = $this->service->rebuildIfStale($state, $this->runId);
+
+        self::assertTrue($result->rebuilt, 'Expected state rebuild when events exist.');
+        $rebuilt = $result->rebuiltState;
+        self::assertNotNull($rebuilt);
+
+        // Critical: all entries in pendingToolCalls MUST be true (fully resolved)
+        // via applyToolExecutionEnd — even without an LLM step that would
+        // normally clear the map.  The AdvanceRunHandler guard iterates entries
+        // and bails on any false (unresolved) call; all-true means no bail.
+        self::assertNotEmpty(
+            $rebuilt->pendingToolCalls,
+            'Expected pendingToolCalls to contain the shell tool call.',
+        );
+        self::assertNotContains(
+            false,
+            $rebuilt->pendingToolCalls,
+            'Shell-only tool calls must be fully resolved (all true) so AdvanceRun does not bail.',
+        );
+    }
+
     // ── HITL replay ─────────────────────────────────────────────────────────
 
     public function testReplayHitlWaitingAndResponse(): void

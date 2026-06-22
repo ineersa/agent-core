@@ -283,9 +283,9 @@ final class TuiJourneyE2eTest extends TestCase
      * causing a cross-process ordering race between the controller's sync
      * completeRun() and the async tool worker.
      *
-     * The fix ensures the worker owns the terminal AgentEnd for this path
-     * too (via complete_after), so ordering is [tool_exec_start,
-     * tool_exec_end, agent_end] and the follow-up message succeeds.
+     * Ordering is [tool_exec_start, tool_exec_end] and the follow-up
+     * message succeeds because the root cause was the unresolved
+     * pendingToolCalls in state replay (issue #183).
      */
     private function journeyPhase9InlineShellOnCompletedRun(TmuxPane $pane): void
     {

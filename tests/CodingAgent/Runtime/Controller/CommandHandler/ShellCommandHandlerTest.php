@@ -186,32 +186,6 @@ final class ShellCommandHandlerTest extends TestCase
         self::assertSame(0, $this->spyClient->completeRunCalls);
     }
 
-    public function testCompleteAfterFlagPassesToWorker(): void
-    {
-        $handler = new ShellCommandHandler($this->spyBus);
-
-        // Complete-after shell: subsequent !cmd on an already-completed run.
-        // SubmitListener passes complete_after=true to signal the worker
-        // should write AgentEnd after tool_exec events.
-        $command = new RuntimeCommand(
-            id: 'cmd_complete_after',
-            type: 'shell_command',
-            runId: 'run-ca-1',
-            payload: [
-                'text' => 'echo done',
-                'complete_after' => true,
-            ],
-        );
-
-        $event = new ControllerCommandEvent($command, static function (): void {});
-        $handler($event);
-
-        self::assertNotNull($this->spyBus->lastMessage);
-        self::assertInstanceOf(ExecuteShellToolCall::class, $this->spyBus->lastMessage);
-        self::assertFalse($this->spyBus->lastMessage->standalone, 'standalone=false for subsequent shell');
-        self::assertTrue($this->spyBus->lastMessage->completeAfter, 'completeAfter must be passed to worker');
-        self::assertSame(0, $this->spyClient->completeRunCalls, 'Handler must NOT call completeRun');
-    }
 }
 
 /**

@@ -30,11 +30,80 @@ final class ShellFollowUpLiveE2eTest extends ControllerE2eTestCase
 
     /**
      * Isolation test: follow_up on a completed run with NO shell in between.
-     * If this fails, the issue is in the follow_up path itself.
+     * If this fails, the issue is in the follow_up path itself (generic),
+     * not specific to the shell-command interaction.
      */
     public function testFollowUpWithoutShell(): void
     {
-        self::assertNotEmpty('not yet implemented');
+        $this->spawnController();
+        $this->waitForEvent('runtime.ready', 5.0);
+
+        // ── Turn 1 ──
+        $startCmdId = 'cmd_turn1_'.uniqid();
+        $this->writeCommand([
+            'v' => 1, 'id' => $startCmdId,
+            'type' => 'start_run',
+            'payload' => ['prompt' => 'Respond with exactly one word: hello.'],
+        ]);
+
+        $turn1Events = $this->collectEvents(12.0);
+        $byType = $this->indexByType($turn1Events);
+        $this->assertStartRunAcked($turn1Events, $startCmdId);
+
+        self::assertArrayHasKey('run.started', $byType,
+            'Turn 1: expected run.started. '.$this->collectDiagnostics($turn1Events));
+
+        $this->runId = (string) ($byType['run.started'][0]['runId']
+            ?? $byType['run.started'][0]['payload']['runId'] ?? '');
+        self::assertNotEmpty($this->runId);
+
+        self::assertTrue(
+            isset($byType['assistant.text_started']) || isset($byType['assistant.message_completed']),
+            'Turn 1: expected assistant response. '
+            .'Event types: '.implode(', ', array_keys($byType))."\n"
+            .$this->collectDiagnostics($turn1Events),
+        );
+
+        self::assertTrue(
+            isset($byType['run.completed']) || isset($byType['run.failed']),
+            'Turn 1: expected run.completed/run.failed. '
+            .'Event types: '.implode(', ', array_keys($byType))."\n"
+            .$this->collectDiagnostics($turn1Events),
+        );
+
+        // ── Follow-up (no shell in between — isolation control) ──
+        $followUpCmdId = 'cmd_followup_'.uniqid();
+        $this->writeCommand([
+            'v' => 1, 'id' => $followUpCmdId,
+            'type' => 'follow_up',
+            'runId' => $this->runId,
+            'payload' => ['text' => 'Say hello again.'],
+        ]);
+
+        $followUpEvents = $this->collectEvents(8.0);
+        $followUpByType = $this->indexByType($followUpEvents);
+
+        self::assertTrue($this->foundAck($followUpEvents, $followUpCmdId),
+            'Follow-up: expected command.ack. '.$this->collectDiagnostics($followUpEvents));
+
+        // The follow-up MUST produce an assistant response.
+        $hasAssistant = isset($followUpByType['assistant.text_started'])
+            || isset($followUpByType['assistant.message_completed'])
+            || isset($followUpByType['assistant.text_delta'])
+            || isset($followUpByType['assistant.thinking_started']);
+        self::assertTrue(
+            $hasAssistant,
+            'Follow-up without shell: NO assistant response — follow_up broken generically. '
+            .'Event types: '.implode(', ', array_keys($followUpByType))."\n"
+            .$this->collectDiagnostics($followUpEvents),
+        );
+
+        self::assertTrue(
+            isset($followUpByType['run.completed']) || isset($followUpByType['run.failed']),
+            'Follow-up without shell: expected terminal state. '
+            .'Event types: '.implode(', ', array_keys($followUpByType))."\n"
+            .$this->collectDiagnostics($followUpEvents),
+        );
     }
 
     /**

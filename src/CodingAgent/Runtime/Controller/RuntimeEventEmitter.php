@@ -17,8 +17,7 @@ use Revolt\EventLoop;
  * canonical event drain from InProcessAgentSessionClient.
  *
  * All runtime event writes go through this class. Cursor tracking auto-registers
- * on RunStarted/RunResumed events and releases on terminal events
- * (RunCompleted/RunFailed/RunCancelled). The drain loop polls eventClient per
+ * on RunStarted events and cursors are never released (issue #183). The drain loop polls eventClient per
  * active run, skips already-seen events by cursor,
  * and writes to stdout via JsonlCodec.
  */
@@ -70,7 +69,7 @@ final class RuntimeEventEmitter
      * Emit a runtime event to stdout with auto cursor register.
      *
      * Cursor lifecycle events:
-     * - Register on: RunStarted, RunResumed
+     * - Register on: RunStarted
      * - Cursors are NEVER released — a completed/failed/cancelled run may
      *   receive follow-up commands that produce new canonical events
      *   (issue #183). The drain loop continues polling at the recorded
@@ -79,18 +78,16 @@ final class RuntimeEventEmitter
     public function emit(RuntimeEvent $event): void
     {
         // Auto-register event drain cursors based on event type.
-        if (RuntimeEventTypeEnum::RunStarted->value === $event->type
-            || RuntimeEventTypeEnum::RunResumed->value === $event->type
-        ) {
+        if (RuntimeEventTypeEnum::RunStarted->value === $event->type) {
             $this->runEventCursors[$event->runId] = $this->runEventCursors[$event->runId] ?? 0;
         }
 
         // Cursor removal on terminal events has been removed (issue #183).
-        // After complete_run / shell-command completeAfter writes AgentEnd,
-        // the resulting run.completed event would unset the cursor, preventing
-        // follow-up AdvanceRun events from being forwarded.  Keeping cursors
-        // alive has trivial overhead (polling completed runs returns 0 events)
-        // and prevents the drain loop from silently dropping follow-up events.
+        // When a run completes, the resulting run.completed event would unset
+        // the cursor, preventing follow-up AdvanceRun events from being
+        // forwarded. Keeping cursors alive has trivial overhead (polling
+        // completed runs returns 0 events) and prevents the drain loop from
+        // silently dropping follow-up events.
 
         $this->emitInternal($event);
     }

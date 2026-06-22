@@ -25,8 +25,8 @@ use Symfony\Component\Messenger\MessageBusInterface;
  *
  * The worker is the sole ordering authority for shell-command lifecycle
  * events: it writes tool_execution_start, tool_execution_end, and (when
- * standalone or complete_after) AgentEnd in a single process, guaranteeing
- * tool_exec → agent_end ordering (LifecycleOrderValidator-conformant).
+ * standalone) AgentEnd in a single process, guaranteeing tool_exec →
+ * agent_end ordering (LifecycleOrderValidator-conformant).
  *
  * complete_run commands are NOT handled here — the controller must never
  * synchronously write AgentEnd for work dispatched to an async consumer
@@ -64,7 +64,6 @@ final readonly class ShellCommandHandler
 
         $commandText = (string) ($command->payload['text'] ?? '');
         $standalone = (bool) ($command->payload['standalone'] ?? false);
-        $completeAfter = (bool) ($command->payload['complete_after'] ?? false);
 
         // Shell-only runs do not emit RunStarted (they bypass start()),
         // so the RuntimeEventEmitter drain loop never registers a cursor
@@ -91,9 +90,8 @@ final readonly class ShellCommandHandler
         // run in the consumer, not the controller, so the event loop
         // stays alive.
         //
-        // The standalone and complete_after flags are passed through so the
-        // worker owns the terminal AgentEnd write when the shell command
-        // should complete the run.  By keeping tool_exec and AgentEnd writes
+        // The standalone flag is passed through so the worker owns the terminal
+        // AgentEnd write for first-input shell commands.  By keeping tool_exec and AgentEnd writes
         // within a single process (the worker), the EventStore ordering is
         // guaranteed — AgentEnd always follows tool_exec events, satisfying
         // the LifecycleOrderValidator constraint that agent_end must be the
@@ -108,7 +106,6 @@ final readonly class ShellCommandHandler
                 toolCallId: $toolCallId,
                 commandText: $commandText,
                 standalone: $standalone,
-                completeAfter: $completeAfter,
             ));
         } catch (ExceptionInterface $exception) {
             // Messenger transport unavailable — emit a diagnostic error

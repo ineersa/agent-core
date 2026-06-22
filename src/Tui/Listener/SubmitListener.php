@@ -428,20 +428,13 @@ final class SubmitListener implements TuiListenerRegistrar
                     new UserCommand(
                         type: 'shell_command',
                         text: $shellCommand->command,
-                        payload: [
-                            'complete_after' => $state->activity->isTerminal(),
-                        ],
                     ),
                 );
 
-                // When the run is already terminal (prior LLM turn completed),
-                // the worker writes a terminal AgentEnd event after tool_exec
-                // events so the tick poller transitions from Running back to
-                // Completed and clears the working indicator.  The controller
-                // must NEVER synchronously call completeRun() for shell commands
-                // because that races with the async worker and produces
-                // [AgentEnd, tool_exec_start, tool_exec_end] ordering — a
-                // LifecycleOrderValidator violation (issue #183).
+                // The controller must NEVER synchronously call completeRun()
+                // for shell commands because that races with the async worker
+                // and produces [AgentEnd, tool_exec_start, tool_exec_end]
+                // ordering — a LifecycleOrderValidator violation (issue #183).
                 //
                 // Activity transitions (Running → Completed) are handled by
                 // TickPollListener from the authoritative event drain — we do
