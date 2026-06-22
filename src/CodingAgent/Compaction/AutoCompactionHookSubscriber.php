@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Compaction;
 
+use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
 use Ineersa\AgentCore\Contract\Extension\HookSubscriberInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -50,6 +51,7 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
         private readonly CompactionConfig $compactionConfig,
         private readonly ActiveModelResolverInterface $modelResolver,
         private readonly MessageBusInterface $commandBus,
+        private readonly CompactionServiceInterface $compactionService,
     ) {
     }
 
@@ -198,6 +200,25 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
         $this->dispatchAutoCompaction($runId);
 
         return $context;
+    }
+
+    /**
+     * Returns true when every message in the partition carries the
+     * compact_summary metadata flag — i.e. the partition contains
+     * only prior compaction handoff summaries, not original
+     * conversation content.
+     *
+     * @param list<\Ineersa\AgentCore\Domain\Message\AgentMessage> $messages
+     */
+    private function isSummaryOnlyPartition(array $messages): bool
+    {
+        foreach ($messages as $message) {
+            if (true !== ($message->metadata['compact_summary'] ?? null)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function dispatchAutoCompaction(string $runId): void

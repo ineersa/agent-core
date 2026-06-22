@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Compaction;
 
+use Ineersa\AgentCore\Contract\Compaction\CompactResult;
+use Ineersa\AgentCore\Contract\Compaction\CompactionPrepareResult;
+use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Extension\HookSubscriberInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
@@ -43,6 +46,8 @@ final class AutoCompactionHookSubscriberTest extends TestCase
     private CompactionConfig $compactionConfig;
     /** @var ActiveModelResolverInterface&\PHPUnit\Framework\MockObject\MockObject */
     private $modelResolver;
+    /** @var CompactionServiceInterface&\PHPUnit\Framework\MockObject\MockObject */
+    private $compactionService;
     private TestMessageBus $commandBus;
 
     protected function setUp(): void
@@ -56,6 +61,25 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             keepRecentTokens: 10,
         );
         $this->modelResolver = $this->createMock(ActiveModelResolverInterface::class);
+        $this->compactionService = $this->createMock(CompactionServiceInterface::class);
+        // Default: preparation is ready and contains fresh non-summary messages.
+        // Individual tests that test the summary-only or preparation-failure
+        // guards override this via expects()+willReturn().
+        $this->compactionService->method('prepare')
+            ->willReturn(CompactionPrepareResult::ready(
+                messagesToSummarize: [
+                    new AgentMessage(
+                        role: 'user',
+                        content: [['type' => 'text', 'text' => 'Some message']],
+                    ),
+                ],
+                retainedTailMessages: [],
+                tokenEstimateBefore: 100,
+                messagesCompacted: 1,
+                messagesRetained: 0,
+                firstRetainedIndex: 1,
+                priorSummaryPresent: false,
+            ));
         $this->commandBus = new TestMessageBus();
 
         $this->subscriber = new AutoCompactionHookSubscriber(
@@ -64,6 +88,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             $this->compactionConfig,
             $this->modelResolver,
             $this->commandBus,
+            $this->compactionService,
         );
     }
 
@@ -103,6 +128,15 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             'content' => [['text' => $text]],
             'role' => $role,
         ]);
+    }
+
+    private function makeCompactSummaryMessage(string $text = 'Prior conversation summary.'): AgentMessage
+    {
+        return new AgentMessage(
+            role: 'user',
+            content: [['type' => 'text', 'text' => $text]],
+            metadata: ['compact_summary' => true],
+        );
     }
 
     /**
@@ -229,6 +263,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             $disabledConfig,
             $this->modelResolver,
             $this->commandBus,
+            $this->compactionService,
         );
 
         $context = $this->createHookContext();
@@ -384,6 +419,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             $configWithOverride,
             $modelResolver,
             $this->commandBus,
+            $this->compactionService,
         );
 
         $messages = [
@@ -636,6 +672,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             $this->compactionConfig,
             $this->modelResolver,
             $this->commandBus,
+            $this->compactionService,
         );
 
         $freshSubscriber->handleAfterTurnCommit($this->createHookContext());
@@ -850,36 +887,184 @@ final class AutoCompactionHookSubscriberTest extends TestCase
     }
 
     /**
-     * Thesis: commits containing AgentCommandApplied must NOT dispatch
-     * auto-compaction, even when provider usage exceeds threshold.
+     * Thesis: when the compaction preparation would summarize ONLY prior
+     * compact_summary messages (no fresh non-summary conversation), the
+     * auto-compaction hook must NOT dispatch CompactRun.
      *
-     * AgentCommandApplied commits may have effectsCount=0 but can
-     * schedule AdvanceRun via a postCommit callback.  Dispatching
-     * auto-compaction here would race the pending AdvanceRun and
-     * dead-end the turn — same class of bug as the ToolBatchCommitted
-     * guard.
+     * Session 14: seq149/150 compacted only the prior compact_summary
+     * (messages_to_summarize=1, prior_summary_present=true) producing a
+     * near-zero token reduction visible to the user as redundant noise.
+     * The auto hook must silently skip and wait for later turns.
      */
-    public function testSkipsWhenAgentCommandAppliedEventPresent(): void
+    public function testSkipsWhenCompactionWouldSummarizeOnlyCompactSummary(): void
     {
         $this->modelResolver->method('getActiveModel')->willReturn(null);
 
-        $runState = $this->createRunState([
-            $this->makeTextMessage('user', 'Hello'),
-        ]);
+        $compactSummaryMsg = $this->makeCompactSummaryMessage();
+        $freshUserMsg = $this->makeTextMessage('user', 'Hello');
+        $freshAssistantMsg = $this->makeTextMessage('assistant', 'Hi there!');
+
+        $messages = [$compactSummaryMsg, $freshUserMsg, $freshAssistantMsg];
+        $runState = $this->createRunState($messages);
+
         $this->runStore->method('get')->willReturn($runState);
 
         $this->eventStore->method('allFor')
-            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]); // 12000 > 11000
+            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]);
 
-        $context = $this->createHookContext(
-            eventTypes: [RunEventTypeEnum::AgentCommandApplied->value],
-            effectsCount: 0,
+        // Preparation: only the compact_summary message is summarized.
+        // The fresh messages are in the retained tail.
+        // Use anonymous class to guarantee the exact return value
+        $summaryOnlyService = new class($compactSummaryMsg, $freshUserMsg, $freshAssistantMsg) implements CompactionServiceInterface {
+            public function __construct(
+                private readonly AgentMessage $compactSummaryMsg,
+                private readonly AgentMessage $freshUserMsg,
+                private readonly AgentMessage $freshAssistantMsg,
+            ) {}
+            public function prepare(array $messages): CompactionPrepareResult {
+                return CompactionPrepareResult::ready(
+                    messagesToSummarize: [$this->compactSummaryMsg],
+                    retainedTailMessages: [$this->freshUserMsg, $this->freshAssistantMsg],
+                    tokenEstimateBefore: 15000,
+                    messagesCompacted: 1,
+                    messagesRetained: 2,
+                    firstRetainedIndex: 1,
+                    priorSummaryPresent: true,
+                );
+            }
+            public function buildSummarizationMessages(CompactionPrepareResult $result, ?string $customInstructions): array { return []; }
+            public function buildCompactedMessages(string $summaryText, CompactionPrepareResult $result): \Ineersa\AgentCore\Contract\Compaction\CompactResult { throw new \RuntimeException('not called'); }
+        };
+
+        $summaryOnlySubscriber = new AutoCompactionHookSubscriber(
+            $this->runStore,
+            $this->providerUsageResolver,
+            $this->compactionConfig,
+            $this->modelResolver,
+            $this->commandBus,
+            $summaryOnlyService,
         );
-        $this->subscriber->handleAfterTurnCommit($context);
+
+        $context = $this->createHookContext();
+        $summaryOnlySubscriber->handleAfterTurnCommit($context);
 
         self::assertCount(0, $this->commandBus->messages,
-            'AgentCommandApplied commit must NOT dispatch CompactRun '
-            .'even when provider usage exceeds threshold (effectsCount=0). '
-            .'The pending PostCommit AdvanceRun must not be raced by compaction.');
+            'Auto compaction must NOT dispatch when messagesToSummarize '
+            .'contains only compact_summary messages (session 14 seq149 class).');
+    }
+
+    /**
+     * Thesis: when compaction preparation includes prior compact_summary
+     * PLUS fresh non-summary conversation messages, the auto-compaction
+     * hook MUST dispatch CompactRun.
+     *
+     * Session 14 seq230 was a valid later re-compaction that included
+     * prior summary plus 25+ fresh messages.  The summary-only guard
+     * must NOT block this class of valid re-compaction.
+     */
+    public function testAllowsCompactionWhenSummarizeIncludesFreshNonSummaryMessages(): void
+    {
+        $this->modelResolver->method('getActiveModel')->willReturn(null);
+
+        $compactSummaryMsg = $this->makeCompactSummaryMessage();
+        $freshUserMsg = $this->makeTextMessage('user', 'Long conversation turn 2...');
+        $freshAssistantMsg = $this->makeTextMessage('assistant', 'Response to turn 2.');
+        $recentUserMsg = $this->makeTextMessage('user', 'Turn 3 short message.');
+        $recentAssistantMsg = $this->makeTextMessage('assistant', 'Turn 3 response.');
+
+        $messages = [$compactSummaryMsg, $freshUserMsg, $freshAssistantMsg, $recentUserMsg, $recentAssistantMsg];
+        $runState = $this->createRunState($messages);
+
+        $this->runStore->method('get')->willReturn($runState);
+
+        $this->eventStore->method('allFor')
+            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]);
+
+        // Use anonymous class to guarantee the exact return value
+        $summaryPlusFreshService = new class($compactSummaryMsg, $freshUserMsg, $freshAssistantMsg, $recentUserMsg, $recentAssistantMsg) implements CompactionServiceInterface {
+            public function __construct(
+                private readonly AgentMessage $compactSummaryMsg,
+                private readonly AgentMessage $freshUserMsg,
+                private readonly AgentMessage $freshAssistantMsg,
+                private readonly AgentMessage $recentUserMsg,
+                private readonly AgentMessage $recentAssistantMsg,
+            ) {}
+            public function prepare(array $messages): CompactionPrepareResult {
+                return CompactionPrepareResult::ready(
+                    messagesToSummarize: [$this->compactSummaryMsg, $this->freshUserMsg, $this->freshAssistantMsg],
+                    retainedTailMessages: [$this->recentUserMsg, $this->recentAssistantMsg],
+                    tokenEstimateBefore: 20000,
+                    messagesCompacted: 3,
+                    messagesRetained: 2,
+                    firstRetainedIndex: 3,
+                    priorSummaryPresent: true,
+                );
+            }
+            public function buildSummarizationMessages(CompactionPrepareResult $result, ?string $customInstructions): array { return []; }
+            public function buildCompactedMessages(string $summaryText, CompactionPrepareResult $result): CompactResult { throw new \RuntimeException('not called'); }
+        };
+
+        $summaryPlusFreshSubscriber = new AutoCompactionHookSubscriber(
+            $this->runStore,
+            $this->providerUsageResolver,
+            $this->compactionConfig,
+            $this->modelResolver,
+            $this->commandBus,
+            $summaryPlusFreshService,
+        );
+
+        $context = $this->createHookContext();
+        $summaryPlusFreshSubscriber->handleAfterTurnCommit($context);
+
+        self::assertCount(1, $this->commandBus->messages,
+            'Auto compaction MUST dispatch when messagesToSummarize includes '
+            .'fresh non-summary messages alongside prior compact_summary '
+            .'(session 14 seq230 class).');
+        self::assertSame('auto', $this->commandBus->messages[0]->trigger);
+    }
+
+    /**
+     * Thesis: when compaction preparation is not ready (structural skip),
+     * the auto-compaction hook must NOT dispatch CompactRun nor emit a
+     * visible failure — it silently skips, same as all other guards.
+     */
+    public function testSkipsWhenPreparationIsNotReady(): void
+    {
+        $this->modelResolver->method('getActiveModel')->willReturn(null);
+
+        $messages = [
+            $this->makeTextMessage('user', 'Hello'),
+            $this->makeTextMessage('assistant', 'Hi!'),
+        ];
+        $runState = $this->createRunState($messages);
+
+        $this->runStore->method('get')->willReturn($runState);
+
+        $this->eventStore->method('allFor')
+            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]);
+
+        // Use anonymous class to guarantee the exact return value
+        $failedService = new class implements CompactionServiceInterface {
+            public function prepare(array $messages): CompactionPrepareResult {
+                return CompactionPrepareResult::failed('too_few_messages');
+            }
+            public function buildSummarizationMessages(CompactionPrepareResult $result, ?string $customInstructions): array { return []; }
+            public function buildCompactedMessages(string $summaryText, CompactionPrepareResult $result): CompactResult { throw new \RuntimeException('not called'); }
+        };
+
+        $failedSubscriber = new AutoCompactionHookSubscriber(
+            $this->runStore,
+            $this->providerUsageResolver,
+            $this->compactionConfig,
+            $this->modelResolver,
+            $this->commandBus,
+            $failedService,
+        );
+
+        $context = $this->createHookContext();
+        $failedSubscriber->handleAfterTurnCommit($context);
+
+        self::assertCount(0, $this->commandBus->messages,
+            'Auto compaction must silently skip when preparation is not ready.');
     }
 }
