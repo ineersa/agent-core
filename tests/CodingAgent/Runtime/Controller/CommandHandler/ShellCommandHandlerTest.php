@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller\CommandHandler;
 
+use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
@@ -15,20 +16,24 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\MessageBusInterface;
 
 #[CoversClass(ShellCommandHandler::class)]
 final class ShellCommandHandlerTest extends TestCase
 {
     private ShellCommandSpyClient $spyClient;
+    private ShellCommandSpyBus $spyBus;
 
     protected function setUp(): void
     {
         $this->spyClient = new ShellCommandSpyClient();
+        $this->spyBus = new ShellCommandSpyBus();
     }
 
-    public function testDispatchesShellCommandToClient(): void
+    public function testDispatchesShellCommandViaExecutionBus(): void
     {
-        $handler = new ShellCommandHandler($this->spyClient);
+        $handler = new ShellCommandHandler($this->spyClient, $this->spyBus);
 
         $command = new RuntimeCommand(
             id: 'cmd_1',
@@ -42,14 +47,18 @@ final class ShellCommandHandlerTest extends TestCase
         $event = new ControllerCommandEvent($command, static function (): void {});
         $handler($event);
 
-        self::assertNotNull($this->spyClient->lastCommand);
-        self::assertSame('shell_command', $this->spyClient->lastCommand->type);
-        self::assertSame('echo hello', $this->spyClient->lastCommand->text);
+        // Shell commands are now dispatched via the async Messenger bus
+        // instead of the synchronous in-process client (issue #183).
+        self::assertNull($this->spyClient->lastCommand, 'Client send() should NOT be called for shell commands');
+        self::assertNotNull($this->spyBus->lastMessage);
+        self::assertInstanceOf(ExecuteShellToolCall::class, $this->spyBus->lastMessage);
+        self::assertSame('run-123', $this->spyBus->lastMessage->runId());
+        self::assertSame('echo hello', $this->spyBus->lastMessage->commandText);
     }
 
     public function testEmitsProtocolErrorWhenRunIdMissing(): void
     {
-        $handler = new ShellCommandHandler($this->spyClient);
+        $handler = new ShellCommandHandler($this->spyClient, $this->spyBus);
 
         $emittedEvents = [];
         $emit = static function (RuntimeEvent $event) use (&$emittedEvents): void {
@@ -67,13 +76,14 @@ final class ShellCommandHandlerTest extends TestCase
         $handler($event);
 
         self::assertNull($this->spyClient->lastCommand);
+        self::assertNull($this->spyBus->lastMessage);
         self::assertCount(1, $emittedEvents);
         self::assertSame(RuntimeEventTypeEnum::ProtocolError->value, $emittedEvents[0]->type);
     }
 
     public function testIgnoresNonShellCommands(): void
     {
-        $handler = new ShellCommandHandler($this->spyClient);
+        $handler = new ShellCommandHandler($this->spyClient, $this->spyBus);
 
         $command = new RuntimeCommand(
             id: 'cmd_3',
@@ -86,12 +96,13 @@ final class ShellCommandHandlerTest extends TestCase
         $handler($event);
 
         self::assertNull($this->spyClient->lastCommand);
+        self::assertNull($this->spyBus->lastMessage);
         $this->addToAssertionCount(1);
     }
 
-    public function testSendEmptyTextStillDispatches(): void
+    public function testEmptyCommandTextDoesNotDispatchToBus(): void
     {
-        $handler = new ShellCommandHandler($this->spyClient);
+        $handler = new ShellCommandHandler($this->spyClient, $this->spyBus);
 
         $command = new RuntimeCommand(
             id: 'cmd_4',
@@ -103,14 +114,17 @@ final class ShellCommandHandlerTest extends TestCase
         $event = new ControllerCommandEvent($command, static function (): void {});
         $handler($event);
 
-        self::assertNotNull($this->spyClient->lastCommand);
-        self::assertSame('shell_command', $this->spyClient->lastCommand->type);
-        self::assertSame('', $this->spyClient->lastCommand->text);
+        // Empty command text: the worker returns early (no-op),
+        // but the dispatch still happens — ExecuteShellToolCallWorker
+        // handles the empty-command case.
+        self::assertNotNull($this->spyBus->lastMessage);
+        self::assertInstanceOf(ExecuteShellToolCall::class, $this->spyBus->lastMessage);
+        self::assertSame('', $this->spyBus->lastMessage->commandText);
     }
 
     public function testStandaloneShellCommandCompletesRun(): void
     {
-        $handler = new ShellCommandHandler($this->spyClient);
+        $handler = new ShellCommandHandler($this->spyClient, $this->spyBus);
 
         $command = new RuntimeCommand(
             id: 'cmd_standalone',
@@ -125,18 +139,19 @@ final class ShellCommandHandlerTest extends TestCase
         $event = new ControllerCommandEvent($command, static function (): void {});
         $handler($event);
 
-        self::assertNotNull($this->spyClient->lastCommand);
-        self::assertSame('shell_command', $this->spyClient->lastCommand->type);
+        // Standalone shell commands: bus dispatch + completeRun() via client.
+        self::assertNotNull($this->spyBus->lastMessage);
+        self::assertInstanceOf(ExecuteShellToolCall::class, $this->spyBus->lastMessage);
         self::assertSame(1, $this->spyClient->completeRunCalls);
         self::assertSame('run-standalone-1', $this->spyClient->lastCompletedRunId);
     }
 
     public function testInlineShellCommandDoesNotCompleteRun(): void
     {
-        $handler = new ShellCommandHandler($this->spyClient);
+        $handler = new ShellCommandHandler($this->spyClient, $this->spyBus);
 
-        // Non-standalone: sent via $client->send() from SubmitListener
-        // for subsequent shell commands during an agent run.
+        // Non-standalone: dispatched via bus for subsequent shell commands
+        // during an agent run. No completeRun() call.
         $command = new RuntimeCommand(
             id: 'cmd_inline',
             type: 'shell_command',
@@ -147,14 +162,14 @@ final class ShellCommandHandlerTest extends TestCase
         $event = new ControllerCommandEvent($command, static function (): void {});
         $handler($event);
 
-        self::assertNotNull($this->spyClient->lastCommand);
-        self::assertSame('shell_command', $this->spyClient->lastCommand->type);
+        self::assertNotNull($this->spyBus->lastMessage);
+        self::assertInstanceOf(ExecuteShellToolCall::class, $this->spyBus->lastMessage);
         self::assertSame(0, $this->spyClient->completeRunCalls);
     }
 
     public function testCompleteRunCommandDispatches(): void
     {
-        $handler = new ShellCommandHandler($this->spyClient);
+        $handler = new ShellCommandHandler($this->spyClient, $this->spyBus);
 
         $command = new RuntimeCommand(
             id: 'cmd_complete',
@@ -167,12 +182,12 @@ final class ShellCommandHandlerTest extends TestCase
 
         self::assertSame(1, $this->spyClient->completeRunCalls);
         self::assertSame('run-complete-1', $this->spyClient->lastCompletedRunId);
-        self::assertNull($this->spyClient->lastCommand);
+        self::assertNull($this->spyBus->lastMessage);
     }
 
     public function testCompleteRunWithEmptyRunIdIsIgnored(): void
     {
-        $handler = new ShellCommandHandler($this->spyClient);
+        $handler = new ShellCommandHandler($this->spyClient, $this->spyBus);
 
         $command = new RuntimeCommand(
             id: 'cmd_complete_no_run',
@@ -184,6 +199,29 @@ final class ShellCommandHandlerTest extends TestCase
         $handler($event);
 
         self::assertSame(0, $this->spyClient->completeRunCalls);
+    }
+}
+
+/**
+ * Test spy for MessageBusInterface in shell command context.
+ *
+ * @internal test helper
+ */
+final class ShellCommandSpyBus implements MessageBusInterface
+{
+    /** @var object|null */
+    public $lastMessage = null;
+
+    /** @var list<Envelope> */
+    public array $dispatched = [];
+
+    public function dispatch(object $message, array $stamps = []): Envelope
+    {
+        $this->lastMessage = $message;
+        $envelope = new Envelope($message, $stamps);
+        $this->dispatched[] = $envelope;
+
+        return $envelope;
     }
 }
 

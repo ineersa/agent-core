@@ -78,6 +78,7 @@ framework:
             Ineersa\AgentCore\Domain\Message\ExecuteLlmStep: llm
             Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep: llm
             Ineersa\AgentCore\Domain\Message\ExecuteToolCall: tool
+            Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall: tool
             Ineersa\CodingAgent\Mcp\Message\McpInitializeSessionCommand: mcp
             Ineersa\CodingAgent\Mcp\Message\McpRefreshCatalogCommand: mcp
             Ineersa\CodingAgent\Mcp\Message\McpDisconnectSessionCommand: mcp
