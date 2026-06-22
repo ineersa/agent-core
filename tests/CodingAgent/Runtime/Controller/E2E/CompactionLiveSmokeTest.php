@@ -49,9 +49,14 @@ final class CompactionLiveSmokeTest extends ControllerE2eTestCase
 
     protected function extraSettingsYaml(): string
     {
+        // keep_recent_tokens=3 lets the short assistant answer alone
+        // become the retained tail in a single-turn session.  The
+        // tentative boundary lands at the assistant message instead
+        // of the user message, and findSafeBoundary accepts it as a
+        // safe cut point when no tool calls are present.
         return <<<YAML
 compaction:
-    keep_recent_tokens: 10
+    keep_recent_tokens: 3
     auto_enabled: false
 YAML;
     }
@@ -76,7 +81,7 @@ YAML;
         // threshold while the assistant answer stays short.
         $longContext = str_repeat(
             "Automated testing is a fundamental practice in modern software engineering. ",
-            20,
+            30,
         ) . "Now respond with exactly: Understood.";
 
         $startCmdId = 'cmd_start_'.uniqid();
