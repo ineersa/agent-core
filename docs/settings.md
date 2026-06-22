@@ -571,6 +571,39 @@ prompts:
 See [Prompt Templates](prompt-templates.md) for full syntax, loading
 order, collisions, placeholder reference, and current limitations.
 
+### `agents.enabled`
+
+Whether agent definition discovery is enabled. When `false`, discovery
+returns an empty catalog with no diagnostics.
+
+**Default:** `true`
+
+### `agents.paths`
+
+Additional explicit agent definition file or directory paths. These have
+the highest precedence — they override all auto-discovery locations.
+
+Paths support `~` (home), `%kernel.project_dir%`, and relative paths
+(resolved against the project CWD). Each entry may be a single `.md` file
+or a directory of `*.md` files (non-recursive).
+
+Auto-discovery directories (`~/.hatfield/agents/`, `~/.agents/`,
+`.hatfield/agents/`, `.agents/`) are always scanned regardless of this list.
+
+**Default:** `[]` (empty — only auto-discovery directories are scanned)
+
+**Example:**
+```yaml
+agents:
+    enabled: true
+    paths:
+        - ~/shared/agents/custom-reviewer.md
+        - .hatfield/team-agents
+```
+
+See [Agent Definitions](agents.md) for the full definition format,
+discovery precedence, and catalog API.
+
 ### `extensions.enabled`
 
 List of enabled extension class names. Each class must implement
