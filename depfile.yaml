@@ -383,10 +383,12 @@ parameters:
       - TuiFooter
 
     TuiExtension:
+      - AppExtensionApi
       - TuiLayout
       - TuiWidget
       - TuiFooter
       - TuiTheme
+      - TuiCommand
 
     TuiHeader:
       - TuiWidget
@@ -543,6 +545,7 @@ parameters:
       - AgentCore
       - SymfonyAiPlatform
       - SymfonyEventDispatcher
+      - SymfonyProcess
 
     AppAgent:
       - AppConfig
@@ -557,11 +560,13 @@ parameters:
       - SymfonyYaml
 
     AppSystemPrompt:
+      - AppExtensionApi
       - AppTool
       - AppConfig
       - SymfonyAiPlatform
 
     AppTool:
+      - AppExtensionApi
       - AgentCore
       - AppConfig
       - SymfonyAiPlatform

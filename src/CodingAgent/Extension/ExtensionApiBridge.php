@@ -4,8 +4,15 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Extension;
 
+use Ineersa\Hatfield\ExtensionApi\CommandDefinitionDTO;
+use Ineersa\Hatfield\ExtensionApi\ExecInterface;
+use Ineersa\Hatfield\ExtensionApi\ExecOptionsDTO;
+use Ineersa\Hatfield\ExtensionApi\ExecResultDTO;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
+use Ineersa\Hatfield\ExtensionApi\ExtensionCommandHandlerInterface;
+use Ineersa\Hatfield\ExtensionApi\PromptContributorInterface;
 use Ineersa\Hatfield\ExtensionApi\ToolCallHookInterface;
+use Ineersa\Hatfield\ExtensionApi\ToolCallRewriteHookInterface;
 use Ineersa\Hatfield\ExtensionApi\ToolRegistrationDTO;
 use Ineersa\Hatfield\ExtensionApi\ToolResultHookInterface;
 
@@ -121,5 +128,30 @@ final class ExtensionApiBridge implements ExtensionApiInterface
     public function getCwd(): string
     {
         return $this->cwd;
+    }
+
+    public function exec(): ExecInterface
+    {
+        return new readonly class implements ExecInterface {
+            public function exec(string $command, array $args = [], ?ExecOptionsDTO $options = null): ExecResultDTO
+            {
+                throw new \LogicException('Exec is not available in the v1 ExtensionApiBridge. Use the production ExtensionToolRegistryBridge.');
+            }
+        };
+    }
+
+    public function registerPromptContributor(PromptContributorInterface $contributor): void
+    {
+        // No-op: v1 bridge does not support prompt contributors.
+    }
+
+    public function registerCommand(CommandDefinitionDTO $definition, ExtensionCommandHandlerInterface $handler): void
+    {
+        // No-op: v1 bridge does not support slash command registration.
+    }
+
+    public function registerToolCallRewriteHook(string $toolName, ToolCallRewriteHookInterface $hook): void
+    {
+        // No-op: v1 bridge does not support rewrite hooks.
     }
 }
