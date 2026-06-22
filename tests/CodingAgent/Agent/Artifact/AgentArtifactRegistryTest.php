@@ -10,48 +10,45 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 
 /**
  * Tests for AgentArtifactRegistry covering create, update, read, list,
- * path layout, and locking/concurrent update safety.
+ * path layout, locking safety, path traversal rejection, and corrupt
+ * registry/malformed-entry resilience.
  *
  * Test thesis: The registry correctly stores parent-scoped artifact
  * entries under .hatfield/sessions/<parent>/artifacts/agents/ without
- * creating top-level session directories, and concurrent updates under
- * the per-parent lock do not corrupt the registry.
+ * creating top-level session directories, rejects path traversal in all
+ * public APIs, and propagates corrupt data aggressively instead of
+ * silently clobbering.
  */
 final class AgentArtifactRegistryTest extends TestCase
 {
     private string $projectDir;
     private AgentArtifactRegistry $registry;
-    private HatfieldSessionStore $hatfieldSessionStore;
 
     protected function setUp(): void
     {
         parent::setUp();
 
-        $this->projectDir = sys_get_temp_dir().'/hatfield-agent-registry-'.getmypid();
-        if (is_dir($this->projectDir)) {
-            $this->rmDir($this->projectDir);
-        }
-        mkdir($this->projectDir, 0777, true);
-        mkdir($this->projectDir.'/.hatfield/sessions', 0777, true);
+        $this->projectDir = TestDirectoryIsolation::createOsTempDir('hatfield-agent-registry');
+        TestDirectoryIsolation::createHatfieldTree($this->projectDir, withSessions: true);
 
-        $appConfig = new AppConfig(
-            tui: new TuiConfig(theme: 'default'),
-            logging: new LoggingConfig(),
-            cwd: $this->projectDir,
-        );
-        $this->hatfieldSessionStore = new HatfieldSessionStore(
-            appConfig: $appConfig,
+        $hatfieldSessionStore = new HatfieldSessionStore(
+            appConfig: new AppConfig(
+                tui: new TuiConfig(theme: 'default'),
+                logging: new LoggingConfig(),
+                cwd: $this->projectDir,
+            ),
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
         );
 
         $this->registry = new AgentArtifactRegistry(
-            hatfieldSessionStore: $this->hatfieldSessionStore,
+            hatfieldSessionStore: $hatfieldSessionStore,
             lockFactory: new LockFactory(new FlockStore()),
         );
     }
@@ -60,9 +57,7 @@ final class AgentArtifactRegistryTest extends TestCase
     {
         parent::tearDown();
 
-        if (is_dir($this->projectDir)) {
-            $this->rmDir($this->projectDir);
-        }
+        TestDirectoryIsolation::removeDirectory($this->projectDir);
     }
 
     // ── Create ────────────────────────────────────────────────────────────
@@ -138,8 +133,17 @@ final class AgentArtifactRegistryTest extends TestCase
     public function testCreateRejectsDotDotInArtifactId(): void
     {
         $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('must not be ".."');
 
         $this->registry->create('parent', '..', 'child-a', 'scout');
+    }
+
+    public function testCreateRejectsBackslashInArtifactId(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('path separators');
+
+        $this->registry->create('parent', 'a\\b', 'child-a', 'scout');
     }
 
     public function testRegistryJsonIsValid(): void
@@ -186,6 +190,22 @@ final class AgentArtifactRegistryTest extends TestCase
         $this->registry->create($parentA, 'agent_01HX', 'child-a', 'scout');
 
         self::assertNull($this->registry->get($parentB, 'agent_01HX'));
+    }
+
+    public function testGetRejectsPathTraversalInParentRunId(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('path separators');
+
+        $this->registry->get('../sessions', 'agent_01HX');
+    }
+
+    public function testGetRejectsPathTraversalInArtifactId(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('must not be ".."');
+
+        $this->registry->get('parent', '..');
     }
 
     public function testFindByAgentRunId(): void
@@ -314,6 +334,22 @@ final class AgentArtifactRegistryTest extends TestCase
         );
     }
 
+    public function testUpdateRejectsPathTraversalInParentRunId(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('path separators');
+
+        $this->registry->update('../sessions', 'agent_01HX', status: AgentArtifactStatusEnum::Running);
+    }
+
+    public function testUpdateRejectsPathTraversalInArtifactId(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('path separators');
+
+        $this->registry->update('parent', 'a/b', status: AgentArtifactStatusEnum::Running);
+    }
+
     // ── List ──────────────────────────────────────────────────────────────
 
     public function testListReturnsEmptyForNoArtifacts(): void
@@ -333,6 +369,48 @@ final class AgentArtifactRegistryTest extends TestCase
         $names = array_map(static fn ($e) => $e->agentName, $entries);
         self::assertContains('scout', $names);
         self::assertContains('reviewer', $names);
+    }
+
+    public function testListRejectsPathTraversal(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('path separators');
+
+        $this->registry->list('../sessions');
+    }
+
+    // ── Resolve path helpers ──────────────────────────────────────────────
+
+    public function testResolveArtifactsBasePath(): void
+    {
+        $parentRunId = 'parent-'.bin2hex(random_bytes(4));
+        $expected = $this->projectDir.'/.hatfield/sessions/'.$parentRunId.'/artifacts/agents';
+
+        self::assertSame($expected, $this->registry->resolveArtifactsBasePath($parentRunId));
+    }
+
+    public function testResolveArtifactsBasePathRejectsPathTraversal(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('path separators');
+
+        $this->registry->resolveArtifactsBasePath('../sessions');
+    }
+
+    public function testResolveArtifactDir(): void
+    {
+        $parentRunId = 'parent-'.bin2hex(random_bytes(4));
+        $expected = $this->projectDir.'/.hatfield/sessions/'.$parentRunId.'/artifacts/agents/agent_01HX';
+
+        self::assertSame($expected, $this->registry->resolveArtifactDir($parentRunId, 'agent_01HX'));
+    }
+
+    public function testResolveArtifactDirRejectsPathTraversal(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('path separators');
+
+        $this->registry->resolveArtifactDir('parent', 'a/b');
     }
 
     // ── Locking / concurrent update safety ───────────────────────────────
@@ -413,73 +491,143 @@ final class AgentArtifactRegistryTest extends TestCase
         self::assertSame('', file_get_contents($handoffPath));
     }
 
-    // ── Path resolution helpers ───────────────────────────────────────────
+    // ── Corrupt registry / malformed entry resilience ────────────────────
 
-    public function testResolveArtifactsBasePath(): void
+    public function testCorruptRegistryJsonThrowsOnCreate(): void
     {
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
-        $expected = $this->projectDir.'/.hatfield/sessions/'.$parentRunId.'/artifacts/agents';
 
-        self::assertSame($expected, $this->registry->resolveArtifactsBasePath($parentRunId));
+        // Write corrupt JSON as the registry
+        $agentsDir = $this->registry->resolveArtifactsBasePath($parentRunId);
+        mkdir($agentsDir, 0777, true);
+        file_put_contents($agentsDir.'/registry.json', 'this is not json {{{');
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Corrupt registry.json');
+
+        $this->registry->create($parentRunId, 'agent_01HX', 'child-a', 'scout');
     }
 
-    public function testResolveArtifactDir(): void
+    public function testCorruptRegistryJsonThrowsOnGet(): void
     {
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
-        $expected = $this->projectDir.'/.hatfield/sessions/'.$parentRunId.'/artifacts/agents/agent_01HX';
 
-        self::assertSame($expected, $this->registry->resolveArtifactDir($parentRunId, 'agent_01HX'));
+        $agentsDir = $this->registry->resolveArtifactsBasePath($parentRunId);
+        mkdir($agentsDir, 0777, true);
+        file_put_contents($agentsDir.'/registry.json', 'corrupt');
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Corrupt registry.json');
+
+        $this->registry->get($parentRunId, 'any-id');
     }
 
-    // ── AgentArtifactEntryDTO::isTerminal ─────────────────────────────────
-
-    public function testIsTerminal(): void
+    public function testCorruptRegistryJsonThrowsOnList(): void
     {
-        $entryPending = new \Ineersa\CodingAgent\Agent\Artifact\AgentArtifactEntryDTO(
-            artifactId: 'test',
-            parentRunId: 'p',
-            agentRunId: 'c',
-            agentName: 'scout',
-            status: AgentArtifactStatusEnum::Pending,
-            paths: \Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathsDTO::forArtifactId('test'),
-            createdAt: new \DateTimeImmutable(),
-        );
-        self::assertFalse($entryPending->isTerminal());
+        $parentRunId = 'parent-'.bin2hex(random_bytes(4));
 
-        $entryCompleted = new \Ineersa\CodingAgent\Agent\Artifact\AgentArtifactEntryDTO(
-            artifactId: 'test',
-            parentRunId: 'p',
-            agentRunId: 'c',
-            agentName: 'scout',
-            status: AgentArtifactStatusEnum::Completed,
-            paths: \Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathsDTO::forArtifactId('test'),
-            createdAt: new \DateTimeImmutable(),
-        );
-        self::assertTrue($entryCompleted->isTerminal());
+        $agentsDir = $this->registry->resolveArtifactsBasePath($parentRunId);
+        mkdir($agentsDir, 0777, true);
+        file_put_contents($agentsDir.'/registry.json', 'not valid json');
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Corrupt registry.json');
+
+        $this->registry->list($parentRunId);
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────
-
-    private function rmDir(string $dir): void
+    public function testMalformedRegistryEntryThrows(): void
     {
-        if (!is_dir($dir)) {
-            return;
-        }
+        $parentRunId = 'parent-'.bin2hex(random_bytes(4));
 
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
+        $agentsDir = $this->registry->resolveArtifactsBasePath($parentRunId);
+        mkdir($agentsDir, 0777, true);
+        // Valid JSON but entry missing required fields
+        file_put_contents($agentsDir.'/registry.json', json_encode([
+            'schema_version' => 1,
+            'entries' => [['foo' => 'bar']],
+        ]));
 
-        foreach ($iterator as $file) {
-            if ($file->isDir()) {
-                rmdir($file->getPathname());
-            } else {
-                @chmod($file->getPathname(), 0644);
-                unlink($file->getPathname());
-            }
-        }
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('missing or non-string required fields');
 
-        rmdir($dir);
+        $this->registry->list($parentRunId);
+    }
+
+    public function testRegistryWithUnknownStatusThrows(): void
+    {
+        $parentRunId = 'parent-'.bin2hex(random_bytes(4));
+
+        $agentsDir = $this->registry->resolveArtifactsBasePath($parentRunId);
+        mkdir($agentsDir, 0777, true);
+        file_put_contents($agentsDir.'/registry.json', json_encode([
+            'schema_version' => 1,
+            'entries' => [[
+                'artifact_id' => 'agent_01HX',
+                'parent_run_id' => $parentRunId,
+                'agent_run_id' => 'child-a',
+                'agent_name' => 'scout',
+                'status' => 'nonexistent_status',
+                'created_at' => '2026-06-22T12:00:00+00:00',
+                'handoff_path' => 'artifacts/agents/agent_01HX/handoff.md',
+                'metadata_path' => 'artifacts/agents/agent_01HX/metadata.json',
+                'events_path' => 'artifacts/agents/agent_01HX/events.jsonl',
+                'state_path' => 'artifacts/agents/agent_01HX/state.json',
+            ]],
+        ]));
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('unknown status');
+
+        $this->registry->list($parentRunId);
+    }
+
+    public function testRegistryWithMismatchedSchemaVersionThrows(): void
+    {
+        $parentRunId = 'parent-'.bin2hex(random_bytes(4));
+
+        $agentsDir = $this->registry->resolveArtifactsBasePath($parentRunId);
+        mkdir($agentsDir, 0777, true);
+        file_put_contents($agentsDir.'/registry.json', json_encode([
+            'schema_version' => 999,
+            'entries' => [],
+        ]));
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('unsupported schema_version');
+
+        $this->registry->list($parentRunId);
+    }
+
+    public function testRegistryWithMissingSchemaVersionThrows(): void
+    {
+        $parentRunId = 'parent-'.bin2hex(random_bytes(4));
+
+        $agentsDir = $this->registry->resolveArtifactsBasePath($parentRunId);
+        mkdir($agentsDir, 0777, true);
+        file_put_contents($agentsDir.'/registry.json', json_encode([
+            'entries' => [],
+        ]));
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('unsupported schema_version');
+
+        $this->registry->list($parentRunId);
+    }
+
+    public function testRegistryMissingEntriesKeyThrows(): void
+    {
+        $parentRunId = 'parent-'.bin2hex(random_bytes(4));
+
+        $agentsDir = $this->registry->resolveArtifactsBasePath($parentRunId);
+        mkdir($agentsDir, 0777, true);
+        file_put_contents($agentsDir.'/registry.json', json_encode([
+            'schema_version' => 1,
+        ]));
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('missing required "entries"');
+
+        $this->registry->list($parentRunId);
     }
 }

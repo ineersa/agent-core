@@ -143,6 +143,9 @@ final class AgentArtifactRegistry
         ?string $failureReason = null,             // sentinel: null = no change
         ?string $needsClarification = null,        // sentinel: null = no change
     ): ?AgentArtifactEntryDTO {
+        $this->validatePathComponent($parentRunId, 'parentRunId');
+        $this->validatePathComponent($artifactId, 'artifactId');
+
         $lock = $this->lockFactory->createLock("hatfield-agent-artifacts-{$parentRunId}");
         $lock->acquire(true);
 
@@ -193,6 +196,9 @@ final class AgentArtifactRegistry
      */
     public function get(string $parentRunId, string $artifactId): ?AgentArtifactEntryDTO
     {
+        $this->validatePathComponent($parentRunId, 'parentRunId');
+        $this->validatePathComponent($artifactId, 'artifactId');
+
         foreach ($this->list($parentRunId) as $entry) {
             if ($entry->artifactId === $artifactId) {
                 return $entry;
@@ -210,6 +216,9 @@ final class AgentArtifactRegistry
      */
     public function findByAgentRunId(string $parentRunId, string $agentRunId): ?AgentArtifactEntryDTO
     {
+        $this->validatePathComponent($parentRunId, 'parentRunId');
+        $this->validatePathComponent($agentRunId, 'agentRunId');
+
         foreach ($this->list($parentRunId) as $entry) {
             if ($entry->agentRunId === $agentRunId) {
                 return $entry;
@@ -226,6 +235,8 @@ final class AgentArtifactRegistry
      */
     public function list(string $parentRunId): array
     {
+        $this->validatePathComponent($parentRunId, 'parentRunId');
+
         $lock = $this->lockFactory->createLock("hatfield-agent-artifacts-{$parentRunId}");
         $lock->acquire(true);
 
@@ -241,6 +252,8 @@ final class AgentArtifactRegistry
      */
     public function resolveArtifactsBasePath(string $parentRunId): string
     {
+        $this->validatePathComponent($parentRunId, 'parentRunId');
+
         return $this->sessionsBasePath.'/'.$parentRunId.'/'.self::AGENTS_SUBDIR;
     }
 
@@ -249,6 +262,9 @@ final class AgentArtifactRegistry
      */
     public function resolveArtifactDir(string $parentRunId, string $artifactId): string
     {
+        $this->validatePathComponent($parentRunId, 'parentRunId');
+        $this->validatePathComponent($artifactId, 'artifactId');
+
         return $this->resolveArtifactsBasePath($parentRunId).'/'.$artifactId;
     }
 
@@ -257,7 +273,12 @@ final class AgentArtifactRegistry
     /**
      * Load all entries from registry.json for a parent session.
      *
+     * A missing file is legitimate empty.  Corrupt JSON or an
+     * unsupported schema version throw — never silently return [].
+     *
      * @return list<AgentArtifactEntryDTO>
+     *
+     * @throws \RuntimeException when the registry file is corrupt
      */
     private function loadRegistry(string $parentRunId): array
     {
@@ -274,24 +295,26 @@ final class AgentArtifactRegistry
 
         try {
             $data = json_decode($json, true, 512, \JSON_THROW_ON_ERROR);
-        } catch (\JsonException) {
-            return [];
+        } catch (\JsonException $e) {
+            throw new \RuntimeException(\sprintf('Corrupt registry.json for parent run "%s" — not parseable as JSON: %s', $parentRunId, $e->getMessage()), previous: $e);
         }
 
         if (!\is_array($data) || !isset($data['entries']) || !\is_array($data['entries'])) {
-            return [];
+            throw new \RuntimeException(\sprintf('Registry.json for parent run "%s" missing required "entries" key.', $parentRunId));
+        }
+
+        $schemaVersion = $data['schema_version'] ?? null;
+        if (self::SCHEMA_VERSION !== $schemaVersion) {
+            throw new \RuntimeException(\sprintf('Registry.json for parent run "%s" has unsupported schema_version "%s" (expected %d).', $parentRunId, var_export($schemaVersion, true), self::SCHEMA_VERSION));
         }
 
         $entries = [];
         foreach ($data['entries'] as $entryData) {
             if (!\is_array($entryData)) {
-                continue;
+                throw new \RuntimeException(\sprintf('Registry.json for parent run "%s" contains a non-associative entry.', $parentRunId));
             }
 
-            $entry = $this->hydrateEntry($entryData);
-            if (null !== $entry) {
-                $entries[] = $entry;
-            }
+            $entries[] = $this->hydrateEntry($entryData, $parentRunId);
         }
 
         return $entries;
@@ -397,44 +420,50 @@ final class AgentArtifactRegistry
     /**
      * Hydrate an AgentArtifactEntryDTO from a registry entry array.
      *
+     * Throws on corrupt/malformed entries so corruption cannot be
+     * silently clobbered on the next write.
+     *
      * @param array<string, mixed> $data
+     * @param string               $parentRunId for error context
+     *
+     * @throws \RuntimeException when required fields are missing or malformed
      */
-    private function hydrateEntry(array $data): ?AgentArtifactEntryDTO
+    private function hydrateEntry(array $data, string $parentRunId): AgentArtifactEntryDTO
     {
         $artifactId = $data['artifact_id'] ?? null;
-        $parentRunId = $data['parent_run_id'] ?? null;
+        $parentRunIdFromData = $data['parent_run_id'] ?? null;
         $agentRunId = $data['agent_run_id'] ?? null;
         $agentName = $data['agent_name'] ?? null;
         $status = $data['status'] ?? null;
         $createdAt = $data['created_at'] ?? null;
 
         if (!\is_string($artifactId)
-            || !\is_string($parentRunId)
+            || !\is_string($parentRunIdFromData)
             || !\is_string($agentRunId)
             || !\is_string($agentName)
             || !\is_string($status)
             || !\is_string($createdAt)
         ) {
-            return null;
+            throw new \RuntimeException(\sprintf('Registry entry for parent run "%s" has missing or non-string required fields (artifact_id, parent_run_id, agent_run_id, agent_name, status, created_at).', $parentRunId));
         }
 
         $statusEnum = AgentArtifactStatusEnum::tryFrom($status);
         if (null === $statusEnum) {
-            return null;
+            throw new \RuntimeException(\sprintf('Registry entry for parent run "%s" artifact "%s" has unknown status "%s".', $parentRunId, $artifactId, $status));
         }
 
         try {
             $createdAtDt = new \DateTimeImmutable($createdAt);
-        } catch (\Throwable) {
-            return null;
+        } catch (\Throwable $e) {
+            throw new \RuntimeException(\sprintf('Registry entry for parent run "%s" artifact "%s" has unparseable created_at "%s".', $parentRunId, $artifactId, $createdAt), previous: $e);
         }
 
         $startedAt = null;
         if (\is_string($data['started_at'] ?? null)) {
             try {
                 $startedAt = new \DateTimeImmutable($data['started_at']);
-            } catch (\Throwable) {
-                // tolerate unparseable timestamp
+            } catch (\Throwable $e) {
+                throw new \RuntimeException(\sprintf('Registry entry for parent run "%s" artifact "%s" has unparseable started_at "%s".', $parentRunId, $artifactId, $data['started_at']), previous: $e);
             }
         }
 
@@ -442,18 +471,35 @@ final class AgentArtifactRegistry
         if (\is_string($data['completed_at'] ?? null)) {
             try {
                 $completedAt = new \DateTimeImmutable($data['completed_at']);
-            } catch (\Throwable) {
-                // tolerate unparseable timestamp
+            } catch (\Throwable $e) {
+                throw new \RuntimeException(\sprintf('Registry entry for parent run "%s" artifact "%s" has unparseable completed_at "%s".', $parentRunId, $artifactId, $data['completed_at']), previous: $e);
+            }
+        }
+
+        // Validate stored path fields match the canonical paths for this artifact ID.
+        $expectedPaths = AgentArtifactPathsDTO::forArtifactId($artifactId);
+        foreach ([
+            'handoff_path' => $expectedPaths->handoffPath,
+            'metadata_path' => $expectedPaths->metadataPath,
+            'events_path' => $expectedPaths->eventsPath,
+            'state_path' => $expectedPaths->statePath,
+        ] as $key => $expected) {
+            $stored = $data[$key] ?? null;
+            if (!\is_string($stored)) {
+                throw new \RuntimeException(\sprintf('Registry entry for parent run "%s" artifact "%s" missing or non-string "%s".', $parentRunId, $artifactId, $key));
+            }
+            if ($stored !== $expected) {
+                throw new \RuntimeException(\sprintf('Registry entry for parent run "%s" artifact "%s" has unexpected "%s" value "%s" (expected "%s").', $parentRunId, $artifactId, $key, $stored, $expected));
             }
         }
 
         return new AgentArtifactEntryDTO(
             artifactId: $artifactId,
-            parentRunId: $parentRunId,
+            parentRunId: $parentRunIdFromData,
             agentRunId: $agentRunId,
             agentName: $agentName,
             status: $statusEnum,
-            paths: AgentArtifactPathsDTO::forArtifactId($artifactId),
+            paths: $expectedPaths,
             createdAt: $createdAtDt,
             startedAt: $startedAt,
             completedAt: $completedAt,

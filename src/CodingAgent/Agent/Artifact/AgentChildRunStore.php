@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Agent\Artifact;
 
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
@@ -124,63 +125,44 @@ final class AgentChildRunStore implements RunStoreInterface
     }
 
     /**
-     * Find running child runs whose state.json has not been updated since
-     * the given timestamp.
+     * Find the bound child run if it is running and its state.json has
+     * not been updated since the given timestamp.
      *
-     * This scans the artifacts/agents/ directories under the parent session
-     * — NOT the top-level sessions directory.
+     * This store is bound to exactly one child (parentRunId + agentRunId +
+     * artifactId).  Returns [state] when stale and Running, [] otherwise.
+     * Does NOT scan sibling artifacts — upstream callers iterate the
+     * registry for multi-child scanning.
      *
      * @return list<RunState>
      */
     public function findRunningStaleBefore(\DateTimeImmutable $updatedBefore): array
     {
-        $agentsDir = \sprintf(
-            '%s/%s/artifacts/agents',
-            $this->sessionsBasePath,
-            $this->parentRunId,
-        );
+        $path = $this->statePath();
 
-        if (!is_dir($agentsDir)) {
+        if (!is_file($path)) {
             return [];
         }
 
-        $stale = [];
-
-        foreach (new \DirectoryIterator($agentsDir) as $item) {
-            if ($item->isDot() || !$item->isDir()) {
-                continue;
-            }
-
-            $artifactId = $item->getFilename();
-            $statePath = \sprintf('%s/%s/state.json', $agentsDir, $artifactId);
-
-            if (!is_file($statePath)) {
-                continue;
-            }
-
-            $mtime = filemtime($statePath);
-            if (false === $mtime) {
-                continue;
-            }
-
-            $lastModified = \DateTimeImmutable::createFromFormat('U', (string) $mtime);
-            if (false === $lastModified || $lastModified > $updatedBefore) {
-                continue;
-            }
-
-            $state = $this->get($this->agentRunId);
-            if (null === $state) {
-                continue;
-            }
-
-            if (\Ineersa\AgentCore\Domain\Run\RunStatus::Running !== $state->status) {
-                continue;
-            }
-
-            $stale[] = $state;
+        $mtime = filemtime($path);
+        if (false === $mtime) {
+            return [];
         }
 
-        return $stale;
+        $lastModified = \DateTimeImmutable::createFromFormat('U', (string) $mtime);
+        if (false === $lastModified || $lastModified > $updatedBefore) {
+            return [];
+        }
+
+        $state = $this->get($this->agentRunId);
+        if (null === $state) {
+            return [];
+        }
+
+        if (RunStatus::Running !== $state->status) {
+            return [];
+        }
+
+        return [$state];
     }
 
     /**
@@ -190,11 +172,8 @@ final class AgentChildRunStore implements RunStoreInterface
      */
     private function statePath(): string
     {
-        return \sprintf(
-            '%s/%s/artifacts/agents/%s/state.json',
-            $this->sessionsBasePath,
-            $this->parentRunId,
-            $this->artifactId,
-        );
+        $paths = AgentArtifactPathsDTO::forArtifactId($this->artifactId);
+
+        return $this->sessionsBasePath.'/'.$this->parentRunId.'/'.$paths->statePath;
     }
 }

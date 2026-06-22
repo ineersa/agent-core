@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
@@ -34,20 +35,15 @@ final class AgentChildRunEventStoreTest extends TestCase
     {
         parent::setUp();
 
-        $this->projectDir = sys_get_temp_dir().'/hatfield-child-eventstore-'.getmypid();
-        if (is_dir($this->projectDir)) {
-            $this->rmDir($this->projectDir);
-        }
-        mkdir($this->projectDir, 0777, true);
-        mkdir($this->projectDir.'/.hatfield/sessions', 0777, true);
+        $this->projectDir = TestDirectoryIsolation::createOsTempDir('hatfield-child-eventstore');
+        TestDirectoryIsolation::createHatfieldTree($this->projectDir, withSessions: true);
 
-        $appConfig = new AppConfig(
-            tui: new TuiConfig(theme: 'default'),
-            logging: new LoggingConfig(),
-            cwd: $this->projectDir,
-        );
         $this->hatfieldSessionStore = new HatfieldSessionStore(
-            appConfig: $appConfig,
+            appConfig: new AppConfig(
+                tui: new TuiConfig(theme: 'default'),
+                logging: new LoggingConfig(),
+                cwd: $this->projectDir,
+            ),
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
         );
     }
@@ -56,9 +52,7 @@ final class AgentChildRunEventStoreTest extends TestCase
     {
         parent::tearDown();
 
-        if (is_dir($this->projectDir)) {
-            $this->rmDir($this->projectDir);
-        }
+        TestDirectoryIsolation::removeDirectory($this->projectDir);
     }
 
     public function testAppendAndRetrieveSingleEvent(): void
@@ -210,28 +204,5 @@ final class AgentChildRunEventStoreTest extends TestCase
             agentRunId: $agentRunId,
             artifactId: $artifactId,
         );
-    }
-
-    private function rmDir(string $dir): void
-    {
-        if (!is_dir($dir)) {
-            return;
-        }
-
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-
-        foreach ($iterator as $file) {
-            if ($file->isDir()) {
-                rmdir($file->getPathname());
-            } else {
-                @chmod($file->getPathname(), 0644);
-                unlink($file->getPathname());
-            }
-        }
-
-        rmdir($dir);
     }
 }

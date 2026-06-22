@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
@@ -22,13 +23,15 @@ use Symfony\Component\Serializer\Serializer;
 
 /**
  * Tests for AgentChildRunStore covering CAS, retrieve, runId
- * validation, and the critical invariant that child state is stored
- * under the parent artifact path — not as a top-level session directory.
+ * validation, stale detection, and the critical invariant that child
+ * state is stored under the parent artifact path — not as a top-level
+ * session directory.
  *
  * Test thesis: The child run store correctly persists and reads
  * RunState at .hatfield/sessions/<parent>/artifacts/agents/<artifact>/state.json
- * with correct CAS semantics and does NOT create a top-level
- * .hatfield/sessions/<agentRunId>/state.json.
+ * with correct CAS semantics, findRunningStaleBefore() only reports the
+ * bound child, and no top-level .hatfield/sessions/<agentRunId>/ is
+ * ever created.
  */
 final class AgentChildRunStoreTest extends TestCase
 {
@@ -40,20 +43,15 @@ final class AgentChildRunStoreTest extends TestCase
     {
         parent::setUp();
 
-        $this->projectDir = sys_get_temp_dir().'/hatfield-child-runstore-'.getmypid();
-        if (is_dir($this->projectDir)) {
-            $this->rmDir($this->projectDir);
-        }
-        mkdir($this->projectDir, 0777, true);
-        mkdir($this->projectDir.'/.hatfield/sessions', 0777, true);
+        $this->projectDir = TestDirectoryIsolation::createOsTempDir('hatfield-child-runstore');
+        TestDirectoryIsolation::createHatfieldTree($this->projectDir, withSessions: true);
 
-        $appConfig = new AppConfig(
-            tui: new TuiConfig(theme: 'default'),
-            logging: new LoggingConfig(),
-            cwd: $this->projectDir,
-        );
         $this->hatfieldSessionStore = new HatfieldSessionStore(
-            appConfig: $appConfig,
+            appConfig: new AppConfig(
+                tui: new TuiConfig(theme: 'default'),
+                logging: new LoggingConfig(),
+                cwd: $this->projectDir,
+            ),
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
         );
 
@@ -67,9 +65,7 @@ final class AgentChildRunStoreTest extends TestCase
     {
         parent::tearDown();
 
-        if (is_dir($this->projectDir)) {
-            $this->rmDir($this->projectDir);
-        }
+        TestDirectoryIsolation::removeDirectory($this->projectDir);
     }
 
     // ── Basic get / CAS ───────────────────────────────────────────────────
@@ -221,6 +217,69 @@ final class AgentChildRunStoreTest extends TestCase
         self::assertCount(0, $stale);
     }
 
+    public function testFindRunningStaleBeforeReturnsEmptyForNonRunningChild(): void
+    {
+        $parentRunId = 'parent-'.bin2hex(random_bytes(4));
+        $agentRunId = 'child-'.bin2hex(random_bytes(4));
+        $artifactId = 'scout-001';
+
+        $store = $this->createStore($parentRunId, $agentRunId, $artifactId);
+
+        // A completed child is not stale
+        $state = new RunState(runId: $agentRunId, status: RunStatus::Completed, version: 1);
+        $store->compareAndSwap($state, 0);
+
+        $statePath = "{$this->projectDir}/.hatfield/sessions/{$parentRunId}/artifacts/agents/{$artifactId}/state.json";
+        touch($statePath, time() - 3600);
+
+        $stale = $store->findRunningStaleBefore(new \DateTimeImmutable());
+        self::assertCount(0, $stale);
+    }
+
+    /**
+     * Regression test: the bound store returns only its own stale
+     * running state — NOT a sibling artifact's state.
+     *
+     * Previous implementation incorrectly looped all sibling directories
+     * while always reading $this->agentRunId, which returned the same
+     * bound child's state for every sibling and duplicated entries.
+     */
+    public function testFindRunningStaleBeforeOnlyReportsBoundChildNotSiblings(): void
+    {
+        $parentRunId = 'parent-'.bin2hex(random_bytes(4));
+
+        // Create two artifact directories with state.json files.
+        $agentRunIdA = 'child-a';
+        $artifactA = 'scout-001';
+        $agentRunIdB = 'child-b';
+        $artifactB = 'scout-002';
+
+        $storeA = $this->createStore($parentRunId, $agentRunIdA, $artifactA);
+        $storeB = $this->createStore($parentRunId, $agentRunIdB, $artifactB);
+
+        // Both children are running and stale.
+        $stateA = new RunState(runId: $agentRunIdA, status: RunStatus::Running, version: 1);
+        $stateB = new RunState(runId: $agentRunIdB, status: RunStatus::Running, version: 1);
+
+        $storeA->compareAndSwap($stateA, 0);
+        $storeB->compareAndSwap($stateB, 0);
+
+        $statePathA = "{$this->projectDir}/.hatfield/sessions/{$parentRunId}/artifacts/agents/{$artifactA}/state.json";
+        $statePathB = "{$this->projectDir}/.hatfield/sessions/{$parentRunId}/artifacts/agents/{$artifactB}/state.json";
+        touch($statePathA, time() - 7200);
+        touch($statePathB, time() - 7200);
+
+        // Store A only reports child A.
+        $staleA = $storeA->findRunningStaleBefore(new \DateTimeImmutable());
+        self::assertCount(1, $staleA, 'Store A should report exactly one stale child — its own');
+        self::assertSame($agentRunIdA, $staleA[0]->runId);
+
+        // Store B only reports child B.
+        $staleB = $storeB->findRunningStaleBefore(new \DateTimeImmutable());
+        self::assertCount(1, $staleB, 'Store B should report exactly one stale child — its own');
+        self::assertSame($agentRunIdB, $staleB[0]->runId);
+    }
+
     // ── Test isolation: no top-level child session ────────────────────────
 
     public function testNoTopLevelChildSessionDirectoryCreated(): void
@@ -252,28 +311,5 @@ final class AgentChildRunStoreTest extends TestCase
             agentRunId: $agentRunId,
             artifactId: $artifactId,
         );
-    }
-
-    private function rmDir(string $dir): void
-    {
-        if (!is_dir($dir)) {
-            return;
-        }
-
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-
-        foreach ($iterator as $file) {
-            if ($file->isDir()) {
-                rmdir($file->getPathname());
-            } else {
-                @chmod($file->getPathname(), 0644);
-                unlink($file->getPathname());
-            }
-        }
-
-        rmdir($dir);
     }
 }

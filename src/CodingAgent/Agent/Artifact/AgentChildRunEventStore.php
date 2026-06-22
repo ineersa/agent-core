@@ -163,12 +163,9 @@ final class AgentChildRunEventStore implements EventStoreInterface
      */
     private function eventsPath(): string
     {
-        return \sprintf(
-            '%s/%s/artifacts/agents/%s/events.jsonl',
-            $this->sessionsBasePath,
-            $this->parentRunId,
-            $this->artifactId,
-        );
+        $paths = AgentArtifactPathsDTO::forArtifactId($this->artifactId);
+
+        return $this->sessionsBasePath.'/'.$this->parentRunId.'/'.$paths->eventsPath;
     }
 
     /**
