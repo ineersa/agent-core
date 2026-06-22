@@ -291,6 +291,48 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
 
         $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
 
+        // When there is no active work to finish cancellation (not streaming,
+        // no active step, no unresolved tool calls), terminalize immediately
+        // to Cancelled.  Otherwise the run can get stuck Cancelling with no
+        // later result/effect to transition it out — the classic cancel hang.
+        $hasActiveWork = $state->isStreaming
+            || null !== $state->activeStepId
+            || \in_array(false, $state->pendingToolCalls, true);
+
+        if (!$hasActiveWork) {
+            // No active work — terminalize to Cancelled with AgentEnd.
+            // Reuse the already-built $eventSpecs (applied + stale rejections)
+            // and append the agent_end event at the correct sequence number.
+            $eventSpecs[] = [
+                'type' => RunEventTypeEnum::AgentEnd->value,
+                'payload' => [
+                    'reason' => 'cancelled',
+                ],
+            ];
+
+            $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
+
+            $nextState = new RunState(
+                runId: $state->runId,
+                status: RunStatus::Cancelled,
+                version: $state->version + 1,
+                turnNo: $state->turnNo,
+                lastSeq: $state->lastSeq + \count($events),
+                isStreaming: $state->isStreaming,
+                streamingMessage: $state->streamingMessage,
+                pendingToolCalls: $state->pendingToolCalls,
+                errorMessage: $reason,
+                messages: $state->messages,
+                activeStepId: null,
+                retryableFailure: false,
+            );
+
+            return new HandlerResult(
+                nextState: $nextState,
+                events: $events,
+            );
+        }
+
         $nextState = new RunState(
             runId: $state->runId,
             status: RunStatus::Cancelling,

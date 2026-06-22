@@ -504,7 +504,14 @@ final class CompactionStepResultHandlerTest extends TestCase
      * Thesis: pre-LLM auto-triggered compaction failure (e.g., model_error) must
      * NOT include an AdvanceRun.  Only successful compaction continues.
      */
-    public function testPreLlmAutoTriggerFailureDoesNotIncludeAdvanceRunEffect(): void
+    /**
+     * Thesis: pre-LLM auto trigger model_error with continueAfterCompaction=true
+     * must include an AdvanceRun effect so the pending LLM turn proceeds on
+     * original (uncompacted) messages.  Without this, the run dead-ends at
+     * Running with no active step and no pending work — the classic session 8
+     * hang pattern.
+     */
+    public function testPreLlmAutoTriggerModelErrorIncludesAdvanceRunEffect(): void
     {
         $originalMessages = [$this->userMsg('hi')];
         $state = $this->createRunState($originalMessages, turnNo: 5, activeStepId: 'step-1');
@@ -535,11 +542,15 @@ final class CompactionStepResultHandlerTest extends TestCase
         );
 
         self::assertNotNull($result->nextState);
+        self::assertSame(RunStatus::Running, $result->nextState->status,
+            'Pre-LLM auto model_error must resolve to Running');
         self::assertCount(1, $result->events);
         self::assertSame(RunEventTypeEnum::ContextCompactionFailed->value, $result->events[0]->type);
 
-        // Effects must NOT include an AdvanceRun — only success continues.
-        self::assertCount(0, $result->effects, 'Auto compaction failure must not auto-advance');
+        // Effects MUST include an AdvanceRun so the pending LLM turn proceeds.
+        self::assertCount(1, $result->effects,
+            'Pre-LLM auto model_error must dispatch AdvanceRun to continue pending turn');
+        self::assertInstanceOf(AdvanceRun::class, $result->effects[0]);
     }
 
     /**
@@ -736,6 +747,9 @@ final class CompactionStepResultHandlerTest extends TestCase
         self::assertSame(RunStatus::Running, $result->nextState->status,
             'Pre-LLM auto trigger failure must resolve Compacting to Running');
         self::assertNull($result->nextState->activeStepId);
+        self::assertCount(1, $result->effects,
+            'Pre-LLM auto failure with continueAfterCompaction must dispatch AdvanceRun');
+        self::assertInstanceOf(AdvanceRun::class, $result->effects[0]);
     }
 
     /**
@@ -778,6 +792,152 @@ final class CompactionStepResultHandlerTest extends TestCase
         self::assertSame(RunStatus::Completed, $result->nextState->status,
             'After-turn auto trigger failure must resolve Compacting to Completed');
         self::assertNull($result->nextState->activeStepId);
+    }
+
+    /**
+     * Thesis: pre-LLM model_error during Cancelling must NOT emit AdvanceRun.
+     *
+     * When the user cancelled while compaction was in-flight, the incoming
+     * state is Cancelling.  The handler resolves to Cancelled (terminal)
+     * but must NOT also dispatch an AdvanceRun that would try to continue
+     * the cancelled run.
+     */
+    public function testPreLlmAutoModelErrorCancellingDoesNotAdvance(): void
+    {
+        $state = new RunState(
+            runId: 'run-1',
+            status: RunStatus::Cancelling,
+            version: 10,
+            turnNo: 5,
+            lastSeq: 20,
+            isStreaming: false,
+            streamingMessage: null,
+            pendingToolCalls: [],
+            errorMessage: null,
+            messages: [$this->userMsg('q')],
+            activeStepId: 'step-1',
+            retryableFailure: false,
+        );
+
+        $handler = new CompactionStepResultHandler($this->createNoOpStub(), new EventFactory());
+
+        $result = $handler->handle(
+            new CompactionStepResult(
+                runId: 'run-1',
+                turnNo: 5,
+                stepId: 'step-1',
+                attempt: 1,
+                idempotencyKey: 'key-1',
+                summaryText: null,
+                error: ['type' => 'HttpException', 'message' => 'timeout'],
+                retainedTailMessages: [],
+                messagesCompacted: 0,
+                messagesRetained: 0,
+                firstRetainedIndex: 0,
+                tokenEstimateBefore: 50000,
+                trigger: 'auto',
+                continueAfterCompaction: true,
+                model: 'openai/gpt-4.1-mini',
+                modelOptions: [],
+            ),
+            $state,
+        );
+
+        self::assertNotNull($result->nextState);
+        self::assertSame(RunStatus::Cancelled, $result->nextState->status,
+            'Compaction model_error during Cancelling must resolve to Cancelled');
+        self::assertCount(0, $result->effects,
+            'Must NOT dispatch AdvanceRun when Cancelling — run has been cancelled');
+    }
+
+    /**
+     * Thesis: pre-LLM empty_summary with continueAfterCompaction=true must
+     * include AdvanceRun so the pending LLM turn proceeds on original messages.
+     */
+    public function testPreLlmAutoEmptySummaryIncludesAdvanceRunEffect(): void
+    {
+        $state = $this->createRunState([$this->userMsg('hi')], turnNo: 5, activeStepId: 'step-1');
+
+        $handler = new CompactionStepResultHandler($this->createNoOpStub(), new EventFactory());
+
+        $result = $handler->handle(
+            new CompactionStepResult(
+                runId: 'run-1',
+                turnNo: 5,
+                stepId: 'step-1',
+                attempt: 1,
+                idempotencyKey: 'key-1',
+                summaryText: '',  // empty summary
+                error: null,
+                retainedTailMessages: [],
+                messagesCompacted: 0,
+                messagesRetained: 1,
+                firstRetainedIndex: 0,
+                tokenEstimateBefore: 50000,
+                trigger: 'auto',
+                continueAfterCompaction: true,
+                model: 'openai/gpt-4.1-mini',
+                modelOptions: [],
+            ),
+            $state,
+        );
+
+        self::assertNotNull($result->nextState);
+        self::assertSame(RunStatus::Running, $result->nextState->status,
+            'Pre-LLM auto empty_summary must resolve to Running');
+        self::assertCount(1, $result->events);
+        self::assertSame(RunEventTypeEnum::ContextCompactionFailed->value, $result->events[0]->type);
+        self::assertSame('empty_summary', $result->events[0]->payload['reason']);
+
+        self::assertCount(1, $result->effects,
+            'Pre-LLM auto empty_summary must dispatch AdvanceRun to continue pending turn');
+        self::assertInstanceOf(AdvanceRun::class, $result->effects[0]);
+    }
+
+    /**
+     * Thesis: pre-LLM empty_summary during Cancelling must NOT emit AdvanceRun.
+     */
+    public function testPreLlmAutoEmptySummaryCancellingDoesNotAdvance(): void
+    {
+        $state = new RunState(
+            runId: 'run-1',
+            status: RunStatus::Cancelling,
+            version: 10,
+            turnNo: 5,
+            lastSeq: 20,
+            activeStepId: 'step-1',
+            messages: [$this->userMsg('q')],
+        );
+
+        $handler = new CompactionStepResultHandler($this->createNoOpStub(), new EventFactory());
+
+        $result = $handler->handle(
+            new CompactionStepResult(
+                runId: 'run-1',
+                turnNo: 5,
+                stepId: 'step-1',
+                attempt: 1,
+                idempotencyKey: 'key-1',
+                summaryText: '',  // empty summary
+                error: null,
+                retainedTailMessages: [],
+                messagesCompacted: 0,
+                messagesRetained: 0,
+                firstRetainedIndex: 0,
+                tokenEstimateBefore: 50000,
+                trigger: 'auto',
+                continueAfterCompaction: true,
+                model: 'openai/gpt-4.1-mini',
+                modelOptions: [],
+            ),
+            $state,
+        );
+
+        self::assertNotNull($result->nextState);
+        self::assertSame(RunStatus::Cancelled, $result->nextState->status,
+            'Compaction empty_summary during Cancelling must resolve to Cancelled');
+        self::assertCount(0, $result->effects,
+            'Must NOT dispatch AdvanceRun when Cancelling — run has been cancelled');
     }
 
     /**

@@ -570,9 +570,11 @@ final class ApplyCommandHandlerTest extends TestCase
 
         $result = $handler->handle($cancelMessage, $state);
 
-        // Cancel should be applied
+        // Cancel should be applied and terminalizes directly to Cancelled
+        // because there is no active work (no activeStepId, no streaming,
+        // no unresolved pendingToolCalls).
         $this->assertNotNull($result->nextState);
-        $this->assertSame(RunStatus::Cancelling, $result->nextState->status);
+        $this->assertSame(RunStatus::Cancelled, $result->nextState->status);
         $this->assertSame(RunStatus::Running, $state->status, 'Original state unchanged');
 
         // Already-applied user messages must remain intact
@@ -580,12 +582,21 @@ final class ApplyCommandHandlerTest extends TestCase
         $this->assertSame('user', $result->nextState->messages[0]->role);
         $this->assertSame('assistant', $result->nextState->messages[1]->role);
 
-        // Must include agent_command_applied + rejections for steer, follow_up, and continue
+        // Must include agent_command_applied + agent_end (cancelled) + rejections
         $eventTypes = array_map(static fn ($e) => $e->type, $result->events);
         $this->assertContains('agent_command_applied', $eventTypes);
+        $this->assertContains('agent_end', $eventTypes);
         $this->assertContains('agent_command_rejected', $eventTypes);
 
-        // Count rejection events: steer + follow_up (continue may not be in store but rejectPendingByKind is called for all three)
+        // Verify agent_end reason
+        $agentEndEvent = array_values(array_filter(
+            $result->events,
+            static fn ($e) => 'agent_end' === $e->type,
+        ))[0] ?? null;
+        $this->assertNotNull($agentEndEvent, 'Must emit agent_end.');
+        $this->assertSame('cancelled', $agentEndEvent->payload['reason']);
+
+        // Count rejection events: steer + follow_up
         $rejectedEvents = array_filter($result->events, static fn ($e) => 'agent_command_rejected' === $e->type);
         $this->assertCount(2, $rejectedEvents, 'Expected 2 rejection events (steer, follow_up).');
 
@@ -726,6 +737,142 @@ final class ApplyCommandHandlerTest extends TestCase
         $this->assertNull($result2->nextState,
             'Second compact with same idempotency key must be a no-op.',
         );
+    }
+
+    /**
+     * Thesis: cancel from idle Running (no activeStepId, not streaming,
+     * no pendingToolCalls) must terminalize immediately to Cancelled with
+     * AgentEnd rather than getting stuck in Cancelling.
+     */
+    public function testCancelFromIdleRunningTerminalizesToCancelled(): void
+    {
+        $commandStore = new InMemoryCommandStore();
+        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandMailboxPolicy = new CommandMailboxPolicy(
+            commandStore: $commandStore,
+            commandRouter: $commandRouter,
+        );
+
+        $handler = new ApplyCommandHandler(
+            commandStore: $commandStore,
+            commandRouter: $commandRouter,
+            commandMailboxPolicy: $commandMailboxPolicy,
+            eventFactory: new EventFactory(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            maxPendingCommands: 10,
+        );
+
+        $state = new RunState(
+            runId: 'run-idle-cancel',
+            status: RunStatus::Running,
+            version: 5,
+            turnNo: 2,
+            lastSeq: 8,
+            isStreaming: false,
+            streamingMessage: null,
+            pendingToolCalls: [],
+            errorMessage: null,
+            messages: [
+                new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'Hello']]),
+                new AgentMessage(role: 'assistant', content: [['type' => 'text', 'text' => 'Hi']]),
+            ],
+            activeStepId: null,  // idle: no active step
+            retryableFailure: false,
+        );
+
+        $cancelMessage = new ApplyCommand(
+            runId: 'run-idle-cancel',
+            turnNo: 2,
+            stepId: 'cancel-step-1',
+            attempt: 1,
+            idempotencyKey: 'cancel-idle-1',
+            kind: CoreCommandKind::Cancel,
+            payload: [],
+        );
+
+        $result = $handler->handle($cancelMessage, $state);
+
+        // Must reach Cancelled directly — no Cancelling limbo.
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(RunStatus::Cancelled, $result->nextState->status,
+            'Cancel from idle Running must terminalize to Cancelled, not Cancelling');
+        $this->assertNull($result->nextState->activeStepId);
+        $this->assertFalse($result->nextState->isStreaming);
+
+        // Events: agent_command_applied + agent_end (cancelled reason).
+        $eventTypes = array_map(static fn ($e) => $e->type, $result->events);
+        $this->assertContains('agent_command_applied', $eventTypes);
+        $this->assertContains('agent_end', $eventTypes);
+
+        $agentEndEvent = array_values(array_filter(
+            $result->events,
+            static fn ($e) => 'agent_end' === $e->type,
+        ))[0] ?? null;
+        $this->assertNotNull($agentEndEvent, 'Must emit agent_end event.');
+        $this->assertSame('cancelled', $agentEndEvent->payload['reason'] ?? null,
+            'AgentEnd reason must be cancelled.');
+    }
+
+    /**
+     * Thesis: repeated cancel while already Cancelling with no active work
+     * is idempotent — accepted as an applied command without changing state
+     * or rejecting.
+     */
+    public function testRepeatedCancelWhileCancellingNoActiveWorkIsIdempotent(): void
+    {
+        $commandStore = new InMemoryCommandStore();
+        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandMailboxPolicy = new CommandMailboxPolicy(
+            commandStore: $commandStore,
+            commandRouter: $commandRouter,
+        );
+
+        $handler = new ApplyCommandHandler(
+            commandStore: $commandStore,
+            commandRouter: $commandRouter,
+            commandMailboxPolicy: $commandMailboxPolicy,
+            eventFactory: new EventFactory(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            maxPendingCommands: 10,
+        );
+
+        $state = new RunState(
+            runId: 'run-cancel-repeat',
+            status: RunStatus::Cancelling,
+            version: 10,
+            turnNo: 3,
+            lastSeq: 12,
+            isStreaming: false,
+            streamingMessage: null,
+            pendingToolCalls: [],
+            errorMessage: 'Run cancelled by command.',
+            messages: [
+                new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'Cancel me']]),
+            ],
+            activeStepId: null,  // no active work
+            retryableFailure: false,
+        );
+
+        $cancelMessage = new ApplyCommand(
+            runId: 'run-cancel-repeat',
+            turnNo: 3,
+            stepId: 'cancel-step-2',
+            attempt: 1,
+            idempotencyKey: 'cancel-repeat-1',
+            kind: CoreCommandKind::Cancel,
+            payload: [],
+        );
+
+        $result = $handler->handle($cancelMessage, $state);
+
+        // Must be accepted (not rejected), preserving Cancelling status.
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(RunStatus::Cancelling, $result->nextState->status,
+            'Repeated cancel while Cancelling must preserve Cancelling status');
+
+        // Must emit agent_command_applied (not rejected).
+        $this->assertCount(1, $result->events);
+        $this->assertSame('agent_command_applied', $result->events[0]->type);
     }
 }
 

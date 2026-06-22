@@ -148,16 +148,35 @@ final class CompactionStepResultHandler implements RunMessageHandler
             // PRESERVE Cancelling: if cancel was accepted during
             // compaction, the incoming state is Cancelling and must not
             // be overwritten.  The active step is cleared (no more work),
-            // so transition to Cancelled.
+            // so transition to Cancelled without emitting AdvanceRun.
             $errorFinalStatus = match (true) {
                 RunStatus::Cancelling === $state->status => RunStatus::Cancelled,
                 $message->continueAfterCompaction => RunStatus::Running,
                 default => RunStatus::Completed,
             };
 
+            // When a pending LLM turn was held open (pre-LLM guard) and
+            // compaction failed, dispatch AdvanceRun so the pending turn
+            // proceeds on the original (uncompacted) messages.  The
+            // pre-LLM guard's turn-level dedup prevents immediate re-fire.
+            // Do NOT advance when Cancelling — the run has been cancelled
+            // and the Cancelled resolution above is terminal.
+            $errorEffects = [];
+            if (RunStatus::Cancelling !== $state->status && $message->continueAfterCompaction) {
+                $continueStepId = \sprintf('advance-%d', hrtime(true));
+                $errorEffects[] = new AdvanceRun(
+                    runId: $runId,
+                    turnNo: $state->turnNo,
+                    stepId: $continueStepId,
+                    attempt: 1,
+                    idempotencyKey: hash('sha256', \sprintf('%s|advance|%d|%s', $runId, $state->turnNo, $continueStepId)),
+                );
+            }
+
             return new HandlerResult(
                 nextState: $this->incrementState($state, $events, clearActiveStepId: true, status: $errorFinalStatus),
                 events: $events,
+                effects: $errorEffects,
             );
         }
 
@@ -195,9 +214,26 @@ final class CompactionStepResultHandler implements RunMessageHandler
                 default => RunStatus::Completed,
             };
 
+            // Same continuation policy as model_error path: when a pending
+            // LLM turn was held open and compaction failed on empty summary,
+            // dispatch AdvanceRun so the turn proceeds on original messages.
+            // Do NOT advance when Cancelling.
+            $emptyEffects = [];
+            if (RunStatus::Cancelling !== $state->status && $message->continueAfterCompaction) {
+                $continueStepId = \sprintf('advance-%d', hrtime(true));
+                $emptyEffects[] = new AdvanceRun(
+                    runId: $runId,
+                    turnNo: $state->turnNo,
+                    stepId: $continueStepId,
+                    attempt: 1,
+                    idempotencyKey: hash('sha256', \sprintf('%s|advance|%d|%s', $runId, $state->turnNo, $continueStepId)),
+                );
+            }
+
             return new HandlerResult(
                 nextState: $this->incrementState($state, $events, clearActiveStepId: true, status: $emptyFinalStatus),
                 events: $events,
+                effects: $emptyEffects,
             );
         }
 
