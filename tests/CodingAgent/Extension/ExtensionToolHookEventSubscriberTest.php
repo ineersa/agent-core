@@ -20,6 +20,12 @@ use Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge;
 use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
 use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
+use Ineersa\Hatfield\ExtensionApi\CommandDefinitionDTO;
+use Ineersa\Hatfield\ExtensionApi\CommandRegistryInterface;
+use Ineersa\Hatfield\ExtensionApi\ExecInterface;
+use Ineersa\Hatfield\ExtensionApi\ExecOptionsDTO;
+use Ineersa\Hatfield\ExtensionApi\ExecResultDTO;
+use Ineersa\Hatfield\ExtensionApi\ExtensionCommandHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\ApprovalAnswerContextDTO;
 use Ineersa\Hatfield\ExtensionApi\ApprovalAnswerHookInterface;
 use Ineersa\Hatfield\ExtensionApi\ToolCallContextDTO;
@@ -45,7 +51,13 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
             logging: new LoggingConfig(),
             cwd: getcwd() ?: '/',
         );
-        $bridge = new ExtensionToolRegistryBridge($registry, $hookRegistry, $appConfig);
+        $bridge = new ExtensionToolRegistryBridge(
+            $registry,
+            $hookRegistry,
+            $appConfig,
+            $this->stubExecBridge(),
+            $this->stubCommandRegistry(),
+        );
         $seenContext = null;
         $bridge->registerToolCallHook(new class($seenContext) implements ToolCallHookInterface {
             public function __construct(
@@ -613,6 +625,23 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
 
                 return $this->result;
             }
+        };
+    }
+
+    private function stubExecBridge(): ExecInterface
+    {
+        return new readonly class implements ExecInterface {
+            public function exec(string $command, array $args = [], ?ExecOptionsDTO $options = null): ExecResultDTO
+            {
+                return new ExecResultDTO('', '', 0);
+            }
+        };
+    }
+
+    private function stubCommandRegistry(): CommandRegistryInterface
+    {
+        return new readonly class implements CommandRegistryInterface {
+            public function register(CommandDefinitionDTO $definition, ExtensionCommandHandlerInterface $handler): void {}
         };
     }
 }
