@@ -7,30 +7,42 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Controller\E2E;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
- * Deterministic controller replay E2E — reproduces the session 5
- * mid-tool-cycle auto-compaction race condition.
+ * Deterministic controller replay E2E — reproduces the session 5 and
+ * session 8 mid-tool-cycle auto-compaction race conditions.
  *
- * When a tool batch completes (tool_batch_committed), ToolCallResultHandler
- * schedules the post-tool AdvanceRun as a postCommit callback, producing
- * a commit with effectsCount=0.  Without the ToolBatchCommitted guard in
- * AutoCompactionHookSubscriber, the after-turn hook would fire
- * auto-compaction here, setting status=Compacting before the postCommit
- * AdvanceRun executes — killing the final assistant response.
+ * Two bugs proven:
+ *  1. (Session 5) ToolBatchCommitted commits trigger auto-compaction
+ *     via the after-turn hook before the postCommit AdvanceRun fires.
+ *     FIX: ToolBatchCommitted guard in AutoCompactionHookSubscriber.
+ *  2. (Session 8) PARTIAL tool-result commits (first tool_execution_end
+ *     without ToolBatchCommitted) trigger auto-compaction mid-cycle.
+ *     The hook sees effectsCount=0, no ToolExecutionStart (prior commit),
+ *     no ToolBatchCommitted (batch incomplete) — all guards pass.
+ *     FIX: Check RunState::pendingToolCalls for unresolved entries.
+ *  3. (Session 8) The pre-LLM guard fires on the post-tool AdvanceRun,
+ *     dispatching a CompactRun with continueAfterCompaction=true before
+ *     the final assistant answer can complete.  Compaction fails
+ *     (empty_summary/no_safe_boundary), session dead-ends.
+ *     FIX: Skip pre-LLM guard on post-tool continuations.
  *
  * This test proves:
  *  1. Tool batch commits do not trigger mid-cycle auto-compaction
- *  2. The post-tool AdvanceRun fires and the final assistant turn completes
- *  3. Auto-compaction fires AFTER the full assistant/tool cycle finishes
+ *  2. Partial tool-result commits do not trigger mid-cycle auto-compaction
+ *  3. The post-tool AdvanceRun fires and the final assistant turn completes
+ *  4. No pre-LLM compaction fires on post-tool AdvanceRun
+ *  5. Auto-compaction fires AFTER the full assistant/tool cycle finishes
  *
  * Replay fixture design:
- *   Fixture 0: tool_call (read ./notes.txt), usage.input_tokens=500 — BELOW
- *              so provider measurement is above threshold before tool batch
- *   Fixture 1: final assistant text response after tool batch, usage=5000
- *   Fixture 2: compaction summary LLM call
+ *   Fixture 0: tool_call (2 tools: read + bash), usage.input_tokens=5000
+ *              ABOVE compact_after_tokens=1000 — exercises BOTH the partial
+ *              batch hook path AND the pre-LLM guard path.
+ *   Fixture 1: final assistant text response after tool batch, usage=6000
+ *   Fixture 2: compaction summary LLM call (consumed after full turn)
  *
  * The thesis: the final assistant answer arrives after the tool cycle
- * without interference from auto-compaction.  Auto-compaction fires via
- * the after-turn hook after the full turn's run.completed.
+ * without interference from either the hook or the pre-LLM guard.
+ * Auto-compaction fires via the after-turn hook after the full turn
+ * completes.
  *
  * @group controller-replay
  */
@@ -66,26 +78,27 @@ YAML;
     protected function replayFixtures(): array
     {
         return [
-            // ── Fixture 0: Initial LLM call returns tool_call for read ──
+            // ── Fixture 0: Initial LLM call returns tool_calls (read + bash) ──
             //
-            // usage.input_tokens=500 is BELOW compact_after_tokens (1000).
-            // This ensures the pre-LLM guard does NOT fire on the post-tool
-            // AdvanceRun — the final assistant turn proceeds without being
-            // compacted first.  The ToolExecutionStart and ToolBatchCommitted
-            // guards are tested via unit tests where provider usage CAN be
-            // set above threshold with those event types in the commit.
-            //
-            // After the tool cycle and final assistant turn complete,
-            // fixture 1's usage (5000) triggers auto-compaction via the
-            // after-turn hook.
+            // usage.input_tokens=5000 ABOVE compact_after_tokens=1000.
+            // This exercises BOTH the partial batch hook path AND the
+            // pre-LLM guard path:
+            //  - The after-turn hook fires on each tool_execution_end commit
+            //    (ToolCallResultHandler partial batch: effectsCount=0,
+            //    no ToolExecutionStart, no ToolBatchCommitted).
+            //  - If the hook skipped because pendingToolCalls are unresolved,
+            //    the postCommit AdvanceRun fires next — and the pre-LLM guard
+            //    would see usage=5000 > threshold and dispatch CompactRun
+            //    before the final assistant answer.
+            // Both paths must NOT fire mid-cycle.
             [
-                '$schema' => 'Synthetic controller replay — tool_call (read ./notes.txt)',
+                '$schema' => 'Synthetic controller replay — tool_calls (read ./notes.txt + bash echo)',
                 'fixture_source' => 'synthetic',
-                'synthetic_reason' => 'Controller replay E2E for mid-tool-cycle auto-compaction race: '
-                    .'initial LLM call returns a tool_call for the read tool so a tool batch '
-                    .'commits before the final assistant answer.  '
-                    .'usage.input_tokens=500 < compact_after_tokens=1000 so the pre-LLM guard '
-                    .'does NOT fire on the post-tool AdvanceRun.',
+                'synthetic_reason' => 'Controller replay E2E session 8 regression: '
+                    .'initial LLM call returns TWO tool_calls (read + bash) so '
+                    .'partial batch commits exist.  '
+                    .'usage.input_tokens=5000 > compact_after_tokens=1000 exercises '
+                    .'the partial-batch hook path AND the pre-LLM guard path.',
                 'model' => 'llama_cpp/test',
                 'provider_id' => 'llama_cpp',
                 'reasoning' => 'off',
@@ -97,14 +110,25 @@ YAML;
                     ['type' => 'tool_input_delta', 'id' => 'call_age_1', 'name' => 'read', 'partial_json' => 'not'],
                     ['type' => 'tool_input_delta', 'id' => 'call_age_1', 'name' => 'read', 'partial_json' => 'es.'],
                     ['type' => 'tool_input_delta', 'id' => 'call_age_1', 'name' => 'read', 'partial_json' => 'txt"}'],
+                    ['type' => 'tool_call_start', 'id' => 'call_age_2', 'name' => 'bash'],
+                    ['type' => 'tool_input_delta', 'id' => 'call_age_2', 'name' => 'bash', 'partial_json' => '{"co'],
+                    ['type' => 'tool_input_delta', 'id' => 'call_age_2', 'name' => 'bash', 'partial_json' => 'mma'],
+                    ['type' => 'tool_input_delta', 'id' => 'call_age_2', 'name' => 'bash', 'partial_json' => 'nd"'],
+                    ['type' => 'tool_input_delta', 'id' => 'call_age_2', 'name' => 'bash', 'partial_json' => ': "e'],
+                    ['type' => 'tool_input_delta', 'id' => 'call_age_2', 'name' => 'bash', 'partial_json' => 'cho '],
+                    ['type' => 'tool_input_delta', 'id' => 'call_age_2', 'name' => 'bash', 'partial_json' => 'tool-'],
+                    ['type' => 'tool_input_delta', 'id' => 'call_age_2', 'name' => 'bash', 'partial_json' => 'cycl'],
+                    ['type' => 'tool_input_delta', 'id' => 'call_age_2', 'name' => 'bash', 'partial_json' => 'e te'],
+                    ['type' => 'tool_input_delta', 'id' => 'call_age_2', 'name' => 'bash', 'partial_json' => 'st"}'],
                     ['type' => 'tool_call_complete', 'tool_calls' => [
                         ['id' => 'call_age_1', 'name' => 'read', 'arguments' => ['path' => './notes.txt']],
+                        ['id' => 'call_age_2', 'name' => 'bash', 'arguments' => ['command' => 'echo tool-cycle test']],
                     ]],
                 ],
                 'usage' => [
-                    'input_tokens' => 500,
-                    'output_tokens' => 80,
-                    'total_tokens' => 580,
+                    'input_tokens' => 5000,
+                    'output_tokens' => 120,
+                    'total_tokens' => 5120,
                 ],
                 'stop_reason' => 'tool_call',
             ],
@@ -112,28 +136,32 @@ YAML;
             // ── Fixture 1: Final assistant response after tool batch ──
             //
             // This fixture is consumed by the postCommit AdvanceRun that
-            // fires AFTER tool_batch_committed.  With the ToolBatchCommitted
-            // guard fix, this AdvanceRun proceeds normally and the assistant
-            // produces a text response.  usage.input_tokens=6000 keeps the
-            // provider measurement above threshold so auto-compaction will
-            // fire after this turn's run.completed.
+            // fires AFTER tool_batch_committed.  usage.input_tokens=6000
+            // keeps the provider measurement above threshold.
+            //
+            // REGRESSION PROOF: if either the partial-batch hook or the
+            // pre-LLM guard fires mid-cycle, this fixture is NEVER consumed
+            // (AdvanceRun is swallowed by Compacting guard, or CompactRun
+            // replaces it).  The final assistant answer would be missing.
             [
                 '$schema' => 'Synthetic controller replay — final assistant text after tool',
                 'fixture_source' => 'synthetic',
-                'synthetic_reason' => 'Controller replay E2E: post-tool AdvanceRun consumes this '
-                    .'fixture for the final assistant answer.  '
-                    .'usage.input_tokens=6000 > compact_after_tokens=1000 triggers auto-compaction '
-                    .'after this turn completes.',
+                'synthetic_reason' => 'Controller replay E2E session 8 regression: post-tool AdvanceRun '
+                    .'consumes this fixture for the final assistant answer.  '
+                    .'usage.input_tokens=6000 > compact_after_tokens=1000 — the pre-LLM '
+                    .'guard must NOT fire on this post-tool continuation.  '
+                    .'If it does, it dispatches CompactRun instead and this fixture '
+                    .'is never consumed (fixture exhaustion / wrong response).',
                 'model' => 'llama_cpp/test',
                 'provider_id' => 'llama_cpp',
                 'reasoning' => 'off',
                 'deltas' => [
-                    ['type' => 'text', 'content' => 'The file notes.txt contains: Hello from the tool-cycle test.'],
+                    ['type' => 'text', 'content' => 'The file notes.txt contains: Hello from the tool-cycle test. The bash command output was: tool-cycle test.'],
                 ],
                 'usage' => [
                     'input_tokens' => 6000,
-                    'output_tokens' => 25,
-                    'total_tokens' => 6025,
+                    'output_tokens' => 40,
+                    'total_tokens' => 6040,
                 ],
                 'stop_reason' => 'stop',
             ],
@@ -240,75 +268,88 @@ YAML;
 
         $timeline = $this->buildTimeline($coreEvents);
 
-        // ── Assert: tool_batch_committed exists ──
-        $toolBatchSeq = null;
+        // ════════════════════════════════════════════════════════════
+        //  Assert: the full tool cycle completed without mid-cycle
+        //  auto-compaction interference.
+        // ════════════════════════════════════════════════════════════
+
+        // Find the first llm_step_completed with tool_calls_count>0.
+        // This is the assistant-trigger that starts the tool cycle.
+        $toolCallLlmSeq = null;
+        $toolCallCount = null;
         foreach ($coreEvents as $evt) {
-            if ('tool_batch_committed' === ($evt['type'] ?? '')) {
-                $toolBatchSeq = (int) ($evt['seq'] ?? 0);
+            $tc = (int) ($evt['payload']['tool_calls_count'] ?? 0);
+            if ($tc > 0 && 'llm_step_completed' === ($evt['type'] ?? '')) {
+                $toolCallLlmSeq = (int) ($evt['seq'] ?? 0);
+                $toolCallCount = $tc;
                 break;
             }
         }
 
         self::assertNotNull(
-            $toolBatchSeq,
-            "events.jsonl must contain a tool_batch_committed event.\n"
+            $toolCallLlmSeq,
+            "events.jsonl must contain an llm_step_completed with tool_calls_count>0.\n"
             . "Timeline:\n" . $timeline,
         );
 
-        // ── Assert: llm_step_completed exists AFTER tool_batch_committed ──
-        // This proves the postCommit AdvanceRun was NOT swallowed —
-        // the final assistant turn completed.
-        $llmAfterTool = false;
+        // Find the next llm_step_completed after the tool-call LLM.
+        // This is the final assistant answer after all tool results
+        // and the postCommit AdvanceRun.
+        $finalLlmSeq = null;
         foreach ($coreEvents as $evt) {
             $seq = (int) ($evt['seq'] ?? 0);
-            if ($seq > $toolBatchSeq && 'llm_step_completed' === ($evt['type'] ?? '')) {
-                $llmAfterTool = true;
+            if ($seq > $toolCallLlmSeq && 'llm_step_completed' === ($evt['type'] ?? '')) {
+                $finalLlmSeq = $seq;
                 break;
             }
         }
 
-        self::assertTrue(
-            $llmAfterTool,
-            "Expected at least one llm_step_completed after tool_batch_committed at seq={$toolBatchSeq}. "
-            . "This proves the postCommit AdvanceRun was NOT swallowed by a mid-cycle compaction.\n"
+        self::assertNotNull(
+            $finalLlmSeq,
+            "Expected llm_step_completed (final assistant answer) after the tool-call LLM at seq={$toolCallLlmSeq}. "
+            . "If missing, mid-cycle compaction blocked the postCommit AdvanceRun.\n"
             . "Timeline:\n" . $timeline,
         );
 
-        // ── Assert: no context_compaction_started between tool_batch_committed
-        //    and the next llm_step_completed ──
-        // This is the DIRECT regression proof — auto-compaction must not
-        // fire mid-tool-cycle.
-        $nextLlmSeq = null;
-        foreach ($coreEvents as $evt) {
-            $seq = (int) ($evt['seq'] ?? 0);
-            if ($seq > $toolBatchSeq && 'llm_step_completed' === ($evt['type'] ?? '')) {
-                $nextLlmSeq = $seq;
-                break;
-            }
-        }
-
-        self::assertNotNull($nextLlmSeq, 'Could not find next llm_step_completed after tool_batch_committed');
-
-        $midCycleCompaction = false;
+        // REGRESSION PROOF: no auto compaction events of ANY kind
+        // (context_compaction_started/compacted/failed) between the
+        // tool-call llm_step_completed and the final assistant answer.
+        // This catches both:
+        //  - Partial-batch hook compaction (between tool_execution_end events)
+        //  - Pre-LLM guard compaction on post-tool AdvanceRun
+        $compactionLifecycleTypes = [
+            'context_compaction_started',
+            'context_compacted',
+            'context_compaction_failed',
+        ];
+        $midCycleCompactionEvent = null;
         foreach ($coreEvents as $evt) {
             $seq = (int) ($evt['seq'] ?? 0);
             $type = $evt['type'] ?? '';
-            if ($seq > $toolBatchSeq && $seq < $nextLlmSeq
-                && \in_array($type, ['context_compaction_started', 'context_compacted'], true)
+            if ($seq > $toolCallLlmSeq && $seq < $finalLlmSeq
+                && \in_array($type, $compactionLifecycleTypes, true)
             ) {
                 $trigger = $evt['payload']['trigger'] ?? '';
                 if ('auto' === $trigger) {
-                    $midCycleCompaction = true;
-                    $timeline .= "\n  → BUG: auto {$type} at seq={$seq} between tool_batch_committed and next llm_step_completed";
+                    $midCycleCompactionEvent = \sprintf(
+                        'auto %s at seq=%d (trigger=%s reason=%s)',
+                        $type,
+                        $seq,
+                        $trigger,
+                        $evt['payload']['reason'] ?? '?',
+                    );
+                    $timeline .= "\n  → BUG: {$midCycleCompactionEvent}";
+                    break;
                 }
             }
         }
 
-        self::assertFalse(
-            $midCycleCompaction,
-            "Auto compaction must NOT fire between tool_batch_committed (seq={$toolBatchSeq}) "
-            . "and the next llm_step_completed (seq={$nextLlmSeq}). "
-            . "Mid-cycle compaction would block the postCommit AdvanceRun and kill the final assistant answer.\n"
+        self::assertNull(
+            $midCycleCompactionEvent,
+            "Auto compaction must NOT fire between the tool-call llm_step_completed (seq={$toolCallLlmSeq}) "
+            . "and the final llm_step_completed (seq={$finalLlmSeq}). "
+            . "Found: {$midCycleCompactionEvent}. "
+            . "Both the partial-batch hook path and the pre-LLM guard path must be blocked.\n"
             . "Timeline:\n" . $timeline,
         );
 
@@ -321,7 +362,7 @@ YAML;
             $seq = (int) ($evt['seq'] ?? 0);
             if (\in_array($type, ['context_compacted', 'context_compaction_failed'], true)
                 && 'auto' === ($evt['payload']['trigger'] ?? '')
-                && $seq > $nextLlmSeq
+                && $seq > $finalLlmSeq
             ) {
                 $autoCompactedSeq = $seq;
                 $autoTerminalType = $type;
@@ -331,24 +372,36 @@ YAML;
 
         self::assertNotNull(
             $autoCompactedSeq,
-            "Expected auto context_compacted (or context_compaction_failed) after llm_step_completed at seq={$nextLlmSeq}. "
+            "Expected auto context_compacted (or context_compaction_failed) after llm_step_completed at seq={$finalLlmSeq}. "
             . "Auto compaction should fire after the full assistant/tool cycle, not during it.\n"
             . "Timeline:\n" . $timeline,
         );
 
         if ('context_compaction_failed' === $autoTerminalType) {
-            $failPayload = $coreEvents[$autoCompactedSeq - $coreEvents[0]['seq']]['payload'] ?? [];
+            $failPayload = [];
+            foreach ($coreEvents as $evt) {
+                if (($evt['seq'] ?? 0) === $autoCompactedSeq) {
+                    $failPayload = $evt['payload'] ?? [];
+                    break;
+                }
+            }
             $failReason = $failPayload['reason'] ?? 'unknown';
             // Auto compaction fired after the full cycle (correct placement)
-            // but failed to produce a summary — e.g. no_safe_boundary,
-            // too_few_messages.  This is a test-data sizing issue, not
-            // a regression.  The critical proof (no mid-cycle compaction)
-            // is satisfied by the earlier assertions.
+            // but failed to produce a summary.  This is a test-data sizing
+            // issue, not a regression.  The critical proof (no mid-cycle
+            // compaction) is satisfied by the earlier assertions.
             $this->addToAssertionCount(1);
+
             return;
         }
 
-        $terminalPayload = $coreEvents[$autoCompactedSeq - $coreEvents[0]['seq']]['payload'] ?? [];
+        $terminalPayload = [];
+        foreach ($coreEvents as $evt) {
+            if (($evt['seq'] ?? 0) === $autoCompactedSeq) {
+                $terminalPayload = $evt['payload'] ?? [];
+                break;
+            }
+        }
         self::assertGreaterThan(
             0,
             $terminalPayload['messages_compacted'] ?? 0,
