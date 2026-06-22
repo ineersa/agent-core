@@ -176,6 +176,14 @@ final class AgentArtifactRegistryTest extends TestCase
         $this->registry->create('parent', 'a\\b', 'child-a', 'scout');
     }
 
+    public function testCreateRejectsNulByteInArtifactId(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('NUL bytes');
+
+        $this->registry->create('parent', "bad\0id", 'child-a', 'scout');
+    }
+
     public function testRegistryJsonIsValid(): void
     {
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
@@ -722,6 +730,39 @@ final class AgentArtifactRegistryTest extends TestCase
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('failed validation');
+
+        $this->registry->list($parentRunId);
+    }
+
+    public function testRegistryWithTamperedArtifactDirThrows(): void
+    {
+        $parentRunId = 'parent-'.bin2hex(random_bytes(4));
+
+        $agentsDir = $this->pathResolver->resolveArtifactsBasePath($parentRunId);
+        mkdir($agentsDir, 0755, true);
+        // Tampered artifact_dir — file paths are correct but artifact_dir does
+        // not match the canonical path for the artifact ID.
+        file_put_contents($agentsDir.'/registry.json', json_encode([
+            'schema_version' => 1,
+            'entries' => [[
+                'artifact_id' => 'agent_01HX',
+                'parent_run_id' => $parentRunId,
+                'agent_run_id' => 'child-a',
+                'agent_name' => 'scout',
+                'status' => 'pending',
+                'created_at' => '2026-06-22T12:00:00+00:00',
+                'paths' => [
+                    'artifact_dir' => 'artifacts/agents/evil_dir',
+                    'handoff_path' => 'artifacts/agents/agent_01HX/handoff.md',
+                    'metadata_path' => 'artifacts/agents/agent_01HX/metadata.json',
+                    'events_path' => 'artifacts/agents/agent_01HX/events.jsonl',
+                    'state_path' => 'artifacts/agents/agent_01HX/state.json',
+                ],
+            ]],
+        ]));
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('unexpected paths');
 
         $this->registry->list($parentRunId);
     }

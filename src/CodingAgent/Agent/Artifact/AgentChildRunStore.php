@@ -124,7 +124,7 @@ final class AgentChildRunStore implements RunStoreInterface
             if (false === $written) {
                 throw new \RuntimeException(\sprintf('Failed to write state.json for child run "%s".', $this->agentRunId));
             }
-            chmod($tmpPath, 0644);
+            chmod($tmpPath, AgentArtifactPathResolver::FILE_PERMISSIONS);
             rename($tmpPath, $path);
 
             return true;

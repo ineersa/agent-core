@@ -105,12 +105,14 @@ final class AgentArtifactRegistry
 
             // Create the artifact directory and files.
             $this->ensureArtifactDir($parentRunId, $artifactId);
-            $this->writeMetadata($parentRunId, $entry);
             $this->writeHandoff($parentRunId, $artifactId, '');
 
-            // Write the registry.
+            // Write the canonical registry first — if a later sidecar write
+            // fails, the canonical registry is still correct.  metadata.json
+            // is never read by this code; it is an inspectable sidecar.
             $entries[] = $entry;
             $this->writeRegistry($parentRunId, $entries);
+            $this->writeMetadata($parentRunId, $entry);
 
             return $entry;
         } finally {
@@ -186,8 +188,8 @@ final class AgentArtifactRegistry
                 return null;
             }
 
-            $this->writeMetadata($parentRunId, $updated);
             $this->writeRegistry($parentRunId, $entries);
+            $this->writeMetadata($parentRunId, $updated);
 
             return $updated;
         } finally {
@@ -267,8 +269,14 @@ final class AgentArtifactRegistry
     {
         $path = $this->pathResolver->registryPath($parentRunId);
 
-        if (!is_readable($path)) {
+        // Missing file is legitimate empty (no artifacts yet).
+        // An existing but unreadable registry is a data integrity failure.
+        if (!is_file($path)) {
             return [];
+        }
+
+        if (!is_readable($path)) {
+            throw new \RuntimeException(\sprintf('Registry.json for parent run "%s" exists but is not readable.', $parentRunId));
         }
 
         $json = file_get_contents($path);
@@ -337,7 +345,7 @@ final class AgentArtifactRegistry
         if (false === $written) {
             throw new \RuntimeException(\sprintf('Failed to write registry.json for parent run "%s".', $parentRunId));
         }
-        chmod($tmpPath, 0644);
+        chmod($tmpPath, AgentArtifactPathResolver::FILE_PERMISSIONS);
         rename($tmpPath, $path);
     }
 
@@ -362,7 +370,7 @@ final class AgentArtifactRegistry
         if (false === $written) {
             throw new \RuntimeException(\sprintf('Failed to write metadata.json for artifact "%s" parent "%s".', $entry->artifactId, $parentRunId));
         }
-        chmod($tmpPath, 0644);
+        chmod($tmpPath, AgentArtifactPathResolver::FILE_PERMISSIONS);
         rename($tmpPath, $path);
     }
 
@@ -387,7 +395,7 @@ final class AgentArtifactRegistry
         if (false === $written) {
             throw new \RuntimeException(\sprintf('Failed to write handoff.md for artifact "%s" parent "%s".', $artifactId, $parentRunId));
         }
-        chmod($tmpPath, 0644);
+        chmod($tmpPath, AgentArtifactPathResolver::FILE_PERMISSIONS);
         rename($tmpPath, $path);
     }
 
@@ -444,7 +452,8 @@ final class AgentArtifactRegistry
 
         // Validate stored paths match the canonical paths for this artifact ID.
         $expectedPaths = AgentArtifactPathsDTO::forArtifactId($entry->artifactId);
-        if ($entry->paths->handoffPath !== $expectedPaths->handoffPath
+        if ($entry->paths->artifactDir !== $expectedPaths->artifactDir
+            || $entry->paths->handoffPath !== $expectedPaths->handoffPath
             || $entry->paths->metadataPath !== $expectedPaths->metadataPath
             || $entry->paths->eventsPath !== $expectedPaths->eventsPath
             || $entry->paths->statePath !== $expectedPaths->statePath

@@ -25,6 +25,13 @@
   state.json               AgentCore RunState materialized snapshot/checkpoint
   events.jsonl             AgentCore RunEvent canonical event stream
   attachments/             (future) pasted files, images, diffs
+  artifacts/agents/        (future) parent-scoped child agent artifacts
+    registry.json          canonical artifact entry list
+    <artifactId>/
+      metadata.json        per-child identity/status/timestamps
+      handoff.md           human-readable child agent handoff
+      events.jsonl         child RunEvent stream (AgentChildRunEventStore)
+      state.json           child RunState cache (AgentChildRunStore)
 ```
 
 Session metadata (identity, prompt, model, reasoning, fork tree links)
@@ -36,6 +43,24 @@ lives in the `hatfield_session` database table, not in a metadata.yaml file.
 |------|-----------|------------|---------|--------|
 | `state.json` | No — materialized snapshot/checkpoint | `SessionRunStore::compareAndSwap()` | `SessionRunStore::get()`, resume flow | JSON (Symfony Serializer) |
 | `events.jsonl` | **Yes — canonical domain event stream** | `SessionRunEventStore::append()` | `SessionRunEventStore::allFor()`, `InProcessAgentSessionClient::events()`, TUI tick callback | JSONL (EventPayloadNormalizer) |
+| `artifacts/agents/registry.json` | **Yes — child artifact list** | `AgentArtifactRegistry::create()` / `update()` | `AgentArtifactRegistry::list()` / `get()` | JSON (Symfony Serializer) |
+
+### Child agent artifacts
+
+Parent sessions that launch child subagents store child run data under
+`artifacts/agents/<artifactId>/`.  Key design points:
+
+- **No top-level child session directories.** Child runs are scoped entirely
+  under the parent's `.hatfield/sessions/<parentRunId>/artifacts/agents/`,
+  so `listSessions()` only returns parent sessions.
+- **registry.json is the canonical source** for artifact discovery within a
+  parent scope.  `metadata.json` is an inspectable sidecar; it is never read
+  by production load paths.
+- **Child events and state** use the same Canonical JSONL and CAS patterns as
+  parent runs, stored under the parent directory via `AgentChildRunEventStore`
+  and `AgentChildRunStore`.
+- All child stores use per-instance binding (`parentRunId` + `agentRunId` +
+  `artifactId`) and resolve paths through `AgentArtifactPathResolver`.
 
 ### Session metadata (database)
 

@@ -27,6 +27,9 @@ final class AgentArtifactPathResolver
     /** Directory permission for artifact storage directories. */
     public const DIR_PERMISSIONS = 0755;
 
+    /** File permission for artifact storage files. */
+    public const FILE_PERMISSIONS = 0644;
+
     /** Relative to parent session directory. */
     private const AGENTS_SUBDIR = 'artifacts/agents';
 
@@ -137,6 +140,10 @@ final class AgentArtifactPathResolver
 
         if ('..' === $value || '.' === $value) {
             throw new \InvalidArgumentException(\sprintf('"%s" must not be "%s".', $field, $value));
+        }
+
+        if (str_contains($value, "\0")) {
+            throw new \InvalidArgumentException(\sprintf('"%s" must not contain NUL bytes.', $field));
         }
     }
 }
