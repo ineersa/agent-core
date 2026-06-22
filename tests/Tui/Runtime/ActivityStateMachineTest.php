@@ -423,6 +423,40 @@ final class ActivityStateMachineTest extends TestCase
     }
 
     /**
+     * CompactionStarted from Cancelled stays Cancelled — terminal
+     * must not be reopened by auto-compaction.
+     */
+    public function testCompactionStartedOnCancelledStaysCancelled(): void
+    {
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::CompactionStarted->value,
+            runId: 'test',
+            seq: 1,
+        );
+        $result = ActivityStateMachine::transition(RunActivityStateEnum::Cancelled, $event);
+        $this->assertSame(RunActivityStateEnum::Cancelled, $result,
+            'Terminal Cancelled must survive CompactionStarted.'
+        );
+    }
+
+    /**
+     * CompactionStarted from Failed stays Failed — terminal
+     * must not be reopened by auto-compaction.
+     */
+    public function testCompactionStartedOnFailedStaysFailed(): void
+    {
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::CompactionStarted->value,
+            runId: 'test',
+            seq: 1,
+        );
+        $result = ActivityStateMachine::transition(RunActivityStateEnum::Failed, $event);
+        $this->assertSame(RunActivityStateEnum::Failed, $result,
+            'Terminal Failed must survive CompactionStarted.'
+        );
+    }
+
+    /**
      * CompactionCompleted is a no-op on terminal states (Completed
      * already).  CompactionCompleted should not undo Cancelled/Failed.
      */
@@ -436,6 +470,23 @@ final class ActivityStateMachineTest extends TestCase
         $result = ActivityStateMachine::transition(RunActivityStateEnum::Cancelled, $event);
         $this->assertSame(RunActivityStateEnum::Cancelled, $result,
             'Terminal Cancelled must survive CompactionCompleted.');
+    }
+
+    /**
+     * CompactionCompleted from Failed stays Failed — terminal
+     * must not be undone.
+     */
+    public function testCompactionCompletedOnFailedStaysFailed(): void
+    {
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::CompactionCompleted->value,
+            runId: 'test',
+            seq: 1,
+        );
+        $result = ActivityStateMachine::transition(RunActivityStateEnum::Failed, $event);
+        $this->assertSame(RunActivityStateEnum::Failed, $result,
+            'Terminal Failed must survive CompactionCompleted.'
+        );
     }
 
     /**

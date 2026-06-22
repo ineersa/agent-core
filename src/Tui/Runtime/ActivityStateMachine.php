@@ -30,15 +30,17 @@ final class ActivityStateMachine
     {
         // Terminal states are never overridden by later events.
         //
-        // EXCEPTION: CompactionStarted must transition Completed → Compacting
-        // so Escape can cancel an in-flight maintenance compaction (session 13).
-        // After the after-turn hook dispatches auto-compaction, the
-        // compaction.started event arrives while the activity is still
-        // Completed.  Without this exception, Completed.isTerminal() blocks
-        // the transition and CancelListener clears the editor instead of
-        // calling cancel.
+        // EXCEPTION: Completed → Compacting for after-turn maintenance
+        // compaction so Escape can cancel (session 13).  The after-turn
+        // hook dispatches auto-compaction after the turn commits; the
+        // compaction.started event arrives while activity is still
+        // Completed.
+        //
+        // Failed and Cancelled remain fully terminal — CompactionStarted
+        // must not reopen a cancelled or failed run.
         if ($current->isTerminal()
-            && RuntimeEventTypeEnum::CompactionStarted->value !== $event->type) {
+            && !(RunActivityStateEnum::Completed === $current
+                 && RuntimeEventTypeEnum::CompactionStarted->value === $event->type)) {
             return $current;
         }
 

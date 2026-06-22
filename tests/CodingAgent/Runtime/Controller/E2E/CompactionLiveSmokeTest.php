@@ -65,15 +65,27 @@ YAML;
         // ── Phase 1: Start a run with enough text to be compactable ──
         //
         // keep_recent_tokens=10 → about 32 characters of message
-        // content trigger compaction.  A multi-sentence prompt ensures
-        // the token estimate comfortably exceeds the threshold.
+        // content trigger compaction.  A long, deliberate prompt
+        // ensures the assistant reply + this user message together
+        // form a compactable body large enough for actual token
+        // reduction after summarization.
+        //
+        // We embed the prompt instructions in a large block of
+        // reproducible background text so the user→assistant pair
+        // in the conversation body is well above the compact-after
+        // threshold while the assistant answer stays short.
+        $longContext = str_repeat(
+            "Automated testing is a fundamental practice in modern software engineering. ",
+            20,
+        ) . "Now respond with exactly: Understood.";
+
         $startCmdId = 'cmd_start_'.uniqid();
         $this->writeCommand([
             'v' => 1,
             'id' => $startCmdId,
             'type' => 'start_run',
             'payload' => [
-                'prompt' => 'Write a short paragraph about the benefits of automated testing in software development.',
+                'prompt' => $longContext,
             ],
         ]);
 
@@ -149,58 +161,9 @@ YAML;
             $reason = $failPayload['reason'] ?? 'unknown';
             $errorMsg = $failPayload['error'] ?? $reason;
 
-            // Ineffective compaction: a tiny session (system prompt
-            // dominates, no compactable body) may produce a summary
-            // whose XML wrapper overhead exceeds the savings.
-            // context_compaction_failed with reason ineffective_compaction
-            // is a valid, truthful outcome — the compaction was attempted
-            // but did not reduce context size.
-            if ('ineffective_compaction' === $reason) {
-                self::assertArrayHasKey('compaction.started', $compactByType,
-                    'Expected compaction.started before ineffective outcome.');
-
-                // Structural proof: events.jsonl must have
-                // context_compaction_failed with diagnostics.
-                $sessionDir = $this->tempDir.'/.hatfield/sessions/'.$this->sessionId;
-                $eventsPath = $sessionDir.'/events.jsonl';
-                self::assertFileExists($eventsPath, 'Session events.jsonl must exist');
-
-                $coreEvents = [];
-                foreach (\file($eventsPath, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES) as $line) {
-                    $evt = \json_decode($line, true, 512, \JSON_THROW_ON_ERROR);
-                    if (\is_array($evt)) {
-                        $coreEvents[] = $evt;
-                    }
-                }
-
-                $failedCoreEvents = \array_filter(
-                    $coreEvents,
-                    static fn (array $e): bool => 'context_compaction_failed' === ($e['type'] ?? ''),
-                );
-
-                self::assertNotEmpty(
-                    $failedCoreEvents,
-                    'Ineffective compaction must produce context_compaction_failed in events.jsonl.',
-                );
-
-                $cf = \reset($failedCoreEvents);
-                $cfp = $cf['payload'] ?? [];
-                self::assertSame('ineffective_compaction', $cfp['reason'] ?? '');
-                self::assertFalse($cfp['messages_replaced'] ?? true,
-                    'Ineffective compaction must not replace messages.');
-                self::assertArrayHasKey('estimated_tokens_before', $cfp);
-                self::assertArrayHasKey('estimated_tokens_after', $cfp);
-                self::assertGreaterThan(0, $cfp['estimated_tokens_before'] ?? 0);
-                self::assertGreaterThan(0, $cfp['estimated_tokens_after'] ?? 0);
-                self::assertGreaterThan(0, $cfp['messages_compacted'] ?? 0,
-                    'Ineffective compaction must report messages_compacted > 0 for diagnostics.');
-
-                // Test passes — ineffective compaction is a valid outcome.
-                return;
-            }
-
             self::fail(
                 'Compaction failed instead of succeeding: '.$errorMsg."\n"
+                .'Reason: '.$reason."\n"
                 .$this->collectDiagnostics($compactEvents),
             );
         }

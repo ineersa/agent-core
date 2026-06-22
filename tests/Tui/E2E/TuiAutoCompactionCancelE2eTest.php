@@ -139,10 +139,13 @@ final class TuiAutoCompactionCancelE2eTest extends TestCase
             while (\microtime(true) < $deadline) {
                 $capture = $this->tmux->captureAnsi($pane);
 
+                // Require the user-visible cancellation state text.
+                // 'cancel' (lowercase) is excluded — it can match
+                // static footer/hotkey text without meaning the run
+                // actually transitioned to cancelling.
                 if (
                     str_contains($capture, 'Cancelling')
                     || str_contains($capture, 'Cancelled')
-                    || str_contains($capture, 'cancel')
                 ) {
                     $hasCancellation = true;
 
@@ -154,9 +157,10 @@ final class TuiAutoCompactionCancelE2eTest extends TestCase
 
             self::assertTrue(
                 $hasCancellation,
-                "TUI must show cancellation evidence after Escape during auto-compaction.\n"
+                "TUI must show 'Cancelling' or 'Cancelled' after Escape during auto-compaction.\n"
                 . "On HEAD (RED): Completed.isActive() is false, so CancelListener clears "
                 . "the editor instead of sending cancel.  The TUI shows no Cancelling/Cancelled text.\n"
+                . "Lowercase 'cancel' in footer/hotkey text is NOT sufficient evidence.\n"
                 . "Final capture:\n" . ($this->tmux->captureAnsi($pane)),
             );
 
@@ -221,15 +225,8 @@ final class TuiAutoCompactionCancelE2eTest extends TestCase
                     $payload = $event['payload'] ?? [];
                     $kind = $payload['kind'] ?? $payload['type'] ?? '';
                     if ('cancel' === $kind) {
-                        $cancelEvents[] = ['seq' => $seq, 'type' => $type];
+                        $cancelEvents[] = ['seq' => $seq, 'type' => $type, 'kind' => 'cancel'];
                     }
-                }
-
-                if (
-                    'agent_end' === $type
-                    && 'cancelled' === ($event['payload']['reason'] ?? '')
-                ) {
-                    $cancelEvents[] = ['seq' => $seq, 'type' => 'agent_end', 'reason' => 'cancelled'];
                 }
             }
         }
@@ -242,10 +239,13 @@ final class TuiAutoCompactionCancelE2eTest extends TestCase
         self::assertNotEmpty(
             $cancelEvents,
             \sprintf(
-                "events.jsonl must contain a cancel command or agent_end reason=cancelled "
-                . "after context_compaction_started (seq %d).\n"
+                "events.jsonl must contain a cancel command (agent_command_queued or "
+                . "agent_command_applied with kind=cancel) after context_compaction_started "
+                . "(seq %d).\n"
                 . "On HEAD (RED): Escape clears editor instead of sending cancel — "
-                . "zero cancel events in the event log.\n"
+                . "zero cancel command events in the event log.\n"
+                . "agent_end reason=cancelled alone is NOT sufficient — it can appear "
+                . "without an actual cancel command in scenarios like sess-13.\n"
                 . "Found compaction_started at seq=%d, cancel events: %s",
                 $compactionStartedSeq,
                 $compactionStartedSeq,
