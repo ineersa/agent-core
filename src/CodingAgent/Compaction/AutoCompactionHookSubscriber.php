@@ -30,6 +30,9 @@ use Symfony\Component\Messenger\MessageBusInterface;
  *  - Auto disabled via compaction.auto_enabled (per-provider/per-model overrides)
  *  - In-flight compaction (activeStepId starts with compact-)
  *  - Commit contains compaction lifecycle events (avoids loops)
+ *  - Commit contains tool_batch_committed (ToolCallResultHandler uses postCommit
+ *    for post-tool AdvanceRun, so effectsCount is 0 but the turn will continue;
+ *    auto-compaction must not interrupt an in-progress assistant/tool cycle)
  *  - Provider context tokens ≤ threshold (or no provider measurement)
  *  - In-process dedup per run (prevents double dispatch within a single process
  *    between async compaction dispatch and lifecycle commit)
@@ -92,6 +95,36 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
             // re-trigger auto-compaction).
             $this->compactionResolved[$runId] = true;
 
+            return $context;
+        }
+
+        // Guard: skip commits that contain tool_execution_start.
+        // The LlmStepResultHandler dispatches ExecuteToolCall effects
+        // via a postCommit callback (not HandlerResult effects) when
+        // the LLM step returns tool_calls.  This commit has
+        // effectsCount=0 but the turn is mid-tool-cycle — tools have
+        // not started executing yet.  If auto-compaction fires here,
+        // it sets status=Compacting and the postCommit tool dispatch
+        // is swallowed, same class of bug as ToolBatchCommitted.
+        if ($this->containsEventType($context, RunEventTypeEnum::ToolExecutionStart->value)) {
+            return $context;
+        }
+
+        // Guard: skip commits that contain tool_batch_committed.
+        // ToolCallResultHandler schedules post-tool AdvanceRun as a
+        // postCommit callback (not HandlerResult effects), so this
+        // commit has effectsCount=0 but the turn will continue via
+        // the imminent postCommit AdvanceRun.  If auto-compaction
+        // fires here, it sets status=Compacting, the postCommit
+        // AdvanceRun is swallowed by AdvanceRunHandler's Compacting
+        // guard, and the final assistant answer is lost — the run
+        // dead-ends at Completed after compaction (session 5 bug).
+        //
+        // Pre-LLM compaction guard in AdvanceRunHandler may still
+        // trigger compaction with continueAfterCompaction=true before
+        // the next LLM step if token pressure warrants; that is
+        // semantically correct and preserves continuation.
+        if ($this->containsEventType($context, RunEventTypeEnum::ToolBatchCommitted->value)) {
             return $context;
         }
 

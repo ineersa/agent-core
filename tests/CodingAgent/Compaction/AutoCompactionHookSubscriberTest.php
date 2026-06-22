@@ -611,4 +611,88 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         self::assertCount(0, $this->commandBus->messages,
             'Failure-only auto marker at seq 79 must block dispatch from stale provider measurement at seq 74');
     }
+
+    // ─────────────────────────────────────────────────────────────────
+    //  Test: tool_execution_start prevents auto-compaction
+    // ─────────────────────────────────────────────────────────────────
+
+    /**
+     * Thesis: when the LLM step returns tool_calls, LlmStepResultHandler
+     * emits tool_execution_start events and dispatches ExecuteToolCall
+     * effects via a postCommit callback (not HandlerResult effects).
+     * This produces effectsCount=0, which would otherwise make the
+     * hook treat this as a stable turn-level commit.
+     *
+     * The ToolExecutionStart guard prevents mid-cycle auto-compaction
+     * before tools have started executing.
+     */
+    public function testSkipsWhenToolExecutionStartEventPresent(): void
+    {
+        $this->modelResolver->method('getActiveModel')->willReturn(null);
+
+        $runState = $this->createRunState([
+            $this->makeTextMessage('user', 'Hello'),
+        ]);
+        $this->runStore->method('get')->willReturn($runState);
+
+        $this->eventStore->method('allFor')
+            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]);
+
+        $context = $this->createHookContext(
+            eventTypes: [RunEventTypeEnum::ToolExecutionStart->value],
+            effectsCount: 0,
+        );
+        $this->subscriber->handleAfterTurnCommit($context);
+
+        self::assertCount(0, $this->commandBus->messages,
+            'ToolExecutionStart commit must NOT dispatch CompactRun '
+            .'even when provider usage exceeds threshold (effectsCount=0). '
+            .'Tool dispatch via postCommit must proceed without interruption.');
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    //  Test: tool_batch_committed prevents auto-compaction (session 5)
+    // ─────────────────────────────────────────────────────────────────
+
+    /**
+     * Thesis: when a tool batch completes (ToolBatchCommitted event),
+     * ToolCallResultHandler schedules the post-tool AdvanceRun as a
+     * postCommit callback, NOT via HandlerResult effects.  This means
+     * effectsCount=0, which would otherwise make the hook treat this
+     * as a stable turn-level commit eligible for auto-compaction.
+     *
+     * If auto-compaction fires here, it sets status=Compacting before
+     * the postCommit AdvanceRun executes.  AdvanceRunHandler's
+     * Compacting guard then swallows the continuation, the final
+     * assistant answer is lost, and the run dead-ends.
+     *
+     * The ToolBatchCommitted guard prevents this by returning early
+     * without dispatching CompactRun, even when provider usage exceeds
+     * the threshold and effectsCount is zero.
+     */
+    public function testSkipsWhenToolBatchCommittedEventPresent(): void
+    {
+        $this->modelResolver->method('getActiveModel')->willReturn(null);
+
+        $runState = $this->createRunState([
+            $this->makeTextMessage('user', 'Hello'),
+        ]);
+        $this->runStore->method('get')->willReturn($runState);
+
+        // Provider usage exceeds threshold — the hook WOULD dispatch
+        // auto-compaction if not for the ToolBatchCommitted guard.
+        $this->eventStore->method('allFor')
+            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]); // 12000 > 11000
+
+        $context = $this->createHookContext(
+            eventTypes: [RunEventTypeEnum::ToolBatchCommitted->value],
+            effectsCount: 0,
+        );
+        $this->subscriber->handleAfterTurnCommit($context);
+
+        self::assertCount(0, $this->commandBus->messages,
+            'ToolBatchCommitted commit must NOT dispatch CompactRun '
+            .'even when provider usage exceeds threshold (effectsCount=0). '
+            .'The postCommit AdvanceRun must proceed without interruption.');
+    }
 }
