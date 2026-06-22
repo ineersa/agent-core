@@ -383,6 +383,17 @@ Three files added, one modified:
 
 **Prerequisites**: The worktree must have a running TUI session with an active conversation.
 
+**UX overview**:
+
+- `/agent-poc` creates nested child files, sets a compact status entry in the main
+  TUI status panel: `Agents: scout-poc running · 4 events · /agent-poc`
+- A compact overlay opens BELOW the editor (via `insertOverlayAfterEditor`, same
+  position as completion menus) — the editor **keeps focus** so user can immediately
+  type `/agent-poc tick` or `/agent-poc close`.
+- The overlay is a small control panel (list + selected detail + controls), not a
+  full transcript dump.
+- `/agent-poc close` removes the overlay and clears the compact status entry.
+
 **Step-by-step smoke test**:
 
 1. Start the TUI in isolated mode:
@@ -399,30 +410,41 @@ Three files added, one modified:
    /agent-poc
    ```
 
-4. **Expected visible proof**: An overlay appears ABOVE the prompt editor, displaying:
-   - A box with title `AGENT CONTROL POC`
-   - Parent session ID (numeric, e.g. `428`)
-   - Parent session directory path
-   - Registry path: `.../artifacts/agents/registry.json`
-   - Child directory path: `.../artifacts/agents/scout-poc/`
-   - Child name: `scout-poc` with status `running`
-   - Event count (4 initial events)
-   - Transcript rebuilt from child events (showing `run.started`, `assistant.message`, `tool_execution.started`, `tool_execution.completed`)
-   - `Scout POC child event #1: Exploring codebase structure...` should be visible
+4. **Expected compact status** (in the status panel between transcript and editor):
+   ```
+     Agents        scout-poc running · 4 events · /agent-poc
+   ```
 
-5. **Simulate a live update** (child agent produces a new event):
+5. **Expected overlay** (BELOW the editor, above the footer):
+   ```
+   ┌── AGENTS — session <id> ────────────────────────────┐
+   │                                                      │
+   │  scout-poc    running    4 events    background      │
+   │  Registry: .../artifacts/agents/registry.json        │
+   │  Events:   artifacts/agents/scout-poc/events.jsonl  │
+   │                                                      │
+   │  Latest: Scout POC child event #1: Exploring...  │
+   │                                                      │
+   │  tick │ close                                        │
+   └──────────────────────────────────────────────────────┘
+   ```
+
+6. **Smoke editor focus**: Immediately after step 4, type:
    ```
    /agent-poc tick
    ```
-   The overlay refreshes; event count increases to 5. New line appears:
-   `Scout POC live update #5: New findings discovered...`
-   Repeat `/agent-poc tick` a few times to verify live update simulation.
+   This MUST work — the editor still has focus. The overlay and status both update.
+   Event count increases to 5, status shows `· 5 events`, latest event shows
+   `Scout POC live update #5: New findings discovered...`.
 
-6. **Close the overlay**:
+7. **Repeat tick** a few times to verify live update simulation.
+
+8. **Close the overlay**:
    ```
    /agent-poc close
    ```
-   Overlay disappears. Editor area is restored.
+   Overlay disappears. The compact status line (`Agents: ...`) is cleared.
+   Editor area is restored and keeps focus.
 
 ### On-disk artifacts created
 
@@ -452,12 +474,14 @@ ls .hatfield/sessions/scout-poc/  # should error: No such file or directory
 
 - ✅ Nested child event storage: `.hatfield/sessions/<parent>/artifacts/agents/<child>/events.jsonl`
 - ✅ Parent-scoped registry: `artifacts/agents/registry.json` tracks child_run_id, status, attention_state
-- ✅ Selected-child transcript: rebuilt from child `events.jsonl` only, not copied to parent events
-- ✅ Live update routing: `/agent-poc tick` appends to child event stream, overlay refreshes
+- ✅ Selected-child detail/latest event: rebuilt from child `events.jsonl` only
+- ✅ Live update routing: `/agent-poc tick` appends to child event stream, overlay + status refresh
 - ✅ No top-level child session directory
 - ✅ Normal session listing exclusion (child is not a top-level directory)
-- ✅ Slash command overlay works: TUI widgets can display agent control data
-- ✅ Overlay lifecycle: open, refresh, close — ChatScreen overlay API works for this shape
+- ✅ Compact status entry works: `Agents: scout-poc running · N events · /agent-poc` in status panel
+- ✅ Compact overlay works below editor without stealing focus
+- ✅ Overlay lifecycle: open (below editor, focus preserved), refresh, close, status cleared
+- ✅ Editor focus preserved: user can type `/agent-poc tick` immediately after overlay opens
 
 ### What the prototype does NOT cover (explicitly deferred)
 
@@ -467,7 +491,8 @@ ls .hatfield/sessions/scout-poc/  # should error: No such file or directory
 - Foreground/background mode distinction
 - Concurrency / parallel children
 - MCP policy
-- Polished TUI: no styled list, no keyboard navigation, no color theme
+- Multi-child list (only one hardcoded scout-poc)
+- Keyboard navigation in overlay
 - Real TranscriptProjector integration (child events are raw JSONL, not projected RuntimeEvents)
 - Production API surface — AgentPocCommandHandler is NOT a production pattern
 

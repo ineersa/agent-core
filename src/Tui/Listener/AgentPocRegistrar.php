@@ -35,7 +35,6 @@ final class AgentPocRegistrar implements TuiListenerRegistrar
             $context->sessionStore,
             $context->state,
             $context->screen,
-            $context->tui,
         );
 
         if ($this->commandRegistry->has('agent-poc')) {

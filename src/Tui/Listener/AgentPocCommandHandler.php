@@ -12,7 +12,6 @@ use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Widget\LiveTextWidget;
-use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\ContainerWidget;
 
 /**
@@ -26,14 +25,21 @@ use Symfony\Component\Tui\Widget\ContainerWidget;
  * entirely before building the real agent control view.
  *
  * Commands:
- *   /agent-poc            Create POC data + open/refresh overlay
- *   /agent-poc close      Remove the overlay
- *   /agent-poc tick       Append a synthetic child event + refresh overlay
+ *   /agent-poc            Create POC data + open/refresh overlay + compact status
+ *   /agent-poc close      Remove overlay, clear compact status
+ *   /agent-poc tick       Append synthetic child event, update overlay + status
+ *
+ * The overlay uses insertOverlayAfterEditor() (like CompletionMenu) so the
+ * editor keeps focus — user can immediately type /agent-poc tick or /agent-poc close.
+ *
+ * Compact status is set via ChatScreen::setStatus() so the main TUI shows
+ * e.g. "Agents: scout-poc running · 4 events · /agent-poc".
  *
  * @internal
  */
 final class AgentPocCommandHandler implements SlashCommandHandler
 {
+    private const string STATUS_KEY = 'Agents';
     private ?ContainerWidget $overlayContainer = null;
 
     /** @var list<array<string, mixed>> Cached synthetic child events for display */
@@ -43,7 +49,6 @@ final class AgentPocCommandHandler implements SlashCommandHandler
         private readonly HatfieldSessionStore $sessionStore,
         private readonly TuiSessionState $state,
         private readonly ChatScreen $screen,
-        private readonly Tui $tui,
     ) {
     }
 
@@ -76,8 +81,11 @@ final class AgentPocCommandHandler implements SlashCommandHandler
             $this->overlayContainer = null;
         }
 
+        // Clear compact agent status from the main TUI status panel.
+        $this->screen->setStatus(self::STATUS_KEY, null);
+
         return new TranscriptMessage(
-            'POC: Agent control overlay closed.',
+            'POC: Agent control overlay closed. Agent status cleared.',
             'system',
             'muted',
         );
@@ -115,11 +123,18 @@ final class AgentPocCommandHandler implements SlashCommandHandler
         // Write child state
         $this->writeStateFile($childDir.'/state.json', $childId);
 
-        // ── Build visible overlay ──
-        $this->buildOverlay($sessionId, $parentDir, $agentsDir, $childDir, $childId, $appendTick);
+        // ── Set compact agent status in the main TUI status panel ──
+        $eventCount = \count($this->childEvents);
+        $this->screen->setStatus(
+            self::STATUS_KEY,
+            \sprintf('scout-poc running · %d events · /agent-poc', $eventCount),
+        );
+
+        // ── Build visible overlay (below editor, keeps editor focus) ──
+        $this->buildOverlay($sessionId, $agentsDir, $childId, $appendTick);
 
         return new TranscriptMessage(
-            'POC: Agent control overlay open. Use /agent-poc tick to simulate live update, /agent-poc close to dismiss.',
+            'POC: Agent control overlay open below editor. Use /agent-poc tick or /agent-poc close.',
             'system',
         );
     }
@@ -284,38 +299,22 @@ final class AgentPocCommandHandler implements SlashCommandHandler
 
     private function buildOverlay(
         string $sessionId,
-        string $parentDir,
         string $agentsDir,
-        string $childDir,
         string $childId,
         bool $appendTick,
     ): void {
-        // Build transcript text from child events
-        $transcriptLines = [];
-        foreach ($this->childEvents as $event) {
-            $type = $event['type'] ?? 'unknown';
-            $payload = $event['payload'] ?? [];
-            $text = $payload['text'] ?? ($payload['output'] ?? '');
-            $toolName = $payload['tool_name'] ?? '';
+        $eventCount = \count($this->childEvents);
 
-            $prefix = match (true) {
-                'assistant.message' === $type => '  🤖 ',
-                'tool_execution.started' === $type => '  🔧 START: '.$toolName,
-                'tool_execution.completed' === $type => '  ✅ DONE:  '.$toolName,
-                'run.started' === $type => '  ▶  ',
-                default => '  ·  ',
-            };
-
-            if ('' !== $text) {
-                $transcriptLines[] = $prefix.': '.$text;
-            } elseif ('' !== $toolName) {
-                $transcriptLines[] = $prefix;
-            } else {
-                $transcriptLines[] = $prefix.$type;
+        // Extract latest assistant message text for the selected-child detail
+        $latestText = '';
+        for ($i = $eventCount - 1; $i >= 0; --$i) {
+            $payload = $this->childEvents[$i]['payload'] ?? [];
+            $candidate = $payload['text'] ?? '';
+            if ('' !== $candidate) {
+                $latestText = $candidate;
+                break;
             }
         }
-
-        $eventCount = \count($this->childEvents);
 
         // Remove existing overlay if present
         if (null !== $this->overlayContainer) {
@@ -325,26 +324,25 @@ final class AgentPocCommandHandler implements SlashCommandHandler
         // Build new overlay container
         $this->overlayContainer = new ContainerWidget();
 
-        // Build the display text
         $tickNote = $appendTick ? ' (live update appended)' : '';
+        $parentSessionIdShort = mb_strlen($sessionId) > 20
+            ? mb_substr($sessionId, 0, 17).'...'
+            : $sessionId;
 
+        // Compact overlay: list + selected child detail + controls
         $displayText = implode("\n", [
-            '┌── AGENT CONTROL POC ───────────────────────────┐',
-            '│ Parent session: '.$sessionId,
-            '│ Parent dir:     '.$parentDir,
-            '│ Registry:       '.$agentsDir.'/registry.json',
-            '│ Child dir:      '.$childDir,
+            '┌── AGENTS — session '.$parentSessionIdShort.' ────────────────────────┐',
             '│',
-            '│ Child:  '.$childId.'  (status: running)',
-            '│ Events: '.$eventCount.'  (source of truth)',
+            '│  '.$childId.'    running    '.$eventCount.' events    background',
+            '│  Registry: '.$agentsDir.'/registry.json',
+            '│  Events:   artifacts/agents/'.$childId.'/events.jsonl',
             '│',
-            '│ Child transcript (from nested events.jsonl):',
+            ('' !== $latestText)
+                ? '│  Latest: '.$latestText
+                : '│  (no assistant messages yet)',
             '│',
-            ...array_map(static fn (string $l) => '│ '.$l, $transcriptLines),
-            '│',
-            '│ /agent-poc tick  → simulate live update',
-            '│ /agent-poc close → dismiss overlay',
-            '└────────────────────────────────────────────────┘'.$tickNote,
+            '│  tick │ close'.(true === $appendTick ? '  ← just updated' : ''),
+            '└────────────────────────────────────────────────────────┘'.$tickNote,
         ]);
 
         $overlayWidget = new LiveTextWidget(
@@ -354,8 +352,10 @@ final class AgentPocCommandHandler implements SlashCommandHandler
 
         $this->overlayContainer->add($overlayWidget);
 
-        $this->screen->insertOverlayBeforeEditor($this->overlayContainer);
-        $this->screen->setFocus($overlayWidget);
+        // Use insertOverlayAfterEditor like CompletionMenu so the editor
+        // keeps focus — user can immediately type /agent-poc tick or close.
+        // Do NOT call setFocus() on the overlay.
+        $this->screen->insertOverlayAfterEditor($this->overlayContainer);
         $this->screen->requestRender();
     }
 }
