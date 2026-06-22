@@ -87,6 +87,24 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         }
 
         if (CoreCommandKind::Cancel === $message->kind) {
+            // Guard: cancelling an already-terminated run (Completed / Failed
+            // without retryable failure) would transition to Cancelling with
+            // no subsequent transition event (no RunCancelled or TurnCancelled
+            // is emitted for a completed/failed run), leaving the
+            // ActivityStateMachine permanently stuck in Cancelling (issue #183).
+            //
+            // Failed-with-retryableFailure is an exception: the run is recoverable
+            // via Continue, and Cancel may be used to clean up stale state before
+            // retry.  Reject the cancel for truly terminal states so the UI
+            // reflects the correct state.
+            if (\in_array($state->status, [RunStatus::Completed, RunStatus::Failed], true) && !$state->retryableFailure) {
+                return $this->rejectCommand(
+                    $state,
+                    $message,
+                    \sprintf('Cancel rejected: run is already in terminal state (%s).', $state->status->value),
+                );
+            }
+
             return $this->applyCancelCommand($state, $message);
         }
 

@@ -119,7 +119,25 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         $this->sessionId = $runId;
 
         $this->ensureProcessRunning();
-        $this->waitForRuntimeReady();
+
+        try {
+            $this->waitForRuntimeReady();
+        } catch (\RuntimeException $e) {
+            // Clean up orphaned controller and consumer processes before
+            // propagating the error (issue #183).  Without this, a failed
+            // shell-command follow-up start() leaves the controller and
+            // all messenger:consume grandchildren orphaned.
+            $this->logger->warning('start: stopping process after runtime.ready timeout', [
+                'component' => 'JsonlProcessAgentSessionClient',
+                'event_type' => 'start_process_cleanup',
+                'session_id' => $this->sessionId ?? '',
+                'run_id' => $runId ?? '',
+                'error' => $e->getMessage(),
+            ]);
+            $this->stopProcess();
+
+            throw $e;
+        }
 
         // activeRunId was set above from the request runId for crash recovery
         // before spawning the process, so if the controller dies before
@@ -147,28 +165,54 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         $timeout = 15.0;
         $start = microtime(true);
 
-        while (microtime(true) - $start < $timeout) {
-            /** @var RuntimeEvent $event */
-            foreach ($this->readEvents() as $event) {
-                if ('run.started' === $event->type || 'run_started' === $event->type) {
-                    $this->activeRunId = $event->runId;
+        try {
+            while (microtime(true) - $start < $timeout) {
+                /** @var RuntimeEvent $event */
+                foreach ($this->readEvents() as $event) {
+                    if ('run.started' === $event->type || 'run_started' === $event->type) {
+                        $this->activeRunId = $event->runId;
 
-                    return new RunHandle(runId: $event->runId, status: 'running');
+                        return new RunHandle(runId: $event->runId, status: 'running');
+                    }
+
+                    if ('runtime.ready' === $event->type || 'command.ack' === $event->type) {
+                        continue;
+                    }
+
+                    // Buffer non-matching events.
+                    $this->eventBuffer->enqueue($event);
                 }
 
-                if ('runtime.ready' === $event->type || 'command.ack' === $event->type) {
-                    continue;
-                }
+                $this->assertProcessStillRunning('waiting for run_started');
 
-                // Buffer non-matching events.
-                $this->eventBuffer->enqueue($event);
+                // No events yet — brief sleep to avoid busy-wait.
+                usleep(10_000);
             }
+        } catch (\RuntimeException $e) {
+            // The assertProcessStillRunning() call throws when the controller
+            // exits prematurely.  Clean up orphaned processes before propagating
+            // (issue #183).
+            $this->logger->warning('start: stopping process after controller exit during run_started wait', [
+                'component' => 'JsonlProcessAgentSessionClient',
+                'event_type' => 'start_process_cleanup',
+                'session_id' => $this->sessionId ?? '',
+                'run_id' => $runId ?? '',
+                'error' => $e->getMessage(),
+            ]);
+            $this->stopProcess();
 
-            $this->assertProcessStillRunning('waiting for run_started');
-
-            // No events yet — brief sleep to avoid busy-wait.
-            usleep(10_000);
+            throw $e;
         }
+
+        // Timeout reached — clean up before propagating.
+        $this->logger->warning('start: stopping process after run_started timeout', [
+            'component' => 'JsonlProcessAgentSessionClient',
+            'event_type' => 'start_process_cleanup',
+            'session_id' => $this->sessionId ?? '',
+            'run_id' => $runId ?? '',
+            'timeout_seconds' => $timeout,
+        ]);
+        $this->stopProcess();
 
         throw new \RuntimeException('Agent process did not emit run_started event within '.$timeout.'s'."\n".$this->diagnosticOutput());
     }

@@ -678,6 +678,139 @@ final class ApplyCommandHandlerTest extends TestCase
     }
 
     /**
+     * Regression: cancel-on-completed-run must not stick in Cancelling (issue #183).
+     *
+     * Before the fix, applyCancelCommand() unconditionally set RunStatus::Cancelling
+     * even when the run was already Completed or Failed.  With no subsequent
+     * RunCancelled transition (nothing was in flight to abort), the
+     * ActivityStateMachine permanently stuck at Cancelling.
+     *
+     * Thesis: cancel command applied to a Completed run must be rejected,
+     * leaving the state at Completed.
+     */
+    public function testCancelOnCompletedRunIsRejected(): void
+    {
+        $commandStore = new InMemoryCommandStore();
+        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandMailboxPolicy = new CommandMailboxPolicy(
+            commandStore: $commandStore,
+            commandRouter: $commandRouter,
+        );
+
+        $handler = new ApplyCommandHandler(
+            commandStore: $commandStore,
+            commandRouter: $commandRouter,
+            commandMailboxPolicy: $commandMailboxPolicy,
+            eventFactory: new EventFactory(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            maxPendingCommands: 10,
+        );
+
+        $state = new RunState(
+            runId: 'run-cancel-completed',
+            status: RunStatus::Completed,
+            version: 5,
+            turnNo: 3,
+            lastSeq: 15,
+            messages: [
+                new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'Hello']]),
+                new AgentMessage(role: 'assistant', content: [['type' => 'text', 'text' => 'Hi there!']]),
+            ],
+        );
+
+        $cancelMessage = new ApplyCommand(
+            runId: 'run-cancel-completed',
+            turnNo: 3,
+            stepId: 'cancel-completed-step',
+            attempt: 1,
+            idempotencyKey: 'cancel-completed-1',
+            kind: CoreCommandKind::Cancel,
+            payload: [],
+        );
+
+        $result = $handler->handle($cancelMessage, $state);
+
+        // The cancel must be REJECTED — the run is already completed.
+        $this->assertNotNull($result->nextState, 'State must be present (rejection still increments version).');
+        $this->assertSame(RunStatus::Completed, $result->nextState->status,
+            'Cancel on Completed run must NOT transition to Cancelling.',
+        );
+        $this->assertCount(1, $result->events, 'Single rejection event expected.');
+        $this->assertSame('agent_command_rejected', $result->events[0]->type,
+            'Cancel on Completed run must emit agent_command_rejected.',
+        );
+        $this->assertStringContainsString(
+            'terminal state',
+            $result->nextState->errorMessage ?? '',
+            'Rejection must mention terminal state.',
+        );
+
+        // No pending command left in store.
+        $this->assertCount(0, $commandStore->pending('run-cancel-completed'));
+    }
+
+    /**
+     * Regression: cancel-on-failed-run must not stick in Cancelling (issue #183).
+     *
+     * Mirror of cancel-on-completed — Failed is also a terminal state.
+     */
+    public function testCancelOnFailedRunIsRejected(): void
+    {
+        $commandStore = new InMemoryCommandStore();
+        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandMailboxPolicy = new CommandMailboxPolicy(
+            commandStore: $commandStore,
+            commandRouter: $commandRouter,
+        );
+
+        $handler = new ApplyCommandHandler(
+            commandStore: $commandStore,
+            commandRouter: $commandRouter,
+            commandMailboxPolicy: $commandMailboxPolicy,
+            eventFactory: new EventFactory(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            maxPendingCommands: 10,
+        );
+
+        $state = new RunState(
+            runId: 'run-cancel-failed',
+            status: RunStatus::Failed,
+            version: 3,
+            turnNo: 1,
+            lastSeq: 8,
+            errorMessage: 'Something went wrong.',
+            messages: [
+                new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'Task']]),
+            ],
+        );
+
+        $cancelMessage = new ApplyCommand(
+            runId: 'run-cancel-failed',
+            turnNo: 1,
+            stepId: 'cancel-failed-step',
+            attempt: 1,
+            idempotencyKey: 'cancel-failed-1',
+            kind: CoreCommandKind::Cancel,
+            payload: [],
+        );
+
+        $result = $handler->handle($cancelMessage, $state);
+
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(RunStatus::Failed, $result->nextState->status,
+            'Cancel on Failed run must NOT transition to Cancelling.',
+        );
+        $this->assertCount(1, $result->events);
+        $this->assertSame('agent_command_rejected', $result->events[0]->type);
+
+        // Original error message must be preserved (not overwritten by cancel rejection).
+        $this->assertStringContainsString(
+            'terminal state',
+            $result->nextState->errorMessage ?? '',
+        );
+    }
+
+    /**
      * Idempotency: compact applied call with same idempotencyKey is no-op.
      */
     public function testCompactTerminalIdempotency(): void

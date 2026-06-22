@@ -364,6 +364,13 @@ services:
   Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient:
     alias: 'Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient'
 
+  # ShellCommandHandler dispatches ExecuteShellToolCall messages on the
+  # agent.execution.bus (not the default agent.command.bus) so that shell
+  # command tool execution runs in the tool consumer process (issue #183).
+  Ineersa\CodingAgent\Runtime\Controller\CommandHandler\ShellCommandHandler:
+    arguments:
+      $executionBus: '@agent.execution.bus'
+
   Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter:
     arguments:
       $eventClient: '@Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient'

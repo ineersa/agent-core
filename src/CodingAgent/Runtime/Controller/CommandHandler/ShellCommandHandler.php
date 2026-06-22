@@ -4,33 +4,41 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Controller\CommandHandler;
 
-use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
-use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
+use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
+use Symfony\Component\Messenger\Exception\ExceptionInterface;
+use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
- * Handles shell_command and complete_run commands via Symfony EventDispatcher.
+ * Handles shell_command commands via Symfony EventDispatcher.
  *
- * Receives shell_command RuntimeCommands from the TUI (via JSONL),
- * delegates to InProcessAgentSessionClient which executes bash through
- * the shared tool executor and emits canonical tool_execution events.
+ * Receives shell_command RuntimeCommands from the TUI (via JSONL) and
+ * dispatches them as ExecuteShellToolCall messages on the agent.execution.bus
+ * so that bash execution happens in a tool consumer process (issue #183).
  *
- * When the standalone flag is set (shellExecute path), a terminal
- * AgentEnd event is written to the EventStore so the TUI poller
- * transitions from Running to Completed and clears the working
- * indicator.
+ * This avoids the controller event-loop freeze that occurred when
+ * InProcessAgentSessionClient::executeShellCommand() called toolExecutor->execute()
+ * synchronously and SafeGuard hooks entered a blocking approval poll.
  *
- * Shell output appears in the transcript via the controller's periodic
- * EventStore drain — no LLM turn is triggered.
+ * The worker is the sole ordering authority for shell-command lifecycle
+ * events: it writes tool_execution_start, tool_execution_end, and (when
+ * standalone) AgentEnd in a single process, guaranteeing tool_exec →
+ * agent_end ordering (LifecycleOrderValidator-conformant).
+ *
+ * complete_run commands are NOT handled here — the controller must never
+ * synchronously write AgentEnd for work dispatched to an async consumer
+ * because that produces [AgentEnd, tool_exec_start, tool_exec_end] ordering
+ * (issue #183).  Shell output appears in the transcript via the controller's
+ * periodic EventStore drain — no LLM turn is triggered.
  */
 #[AsEventListener(event: ControllerCommandEvent::class)]
 final readonly class ShellCommandHandler
 {
     public function __construct(
-        private readonly AgentSessionClient $client,
+        private readonly MessageBusInterface $executionBus,
     ) {
     }
 
@@ -38,14 +46,6 @@ final readonly class ShellCommandHandler
     {
         $command = $event->command;
         $runId = $command->runId ?? '';
-
-        if ('complete_run' === $command->type) {
-            if ('' !== $runId) {
-                $this->client->completeRun($runId);
-            }
-
-            return;
-        }
 
         if ('shell_command' !== $command->type) {
             return;
@@ -82,20 +82,44 @@ final readonly class ShellCommandHandler
             payload: ['kind' => 'shell'],
         ));
 
-        // Delegate to the in-process client which executes bash through
-        // the shared tool executor and persists tool_execution events to
-        // the canonical event store.
-        $this->client->send($runId, new UserCommand(
-            type: 'shell_command',
-            text: $commandText,
-        ));
+        // Dispatch bash execution to the tool consumer via the async
+        // Messenger tool bus (issue #183).  The ExecuteShellToolCallWorker
+        // in the tool consumer executes bash through the shared tool
+        // executor and persists tool_execution_start / tool_execution_end
+        // events to the canonical event store.  SafeGuard approval polls
+        // run in the consumer, not the controller, so the event loop
+        // stays alive.
+        //
+        // The standalone flag is passed through so the worker owns the terminal
+        // AgentEnd write for first-input shell commands.  By keeping tool_exec and AgentEnd writes
+        // within a single process (the worker), the EventStore ordering is
+        // guaranteed — AgentEnd always follows tool_exec events, satisfying
+        // the LifecycleOrderValidator constraint that agent_end must be the
+        // final lifecycle event.  Synchronously calling completeRun() from
+        // the controller would race with the async worker and produce
+        // [AgentEnd, tool_exec_start, tool_exec_end] ordering (issue #183).
+        $toolCallId = uniqid('sh_', true);
 
-        // Standalone shell commands (first-input !cmd) need a terminal
-        // AgentEnd event so the TUI poller transitions from Running to
-        // Completed. Subsequent shell commands during an agent run must
-        // NOT complete the run — the agent is still working.
-        if ($standalone) {
-            $this->client->completeRun($runId);
+        try {
+            $this->executionBus->dispatch(new ExecuteShellToolCall(
+                runId: $runId,
+                toolCallId: $toolCallId,
+                commandText: $commandText,
+                standalone: $standalone,
+            ));
+        } catch (ExceptionInterface $exception) {
+            // Messenger transport unavailable — emit a diagnostic error
+            // so the user sees a clear message instead of a silent hang.
+            $event->emit(new RuntimeEvent(
+                type: RuntimeEventTypeEnum::ProtocolError->value,
+                runId: $runId,
+                seq: 0,
+                payload: [
+                    'error' => 'Failed to dispatch shell command: '.$exception->getMessage(),
+                ],
+            ));
+
+            return;
         }
     }
 }

@@ -57,6 +57,7 @@ final readonly class UserMessageHandler
             'steer' => 'message',
             default => 'message',
         };
+
         $this->client->send($runId, new UserCommand(
             type: $commandType,
             text: (string) ($command->payload['text'] ?? ''),

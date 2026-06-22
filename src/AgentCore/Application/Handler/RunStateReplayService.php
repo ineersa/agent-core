@@ -269,7 +269,7 @@ final readonly class RunStateReplayService
             RunEventTypeEnum::LlmStepFailed->value => $this->applyLlmStepFailed($payload, $state),
             RunEventTypeEnum::LlmStepAborted->value => $this->applyNoMutation($event, $state),
             RunEventTypeEnum::ToolExecutionStart->value => $this->applyToolExecutionStart($payload, $pendingToolCalls, $state),
-            RunEventTypeEnum::ToolExecutionEnd->value,
+            RunEventTypeEnum::ToolExecutionEnd->value => $this->applyToolExecutionEnd($payload, $pendingToolCalls, $state),
             RunEventTypeEnum::ToolCallResultReceived->value => $this->applyNoMutation($event, $state),
             RunEventTypeEnum::MessageStart->value => $this->applyNoMutation($event, $state),
             RunEventTypeEnum::MessageEnd->value => $this->applyMessageEnd($payload, $state, $messages),
@@ -569,6 +569,30 @@ final readonly class RunStateReplayService
 
         if (null !== $toolCallId) {
             $pendingToolCalls[$toolCallId] = false;
+        }
+
+        return $state;
+    }
+
+    /**
+     * Tool execution end resolves the matching pending tool call so that
+     * standalone/shell tool calls (which do NOT go through the LLM step)
+     * are properly marked as completed in the replayed RunState.
+     *
+     * Without this, tool_execution_end (seq N+1) leaves the pending tool
+     * call from tool_execution_start (seq N) unresolved, and a subsequent
+     * AdvanceRun (after the run completed) bails on the stale tool-call
+     * guard even though the tool has already finished (issue #183).
+     *
+     * @param array<string, mixed> $payload
+     * @param array<string, bool>  $pendingToolCalls
+     */
+    private function applyToolExecutionEnd(array $payload, array &$pendingToolCalls, RunState $state): RunState
+    {
+        $toolCallId = \is_string($payload['tool_call_id'] ?? null) ? $payload['tool_call_id'] : null;
+
+        if (null !== $toolCallId) {
+            $pendingToolCalls[$toolCallId] = true;
         }
 
         return $state;

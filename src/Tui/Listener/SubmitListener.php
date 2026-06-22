@@ -421,32 +421,35 @@ final class SubmitListener implements TuiListenerRegistrar
                 $state->lastSeq = 0;
             } else {
                 // Subsequent input — send shell command to existing run.
-                // executeShellCommand() writes tool_exec events synchronously.
+                // The worker in the tool consumer process executes bash
+                // and writes tool_exec events to the canonical event store.
                 $client->send(
                     $state->handle->runId,
-                    new UserCommand(type: 'shell_command', text: $shellCommand->command),
+                    new UserCommand(
+                        type: 'shell_command',
+                        text: $shellCommand->command,
+                    ),
                 );
 
-                // When the run is already terminal (prior LLM turn completed),
-                // the shell command tool_exec events transition the state machine
-                // to Running but nothing ever emits RunCompleted.  Write a
-                // terminal AgentEnd event so the tick poller sees RunCompleted
-                // and transitions back to Completed, clearing the working
-                // indicator.
-                if ($state->activity->isTerminal()) {
-                    $client->completeRun($state->handle->runId);
-                    $state->activity = RunActivityStateEnum::Completed;
-                }
+                // The controller must NEVER synchronously call completeRun()
+                // for shell commands because that races with the async worker
+                // and produces [AgentEnd, tool_exec_start, tool_exec_end]
+                // ordering — a LifecycleOrderValidator violation (issue #183).
+                //
+                // Activity transitions (Running → Completed) are handled by
+                // TickPollListener from the authoritative event drain — we do
+                // not set activity here because that would cause the next normal
+                // submit to route as steer (active) instead of follow_up (terminal).
             }
 
             // For first-input shellExecute(): the command completed synchronously
-            // and activity is already Completed — no working indicator needed.
+            // (InProcess transport writes events directly) and activity is already
+            // Completed — no working indicator needed.
             //
-            // For subsequent shell commands (send()): the shell executes inline.
-            // The poller will pick up tool_exec events on the next tick. Show a
-            // brief running indicator until then; if the run was already terminal
-            // the tick will clear it (TickPollListener always sets based on
-            // authoritative activity state).
+            // For subsequent shell commands (send()): activities are driven by
+            // TickPollListener from the event drain.  tool_exec_start transitions
+            // to Running, AgentEnd transitions back to Completed.  The window
+            // between send() and the first event is brief for simple commands.
             $screen->setWorkingMessage(
                 $state->activity->isTerminal() ? null : 'Running...',
             );
