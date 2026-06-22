@@ -8,6 +8,7 @@ enum RunStatus: string
 {
     case Queued = 'queued';
     case Running = 'running';
+    case Compacting = 'compacting';
     case WaitingHuman = 'waiting_human';
     case Cancelling = 'cancelling';
     case Completed = 'completed';

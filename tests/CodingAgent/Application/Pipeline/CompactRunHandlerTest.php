@@ -102,6 +102,10 @@ final class CompactRunHandlerTest extends TestCase
         // Sets activeStepId so the result handler can match the result.
         $this->assertSame('step-1', $result->nextState->activeStepId);
 
+        // Sets status to Compacting so follow-up/steer commands are queued
+        // (not applied immediately) while the async compaction worker runs.
+        $this->assertSame(RunStatus::Compacting, $result->nextState->status);
+
         // Dispatches ExecuteCompactionStep effect.
         $this->assertCount(1, $result->effects);
         $this->assertInstanceOf(ExecuteCompactionStep::class, $result->effects[0]);
@@ -651,6 +655,62 @@ final class CompactRunHandlerTest extends TestCase
     }
 
     // ── helpers ──
+
+    /**
+     * Thesis: async compaction path with auto trigger sets status to Compacting.
+     *
+     * When auto-compaction starts, the run must be marked as Compacting so
+     * follow-up/steer commands are queued (not applied immediately) and the
+     * turn is not advanced until the async worker completes.
+     *
+     * This test exercises CompactRunHandler in isolation — it does not require
+     * a full kernel or async worker.
+     */
+    public function testAutoCompactionSetsCompactingStatus(): void
+    {
+        $messages = [
+            $this->userMsg('question'),
+            $this->assistantMsg('answer'),
+        ];
+        $state = $this->createRunState($messages);
+
+        $summarize = [$messages[0]];
+        $retained = [$messages[1]];
+
+        $fakeService = $this->createReadyCompactionService($summarize, $retained);
+        $fakeModelSelection = $this->createModelSelectionStub();
+
+        $handler = new CompactRunHandler(
+            $fakeService,
+            $this->createAppConfig(),
+            new EventFactory(),
+            $fakeModelSelection,
+            new CompactionHookDispatcher([]),
+        );
+
+        $result = $handler->handle(
+            new CompactRun(
+                runId: 'run-1',
+                turnNo: 5,
+                stepId: 'step-auto',
+                attempt: 1,
+                idempotencyKey: 'key-auto',
+                trigger: 'auto',
+            ),
+            $state,
+        );
+
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(RunStatus::Compacting, $result->nextState->status,
+            'Async compaction path must set status to Compacting');
+        $this->assertSame('step-auto', $result->nextState->activeStepId);
+        $this->assertCount(1, $result->effects);
+        $this->assertInstanceOf(ExecuteCompactionStep::class, $result->effects[0]);
+        $this->assertSame('auto', $result->effects[0]->trigger);
+    }
+
+    /**
+     * Thesis: prepare failure path does NOT set Compacting status.
 
     /**
      * @param list<AgentMessage> $messages

@@ -198,6 +198,38 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             );
         }
 
+        // Compaction guard: while a compaction is active, do NOT advance
+        // the turn.  The CompactionStepResultHandler will dispatch
+        // AdvanceRun when the async worker completes, at which point the
+        // status will be Running (not Compacting) and turn advancement
+        // proceeds normally.  Advancing here would emit turn_advanced and
+        // leaf_set mid-compaction, confusing the event log.
+        if (RunStatus::Compacting === $preparedState->status) {
+            if ([] === $boundaryEventSpecs) {
+                return new HandlerResult();
+            }
+
+            $events = $this->eventFactory->eventsFromSpecs($runId, $preparedState->turnNo, $state->lastSeq + 1, $boundaryEventSpecs);
+
+            return new HandlerResult(
+                nextState: new RunState(
+                    runId: $preparedState->runId,
+                    status: $preparedState->status,
+                    version: $state->version + 1,
+                    turnNo: $preparedState->turnNo,
+                    lastSeq: $state->lastSeq + \count($events),
+                    isStreaming: $preparedState->isStreaming,
+                    streamingMessage: $preparedState->streamingMessage,
+                    pendingToolCalls: $preparedState->pendingToolCalls,
+                    errorMessage: $preparedState->errorMessage,
+                    messages: $preparedState->messages,
+                    activeStepId: $preparedState->activeStepId,
+                    retryableFailure: $preparedState->retryableFailure,
+                ),
+                events: $events,
+            );
+        }
+
         $nextTurnNo = $preparedState->turnNo + 1;
         $nextStepId = $message->stepId();
 

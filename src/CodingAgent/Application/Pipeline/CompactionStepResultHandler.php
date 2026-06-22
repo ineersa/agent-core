@@ -14,6 +14,7 @@ use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\CompactionStepResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 
@@ -88,8 +89,15 @@ final class CompactionStepResultHandler implements RunMessageHandler
                 ],
             ]]);
 
+            // Stale result — resolve Compacting back to a running state.
+            // If a newer compaction IS active (different activeStepId), its
+            // handler will set Compacting again on its own started event.
+            $staleFinalStatus = RunStatus::Compacting === $state->status
+                ? RunStatus::Running
+                : $state->status;
+
             return new HandlerResult(
-                nextState: $this->incrementState($state, $events, clearActiveStepId: false),
+                nextState: $this->incrementState($state, $events, clearActiveStepId: false, status: $staleFinalStatus),
                 events: $events,
             );
         }
@@ -131,8 +139,15 @@ final class CompactionStepResultHandler implements RunMessageHandler
                 ],
             ]]);
 
+            // Resolve Compacting status: auto compaction failure leaves
+            // the run ready to continue (the pre-LLM guard won't re-fire
+            // due to turn-level dedup); manual failure returns to terminal.
+            $errorFinalStatus = 'auto' === $message->trigger
+                ? RunStatus::Running
+                : RunStatus::Completed;
+
             return new HandlerResult(
-                nextState: $this->incrementState($state, $events, clearActiveStepId: true),
+                nextState: $this->incrementState($state, $events, clearActiveStepId: true, status: $errorFinalStatus),
                 events: $events,
             );
         }
@@ -162,8 +177,13 @@ final class CompactionStepResultHandler implements RunMessageHandler
                 ],
             ]]);
 
+            // Resolve Compacting status: same policy as model_error path.
+            $emptyFinalStatus = 'auto' === $message->trigger
+                ? RunStatus::Running
+                : RunStatus::Completed;
+
             return new HandlerResult(
-                nextState: $this->incrementState($state, $events, clearActiveStepId: true),
+                nextState: $this->incrementState($state, $events, clearActiveStepId: true, status: $emptyFinalStatus),
                 events: $events,
             );
         }
@@ -236,10 +256,16 @@ final class CompactionStepResultHandler implements RunMessageHandler
             ],
         ]]);
 
+        // Resolve Compacting: auto trigger → Running (AdvanceRun will
+        // continue the turn below), manual trigger → Completed (terminal).
+        $finalStatus = 'auto' === $message->trigger
+            ? RunStatus::Running
+            : RunStatus::Completed;
+
         // Atomically replace RunState.messages with the compacted list.
         $nextState = new RunState(
             runId: $state->runId,
-            status: $state->status,
+            status: $finalStatus,
             version: $state->version + 1,
             turnNo: $state->turnNo,
             lastSeq: $state->lastSeq + \count($events),
@@ -279,6 +305,7 @@ final class CompactionStepResultHandler implements RunMessageHandler
     /**
      * @param list<\Ineersa\AgentCore\Domain\Event\RunEvent> $events
      * @param bool                                           $clearActiveStepId when true, set activeStepId to null (terminal outcome)
+     * @param RunStatus|null                                 $status            null = preserve current; non-null = override
      *
      * NOTE: this uses a boolean clear flag (false=preserve, true=clear),
      * which inverts CompactRunHandler::incrementState()'s nullable-string
@@ -286,13 +313,13 @@ final class CompactionStepResultHandler implements RunMessageHandler
      * because model_error/empty_summary/success paths genuinely clear the
      * step while stale_result paths genuinely preserve it.
      */
-    private function incrementState(RunState $state, array $events, bool $clearActiveStepId = false): RunState
+    private function incrementState(RunState $state, array $events, bool $clearActiveStepId = false, ?RunStatus $status = null): RunState
     {
         $count = \count($events);
 
         return new RunState(
             runId: $state->runId,
-            status: $state->status,
+            status: $status ?? $state->status,
             version: $state->version + 1,
             turnNo: $state->turnNo,
             lastSeq: $state->lastSeq + $count,

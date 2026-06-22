@@ -14,6 +14,7 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep;
 use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Ineersa\CodingAgent\Compaction\CompactionHookContextDTO;
 use Ineersa\CodingAgent\Compaction\CompactionHookDispatcher;
@@ -252,7 +253,7 @@ final readonly class CompactRunHandler implements RunMessageHandler
             ],
         ]]);
 
-        $nextState = $this->incrementState($state, $startedEvents, activeStepId: $message->stepId());
+        $nextState = $this->incrementState($state, $startedEvents, activeStepId: $message->stepId(), status: RunStatus::Compacting);
 
         // Serialize AgentMessage lists as array shapes for transport safety
         // (the llm transport uses default Symfony Serializer, not PhpSerializer).
@@ -340,7 +341,7 @@ final readonly class CompactRunHandler implements RunMessageHandler
             ],
         ]]);
 
-        $afterStartState = $this->incrementState($state, $startedEvents, activeStepId: $message->stepId());
+        $afterStartState = $this->incrementState($state, $startedEvents, activeStepId: $message->stepId(), status: RunStatus::Compacting);
 
         // Build compacted messages from the replacement summary.
         $compactResult = $this->compactionService->buildCompactedMessages(
@@ -376,10 +377,15 @@ final readonly class CompactRunHandler implements RunMessageHandler
             ]],
         );
 
+        // Replacement summary is a successful compaction: resolve Compacting
+        // back to Running (auto trigger continues the turn) or Completed
+        // (manual trigger leaves the run terminal so the user can follow-up).
+        $finalStatus = 'auto' === $message->trigger ? RunStatus::Running : RunStatus::Completed;
+
         // Replace RunState.messages with compacted messages.
         $nextState = new RunState(
             runId: $afterStartState->runId,
-            status: $afterStartState->status,
+            status: $finalStatus,
             version: $afterStartState->version + 1,
             turnNo: $afterStartState->turnNo,
             lastSeq: $afterStartState->lastSeq + \count($compactedEvents),
@@ -401,14 +407,15 @@ final readonly class CompactRunHandler implements RunMessageHandler
     /**
      * @param list<\Ineersa\AgentCore\Domain\Event\RunEvent> $events
      * @param string|null                                    $activeStepId null = preserve current; non-null = override
+     * @param RunStatus|null                                 $status       null = preserve current; non-null = override
      */
-    private function incrementState(RunState $state, array $events, ?string $activeStepId = null): RunState
+    private function incrementState(RunState $state, array $events, ?string $activeStepId = null, ?RunStatus $status = null): RunState
     {
         $count = \count($events);
 
         return new RunState(
             runId: $state->runId,
-            status: $state->status,
+            status: $status ?? $state->status,
             version: $state->version + 1,
             turnNo: $state->turnNo,
             lastSeq: $state->lastSeq + $count,

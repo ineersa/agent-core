@@ -154,7 +154,9 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         // assistant tool_calls, causing the provider to reject the run
         // with "insufficient tool messages following tool_calls message".
         $postCommit = [];
-        $isActive = \in_array($state->status, [RunStatus::Running, RunStatus::Cancelling], true);
+        // Active runs (Running, Cancelling, or Compacting) queue the command
+        // for the next safe boundary.  Non-active runs apply immediately.
+        $isActive = \in_array($state->status, [RunStatus::Running, RunStatus::Cancelling, RunStatus::Compacting], true);
         if (!$isActive) {
             $followUpAdvance = $this->followUpAdvanceCallback($runId, $message->kind);
             if (null !== $followUpAdvance) {
@@ -414,7 +416,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
     private function applyCompactCommand(RunState $state, ApplyCommand $message): HandlerResult
     {
         $runId = $message->runId();
-        $isActive = \in_array($state->status, [RunStatus::Running, RunStatus::Cancelling], true);
+        $isActive = \in_array($state->status, [RunStatus::Running, RunStatus::Cancelling, RunStatus::Compacting], true);
 
         if (!$isActive) {
             // Terminal/safe boundary: apply immediately.

@@ -35,7 +35,7 @@ final readonly class CompactionProjectionSubscriber implements EventSubscriberIn
             kind: TranscriptBlockKindEnum::System,
             runId: $runId,
             seq: $state->nextSeq(),
-            text: '',
+            text: '◐ Compacting conversation…',
             meta: ['subtext' => 'Compacting conversation...'],
             streaming: true,
         ));

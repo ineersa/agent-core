@@ -481,6 +481,172 @@ final class CompactionStepResultHandlerTest extends TestCase
         self::assertCount(0, $result->effects, 'Auto compaction failure must not auto-advance');
     }
 
+    /**
+     * Thesis: auto trigger success resolves Compacting → Running.
+     *
+     * When auto-compaction succeeds from a Compacting state, the run must
+     * transition to Running so the dispatched AdvanceRun can continue the
+     * LLM turn normally.
+     */
+    public function testAutoTriggerSuccessResolvesCompactingToRunning(): void
+    {
+        $originalMessages = [
+            $this->userMsg('old'),
+            $this->assistantMsg('answer'),
+        ];
+        $state = $this->createCompactingState($originalMessages, activeStepId: 'step-1');
+
+        $summaryMsg = $this->userMsg('summary');
+        $compactedMessages = [$summaryMsg, ...$originalMessages];
+
+        $fakeService = $this->stubCompactionService($compactedMessages);
+        $handler = new CompactionStepResultHandler($fakeService, new EventFactory());
+
+        $result = $handler->handle(
+            new CompactionStepResult(
+                runId: 'run-1',
+                turnNo: 5,
+                stepId: 'step-1',
+                attempt: 1,
+                idempotencyKey: 'key-1',
+                summaryText: 'summary text',
+                error: null,
+                retainedTailMessages: array_map(static fn ($m) => $m->toArray(), $originalMessages),
+                messagesCompacted: 1,
+                messagesRetained: 2,
+                firstRetainedIndex: 0,
+                tokenEstimateBefore: 50000,
+                trigger: 'auto',
+                model: 'openai/gpt-4.1-mini',
+                modelOptions: [],
+            ),
+            $state,
+        );
+
+        self::assertNotNull($result->nextState);
+        self::assertSame(RunStatus::Running, $result->nextState->status,
+            'Auto trigger success must resolve Compacting to Running');
+        self::assertNull($result->nextState->activeStepId);
+        self::assertCount(1, $result->effects);
+        self::assertInstanceOf(AdvanceRun::class, $result->effects[0]);
+    }
+
+    /**
+     * Thesis: manual trigger success resolves Compacting → Completed.
+     *
+     * Manual /compact is a terminal operation — the user must explicitly
+     * follow up or continue.  The run should return to Completed.
+     */
+    public function testManualTriggerSuccessResolvesCompactingToCompleted(): void
+    {
+        $originalMessages = [
+            $this->userMsg('old'),
+            $this->assistantMsg('answer'),
+        ];
+        $state = $this->createCompactingState($originalMessages, activeStepId: 'step-1');
+
+        $summaryMsg = $this->userMsg('summary');
+        $compactedMessages = [$summaryMsg, ...$originalMessages];
+
+        $fakeService = $this->stubCompactionService($compactedMessages);
+        $handler = new CompactionStepResultHandler($fakeService, new EventFactory());
+
+        $result = $handler->handle(
+            new CompactionStepResult(
+                runId: 'run-1',
+                turnNo: 5,
+                stepId: 'step-1',
+                attempt: 1,
+                idempotencyKey: 'key-1',
+                summaryText: 'summary text',
+                error: null,
+                retainedTailMessages: array_map(static fn ($m) => $m->toArray(), $originalMessages),
+                messagesCompacted: 1,
+                messagesRetained: 2,
+                firstRetainedIndex: 0,
+                tokenEstimateBefore: 50000,
+                trigger: 'manual',
+                model: 'openai/gpt-4.1-mini',
+                modelOptions: [],
+            ),
+            $state,
+        );
+
+        self::assertNotNull($result->nextState);
+        self::assertSame(RunStatus::Completed, $result->nextState->status,
+            'Manual trigger success must resolve Compacting to Completed');
+        self::assertNull($result->nextState->activeStepId);
+        self::assertCount(0, $result->effects,
+            'Manual trigger must not dispatch AdvanceRun');
+    }
+
+    /**
+     * Thesis: auto trigger failure resolves Compacting → Running.
+     *
+     * When auto-compaction fails (model_error/empty_summary) from a
+     * Compacting state, the run should return to Running so the stalled
+     * turn can attempt the LLM step without compaction.  The pre-LLM
+     * guard's turn-level dedup prevents immediate re-fire.
+     */
+    public function testAutoTriggerFailureResolvesCompactingToRunning(): void
+    {
+        $state = $this->createCompactingState([
+            $this->userMsg('q'),
+            $this->assistantMsg('a'),
+        ], activeStepId: 'step-1');
+
+        $handler = new CompactionStepResultHandler($this->createNoOpStub(), new EventFactory());
+
+        $result = $handler->handle(
+            new CompactionStepResult(
+                runId: 'run-1',
+                turnNo: 5,
+                stepId: 'step-1',
+                attempt: 1,
+                idempotencyKey: 'key-1',
+                summaryText: null,
+                error: ['type' => 'HttpException', 'message' => 'timeout'],
+                retainedTailMessages: [],
+                messagesCompacted: 0,
+                messagesRetained: 0,
+                firstRetainedIndex: 0,
+                tokenEstimateBefore: 50000,
+                trigger: 'auto',
+                model: 'openai/gpt-4.1-mini',
+                modelOptions: [],
+            ),
+            $state,
+        );
+
+        self::assertNotNull($result->nextState);
+        self::assertSame(RunStatus::Running, $result->nextState->status,
+            'Auto trigger failure must resolve Compacting to Running');
+        self::assertNull($result->nextState->activeStepId);
+    }
+
+    /**
+     * Create a RunState with Compacting status for testing status resolution.
+     *
+     * @param list<AgentMessage> $messages
+     */
+    private function createCompactingState(array $messages, string $activeStepId): RunState
+    {
+        return new RunState(
+            runId: 'run-1',
+            status: RunStatus::Compacting,
+            version: 10,
+            turnNo: 5,
+            lastSeq: 20,
+            isStreaming: false,
+            streamingMessage: null,
+            pendingToolCalls: [],
+            errorMessage: null,
+            messages: $messages,
+            activeStepId: $activeStepId,
+            retryableFailure: false,
+        );
+    }
+
     // ── helpers ──
 
     /**
