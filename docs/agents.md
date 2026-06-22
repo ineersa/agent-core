@@ -1,6 +1,6 @@
 # Agent Definitions
 
-Agent definitions configure specialized child agents (`scout`, `reviewer`, `researcher`, `worker`, and custom agents). Each definition lives in a Markdown file with YAML frontmatter.
+Agent definitions configure named child-agent roles for your project or user environment. For example, you can define agents named `scout`, `reviewer`, `researcher`, `worker`, or any custom name. Each definition lives in a Markdown file with YAML frontmatter.
 
 **This is a discovery/catalog feature only.** Agent launch, runtime execution, TUI controls, artifacts, and background/foreground orchestration are NOT implemented yet. This document covers the definition format, discovery, and catalog.
 

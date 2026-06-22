@@ -309,8 +309,9 @@ prompts: []
 # Agent definitions
 # ---------------------------------------------------------------------------
 #
-# Agent definitions configure specialised child agents (scout, reviewer,
-# researcher, worker, and custom agents). Each definition is a Markdown file
+# Agent definitions configure named child-agent roles for your project or user
+# environment. For example, you can define agents named scout, reviewer,
+# researcher, worker, or any custom name. Each definition is a Markdown file
 # with YAML frontmatter discovered from the locations below in deterministic
 # order (higher-numbered layers override lower-numbered by name).
 #
