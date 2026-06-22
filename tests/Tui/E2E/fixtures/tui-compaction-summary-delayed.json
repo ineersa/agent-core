@@ -1,0 +1,21 @@
+{
+    "$schema": "TUI E2E delayed compaction summary fixture — allows Escape/cancel to be sent during compaction",
+    "model": "llama_cpp_test/test",
+    "provider_id": "llama_cpp_test",
+    "reasoning": "off",
+    "response_delay_ms": 3000,
+    "fixture_source": "synthetic",
+    "synthetic_reason": "Delayed summary fixture for TUI E2E compaction cancel test. The 3s delay keeps the compaction in-flight so Escape can be sent during Compacting state.",
+    "deltas": [
+        {
+            "type": "text",
+            "content": "Context checkpoint: The conversation covered various topics about software development."
+        }
+    ],
+    "usage": {
+        "input_tokens": 300,
+        "output_tokens": 14,
+        "total_tokens": 314
+    },
+    "stop_reason": "stop"
+}

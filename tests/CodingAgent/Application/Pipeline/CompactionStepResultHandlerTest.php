@@ -1171,6 +1171,210 @@ final class CompactionStepResultHandlerTest extends TestCase
         };
     }
 
+    // ── ineffective compaction detection ─────────────────────────────────
+
+    /**
+     * Thesis: when the compaction service builds compacted messages but
+     * the token estimate after compaction is >= the estimate before,
+     * the handler must emit context_compaction_failed with reason
+     * ineffective_compaction instead of context_compacted.
+     *
+     * Session 13 evidence: two auto compactions produced zero token
+     * reduction (27316→27464 and 27528→27528) but the handler
+     * unconditionally replaced messages and emitted context_compacted,
+     * creating user-visible "Conversation compacted" for a useless
+     * compaction.
+     *
+     * RED on HEAD — success path emits context_compacted unconditionally.
+     */
+    public function testIneffectiveCompactionEqualTokenEstimatesEmitsFailed(): void
+    {
+        $originalMessages = [
+            $this->userMsg('old question'),
+            $this->assistantMsg('old answer'),
+        ];
+        $state = $this->createRunState($originalMessages, 'step-1', turnNo: 5);
+
+        $summaryMsg = $this->userMsg('summary text');
+        $retained = [$this->userMsg('recent'), $this->assistantMsg('recent answer')];
+        $compactedMessages = [$summaryMsg, ...$retained];
+
+        // tokenEstimateAfter (100) >= tokenEstimateBefore (100) → ineffective.
+        $fakeService = $this->stubCompactionServiceWithEstimates(
+            compactedMessages: $compactedMessages,
+            tokenEstimateBefore: 100,
+            tokenEstimateAfter: 100,
+        );
+
+        $handler = new CompactionStepResultHandler($fakeService, new EventFactory());
+
+        $result = $handler->handle(
+            new CompactionStepResult(
+                runId: 'run-1',
+                turnNo: 5,
+                stepId: 'step-1',
+                attempt: 1,
+                idempotencyKey: 'key-ineff',
+                summaryText: 'summary text',
+                error: null,
+                retainedTailMessages: array_map(static fn ($m) => $m->toArray(), $retained),
+                messagesCompacted: 2,
+                messagesRetained: 2,
+                firstRetainedIndex: 0,
+                tokenEstimateBefore: 100,
+                trigger: 'auto',
+                model: 'openai/gpt-4.1-mini',
+                modelOptions: ['thinking_level' => 'low'],
+            ),
+            $state,
+        );
+
+        // Assert: emits context_compaction_failed, NOT context_compacted.
+        self::assertNotNull($result->nextState);
+        self::assertGreaterThanOrEqual(1, \count($result->events));
+        self::assertSame(
+            RunEventTypeEnum::ContextCompactionFailed->value,
+            $result->events[0]->type,
+            'Ineffective compaction must emit context_compaction_failed, not context_compacted.',
+        );
+        self::assertSame(
+            'ineffective_compaction',
+            $result->events[0]->payload['reason'] ?? null,
+            'Failure reason must be ineffective_compaction.',
+        );
+        self::assertFalse(
+            $result->events[0]->payload['messages_replaced'] ?? true,
+            'Messages must NOT be replaced when compaction is ineffective.',
+        );
+        self::assertArrayHasKey(
+            'estimated_tokens_before',
+            $result->events[0]->payload,
+            'Payload must include token estimate before for diagnostics.',
+        );
+        self::assertArrayHasKey(
+            'estimated_tokens_after',
+            $result->events[0]->payload,
+            'Payload must include token estimate after for diagnostics.',
+        );
+
+        // Messages must be preserved (same count as original).
+        self::assertCount(\count($originalMessages), $result->nextState->messages);
+    }
+
+    /**
+     * Thesis: when tokenEstimateAfter > tokenEstimateBefore (compaction
+     * INCREASED the estimate), emit context_compaction_failed.  Even a
+     * single token increase is a failed compaction — summary overhead
+     * exceeded the savings.
+     */
+    public function testIneffectiveCompactionHigherTokenEstimateEmitsFailed(): void
+    {
+        $originalMessages = [
+            $this->userMsg('hi'),
+            $this->assistantMsg('hello'),
+            $this->userMsg('question'),
+            $this->assistantMsg('answer'),
+        ];
+        $state = $this->createRunState($originalMessages, 'step-1', turnNo: 5);
+
+        $summaryMsg = $this->userMsg('summary');
+        $retained = [$this->userMsg('recent'), $this->assistantMsg('recent answer')];
+        $compactedMessages = [$summaryMsg, ...$retained];
+
+        // tokenEstimateAfter (51000) > tokenEstimateBefore (50000) → ineffective.
+        $fakeService = $this->stubCompactionServiceWithEstimates(
+            compactedMessages: $compactedMessages,
+            tokenEstimateBefore: 50000,
+            tokenEstimateAfter: 51000,
+        );
+
+        $handler = new CompactionStepResultHandler($fakeService, new EventFactory());
+
+        $result = $handler->handle(
+            new CompactionStepResult(
+                runId: 'run-1',
+                turnNo: 5,
+                stepId: 'step-1',
+                attempt: 1,
+                idempotencyKey: 'key-ineff-worse',
+                summaryText: 'summary',
+                error: null,
+                retainedTailMessages: array_map(static fn ($m) => $m->toArray(), $retained),
+                messagesCompacted: 2,
+                messagesRetained: 2,
+                firstRetainedIndex: 0,
+                tokenEstimateBefore: 50000,
+                trigger: 'auto',
+                model: 'openai/gpt-4.1-mini',
+                modelOptions: ['thinking_level' => 'low'],
+            ),
+            $state,
+        );
+
+        self::assertNotNull($result->nextState);
+        self::assertGreaterThanOrEqual(1, \count($result->events));
+        self::assertSame(
+            RunEventTypeEnum::ContextCompactionFailed->value,
+            $result->events[0]->type,
+            'Compaction with increased estimate must emit context_compaction_failed.',
+        );
+        self::assertSame(
+            'ineffective_compaction',
+            $result->events[0]->payload['reason'] ?? null,
+        );
+        self::assertFalse(
+            $result->events[0]->payload['messages_replaced'] ?? true,
+        );
+        // Messages preserved.
+        self::assertCount(\count($originalMessages), $result->nextState->messages);
+    }
+
+    /**
+     * Create a stub that returns specific token estimates from buildCompactedMessages.
+     *
+     * @param list<AgentMessage> $compactedMessages
+     */
+    private function stubCompactionServiceWithEstimates(
+        array $compactedMessages,
+        int $tokenEstimateBefore,
+        int $tokenEstimateAfter,
+    ): CompactionServiceInterface {
+        return new class($compactedMessages, $tokenEstimateBefore, $tokenEstimateAfter) implements CompactionServiceInterface {
+            /**
+             * @param list<AgentMessage> $compacted
+             */
+            public function __construct(
+                private array $compacted,
+                private int $before,
+                private int $after,
+            ) {}
+
+            public function prepare(array $messages): CompactionPrepareResult
+            {
+                throw new \LogicException('Not expected in this test.');
+            }
+
+            public function buildSummarizationMessages(CompactionPrepareResult $result, ?string $customInstructions): array
+            {
+                throw new \LogicException('Not expected in this test.');
+            }
+
+            public function buildCompactedMessages(string $summaryText, CompactionPrepareResult $result): CompactResult
+            {
+                return new CompactResult(
+                    summaryText: $summaryText,
+                    summaryMessage: $this->compacted[0] ?? new AgentMessage('assistant', $summaryText),
+                    compactedMessages: $this->compacted,
+                    tokenEstimateBefore: $this->before,
+                    tokenEstimateAfter: $this->after,
+                    messagesCompacted: 1,
+                    messagesRetained: \count($this->compacted) - 1,
+                    firstRetainedIndex: 0,
+                );
+            }
+        };
+    }
+
     private function userMsg(string $text): AgentMessage
     {
         return new AgentMessage('user', [['type' => 'text', 'text' => $text]]);
