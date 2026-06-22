@@ -139,17 +139,17 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
             return $context;
         }
 
-        // Resolve effective context tokens = latest provider input/prompt
-        // tokens + estimated delta for messages appended after that
-        // measurement (assistant output, tool results, user messages).
-        // No provider measurement → no auto-compaction.  The text-only
-        // estimator is used ONLY for the post-measurement delta, never
-        // as the whole trigger baseline.
+        // Resolve context token count from latest provider measurement.
+        // No provider measurement → no auto-compaction (the provider has
+        // not yet measured this run's context).  The CompactionTokenEstimator
+        // is NOT used as the trigger baseline — it undercounts real
+        // provider context by omitting tool schemas, JSON envelope,
+        // and provider-specific overhead.
         if (null === $runState) {
             return $context;
         }
 
-        $effectiveTokens = $this->providerUsageResolver->getEffectiveContextTokens($runId, $runState->messages);
+        $effectiveTokens = $this->providerUsageResolver->getLatestInputTokens($runId);
 
         if (null === $effectiveTokens || $effectiveTokens <= $runtimeSettings->compactAfterTokens) {
             return $context;
