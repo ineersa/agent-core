@@ -887,6 +887,42 @@ final class AutoCompactionHookSubscriberTest extends TestCase
     }
 
     /**
+     * Thesis: commits containing AgentCommandApplied must NOT dispatch
+     * auto-compaction, even when provider usage exceeds threshold.
+     *
+     * Mirror of testSkipsWhenAgentCommandQueuedEventPresent for the
+     * applied side of the user-command lifecycle.  AgentCommandApplied
+     * commits have effectsCount=0 but may schedule AdvanceRun via
+     * postCommit callbacks; dispatching auto-compaction here would
+     * race the pending command processing (session 9 class).
+     */
+    public function testSkipsWhenAgentCommandAppliedEventPresent(): void
+    {
+        $this->modelResolver->method('getActiveModel')->willReturn(null);
+
+        $runState = $this->createRunState([
+            $this->makeTextMessage('user', 'Hello'),
+        ]);
+        $this->runStore->method('get')->willReturn($runState);
+
+        // Provider usage exceeds threshold — the hook WOULD dispatch
+        // auto-compaction if not for the AgentCommandApplied guard.
+        $this->eventStore->method('allFor')
+            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]); // 12000 > 11000
+
+        $context = $this->createHookContext(
+            eventTypes: [RunEventTypeEnum::AgentCommandApplied->value],
+            effectsCount: 0,
+        );
+        $this->subscriber->handleAfterTurnCommit($context);
+
+        self::assertCount(0, $this->commandBus->messages,
+            'AgentCommandApplied commit must NOT dispatch CompactRun '
+            .'even when provider usage exceeds threshold (effectsCount=0). '
+            .'The pending follow_up/steer command must not be raced by compaction.');
+    }
+
+    /**
      * Thesis: when the compaction preparation would summarize ONLY prior
      * compact_summary messages (no fresh non-summary conversation), the
      * auto-compaction hook must NOT dispatch CompactRun.
@@ -1066,5 +1102,32 @@ final class AutoCompactionHookSubscriberTest extends TestCase
 
         self::assertCount(0, $this->commandBus->messages,
             'Auto compaction must silently skip when preparation is not ready.');
+    }
+
+    /**
+     * Thesis: when RunState is absent from the store, the auto-compaction
+     * hook must NOT dispatch CompactRun and must NOT fatal.
+     *
+     * Under normal operation RunState always exists for runs processed
+     * by after-turn hooks, but this is defensive against concurrent
+     * store eviction, corruption, or edge cases where the hook fires
+     * for a run whose state has been removed.
+     */
+    public function testSkipsWhenRunStateMissingBeforePreparation(): void
+    {
+        $this->modelResolver->method('getActiveModel')->willReturn(null);
+
+        // RunState absent: no stubbed return from runStore->get()
+        // Under #[AllowMockObjectsWithoutExpectations] this returns null.
+
+        $this->eventStore->method('allFor')
+            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]); // 12000 > 11000
+
+        $context = $this->createHookContext();
+        $this->subscriber->handleAfterTurnCommit($context);
+
+        self::assertCount(0, $this->commandBus->messages,
+            'Must skip without fatal when RunState is missing from store '
+            .'— null $runState must not dereference in prepare().');
     }
 }

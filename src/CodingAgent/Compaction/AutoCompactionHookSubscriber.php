@@ -216,6 +216,12 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
         // (too_few_messages, below_keep_recent_tokens, no_boundary,
         // no_safe_boundary) are also silently skipped — the hook
         // should not emit visible failures for compile-time skips.
+        // If RunState is absent (unlikely but defensive), skip — we
+        // cannot inspect messages to prepare compaction boundaries.
+        if (null === $runState) {
+            return $context;
+        }
+
         $prepareResult = $this->compactionService->prepare($runState->messages);
 
         if (!$prepareResult->isReady()) {
