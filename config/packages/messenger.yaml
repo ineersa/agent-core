@@ -38,6 +38,9 @@
 # run_control transport uses PhpSerializer because StartRun contains complex
 # objects (StartRunPayload with AgentMessage[] and RunMetadata) that would
 # not round-trip correctly through the default Symfony Serializer.
+
+parameters:
+    env(HATFIELD_MCP_TRANSPORT_DSN): 'in-memory://'
 # llm and tool transports use the default Symfony Serializer since
 # their messages contain only scalar/array properties.
 
