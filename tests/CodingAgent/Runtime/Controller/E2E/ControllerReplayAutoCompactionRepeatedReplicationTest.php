@@ -78,12 +78,12 @@ YAML;
                 'provider_id' => 'llama_cpp',
                 'reasoning' => 'off',
                 'deltas' => [
-                    ['type' => 'text', 'content' => 'Automated testing catches bugs early by running tests automatically on every code change.'],
+                    ['type' => 'text', 'content' => 'Automated testing in software development is a critical quality assurance practice that involves using specialized tools and frameworks to execute pre-defined test cases automatically, without requiring manual human intervention. This approach enables development teams to run comprehensive test suites on every code change, providing rapid feedback on regressions and ensuring that new modifications do not break existing functionality. Continuous integration pipelines commonly integrate automated unit tests, integration tests, and end-to-end tests to validate the system at multiple levels of abstraction simultaneously.'],
                 ],
                 'usage' => [
                     'input_tokens' => 100,
-                    'output_tokens' => 22,
-                    'total_tokens' => 122,
+                    'output_tokens' => 80,
+                    'total_tokens' => 180,
                 ],
                 'stop_reason' => 'stop',
             ],
@@ -99,12 +99,12 @@ YAML;
                 'provider_id' => 'llama_cpp',
                 'reasoning' => 'off',
                 'deltas' => [
-                    ['type' => 'text', 'content' => 'Manual testing relies on human effort while automated testing uses scripts for consistent verification across runs.'],
+                    ['type' => 'text', 'content' => 'Manual testing involves human testers executing test cases step by step, observing the software behavior directly, and documenting their findings. While this approach allows for intuitive exploration and ad-hoc testing that can uncover unexpected edge cases, it is inherently slow, inconsistent across different testers, and cannot scale to support the rapid iteration cycles demanded by modern continuous delivery pipelines. Automated testing complements manual testing by handling repetitive regression checks and data-driven validations that would be impractical for humans to perform repeatedly.'],
                 ],
                 'usage' => [
                     'input_tokens' => 5000,
-                    'output_tokens' => 25,
-                    'total_tokens' => 5025,
+                    'output_tokens' => 80,
+                    'total_tokens' => 5080,
                 ],
                 'stop_reason' => 'stop',
             ],
@@ -141,12 +141,12 @@ YAML;
                 'provider_id' => 'llama_cpp',
                 'reasoning' => 'off',
                 'deltas' => [
-                    ['type' => 'text', 'content' => 'Both automated and manual testing strategies complement each other in a mature quality process.'],
+                    ['type' => 'text', 'content' => 'Both automated and manual testing strategies complement each other in a mature quality process. Automated tests provide rapid, consistent feedback on regressions and functional correctness across every code change, while manual testing enables creative exploration, usability assessment, and the discovery of edge cases that scripted automated tests might miss. Organizations that invest in both approaches, integrating automated checks into their continuous integration pipeline while reserving manual testing for high-value exploratory and user experience work, achieve better overall software quality than those relying exclusively on either approach alone.'],
                 ],
                 'usage' => [
                     'input_tokens' => 5000,
-                    'output_tokens' => 20,
-                    'total_tokens' => 5020,
+                    'output_tokens' => 80,
+                    'total_tokens' => 5080,
                 ],
                 'stop_reason' => 'stop',
             ],
@@ -306,7 +306,7 @@ YAML;
         self::assertGreaterThanOrEqual(
             2,
             \count($autoCompactedSeqs),
-            "Session must have at least 2 auto context_compacted events (one per above-threshold turn).\n"
+            "Session must have at least 2 auto compaction terminal events (one per above-threshold turn).\n"
             . "Found: " . \count($autoCompactedSeqs) . "\n"
             . "On HEAD, compactionResolved permanently blocks the second auto-compaction.\n"
             . "Timeline:\n" . $timeline,
@@ -397,7 +397,11 @@ YAML;
     }
 
     /**
-     * Find all auto context_compacted event seqs (trigger=auto).
+     * Find all auto compaction terminal event seqs (trigger=auto).
+     *
+     * Includes both context_compacted AND context_compaction_failed
+     * — a failed auto-compaction (e.g. ineffective_compaction) is still
+     * a terminal outcome that must not produce ghost LLM steps.
      *
      * @param list<array<string, mixed>> $coreEvents
      *
@@ -406,8 +410,9 @@ YAML;
     private function findAutoCompactedSeqs(array $coreEvents): array
     {
         $seqs = [];
+        $terminalTypes = ['context_compacted', 'context_compaction_failed'];
         foreach ($coreEvents as $evt) {
-            if ('context_compacted' !== ($evt['type'] ?? '')) {
+            if (!\in_array($evt['type'] ?? '', $terminalTypes, true)) {
                 continue;
             }
             $trigger = $evt['payload']['trigger'] ?? '';
@@ -421,7 +426,8 @@ YAML;
 
     /**
      * Assert no ghost turn_advanced / leaf_set / llm_step_* events
-     * occur after each auto context_compacted terminal.
+     * occur after each auto compaction terminal (context_compacted
+     * or context_compaction_failed with trigger=auto).
      *
      * @param list<array<string, mixed>> $coreEvents
      * @param list<int>                  $autoCompactedSeqs

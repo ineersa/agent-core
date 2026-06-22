@@ -302,6 +302,84 @@ final class CompactionStepResultHandler implements RunMessageHandler
             $preparation,
         );
 
+        // Guard: ineffective compaction — the token estimate did not
+        // decrease (or even increased).  The summarization model
+        // produced a summary whose overhead exceeded the savings.
+        //
+        // Session 13 evidence: two auto compactions produced zero
+        // token reduction (27316→27464 and 27528→27528) — the handler
+        // replaced messages and emitted context_compacted for a useless
+        // compaction.
+        //
+        // Emit context_compaction_failed with reason ineffective_compaction,
+        // preserve original messages, and include before/after estimates
+        // for diagnostics.  Same continuation/cancelling policy as other
+        // failure paths.
+        if ($compactResult->tokenEstimateAfter >= $compactResult->tokenEstimateBefore) {
+            $this->logger->info('Compaction was ineffective — token estimate did not decrease.', [
+                'session_id' => $runId,
+                'component' => 'compaction',
+                'event_type' => 'compaction.ineffective',
+                'run_id' => $runId,
+                'step_id' => $message->stepId(),
+                'estimated_tokens_before' => $compactResult->tokenEstimateBefore,
+                'estimated_tokens_after' => $compactResult->tokenEstimateAfter,
+                'messages_compacted' => $compactResult->messagesCompacted,
+                'messages_retained' => $compactResult->messagesRetained,
+            ]);
+
+            $ineffectiveFinalStatus = match (true) {
+                RunStatus::Cancelling === $state->status => RunStatus::Cancelled,
+                $message->continueAfterCompaction => RunStatus::Running,
+                default => RunStatus::Completed,
+            };
+
+            $ineffectiveEffects = [];
+            if (RunStatus::Cancelling !== $state->status && $message->continueAfterCompaction) {
+                $continueStepId = \sprintf('advance-%d', hrtime(true));
+                $ineffectiveEffects[] = new AdvanceRun(
+                    runId: $runId,
+                    turnNo: $state->turnNo,
+                    stepId: $continueStepId,
+                    attempt: 1,
+                    idempotencyKey: hash('sha256', \sprintf('%s|advance|%d|%s', $runId, $state->turnNo, $continueStepId)),
+                );
+            }
+
+            $ineffectiveSpecs = [[
+                'type' => RunEventTypeEnum::ContextCompactionFailed->value,
+                'payload' => [
+                    'reason' => 'ineffective_compaction',
+                    'message' => 'Compaction did not reduce context size — messages were preserved.',
+                    'messages_replaced' => false,
+                    'step_id' => $message->stepId(),
+                    'model' => $message->model,
+                    'thinking_level' => $message->modelOptions['thinking_level'] ?? null,
+                    'trigger' => $message->trigger,
+                    'continue_after_compaction' => $message->continueAfterCompaction,
+                    'estimated_tokens_before' => $compactResult->tokenEstimateBefore,
+                    'estimated_tokens_after' => $compactResult->tokenEstimateAfter,
+                    'messages_compacted' => $compactResult->messagesCompacted,
+                    'messages_retained' => $compactResult->messagesRetained,
+                ],
+            ]];
+
+            if (RunStatus::Cancelling === $state->status) {
+                $ineffectiveSpecs[] = [
+                    'type' => RunEventTypeEnum::AgentEnd->value,
+                    'payload' => ['reason' => 'cancelled'],
+                ];
+            }
+
+            $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $ineffectiveSpecs);
+
+            return new HandlerResult(
+                nextState: $this->incrementState($state, $events, clearActiveStepId: true, status: $ineffectiveFinalStatus),
+                events: $events,
+                effects: $ineffectiveEffects,
+            );
+        }
+
         // Serialize compacted messages to array representation for the
         // context_compacted payload. The replay path reconstructs
         // AgentMessage instances from toArray() output via AgentMessage::fromPayload().

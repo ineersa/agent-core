@@ -44,7 +44,17 @@ final class CancelListener implements TuiListenerRegistrar
         $boundary = $this->boundary;
 
         $context->tui->addListener(static function (CancelEvent $event) use ($client, $state, $screen, $logger, $boundary): void {
-            if ($state->activity->isActive() && null !== $state->handle) {
+            // Active run (Starting/Running/WaitingHuman/Cancelling) — send cancel.
+            // Compacting: auto-compaction maintenance is in flight — also
+            // send cancel so the user can abort a stuck compaction (session 13).
+            //
+            // Compacting.isActive() returns false (SubmitListener routes
+            // user input as follow_up, not steer, to avoid racing compaction).
+            // CancelListener must still send cancel during Compacting because
+            // CancelListener's own guard checks isActive() — we special-case
+            // Compacting here rather than making it report as isActive.
+            if (($state->activity->isActive() || RunActivityStateEnum::Compacting === $state->activity)
+                && null !== $state->handle) {
                 $logger->info('ESC cancel requested', [
                     'run_id' => $state->handle->runId,
                     'activity' => $state->activity->value,

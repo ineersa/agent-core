@@ -29,7 +29,16 @@ final class ActivityStateMachine
     public static function transition(RunActivityStateEnum $current, RuntimeEvent $event): RunActivityStateEnum
     {
         // Terminal states are never overridden by later events.
-        if ($current->isTerminal()) {
+        //
+        // EXCEPTION: CompactionStarted must transition Completed → Compacting
+        // so Escape can cancel an in-flight maintenance compaction (session 13).
+        // After the after-turn hook dispatches auto-compaction, the
+        // compaction.started event arrives while the activity is still
+        // Completed.  Without this exception, Completed.isTerminal() blocks
+        // the transition and CancelListener clears the editor instead of
+        // calling cancel.
+        if ($current->isTerminal()
+            && RuntimeEventTypeEnum::CompactionStarted->value !== $event->type) {
             return $current;
         }
 
@@ -56,6 +65,13 @@ final class ActivityStateMachine
                 RuntimeEventTypeEnum::RunFailed->value,
                 RuntimeEventTypeEnum::TurnFailed->value,
                 RuntimeEventTypeEnum::AssistantMessageFailed->value => RunActivityStateEnum::Failed,
+                // Compaction events during cancellation: the
+                // sticky-gate treats them like mid-turn deltas
+                // and stays Cancelling.  The runtime handler
+                // resolves Cancelling→Cancelled when the result
+                // arrives.
+                RuntimeEventTypeEnum::CompactionCompleted->value,
+                RuntimeEventTypeEnum::CompactionFailed->value => RunActivityStateEnum::Cancelling,
                 // All other events (mid-turn streaming deltas, TurnStarted,
                 // tool-call deltas, etc.) belong to the dying run and must
                 // not regress to Running.
@@ -103,6 +119,13 @@ final class ActivityStateMachine
 
             RuntimeEventTypeEnum::RunCancelled->value,
             RuntimeEventTypeEnum::TurnCancelled->value => RunActivityStateEnum::Cancelled,
+
+            // Compaction events: transition from Completed/idle to
+            // Compacting so CancelListener can send cancel.  After
+            // compaction resolves, return to Completed.
+            RuntimeEventTypeEnum::CompactionStarted->value => RunActivityStateEnum::Compacting,
+            RuntimeEventTypeEnum::CompactionCompleted->value,
+            RuntimeEventTypeEnum::CompactionFailed->value => RunActivityStateEnum::Completed,
 
             default => $current, // No transition for unknown/streaming/internal events
         };

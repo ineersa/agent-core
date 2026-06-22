@@ -71,12 +71,12 @@ YAML;
                 'provider_id' => 'llama_cpp',
                 'reasoning' => 'off',
                 'deltas' => [
-                    ['type' => 'text', 'content' => 'Automated testing helps catch bugs early in the development cycle by running tests automatically whenever code changes.'],
+                    ['type' => 'text', 'content' => 'Automated testing in software development is a critical quality assurance practice that involves using specialized tools and frameworks to execute pre-defined test cases automatically, without requiring manual human intervention. This approach enables development teams to run comprehensive test suites on every code change, providing rapid feedback on regressions and ensuring that new modifications do not break existing functionality. Continuous integration pipelines commonly integrate automated unit tests, integration tests, and end-to-end tests to validate the system at multiple levels of abstraction simultaneously, significantly reducing the time between writing code and discovering defects compared to traditional manual testing workflows.'],
                 ],
                 'usage' => [
                     'input_tokens' => 100,
-                    'output_tokens' => 22,
-                    'total_tokens' => 122,
+                    'output_tokens' => 80,
+                    'total_tokens' => 180,
                 ],
                 'stop_reason' => 'stop',
             ],
@@ -91,12 +91,12 @@ YAML;
                 'provider_id' => 'llama_cpp',
                 'reasoning' => 'off',
                 'deltas' => [
-                    ['type' => 'text', 'content' => 'Manual testing relies on human effort to find defects, while automated testing uses scripts and tools to verify behavior consistently across runs.'],
+                    ['type' => 'text', 'content' => 'Manual testing involves human testers executing test cases step by step, observing the software behavior directly, and documenting their findings. While this approach allows for intuitive exploration and ad-hoc testing that can uncover unexpected edge cases, it is inherently slow, inconsistent across different testers, and cannot scale to support the rapid iteration cycles demanded by modern continuous delivery pipelines. Automated testing complements manual testing by handling repetitive regression checks and data-driven validations that would be impractical for humans to perform repeatedly, allowing manual testers to focus their expertise on exploratory testing, usability evaluation, and complex scenarios that require human judgment and contextual understanding.'],
                 ],
                 'usage' => [
                     'input_tokens' => 5000,
-                    'output_tokens' => 25,
-                    'total_tokens' => 5025,
+                    'output_tokens' => 80,
+                    'total_tokens' => 5080,
                 ],
                 'stop_reason' => 'stop',
             ],

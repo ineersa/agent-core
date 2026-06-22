@@ -313,6 +313,15 @@ final class SubmitListener implements TuiListenerRegistrar
                 if (RunActivityStateEnum::Cancelling === $state->activity) {
                     $state->queuedFollowUp = $text;
                     $screen->setWorkingMessage('Message queued — waiting for cancellation to complete...');
+                } elseif (RunActivityStateEnum::Compacting === $state->activity) {
+                    // Compacting: auto-compaction maintenance is in flight.
+                    // Sending follow_up would race with the compaction
+                    // (session 9 pattern).  Queue the message and dispatch
+                    // it as follow_up after CompactionCompleted/CompactionFailed
+                    // arrives.  The poller auto-dispatches queued follow-ups
+                    // on the same path as cancellation completion.
+                    $state->queuedFollowUp = $text;
+                    $screen->setWorkingMessage('Message queued — waiting for compaction to complete...');
                 } elseif ($state->activity->isActive()) {
                     $client->send(
                         $state->handle->runId,

@@ -264,16 +264,16 @@ final class TuiAutoCompactionCancelE2eTest extends TestCase
         $fixture0 = $this->projectRoot . '/tests/Tui/E2E/fixtures/tui-startup-prompt-response.json';
         $fixture1 = $this->projectRoot . '/tests/Tui/E2E/fixtures/tui-compaction-summary-delayed.json';
 
-        $fixturePath = '';
+        $fixtureChain = '';
         if (\is_file($fixture0)) {
-            $fixturePath = \escapeshellarg($fixture0);
+            $fixtureChain = $fixture0;
         }
         if (\is_file($fixture1)) {
-            $fixturePath .= ';' . \escapeshellarg($fixture1);
+            $fixtureChain = ('' !== $fixtureChain ? $fixtureChain . ';' : '') . $fixture1;
         }
 
-        $fixtureEnv = ('' !== $fixturePath)
-            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH=' . $fixturePath . ' '
+        $fixtureEnv = ('' !== $fixtureChain)
+            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH=' . \escapeshellarg($fixtureChain) . ' '
             : '';
 
         $php = \PHP_BINARY;

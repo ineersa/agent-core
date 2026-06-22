@@ -376,9 +376,13 @@ final class ActivityStateMachineTest extends TestCase
     }
 
     /**
-     * CompactionStarted from Running stays Running (already active).
+     * CompactionStarted from Running transitions to Compacting.
+     * Pre-LLM guard compaction starts while the run is Running —
+     * activity transitions to Compacting so Escape can cancel if
+     * the compaction hangs.  Compacting.isActive() is false so
+     * SubmitListener queues user messages instead of sending steer.
      */
-    public function testCompactionStartedFromRunningStaysRunning(): void
+    public function testCompactionStartedFromRunningTransitionsToCompacting(): void
     {
         $event = new RuntimeEvent(
             type: RuntimeEventTypeEnum::CompactionStarted->value,
@@ -386,7 +390,7 @@ final class ActivityStateMachineTest extends TestCase
             seq: 1,
         );
         $result = ActivityStateMachine::transition(RunActivityStateEnum::Running, $event);
-        $this->assertSame(RunActivityStateEnum::Running, $result);
+        $this->assertSame(RunActivityStateEnum::Compacting, $result);
     }
 
     /**
