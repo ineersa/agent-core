@@ -386,13 +386,17 @@ Three files added, one modified:
 **UX overview**:
 
 - `/agent-poc` creates nested child files, sets a compact status entry in the main
-  TUI status panel: `Agents: scout-poc running · 4 events · /agent-poc`
-- A compact overlay opens BELOW the editor (via `insertOverlayAfterEditor`, same
-  position as completion menus) — the editor **keeps focus** so user can immediately
-  type `/agent-poc tick` or `/agent-poc close`.
-- The overlay is a small control panel (list + selected detail + controls), not a
-  full transcript dump.
-- `/agent-poc close` removes the overlay and clears the compact status entry.
+  TUI status panel: `Agents: scout-poc running · 4 events · open /agent-poc`
+- A **modal** control overlay opens ABOVE the editor (via `insertOverlayBeforeEditor`,
+  same position as QuestionController overlays).  The editor **loses focus** — the
+  overlay is a focused control plane navigated with arrow keys + Enter/Esc.
+- The overlay includes: header, agent list row with status, selected-child detail
+  (latest event from `events.jsonl`), path refs, and a `SelectListWidget` with
+  controls: `tick / update`, `steer`, `cancel child`, `retrieve artifact`,
+  `close overlay`.
+- Arrow keys navigate; Enter selects; Esc (or close) dismisses the overlay.
+- Compact status stays visible in the main TUI after the overlay closes — it
+  only updates when child state changes (e.g. cancelled).
 
 **Step-by-step smoke test**:
 
@@ -412,39 +416,55 @@ Three files added, one modified:
 
 4. **Expected compact status** (in the status panel between transcript and editor):
    ```
-     Agents        scout-poc running · 4 events · /agent-poc
+     Agents        scout-poc running · 4 events · open /agent-poc
    ```
 
-5. **Expected overlay** (BELOW the editor, above the footer):
+5. **Expected overlay** (ABOVE the editor, modal-like, focus is on the control list):
    ```
-   ┌── AGENTS — session <id> ────────────────────────────┐
-   │                                                      │
-   │  scout-poc    running    4 events    background      │
-   │  Registry: .../artifacts/agents/registry.json        │
-   │  Events:   artifacts/agents/scout-poc/events.jsonl  │
-   │                                                      │
-   │  Latest: Scout POC child event #1: Exploring...  │
-   │                                                      │
-   │  tick │ close                                        │
-   └──────────────────────────────────────────────────────┘
+   ┌─ AGENTS — session <shortId> ─┐
+   │  ▶ scout-poc  running  4 events  background
+   ├ Selected: scout-poc ────────────────────────
+   │  Latest: Scout POC child event #1: Exploring codebase structure...
+   │  Events:  artifacts/agents/scout-poc/events.jsonl
+   │
+   │  Controls ↑↓/Enter │ Esc to close
+   > tick / update      (4 events)                                ← focused
+     steer
+     cancel child
+     retrieve artifact
+     close overlay
    ```
 
-6. **Smoke editor focus**: Immediately after step 4, type:
-   ```
-   /agent-poc tick
-   ```
-   This MUST work — the editor still has focus. The overlay and status both update.
-   Event count increases to 5, status shows `· 5 events`, latest event shows
-   `Scout POC live update #5: New findings discovered...`.
+6. **Navigate and tick**: Use Down arrow to different controls. Press Enter on
+   `tick / update`. The overlay refreshes: event count → 5, latest event shows
+   `Scout POC live update #5`, compact status updates to `· 5 events`.
 
-7. **Repeat tick** a few times to verify live update simulation.
+7. **Test steer**: Navigate to `steer`, press Enter. Overlay refreshes with a
+   new `agent_control.steer` event in the child stream. Status updates.
 
-8. **Close the overlay**:
+8. **Test cancel child**: Navigate to `cancel child`, press Enter. Overlay
+   refreshes: child status now shows `cancelled`, compact status shows
+   `scout-poc cancelled · N events`. State file reflects cancelled.
+
+9. **Test retrieve artifact**: Navigate to `retrieve artifact`, press Enter.
+   Overlay refreshes. Check filesystem:
+   ```bash
+   cat .hatfield/sessions/<parent>/artifacts/agents/scout-poc/artifact-poc.json
+   # → JSON with artifact_id, type: findings, content
    ```
-   /agent-poc close
-   ```
-   Overlay disappears. The compact status line (`Agents: ...`) is cleared.
-   Editor area is restored and keeps focus.
+
+10. **Close the overlay**: Navigate to `close overlay`, press Enter (or press Esc).
+    Overlay disappears. **Compact status stays visible**:
+    ```
+      Agents        scout-poc cancelled · N events
+    ```
+    (Status only clears if you re-run `/agent-poc` and close.)
+
+11. **Re-open**: Run:
+    ```
+    /agent-poc
+    ```
+    Overlay re-opens reading current state from disk (cancelled status reflected).
 
 ### On-disk artifacts created
 
@@ -478,10 +498,12 @@ ls .hatfield/sessions/scout-poc/  # should error: No such file or directory
 - ✅ Live update routing: `/agent-poc tick` appends to child event stream, overlay + status refresh
 - ✅ No top-level child session directory
 - ✅ Normal session listing exclusion (child is not a top-level directory)
-- ✅ Compact status entry works: `Agents: scout-poc running · N events · /agent-poc` in status panel
-- ✅ Compact overlay works below editor without stealing focus
-- ✅ Overlay lifecycle: open (below editor, focus preserved), refresh, close, status cleared
-- ✅ Editor focus preserved: user can type `/agent-poc tick` immediately after overlay opens
+- ✅ Compact status entry works: `Agents: scout-poc running · N events · open /agent-poc` in status panel
+- ✅ Modal control overlay works as a focused SelectListWidget above the editor (QuestionController pattern)
+- ✅ Compact status and modal overlay are separate: status survives overlay close, updates on state changes
+- ✅ Overlay lifecycle: open (modal, focus stolen), navigate + interact via arrow keys/Enter/Esc, close keeps status
+- ✅ Agent control actions via SelectListWidget: tick (append event), steer (append steer event), cancel (mark cancelled), retrieve (write artifact), close (dismiss)
+- ✅ Keyboard navigation: arrow keys through controls, Enter to select, Esc to dismiss
 
 ### What the prototype does NOT cover (explicitly deferred)
 
