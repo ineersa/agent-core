@@ -110,6 +110,30 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
             return $context;
         }
 
+        // Guard: skip commits where there are unresolved tool calls.
+        // ToolCallResultHandler emits partial-batch commits (single
+        // tool_execution_end, no ToolBatchCommitted) when tool results
+        // arrive one at a time.  These commits have effectsCount=0,
+        // no ToolExecutionStart (emitted in a prior commit), and
+        // no ToolBatchCommitted (batch not yet complete).  Auto-compaction
+        // must NOT fire here — it dead-ends the turn mid-cycle.
+        //
+        // Check RunState::pendingToolCalls for false entries (unresolved).
+        // The ToolExecutionStart guard catches the batch-start commit;
+        // this guard catches the in-between partial commits.
+        //
+        // Fetch run state once here and reuse below for the in-flight
+        // and provider-usage guards — avoids a double fetch that would
+        // produce a stale-version mismatch in concurrent scenarios.
+        $runState = $this->runStore->get($runId);
+        if (null !== $runState) {
+            foreach ($runState->pendingToolCalls as $completed) {
+                if (true !== $completed) {
+                    return $context;
+                }
+            }
+        }
+
         // Guard: skip commits that contain tool_batch_committed.
         // ToolCallResultHandler schedules post-tool AdvanceRun as a
         // postCommit callback (not HandlerResult effects), so this
@@ -160,7 +184,6 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
         // Guard: skip when a compaction is already in flight.
         // activeStepId is set to e.g. 'compact-1234567890' by
         // CompactRunHandler before the lifecycle events are committed.
-        $runState = $this->runStore->get($runId);
         if (null !== $runState && null !== $runState->activeStepId && str_starts_with($runState->activeStepId, 'compact-')) {
             return $context;
         }
@@ -178,10 +201,6 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
         // is NOT used as the trigger baseline — it undercounts real
         // provider context by omitting tool schemas, JSON envelope,
         // and provider-specific overhead.
-        if (null === $runState) {
-            return $context;
-        }
-
         $effectiveTokens = $this->providerUsageResolver->getLatestEligibleInputTokens($runId);
 
         if (null === $effectiveTokens || $effectiveTokens <= $runtimeSettings->compactAfterTokens) {

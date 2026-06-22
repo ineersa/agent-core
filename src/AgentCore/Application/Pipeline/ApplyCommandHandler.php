@@ -78,6 +78,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         }
 
         if (RunStatus::Cancelling === $state->status
+            && CoreCommandKind::Cancel !== $message->kind
             && !$this->commandMailboxPolicy->isCancelSafeExtensionCommand($message->kind, $routedCommand->options)) {
             return $this->rejectCommand(
                 $state,
@@ -252,6 +253,40 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                     'reason' => 'Rejected because cancel command was accepted.',
                 ],
             ];
+        }
+
+        // Idempotent cancel: when cancellation is already in progress,
+        // accept the command without changing state (no version bump).
+        // Repeated cancel during Cancelling should not be rejected.
+        if (RunStatus::Cancelling === $state->status) {
+            $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, [[
+                'type' => RunEventTypeEnum::AgentCommandApplied->value,
+                'payload' => [
+                    'kind' => $message->kind,
+                    'idempotency_key' => $message->idempotencyKey(),
+                    'options' => [],
+                ],
+            ]]);
+
+            $noopState = new RunState(
+                runId: $state->runId,
+                status: $state->status,
+                version: $state->version + 1,
+                turnNo: $state->turnNo,
+                lastSeq: $state->lastSeq + \count($events),
+                isStreaming: $state->isStreaming,
+                streamingMessage: $state->streamingMessage,
+                pendingToolCalls: $state->pendingToolCalls,
+                errorMessage: $state->errorMessage,
+                messages: $state->messages,
+                activeStepId: $state->activeStepId,
+                retryableFailure: $state->retryableFailure,
+            );
+
+            return new HandlerResult(
+                nextState: $noopState,
+                events: $events,
+            );
         }
 
         $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);

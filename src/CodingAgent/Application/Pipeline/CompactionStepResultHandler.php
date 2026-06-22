@@ -144,9 +144,16 @@ final class CompactionStepResultHandler implements RunMessageHandler
             // a pending LLM turn (continueAfterCompaction, pre-LLM guard),
             // the run stays Running so the turn can proceed.  Maintenance
             // compaction (after-turn hook, manual) returns to terminal.
-            $errorFinalStatus = $message->continueAfterCompaction
-                ? RunStatus::Running
-                : RunStatus::Completed;
+            //
+            // PRESERVE Cancelling: if cancel was accepted during
+            // compaction, the incoming state is Cancelling and must not
+            // be overwritten.  The active step is cleared (no more work),
+            // so transition to Cancelled.
+            $errorFinalStatus = match (true) {
+                RunStatus::Cancelling === $state->status => RunStatus::Cancelled,
+                $message->continueAfterCompaction => RunStatus::Running,
+                default => RunStatus::Completed,
+            };
 
             return new HandlerResult(
                 nextState: $this->incrementState($state, $events, clearActiveStepId: true, status: $errorFinalStatus),
@@ -181,9 +188,12 @@ final class CompactionStepResultHandler implements RunMessageHandler
             ]]);
 
             // Resolve Compacting status: same policy as model_error path.
-            $emptyFinalStatus = $message->continueAfterCompaction
-                ? RunStatus::Running
-                : RunStatus::Completed;
+            // Preserve Cancelling → Cancelled when no more work remains.
+            $emptyFinalStatus = match (true) {
+                RunStatus::Cancelling === $state->status => RunStatus::Cancelled,
+                $message->continueAfterCompaction => RunStatus::Running,
+                default => RunStatus::Completed,
+            };
 
             return new HandlerResult(
                 nextState: $this->incrementState($state, $events, clearActiveStepId: true, status: $emptyFinalStatus),
