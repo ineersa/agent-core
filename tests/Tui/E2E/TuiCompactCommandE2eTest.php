@@ -261,9 +261,22 @@ final class TuiCompactCommandE2eTest extends TestCase
             usleep(500_000);
 
             // ── Phase 1: Submit prompt → fixture #1 response ──
+            //
+            // Use a long prompt (~500 chars) so the compact summary (with
+            // ~159-char XML wrapper overhead) is shorter than the original
+            // user message.  With a short prompt, the token-estimate-after
+            // would exceed the token-estimate-before and the ineffective-
+            // compaction guard (COMP-06) would emit compaction.failed.
             $this->tmux->sendKey($pane, 'C-u');
             usleep(100_000);
-            $prompt = 'Respond with exactly: OK.';
+            $prompt = 'Explain what automated testing is and why it is important '
+                .'for software quality.  Cover the relationship between unit '
+                .'tests, integration tests, end-to-end tests, and manual '
+                .'testing practices.  Include advantages and disadvantages '
+                .'of each approach.  Discuss how test automation improves '
+                .'developer productivity, reduces regression bugs, and '
+                .'enables continuous integration pipelines.  Answer with '
+                .'exactly: OK.';
             $this->tmux->sendLiteral($pane, $prompt);
             $this->tmux->sendKey($pane, 'Enter');
 
