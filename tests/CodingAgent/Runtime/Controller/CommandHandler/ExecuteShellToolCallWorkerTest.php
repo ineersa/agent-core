@@ -119,6 +119,51 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
     }
 
     /**
+     * Thesis: Shell commands with completeAfter=true (subsequent !cmd on
+     * a completed run) must produce [tool_exec_start, tool_exec_end, agent_end]
+     * in strict ascending seq order, just like standalone.
+     *
+     * Regression: async dispatch must not let the controller's sync AgentEnd
+     * write race ahead of the async worker's tool_exec events (issue #183).
+     */
+    public function testCompleteAfterWritesEventsInOrder(): void
+    {
+        $eventStore = $this->createEventStore();
+        $toolExecutor = $this->createToolExecutor('complete-after-output');
+
+        $worker = new ExecuteShellToolCallWorker($toolExecutor, $eventStore);
+        $worker(new ExecuteShellToolCall(
+            runId: 'run-complete-after',
+            toolCallId: 'sh_tc_3',
+            commandText: 'echo done',
+            standalone: false,
+            completeAfter: true,
+        ));
+
+        self::assertCount(3, $this->appendedEvents, 'completeAfter shell must produce 3 events.');
+
+        // Seq 1: tool_execution_start
+        self::assertSame(1, $this->appendedEvents[0]->seq);
+        self::assertSame(RunEventTypeEnum::ToolExecutionStart->value, $this->appendedEvents[0]->type);
+
+        // Seq 2: tool_execution_end
+        self::assertSame(2, $this->appendedEvents[1]->seq);
+        self::assertSame(RunEventTypeEnum::ToolExecutionEnd->value, $this->appendedEvents[1]->type);
+
+        // Seq 3: agent_end (final event)
+        self::assertSame(3, $this->appendedEvents[2]->seq);
+        self::assertSame(RunEventTypeEnum::AgentEnd->value, $this->appendedEvents[2]->type);
+        self::assertSame('completed', $this->appendedEvents[2]->payload['reason'] ?? null);
+
+        // AgentEnd must be the final lifecycle event.
+        self::assertSame(
+            RunEventTypeEnum::AgentEnd->value,
+            $this->appendedEvents[array_key_last($this->appendedEvents)]->type,
+            'AgentEnd must be the final event for completeAfter shell commands.',
+        );
+    }
+
+    /**
      * Creates an in-memory EventStore that collects appended events for assertion.
      */
     private function createEventStore(): EventStoreInterface

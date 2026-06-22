@@ -23,20 +23,28 @@ namespace Ineersa\AgentCore\Domain\Message;
 final readonly class ExecuteShellToolCall extends AbstractAgentBusMessage
 {
     /**
-     * @param string $runId       The run/session ID
-     * @param string $toolCallId  Unique tool-call identifier for idempotency and dedup
-     * @param string $commandText The shell command text to execute via bash
-     * @param bool   $standalone  when true, the worker owns the terminal AgentEnd
-     *                            event so that tool_exec_start/end and AgentEnd are
-     *                            written by a single process in guaranteed order —
-     *                            avoids the ordering race where AgentEnd appeared
-     *                            before tool_exec events (issue #183)
+     * @param string $runId         The run/session ID
+     * @param string $toolCallId    Unique tool-call identifier for idempotency and dedup
+     * @param string $commandText   The shell command text to execute via bash
+     * @param bool   $standalone    when true, the worker owns the terminal AgentEnd
+     *                              event so that tool_exec_start/end and AgentEnd are
+     *                              written by a single process in guaranteed order —
+     *                              avoids the ordering race where AgentEnd appeared
+     *                              before tool_exec events (issue #183).  Set by
+     *                              the standalone (first-input) shellExecute() path.
+     * @param bool   $completeAfter when true, the worker owns the terminal AgentEnd
+     *                              event for a subsequent shell command on a completed
+     *                              run.  Kept separate from $standalone so the handler
+     *                              can distinguish the first-input case (which sets
+     *                              isShellRun) from the subsequent-terminal case.
+     *                              Set by SubmitListener when the run is terminal.
      */
     public function __construct(
         string $runId,
         public string $toolCallId,
         public string $commandText,
         public bool $standalone = false,
+        public bool $completeAfter = false,
     ) {
         parent::__construct(
             runId: $runId,

@@ -67,12 +67,13 @@ final class TuiJourneyE2eTest extends TestCase
      *  1. Startup layout (logo, status, footer)
      *  2. Reasoning cycling via Shift+Tab + border colour change
      *  3. /hotkeys slash-command table
-     *  4. Shell !ls prefix — real command output proof
+     *  4. Shell !ls prefix — real command output proof + ordering
      *  5. File @ completion preserves multiline content
      *  6. Model interaction via replay fixture (no live LLM)
      *  7. !! double-bang rejection proof
      *  8. /export slash command proof
-     *  9. Clean exit via Ctrl+D
+     *  9. Inline shell on completed run + follow-up (issue #183 repro)
+     * 10. Clean exit via Ctrl+D
      *
      * Ctrl+J newline is tested separately in HotkeySmokeTest
      * (it is sensitive to terminal configuration and a race
@@ -97,6 +98,7 @@ final class TuiJourneyE2eTest extends TestCase
             $this->journeyPhase6ModelInteractionReplay($pane);
             $this->journeyPhase7DoubleBangRejection($pane);
             $this->journeyPhase8ExportCommand($pane);
+            $this->journeyPhase9InlineShellOnCompletedRun($pane);
 
             $this->tmux->sendKey($pane, 'C-d');
         } catch (\Throwable $e) {
@@ -226,10 +228,12 @@ final class TuiJourneyE2eTest extends TestCase
     }
 
     /**
-     * Phase 4: !ls shell prefix — creates a unique marker file,
-     * sends !ls -1 (marker NOT in the command text), and asserts
-     * the marker appears in captured output (proving real command
-     * output was shown).
+     * Phase 4: !ls shell prefix (standalone, first-input) — creates a
+     * unique marker file, sends !ls -1 (marker NOT in the command text),
+     * and asserts the marker appears in captured output (proving real
+     * command output was shown).  Also verifies that AgentEnd is the
+     * final lifecycle event in the canonical stream (regression for
+     * issue #183 ordering race).
      */
     private function journeyPhase4ShellPrefixOutput(TmuxPane $pane): void
     {
@@ -261,6 +265,110 @@ final class TuiJourneyE2eTest extends TestCase
             message: 'Working/Running status never cleared after !ls -1',
             history: 2000,
         );
+
+        // Ordering assertion: the standalone shell's canonical events
+        // must end with AgentEnd (tool_exec_start → tool_exec_end → agent_end).
+        // A violation happens when the controller writes AgentEnd synchronously
+        // before the async worker writes tool_exec events (issue #183).
+        $this->assertShellEventsOrder($this->testProjectDir, '!ls');
+    }
+
+    /**
+     * Phase 9: Inline shell on a completed run (subsequent !cmd), then
+     * follow-up normal message — the documented residual from issue #183.
+     *
+     * After Phase 6 (model interaction), the run is Completed.  Sending
+     * !ls -1 at this point exercises the subsequent/terminal shell path
+     * where SubmitListener previously sent shell_command + complete_run
+     * causing a cross-process ordering race between the controller's sync
+     * completeRun() and the async tool worker.
+     *
+     * The fix ensures the worker owns the terminal AgentEnd for this path
+     * too (via complete_after), so ordering is [tool_exec_start,
+     * tool_exec_end, agent_end] and the follow-up message succeeds.
+     */
+    private function journeyPhase9InlineShellOnCompletedRun(TmuxPane $pane): void
+    {
+        $marker = 'inline-journey-marker-'.bin2hex(random_bytes(4)).'.txt';
+        touch($this->testProjectDir.'/'.$marker);
+
+        $this->tmux->sendKey($pane, 'C-u'); // Clear editor
+        $this->tmux->sendLiteral($pane, '!ls -1');
+        $this->tmux->sendKey($pane, 'Enter');
+
+        // Assert the shell output appears (proving real command execution).
+        $this->tmux->waitForCallback(
+            $pane,
+            static function (string $cap) use ($marker): bool {
+                return str_contains($cap, $marker);
+            },
+            timeout: 5.0,
+            message: sprintf('Inline-shell marker file "%s" never appeared in captured output', $marker),
+            history: 2000,
+        );
+
+        // Assert working status clears after inline shell (AgentEnd from worker).
+        $this->tmux->waitForCallback(
+            $pane,
+            static function (string $cap): bool {
+                return !str_contains($cap, 'Working...')
+                    && !str_contains($cap, 'Running...');
+            },
+            timeout: 5.0,
+            message: 'Working/Running status never cleared after inline !ls -1',
+            history: 2000,
+        );
+
+        // Ordering assertion for inline shell: AgentEnd must be last.
+        $this->assertShellEventsOrder($this->testProjectDir, 'inline-!ls');
+
+        // Follow-up normal message: must NOT die (the original bug symptom).
+        // The run was completed before the shell; the shell wrote a fresh
+        // AgentEnd; the follow_up should dispatch AdvanceRun and get a
+        // replay-assisted response.
+        $this->tmux->sendKey($pane, 'C-u');
+        usleep(100_000);
+        $this->tmux->sendLiteral($pane, 'hello');
+        $this->tmux->sendKey($pane, 'Enter');
+
+        // Wait for ANY assistant or error block.  The replay fixture or
+        // fallback should produce visible output within a few seconds.
+        $capture = $this->tmux->waitForCallback(
+            $pane,
+            static fn (string $cap): bool => str_contains($cap, '◇')
+                || str_contains($cap, '✕'),
+            timeout: 15.0,
+            message: 'Follow-up after inline shell produced no assistant/error block — run appears dead (issue #183)',
+            history: 2000,
+        );
+
+        self::assertStringNotContainsString(
+            '✕',
+            $capture,
+            'Follow-up after inline shell must NOT produce an error block',
+        );
+
+        self::assertStringContainsString(
+            '◇',
+            $capture,
+            'Follow-up after inline shell must produce an assistant block',
+        );
+
+        // Wait for turn completion after follow-up.
+        try {
+            $this->tmux->waitForCallback(
+                $pane,
+                static fn (string $cap): bool => str_contains($cap, '◇')
+                    && !str_contains($cap, '◐ Working...'),
+                timeout: 5.0,
+                message: 'Turn did not complete after follow-up',
+                history: 2000,
+            );
+        } catch (\RuntimeException) {
+            // Non-fatal timeout; working indicator may race with cleanup.
+        }
+
+        $this->saveAnsiSnapshot($pane, 'journey-inline-shell');
     }
 
     /**
@@ -456,6 +564,12 @@ final class TuiJourneyE2eTest extends TestCase
             $fixturePaths[] = $replyFixture;
         }
 
+        // Follow-up fixture for Phase 9: inline shell + follow-up response.
+        $followupFixture = __DIR__.'/fixtures/tui-followup-response.json';
+        if (\is_file($followupFixture)) {
+            $fixturePaths[] = $followupFixture;
+        }
+
         // Use source bin/console (not PHAR) so APP_ENV=test autoload-dev
         // classes (ControllerReplayHttpClientFactory in tests/) are available.
         $projectDir = ProjectDir::get();
@@ -626,5 +740,58 @@ final class TuiJourneyE2eTest extends TestCase
         $ts = date('Ymd-His');
         $path = \sprintf('%s/%s-%s.ansi', $this->snapshotDir, $tag, $ts);
         \file_put_contents($path, $ansi);
+    }
+
+    /**
+     * Assert that the canonical event stream ends with AgentEnd.
+     *
+     * Reads the most recent session's events.jsonl from the isolated test
+     * dir and verifies the final event type is agent_end (LifecycleOrderValidator
+     * conformance).
+     */
+    private function assertShellEventsOrder(string $testProjectDir, string $label): void
+    {
+        $sessionDirs = glob($testProjectDir.'/.hatfield/sessions/*', GLOB_ONLYDIR);
+        if (false === $sessionDirs || [] === $sessionDirs) {
+            return;
+        }
+
+        rsort($sessionDirs);
+        $eventsPath = $sessionDirs[0].'/events.jsonl';
+
+        if (!\is_file($eventsPath)) {
+            return;
+        }
+
+        $lines = file($eventsPath, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES);
+        if (false === $lines || [] === $lines) {
+            return;
+        }
+
+        $lastEvent = null;
+        $lastLine = null;
+        for ($i = \count($lines) - 1; $i >= 0; --$i) {
+            $decoded = \json_decode($lines[$i], true);
+            if (\is_array($decoded) && isset($decoded['type'])) {
+                $lastEvent = $decoded;
+                $lastLine = $i + 1;
+                break;
+            }
+        }
+
+        if (null === $lastEvent) {
+            return;
+        }
+
+        self::assertSame(
+            'agent_end',
+            $lastEvent['type'],
+            \sprintf(
+                '%s: AgentEnd must be the final lifecycle event in events.jsonl (found "%s" at line %d).',
+                $label,
+                $lastEvent['type'],
+                $lastLine ?? 0,
+            ),
+        );
     }
 }

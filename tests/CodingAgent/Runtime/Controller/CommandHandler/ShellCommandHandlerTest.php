@@ -33,7 +33,7 @@ final class ShellCommandHandlerTest extends TestCase
 
     public function testDispatchesShellCommandViaExecutionBus(): void
     {
-        $handler = new ShellCommandHandler($this->spyClient, $this->spyBus);
+        $handler = new ShellCommandHandler($this->spyBus);
 
         $command = new RuntimeCommand(
             id: 'cmd_1',
@@ -59,7 +59,7 @@ final class ShellCommandHandlerTest extends TestCase
 
     public function testEmitsProtocolErrorWhenRunIdMissing(): void
     {
-        $handler = new ShellCommandHandler($this->spyClient, $this->spyBus);
+        $handler = new ShellCommandHandler($this->spyBus);
 
         $emittedEvents = [];
         $emit = static function (RuntimeEvent $event) use (&$emittedEvents): void {
@@ -84,26 +84,39 @@ final class ShellCommandHandlerTest extends TestCase
 
     public function testIgnoresNonShellCommands(): void
     {
-        $handler = new ShellCommandHandler($this->spyClient, $this->spyBus);
+        $handler = new ShellCommandHandler($this->spyBus);
 
+        // complete_run is NOT handled here — the controller must never
+        // synchronously write AgentEnd for async shell work (issue #183).
         $command = new RuntimeCommand(
+            id: 'cmd_complete',
+            type: 'complete_run',
+            runId: 'run-complete-1',
+        );
+
+        $event = new ControllerCommandEvent($command, static function (): void {});
+        $handler($event);
+
+        self::assertSame(0, $this->spyClient->completeRunCalls, 'complete_run must NOT be handled (worker owns AgentEnd)');
+        self::assertNull($this->spyBus->lastMessage);
+
+        $command2 = new RuntimeCommand(
             id: 'cmd_3',
             type: 'user_message',
             runId: 'run-789',
             payload: ['text' => 'hello'],
         );
 
-        $event = new ControllerCommandEvent($command, static function (): void {});
-        $handler($event);
+        $event2 = new ControllerCommandEvent($command2, static function (): void {});
+        $handler($event2);
 
         self::assertNull($this->spyClient->lastCommand);
         self::assertNull($this->spyBus->lastMessage);
-        $this->addToAssertionCount(1);
     }
 
     public function testEmptyCommandTextDoesNotDispatchToBus(): void
     {
-        $handler = new ShellCommandHandler($this->spyClient, $this->spyBus);
+        $handler = new ShellCommandHandler($this->spyBus);
 
         $command = new RuntimeCommand(
             id: 'cmd_4',
@@ -125,7 +138,7 @@ final class ShellCommandHandlerTest extends TestCase
 
     public function testStandaloneShellCommandPassesFlagToWorker(): void
     {
-        $handler = new ShellCommandHandler($this->spyClient, $this->spyBus);
+        $handler = new ShellCommandHandler($this->spyBus);
 
         $command = new RuntimeCommand(
             id: 'cmd_standalone',
@@ -153,7 +166,7 @@ final class ShellCommandHandlerTest extends TestCase
 
     public function testInlineShellCommandDoesNotCompleteRun(): void
     {
-        $handler = new ShellCommandHandler($this->spyClient, $this->spyBus);
+        $handler = new ShellCommandHandler($this->spyBus);
 
         // Non-standalone: dispatched via bus for subsequent shell commands
         // during an agent run. No completeRun() call.
@@ -173,38 +186,31 @@ final class ShellCommandHandlerTest extends TestCase
         self::assertSame(0, $this->spyClient->completeRunCalls);
     }
 
-    public function testCompleteRunCommandDispatches(): void
+    public function testCompleteAfterFlagPassesToWorker(): void
     {
-        $handler = new ShellCommandHandler($this->spyClient, $this->spyBus);
+        $handler = new ShellCommandHandler($this->spyBus);
 
+        // Complete-after shell: subsequent !cmd on an already-completed run.
+        // SubmitListener passes complete_after=true to signal the worker
+        // should write AgentEnd after tool_exec events.
         $command = new RuntimeCommand(
-            id: 'cmd_complete',
-            type: 'complete_run',
-            runId: 'run-complete-1',
+            id: 'cmd_complete_after',
+            type: 'shell_command',
+            runId: 'run-ca-1',
+            payload: [
+                'text' => 'echo done',
+                'complete_after' => true,
+            ],
         );
 
         $event = new ControllerCommandEvent($command, static function (): void {});
         $handler($event);
 
-        self::assertSame(1, $this->spyClient->completeRunCalls);
-        self::assertSame('run-complete-1', $this->spyClient->lastCompletedRunId);
-        self::assertNull($this->spyBus->lastMessage);
-    }
-
-    public function testCompleteRunWithEmptyRunIdIsIgnored(): void
-    {
-        $handler = new ShellCommandHandler($this->spyClient, $this->spyBus);
-
-        $command = new RuntimeCommand(
-            id: 'cmd_complete_no_run',
-            type: 'complete_run',
-            runId: '',
-        );
-
-        $event = new ControllerCommandEvent($command, static function (): void {});
-        $handler($event);
-
-        self::assertSame(0, $this->spyClient->completeRunCalls);
+        self::assertNotNull($this->spyBus->lastMessage);
+        self::assertInstanceOf(ExecuteShellToolCall::class, $this->spyBus->lastMessage);
+        self::assertFalse($this->spyBus->lastMessage->standalone, 'standalone=false for subsequent shell');
+        self::assertTrue($this->spyBus->lastMessage->completeAfter, 'completeAfter must be passed to worker');
+        self::assertSame(0, $this->spyClient->completeRunCalls, 'Handler must NOT call completeRun');
     }
 }
 

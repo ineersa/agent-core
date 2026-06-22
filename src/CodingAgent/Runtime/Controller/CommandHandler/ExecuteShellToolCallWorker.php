@@ -139,15 +139,17 @@ final readonly class ExecuteShellToolCallWorker
             'is_error' => $result->isError,
         ]);
 
-        // Standalone shell commands (first-input !cmd) need a terminal
-        // AgentEnd event so the TUI poller transitions from Running to
-        // Completed and clears the working indicator.  Writing it here,
-        // in the same process as tool_exec events, guarantees the
-        // EventStore ordering: tool_exec_start → tool_exec_end → agent_end.
+        // Standalone shell commands (first-input !cmd) and subsequent
+        // shell commands on already-completed runs (complete_after) need
+        // a terminal AgentEnd event so the TUI poller transitions from
+        // Running to Completed and clears the working indicator.
+        // Writing it here, in the same process as tool_exec events,
+        // guarantees the EventStore ordering:
+        // tool_exec_start → tool_exec_end → agent_end.
         // This avoids the ordering race that occurs when the controller
         // calls completeRun() synchronously before the async worker has
         // written tool_exec events (issue #183).
-        if ($message->standalone) {
+        if ($message->standalone || $message->completeAfter) {
             $this->eventStore->append(new RunEvent(
                 runId: $runId,
                 seq: $nextSeq + 2,

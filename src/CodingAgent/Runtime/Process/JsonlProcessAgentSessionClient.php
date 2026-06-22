@@ -281,6 +281,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
                 'text' => $command->text,
                 'question_id' => $command->payload['question_id'] ?? null,
                 'answer' => $command->payload['answer'] ?? null,
+                'complete_after' => $command->payload['complete_after'] ?? null,
             ], static fn (mixed $v): bool => null !== $v),
         };
 

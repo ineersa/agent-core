@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Runtime\Controller\CommandHandler;
 
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
-use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
@@ -14,7 +13,7 @@ use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
- * Handles shell_command and complete_run commands via Symfony EventDispatcher.
+ * Handles shell_command commands via Symfony EventDispatcher.
  *
  * Receives shell_command RuntimeCommands from the TUI (via JSONL) and
  * dispatches them as ExecuteShellToolCall messages on the agent.execution.bus
@@ -24,20 +23,21 @@ use Symfony\Component\Messenger\MessageBusInterface;
  * InProcessAgentSessionClient::executeShellCommand() called toolExecutor->execute()
  * synchronously and SafeGuard hooks entered a blocking approval poll.
  *
- * When the standalone flag is set (shellExecute path), the worker
- * writes a terminal AgentEnd event after tool_exec events so the
- * TUI poller transitions from Running to Completed and clears the
- * working indicator.  The terminal event is written in the worker
- * — not here — to guarantee tool_exec→AgentEnd ordering (issue #183).
+ * The worker is the sole ordering authority for shell-command lifecycle
+ * events: it writes tool_execution_start, tool_execution_end, and (when
+ * standalone or complete_after) AgentEnd in a single process, guaranteeing
+ * tool_exec → agent_end ordering (LifecycleOrderValidator-conformant).
  *
- * Shell output appears in the transcript via the controller's periodic
- * EventStore drain — no LLM turn is triggered.
+ * complete_run commands are NOT handled here — the controller must never
+ * synchronously write AgentEnd for work dispatched to an async consumer
+ * because that produces [AgentEnd, tool_exec_start, tool_exec_end] ordering
+ * (issue #183).  Shell output appears in the transcript via the controller's
+ * periodic EventStore drain — no LLM turn is triggered.
  */
 #[AsEventListener(event: ControllerCommandEvent::class)]
 final readonly class ShellCommandHandler
 {
     public function __construct(
-        private readonly AgentSessionClient $client,
         private readonly MessageBusInterface $executionBus,
     ) {
     }
@@ -46,14 +46,6 @@ final readonly class ShellCommandHandler
     {
         $command = $event->command;
         $runId = $command->runId ?? '';
-
-        if ('complete_run' === $command->type) {
-            if ('' !== $runId) {
-                $this->client->completeRun($runId);
-            }
-
-            return;
-        }
 
         if ('shell_command' !== $command->type) {
             return;
@@ -72,6 +64,7 @@ final readonly class ShellCommandHandler
 
         $commandText = (string) ($command->payload['text'] ?? '');
         $standalone = (bool) ($command->payload['standalone'] ?? false);
+        $completeAfter = (bool) ($command->payload['complete_after'] ?? false);
 
         // Shell-only runs do not emit RunStarted (they bypass start()),
         // so the RuntimeEventEmitter drain loop never registers a cursor
@@ -98,12 +91,12 @@ final readonly class ShellCommandHandler
         // run in the consumer, not the controller, so the event loop
         // stays alive.
         //
-        // The standalone flag is passed through so the worker owns the
-        // terminal AgentEnd write when this is a first-input shell command.
-        // By keeping tool_exec and AgentEnd writes within a single process
-        // (the worker), the EventStore ordering is guaranteed — AgentEnd
-        // always follows tool_exec events, satisfying the
-        // LifecycleOrderValidator constraint that agent_end must be the
+        // The standalone and complete_after flags are passed through so the
+        // worker owns the terminal AgentEnd write when the shell command
+        // should complete the run.  By keeping tool_exec and AgentEnd writes
+        // within a single process (the worker), the EventStore ordering is
+        // guaranteed — AgentEnd always follows tool_exec events, satisfying
+        // the LifecycleOrderValidator constraint that agent_end must be the
         // final lifecycle event.  Synchronously calling completeRun() from
         // the controller would race with the async worker and produce
         // [AgentEnd, tool_exec_start, tool_exec_end] ordering (issue #183).
@@ -115,6 +108,7 @@ final readonly class ShellCommandHandler
                 toolCallId: $toolCallId,
                 commandText: $commandText,
                 standalone: $standalone,
+                completeAfter: $completeAfter,
             ));
         } catch (ExceptionInterface $exception) {
             // Messenger transport unavailable — emit a diagnostic error
