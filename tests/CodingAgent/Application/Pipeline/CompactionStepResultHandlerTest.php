@@ -849,18 +849,27 @@ final class CompactionStepResultHandlerTest extends TestCase
         self::assertCount(0, $result->effects,
             'Must NOT dispatch AdvanceRun when Cancelling — run has been cancelled');
 
-        // Must emit agent_end reason=cancelled for consistent cancellation projection.
-        // AdvanceRunHandler and ApplyCommandHandler both emit agent_end when
-        // terminalising Cancelling → Cancelled; this handler must do the same.
-        $agentEndEvent = $result->events[0] ?? null;
-        self::assertNotNull($agentEndEvent, 'Must have at least one event');
-        self::assertSame(RunEventTypeEnum::AgentEnd->value, $agentEndEvent->type,
-            'Must emit agent_end when terminalising Cancelling → Cancelled');
-        self::assertSame('cancelled', $agentEndEvent->payload['reason'] ?? null);
+        // Compaction outcome FIRST, agent_end LAST for replay correctness.
+        // Replay applies events sequentially; when agent_end came first,
+        // context_compaction_failed could overwrite Cancelled with Running.
+        // Events must have unique contiguous seq numbers.
+        self::assertCount(2, $result->events, 'Must emit context_compaction_failed + agent_end');
 
-        $failedEvent = $result->events[1] ?? null;
-        self::assertNotNull($failedEvent, 'Must also emit context_compaction_failed after agent_end');
-        self::assertSame(RunEventTypeEnum::ContextCompactionFailed->value, $failedEvent->type);
+        $failedEvent = $result->events[0];
+        self::assertSame(RunEventTypeEnum::ContextCompactionFailed->value, $failedEvent->type,
+            'Must emit context_compaction_failed first');
+        self::assertSame(21, $failedEvent->seq,
+            'First event seq must be lastSeq+1 (unique contiguous)');
+
+        $agentEndEvent = $result->events[1];
+        self::assertSame(RunEventTypeEnum::AgentEnd->value, $agentEndEvent->type,
+            'Must emit agent_end last (terminal event wins during replay)');
+        self::assertSame('cancelled', $agentEndEvent->payload['reason'] ?? null);
+        self::assertSame(22, $agentEndEvent->seq,
+            'Second event seq must be lastSeq+2 (unique contiguous)');
+
+        self::assertSame(22, $result->nextState->lastSeq,
+            'nextState.lastSeq must reflect both events');
     }
 
     /**
@@ -952,16 +961,24 @@ final class CompactionStepResultHandlerTest extends TestCase
         self::assertCount(0, $result->effects,
             'Must NOT dispatch AdvanceRun when Cancelling — run has been cancelled');
 
-        // Must emit agent_end reason=cancelled for consistent cancellation projection.
-        $agentEndEvent = $result->events[0] ?? null;
-        self::assertNotNull($agentEndEvent, 'Must have at least one event');
-        self::assertSame(RunEventTypeEnum::AgentEnd->value, $agentEndEvent->type,
-            'Must emit agent_end when terminalising Cancelling → Cancelled');
-        self::assertSame('cancelled', $agentEndEvent->payload['reason'] ?? null);
+        // Compaction outcome FIRST, agent_end LAST — same replay contract.
+        self::assertCount(2, $result->events, 'Must emit context_compaction_failed + agent_end');
 
-        $failedEvent = $result->events[1] ?? null;
-        self::assertNotNull($failedEvent, 'Must also emit context_compaction_failed after agent_end');
-        self::assertSame(RunEventTypeEnum::ContextCompactionFailed->value, $failedEvent->type);
+        $failedEvent = $result->events[0];
+        self::assertSame(RunEventTypeEnum::ContextCompactionFailed->value, $failedEvent->type,
+            'Must emit context_compaction_failed first');
+        self::assertSame(21, $failedEvent->seq,
+            'First event seq must be lastSeq+1 (unique contiguous)');
+
+        $agentEndEvent = $result->events[1];
+        self::assertSame(RunEventTypeEnum::AgentEnd->value, $agentEndEvent->type,
+            'Must emit agent_end last (terminal event wins during replay)');
+        self::assertSame('cancelled', $agentEndEvent->payload['reason'] ?? null);
+        self::assertSame(22, $agentEndEvent->seq,
+            'Second event seq must be lastSeq+2 (unique contiguous)');
+
+        self::assertSame(22, $result->nextState->lastSeq,
+            'nextState.lastSeq must reflect both events');
     }
 
     /**
@@ -1031,17 +1048,24 @@ final class CompactionStepResultHandlerTest extends TestCase
         self::assertCount(0, $result->effects,
             'Must NOT dispatch AdvanceRun when Cancelling — run has been cancelled');
 
-        // Must emit both agent_end and context_compacted.
-        self::assertCount(2, $result->events, 'Must emit agent_end + context_compacted');
+        // Compaction outcome FIRST, agent_end LAST — same replay contract.
+        self::assertCount(2, $result->events, 'Must emit context_compacted + agent_end');
 
-        $agentEndEvent = $result->events[0];
-        self::assertSame(RunEventTypeEnum::AgentEnd->value, $agentEndEvent->type,
-            'Must emit agent_end when terminalising Cancelling → Cancelled');
-        self::assertSame('cancelled', $agentEndEvent->payload['reason'] ?? null);
-
-        $compactedEvent = $result->events[1];
+        $compactedEvent = $result->events[0];
         self::assertSame(RunEventTypeEnum::ContextCompacted->value, $compactedEvent->type,
-            'Must also emit context_compacted after agent_end');
+            'Must emit context_compacted first');
+        self::assertSame(21, $compactedEvent->seq,
+            'First event seq must be lastSeq+1 (unique contiguous)');
+
+        $agentEndEvent = $result->events[1];
+        self::assertSame(RunEventTypeEnum::AgentEnd->value, $agentEndEvent->type,
+            'Must emit agent_end last (terminal event wins during replay)');
+        self::assertSame('cancelled', $agentEndEvent->payload['reason'] ?? null);
+        self::assertSame(22, $agentEndEvent->seq,
+            'Second event seq must be lastSeq+2 (unique contiguous)');
+
+        self::assertSame(22, $result->nextState->lastSeq,
+            'nextState.lastSeq must reflect both events');
 
         // Verify compacted messages were applied.
         self::assertSame(

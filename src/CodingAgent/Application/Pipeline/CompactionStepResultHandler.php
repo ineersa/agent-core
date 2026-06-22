@@ -126,20 +126,6 @@ final class CompactionStepResultHandler implements RunMessageHandler
                     ? $message->error['message']
                     : 'Summarization model call failed.');
 
-            $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, [[
-                'type' => RunEventTypeEnum::ContextCompactionFailed->value,
-                'payload' => [
-                    'reason' => $reason,
-                    'message' => $userMessage,
-                    'messages_replaced' => false,
-                    'step_id' => $message->stepId(),
-                    'model' => $message->model,
-                    'thinking_level' => $message->modelOptions['thinking_level'] ?? null,
-                    'trigger' => $message->trigger,
-                    'continue_after_compaction' => $message->continueAfterCompaction,
-                ],
-            ]]);
-
             // Resolve Compacting status: when the compaction was holding
             // a pending LLM turn (continueAfterCompaction, pre-LLM guard),
             // the run stays Running so the turn can proceed.  Maintenance
@@ -149,9 +135,6 @@ final class CompactionStepResultHandler implements RunMessageHandler
             // compaction, the incoming state is Cancelling and must not
             // be overwritten.  The active step is cleared (no more work),
             // so transition to Cancelled without emitting AdvanceRun.
-            // Emit agent_end reason=cancelled alongside the failure event
-            // for consistent cancellation projection — same contract as
-            // AdvanceRunHandler and ApplyCommandHandler.
             $errorFinalStatus = match (true) {
                 RunStatus::Cancelling === $state->status => RunStatus::Cancelled,
                 $message->continueAfterCompaction => RunStatus::Running,
@@ -176,15 +159,30 @@ final class CompactionStepResultHandler implements RunMessageHandler
                 );
             }
 
-            // When terminalising Cancelling → Cancelled, emit agent_end
-            // before context_compaction_failed for consistent projection.
+            // Build event specs: context_compaction_failed FIRST, then
+            // optional agent_end LAST so terminal Cancelled wins in replay.
+            $errorSpecs = [[
+                'type' => RunEventTypeEnum::ContextCompactionFailed->value,
+                'payload' => [
+                    'reason' => $reason,
+                    'message' => $userMessage,
+                    'messages_replaced' => false,
+                    'step_id' => $message->stepId(),
+                    'model' => $message->model,
+                    'thinking_level' => $message->modelOptions['thinking_level'] ?? null,
+                    'trigger' => $message->trigger,
+                    'continue_after_compaction' => $message->continueAfterCompaction,
+                ],
+            ]];
+
             if (RunStatus::Cancelling === $state->status) {
-                $agentEndEvent = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, [[
+                $errorSpecs[] = [
                     'type' => RunEventTypeEnum::AgentEnd->value,
                     'payload' => ['reason' => 'cancelled'],
-                ]]);
-                $events = array_merge($agentEndEvent, $events);
+                ];
             }
+
+            $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $errorSpecs);
 
             return new HandlerResult(
                 nextState: $this->incrementState($state, $events, clearActiveStepId: true, status: $errorFinalStatus),
@@ -205,20 +203,6 @@ final class CompactionStepResultHandler implements RunMessageHandler
                 'reason' => 'empty_summary',
                 'step_id' => $message->stepId(),
             ]);
-            $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, [[
-                'type' => RunEventTypeEnum::ContextCompactionFailed->value,
-                'payload' => [
-                    'reason' => 'empty_summary',
-                    'message' => 'Compaction failed: summarization model returned an empty summary.',
-                    'messages_replaced' => false,
-                    'step_id' => $message->stepId(),
-                    'model' => $message->model,
-                    'thinking_level' => $message->modelOptions['thinking_level'] ?? null,
-                    'trigger' => $message->trigger,
-                    'continue_after_compaction' => $message->continueAfterCompaction,
-                ],
-            ]]);
-
             // Resolve Compacting status: same policy as model_error path.
             // Preserve Cancelling → Cancelled when no more work remains.
             $emptyFinalStatus = match (true) {
@@ -243,15 +227,30 @@ final class CompactionStepResultHandler implements RunMessageHandler
                 );
             }
 
-            // When terminalising Cancelling → Cancelled, emit agent_end
-            // before context_compaction_failed for consistent projection.
+            // Build event specs: context_compaction_failed FIRST, then
+            // optional agent_end LAST so terminal Cancelled wins in replay.
+            $emptySpecs = [[
+                'type' => RunEventTypeEnum::ContextCompactionFailed->value,
+                'payload' => [
+                    'reason' => 'empty_summary',
+                    'message' => 'Compaction failed: summarization model returned an empty summary.',
+                    'messages_replaced' => false,
+                    'step_id' => $message->stepId(),
+                    'model' => $message->model,
+                    'thinking_level' => $message->modelOptions['thinking_level'] ?? null,
+                    'trigger' => $message->trigger,
+                    'continue_after_compaction' => $message->continueAfterCompaction,
+                ],
+            ]];
+
             if (RunStatus::Cancelling === $state->status) {
-                $agentEndEvent = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, [[
+                $emptySpecs[] = [
                     'type' => RunEventTypeEnum::AgentEnd->value,
                     'payload' => ['reason' => 'cancelled'],
-                ]]);
-                $events = array_merge($agentEndEvent, $events);
+                ];
             }
+
+            $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $emptySpecs);
 
             return new HandlerResult(
                 nextState: $this->incrementState($state, $events, clearActiveStepId: true, status: $emptyFinalStatus),
@@ -311,7 +310,22 @@ final class CompactionStepResultHandler implements RunMessageHandler
             $compactResult->compactedMessages,
         );
 
-        $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, [[
+        // Resolve Compacting based on continuation intent, NOT trigger.
+        // - continueAfterCompaction: the compaction was holding a pending LLM
+        //   turn (pre-LLM guard path) → Running so the turn can continue.
+        // - maintenance (after-turn hook, manual): the run was already
+        //   terminal before compaction → Completed.
+        // - Cancelling: user cancelled while compaction was in flight.
+        //   Cancellation always wins → Cancelled with NO AdvanceRun.
+        $finalStatus = match (true) {
+            RunStatus::Cancelling === $state->status => RunStatus::Cancelled,
+            $message->continueAfterCompaction => RunStatus::Running,
+            default => RunStatus::Completed,
+        };
+
+        // Build event specs: context_compacted FIRST, then optional
+        // agent_end LAST so terminal Cancelled wins in replay.
+        $successSpecs = [[
             'type' => RunEventTypeEnum::ContextCompacted->value,
             'payload' => [
                 'summary_text' => $summaryText,
@@ -327,31 +341,16 @@ final class CompactionStepResultHandler implements RunMessageHandler
                 'continue_after_compaction' => $message->continueAfterCompaction,
                 'hook_metadata' => $message->hookMetadata,
             ],
-        ]]);
+        ]];
 
-        // Resolve Compacting based on continuation intent, NOT trigger.
-        // - continueAfterCompaction: the compaction was holding a pending LLM
-        //   turn (pre-LLM guard path) → Running so the turn can continue.
-        // - maintenance (after-turn hook, manual): the run was already
-        //   terminal before compaction → Completed.
-        // - Cancelling: user cancelled while compaction was in flight.
-        //   Cancellation always wins → Cancelled with NO AdvanceRun.
-        //   Emit agent_end reason=cancelled before context_compacted.
-        $finalStatus = match (true) {
-            RunStatus::Cancelling === $state->status => RunStatus::Cancelled,
-            $message->continueAfterCompaction => RunStatus::Running,
-            default => RunStatus::Completed,
-        };
-
-        // When terminalising Cancelling → Cancelled on success, prepend
-        // agent_end before context_compacted for consistent projection.
         if (RunStatus::Cancelling === $state->status) {
-            $agentEndEvent = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, [[
+            $successSpecs[] = [
                 'type' => RunEventTypeEnum::AgentEnd->value,
                 'payload' => ['reason' => 'cancelled'],
-            ]]);
-            $events = array_merge($agentEndEvent, $events);
+            ];
         }
+
+        $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $successSpecs);
 
         // Atomically replace RunState.messages with the compacted list.
         $nextState = new RunState(
