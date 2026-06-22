@@ -547,9 +547,12 @@ parameters:
     AppAgent:
       - AppConfig
       - AppMarkdown
+      - AppSession
+      - AgentCore
       - SymfonyYaml
       - SymfonySerializer
       - SymfonyValidator
+      - SymfonyLock
 
     AppSkills:
       - AppConfig
