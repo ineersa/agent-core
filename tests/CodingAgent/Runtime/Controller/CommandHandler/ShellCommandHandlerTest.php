@@ -54,6 +54,7 @@ final class ShellCommandHandlerTest extends TestCase
         self::assertInstanceOf(ExecuteShellToolCall::class, $this->spyBus->lastMessage);
         self::assertSame('run-123', $this->spyBus->lastMessage->runId());
         self::assertSame('echo hello', $this->spyBus->lastMessage->commandText);
+        self::assertFalse($this->spyBus->lastMessage->standalone, 'Payload without standalone flag defaults to false');
     }
 
     public function testEmitsProtocolErrorWhenRunIdMissing(): void
@@ -122,7 +123,7 @@ final class ShellCommandHandlerTest extends TestCase
         self::assertSame('', $this->spyBus->lastMessage->commandText);
     }
 
-    public function testStandaloneShellCommandCompletesRun(): void
+    public function testStandaloneShellCommandPassesFlagToWorker(): void
     {
         $handler = new ShellCommandHandler($this->spyClient, $this->spyBus);
 
@@ -139,11 +140,15 @@ final class ShellCommandHandlerTest extends TestCase
         $event = new ControllerCommandEvent($command, static function (): void {});
         $handler($event);
 
-        // Standalone shell commands: bus dispatch + completeRun() via client.
+        // Standalone shell commands: the standalone flag is passed through
+        // to the worker so it writes the terminal AgentEnd event in guaranteed
+        // order after tool_exec events (issue #183).  The handler no longer
+        // calls completeRun() itself — the worker owns the terminal event.
         self::assertNotNull($this->spyBus->lastMessage);
         self::assertInstanceOf(ExecuteShellToolCall::class, $this->spyBus->lastMessage);
-        self::assertSame(1, $this->spyClient->completeRunCalls);
-        self::assertSame('run-standalone-1', $this->spyClient->lastCompletedRunId);
+        self::assertTrue($this->spyBus->lastMessage->standalone, 'Standalone flag must be passed to the worker');
+        self::assertSame('run-standalone-1', $this->spyBus->lastMessage->runId());
+        self::assertSame(0, $this->spyClient->completeRunCalls, 'Handler must NOT call completeRun for standalone — worker owns AgentEnd');
     }
 
     public function testInlineShellCommandDoesNotCompleteRun(): void
@@ -164,6 +169,7 @@ final class ShellCommandHandlerTest extends TestCase
 
         self::assertNotNull($this->spyBus->lastMessage);
         self::assertInstanceOf(ExecuteShellToolCall::class, $this->spyBus->lastMessage);
+        self::assertFalse($this->spyBus->lastMessage->standalone);
         self::assertSame(0, $this->spyClient->completeRunCalls);
     }
 

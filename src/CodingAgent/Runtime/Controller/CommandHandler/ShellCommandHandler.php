@@ -24,10 +24,11 @@ use Symfony\Component\Messenger\MessageBusInterface;
  * InProcessAgentSessionClient::executeShellCommand() called toolExecutor->execute()
  * synchronously and SafeGuard hooks entered a blocking approval poll.
  *
- * When the standalone flag is set (shellExecute path), a terminal
- * AgentEnd event is written to the EventStore so the TUI poller
- * transitions from Running to Completed and clears the working
- * indicator.
+ * When the standalone flag is set (shellExecute path), the worker
+ * writes a terminal AgentEnd event after tool_exec events so the
+ * TUI poller transitions from Running to Completed and clears the
+ * working indicator.  The terminal event is written in the worker
+ * — not here — to guarantee tool_exec→AgentEnd ordering (issue #183).
  *
  * Shell output appears in the transcript via the controller's periodic
  * EventStore drain — no LLM turn is triggered.
@@ -96,6 +97,16 @@ final readonly class ShellCommandHandler
         // events to the canonical event store.  SafeGuard approval polls
         // run in the consumer, not the controller, so the event loop
         // stays alive.
+        //
+        // The standalone flag is passed through so the worker owns the
+        // terminal AgentEnd write when this is a first-input shell command.
+        // By keeping tool_exec and AgentEnd writes within a single process
+        // (the worker), the EventStore ordering is guaranteed — AgentEnd
+        // always follows tool_exec events, satisfying the
+        // LifecycleOrderValidator constraint that agent_end must be the
+        // final lifecycle event.  Synchronously calling completeRun() from
+        // the controller would race with the async worker and produce
+        // [AgentEnd, tool_exec_start, tool_exec_end] ordering (issue #183).
         $toolCallId = uniqid('sh_', true);
 
         try {
@@ -103,6 +114,7 @@ final readonly class ShellCommandHandler
                 runId: $runId,
                 toolCallId: $toolCallId,
                 commandText: $commandText,
+                standalone: $standalone,
             ));
         } catch (ExceptionInterface $exception) {
             // Messenger transport unavailable — emit a diagnostic error
@@ -117,14 +129,6 @@ final readonly class ShellCommandHandler
             ));
 
             return;
-        }
-
-        // Standalone shell commands (first-input !cmd) need a terminal
-        // AgentEnd event so the TUI poller transitions from Running to
-        // Completed. Subsequent shell commands during an agent run must
-        // NOT complete the run — the agent is still working.
-        if ($standalone) {
-            $this->client->completeRun($runId);
         }
     }
 }

@@ -24,6 +24,11 @@ use Symfony\Component\Messenger\Attribute\AsMessageHandler;
  *
  * Writes canonical tool_execution_start / tool_execution_end events to the
  * EventStore so the TUI poller surfaces shell output in the transcript.
+ *
+ * For standalone shell commands (first-input !cmd), also writes a terminal
+ * AgentEnd event after tool_exec events, ensuring the EventStore ordering
+ * guarantee (tool_exec_start → tool_exec_end → agent_end) is maintained by
+ * a single writer — no cross-process race with the controller.
  */
 #[AsMessageHandler(bus: 'agent.execution.bus')]
 final readonly class ExecuteShellToolCallWorker
@@ -133,5 +138,30 @@ final readonly class ExecuteShellToolCallWorker
             'tool_call_id' => $toolCallId,
             'is_error' => $result->isError,
         ]);
+
+        // Standalone shell commands (first-input !cmd) need a terminal
+        // AgentEnd event so the TUI poller transitions from Running to
+        // Completed and clears the working indicator.  Writing it here,
+        // in the same process as tool_exec events, guarantees the
+        // EventStore ordering: tool_exec_start → tool_exec_end → agent_end.
+        // This avoids the ordering race that occurs when the controller
+        // calls completeRun() synchronously before the async worker has
+        // written tool_exec events (issue #183).
+        if ($message->standalone) {
+            $this->eventStore->append(new RunEvent(
+                runId: $runId,
+                seq: $nextSeq + 2,
+                turnNo: 0,
+                type: RunEventTypeEnum::AgentEnd->value,
+                payload: ['reason' => 'completed'],
+            ));
+
+            $this->logger?->info('shell.run_completed', [
+                'run_id' => $runId,
+                'component' => 'tool.shell',
+                'event_type' => 'shell.run_completed',
+                'tool_call_id' => $toolCallId,
+            ]);
+        }
     }
 }
