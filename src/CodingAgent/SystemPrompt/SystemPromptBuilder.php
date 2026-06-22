@@ -163,20 +163,20 @@ final readonly class SystemPromptBuilder
             }
         }
 
+        // Drain prompt contributors (extension-registered) BEFORE the
+        // empty-parts check, so contributors still apply when no static
+        // APPEND_SYSTEM.md files exist (the common case).
+        $contributorOutput = $this->drainContributors();
+        if ('' !== $contributorOutput) {
+            $parts[] = $contributorOutput;
+        }
+
         if ([] === $parts) {
             return '';
         }
 
         // Concatenate with blank-line separator.
         $concatenated = implode("\n\n", $parts);
-
-        // Drain prompt contributors (extension-registered).
-        $contributorOutput = $this->drainContributors();
-        if ('' !== $contributorOutput) {
-            $concatenated = '' !== $concatenated
-                ? $concatenated."\n\n".$contributorOutput
-                : $contributorOutput;
-        }
 
         // Render append content with empty {appends_part} to avoid recursion.
         $appendVariables = $this->buildVariables($cwd, '');

@@ -18,7 +18,7 @@ final readonly class ExecOptionsDTO
     /**
      * @param string|null           $cwd     Working directory for the subprocess (null = inherit)
      * @param float|null            $timeout Timeout in seconds (null = no timeout)
-     * @param array<string, string> $env     Environment variables to set for the subprocess
+     * @param array<string, string> $env     Environment variables merged on top of the inherited parent process environment
      */
     public function __construct(
         public ?string $cwd = null,

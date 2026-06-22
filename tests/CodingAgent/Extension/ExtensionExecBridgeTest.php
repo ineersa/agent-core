@@ -111,4 +111,29 @@ final class ExtensionExecBridgeTest extends TestCase
         // The Process with array args does NOT shell-interpolate
         $this->assertStringContainsString('$HOME literal', $result->stdout);
     }
+
+    public function testStartFailureReturnsStructuredResult(): void
+    {
+        // When proc_open fails (e.g. cwd is a file, not a directory),
+        // ProcessStartFailedException (extends ProcessRuntimeException)
+        // is caught and returns a structured ExecResultDTO rather than
+        // propagating the exception.
+        $file = sys_get_temp_dir().'/exec_test_cwd_file_'.bin2hex(random_bytes(4));
+        touch($file);
+
+        try {
+            $result = $this->execBridge->exec(
+                'true',
+                [],
+                new ExecOptionsDTO(cwd: $file),
+            );
+
+            $this->assertSame(-1, $result->exitCode);
+            $this->assertFalse($result->timedOut);
+            // The exception diagnostics should be in stderr
+            $this->assertNotEmpty($result->stderr);
+        } finally {
+            @unlink($file);
+        }
+    }
 }

@@ -9,6 +9,8 @@ use Ineersa\Hatfield\ExtensionApi\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\CommandRegistryInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionCommandHandlerInterface;
 use Ineersa\Tui\Command\CommandMetadata;
+use Ineersa\Tui\Command\CommandResult;
+use Ineersa\Tui\Command\NoOp;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandHandler;
 use Ineersa\Tui\Command\SlashCommandRegistry;
@@ -49,25 +51,48 @@ final readonly class TuiCommandRegistryAdapter implements CommandRegistryInterfa
             ) {
             }
 
-            public function handle(SlashCommand $command): TranscriptMessage
+            public function handle(SlashCommand $command): CommandResult
             {
                 $context = new class implements CommandContextInterface {
                     /** @var list<string> */
                     public array $messages = [];
 
+                    /** @var int highest-severity level seen: 0=info, 1=success, 2=warning, 3=error */
+                    public int $highestSeverity = 0;
+
                     public function notify(string $message, string $level = 'info'): void
                     {
                         $this->messages[] = $message;
+                        $sev = match ($level) {
+                            'error' => 3,
+                            'warning' => 2,
+                            'success' => 1,
+                            default => 0,
+                        };
+                        if ($sev > $this->highestSeverity) {
+                            $this->highestSeverity = $sev;
+                        }
                     }
                 };
 
                 $this->extensionHandler->handle($command->args, $context);
 
                 if ([] === $context->messages) {
-                    return new TranscriptMessage('', 'system');
+                    return new NoOp();
                 }
 
-                return new TranscriptMessage(implode("\n", $context->messages), 'system');
+                $text = implode("\n", $context->messages);
+
+                $role = 'system';
+                $style = '';
+                if ($context->highestSeverity >= 3) {
+                    $role = 'error';
+                    $style = 'error';
+                } elseif ($context->highestSeverity >= 2) {
+                    $style = 'accent';
+                }
+
+                return new TranscriptMessage($text, $role, $style);
             }
         };
 

@@ -7,6 +7,7 @@ namespace Ineersa\Tui\Tests\Extension;
 use Ineersa\Hatfield\ExtensionApi\CommandContextInterface;
 use Ineersa\Hatfield\ExtensionApi\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\ExtensionCommandHandlerInterface;
+use Ineersa\Tui\Command\NoOp;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Command\TranscriptMessage;
@@ -69,7 +70,7 @@ final class TuiCommandRegistryAdapterTest extends TestCase
         );
 
         $result = $slashRegistry->execute(new SlashCommand('tasks', 'TODO', '/tasks TODO'));
-        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $this->assertInstanceOf(NoOp::class, $result);
 
         $this->assertSame('TODO', $handler->capturedArgs);
     }
@@ -167,5 +168,79 @@ final class TuiCommandRegistryAdapterTest extends TestCase
         // /noarg extra-stuff → registry strips "extra-stuff" because acceptArguments=false
         $slashRegistry->execute(new SlashCommand('noarg', 'extra-stuff', '/noarg extra-stuff'));
         $this->assertSame('', $handler->capturedArgs);
+    }
+
+    public function testNotifyErrorLevelProducesErrorRole(): void
+    {
+        $slashRegistry = new SlashCommandRegistry();
+        $adapter = new TuiCommandRegistryAdapter($slashRegistry);
+
+        $handler = new readonly class implements ExtensionCommandHandlerInterface {
+            public function handle(string $args, CommandContextInterface $context): void
+            {
+                $context->notify('Setup error: permission denied', 'error');
+            }
+        };
+
+        $adapter->register(
+            new CommandDefinitionDTO(name: 'tasks'),
+            $handler,
+        );
+
+        $result = $slashRegistry->execute(new SlashCommand('tasks', '', '/tasks'));
+
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $this->assertStringContainsString('Setup error: permission denied', $result->text);
+        $this->assertSame('error', $result->role);
+    }
+
+    public function testNotifyWarningLevelProducesAccentStyle(): void
+    {
+        $slashRegistry = new SlashCommandRegistry();
+        $adapter = new TuiCommandRegistryAdapter($slashRegistry);
+
+        $handler = new readonly class implements ExtensionCommandHandlerInterface {
+            public function handle(string $args, CommandContextInterface $context): void
+            {
+                $context->notify('Watch out', 'warning');
+            }
+        };
+
+        $adapter->register(
+            new CommandDefinitionDTO(name: 'tasks'),
+            $handler,
+        );
+
+        $result = $slashRegistry->execute(new SlashCommand('tasks', '', '/tasks'));
+
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $this->assertSame('accent', $result->style);
+    }
+
+    public function testErrorLevelOverridesWarningLevel(): void
+    {
+        // When mixed levels are notified, the highest severity wins.
+        $slashRegistry = new SlashCommandRegistry();
+        $adapter = new TuiCommandRegistryAdapter($slashRegistry);
+
+        $handler = new readonly class implements ExtensionCommandHandlerInterface {
+            public function handle(string $args, CommandContextInterface $context): void
+            {
+                $context->notify('Task board ready', 'info');
+                $context->notify('Watch out', 'warning');
+                $context->notify('Fatal: unreachable', 'error');
+            }
+        };
+
+        $adapter->register(
+            new CommandDefinitionDTO(name: 'tasks'),
+            $handler,
+        );
+
+        $result = $slashRegistry->execute(new SlashCommand('tasks', '', '/tasks'));
+
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $this->assertSame('error', $result->role);
+        $this->assertSame('error', $result->style);
     }
 }

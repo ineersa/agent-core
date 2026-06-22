@@ -132,26 +132,26 @@ final class ExtensionApiBridge implements ExtensionApiInterface
 
     public function exec(): ExecInterface
     {
-        return new readonly class implements ExecInterface {
+        return new class implements ExecInterface {
             public function exec(string $command, array $args = [], ?ExecOptionsDTO $options = null): ExecResultDTO
             {
-                throw new \LogicException('Exec is not available in the v1 ExtensionApiBridge. Use the production ExtensionToolRegistryBridge.');
+                throw new \LogicException('exec is not supported on the v1 ExtensionApiBridge. Use the production ExtensionToolRegistryBridge.');
             }
         };
     }
 
     public function registerPromptContributor(PromptContributorInterface $contributor): void
     {
-        // No-op: v1 bridge does not support prompt contributors.
+        throw new \LogicException('registerPromptContributor is not supported on the v1 ExtensionApiBridge. Use the production ExtensionToolRegistryBridge.');
     }
 
     public function registerCommand(CommandDefinitionDTO $definition, ExtensionCommandHandlerInterface $handler): void
     {
-        // No-op: v1 bridge does not support slash command registration.
+        throw new \LogicException('registerCommand is not supported on the v1 ExtensionApiBridge. Use the production ExtensionToolRegistryBridge.');
     }
 
     public function registerToolCallRewriteHook(string $toolName, ToolCallRewriteHookInterface $hook): void
     {
-        // No-op: v1 bridge does not support rewrite hooks.
+        throw new \LogicException('registerToolCallRewriteHook is not supported on the v1 ExtensionApiBridge. Use the production ExtensionToolRegistryBridge.');
     }
 }

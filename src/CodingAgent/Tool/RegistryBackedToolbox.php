@@ -100,6 +100,9 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
 
             $hookIndex = 0;
             foreach ($rewriteHooks as $hook) {
+                // runId/turnNo/cwd/metadata are intentionally null here;
+                // rewriters in EXT-01 only need arguments. Thread from
+                // worker context if a future hook needs them.
                 $context = new ToolCallContextDTO(
                     toolCallId: $toolCall->getId(),
                     toolName: $toolCall->getName(),

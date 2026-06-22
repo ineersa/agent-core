@@ -119,9 +119,10 @@ final class ExtensionHookRegistry implements PromptContributorProviderInterface,
     /**
      * Get rewrite hooks matching the given tool name.
      *
-     * Returns hooks registered for the exact tool name plus wildcard
-     * hooks ('*'), in registration order. Duplicates are possible if
-     * the same hook is registered for both the tool name and wildcard.
+     * Returns hooks registered for the exact tool name (registration
+     * order), followed by wildcard hooks ('*', registration order).
+     * Duplicates are possible if the same hook is registered for both
+     * the tool name and wildcard.
      *
      * @return list<ToolCallRewriteHookInterface>
      */

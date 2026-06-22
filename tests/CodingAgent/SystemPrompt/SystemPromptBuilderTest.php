@@ -12,6 +12,8 @@ use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
 use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
+use Ineersa\Hatfield\ExtensionApi\PromptContributorInterface;
+use Ineersa\Hatfield\ExtensionApi\PromptContributorProviderInterface;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Message\TemplateRenderer\StringTemplateRenderer;
 
@@ -292,6 +294,61 @@ final class SystemPromptBuilderTest extends TestCase
         $this->assertStringNotContainsString('{appends_part}', $result);
     }
 
+    public function testContributorDrainedWhenNoAppendFilesExist(): void
+    {
+        // The common case: no APPEND_SYSTEM.md files, but a prompt
+        // contributor is registered. The contributor output MUST appear
+        // in the rendered prompt — this is finding #1's regression test.
+        $provider = new class implements PromptContributorProviderInterface {
+            public function promptContributors(): array
+            {
+                return [
+                    new class implements PromptContributorInterface {
+                        public function contribute(): string
+                        {
+                            return 'EXTENSION_WORKFLOW_RULES_MARKER';
+                        }
+                    },
+                ];
+            }
+        };
+
+        $builder = $this->createBuilder(promptContributorProvider: $provider);
+        $result = $builder->build();
+
+        $this->assertStringContainsString('EXTENSION_WORKFLOW_RULES_MARKER', $result);
+    }
+
+    public function testContributorAndAppendFileMerged(): void
+    {
+        // When BOTH a contributor AND an APPEND_SYSTEM.md file exist,
+        // both outputs must appear in the rendered prompt.
+        file_put_contents(
+            $this->tmpDir.'/.hatfield/APPEND_SYSTEM.md',
+            'Static rules from project.',
+        );
+
+        $provider = new class implements PromptContributorProviderInterface {
+            public function promptContributors(): array
+            {
+                return [
+                    new class implements PromptContributorInterface {
+                        public function contribute(): string
+                        {
+                            return 'Dynamic rules from extension.';
+                        }
+                    },
+                ];
+            }
+        };
+
+        $builder = $this->createBuilder(promptContributorProvider: $provider);
+        $result = $builder->build();
+
+        $this->assertStringContainsString('Static rules from project.', $result);
+        $this->assertStringContainsString('Dynamic rules from extension.', $result);
+    }
+
     /* ───────── Placeholder substitution ───────── */
 
     public function testAllPlaceholdersAreSubstituted(): void
@@ -476,6 +533,7 @@ final class SystemPromptBuilderTest extends TestCase
         ?ToolRegistryInterface $registry = null,
         ?string $projectDir = null,
         ?string $cwd = null,
+        ?PromptContributorProviderInterface $promptContributorProvider = null,
     ): SystemPromptBuilder {
         return new SystemPromptBuilder(
             toolRegistry: $registry ?? $this->createEmptyRegistry(),
@@ -487,6 +545,7 @@ final class SystemPromptBuilderTest extends TestCase
                 cwd: $cwd ?? $this->tmpDir,
             ),
             projectDir: $projectDir ?? $this->projectDir,
+            promptContributorProvider: $promptContributorProvider,
         );
     }
 

@@ -7,6 +7,8 @@ namespace Ineersa\CodingAgent\Extension;
 use Ineersa\Hatfield\ExtensionApi\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\ExecOptionsDTO;
 use Ineersa\Hatfield\ExtensionApi\ExecResultDTO;
+use Symfony\Component\Process\Exception\ProcessTimedOutException;
+use Symfony\Component\Process\Exception\RuntimeException as ProcessRuntimeException;
 use Symfony\Component\Process\Process;
 
 /**
@@ -36,14 +38,32 @@ final readonly class ExtensionExecBridge implements ExecInterface
         try {
             $exitCode = $process->run();
             $timedOut = false;
-        } catch (\Symfony\Component\Process\Exception\ProcessTimedOutException $e) {
+            $stdout = $process->getOutput();
+            $stderr = $process->getErrorOutput();
+        } catch (ProcessTimedOutException $e) {
             $exitCode = $e->getProcess()->getExitCode() ?? -1;
             $timedOut = true;
+            $stdout = $process->getOutput();
+            $stderr = $process->getErrorOutput();
+        } catch (ProcessRuntimeException $e) {
+            // proc_open failure, permission denied, signal, etc.
+            $exitCode = -1;
+            $timedOut = false;
+
+            // getOutput/getErrorOutput throw LogicException when the
+            // process never started — fall back to the exception message.
+            try {
+                $stdout = $process->getOutput();
+                $stderr = $process->getErrorOutput().$e->getMessage();
+            } catch (\Symfony\Component\Process\Exception\LogicException) {
+                $stdout = '';
+                $stderr = $e->getMessage();
+            }
         }
 
         return new ExecResultDTO(
-            stdout: $process->getOutput(),
-            stderr: $process->getErrorOutput(),
+            stdout: $stdout,
+            stderr: $stderr,
             exitCode: $exitCode,
             timedOut: $timedOut,
         );
