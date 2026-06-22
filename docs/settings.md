@@ -588,8 +588,7 @@ Paths support `~` (home), `%kernel.project_dir%`, and relative paths
 or a directory of `*.md` files (non-recursive).
 
 Auto-discovery directories (`~/.hatfield/agents/`, `~/.agents/`,
-`.hatfield/agents/`, `.agents/`, and built-in `config/agents/`) are
-always scanned regardless of this list.
+`.hatfield/agents/`, `.agents/`) are always scanned regardless of this list.
 
 **Default:** `[]` (empty — only auto-discovery directories are scanned)
 
@@ -603,7 +602,7 @@ agents:
 ```
 
 See [Agent Definitions](agents.md) for the full definition format,
-discovery precedence, built-in agents, and catalog API.
+discovery precedence, and catalog API.
 
 ### `extensions.enabled`
 

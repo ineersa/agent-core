@@ -315,12 +315,11 @@ prompts: []
 # order (higher-numbered layers override lower-numbered by name).
 #
 # Discovery precedence:
-#   1. Built-in agents bundled with Hatfield (config/agents/*.md)
-#   2. User agents under ~/.hatfield/agents/*.md
-#   3. User agents under ~/.agents/*.md
-#   4. Project agents under .hatfield/agents/*.md
-#   5. Project agents under .agents/*.md
-#   6. Configured agents.paths (highest precedence)
+#   1. User agents under ~/.hatfield/agents/*.md
+#   2. User agents under ~/.agents/*.md
+#   3. Project agents under .hatfield/agents/*.md
+#   4. Project agents under .agents/*.md
+#   5. Configured agents.paths (highest precedence)
 #
 # Directories are scanned non-recursively for *.md files. Configured paths
 # may be a single .md file or a directory of *.md files.

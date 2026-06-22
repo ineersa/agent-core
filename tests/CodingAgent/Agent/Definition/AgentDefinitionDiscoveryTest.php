@@ -8,7 +8,6 @@ use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDiscovery;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionParser;
 use Ineersa\CodingAgent\Agent\Definition\AgentFrontmatterParser;
 use Ineersa\CodingAgent\Config\AgentsConfig;
-use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
@@ -22,19 +21,19 @@ use Symfony\Component\Serializer\Serializer;
 use Symfony\Component\Validator\Validation;
 
 /**
- * Tests for AgentDefinitionDiscovery covering discovery from all
- * configured locations, precedence, diagnostics, and edge cases.
+ * Tests for AgentDefinitionDiscovery covering discovery from user,
+ * project, and configured paths, precedence, diagnostics, and edge cases.
  *
  * Test thesis: Discovery protects the stable contract that Hatfield can
  * locate, validate, override, diagnose, and list agent definition files
- * deterministically before any runtime launch work exists.
+ * deterministically before any runtime launch work exists. There are no
+ * bundled/built-in agent definitions.
  */
 final class AgentDefinitionDiscoveryTest extends TestCase
 {
     private string $tempDir;
     private string $homeDir;
     private string $cwd;
-    private string $appRoot;
     private AgentDefinitionParser $parser;
 
     protected function setUp(): void
@@ -42,21 +41,9 @@ final class AgentDefinitionDiscoveryTest extends TestCase
         $this->tempDir = TestDirectoryIsolation::createProjectTempDir();
         $this->homeDir = $this->tempDir.'/home';
         $this->cwd = $this->tempDir.'/project';
-        $this->appRoot = $this->tempDir.'/app';
 
         mkdir($this->homeDir, 0755, true);
         mkdir($this->cwd, 0755, true);
-        mkdir($this->appRoot, 0755, true);
-
-        // Create built-in agents directory inside appRoot
-        mkdir($this->appRoot.'/config/agents', 0755, true);
-        file_put_contents(
-            $this->appRoot.'/config/agents/acme-bundled.md',
-            self::validFrontmatter(['name' => 'acme-bundled', 'description' => 'Bundled ACME agent', 'tools' => ['read']]),
-        );
-
-        // Create a minimal defaults YAML for the resource locator path
-        file_put_contents($this->appRoot.'/config/hatfield.defaults.yaml', "agents:\n  enabled: true\n  paths: []\n");
 
         // Set up parser
         $reflectionExtractor = new ReflectionExtractor();
@@ -139,43 +126,31 @@ final class AgentDefinitionDiscoveryTest extends TestCase
 
     private function createDiscovery(?AgentsConfig $config = null): AgentDefinitionDiscovery
     {
-        $pathResolver = new SettingsPathResolver($this->appRoot, $this->homeDir);
+        $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
 
         return new AgentDefinitionDiscovery(
             agentsConfig: $config ?? new AgentsConfig(),
             pathResolver: $pathResolver,
-            resources: new AppResourceLocator($this->appRoot),
             parser: $this->parser,
             cwd: $this->cwd,
         );
     }
 
-    public function testDiscoversBuiltinDefinitions(): void
+    public function testDiscoversAgentFromUserHatfieldAgents(): void
     {
-        $discovery = $this->createDiscovery();
-        $catalog = $discovery->discover();
-
-        $definition = $catalog->get('acme-bundled');
-        self::assertNotNull($definition);
-        self::assertSame('Bundled ACME agent', $definition->description);
-        self::assertStringContainsString('Test body.', $definition->instructions);
-    }
-
-    public function testUserHatfieldOverridesBuiltin(): void
-    {
-        // Create user ~/.hatfield/agents/acme-bundled.md that overrides the builtin
         $this->createValidDefinition(
-            $this->homeDir.'/.hatfield/agents/acme-bundled.md',
-            'acme-bundled',
-            ['description' => 'User-hatfield ACME override'],
+            $this->homeDir.'/.hatfield/agents/l1.md',
+            'l1',
+            ['description' => 'First-layer agent'],
         );
 
         $discovery = $this->createDiscovery();
         $catalog = $discovery->discover();
 
-        $definition = $catalog->get('acme-bundled');
+        $definition = $catalog->get('l1');
         self::assertNotNull($definition);
-        self::assertSame('User-hatfield ACME override', $definition->description);
+        self::assertSame('First-layer agent', $definition->description);
+        self::assertStringContainsString('Test body.', $definition->instructions);
     }
 
     public function testUserAgentsOverridesUserHatfield(): void
@@ -355,18 +330,13 @@ final class AgentDefinitionDiscoveryTest extends TestCase
 
     public function testAutoDiscoveryMissingDirsSilentlySkipped(): void
     {
-        // None of the auto-discovery dirs exist (except builtin which has acme-bundled).
-        // This should not produce missing_path diagnostics.
+        // None of the auto-discovery dirs exist.
+        // Catalog should be empty; no missing_path diagnostics.
         $discovery = $this->createDiscovery();
         $catalog = $discovery->discover();
 
-        // At least the built-in definition must be found
-        self::assertNotNull($catalog->get('acme-bundled'), 'Built-in definition must still be found');
-
-        // No missing_path diagnostics
-        foreach ($catalog->diagnostics() as $d) {
-            self::assertNotSame('missing_path', $d->type, 'Auto-discovery dirs should not emit missing_path');
-        }
+        self::assertCount(0, $catalog->all(), 'No auto dirs exist so catalog must be empty');
+        self::assertCount(0, $catalog->diagnostics(), 'Auto-discovery missing dirs should not emit diagnostics');
     }
 
     public function testDisabledDefinitionStillInAllAndDisabled(): void
@@ -407,10 +377,6 @@ final class AgentDefinitionDiscoveryTest extends TestCase
         $configuredDir = $this->tempDir.'/configured';
         $this->createValidDefinition($configuredDir.'/should-be-skipped.md', 'skipped', []);
 
-        // Also put an invalid file in the built-in directory to prove parsing
-        // is never attempted when disabled.
-        file_put_contents($this->appRoot.'/config/agents/malformed.md', "---\nincomplete\n");
-
         // enabled=false with a nonexistent path to prove diagnostics are suppressed
         $config = new AgentsConfig(enabled: false, paths: ['/nonexistent/path/agent.md']);
         $discovery = $this->createDiscovery($config);
@@ -429,7 +395,7 @@ final class AgentDefinitionDiscoveryTest extends TestCase
         $catalog = $discovery->discover();
 
         $all = $catalog->all();
-        self::assertGreaterThanOrEqual(2, \count($all));
+        self::assertCount(2, $all);
         self::assertNotNull($catalog->get('alpha'));
         self::assertNotNull($catalog->get('beta'));
     }

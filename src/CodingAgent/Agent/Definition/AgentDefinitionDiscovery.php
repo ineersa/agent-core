@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Definition;
 
 use Ineersa\CodingAgent\Config\AgentsConfig;
-use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Psr\Log\LoggerInterface;
 
@@ -13,12 +12,11 @@ use Psr\Log\LoggerInterface;
  * Discovers agent definitions from all configured locations.
  *
  * Discovery precedence (highest wins — later layers override earlier):
- *   1. Built-in agents bundled with Hatfield (config/agents/*.md)
- *   2. User agents under ~/.hatfield/agents/*.md
- *   3. User agents under ~/.agents/*.md
- *   4. Project agents under .hatfield/agents/*.md
- *   5. Project agents under .agents/*.md
- *   6. Configured agents.paths (additional explicit paths, highest precedence)
+ *   1. User agents under ~/.hatfield/agents/*.md
+ *   2. User agents under ~/.agents/*.md
+ *   3. Project agents under .hatfield/agents/*.md
+ *   4. Project agents under .agents/*.md
+ *   5. Configured agents.paths (additional explicit paths, highest precedence)
  *
  * Each directory is scanned non-recursively for *.md files (sorted
  * lexicographically for deterministic output). Explicit configured paths
@@ -45,7 +43,6 @@ final class AgentDefinitionDiscovery
     public function __construct(
         private readonly AgentsConfig $agentsConfig,
         private readonly SettingsPathResolver $pathResolver,
-        private readonly AppResourceLocator $resources,
         private readonly AgentDefinitionParser $parser,
         private readonly string $cwd,
         private readonly ?LoggerInterface $logger = null,
@@ -75,15 +72,7 @@ final class AgentDefinitionDiscovery
         /** @var list<AgentDefinitionDiagnosticDTO> $diagnostics */
         $diagnostics = [];
 
-        // 1. Built-in agents (lowest precedence)
-        $this->loadDirectory(
-            $this->resources->getBuiltinAgentsPath(),
-            $definitionsByName,
-            $diagnostics,
-            isAutoDiscovery: true,
-        );
-
-        // 2. User ~/.hatfield/agents
+        // 1. User ~/.hatfield/agents
         $this->loadDirectory(
             $homeDir.'/.hatfield/agents',
             $definitionsByName,
@@ -91,7 +80,7 @@ final class AgentDefinitionDiscovery
             isAutoDiscovery: true,
         );
 
-        // 3. User ~/.agents
+        // 2. User ~/.agents
         $this->loadDirectory(
             $homeDir.'/.agents',
             $definitionsByName,
@@ -99,7 +88,7 @@ final class AgentDefinitionDiscovery
             isAutoDiscovery: true,
         );
 
-        // 4. Project .hatfield/agents
+        // 3. Project .hatfield/agents
         $this->loadDirectory(
             $cwd.'/.hatfield/agents',
             $definitionsByName,
@@ -107,7 +96,7 @@ final class AgentDefinitionDiscovery
             isAutoDiscovery: true,
         );
 
-        // 5. Project .agents
+        // 4. Project .agents
         $this->loadDirectory(
             $cwd.'/.agents',
             $definitionsByName,
@@ -115,7 +104,7 @@ final class AgentDefinitionDiscovery
             isAutoDiscovery: true,
         );
 
-        // 6. Configured agents.paths (highest precedence)
+        // 5. Configured agents.paths (highest precedence)
         foreach ($this->agentsConfig->paths as $path) {
             $this->loadPath($path, $definitionsByName, $diagnostics);
         }

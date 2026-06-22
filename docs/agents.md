@@ -62,12 +62,11 @@ Agent definitions are discovered from the following locations in deterministic o
 
 ### Precedence (highest wins)
 
-1. **Built-in agents** bundled with Hatfield — `config/agents/*.md`
-2. **User agents** — `~/.hatfield/agents/*.md`
-3. **User agents** — `~/.agents/*.md`
-4. **Project agents** — `.hatfield/agents/*.md`
-5. **Project agents** — `.agents/*.md`
-6. **Configured paths** — `agents.paths` settings (highest precedence)
+1. **User agents** — `~/.hatfield/agents/*.md`
+2. **User agents** — `~/.agents/*.md`
+3. **Project agents** — `.hatfield/agents/*.md`
+4. **Project agents** — `.agents/*.md`
+5. **Configured paths** — `agents.paths` settings (highest precedence)
 
 Each directory is scanned non-recursively for `*.md` files (sorted lexicographically). Configured paths may be a single `.md` file or a directory of `*.md` files.
 
@@ -88,25 +87,6 @@ Auto-discovery directories that do not exist are silently skipped. Explicit conf
 ### Invalid definitions
 
 Definitions that fail to parse or validate produce a diagnostic and do not appear in the catalog. One invalid file does not abort all discovery.
-
-## Built-in agents
-
-Hatfield ships with four built-in agent definitions:
-
-| Agent | Purpose | Tools | Fields of note |
-|---|---|---|---|
-| `scout` | Fast read-only codebase reconnaissance | read, ide_find_file, ide_search_text, ide_file_structure, semantic-search | parallelAllowed, backgroundAllowed |
-| `reviewer` | Code review and correctness analysis | read, ide_find_file, ide_search_text, ide_file_structure, ide_find_references, ide_call_hierarchy, ide_type_hierarchy, semantic-search | parallelAllowed |
-| `researcher` | External research and documentation lookup | read, websearch__*, context7__* | parallelAllowed, has web/docs tools (docs use wildcard shorthand; built-in definition enumerates concrete tool IDs) |
-| `worker` | General-purpose implementation | read, write, edit, bash, bg_status, ide_find_file, ide_search_text, ide_file_structure, semantic-search | parallelAllowed: false, has mutation tools |
-
-All built-in agents:
-- Have `mcp.mode: none`
-- Have `maxDepth: 1`
-- Allow both foreground and background execution
-- Use `systemPromptMode: replace`
-- Use `inheritProjectContext: true` and `inheritAgentsMd: true`
-- Do **not** include a `type` field
 
 ### Adding custom agents
 
@@ -130,7 +110,7 @@ Your custom instructions here.
 
 ### Per-project agents
 
-For project-specific agents, add `.md` files under `.hatfield/agents/` or `.agents/`. These override user and built-in definitions with the same name.
+For project-specific agents, add `.md` files under `.hatfield/agents/` or `.agents/`. These override user definitions with the same name.
 
 ### User-level agents
 
