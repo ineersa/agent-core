@@ -350,6 +350,7 @@ parameters:
       - TuiQuestion
       - TuiTheme
       - TuiUtility
+      - TuiWidget
       - SymfonyTui
 
     TuiRuntime:

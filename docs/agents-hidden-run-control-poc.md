@@ -373,6 +373,107 @@ castor cs-check
 
 ## 10. Files changed
 
-One new file: `docs/agents-hidden-run-control-poc.md` (this document).
+Three files added, one modified:
 
-No production or test code was added, modified, or deleted. The analysis was purely investigative.
+- `src/Tui/Listener/AgentPocCommandHandler.php` — throwaway POC slash command handler
+- `src/Tui/Listener/AgentPocRegistrar.php` — throwaway POC DI registrar
+- `depfile.yaml` — added TuiWidget to TuiListener allowed deps (POC-only; remove after POC deleted)
+
+### Manual smoke test
+
+**Prerequisites**: The worktree must have a running TUI session with an active conversation.
+
+**Step-by-step smoke test**:
+
+1. Start the TUI in isolated mode:
+   ```bash
+   cd /home/ineersa/projects/agent-core-worktrees/agent-03-throwaway-hidden-run-control-poc
+   castor run:agent-test
+   ```
+
+2. Start a conversation: type any prompt and submit it, e.g. `hello world`.
+   Wait for the assistant response so the session is active.
+
+3. Run the POC command:
+   ```
+   /agent-poc
+   ```
+
+4. **Expected visible proof**: An overlay appears ABOVE the prompt editor, displaying:
+   - A box with title `AGENT CONTROL POC`
+   - Parent session ID (numeric, e.g. `428`)
+   - Parent session directory path
+   - Registry path: `.../artifacts/agents/registry.json`
+   - Child directory path: `.../artifacts/agents/scout-poc/`
+   - Child name: `scout-poc` with status `running`
+   - Event count (4 initial events)
+   - Transcript rebuilt from child events (showing `run.started`, `assistant.message`, `tool_execution.started`, `tool_execution.completed`)
+   - `Scout POC child event #1: Exploring codebase structure...` should be visible
+
+5. **Simulate a live update** (child agent produces a new event):
+   ```
+   /agent-poc tick
+   ```
+   The overlay refreshes; event count increases to 5. New line appears:
+   `Scout POC live update #5: New findings discovered...`
+   Repeat `/agent-poc tick` a few times to verify live update simulation.
+
+6. **Close the overlay**:
+   ```
+   /agent-poc close
+   ```
+   Overlay disappears. Editor area is restored.
+
+### On-disk artifacts created
+
+During smoke, inspect the filesystem:
+
+```bash
+# Find the parent session directory (check TUI overlay for exact path)
+ls .hatfield/sessions/<parent_id>/artifacts/agents/
+# → registry.json  scout-poc/
+
+cat .hatfield/sessions/<parent_id>/artifacts/agents/registry.json
+# → JSON with schema:1, entries[0] with child_run_id, artifact_id, status, etc.
+
+cat .hatfield/sessions/<parent_id>/artifacts/agents/scout-poc/events.jsonl
+# → JSONL lines with run_id=scout-poc, types: run.started, assistant.message, tool_execution.*
+
+cat .hatfield/sessions/<parent_id>/artifacts/agents/scout-poc/state.json
+# → JSON with run_id, parent_run_id, status, agent_name
+```
+
+**No** `.hatfield/sessions/scout-poc/` (top-level child directory) is created — verified by:
+```bash
+ls .hatfield/sessions/scout-poc/  # should error: No such file or directory
+```
+
+### What the prototype proves
+
+- ✅ Nested child event storage: `.hatfield/sessions/<parent>/artifacts/agents/<child>/events.jsonl`
+- ✅ Parent-scoped registry: `artifacts/agents/registry.json` tracks child_run_id, status, attention_state
+- ✅ Selected-child transcript: rebuilt from child `events.jsonl` only, not copied to parent events
+- ✅ Live update routing: `/agent-poc tick` appends to child event stream, overlay refreshes
+- ✅ No top-level child session directory
+- ✅ Normal session listing exclusion (child is not a top-level directory)
+- ✅ Slash command overlay works: TUI widgets can display agent control data
+- ✅ Overlay lifecycle: open, refresh, close — ChatScreen overlay API works for this shape
+
+### What the prototype does NOT cover (explicitly deferred)
+
+- Real child agent execution (no AgentRunner integration)
+- Real runtime event streaming (no AgentSessionClient::events() child polling)
+- HITL/question handling (child tool questions not wired to TUI question coordinator)
+- Foreground/background mode distinction
+- Concurrency / parallel children
+- MCP policy
+- Polished TUI: no styled list, no keyboard navigation, no color theme
+- Real TranscriptProjector integration (child events are raw JSONL, not projected RuntimeEvents)
+- Production API surface — AgentPocCommandHandler is NOT a production pattern
+
+### ⚠️ WARNING: Disposable POC
+
+`AgentPocCommandHandler`, `AgentPocRegistrar`, and the `TuiWidget` entry in `depfile.yaml`
+for `TuiListener` are THROWAWAY code. They must be deleted before production implementation.
+The real agent control view should be built from scratch using the patterns validated here,
+NOT by evolving this prototype.
