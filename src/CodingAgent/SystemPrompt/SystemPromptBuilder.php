@@ -7,7 +7,6 @@ namespace Ineersa\CodingAgent\SystemPrompt;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
-use Ineersa\Hatfield\ExtensionApi\PromptContributorProviderInterface;
 use Symfony\AI\Platform\Message\Template;
 use Symfony\AI\Platform\Message\TemplateRenderer\StringTemplateRenderer;
 
@@ -52,7 +51,6 @@ final readonly class SystemPromptBuilder
         private StringTemplateRenderer $templateRenderer,
         private AppConfig $appConfig,
         string $projectDir,
-        private ?PromptContributorProviderInterface $promptContributorProvider = null,
     ) {
         $this->projectDir = rtrim($projectDir, '/');
     }
@@ -170,14 +168,6 @@ final readonly class SystemPromptBuilder
         // Concatenate with blank-line separator.
         $concatenated = implode("\n\n", $parts);
 
-        // Drain prompt contributors (extension-registered).
-        $contributorOutput = $this->drainContributors();
-        if ('' !== $contributorOutput) {
-            $concatenated = '' !== $concatenated
-                ? $concatenated."\n\n".$contributorOutput
-                : $contributorOutput;
-        }
-
         // Render append content with empty {appends_part} to avoid recursion.
         $appendVariables = $this->buildVariables($cwd, '');
 
@@ -211,28 +201,6 @@ final readonly class SystemPromptBuilder
         $lines = $this->toolRegistry->permanentToolLines();
 
         return implode("\n", $lines);
-    }
-
-    /**
-     * Drain registered prompt contributors and concatenate their output.
-     *
-     * Empty contributions are skipped. Contributors run in registration order.
-     */
-    private function drainContributors(): string
-    {
-        if (null === $this->promptContributorProvider) {
-            return '';
-        }
-
-        $contributions = [];
-        foreach ($this->promptContributorProvider->promptContributors() as $contributor) {
-            $output = $contributor->contribute();
-            if ('' !== $output) {
-                $contributions[] = $output;
-            }
-        }
-
-        return implode("\n\n", $contributions);
     }
 
     /**

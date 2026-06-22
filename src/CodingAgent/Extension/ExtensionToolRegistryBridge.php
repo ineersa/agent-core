@@ -7,14 +7,8 @@ namespace Ineersa\CodingAgent\Extension;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
-use Ineersa\Hatfield\ExtensionApi\CommandDefinitionDTO;
-use Ineersa\Hatfield\ExtensionApi\CommandRegistryInterface;
-use Ineersa\Hatfield\ExtensionApi\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
-use Ineersa\Hatfield\ExtensionApi\ExtensionCommandHandlerInterface;
-use Ineersa\Hatfield\ExtensionApi\PromptContributorInterface;
 use Ineersa\Hatfield\ExtensionApi\ToolCallHookInterface;
-use Ineersa\Hatfield\ExtensionApi\ToolCallRewriteHookInterface;
 use Ineersa\Hatfield\ExtensionApi\ToolRegistrationDTO;
 use Ineersa\Hatfield\ExtensionApi\ToolResultHookInterface;
 
@@ -39,8 +33,6 @@ final readonly class ExtensionToolRegistryBridge implements ExtensionApiInterfac
         private ToolRegistryInterface $toolRegistry,
         private ExtensionHookRegistry $hookRegistry,
         private AppConfig $appConfig,
-        private ExecInterface $execBridge,
-        private CommandRegistryInterface $commandRegistry,
     ) {
     }
 
@@ -106,25 +98,5 @@ final readonly class ExtensionToolRegistryBridge implements ExtensionApiInterfac
     public function getCwd(): string
     {
         return $this->appConfig->cwd;
-    }
-
-    public function exec(): ExecInterface
-    {
-        return $this->execBridge;
-    }
-
-    public function registerPromptContributor(PromptContributorInterface $contributor): void
-    {
-        $this->hookRegistry->addPromptContributor($contributor);
-    }
-
-    public function registerCommand(CommandDefinitionDTO $definition, ExtensionCommandHandlerInterface $handler): void
-    {
-        $this->commandRegistry->register($definition, $handler);
-    }
-
-    public function registerToolCallRewriteHook(string $toolName, ToolCallRewriteHookInterface $hook): void
-    {
-        $this->hookRegistry->addToolCallRewriteHook($toolName, $hook);
     }
 }
