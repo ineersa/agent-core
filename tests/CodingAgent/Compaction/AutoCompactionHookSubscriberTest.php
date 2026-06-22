@@ -695,4 +695,159 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             .'even when provider usage exceeds threshold (effectsCount=0). '
             .'The postCommit AdvanceRun must proceed without interruption.');
     }
+
+    // ─────────────────────────────────────────────────────────────────
+    //  Test: compactionResolved removed — event-log eligibility replaces it
+    // ─────────────────────────────────────────────────────────────────
+
+    /**
+     * Thesis: after a compaction lifecycle commit, a new stable
+     * commit with a FRESH eligible provider measurement (higher seq
+     * than the latest auto attempt marker) MUST trigger another
+     * auto-compaction dispatch — even within the same run.
+     *
+     * The compactionResolved flag permanently blocks this on HEAD
+     * (RED), because run_started never fires after the first turn.
+     *
+     * Event-log eligibility in ProviderContextUsageResolver already
+     * prevents reusing the same provider measurement — in-memory
+     * compactionResolved dedup across turns is redundant and harmful.
+     */
+    public function testAllowsAutoCompactionOnLaterTurnWithFreshProviderUsage(): void
+    {
+        $this->modelResolver->method('getActiveModel')->willReturn(null);
+
+        $runState = $this->createRunState([
+            $this->makeTextMessage('user', 'Hello'),
+        ]);
+        $this->runStore->method('get')->willReturn($runState);
+
+        // Event log:
+        //  - OLD provider measurement at seq 1 (12000 > 11000)
+        //  - First auto attempt marker at seq 5 (context_compaction_started)
+        //  - NEW provider measurement at seq 10 (15000 > 11000, seq=10 > 5)
+        $this->eventStore->method('allFor')
+            ->willReturn([
+                $this->makeLlmStepCompletedEvent(12000),
+                new RunEvent(
+                    runId: 'run-1',
+                    seq: 5,
+                    turnNo: 1,
+                    type: RunEventTypeEnum::ContextCompactionStarted->value,
+                    payload: [
+                        'trigger' => 'auto',
+                        'step_id' => 'compact-123',
+                        'reason' => 'threshold_exceeded',
+                    ],
+                ),
+                new RunEvent(
+                    runId: 'run-1',
+                    seq: 10,
+                    turnNo: 2,
+                    type: RunEventTypeEnum::LlmStepCompleted->value,
+                    payload: [
+                        'step_id' => 'step-10',
+                        'stop_reason' => 'stop',
+                        'usage' => [
+                            'input_tokens' => 15000,
+                            'output_tokens' => 100,
+                            'total_tokens' => 15100,
+                        ],
+                    ],
+                ),
+            ]);
+
+        // Step 1: simulate compaction lifecycle commit (sets compactionResolved on HEAD).
+        $lifecycleContext = $this->createHookContext(
+            eventTypes: [RunEventTypeEnum::ContextCompactionStarted->value],
+        );
+        $this->subscriber->handleAfterTurnCommit($lifecycleContext);
+        self::assertCount(0, $this->commandBus->messages,
+            'Lifecycle commit itself must not dispatch');
+
+        // Step 2: a stable commit on a later turn — fresh eligible provider usage.
+        $stableContext = $this->createHookContext();
+        $this->subscriber->handleAfterTurnCommit($stableContext);
+
+        // On HEAD: compactionResolved prevents dispatch → 0 messages.
+        // After fix: event-log eligibility allows dispatch → 1 message.
+        self::assertCount(1, $this->commandBus->messages,
+            'Later turn with fresh eligible provider usage MUST dispatch auto-compaction. '
+            .'compactionResolved on HEAD permanently blocks this.');
+        self::assertSame('auto', $this->commandBus->messages[0]->trigger);
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    //  Test: AgentCommandQueued / AgentCommandApplied guards (session 9)
+    // ─────────────────────────────────────────────────────────────────
+
+    /**
+     * Thesis: commits containing AgentCommandQueued must NOT dispatch
+     * auto-compaction, even when provider usage exceeds threshold.
+     *
+     * AgentCommandQueued commits have effectsCount=0 but the command
+     * has not yet been applied.  Dispatching auto-compaction here races
+     * with the pending ApplyCommand → AdvanceRun → ExecuteLlmStep chain
+     * and can dead-end the turn (session 9: compaction won the race,
+     * continueAfterCompaction=false, user turn never resumed).
+     */
+    public function testSkipsWhenAgentCommandQueuedEventPresent(): void
+    {
+        $this->modelResolver->method('getActiveModel')->willReturn(null);
+
+        $runState = $this->createRunState([
+            $this->makeTextMessage('user', 'Hello'),
+        ]);
+        $this->runStore->method('get')->willReturn($runState);
+
+        // Provider usage exceeds threshold — the hook WOULD dispatch
+        // auto-compaction if not for the AgentCommandQueued guard.
+        $this->eventStore->method('allFor')
+            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]); // 12000 > 11000
+
+        $context = $this->createHookContext(
+            eventTypes: [RunEventTypeEnum::AgentCommandQueued->value],
+            effectsCount: 0,
+        );
+        $this->subscriber->handleAfterTurnCommit($context);
+
+        self::assertCount(0, $this->commandBus->messages,
+            'AgentCommandQueued commit must NOT dispatch CompactRun '
+            .'even when provider usage exceeds threshold (effectsCount=0). '
+            .'The pending follow_up command must not be raced by compaction.');
+    }
+
+    /**
+     * Thesis: commits containing AgentCommandApplied must NOT dispatch
+     * auto-compaction, even when provider usage exceeds threshold.
+     *
+     * AgentCommandApplied commits may have effectsCount=0 but can
+     * schedule AdvanceRun via a postCommit callback.  Dispatching
+     * auto-compaction here would race the pending AdvanceRun and
+     * dead-end the turn — same class of bug as the ToolBatchCommitted
+     * guard.
+     */
+    public function testSkipsWhenAgentCommandAppliedEventPresent(): void
+    {
+        $this->modelResolver->method('getActiveModel')->willReturn(null);
+
+        $runState = $this->createRunState([
+            $this->makeTextMessage('user', 'Hello'),
+        ]);
+        $this->runStore->method('get')->willReturn($runState);
+
+        $this->eventStore->method('allFor')
+            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]); // 12000 > 11000
+
+        $context = $this->createHookContext(
+            eventTypes: [RunEventTypeEnum::AgentCommandApplied->value],
+            effectsCount: 0,
+        );
+        $this->subscriber->handleAfterTurnCommit($context);
+
+        self::assertCount(0, $this->commandBus->messages,
+            'AgentCommandApplied commit must NOT dispatch CompactRun '
+            .'even when provider usage exceeds threshold (effectsCount=0). '
+            .'The pending PostCommit AdvanceRun must not be raced by compaction.');
+    }
 }
