@@ -62,6 +62,14 @@ For changes touching TUI runtime, `AgentSessionClient`, Messenger, `TranscriptPr
 
 Default `castor check` is fully deterministic (replay-backed controller and TUI E2E, no live LLM). Live LLM smoke is opt-in via `castor test:llm-real` and `castor test:controller`.
 
+### Replay tests vs. live reproduction
+
+Replay-backed E2E tests exercise a fixture-driven controller and can report "green" while the real bug persists — the replay does not enforce the same run-state transitions, process topology, or wire protocol as the live controller subprocess. Replay is a regression guard, not a proof of correctness.
+
+**Trust the live reproduction over the fixture.** When a user-reported bug survives replay tests, the replay is exercising the wrong path. Reach for a live LLM controller E2E (`#[Group('llm-real')]`, real controller subprocess via `JsonlProcessAgentSessionClient::start()`) that reproduces the exact user scenario. Do not iterate on more replay-based proofs once replay and reality disagree — the disagreement IS the signal. Treat replay `OK` as one data point, not a verdict, whenever the symptom is a real-run hang, freeze, or stuck state.
+
+Observed in issue #183: the follow-up-after-shell hang was diagnosed and "fixed" across 5 iterations of replay-based proofs that all passed, while the live hang persisted. The real root cause (`RunStateReplayService` mapping `ToolExecutionEnd` to a no-op, leaving shell tool calls unresolved in state replay) only surfaced once a live `start_run → shell_command → follow_up` E2E reproduced the hang deterministically.
+
 ### Focused live LLM provider validation
 
 `castor check` is deterministic and must NOT include `castor test:llm-real` by default. Run `castor test:llm-real` as opt-in focused validation when changes touch:
