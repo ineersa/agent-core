@@ -14,8 +14,13 @@ use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
- * After-turn hook that triggers auto-compaction when the estimated context
- * tokens exceed the compact_after_tokens threshold.
+ * After-turn hook that triggers auto-compaction when the latest provider-
+ * reported context token count exceeds the compact_after_tokens threshold.
+ *
+ * Uses committed llm_step_completed/llm_step_aborted event usage as the
+ * authoritative context size — NOT the text-only CompactionTokenEstimator.
+ * No provider measurement = no auto-compaction (fresh runs wait for the
+ * first LLM call to produce a measurement).
  *
  * Registered as a HookSubscriberInterface (auto-tagged agent_core.hook_subscriber).
  * Runs synchronously inside RunCommit::commit() so the dispatch is a fire-and-
@@ -25,7 +30,7 @@ use Symfony\Component\Messenger\MessageBusInterface;
  *  - Auto disabled via compaction.auto_enabled (per-provider/per-model overrides)
  *  - In-flight compaction (activeStepId starts with compact-)
  *  - Commit contains compaction lifecycle events (avoids loops)
- *  - Token estimate ≤ threshold
+ *  - Provider context tokens ≤ threshold (or no provider measurement)
  *  - In-process dedup per run (prevents double dispatch within a single process
  *    between async compaction dispatch and lifecycle commit)
  */
@@ -48,7 +53,7 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
 
     public function __construct(
         private readonly RunStoreInterface $runStore,
-        private readonly CompactionTokenEstimator $tokenEstimator,
+        private readonly ProviderContextUsageResolver $providerUsageResolver,
         private readonly CompactionConfig $compactionConfig,
         private readonly ActiveModelResolverInterface $modelResolver,
         private readonly MessageBusInterface $commandBus,
@@ -134,14 +139,19 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
             return $context;
         }
 
-        // Estimate current context tokens.
+        // Resolve context token count from latest provider measurement.
+        // No provider measurement → no auto-compaction (the provider has
+        // not yet measured this run's context).  The CompactionTokenEstimator
+        // is NOT used as the trigger baseline — it undercounts real
+        // provider context by omitting tool schemas, JSON envelope,
+        // and provider-specific overhead.
         if (null === $runState) {
             return $context;
         }
 
-        $estimatedTokens = $this->tokenEstimator->estimateTokens($runState->messages);
+        $effectiveTokens = $this->providerUsageResolver->getLatestInputTokens($runId);
 
-        if ($estimatedTokens <= $runtimeSettings->compactAfterTokens) {
+        if (null === $effectiveTokens || $effectiveTokens <= $runtimeSettings->compactAfterTokens) {
             return $context;
         }
 

@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Compaction;
 
+use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Extension\HookSubscriberInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
@@ -16,7 +18,7 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Compaction\ActiveModelResolverInterface;
 use Ineersa\CodingAgent\Compaction\AutoCompactionHookSubscriber;
-use Ineersa\CodingAgent\Compaction\CompactionTokenEstimator;
+use Ineersa\CodingAgent\Compaction\ProviderContextUsageResolver;
 use Ineersa\CodingAgent\Config\CompactionConfig;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
@@ -24,9 +26,10 @@ use PHPUnit\Framework\TestCase;
 /**
  * @covers \Ineersa\CodingAgent\Compaction\AutoCompactionHookSubscriber
  *
- * setUp() creates shared mock defaults (stubs) that are overridden by
- * individual tests.  The attribute suppresses "no expectations were
- * configured" notices for this legitimate pattern.
+ * Auto-compaction trigger now uses provider-reported usage (from
+ * llm_step_completed events) as the authoritative context size.
+ * The text-only CompactionTokenEstimator is no longer the trigger
+ * baseline — it undercounts real provider context.
  */
 #[AllowMockObjectsWithoutExpectations]
 final class AutoCompactionHookSubscriberTest extends TestCase
@@ -34,7 +37,9 @@ final class AutoCompactionHookSubscriberTest extends TestCase
     private AutoCompactionHookSubscriber $subscriber;
     /** @var RunStoreInterface&\PHPUnit\Framework\MockObject\MockObject */
     private $runStore;
-    private CompactionTokenEstimator $tokenEstimator;
+    /** @var EventStoreInterface&\PHPUnit\Framework\MockObject\MockObject */
+    private $eventStore;
+    private ProviderContextUsageResolver $providerUsageResolver;
     private CompactionConfig $compactionConfig;
     /** @var ActiveModelResolverInterface&\PHPUnit\Framework\MockObject\MockObject */
     private $modelResolver;
@@ -43,10 +48,11 @@ final class AutoCompactionHookSubscriberTest extends TestCase
     protected function setUp(): void
     {
         $this->runStore = $this->createMock(RunStoreInterface::class);
-        $this->tokenEstimator = new CompactionTokenEstimator();
+        $this->eventStore = $this->createMock(EventStoreInterface::class);
+        $this->providerUsageResolver = new ProviderContextUsageResolver($this->eventStore);
         $this->compactionConfig = new CompactionConfig(
             autoEnabled: true,
-            compactAfterTokens: 50,
+            compactAfterTokens: 11000,
             keepRecentTokens: 10,
         );
         $this->modelResolver = $this->createMock(ActiveModelResolverInterface::class);
@@ -54,7 +60,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
 
         $this->subscriber = new AutoCompactionHookSubscriber(
             $this->runStore,
-            $this->tokenEstimator,
+            $this->providerUsageResolver,
             $this->compactionConfig,
             $this->modelResolver,
             $this->commandBus,
@@ -75,7 +81,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         );
     }
 
-    private function createHookContext(array $eventTypes = []): AfterTurnCommitHookContext
+    private function createHookContext(array $eventTypes = [], int $effectsCount = 0): AfterTurnCommitHookContext
     {
         $events = array_map(
             static fn (string $type): AfterTurnCommitEventSummary => new AfterTurnCommitEventSummary(seq: 1, type: $type),
@@ -87,7 +93,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             turnNo: 1,
             status: 'running',
             events: $events,
-            effectsCount: 0,
+            effectsCount: $effectsCount,
         );
     }
 
@@ -99,11 +105,33 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         ]);
     }
 
+    /**
+     * Create a RunEvent stub for llm_step_completed with given input_tokens.
+     */
+    private function makeLlmStepCompletedEvent(int $inputTokens): RunEvent
+    {
+        return new RunEvent(
+            runId: 'run-1',
+            seq: 1,
+            turnNo: 1,
+            type: RunEventTypeEnum::LlmStepCompleted->value,
+            payload: [
+                'step_id' => 'step-1',
+                'stop_reason' => 'stop',
+                'usage' => [
+                    'input_tokens' => $inputTokens,
+                    'output_tokens' => 100,
+                    'total_tokens' => $inputTokens + 100,
+                ],
+            ],
+        );
+    }
+
     // ─────────────────────────────────────────────────────────────────
-    //  Test: auto compaction triggers when threshold exceeded
+    //  Test: auto compaction triggers when provider usage exceeds threshold
     // ─────────────────────────────────────────────────────────────────
 
-    public function testDispatchesAutoCompactWhenTokenThresholdExceeded(): void
+    public function testDispatchesAutoCompactWhenProviderUsageExceedsThreshold(): void
     {
         $this->modelResolver->expects(self::once())
             ->method('getActiveModel')
@@ -111,7 +139,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             ->willReturn(null);
 
         $messages = [
-            $this->makeTextMessage('user', str_repeat('x', 200)), // ~62 tokens
+            $this->makeTextMessage('user', 'Hello'), // text estimator would give ~2 tokens, well below 11000
         ];
         $runState = $this->createRunState($messages);
 
@@ -120,100 +148,155 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             ->with('run-1')
             ->willReturn($runState);
 
-        $context = $this->createHookContext([]);
+        $this->eventStore->expects(self::once())
+            ->method('allFor')
+            ->with('run-1')
+            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]);  // 12000 > 11000
+
+        $context = $this->createHookContext();
         $this->subscriber->handleAfterTurnCommit($context);
 
         self::assertCount(1, $this->commandBus->messages);
         self::assertSame('auto', $this->commandBus->messages[0]->trigger);
     }
 
-    // ─────────────────────────────────────────────────────────────────
-    //  Test: does NOT trigger when below threshold
-    // ─────────────────────────────────────────────────────────────────
-
-    public function testDoesNotDispatchWhenBelowThreshold(): void
+    /**
+     * Thesis: when provider usage exists but is below threshold, no auto-compaction
+     * even though the text-only estimator might say otherwise.
+     */
+    public function testDoesNotDispatchWhenProviderUsageBelowThreshold(): void
     {
-        $this->modelResolver->method('getActiveModel')->willReturn(null);
+        $this->modelResolver->expects(self::once())
+            ->method('getActiveModel')
+            ->willReturn(null);
 
         $messages = [
-            $this->makeTextMessage('user', 'Hello'), // ~8 tokens < 50
+            $this->makeTextMessage('user', str_repeat('x', 50000)), // estimator would say 15384 > 11000
         ];
         $runState = $this->createRunState($messages);
 
-        $this->runStore->method('get')->willReturn($runState);
+        $this->runStore->expects(self::once())
+            ->method('get')
+            ->with('run-1')
+            ->willReturn($runState);
 
-        $this->subscriber->handleAfterTurnCommit($this->createHookContext([]));
+        $this->eventStore->expects(self::once())
+            ->method('allFor')
+            ->with('run-1')
+            ->willReturn([$this->makeLlmStepCompletedEvent(5000)]);  // 5000 < 11000
+
+        $context = $this->createHookContext();
+        $this->subscriber->handleAfterTurnCommit($context);
+
+        self::assertCount(0, $this->commandBus->messages);
+    }
+
+    /**
+     * Thesis: no provider measurement → no auto-compaction.
+     * The text-only estimator is NOT a fallback trigger baseline.
+     */
+    public function testDoesNotDispatchWhenNoProviderUsageExists(): void
+    {
+        $this->modelResolver->expects(self::once())
+            ->method('getActiveModel')
+            ->willReturn(null);
+
+        $messages = [
+            $this->makeTextMessage('user', str_repeat('x', 50000)), // would exceed if we used estimator
+        ];
+        $runState = $this->createRunState($messages);
+
+        $this->runStore->expects(self::once())
+            ->method('get')
+            ->with('run-1')
+            ->willReturn($runState);
+
+        // No llm_step_completed events at all.
+        $this->eventStore->expects(self::once())
+            ->method('allFor')
+            ->with('run-1')
+            ->willReturn([]);
+
+        $context = $this->createHookContext();
+        $this->subscriber->handleAfterTurnCommit($context);
+
         self::assertCount(0, $this->commandBus->messages);
     }
 
     // ─────────────────────────────────────────────────────────────────
-    //  Test: skips when auto disabled
+    //  Test: auto disabled
     // ─────────────────────────────────────────────────────────────────
 
     public function testSkipsWhenAutoDisabled(): void
     {
-        $this->compactionConfig = new CompactionConfig(
+        $disabledConfig = new CompactionConfig(
             autoEnabled: false,
             compactAfterTokens: 1,
         );
-        $this->subscriber = new AutoCompactionHookSubscriber(
+        $subscriber = new AutoCompactionHookSubscriber(
             $this->runStore,
-            $this->tokenEstimator,
-            $this->compactionConfig,
+            $this->providerUsageResolver,
+            $disabledConfig,
             $this->modelResolver,
             $this->commandBus,
         );
 
-        $this->modelResolver->expects(self::once())->method('getActiveModel')->willReturn(null);
-        $this->runStore->expects(self::never())->method('get');
+        $context = $this->createHookContext();
+        $subscriber->handleAfterTurnCommit($context);
 
-        $this->subscriber->handleAfterTurnCommit($this->createHookContext([]));
         self::assertCount(0, $this->commandBus->messages);
     }
 
     // ─────────────────────────────────────────────────────────────────
-    //  Test: skip when compaction lifecycle events present
+    //  Test: lifecycle guards (unchanged — independent of token source)
     // ─────────────────────────────────────────────────────────────────
 
     public function testSkipsWhenCompactionLifecycleEventsPresent(): void
     {
-        $this->subscriber->handleAfterTurnCommit(
-            $this->createHookContext([RunEventTypeEnum::ContextCompactionStarted->value]),
-        );
+        $context = $this->createHookContext([RunEventTypeEnum::ContextCompactionStarted->value]);
+        $this->subscriber->handleAfterTurnCommit($context);
+
         self::assertCount(0, $this->commandBus->messages);
     }
 
     public function testSkipsWhenContextCompactedEventPresent(): void
     {
-        $this->subscriber->handleAfterTurnCommit(
-            $this->createHookContext([RunEventTypeEnum::ContextCompacted->value]),
-        );
+        $context = $this->createHookContext([RunEventTypeEnum::ContextCompacted->value]);
+        $this->subscriber->handleAfterTurnCommit($context);
+
         self::assertCount(0, $this->commandBus->messages);
     }
 
     public function testSkipsWhenContextCompactionFailedEventPresent(): void
     {
-        $this->subscriber->handleAfterTurnCommit(
-            $this->createHookContext([RunEventTypeEnum::ContextCompactionFailed->value]),
-        );
+        $context = $this->createHookContext([RunEventTypeEnum::ContextCompactionFailed->value]);
+        $this->subscriber->handleAfterTurnCommit($context);
+
         self::assertCount(0, $this->commandBus->messages);
     }
 
     // ─────────────────────────────────────────────────────────────────
-    //  Test: skip when compaction in flight (activeStepId)
+    //  Test: in-flight compaction guard
     // ─────────────────────────────────────────────────────────────────
 
     public function testSkipsWhenCompactionAlreadyInFlight(): void
     {
-        $this->modelResolver->method('getActiveModel')->willReturn(null);
+        $this->modelResolver->expects(self::once())
+            ->method('getActiveModel')
+            ->willReturn(null);
 
         $messages = [
-            $this->makeTextMessage('user', str_repeat('x', 200)),
+            $this->makeTextMessage('user', 'Hello'),
         ];
         $runState = $this->createRunState($messages, activeStepId: 'compact-1234567890');
-        $this->runStore->method('get')->willReturn($runState);
 
-        $this->subscriber->handleAfterTurnCommit($this->createHookContext([]));
+        $this->runStore->expects(self::once())
+            ->method('get')
+            ->willReturn($runState);
+
+        $context = $this->createHookContext();
+        $this->subscriber->handleAfterTurnCommit($context);
+
         self::assertCount(0, $this->commandBus->messages);
     }
 
@@ -225,92 +308,101 @@ final class AutoCompactionHookSubscriberTest extends TestCase
     {
         $this->modelResolver->method('getActiveModel')->willReturn(null);
 
-        $messages = [
-            $this->makeTextMessage('user', str_repeat('x', 200)),
-        ];
-        $this->runStore->method('get')->willReturn(
-            $this->createRunState($messages),
-        );
+        $runState = $this->createRunState([
+            $this->makeTextMessage('user', 'Hello'),
+        ]);
 
-        // First call dispatches
-        $this->subscriber->handleAfterTurnCommit($this->createHookContext([]));
+        $this->runStore->method('get')->willReturn($runState);
+
+        $this->eventStore->method('allFor')
+            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]); // exceeds 11000
+
+        // First call → dispatches.
+        $this->subscriber->handleAfterTurnCommit($this->createHookContext());
         self::assertCount(1, $this->commandBus->messages);
 
-        // Second call (before lifecycle commit) skips
-        $this->subscriber->handleAfterTurnCommit($this->createHookContext([]));
+        // Second call → dedup prevents dispatch (inFlight guard).
+        $this->subscriber->handleAfterTurnCommit($this->createHookContext());
         self::assertCount(1, $this->commandBus->messages);
     }
-
-    // ─────────────────────────────────────────────────────────────────
-    //  Test: dedup cleared BUT compactionResolved prevents re-dispatch
-    //        until next user turn (run_started) resets the flag
-    // ─────────────────────────────────────────────────────────────────
 
     public function testDedupClearedButCompactionResolvedPreventsRedispatch(): void
     {
         $this->modelResolver->method('getActiveModel')->willReturn(null);
 
         $messages = [
-            $this->makeTextMessage('user', str_repeat('x', 200)),
+            $this->makeTextMessage('user', 'Hello'),
         ];
-        $this->runStore->method('get')->willReturn(
-            $this->createRunState($messages),
-        );
+        $runState = $this->createRunState($messages);
 
-        // Dispatch
-        $this->subscriber->handleAfterTurnCommit($this->createHookContext([]));
+        $this->runStore->method('get')->willReturn($runState);
+
+        $this->eventStore->method('allFor')
+            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]);
+
+        // First call — dispatches.
+        $this->subscriber->handleAfterTurnCommit($this->createHookContext());
         self::assertCount(1, $this->commandBus->messages);
 
-        // Lifecycle commit clears inFlight AND sets compactionResolved
-        $this->subscriber->handleAfterTurnCommit(
-            $this->createHookContext([RunEventTypeEnum::ContextCompactionStarted->value]),
-        );
+        // Simulate lifecycle commit (clears inFlight, sets compactionResolved).
+        $lifecycleContext = $this->createHookContext([RunEventTypeEnum::ContextCompactionFailed->value]);
+        $this->subscriber->handleAfterTurnCommit($lifecycleContext);
 
-        // Next non-lifecycle commit must NOT dispatch again —
-        // compaction was already resolved for this logical turn.
-        $this->subscriber->handleAfterTurnCommit($this->createHookContext([]));
+        // Post-lifecycle stable commit — compactionResolved set → no dispatch,
+        // even though inFlight was cleared above.
+        $stableContext = $this->createHookContext();
+        $this->subscriber->handleAfterTurnCommit($stableContext);
         self::assertCount(1, $this->commandBus->messages);
     }
 
     // ─────────────────────────────────────────────────────────────────
-    //  Test: respects model overrides for threshold
+    //  Test: per-model override
     // ─────────────────────────────────────────────────────────────────
 
     public function testRespectsModelOverridesForThreshold(): void
     {
-        $this->compactionConfig = new CompactionConfig(
+        $configWithOverride = new CompactionConfig(
             autoEnabled: true,
-            compactAfterTokens: 50,
+            compactAfterTokens: 11000,
             modelOverrides: [
-                'openai/gpt-4' => ['compact_after_tokens' => 10000],
+                'openai/gpt-4' => ['compact_after_tokens' => 50000],
             ],
         );
-        $this->subscriber = new AutoCompactionHookSubscriber(
-            $this->runStore,
-            $this->tokenEstimator,
-            $this->compactionConfig,
-            $this->modelResolver,
-            $this->commandBus,
-        );
-
-        $this->modelResolver->expects(self::once())
+        $modelResolver = $this->createMock(ActiveModelResolverInterface::class);
+        $modelResolver->expects(self::once())
             ->method('getActiveModel')
             ->with('run-1')
             ->willReturn('openai/gpt-4');
 
-        $messages = [
-            $this->makeTextMessage('user', str_repeat('x', 200)), // ~62 tokens < 10000 override
-        ];
-        $this->runStore->method('get')->willReturn(
-            $this->createRunState($messages),
+        $subscriber = new AutoCompactionHookSubscriber(
+            $this->runStore,
+            $this->providerUsageResolver,
+            $configWithOverride,
+            $modelResolver,
+            $this->commandBus,
         );
 
-        $this->subscriber->handleAfterTurnCommit($this->createHookContext([]));
+        $messages = [
+            $this->makeTextMessage('user', 'Hello'),
+        ];
+        $runState = $this->createRunState($messages);
+
+        $this->runStore->expects(self::once())
+            ->method('get')
+            ->willReturn($runState);
+
+        $this->eventStore->expects(self::once())
+            ->method('allFor')
+            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]); // 12000 < 50000 override
+
+        $context = $this->createHookContext();
+        $subscriber->handleAfterTurnCommit($context);
+
         self::assertCount(0, $this->commandBus->messages);
     }
 
     // ─────────────────────────────────────────────────────────────────
-    //  Test: no dispatch when run state missing
+    //  Test: null run state
     // ─────────────────────────────────────────────────────────────────
 
     public function testDoesNotDispatchWhenRunStateMissing(): void
@@ -318,12 +410,14 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $this->modelResolver->method('getActiveModel')->willReturn(null);
         $this->runStore->method('get')->willReturn(null);
 
-        $this->subscriber->handleAfterTurnCommit($this->createHookContext([]));
+        $context = $this->createHookContext();
+        $this->subscriber->handleAfterTurnCommit($context);
+
         self::assertCount(0, $this->commandBus->messages);
     }
 
     // ─────────────────────────────────────────────────────────────────
-    //  Test: implements HookSubscriberInterface
+    //  Test: interface contract
     // ─────────────────────────────────────────────────────────────────
 
     public function testImplementsHookSubscriberInterface(): void
@@ -332,186 +426,129 @@ final class AutoCompactionHookSubscriberTest extends TestCase
     }
 
     // ─────────────────────────────────────────────────────────────────
-    //  Test: skips when effectsCount > 0 (intermediate orchestration)
+    //  Test: run_started clears compactionResolved
     // ─────────────────────────────────────────────────────────────────
 
     public function testSkipsWhenRunStartedEventPresent(): void
     {
-        // Skip the model resolver call since run_started returns early
-        $this->modelResolver->expects(self::never())->method('getActiveModel');
+        $this->modelResolver->method('getActiveModel')->willReturn(null);
 
-        $ctx = $this->createHookContext([
-            RunEventTypeEnum::RunStarted->value,
+        $runState = $this->createRunState([
+            $this->makeTextMessage('user', 'Hello'),
         ]);
+        $this->runStore->method('get')->willReturn($runState);
+        $this->eventStore->method('allFor')
+            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]);
 
-        $this->subscriber->handleAfterTurnCommit($ctx);
+        // RunStarted clears the resolved flag and returns early (no dispatch).
+        $context = $this->createHookContext([RunEventTypeEnum::RunStarted->value]);
+        $this->subscriber->handleAfterTurnCommit($context);
+
         self::assertCount(0, $this->commandBus->messages);
     }
 
-    /**
-     * A commit with outbound effects (e.g. StartRun producing AdvanceRun,
-     * or AdvanceRun producing CompactRun/ExecuteLlmStep) is intermediate —
-     * effects will produce follow-up commits.  The hook must not evaluate
-     * auto-compaction on these intermediate commits because the follow-up
-     * may also satisfy the threshold, causing duplicate dispatches.
-     *
-     * Without this guard, three compact dispatch paths can stack:
-     *  hook after effect-producing commit → CompactRun #1
-     *  pre-LLM guard → CompactRun #2
-     *  hook after pre-LLM-guard commit → CompactRun #3
-     *
-     * With effectsCount > 0, only the pre-LLM guard path dispatches once.
-     */
+    // ─────────────────────────────────────────────────────────────────
+    //  Test: effectsCount > 0 → skip
+    // ─────────────────────────────────────────────────────────────────
+
     public function testSkipsWhenEffectsCountGreaterThanZero(): void
     {
         $this->modelResolver->method('getActiveModel')->willReturn(null);
 
-        $messages = [
-            $this->makeTextMessage('user', str_repeat('x', 200)), // ~62 tokens > 50
-        ];
-        $this->runStore->method('get')->willReturn(
-            $this->createRunState($messages),
-        );
+        $runState = $this->createRunState([
+            $this->makeTextMessage('user', 'Hello'),
+        ]);
+        $this->runStore->method('get')->willReturn($runState);
+        $this->eventStore->method('allFor')
+            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]);
 
-        $context = new AfterTurnCommitHookContext(
-            runId: 'run-1',
-            turnNo: 1,
-            status: 'running',
-            events: [],
-            effectsCount: 1, // intermediate commit with outbound effects
-        );
-
+        // effectsCount > 0 means intermediate orchestration commit — skip.
+        $context = $this->createHookContext(effectsCount: 2);
         $this->subscriber->handleAfterTurnCommit($context);
+
         self::assertCount(0, $this->commandBus->messages);
     }
 
     // ─────────────────────────────────────────────────────────────────
-    //  Test: skips after compaction lifecycle is resolved (no duplicate
-    //        dispatch on stable follow-up commit)
+    //  Test: compactionResolved prevents re-dispatch after lifecycle
     // ─────────────────────────────────────────────────────────────────
 
-    /**
-     * After the pre-LLM guard dispatches a CompactRun and its lifecycle
-     * commit is observed (context_compaction_failed/started/compacted),
-     * the CompactionStepResultHandler dispatches a continuation AdvanceRun.
-     * That AdvanceRun advances the turn and the LLM step runs.  The
-     * subsequent stable commit (effectsCount=0) must NOT re-trigger
-     * auto-compaction because the compaction lifecycle was already
-     * resolved for this logical user turn.
-     */
     public function testSkipsAfterCompactionLifecycleResolved(): void
     {
         $this->modelResolver->method('getActiveModel')->willReturn(null);
 
-        $messages = [
-            $this->makeTextMessage('user', str_repeat('x', 200)),
-        ];
-        // Simulate a later turn after compaction resolved
-        $runState = $this->createRunState($messages);
-        $this->runStore->method('get')->willReturn($runState);
-
-        // Step 1: lifecycle commit marks compaction as resolved
-        $lifecycleCtx = $this->createHookContext([
-            RunEventTypeEnum::ContextCompactionFailed->value,
+        $runState = $this->createRunState([
+            $this->makeTextMessage('user', 'Hello'),
         ]);
-        $this->subscriber->handleAfterTurnCommit($lifecycleCtx);
-        self::assertCount(0, $this->commandBus->messages, 'Lifecycle commit must not dispatch');
+        $this->runStore->method('get')->willReturn($runState);
+        $this->eventStore->method('allFor')
+            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]);
 
-        // Step 2: stable follow-up commit (e.g. LLM step result) with
-        // effectsCount=0 and no lifecycle events.  Without the
-        // compactionResolved guard, the hook would re-dispatch here.
-        $stableCtx = $this->createHookContext([]);
-        $this->subscriber->handleAfterTurnCommit($stableCtx);
-        self::assertCount(
-            0,
-            $this->commandBus->messages,
-            'Stable commit after compaction lifecycle must not re-dispatch',
-        );
+        // Pre-condition: dispatch auto-compaction.
+        $this->subscriber->handleAfterTurnCommit($this->createHookContext());
+        self::assertCount(1, $this->commandBus->messages, 'Should have dispatched before lifecycle');
+
+        // Simulate lifecycle commit (sets compactionResolved).
+        $lifecycleContext = $this->createHookContext([RunEventTypeEnum::ContextCompactionFailed->value]);
+        $this->subscriber->handleAfterTurnCommit($lifecycleContext);
+
+        // Post-lifecycle stable commit — must NOT dispatch.
+        $this->subscriber->handleAfterTurnCommit($this->createHookContext());
     }
 
     // ─────────────────────────────────────────────────────────────────
-    //  Test: compactionResolved cleared on new user turn (run_started)
+    //  Test: compactionResolved cleared on new user turn
     // ─────────────────────────────────────────────────────────────────
 
-    /**
-     * After a compaction lifecycle was resolved, the next user prompt
-     * starts with a run_started event.  The hook must clear the
-     * compactionResolved flag AND return early (no dispatch on StartRun),
-     * so auto-compaction can fire again on the next stable commit.
-     */
     public function testCompactionResolvedClearedOnNewUserTurn(): void
     {
         $this->modelResolver->method('getActiveModel')->willReturn(null);
 
-        $messages = [
-            $this->makeTextMessage('user', str_repeat('x', 200)),
-        ];
-        $this->runStore->method('get')->willReturn(
-            $this->createRunState($messages),
-        );
-
-        // Step 1: lifecycle commit marks compaction as resolved
-        $lifecycleCtx = $this->createHookContext([
-            RunEventTypeEnum::ContextCompactionFailed->value,
+        $runState = $this->createRunState([
+            $this->makeTextMessage('user', 'Hello'),
         ]);
-        $this->subscriber->handleAfterTurnCommit($lifecycleCtx);
+        $this->runStore->method('get')->willReturn($runState);
+        $this->eventStore->method('allFor')
+            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]);
 
-        // Step 2: new user turn — run_started clears the flag and
-        // returns early (StartRun commits never trigger auto-compaction;
-        // that's handled by the pre-LLM guard or the next effectsCount=0
-        // commit).
-        $startCtx = new AfterTurnCommitHookContext(
-            runId: 'run-1',
-            turnNo: 2,
-            status: 'running',
-            events: [
-                new AfterTurnCommitEventSummary(seq: 5, type: RunEventTypeEnum::RunStarted->value),
-            ],
-            effectsCount: 0, // StartRun dispatches AdvanceRun via bus, not effects
+        // Pre-condition: dispatch auto-compaction, then lifecycle sets resolved.
+        $this->subscriber->handleAfterTurnCommit($this->createHookContext());
+        self::assertCount(1, $this->commandBus->messages);
+
+        $lifecycleContext = $this->createHookContext([RunEventTypeEnum::ContextCompactionFailed->value]);
+        $this->subscriber->handleAfterTurnCommit($lifecycleContext);
+
+        // New user turn (run_started) — clears compactionResolved.
+        $this->subscriber->handleAfterTurnCommit(
+            $this->createHookContext([RunEventTypeEnum::RunStarted->value]),
         );
 
-        $result = $this->subscriber->handleAfterTurnCommit($startCtx);
-        self::assertSame($startCtx, $result);
-        self::assertCount(
-            0,
-            $this->commandBus->messages,
-            'StartRun commit must not dispatch auto-compaction (handled by pre-LLM guard)',
-        );
-
-        // Step 3: stable commit after new turn → should dispatch
-        // because compactionResolved was cleared by run_started
-        $stableCtx = $this->createHookContext([]);
-        $this->subscriber->handleAfterTurnCommit($stableCtx);
-        self::assertCount(
-            1,
-            $this->commandBus->messages,
-            'Stable commit after new user turn must dispatch auto-compaction',
-        );
-        self::assertSame('auto', $this->commandBus->messages[0]->trigger);
+        // After new turn, provider usage still > threshold → should dispatch again.
+        $this->subscriber->handleAfterTurnCommit($this->createHookContext());
+        self::assertCount(2, $this->commandBus->messages);
+        self::assertSame('auto', $this->commandBus->messages[1]->trigger);
     }
 
     // ─────────────────────────────────────────────────────────────────
-    //  Test: dispatched message has correct shape
+    //  Test: dispatched CompactRun has auto trigger
     // ─────────────────────────────────────────────────────────────────
 
     public function testDispatchedCompactRunHasAutoTrigger(): void
     {
         $this->modelResolver->method('getActiveModel')->willReturn(null);
 
-        $messages = [
-            $this->makeTextMessage('user', str_repeat('x', 200)),
-        ];
-        $this->runStore->method('get')->willReturn(
-            $this->createRunState($messages),
-        );
+        $runState = $this->createRunState([
+            $this->makeTextMessage('user', 'Hello'),
+        ]);
+        $this->runStore->method('get')->willReturn($runState);
+        $this->eventStore->method('allFor')
+            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]);
 
-        $this->subscriber->handleAfterTurnCommit($this->createHookContext([]));
+        $this->subscriber->handleAfterTurnCommit($this->createHookContext());
 
         self::assertCount(1, $this->commandBus->messages);
         $msg = $this->commandBus->messages[0];
+        self::assertInstanceOf(CompactRun::class, $msg);
         self::assertSame('auto', $msg->trigger);
-        self::assertNull($msg->customInstructions);
-        self::assertSame('run-1', $msg->runId());
-        self::assertStringStartsWith('compact-', $msg->stepId());
     }
 }

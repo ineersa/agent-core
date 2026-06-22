@@ -97,22 +97,21 @@ final class TuiAutoCompactionE2eTest extends TestCase
             // After the turn commits, the AutoCompactionHookSubscriber
             // fires and dispatches CompactRun(trigger: 'auto').  The
             // CompactionProjectionSubscriber renders a visible block —
-            // either "Compacting conversation..." (progress, if a worker
-            // picks up the async step) or "Compaction failed: ..."
-            // (structural failure, e.g. too few messages on a tiny
-            // session).  BOTH prove the auto trigger path is functional
-            // end-to-end (hook → dispatch → handler → runtime events →
-            // projection → visible TUI).
+            // either "Compacting conversation..." (transient progress),
+            // "⧉ Conversation compacted" (success), or "Compaction failed"
+            // (structural failure).  ANY of these proves the auto trigger
+            // path is functional end-to-end (hook → dispatch → handler →
+            // runtime events → projection → visible TUI) without typing
+            // /compact.
             //
-            // The test uses a tiny 2-message session with
-            // keep_recent_tokens=5, so compaction predictably fails with
-            // "too few messages".  The key invariant is: compaction
-            // became visible WITHOUT typing /compact.
-            //
-            // Wait for any compaction-related visible block.
+            // With the provider-usage-based trigger, the replay fixture's
+            // input_tokens (17) exceed compact_after_tokens (10), so auto-
+            // compaction triggers and typically succeeds on the tiny
+            // fixture session.
             $autoCompactCapture = $this->tmux->waitForCallback(
                 $pane,
                 static fn (string $cap): bool => str_contains($cap, 'Compacting conversation')
+                    || str_contains($cap, 'Conversation compacted')
                     || str_contains($cap, 'Compaction failed'),
                 timeout: 20.0,
                 message: 'Auto-compaction progress/failure not shown in TUI',
@@ -123,6 +122,7 @@ final class TuiAutoCompactionE2eTest extends TestCase
                 $autoCompactCapture,
                 self::logicalOr(
                     self::stringContains('Compacting conversation'),
+                    self::stringContains('Conversation compacted'),
                     self::stringContains('Compaction failed'),
                 ),
                 'Auto-compaction must produce visible compaction-related text in TUI without manual /compact',
@@ -185,13 +185,15 @@ final class TuiAutoCompactionE2eTest extends TestCase
 
     /**
      * Assert events.jsonl contains exactly one auto-compaction lifecycle
-     * outcome (context_compaction_failed, context_compacted, or
-     * context_compaction_started with trigger=auto).
+     * OUTCOME (context_compacted or context_compaction_failed with
+     * trigger=auto).
      *
+     * Compaction normally emits started → completed/failed.  Both are
+     * lifecycle events but only completed/failed are terminal outcomes.
      * Without the effectsCount > 0 guard, intermediate-orchestration
      * commits trigger the hook multiple times per turn, producing
-     * duplicate/failed events that the TUI-visible assertion alone
-     * cannot distinguish (all blocks look the same).
+     * duplicate terminal events (three identical context_compaction_failed
+     * blocks for one user prompt).  This assertion catches that regression.
      */
     private function assertExactlyOneAutoCompactionLifecycle(): void
     {
@@ -205,10 +207,9 @@ final class TuiAutoCompactionE2eTest extends TestCase
         }
 
         $lines = \file($eventLog, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES);
-        $autoCompactionEvents = [];
+        $autoOutcomes = [];
 
-        $lifecycleTypes = [
-            'context_compaction_started',
+        $terminalTypes = [
             'context_compacted',
             'context_compaction_failed',
         ];
@@ -220,7 +221,7 @@ final class TuiAutoCompactionE2eTest extends TestCase
             }
 
             $type = $event['type'] ?? '';
-            if (!\in_array($type, $lifecycleTypes, true)) {
+            if (!\in_array($type, $terminalTypes, true)) {
                 continue;
             }
 
@@ -228,7 +229,7 @@ final class TuiAutoCompactionE2eTest extends TestCase
             $trigger = $payload['trigger'] ?? null;
 
             if ('auto' === $trigger) {
-                $autoCompactionEvents[] = [
+                $autoOutcomes[] = [
                     'seq' => $event['seq'] ?? 0,
                     'type' => $type,
                     'reason' => $payload['reason'] ?? 'n/a',
@@ -236,14 +237,14 @@ final class TuiAutoCompactionE2eTest extends TestCase
             }
         }
 
-        $count = \count($autoCompactionEvents);
+        $count = \count($autoOutcomes);
         self::assertEquals(
             1,
             $count,
             \sprintf(
-                'Expected exactly 1 auto-compaction lifecycle event, found %d: %s',
+                'Expected exactly 1 auto-compaction lifecycle outcome, found %d: %s',
                 $count,
-                \json_encode($autoCompactionEvents),
+                \json_encode($autoOutcomes),
             ),
         );
     }

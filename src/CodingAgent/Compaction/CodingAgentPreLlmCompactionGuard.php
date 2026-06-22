@@ -10,8 +10,10 @@ use Ineersa\CodingAgent\Config\CompactionConfig;
 /**
  * CodingAgent implementation of the pre-LLM compaction guard.
  *
- * Resolves per-provider/per-model runtime settings, estimates tokens,
- * and answers whether compaction should run before the next LLM call.
+ * Resolves per-provider/per-model runtime settings and checks the latest
+ * provider-reported context token count against compact_after_tokens.
+ * Uses committed llm_step_completed event usage as the authoritative
+ * context size — NOT the text-only CompactionTokenEstimator.
  *
  * Registered in the container so {@see \Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler}
  * can inject the AgentCore contract without depending on CodingAgent.
@@ -37,7 +39,7 @@ final class CodingAgentPreLlmCompactionGuard implements PreLlmCompactionGuardInt
 
     public function __construct(
         private readonly CompactionConfig $compactionConfig,
-        private readonly CompactionTokenEstimator $tokenEstimator,
+        private readonly ProviderContextUsageResolver $providerUsageResolver,
         private readonly ActiveModelResolverInterface $modelResolver,
     ) {
     }
@@ -72,10 +74,14 @@ final class CodingAgentPreLlmCompactionGuard implements PreLlmCompactionGuardInt
             return false;
         }
 
-        // Check the flat token threshold.
-        $estimatedTokens = $this->tokenEstimator->estimateTokens($messages);
+        // Check the provider-measured context token count against the
+        // compact_after_tokens threshold.  The text-only estimator is NOT
+        // used as the trigger baseline — it undercounts real provider
+        // context by omitting tool schemas, JSON envelope, and provider-
+        // specific overhead.  No provider measurement means no auto-compaction.
+        $effectiveTokens = $this->providerUsageResolver->getLatestInputTokens($runId);
 
-        if ($estimatedTokens > $runtimeSettings->compactAfterTokens) {
+        if (null !== $effectiveTokens && $effectiveTokens > $runtimeSettings->compactAfterTokens) {
             $this->preLlmCompacted[$dedupKey] = true;
 
             return true;

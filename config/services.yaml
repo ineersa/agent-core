@@ -448,6 +448,10 @@ services:
   Ineersa\CodingAgent\Compaction\ActiveModelResolverInterface:
     alias: Ineersa\CodingAgent\Compaction\ModelSelectionActiveModelResolver
 
+  # Provider context usage resolver — reads latest llm_step_completed usage
+  # from committed events for auto-compaction trigger policy.
+  Ineersa\CodingAgent\Compaction\ProviderContextUsageResolver: ~
+
   # Pre-LLM guard: CodingAgent implementation of the AgentCore contract.
   # Injected into AdvanceRunHandler (AgentCore) so AgentCore can check
   # auto-compaction policy without depending on CodingAgent internals.

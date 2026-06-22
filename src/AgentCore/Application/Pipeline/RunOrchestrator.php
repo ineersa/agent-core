@@ -82,6 +82,7 @@ final readonly class RunOrchestrator
      * Handles AdvanceRun message to trigger next step execution.
      */
     #[AsMessageHandler(bus: 'agent.command.bus')]
+    #[AsMessageHandler(bus: 'agent.execution.bus')]
     public function onAdvanceRun(AdvanceRun $message): void
     {
         $this->withLogContext($message->runId(), 'turn.orchestrator.advance', function () use ($message): void {

@@ -5,32 +5,43 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Compaction;
 
 use Ineersa\AgentCore\Contract\Compaction\PreLlmCompactionGuardInterface;
+use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\CodingAgent\Compaction\ActiveModelResolverInterface;
 use Ineersa\CodingAgent\Compaction\CodingAgentPreLlmCompactionGuard;
-use Ineersa\CodingAgent\Compaction\CompactionTokenEstimator;
+use Ineersa\CodingAgent\Compaction\ProviderContextUsageResolver;
 use Ineersa\CodingAgent\Config\CompactionConfig;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
 
 /**
  * @covers \Ineersa\CodingAgent\Compaction\CodingAgentPreLlmCompactionGuard
+ *
+ * Pre-LLM compaction guard now uses provider-reported usage (from
+ * llm_step_completed events) as the authoritative context size.
+ * The text-only CompactionTokenEstimator is no longer the trigger
+ * baseline.
  */
 #[AllowMockObjectsWithoutExpectations]
 final class CodingAgentPreLlmCompactionGuardTest extends TestCase
 {
     private CodingAgentPreLlmCompactionGuard $guard;
-    private CompactionTokenEstimator $tokenEstimator;
+    /** @var EventStoreInterface&\PHPUnit\Framework\MockObject\MockObject */
+    private $eventStore;
+    private ProviderContextUsageResolver $providerUsageResolver;
     private CompactionConfig $compactionConfig;
     /** @var ActiveModelResolverInterface&\PHPUnit\Framework\MockObject\MockObject */
     private $modelResolver;
 
     protected function setUp(): void
     {
-        $this->tokenEstimator = new CompactionTokenEstimator();
+        $this->eventStore = $this->createMock(EventStoreInterface::class);
+        $this->providerUsageResolver = new ProviderContextUsageResolver($this->eventStore);
         $this->compactionConfig = new CompactionConfig(
             autoEnabled: true,
-            compactAfterTokens: 50,
+            compactAfterTokens: 11000,
         );
         $this->modelResolver = $this->createMock(ActiveModelResolverInterface::class);
         // Most tests don't care about the model; return null by default.
@@ -38,7 +49,7 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
 
         $this->guard = new CodingAgentPreLlmCompactionGuard(
             $this->compactionConfig,
-            $this->tokenEstimator,
+            $this->providerUsageResolver,
             $this->modelResolver,
         );
     }
@@ -51,39 +62,102 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
         ]);
     }
 
-    public function testReturnsTrueWhenThresholdExceeded(): void
+    private function makeLlmStepCompletedEvent(int $inputTokens): RunEvent
+    {
+        return new RunEvent(
+            runId: 'run-1',
+            seq: 1,
+            turnNo: 1,
+            type: RunEventTypeEnum::LlmStepCompleted->value,
+            payload: [
+                'step_id' => 'step-1',
+                'stop_reason' => 'stop',
+                'usage' => [
+                    'input_tokens' => $inputTokens,
+                    'output_tokens' => 100,
+                    'total_tokens' => $inputTokens + 100,
+                ],
+            ],
+        );
+    }
+
+    // ── Provider-usage-based trigger tests ──────────────────────────
+
+    /**
+     * Thesis: provider usage exceeds threshold → return true,
+     * even though the text-only estimator would say otherwise
+     * (the messages array here is tiny, estimator would give ~2 tokens).
+     */
+    public function testReturnsTrueWhenProviderUsageExceedsThreshold(): void
     {
         $messages = [
-            $this->makeTextMessage('user', str_repeat('x', 200)), // ~62 tokens > 50
+            $this->makeTextMessage('user', 'Hello'), // text estimator ≈ 2 tokens, well below 11000
         ];
+
+        $this->eventStore->expects(self::once())
+            ->method('allFor')
+            ->with('run-1')
+            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]); // 12000 > 11000
 
         self::assertTrue(
             $this->guard->shouldCompactBeforeLlmStep('run-1', 1, $messages, null),
         );
     }
 
-    public function testReturnsFalseWhenBelowThreshold(): void
+    /**
+     * Thesis: provider usage below threshold → return false,
+     * even though the text-only estimator for very long messages
+     * might say otherwise.
+     */
+    public function testReturnsFalseWhenProviderUsageBelowThreshold(): void
     {
         $messages = [
-            $this->makeTextMessage('user', 'Hello'),
+            $this->makeTextMessage('user', str_repeat('x', 50000)), // estimator ≈ 15384 > 11000
         ];
+
+        $this->eventStore->expects(self::once())
+            ->method('allFor')
+            ->with('run-1')
+            ->willReturn([$this->makeLlmStepCompletedEvent(5000)]); // 5000 < 11000
 
         self::assertFalse(
             $this->guard->shouldCompactBeforeLlmStep('run-1', 1, $messages, null),
         );
     }
 
+    /**
+     * Thesis: no provider measurement → no auto-compaction.
+     * The text-only estimator is NOT a fallback trigger baseline.
+     */
+    public function testReturnsFalseWhenNoProviderUsageExists(): void
+    {
+        $messages = [
+            $this->makeTextMessage('user', str_repeat('x', 50000)), // would exceed if we used estimator
+        ];
+
+        $this->eventStore->expects(self::once())
+            ->method('allFor')
+            ->with('run-1')
+            ->willReturn([]); // No llm_step_completed events at all
+
+        self::assertFalse(
+            $this->guard->shouldCompactBeforeLlmStep('run-1', 1, $messages, null),
+        );
+    }
+
+    // ── Preserved guard tests (unchanged semantics) ─────────────────
+
     public function testReturnsFalseWhenAutoDisabled(): void
     {
         $disabledConfig = new CompactionConfig(autoEnabled: false, compactAfterTokens: 1);
         $guard = new CodingAgentPreLlmCompactionGuard(
             $disabledConfig,
-            $this->tokenEstimator,
+            $this->providerUsageResolver,
             $this->modelResolver,
         );
 
         $messages = [
-            $this->makeTextMessage('user', str_repeat('x', 200)),
+            $this->makeTextMessage('user', 'Hello'),
         ];
 
         self::assertFalse(
@@ -94,9 +168,10 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
     public function testReturnsFalseWhenCompactionInFlight(): void
     {
         $messages = [
-            $this->makeTextMessage('user', str_repeat('x', 200)),
+            $this->makeTextMessage('user', 'Hello'),
         ];
 
+        // In-flight guard catches before event store is queried.
         self::assertFalse(
             $this->guard->shouldCompactBeforeLlmStep('run-1', 1, $messages, 'compact-1234567890'),
         );
@@ -106,12 +181,11 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
     {
         $configWithOverride = new CompactionConfig(
             autoEnabled: true,
-            compactAfterTokens: 50,
+            compactAfterTokens: 11000,
             modelOverrides: [
-                'openai/gpt-4' => ['compact_after_tokens' => 10000],
+                'openai/gpt-4' => ['compact_after_tokens' => 50000],
             ],
         );
-        // Replace the default mock with one that returns the overridden model.
         $modelResolver = $this->createMock(ActiveModelResolverInterface::class);
         $modelResolver->expects(self::once())
             ->method('getActiveModel')
@@ -120,13 +194,18 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
 
         $guard = new CodingAgentPreLlmCompactionGuard(
             $configWithOverride,
-            $this->tokenEstimator,
+            $this->providerUsageResolver,
             $modelResolver,
         );
 
         $messages = [
-            $this->makeTextMessage('user', str_repeat('x', 200)), // ~62 tokens < 10000 override
+            $this->makeTextMessage('user', 'Hello'),
         ];
+
+        $this->eventStore->expects(self::once())
+            ->method('allFor')
+            ->with('run-1')
+            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]); // 12000 < 50000 override
 
         self::assertFalse(
             $guard->shouldCompactBeforeLlmStep('run-1', 1, $messages, null),
@@ -146,8 +225,11 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
     public function testOneShotDedupPreventsRepeatedCompactionForSameTurn(): void
     {
         $messages = [
-            $this->makeTextMessage('user', str_repeat('x', 200)), // ~62 tokens > 50
+            $this->makeTextMessage('user', 'Hello'),
         ];
+
+        $this->eventStore->method('allFor')
+            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]); // 12000 > 11000
 
         // First call → true (no dedup yet).
         self::assertTrue(
@@ -169,8 +251,11 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
     public function testDedupIsPerTurnNo(): void
     {
         $messages = [
-            $this->makeTextMessage('user', str_repeat('x', 200)), // ~62 tokens > 50
+            $this->makeTextMessage('user', 'Hello'),
         ];
+
+        $this->eventStore->method('allFor')
+            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]); // 12000 > 11000
 
         // Turn 1 → true.
         self::assertTrue(
