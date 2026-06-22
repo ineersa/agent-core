@@ -37,6 +37,27 @@ final class CodingAgentPreLlmCompactionGuard implements PreLlmCompactionGuardInt
      */
     private array $preLlmCompacted = [];
 
+    /**
+     * Run-level dedup: run IDs for which pre-LLM compaction has already
+     * been dispatched.  Prevents the guard from firing a second pre-LLM
+     * compaction for the same run — even at a different turnNo — when
+     * the first compaction is still in flight or the run was re-advanced
+     * by a follow-up/steer command before the async compaction worker
+     * completed.
+     *
+     * This is a belt-and-suspenders guard on top of the turn-level dedup
+     * and the activeStepId compact-* prefix check in shouldCompactBeforeLlmStep.
+     * In practice, AdvanceRun can arrive through multiple buses
+     * (agent.command.bus from ApplyCommandHandler postCommit callbacks,
+     * agent.execution.bus from handler effects), and the state visible to
+     * each handler may differ depending on CAS commit ordering.
+     *
+     * Cleared on process restart.
+     *
+     * @var array<string, true>
+     */
+    private array $preLlmCompactedByRun = [];
+
     public function __construct(
         private readonly CompactionConfig $compactionConfig,
         private readonly ProviderContextUsageResolver $providerUsageResolver,
@@ -50,12 +71,24 @@ final class CodingAgentPreLlmCompactionGuard implements PreLlmCompactionGuardInt
         array $messages,
         ?string $activeStepId,
     ): bool {
-        // One-shot guard: prevent repeated pre-LLM compaction for the
-        // same run+turnNo.  When the pre-LLM guard fires, the AdvanceRun
-        // is replaced with a CompactRun effect.  After compaction succeeds,
+        // Run-level guard: prevent ANY second pre-LLM compaction for the
+        // same run.  When the pre-LLM guard fires, the AdvanceRun is
+        // replaced with a CompactRun effect.  After compaction succeeds,
         // CompactionStepResultHandler dispatches another AdvanceRun to
         // continue.  If token count is still above threshold, the guard
         // would fire again — this dedup prevents that loop.
+        //
+        // Using runId alone (not runId|turnNo) ensures that follow-up or
+        // steer commands applied while the first compaction is in flight
+        // cannot trigger a second pre-LLM compaction through a different
+        // AdvanceRun path (e.g., ApplyCommandHandler's postCommit callback
+        // dispatching AdvanceRun to agent.command.bus).
+        if (isset($this->preLlmCompactedByRun[$runId])) {
+            return false;
+        }
+
+        // Turn-level guard: prevent repeated pre-LLM compaction for the
+        // same run+turnNo (additional safety within the same turn).
         $dedupKey = \sprintf('%s|%d', $runId, $nextTurnNo);
         if (isset($this->preLlmCompacted[$dedupKey])) {
             return false;
@@ -83,6 +116,7 @@ final class CodingAgentPreLlmCompactionGuard implements PreLlmCompactionGuardInt
 
         if (null !== $effectiveTokens && $effectiveTokens > $runtimeSettings->compactAfterTokens) {
             $this->preLlmCompacted[$dedupKey] = true;
+            $this->preLlmCompactedByRun[$runId] = true;
 
             return true;
         }
