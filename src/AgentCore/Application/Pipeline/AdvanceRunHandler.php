@@ -122,6 +122,18 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             }
 
             if ($hasNonCompactBoundaryEvent && [] !== $boundaryEventSpecs && \in_array($preparedState->status, [RunStatus::Completed, RunStatus::Failed, RunStatus::Cancelled], true)) {
+                // Emit run_resumed so the headless controller's RuntimeEventEmitter
+                // drain loop re-registers the event cursor for this run (issue #183).
+                // Without this, events after a shell command's completeAfter AgentEnd
+                // (which removes the cursor) are never forwarded to stdout.
+                $boundaryEventSpecs = [
+                    [
+                        'type' => RunEventTypeEnum::RunResumed->value,
+                        'payload' => [],
+                    ],
+                    ...$boundaryEventSpecs,
+                ];
+
                 $preparedState = new RunState(
                     runId: $preparedState->runId,
                     status: RunStatus::Running,

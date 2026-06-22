@@ -46,6 +46,7 @@ final class RuntimeEventTranslator
         $this->dispatchTable = [
             // Lifecycle
             RunEventTypeEnum::RunStarted->value => $this->onRunStarted(...),
+            RunEventTypeEnum::RunResumed->value => $this->onRunResumed(...),
             RunEventTypeEnum::TurnAdvanced->value => $this->onTurnStarted(...),
             RunEventTypeEnum::AgentEnd->value => $this->onAgentEnd(...),
             // Assistant stream
@@ -128,6 +129,22 @@ final class RuntimeEventTranslator
             runId: $runEvent->runId,
             seq: $runEvent->seq,
             payload: $payload,
+        );
+    }
+
+    /**
+     * Maps a run_resumed domain event to the TUI protocol.
+     *
+     * Emitted by AdvanceRunHandler when a follow-up turn resumes a
+     * previously-completed run so the RuntimeEventEmitter re-registers
+     * the event drain cursor (issue #183).
+     */
+    private function onRunResumed(RunEvent $runEvent): RuntimeEvent
+    {
+        return new RuntimeEvent(
+            type: RuntimeEventTypeEnum::RunResumed->value,
+            runId: $runEvent->runId,
+            seq: $runEvent->seq,
         );
     }
 

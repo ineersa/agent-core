@@ -120,13 +120,17 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
 
     /**
      * Thesis: Shell commands with completeAfter=true (subsequent !cmd on
-     * a completed run) must produce [tool_exec_start, tool_exec_end, agent_end]
-     * in strict ascending seq order, just like standalone.
+     * a completed run) must NOT produce agent_end — the run is already
+     * completed and writing a second AgentEnd would interfere with
+     * follow-up command processing by removing (or double-writing)
+     * the terminal event and confusing the event drain cursor lifecycle.
      *
-     * Regression: async dispatch must not let the controller's sync AgentEnd
-     * write race ahead of the async worker's tool_exec events (issue #183).
+     * Regression: the prior design wrote a second AgentEnd for completeAfter,
+     * which caused the RuntimeEventEmitter drain cursor to be removed,
+     * preventing follow-up AdvanceRun events from being forwarded to
+     * stdout (issue #183 live-path hang).
      */
-    public function testCompleteAfterWritesEventsInOrder(): void
+    public function testCompleteAfterDoesNotWriteAgentEnd(): void
     {
         $eventStore = $this->createEventStore();
         $toolExecutor = $this->createToolExecutor('complete-after-output');
@@ -140,7 +144,9 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
             completeAfter: true,
         ));
 
-        self::assertCount(3, $this->appendedEvents, 'completeAfter shell must produce 3 events.');
+        // completeAfter must produce exactly 2 events (tool_exec_start + end).
+        // No AgentEnd — the run is already completed from the prior turn.
+        self::assertCount(2, $this->appendedEvents, 'completeAfter shell must produce 2 events (no AgentEnd).');
 
         // Seq 1: tool_execution_start
         self::assertSame(1, $this->appendedEvents[0]->seq);
@@ -150,16 +156,11 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
         self::assertSame(2, $this->appendedEvents[1]->seq);
         self::assertSame(RunEventTypeEnum::ToolExecutionEnd->value, $this->appendedEvents[1]->type);
 
-        // Seq 3: agent_end (final event)
-        self::assertSame(3, $this->appendedEvents[2]->seq);
-        self::assertSame(RunEventTypeEnum::AgentEnd->value, $this->appendedEvents[2]->type);
-        self::assertSame('completed', $this->appendedEvents[2]->payload['reason'] ?? null);
-
-        // AgentEnd must be the final lifecycle event.
-        self::assertSame(
+        // No AgentEnd event — the run stays completed, ready for follow-up.
+        self::assertNotContains(
             RunEventTypeEnum::AgentEnd->value,
-            $this->appendedEvents[array_key_last($this->appendedEvents)]->type,
-            'AgentEnd must be the final event for completeAfter shell commands.',
+            array_map(static fn (RunEvent $e): string => $e->type, $this->appendedEvents),
+            'completeAfter must not write AgentEnd — the run is already completed.',
         );
     }
 

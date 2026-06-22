@@ -57,6 +57,20 @@ final readonly class UserMessageHandler
             'steer' => 'message',
             default => 'message',
         };
+
+        // Re-register the event drain cursor when resuming a completed run.
+        // After the shell command's completeAfter AgentEnd removes the cursor
+        // (via run.completed), the drain loop stops polling this run's events.
+        // Follow-up / steer commands that dispatch AdvanceRun to the run_control
+        // consumer produce canonical events (turn_advanced, llm_step_completed,
+        // agent_end) that the drain loop would never forward without an active
+        // cursor (issue #183).
+        $event->emit(new RuntimeEvent(
+            type: RuntimeEventTypeEnum::RunResumed->value,
+            runId: $runId,
+            seq: 0,
+        ));
+
         $this->client->send($runId, new UserCommand(
             type: $commandType,
             text: (string) ($command->payload['text'] ?? ''),

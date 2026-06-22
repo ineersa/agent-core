@@ -320,7 +320,7 @@ final class TuiJourneyE2eTest extends TestCase
         );
 
         // Ordering assertion for inline shell: AgentEnd must be last.
-        $this->assertShellEventsOrder($this->testProjectDir, 'inline-!ls');
+        $this->assertShellEventsOrder($this->testProjectDir, 'inline-!ls', 'tool_execution_end');
 
         // Follow-up normal message: must NOT die (the original bug symptom).
         // The run was completed before the shell; the shell wrote a fresh
@@ -749,7 +749,7 @@ final class TuiJourneyE2eTest extends TestCase
      * dir and verifies the final event type is agent_end (LifecycleOrderValidator
      * conformance).
      */
-    private function assertShellEventsOrder(string $testProjectDir, string $label): void
+    private function assertShellEventsOrder(string $testProjectDir, string $label, string $expectedLastType = 'agent_end'): void
     {
         $sessionDirs = glob($testProjectDir.'/.hatfield/sessions/*', GLOB_ONLYDIR);
         if (false === $sessionDirs || [] === $sessionDirs) {
@@ -784,11 +784,12 @@ final class TuiJourneyE2eTest extends TestCase
         }
 
         self::assertSame(
-            'agent_end',
+            $expectedLastType,
             $lastEvent['type'],
             \sprintf(
-                '%s: AgentEnd must be the final lifecycle event in events.jsonl (found "%s" at line %d).',
+                '%s: Expected "%s" as the final lifecycle event in events.jsonl (found "%s" at line %d).',
                 $label,
+                $expectedLastType,
                 $lastEvent['type'],
                 $lastLine ?? 0,
             ),

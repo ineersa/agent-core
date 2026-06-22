@@ -149,7 +149,7 @@ final readonly class ExecuteShellToolCallWorker
         // This avoids the ordering race that occurs when the controller
         // calls completeRun() synchronously before the async worker has
         // written tool_exec events (issue #183).
-        if ($message->standalone || $message->completeAfter) {
+        if ($message->standalone) {
             $this->eventStore->append(new RunEvent(
                 runId: $runId,
                 seq: $nextSeq + 2,

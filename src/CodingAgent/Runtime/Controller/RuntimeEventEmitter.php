@@ -67,25 +67,30 @@ final class RuntimeEventEmitter
     }
 
     /**
-     * Emit a runtime event to stdout with auto cursor register/release.
+     * Emit a runtime event to stdout with auto cursor register.
      *
      * Cursor lifecycle events:
      * - Register on: RunStarted, RunResumed
-     * - Release on: RunCompleted, RunFailed, RunCancelled
+     * - Cursors are NEVER released — a completed/failed/cancelled run may
+     *   receive follow-up commands that produce new canonical events
+     *   (issue #183). The drain loop continues polling at the recorded
+     *   cursor position and simply yields no new events for idle runs.
      */
     public function emit(RuntimeEvent $event): void
     {
-        // Auto-register/release event drain cursors based on event type.
+        // Auto-register event drain cursors based on event type.
         if (RuntimeEventTypeEnum::RunStarted->value === $event->type
             || RuntimeEventTypeEnum::RunResumed->value === $event->type
         ) {
             $this->runEventCursors[$event->runId] = $this->runEventCursors[$event->runId] ?? 0;
-        } elseif (RuntimeEventTypeEnum::RunCompleted->value === $event->type
-            || RuntimeEventTypeEnum::RunFailed->value === $event->type
-            || RuntimeEventTypeEnum::RunCancelled->value === $event->type
-        ) {
-            unset($this->runEventCursors[$event->runId]);
         }
+
+        // Cursor removal on terminal events has been removed (issue #183).
+        // After complete_run / shell-command completeAfter writes AgentEnd,
+        // the resulting run.completed event would unset the cursor, preventing
+        // follow-up AdvanceRun events from being forwarded.  Keeping cursors
+        // alive has trivial overhead (polling completed runs returns 0 events)
+        // and prevents the drain loop from silently dropping follow-up events.
 
         $this->emitInternal($event);
     }
