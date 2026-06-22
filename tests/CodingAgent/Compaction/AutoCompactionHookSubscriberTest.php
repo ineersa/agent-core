@@ -18,6 +18,7 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Compaction\ActiveModelResolverInterface;
 use Ineersa\CodingAgent\Compaction\AutoCompactionHookSubscriber;
+use Ineersa\CodingAgent\Compaction\CompactionTokenEstimator;
 use Ineersa\CodingAgent\Compaction\ProviderContextUsageResolver;
 use Ineersa\CodingAgent\Config\CompactionConfig;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
@@ -49,7 +50,10 @@ final class AutoCompactionHookSubscriberTest extends TestCase
     {
         $this->runStore = $this->createMock(RunStoreInterface::class);
         $this->eventStore = $this->createMock(EventStoreInterface::class);
-        $this->providerUsageResolver = new ProviderContextUsageResolver($this->eventStore);
+        $this->providerUsageResolver = new ProviderContextUsageResolver(
+            $this->eventStore,
+            new CompactionTokenEstimator(),
+        );
         $this->compactionConfig = new CompactionConfig(
             autoEnabled: true,
             compactAfterTokens: 11000,
@@ -122,6 +126,35 @@ final class AutoCompactionHookSubscriberTest extends TestCase
                     'input_tokens' => $inputTokens,
                     'output_tokens' => 100,
                     'total_tokens' => $inputTokens + 100,
+                ],
+            ],
+        );
+    }
+
+    /**
+     * Create a llm_step_completed event WITH assistant_message payload
+     * so the resolver can compute delta.
+     */
+    private function makeLlmStepCompletedEventWithAssistant(
+        int $inputTokens,
+        string $assistantText = 'Hello from assistant',
+    ): RunEvent {
+        return new RunEvent(
+            runId: 'run-1',
+            seq: 1,
+            turnNo: 1,
+            type: RunEventTypeEnum::LlmStepCompleted->value,
+            payload: [
+                'step_id' => 'step-1',
+                'stop_reason' => 'stop',
+                'usage' => [
+                    'input_tokens' => $inputTokens,
+                    'output_tokens' => 100,
+                    'total_tokens' => $inputTokens + 100,
+                ],
+                'assistant_message' => [
+                    'role' => 'assistant',
+                    'content' => [['type' => 'text', 'text' => $assistantText]],
                 ],
             ],
         );
@@ -550,5 +583,90 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $msg = $this->commandBus->messages[0];
         self::assertInstanceOf(CompactRun::class, $msg);
         self::assertSame('auto', $msg->trigger);
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    //  Test: delta pushes effective tokens over threshold
+    // ─────────────────────────────────────────────────────────────────
+
+    /**
+     * Thesis: provider input alone is below threshold, but post-measurement
+     * delta (assistant output, tool results, new user message) pushes the
+     * effective token count above compact_after_tokens → dispatch.
+     */
+    public function testDispatchesWhenDeltaPushesEffectiveTokensOverThreshold(): void
+    {
+        $this->modelResolver->expects(self::once())
+            ->method('getActiveModel')
+            ->with('run-1')
+            ->willReturn(null);
+
+        $assistantText = 'Let me look into that.';
+        $messages = [
+            $this->makeTextMessage('user', 'What is the answer?'),
+            $this->makeTextMessage('assistant', $assistantText),
+            // Tool output adds substantial delta (~2300+ tokens)
+            $this->makeTextMessage('tool', str_repeat('tool result data ', 450)),
+            $this->makeTextMessage('user', 'Now explain in more detail.'),
+        ];
+        $runState = $this->createRunState($messages);
+
+        $this->runStore->expects(self::once())
+            ->method('get')
+            ->with('run-1')
+            ->willReturn($runState);
+
+        // input_tokens=9000 (below 11000 threshold) but delta from tool output
+        // + user message pushes effective tokens well above 11000.
+        $this->eventStore->expects(self::once())
+            ->method('allFor')
+            ->with('run-1')
+            ->willReturn([$this->makeLlmStepCompletedEventWithAssistant(9000, $assistantText)]);
+
+        $context = $this->createHookContext();
+        $this->subscriber->handleAfterTurnCommit($context);
+
+        self::assertCount(1, $this->commandBus->messages, 'Should dispatch when delta pushes effective tokens over threshold');
+        self::assertSame('auto', $this->commandBus->messages[0]->trigger);
+    }
+
+    /**
+     * Thesis: huge pre-measurement messages (below threshold after
+     * provider measurement) with NO post-measurement delta do NOT
+     * trigger auto-compaction.  This proves no full-conversation
+     * estimator fallback.
+     */
+    public function testDoesNotDispatchWhenBelowThresholdAndNoDelta(): void
+    {
+        $this->modelResolver->expects(self::once())
+            ->method('getActiveModel')
+            ->with('run-1')
+            ->willReturn(null);
+
+        $assistantText = 'Done.';
+        // Messages end with the matched assistant — no delta.
+        $messages = [
+            $this->makeTextMessage('user', str_repeat('large pre-measurement text ', 500)),
+            $this->makeTextMessage('assistant', $assistantText),
+        ];
+        $runState = $this->createRunState($messages);
+
+        $this->runStore->expects(self::once())
+            ->method('get')
+            ->with('run-1')
+            ->willReturn($runState);
+
+        // input_tokens=9000 (below 11000 threshold).  The pre-measurement
+        // user message is huge but was already counted in input_tokens.
+        // No post-measurement delta → effective tokens = 9000 ≤ 11000.
+        $this->eventStore->expects(self::once())
+            ->method('allFor')
+            ->with('run-1')
+            ->willReturn([$this->makeLlmStepCompletedEventWithAssistant(9000, $assistantText)]);
+
+        $context = $this->createHookContext();
+        $this->subscriber->handleAfterTurnCommit($context);
+
+        self::assertCount(0, $this->commandBus->messages, 'Should NOT dispatch when below threshold with no delta');
     }
 }

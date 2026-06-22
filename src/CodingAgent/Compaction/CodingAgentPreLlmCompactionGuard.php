@@ -74,12 +74,13 @@ final class CodingAgentPreLlmCompactionGuard implements PreLlmCompactionGuardInt
             return false;
         }
 
-        // Check the provider-measured context token count against the
-        // compact_after_tokens threshold.  The text-only estimator is NOT
-        // used as the trigger baseline — it undercounts real provider
-        // context by omitting tool schemas, JSON envelope, and provider-
-        // specific overhead.  No provider measurement means no auto-compaction.
-        $effectiveTokens = $this->providerUsageResolver->getLatestInputTokens($runId);
+        // Compute effective context tokens = latest provider input tokens
+        // + estimated delta for messages appended after that measurement
+        // (assistant output, tool results, new user messages).
+        // The text-only estimator is used ONLY for the post-measurement
+        // delta, never as the whole trigger baseline.
+        // No provider measurement → no auto-compaction.
+        $effectiveTokens = $this->providerUsageResolver->getEffectiveContextTokens($runId, $messages);
 
         if (null !== $effectiveTokens && $effectiveTokens > $runtimeSettings->compactAfterTokens) {
             $this->preLlmCompacted[$dedupKey] = true;

@@ -11,6 +11,7 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\CodingAgent\Compaction\ActiveModelResolverInterface;
 use Ineersa\CodingAgent\Compaction\CodingAgentPreLlmCompactionGuard;
+use Ineersa\CodingAgent\Compaction\CompactionTokenEstimator;
 use Ineersa\CodingAgent\Compaction\ProviderContextUsageResolver;
 use Ineersa\CodingAgent\Config\CompactionConfig;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
@@ -38,7 +39,10 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
     protected function setUp(): void
     {
         $this->eventStore = $this->createMock(EventStoreInterface::class);
-        $this->providerUsageResolver = new ProviderContextUsageResolver($this->eventStore);
+        $this->providerUsageResolver = new ProviderContextUsageResolver(
+            $this->eventStore,
+            new CompactionTokenEstimator(),
+        );
         $this->compactionConfig = new CompactionConfig(
             autoEnabled: true,
             compactAfterTokens: 11000,
@@ -76,6 +80,35 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
                     'input_tokens' => $inputTokens,
                     'output_tokens' => 100,
                     'total_tokens' => $inputTokens + 100,
+                ],
+            ],
+        );
+    }
+
+    /**
+     * Create a llm_step_completed event WITH assistant_message payload
+     * so the resolver can compute delta.
+     */
+    private function makeLlmStepCompletedEventWithAssistant(
+        int $inputTokens,
+        string $assistantText = 'Hello from assistant',
+    ): RunEvent {
+        return new RunEvent(
+            runId: 'run-1',
+            seq: 1,
+            turnNo: 1,
+            type: RunEventTypeEnum::LlmStepCompleted->value,
+            payload: [
+                'step_id' => 'step-1',
+                'stop_reason' => 'stop',
+                'usage' => [
+                    'input_tokens' => $inputTokens,
+                    'output_tokens' => 100,
+                    'total_tokens' => $inputTokens + 100,
+                ],
+                'assistant_message' => [
+                    'role' => 'assistant',
+                    'content' => [['type' => 'text', 'text' => $assistantText]],
                 ],
             ],
         );
@@ -266,6 +299,61 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
         self::assertTrue(
             $this->guard->shouldCompactBeforeLlmStep('run-1', 2, $messages, null),
             'Different turnNo should not be blocked by dedup',
+        );
+    }
+
+    // ── Delta-aware trigger tests ───────────────────────────────────
+
+    /**
+     * Thesis: provider input below threshold but post-measurement delta
+     * (tool results, new user message) pushes effective tokens over
+     * compact_after_tokens → return true.
+     */
+    public function testReturnsTrueWhenDeltaPushesEffectiveTokensOverThreshold(): void
+    {
+        $assistantText = 'Let me check that.';
+        $messages = [
+            $this->makeTextMessage('user', 'What is the answer?'),
+            $this->makeTextMessage('assistant', $assistantText),
+            $this->makeTextMessage('tool', str_repeat('tool result data ', 450)),
+            $this->makeTextMessage('user', 'Now explain more.'),
+        ];
+
+        // input_tokens=9000 (below 11000) but delta from tool output pushes it over.
+        $this->eventStore->expects(self::once())
+            ->method('allFor')
+            ->with('run-1')
+            ->willReturn([$this->makeLlmStepCompletedEventWithAssistant(9000, $assistantText)]);
+
+        self::assertTrue(
+            $this->guard->shouldCompactBeforeLlmStep('run-1', 1, $messages, null),
+            'Should trigger when delta pushes effective tokens over threshold',
+        );
+    }
+
+    /**
+     * Thesis: huge pre-measurement messages with NO post-measurement
+     * delta do NOT trigger auto-compaction — proves no full-conversation
+     * estimator fallback.
+     */
+    public function testReturnsFalseWhenBelowThresholdAndNoDelta(): void
+    {
+        $assistantText = 'Done.';
+        $messages = [
+            $this->makeTextMessage('user', str_repeat('large pre-measurement text ', 500)),
+            $this->makeTextMessage('assistant', $assistantText),
+        ];
+
+        // input_tokens=9000 (below 11000).  Huge user message was already
+        // counted in input_tokens.  No delta → effective = 9000 ≤ 11000.
+        $this->eventStore->expects(self::once())
+            ->method('allFor')
+            ->with('run-1')
+            ->willReturn([$this->makeLlmStepCompletedEventWithAssistant(9000, $assistantText)]);
+
+        self::assertFalse(
+            $this->guard->shouldCompactBeforeLlmStep('run-1', 1, $messages, null),
+            'Should NOT trigger when below threshold with no delta',
         );
     }
 }
