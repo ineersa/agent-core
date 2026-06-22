@@ -251,28 +251,6 @@ final class AgentArtifactRegistry
         }
     }
 
-    /**
-     * Resolve the absolute base path for a parent session's agent artifacts.
-     *
-     * @deprecated Prefer {@see AgentArtifactPathResolver::resolveArtifactsBasePath()}.
-     *             Kept for backward compatibility with existing public API consumers.
-     */
-    public function resolveArtifactsBasePath(string $parentRunId): string
-    {
-        return $this->pathResolver->resolveArtifactsBasePath($parentRunId);
-    }
-
-    /**
-     * Resolve an absolute path to a child artifact directory.
-     *
-     * @deprecated Prefer {@see AgentArtifactPathResolver::resolveArtifactDir()}.
-     *             Kept for backward compatibility with existing public API consumers.
-     */
-    public function resolveArtifactDir(string $parentRunId, string $artifactId): string
-    {
-        return $this->pathResolver->resolveArtifactDir($parentRunId, $artifactId);
-    }
-
     // ── Internal read/write methods ─────────────────────────────────────
 
     /**
@@ -462,11 +440,6 @@ final class AgentArtifactRegistry
             // missing constructors, unrecognized enum values, etc.
             $artifactId = \is_string($data['artifact_id'] ?? null) ? $data['artifact_id'] : 'unknown';
             throw new \RuntimeException(\sprintf('Registry entry for parent run "%s" artifact "%s" could not be denormalized: %s', $parentRunId, $artifactId, $e->getMessage()), previous: $e);
-        }
-
-        // Validate required identity fields are present and non-empty after denormalization.
-        if ('' === $entry->artifactId || '' === $entry->parentRunId || '' === $entry->agentRunId || '' === $entry->agentName) {
-            throw new \RuntimeException(\sprintf('Registry entry for parent run "%s" has empty required identity fields.', $parentRunId));
         }
 
         // Validate stored paths match the canonical paths for this artifact ID.

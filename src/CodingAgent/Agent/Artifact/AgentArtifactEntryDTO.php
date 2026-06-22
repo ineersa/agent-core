@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Artifact;
 
 use Symfony\Component\Serializer\Attribute\SerializedName;
+use Symfony\Component\Validator\Constraints as Assert;
 
 /**
  * Immutable metadata for one parent-scoped agent artifact / child run.
@@ -23,16 +24,21 @@ final readonly class AgentArtifactEntryDTO
     /** @param ?string $summary short completion/failure summary */
     public function __construct(
         #[SerializedName('artifact_id')]
+        #[Assert\NotBlank(normalizer: 'trim', message: 'artifact_id must not be blank')]
         public string $artifactId,
         #[SerializedName('parent_run_id')]
+        #[Assert\NotBlank(normalizer: 'trim', message: 'parent_run_id must not be blank')]
         public string $parentRunId,
         #[SerializedName('agent_run_id')]
+        #[Assert\NotBlank(normalizer: 'trim', message: 'agent_run_id must not be blank')]
         public string $agentRunId,
         #[SerializedName('agent_name')]
+        #[Assert\NotBlank(normalizer: 'trim', message: 'agent_name must not be blank')]
         public string $agentName,
         #[SerializedName('status')]
         public AgentArtifactStatusEnum $status,
         #[SerializedName('paths')]
+        #[Assert\Valid]
         public AgentArtifactPathsDTO $paths,
         #[SerializedName('created_at')]
         public \DateTimeImmutable $createdAt,
@@ -47,19 +53,5 @@ final readonly class AgentArtifactEntryDTO
         #[SerializedName('needs_clarification')]
         public ?string $needsClarification = null,
     ) {
-    }
-
-    /**
-     * Whether the artifact is in a terminal state.
-     */
-    public function isTerminal(): bool
-    {
-        return match ($this->status) {
-            AgentArtifactStatusEnum::Completed,
-            AgentArtifactStatusEnum::Failed,
-            AgentArtifactStatusEnum::Cancelled,
-            AgentArtifactStatusEnum::NeedsClarification => true,
-            default => false,
-        };
     }
 }

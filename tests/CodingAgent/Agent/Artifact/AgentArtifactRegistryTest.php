@@ -37,6 +37,7 @@ use Symfony\Component\Validator\ValidatorBuilder;
 final class AgentArtifactRegistryTest extends TestCase
 {
     private string $projectDir;
+    private AgentArtifactPathResolver $pathResolver;
     private AgentArtifactRegistry $registry;
 
     protected function setUp(): void
@@ -64,8 +65,10 @@ final class AgentArtifactRegistryTest extends TestCase
 
         $validator = (new ValidatorBuilder())->enableAttributeMapping()->getValidator();
 
+        $this->pathResolver = new AgentArtifactPathResolver($hatfieldSessionStore);
+
         $this->registry = new AgentArtifactRegistry(
-            pathResolver: new AgentArtifactPathResolver($hatfieldSessionStore),
+            pathResolver: $this->pathResolver,
             serializer: $serializer,
             validator: $validator,
             lockFactory: new LockFactory(new FlockStore()),
@@ -432,7 +435,7 @@ final class AgentArtifactRegistryTest extends TestCase
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
         $expected = $this->projectDir.'/.hatfield/sessions/'.$parentRunId.'/artifacts/agents';
 
-        self::assertSame($expected, $this->registry->resolveArtifactsBasePath($parentRunId));
+        self::assertSame($expected, $this->pathResolver->resolveArtifactsBasePath($parentRunId));
     }
 
     public function testResolveArtifactsBasePathRejectsPathTraversal(): void
@@ -440,7 +443,7 @@ final class AgentArtifactRegistryTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('path separators');
 
-        $this->registry->resolveArtifactsBasePath('../sessions');
+        $this->pathResolver->resolveArtifactsBasePath('../sessions');
     }
 
     public function testResolveArtifactDir(): void
@@ -448,7 +451,7 @@ final class AgentArtifactRegistryTest extends TestCase
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
         $expected = $this->projectDir.'/.hatfield/sessions/'.$parentRunId.'/artifacts/agents/agent_01HX';
 
-        self::assertSame($expected, $this->registry->resolveArtifactDir($parentRunId, 'agent_01HX'));
+        self::assertSame($expected, $this->pathResolver->resolveArtifactDir($parentRunId, 'agent_01HX'));
     }
 
     public function testResolveArtifactDirRejectsDotInArtifactId(): void
@@ -456,7 +459,7 @@ final class AgentArtifactRegistryTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('must not be "."');
 
-        $this->registry->resolveArtifactDir('parent', '.');
+        $this->pathResolver->resolveArtifactDir('parent', '.');
     }
 
     public function testResolveArtifactDirRejectsPathTraversal(): void
@@ -464,7 +467,7 @@ final class AgentArtifactRegistryTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('path separators');
 
-        $this->registry->resolveArtifactDir('parent', 'a/b');
+        $this->pathResolver->resolveArtifactDir('parent', 'a/b');
     }
 
     // ── Locking / concurrent update safety ───────────────────────────────
@@ -554,7 +557,7 @@ final class AgentArtifactRegistryTest extends TestCase
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
 
         // Write corrupt JSON as the registry
-        $agentsDir = $this->registry->resolveArtifactsBasePath($parentRunId);
+        $agentsDir = $this->pathResolver->resolveArtifactsBasePath($parentRunId);
         mkdir($agentsDir, 0755, true);
         file_put_contents($agentsDir.'/registry.json', 'this is not json {{{');
 
@@ -568,7 +571,7 @@ final class AgentArtifactRegistryTest extends TestCase
     {
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
 
-        $agentsDir = $this->registry->resolveArtifactsBasePath($parentRunId);
+        $agentsDir = $this->pathResolver->resolveArtifactsBasePath($parentRunId);
         mkdir($agentsDir, 0755, true);
         file_put_contents($agentsDir.'/registry.json', 'corrupt');
 
@@ -582,7 +585,7 @@ final class AgentArtifactRegistryTest extends TestCase
     {
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
 
-        $agentsDir = $this->registry->resolveArtifactsBasePath($parentRunId);
+        $agentsDir = $this->pathResolver->resolveArtifactsBasePath($parentRunId);
         mkdir($agentsDir, 0755, true);
         file_put_contents($agentsDir.'/registry.json', 'not valid json');
 
@@ -596,7 +599,7 @@ final class AgentArtifactRegistryTest extends TestCase
     {
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
 
-        $agentsDir = $this->registry->resolveArtifactsBasePath($parentRunId);
+        $agentsDir = $this->pathResolver->resolveArtifactsBasePath($parentRunId);
         mkdir($agentsDir, 0755, true);
         // Valid JSON but entry missing required fields — denormalization fails
         file_put_contents($agentsDir.'/registry.json', json_encode([
@@ -614,7 +617,7 @@ final class AgentArtifactRegistryTest extends TestCase
     {
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
 
-        $agentsDir = $this->registry->resolveArtifactsBasePath($parentRunId);
+        $agentsDir = $this->pathResolver->resolveArtifactsBasePath($parentRunId);
         mkdir($agentsDir, 0755, true);
         // Nested paths shape (serializer-native)
         file_put_contents($agentsDir.'/registry.json', json_encode([
@@ -646,7 +649,7 @@ final class AgentArtifactRegistryTest extends TestCase
     {
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
 
-        $agentsDir = $this->registry->resolveArtifactsBasePath($parentRunId);
+        $agentsDir = $this->pathResolver->resolveArtifactsBasePath($parentRunId);
         mkdir($agentsDir, 0755, true);
         file_put_contents($agentsDir.'/registry.json', json_encode([
             'schema_version' => 999,
@@ -663,7 +666,7 @@ final class AgentArtifactRegistryTest extends TestCase
     {
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
 
-        $agentsDir = $this->registry->resolveArtifactsBasePath($parentRunId);
+        $agentsDir = $this->pathResolver->resolveArtifactsBasePath($parentRunId);
         mkdir($agentsDir, 0755, true);
         file_put_contents($agentsDir.'/registry.json', json_encode([
             'entries' => [],
@@ -679,7 +682,7 @@ final class AgentArtifactRegistryTest extends TestCase
     {
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
 
-        $agentsDir = $this->registry->resolveArtifactsBasePath($parentRunId);
+        $agentsDir = $this->pathResolver->resolveArtifactsBasePath($parentRunId);
         mkdir($agentsDir, 0755, true);
         file_put_contents($agentsDir.'/registry.json', json_encode([
             'schema_version' => 1,
@@ -687,6 +690,38 @@ final class AgentArtifactRegistryTest extends TestCase
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('missing required "entries"');
+
+        $this->registry->list($parentRunId);
+    }
+
+    public function testRegistryWithEmptyIdentityFieldFailsValidation(): void
+    {
+        $parentRunId = 'parent-'.bin2hex(random_bytes(4));
+
+        $agentsDir = $this->pathResolver->resolveArtifactsBasePath($parentRunId);
+        mkdir($agentsDir, 0755, true);
+        // Registry entry with blank artifact_id — Validator should catch this.
+        file_put_contents($agentsDir.'/registry.json', json_encode([
+            'schema_version' => 1,
+            'entries' => [[
+                'artifact_id' => '',
+                'parent_run_id' => $parentRunId,
+                'agent_run_id' => 'child-a',
+                'agent_name' => 'scout',
+                'status' => 'pending',
+                'created_at' => '2026-06-22T12:00:00+00:00',
+                'paths' => [
+                    'artifact_dir' => 'artifacts/agents/',
+                    'handoff_path' => 'artifacts/agents//handoff.md',
+                    'metadata_path' => 'artifacts/agents//metadata.json',
+                    'events_path' => 'artifacts/agents//events.jsonl',
+                    'state_path' => 'artifacts/agents//state.json',
+                ],
+            ]],
+        ]));
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('failed validation');
 
         $this->registry->list($parentRunId);
     }
