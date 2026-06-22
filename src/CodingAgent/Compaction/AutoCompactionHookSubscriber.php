@@ -34,6 +34,18 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
     /** @var array<string, true> Run IDs with an in-flight auto dispatch (in-process dedup) */
     private array $inFlight = [];
 
+    /**
+     * Run IDs where a compaction lifecycle commit has been observed.
+     *
+     * Prevents the hook from re-dispatching auto-compaction after the
+     * pre-LLM guard path already handled it (or after a prior hook
+     * dispatch completed).  Cleared when a new user turn starts
+     * (run_started event in the commit).
+     *
+     * @var array<string, true>
+     */
+    private array $compactionResolved = [];
+
     public function __construct(
         private readonly RunStoreInterface $runStore,
         private readonly CompactionTokenEstimator $tokenEstimator,
@@ -47,23 +59,63 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
     {
         $runId = $context->runId;
 
-        // Resolve active model for per-provider/per-model override support.
-        $activeModel = $this->modelResolver->getActiveModel($runId);
-        $runtimeSettings = $this->compactionConfig->resolveRuntimeSettings($activeModel);
+        // Guard: fresh user turn — clear any prior compaction-resolved
+        // flag and skip evaluation.  StartRun commits signal a new user
+        // prompt cycle; auto-compaction should fire after the turn
+        // completes (effectsCount=0) or via the pre-LLM guard, never at
+        // the start of a new turn.
+        if ($this->containsEventType($context, RunEventTypeEnum::RunStarted->value)) {
+            unset($this->compactionResolved[$runId]);
 
-        if (!$runtimeSettings->autoEnabled) {
             return $context;
         }
 
-        // Guard: skip when the current commit contains compaction lifecycle
-        // events (context_compaction_started / context_compacted /
-        // context_compaction_failed).  Without this, compaction lifecycle
-        // commits would re-enter the hook and trigger repeated dispatches.
+        // Guard: compaction lifecycle events (context_compaction_started /
+        // context_compacted / context_compaction_failed).  These commits
+        // may carry continuation effects (AdvanceRun), so this guard must
+        // run BEFORE the effectsCount check — otherwise lifecycle
+        // commits with effects never set compactionResolved.
         if ($this->containsCompactionLifecycle($context)) {
             // Clear the in-process dedup flag — lifecycle commit signals
             // the async compaction has resolved.
             unset($this->inFlight[$runId]);
 
+            // Mark compaction as resolved for this logical user turn.
+            // Prevents the hook from re-dispatching after the turn
+            // continues (the continuation AdvanceRun may advance the
+            // turnNo, and the subsequent stable commit would otherwise
+            // re-trigger auto-compaction).
+            $this->compactionResolved[$runId] = true;
+
+            return $context;
+        }
+
+        // Guard: skip commits that produced outbound effects (AdvanceRun,
+        // CompactRun, ExecuteLlmStep, etc.).  These are intermediate
+        // orchestration commits — effects will produce follow-up commits
+        // that may themselves carry events or outcomes.  Evaluating
+        // auto-compaction on intermediate commits causes duplicate
+        // dispatches (hook + pre-LLM guard both fire, or the hook fires
+        // on successive intermediate commits).  Only evaluate on stable
+        // turn-level commits with no pending outbound work.
+        if ($context->effectsCount > 0) {
+            return $context;
+        }
+
+        // Guard: when a prior auto-compaction lifecycle commit has been
+        // observed (via containsCompactionLifecycle), skip further
+        // auto-compaction evaluations for this logical user turn — the
+        // pre-LLM guard or an earlier hook dispatch already handled it.
+        // Cleared when run_started signals a new user prompt.
+        if (isset($this->compactionResolved[$runId])) {
+            return $context;
+        }
+
+        // Resolve active model for per-provider/per-model override support.
+        $activeModel = $this->modelResolver->getActiveModel($runId);
+        $runtimeSettings = $this->compactionConfig->resolveRuntimeSettings($activeModel);
+
+        if (!$runtimeSettings->autoEnabled) {
             return $context;
         }
 
@@ -133,6 +185,17 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
 
         foreach ($context->events as $event) {
             if (\in_array($event->type, $lifecycleTypes, true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function containsEventType(AfterTurnCommitHookContext $context, string $type): bool
+    {
+        foreach ($context->events as $event) {
+            if ($event->type === $type) {
                 return true;
             }
         }

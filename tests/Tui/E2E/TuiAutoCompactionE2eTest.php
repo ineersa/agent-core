@@ -132,6 +132,16 @@ final class TuiAutoCompactionE2eTest extends TestCase
             // so the log is complete before inspection.
             usleep(500_000);
 
+            // ── Structural proof: exactly one auto-compaction lifecycle ──
+            // Without the effectsCount > 0 guard in
+            // AutoCompactionHookSubscriber, the hook fires on intermediate
+            // orchestration commits (that have outbound effects), stacking
+            // with the pre-LLM guard to produce duplicate
+            // context_compaction_failed events (three identical failures
+            // for one user prompt).  This assertion catches that regression
+            // by reading the canonical events.jsonl directly.
+            $this->assertExactlyOneAutoCompactionLifecycle();
+
             // ── Sanity check: no boot/bus errors from double dispatch ──
             // The auto-compaction hook dispatches CompactRun on
             // agent.command.bus from inside RunCommit.  Without the fix
@@ -180,6 +190,71 @@ final class TuiAutoCompactionE2eTest extends TestCase
      * These errors would indicate CompactRun was routed to a bus
      * (agent.execution.bus) that has no handler for the message.
      */
+    /**
+     * Assert events.jsonl contains exactly one auto-compaction lifecycle
+     * outcome (context_compaction_failed, context_compacted, or
+     * context_compaction_started with trigger=auto).
+     *
+     * Without the effectsCount > 0 guard, intermediate-orchestration
+     * commits trigger the hook multiple times per turn, producing
+     * duplicate/failed events that the TUI-visible assertion alone
+     * cannot distinguish (all blocks look the same).
+     */
+    private function assertExactlyOneAutoCompactionLifecycle(): void
+    {
+        $eventLog = $this->testProjectDir.'/.hatfield/sessions/1/events.jsonl';
+
+        if (!\is_file($eventLog)) {
+            self::fail(
+                'events.jsonl not found at '.$eventLog
+                .' — TUI session did not produce expected event log.',
+            );
+        }
+
+        $lines = \file($eventLog, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES);
+        $autoCompactionEvents = [];
+
+        $lifecycleTypes = [
+            'context_compaction_started',
+            'context_compacted',
+            'context_compaction_failed',
+        ];
+
+        foreach ($lines as $line) {
+            $event = \json_decode($line, true);
+            if (!\is_array($event)) {
+                continue;
+            }
+
+            $type = $event['type'] ?? '';
+            if (!\in_array($type, $lifecycleTypes, true)) {
+                continue;
+            }
+
+            $payload = $event['payload'] ?? [];
+            $trigger = $payload['trigger'] ?? null;
+
+            if ('auto' === $trigger) {
+                $autoCompactionEvents[] = [
+                    'seq' => $event['seq'] ?? 0,
+                    'type' => $type,
+                    'reason' => $payload['reason'] ?? 'n/a',
+                ];
+            }
+        }
+
+        $count = \count($autoCompactionEvents);
+        self::assertEquals(
+            1,
+            $count,
+            \sprintf(
+                'Expected exactly 1 auto-compaction lifecycle event, found %d: %s',
+                $count,
+                \json_encode($autoCompactionEvents),
+            ),
+        );
+    }
+
     private function assertNoBusErrorInLog(): void
     {
         $logGlob = $this->testProjectDir.'/.hatfield/logs/agent-*.log';
