@@ -13,7 +13,6 @@ use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
-use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Message\Content\Text;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
@@ -141,9 +140,24 @@ final readonly class ExecuteLlmStepWorker
             $assistantMessage = $response->assistantMessage;
             $hasStreamDeltas = [] !== $response->deltas();
             if (null === $assistantMessage && !$hasStreamDeltas && null === $response->stopReason && null === $response->error) {
-                $assistantMessage = new AssistantMessage(
-                    new Text(\sprintf('LLM placeholder response for %s', $message->contextRef)),
+                // The platform returned a fully empty response: no assistant
+                // message, no stream deltas, no stop reason, no error.
+                // This is a degenerate platform result; treat it as an error
+                // rather than fabricating placeholder text that enters the
+                // conversation history.
+                $response = new PlatformInvocationResult(
+                    assistantMessage: null,
+                    deltas: $response->deltas,
+                    usage: $response->usage,
+                    stopReason: $response->stopReason,
+                    modelNotifications: $response->modelNotifications,
+                    error: [
+                        'type' => 'empty_response',
+                        'message' => 'LLM provider returned an empty response.',
+                        'retryable' => false,
+                    ],
                 );
+                $assistantMessage = null;
             }
 
             return new LlmStepResult(

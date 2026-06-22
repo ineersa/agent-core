@@ -79,7 +79,7 @@ final class CodingAgentPreLlmCompactionGuard implements PreLlmCompactionGuardInt
         // used as the trigger baseline — it undercounts real provider
         // context by omitting tool schemas, JSON envelope, and provider-
         // specific overhead.  No provider measurement means no auto-compaction.
-        $effectiveTokens = $this->providerUsageResolver->getLatestInputTokens($runId);
+        $effectiveTokens = $this->providerUsageResolver->getLatestEligibleInputTokens($runId);
 
         if (null !== $effectiveTokens && $effectiveTokens > $runtimeSettings->compactAfterTokens) {
             $this->preLlmCompacted[$dedupKey] = true;

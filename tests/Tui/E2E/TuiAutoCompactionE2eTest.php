@@ -144,18 +144,20 @@ final class TuiAutoCompactionE2eTest extends TestCase
             // is followed by a terminal before the next auto start.
             $this->assertNoConcurrentAutoCompactionStarts();
 
-            // ── Structural proof: auto-compaction lifecycle outcomes ──
-            // Sequential auto compactions are legitimate when the pre-LLM
-            // guard re-triggers after a successful compaction: the replay
-            // fixture's provider usage measurement (17 input_tokens) persists
-            // across compactions (no new llm_step_completed between them),
-            // so the pre-LLM guard sees tokens still above compact_after_tokens
-            // (10) and triggers a second sequential compaction.
+            // ── Structural proof: exactly one auto-compaction lifecycle outcome ──
+            // The event-log eligibility (ProviderContextUsageResolver) prevents
+            // stale provider measurements from re-triggering auto-compaction.
+            // After the first auto compaction starts (context_compaction_started
+            // with trigger=auto), that provider measurement is marked handled
+            // and cannot re-trigger — regardless of in-memory dedup maps or
+            // process restarts.
             //
-            // Assert 1 or 2 terminal outcomes — both are valid:
-            //  - 1: first compaction drops tokens below threshold
-            //  - 2: pre-LLM guard re-triggers (legitimate sequential)
-            $this->assertAtMostTwoAutoCompactionOutcomes();
+            // A second sequential auto compaction would only be legitimate if
+            // a NEWER provider measurement (new llm_step_completed with higher
+            // seq) arrives above the threshold after the first compaction.
+            // With compact_after_tokens=10 + tiny fixture, the first compaction
+            // typically drops tokens below threshold.
+            $this->assertExactlyOneAutoCompactionOutcome();
 
             // ── Sanity check: no boot/bus errors from double dispatch ──
             // The auto-compaction hook dispatches CompactRun on
@@ -255,19 +257,23 @@ final class TuiAutoCompactionE2eTest extends TestCase
     }
 
     /**
-     * Assert at most two auto-compaction lifecycle terminal outcomes.
+     * Assert exactly one auto-compaction lifecycle terminal outcome.
      *
-     * Sequential re-trigger by the pre-LLM guard is legitimate when the
-     * provider usage measurement persists above compact_after_tokens after
-     * the first compaction (no new llm_step_completed occurs between them).
+     * The event-log eligibility fix (ProviderContextUsageResolver) prevents
+     * stale provider measurements from re-triggering auto-compaction.
+     * After context_compaction_started with trigger=auto, the matching
+     * provider measurement is marked handled — no second auto compaction
+     * can fire for the same measurement, even after in-memory dedup maps
+     * are cleared.
      *
-     * This assertion replaces the former exactly-one check, which was too
-     * strict for replay fixtures where the pre-LLM guard legitimately fires
-     * twice.  The concurrent-starts invariant (assertNoConcurrentAutoCompactionStarts)
-     * already catches the actual regression — this assertion adds a ceiling
-     * to prevent runaway loops (3+ outcomes would indicate an infinite loop bug).
+     * With compact_after_tokens=10 on a tiny replay fixture, the first
+     * compaction drops tokens below threshold, producing exactly one outcome.
+     *
+     * A second sequential outcome would only appear if a NEWER provider
+     * measurement (new llm_step_completed with higher seq) exceeds the
+     * threshold — this is legitimate but does not happen on this tiny fixture.
      */
-    private function assertAtMostTwoAutoCompactionOutcomes(): void
+    private function assertExactlyOneAutoCompactionOutcome(): void
     {
         $eventLog = $this->testProjectDir.'/.hatfield/sessions/1/events.jsonl';
 
@@ -304,11 +310,11 @@ final class TuiAutoCompactionE2eTest extends TestCase
         }
 
         $count = \count($autoOutcomes);
-        self::assertLessThanOrEqual(
-            2,
+        self::assertEquals(
+            1,
             $count,
             \sprintf(
-                'Expected at most 2 auto-compaction lifecycle outcomes (legitimate sequential re-trigger), found %d: %s',
+                'Expected exactly 1 auto-compaction lifecycle outcome (stale measurement blocked by event-log eligibility), found %d: %s',
                 $count,
                 \json_encode($autoOutcomes),
             ),

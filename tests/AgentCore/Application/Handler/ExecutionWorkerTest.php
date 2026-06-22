@@ -230,6 +230,59 @@ final class ExecutionWorkerTest extends TestCase
         self::assertFalse($result->isError);
         self::assertSame('web_search', $result->result['tool_name']);
     }
+
+    /**
+     * Thesis: an empty platform response (no assistant message, no deltas,
+     * no stop reason, no error) must produce an error LlmStepResult, NOT
+     * a fabricated placeholder assistant message that enters the conversation
+     * history.  This prevents the "LLM placeholder response for hot:run:X"
+     * text from being stored as real assistant output.
+     */
+    public function testLlmWorkerConvertsEmptyPlatformResponseToError(): void
+    {
+        $platform = new class implements PlatformInterface {
+            public function invoke(ModelInvocationRequest $request): PlatformInvocationResult
+            {
+                unset($request);
+
+                // Empty response: no assistant message, no deltas,
+                // no stop reason, no error.
+                return new PlatformInvocationResult(
+                    assistantMessage: null,
+                    deltas: [],
+                    usage: ['input_tokens' => 100, 'output_tokens' => 0],
+                    stopReason: null,
+                    modelNotifications: [],
+                    error: null,
+                );
+            }
+        };
+
+        $commandBus = new TestMessageBus();
+        $worker = new ExecuteLlmStepWorker($platform, $commandBus, 'test-model');
+
+        $worker(new ExecuteLlmStep(
+            runId: 'run-empty-1',
+            turnNo: 3,
+            stepId: 'turn-3-llm-1',
+            attempt: 1,
+            idempotencyKey: 'llm-empty-1',
+            contextRef: 'hot:run:run-empty-1',
+            toolsRef: 'toolset:run:run-empty-1:turn:3',
+        ));
+
+        self::assertCount(1, $commandBus->messages);
+        self::assertInstanceOf(LlmStepResult::class, $commandBus->messages[0]);
+
+        /** @var LlmStepResult $result */
+        $result = $commandBus->messages[0];
+
+        self::assertSame('run-empty-1', $result->runId());
+        self::assertNull($result->assistantMessage, 'Empty platform response must not produce a fake assistant message');
+        self::assertNotNull($result->error, 'Empty platform response must be treated as an error');
+        self::assertSame('empty_response', $result->error['type'] ?? '');
+        self::assertStringContainsString('empty response', $result->error['message'] ?? '');
+    }
 }
 
 

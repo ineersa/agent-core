@@ -149,7 +149,7 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
             return $context;
         }
 
-        $effectiveTokens = $this->providerUsageResolver->getLatestInputTokens($runId);
+        $effectiveTokens = $this->providerUsageResolver->getLatestEligibleInputTokens($runId);
 
         if (null === $effectiveTokens || $effectiveTokens <= $runtimeSettings->compactAfterTokens) {
             return $context;

@@ -135,7 +135,6 @@ final class AutoCompactionHookSubscriberTest extends TestCase
     {
         $this->modelResolver->expects(self::once())
             ->method('getActiveModel')
-            ->with('run-1')
             ->willReturn(null);
 
         $messages = [
@@ -145,13 +144,10 @@ final class AutoCompactionHookSubscriberTest extends TestCase
 
         $this->runStore->expects(self::once())
             ->method('get')
-            ->with('run-1')
             ->willReturn($runState);
 
-        $this->eventStore->expects(self::once())
-            ->method('allFor')
-            ->with('run-1')
-            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]);  // 12000 > 11000
+        $this->eventStore->method('allFor')
+            ->willReturn([$this->makeLlmStepCompletedEvent(12000)]);  // 12000 > 11000, no auto started event
 
         $context = $this->createHookContext();
         $this->subscriber->handleAfterTurnCommit($context);
@@ -177,12 +173,9 @@ final class AutoCompactionHookSubscriberTest extends TestCase
 
         $this->runStore->expects(self::once())
             ->method('get')
-            ->with('run-1')
             ->willReturn($runState);
 
-        $this->eventStore->expects(self::once())
-            ->method('allFor')
-            ->with('run-1')
+        $this->eventStore->method('allFor')
             ->willReturn([$this->makeLlmStepCompletedEvent(5000)]);  // 5000 < 11000
 
         $context = $this->createHookContext();
@@ -208,13 +201,10 @@ final class AutoCompactionHookSubscriberTest extends TestCase
 
         $this->runStore->expects(self::once())
             ->method('get')
-            ->with('run-1')
             ->willReturn($runState);
 
         // No llm_step_completed events at all.
-        $this->eventStore->expects(self::once())
-            ->method('allFor')
-            ->with('run-1')
+        $this->eventStore->method('allFor')
             ->willReturn([]);
 
         $context = $this->createHookContext();
@@ -371,7 +361,6 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $modelResolver = $this->createMock(ActiveModelResolverInterface::class);
         $modelResolver->expects(self::once())
             ->method('getActiveModel')
-            ->with('run-1')
             ->willReturn('openai/gpt-4');
 
         $subscriber = new AutoCompactionHookSubscriber(
@@ -391,8 +380,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             ->method('get')
             ->willReturn($runState);
 
-        $this->eventStore->expects(self::once())
-            ->method('allFor')
+        $this->eventStore->method('allFor')
             ->willReturn([$this->makeLlmStepCompletedEvent(12000)]); // 12000 < 50000 override
 
         $context = $this->createHookContext();
@@ -550,5 +538,59 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $msg = $this->commandBus->messages[0];
         self::assertInstanceOf(CompactRun::class, $msg);
         self::assertSame('auto', $msg->trigger);
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    //  Test: stale provider measurement blocked by event-log eligibility
+    // ─────────────────────────────────────────────────────────────────
+
+    /**
+     * Thesis: after auto compaction starts on a provider measurement,
+     * the same measurement must NOT trigger another CompactRun dispatch
+     * — even when the in-memory dedup maps are cleared (e.g. process
+     * restart).  The event-log-eligibility check via
+     * ProviderContextUsageResolver::getLatestEligibleInputTokens is the
+     * authoritative guard.
+     */
+    public function testStaleProviderMeasurementDoesNotRetriggerAfterAutoCompactionStart(): void
+    {
+        $this->modelResolver->method('getActiveModel')->willReturn(null);
+
+        $runState = $this->createRunState([
+            $this->makeTextMessage('user', 'Hello'),
+        ]);
+        $this->runStore->method('get')->willReturn($runState);
+
+        // Event log: provider measurement at seq 10, auto started at seq 11.
+        // The resolver sees that the auto start (seq 11) > provider (seq 10),
+        // so the measurement is INELIGIBLE.
+        $this->eventStore->method('allFor')
+            ->willReturn([
+                $this->makeLlmStepCompletedEvent(12000),
+                new RunEvent(
+                    runId: 'run-1',
+                    seq: 2,
+                    turnNo: 1,
+                    type: RunEventTypeEnum::ContextCompactionStarted->value,
+                    payload: [
+                        'step_id' => 'compact-99',
+                        'trigger' => 'auto',
+                        'estimated_tokens' => 12000,
+                        'keep_recent_tokens' => 10,
+                        'messages_before' => 10,
+                        'messages_to_summarize' => 5,
+                        'messages_retained' => 5,
+                        'first_retained_index' => 5,
+                        'prior_summary_present' => false,
+                    ],
+                ),
+            ]);
+
+        // Stable commit after process restart — in-memory maps are empty,
+        // but event log says auto start already covered this measurement.
+        $context = $this->createHookContext();
+        $this->subscriber->handleAfterTurnCommit($context);
+
+        self::assertCount(0, $this->commandBus->messages);
     }
 }

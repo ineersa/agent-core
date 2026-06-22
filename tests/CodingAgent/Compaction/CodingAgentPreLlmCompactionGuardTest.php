@@ -94,9 +94,7 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
             $this->makeTextMessage('user', 'Hello'), // text estimator ≈ 2 tokens, well below 11000
         ];
 
-        $this->eventStore->expects(self::once())
-            ->method('allFor')
-            ->with('run-1')
+        $this->eventStore->method('allFor')
             ->willReturn([$this->makeLlmStepCompletedEvent(12000)]); // 12000 > 11000
 
         self::assertTrue(
@@ -115,9 +113,7 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
             $this->makeTextMessage('user', str_repeat('x', 50000)), // estimator ≈ 15384 > 11000
         ];
 
-        $this->eventStore->expects(self::once())
-            ->method('allFor')
-            ->with('run-1')
+        $this->eventStore->method('allFor')
             ->willReturn([$this->makeLlmStepCompletedEvent(5000)]); // 5000 < 11000
 
         self::assertFalse(
@@ -135,9 +131,7 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
             $this->makeTextMessage('user', str_repeat('x', 50000)), // would exceed if we used estimator
         ];
 
-        $this->eventStore->expects(self::once())
-            ->method('allFor')
-            ->with('run-1')
+        $this->eventStore->method('allFor')
             ->willReturn([]); // No llm_step_completed events at all
 
         self::assertFalse(
@@ -189,7 +183,6 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
         $modelResolver = $this->createMock(ActiveModelResolverInterface::class);
         $modelResolver->expects(self::once())
             ->method('getActiveModel')
-            ->with('run-1')
             ->willReturn('openai/gpt-4');
 
         $guard = new CodingAgentPreLlmCompactionGuard(
@@ -202,9 +195,7 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
             $this->makeTextMessage('user', 'Hello'),
         ];
 
-        $this->eventStore->expects(self::once())
-            ->method('allFor')
-            ->with('run-1')
+        $this->eventStore->method('allFor')
             ->willReturn([$this->makeLlmStepCompletedEvent(12000)]); // 12000 < 50000 override
 
         self::assertFalse(
@@ -266,6 +257,104 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
         self::assertTrue(
             $this->guard->shouldCompactBeforeLlmStep('run-1', 2, $messages, null),
             'Different turnNo should not be blocked by dedup',
+        );
+    }
+
+    // ── Event-log eligibility: stale measurement blocked ───────────
+
+    /**
+     * Thesis: after auto compaction starts on a provider measurement,
+     * the pre-LLM guard must NOT re-trigger for the same measurement.
+     * The event-log-eligibility check (provider seq vs auto started seq)
+     * is authoritative — not in-memory dedup.
+     */
+    public function testReturnsFalseWhenAutoCompactionAlreadyStartedForProviderMeasurement(): void
+    {
+        $messages = [
+            $this->makeTextMessage('user', 'Hello'),
+        ];
+
+        // Provider measurement at seq 1, auto started at seq 2.
+        $this->eventStore->method('allFor')
+            ->willReturn([
+                $this->makeLlmStepCompletedEvent(12000),
+                new RunEvent(
+                    runId: 'run-1',
+                    seq: 2,
+                    turnNo: 1,
+                    type: RunEventTypeEnum::ContextCompactionStarted->value,
+                    payload: [
+                        'step_id' => 'compact-99',
+                        'trigger' => 'auto',
+                        'estimated_tokens' => 12000,
+                        'keep_recent_tokens' => 10,
+                        'messages_before' => 10,
+                        'messages_to_summarize' => 5,
+                        'messages_retained' => 5,
+                        'first_retained_index' => 5,
+                        'prior_summary_present' => false,
+                    ],
+                ),
+            ]);
+
+        self::assertFalse(
+            $this->guard->shouldCompactBeforeLlmStep('run-1', 1, $messages, null),
+            'Stale measurement at seq 1 must be blocked by auto start at seq 2',
+        );
+    }
+
+    /**
+     * Thesis: after auto compaction SUCCEEDS and a newer LLM step runs,
+     * the newer measurement IS eligible.  This proves the guard allows
+     * legitimate sequential auto compactions when new measurements arrive.
+     */
+    public function testReturnsTrueWhenNewerProviderMeasurementArrivesAfterAutoCompactionSuccess(): void
+    {
+        $messages = [
+            $this->makeTextMessage('user', 'Hello'),
+        ];
+
+        $this->eventStore->method('allFor')
+            ->willReturn([
+                $this->makeLlmStepCompletedEvent(12000), // seq 1 (made by makeLlmStepCompletedEvent)
+                new RunEvent(
+                    runId: 'run-1',
+                    seq: 2,
+                    turnNo: 1,
+                    type: RunEventTypeEnum::ContextCompactionStarted->value,
+                    payload: [
+                        'step_id' => 'compact-1',
+                        'trigger' => 'auto',
+                        'estimated_tokens' => 12000,
+                        'keep_recent_tokens' => 10,
+                        'messages_before' => 10,
+                        'messages_to_summarize' => 5,
+                        'messages_retained' => 5,
+                        'first_retained_index' => 5,
+                        'prior_summary_present' => false,
+                    ],
+                ),
+                // Newer measurement at seq 5, after auto start.
+                new RunEvent(
+                    runId: 'run-1',
+                    seq: 5,
+                    turnNo: 2,
+                    type: RunEventTypeEnum::LlmStepCompleted->value,
+                    payload: [
+                        'step_id' => 'step-2',
+                        'stop_reason' => 'stop',
+                        'usage' => [
+                            'input_tokens' => 20000,
+                            'output_tokens' => 100,
+                            'total_tokens' => 20100,
+                        ],
+                    ],
+                ),
+            ]);
+
+        self::assertTrue(
+            $this->guard->shouldCompactBeforeLlmStep('run-1', 2, $messages, null),
+            'Newer measurement at seq 5 must be eligible after auto start at seq 2',
         );
     }
 }
