@@ -306,6 +306,41 @@ logging:
 prompts: []
 
 # ---------------------------------------------------------------------------
+# Agent definitions
+# ---------------------------------------------------------------------------
+#
+# Agent definitions configure named child-agent roles for your project or user
+# environment. For example, you can define agents named scout, reviewer,
+# researcher, worker, or any custom name. Each definition is a Markdown file
+# with YAML frontmatter discovered from the locations below in deterministic
+# order (higher-numbered layers override lower-numbered by name).
+#
+# Discovery precedence:
+#   1. User agents under ~/.hatfield/agents/*.md
+#   2. User agents under ~/.agents/*.md
+#   3. Project agents under .hatfield/agents/*.md
+#   4. Project agents under .agents/*.md
+#   5. Configured agents.paths (highest precedence)
+#
+# Directories are scanned non-recursively for *.md files. Configured paths
+# may be a single .md file or a directory of *.md files.
+#
+# Disabled definitions (disabled: true) are loaded into the catalog but
+# excluded from enabled()/requireEnabled() lookups.
+#
+agents:
+    # Whether agent discovery is enabled.
+    enabled: true
+
+    # Additional explicit agent definition file or directory paths.
+    # These have the highest precedence (override all auto-discovery).
+    # Example:
+    # paths:
+    #     - ~/shared/agents/custom-reviewer.md
+    #     - .hatfield/team-agents
+    paths: []
+
+# ---------------------------------------------------------------------------
 # AI provider and model configuration
 # ---------------------------------------------------------------------------
 #

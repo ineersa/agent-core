@@ -60,6 +60,7 @@ final class AppConfigLoader
         '[tools][output_cap][path]' => 'string',
         '[tools][background_process][path]' => 'string',
         '[prompts]' => 'list',
+        '[agents][paths]' => 'list',
     ];
 
     public function __construct(

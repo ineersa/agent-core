@@ -545,6 +545,7 @@ parameters:
       - SymfonyEventDispatcher
 
     AppAgent:
+      - AppConfig
       - AppMarkdown
       - SymfonyYaml
       - SymfonySerializer
