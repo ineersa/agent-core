@@ -6,7 +6,13 @@ Planning document for adding **native agents/subagents** to Hatfield/agent-core.
 
 This plan is intentionally self-contained. It assumes the reader has no context from prior design discussions.
 
-The design is inspired by Pi's subagents package (`/home/ineersa/claw/my-pi/packages/subagents`) but must be implemented natively in Hatfield using the existing AgentCore run pipeline, runtime protocol, session storage, tool registry, HITL/SafeGuard flow, and TUI architecture.
+The design is inspired by Pi's subagents package (`/home/ineersa/claw/my-pi/packages/subagents`) but must be implemented natively in Hatfield using the existing AgentCore run pipeline, runtime protocol, session storage, tool registry, and TUI architecture.
+
+**AGENT-03 POC result:** the current `ChatScreen::insertOverlayBeforeEditor()` / `insertOverlayAfterEditor()` APIs are insertion slots, not real floating/modal overlays. Do not build the first production subagent UX around fake overlays.
+
+**Pi subagents reconnaissance result:** Pi's subagents package (`/home/ineersa/claw/my-pi/packages/subagents`) uses inline chat transcript tool rendering, not overlays, panes, docks, or a dedicated agent view. Live progress is pushed through the normal tool update callback and `Ctrl+O` expands the inline tool widget. This is acceptable for Hatfield v1 and substantially simpler than a separate agent control surface.
+
+**Simplification decision:** first-production subagents are non-interactive foreground workers implemented as a normal `subagent` tool call. They do not support background launch, mid-run steering, live user input, child HITL questions, nested approval flows, or interactive child conversations.
 
 This is **not** a fork implementation plan. Fork is related and should eventually reuse parts of this infrastructure, but it is explicitly out of scope for the initial agents/subagents milestone.
 
@@ -18,22 +24,21 @@ Add a first-class agent/subagent system so a Hatfield session can delegate focus
 
 The system must support:
 
-- builtin agents such as `scout`, `reviewer`, `researcher`, and `worker`;
-- project/user agent definitions with markdown frontmatter;
-- per-agent steering/instructions;
-- foreground and background execution modes;
-- parallel execution;
+- project/user agent definitions with markdown frontmatter under `.agents/` and `.hatfield/agents/`;
+- named agent roles such as `scout`, `reviewer`, `researcher`, and `worker` as examples users can define, not bundled builtins;
+- non-interactive foreground child runs that receive one task, work independently, and return a result/artifact through the tool result;
+- live progress rendered inline in the chat transcript tool widget;
+- parallel execution inside the same `subagent` tool;
 - per-agent tool policy and future per-agent MCP policy;
 - setup skills loaded from start;
 - explicit `AGENTS.md` inheritance controls;
-- SafeGuard permission approval compatibility;
-- future `ask_human` compatibility;
-- completion notification for background agents;
-- a session-scoped artifacts registry for handoffs/results;
-- a dedicated agent view in the first production implementation;
+- a session-scoped artifacts registry for handoffs/results/history;
+- explicit artifact/history retrieval for failed or completed child runs;
 - recursion prevention with both environment variables and persisted metadata.
 
-Normal agents/subagents are **hidden child runs**. They must not appear as normal user sessions in `/sessions`. The parent session discovers them only through the session-scoped agent/artifact registry and TUI agent view.
+If a child lacks information, it should complete with a clear `needs_clarification`/failed artifact containing questions for the parent, not pause mid-run and ask the user interactively.
+
+Normal agents/subagents are **parent-scoped child runs**. They must not appear as normal user sessions in `/sessions`. The parent session discovers them through the inline tool result and parent-scoped agent/artifact registry.
 
 ---
 
@@ -47,8 +52,17 @@ Do not include these in the initial agents implementation:
 - Global agent session listing in `/sessions`.
 - MCP implementation itself.
 - `ask_human` implementation itself.
-- Backgrounding an already-foreground subagent mid-run.
+- Mid-run steering or follow-up instructions to a child.
+- Live user input routed into a child run.
+- Child HITL questions or nested approval flows.
+- Interactive child conversations.
+- Foreground behavior where a child asks the parent/user questions mid-run.
+- Background/async subagent launch in v1.
+- Backgrounding an already-running subagent mid-run.
+- Dedicated agent dock/view in v1.
+- Compact global agent status in v1 unless it falls out naturally from inline tool rendering.
 - Full autonomous inter-agent conversation/intercom.
+- Floating/modal overlay control plane built on current `insertOverlay*` APIs.
 - Multi-machine/distributed agent execution.
 - Web/HTTP server endpoints.
 
@@ -58,24 +72,15 @@ Important future hooks should be designed now, but implementation should stay fo
 
 ## 3. Required prerequisites
 
-Agents should be implemented **after** the QH/`ask_human` track and the MCP track.
+Agents should be implemented after the agent definition/catalog work and after enough runtime/session infrastructure exists for parent-scoped child artifacts. The MCP track remains a prerequisite only for per-agent MCP tool policy.
 
-### 3.1 QH / `ask_human` prerequisite
+### 3.1 QH / `ask_human` is not a v1 prerequisite
 
-Agents must be able to ask humans and request approvals through the same persistent HITL flow used by the parent session. Therefore complete the QH task chain first:
+The first production agent milestone must **not** route live questions, approvals, or human input into child runs. QH/`ask_human` remains important for the parent session, but child-agent HITL is out of scope until there is a clear UX that explains why a child is asking, what context it has, and what answering will do.
 
-```text
-tasks/TODO/qh-04-ask-human-tool.md
-tasks/TODO/qh-05-ask-human-agentcore-compatibility.md
-tasks/TODO/qh-06-hitl-runtime-projection.md
-tasks/TODO/qh-07-bind-hitl-to-question-coordinator.md
-tasks/TODO/qh-08-resume-pending-hitl-question.md
-tasks/TODO/qh-09-question-docs-tests-smoke.md
-```
+If a child run reaches a condition that would require human input or approval, v1 should stop the child and write a clear failed/needs-clarification artifact instead of entering `WaitingHuman`.
 
-Some TUI question infrastructure already exists on main, but the agents implementation should treat the QH chain as a prerequisite and re-check task status before starting.
-
-Relevant current code:
+Relevant current code remains useful background, but should not become a v1 child-agent dependency:
 
 - `src/AgentCore/Application/Pipeline/ToolCallResultHandler.php`
   - transitions runs to `WaitingHuman` when a tool result contains an interrupt payload.
@@ -85,14 +90,10 @@ Relevant current code:
   - processes `HumanResponse` commands and resumes the run.
 - `src/AgentCore/Domain/Run/RunStatus.php`
   - already has `WaitingHuman`.
-- `src/CodingAgent/Runtime/Protocol/RuntimeEventTranslator.php`
-  - maps AgentCore events to runtime events.
-- `src/Tui/Question/QuestionCoordinator.php`
-  - queues TUI questions.
-- `src/Tui/Question/QuestionController.php`
-  - owns the question overlay lifecycle.
+- `src/Tui/Question/QuestionCoordinator.php` and `src/Tui/Question/QuestionController.php`
+  - parent-session question infrastructure, not v1 child-agent control UX.
 - `docs/hitl-and-approvals.md`
-  - documents SafeGuard/HITL approval architecture.
+  - parent-session SafeGuard/HITL approval architecture.
 
 ### 3.2 MCP prerequisite
 
@@ -140,7 +141,7 @@ Key files:
 - `src/AgentCore/Application/Pipeline/ApplyCommandHandler.php`
   - steer/follow-up/cancel/human-response commands.
 
-The agents system should create hidden child runs that use this existing pipeline. Do not invent a separate agent loop.
+The agents system should create parent-scoped child runs that use this existing pipeline. Do not invent a separate agent loop.
 
 ### 4.2 Runtime boundary
 
@@ -210,7 +211,7 @@ Key files:
 - `src/CodingAgent/ExtensionApi/ToolCallHookInterface.php`
 - `src/CodingAgent/ExtensionApi/ApprovalAnswerHookInterface.php`
 
-Child agent tool calls must still pass through SafeGuard and any future approval hooks. If a hidden child agent requests approval or asks a human, the parent TUI must surface that requirement in the agent view and compact status area.
+Child agent tool calls must still pass through normal tool execution and extension hooks, but v1 child agents must not pause for approvals or ask the human. Tool policy should avoid tools likely to require approval. If SafeGuard or a future hook returns `RequireApproval` for a child run, v1 should treat that as an unsupported child-interaction condition: mark the child failed/needs-attention in the registry, write an artifact explaining the blocked action, and let the parent decide whether to continue manually or launch a new child with different constraints.
 
 ### 4.6 Background bash analogy
 
@@ -230,15 +231,16 @@ Relevant code areas:
 
 For the production agents implementation:
 
-- background agent launch returns immediately;
-- background agent completion notifies the parent session;
+- the `subagent` tool call remains foreground/blocking from the parent LLM perspective;
+- live child progress updates render through the normal tool update path;
+- child completion is the normal tool result;
 - no user question asking whether to background;
-- no mid-run background handoff in the first production version;
+- no mid-run background/foreground handoff in the first production version;
 - no shell process question bridge reuse unless needed later.
 
 ### 4.7 TUI layout and overlay architecture
 
-The TUI is currently a single-column chat screen with widgets and overlays.
+The TUI is currently a single-column chat screen with widgets and insertion slots. AGENT-03 proved that the current `insertOverlayBeforeEditor()` and `insertOverlayAfterEditor()` APIs insert widgets into the normal layout; they do not provide a real floating/modal overlay surface.
 
 Key files:
 
@@ -253,146 +255,104 @@ Key files:
 - `src/Tui/Runtime/RuntimeEventPoller.php`
 - `src/Tui/Listener/TickPollListener.php`
 
-The initial dedicated agent view should be implemented as a TUI overlay/dedicated in-process view, not one tmux pane per subagent.
+The initial TUI should follow Pi's simpler subagent UX: render live progress and final results inline inside the normal chat transcript tool widget. Do not implement a dedicated agent view/dock for v1.
 
 ---
 
 ## 5. Core design decisions
 
-### 5.1 Hidden child runs
+### 5.1 Parent-scoped child runs
 
-Each subagent execution is a normal AgentCore run internally but hidden from normal session listing.
+Each subagent execution is a normal AgentCore-style run internally, but it is scoped under the parent session instead of becoming a normal top-level Hatfield session.
 
-A hidden child run has:
+Recommended v1 storage layout:
 
-- its own run id;
-- its own `.hatfield/sessions/<child_run_id>/events.jsonl`;
-- a real persisted `hidden` column/flag on `HatfieldSession` so session catalog queries can exclude it efficiently;
+```text
+.hatfield/sessions/<parent_run_id>/artifacts/agents/
+  registry.json
+  <child_artifact_id>/
+    events.jsonl
+    state.json
+    handoff.md
+    metadata.json
+```
+
+A child run has:
+
+- its own child run id;
 - parent run id metadata;
 - root run id metadata;
-- agent name/type metadata;
+- agent name metadata;
 - depth metadata;
-- launch mode metadata (`foreground` or `background`);
 - artifact id metadata;
-- duplicated hidden/non-user-visible metadata for replay/debugging and filesystem-only diagnostics.
+- resolved tool/MCP policy metadata;
+- child events stored under the parent session's `artifacts/agents/<child_artifact_id>/events.jsonl` path.
+
+Do **not** create top-level `.hatfield/sessions/<child_run_id>/` directories for v1 subagents. That pollutes normal session storage/listing and forces hidden-session DB complexity before the UX is proven.
 
 The child run must not appear in `/sessions` or ordinary session pickers. It should appear only in:
 
-- agent view for the parent session;
+- the inline `subagent` tool result/progress widget;
 - session-scoped agent registry;
-- session-scoped artifact registry;
+- session-scoped artifact registry/history retrieval;
 - logs/debug tooling when explicitly requested.
 
-### 5.2 Foreground mode
+### 5.2 Execution mode: foreground inline tool result
 
-Foreground mode must not be implemented as a long blocking PHP process wait inside the tool.
-
-Use this state-machine model:
+The first production implementation should be foreground/blocking from the parent LLM perspective, matching Pi subagents.
 
 ```text
-parent LLM calls agent tool with background=false
-  → AgentLaunchService creates hidden child run
-  → parent run records pending foreground agent wait
-  → parent run transitions to WaitingAgent
-  → child run executes independently
+parent LLM calls subagent tool
+  → SubagentTool creates parent-scoped child run/artifact entry
+  → child works independently while the tool call remains active
+  → child events/progress update the inline tool widget
   → child completes/fails/cancels
-  → AgentSupervisor writes artifact
-  → AgentSupervisor injects child result as parent tool result
-  → parent run leaves WaitingAgent and continues
+  → registry and handoff/history artifacts are finalized
+  → tool returns final result/handoff to the parent LLM
 ```
 
-This gives users foreground semantics while preserving runtime responsiveness, TUI updates, cancellation, and HITL handling.
+There is no v1 background mode, completion notification, mid-run steering, child question flow, nested approval flow, or child conversation. If the child lacks context, it writes a failed/needs-clarification handoff and exits; that handoff is returned by the tool and remains retrievable from the registry.
 
-### 5.3 Background mode
+Cancellation should use the normal in-flight tool/run cancellation path (for example Esc in the TUI), not a separate agent control plane.
 
-Background mode starts a hidden child run and returns immediately.
+### 5.3 Registry and explicit retrieval
+
+The inline tool result is the primary user/LLM delivery mechanism, but v1 should still keep a file-backed parent-scoped registry and retrieval API for failed runs, long handoffs, event/history inspection, resume, and debugging.
+
+The source of truth for completion/progress is:
+
+1. the active tool result/progress snapshots while the tool is running;
+2. the child run's own parent-scoped event stream/history; and
+3. the parent session's file-backed agent/artifact registry for retrieval.
+
+Do **not** duplicate every child event into the parent transcript. The running tool widget can show compact live progress snapshots. `agent_retrieve` can later read the registry/artifact directory and return handoff, metadata, and optionally a formatted event/history summary.
+
+### 5.4 No dedicated agent view/dock in v1
+
+A dedicated agent view/dock is explicitly out of scope for the first production implementation.
+
+V1 TUI should render subagent progress/results inline in the normal chat transcript, similar to Pi's `renderSubagentResult()` approach:
 
 ```text
-parent LLM calls agent tool with background=true
-  → AgentLaunchService creates hidden child run
-  → artifact registry creates pending artifact entry
-  → tool result returns agent_run_id/artifact_id/status
-  → parent run continues immediately
-  → child completes later
-  → AgentSupervisor updates artifact registry
-  → parent session receives an agent completion notification
-  → result can be retrieved later from registry
+subagent scout running | 3 tools, 4.2k tok, 00:18
+Task: inspect TUI architecture
+> read: render.ts | 00:03
+active now
+Artifacts: agent_01HX
 ```
 
-The completion notification is similar in spirit to background bash completion, but simpler:
+Expanding/collapsing inline details through the normal tool widget is acceptable. Do not implement `/agents`, a dock, a fake overlay, selected-child panels, or a custom control surface for v1.
 
-- no prompt asking whether to background;
-- no local TUI question flow for the launch itself;
-- no mid-run backgrounding in the first production version;
-- no shell process semantics.
-
-A future phase can add "move this foreground agent to background" because the architecture already separates parent wait state from child run execution.
-
-### 5.4 Completion notification
-
-Background agents must notify the parent when they finish, but detailed child events should **not** be duplicated into the parent session.
-
-The source of truth is:
-
-1. the child run's own session event stream for detailed replay/progress; and
-2. the parent session's file-backed agent/artifact registry for summary status.
-
-A completion notification should be persisted as a registry status transition. If the parent transcript/runtime needs a visible notification, emit at most one coarse parent-visible notification for the lifecycle transition, not a mirrored copy of child events.
-
-Suggested registry/notification payload:
-
-```json
-{
-  "agent_run_id": "...",
-  "parent_run_id": "...",
-  "artifact_id": "...",
-  "agent_name": "scout",
-  "status": "completed",
-  "summary": "Short one-line handoff summary",
-  "completed_at": "..."
-}
-```
-
-The parent LLM should not automatically receive full artifact contents unless the foreground mode requires it. Background mode should make retrieval explicit through `agent_retrieve` or a TUI command.
-
-### 5.5 Dedicated agent view in the first production implementation
-
-A dedicated agent view is part of the first production implementation, not a later follow-up layered onto a minimal tool-only release.
-
-Prefer an overlay/dedicated in-process TUI view for subagents rather than tmux panes.
-
-The dedicated agent view should show:
-
-- list/tree of agents for the current parent session;
-- each agent's name, type, mode, status, elapsed time, and attention state;
-- selected agent progress/events;
-- selected agent artifact/handoff preview;
-- controls for:
-  - steer;
-  - cancel;
-  - answer pending question;
-  - retrieve result / copy artifact id;
-  - close view.
-
-The main chat view should show compact status rows such as:
-
-```text
-Agents: scout#abc running · reviewer#def completed · worker#ghi requires attention
-```
-
-A shortcut should open the agent view. Exact keybinding can be chosen during implementation and must be listed in `/hotkeys`.
-
-Tmux monitor mode may be useful later, especially for fork, but it is not the default subagent view. Avoid one tmux pane per subagent due to pane limits/layout instability and because subagents do not require full visibility by default.
+Tmux monitor mode and dedicated views may be useful later, especially for fork, but they are not part of v1 subagents.
 
 ### 5.6 Fork is out of scope
 
 Fork should eventually reuse:
 
-- hidden child run infrastructure;
-- artifact registry;
-- background/foreground mechanics;
-- completion notifications;
-- dedicated agent/fork view components where useful.
+- parent-scoped child run infrastructure where appropriate;
+- artifact registry/retrieval where appropriate;
+- parent-scoped child run and artifact mechanics;
+- inline progress/result rendering where appropriate.
 
 But fork is not simply an agent definition. It has special semantics:
 
@@ -403,7 +363,7 @@ But fork is not simply an agent definition. It has special semantics:
 - produces implementation handoffs;
 - may deserve tmux-pane visibility more than normal subagents.
 
-Do not include fork in the initial builtin agent list. Track it as a separate design/implementation later.
+Do not include fork in the initial agent catalog/examples. Track it as a separate design/implementation later.
 
 ---
 
@@ -419,7 +379,6 @@ Example:
 ---
 name: scout
 description: Fast read-only codebase reconnaissance
-type: scout
 model: deepseek/deepseek-v4-flash
 thinking: low
 tools:
@@ -436,8 +395,6 @@ inheritProjectContext: true
 inheritAgentsMd: true
 systemPromptMode: replace
 maxDepth: 1
-backgroundAllowed: true
-foregroundAllowed: true
 parallelAllowed: true
 ---
 
@@ -450,14 +407,14 @@ classes, methods, risks, and recommendations. Do not edit files.
 Recommended discovery order:
 
 ```text
-builtin agents bundled with Hatfield
 user agents under ~/.hatfield/agents/
 user agents under ~/.agents/
 project agents under .hatfield/agents/
 project agents under .agents/
+configured explicit agents.paths entries
 ```
 
-`.agents/` support is first-class, not a legacy fallback. Project definitions should override user definitions by name. Hatfield-native `.hatfield/agents/` and cross-tool `.agents/` definitions should both be supported with deterministic precedence documented in `docs/agents.md`. Builtins should be lowest precedence unless a definition is protected/reserved.
+`.agents/` support is first-class, not a legacy fallback. Project definitions should override user definitions by name. Hatfield-native `.hatfield/agents/` and cross-tool `.agents/` definitions should both be supported with deterministic precedence documented in `docs/agents.md`. Do **not** bundle built-in agent definition files; users/projects define names such as `scout`, `reviewer`, `researcher`, and `worker` themselves.
 
 Do not recreate `.hatfield.example/`.
 
@@ -469,7 +426,6 @@ Recommended typed fields:
 |---|---:|---:|---|
 | `name` | string | yes | Unique agent name. |
 | `description` | string | yes | Human-readable description and catalog text. |
-| `type` | enum | yes | `scout`, `reviewer`, `researcher`, `worker`, or custom. |
 | `model` | string|null | no | Optional model override. |
 | `thinking` | string|null | no | Optional reasoning/thinking override. |
 | `tools` | list<string> | yes | Explicit tool allowlist. |
@@ -480,17 +436,15 @@ Recommended typed fields:
 | `inheritAgentsMd` | bool | no | Whether to include `AGENTS.md`. |
 | `systemPromptMode` | enum | no | `replace` or `append`. |
 | `maxDepth` | int | no | Per-agent recursion cap. |
-| `backgroundAllowed` | bool | no | Whether background launches are allowed. |
-| `foregroundAllowed` | bool | no | Whether foreground launches are allowed. |
 | `parallelAllowed` | bool | no | Whether the agent can be launched as part of parallel execution. |
 | `disabled` | bool | no | Disable definition without deleting it. |
 | `handoffFormat` | string|null | no | Optional named handoff template. |
 
 Unknown fields should be rejected or warned on during catalog validation. Prefer strict validation to avoid silent misconfiguration.
 
-### 6.4 Builtin agents
+### 6.4 Example agent roles, not bundled builtins
 
-Initial builtin agents:
+Do not ship bundled agent definition files in `config/agents/` or another built-in directory. The following are example names users/projects may define under `.agents/` or `.hatfield/agents/`.
 
 #### `scout`
 
@@ -501,12 +455,12 @@ Purpose:
 - impact analysis;
 - read-only findings.
 
-Defaults:
+Typical policy:
 
 - read-only tools;
 - low/medium thinking;
 - parallel allowed;
-- background allowed;
+- foreground `subagent` tool execution;
 - max depth 1.
 
 #### `reviewer`
@@ -517,11 +471,11 @@ Purpose:
 - correctness/security/design risk analysis;
 - validation of implementation diffs.
 
-Defaults:
+Typical policy:
 
 - read-only tools;
 - higher thinking;
-- foreground and background allowed;
+- foreground `subagent` tool execution;
 - max depth 1.
 
 #### `researcher`
@@ -532,11 +486,11 @@ Purpose:
 - changelog/library investigation;
 - external API lookup.
 
-Defaults:
+Typical policy:
 
 - web/MCP/documentation tools when enabled;
 - no file editing;
-- background allowed;
+- foreground `subagent` tool execution;
 - max depth 1.
 
 #### `worker`
@@ -545,7 +499,7 @@ Purpose:
 
 - general execution where implementation-capable tools are intentionally allowed.
 
-Defaults:
+Typical policy:
 
 - more restricted than parent unless explicitly configured;
 - not recursively allowed by default;
@@ -553,7 +507,7 @@ Defaults:
 
 #### Excluded: `fork`
 
-Do not include `fork` as a builtin agent in this milestone.
+Do not implement `fork` as an agent definition in this milestone.
 
 ---
 
@@ -573,7 +527,7 @@ hard safety rules
   → SafeGuard/tool hooks at execution time
 ```
 
-The resolved policy must be persisted in hidden run metadata so replay/debugging can explain which tools were available.
+The resolved policy must be persisted in child run metadata so replay/debugging can explain which tools were available.
 
 ### 7.2 MCP policy
 
@@ -595,60 +549,65 @@ Semantics:
 
 Agents may have MCP tools that are not enabled for the global/parent agent, as long as the session/project configuration permits those MCP servers. This requires the MCP tool resolver to accept a per-run/per-agent policy.
 
-### 7.3 SafeGuard compatibility
+### 7.3 SafeGuard compatibility as a guardrail, not child HITL
 
 Agent tool calls must pass through normal tool execution and extension hook paths. SafeGuard should not need a special subagent-only implementation.
 
-If a child agent invokes a risky tool and SafeGuard requires approval:
+However, v1 child agents must not enter a nested approval/question flow. If a child agent invokes a risky tool and SafeGuard requires approval:
 
 ```text
-child run enters WaitingHuman
-  → parent agent registry marks child as requires_attention
-  → main TUI compact status shows attention indicator
-  → agent view displays the pending approval/question
-  → user answers
-  → answer routes to child run
-  → child continues
+child tool call returns RequireApproval
+  → child run is stopped/failed with needs_attention or approval_required
+  → parent agent registry records the blocked action summary
+  → inline tool result shows the failed/blocked handoff
+  → parent/user decides what to do manually or launches a new child
 ```
 
-This depends on QH/HITL infrastructure being complete.
+Do not route the approval question into the child in v1. Child-agent HITL may be redesigned later only if there is a clear UX and event model.
 
 ---
 
-## 8. Steering and control
+## 8. Control surface
 
-Agents must support steering.
+Agents do not support steering, live user input, or a separate control plane in v1.
 
-Control operations:
+Supported control operations:
 
+- launch agent through the foreground `subagent` tool;
+- cancel the in-flight tool/run through the existing cancellation path (for example Esc in the TUI);
+- retrieve result artifact/history through `agent_retrieve`;
+- optionally retry failed agent later by launching a new run with a revised task.
+
+Explicitly unsupported in v1:
+
+- background launch;
+- separate status/list tool;
+- dedicated agent dock/view;
 - steer agent with additional instructions;
-- cancel agent;
 - answer pending human question;
-- retrieve result artifact;
-- list agents for current parent session;
-- inspect agent status/progress;
-- optionally resume/retry failed agent later.
+- nested approval flow;
+- child conversation/follow-up;
+- parent/user input routed into a running child.
 
-App-layer service methods might look like:
+App-layer service methods should stay minimal:
 
 ```php
-interface AgentControlServiceInterface
+interface SubagentExecutionServiceInterface
 {
-    public function launch(AgentLaunchRequestDTO $request): AgentLaunchResultDTO;
-    public function steer(string $parentRunId, string $agentRunId, string $instructions): void;
-    public function cancel(string $parentRunId, string $agentRunId): void;
-    public function answerHuman(string $parentRunId, string $agentRunId, AgentHumanAnswerDTO $answer): void;
-    public function status(string $parentRunId, string $agentRunId): AgentStatusDTO;
-    public function list(string $parentRunId): AgentListDTO;
-    public function retrieveArtifact(string $parentRunId, string $artifactId): AgentArtifactDTO;
+    public function run(SubagentRunRequestDTO $request, ?SubagentProgressCallbackInterface $progress = null): SubagentRunResultDTO;
+}
+
+interface AgentArtifactRetrievalServiceInterface
+{
+    public function retrieve(string $parentRunId, string $artifactId, AgentArtifactRetrieveOptionsDTO $options): AgentArtifactDTO;
 }
 ```
 
 Implementation should delegate to existing `AgentRunner`/runtime commands where possible:
 
-- steer → `AgentRunner::steer()` / runtime `UserCommand::steer`;
-- cancel → `AgentRunner::cancel()`;
-- answer → `AgentRunner::answerHuman()` / runtime `UserCommand::answer_human`.
+- run → existing start/continue pipeline with child-scoped storage and progress callback;
+- cancel → existing in-flight tool/run cancellation;
+- retrieve → parent-scoped registry and child artifact/event files.
 
 ---
 
@@ -669,11 +628,14 @@ Suggested layout:
 ```text
 .hatfield/sessions/<parent_run_id>/artifacts/agents/
   registry.json
-  <artifact_id>.json
-  <artifact_id>.md
+  <artifact_id>/
+    metadata.json
+    handoff.md
+    events.jsonl
+    state.json
 ```
 
-A DB-backed registry can be added if needed, but file-backed session-local storage is acceptable for v1 if it follows locking and replay conventions.
+A DB-backed registry can be added if needed, but file-backed session-local storage is preferred for v1 if it follows locking and replay conventions. The important constraint is parent-scoped storage: do not write child events as top-level `.hatfield/sessions/<child_run_id>/events.jsonl` for normal subagents.
 
 ### 9.3 Registry entry shape
 
@@ -683,16 +645,15 @@ A DB-backed registry can be added if needed, but file-backed session-local stora
   "parent_run_id": "parent-run-id",
   "agent_run_id": "child-run-id",
   "agent_name": "scout",
-  "agent_type": "scout",
-  "mode": "background",
   "status": "completed",
-  "attention_state": "none",
   "created_at": "2026-06-15T12:00:00Z",
   "started_at": "2026-06-15T12:00:01Z",
   "completed_at": "2026-06-15T12:01:30Z",
   "summary": "Short human-readable summary",
-  "handoff_path": "artifacts/agents/agent_01HX.md",
-  "metadata_path": "artifacts/agents/agent_01HX.json",
+  "handoff_path": "artifacts/agents/agent_01HX/handoff.md",
+  "metadata_path": "artifacts/agents/agent_01HX/metadata.json",
+  "events_path": "artifacts/agents/agent_01HX/events.jsonl",
+  "state_path": "artifacts/agents/agent_01HX/state.json",
   "usage": {
     "input_tokens": 0,
     "output_tokens": 0,
@@ -742,15 +703,14 @@ Agent definitions may override handoff format later, but v1 should standardize i
 
 ### 9.5 Agent tools/API
 
-Expose three model-visible tools to the parent LLM and TUI-facing command handlers:
+Expose two model-visible tools for v1:
 
-- `agent_start` — launch one or more agents in foreground/background mode.
-- `agent_status` — list agents for the current parent session or inspect one agent by `agent_run_id`/`artifact_id`.
-- `agent_retrieve` — retrieve a completed handoff/artifact by `artifact_id` or `agent_run_id`.
+- `subagent` — foreground/blocking launch of one or more agents with live inline progress and final handoff as the tool result.
+- `agent_retrieve` — retrieve a completed/failed handoff, metadata, or formatted event/history summary by `artifact_id` or `agent_run_id`.
 
-Do not use one broad router tool for v1. Three focused schemas should be easier for models to call correctly and easier for SafeGuard/tool policy to reason about.
+Do not add `agent_start`/`agent_status` for v1. The running tool widget is the status surface, and the final tool result is the completion notification.
 
-Control operations that are primarily interactive (`steer`, `cancel`, `answer question`) can be implemented through TUI commands/controllers and app-layer services first. If model-visible control becomes necessary later, add focused tools instead of expanding `agent_status` into a catch-all router.
+Interactive controls (`steer`, `answer question`, nested approval response) are intentionally absent from v1. Cancellation should use the existing in-flight tool/run cancellation path.
 
 ---
 
@@ -758,75 +718,36 @@ Control operations that are primarily interactive (`steer`, `cancel`, `answer qu
 
 ### 10.1 AgentCore additions
 
-Add explicit state/events instead of overloading `WaitingHuman`.
+For v1, avoid adding a parent `WaitingAgent` state. The parent is already waiting on a normal foreground tool call, just like any other long-running tool.
 
-Potential `RunStatus` addition:
+Potential command/event additions should be minimal and app-agnostic. Do **not** overload `WaitingHuman` for child agents and do **not** add AgentCore events for every child progress/update.
 
-```php
-enum RunStatus
-{
-    case WaitingAgent;
-}
-```
+The child run already has its own parent-scoped `events.jsonl`, and those events should remain the detailed source of truth. Keep AgentCore payloads generic and app-independent. Do not let AgentCore depend on `CodingAgent\Agent` classes.
 
-Potential command kind additions:
+### 10.2 App/runtime protocol and child progress
 
-```php
-enum CoreCommandKind
-{
-    case AgentResult;
-    case AgentFailed;
-}
-```
+Do not mirror every child event into the parent runtime stream. A child run is still a run with its own parent-scoped events.
 
-Potential parent-run event types should be minimal:
-
-```php
-enum RunEventTypeEnum
-{
-    case AgentWaiting;          // parent is waiting for a foreground child result
-    case AgentResultReceived;   // foreground child result was injected into parent
-}
-```
-
-Do **not** add AgentCore events for every child progress/update. The child run already has its own canonical `events.jsonl`, and those events should remain the detailed source of truth. Keep AgentCore payloads generic and app-independent. Do not let AgentCore depend on `CodingAgent\Agent` classes.
-
-### 10.2 App/runtime protocol and child event streaming
-
-Do not mirror every child event into the parent runtime stream. A hidden child run is still a normal run with its own runtime events.
-
-For the dedicated agent view:
+During an active `subagent` tool call, the app layer should convert child progress into compact tool-result update snapshots, similar to Pi subagents:
 
 ```text
-selected child run id
-  → AgentControlService validates parent/child relationship
-  → child session events are replayed through the normal RuntimeEventTranslator
-  → RuntimeEvent stream keeps runId = child_run_id and includes parent_run_id/agent metadata
-  → TUI agent view projects those events into the selected-agent panel
+child event/progress
+  → update in-memory AgentProgress snapshot
+  → tool update callback emits partial AgentToolResult details
+  → chat transcript re-renders the inline subagent tool widget
 ```
 
-The main parent chat view should use the parent-scoped registry snapshot for compact status. It should not process every child token/tool/progress event unless the user has opened the agent view and selected that child.
-
-Runtime protocol additions, if needed, should be query/stream APIs rather than many new event types:
+After completion, retrieval should read from the registry/artifact directory:
 
 ```php
-AgentSessionClient::agents(string $parentRunId): AgentListSnapshotDTO;
-AgentSessionClient::agentEvents(string $parentRunId, string $agentRunId, int $afterSeq): AgentEventSliceDTO;
-AgentSessionClient::agentArtifact(string $parentRunId, string $artifactId): AgentArtifactPreviewDTO;
+AgentArtifactRetrievalService::retrieve(parentRunId, artifactId, options): AgentArtifactDTO;
 ```
 
-The process controller can implement these by streaming existing child runtime events with `parent_run_id` metadata and letting the TUI filter/route them. Replay is simply rebuilding the selected agent view from the child run's own event stream.
+`agent_retrieve` may support modes such as handoff-only, metadata, recent events, full formatted history, or raw artifact paths. A dedicated runtime event stream/query API for selected-child replay is not required for v1.
 
-### 10.3 Foreground result injection
+### 10.3 Future async/dedicated-view mode
 
-For foreground mode, parent run is waiting for a specific child run/artifact. When the child completes:
-
-1. `AgentSupervisor` writes/updates artifact.
-2. It dispatches a parent command or event carrying a synthetic tool result payload.
-3. Parent `ToolCallResultHandler`/new handler records the result for the original agent tool call.
-4. Parent transitions out of `WaitingAgent` and continues.
-
-Implementation details need careful design around idempotency and CAS retries. The supervisor command must be safe to retry.
+A future mode may add async launch, `agent_status`, completion notifications, compact global status, or a dedicated `/agents` view. That future mode must not add mid-run child questions, steering, or nested approvals without a separate UX decision.
 
 ---
 
@@ -844,66 +765,47 @@ src/CodingAgent/Agent/
 
   Definition/
     AgentDefinitionDTO.php
-    AgentDefinitionLoader.php
     AgentDefinitionCatalog.php
-    AgentFrontmatterParser.php
-    AgentDefinitionValidator.php
-    AgentTypeEnum.php
+    AgentDefinitionDiscovery.php
+    AgentDefinitionParser.php
 
-  Launch/
-    AgentLaunchRequestDTO.php
-    AgentLaunchResultDTO.php
-    AgentExecutionModeEnum.php
-    AgentLaunchService.php
+  Execution/
+    SubagentRunRequestDTO.php
+    SubagentRunResultDTO.php
+    SubagentExecutionService.php
+    SubagentProgressDTO.php
+    SubagentProgressCallbackInterface.php
     AgentDepthGuard.php
     AgentToolPolicyResolver.php
     AgentPromptBuilder.php
 
-  Runtime/
-    AgentRunSupervisor.php
-    AgentRunStatusTracker.php
-    AgentCompletionNotifier.php
-    AgentForegroundWaitStore.php
-
   Tool/
     AgentToolProvider.php
-    AgentStartTool.php
-    AgentStatusTool.php
+    SubagentTool.php
     AgentRetrieveTool.php
 
-  Tui/        # only if not placed under src/Tui/Agent
+  Render/
+    SubagentResultRenderer.php  # or equivalent TUI/tool-rendering integration
 ```
 
-Recommended TUI namespace:
-
-```text
-src/Tui/Agent/
-  AgentViewController.php
-  AgentViewWidget.php
-  AgentListWidget.php
-  AgentDetailWidget.php
-  AgentArtifactPreviewWidget.php
-  AgentViewCommandHandler.php
-  AgentStatusCompactWidget.php
-```
+No dedicated `src/Tui/Agent/` namespace is required for v1. Inline rendering should live with normal tool-result rendering infrastructure.
 
 Recommended core additions should stay in `src/AgentCore/` only for generic run statuses/events/commands. Avoid app-specific agent DTOs in AgentCore.
 
 ---
 
-## 12. Agent launch flow
+## 12. Subagent tool execution flow
 
-### 12.1 Launch request DTO
+### 12.1 Subagent run request DTO
 
 ```php
-final readonly class AgentLaunchRequestDTO
+final readonly class SubagentRunRequestDTO
 {
-    /** @param list<AgentLaunchTaskDTO> $tasks */
+    /** @param list<SubagentRunTaskDTO> $tasks */
     public function __construct(
         public string $parentRunId,
-        public string $agentName,
-        public string $task,
-        public AgentExecutionModeEnum $mode,
+        public ?string $agentName,
+        public ?string $task,
         public array $tasks = [],
         public ?string $cwd = null,
         public ?string $model = null,
@@ -914,40 +816,41 @@ final readonly class AgentLaunchRequestDTO
 }
 ```
 
-For parallel execution, either allow a top-level `tasks` list in one tool call or provide a separate `agent_parallel` tool. Use the Pi subagents shape as inspiration but keep the PHP DTO strict.
+Use one `subagent` tool with mutually exclusive single (`agent` + `task`) and parallel (`tasks`) modes, following Pi subagents' parameter shape.
 
-### 12.2 Launch algorithm
+### 12.2 Foreground execution algorithm
 
 ```text
-AgentStartTool invoked
+SubagentTool invoked
   → parse/validate parameters
-  → AgentDefinitionCatalog resolves agent definition
+  → AgentDefinitionCatalog resolves agent definition(s)
   → AgentDepthGuard checks recursion limits
   → AgentToolPolicyResolver resolves allowed tools/MCP
-  → AgentArtifactRegistry creates pending artifact entry
-  → hidden child session/run is created with persisted hidden flag + metadata
+  → AgentArtifactRegistry creates pending parent-scoped artifact directory/entry
+  → parent-scoped child run metadata is created
   → AgentPromptBuilder builds child system/task prompt
-  → AgentRunner starts child run
-  → AgentRunSupervisor starts tracking child
-  → if foreground: parent transitions to WaitingAgent
-  → if background: tool returns handle/artifact id immediately
+  → AgentRunner starts child run against child-scoped event/state stores
+  → child progress updates produce inline tool-result update snapshots
+  → child completes/fails/cancels
+  → registry, metadata, events, and handoff artifacts are finalized
+  → tool returns final handoff/result to parent LLM
 ```
 
-### 12.3 Hidden child session creation
+### 12.3 Parent-scoped child run metadata
 
-Hidden child sessions must include enough metadata for registry and debugging:
+Child run metadata must include enough context for registry and debugging:
 
 ```json
 {
-  "hidden": true,
   "kind": "agent_child",
   "parent_run_id": "...",
   "root_run_id": "...",
+  "agent_run_id": "...",
   "agent_name": "scout",
-  "agent_type": "scout",
   "agent_depth": 1,
   "artifact_id": "...",
-  "launch_mode": "background",
+  "events_path": "artifacts/agents/agent_01HX/events.jsonl",
+  "state_path": "artifacts/agents/agent_01HX/state.json",
   "tool_policy": {
     "tools": ["read", "ide_find_file"],
     "mcp": {"mode": "none", "tools": []}
@@ -955,7 +858,7 @@ Hidden child sessions must include enough metadata for registry and debugging:
 }
 ```
 
-If `HatfieldSession` already has `parentId`/`rootId` columns, use them where appropriate. Add/use a persisted hidden flag/column and also duplicate the hidden marker in metadata. Regular session catalog queries must exclude hidden child runs by default.
+Do not create a normal `HatfieldSession` row for v1 child agents unless a later task explicitly chooses a DB-backed design. Regular session catalog queries should not need hidden-row filtering for these parent-scoped child runs.
 
 ---
 
@@ -996,7 +899,7 @@ Rules:
 
 Support parallel agent launches.
 
-Initial shape can mirror Pi subagents:
+Initial shape can mirror Pi subagents, with no foreground/background mode selection:
 
 ```json
 {
@@ -1005,8 +908,7 @@ Initial shape can mirror Pi subagents:
     {"agent": "scout", "task": "Inspect TUI view options"},
     {"agent": "reviewer", "task": "Review proposed API"}
   ],
-  "concurrency": 3,
-  "mode": "background"
+  "concurrency": 3
 }
 ```
 
@@ -1014,9 +916,10 @@ Rules:
 
 - Enforce global and per-parent concurrency caps.
 - Enforce per-agent `parallelAllowed`.
-- Each child gets its own hidden run and artifact id.
-- Parallel foreground means parent waits for all child results before resuming, unless a partial-failure policy is explicitly chosen.
-- Parallel background returns all handles/artifact ids immediately.
+- Each child gets its own parent-scoped child run and artifact id.
+- The foreground `subagent` tool returns when all children have completed/failed/cancelled.
+- Live inline progress should show per-child status while parallel children run.
+- Partial failures should use per-child artifacts with clear success/failure states and an aggregate tool result.
 
 Suggested settings:
 
@@ -1031,88 +934,63 @@ agents:
 
 ## 15. TUI design
 
-### 15.1 Main chat compact status
+### 15.1 Inline tool rendering
 
-Add compact agent status visible in the main chat view.
+V1 subagent TUI should be an inline chat transcript tool widget, not a dock, dedicated view, or overlay. Pi subagents prove this is acceptable and simpler.
 
-Examples:
-
-```text
-Agents: scout#2 running · reviewer#1 completed
-Agents: worker#4 requires attention — open Agents view
-```
-
-This can be a status panel entry or a widget above/below editor.
-
-### 15.2 Dedicated agent view
-
-Open via slash command and keybinding, for example:
+The running widget should show compact live progress, for example:
 
 ```text
-/agents
-Ctrl+A or another available shortcut
+subagent scout running | 3 tools, 4.2k tok, 00:18
+Task: inspect runtime events
+> read: RuntimeEventTranslator.php | 00:03
+active now
+Artifacts: agent_01HX
 ```
 
-The actual keybinding must be chosen after checking current hotkeys and must be documented in `/hotkeys`.
-
-View contents:
+For parallel runs, show an aggregate header plus per-child rows:
 
 ```text
-┌ Agents for current session ───────────────────────────────┐
-│ scout     running             00:12    artifact pending    │
-│ reviewer  completed           01:03    artifact agent_x    │
-│ worker    requires attention  00:44    approval pending    │
-├ Selected: worker ─────────────────────────────────────────┤
-│ Status/progress/events                                      │
-│ Latest event: SafeGuard approval requested                  │
-│                                                             │
-│ Handoff/artifact preview or pending question                │
-│                                                             │
-│ Controls: steer | cancel | answer | retrieve | close        │
-└─────────────────────────────────────────────────────────────┘
+subagent parallel running 2/3 | 7 tools, 00:42
+running Step 2: scout | 3 tools
+  task: Inspect TUI rendering
+  > read: ChatScreen.php
+completed Step 1: reviewer | artifact agent_a
+failed Step 3: worker | artifact agent_b
 ```
 
-Implementation options:
+Expanded inline detail may show recent tool calls, recent output lines, artifact id/path, usage, and final Markdown handoff. Collapsed detail should stay small enough not to bury the conversation.
 
-1. Overlay mounted through `ChatScreen::insertOverlayAfterEditor()` or `insertOverlayBeforeEditor()`.
-2. Dedicated in-process view controller that temporarily replaces a major layout region.
-3. Future tmux monitor pane.
-4. Future Symfony tabs if/when tab widget support is available and suitable.
+### 15.2 Retrieval UX
 
-For the first production implementation, prefer option 1 or 2. Avoid tmux as the default for subagents.
+`agent_retrieve` is the v1 way to inspect completed/failed child artifacts after the tool result, especially when the original inline output was truncated or the agent failed.
 
-### 15.3 Event source for selected agent view
+Retrieval can return:
 
-The selected-agent panel should rebuild from the child run's own events, not from duplicated parent events.
+- handoff markdown;
+- metadata/status/usage;
+- recent events;
+- formatted event/history summary;
+- raw artifact paths for debugging.
 
-When the agent view opens or the selected child changes:
+No `/agents` command, hotkey, dock, selected-child panel, or custom control surface is required for v1.
 
-```text
-agent registry gives child_run_id
-  → TUI asks runtime/app contract for child events after seq 0
-  → controller validates child belongs to current parent
-  → existing RuntimeEventTranslator maps child AgentCore events to RuntimeEvent DTOs
-  → agent view uses a dedicated projector/state for that selected child
-```
+### 15.3 Needs-clarification / blocked flow
 
-For live updates, poll/stream only the selected child run after the last seen child seq. Compact list rows use the registry snapshot and do not need the full event stream for every child.
+When a child agent lacks information, hits an unsupported approval requirement, or otherwise cannot continue independently:
 
-### 15.4 Attention flow
+- the child stops and writes a failed/needs-clarification artifact;
+- the inline tool result shows the blocked/needs-clarification summary;
+- the artifact remains retrievable through `agent_retrieve`;
+- the parent/user decides whether to answer in the parent conversation, manually continue, or launch a new child with a revised task.
 
-When a child agent needs human input or SafeGuard approval:
+Do not route answers into the running child in v1.
 
-- compact status shows `requires attention` based on the registry/status snapshot;
-- agent view highlights the child;
-- selected detail replays/streams the child event that produced the question/approval;
-- answering routes to the child run through `AgentControlService`;
-- child continues;
-- parent TUI updates from registry status and selected-child event stream.
+### 15.4 TUI validation requirement
 
-### 15.5 TUI validation requirement
+Any custom inline subagent tool rendering should include a real TUI E2E test using the project `TmuxHarness` and real test LLM endpoint, following `tests/AGENTS.md` and the `testing` skill.
 
-Any TUI implementation must include a real TUI E2E test using the project `TmuxHarness` and real test LLM endpoint, following `tests/AGENTS.md` and the `testing` skill.
-
-Do not accept service-only tests as proof for user-visible agent view behavior.
+Do not accept service-only tests as proof for user-visible subagent rendering behavior.
 
 ---
 
@@ -1131,12 +1009,10 @@ agents:
   max_depth: 1
   max_concurrent_per_parent: 4
   max_concurrent_global: 8
-  default_mode: foreground
   artifacts:
     retention_days: 14
   ui:
-    mode: overlay # overlay|tmux|none, future: tabs
-    compact_status: true
+    inline_progress: true
 ```
 
 Update:
@@ -1163,10 +1039,10 @@ Requirements:
 - Explicit tool allowlists for every agent.
 - SafeGuard hooks still apply to child agents.
 - MCP tools are disabled unless configured by policy.
-- Hidden child metadata must not leak raw prompts/tool outputs into logs.
+- Child metadata must not leak raw prompts/tool outputs into logs.
 - Runtime logs must use structured event-style fields and avoid raw prompts, tool output, environment values, API keys, and full session content by default.
 - Agent artifacts may contain sensitive content; store under session directory and do not expose globally.
-- Background completion notifications should contain summaries/ids, not full raw outputs unless explicitly intended.
+- Inline tool results and retrieval outputs should contain summaries/ids by default, not full raw outputs unless explicitly requested.
 
 Relevant logging guidance:
 
@@ -1185,10 +1061,10 @@ Expected coverage:
 - unit tests for frontmatter parser and definition validation;
 - unit/integration tests for policy resolution;
 - integration tests for artifact registry locking/update behavior;
-- AgentCore/application tests for `WaitingAgent` state transitions;
-- runtime protocol tests for agent events;
-- TUI E2E tests for dedicated agent view and attention/completion display;
-- end-to-end validation for foreground and background agent launches.
+- runtime/app tests for foreground execution, completion, failure, cancellation, and retrieval;
+- runtime protocol/tool-update tests for live progress snapshots;
+- TUI E2E tests for inline subagent progress/result rendering;
+- end-to-end validation for foreground subagent runs, parallel runs, and retrieval.
 
 ### 18.2 Required Castor commands
 
@@ -1209,12 +1085,12 @@ Do not run raw `vendor/bin/*` except for diagnosing a Castor failure.
 
 ### 18.3 TUI E2E proof
 
-The dedicated agent view is a TUI feature. It is not complete until there is an automated TUI E2E test using:
+Inline subagent rendering is a TUI feature. It is not complete until there is an automated TUI E2E test using:
 
 - real `TmuxHarness`;
 - real `llama_cpp_test/test` endpoint on port 9052;
 - isolated `var/tmp/test-{uuid}` directories;
-- snapshot/assertion proving the feature works through interactive TUI behavior.
+- snapshot/assertion proving live progress and final result render through interactive TUI behavior.
 
 A service test, mocked runtime, or manual smoke script is not enough.
 
@@ -1228,15 +1104,18 @@ Before production implementation, run a deliberately throwaway POC to test the r
 
 Purpose:
 
-- prove that a hidden child run can be started and supervised;
+- prove that a parent-scoped child run can be started and supervised;
 - prove that a parent-scoped file registry can track the child;
-- prove that a TUI overlay can select a child run and replay/stream its own events;
+- test whether the current TUI overlay APIs can support the planned agent control surface;
+- compare that result with Pi subagents' inline rendering model;
 - discover state-machine and TUI projection problems before committing to production structure.
+
+AGENT-03 result: parent-scoped nested storage works and focusable inserted controls are possible, but current `insertOverlay*` APIs do **not** create a real overlay/control plane. Follow-up reconnaissance of Pi subagents showed an even simpler acceptable UX: inline chat transcript tool rendering with live updates and expansion. Production v1 should use inline `subagent` tool rendering, not a dock/dedicated view.
 
 POC constraints:
 
 - hardcode one agent definition, likely `scout`;
-- skip custom discovery, settings polish, MCP policy, and full builtin catalog;
+- skip custom discovery, settings polish, MCP policy, and full catalog;
 - skip compatibility/fallback layers;
 - accept ugly internal seams if they help answer the architectural question;
 - do not add production APIs solely to support the spike;
@@ -1247,14 +1126,15 @@ The POC should validate the architecture, not become a fallback path. The produc
 
 ### Stage 0 — Finish prerequisites
 
-Complete and merge:
+Complete/verify any prerequisite runtime/session work needed for parent-scoped child event stores and artifact registry.
+
+MCP remains a prerequisite only for per-agent MCP policy:
 
 ```text
-QH track: qh-04 → qh-09
 MCP track: mcp-01 → mcp-06
 ```
 
-Do not start agents implementation before these are complete unless the user explicitly reprioritizes.
+The QH/`ask_human` track is not a blocker for v1 agents because child HITL/questions are explicitly out of scope.
 
 ### Stage 1 — Production RFC/task breakdown
 
@@ -1262,19 +1142,17 @@ Use the POC findings to create concrete production task files for the agents pro
 
 ```text
 AGENTS-01 Agent definitions, catalog, settings, and docs
-AGENTS-02 Session-scoped artifact registry and hidden child run metadata
-AGENTS-03 Agent launch service, tool policy, and recursion guard
-AGENTS-04 Foreground WaitingAgent state and result injection
-AGENTS-05 Background agent completion notification and retrieval tools
-AGENTS-06 Parallel agent execution and concurrency caps
-AGENTS-07 Dedicated TUI agent view and compact status widget
-AGENTS-08 Builtin agents, prompt/tool docs, and final E2E validation
+AGENTS-02 Parent-scoped artifact registry and child run metadata/event stores
+AGENTS-03 Foreground subagent tool, policy, recursion guard, and inline progress
+AGENTS-04 Agent retrieval tool for handoff/history/events
+AGENTS-05 Parallel subagent execution and concurrency caps
+AGENTS-06 Prompt/tool docs and final E2E validation
 ```
 
 Fork should be a later separate track, for example:
 
 ```text
-FORK-01 Native fork design using hidden child runs and artifacts
+FORK-01 Native fork design using parent-scoped child runs and artifacts
 ```
 
 ### Stage 2 — Agent definitions/catalog
@@ -1286,7 +1164,7 @@ Deliverables:
 - `AgentFrontmatterParser`
 - `AgentDefinitionCatalog`
 - validation errors with actionable messages
-- builtin definitions for `scout`, `reviewer`, `researcher`, `worker`
+- docs/examples for user-defined `scout`, `reviewer`, `researcher`, and `worker` roles
 - settings/docs updates
 
 Validation:
@@ -1295,114 +1173,82 @@ Validation:
 - `castor phpstan`;
 - `castor test` focused where applicable.
 
-### Stage 3 — Artifact registry and hidden run metadata
+### Stage 3 — Parent-scoped artifact registry and child run metadata
 
 Deliverables:
 
-- session-scoped artifact storage;
+- parent-scoped artifact storage under `.hatfield/sessions/<parent>/artifacts/agents/`;
 - registry read/write/update with locking;
-- hidden child session/run metadata support;
-- normal session listing excludes hidden child runs;
+- child run metadata and parent-scoped child event/state stores;
+- proof that normal session listing is not polluted by child runs;
 - explicit retrieval APIs.
 
 Validation:
 
 - integration tests for registry;
-- session catalog tests proving hidden runs do not appear in `/sessions`;
+- storage tests proving child runs do not create top-level session entries;
 - `castor test`.
 
-### Stage 4 — Launch service and recursion guard
+### Stage 4 — Foreground subagent tool, policy, and recursion guard
 
 Deliverables:
 
-- `AgentLaunchService`;
+- `SubagentTool` with single and parallel parameter shapes;
+- `SubagentExecutionService`;
 - `AgentDepthGuard`;
 - tool/MCP policy resolver;
-- hidden child run start;
+- parent-scoped child run start;
 - persisted metadata and env guard setup;
-- status tracking.
+- live inline progress snapshots for the tool result;
+- normal cancellation through existing in-flight tool/run cancellation.
 
 Validation:
 
 - unit/integration tests for depth and policy;
-- launch tests with stubbed/minimal runtime where appropriate;
+- foreground run tests with stubbed/minimal runtime where appropriate;
+- TUI E2E for inline progress/final result if custom rendering is introduced;
 - `castor deptrac` to verify boundaries.
 
-### Stage 5 — Foreground mode
+### Stage 5 — Retrieval tool for handoff/history/events
 
 Deliverables:
 
-- `WaitingAgent` state or equivalent explicit parent wait state;
-- foreground wait store;
-- child completion result injection;
-- idempotent retry-safe supervisor command;
-- parent resumes with agent result as tool result.
+- `agent_retrieve` tool/API;
+- retrieval by `artifact_id` or `agent_run_id`;
+- handoff, metadata/status/usage, recent events, formatted history, and debug path modes;
+- no separate `agent_status` tool in v1.
 
 Validation:
 
-- AgentCore/application pipeline tests;
-- runtime tests;
-- focused E2E if LLM-visible behavior changes.
+- retrieval tests;
+- resume/replay retrieval tests;
+- truncation/failed-run retrieval tests.
 
-### Stage 6 — Background mode and completion notification
-
-Deliverables:
-
-- background launch returns agent handle/artifact id immediately;
-- completion notification persisted to parent session;
-- retrieval tool/API;
-- compact TUI status updates from runtime/registry;
-- no mid-run background handoff in the first production version.
-
-Validation:
-
-- background completion tests;
-- resume/replay tests for completion notification;
-- TUI status test if user-visible.
-
-### Stage 7 — Parallel execution
+### Stage 6 — Parallel execution
 
 Deliverables:
 
-- parallel launch shape;
+- parallel `subagent` tool shape;
 - concurrency caps;
 - aggregate foreground result behavior;
-- aggregate background handle result behavior;
-- per-child artifacts.
+- per-child artifacts;
+- clear partial-failure behavior.
 
 Validation:
 
 - concurrency tests;
 - partial failure behavior tests;
-- registry consistency tests.
+- registry consistency tests;
+- TUI inline rendering test for parallel progress if user-visible.
 
-### Stage 8 — Dedicated TUI agent view
-
-Deliverables:
-
-- `/agents` command;
-- hotkey catalog entry;
-- agent view overlay/controller/widgets;
-- list/tree;
-- selected detail/progress/events;
-- artifact preview;
-- controls for steer/cancel/answer/retrieve;
-- compact main status widget/row.
-
-Validation:
-
-- `castor test:tui`;
-- real TmuxHarness E2E snapshot/assertion;
-- `LLM_MODE=true castor check` before code review.
-
-### Stage 9 — Docs and final validation
+### Stage 7 — Docs and final validation
 
 Deliverables:
 
 - `docs/agents.md`;
 - `docs/settings.md` updates;
 - prompt/tool docs updates;
-- examples for builtin and custom agents;
+- examples for user-defined custom agents;
 - final full validation.
 
 Validation:
@@ -1419,11 +1265,9 @@ Fork should be designed after normal agents are complete.
 
 Expected fork relationship to this plan:
 
-- reuse hidden child run infrastructure;
-- reuse artifact registry;
-- reuse foreground/background modes;
-- reuse completion notification;
-- reuse parts of agent view where appropriate.
+- reuse parent-scoped child run infrastructure where appropriate;
+- reuse artifact registry/retrieval where appropriate;
+- reuse inline progress/result rendering where appropriate.
 
 Expected fork-specific additions:
 
@@ -1443,33 +1287,46 @@ Fork is not a custom agent definition and should not be implemented as `type: fo
 
 These decisions should be treated as input to the Stage 1 RFC/task breakdown.
 
-1. Hidden child runs should be represented by **both**:
-   - a persisted `hidden` column/flag on `HatfieldSession`; and
-   - metadata in the hidden child session/run record.
+1. V1 child runs are parent-scoped artifacts, not normal top-level Hatfield sessions.
+   - Store child events/state under `.hatfield/sessions/<parent>/artifacts/agents/<artifact>/`.
+   - Do not create `.hatfield/sessions/<child_run_id>/` for normal subagents in v1.
 
-2. Foreground agent waits should use an explicit `WaitingAgent` run status.
-   - Do not overload `WaitingHuman` or generic interrupt details for foreground agent waits.
+2. V1 agents are non-interactive foreground workers.
+   - One `subagent` tool call launches and waits for completion.
+   - Live progress renders inline in the tool widget.
+   - No background/async launch in v1.
+   - No mid-run steering.
+   - No live user input routed to children.
+   - No child HITL questions.
+   - No nested approval flows.
+   - No interactive child conversations.
 
-3. The artifact registry is file-backed for v1.
+3. `WaitingAgent`, completion notifications, global compact status, and dedicated agent dock/view are deferred.
+   - The parent is already waiting on the normal foreground tool call.
+   - Do not overload `WaitingHuman` or generic interrupt details for agent waits.
+
+4. The artifact registry is file-backed for v1.
    - Store it under the parent session directory with locking and a clear future DB migration path.
+   - Keep it because failed/long child runs may need retrievable handoff/history/events.
 
-4. Use three model-visible tools for v1:
-   - `agent_start`;
-   - `agent_status`;
+5. Use two model-visible tools for v1:
+   - `subagent`;
    - `agent_retrieve`.
 
-5. Selected child run events should come from the child run's own event stream.
-   - Hard requirement: do not let TUI read AgentCore stores directly.
+6. Child events should stay in the child run's own parent-scoped event stream.
    - Do not mirror every child event into the parent session; that would duplicate data and increase event volume unnecessarily.
-   - The controller/runtime layer should expose a parent-validated child event stream: selected `agent_run_id` events are replayed/streamed as normal `RuntimeEvent` DTOs with `runId = child_run_id` and `parent_run_id`/agent metadata for routing/filtering.
-   - When the agent view opens, rebuild the selected child panel from the child session's own events. For live updates, poll/stream only that selected child after the last seen seq.
-   - Compact parent status rows should use the file-backed registry snapshot, not the full child event stream.
+   - The active `subagent` tool can render compact live progress snapshots.
+   - `agent_retrieve` can read handoff, metadata, and formatted event/history summaries from the registry/artifact directory.
+   - A selected-child replay/dedicated-view event API is not required for v1.
 
-6. Parallel foreground partial failures should use per-child artifacts with clear success/failure states.
+7. Parallel partial failures should use per-child artifacts with clear success/failure states.
    - Aggregate summaries must not silently collapse failures into success.
 
-7. `.agents/` support is first-class.
+8. `.agents/` support is first-class.
    - Support project `.agents/` and user `~/.agents/` alongside Hatfield-native `.hatfield/agents/` locations with deterministic documented precedence.
+
+9. Do not bundle built-in agent definitions.
+   - `scout`, `reviewer`, `researcher`, and `worker` are example names users/projects may define.
 
 ---
 
@@ -1495,15 +1352,15 @@ Follow project rules:
 
 The agents system is ready when:
 
-- builtin agents can be listed/launched;
-- custom agent definitions can be loaded and validated;
-- a foreground scout can run as a hidden child and return a result to the parent;
-- a background scout can run, notify completion, and expose its artifact for retrieval;
-- child agents do not appear in normal `/sessions`;
+- custom agent definitions can be loaded and validated from `.agents/` / `.hatfield/agents/`;
+- a scout-style user-defined agent can run as a parent-scoped child and produce a handoff artifact;
+- child agents do not appear in normal `/sessions` and do not create top-level child session directories;
 - artifacts are session-scoped and retrievable after resume;
+- the foreground `subagent` tool returns final handoffs and updates the registry/artifacts;
+- `agent_retrieve` can retrieve failed/completed handoffs and useful history/events;
 - recursion guard prevents accidental nested agent explosions;
-- SafeGuard/`ask_human` attention from child agents is visible and answerable from parent TUI;
+- unsupported child approval/input conditions stop with a clear blocked/needs-clarification artifact;
 - per-agent tool/MCP policy is enforced;
 - parallel launches respect concurrency limits;
-- dedicated agent view works through real TUI E2E;
+- inline subagent progress/result rendering works through real TUI E2E;
 - `LLM_MODE=true castor check` passes.
