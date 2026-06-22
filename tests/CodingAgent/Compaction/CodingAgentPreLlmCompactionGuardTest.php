@@ -245,19 +245,10 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
     }
 
     /**
-     * Thesis: the run-level dedup prevents a second pre-LLM compaction
-     * for the same run even at a different turnNo.  This prevents the
-     * live-smoke pattern where a follow-up command AdvancesRun while the
-     * first compaction is in flight, and the pre-LLM guard fires again
-     * through a different bus/dispatch path.
-     *
-     * The activeStepId compact-* check in shouldCompactBeforeLlmStep
-     * should catch in-flight compactions, but CAS commit visibility
-     * across different bus contexts (agent.execution.bus from handler
-     * effects vs agent.command.bus from postCommit callbacks) makes this
-     * unreliable in practice.  The run-level dedup is belt-and-suspenders.
+     * Thesis: the dedup is keyed by (runId, turnNo); a different turnNo
+     * is a fresh evaluation and should NOT be blocked.
      */
-    public function testDedupIsPerRun(): void
+    public function testDedupIsPerTurnNo(): void
     {
         $messages = [
             $this->makeTextMessage('user', 'Hello'),
@@ -271,16 +262,10 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
             $this->guard->shouldCompactBeforeLlmStep('run-1', 1, $messages, null),
         );
 
-        // Same run, different turn → false (run-level dedup hit).
-        self::assertFalse(
-            $this->guard->shouldCompactBeforeLlmStep('run-1', 2, $messages, null),
-            'Different turnNo should be blocked by run-level dedup',
-        );
-
-        // Different run → true (fresh evaluation, no dedup hit).
+        // Same run, different turn → true (fresh evaluation).
         self::assertTrue(
-            $this->guard->shouldCompactBeforeLlmStep('run-2', 1, $messages, null),
-            'Different runId should not be blocked by dedup',
+            $this->guard->shouldCompactBeforeLlmStep('run-1', 2, $messages, null),
+            'Different turnNo should not be blocked by dedup',
         );
     }
 }
