@@ -127,6 +127,11 @@ final class AgentArtifactRegistry
      * agentRunId, agentName, paths, createdAt) are preserved from the
      * existing entry.
      *
+     * Sentinels: nullable parameters use null as "leave existing field
+     * unchanged".  This means a lifecycle field (e.g., summary) cannot
+     * be cleared back to null after it has been set.  This matches the
+     * write-once-forward lifecycle model.
+     *
      * The registry and metadata file are kept in sync.  If the artifact
      * ID is not found, this is a no-op (returns null).
      *
@@ -349,13 +354,20 @@ final class AgentArtifactRegistry
 
         // Temp-file + rename for atomic replacement.
         $tmpPath = $path.'.'.bin2hex(random_bytes(4)).'.tmp';
-        file_put_contents($tmpPath, $json, \LOCK_EX);
+        $written = file_put_contents($tmpPath, $json, \LOCK_EX);
+        if (false === $written) {
+            throw new \RuntimeException(\sprintf('Failed to write registry.json for parent run "%s".', $parentRunId));
+        }
         chmod($tmpPath, 0644);
         rename($tmpPath, $path);
     }
 
     /**
      * Write per-child metadata.json.
+     *
+     * metadata.json is an inspectable sidecar for external tooling.
+     * registry.json remains the canonical load source —
+     * metadata.json is written but never read by this code.
      */
     private function writeMetadata(string $parentRunId, AgentArtifactEntryDTO $entry): void
     {
@@ -367,7 +379,10 @@ final class AgentArtifactRegistry
 
         $json = json_encode($this->serializeEntryMetadata($entry), \JSON_PRETTY_PRINT | \JSON_THROW_ON_ERROR);
         $tmpPath = $path.'.'.bin2hex(random_bytes(4)).'.tmp';
-        file_put_contents($tmpPath, $json, \LOCK_EX);
+        $written = file_put_contents($tmpPath, $json, \LOCK_EX);
+        if (false === $written) {
+            throw new \RuntimeException(\sprintf('Failed to write metadata.json for artifact "%s" parent "%s".', $entry->artifactId, $parentRunId));
+        }
         chmod($tmpPath, 0644);
         rename($tmpPath, $path);
     }
@@ -376,7 +391,8 @@ final class AgentArtifactRegistry
      * Write (or overwrite) the handoff.md file for a child artifact.
      *
      * An empty string creates an empty file placeholder so the path
-     * reference is always valid.
+     * reference is always valid.  Uses atomic temp-file + rename to
+     * avoid partial writes.
      */
     private function writeHandoff(string $parentRunId, string $artifactId, string $content): void
     {
@@ -387,8 +403,13 @@ final class AgentArtifactRegistry
             mkdir($dir, 0777, true);
         }
 
-        file_put_contents($path, $content, \LOCK_EX);
-        chmod($path, 0644);
+        $tmpPath = $path.'.'.bin2hex(random_bytes(4)).'.tmp';
+        $written = file_put_contents($tmpPath, $content, \LOCK_EX);
+        if (false === $written) {
+            throw new \RuntimeException(\sprintf('Failed to write handoff.md for artifact "%s" parent "%s".', $artifactId, $parentRunId));
+        }
+        chmod($tmpPath, 0644);
+        rename($tmpPath, $path);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────
@@ -577,6 +598,9 @@ final class AgentArtifactRegistry
     /**
      * Reject path components that could escape the session directory.
      *
+     * Embedded patterns like "foo..bar" are harmless because path separators
+     * are already blocked.
+     *
      * @throws \InvalidArgumentException
      */
     private function validatePathComponent(string $value, string $field): void
@@ -589,8 +613,8 @@ final class AgentArtifactRegistry
             throw new \InvalidArgumentException(\sprintf('"%s" must not contain path separators: got "%s".', $field, $value));
         }
 
-        if ('..' === $value) {
-            throw new \InvalidArgumentException(\sprintf('"%s" must not be "..".', $field));
+        if ('..' === $value || '.' === $value) {
+            throw new \InvalidArgumentException(\sprintf('"%s" must not be "%s".', $field, $value));
         }
     }
 }

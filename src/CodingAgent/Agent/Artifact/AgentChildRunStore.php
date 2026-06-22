@@ -45,6 +45,10 @@ final class AgentChildRunStore implements RunStoreInterface
         private readonly string $artifactId,
     ) {
         $this->sessionsBasePath = $hatfieldSessionStore->resolveSessionsBasePath();
+
+        // Defense-in-depth path validation: reject traversal/spurious components.
+        $this->validatePathComponent($parentRunId, 'parentRunId');
+        $this->validatePathComponent($artifactId, 'artifactId');
     }
 
     public function get(string $runId): ?RunState
@@ -76,7 +80,7 @@ final class AgentChildRunStore implements RunStoreInterface
         }
 
         if (!\is_array($data)) {
-            return null;
+            throw new \RuntimeException(\sprintf('Corrupt state.json for child run "%s" — decoded data is not an array.', $this->agentRunId));
         }
 
         /** @var RunState $state */
@@ -116,7 +120,14 @@ final class AgentChildRunStore implements RunStoreInterface
                 mkdir($dir, 0777, true);
             }
 
-            file_put_contents($path, $json, \LOCK_EX);
+            // Atomic temp-file + rename to avoid partial writes.
+            $tmpPath = $path.'.'.bin2hex(random_bytes(4)).'.tmp';
+            $written = file_put_contents($tmpPath, $json, \LOCK_EX);
+            if (false === $written) {
+                throw new \RuntimeException(\sprintf('Failed to write state.json for child run "%s".', $this->agentRunId));
+            }
+            chmod($tmpPath, 0644);
+            rename($tmpPath, $path);
 
             return true;
         } finally {
@@ -175,5 +186,25 @@ final class AgentChildRunStore implements RunStoreInterface
         $paths = AgentArtifactPathsDTO::forArtifactId($this->artifactId);
 
         return $this->sessionsBasePath.'/'.$this->parentRunId.'/'.$paths->statePath;
+    }
+
+    /**
+     * Reject path components that could escape the session directory.
+     *
+     * @throws \InvalidArgumentException
+     */
+    private function validatePathComponent(string $value, string $field): void
+    {
+        if ('' === $value) {
+            throw new \InvalidArgumentException(\sprintf('"%s" must not be empty.', $field));
+        }
+
+        if (false !== strpbrk($value, '/\\')) {
+            throw new \InvalidArgumentException(\sprintf('"%s" must not contain path separators: got "%s".', $field, $value));
+        }
+
+        if ('..' === $value || '.' === $value) {
+            throw new \InvalidArgumentException(\sprintf('"%s" must not be "%s".', $field, $value));
+        }
     }
 }

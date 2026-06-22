@@ -47,6 +47,10 @@ final class AgentChildRunEventStore implements EventStoreInterface
         private readonly string $artifactId,
     ) {
         $this->sessionsBasePath = $hatfieldSessionStore->resolveSessionsBasePath();
+
+        // Defense-in-depth path validation: reject traversal/spurious components.
+        $this->validatePathComponent($parentRunId, 'parentRunId');
+        $this->validatePathComponent($artifactId, 'artifactId');
     }
 
     public function append(RunEvent $event): void
@@ -68,7 +72,10 @@ final class AgentChildRunEventStore implements EventStoreInterface
             $entry = $this->eventPayloadNormalizer->normalizeRunEvent($event);
             $json = json_encode($entry, \JSON_THROW_ON_ERROR);
 
-            file_put_contents($path, $json."\n", \FILE_APPEND | \LOCK_EX);
+            $written = file_put_contents($path, $json."\n", \FILE_APPEND | \LOCK_EX);
+            if (false === $written) {
+                throw new \RuntimeException(\sprintf('Failed to append to events.jsonl for child run "%s".', $this->agentRunId));
+            }
         } finally {
             $lock->release();
         }
@@ -166,6 +173,26 @@ final class AgentChildRunEventStore implements EventStoreInterface
         $paths = AgentArtifactPathsDTO::forArtifactId($this->artifactId);
 
         return $this->sessionsBasePath.'/'.$this->parentRunId.'/'.$paths->eventsPath;
+    }
+
+    /**
+     * Reject path components that could escape the session directory.
+     *
+     * @throws \InvalidArgumentException
+     */
+    private function validatePathComponent(string $value, string $field): void
+    {
+        if ('' === $value) {
+            throw new \InvalidArgumentException(\sprintf('"%s" must not be empty.', $field));
+        }
+
+        if (false !== strpbrk($value, '/\\')) {
+            throw new \InvalidArgumentException(\sprintf('"%s" must not contain path separators: got "%s".', $field, $value));
+        }
+
+        if ('..' === $value || '.' === $value) {
+            throw new \InvalidArgumentException(\sprintf('"%s" must not be "%s".', $field, $value));
+        }
     }
 
     /**

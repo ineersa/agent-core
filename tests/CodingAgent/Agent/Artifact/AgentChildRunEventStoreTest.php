@@ -191,6 +191,40 @@ final class AgentChildRunEventStoreTest extends TestCase
         self::assertCount(0, $storeB->allFor('child-a'));
     }
 
+    // ── Constructor path validation ──────────────────────────────────────
+
+    public function testConstructorRejectsEmptyParentRunId(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('must not be empty');
+
+        $this->createStore('', 'child-x', 'artifact-x');
+    }
+
+    public function testConstructorRejectsPathSeparatorsInParentRunId(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('path separators');
+
+        $this->createStore('a/b', 'child-x', 'artifact-x');
+    }
+
+    public function testConstructorRejectsDotInArtifactId(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('must not be "."');
+
+        $this->createStore('parent-x', 'child-x', '.');
+    }
+
+    public function testConstructorRejectsDotDotInArtifactId(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('must not be ".."');
+
+        $this->createStore('parent-x', 'child-x', '..');
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────
 
     private function createStore(string $parentRunId, string $agentRunId, string $artifactId): AgentChildRunEventStore

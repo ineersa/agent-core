@@ -280,6 +280,63 @@ final class AgentChildRunStoreTest extends TestCase
         self::assertSame($agentRunIdB, $staleB[0]->runId);
     }
 
+    // ── Constructor path validation ──────────────────────────────────────
+
+    public function testConstructorRejectsEmptyParentRunId(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('must not be empty');
+
+        $this->createStore('', 'child-x', 'artifact-x');
+    }
+
+    public function testConstructorRejectsPathSeparatorsInParentRunId(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('path separators');
+
+        $this->createStore('a/b', 'child-x', 'artifact-x');
+    }
+
+    public function testConstructorRejectsDotInArtifactId(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('must not be "."');
+
+        $this->createStore('parent-x', 'child-x', '.');
+    }
+
+    public function testConstructorRejectsDotDotInArtifactId(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('must not be ".."');
+
+        $this->createStore('parent-x', 'child-x', '..');
+    }
+
+    // ── State corruption ─────────────────────────────────────────────────
+
+    public function testGetThrowsOnScalarStateJson(): void
+    {
+        $parentRunId = 'parent-'.bin2hex(random_bytes(4));
+        $agentRunId = 'child-'.bin2hex(random_bytes(4));
+        $artifactId = 'scout-001';
+
+        $store = $this->createStore($parentRunId, $agentRunId, $artifactId);
+
+        // Write a valid state first to create the directory, then overwrite with scalar
+        $state = new RunState(runId: $agentRunId, status: RunStatus::Running, version: 1);
+        $store->compareAndSwap($state, 0);
+
+        $statePath = "{$this->projectDir}/.hatfield/sessions/{$parentRunId}/artifacts/agents/{$artifactId}/state.json";
+        file_put_contents($statePath, '42');
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('not an array');
+
+        $store->get($agentRunId);
+    }
+
     // ── Test isolation: no top-level child session ────────────────────────
 
     public function testNoTopLevelChildSessionDirectoryCreated(): void
@@ -297,6 +354,28 @@ final class AgentChildRunStoreTest extends TestCase
 
         // Parent artifacts directory must exist
         self::assertDirectoryExists("{$this->projectDir}/.hatfield/sessions/{$parentRunId}/artifacts/agents/{$artifactId}");
+    }
+
+    // ── Atomic write resilience ──────────────────────────────────────────
+
+    public function testCasUsesTempFileBeforeRename(): void
+    {
+        $parentRunId = 'parent-'.bin2hex(random_bytes(4));
+        $agentRunId = 'child-'.bin2hex(random_bytes(4));
+        $artifactId = 'scout-001';
+
+        $store = $this->createStore($parentRunId, $agentRunId, $artifactId);
+
+        $state = new RunState(runId: $agentRunId, status: RunStatus::Running, version: 1);
+        $store->compareAndSwap($state, 0);
+
+        $statePath = "{$this->projectDir}/.hatfield/sessions/{$parentRunId}/artifacts/agents/{$artifactId}/state.json";
+        self::assertFileExists($statePath);
+
+        // Verify no temp files linger
+        $artifactDir = \dirname($statePath);
+        $tmpFiles = glob($artifactDir.'/*.tmp');
+        self::assertCount(0, $tmpFiles !== false ? $tmpFiles : [], 'No .tmp files should remain after CAS');
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────

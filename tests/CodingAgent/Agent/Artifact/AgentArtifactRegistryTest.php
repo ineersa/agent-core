@@ -130,6 +130,14 @@ final class AgentArtifactRegistryTest extends TestCase
         $this->registry->create('parent', 'a/b', 'child-a', 'scout');
     }
 
+    public function testCreateRejectsDotInArtifactId(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('must not be "."');
+
+        $this->registry->create('parent', '.', 'child-a', 'scout');
+    }
+
     public function testCreateRejectsDotDotInArtifactId(): void
     {
         $this->expectException(\InvalidArgumentException::class);
@@ -198,6 +206,14 @@ final class AgentArtifactRegistryTest extends TestCase
         $this->expectExceptionMessage('path separators');
 
         $this->registry->get('../sessions', 'agent_01HX');
+    }
+
+    public function testGetRejectsDotInArtifactId(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('must not be "."');
+
+        $this->registry->get('parent', '.');
     }
 
     public function testGetRejectsPathTraversalInArtifactId(): void
@@ -342,6 +358,14 @@ final class AgentArtifactRegistryTest extends TestCase
         $this->registry->update('../sessions', 'agent_01HX', status: AgentArtifactStatusEnum::Running);
     }
 
+    public function testUpdateRejectsDotInArtifactId(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('must not be "."');
+
+        $this->registry->update('parent', '.', status: AgentArtifactStatusEnum::Running);
+    }
+
     public function testUpdateRejectsPathTraversalInArtifactId(): void
     {
         $this->expectException(\InvalidArgumentException::class);
@@ -403,6 +427,14 @@ final class AgentArtifactRegistryTest extends TestCase
         $expected = $this->projectDir.'/.hatfield/sessions/'.$parentRunId.'/artifacts/agents/agent_01HX';
 
         self::assertSame($expected, $this->registry->resolveArtifactDir($parentRunId, 'agent_01HX'));
+    }
+
+    public function testResolveArtifactDirRejectsDotInArtifactId(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('must not be "."');
+
+        $this->registry->resolveArtifactDir('parent', '.');
     }
 
     public function testResolveArtifactDirRejectsPathTraversal(): void
