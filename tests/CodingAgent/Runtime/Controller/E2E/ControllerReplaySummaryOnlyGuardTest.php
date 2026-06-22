@@ -14,8 +14,12 @@ use PHPUnit\Framework\Attributes\Group;
  *   1. Turn 1 completes with provider usage above threshold →
  *      after-turn hook dispatches auto-compaction.
  *   2. First auto-compaction produces compact_summary.
- *   3. Short follow_up "ok" executes → pre-LLM guard compacts (if
- *      needed) → LLM step → assistant text response.
+ *   3. Short follow_up "ok" executes.  The pre-LLM guard does NOT fire
+ *      because the latest provider measurement after the first auto-
+ *      compaction is from the compaction LLM call (fixture 1,
+ *      input_tokens=600, below compact_after_tokens=1000).  The
+ *      follow_up LLM step consumes fixture 3 directly (fixture 2
+ *      is not consumed — it acts as a canary).
  *   4. After the follow_up turn, the after-turn hook evaluates again.
  *      The session-14 bug: a pathological context_compacted appears
  *      with messages_compacted=1 and prior_summary_present=true.
@@ -23,16 +27,19 @@ use PHPUnit\Framework\Attributes\Group;
  *      prepare() returns a summary-only partition — no CompactRun
  *      is dispatched, no context_compaction_* events appear.
  *
- * Fixtures (5 total — fifth is a ghost that proves the guard):
+ * Fixtures (5 total — two unconsumed canaries):
  *   0  Turn 1 assistant response (usage=5000 → triggers auto)
- *   1  First compaction summary (consumed by after-turn hook)
- *   2  Pre-LLM compaction summary (consumed by pre-LLM guard)
- *   3  Turn 2 assistant response (consumed after pre-LLM compaction)
+ *   1  First compaction summary (consumed by first after-turn hook)
+ *   2  Pre-LLM compaction canary — NOT consumed in normal flow
+ *      (latest provider usage after first compaction is 600,
+ *      below the 1000 threshold, so pre-LLM guard does not fire).
+ *      Consumed only if pre-LLM guard fires unexpectedly.
+ *   3  Turn 2 assistant response (consumed by follow_up LLM step)
  *   4  GHOST — only consumed if after-turn hook fires on follow_up
  *      (session 14 regression: summary-only auto-compaction)
  *
- * The ghost fixture has input_tokens=700 (below threshold) to catch
- * fixture-miscount assertion failures cleanly.
+ * The ghost fixture has input_tokens=700 (below threshold) so even if
+ * consumed accidentally it won't cascade into yet another compaction.
  *
  * @group controller-replay
  */
@@ -119,18 +126,24 @@ YAML;
             ],
 
             // ═══════════════════════════════════════════════════════
-            //  Fixture 2 — Pre-LLM compaction summary
+            //  Fixture 2 — Pre-LLM compaction canary (NOT consumed)
             // ═══════════════════════════════════════════════════════
             //
-            // The follow_up "ok" is queued.  The pre-LLM guard sees
-            // provider usage > threshold and dispatches CompactRun
-            // BEFORE the follow_up LLM step.  This fixture is consumed
-            // by that pre-LLM compaction.
+            // NOT consumed in normal flow.  After the first auto-
+            // compaction completes, the latest provider usage is from
+            // the compaction LLM call (fixture 1, input_tokens=600).
+            // 600 <= compact_after_tokens=1000, so the pre-LLM guard
+            // in AdvanceRunHandler does NOT fire before the follow_up
+            // LLM step.  Fixture 3 is consumed directly as the
+            // follow_up assistant response.
+            //
+            // If this fixture IS consumed, the pre-LLM guard fired
+            // when it shouldn't have — a different regression.
             [
-                '$schema' => 'Synthetic controller replay — pre-LLM compaction',
+                '$schema' => 'Synthetic controller replay — pre-LLM canary (not consumed)',
                 'fixture_source' => 'synthetic',
-                'synthetic_reason' => 'Pre-LLM guard compaction before follow_up LLM step.  '
-                    .'continue_after_compaction=true so AdvanceRun follows.',
+                'synthetic_reason' => 'Pre-LLM compaction canary: not consumed because latest '
+                    .'provider usage (600) is below threshold (1000) after first auto-compaction.',
                 'model' => 'llama_cpp/test',
                 'provider_id' => 'llama_cpp',
                 'reasoning' => 'off',
@@ -149,21 +162,23 @@ YAML;
             //  Fixture 3 — Turn 2 assistant response (follow_up)
             // ═══════════════════════════════════════════════════════
             //
-            // After the pre-LLM compaction completes, AdvanceRun fires
-            // (continueAfterCompaction=true).  This fixture is consumed
-            // by the actual follow_up LLM step.
+            // Consumed by the follow_up LLM step (fixture 2 was NOT
+            // consumed — pre-LLM guard did not fire).
             //
-            // The response must be long enough (> ~32 chars) so that
-            // keep_recent_tokens=10 retains "ok" + the assistant
-            // response but NOT the compact_summary before them —
-            // making the after-turn partition summary-only.
+            // The response is deliberately long so keep_recent_tokens=3
+            // (≈10 chars) produces a boundary that puts compact_summary1
+            // and the earlier messages into the compact range while
+            // keeping "ok" + this response in the tail — yielding a
+            // summary-only after-turn partition that the guard must
+            // silently reject.
             [
                 '$schema' => 'Synthetic controller replay — turn 2 follow_up',
                 'fixture_source' => 'synthetic',
                 'synthetic_reason' => 'Follow_up LLM response.  Long text ensures '
-                    .'keep_recent_tokens retains this + "ok" in the tail, '
-                    .'leaving [compact_summary1, compact_summary2] in the '
-                    .'compact range → summary-only after-turn partition.',
+                    .'keep_recent_tokens=3 retains only the last few chars '
+                    .'in the tail, pushing all prior messages (including '
+                    .'compact_summary1) into the compact range for the '
+                    .'summary-only after-turn check.',
                 'model' => 'llama_cpp/test',
                 'provider_id' => 'llama_cpp',
                 'reasoning' => 'off',
@@ -237,9 +252,14 @@ YAML;
             ],
         ]);
 
-        // Collect past run.completed to catch the after-turn
-        // auto-compaction events (compaction.started/completed/failed).
-        $turn1Events = $this->collectEventsPastRunCompleted(25.0);
+        // Collect until run.completed, then drain for after-turn
+        // auto-compaction lifecycle events (compaction.started/
+        // completed/failed appear after the turn finishes).
+        $turn1Events = $this->collectEventsUntil('run.completed', 10.0);
+        $turn1Events = array_merge(
+            $turn1Events,
+            $this->drainUntilCompactionResolved(5.0, $turn1Events),
+        );
         $t1ByType = $this->indexByType($turn1Events);
 
         $this->assertStartRunAcked($turn1Events, $startCmdId);
@@ -274,9 +294,16 @@ YAML;
             'payload' => ['text' => 'ok'],
         ]);
 
-        // Collect past run.completed again — the pre-LLM guard may
-        // compact before the follow_up LLM step.
-        $turn2Events = $this->collectEventsPastRunCompleted(25.0);
+        // Collect until run.completed (turn 2 finishes), then do a
+        // short drain.  If the summary-only guard works, no after-turn
+        // compaction fires → idle exit returns in ~500ms.  If the guard
+        // is broken, the ghost fixture is consumed and the drain catches
+        // compaction.completed within the 5s window.
+        $turn2Events = $this->collectEventsUntil('run.completed', 10.0);
+        $turn2Events = array_merge(
+            $turn2Events,
+            $this->drainUntilCompactionResolved(5.0, $turn2Events),
+        );
         $t2ByType = $this->indexByType($turn2Events);
 
         self::assertTrue(
@@ -377,19 +404,34 @@ YAML;
     // ─────────────────────────────────────────────────────────────────
 
     /**
-     * Collect runtime events past run.completed until a compaction
-     * lifecycle terminal appears or the timeout expires.
+     * Collect events until a compaction.completed or compaction.failed
+     * event appears, or the timeout expires.  Used after
+     * collectEventsUntil('run.completed') to catch async after-turn
+     * compaction lifecycle events that arrive after the terminal
+     * run state.
      *
-     * @return list<array<string, mixed>>
+     * Exits early (without waiting the full timeout) when:
+     *  - The controller process stops.
+     *  - No new events arrive for 500ms (idle drain).
+     *
+     * @param list<array<string, mixed>> $alreadyCollected Events already
+     *        collected from the turn (used only for early-exit drain —
+     *        the result is a fresh list).
+     * @return list<array<string, mixed>> Events collected during the
+     *         drain (NOT merged with $alreadyCollected).
      */
-    private function collectEventsPastRunCompleted(float $timeoutSeconds): array
-    {
+    private function drainUntilCompactionResolved(
+        float $timeoutSeconds,
+        array $alreadyCollected,
+    ): array {
         $events = [];
         $deadline = \microtime(true) + $timeoutSeconds;
+        $lastEventAt = \microtime(true);
 
         while (\microtime(true) < $deadline) {
             foreach ($this->readEvents() as $event) {
                 $events[] = $event;
+                $lastEventAt = \microtime(true);
                 $type = $event['type'] ?? '';
 
                 if (\in_array($type, ['compaction.completed', 'compaction.failed'], true)) {
@@ -402,6 +444,15 @@ YAML;
                 foreach ($this->readEvents() as $event) {
                     $events[] = $event;
                 }
+                break;
+            }
+
+            // Idle drain: if no new events for 800ms after the
+            // initial post-completion flush, the async pipeline
+            // is clean and nothing is coming.  This prevents the
+            // test from burning the full timeout when the guard
+            // works and no after-turn compaction fires.
+            if (\microtime(true) - $lastEventAt > 0.8) {
                 break;
             }
 
