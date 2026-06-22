@@ -1,6 +1,6 @@
 {
     "$schema": "Minimal replay fixture for TUI resume-switch E2E — single-shot text response",
-    "model": "llama_cpp_test/test",
+    "model": "llama_cpp_test/alpha",
     "provider_id": "llama_cpp_test",
     "reasoning": "off",
     "recorded_at": "2026-06-16T00:00:00+00:00",

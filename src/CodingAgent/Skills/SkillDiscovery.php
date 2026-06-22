@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Skills;
 
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
+use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Yaml\Yaml;
 
@@ -49,6 +50,7 @@ final class SkillDiscovery
         private readonly SkillsConfig $config,
         private readonly SettingsPathResolver $pathResolver,
         private readonly AppConfig $appConfig,
+        private readonly MarkdownFrontmatterExtractor $extractor,
         private ?LoggerInterface $logger = null,
     ) {
     }
@@ -148,14 +150,6 @@ final class SkillDiscovery
     }
 
     /**
-     * Strip YAML frontmatter from SKILL.md content, returning the body only.
-     */
-    public static function stripFrontmatter(string $content): string
-    {
-        return preg_replace('/^---\s*\n.*?\n(?:---|\.\.\.)\s*\n/s', '', $content);
-    }
-
-    /**
      * Recursively scan a directory for skill roots (directories containing SKILL.md).
      *
      * @return list<string> Absolute paths to skill root directories
@@ -250,18 +244,21 @@ final class SkillDiscovery
     /**
      * Parse YAML frontmatter from SKILL.md content.
      *
+     * Uses the shared {@see MarkdownFrontmatterExtractor} for delimiter scanning
+     * (BOM handling, proper delimiter-line detection, \n---/\n... closers).
+     *
      * @return array<string, mixed>
      */
     private function parseFrontmatter(string $content): array
     {
-        if (!preg_match('/^---\s*\n(.*?)\n(?:---|\.\.\.)\s*\n/s', $content, $matches)) {
+        $extraction = $this->extractor->extract($content);
+
+        if (null === $extraction['yamlBlock']) {
             return [];
         }
 
-        $yamlBlock = $matches[1];
-
         try {
-            $parsed = Yaml::parse($yamlBlock);
+            $parsed = Yaml::parse($extraction['yamlBlock']);
 
             return \is_array($parsed) ? $parsed : [];
         } catch (\Throwable $e) {
