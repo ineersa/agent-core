@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Artifact;
 
+use Symfony\Component\Serializer\Attribute\SerializedName;
+
 /**
  * Relative paths for a parent-scoped agent artifact.
  *
  * All paths are relative to the parent session directory
  * (<sessionsBase>/<parentRunId>/).  Callers that need absolute
- * paths should join against the resolved sessions base.
+ * paths should use {@see AgentArtifactPathResolver}.
  *
  * Immutable value object assembled during artifact creation.
  */
@@ -23,10 +25,15 @@ final readonly class AgentArtifactPathsDTO
      * @param string $statePath    Relative: artifacts/agents/<artifact_id>/state.json
      */
     public function __construct(
+        #[SerializedName('artifact_dir')]
         public string $artifactDir,
+        #[SerializedName('metadata_path')]
         public string $metadataPath,
+        #[SerializedName('handoff_path')]
         public string $handoffPath,
+        #[SerializedName('events_path')]
         public string $eventsPath,
+        #[SerializedName('state_path')]
         public string $statePath,
     ) {
     }

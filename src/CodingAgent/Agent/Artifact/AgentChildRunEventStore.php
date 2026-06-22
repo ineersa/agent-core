@@ -8,7 +8,6 @@ use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Schema\SchemaVersion;
-use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Lock\LockFactory;
 
@@ -29,13 +28,14 @@ use Symfony\Component\Lock\LockFactory;
  * Validates that embedded runId in each event matches the bound
  * agentRunId. Mismatches throw on append.  allFor() only returns
  * events for the bound agentRunId; other run IDs return an empty list.
+ *
+ * Path resolution and validation are delegated to
+ * {@see AgentArtifactPathResolver}.
  */
 final class AgentChildRunEventStore implements EventStoreInterface
 {
-    private readonly string $sessionsBasePath;
-
     public function __construct(
-        HatfieldSessionStore $hatfieldSessionStore,
+        private readonly AgentArtifactPathResolver $pathResolver,
         private readonly EventPayloadNormalizer $eventPayloadNormalizer,
         private readonly LockFactory $lockFactory,
         private readonly LoggerInterface $logger,
@@ -46,11 +46,9 @@ final class AgentChildRunEventStore implements EventStoreInterface
         /** Artifact directory name within artifacts/agents/. */
         private readonly string $artifactId,
     ) {
-        $this->sessionsBasePath = $hatfieldSessionStore->resolveSessionsBasePath();
-
         // Defense-in-depth path validation: reject traversal/spurious components.
-        $this->validatePathComponent($parentRunId, 'parentRunId');
-        $this->validatePathComponent($artifactId, 'artifactId');
+        $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
+        $this->pathResolver->validatePathComponent($artifactId, 'artifactId');
     }
 
     public function append(RunEvent $event): void
@@ -66,7 +64,7 @@ final class AgentChildRunEventStore implements EventStoreInterface
         try {
             $dir = \dirname($path);
             if (!is_dir($dir)) {
-                mkdir($dir, 0777, true);
+                mkdir($dir, AgentArtifactPathResolver::DIR_PERMISSIONS, true);
             }
 
             $entry = $this->eventPayloadNormalizer->normalizeRunEvent($event);
@@ -165,34 +163,10 @@ final class AgentChildRunEventStore implements EventStoreInterface
 
     /**
      * Resolve the events.jsonl path for this child artifact.
-     *
-     * Returns: <sessionsBase>/<parentRunId>/artifacts/agents/<artifactId>/events.jsonl
      */
     private function eventsPath(): string
     {
-        $paths = AgentArtifactPathsDTO::forArtifactId($this->artifactId);
-
-        return $this->sessionsBasePath.'/'.$this->parentRunId.'/'.$paths->eventsPath;
-    }
-
-    /**
-     * Reject path components that could escape the session directory.
-     *
-     * @throws \InvalidArgumentException
-     */
-    private function validatePathComponent(string $value, string $field): void
-    {
-        if ('' === $value) {
-            throw new \InvalidArgumentException(\sprintf('"%s" must not be empty.', $field));
-        }
-
-        if (false !== strpbrk($value, '/\\')) {
-            throw new \InvalidArgumentException(\sprintf('"%s" must not contain path separators: got "%s".', $field, $value));
-        }
-
-        if ('..' === $value || '.' === $value) {
-            throw new \InvalidArgumentException(\sprintf('"%s" must not be "%s".', $field, $value));
-        }
+        return $this->pathResolver->eventsPath($this->parentRunId, $this->artifactId);
     }
 
     /**

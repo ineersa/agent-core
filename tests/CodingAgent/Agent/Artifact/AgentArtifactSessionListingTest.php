@@ -4,11 +4,19 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Artifact;
 
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathResolver;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
+use Symfony\Component\Serializer\Encoder\JsonEncoder;
+use Symfony\Component\Serializer\Normalizer\BackedEnumNormalizer;
+use Symfony\Component\Serializer\Normalizer\DateTimeNormalizer;
+use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
+use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
+use Symfony\Component\Serializer\Serializer;
+use Symfony\Component\Validator\ValidatorBuilder;
 
 /**
  * DB-backed integration test proving that child agent artifacts do not
@@ -35,8 +43,19 @@ final class AgentArtifactSessionListingTest extends IsolatedKernelTestCase
         $store = self::getContainer()->get(HatfieldSessionStore::class);
         $this->hatfieldSessionStore = $store;
 
+        $serializer = new Serializer(
+            [new DateTimeNormalizer(), new BackedEnumNormalizer(), new ObjectNormalizer(
+                nameConverter: new CamelCaseToSnakeCaseNameConverter(),
+            )],
+            [new JsonEncoder()],
+        );
+
+        $validator = (new ValidatorBuilder())->enableAttributeMapping()->getValidator();
+
         $this->registry = new AgentArtifactRegistry(
-            hatfieldSessionStore: $this->hatfieldSessionStore,
+            pathResolver: new AgentArtifactPathResolver($this->hatfieldSessionStore),
+            serializer: $serializer,
+            validator: $validator,
             lockFactory: new LockFactory(new FlockStore()),
         );
     }

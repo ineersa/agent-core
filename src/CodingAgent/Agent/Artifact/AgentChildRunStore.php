@@ -7,7 +7,6 @@ namespace Ineersa\CodingAgent\Agent\Artifact;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
@@ -28,13 +27,14 @@ use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
  * The embedded runId inside state.json must match the bound agentRunId.
  * Mismatches throw on read.  get() only returns results for the bound
  * agentRunId; other run IDs return null.
+ *
+ * Path resolution and validation are delegated to
+ * {@see AgentArtifactPathResolver}.
  */
 final class AgentChildRunStore implements RunStoreInterface
 {
-    private readonly string $sessionsBasePath;
-
     public function __construct(
-        HatfieldSessionStore $hatfieldSessionStore,
+        private readonly AgentArtifactPathResolver $pathResolver,
         private readonly NormalizerInterface&DenormalizerInterface $serializer,
         private readonly LockFactory $lockFactory,
         /** Parent session run ID. */
@@ -44,11 +44,9 @@ final class AgentChildRunStore implements RunStoreInterface
         /** Artifact directory name within artifacts/agents/. */
         private readonly string $artifactId,
     ) {
-        $this->sessionsBasePath = $hatfieldSessionStore->resolveSessionsBasePath();
-
         // Defense-in-depth path validation: reject traversal/spurious components.
-        $this->validatePathComponent($parentRunId, 'parentRunId');
-        $this->validatePathComponent($artifactId, 'artifactId');
+        $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
+        $this->pathResolver->validatePathComponent($artifactId, 'artifactId');
     }
 
     public function get(string $runId): ?RunState
@@ -117,7 +115,7 @@ final class AgentChildRunStore implements RunStoreInterface
             $path = $this->statePath();
             $dir = \dirname($path);
             if (!is_dir($dir)) {
-                mkdir($dir, 0777, true);
+                mkdir($dir, AgentArtifactPathResolver::DIR_PERMISSIONS, true);
             }
 
             // Atomic temp-file + rename to avoid partial writes.
@@ -178,33 +176,9 @@ final class AgentChildRunStore implements RunStoreInterface
 
     /**
      * Resolve the state.json path for this child artifact.
-     *
-     * Returns: <sessionsBase>/<parentRunId>/artifacts/agents/<artifactId>/state.json
      */
     private function statePath(): string
     {
-        $paths = AgentArtifactPathsDTO::forArtifactId($this->artifactId);
-
-        return $this->sessionsBasePath.'/'.$this->parentRunId.'/'.$paths->statePath;
-    }
-
-    /**
-     * Reject path components that could escape the session directory.
-     *
-     * @throws \InvalidArgumentException
-     */
-    private function validatePathComponent(string $value, string $field): void
-    {
-        if ('' === $value) {
-            throw new \InvalidArgumentException(\sprintf('"%s" must not be empty.', $field));
-        }
-
-        if (false !== strpbrk($value, '/\\')) {
-            throw new \InvalidArgumentException(\sprintf('"%s" must not contain path separators: got "%s".', $field, $value));
-        }
-
-        if ('..' === $value || '.' === $value) {
-            throw new \InvalidArgumentException(\sprintf('"%s" must not be "%s".', $field, $value));
-        }
+        return $this->pathResolver->statePath($this->parentRunId, $this->artifactId);
     }
 }

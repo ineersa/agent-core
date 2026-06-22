@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Agent\Artifact;
 
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathResolver;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStore;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
@@ -29,7 +30,7 @@ use Symfony\Component\Lock\Store\FlockStore;
 final class AgentChildRunEventStoreTest extends TestCase
 {
     private string $projectDir;
-    private HatfieldSessionStore $hatfieldSessionStore;
+    private AgentArtifactPathResolver $pathResolver;
 
     protected function setUp(): void
     {
@@ -38,7 +39,7 @@ final class AgentChildRunEventStoreTest extends TestCase
         $this->projectDir = TestDirectoryIsolation::createOsTempDir('hatfield-child-eventstore');
         TestDirectoryIsolation::createHatfieldTree($this->projectDir, withSessions: true);
 
-        $this->hatfieldSessionStore = new HatfieldSessionStore(
+        $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: new AppConfig(
                 tui: new TuiConfig(theme: 'default'),
                 logging: new LoggingConfig(),
@@ -46,6 +47,8 @@ final class AgentChildRunEventStoreTest extends TestCase
             ),
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
         );
+
+        $this->pathResolver = new AgentArtifactPathResolver($hatfieldSessionStore);
     }
 
     protected function tearDown(): void
@@ -230,7 +233,7 @@ final class AgentChildRunEventStoreTest extends TestCase
     private function createStore(string $parentRunId, string $agentRunId, string $artifactId): AgentChildRunEventStore
     {
         return new AgentChildRunEventStore(
-            hatfieldSessionStore: $this->hatfieldSessionStore,
+            pathResolver: $this->pathResolver,
             eventPayloadNormalizer: new EventPayloadNormalizer(),
             lockFactory: new LockFactory(new FlockStore()),
             logger: new NullLogger(),

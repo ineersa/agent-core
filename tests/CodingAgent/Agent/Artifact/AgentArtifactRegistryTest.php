@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Artifact;
 
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathResolver;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Config\AppConfig;
@@ -14,6 +15,13 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
+use Symfony\Component\Serializer\Encoder\JsonEncoder;
+use Symfony\Component\Serializer\Normalizer\BackedEnumNormalizer;
+use Symfony\Component\Serializer\Normalizer\DateTimeNormalizer;
+use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
+use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
+use Symfony\Component\Serializer\Serializer;
+use Symfony\Component\Validator\ValidatorBuilder;
 
 /**
  * Tests for AgentArtifactRegistry covering create, update, read, list,
@@ -47,8 +55,19 @@ final class AgentArtifactRegistryTest extends TestCase
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
         );
 
+        $serializer = new Serializer(
+            [new DateTimeNormalizer(), new BackedEnumNormalizer(), new ObjectNormalizer(
+                nameConverter: new CamelCaseToSnakeCaseNameConverter(),
+            )],
+            [new JsonEncoder()],
+        );
+
+        $validator = (new ValidatorBuilder())->enableAttributeMapping()->getValidator();
+
         $this->registry = new AgentArtifactRegistry(
-            hatfieldSessionStore: $hatfieldSessionStore,
+            pathResolver: new AgentArtifactPathResolver($hatfieldSessionStore),
+            serializer: $serializer,
+            validator: $validator,
             lockFactory: new LockFactory(new FlockStore()),
         );
     }
@@ -168,6 +187,9 @@ final class AgentArtifactRegistryTest extends TestCase
         self::assertSame('agent_01HX', $data['entries'][0]['artifact_id']);
         self::assertSame('scout', $data['entries'][0]['agent_name']);
         self::assertSame('pending', $data['entries'][0]['status']);
+        // Paths are nested (serializer-native shape)
+        self::assertIsArray($data['entries'][0]['paths']);
+        self::assertSame('artifacts/agents/agent_01HX', $data['entries'][0]['paths']['artifact_dir']);
     }
 
     // ── Get ───────────────────────────────────────────────────────────────
@@ -505,12 +527,14 @@ final class AgentArtifactRegistryTest extends TestCase
         self::assertFileExists($metadataPath);
 
         $meta = json_decode(file_get_contents($metadataPath), true, 512, \JSON_THROW_ON_ERROR);
-        self::assertSame('agent_child', $meta['kind']);
+        // Serializer-native nested shape (no "kind" — metadata mirrors registry entry)
         self::assertSame('agent_01HX', $meta['artifact_id']);
         self::assertSame($parentRunId, $meta['parent_run_id']);
         self::assertSame('child-a', $meta['agent_run_id']);
         self::assertSame('scout', $meta['agent_name']);
         self::assertSame('pending', $meta['status']);
+        self::assertIsArray($meta['paths']);
+        self::assertSame('artifacts/agents/agent_01HX', $meta['paths']['artifact_dir']);
     }
 
     public function testHandoffMdIsCreatedEmpty(): void
@@ -531,7 +555,7 @@ final class AgentArtifactRegistryTest extends TestCase
 
         // Write corrupt JSON as the registry
         $agentsDir = $this->registry->resolveArtifactsBasePath($parentRunId);
-        mkdir($agentsDir, 0777, true);
+        mkdir($agentsDir, 0755, true);
         file_put_contents($agentsDir.'/registry.json', 'this is not json {{{');
 
         $this->expectException(\RuntimeException::class);
@@ -545,7 +569,7 @@ final class AgentArtifactRegistryTest extends TestCase
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
 
         $agentsDir = $this->registry->resolveArtifactsBasePath($parentRunId);
-        mkdir($agentsDir, 0777, true);
+        mkdir($agentsDir, 0755, true);
         file_put_contents($agentsDir.'/registry.json', 'corrupt');
 
         $this->expectException(\RuntimeException::class);
@@ -559,7 +583,7 @@ final class AgentArtifactRegistryTest extends TestCase
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
 
         $agentsDir = $this->registry->resolveArtifactsBasePath($parentRunId);
-        mkdir($agentsDir, 0777, true);
+        mkdir($agentsDir, 0755, true);
         file_put_contents($agentsDir.'/registry.json', 'not valid json');
 
         $this->expectException(\RuntimeException::class);
@@ -573,15 +597,15 @@ final class AgentArtifactRegistryTest extends TestCase
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
 
         $agentsDir = $this->registry->resolveArtifactsBasePath($parentRunId);
-        mkdir($agentsDir, 0777, true);
-        // Valid JSON but entry missing required fields
+        mkdir($agentsDir, 0755, true);
+        // Valid JSON but entry missing required fields — denormalization fails
         file_put_contents($agentsDir.'/registry.json', json_encode([
             'schema_version' => 1,
             'entries' => [['foo' => 'bar']],
         ]));
 
         $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('missing or non-string required fields');
+        $this->expectExceptionMessage('could not be denormalized');
 
         $this->registry->list($parentRunId);
     }
@@ -591,7 +615,8 @@ final class AgentArtifactRegistryTest extends TestCase
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
 
         $agentsDir = $this->registry->resolveArtifactsBasePath($parentRunId);
-        mkdir($agentsDir, 0777, true);
+        mkdir($agentsDir, 0755, true);
+        // Nested paths shape (serializer-native)
         file_put_contents($agentsDir.'/registry.json', json_encode([
             'schema_version' => 1,
             'entries' => [[
@@ -601,15 +626,18 @@ final class AgentArtifactRegistryTest extends TestCase
                 'agent_name' => 'scout',
                 'status' => 'nonexistent_status',
                 'created_at' => '2026-06-22T12:00:00+00:00',
-                'handoff_path' => 'artifacts/agents/agent_01HX/handoff.md',
-                'metadata_path' => 'artifacts/agents/agent_01HX/metadata.json',
-                'events_path' => 'artifacts/agents/agent_01HX/events.jsonl',
-                'state_path' => 'artifacts/agents/agent_01HX/state.json',
+                'paths' => [
+                    'artifact_dir' => 'artifacts/agents/agent_01HX',
+                    'handoff_path' => 'artifacts/agents/agent_01HX/handoff.md',
+                    'metadata_path' => 'artifacts/agents/agent_01HX/metadata.json',
+                    'events_path' => 'artifacts/agents/agent_01HX/events.jsonl',
+                    'state_path' => 'artifacts/agents/agent_01HX/state.json',
+                ],
             ]],
         ]));
 
         $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('unknown status');
+        $this->expectExceptionMessage('could not be denormalized');
 
         $this->registry->list($parentRunId);
     }
@@ -619,7 +647,7 @@ final class AgentArtifactRegistryTest extends TestCase
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
 
         $agentsDir = $this->registry->resolveArtifactsBasePath($parentRunId);
-        mkdir($agentsDir, 0777, true);
+        mkdir($agentsDir, 0755, true);
         file_put_contents($agentsDir.'/registry.json', json_encode([
             'schema_version' => 999,
             'entries' => [],
@@ -636,7 +664,7 @@ final class AgentArtifactRegistryTest extends TestCase
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
 
         $agentsDir = $this->registry->resolveArtifactsBasePath($parentRunId);
-        mkdir($agentsDir, 0777, true);
+        mkdir($agentsDir, 0755, true);
         file_put_contents($agentsDir.'/registry.json', json_encode([
             'entries' => [],
         ]));
@@ -652,7 +680,7 @@ final class AgentArtifactRegistryTest extends TestCase
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
 
         $agentsDir = $this->registry->resolveArtifactsBasePath($parentRunId);
-        mkdir($agentsDir, 0777, true);
+        mkdir($agentsDir, 0755, true);
         file_put_contents($agentsDir.'/registry.json', json_encode([
             'schema_version' => 1,
         ]));

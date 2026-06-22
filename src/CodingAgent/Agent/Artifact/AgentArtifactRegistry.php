@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Artifact;
 
-use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
+use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
+use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /**
  * File-backed parent-scoped agent artifact registry.
@@ -25,8 +27,9 @@ use Symfony\Component\Lock\LockFactory;
  * temp-file + rename where possible; at minimum the Symfony lock guards
  * the write.
  *
- * Path validation rejects empty IDs, "/", and ".." in path components
- * to prevent directory traversal.
+ * Path resolution and validation are delegated to
+ * {@see AgentArtifactPathResolver}.  Serialization/deserialization
+ * of entries and registry uses Symfony Serializer.
  *
  * No DB row is created for child runs — the registry is entirely
  * file-backed and disposable with the parent session directory.
@@ -35,16 +38,12 @@ final class AgentArtifactRegistry
 {
     private const SCHEMA_VERSION = 1;
 
-    /** Relative to parent session directory. */
-    private const AGENTS_SUBDIR = 'artifacts/agents';
-
-    private readonly string $sessionsBasePath;
-
     public function __construct(
-        private readonly HatfieldSessionStore $hatfieldSessionStore,
+        private readonly AgentArtifactPathResolver $pathResolver,
+        private readonly NormalizerInterface&DenormalizerInterface $serializer,
+        private readonly ValidatorInterface $validator,
         private readonly LockFactory $lockFactory,
     ) {
-        $this->sessionsBasePath = $hatfieldSessionStore->resolveSessionsBasePath();
     }
 
     /**
@@ -74,9 +73,9 @@ final class AgentArtifactRegistry
         string $agentRunId,
         string $agentName,
     ): AgentArtifactEntryDTO {
-        $this->validatePathComponent($parentRunId, 'parentRunId');
-        $this->validatePathComponent($artifactId, 'artifactId');
-        $this->validatePathComponent($agentRunId, 'agentRunId');
+        $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
+        $this->pathResolver->validatePathComponent($artifactId, 'artifactId');
+        $this->pathResolver->validatePathComponent($agentRunId, 'agentRunId');
 
         $lock = $this->lockFactory->createLock("hatfield-agent-artifacts-{$parentRunId}");
         $lock->acquire(true);
@@ -148,8 +147,8 @@ final class AgentArtifactRegistry
         ?string $failureReason = null,             // sentinel: null = no change
         ?string $needsClarification = null,        // sentinel: null = no change
     ): ?AgentArtifactEntryDTO {
-        $this->validatePathComponent($parentRunId, 'parentRunId');
-        $this->validatePathComponent($artifactId, 'artifactId');
+        $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
+        $this->pathResolver->validatePathComponent($artifactId, 'artifactId');
 
         $lock = $this->lockFactory->createLock("hatfield-agent-artifacts-{$parentRunId}");
         $lock->acquire(true);
@@ -201,8 +200,8 @@ final class AgentArtifactRegistry
      */
     public function get(string $parentRunId, string $artifactId): ?AgentArtifactEntryDTO
     {
-        $this->validatePathComponent($parentRunId, 'parentRunId');
-        $this->validatePathComponent($artifactId, 'artifactId');
+        $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
+        $this->pathResolver->validatePathComponent($artifactId, 'artifactId');
 
         foreach ($this->list($parentRunId) as $entry) {
             if ($entry->artifactId === $artifactId) {
@@ -221,8 +220,8 @@ final class AgentArtifactRegistry
      */
     public function findByAgentRunId(string $parentRunId, string $agentRunId): ?AgentArtifactEntryDTO
     {
-        $this->validatePathComponent($parentRunId, 'parentRunId');
-        $this->validatePathComponent($agentRunId, 'agentRunId');
+        $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
+        $this->pathResolver->validatePathComponent($agentRunId, 'agentRunId');
 
         foreach ($this->list($parentRunId) as $entry) {
             if ($entry->agentRunId === $agentRunId) {
@@ -240,7 +239,7 @@ final class AgentArtifactRegistry
      */
     public function list(string $parentRunId): array
     {
-        $this->validatePathComponent($parentRunId, 'parentRunId');
+        $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
 
         $lock = $this->lockFactory->createLock("hatfield-agent-artifacts-{$parentRunId}");
         $lock->acquire(true);
@@ -254,23 +253,24 @@ final class AgentArtifactRegistry
 
     /**
      * Resolve the absolute base path for a parent session's agent artifacts.
+     *
+     * @deprecated Prefer {@see AgentArtifactPathResolver::resolveArtifactsBasePath()}.
+     *             Kept for backward compatibility with existing public API consumers.
      */
     public function resolveArtifactsBasePath(string $parentRunId): string
     {
-        $this->validatePathComponent($parentRunId, 'parentRunId');
-
-        return $this->sessionsBasePath.'/'.$parentRunId.'/'.self::AGENTS_SUBDIR;
+        return $this->pathResolver->resolveArtifactsBasePath($parentRunId);
     }
 
     /**
      * Resolve an absolute path to a child artifact directory.
+     *
+     * @deprecated Prefer {@see AgentArtifactPathResolver::resolveArtifactDir()}.
+     *             Kept for backward compatibility with existing public API consumers.
      */
     public function resolveArtifactDir(string $parentRunId, string $artifactId): string
     {
-        $this->validatePathComponent($parentRunId, 'parentRunId');
-        $this->validatePathComponent($artifactId, 'artifactId');
-
-        return $this->resolveArtifactsBasePath($parentRunId).'/'.$artifactId;
+        return $this->pathResolver->resolveArtifactDir($parentRunId, $artifactId);
     }
 
     // ── Internal read/write methods ─────────────────────────────────────
@@ -287,7 +287,7 @@ final class AgentArtifactRegistry
      */
     private function loadRegistry(string $parentRunId): array
     {
-        $path = $this->registryPath($parentRunId);
+        $path = $this->pathResolver->registryPath($parentRunId);
 
         if (!is_readable($path)) {
             return [];
@@ -328,27 +328,28 @@ final class AgentArtifactRegistry
     /**
      * Write entries to registry.json for a parent session.
      *
-     * Uses a temp file + rename to avoid partial writes from
-     * crashes mid-write operating on the real file.
+     * Uses Serializer for entry normalization and temp-file+rename for
+     * atomic replacement.
      *
      * @param list<AgentArtifactEntryDTO> $entries
      */
     private function writeRegistry(string $parentRunId, array $entries): void
     {
-        $path = $this->registryPath($parentRunId);
+        $path = $this->pathResolver->registryPath($parentRunId);
         $dir = \dirname($path);
 
         if (!is_dir($dir)) {
-            mkdir($dir, 0777, true);
-        }
-
-        $serialized = [];
-        foreach ($entries as $entry) {
-            $serialized[] = $this->serializeEntry($entry);
+            mkdir($dir, AgentArtifactPathResolver::DIR_PERMISSIONS, true);
         }
 
         $json = json_encode(
-            ['schema_version' => self::SCHEMA_VERSION, 'entries' => $serialized],
+            [
+                'schema_version' => self::SCHEMA_VERSION,
+                'entries' => array_map(
+                    fn (AgentArtifactEntryDTO $entry): array => $this->normalizeEntry($entry),
+                    $entries,
+                ),
+            ],
             \JSON_PRETTY_PRINT | \JSON_THROW_ON_ERROR,
         );
 
@@ -371,13 +372,13 @@ final class AgentArtifactRegistry
      */
     private function writeMetadata(string $parentRunId, AgentArtifactEntryDTO $entry): void
     {
-        $path = $this->absolutePath($parentRunId, $entry->paths->metadataPath);
+        $path = $this->pathResolver->absolutePath($parentRunId, $entry->paths->metadataPath);
         $dir = \dirname($path);
         if (!is_dir($dir)) {
-            mkdir($dir, 0777, true);
+            mkdir($dir, AgentArtifactPathResolver::DIR_PERMISSIONS, true);
         }
 
-        $json = json_encode($this->serializeEntryMetadata($entry), \JSON_PRETTY_PRINT | \JSON_THROW_ON_ERROR);
+        $json = json_encode($this->normalizeEntry($entry), \JSON_PRETTY_PRINT | \JSON_THROW_ON_ERROR);
         $tmpPath = $path.'.'.bin2hex(random_bytes(4)).'.tmp';
         $written = file_put_contents($tmpPath, $json, \LOCK_EX);
         if (false === $written) {
@@ -397,10 +398,10 @@ final class AgentArtifactRegistry
     private function writeHandoff(string $parentRunId, string $artifactId, string $content): void
     {
         $paths = AgentArtifactPathsDTO::forArtifactId($artifactId);
-        $path = $this->absolutePath($parentRunId, $paths->handoffPath);
+        $path = $this->pathResolver->absolutePath($parentRunId, $paths->handoffPath);
         $dir = \dirname($path);
         if (!is_dir($dir)) {
-            mkdir($dir, 0777, true);
+            mkdir($dir, AgentArtifactPathResolver::DIR_PERMISSIONS, true);
         }
 
         $tmpPath = $path.'.'.bin2hex(random_bytes(4)).'.tmp';
@@ -419,27 +420,28 @@ final class AgentArtifactRegistry
      */
     private function ensureArtifactDir(string $parentRunId, string $artifactId): void
     {
-        $path = $this->resolveArtifactDir($parentRunId, $artifactId);
+        $path = $this->pathResolver->resolveArtifactDir($parentRunId, $artifactId);
         if (!is_dir($path)) {
-            mkdir($path, 0777, true);
+            mkdir($path, AgentArtifactPathResolver::DIR_PERMISSIONS, true);
         }
     }
 
-    private function registryPath(string $parentRunId): string
-    {
-        return $this->sessionsBasePath.'/'.$parentRunId.'/'.self::AGENTS_SUBDIR.'/registry.json';
-    }
-
     /**
-     * Resolve an absolute path from a parent-relative artifact path.
+     * Normalize an entry for JSON storage using Symfony Serializer.
+     *
+     * Produces a snake_case array suitable for registry.json or metadata.json.
+     *
+     * @return array<string, mixed>
      */
-    private function absolutePath(string $parentRunId, string $relative): string
+    private function normalizeEntry(AgentArtifactEntryDTO $entry): array
     {
-        return $this->sessionsBasePath.'/'.$parentRunId.'/'.$relative;
+        /* @var array<string, mixed> */
+        return $this->serializer->normalize($entry);
     }
 
     /**
-     * Hydrate an AgentArtifactEntryDTO from a registry entry array.
+     * Denormalize an entry from registry array data using Symfony Serializer,
+     * then validate with Symfony Validator.
      *
      * Throws on corrupt/malformed entries so corruption cannot be
      * silently clobbered on the next write.
@@ -447,174 +449,46 @@ final class AgentArtifactRegistry
      * @param array<string, mixed> $data
      * @param string               $parentRunId for error context
      *
-     * @throws \RuntimeException when required fields are missing or malformed
+     * @throws \RuntimeException when required fields are missing, malformed,
+     *                           or validation fails
      */
     private function hydrateEntry(array $data, string $parentRunId): AgentArtifactEntryDTO
     {
-        $artifactId = $data['artifact_id'] ?? null;
-        $parentRunIdFromData = $data['parent_run_id'] ?? null;
-        $agentRunId = $data['agent_run_id'] ?? null;
-        $agentName = $data['agent_name'] ?? null;
-        $status = $data['status'] ?? null;
-        $createdAt = $data['created_at'] ?? null;
-
-        if (!\is_string($artifactId)
-            || !\is_string($parentRunIdFromData)
-            || !\is_string($agentRunId)
-            || !\is_string($agentName)
-            || !\is_string($status)
-            || !\is_string($createdAt)
-        ) {
-            throw new \RuntimeException(\sprintf('Registry entry for parent run "%s" has missing or non-string required fields (artifact_id, parent_run_id, agent_run_id, agent_name, status, created_at).', $parentRunId));
-        }
-
-        $statusEnum = AgentArtifactStatusEnum::tryFrom($status);
-        if (null === $statusEnum) {
-            throw new \RuntimeException(\sprintf('Registry entry for parent run "%s" artifact "%s" has unknown status "%s".', $parentRunId, $artifactId, $status));
-        }
-
         try {
-            $createdAtDt = new \DateTimeImmutable($createdAt);
+            /** @var AgentArtifactEntryDTO $entry */
+            $entry = $this->serializer->denormalize($data, AgentArtifactEntryDTO::class);
         } catch (\Throwable $e) {
-            throw new \RuntimeException(\sprintf('Registry entry for parent run "%s" artifact "%s" has unparseable created_at "%s".', $parentRunId, $artifactId, $createdAt), previous: $e);
+            // Serializer throws various exceptions for type mismatches,
+            // missing constructors, unrecognized enum values, etc.
+            $artifactId = \is_string($data['artifact_id'] ?? null) ? $data['artifact_id'] : 'unknown';
+            throw new \RuntimeException(\sprintf('Registry entry for parent run "%s" artifact "%s" could not be denormalized: %s', $parentRunId, $artifactId, $e->getMessage()), previous: $e);
         }
 
-        $startedAt = null;
-        if (\is_string($data['started_at'] ?? null)) {
-            try {
-                $startedAt = new \DateTimeImmutable($data['started_at']);
-            } catch (\Throwable $e) {
-                throw new \RuntimeException(\sprintf('Registry entry for parent run "%s" artifact "%s" has unparseable started_at "%s".', $parentRunId, $artifactId, $data['started_at']), previous: $e);
+        // Validate required identity fields are present and non-empty after denormalization.
+        if ('' === $entry->artifactId || '' === $entry->parentRunId || '' === $entry->agentRunId || '' === $entry->agentName) {
+            throw new \RuntimeException(\sprintf('Registry entry for parent run "%s" has empty required identity fields.', $parentRunId));
+        }
+
+        // Validate stored paths match the canonical paths for this artifact ID.
+        $expectedPaths = AgentArtifactPathsDTO::forArtifactId($entry->artifactId);
+        if ($entry->paths->handoffPath !== $expectedPaths->handoffPath
+            || $entry->paths->metadataPath !== $expectedPaths->metadataPath
+            || $entry->paths->eventsPath !== $expectedPaths->eventsPath
+            || $entry->paths->statePath !== $expectedPaths->statePath
+        ) {
+            throw new \RuntimeException(\sprintf('Registry entry for parent run "%s" artifact "%s" has unexpected paths.', $parentRunId, $entry->artifactId));
+        }
+
+        // Run Symfony Validator on the denormalized entry to catch type/domain errors.
+        $violations = $this->validator->validate($entry);
+        if ($violations->count() > 0) {
+            $messages = [];
+            foreach ($violations as $violation) {
+                $messages[] = \sprintf('%s: %s', $violation->getPropertyPath(), $violation->getMessage());
             }
+            throw new \RuntimeException(\sprintf('Registry entry for parent run "%s" artifact "%s" failed validation: %s', $parentRunId, $entry->artifactId, implode('; ', $messages)));
         }
 
-        $completedAt = null;
-        if (\is_string($data['completed_at'] ?? null)) {
-            try {
-                $completedAt = new \DateTimeImmutable($data['completed_at']);
-            } catch (\Throwable $e) {
-                throw new \RuntimeException(\sprintf('Registry entry for parent run "%s" artifact "%s" has unparseable completed_at "%s".', $parentRunId, $artifactId, $data['completed_at']), previous: $e);
-            }
-        }
-
-        // Validate stored path fields match the canonical paths for this artifact ID.
-        $expectedPaths = AgentArtifactPathsDTO::forArtifactId($artifactId);
-        foreach ([
-            'handoff_path' => $expectedPaths->handoffPath,
-            'metadata_path' => $expectedPaths->metadataPath,
-            'events_path' => $expectedPaths->eventsPath,
-            'state_path' => $expectedPaths->statePath,
-        ] as $key => $expected) {
-            $stored = $data[$key] ?? null;
-            if (!\is_string($stored)) {
-                throw new \RuntimeException(\sprintf('Registry entry for parent run "%s" artifact "%s" missing or non-string "%s".', $parentRunId, $artifactId, $key));
-            }
-            if ($stored !== $expected) {
-                throw new \RuntimeException(\sprintf('Registry entry for parent run "%s" artifact "%s" has unexpected "%s" value "%s" (expected "%s").', $parentRunId, $artifactId, $key, $stored, $expected));
-            }
-        }
-
-        return new AgentArtifactEntryDTO(
-            artifactId: $artifactId,
-            parentRunId: $parentRunIdFromData,
-            agentRunId: $agentRunId,
-            agentName: $agentName,
-            status: $statusEnum,
-            paths: $expectedPaths,
-            createdAt: $createdAtDt,
-            startedAt: $startedAt,
-            completedAt: $completedAt,
-            summary: \is_string($data['summary'] ?? null) ? $data['summary'] : null,
-            failureReason: \is_string($data['failure_reason'] ?? null) ? $data['failure_reason'] : null,
-            needsClarification: \is_string($data['needs_clarification'] ?? null) ? $data['needs_clarification'] : null,
-        );
-    }
-
-    /**
-     * Serialize an entry for registry.json storage.
-     *
-     * @return array<string, mixed>
-     */
-    private function serializeEntry(AgentArtifactEntryDTO $entry): array
-    {
-        $data = [
-            'artifact_id' => $entry->artifactId,
-            'parent_run_id' => $entry->parentRunId,
-            'agent_run_id' => $entry->agentRunId,
-            'agent_name' => $entry->agentName,
-            'status' => $entry->status->value,
-            'created_at' => $entry->createdAt->format(\DateTimeInterface::ATOM),
-            'handoff_path' => $entry->paths->handoffPath,
-            'metadata_path' => $entry->paths->metadataPath,
-            'events_path' => $entry->paths->eventsPath,
-            'state_path' => $entry->paths->statePath,
-        ];
-
-        if (null !== $entry->startedAt) {
-            $data['started_at'] = $entry->startedAt->format(\DateTimeInterface::ATOM);
-        }
-        if (null !== $entry->completedAt) {
-            $data['completed_at'] = $entry->completedAt->format(\DateTimeInterface::ATOM);
-        }
-        if (null !== $entry->summary) {
-            $data['summary'] = $entry->summary;
-        }
-        if (null !== $entry->failureReason) {
-            $data['failure_reason'] = $entry->failureReason;
-        }
-        if (null !== $entry->needsClarification) {
-            $data['needs_clarification'] = $entry->needsClarification;
-        }
-
-        return $data;
-    }
-
-    /**
-     * Serialize an entry for metadata.json storage.
-     *
-     * @return array<string, mixed>
-     */
-    private function serializeEntryMetadata(AgentArtifactEntryDTO $entry): array
-    {
-        return [
-            'kind' => 'agent_child',
-            'artifact_id' => $entry->artifactId,
-            'parent_run_id' => $entry->parentRunId,
-            'agent_run_id' => $entry->agentRunId,
-            'agent_name' => $entry->agentName,
-            'status' => $entry->status->value,
-            'created_at' => $entry->createdAt->format(\DateTimeInterface::ATOM),
-            'started_at' => $entry->startedAt?->format(\DateTimeInterface::ATOM),
-            'completed_at' => $entry->completedAt?->format(\DateTimeInterface::ATOM),
-            'summary' => $entry->summary,
-            'failure_reason' => $entry->failureReason,
-            'needs_clarification' => $entry->needsClarification,
-            'events_path' => $entry->paths->eventsPath,
-            'state_path' => $entry->paths->statePath,
-            'handoff_path' => $entry->paths->handoffPath,
-        ];
-    }
-
-    /**
-     * Reject path components that could escape the session directory.
-     *
-     * Embedded patterns like "foo..bar" are harmless because path separators
-     * are already blocked.
-     *
-     * @throws \InvalidArgumentException
-     */
-    private function validatePathComponent(string $value, string $field): void
-    {
-        if ('' === $value) {
-            throw new \InvalidArgumentException(\sprintf('"%s" must not be empty.', $field));
-        }
-
-        if (false !== strpbrk($value, '/\\')) {
-            throw new \InvalidArgumentException(\sprintf('"%s" must not contain path separators: got "%s".', $field, $value));
-        }
-
-        if ('..' === $value || '.' === $value) {
-            throw new \InvalidArgumentException(\sprintf('"%s" must not be "%s".', $field, $value));
-        }
+        return $entry;
     }
 }

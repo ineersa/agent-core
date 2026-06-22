@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Agent\Artifact;
 
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathResolver;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunStore;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
@@ -18,6 +19,7 @@ use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Serializer\Encoder\JsonEncoder;
 use Symfony\Component\Serializer\Normalizer\BackedEnumNormalizer;
 use Symfony\Component\Serializer\Normalizer\DateTimeNormalizer;
+use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 use Symfony\Component\Serializer\Serializer;
 
@@ -36,7 +38,7 @@ use Symfony\Component\Serializer\Serializer;
 final class AgentChildRunStoreTest extends TestCase
 {
     private string $projectDir;
-    private HatfieldSessionStore $hatfieldSessionStore;
+    private AgentArtifactPathResolver $pathResolver;
     private Serializer $serializer;
 
     protected function setUp(): void
@@ -46,7 +48,7 @@ final class AgentChildRunStoreTest extends TestCase
         $this->projectDir = TestDirectoryIsolation::createOsTempDir('hatfield-child-runstore');
         TestDirectoryIsolation::createHatfieldTree($this->projectDir, withSessions: true);
 
-        $this->hatfieldSessionStore = new HatfieldSessionStore(
+        $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: new AppConfig(
                 tui: new TuiConfig(theme: 'default'),
                 logging: new LoggingConfig(),
@@ -55,8 +57,12 @@ final class AgentChildRunStoreTest extends TestCase
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
         );
 
+        $this->pathResolver = new AgentArtifactPathResolver($hatfieldSessionStore);
+
         $this->serializer = new Serializer(
-            [new DateTimeNormalizer(), new BackedEnumNormalizer(), new ObjectNormalizer()],
+            [new DateTimeNormalizer(), new BackedEnumNormalizer(), new ObjectNormalizer(
+                nameConverter: new CamelCaseToSnakeCaseNameConverter(),
+            )],
             [new JsonEncoder()],
         );
     }
@@ -383,7 +389,7 @@ final class AgentChildRunStoreTest extends TestCase
     private function createStore(string $parentRunId, string $agentRunId, string $artifactId): AgentChildRunStore
     {
         return new AgentChildRunStore(
-            hatfieldSessionStore: $this->hatfieldSessionStore,
+            pathResolver: $this->pathResolver,
             serializer: $this->serializer,
             lockFactory: new LockFactory(new FlockStore()),
             parentRunId: $parentRunId,
