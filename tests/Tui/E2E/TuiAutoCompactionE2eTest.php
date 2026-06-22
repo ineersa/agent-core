@@ -184,13 +184,6 @@ final class TuiAutoCompactionE2eTest extends TestCase
     // ── Helpers ───────────────────────────────────────────────────
 
     /**
-     * Assert the agent log contains no NoHandlerForMessageException
-     * or "No handler for message" transport-level errors.
-     *
-     * These errors would indicate CompactRun was routed to a bus
-     * (agent.execution.bus) that has no handler for the message.
-     */
-    /**
      * Assert events.jsonl contains exactly one auto-compaction lifecycle
      * outcome (context_compaction_failed, context_compacted, or
      * context_compaction_started with trigger=auto).

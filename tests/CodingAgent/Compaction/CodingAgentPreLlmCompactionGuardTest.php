@@ -113,7 +113,8 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
         );
         // Replace the default mock with one that returns the overridden model.
         $modelResolver = $this->createMock(ActiveModelResolverInterface::class);
-        $modelResolver->method('getActiveModel')
+        $modelResolver->expects(self::once())
+            ->method('getActiveModel')
             ->with('run-1')
             ->willReturn('openai/gpt-4');
 
