@@ -848,6 +848,19 @@ final class CompactionStepResultHandlerTest extends TestCase
             'Compaction model_error during Cancelling must resolve to Cancelled');
         self::assertCount(0, $result->effects,
             'Must NOT dispatch AdvanceRun when Cancelling — run has been cancelled');
+
+        // Must emit agent_end reason=cancelled for consistent cancellation projection.
+        // AdvanceRunHandler and ApplyCommandHandler both emit agent_end when
+        // terminalising Cancelling → Cancelled; this handler must do the same.
+        $agentEndEvent = $result->events[0] ?? null;
+        self::assertNotNull($agentEndEvent, 'Must have at least one event');
+        self::assertSame(RunEventTypeEnum::AgentEnd->value, $agentEndEvent->type,
+            'Must emit agent_end when terminalising Cancelling → Cancelled');
+        self::assertSame('cancelled', $agentEndEvent->payload['reason'] ?? null);
+
+        $failedEvent = $result->events[1] ?? null;
+        self::assertNotNull($failedEvent, 'Must also emit context_compaction_failed after agent_end');
+        self::assertSame(RunEventTypeEnum::ContextCompactionFailed->value, $failedEvent->type);
     }
 
     /**
@@ -938,6 +951,104 @@ final class CompactionStepResultHandlerTest extends TestCase
             'Compaction empty_summary during Cancelling must resolve to Cancelled');
         self::assertCount(0, $result->effects,
             'Must NOT dispatch AdvanceRun when Cancelling — run has been cancelled');
+
+        // Must emit agent_end reason=cancelled for consistent cancellation projection.
+        $agentEndEvent = $result->events[0] ?? null;
+        self::assertNotNull($agentEndEvent, 'Must have at least one event');
+        self::assertSame(RunEventTypeEnum::AgentEnd->value, $agentEndEvent->type,
+            'Must emit agent_end when terminalising Cancelling → Cancelled');
+        self::assertSame('cancelled', $agentEndEvent->payload['reason'] ?? null);
+
+        $failedEvent = $result->events[1] ?? null;
+        self::assertNotNull($failedEvent, 'Must also emit context_compaction_failed after agent_end');
+        self::assertSame(RunEventTypeEnum::ContextCompactionFailed->value, $failedEvent->type);
+    }
+
+    /**
+     * Thesis: pre-LLM auto compaction success during Cancelling must emit
+     * agent_end + context_compacted and must NOT dispatch AdvanceRun.
+     *
+     * When the user cancelled while compaction was in-flight and compaction
+     * succeeded (model returned a good summary), the handler must still
+     * terminalise Cancelling → Cancelled because cancellation wins over
+     * continuation.  Apply compacted messages but do NOT advance the run.
+     */
+    public function testPreLlmAutoSuccessCancellingDoesNotAdvance(): void
+    {
+        $originalMessages = [
+            $this->userMsg('q'),
+            $this->assistantMsg('a'),
+        ];
+        $state = new RunState(
+            runId: 'run-1',
+            status: RunStatus::Cancelling,
+            version: 10,
+            turnNo: 5,
+            lastSeq: 20,
+            isStreaming: false,
+            streamingMessage: null,
+            pendingToolCalls: [],
+            errorMessage: null,
+            messages: $originalMessages,
+            activeStepId: 'step-1',
+            retryableFailure: false,
+        );
+
+        $summaryMsg = $this->userMsg('summary');
+        $retained = [$this->userMsg('recent'), $this->assistantMsg('recent')];
+        $compactedMessages = [$summaryMsg, ...$retained];
+
+        $fakeService = $this->stubCompactionService($compactedMessages);
+        $handler = new CompactionStepResultHandler($fakeService, new EventFactory());
+
+        $result = $handler->handle(
+            new CompactionStepResult(
+                runId: 'run-1',
+                turnNo: 5,
+                stepId: 'step-1',
+                attempt: 1,
+                idempotencyKey: 'key-1',
+                summaryText: 'summary text',
+                error: null,
+                retainedTailMessages: array_map(static fn ($m) => $m->toArray(), $retained),
+                messagesCompacted: 1,
+                messagesRetained: 2,
+                firstRetainedIndex: 0,
+                tokenEstimateBefore: 50000,
+                trigger: 'auto',
+                continueAfterCompaction: true,
+                model: 'openai/gpt-4.1-mini',
+                modelOptions: [],
+            ),
+            $state,
+        );
+
+        self::assertNotNull($result->nextState);
+        self::assertSame(RunStatus::Cancelled, $result->nextState->status,
+            'Compaction success during Cancelling must resolve to Cancelled');
+
+        // Must NOT dispatch AdvanceRun — cancellation wins.
+        self::assertCount(0, $result->effects,
+            'Must NOT dispatch AdvanceRun when Cancelling — run has been cancelled');
+
+        // Must emit both agent_end and context_compacted.
+        self::assertCount(2, $result->events, 'Must emit agent_end + context_compacted');
+
+        $agentEndEvent = $result->events[0];
+        self::assertSame(RunEventTypeEnum::AgentEnd->value, $agentEndEvent->type,
+            'Must emit agent_end when terminalising Cancelling → Cancelled');
+        self::assertSame('cancelled', $agentEndEvent->payload['reason'] ?? null);
+
+        $compactedEvent = $result->events[1];
+        self::assertSame(RunEventTypeEnum::ContextCompacted->value, $compactedEvent->type,
+            'Must also emit context_compacted after agent_end');
+
+        // Verify compacted messages were applied.
+        self::assertSame(
+            $compactedMessages,
+            $result->nextState->messages,
+            'Compacted messages must be applied even when cancelling',
+        );
     }
 
     /**

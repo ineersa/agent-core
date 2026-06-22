@@ -149,6 +149,9 @@ final class CompactionStepResultHandler implements RunMessageHandler
             // compaction, the incoming state is Cancelling and must not
             // be overwritten.  The active step is cleared (no more work),
             // so transition to Cancelled without emitting AdvanceRun.
+            // Emit agent_end reason=cancelled alongside the failure event
+            // for consistent cancellation projection — same contract as
+            // AdvanceRunHandler and ApplyCommandHandler.
             $errorFinalStatus = match (true) {
                 RunStatus::Cancelling === $state->status => RunStatus::Cancelled,
                 $message->continueAfterCompaction => RunStatus::Running,
@@ -171,6 +174,16 @@ final class CompactionStepResultHandler implements RunMessageHandler
                     attempt: 1,
                     idempotencyKey: hash('sha256', \sprintf('%s|advance|%d|%s', $runId, $state->turnNo, $continueStepId)),
                 );
+            }
+
+            // When terminalising Cancelling → Cancelled, emit agent_end
+            // before context_compaction_failed for consistent projection.
+            if (RunStatus::Cancelling === $state->status) {
+                $agentEndEvent = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, [[
+                    'type' => RunEventTypeEnum::AgentEnd->value,
+                    'payload' => ['reason' => 'cancelled'],
+                ]]);
+                $events = array_merge($agentEndEvent, $events);
             }
 
             return new HandlerResult(
@@ -228,6 +241,16 @@ final class CompactionStepResultHandler implements RunMessageHandler
                     attempt: 1,
                     idempotencyKey: hash('sha256', \sprintf('%s|advance|%d|%s', $runId, $state->turnNo, $continueStepId)),
                 );
+            }
+
+            // When terminalising Cancelling → Cancelled, emit agent_end
+            // before context_compaction_failed for consistent projection.
+            if (RunStatus::Cancelling === $state->status) {
+                $agentEndEvent = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, [[
+                    'type' => RunEventTypeEnum::AgentEnd->value,
+                    'payload' => ['reason' => 'cancelled'],
+                ]]);
+                $events = array_merge($agentEndEvent, $events);
             }
 
             return new HandlerResult(
@@ -311,9 +334,24 @@ final class CompactionStepResultHandler implements RunMessageHandler
         //   turn (pre-LLM guard path) → Running so the turn can continue.
         // - maintenance (after-turn hook, manual): the run was already
         //   terminal before compaction → Completed.
-        $finalStatus = $message->continueAfterCompaction
-            ? RunStatus::Running
-            : RunStatus::Completed;
+        // - Cancelling: user cancelled while compaction was in flight.
+        //   Cancellation always wins → Cancelled with NO AdvanceRun.
+        //   Emit agent_end reason=cancelled before context_compacted.
+        $finalStatus = match (true) {
+            RunStatus::Cancelling === $state->status => RunStatus::Cancelled,
+            $message->continueAfterCompaction => RunStatus::Running,
+            default => RunStatus::Completed,
+        };
+
+        // When terminalising Cancelling → Cancelled on success, prepend
+        // agent_end before context_compacted for consistent projection.
+        if (RunStatus::Cancelling === $state->status) {
+            $agentEndEvent = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, [[
+                'type' => RunEventTypeEnum::AgentEnd->value,
+                'payload' => ['reason' => 'cancelled'],
+            ]]);
+            $events = array_merge($agentEndEvent, $events);
+        }
 
         // Atomically replace RunState.messages with the compacted list.
         $nextState = new RunState(
@@ -332,11 +370,12 @@ final class CompactionStepResultHandler implements RunMessageHandler
         );
 
         // Continue the LLM turn ONLY when the compaction was holding a
-        // pending turn open (pre-LLM guard path).  After-turn maintenance
-        // and manual /compact must NOT auto-continue — the run is already
-        // terminal and the user is expected to follow-up manually.
+        // pending turn open (pre-LLM guard path) AND cancellation has NOT
+        // been requested.  After-turn maintenance and manual /compact must
+        // NOT auto-continue — the run is already terminal and the user is
+        // expected to follow-up manually.
         $effects = [];
-        if ($message->continueAfterCompaction) {
+        if (RunStatus::Cancelling !== $state->status && $message->continueAfterCompaction) {
             $continueStepId = \sprintf('advance-%d', hrtime(true));
             $effects[] = new AdvanceRun(
                 runId: $runId,
