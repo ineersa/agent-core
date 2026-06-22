@@ -197,6 +197,37 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
         }
 
         // Dispatch auto compaction.
+        //
+        // ── Summary-only guard (session 14) ─────────────────────────
+        // Before dispatching, check whether the compaction preparation
+        // would summarize ONLY prior compact_summary messages with no
+        // fresh non-summary conversation body.  This prevents the
+        // pathological case where auto-compaction fires on successive
+        // turns, each time compacting only the prior compact_summary
+        // and producing near-zero token reduction — noise the user
+        // sees as redundant "Conversation compacted" (session 14
+        // seq149/150: messages_to_summarize=1,
+        // prior_summary_present=true).
+        //
+        // Valid later re-compaction (session 14 seq230:
+        // messages_compacted=26 including compact_summary + fresh
+        // history) is NOT blocked — only summary-only partitions
+        // are suppressed.  Structural preparation failures
+        // (too_few_messages, below_keep_recent_tokens, no_boundary,
+        // no_safe_boundary) are also silently skipped — the hook
+        // should not emit visible failures for compile-time skips.
+        $prepareResult = $this->compactionService->prepare($runState->messages);
+
+        if (!$prepareResult->isReady()) {
+            return $context;
+        }
+
+        // Detect summary-only: priorSummaryPresent and ALL messages
+        // in the summarize partition carry the compact_summary flag.
+        if ($prepareResult->priorSummaryPresent && $this->isSummaryOnlyPartition($prepareResult->messagesToSummarize)) {
+            return $context;
+        }
+
         $this->dispatchAutoCompaction($runId);
 
         return $context;
