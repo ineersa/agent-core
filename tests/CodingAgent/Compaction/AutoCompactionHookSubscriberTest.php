@@ -545,14 +545,17 @@ final class AutoCompactionHookSubscriberTest extends TestCase
     // ─────────────────────────────────────────────────────────────────
 
     /**
-     * Thesis: after auto compaction starts on a provider measurement,
-     * the same measurement must NOT trigger another CompactRun dispatch
-     * — even when the in-memory dedup maps are cleared (e.g. process
-     * restart).  The event-log-eligibility check via
-     * ProviderContextUsageResolver::getLatestEligibleInputTokens is the
-     * authoritative guard.
+     * Thesis: after auto compaction fails via the prepare-failure path
+     * (context_compaction_failed with no preceding started event —
+     * e.g. no_safe_boundary), the same provider measurement must NOT
+     * trigger another CompactRun dispatch — even from a fresh service
+     * instance (event-log persistence, not in-memory dedup only).
+     *
+     * This catches the session 3 seq74→seq79→seq87 class where
+     * d11039e0f would allow retry because it only checked for
+     * context_compaction_started as the attempt marker.
      */
-    public function testStaleProviderMeasurementDoesNotRetriggerAfterAutoCompactionStart(): void
+    public function testFailureOnlyAutoMarkerBlocksDispatchFromFreshInstance(): void
     {
         $this->modelResolver->method('getActiveModel')->willReturn(null);
 
@@ -561,36 +564,51 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         ]);
         $this->runStore->method('get')->willReturn($runState);
 
-        // Event log: provider measurement at seq 10, auto started at seq 11.
-        // The resolver sees that the auto start (seq 11) > provider (seq 10),
-        // so the measurement is INELIGIBLE.
+        // Event log: provider measurement at seq 74, auto failed-only at
+        // seq 79 (no started event — the prepare-failure path).
         $this->eventStore->method('allFor')
             ->willReturn([
-                $this->makeLlmStepCompletedEvent(12000),
                 new RunEvent(
                     runId: 'run-1',
-                    seq: 2,
+                    seq: 74,
                     turnNo: 1,
-                    type: RunEventTypeEnum::ContextCompactionStarted->value,
+                    type: RunEventTypeEnum::LlmStepCompleted->value,
                     payload: [
-                        'step_id' => 'compact-99',
+                        'step_id' => 'step-74',
+                        'stop_reason' => 'stop',
+                        'usage' => [
+                            'input_tokens' => 32660,
+                            'output_tokens' => 100,
+                            'total_tokens' => 32760,
+                        ],
+                    ],
+                ),
+                new RunEvent(
+                    runId: 'run-1',
+                    seq: 79,
+                    turnNo: 1,
+                    type: RunEventTypeEnum::ContextCompactionFailed->value,
+                    payload: [
+                        'reason' => 'no_safe_boundary',
                         'trigger' => 'auto',
-                        'estimated_tokens' => 12000,
-                        'keep_recent_tokens' => 10,
-                        'messages_before' => 10,
-                        'messages_to_summarize' => 5,
-                        'messages_retained' => 5,
-                        'first_retained_index' => 5,
-                        'prior_summary_present' => false,
+                        'step_id' => null,
+                        'messages_replaced' => false,
                     ],
                 ),
             ]);
 
-        // Stable commit after process restart — in-memory maps are empty,
-        // but event log says auto start already covered this measurement.
-        $context = $this->createHookContext();
-        $this->subscriber->handleAfterTurnCommit($context);
+        // Fresh service instance — no in-memory state.
+        $freshSubscriber = new AutoCompactionHookSubscriber(
+            $this->runStore,
+            $this->providerUsageResolver,
+            $this->compactionConfig,
+            $this->modelResolver,
+            $this->commandBus,
+        );
 
-        self::assertCount(0, $this->commandBus->messages);
+        $freshSubscriber->handleAfterTurnCommit($this->createHookContext());
+
+        self::assertCount(0, $this->commandBus->messages,
+            'Failure-only auto marker at seq 79 must block dispatch from stale provider measurement at seq 74');
     }
 }

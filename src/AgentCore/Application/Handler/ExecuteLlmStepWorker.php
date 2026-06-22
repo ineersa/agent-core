@@ -105,6 +105,33 @@ final readonly class ExecuteLlmStepWorker
             ;
 
             $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
+
+            // Detect fully empty platform response BEFORE metrics and
+            // logging so the deficiency is counted as an error, not a
+            // silent success.
+            $assistantMessage = $response->assistantMessage;
+            $hasStreamDeltas = [] !== $response->deltas();
+            if (null === $assistantMessage && !$hasStreamDeltas && null === $response->stopReason && null === $response->error) {
+                // The platform returned a fully empty response: no assistant
+                // message, no stream deltas, no stop reason, no error.
+                // This is a degenerate platform result; treat it as an error
+                // rather than fabricating placeholder text that enters the
+                // conversation history.
+                $response = new PlatformInvocationResult(
+                    assistantMessage: null,
+                    deltas: $response->deltas,
+                    usage: $response->usage,
+                    stopReason: $response->stopReason,
+                    modelNotifications: $response->modelNotifications,
+                    error: [
+                        'type' => 'empty_response',
+                        'message' => 'LLM provider returned an empty response.',
+                        'retryable' => false,
+                    ],
+                );
+                $assistantMessage = null;
+            }
+
             $this->metrics?->recordLlmLatency($durationMs, null !== $response->error);
 
             if (null !== $response->error) {
@@ -135,29 +162,6 @@ final readonly class ExecuteLlmStepWorker
                     'duration_ms' => round($durationMs, 3),
                     'event_type' => 'llm.request.completed',
                 ]);
-            }
-
-            $assistantMessage = $response->assistantMessage;
-            $hasStreamDeltas = [] !== $response->deltas();
-            if (null === $assistantMessage && !$hasStreamDeltas && null === $response->stopReason && null === $response->error) {
-                // The platform returned a fully empty response: no assistant
-                // message, no stream deltas, no stop reason, no error.
-                // This is a degenerate platform result; treat it as an error
-                // rather than fabricating placeholder text that enters the
-                // conversation history.
-                $response = new PlatformInvocationResult(
-                    assistantMessage: null,
-                    deltas: $response->deltas,
-                    usage: $response->usage,
-                    stopReason: $response->stopReason,
-                    modelNotifications: $response->modelNotifications,
-                    error: [
-                        'type' => 'empty_response',
-                        'message' => 'LLM provider returned an empty response.',
-                        'retryable' => false,
-                    ],
-                );
-                $assistantMessage = null;
             }
 
             return new LlmStepResult(

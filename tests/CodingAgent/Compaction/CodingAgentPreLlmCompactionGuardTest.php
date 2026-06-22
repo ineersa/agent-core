@@ -304,9 +304,55 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
     }
 
     /**
-     * Thesis: after auto compaction SUCCEEDS and a newer LLM step runs,
-     * the newer measurement IS eligible.  This proves the guard allows
-     * legitimate sequential auto compactions when new measurements arrive.
+     * Thesis: after auto compaction fails via the prepare-failure path
+     * (context_compaction_failed with trigger=auto, no started event —
+     * e.g. no_safe_boundary), the pre-LLM guard must NOT re-trigger
+     * for the same provider measurement, even from a fresh guard instance.
+     *
+     * This catches the session 3 class where d11039e0f would allow retry
+     * because it only checked context_compaction_started, but the
+     * prepare-failure path emits only context_compaction_failed.
+     */
+    public function testReturnsFalseWhenAutoCompactionFailedWithoutStartedForProviderMeasurement(): void
+    {
+        $messages = [
+            $this->makeTextMessage('user', 'Hello'),
+        ];
+
+        // Provider measurement at seq 74, auto failed-only at seq 79.
+        $this->eventStore->method('allFor')
+            ->willReturn([
+                $this->makeLlmStepCompletedEvent(12000),
+                new RunEvent(
+                    runId: 'run-1',
+                    seq: 2,
+                    turnNo: 1,
+                    type: RunEventTypeEnum::ContextCompactionFailed->value,
+                    payload: [
+                        'reason' => 'no_safe_boundary',
+                        'trigger' => 'auto',
+                        'step_id' => null,
+                        'messages_replaced' => false,
+                    ],
+                ),
+            ]);
+
+        // Fresh guard instance — no in-memory state.
+        $freshGuard = new CodingAgentPreLlmCompactionGuard(
+            $this->compactionConfig,
+            $this->providerUsageResolver,
+            $this->modelResolver,
+        );
+
+        self::assertFalse(
+            $freshGuard->shouldCompactBeforeLlmStep('run-1', 1, $messages, null),
+            'Failure-only auto marker at seq 2 must block stale provider measurement at seq 1',
+        );
+    }
+
+    /**
+     * Thesis: the normal path (started + compacted) should still work
+     * — only a newer provider measurement is eligible.
      */
     public function testReturnsTrueWhenNewerProviderMeasurementArrivesAfterAutoCompactionSuccess(): void
     {

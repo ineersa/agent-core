@@ -320,6 +320,132 @@ final class ProviderContextUsageResolverTest extends TestCase
         self::assertSame(15000, $this->resolver->getLatestEligibleInputTokens('run-1'));
     }
 
+    // ── Structural failure-only marker tests (session 3 class) ─────
+
+    /**
+     * Thesis: when a provider measurement is followed by an auto
+     * context_compaction_failed WITHOUT a preceding started event
+     * (the prepare-failure path — e.g. too_few_messages,
+     * no_safe_boundary), the failed event still marks the provider
+     * measurement handled.  This is the session 3 seq79→seq87 class.
+     *
+     * Without this, d11039e0f allowed retry loops: the resolver only
+     * checked context_compaction_started, but the prepare-failure
+     * path emits only context_compaction_failed.
+     */
+    public function testIneligibleWhenAutoCompactionFailedWithoutStartedAfterProviderMeasurement(): void
+    {
+        $this->mockEvents([
+            $this->makeLlmStepCompleted(74, 32660),
+            new RunEvent(
+                runId: 'run-1',
+                seq: 79,
+                turnNo: 1,
+                type: RunEventTypeEnum::ContextCompactionFailed->value,
+                payload: [
+                    'reason' => 'no_safe_boundary',
+                    'trigger' => 'auto',
+                    'step_id' => null, // no step_id — prepare failure
+                    'messages_replaced' => false,
+                ],
+            ),
+        ]);
+
+        // Failed-only at seq 79 covers provider measurement at seq 74.
+        self::assertNull($this->resolver->getLatestEligibleInputTokens('run-1'));
+    }
+
+    /**
+     * Thesis: after a prepare-failure-only marker, a newer provider
+     * measurement (higher seq) re-opens eligibility.
+     */
+    public function testEligibleWhenNewerMeasurementAfterFailureOnlyMarker(): void
+    {
+        $this->mockEvents([
+            $this->makeLlmStepCompleted(74, 32660),
+            new RunEvent(
+                runId: 'run-1',
+                seq: 79,
+                turnNo: 1,
+                type: RunEventTypeEnum::ContextCompactionFailed->value,
+                payload: [
+                    'reason' => 'no_safe_boundary',
+                    'trigger' => 'auto',
+                ],
+            ),
+            // Newer provider measurement at seq 90.
+            new RunEvent(
+                runId: 'run-1',
+                seq: 90,
+                turnNo: 2,
+                type: RunEventTypeEnum::LlmStepCompleted->value,
+                payload: [
+                    'step_id' => 'step-90',
+                    'stop_reason' => 'stop',
+                    'usage' => [
+                        'input_tokens' => 35000,
+                        'output_tokens' => 100,
+                        'total_tokens' => 35100,
+                    ],
+                ],
+            ),
+        ]);
+
+        // Newer measurement at seq 90 IS eligible — after failure-only marker at seq 79.
+        self::assertSame(35000, $this->resolver->getLatestEligibleInputTokens('run-1'));
+    }
+
+    /**
+     * Thesis: when both a started AND a failed event exist for the
+     * same auto attempt (the normal LLM-path failure), the max seq
+     * among them (failed) marks the measurement handled.
+     */
+    public function testIneligibleWhenStartedAndFailedBothExistAfterProviderMeasurement(): void
+    {
+        $this->mockEvents([
+            $this->makeLlmStepCompleted(10, 30755),
+            $this->makeAutoCompactionStarted(11),
+            new RunEvent(
+                runId: 'run-1',
+                seq: 12,
+                turnNo: 1,
+                type: RunEventTypeEnum::ContextCompactionFailed->value,
+                payload: [
+                    'reason' => 'model_error',
+                    'trigger' => 'auto',
+                    'step_id' => 'compact-11',
+                ],
+            ),
+        ]);
+
+        // Both started (11) and failed (12) cover measurement at 10.
+        self::assertNull($this->resolver->getLatestEligibleInputTokens('run-1'));
+    }
+
+    /**
+     * Thesis: manual compaction failure does NOT count as an auto
+     * attempt marker — only auto-triggered events count.
+     */
+    public function testManualCompactionFailureDoesNotBlockEligibility(): void
+    {
+        $this->mockEvents([
+            $this->makeLlmStepCompleted(10, 30755),
+            new RunEvent(
+                runId: 'run-1',
+                seq: 11,
+                turnNo: 1,
+                type: RunEventTypeEnum::ContextCompactionFailed->value,
+                payload: [
+                    'reason' => 'no_safe_boundary',
+                    'trigger' => 'manual',
+                ],
+            ),
+        ]);
+
+        // Manual failure does NOT block auto eligibility.
+        self::assertSame(30755, $this->resolver->getLatestEligibleInputTokens('run-1'));
+    }
+
     /**
      * Thesis: usage with zero input_tokens is not a valid measurement.
      */

@@ -20,13 +20,19 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
  *
  * Eligibility rule (event-log authoritative, not in-memory):
  * A provider usage measurement is eligible for auto-compaction at most
- * once.  The latest auto context_compaction_started event marks the
- * measurement handled.  A newer provider usage (higher seq) re-opens
- * eligibility.  This prevents repeated auto-compaction loops on the
- * same provider measurement after compaction commits or process restart.
+ * once.  An auto compaction attempt marker is any event with trigger=auto
+ * and type in {context_compaction_started, context_compaction_failed}.
+ * The latest attempt marker that is newer than the provider measurement
+ * renders it ineligible.  A newer provider measurement (higher seq than
+ * the latest attempt marker) re-opens eligibility.
+ *
+ * This covers both the normal path (started → compacted/failed) and the
+ * prepare-failure path where context_compaction_failed is emitted without
+ * a preceding context_compaction_started (e.g. too_few_messages,
+ * no_safe_boundary).
  *
  * Manual /compact events are NOT considered in eligibility — only
- * auto-triggered starts (trigger=auto).
+ * auto-triggered markers (trigger=auto).
  */
 final class ProviderContextUsageResolver
 {
@@ -57,17 +63,21 @@ final class ProviderContextUsageResolver
     /**
      * Returns the latest provider token count that is ELIGIBLE for
      * auto-compaction — i.e. a provider usage measurement whose event
-     * sequence number is greater than the latest auto
-     * context_compaction_started event seq (or no auto started event
-     * exists).
+     * sequence number is greater than the latest auto compaction
+     * attempt marker seq (or no auto attempt marker exists).
      *
-     * A provider measurement that has already triggered an auto-
-     * compaction attempt (context_compaction_started with trigger=auto)
-     * is ineligible regardless of whether the attempt succeeded, failed,
-     * or is still in flight.  Only a newer provider measurement (higher
-     * seq) re-opens eligibility.
+     * Attempt markers include both context_compaction_started and
+     * context_compaction_failed with trigger=auto.  The prepare-failure
+     * path emits only context_compaction_failed (no started event), so
+     * both types must be considered to prevent retry loops on stale
+     * measurements.
      *
-     * Manual /compact attempts do NOT count — only auto starts.
+     * A provider measurement that has already triggered an attempt
+     * marker is ineligible regardless of whether the attempt succeeded,
+     * failed, or is still in flight.  Only a newer provider measurement
+     * (higher seq than the latest attempt marker) re-opens eligibility.
+     *
+     * Manual /compact attempts do NOT count — only auto markers.
      *
      * @return int|null eligible tokens, or null when no eligible
      *                  measurement exists
@@ -83,11 +93,14 @@ final class ProviderContextUsageResolver
         }
 
         $providerSeq = $measurement['seq'] ?? 0;
-        $latestAutoStartSeq = $this->findLatestAutoCompactionStartSeq($runId);
+        $latestAutoAttemptSeq = $this->findLatestAutoCompactionAttemptSeq($runId);
 
         // Eligible only when provider measurement is newer than the
-        // last auto compaction attempt (or no auto attempt exists).
-        if (null !== $latestAutoStartSeq && $providerSeq <= $latestAutoStartSeq) {
+        // last auto compaction attempt marker (or no attempt exists).
+        // Attempt markers include both context_compaction_started and
+        // context_compaction_failed (the prepare-failure path emits
+        // only failed, no started).
+        if (null !== $latestAutoAttemptSeq && $providerSeq <= $latestAutoAttemptSeq) {
             return null;
         }
 
@@ -133,22 +146,36 @@ final class ProviderContextUsageResolver
     }
 
     /**
-     * Finds the latest auto context_compaction_started event seq.
+     * Finds the latest auto compaction attempt marker seq.
      *
      * Walks backward through events, returning the seq of the most
-     * recent context_compaction_started with trigger=auto.
-     * Manual /compact starts (trigger=manual or missing) are ignored —
+     * recent auto-triggered compaction attempt — either
+     * context_compaction_started or context_compaction_failed with
+     * trigger=auto.
+     *
+     * The prepare-failure path in CompactRunHandler emits
+     * context_compaction_failed without a preceding started event
+     * (e.g. too_few_messages, no_safe_boundary).  Including failure
+     * as an attempt marker prevents retry loops on the same stale
+     * provider measurement.
+     *
+     * Manual /compact markers (trigger=manual or missing) are ignored —
      * manual compaction should never block auto-compaction from a
      * newer provider measurement.
      */
-    private function findLatestAutoCompactionStartSeq(string $runId): ?int
+    private function findLatestAutoCompactionAttemptSeq(string $runId): ?int
     {
+        $attemptTypes = [
+            RunEventTypeEnum::ContextCompactionStarted->value,
+            RunEventTypeEnum::ContextCompactionFailed->value,
+        ];
+
         $events = $this->eventStore->allFor($runId);
 
         for ($i = \count($events) - 1; $i >= 0; --$i) {
             $event = $events[$i];
 
-            if (RunEventTypeEnum::ContextCompactionStarted->value !== $event->type) {
+            if (!\in_array($event->type, $attemptTypes, true)) {
                 continue;
             }
 
