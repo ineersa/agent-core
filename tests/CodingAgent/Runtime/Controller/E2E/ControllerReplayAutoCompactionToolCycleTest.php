@@ -68,7 +68,7 @@ final class ControllerReplayAutoCompactionToolCycleTest extends ControllerReplay
 compaction:
     auto_enabled: true
     compact_after_tokens: 1000
-    keep_recent_tokens: 2000
+    keep_recent_tokens: 10
 YAML;
     }
 
