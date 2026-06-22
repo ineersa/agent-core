@@ -128,6 +128,34 @@ final class TuiAutoCompactionE2eTest extends TestCase
                 'Auto-compaction must produce visible compaction-related text in TUI without manual /compact',
             );
 
+            // Post-compaction: wait for any retry mechanics to settle
+            // so the log is complete before inspection.
+            usleep(500_000);
+
+            // ── Sanity check: no boot/bus errors from double dispatch ──
+            // The auto-compaction hook dispatches CompactRun on
+            // agent.command.bus from inside RunCommit.  Without the fix
+            // that removes CompactRun from transport routing, the
+            // SendMessageMiddleware re-routes it to run_control (sync://)
+            // and SyncTransport re-dispatches through RoutableMessageBus,
+            // which can land on agent.execution.bus where no handler
+            // exists, producing a NoHandlerForMessageException retry loop.
+            //
+            // Assert the log AND the TUI capture are free of that error.
+            $finalCapture = $this->tmux->captureAnsi($pane);
+            self::assertStringNotContainsString(
+                'Run failed',
+                $finalCapture,
+                'TUI must not show "Run failed" after auto-compaction (hidden bus error)',
+            );
+            self::assertStringNotContainsString(
+                'No handler',
+                $finalCapture,
+                'TUI must not show "No handler" after auto-compaction',
+            );
+
+            $this->assertNoBusErrorInLog();
+
             // Save ANSI snapshot for inspection.
             $this->saveAnsiSnapshot($pane, 'auto-compact-success');
 
@@ -144,6 +172,48 @@ final class TuiAutoCompactionE2eTest extends TestCase
     }
 
     // ── Helpers ───────────────────────────────────────────────────
+
+    /**
+     * Assert the agent log contains no NoHandlerForMessageException
+     * or "No handler for message" transport-level errors.
+     *
+     * These errors would indicate CompactRun was routed to a bus
+     * (agent.execution.bus) that has no handler for the message.
+     */
+    private function assertNoBusErrorInLog(): void
+    {
+        $logGlob = $this->testProjectDir.'/.hatfield/logs/agent-*.log';
+        $logFiles = glob($logGlob);
+
+        if (false === $logFiles || [] === $logFiles) {
+            // No log files at all — fine, nothing to check.
+            return;
+        }
+
+        $noHandlerPatterns = [
+            'No handler for message',
+            'NoHandlerForMessageException',
+        ];
+
+        foreach ($logFiles as $logFile) {
+            $content = file_get_contents($logFile);
+            if (false === $content) {
+                continue;
+            }
+
+            foreach ($noHandlerPatterns as $pattern) {
+                self::assertStringNotContainsString(
+                    $pattern,
+                    $content,
+                    sprintf(
+                        'Log file %s must not contain "%s" (hidden bus error from auto-compaction)',
+                        basename($logFile),
+                        $pattern,
+                    ),
+                );
+            }
+        }
+    }
 
     private function agentCommand(): string
     {

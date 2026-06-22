@@ -74,7 +74,25 @@ framework:
             Ineersa\AgentCore\Domain\Message\StartRun: run_control
             Ineersa\AgentCore\Domain\Message\ApplyCommand: run_control
             Ineersa\AgentCore\Domain\Message\AdvanceRun: run_control
-            Ineersa\AgentCore\Domain\Message\CompactRun: run_control
+            # CompactRun is intentionally NOT routed to a transport.
+            # It is handled synchronously by CompactRunHandler (registered on
+            # agent.command.bus via RunMessageHandler tagging). Async work
+            # (the LLM summarization call) is dispatched separately as
+            # ExecuteCompactionStep → llm transport.
+            #
+            # Routing CompactRun to run_control would cause double-processing:
+            # the sync handler runs once, then SendMessageMiddleware routes it
+            # to the transport, and the consumer processes it again. With
+            # sync:// transports this also triggers a second in-process dispatch
+            # through RoutableMessageBus, which can route to agent.execution.bus
+            # where there is no CompactRun handler, causing a
+            # NoHandlerForMessageException retry loop.
+            #
+            # Auto-compaction (AutoCompactionHookSubscriber) dispatches
+            # CompactRun from inside RunCommit → after-turn hook → the sync
+            # handler in the same process; manual /compact dispatches from
+            # CompactCommandHandler (in-process for TUI, via ApplyCommand for
+            # headless controller). Neither path needs transport routing.
             Ineersa\AgentCore\Domain\Message\ExecuteLlmStep: llm
             Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep: llm
             Ineersa\AgentCore\Domain\Message\ExecuteToolCall: tool
