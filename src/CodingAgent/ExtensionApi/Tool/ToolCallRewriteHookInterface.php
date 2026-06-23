@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\Hatfield\ExtensionApi;
+namespace Ineersa\Hatfield\ExtensionApi\Tool;
 
 /**
  * Hook that rewrites tool-call arguments before the policy hook chain runs.

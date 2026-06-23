@@ -7,9 +7,9 @@ namespace Ineersa\CodingAgent\Tests\Extension\Builtin\SafeGuard;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardToolCallHook;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
-use Ineersa\Hatfield\ExtensionApi\ToolCallContextDTO;
-use Ineersa\Hatfield\ExtensionApi\ToolCallDecisionKindEnum;
-use Ineersa\Hatfield\ExtensionApi\ToolCallHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallContextDTO;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallDecisionKindEnum;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
 use PHPUnit\Framework\TestCase;
 
 /**

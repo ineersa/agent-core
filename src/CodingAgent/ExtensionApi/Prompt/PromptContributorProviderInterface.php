@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\Hatfield\ExtensionApi;
+namespace Ineersa\Hatfield\ExtensionApi\Prompt;
 
 /**
  * Narrow provider interface for reading registered prompt contributors.

@@ -154,14 +154,14 @@ services:
     arguments:
       $slashCommandRegistry: '@Ineersa\Tui\Command\SlashCommandRegistry'
 
-  Ineersa\Hatfield\ExtensionApi\CommandRegistryInterface:
+  Ineersa\Hatfield\ExtensionApi\Command\CommandRegistryInterface:
     alias: Ineersa\Tui\Extension\TuiCommandRegistryAdapter
 
   Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge:
     arguments:
       $appConfig: '@Ineersa\CodingAgent\Config\AppConfig'
       $execBridge: '@Ineersa\CodingAgent\Extension\ExtensionExecBridge'
-      $commandRegistry: '@Ineersa\Hatfield\ExtensionApi\CommandRegistryInterface'
+      $commandRegistry: '@Ineersa\Hatfield\ExtensionApi\Command\CommandRegistryInterface'
 
   Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface:
     alias: Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge

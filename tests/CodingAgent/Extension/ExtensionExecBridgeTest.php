@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Extension;
 
 use Ineersa\CodingAgent\Extension\ExtensionExecBridge;
-use Ineersa\Hatfield\ExtensionApi\ExecOptionsDTO;
+use Ineersa\Hatfield\ExtensionApi\Exec\ExecOptionsDTO;
 use PHPUnit\Framework\TestCase;
 
 /**

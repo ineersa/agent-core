@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\Hatfield\ExtensionApi;
+namespace Ineersa\Hatfield\ExtensionApi\Command;
 
 /**
  * Narrow provider interface consumed by the TUI adapter to register

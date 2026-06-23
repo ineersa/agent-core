@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\Hatfield\ExtensionApi;
+namespace Ineersa\Hatfield\ExtensionApi\Tool;
 
 /**
  * Hook interface invoked before a tool call is executed.

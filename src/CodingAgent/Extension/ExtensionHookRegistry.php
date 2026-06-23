@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Extension;
 
-use Ineersa\Hatfield\ExtensionApi\PromptContributorInterface;
-use Ineersa\Hatfield\ExtensionApi\PromptContributorProviderInterface;
-use Ineersa\Hatfield\ExtensionApi\ToolCallHookInterface;
-use Ineersa\Hatfield\ExtensionApi\ToolCallRewriteHookInterface;
-use Ineersa\Hatfield\ExtensionApi\ToolCallRewriteHookProviderInterface;
-use Ineersa\Hatfield\ExtensionApi\ToolResultHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
+use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorProviderInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookProviderInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultHookInterface;
 
 /**
  * Internal registry for tool call/result hooks registered by extensions.

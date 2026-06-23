@@ -2,35 +2,33 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Extension;
+namespace Ineersa\CodingAgent\Tests\Extension;
 
-use Ineersa\Hatfield\ExtensionApi\CommandDefinitionDTO;
-use Ineersa\Hatfield\ExtensionApi\ExecInterface;
-use Ineersa\Hatfield\ExtensionApi\ExecOptionsDTO;
-use Ineersa\Hatfield\ExtensionApi\ExecResultDTO;
+use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
+use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
+use Ineersa\Hatfield\ExtensionApi\Exec\ExecOptionsDTO;
+use Ineersa\Hatfield\ExtensionApi\Exec\ExecResultDTO;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
-use Ineersa\Hatfield\ExtensionApi\ExtensionCommandHandlerInterface;
-use Ineersa\Hatfield\ExtensionApi\PromptContributorInterface;
-use Ineersa\Hatfield\ExtensionApi\ToolCallHookInterface;
-use Ineersa\Hatfield\ExtensionApi\ToolCallRewriteHookInterface;
-use Ineersa\Hatfield\ExtensionApi\ToolRegistrationDTO;
-use Ineersa\Hatfield\ExtensionApi\ToolResultHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
+use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultHookInterface;
 
 /**
- * Internal implementation of ExtensionApiInterface for the extension loading flow.
+ * In-memory test-double for ExtensionApiInterface.
  *
- * In v1 (EXT-01), this bridge collects tool registrations in-memory so they
- * can be forwarded to the CodingAgent ToolRegistry later (EXT-02 adds the
- * ToolRegistry bridge). EXT-02 should either replace or decorate this service
- * to flush registrations into the permanent ToolRegistry.
+ * Collects tool registrations, hooks, and settings in-memory so tests
+ * can inspect what an extension registered during the loading phase
+ * without depending on the production ToolRegistry/DI wiring.
  *
- * The bridge intentionally does NOT validate ToolRegistrationDTO fields —
- * name validity, schema shape, and handler resolvability are the registry's
- * responsibility, not the ExtensionApi boundary's.
- *
- * @internal this is app-internal wiring, not part of the public ExtensionApi
+ * The v2+ methods (exec, registerPromptContributor, registerCommand,
+ * registerToolCallRewriteHook) throw LogicException — tests that need
+ * these capabilities should use the production ExtensionToolRegistryBridge
+ * or a dedicated test stub.
  */
-final class ExtensionApiBridge implements ExtensionApiInterface
+final class InMemoryExtensionApiBridge implements ExtensionApiInterface
 {
     private string $cwd;
 
@@ -68,10 +66,6 @@ final class ExtensionApiBridge implements ExtensionApiInterface
     /**
      * Return all collected tool registrations and clear the buffer.
      *
-     * EXT-02 should call this after the loading phase to forward registrations
-     * to the ToolRegistry, ensuring registrations are consumed exactly once
-     * per boot cycle.
-     *
      * @return list<ToolRegistrationDTO>
      */
     public function drainRegistrations(): array
@@ -84,8 +78,6 @@ final class ExtensionApiBridge implements ExtensionApiInterface
 
     /**
      * Peek at collected registrations without draining.
-     *
-     * Useful for testing and inspection.
      *
      * @return list<ToolRegistrationDTO>
      */
@@ -135,23 +127,23 @@ final class ExtensionApiBridge implements ExtensionApiInterface
         return new class implements ExecInterface {
             public function exec(string $command, array $args = [], ?ExecOptionsDTO $options = null): ExecResultDTO
             {
-                throw new \LogicException('exec is not supported on the v1 ExtensionApiBridge. Use the production ExtensionToolRegistryBridge.');
+                throw new \LogicException('exec is not supported on the InMemoryExtensionApiBridge. Use the production ExtensionToolRegistryBridge.');
             }
         };
     }
 
     public function registerPromptContributor(PromptContributorInterface $contributor): void
     {
-        throw new \LogicException('registerPromptContributor is not supported on the v1 ExtensionApiBridge. Use the production ExtensionToolRegistryBridge.');
+        throw new \LogicException('registerPromptContributor is not supported on the InMemoryExtensionApiBridge. Use the production ExtensionToolRegistryBridge.');
     }
 
     public function registerCommand(CommandDefinitionDTO $definition, ExtensionCommandHandlerInterface $handler): void
     {
-        throw new \LogicException('registerCommand is not supported on the v1 ExtensionApiBridge. Use the production ExtensionToolRegistryBridge.');
+        throw new \LogicException('registerCommand is not supported on the InMemoryExtensionApiBridge. Use the production ExtensionToolRegistryBridge.');
     }
 
     public function registerToolCallRewriteHook(string $toolName, ToolCallRewriteHookInterface $hook): void
     {
-        throw new \LogicException('registerToolCallRewriteHook is not supported on the v1 ExtensionApiBridge. Use the production ExtensionToolRegistryBridge.');
+        throw new \LogicException('registerToolCallRewriteHook is not supported on the InMemoryExtensionApiBridge. Use the production ExtensionToolRegistryBridge.');
     }
 }

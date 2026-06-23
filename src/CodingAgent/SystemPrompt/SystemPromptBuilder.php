@@ -7,7 +7,7 @@ namespace Ineersa\CodingAgent\SystemPrompt;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
-use Ineersa\Hatfield\ExtensionApi\PromptContributorProviderInterface;
+use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorProviderInterface;
 use Symfony\AI\Platform\Message\Template;
 use Symfony\AI\Platform\Message\TemplateRenderer\StringTemplateRenderer;
 

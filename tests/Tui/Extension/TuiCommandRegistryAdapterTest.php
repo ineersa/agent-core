@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Extension;
 
-use Ineersa\Hatfield\ExtensionApi\CommandContextInterface;
-use Ineersa\Hatfield\ExtensionApi\CommandDefinitionDTO;
-use Ineersa\Hatfield\ExtensionApi\ExtensionCommandHandlerInterface;
+use Ineersa\Hatfield\ExtensionApi\Command\CommandContextInterface;
+use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
+use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
 use Ineersa\Tui\Command\NoOp;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandRegistry;

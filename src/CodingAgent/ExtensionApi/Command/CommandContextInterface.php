@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\Hatfield\ExtensionApi;
+namespace Ineersa\Hatfield\ExtensionApi\Command;
 
 /**
  * UI-agnostic context passed to extension command handlers.

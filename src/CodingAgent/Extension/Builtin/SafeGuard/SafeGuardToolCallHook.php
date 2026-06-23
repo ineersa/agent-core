@@ -7,11 +7,11 @@ namespace Ineersa\CodingAgent\Extension\Builtin\SafeGuard;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Classifier\SafeGuardClassifier;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Policy\SafeGuardDecisionKind;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Policy\SafeGuardPolicy;
-use Ineersa\Hatfield\ExtensionApi\ApprovalAnswerContextDTO;
-use Ineersa\Hatfield\ExtensionApi\ApprovalAnswerHookInterface;
-use Ineersa\Hatfield\ExtensionApi\ToolCallContextDTO;
-use Ineersa\Hatfield\ExtensionApi\ToolCallDecisionDTO;
-use Ineersa\Hatfield\ExtensionApi\ToolCallHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Approval\ApprovalAnswerContextDTO;
+use Ineersa\Hatfield\ExtensionApi\Approval\ApprovalAnswerHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallContextDTO;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallDecisionDTO;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
 
 /**
  * SafeGuard tool-call hook that intercepts tool execution and applies

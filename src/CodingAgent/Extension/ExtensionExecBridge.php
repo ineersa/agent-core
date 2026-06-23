@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Extension;
 
-use Ineersa\Hatfield\ExtensionApi\ExecInterface;
-use Ineersa\Hatfield\ExtensionApi\ExecOptionsDTO;
-use Ineersa\Hatfield\ExtensionApi\ExecResultDTO;
+use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
+use Ineersa\Hatfield\ExtensionApi\Exec\ExecOptionsDTO;
+use Ineersa\Hatfield\ExtensionApi\Exec\ExecResultDTO;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Exception\RuntimeException as ProcessRuntimeException;
 use Symfony\Component\Process\Process;

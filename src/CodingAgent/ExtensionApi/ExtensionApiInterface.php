@@ -4,6 +4,15 @@ declare(strict_types=1);
 
 namespace Ineersa\Hatfield\ExtensionApi;
 
+use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
+use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
+use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
+use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultHookInterface;
+
 /**
  * Public API surface that Hatfield exposes to enabled extensions.
  *

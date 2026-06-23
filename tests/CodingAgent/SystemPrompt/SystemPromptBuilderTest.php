@@ -12,8 +12,8 @@ use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
 use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
-use Ineersa\Hatfield\ExtensionApi\PromptContributorInterface;
-use Ineersa\Hatfield\ExtensionApi\PromptContributorProviderInterface;
+use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
+use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorProviderInterface;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Message\TemplateRenderer\StringTemplateRenderer;
 

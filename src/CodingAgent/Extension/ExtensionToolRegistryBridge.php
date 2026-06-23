@@ -7,16 +7,16 @@ namespace Ineersa\CodingAgent\Extension;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
-use Ineersa\Hatfield\ExtensionApi\CommandDefinitionDTO;
-use Ineersa\Hatfield\ExtensionApi\CommandRegistryInterface;
-use Ineersa\Hatfield\ExtensionApi\ExecInterface;
+use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
+use Ineersa\Hatfield\ExtensionApi\Command\CommandRegistryInterface;
+use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
+use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
-use Ineersa\Hatfield\ExtensionApi\ExtensionCommandHandlerInterface;
-use Ineersa\Hatfield\ExtensionApi\PromptContributorInterface;
-use Ineersa\Hatfield\ExtensionApi\ToolCallHookInterface;
-use Ineersa\Hatfield\ExtensionApi\ToolCallRewriteHookInterface;
-use Ineersa\Hatfield\ExtensionApi\ToolRegistrationDTO;
-use Ineersa\Hatfield\ExtensionApi\ToolResultHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultHookInterface;
 
 /**
  * Bridges public ExtensionApiInterface calls to the internal ToolRegistry.
