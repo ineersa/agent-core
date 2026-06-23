@@ -353,11 +353,18 @@ YAML;
     {
         $events = [];
         $deadline = \microtime(true) + $timeoutSeconds;
+        $lastEventAt = \microtime(true);
+        $sawRunTerminal = false;
 
         while (\microtime(true) < $deadline) {
             foreach ($this->readEvents() as $event) {
                 $events[] = $event;
+                $lastEventAt = \microtime(true);
                 $type = $event['type'] ?? '';
+
+                if (\in_array($type, ['run.completed', 'run.failed'], true)) {
+                    $sawRunTerminal = true;
+                }
 
                 if (\in_array($type, ['compaction.completed', 'compaction.failed'], true)) {
                     return $events;
@@ -365,10 +372,21 @@ YAML;
             }
 
             if (!$this->isRunning()) {
-                \usleep(250_000);
                 foreach ($this->readEvents() as $event) {
                     $events[] = $event;
+                    $lastEventAt = \microtime(true);
+                    $type = $event['type'] ?? '';
+                    if (\in_array($type, ['run.completed', 'run.failed'], true)) {
+                        $sawRunTerminal = true;
+                    }
+                    if (\in_array($type, ['compaction.completed', 'compaction.failed'], true)) {
+                        return $events;
+                    }
                 }
+                break;
+            }
+
+            if ($sawRunTerminal && \microtime(true) - $lastEventAt > 0.8) {
                 break;
             }
 

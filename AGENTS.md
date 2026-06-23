@@ -42,6 +42,31 @@ Before re-running `castor check`, `castor test:controller`, or `castor test:tui`
 
 Replay-backed controller/TUI E2E tests use deterministic fixtures (no live LLM).  Live LLM smoke tests use `llama_cpp_test/test` (port 9052).  Test groups: `#[Group('llm-real')]`, `#[Group('tui-e2e-replay')]`, `#[Group('controller-replay')]`.  All E2E tests use `var/tmp/test-{uuid}` isolation, never real `.hatfield/sessions/`.
 
+
+### Llama-proxy on port 9052 (live smoke + `castor check`)
+
+Local live LLM smoke and the `castor check` **`test:llm-real`** lane expect an OpenAI-compatible endpoint on **port 9052**. In the recommended setup, **[llama-proxy](file:///home/ineersa/projects/llama-proxy)** binds `:9052`, records cache misses to disk, replays identical requests (including streaming), and forwards misses to the real test model (often llama.cpp on `:8052`). Tests and Castor preflight use the normal chat URL on 9052 — they do not bypass the proxy.
+
+**Cache normalization (proxy-side):** With `LLAMA_PROXY_CACHE_NORMALIZE_MESSAGES=true` (default), the proxy cache key ignores volatile chat prologue (leading `system`/`developer`, leading `[user-context]` user messages). The upstream request on a miss still sends the full body. That keeps AGENTS/skills/date/cwd churn from busting cache; live `llm-real` tests still use **unique first user prompts** per scenario so distinct tool paths do not collide after normalization.
+
+**Committed replay fixtures** (`HATFIELD_LLM_REPLAY_FIXTURE_PATH`, `castor test:controller-replay`, `castor test:tui`) are separate: they mock HTTP in the test DI layer and do not use llama-proxy cassettes. Proxy cache speeds live HTTP smoke; fixtures keep controller/TUI E2E deterministic without a model.
+
+**Ops (verify / warm / reset):**
+
+```bash
+curl http://127.0.0.1:9052/__llama_proxy/health
+curl http://127.0.0.1:9052/__llama_proxy/cache/stats
+curl -X POST http://127.0.0.1:9052/__llama_proxy/cache/clear   # or: curl -X DELETE http://127.0.0.1:9052/__llama_proxy/cache
+```
+
+If `LLAMA_PROXY_ADMIN_TOKEN` is set on the proxy, add `-H 'X-Llama-Proxy-Token: …'` to admin calls. Responses on cache hits may include `x-llama-proxy-cache: hit`.
+
+- **Warm cache:** run `castor test:llm-real` or full `castor check` once; unique prompts record cassettes on miss, repeats replay from disk (~20–30s warm lane vs cold upstream).
+- **Cold / stale cache:** `cache/clear`, then rerun the same tests to re-record. Delete Castor preflight cache `var/tmp/llm-generation-ready.cache` or set `HATFIELD_LLM_READY_TTL=0` to force generation preflight.
+- **Stale workers:** before retrying `castor check` / `test:tui` / `test:controller`, kill stale **current-user** `messenger:consume` / `agent --controller` children from the failed worktree (see above). Do not touch root-owned workers.
+
+Load the **`testing`** skill for full command matrix, ParaTest `llm-real` behavior, and failure diagnostics.
+
 See `tests/AGENTS.md` for full test standards: shared helpers, isolation, test doubles, what not to test, and cleanup conventions.
 
 **Load the `testing` skill** when: writing E2E tests, debugging controller/TUI test failures, or needing controller E2E internals, failure diagnostics, or the full testing matrix.
@@ -60,7 +85,7 @@ Run `castor cleanup` to remove all temp/test artifacts.
 
 For changes touching TUI runtime, `AgentSessionClient`, Messenger, `TranscriptProjector`, `RuntimeEventPoller`, or LLM-visible flow: you MUST run `castor check`. Unit/container/mocked tests are not enough. If tmux is unavailable, TUI tasks MUST stay IN-PROGRESS with the blocker — never mark CODE-REVIEW or DONE without validation.
 
-Default `castor check` is fully deterministic (replay-backed controller and TUI E2E, no live LLM). Live LLM smoke is opt-in via `castor test:llm-real` and `castor test:controller`.
+Default `castor check` includes replay-backed controller/TUI E2E plus the live `llm-real` smoke lane (llama.cpp/llama-proxy on port 9052). Additional live smoke remains opt-in via `castor test:controller`.
 
 ### Replay tests vs. live reproduction
 
@@ -72,7 +97,7 @@ Observed in issue #183: the follow-up-after-shell hang was diagnosed and "fixed"
 
 ### Focused live LLM provider validation
 
-`castor check` is deterministic and must NOT include `castor test:llm-real` by default. Run `castor test:llm-real` as opt-in focused validation when changes touch:
+`castor check` already runs the full `llm-real` group via the `test:llm-real` lane. Run `castor test:llm-real` alone for focused/filtered live validation when changes touch:
 - Symfony AI provider/factory/platform integration
 - LLM provider config, model catalog/resolution/routing/selection
 - Tool schemas, tool-call conversion, or tool argument prompts

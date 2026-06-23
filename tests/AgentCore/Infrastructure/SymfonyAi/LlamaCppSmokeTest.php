@@ -207,7 +207,7 @@ final class LlamaCppSmokeTest extends KernelTestCase
             pendingToolCalls: [],
             errorMessage: null,
             messages: [
-                new AgentMessage('user', [['type' => 'text', 'text' => 'Respond with exactly one word: hello.']]),
+                new AgentMessage('user', [['type' => 'text', 'text' => '[llm-real:platform-smoke] Respond with exactly one word: hello.']]),
             ],
             activeStepId: 'turn-1-llm-1',
         ), 0);

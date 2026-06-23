@@ -255,12 +255,12 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
             }
         }
 
-        $deadline = microtime(true) + 3.0;
+        $deadline = microtime(true) + 1.0;
         $stillAlive = true;
         while ($stillAlive && microtime(true) < $deadline) {
             $stillAlive = false;
             foreach ($this->trackedPids as $pid) {
-                if ($pid > 1 && @posix_kill($pid, 0)) {
+                if ($pid > 1 && $this->isPidAlive($pid)) {
                     $stillAlive = true;
                     break;
                 }
@@ -272,22 +272,19 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
 
         // SIGKILL any survivors.
         foreach ($this->trackedPids as $pid) {
-            if ($pid > 1 && @posix_kill($pid, 0)) {
+            if ($pid > 1 && $this->isPidAlive($pid)) {
                 @posix_kill($pid, \SIGKILL);
             }
         }
 
-        // Brief wait for kernel to reap.
-        usleep(100_000);
-
-        // Close the proc resource.
+        // Close the proc resource (reaps the main controller child).
         @proc_close($this->process);
         $this->process = null;
 
         // Assert: no tracked PIDs still alive.
         $survivors = [];
         foreach ($this->trackedPids as $pid) {
-            if ($pid > 1 && @posix_kill($pid, 0)) {
+            if ($pid > 1 && $this->isPidAlive($pid)) {
                 $survivors[] = $pid;
             }
         }
@@ -305,6 +302,31 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
                 ." tracked PIDs still alive after teardown:\n"
                 .implode("\n", $names)."\n");
         }
+    }
+
+    /**
+     * True when the PID still has a live task (not a zombie waiting on reap).
+     */
+    private function isPidAlive(int $pid): bool
+    {
+        if (!@posix_kill($pid, 0)) {
+            return false;
+        }
+
+        $stat = @file_get_contents("/proc/{$pid}/stat");
+        if (false === $stat) {
+            return true;
+        }
+
+        $closeParen = strrpos($stat, ')');
+        if (false === $closeParen) {
+            return true;
+        }
+
+        $rest = trim(substr($stat, $closeParen + 1));
+        $fields = preg_split('/\s+/', $rest) ?: [];
+
+        return 'Z' !== ($fields[0] ?? '');
     }
 
     /**
