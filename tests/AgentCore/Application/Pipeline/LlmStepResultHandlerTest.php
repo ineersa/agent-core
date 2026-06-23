@@ -504,6 +504,11 @@ final class LlmStepResultHandlerTest extends TestCase
         $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\ApplyCommand::class, $commandBus->messages[0]);
         $this->assertSame(CoreCommandKind::Continue, $commandBus->messages[0]->kind);
         $this->assertTrue($commandBus->messages[0]->payload['auto_retry'] ?? false);
+        $this->assertSame(1, $commandBus->messages[0]->payload['retry_attempt'] ?? null);
+        $this->assertSame([], $commandBus->messages[0]->options);
+
+        $routed = (new CommandRouter(new CommandHandlerRegistry([])))->route($commandBus->messages[0]);
+        $this->assertSame('core', $routed->status, (string) $routed->reason);
     }
 
     public function testRetryableErrorAtCapDoesNotDispatchRetryAndStripsAutoRetryPromise(): void
@@ -576,6 +581,7 @@ final class LlmStepResultHandlerTest extends TestCase
         $this->assertNotNull($failed);
         $this->assertTrue($failed->payload['retries_exhausted'] ?? false);
         $this->assertFalse($failed->payload['retryable'] ?? true);
+        $this->assertFalse($failed->payload['error']['retryable'] ?? true);
 
         foreach ($result->postCommit as $callback) {
             $callback();
