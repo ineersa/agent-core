@@ -63,15 +63,16 @@ function test_llm_real(?string $filter = null): void
     // (messenger:consume children with --time-limit=3600 that outlive PHPUnit
     // and keep the Castor task alive).  run_commands_parallel() spawns the
     // command inside an isolated session via setsid -w and reaps the ENTIRE
-    // session tree on both timeout (30s) and normal completion, killing
-    // separate-PGID grandchildren that passthru() leaves behind.
+    // session tree on timeout and normal completion, killing separate-PGID
+    // grandchildren that passthru() leaves behind.  Full llm-real group is
+    // ~50-55s wall time (8 tests, ShellFollowUpLiveE2eTest ~22s); 30s was too low.
     $commands = [
         'llm-real' => [
             'cmd' => $cmd,
             'log' => report_path('check-test-llm-real.log'),
         ],
     ];
-    $timeouts = ['llm-real' => 30];
+    $timeouts = ['llm-real' => 90];
 
     $start = hrtime(true);
     $results = run_commands_parallel($commands, $timeouts);
