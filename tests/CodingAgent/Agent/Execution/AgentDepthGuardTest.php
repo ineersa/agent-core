@@ -37,7 +37,6 @@ final class AgentDepthGuardTest extends TestCase
     public function testCurrentDepthDefaultsToOneWhenChildButNoDepth(): void
     {
         putenv('HATFIELD_AGENT_CHILD=1');
-        // No HATFIELD_AGENT_DEPTH set.
 
         $guard = new AgentDepthGuard();
         self::assertSame(1, $guard->currentDepth());
@@ -81,7 +80,6 @@ final class AgentDepthGuardTest extends TestCase
         putenv('HATFIELD_AGENT_MAX_DEPTH=1');
 
         $guard = new AgentDepthGuard();
-        // Agent allows 5, but global env caps at 1.
         $result = $guard->checkAllowed(currentDepth: 1, agentMaxDepth: 5);
         self::assertNotNull($result);
     }
@@ -110,5 +108,48 @@ final class AgentDepthGuardTest extends TestCase
         $env = $guard->childEnv(childDepth: 1, maxDepth: 1, agentsDisabled: true);
 
         self::assertSame('1', $env['HATFIELD_AGENTS_DISABLED']);
+    }
+
+    public function testDetermineDepthFallsBackToEnvWhenNoMetadata(): void
+    {
+        $guard = new AgentDepthGuard();
+        // No env vars set, no metadata → 0.
+        self::assertSame(0, $guard->determineDepth(null));
+
+        putenv('HATFIELD_AGENT_CHILD=1');
+        putenv('HATFIELD_AGENT_DEPTH=2');
+        self::assertSame(2, $guard->determineDepth(null));
+    }
+
+    public function testDetermineDepthUsesMaxOfEnvAndMetadata(): void
+    {
+        // Env says depth=1, metadata says depth=3 → use 3.
+        putenv('HATFIELD_AGENT_CHILD=1');
+        putenv('HATFIELD_AGENT_DEPTH=1');
+
+        $guard = new AgentDepthGuard();
+        self::assertSame(3, $guard->determineDepth(3));
+    }
+
+    public function testDetermineDepthUsesMetadataWhenEnvIsZero(): void
+    {
+        // No env vars (env depth=0), metadata says depth=2 → use 2.
+        $guard = new AgentDepthGuard();
+        self::assertSame(2, $guard->determineDepth(2));
+    }
+
+    public function testMaxDepthOneBlocksChildGrandchildFromMetadata(): void
+    {
+        // Simulate: parent depth is 0, maxDepth=1. First child allowed.
+        $guard = new AgentDepthGuard();
+        self::assertNull($guard->checkAllowed(0, 1));
+
+        // Simulate: child reads parent's metadata → effective depth 1.
+        // With maxDepth=1, child→grandchild blocked.
+        $effectiveDepth = $guard->determineDepth(1);
+        self::assertSame(1, $effectiveDepth);
+        $result = $guard->checkAllowed($effectiveDepth, 1);
+        self::assertNotNull($result);
+        self::assertStringContainsString('depth 1 meets or exceeds max depth 1', $result);
     }
 }

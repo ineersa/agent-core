@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Execution;
 
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
+use Ineersa\CodingAgent\Agent\Definition\McpAgentModeEnum;
 
 /**
  * Resolves tool and MCP policy for a child agent run.
@@ -13,7 +14,12 @@ use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
  * hard safety rules:
  *   - The 'subagent' tool is always excluded from child tool lists
  *     to prevent recursive agent launches by default.
- *   - MCP policy mode none/specific/all is read from the definition.
+ *   - MCP policy modes:
+ *     * none  — no MCP tools exposed.
+ *     * all   — MCP tools are passed through; subagent is still
+ *              excluded from the allowed_tools list.
+ *     * specific — only the MCP tools named in the definition's MCP
+ *                  policy are added to the allowed tool list.
  *
  * The resolved policy should be stored in RunMetadata::toolsScope so
  * downstream resolver/filtering can enforce it per-run without
@@ -37,6 +43,16 @@ final readonly class AgentToolPolicyResolver
                 $tools,
                 static fn (string $name): bool => 'subagent' !== $name,
             ));
+        }
+
+        // MCP specific mode: merge MCP tool names into the allowed
+        // tool list so downstream filtering can enforce them.
+        if (McpAgentModeEnum::Specific === $definition->mcp->mode) {
+            foreach ($definition->mcp->tools as $mcpTool) {
+                if (!\in_array($mcpTool, $tools, true)) {
+                    $tools[] = $mcpTool;
+                }
+            }
         }
 
         $mcp = [

@@ -17,6 +17,11 @@ namespace Ineersa\CodingAgent\Agent\Execution;
  *     Child RunStarted metadata carries agent_depth, agent_max_depth,
  *     and agents_disabled fields.
  *
+ * For in-process child runs, metadata is authoritative because env vars
+ * are not propagated.  Use {@see determineDepth()} which combines both
+ * sources, taking the maximum of env and metadata depth so neither
+ * source can be used to bypass the other.
+ *
  * The default parent depth is 0.  A definition with maxDepth=1 allows
  * parent→child but blocks child→grandchild.
  *
@@ -27,10 +32,12 @@ namespace Ineersa\CodingAgent\Agent\Execution;
 final readonly class AgentDepthGuard
 {
     /**
-     * Derive the current agent depth from environment variables.
+     * Derive the current agent depth from environment variables only.
      *
      * Returns 0 for the parent (no HATFIELD_AGENT_CHILD set),
      * otherwise HATFIELD_AGENT_DEPTH as an integer (default 1).
+     *
+     * Prefer {@see determineDepth()} for the combined env+metadata depth.
      */
     public function currentDepth(): int
     {
@@ -45,6 +52,26 @@ final readonly class AgentDepthGuard
         }
 
         return max(0, (int) $depth);
+    }
+
+    /**
+     * Determine the effective current depth by combining environment
+     * variables and persisted RunStarted metadata.
+     *
+     * Uses max(envDepth, metadataDepth) so that neither source can be
+     * used to bypass the other.  When metadata is null (parent is not a
+     * child, or the parent's RunStarted event is not yet available),
+     * falls back to the env-derived depth.
+     *
+     * @param int|null $metadataDepth depth read from parent's RunStarted
+     *                                metadata (or null when N/A)
+     */
+    public function determineDepth(?int $metadataDepth = null): int
+    {
+        $envDepth = $this->currentDepth();
+        $effective = \is_int($metadataDepth) ? max($envDepth, $metadataDepth) : $envDepth;
+
+        return $effective;
     }
 
     /**

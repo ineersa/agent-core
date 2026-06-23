@@ -4,10 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Execution;
 
-use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
-use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -15,11 +13,14 @@ use Psr\Log\LoggerInterface;
  * filtering for child agent runs.
  *
  * When a runId resolves to a child agent run (identified by RunStarted
- * metadata.kind === 'agent_child'), this resolver:
- *  1. Reads the RunStarted event from the EventStoreInterface.
- *  2. Extracts the resolved tool policy from tools_scope.allowed_tools.
+ * metadata.session.kind === 'agent_child'), this resolver:
+ *  1. Reads the RunStarted event via SubagentRunMetadataReader.
+ *  2. Extracts the resolved tool policy from
+ *     metadata.tools_scope.allowed_tools.
  *  3. Intersects the inner resolver's ActiveToolSet with the child's
  *     allowed tools — both toolNames and allowListNames.
+ *  4. Filters executionModes to only include entries for tools that
+ *     remain after intersection.
  *
  * For parent (non-child) runs or when child metadata is missing,
  * passes through to the inner resolver unchanged.
@@ -31,7 +32,7 @@ final readonly class SubagentToolSetResolver implements ToolSetResolverInterface
 {
     public function __construct(
         private ToolSetResolverInterface $inner,
-        private EventStoreInterface $eventStore,
+        private SubagentRunMetadataReader $metadataReader,
         private LoggerInterface $logger,
     ) {
     }
@@ -44,7 +45,7 @@ final readonly class SubagentToolSetResolver implements ToolSetResolverInterface
             return $inner;
         }
 
-        $allowedTools = $this->readChildPolicy($runId);
+        $allowedTools = $this->metadataReader->readAllowedTools($runId);
         if (null === $allowedTools) {
             // Not a child run or policy not available — pass through.
             $this->logger->debug('subagent_resolver.passthrough', [
@@ -57,6 +58,8 @@ final readonly class SubagentToolSetResolver implements ToolSetResolverInterface
         }
 
         // Intersect the inner toolset with the child's allowed tools.
+        $allowedLookup = array_flip($allowedTools);
+
         $filteredToolNames = array_values(
             array_intersect($inner->toolNames, $allowedTools),
         );
@@ -65,51 +68,19 @@ final readonly class SubagentToolSetResolver implements ToolSetResolverInterface
             array_intersect($inner->allowListNames, $allowedTools),
         );
 
+        // Filter executionModes to only include tools that remain after
+        // intersection — not stale modes for removed tools.
+        $filteredExecutionModes = [];
+        foreach ($inner->executionModes as $toolName => $mode) {
+            if (isset($allowedLookup[$toolName])) {
+                $filteredExecutionModes[$toolName] = $mode;
+            }
+        }
+
         return new ActiveToolSet(
             toolNames: $filteredToolNames,
             allowListNames: $filteredAllowList,
-            executionModes: $inner->executionModes,
+            executionModes: $filteredExecutionModes,
         );
-    }
-
-    /**
-     * Read the child agent's allowed tool policy from RunStarted metadata.
-     *
-     * Returns the allowed tool names or null when:
-     *  - The run is not a child agent run.
-     *  - The RunStarted event is not yet available.
-     *
-     * @return list<string>|null
-     */
-    private function readChildPolicy(string $runId): ?array
-    {
-        $events = $this->eventStore->allFor($runId);
-
-        foreach ($events as $event) {
-            if (RunEventTypeEnum::RunStarted->value !== $event->type) {
-                continue;
-            }
-
-            $kind = $event->payload['kind'] ?? null;
-            if ('agent_child' !== $kind) {
-                // Not a child agent run.
-                return null;
-            }
-
-            $toolsScope = $event->payload['tools_scope'] ?? [];
-            if (!\is_array($toolsScope)) {
-                return null;
-            }
-
-            $tools = $toolsScope['allowed_tools'] ?? null;
-            if (!\is_array($tools)) {
-                return null;
-            }
-
-            /* @var list<string> */
-            return $tools;
-        }
-
-        return null;
     }
 }

@@ -246,6 +246,11 @@ definition plus hard safety rules:
   prevent recursive agent launches by default.
 - The MCP policy (`none`, `all`, or `specific` with explicit tool names)
   is read from the definition's `mcp` block.
+  - `specific` mode: MCP tool names are merged into the resolved allowed
+    tools list so downstream filtering can enforce them.
+  - `all` mode: MCP mode metadata is passed through; per-tool enforcement
+    is at the MCP transport/registrar layer.
+  - `none` mode: no MCP tools are exposed.
 - The resolved policy is stored in `RunMetadata::toolsScope` and enforced
   per-run via a scoped `ToolSetResolver`. The global `ToolRegistry` is never
   mutated, so concurrent parent runs with different child policies do not
@@ -256,14 +261,23 @@ definition plus hard safety rules:
 The child system prompt is built from:
 
 1. The agent definition's `instructions` (first, unmodified).
-2. AGENTS.md project context when `inheritAgentsMd: true` (rendered via
-   `AgentsContextDiscovery` + `AgentsContextRenderer`).
-3. The parent system prompt when `systemPromptMode: append`.
+2. AGENTS.md project context when `inheritAgentsMd: true`, extracted from
+   the parent run's `user-context` message with metadata source
+   `agents_context`.
+3. The parent system prompt when `systemPromptMode: append`, extracted from
+   the parent run's `system` role message.
 
 A synthetic `user-context` message is prepended with the **non-interactive
 contract** (artifact ID, allowed tools, and rules: no interactive questions,
 return dense handoff, stop with explanation if information is missing). The
 task text follows as the `user` message.
+
+### Known limitations
+
+- **Stale child run detection:** `RunStoreRouter::findRunningStaleBefore()` only
+  scans parent session store runs, not child agent runs.  Child run liveness
+  is managed by the subagent tool's own timeout mechanism.  A future task
+  should add child scanning when background/async child modes are introduced.
 
 ## Current limitations
 

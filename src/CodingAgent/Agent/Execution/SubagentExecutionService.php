@@ -20,6 +20,7 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunLocator;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * Orchestrates a single foreground subagent execution.
@@ -49,7 +50,9 @@ final class SubagentExecutionService
         private readonly AgentArtifactRegistry $artifactRegistry,
         private readonly AgentRunnerInterface $agentRunner,
         private readonly RunStoreInterface $runStore,
+        private readonly RunStoreInterface $parentRunStore,
         private readonly EventStoreInterface $eventStore,
+        private readonly SubagentRunMetadataReader $metadataReader,
         private readonly AgentChildRunLocator $childRunLocator,
         private readonly StackToolExecutionContextAccessor $contextAccessor,
         private readonly LoggerInterface $logger,
@@ -59,11 +62,9 @@ final class SubagentExecutionService
     /**
      * Execute a single foreground subagent run.
      *
-     * @param string $parentRunId        parent session run ID (required for artifact scoping)
-     * @param string $agentName          agent definition name to resolve
-     * @param string $task               the task text for the child agent
-     * @param string $agentsMd           pre-rendered AGENTS.md project context (may be empty)
-     * @param string $parentSystemPrompt parent system prompt for append mode
+     * @param string $parentRunId parent session run ID (required for artifact scoping)
+     * @param string $agentName   agent definition name to resolve
+     * @param string $task        the task text for the child agent
      *
      * @return string the final handoff/result text
      *
@@ -73,19 +74,22 @@ final class SubagentExecutionService
         string $parentRunId,
         string $agentName,
         string $task,
-        string $agentsMd,
-        string $parentSystemPrompt,
     ): string {
         // 1. Resolve and validate agent definition.
-        $definition = $this->catalog->requireEnabled($agentName);
+        try {
+            $definition = $this->catalog->requireEnabled($agentName);
+        } catch (\RuntimeException $e) {
+            throw new ToolCallException(\sprintf('Agent "%s" is not available: %s', $agentName, $e->getMessage()), retryable: false);
+        }
 
         if (!$definition->foregroundAllowed) {
             throw new ToolCallException(\sprintf('Agent "%s" does not allow foreground execution.', $agentName), retryable: false);
         }
 
-        // 2. Check depth/recursion guard.
-        $currentDepth = $this->depthGuard->currentDepth();
-        $blockReason = $this->depthGuard->checkAllowed($currentDepth, $definition->maxDepth);
+        // 2. Check depth/recursion guard — combine env + metadata.
+        $parentMetadataDepth = $this->metadataReader->readAgentDepth($parentRunId);
+        $effectiveDepth = $this->depthGuard->determineDepth($parentMetadataDepth);
+        $blockReason = $this->depthGuard->checkAllowed($effectiveDepth, $definition->maxDepth);
         if (null !== $blockReason) {
             throw new ToolCallException($blockReason, retryable: false);
         }
@@ -94,9 +98,9 @@ final class SubagentExecutionService
         $policy = $this->policyResolver->resolve($definition);
         $allowedTools = $policy['tools'];
 
-        // 4. Create artifact ID and child run ID.
+        // 4. Create artifact ID and child run ID (RFC 4122).
         $artifactId = 'agent_'.bin2hex(random_bytes(8));
-        $agentRunId = 'uuid:'.bin2hex(random_bytes(16));
+        $agentRunId = Uuid::v4()->toRfc4122();
 
         // 5. Create artifact entry in Pending.
         $entry = $this->artifactRegistry->create(
@@ -109,7 +113,11 @@ final class SubagentExecutionService
         // Pre-populate the locator so routers find the child store immediately.
         $this->childRunLocator->register($entry);
 
-        // 6. Build prompt and messages.
+        // 6. Extract parent system prompt and AGENTS.md context.
+        $parentSystemPrompt = $this->extractSystemPrompt($parentRunId);
+        $agentsMd = $this->extractAgentsMdContext($parentRunId);
+
+        // 7. Build prompt and messages.
         $prompt = $this->promptBuilder->build(
             definition: $definition,
             task: $task,
@@ -119,8 +127,8 @@ final class SubagentExecutionService
             parentSystemPrompt: $parentSystemPrompt,
         );
 
-        // 7. Build child metadata with depth, policy, and artifact paths.
-        $childDepth = $this->depthGuard->childDepth($currentDepth);
+        // 8. Build child metadata with depth, policy, and artifact paths.
+        $childDepth = $this->depthGuard->childDepth($effectiveDepth);
         $childMetadata = new RunMetadata(
             session: [
                 'kind' => 'agent_child',
@@ -139,15 +147,15 @@ final class SubagentExecutionService
             ],
         );
 
-        // 8. Start child run.
-        $childRunId = $this->agentRunner->start(new StartRunInput(
+        // 9. Start child run (AgentRunner generates the runId if null).
+        $this->agentRunner->start(new StartRunInput(
             systemPrompt: $prompt['systemPrompt'],
             messages: $prompt['messages'],
             runId: $agentRunId,
             metadata: $childMetadata,
         ));
 
-        // 9. Mark Running in the registry.
+        // 10. Mark Running in the registry.
         $startedAt = new \DateTimeImmutable();
         $this->artifactRegistry->update(
             parentRunId: $parentRunId,
@@ -156,11 +164,14 @@ final class SubagentExecutionService
             startedAt: $startedAt,
         );
 
-        // 10. Poll child until terminal, timeout, or cancellation.
+        // 11. Poll child until terminal, timeout, or cancellation.
         $timeoutSeconds = $this->timeoutSeconds();
         $deadline = hrtime(true) + $timeoutSeconds * 1_000_000_000;
         $context = $this->contextAccessor->current();
         $cancelToken = $context?->cancellationToken();
+
+        // Monotonically increasing event seq for progress updates.
+        $progressSeq = $this->resolveNextProgressSeq($parentRunId);
 
         while (true) {
             // Check parent cancellation.
@@ -200,13 +211,16 @@ final class SubagentExecutionService
             $status = $state->status;
 
             if (RunStatus::Running === $status || RunStatus::Queued === $status) {
-                // Push inline progress update to parent transcript.
+                // Push inline progress update to parent transcript —
+                // lightweight status line based on RunState, not full event scan.
                 $this->emitProgressUpdate(
                     parentRunId: $parentRunId,
                     agentName: $agentName,
                     artifactId: $artifactId,
                     state: $state,
+                    seq: $progressSeq,
                 );
+                ++$progressSeq;
 
                 usleep(self::DEFAULT_POLL_MICROS);
                 continue;
@@ -228,59 +242,18 @@ final class SubagentExecutionService
                     $agentName, $clarification, $artifactId);
             }
 
-            // Terminal states — all paths return or continue.
-            if (RunStatus::Completed === $status) {
-                $finalMessages = $this->extractLastMessage($state);
-                $this->finalize(
-                    parentRunId: $parentRunId,
-                    artifactId: $artifactId,
-                    status: AgentArtifactStatusEnum::Completed,
-                    summary: $finalMessages,
-                );
-
-                return $finalMessages;
-            }
-
-            if (RunStatus::Failed === $status) {
-                $errorMsg = $state->errorMessage ?? 'Run failed without error message.';
-                $this->finalize(
-                    parentRunId: $parentRunId,
-                    artifactId: $artifactId,
-                    status: AgentArtifactStatusEnum::Failed,
-                    failureReason: $errorMsg,
-                    summary: $errorMsg,
-                );
-
-                return \sprintf("Subagent %s failed: %s\nArtifact: %s",
-                    $agentName, $errorMsg, $artifactId);
-            }
-
-            // Cancelled, Cancelling, or any other terminal/unexpected status.
-            // Cast to value for comparison to avoid PHPStan type-narrowing issues
-            // with the remaining enum cases after all prior checks.
-            $statusValue = $status->value;
-            $isCancelled = 'cancelled' === $statusValue || 'cancelling' === $statusValue;
-            $finalStatus = $isCancelled ? AgentArtifactStatusEnum::Cancelled : AgentArtifactStatusEnum::Failed;
-            // @phpstan-ignore ternary.alwaysTrue (remaining statuses are all terminal but we handle unexpected values defensively)
-            $summary = $isCancelled ? 'Child run was cancelled.' : 'Unexpected terminal status: '.$statusValue;
-
-            $this->logger->info('subagent_execution.terminal', [
-                'component' => 'agent.execution',
-                'event_type' => 'subagent_execution.terminal',
-                'agent_run_id' => $agentRunId,
-                'agent_name' => $agentName,
-                'status' => $status->value,
-            ]);
-
-            $this->finalize(
-                parentRunId: $parentRunId,
-                artifactId: $artifactId,
-                status: $finalStatus,
-                summary: $summary,
-            );
-
-            return \sprintf("Subagent %s ended (status: %s).\nArtifact: %s",
-                $agentName, $statusValue, $artifactId);
+            // Terminal states — exhaustive match over RunStatus.
+            return match ($status) {
+                RunStatus::Completed => $this->handleCompleted(
+                    $parentRunId, $artifactId, $agentName, $state,
+                ),
+                RunStatus::Failed => $this->handleFailed(
+                    $parentRunId, $artifactId, $agentName, $state,
+                ),
+                RunStatus::Cancelled, RunStatus::Cancelling => $this->handleCancelled(
+                    $parentRunId, $artifactId, $agentName,
+                ),
+            };
         }
     }
 
@@ -318,6 +291,74 @@ final class SubagentExecutionService
         );
 
         $this->artifactRegistry->writeHandoff($parentRunId, $artifactId, $handoff);
+    }
+
+    /**
+     * Handle Completed child run — finalize and return handoff.
+     */
+    private function handleCompleted(
+        string $parentRunId,
+        string $artifactId,
+        string $agentName,
+        RunState $state,
+    ): string {
+        $finalMessages = $this->extractLastMessage($state);
+        $this->finalize(
+            parentRunId: $parentRunId,
+            artifactId: $artifactId,
+            status: AgentArtifactStatusEnum::Completed,
+            summary: $finalMessages,
+        );
+
+        return $finalMessages;
+    }
+
+    /**
+     * Handle Failed child run — finalize and return error.
+     */
+    private function handleFailed(
+        string $parentRunId,
+        string $artifactId,
+        string $agentName,
+        RunState $state,
+    ): string {
+        $errorMsg = $state->errorMessage ?? 'Run failed without error message.';
+        $this->finalize(
+            parentRunId: $parentRunId,
+            artifactId: $artifactId,
+            status: AgentArtifactStatusEnum::Failed,
+            failureReason: $errorMsg,
+            summary: $errorMsg,
+        );
+
+        return \sprintf("Subagent %s failed: %s\nArtifact: %s",
+            $agentName, $errorMsg, $artifactId);
+    }
+
+    /**
+     * Handle Cancelled/Cancelling child run — finalize and return message.
+     */
+    private function handleCancelled(
+        string $parentRunId,
+        string $artifactId,
+        string $agentName,
+    ): string {
+        $this->logger->info('subagent_execution.cancelled', [
+            'component' => 'agent.execution',
+            'event_type' => 'subagent_execution.cancelled',
+            'agent_name' => $agentName,
+            'artifact_id' => $artifactId,
+        ]);
+
+        $this->finalize(
+            parentRunId: $parentRunId,
+            artifactId: $artifactId,
+            status: AgentArtifactStatusEnum::Cancelled,
+            summary: 'Child run was cancelled.',
+        );
+
+        return \sprintf("Subagent %s was cancelled.\nArtifact: %s",
+            $agentName, $artifactId);
     }
 
     /**
@@ -385,31 +426,30 @@ final class SubagentExecutionService
     }
 
     /**
-     * Emit a ToolExecutionUpdate event into the parent run's event stream
-     * so the RuntimeEventTranslator maps it to tool_execution.output_delta
-     * in the parent's transcript.
+     * Emit a ToolExecutionUpdate event into the parent run's event stream.
+     *
+     * Produces a lightweight status line (RunState-based) rather than
+     * scanning the full child event log each poll.
      */
     private function emitProgressUpdate(
         string $parentRunId,
         string $agentName,
         string $artifactId,
         RunState $state,
+        int $seq,
     ): void {
         $context = $this->contextAccessor->current();
         if (null === $context) {
             return;
         }
 
-        $delta = $this->buildProgressDelta(
-            agentName: $agentName,
-            artifactId: $artifactId,
-            state: $state,
-        );
+        $delta = \sprintf("subagent %s running | turn %d | artifact %s\n",
+            $agentName, $state->turnNo, $artifactId);
 
         $event = new RunEvent(
             runId: $parentRunId,
-            seq: 0,
-            turnNo: 0,
+            seq: $seq,
+            turnNo: $context->turnNo(),
             type: RunEventTypeEnum::ToolExecutionUpdate->value,
             payload: [
                 'tool_call_id' => $context->toolCallId(),
@@ -423,37 +463,73 @@ final class SubagentExecutionService
     }
 
     /**
-     * Build a compact progress delta line for the inline tool widget.
+     * Resolve the next sequence number for parent progress events.
+     *
+     * Falls back to the parent state's lastSeq + 1 when no parent
+     * events exist (the common case for the first progress event).
      */
-    private function buildProgressDelta(
-        string $agentName,
-        string $artifactId,
-        RunState $state,
-    ): string {
-        $parts = [];
+    private function resolveNextProgressSeq(string $parentRunId): int
+    {
+        $parentState = $this->parentRunStore->get($parentRunId);
 
-        $parts[] = \sprintf('subagent %s running', $agentName);
-        $parts[] = \sprintf('turn %d', $state->turnNo);
+        return null !== $parentState ? $parentState->lastSeq + 1 : 1;
+    }
 
-        // Count tool calls executed so far from events.
-        $events = $this->eventStore->allFor($state->runId);
-        $toolCount = 0;
-        $lastToolName = '';
-        foreach ($events as $event) {
-            if (RunEventTypeEnum::ToolExecutionStart->value === $event->type) {
-                ++$toolCount;
-                $lastToolName = (string) ($event->payload['tool_name'] ?? '');
+    /**
+     * Extract the system prompt from the parent run's messages.
+     */
+    private function extractSystemPrompt(string $parentRunId): string
+    {
+        $state = $this->parentRunStore->get($parentRunId);
+        if (null === $state) {
+            return '';
+        }
+
+        foreach ($state->messages as $message) {
+            if ('system' !== $message->role) {
+                continue;
+            }
+            foreach ($message->content as $block) {
+                if ('text' === ($block['type'] ?? '') && isset($block['text'])) {
+                    return (string) $block['text'];
+                }
             }
         }
 
-        if ($toolCount > 0) {
-            $parts[] = \sprintf('%d tools', $toolCount);
-        }
-        if ('' !== $lastToolName) {
-            $parts[] = \sprintf('> %s', $lastToolName);
+        return '';
+    }
+
+    /**
+     * Extract AGENTS.md context from parent run's user-context messages.
+     *
+     * Looks for messages with role 'user-context' and metadata source
+     * 'agents_context', falling back to any user-context message when
+     * the metadata tag is absent.
+     */
+    private function extractAgentsMdContext(string $parentRunId): string
+    {
+        $state = $this->parentRunStore->get($parentRunId);
+        if (null === $state) {
+            return '';
         }
 
-        return implode(' | ', $parts)."\n";
+        // Prefer explicitly tagged agents_context.
+        foreach ($state->messages as $message) {
+            if ('user-context' !== $message->role) {
+                continue;
+            }
+            $source = $message->metadata['source'] ?? null;
+            if ('agents_context' !== $source) {
+                continue;
+            }
+            foreach ($message->content as $block) {
+                if ('text' === ($block['type'] ?? '') && isset($block['text'])) {
+                    return (string) $block['text'];
+                }
+            }
+        }
+
+        return '';
     }
 
     /**

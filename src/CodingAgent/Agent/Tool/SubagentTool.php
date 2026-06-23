@@ -24,9 +24,6 @@ use Ineersa\CodingAgent\Tool\ToolRuntime;
  * background, and interactive modes are explicitly rejected with
  * actionable error messages.
  *
- * The tool handler requires an active ToolContext (parent run
- * context) because artifacts are parent-scoped.
- *
  * Implements both HatfieldToolProviderInterface and ToolHandlerInterface
  * for automatic registration as a permanent tool.
  */
@@ -42,9 +39,8 @@ final class SubagentTool implements HatfieldToolProviderInterface, ToolHandlerIn
     /**
      * Execute the subagent tool.
      *
-     * @param array<string, mixed> $arguments Must contain 'agent' (string) and
-     *                                        'task' (string).  Optional: 'model',
-     *                                        'thinking', 'context', 'cwd'.
+     * @param array<string, mixed> $arguments must contain 'agent' (string) and
+     *                                        'task' (string)
      *
      * @return string handoff/result text
      *
@@ -63,7 +59,7 @@ final class SubagentTool implements HatfieldToolProviderInterface, ToolHandlerIn
             $agent = $this->validateString($arguments, 'agent');
             $task = $this->validateString($arguments, 'task');
 
-            // Reject unsupported parallel/background modes.
+            // Reject unsupported parallel/background modes at runtime.
             if (isset($arguments['tasks']) && \is_array($arguments['tasks'])) {
                 throw new ToolCallException('Parallel subagent execution (tasks array) is not yet implemented. Use single agent mode with "agent" and "task" fields.', retryable: false, hint: 'Use {"agent": "scout", "task": "your task here"} instead of {"tasks": [...]}.');
             }
@@ -84,8 +80,6 @@ final class SubagentTool implements HatfieldToolProviderInterface, ToolHandlerIn
                 parentRunId: $parentRunId,
                 agentName: $agent,
                 task: $task,
-                agentsMd: '',       // Passed as empty — agent builder handles AGENTS.md injection
-                parentSystemPrompt: '', // Passed as empty — agent builder handles append/replace
             );
         });
     }
@@ -108,23 +102,6 @@ final class SubagentTool implements HatfieldToolProviderInterface, ToolHandlerIn
                     'task' => [
                         'type' => 'string',
                         'description' => 'The task for the subagent. Be specific about what to find, check, or produce.',
-                    ],
-                    'model' => [
-                        'type' => 'string',
-                        'description' => 'Optional model override for the subagent (e.g., "deepseek/deepseek-v4-pro").',
-                    ],
-                    'thinking' => [
-                        'type' => 'string',
-                        'description' => 'Optional thinking/reasoning level override (off, minimal, low, medium, high, xhigh).',
-                    ],
-                    'context' => [
-                        'type' => 'string',
-                        'enum' => ['fresh', 'fork'],
-                        'description' => 'Execution context: "fresh" (default) starts a clean child session, "fork" is not yet implemented.',
-                    ],
-                    'cwd' => [
-                        'type' => 'string',
-                        'description' => 'Optional working directory override (not yet fully supported).',
                     ],
                 ],
                 'required' => ['agent', 'task'],

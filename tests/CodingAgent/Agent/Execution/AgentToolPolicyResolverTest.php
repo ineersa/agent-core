@@ -57,10 +57,32 @@ final class AgentToolPolicyResolverTest extends TestCase
         self::assertSame([], $policy['mcp']['tools']);
     }
 
-    public function testResolveMcpModeSpecific(): void
+    public function testResolveMcpModeSpecificMergesMcpToolsIntoAllowedList(): void
     {
         $definition = $this->createDefinition(
             tools: ['read'],
+            mcp: new McpPolicyDTO(
+                mode: McpAgentModeEnum::Specific,
+                tools: ['context7__query-docs', 'websearch__search'],
+            ),
+        );
+
+        $resolver = new AgentToolPolicyResolver();
+        $policy = $resolver->resolve($definition);
+
+        self::assertSame('specific', $policy['mcp']['mode']);
+        // MCP tools appear in the resolved allowed tools list.
+        self::assertContains('context7__query-docs', $policy['tools']);
+        self::assertContains('websearch__search', $policy['tools']);
+        self::assertContains('read', $policy['tools']);
+        // Subagent is still excluded.
+        self::assertNotContains('subagent', $policy['tools']);
+    }
+
+    public function testResolveMcpModeSpecificDoesNotDuplicateAlreadyPresentTools(): void
+    {
+        $definition = $this->createDefinition(
+            tools: ['read', 'context7__query-docs'],
             mcp: new McpPolicyDTO(
                 mode: McpAgentModeEnum::Specific,
                 tools: ['context7__query-docs'],
@@ -71,7 +93,9 @@ final class AgentToolPolicyResolverTest extends TestCase
         $policy = $resolver->resolve($definition);
 
         self::assertSame('specific', $policy['mcp']['mode']);
-        self::assertContains('context7__query-docs', $policy['mcp']['tools']);
+        // context7 should appear exactly once.
+        $counts = array_count_values($policy['tools']);
+        self::assertSame(1, $counts['context7__query-docs'] ?? 0);
     }
 
     public function testResolveMcpModeAll(): void

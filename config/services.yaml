@@ -485,8 +485,14 @@ services:
   Ineersa\CodingAgent\Agent\Execution\SubagentToolSetResolver:
     arguments:
       $inner: '@Ineersa\CodingAgent\Mcp\Tool\McpCatalogRegisteringToolSetResolver'
-      $eventStore: '@Ineersa\AgentCore\Contract\EventStoreInterface'
+      $metadataReader: '@Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader'
       $logger: '@logger'
+
+  # Shared reader for child RunStarted metadata payloads.
+  Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader:
+    arguments:
+      $eventStore: '@Ineersa\AgentCore\Contract\EventStoreInterface'
+
   Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface:
     alias: Ineersa\CodingAgent\Agent\Execution\SubagentToolSetResolver
 
@@ -708,6 +714,16 @@ services:
   # MCP-backed tools with TransportNamesStamp(['mcp']) before send_message
   # routes them.  Wired in messenger.yaml as bus-level middleware.
   Ineersa\CodingAgent\Mcp\Messenger\McpExecuteToolCallRoutingMiddleware: ~
+
+  # ─── AGENT-05 Subagent execution service ──────────────────────────
+
+  # SubagentExecutionService needs two RunStoreInterface bindings:
+  # $runStore auto-wires to the router (child runs), $parentRunStore to
+  # SessionRunStore (parent run state for prompt/metadata extraction).
+  # $eventStore auto-wires to the EventStoreRouter for progress events.
+  Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService:
+    arguments:
+      $parentRunStore: '@Ineersa\CodingAgent\Session\SessionRunStore'
 
   # ─── AGENT-05 Subagent tool storage routing ─────────────────────────
 
