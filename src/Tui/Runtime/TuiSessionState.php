@@ -79,9 +79,11 @@ final class TuiSessionState
     public int $contextWindow = 0;
 
     /**
-     * Whether a manual compaction is currently in progress for the active
-     * run. Set by CompactCommandHandler and cleared by RuntimeEventPoller
-     * when a compaction.completed or compaction.failed event arrives.
+     * Whether a compaction is currently in progress for the active
+     * run. Set by CompactCommandHandler (manual /compact) and by
+     * RuntimeEventPoller (auto compaction via CompactionStarted event).
+     * Cleared by RuntimeEventPoller when a compaction.completed or
+     * compaction.failed event arrives.
      */
     public bool $isCompacting = false;
 

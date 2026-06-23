@@ -332,6 +332,95 @@ final class LlmStepResultHandlerTest extends TestCase
             'Compact command must be drained (marked applied) from the store.',
         );
     }
+
+    public function testErrorResultDoesNotAppendAssistantMessage(): void
+    {
+        $executionBus = new TestMessageBus();
+        $stepDispatcher = new StepDispatcher($executionBus);
+
+        $commandStore = new InMemoryCommandStore();
+        $handler = new LlmStepResultHandler(
+            toolBatchCollector: new ToolBatchCollector(),
+            commandMailboxPolicy: new CommandMailboxPolicy(
+                commandStore: $commandStore,
+                commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+            ),
+            eventFactory: new EventFactory(),
+            toolCallExtractor: new ToolCallExtractor(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            stepDispatcher: $stepDispatcher,
+        );
+
+        $existingMessages = [
+            new \Ineersa\AgentCore\Domain\Message\AgentMessage(
+                role: 'user',
+                content: [['type' => 'text', 'text' => 'Hello']],
+            ),
+        ];
+
+        $state = new RunState(
+            runId: 'run-empty-asst',
+            status: RunStatus::Running,
+            version: 3,
+            turnNo: 1,
+            lastSeq: 4,
+            activeStepId: 'turn-1-step',
+            messages: $existingMessages,
+        );
+
+        $message = new LlmStepResult(
+            runId: 'run-empty-asst',
+            turnNo: 1,
+            stepId: 'turn-1-step',
+            attempt: 1,
+            idempotencyKey: 'empty-asst-1',
+            assistantMessage: null,
+            usage: ['input_tokens' => 100, 'output_tokens' => 50],
+            stopReason: null,
+            error: [
+                'type' => 'empty_assistant_content',
+                'message' => 'LLM provider returned reasoning without a final assistant response.',
+                'retryable' => false,
+            ],
+        );
+
+        $result = $handler->handle($message, $state);
+
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(RunStatus::Failed, $result->nextState->status,
+            'Thinking-only assistant must cause run failure, not success.',
+        );
+
+        // The error must NOT append any assistant message to state.
+        $this->assertCount(
+            \count($existingMessages),
+            $result->nextState->messages,
+            'Error result must not append assistant message to state messages.',
+        );
+
+        // The error details must propagate.
+        $this->assertSame(
+            'LLM provider returned reasoning without a final assistant response.',
+            $result->nextState->errorMessage,
+        );
+
+        // The llm_step_failed event must carry the error.
+        $llmStepFailed = null;
+        foreach ($result->events as $event) {
+            if ('llm_step_failed' === $event->type) {
+                $llmStepFailed = $event;
+            }
+        }
+        $this->assertNotNull($llmStepFailed, 'Must emit llm_step_failed event.');
+        $this->assertSame(
+            'empty_assistant_content',
+            $llmStepFailed->payload['error']['type'] ?? null,
+        );
+        $this->assertFalse(
+            $llmStepFailed->payload['retryable'] ?? true,
+            'empty_assistant_content must be non-retryable.',
+        );
+    }
 }
 
 

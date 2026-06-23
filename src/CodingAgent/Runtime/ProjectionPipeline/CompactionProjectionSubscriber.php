@@ -35,7 +35,7 @@ final readonly class CompactionProjectionSubscriber implements EventSubscriberIn
             kind: TranscriptBlockKindEnum::System,
             runId: $runId,
             seq: $state->nextSeq(),
-            text: '',
+            text: '◐ Compacting conversation…',
             meta: ['subtext' => 'Compacting conversation...'],
             streaming: true,
         ));
@@ -53,13 +53,7 @@ final readonly class CompactionProjectionSubscriber implements EventSubscriberIn
 
         $before = $p['estimated_tokens_before'] ?? null;
         $after = $p['estimated_tokens_after'] ?? null;
-
         $text = '⧉ Conversation compacted.';
-        if (null !== $before && null !== $after && $before > 0) {
-            $bK = $this->formatTokenCount($before);
-            $aK = $this->formatTokenCount($after);
-            $text = \sprintf('⧉ Conversation compacted. Token estimate: %s → %s.', $bK, $aK);
-        }
 
         $state->addBlock(new TranscriptBlock(
             id: 'compaction_completed_'.$state->nextSeq(),
@@ -97,20 +91,5 @@ final readonly class CompactionProjectionSubscriber implements EventSubscriberIn
                 'reason' => (string) ($p['reason'] ?? ''),
             ],
         ));
-    }
-
-    /**
-     * Format token count for human-readable display (e.g. 142000 → "142k").
-     */
-    private function formatTokenCount(int $tokens): string
-    {
-        if ($tokens >= 1_000_000) {
-            return \sprintf('%.1fM', $tokens / 1_000_000);
-        }
-        if ($tokens >= 1_000) {
-            return \sprintf('%dk', (int) round($tokens / 1_000));
-        }
-
-        return (string) $tokens;
     }
 }

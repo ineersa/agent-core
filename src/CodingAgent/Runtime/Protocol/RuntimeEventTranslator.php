@@ -54,6 +54,7 @@ final class RuntimeEventTranslator
             RunEventTypeEnum::LlmStepAborted->value => $this->onLlmStepAborted(...),
             // Tool execution
             RunEventTypeEnum::ToolExecutionStart->value => $this->onToolExecutionStarted(...),
+            RunEventTypeEnum::ToolExecutionUpdate->value => $this->onToolExecutionUpdate(...),
             RunEventTypeEnum::ToolExecutionEnd->value => $this->onToolExecutionEnded(...),
             // Model notification (generic, tool-scoped for now)
             RunEventTypeEnum::ModelNotification->value => $this->onModelNotification(...),
@@ -279,6 +280,28 @@ final class RuntimeEventTranslator
         );
     }
 
+    /**
+     * Map domain ToolExecutionUpdate → runtime tool_execution.output_delta.
+     *
+     * Used by SubagentExecutionService to push inline progress updates
+     * from child agent runs into the parent's transcript tool result block.
+     */
+    private function onToolExecutionUpdate(RunEvent $runEvent): RuntimeEvent
+    {
+        $p = $runEvent->payload;
+
+        return new RuntimeEvent(
+            type: RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
+            runId: $runEvent->runId,
+            seq: $runEvent->seq,
+            payload: [
+                'tool_call_id' => (string) ($p['tool_call_id'] ?? ''),
+                'delta' => (string) ($p['delta'] ?? ''),
+                'order_index' => (int) ($p['order_index'] ?? 0),
+            ],
+        );
+    }
+
     private function onToolExecutionEnded(RunEvent $runEvent): RuntimeEvent
     {
         $p = $runEvent->payload;
@@ -488,6 +511,7 @@ final class RuntimeEventTranslator
             'no_boundary' => 'Compaction failed: could not determine a boundary for the retained tail.',
             'no_safe_boundary' => 'Compaction failed: no safe boundary found without splitting tool-call results.',
             'empty_summary' => 'Compaction failed: The model returned an empty summary.',
+            'ineffective_compaction' => 'Compaction failed: the compacted context was not smaller than the original.',
             'model_error' => $this->compactionModelErrorMessage($p),
             'stale_result' => 'Compaction result is no longer relevant — the conversation has moved on.',
             default => \sprintf('Compaction failed: %s', $reason),

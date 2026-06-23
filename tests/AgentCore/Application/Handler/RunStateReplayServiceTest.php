@@ -969,6 +969,8 @@ final class RunStateReplayServiceTest extends TestCase
         self::assertSame('user', $result->rebuiltState->messages[1]->role);
         self::assertSame('New message after compaction', $result->rebuiltState->messages[1]->content[0]['text']);
         self::assertNull($result->rebuiltState->activeStepId, 'context_compacted must clear activeStepId — compaction is one-shot, no AdvanceRun follows');
+        // Status after compaction + steer: the steer command sets Running.
+        self::assertSame(RunStatus::Running, $result->rebuiltState->status, 'Steer after compaction sets Running');
     }
 
     /**
@@ -1041,6 +1043,7 @@ final class RunStateReplayServiceTest extends TestCase
         self::assertCount(1, $result->rebuiltState->messages, 'Messages should not be mutated by started event');
         self::assertSame('Original', $result->rebuiltState->messages[0]->content[0]['text']);
         self::assertSame('compaction-step-42', $result->rebuiltState->activeStepId, 'Started event MUST restore activeStepId for result staleness guard');
+        self::assertSame(RunStatus::Compacting, $result->rebuiltState->status, 'Started event MUST set status to Compacting to mirror live CompactRunHandler');
     }
 
     /**
@@ -1084,12 +1087,14 @@ final class RunStateReplayServiceTest extends TestCase
         self::assertNull($result->rebuiltState->activeStepId, 'Matching step_id failure must clear activeStepId');
         self::assertCount(1, $result->rebuiltState->messages, 'Messages preserved');
         self::assertSame('Original', $result->rebuiltState->messages[0]->content[0]['text']);
+        self::assertSame(RunStatus::Completed, $result->rebuiltState->status, 'Manual context_compaction_failed must resolve Compacting → Completed');
     }
 
     /**
      * Thesis: context_compaction_failed with stale_result reason preserves
      * activeStepId even when step_id matches — the live handler treats
-     * stale as non-current, so replay must mirror that.
+     * stale as non-current, so replay must mirror that.  Resolves
+     * Compacting → Running so the state is not stuck in a terminal.
      */
     public function testContextCompactionFailedStaleResultPreservesActiveStepIdWhenStepIdMatches(): void
     {
@@ -1129,11 +1134,13 @@ final class RunStateReplayServiceTest extends TestCase
         self::assertSame('compaction-X', $result->rebuiltState->activeStepId, 'Stale result must preserve activeStepId even when step_id matches');
         self::assertCount(1, $result->rebuiltState->messages, 'Messages preserved');
         self::assertSame('Original', $result->rebuiltState->messages[0]->content[0]['text']);
+        self::assertSame(RunStatus::Running, $result->rebuiltState->status, 'Stale result must resolve Compacting → Running');
     }
 
     /**
      * Thesis: context_compaction_failed with different step_id preserves activeStepId
-     * (stale result for old compaction A when B is active).
+     * (stale result for old compaction A when B is active).  Resolves
+     * Compacting → Running.
      */
     public function testContextCompactionFailedPreservesActiveStepIdWhenStepIdDiffers(): void
     {
@@ -1171,11 +1178,14 @@ final class RunStateReplayServiceTest extends TestCase
         self::assertTrue($result->rebuilt);
         self::assertSame('compaction-B', $result->rebuiltState->activeStepId, 'Different step_id failure must preserve current activeStepId');
         self::assertCount(1, $result->rebuiltState->messages, 'Messages preserved');
+        self::assertSame(RunStatus::Running, $result->rebuiltState->status, 'Stale failure with different step_id must resolve Compacting → Running');
     }
 
     /**
      * Thesis: context_compaction_failed without step_id (structural failure
-     * from CompactRunHandler) preserves activeStepId — no in-flight step was started.
+     * from CompactRunHandler) preserves activeStepId and prior status —
+     * the live CompactRunHandler does NOT transition to Compacting for
+     * prepare/hook-cancel failures, so replay mirrors that.
      */
     public function testContextCompactionFailedPreservesActiveStepIdWhenNoStepId(): void
     {
@@ -1212,6 +1222,279 @@ final class RunStateReplayServiceTest extends TestCase
         self::assertTrue($result->rebuilt);
         self::assertSame('compaction-B', $result->rebuiltState->activeStepId, 'No step_id failure must preserve activeStepId');
         self::assertCount(1, $result->rebuiltState->messages, 'Messages preserved');
+        self::assertSame(RunStatus::Compacting, $result->rebuiltState->status, 'Structural failure must preserve prior status — Compacting was set by started event');
+    }
+
+    /**
+     * Thesis: pre-LLM auto context_compacted resolves Compacting → Running.
+     * When continue_after_compaction=true, the pre-LLM guard held a pending
+     * LLM turn — the run stays Running so the turn can proceed.
+     */
+    public function testPreLlmAutoContextCompactedResolvesToRunning(): void
+    {
+        $this->appendEvent(RunEventTypeEnum::RunStarted->value, 1, [
+            'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Original']]]]],
+            'step_id' => 'init',
+        ]);
+
+        $this->appendEvent(RunEventTypeEnum::ContextCompactionStarted->value, 2, [
+            'step_id' => 'compaction-auto',
+            'trigger' => 'auto',
+            'estimated_tokens' => 50000,
+            'keep_recent_tokens' => 20000,
+            'messages_before' => 10,
+            'messages_to_summarize' => 7,
+            'messages_retained' => 3,
+            'first_retained_index' => 7,
+            'prior_summary_present' => false,
+        ]);
+
+        $summaryMsg = ['role' => 'user', 'content' => [['type' => 'text', 'text' => '<summary>Auto compacted</summary>']], 'metadata' => ['compact_summary' => true]];
+
+        $this->appendEvent(RunEventTypeEnum::ContextCompacted->value, 3, [
+            'summary_text' => 'Auto compacted',
+            'messages' => [$summaryMsg],
+            'estimated_tokens_before' => 50000,
+            'estimated_tokens_after' => 2000,
+            'messages_compacted' => 7,
+            'messages_retained' => 3,
+            'first_retained_index' => 7,
+            'trigger' => 'auto',
+            'continue_after_compaction' => true,
+        ]);
+
+        $state = RunState::queued($this->runId);
+        $result = $this->service->rebuildIfStale($state, $this->runId);
+
+        self::assertTrue($result->rebuilt);
+        self::assertSame(RunStatus::Running, $result->rebuiltState->status, 'Pre-LLM auto context_compacted must resolve Compacting → Running');
+        self::assertNull($result->rebuiltState->activeStepId, 'Completed compaction must clear activeStepId');
+        self::assertCount(1, $result->rebuiltState->messages, 'Messages replaced by compacted checkpoint');
+        self::assertTrue(($result->rebuiltState->messages[0]->metadata['compact_summary'] ?? false), 'First message is compact summary');
+    }
+
+    /**
+     * Thesis: after-turn auto context_compacted resolves Compacting → Completed.
+     * When continue_after_compaction=false (default, after-turn maintenance),
+     * the run was already terminal — compaction is a housekeeping operation
+     * and must NOT auto-continue the conversation.
+     */
+    public function testAfterTurnAutoContextCompactedResolvesToCompleted(): void
+    {
+        $this->appendEvent(RunEventTypeEnum::RunStarted->value, 1, [
+            'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Original']]]]],
+            'step_id' => 'init',
+        ]);
+
+        $this->appendEvent(RunEventTypeEnum::ContextCompactionStarted->value, 2, [
+            'step_id' => 'compaction-auto',
+            'trigger' => 'auto',
+            'estimated_tokens' => 50000,
+            'keep_recent_tokens' => 20000,
+            'messages_before' => 10,
+            'messages_to_summarize' => 7,
+            'messages_retained' => 3,
+            'first_retained_index' => 7,
+            'prior_summary_present' => false,
+        ]);
+
+        $summaryMsg = ['role' => 'user', 'content' => [['type' => 'text', 'text' => '<summary>After-turn auto</summary>']], 'metadata' => ['compact_summary' => true]];
+
+        $this->appendEvent(RunEventTypeEnum::ContextCompacted->value, 3, [
+            'summary_text' => 'After-turn auto',
+            'messages' => [$summaryMsg],
+            'estimated_tokens_before' => 50000,
+            'estimated_tokens_after' => 2000,
+            'messages_compacted' => 7,
+            'messages_retained' => 3,
+            'first_retained_index' => 7,
+            'trigger' => 'auto',
+            // No continue_after_compaction → default false.
+        ]);
+
+        $state = RunState::queued($this->runId);
+        $result = $this->service->rebuildIfStale($state, $this->runId);
+
+        self::assertTrue($result->rebuilt);
+        self::assertSame(RunStatus::Completed, $result->rebuiltState->status, 'After-turn auto context_compacted must resolve Compacting → Completed (maintenance, not continuation)');
+        self::assertNull($result->rebuiltState->activeStepId, 'Completed compaction must clear activeStepId');
+        self::assertCount(1, $result->rebuiltState->messages, 'Messages replaced by compacted checkpoint');
+        self::assertTrue(($result->rebuiltState->messages[0]->metadata['compact_summary'] ?? false), 'First message is compact summary');
+    }
+
+    /**
+     * Thesis: pre-LLM auto context_compaction_failed resolves Compacting → Running
+     * when step_id matches and reason is not stale_result.  The live handler
+     * returns to Running so the run can continue (pre-LLM guard won't re-fire).
+     */
+    public function testPreLlmAutoContextCompactionFailedResolvesToRunning(): void
+    {
+        $this->appendEvent(RunEventTypeEnum::RunStarted->value, 1, [
+            'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Original']]]]],
+            'step_id' => 'init',
+        ]);
+
+        $this->appendEvent(RunEventTypeEnum::ContextCompactionStarted->value, 2, [
+            'step_id' => 'compaction-auto',
+            'trigger' => 'auto',
+            'estimated_tokens' => 50000,
+            'keep_recent_tokens' => 20000,
+            'messages_before' => 10,
+            'messages_to_summarize' => 7,
+            'messages_retained' => 3,
+            'first_retained_index' => 7,
+            'prior_summary_present' => false,
+        ]);
+
+        $this->appendEvent(RunEventTypeEnum::ContextCompactionFailed->value, 3, [
+            'reason' => 'model_error',
+            'message' => 'Compaction failed: model error.',
+            'messages_replaced' => false,
+            'step_id' => 'compaction-auto',
+            'trigger' => 'auto',
+            'continue_after_compaction' => true,
+        ]);
+
+        $state = RunState::queued($this->runId);
+        $result = $this->service->rebuildIfStale($state, $this->runId);
+
+        self::assertTrue($result->rebuilt);
+        self::assertSame(RunStatus::Running, $result->rebuiltState->status, 'Pre-LLM auto context_compaction_failed must resolve Compacting → Running');
+        self::assertNull($result->rebuiltState->activeStepId, 'Matching step_id must clear activeStepId');
+        self::assertCount(1, $result->rebuiltState->messages, 'Messages preserved on failure');
+        self::assertSame('Original', $result->rebuiltState->messages[0]->content[0]['text']);
+    }
+
+    /**
+     * Thesis: after-turn auto context_compaction_failed resolves Compacting → Completed.
+     * When continue_after_compaction=false, the failure is terminal for the
+     * compaction lifecycle and the run returns to its prior terminal state
+     * rather than auto-continuing.
+     */
+    public function testAfterTurnAutoContextCompactionFailedResolvesToCompleted(): void
+    {
+        $this->appendEvent(RunEventTypeEnum::RunStarted->value, 1, [
+            'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Original']]]]],
+            'step_id' => 'init',
+        ]);
+
+        $this->appendEvent(RunEventTypeEnum::ContextCompactionStarted->value, 2, [
+            'step_id' => 'compaction-auto',
+            'trigger' => 'auto',
+            'estimated_tokens' => 50000,
+            'keep_recent_tokens' => 20000,
+            'messages_before' => 10,
+            'messages_to_summarize' => 7,
+            'messages_retained' => 3,
+            'first_retained_index' => 7,
+            'prior_summary_present' => false,
+        ]);
+
+        $this->appendEvent(RunEventTypeEnum::ContextCompactionFailed->value, 3, [
+            'reason' => 'model_error',
+            'message' => 'Compaction failed: model error.',
+            'messages_replaced' => false,
+            'step_id' => 'compaction-auto',
+            'trigger' => 'auto',
+            // No continue_after_compaction → default false.
+        ]);
+
+        $state = RunState::queued($this->runId);
+        $result = $this->service->rebuildIfStale($state, $this->runId);
+
+        self::assertTrue($result->rebuilt);
+        self::assertSame(RunStatus::Completed, $result->rebuiltState->status, 'After-turn auto context_compaction_failed must resolve Compacting → Completed');
+        self::assertNull($result->rebuiltState->activeStepId, 'Matching step_id must clear activeStepId');
+        self::assertCount(1, $result->rebuiltState->messages, 'Messages preserved on failure');
+        self::assertSame('Original', $result->rebuiltState->messages[0]->content[0]['text']);
+    }
+
+    /**
+     * Thesis: auto context_compaction_failed with stale_result resolves
+     * Compacting → Running while preserving activeStepId.  This mirrors
+     * the live CompactionStepResultHandler stale_result path which resolves
+     * Compacting to Running so the state is not stuck.
+     */
+    public function testAutoContextCompactionFailedStaleResultResolvesToRunning(): void
+    {
+        $this->appendEvent(RunEventTypeEnum::RunStarted->value, 1, [
+            'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Original']]]]],
+            'step_id' => 'init',
+        ]);
+
+        $this->appendEvent(RunEventTypeEnum::ContextCompactionStarted->value, 2, [
+            'step_id' => 'compaction-auto',
+            'trigger' => 'auto',
+            'estimated_tokens' => 50000,
+            'keep_recent_tokens' => 20000,
+            'messages_before' => 10,
+            'messages_to_summarize' => 7,
+            'messages_retained' => 3,
+            'first_retained_index' => 7,
+            'prior_summary_present' => false,
+        ]);
+
+        $this->appendEvent(RunEventTypeEnum::ContextCompactionFailed->value, 3, [
+            'reason' => 'stale_result',
+            'message' => 'Compaction result arrived too late.',
+            'messages_replaced' => false,
+            'step_id' => 'compaction-auto',
+            'trigger' => 'auto',
+        ]);
+
+        $state = RunState::queued($this->runId);
+        $result = $this->service->rebuildIfStale($state, $this->runId);
+
+        self::assertTrue($result->rebuilt);
+        self::assertSame('compaction-auto', $result->rebuiltState->activeStepId, 'Stale result must preserve activeStepId');
+        self::assertSame(RunStatus::Running, $result->rebuiltState->status, 'Auto stale_result must resolve Compacting → Running');
+        self::assertCount(1, $result->rebuiltState->messages, 'Messages preserved');
+        self::assertSame('Original', $result->rebuiltState->messages[0]->content[0]['text']);
+    }
+
+    /**
+     * Thesis: manual context_compacted resolves Compacting → Completed.
+     * Manual /compact is invoked on a finished run; after success the
+     * run returns to Completed with compacted messages.
+     */
+    public function testManualContextCompactedResolvesToCompleted(): void
+    {
+        $this->appendEvent(RunEventTypeEnum::RunStarted->value, 1, [
+            'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Original']]]]],
+            'step_id' => 'init',
+        ]);
+
+        $this->appendEvent(RunEventTypeEnum::ContextCompactionStarted->value, 2, [
+            'step_id' => 'compaction-manual',
+            'trigger' => 'manual',
+            'estimated_tokens' => 50000,
+            'keep_recent_tokens' => 20000,
+            'messages_before' => 10,
+            'messages_to_summarize' => 7,
+            'messages_retained' => 3,
+            'first_retained_index' => 7,
+            'prior_summary_present' => false,
+        ]);
+
+        $summaryMsg = ['role' => 'user', 'content' => [['type' => 'text', 'text' => '<summary>Manual compacted</summary>']], 'metadata' => ['compact_summary' => true]];
+
+        $this->appendEvent(RunEventTypeEnum::ContextCompacted->value, 3, [
+            'summary_text' => 'Manual compacted',
+            'messages' => [$summaryMsg],
+            'estimated_tokens_before' => 50000,
+            'estimated_tokens_after' => 2000,
+            'messages_compacted' => 7,
+            'messages_retained' => 3,
+            'first_retained_index' => 7,
+            'trigger' => 'manual',
+        ]);
+
+        $state = RunState::queued($this->runId);
+        $result = $this->service->rebuildIfStale($state, $this->runId);
+
+        self::assertTrue($result->rebuilt);
+        self::assertSame(RunStatus::Completed, $result->rebuiltState->status, 'Manual context_compacted must resolve Compacting → Completed');
+        self::assertNull($result->rebuiltState->activeStepId, 'Completed compaction must clear activeStepId');
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────
@@ -1246,5 +1529,133 @@ final class RunStateReplayServiceTest extends TestCase
             payload: $payload,
             createdAt: new \DateTimeImmutable(),
         ));
+    }
+
+    // ── Thinking-only assistant message replay ─────────────────────────────
+
+    /**
+     * Subject: thinking-only assistant messages (content: null, no
+     * tool_calls, details.thinking present) must NOT be replayed as
+     * state messages. They were erroneously persisted before
+     * ExecuteLlmStepWorker started converting reasoning-only provider
+     * responses to errors, and replaying them into the message history
+     * causes provider 400 "content or tool_calls must be set".
+     */
+    public function testThinkingOnlyAssistantNotReplayed(): void
+    {
+        $this->appendEvent(RunEventTypeEnum::RunStarted->value, 1, [
+            'step_id' => 'step-init',
+            'payload' => ['messages' => []],
+        ]);
+
+        $this->appendEvent(RunEventTypeEnum::TurnAdvanced->value, 2, [
+            'step_id' => 'step-1',
+            'turn_no' => 1,
+        ]);
+
+        // A thinking-only assistant message: role=assistant, content=null,
+        // no tool_calls, but reasoning/thinking in details.
+        $this->appendEvent(RunEventTypeEnum::LlmStepCompleted->value, 3, [
+            'step_id' => 'step-1',
+            'assistant_message' => [
+                'role' => 'assistant',
+                'content' => null,
+                'details' => [
+                    'thinking' => 'The user wants me to respond but I ran out of tokens mid-reasoning.',
+                ],
+            ],
+        ]);
+
+        $state = RunState::queued($this->runId);
+        $result = $this->service->rebuildIfStale($state, $this->runId);
+
+        self::assertTrue($result->rebuilt);
+
+        // No assistant message must appear in state messages.
+        $messages = $result->rebuiltState->messages;
+        self::assertCount(
+            0,
+            $messages,
+            'Thinking-only assistant message must not be replayed into state messages.',
+        );
+    }
+
+    /**
+     * Subject: tool-call-only assistant messages (no text content,
+     * but tool_calls present) must still be replayed normally.
+     */
+    public function testToolCallOnlyAssistantStillReplayed(): void
+    {
+        $this->appendEvent(RunEventTypeEnum::RunStarted->value, 1, [
+            'step_id' => 'step-init',
+            'payload' => ['messages' => []],
+        ]);
+
+        $this->appendEvent(RunEventTypeEnum::TurnAdvanced->value, 2, [
+            'step_id' => 'step-1',
+            'turn_no' => 1,
+        ]);
+
+        $this->appendEvent(RunEventTypeEnum::LlmStepCompleted->value, 3, [
+            'step_id' => 'step-1',
+            'assistant_message' => [
+                'role' => 'assistant',
+                'content' => null,
+                'tool_calls' => [
+                    [
+                        'id' => 'call-1',
+                        'name' => 'search',
+                        'arguments' => ['query' => 'test'],
+                    ],
+                ],
+            ],
+        ]);
+
+        $state = RunState::queued($this->runId);
+        $result = $this->service->rebuildIfStale($state, $this->runId);
+
+        self::assertTrue($result->rebuilt);
+        $messages = $result->rebuiltState->messages;
+        self::assertCount(1, $messages, 'Tool-call-only assistant message must be replayed.');
+        self::assertSame('assistant', $messages[0]->role);
+        self::assertSame('call-1', $messages[0]->metadata['tool_calls'][0]['id']);
+    }
+
+    /**
+     * Subject: text-bearing assistant messages with thinking must
+     * still be replayed normally (the thinking is in details, but
+     * content carries text).
+     */
+    public function testTextWithThinkingAssistantStillReplayed(): void
+    {
+        $this->appendEvent(RunEventTypeEnum::RunStarted->value, 1, [
+            'step_id' => 'step-init',
+            'payload' => ['messages' => []],
+        ]);
+
+        $this->appendEvent(RunEventTypeEnum::TurnAdvanced->value, 2, [
+            'step_id' => 'step-1',
+            'turn_no' => 1,
+        ]);
+
+        $this->appendEvent(RunEventTypeEnum::LlmStepCompleted->value, 3, [
+            'step_id' => 'step-1',
+            'assistant_message' => [
+                'role' => 'assistant',
+                'content' => [['type' => 'text', 'text' => 'Here is the answer.']],
+                'details' => [
+                    'thinking' => 'I should explain this carefully.',
+                ],
+            ],
+        ]);
+
+        $state = RunState::queued($this->runId);
+        $result = $this->service->rebuildIfStale($state, $this->runId);
+
+        self::assertTrue($result->rebuilt);
+        $messages = $result->rebuiltState->messages;
+        self::assertCount(1, $messages, 'Text+thinking message must be replayed.');
+        self::assertSame('assistant', $messages[0]->role);
+        self::assertSame('Here is the answer.', $messages[0]->content[0]['text']);
     }
 }

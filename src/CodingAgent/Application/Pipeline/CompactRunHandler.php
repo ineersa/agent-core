@@ -10,10 +10,12 @@ use Ineersa\AgentCore\Contract\Compaction\CompactionPrepareResult;
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep;
 use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Ineersa\CodingAgent\Compaction\CompactionHookContextDTO;
 use Ineersa\CodingAgent\Compaction\CompactionHookDispatcher;
@@ -134,9 +136,14 @@ final readonly class CompactRunHandler implements RunMessageHandler
                 ],
             ]]);
 
+            // When the pre-LLM guard triggers compaction and prepare() fails
+            // structurally, the pending LLM turn must still resume on original
+            // messages — otherwise the run remains Running with no active step
+            // and the user message is never answered.
             return new HandlerResult(
                 nextState: $this->incrementState($state, $events),
                 events: $events,
+                effects: $this->continueAfterCompactionEffects($runId, $state->turnNo, $message->continueAfterCompaction),
             );
         }
 
@@ -184,9 +191,13 @@ final readonly class CompactRunHandler implements RunMessageHandler
                 ],
             ]]);
 
+            // When the pre-LLM guard triggers compaction and a before-compaction
+            // hook cancels it, the pending LLM turn must still resume on original
+            // messages — otherwise the run remains Running with no active step.
             return new HandlerResult(
                 nextState: $this->incrementState($state, $events),
                 events: $events,
+                effects: $this->continueAfterCompactionEffects($runId, $state->turnNo, $message->continueAfterCompaction),
             );
         }
 
@@ -252,7 +263,7 @@ final readonly class CompactRunHandler implements RunMessageHandler
             ],
         ]]);
 
-        $nextState = $this->incrementState($state, $startedEvents, activeStepId: $message->stepId());
+        $nextState = $this->incrementState($state, $startedEvents, activeStepId: $message->stepId(), status: RunStatus::Compacting);
 
         // Serialize AgentMessage lists as array shapes for transport safety
         // (the llm transport uses default Symfony Serializer, not PhpSerializer).
@@ -280,6 +291,7 @@ final readonly class CompactRunHandler implements RunMessageHandler
             firstRetainedIndex: $preparation->firstRetainedIndex,
             tokenEstimateBefore: $preparation->tokenEstimateBefore,
             trigger: $message->trigger,
+            continueAfterCompaction: $message->continueAfterCompaction,
             hookMetadata: [] !== $sanitisedHookMetadata ? $sanitisedHookMetadata : null,
         );
 
@@ -340,7 +352,7 @@ final readonly class CompactRunHandler implements RunMessageHandler
             ],
         ]]);
 
-        $afterStartState = $this->incrementState($state, $startedEvents, activeStepId: $message->stepId());
+        $afterStartState = $this->incrementState($state, $startedEvents, activeStepId: $message->stepId(), status: RunStatus::Compacting);
 
         // Build compacted messages from the replacement summary.
         $compactResult = $this->compactionService->buildCompactedMessages(
@@ -376,10 +388,18 @@ final readonly class CompactRunHandler implements RunMessageHandler
             ]],
         );
 
+        // Replacement summary is a successful compaction: resolve Compacting.
+        // - continueAfterCompaction: the compaction held a pending LLM turn
+        //   (pre-LLM guard path) → Running and emit AdvanceRun so the
+        //   conversation continues.
+        // - Otherwise: maintenance compaction (after-turn hook, manual) →
+        //   Completed (the run was already terminal before compaction).
+        $finalStatus = $message->continueAfterCompaction ? RunStatus::Running : RunStatus::Completed;
+
         // Replace RunState.messages with compacted messages.
         $nextState = new RunState(
             runId: $afterStartState->runId,
-            status: $afterStartState->status,
+            status: $finalStatus,
             version: $afterStartState->version + 1,
             turnNo: $afterStartState->turnNo,
             lastSeq: $afterStartState->lastSeq + \count($compactedEvents),
@@ -392,23 +412,71 @@ final readonly class CompactRunHandler implements RunMessageHandler
             retryableFailure: $afterStartState->retryableFailure,
         );
 
+        // Pre-LLM guard replacement must continue the LLM turn.
+        $effects = [];
+        if ($message->continueAfterCompaction) {
+            $continueStepId = \sprintf('advance-%d', hrtime(true));
+            $effects[] = new AdvanceRun(
+                runId: $runId,
+                turnNo: $nextState->turnNo,
+                stepId: $continueStepId,
+                attempt: 1,
+                idempotencyKey: hash('sha256', \sprintf('%s|advance|%d|%s', $runId, $nextState->turnNo, $continueStepId)),
+            );
+        }
+
         return new HandlerResult(
             nextState: $nextState,
             events: array_merge($startedEvents, $compactedEvents),
+            effects: $effects,
         );
+    }
+
+    /**
+     * Return an AdvanceRun effect when continueAfterCompaction is true.
+     *
+     * Structural failure paths (prepare-not-ready, hook-cancel) must resume
+     * the pending LLM turn when the pre-LLM guard triggered the compaction.
+     * Without this, the run remains Running with no active step and the user
+     * message is never answered.
+     *
+     * Manual and after-turn hook triggers (continueAfterCompaction=false)
+     * produce an empty array — maintenance compaction doesn't need to continue.
+     *
+     * Uses the same step-id / idempotency-key pattern as the
+     * replacement-summary path.
+     *
+     * @return list<AdvanceRun>
+     */
+    private function continueAfterCompactionEffects(string $runId, int $turnNo, bool $continueAfterCompaction): array
+    {
+        if (!$continueAfterCompaction) {
+            return [];
+        }
+
+        $continueStepId = \sprintf('advance-%d', hrtime(true));
+
+        return [new AdvanceRun(
+            runId: $runId,
+            turnNo: $turnNo,
+            stepId: $continueStepId,
+            attempt: 1,
+            idempotencyKey: hash('sha256', \sprintf('%s|advance|%d|%s', $runId, $turnNo, $continueStepId)),
+        )];
     }
 
     /**
      * @param list<\Ineersa\AgentCore\Domain\Event\RunEvent> $events
      * @param string|null                                    $activeStepId null = preserve current; non-null = override
+     * @param RunStatus|null                                 $status       null = preserve current; non-null = override
      */
-    private function incrementState(RunState $state, array $events, ?string $activeStepId = null): RunState
+    private function incrementState(RunState $state, array $events, ?string $activeStepId = null, ?RunStatus $status = null): RunState
     {
         $count = \count($events);
 
         return new RunState(
             runId: $state->runId,
-            status: $state->status,
+            status: $status ?? $state->status,
             version: $state->version + 1,
             turnNo: $state->turnNo,
             lastSeq: $state->lastSeq + $count,

@@ -14,19 +14,31 @@ use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
+use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Tool\Tool;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 
-final readonly class LlmStepResultHandler implements RunMessageHandler
+final class LlmStepResultHandler implements RunMessageHandler
 {
+    /**
+     * In-process guard: run IDs for which overflow recovery has been
+     * attempted.  Prevents repeated recovery dispatches within the same
+     * consumer process.  Cleared on process restart (intentional — a
+     * stuck compaction is better than infinite recovery loops).
+     *
+     * @var array<string, true>
+     */
+    private array $overflowRecoveryAttempted = [];
+
     public function __construct(
         private ToolBatchCollector $toolBatchCollector,
         private CommandMailboxPolicy $commandMailboxPolicy,
@@ -39,6 +51,7 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
         private ?RunMetrics $metrics = null,
         private ?RunTracer $tracer = null,
         private ?MessageBusInterface $commandBus = null,
+        private ?LlmProviderErrorClassifier $errorClassifier = null,
     ) {
     }
 
@@ -196,10 +209,25 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
 
             $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
 
+            $postCommit = $this->turnCompletedCallbacks($runId, $state->turnNo);
+
+            // Context-overflow recovery: when the error indicates the prompt
+            // exceeded the model's context window, attempt at most one
+            // compaction recovery per overflow episode.  The compact step
+            // runs asynchronously; the user can continue after compaction.
+            $overflowRecovery = $this->maybeScheduleOverflowRecovery(
+                $runId,
+                $state->turnNo,
+                $message->error,
+            );
+            if (null !== $overflowRecovery) {
+                $postCommit[] = $overflowRecovery;
+            }
+
             return new HandlerResult(
                 nextState: $nextState,
                 events: $events,
-                postCommit: $this->turnCompletedCallbacks($runId, $state->turnNo),
+                postCommit: $postCommit,
             );
         }
 
@@ -514,5 +542,56 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
         }
 
         return $specs;
+    }
+
+    /**
+     * Schedule a one-shot compaction recovery when the LLM error
+     * indicates a context-overflow (prompt exceeded the model's
+     * context window).
+     *
+     * Returns a postCommit callback that dispatches CompactRun with
+     * trigger 'overflow_recovery', or null when recovery is not
+     * applicable or already attempted.
+     *
+     * @param array<string, mixed> $classifiedError The classified error array
+     */
+    private function maybeScheduleOverflowRecovery(
+        string $runId,
+        int $turnNo,
+        array $classifiedError,
+    ): ?callable {
+        if (null === $this->commandBus || null === $this->errorClassifier) {
+            return null;
+        }
+
+        // One-attempt guard — prevent repeated recovery dispatches
+        // for the same overflow episode.
+        $guardKey = \sprintf('%s|%d', $runId, $turnNo);
+        if (isset($this->overflowRecoveryAttempted[$guardKey])) {
+            return null;
+        }
+
+        if (!$this->errorClassifier->isContextOverflow($classifiedError)) {
+            return null;
+        }
+
+        $this->overflowRecoveryAttempted[$guardKey] = true;
+
+        return function () use ($runId): void {
+            $stepId = \sprintf('compact-%d', hrtime(true));
+
+            try {
+                $this->commandBus->dispatch(new CompactRun(
+                    runId: $runId,
+                    turnNo: 0,
+                    stepId: $stepId,
+                    attempt: 1,
+                    idempotencyKey: hash('sha256', \sprintf('%s|%s', $runId, $stepId)),
+                    trigger: 'overflow_recovery',
+                ));
+            } catch (ExceptionInterface $exception) {
+                throw new \RuntimeException(\sprintf('Failed to dispatch overflow-recovery CompactRun for run %s.', $runId), previous: $exception);
+            }
+        };
     }
 }

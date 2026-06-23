@@ -230,6 +230,123 @@ final class ExecutionWorkerTest extends TestCase
         self::assertFalse($result->isError);
         self::assertSame('web_search', $result->result['tool_name']);
     }
+
+    /**
+     * Thesis: an empty platform response is detected BEFORE metrics
+     * and logging, so the deficiency is counted as an error (not a
+     * successful LLM call).  This prevents the "LLM placeholder response"
+     * from being silently recorded as a successful call.
+     */
+    public function testLlmWorkerRecordsEmptyResponseAsErrorInMetricsAndLog(): void
+    {
+        $platform = new class implements PlatformInterface {
+            public function invoke(ModelInvocationRequest $request): PlatformInvocationResult
+            {
+                unset($request);
+
+                // Empty response: no assistant message, no deltas,
+                // no stop reason, no error.
+                return new PlatformInvocationResult(
+                    assistantMessage: null,
+                    deltas: [],
+                    usage: ['input_tokens' => 100, 'output_tokens' => 0],
+                    stopReason: null,
+                    modelNotifications: [],
+                    error: null,
+                );
+            }
+        };
+
+        $commandBus = new TestMessageBus();
+        $metrics = new RunMetrics();
+        $testLogger = new TestLogger();
+
+        // Non-null logger passed so the worker logs (bypasses NullLogger default).
+        $worker = new ExecuteLlmStepWorker($platform, $commandBus, 'test-model', $metrics, null, $testLogger);
+
+        $worker(new ExecuteLlmStep(
+            runId: 'run-empty-metrics-1',
+            turnNo: 3,
+            stepId: 'turn-3-llm-1',
+            attempt: 1,
+            idempotencyKey: 'llm-empty-metrics-1',
+            contextRef: 'hot:run:run-empty-metrics-1',
+            toolsRef: 'toolset:run:run-empty-metrics-1:turn:3',
+        ));
+
+        // Metrics: the empty response should be counted as an error call.
+        $snapshot = $metrics->snapshot();
+        self::assertSame(1, $snapshot['llm']['calls']);
+        self::assertSame(1, $snapshot['llm']['errors']);
+
+        // Logger: should emit llm.request.failed with error_type=empty_response,
+        // NOT llm.request.completed.
+        $failedLogs = array_values(array_filter(
+            $testLogger->records,
+            static fn (array $record): bool => 'llm.request.failed' === $record['message']
+                && 'empty_response' === ($record['context']['error_type'] ?? null),
+        ));
+        self::assertCount(1, $failedLogs, 'Empty response must log llm.request.failed with error_type=empty_response');
+
+        $completedLogs = array_values(array_filter(
+            $testLogger->records,
+            static fn (array $record): bool => 'llm.request.completed' === $record['message'],
+        ));
+        self::assertCount(0, $completedLogs, 'Empty response must NOT log llm.request.completed');
+    }
+
+    /**
+     * Thesis: an empty platform response (no assistant message, no deltas,
+     * no stop reason, no error) must produce an error LlmStepResult, NOT
+     * a fabricated placeholder assistant message that enters the conversation
+     * history.  This prevents the "LLM placeholder response for hot:run:X"
+     * text from being stored as real assistant output.
+     */
+    public function testLlmWorkerConvertsEmptyPlatformResponseToError(): void
+    {
+        $platform = new class implements PlatformInterface {
+            public function invoke(ModelInvocationRequest $request): PlatformInvocationResult
+            {
+                unset($request);
+
+                // Empty response: no assistant message, no deltas,
+                // no stop reason, no error.
+                return new PlatformInvocationResult(
+                    assistantMessage: null,
+                    deltas: [],
+                    usage: ['input_tokens' => 100, 'output_tokens' => 0],
+                    stopReason: null,
+                    modelNotifications: [],
+                    error: null,
+                );
+            }
+        };
+
+        $commandBus = new TestMessageBus();
+        $worker = new ExecuteLlmStepWorker($platform, $commandBus, 'test-model');
+
+        $worker(new ExecuteLlmStep(
+            runId: 'run-empty-1',
+            turnNo: 3,
+            stepId: 'turn-3-llm-1',
+            attempt: 1,
+            idempotencyKey: 'llm-empty-1',
+            contextRef: 'hot:run:run-empty-1',
+            toolsRef: 'toolset:run:run-empty-1:turn:3',
+        ));
+
+        self::assertCount(1, $commandBus->messages);
+        self::assertInstanceOf(LlmStepResult::class, $commandBus->messages[0]);
+
+        /** @var LlmStepResult $result */
+        $result = $commandBus->messages[0];
+
+        self::assertSame('run-empty-1', $result->runId());
+        self::assertNull($result->assistantMessage, 'Empty platform response must not produce a fake assistant message');
+        self::assertNotNull($result->error, 'Empty platform response must be treated as an error');
+        self::assertSame('empty_response', $result->error['type'] ?? '');
+        self::assertStringContainsString('empty response', $result->error['message'] ?? '');
+    }
 }
 
 

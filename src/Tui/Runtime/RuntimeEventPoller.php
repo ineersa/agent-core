@@ -98,7 +98,12 @@ final class RuntimeEventPoller
                 }
 
                 // Clear the isCompacting flag when compaction completes or fails.
-                if (
+                // Set the isCompacting flag when compaction starts — auto-compaction
+                // fires asynchronously via the after-turn hook and the flag must be
+                // set from runtime events (not synchronously like manual /compact).
+                if (RuntimeEventTypeEnum::CompactionStarted->value === $runtimeEvent->type) {
+                    $state->isCompacting = true;
+                } elseif (
                     RuntimeEventTypeEnum::CompactionCompleted->value === $runtimeEvent->type
                     || RuntimeEventTypeEnum::CompactionFailed->value === $runtimeEvent->type
                 ) {
@@ -114,6 +119,33 @@ final class RuntimeEventPoller
                 if (RuntimeEventTypeEnum::RunCancelled->value === $runtimeEvent->type
                     && null !== $state->queuedFollowUp
                     && null !== $state->handle) {
+                    $queuedText = $state->queuedFollowUp;
+                    $state->queuedFollowUp = null;
+
+                    $client->send(
+                        $state->handle->runId,
+                        new \Ineersa\CodingAgent\Runtime\Contract\UserCommand(type: 'follow_up', text: $queuedText),
+                    );
+                    $state->activity = RunActivityStateEnum::Starting;
+                }
+
+                // Auto-dispatch a queued follow-up when compaction completes.
+                // The user may have typed a message during the Compacting
+                // window; it was queued in $state->queuedFollowUp instead of
+                // being sent immediately (where it would race the compaction).
+                //
+                // GUARD: if activity is Cancelling, the user also pressed
+                // Escape during compaction.  Do NOT dispatch the queued
+                // follow-up on the compaction result — the RunCancelled
+                // branch above handles dispatch after the cancellation
+                // terminalizes.  Dispatching here would race the cancel
+                // terminal and may start a new run before Cancelled is
+                // visible in the UI.
+                if ((RuntimeEventTypeEnum::CompactionCompleted->value === $runtimeEvent->type
+                    || RuntimeEventTypeEnum::CompactionFailed->value === $runtimeEvent->type)
+                    && null !== $state->queuedFollowUp
+                    && null !== $state->handle
+                    && RunActivityStateEnum::Cancelling !== $state->activity) {
                     $queuedText = $state->queuedFollowUp;
                     $state->queuedFollowUp = null;
 

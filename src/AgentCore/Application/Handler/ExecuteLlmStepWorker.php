@@ -13,7 +13,6 @@ use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
-use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Message\Content\Text;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
@@ -105,7 +104,92 @@ final readonly class ExecuteLlmStepWorker
                 ], $invoke)
             ;
 
+            // One-shot retry for thinking-only provider responses.
+            // Providers like DeepSeek can intermittently return
+            // reasoning-only output (thinking, no text, no tool calls)
+            // due to cache-state shifts or server-side slot contention.
+            // A single immediate retry often resolves this without
+            // user-visible failure (session 16 regression).
+            // The retry runs the identical request — no prompt content
+            // is added to RunState.messages and no transient
+            // instructions leak into persisted history.
+            if ($this->isThinkingOnlyResponse($response)) {
+                $this->logger->warning('llm.request.retrying_thinking_only', [
+                    'run_id' => $message->runId(),
+                    'turn_no' => $message->turnNo(),
+                    'step_id' => $message->stepId(),
+                    'event_type' => 'llm.request.retrying_thinking_only',
+                ]);
+
+                // Retry exactly once (also tracer-wrapped if available).
+                $response = null === $this->tracer
+                    ? $invoke()
+                    : $this->tracer->inSpan('llm.call', [
+                        'run_id' => $message->runId(),
+                        'turn_no' => $message->turnNo(),
+                        'step_id' => $message->stepId(),
+                        'model' => $this->defaultModel,
+                    ], $invoke)
+                ;
+            }
+
+            // Thinking-only assistant messages (no text content, no
+            // tool calls) are not valid conversation turns. Providers
+            // like DeepSeek can produce reasoning-only responses when
+            // max_tokens is exhausted mid-thinking, and replaying these
+            // empty messages causes HTTP 400 "content or tool_calls
+            // must be set". Convert to an error before metrics/logging
+            // so it counts as a failure.  The one-shot retry above may
+            // already have recovered; this guard catches the final
+            // (possibly retried) result.
+            $assistantMessage = $response->assistantMessage;
+            if (null !== $assistantMessage
+                && null === $response->error
+                && !$assistantMessage->hasToolCalls()
+                && null === $assistantMessage->asText()
+            ) {
+                $response = new PlatformInvocationResult(
+                    assistantMessage: null,
+                    deltas: $response->deltas,
+                    usage: $response->usage,
+                    stopReason: $response->stopReason,
+                    error: [
+                        'type' => 'empty_assistant_content',
+                        'message' => 'LLM provider returned reasoning without a final assistant response.',
+                        'retryable' => false,
+                    ],
+                    modelNotifications: $response->modelNotifications,
+                );
+            }
+
             $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
+
+            // Detect fully empty platform response BEFORE metrics and
+            // logging so the deficiency is counted as an error, not a
+            // silent success.
+            $assistantMessage = $response->assistantMessage;
+            $hasStreamDeltas = [] !== $response->deltas();
+            if (null === $assistantMessage && !$hasStreamDeltas && null === $response->stopReason && null === $response->error) {
+                // The platform returned a fully empty response: no assistant
+                // message, no stream deltas, no stop reason, no error.
+                // This is a degenerate platform result; treat it as an error
+                // rather than fabricating placeholder text that enters the
+                // conversation history.
+                $response = new PlatformInvocationResult(
+                    assistantMessage: null,
+                    deltas: $response->deltas,
+                    usage: $response->usage,
+                    stopReason: $response->stopReason,
+                    modelNotifications: $response->modelNotifications,
+                    error: [
+                        'type' => 'empty_response',
+                        'message' => 'LLM provider returned an empty response.',
+                        'retryable' => false,
+                    ],
+                );
+                $assistantMessage = null;
+            }
+
             $this->metrics?->recordLlmLatency($durationMs, null !== $response->error);
 
             if (null !== $response->error) {
@@ -136,14 +220,6 @@ final readonly class ExecuteLlmStepWorker
                     'duration_ms' => round($durationMs, 3),
                     'event_type' => 'llm.request.completed',
                 ]);
-            }
-
-            $assistantMessage = $response->assistantMessage;
-            $hasStreamDeltas = [] !== $response->deltas();
-            if (null === $assistantMessage && !$hasStreamDeltas && null === $response->stopReason && null === $response->error) {
-                $assistantMessage = new AssistantMessage(
-                    new Text(\sprintf('LLM placeholder response for %s', $message->contextRef)),
-                );
             }
 
             return new LlmStepResult(
@@ -192,5 +268,27 @@ final readonly class ExecuteLlmStepWorker
         } finally {
             RunLogContext::leave();
         }
+    }
+
+    /**
+     * Returns true when the platform returned reasoning-only output
+     * (thinking content, no text, no tool calls) without an explicit error.
+     *
+     * These are not valid conversation turns and must not be persisted
+     * in RunState.messages — they cause HTTP 400 "content or tool_calls
+     * must be set" when replayed on the next turn (DeepSeek, session 6).
+     *
+     * callers are expected to retry once before conceding failure
+     * (session 16 regression: intermittent reasoning-only output from
+     *  provider cache-state shifts resolves on simple immediate retry).
+     */
+    private function isThinkingOnlyResponse(PlatformInvocationResult $response): bool
+    {
+        $assistantMessage = $response->assistantMessage;
+
+        return null !== $assistantMessage
+            && null === $response->error
+            && !$assistantMessage->hasToolCalls()
+            && null === $assistantMessage->asText();
     }
 }

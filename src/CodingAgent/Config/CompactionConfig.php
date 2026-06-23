@@ -90,6 +90,11 @@ final readonly class CompactionConfig
     ) {
     }
 
+    public static function fromAppConfig(AppConfig $appConfig): self
+    {
+        return $appConfig->compaction;
+    }
+
     /**
      * Parse the global model override into a provider/model reference.
      *

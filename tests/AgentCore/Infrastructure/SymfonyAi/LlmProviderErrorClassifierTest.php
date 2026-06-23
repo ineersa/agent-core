@@ -382,4 +382,77 @@ final class LlmProviderErrorClassifierTest extends TestCase
         self::assertFalse($result['retryable']);
         self::assertSame(LlmProviderErrorClassifier::CATEGORY_PROVIDER, $result['error_category']);
     }
+
+    // ── Context-overflow detection ────────────────────────────────────────
+
+    #[DataProvider('contextOverflowProvider')]
+    public function testIsContextOverflowDetectsKnownPatterns(string $message, ?int $statusCode): void
+    {
+        $error = ['type' => 'RuntimeException', 'message' => $message];
+        if (null !== $statusCode) {
+            $error['http_status_code'] = $statusCode;
+        }
+
+        $classified = $this->classifier->classify($error);
+        self::assertTrue(
+            $this->classifier->isContextOverflow($classified),
+            \sprintf('Expected context overflow for message: %s', $message),
+        );
+    }
+
+    /** @return list<array{string, int|null}> */
+    public static function contextOverflowProvider(): array
+    {
+        return [
+            'context length exceeded' => ['context length exceeded maximum', 400],
+            'maximum context length' => ["this model's maximum context length is 8192", 400],
+            'context window exceeded' => ['context window exceeded', 400],
+            'token limit' => ['request exceeds token limit', 400],
+            'too many tokens' => ['too many tokens in input', 400],
+            'reduce the length' => ['please reduce the length of the messages', 400],
+            'input length' => ['input length exceeds maximum', 400],
+            'context_length_exceeded' => ['error code: context_length_exceeded', 400],
+            'max context length' => ['max context length is 4096 tokens', 400],
+            'context token limit' => ['context token limit exceeded', 500],
+            'server error with context' => ['context length', 503],
+            'provider error with context' => ['maximum context window', null],
+        ];
+    }
+
+    #[DataProvider('nonOverflowProvider')]
+    public function testIsContextOverflowReturnsFalseForNonOverflow(int $statusCode, string $message): void
+    {
+        $error = ['type' => 'RuntimeException', 'message' => $message, 'http_status_code' => $statusCode];
+        $classified = $this->classifier->classify($error);
+
+        self::assertFalse(
+            $this->classifier->isContextOverflow($classified),
+            \sprintf('Expected non-overflow for status=%d message=%s', $statusCode, $message),
+        );
+    }
+
+    /** @return list<array{int, string}> */
+    public static function nonOverflowProvider(): array
+    {
+        return [
+            'auth 401' => [401, 'unauthorized'],
+            'rate limit 429' => [429, 'rate limit exceeded'],
+            'server 502' => [502, 'bad gateway'],
+            'timeout 408' => [408, 'request timed out'],
+            'bad request not overflow' => [400, 'invalid model parameter'],
+        ];
+    }
+
+    public function testIsContextOverflowFromResponseErrorMessage(): void
+    {
+        $error = [
+            'type' => 'RuntimeException',
+            'message' => 'Bad Request',
+            'http_status_code' => 400,
+            'response_error_message' => 'context length exceeds maximum allowed',
+        ];
+
+        $classified = $this->classifier->classify($error);
+        self::assertTrue($this->classifier->isContextOverflow($classified));
+    }
 }

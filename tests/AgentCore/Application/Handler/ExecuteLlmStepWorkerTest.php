@@ -1,0 +1,244 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Ineersa\AgentCore\Tests\Application\Handler;
+
+use Ineersa\AgentCore\Application\Handler\ExecuteLlmStepWorker;
+use Ineersa\AgentCore\Contract\Model\PlatformInterface;
+use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
+use Ineersa\AgentCore\Domain\Message\LlmStepResult;
+use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
+use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use PHPUnit\Framework\TestCase;
+use Symfony\AI\Platform\Message\AssistantMessage;
+use Symfony\AI\Platform\Message\Content\Text;
+use Symfony\AI\Platform\Message\Content\Thinking;
+
+/**
+ * Contract tests for {@see ExecuteLlmStepWorker}.
+ *
+ * Theses:
+ *  - When the provider returns reasoning-only output (thinking, no text,
+ *    no tool calls), the worker retries ONCE before conceding failure.
+ *  - If the retry returns valid assistant content, the step succeeds with
+ *    no error and the platform is invoked exactly twice.
+ *  - If both attempts return reasoning-only, the step fails with
+ *    empty_assistant_content and the platform is invoked exactly twice.
+ *  - A single valid response proceeds normally (zero retries).
+ */
+final class ExecuteLlmStepWorkerTest extends TestCase
+{
+    public function testRetrySucceedsWhenFirstAttemptIsThinkingOnly(): void
+    {
+        $thinkingOnly = new AssistantMessage(new Thinking('reasoning...'));
+        $validResponse = new AssistantMessage(new Text('Hello there'));
+
+        $platform = $this->createAlternatingPlatform([$thinkingOnly, $validResponse]);
+        $testBus = new TestMessageBus();
+        $testLogger = new TestLogger();
+
+        $worker = new ExecuteLlmStepWorker($platform, $testBus, 'test-model', logger: $testLogger);
+
+        $worker(new ExecuteLlmStep(
+            runId: 'run-1',
+            turnNo: 1,
+            stepId: 'step-1',
+            attempt: 1,
+            idempotencyKey: 'key-1',
+            contextRef: 'ctx-1',
+            toolsRef: 'tools-1',
+        ));
+
+        self::assertCount(1, $testBus->messages);
+
+        /** @var LlmStepResult $result */
+        $result = $testBus->messages[0];
+        self::assertInstanceOf(LlmStepResult::class, $result);
+        self::assertNotNull($result->assistantMessage, 'Retry must succeed with a valid assistant message.');
+        self::assertSame('Hello there', $result->assistantMessage->asText());
+        self::assertNull($result->error, 'No error when retry succeeds.');
+
+        // Platform must have been invoked exactly twice.
+        self::assertSame(2, $platform->invocationCount);
+
+        // A retry warning must be logged.
+        $retryLogs = $this->filterLogsByEventType($testLogger, 'llm.request.retrying_thinking_only');
+        self::assertCount(1, $retryLogs, 'Must log exactly one retry warning.');
+    }
+
+    public function testFailsWhenBothAttemptsAreThinkingOnly(): void
+    {
+        $thinkingOnly = new AssistantMessage(new Thinking('reasoning...again'));
+
+        $platform = $this->createAlternatingPlatform([$thinkingOnly, $thinkingOnly]);
+        $testBus = new TestMessageBus();
+        $testLogger = new TestLogger();
+
+        $worker = new ExecuteLlmStepWorker($platform, $testBus, 'test-model', logger: $testLogger);
+
+        $worker(new ExecuteLlmStep(
+            runId: 'run-2',
+            turnNo: 1,
+            stepId: 'step-2',
+            attempt: 1,
+            idempotencyKey: 'key-2',
+            contextRef: 'ctx-2',
+            toolsRef: 'tools-2',
+        ));
+
+        self::assertCount(1, $testBus->messages);
+
+        /** @var LlmStepResult $result */
+        $result = $testBus->messages[0];
+        self::assertInstanceOf(LlmStepResult::class, $result);
+        self::assertNull($result->assistantMessage, 'Both attempts thinking-only: assistant must be null.');
+        self::assertNotNull($result->error, 'Both attempts thinking-only: must be an error.');
+        self::assertSame('empty_assistant_content', $result->error['type'] ?? null);
+        self::assertFalse($result->error['retryable'] ?? true, 'empty_assistant_content must be non-retryable.');
+
+        // Platform must have been invoked exactly twice (not thrice).
+        self::assertSame(2, $platform->invocationCount);
+
+        // Exactly one retry warning must be logged.
+        $retryLogs = $this->filterLogsByEventType($testLogger, 'llm.request.retrying_thinking_only');
+        self::assertCount(1, $retryLogs, 'Must log exactly one retry warning.');
+    }
+
+    public function testSingleValidResponseProceedsNormally(): void
+    {
+        $validResponse = new AssistantMessage(new Text('Direct response'));
+
+        $platform = $this->createAlternatingPlatform([$validResponse]);
+        $testBus = new TestMessageBus();
+        $testLogger = new TestLogger();
+
+        $worker = new ExecuteLlmStepWorker($platform, $testBus, 'test-model', logger: $testLogger);
+
+        $worker(new ExecuteLlmStep(
+            runId: 'run-3',
+            turnNo: 1,
+            stepId: 'step-3',
+            attempt: 1,
+            idempotencyKey: 'key-3',
+            contextRef: 'ctx-3',
+            toolsRef: 'tools-3',
+        ));
+
+        self::assertCount(1, $testBus->messages);
+
+        /** @var LlmStepResult $result */
+        $result = $testBus->messages[0];
+        self::assertNotNull($result->assistantMessage);
+        self::assertSame('Direct response', $result->assistantMessage->asText());
+        self::assertNull($result->error);
+
+        // Normal path: exactly one platform invocation.
+        self::assertSame(1, $platform->invocationCount);
+
+        // No retry warning logged.
+        $retryLogs = $this->filterLogsByEventType($testLogger, 'llm.request.retrying_thinking_only');
+        self::assertCount(0, $retryLogs, 'No retry warning when first attempt succeeds.');
+    }
+
+    public function testProviderErrorOnFirstAttemptIsNotRetried(): void
+    {
+        $errorResult = new PlatformInvocationResult(
+            assistantMessage: null,
+            usage: [],
+            stopReason: null,
+            error: ['type' => 'provider_error', 'message' => 'HTTP 500'],
+        );
+
+        $platform = $this->createAlternatingPlatform([$errorResult]);
+        $testBus = new TestMessageBus();
+        $testLogger = new TestLogger();
+
+        $worker = new ExecuteLlmStepWorker($platform, $testBus, 'test-model', logger: $testLogger);
+
+        $worker(new ExecuteLlmStep(
+            runId: 'run-4',
+            turnNo: 1,
+            stepId: 'step-4',
+            attempt: 1,
+            idempotencyKey: 'key-4',
+            contextRef: 'ctx-4',
+            toolsRef: 'tools-4',
+        ));
+
+        self::assertCount(1, $testBus->messages);
+
+        /** @var LlmStepResult $result */
+        $result = $testBus->messages[0];
+        self::assertNotNull($result->error, 'Provider error must be propagated.');
+        self::assertSame('provider_error', $result->error['type'] ?? null);
+
+        // Provider errors are NOT retried: only thinking-only responses are.
+        self::assertSame(1, $platform->invocationCount);
+
+        // No retry warning.
+        $retryLogs = $this->filterLogsByEventType($testLogger, 'llm.request.retrying_thinking_only');
+        self::assertCount(0, $retryLogs, 'No retry on provider error.');
+    }
+
+    // ── helpers ──
+
+    /**
+     * @return list<array{level: string, message: string, context: array<string, mixed>}>
+     */
+    private function filterLogsByEventType(TestLogger $logger, string $eventType): array
+    {
+        return array_values(array_filter(
+            $logger->records,
+            static fn (array $record): bool => ($record['context']['event_type'] ?? '') === $eventType,
+        ));
+    }
+
+    /**
+     * Creates a PlatformInterface that returns the given messages in sequence.
+     * After all messages are consumed, it returns the last one repeatedly.
+     *
+     * @param list<AssistantMessage|PlatformInvocationResult> $responses
+     */
+    private function createAlternatingPlatform(array $responses): object
+    {
+        return new class($responses) implements PlatformInterface {
+            public int $invocationCount = 0;
+
+            /** @var list<AssistantMessage|PlatformInvocationResult> */
+            private array $responses;
+
+            /**
+             * @param list<AssistantMessage|PlatformInvocationResult> $responses
+             */
+            public function __construct(array $responses)
+            {
+                $this->responses = $responses;
+            }
+
+            public function invoke(ModelInvocationRequest $request): PlatformInvocationResult
+            {
+                $index = $this->invocationCount;
+                $this->invocationCount++;
+
+                $item = $this->responses[min($index, \count($this->responses) - 1)];
+
+                if ($item instanceof PlatformInvocationResult) {
+                    return $item;
+                }
+
+                // Wrap an AssistantMessage in a successful PlatformInvocationResult.
+                return new PlatformInvocationResult(
+                    assistantMessage: $item,
+                    deltas: [],
+                    usage: ['input_tokens' => 100, 'output_tokens' => 20],
+                    stopReason: 'stop',
+                    error: null,
+                    modelNotifications: [],
+                );
+            }
+        };
+    }
+}
