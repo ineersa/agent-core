@@ -437,3 +437,12 @@ ai:
                      context_window: 272000
                      max_tokens: 128000
                      cost: { input: 0.75, output: 4.50 }
+
+extensions:
+    enabled:
+        - Ineersa\HatfieldExt\TaskWorkflow\TaskWorkflowExtension
+    settings:
+        task_workflow:
+            task_root: /home/ineersa/projects/agent-core-tasks
+            castor_check_timeout_seconds: 480
+

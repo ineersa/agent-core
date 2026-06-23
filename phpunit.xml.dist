@@ -18,6 +18,9 @@
         <testsuite name="platform">
             <directory>tests/Platform</directory>
         </testsuite>
+        <testsuite name="extensions">
+            <directory>.hatfield/extensions/task-workflow/tests</directory>
+        </testsuite>
     </testsuites>
     <extensions>
         <bootstrap class="DAMA\DoctrineTestBundle\PHPUnit\PHPUnitExtension"/>

@@ -21,3 +21,6 @@ callgraph.html
 /.deptrac.cache
 
 /.aiassistant/
+# Hatfield extensions path-repo install artifacts (generated)
+/.hatfield/extensions/vendor/
+/.hatfield/extensions/composer.lock
