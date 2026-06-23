@@ -265,6 +265,30 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         self::assertStringNotContainsString('role=tool', $out);
     }
 
+    public function testDebugModeEmitsRelativeArtifactPathsOnly(): void
+    {
+        $parent = 'parent-debug';
+        $artifactId = 'agent_debug_paths';
+        $childRun = 'child-debug-run';
+        $this->registry->create($parent, $artifactId, $childRun, 'scout');
+
+        $isolatedRoot = (string) getcwd();
+        self::assertNotSame('', $isolatedRoot);
+
+        $service = $this->makeService();
+        $out = $service->retrieve($parent, ['artifact_id' => $artifactId, 'mode' => 'debug']);
+
+        self::assertStringContainsString('# Subagent artifact debug paths', $out);
+        self::assertStringContainsString('artifacts/agents/'.$artifactId.'/', $out);
+        self::assertStringContainsString('- artifact_dir: artifacts/agents/'.$artifactId, $out);
+        self::assertStringContainsString('- metadata_path: artifacts/agents/'.$artifactId.'/metadata.json', $out);
+        self::assertStringContainsString('- handoff_path: artifacts/agents/'.$artifactId.'/handoff.md', $out);
+        self::assertStringContainsString('- events_path: artifacts/agents/'.$artifactId.'/events.jsonl', $out);
+        self::assertStringContainsString('- state_path: artifacts/agents/'.$artifactId.'/state.json', $out);
+        self::assertStringNotContainsString($isolatedRoot, $out);
+        self::assertStringNotContainsString($isolatedRoot.'/.hatfield/sessions', $out);
+    }
+
     public function testRejectsCrossParentArtifactIdViaSessionListing(): void
     {
         $foreignParent = $this->hatfieldSessionStore->createSession('Foreign parent for artifact retrieve');

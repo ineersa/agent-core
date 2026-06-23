@@ -226,9 +226,12 @@ final class AgentArtifactRetrievalService
             '',
             ...$this->identityLines($entry),
             '',
-            \sprintf('Showing last %d of %d events (sanitized summaries only).', \count($slice), \count($events)),
-            '',
         ];
+
+        if ([] !== $slice) {
+            $lines[] = \sprintf('Showing last %d of %d events (sanitized summaries only).', \count($slice), \count($events));
+            $lines[] = '';
+        }
 
         foreach ($slice as $event) {
             $lines[] = \sprintf(
@@ -268,9 +271,12 @@ final class AgentArtifactRetrievalService
             '',
             ...$this->identityLines($entry),
             '',
-            \sprintf('Showing last %d of %d eligible messages (system, user-context, and tool results omitted).', \count($slice), \count($filtered)),
-            '',
         ];
+
+        if ([] !== $slice) {
+            $lines[] = \sprintf('Showing last %d of %d eligible messages (system, user-context, and tool results omitted).', \count($slice), \count($filtered));
+            $lines[] = '';
+        }
 
         foreach ($slice as $message) {
             $summary = $this->summarizeMessage($message);
