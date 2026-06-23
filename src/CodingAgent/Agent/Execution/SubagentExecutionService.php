@@ -33,8 +33,8 @@ use Symfony\Component\Uid\Uuid;
  *  5. Poll child RunState until terminal, timeout, or cancellation.
  *  6. Finalize registry, handoff, and return result text.
  *
- * Only non-interactive foreground mode is supported.  Child HITL
- * Child HITL (WaitingHuman) is unsupported — the child is cancelled and
+ * Only non-interactive foreground mode is supported.
+ * (WaitingHuman) is unsupported — the child is cancelled and
  * the artifact is finalized as Failed (invariant failure).
  */
 final class SubagentExecutionService
