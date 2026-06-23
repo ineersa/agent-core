@@ -524,4 +524,90 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'Progress events should have unique sequence numbers.',
         );
     }
+
+    public function testCompactingChildRunTreatedAsActiveAndCompletes(): void
+    {
+        $parentRunStore = new InMemoryRunStore();
+        $parentState = new RunState(
+            runId: 'parent-compact',
+            status: RunStatus::Running,
+            version: 1,
+            lastSeq: 2,
+            messages: [],
+        );
+        $parentRunStore->compareAndSwap($parentState, 0);
+
+        $getCount = 0;
+        $compactingState = new RunState(
+            runId: 'child-compact',
+            status: RunStatus::Compacting,
+            version: 1,
+            turnNo: 1,
+            messages: [],
+        );
+        $completedState = new RunState(
+            runId: 'child-compact',
+            status: RunStatus::Completed,
+            version: 2,
+            messages: [
+                new AgentMessage(
+                    role: 'assistant',
+                    content: [['type' => 'text', 'text' => 'Handoff: compaction finished.']],
+                ),
+            ],
+        );
+
+        $runStore = $this->createStub(RunStoreInterface::class);
+        $runStore->method('get')->willReturnCallback(
+            function () use (&$getCount, $compactingState, $completedState): ?RunState {
+                $state = 0 === $getCount ? $compactingState : $completedState;
+                ++$getCount;
+
+                return $state;
+            },
+        );
+
+        $agentRunner = $this->createMock(AgentRunnerInterface::class);
+        $agentRunner->expects(self::once())
+            ->method('start')
+            ->willReturn('child-compact');
+
+        $def = new AgentDefinitionDTO(
+            name: 'compact-agent',
+            description: 'Compact agent',
+            tools: ['read'],
+            mcp: new McpPolicyDTO(mode: McpAgentModeEnum::None),
+            instructions: 'Compact test.',
+        );
+
+        $catalog = new AgentDefinitionCatalog([$def]);
+        $directory = self::getContainer()->get(AgentChildRunDirectory::class);
+        $eventStore = $this->createStub(EventStoreInterface::class);
+        $metadataReader = new SubagentRunMetadataReader($eventStore);
+        $registry = self::getContainer()->get(AgentArtifactRegistry::class);
+
+        $service = new SubagentExecutionService(
+            catalog: $catalog,
+            depthGuard: new AgentDepthGuard(),
+            policyResolver: new AgentToolPolicyResolver(),
+            promptBuilder: new AgentPromptBuilder(),
+            artifactRegistry: $registry,
+            agentRunner: $agentRunner,
+            runStore: $runStore,
+            parentRunStore: $parentRunStore,
+            eventStore: $eventStore,
+            metadataReader: $metadataReader,
+            childRunDirectory: $directory,
+            contextAccessor: self::getContainer()->get(StackToolExecutionContextAccessor::class),
+            logger: self::getContainer()->get('logger'),
+        );
+
+        $result = $service->execute('parent-compact', 'compact-agent', 'Compact then finish');
+
+        self::assertStringContainsString('Handoff: compaction finished.', $result);
+
+        $entries = $registry->list('parent-compact');
+        self::assertCount(1, $entries);
+        self::assertSame(AgentArtifactStatusEnum::Completed, $entries[0]->status);
+    }
 }
