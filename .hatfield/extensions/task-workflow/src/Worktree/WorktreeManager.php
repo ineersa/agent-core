@@ -295,6 +295,8 @@ final class WorktreeManager
 
             return true;
         } catch (\Throwable) {
+            // Non-fatal: vendor/.vera are developer-convenience copies; the worker can run
+            // composer install or fall back to absolute-path reads. Do not hard-fail here.
             return false;
         }
     }
