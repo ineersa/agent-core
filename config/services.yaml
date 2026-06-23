@@ -718,25 +718,25 @@ services:
   # ─── AGENT-05 Subagent execution service ──────────────────────────
 
   # SubagentExecutionService needs two RunStoreInterface bindings:
-  # $runStore auto-wires to the router (child runs), $parentRunStore to
+  # $runStore auto-wires to the child-aware decorator (child runs), $parentRunStore to
   # SessionRunStore (parent run state for prompt/metadata extraction).
-  # $eventStore auto-wires to the EventStoreRouter for progress events.
+  # $eventStore auto-wires to the ChildAwareEventStore for progress events.
   Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService:
     arguments:
       $parentRunStore: '@Ineersa\CodingAgent\Session\SessionRunStore'
 
   # ─── AGENT-05 Subagent tool storage routing ─────────────────────────
 
-  # RunStoreRouter — delegates RunStoreInterface between parent-scoped
+  # ChildAwareRunStore — delegates RunStoreInterface between parent-scoped
   # SessionRunStore (parent runs) and AgentChildRunStore (child runs).
   # Explicit wiring needed because $parentStore must point to the concrete
   # SessionRunStore, not itself (would be a cycle).
-  Ineersa\CodingAgent\Agent\Artifact\RunStoreRouter:
+  Ineersa\CodingAgent\Agent\Artifact\ChildAwareRunStore:
     arguments:
       $parentStore: '@Ineersa\CodingAgent\Session\SessionRunStore'
 
-  # EventStoreRouter — delegates EventStoreInterface between parent-scoped
+  # ChildAwareEventStore — delegates EventStoreInterface between parent-scoped
   # SessionRunEventStore (parent runs) and AgentChildRunEventStore (child runs).
-  Ineersa\CodingAgent\Agent\Artifact\EventStoreRouter:
+  Ineersa\CodingAgent\Agent\Artifact\ChildAwareEventStore:
     arguments:
       $parentStore: '@Ineersa\CodingAgent\Session\SessionRunEventStore'

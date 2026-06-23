@@ -8,7 +8,7 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Psr\Log\LoggerInterface;
 
 /**
- * Lazily locates child agent run artifact entries by their agentRunId.
+ * In-memory lookup index for child agent runs backed by AgentArtifactRegistry by their agentRunId.
  *
  * Scans known parent sessions (via HatfieldSessionStore::listSessions())
  * and checks each parent's AgentArtifactRegistry for an entry matching
@@ -36,7 +36,7 @@ use Psr\Log\LoggerInterface;
  * full scan on the first lookup.  Other processes (e.g. messenger
  * consumers) discover the new child on their next cache-miss lookup.
  */
-final class AgentChildRunLocator
+final class AgentChildRunDirectory
 {
     /** @var array<string, AgentArtifactEntryDTO> agentRunId → entry */
     private array $cache = [];
@@ -99,7 +99,7 @@ final class AgentChildRunLocator
     {
         $sessions = $this->hatfieldSessionStore->listSessions();
 
-        $this->logger->debug('AgentChildRunLocator scanning for child artifacts', [
+        $this->logger->debug('AgentChildRunDirectory scanning for child artifacts', [
             'component' => 'agent.locator',
             'session_count' => \count($sessions),
         ]);

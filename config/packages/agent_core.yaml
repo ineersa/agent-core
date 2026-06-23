@@ -7,15 +7,15 @@ services:
   # session_id === run_id in Hatfield.
   #
   # Parent-scoped child agent runs are routed transparently through
-  # RunStoreRouter and EventStoreRouter, which delegate to
+  # ChildAwareRunStore and ChildAwareEventStore, which delegate to
   # AgentChildRunStore / AgentChildRunEventStore when the runId
   # resolves to a child artifact; otherwise to SessionRunStore /
   # SessionRunEventStore for normal parent runs.
   Ineersa\AgentCore\Contract\RunStoreInterface:
-    alias: Ineersa\CodingAgent\Agent\Artifact\RunStoreRouter
+    alias: Ineersa\CodingAgent\Agent\Artifact\ChildAwareRunStore
 
   Ineersa\AgentCore\Contract\EventStoreInterface:
-    alias: Ineersa\CodingAgent\Agent\Artifact\EventStoreRouter
+    alias: Ineersa\CodingAgent\Agent\Artifact\ChildAwareEventStore
 
   Ineersa\AgentCore\Contract\AgentRunnerInterface:
     alias: Ineersa\AgentCore\Application\Pipeline\AgentRunner

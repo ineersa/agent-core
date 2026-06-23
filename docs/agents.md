@@ -176,16 +176,15 @@ indicating they are not yet implemented.
 
 1. **Blocking foreground.** The tool handler blocks the parent LLM until the
    child run reaches a terminal status (Completed, Failed, Cancelled) or
-   requires clarification (NeedsClarification). The tool result is a dense
-   handoff text returned to the parent LLM.
+   times out. The tool result is the dense handoff text returned to the parent LLM.
 2. **Parent-scoped storage.** Child runs are stored entirely under the parent
    session directory — no top-level session rows or directories are created.
 3. **Inline progress.** While the child runs, compact progress status lines
    (agent name, turn number, tool count, last tool name) appear inline in the
    parent's tool result widget. The full child transcript is not duplicated.
 4. **Non-interactive.** Child agents cannot ask the human interactively. If a
-   child enters `WaitingHuman` (HITL/approval state), the execution service
-   cancels the child, finalizes the artifact as `NeedsClarification`, and
+   child enters `WaitingHuman` (should not happen for non-interactive runs), the execution service
+   cancels the child, finalizes the artifact as `Failed`, and
    returns an explanation to the parent LLM.
 5. **Cancellation.** If the parent run is cancelled while a child is running,
    the child is cancelled and the artifact is finalized as `Cancelled`.
@@ -216,22 +215,20 @@ Child runs are stored under the parent session directory:
 - A dedicated retrieval tool (to query, list, or load child artifacts for the
   parent LLM) is **future work** (planned for AGENT-06).
 
-### Depth and recursion guard
+### Depth and recursion guard (v1)
 
-Recursive agent launches are prevented through two mechanisms:
+Nested subagents are not supported:
 
-1. **Environment variables** (protect subprocess/CLI boundaries):
-   - `HATFIELD_AGENTS_DISABLED=1` — globally blocks all subagent launches.
-   - `HATFIELD_AGENT_CHILD` — marker that this process is a child agent.
-   - `HATFIELD_AGENT_DEPTH=N` — current nesting depth (parent = 0).
-   - `HATFIELD_AGENT_MAX_DEPTH=N` — global per-parent maximum.
+1. **Parent metadata** — `SubagentExecutionService` reads the parent run's
+   `RunStarted` metadata. If `session.kind` is `agent_child`, launch is blocked
+   with a non-retryable error.
+2. **Tool policy** — the `subagent` tool is excluded from child toolsets via
+   `AgentToolPolicyResolver` / `SubagentToolSetResolver` (primary enforcement).
+3. **Global disable** — `HATFIELD_AGENTS_DISABLED=1` blocks all subagent launches
+   (subprocess/CLI boundary).
 
-2. **Per-definition `maxDepth`** — a definition with `maxDepth: 1` allows
-   parent → child but blocks child → grandchild. The effective max depth is
-   `min(agentMaxDepth, globalMaxDepth)` when the global env var is set.
-
-If a subagent tool call is blocked by depth limits, the tool returns a
-non-retryable error explaining the reason.
+Agent definition `maxDepth` remains in the catalog format for forward compatibility
+but is not used by the v1 foreground subagent launcher.
 
 ### Tool and MCP policy for children
 
@@ -271,7 +268,7 @@ task text follows as the `user` message.
 
 ### Known limitations
 
-- **Stale child run detection:** `RunStoreRouter::findRunningStaleBefore()` only
+- **Stale child run detection:** `ChildAwareRunStore::findRunningStaleBefore()` only
   scans parent session store runs, not child agent runs.  Child run liveness
   is managed by the subagent tool's own timeout mechanism.  A future task
   should add child scanning when background/async child modes are introduced.
@@ -287,7 +284,7 @@ The following features are **not yet implemented**:
 | `agent_start`, `agent_status` tools | Not implemented | Future |
 | `/agents` TUI command | Not implemented | Future |
 | Dedicated dock/overlay for child agent views | Not implemented | Future |
-| Interactive child HITL, approvals, or questions | Not implemented (becomes NeedsClarification) | Future |
+| Interactive child HITL, approvals, or questions | Not supported (WaitingHuman → Failed) | Future |
 | Child artifact retrieval tool | Not implemented | AGENT-06 |
 
 ## See also

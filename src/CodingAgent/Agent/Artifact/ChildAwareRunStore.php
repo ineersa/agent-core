@@ -8,7 +8,7 @@ use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Run\RunState;
 
 /**
- * RunStoreInterface router that delegates between parent-scoped and
+ * Child-aware decorator for RunStoreInterface that delegates between parent-scoped and
  * child-scoped stores transparently.
  *
  * For parent (top-level) run IDs, delegates to SessionRunStore.
@@ -21,7 +21,7 @@ use Ineersa\AgentCore\Domain\Run\RunState;
  * the parentRunId → artifactId mapping for the child run.  Once located,
  * the mapping is cached per-process so subsequent calls are fast.
  */
-final class RunStoreRouter implements RunStoreInterface
+final class ChildAwareRunStore implements RunStoreInterface
 {
     /** @var array<string, AgentChildRunStore> agentRunId → store */
     private array $childStores = [];
@@ -29,7 +29,7 @@ final class RunStoreRouter implements RunStoreInterface
     public function __construct(
         private readonly RunStoreInterface $parentStore,
         private readonly AgentChildRunStoreFactory $childStoreFactory,
-        private readonly AgentChildRunLocator $childRunLocator,
+        private readonly AgentChildRunDirectory $childRunDirectory,
     ) {
     }
 
@@ -90,7 +90,7 @@ final class RunStoreRouter implements RunStoreInterface
             return $this->childStores[$runId];
         }
 
-        $entry = $this->childRunLocator->locate($runId);
+        $entry = $this->childRunDirectory->locate($runId);
         if (null === $entry) {
             return null;
         }

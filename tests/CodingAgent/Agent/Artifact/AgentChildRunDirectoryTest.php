@@ -6,7 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Agent\Artifact;
 
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathResolver;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
-use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunLocator;
+use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Psr\Log\LoggerInterface;
@@ -21,21 +21,21 @@ use Symfony\Component\Serializer\Serializer;
 use Symfony\Component\Validator\ValidatorBuilder;
 
 /**
- * Tests for AgentChildRunLocator — proves locator discovers child
+ * Tests for AgentChildRunDirectory — proves directory discovers child
  * artifacts and rescans on cache misses in long-lived processes.
  *
  * Test thesis: after a child artifact is created in a parent session,
- * AgentChildRunLocator::locate() finds it via a session/registry scan.
+ * AgentChildRunDirectory::locate() finds it via a session/registry scan.
  * When a second child artifact is created later (in the same process,
  * without calling register()), a subsequent locate() on the new runId
  * rescans and discovers it — proving there is no stale one-time scan
  * flag that would permanently miss later-created children.
  */
-final class AgentChildRunLocatorTest extends IsolatedKernelTestCase
+final class AgentChildRunDirectoryTest extends IsolatedKernelTestCase
 {
     private HatfieldSessionStore $hatfieldSessionStore;
     private AgentArtifactRegistry $registry;
-    private AgentChildRunLocator $locator;
+    private AgentChildRunDirectory $directory;
 
     protected function setUp(): void
     {
@@ -70,7 +70,7 @@ final class AgentChildRunLocatorTest extends IsolatedKernelTestCase
         /** @var LoggerInterface $logger */
         $logger = self::getContainer()->get('logger');
 
-        $this->locator = new AgentChildRunLocator(
+        $this->directory = new AgentChildRunDirectory(
             $this->hatfieldSessionStore,
             $this->registry,
             $logger,
@@ -84,12 +84,12 @@ final class AgentChildRunLocatorTest extends IsolatedKernelTestCase
     {
         $parentSessionId = $this->hatfieldSessionStore->createSession('Locator test parent');
 
-        $childAgentRunId = 'locator-child-1-'.bin2hex(random_bytes(4));
+        $childAgentRunId = 'directory-child-1-'.bin2hex(random_bytes(4));
         $entry = $this->registry->create($parentSessionId, 'scout-001', $childAgentRunId, 'scout');
 
         // Locate should find the entry (requires a session scan since we
         // did not call register()).
-        $found = $this->locator->locate($childAgentRunId);
+        $found = $this->directory->locate($childAgentRunId);
 
         self::assertNotNull($found, 'Locator must find child artifact after creation');
         self::assertSame($childAgentRunId, $found->agentRunId);
@@ -107,20 +107,20 @@ final class AgentChildRunLocatorTest extends IsolatedKernelTestCase
         $parentSessionId = $this->hatfieldSessionStore->createSession('Locator rescan parent');
 
         // Create and locate child-1 (warms the cache with child-1 entry).
-        $child1RunId = 'locator-rescan-1-'.bin2hex(random_bytes(4));
+        $child1RunId = 'directory-rescan-1-'.bin2hex(random_bytes(4));
         $this->registry->create($parentSessionId, 'rescan-artifact-1', $child1RunId, 'scout');
 
-        $found1 = $this->locator->locate($child1RunId);
+        $found1 = $this->directory->locate($child1RunId);
         self::assertNotNull($found1, 'First child must be locatable');
         self::assertSame($child1RunId, $found1->agentRunId);
 
         // Now create a second child (different agentRunId and artifactId) —
-        // do NOT call register(). If the locator has a stale-scanned flag,
+        // do NOT call register(). If the directory has a stale-scanned flag,
         // locate(child-2) would return null.
-        $child2RunId = 'locator-rescan-2-'.bin2hex(random_bytes(4));
+        $child2RunId = 'directory-rescan-2-'.bin2hex(random_bytes(4));
         $this->registry->create($parentSessionId, 'rescan-artifact-2', $child2RunId, 'scout');
 
-        $found2 = $this->locator->locate($child2RunId);
+        $found2 = $this->directory->locate($child2RunId);
 
         self::assertNotNull(
             $found2,
@@ -130,7 +130,7 @@ final class AgentChildRunLocatorTest extends IsolatedKernelTestCase
         self::assertSame($child2RunId, $found2->agentRunId, 'Late child must have correct agentRunId');
 
         // child-1 should still be in the cache (fast-path, no rescan needed).
-        $found1Again = $this->locator->locate($child1RunId);
+        $found1Again = $this->directory->locate($child1RunId);
         self::assertNotNull($found1Again, 'First child must remain in cache after second locate');
         self::assertSame($child1RunId, $found1Again->agentRunId);
     }
@@ -143,14 +143,14 @@ final class AgentChildRunLocatorTest extends IsolatedKernelTestCase
     {
         $parentSessionId = $this->hatfieldSessionStore->createSession('Locator register parent');
 
-        $childAgentRunId = 'locator-reg-'.bin2hex(random_bytes(4));
+        $childAgentRunId = 'directory-reg-'.bin2hex(random_bytes(4));
         $entry = $this->registry->create($parentSessionId, 'scout-003', $childAgentRunId, 'scout');
 
-        // Register directly — the locator should use the cached entry
+        // Register directly — the directory should use the cached entry
         // without scanning.
-        $this->locator->register($entry);
+        $this->directory->register($entry);
 
-        $found = $this->locator->locate($childAgentRunId);
+        $found = $this->directory->locate($childAgentRunId);
         self::assertNotNull($found, 'Pre-registered entry must be locatable without scan');
         self::assertSame($entry->artifactId, $found->artifactId);
     }
@@ -160,7 +160,7 @@ final class AgentChildRunLocatorTest extends IsolatedKernelTestCase
      */
     public function testLocateReturnsNullForUnknownRunId(): void
     {
-        $result = $this->locator->locate('nonexistent-child-run-id');
+        $result = $this->directory->locate('nonexistent-child-run-id');
         self::assertNull($result, 'Locator must return null for unknown run IDs');
     }
 
@@ -169,7 +169,7 @@ final class AgentChildRunLocatorTest extends IsolatedKernelTestCase
      * block location of child runs in other parents.
      *
      * Creates one good parent (with artifacts) and a second parent
-     * whose registry directory permissions prevent reading. The locator
+     * whose registry directory permissions prevent reading. The directory
      * must still find the good parent's artifacts.
      */
     public function testCorruptRegistryDoesNotBlockOtherParents(): void
@@ -178,12 +178,12 @@ final class AgentChildRunLocatorTest extends IsolatedKernelTestCase
         $badParentId = $this->hatfieldSessionStore->createSession('Locator bad parent');
 
         // Create a child in the good parent.
-        $childRunId = 'locator-good-'.bin2hex(random_bytes(4));
+        $childRunId = 'directory-good-'.bin2hex(random_bytes(4));
         $entry = $this->registry->create($goodParentId, 'worker-001', $childRunId, 'worker');
 
         // Corrupt the bad parent's registry.json by writing invalid JSON.
         // This makes AgentArtifactRegistry::list() throw, which the
-        // locator's scanAllSessions() catches and skips.  No chmod/permission
+        // directory's scanAllSessions() catches and skips.  No chmod/permission
         // tricks needed — portable across filesystems and CI environments.
         $pathResolver = new AgentArtifactPathResolver($this->hatfieldSessionStore);
         $badRegistryPath = $pathResolver->registryPath($badParentId);
@@ -198,7 +198,7 @@ final class AgentChildRunLocatorTest extends IsolatedKernelTestCase
 
         // Locating the good child must still succeed — the corrupt
         // parent's failure is logged and skipped, not propagated.
-        $found = $this->locator->locate($childRunId);
+        $found = $this->directory->locate($childRunId);
         self::assertNotNull(
             $found,
             'Locator must find child artifacts in healthy parents even '

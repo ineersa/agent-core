@@ -115,7 +115,7 @@ final class SubagentTool implements HatfieldToolProviderInterface, ToolHandlerIn
                 'Subagents run in the foreground and block until complete. The tool result is the subagent\'s final handoff.',
                 'Specify the agent name (matching an enabled definition like "scout" or "reviewer") and a concrete task.',
                 'Subagents write their results as artifacts under the parent session — no top-level session is created.',
-                'Subagents are non-interactive and cannot ask for human input. If they need information, they return a needs-clarification handoff.',
+                'Subagents are non-interactive and cannot ask for human input or approval. If they need information, they must state it in their final handoff text.',
                 'Currently only single-agent mode is supported. Parallel execution and background/async modes are not yet available.',
                 'Use subagent for codebase exploration, code review, research, or focused implementation work.',
             ],

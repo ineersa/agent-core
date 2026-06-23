@@ -17,7 +17,7 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
-use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunLocator;
+use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Uid\Uuid;
@@ -34,8 +34,8 @@ use Symfony\Component\Uid\Uuid;
  *  6. Finalize registry, handoff, and return result text.
  *
  * Only non-interactive foreground mode is supported.  Child HITL
- * (WaitingHuman) is treated as NeedsClarification — the child is
- * cancelled and a handoff explaining the unsupported state is returned.
+ * Child HITL (WaitingHuman) is unsupported — the child is cancelled and
+ * the artifact is finalized as Failed (invariant failure).
  */
 final class SubagentExecutionService
 {
@@ -53,7 +53,7 @@ final class SubagentExecutionService
         private readonly RunStoreInterface $parentRunStore,
         private readonly EventStoreInterface $eventStore,
         private readonly SubagentRunMetadataReader $metadataReader,
-        private readonly AgentChildRunLocator $childRunLocator,
+        private readonly AgentChildRunDirectory $childRunDirectory,
         private readonly StackToolExecutionContextAccessor $contextAccessor,
         private readonly LoggerInterface $logger,
     ) {
@@ -86,10 +86,9 @@ final class SubagentExecutionService
             throw new ToolCallException(\sprintf('Agent "%s" does not allow foreground execution.', $agentName), retryable: false);
         }
 
-        // 2. Check depth/recursion guard — combine env + metadata.
-        $parentMetadataDepth = $this->metadataReader->readAgentDepth($parentRunId);
-        $effectiveDepth = $this->depthGuard->determineDepth($parentMetadataDepth);
-        $blockReason = $this->depthGuard->checkAllowed($effectiveDepth, $definition->maxDepth);
+        // 2. Defense-in-depth: no nested subagents in v1.
+        $parentIsAgentChild = $this->metadataReader->isAgentChild($parentRunId);
+        $blockReason = $this->depthGuard->checkLaunchAllowed($parentIsAgentChild);
         if (null !== $blockReason) {
             throw new ToolCallException($blockReason, retryable: false);
         }
@@ -111,7 +110,7 @@ final class SubagentExecutionService
         );
 
         // Pre-populate the locator so routers find the child store immediately.
-        $this->childRunLocator->register($entry);
+        $this->childRunDirectory->register($entry);
 
         // 6. Extract parent system prompt and AGENTS.md context.
         $parentSystemPrompt = $this->extractSystemPrompt($parentRunId);
@@ -127,17 +126,14 @@ final class SubagentExecutionService
             parentSystemPrompt: $parentSystemPrompt,
         );
 
-        // 8. Build child metadata with depth, policy, and artifact paths.
-        $childDepth = $this->depthGuard->childDepth($effectiveDepth);
+        // 8. Build child metadata with policy and artifact paths.
         $childMetadata = new RunMetadata(
             session: [
                 'kind' => 'agent_child',
                 'parent_run_id' => $parentRunId,
                 'agent_name' => $agentName,
-                'agent_depth' => $childDepth,
-                'agent_max_depth' => $definition->maxDepth,
-                'agents_disabled' => $this->depthGuard->agentsGloballyDisabled(),
                 'artifact_id' => $artifactId,
+                'interactive' => false,
             ],
             model: $definition->model,
             reasoning: $definition->thinking,
@@ -231,20 +227,19 @@ final class SubagentExecutionService
                 continue;
             }
 
-            // WaitingHuman → NeedsClarification (child HITL unsupported in v1).
+            // WaitingHuman should not occur for non-interactive child runs.
             if (RunStatus::WaitingHuman === $status) {
-                $this->agentRunner->cancel($agentRunId, 'Child HITL/approval is unsupported in v1.');
-                $clarification = $this->extractLastMessage($state);
+                $this->agentRunner->cancel($agentRunId, 'Child entered unsupported WaitingHuman state.');
                 $this->finalize(
                     parentRunId: $parentRunId,
                     artifactId: $artifactId,
-                    status: AgentArtifactStatusEnum::NeedsClarification,
-                    summary: $clarification,
-                    needsClarification: 'Child agent required human input or approval, which is unsupported in v1 foreground subagents.',
+                    status: AgentArtifactStatusEnum::Failed,
+                    failureReason: 'Child agent attempted unsupported human interaction or approval.',
+                    summary: 'Child run entered WaitingHuman; foreground subagents are non-interactive.',
                 );
 
-                return \sprintf("Subagent %s needs clarification:\n%s\nArtifact: %s",
-                    $agentName, $clarification, $artifactId);
+                return \sprintf('Subagent %s failed: unsupported human interaction or approval. Artifact: %s',
+                    $agentName, $artifactId);
             }
 
             // Terminal states — exhaustive match over RunStatus.

@@ -16,7 +16,7 @@ use Symfony\Component\Lock\LockFactory;
  * child stores and injects the shared dependencies (path resolver,
  * event normalizer, lock factory, logger).
  *
- * Consumer code (e.g. EventStoreRouter) creates child stores on demand.
+ * Consumer code (e.g. ChildAwareEventStore) creates child stores on demand.
  */
 final readonly class AgentChildRunEventStoreFactory
 {

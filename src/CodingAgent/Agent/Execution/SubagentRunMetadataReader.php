@@ -16,8 +16,7 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
  *   $event->payload['payload']['metadata']['session'][...]
  *   $event->payload['payload']['metadata']['tools_scope'][...]
  *
- * Consumers (SubagentToolSetResolver, AgentDepthGuard via
- * SubagentExecutionService) use this reader instead of raw
+ * Consumers (SubagentToolSetResolver, SubagentExecutionService) use this reader instead of raw
  * array access to avoid drift between the StartRunHandler
  * serialization shape and downstream consumers.
  */
@@ -84,36 +83,6 @@ final readonly class SubagentRunMetadataReader
 
         /* @var list<string> */
         return $tools;
-    }
-
-    /**
-     * Read the agent depth from the child's RunStarted metadata.
-     *
-     * Returns null when the run is not a child or depth is not set.
-     */
-    public function readAgentDepth(string $runId): ?int
-    {
-        $metadata = $this->readRunStartedMetadata($runId);
-        if (null === $metadata) {
-            return null;
-        }
-
-        $session = $metadata['session'] ?? [];
-        if (!\is_array($session)) {
-            return null;
-        }
-
-        if ('agent_child' !== ($session['kind'] ?? null)) {
-            return null;
-        }
-
-        $depth = $session['agent_depth'] ?? null;
-
-        if (null === $depth) {
-            return null;
-        }
-
-        return (int) $depth;
     }
 
     /**

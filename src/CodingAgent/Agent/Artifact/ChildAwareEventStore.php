@@ -8,17 +8,17 @@ use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 
 /**
- * EventStoreInterface router that delegates between parent-scoped and
+ * Child-aware decorator for EventStoreInterface that delegates between parent-scoped and
  * child-scoped stores transparently.
  *
  * For parent (top-level) run IDs, delegates to SessionRunEventStore.
  * For child agent run IDs, creates per-instance AgentChildRunEventStore
  * and delegates to it.
  *
- * Child run location uses the same AgentChildRunLocator cache as
- * {@see RunStoreRouter}.
+ * Child run location uses the same AgentChildRunDirectory cache as
+ * {@see ChildAwareRunStore}.
  */
-final class EventStoreRouter implements EventStoreInterface
+final class ChildAwareEventStore implements EventStoreInterface
 {
     /** @var array<string, AgentChildRunEventStore> agentRunId → store */
     private array $childStores = [];
@@ -26,7 +26,7 @@ final class EventStoreRouter implements EventStoreInterface
     public function __construct(
         private readonly EventStoreInterface $parentStore,
         private readonly AgentChildRunEventStoreFactory $childStoreFactory,
-        private readonly AgentChildRunLocator $childRunLocator,
+        private readonly AgentChildRunDirectory $childRunDirectory,
     ) {
     }
 
@@ -93,7 +93,7 @@ final class EventStoreRouter implements EventStoreInterface
             return $this->childStores[$runId];
         }
 
-        $entry = $this->childRunLocator->locate($runId);
+        $entry = $this->childRunDirectory->locate($runId);
         if (null === $entry) {
             return null;
         }

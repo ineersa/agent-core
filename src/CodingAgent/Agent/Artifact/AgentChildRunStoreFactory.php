@@ -16,7 +16,7 @@ use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
  * child stores and injects the shared dependencies (path resolver,
  * serializer, lock factory).
  *
- * Consumer code (e.g. RunStoreRouter) creates child stores on demand.
+ * Consumer code (e.g. ChildAwareRunStore) creates child stores on demand.
  */
 final readonly class AgentChildRunStoreFactory
 {

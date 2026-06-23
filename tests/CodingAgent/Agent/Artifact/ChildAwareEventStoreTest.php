@@ -7,14 +7,14 @@ namespace Ineersa\CodingAgent\Tests\Agent\Artifact;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
-use Ineersa\CodingAgent\Agent\Artifact\EventStoreRouter;
+use Ineersa\CodingAgent\Agent\Artifact\ChildAwareEventStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 
-final class EventStoreRouterTest extends IsolatedKernelTestCase
+final class ChildAwareEventStoreTest extends IsolatedKernelTestCase
 {
     public function testAppendHandlesParentEvent(): void
     {
-        $router = self::getContainer()->get(EventStoreRouter::class);
+        $store = self::getContainer()->get(ChildAwareEventStore::class);
 
         $event = new RunEvent(
             runId: 'parent-ev-router',
@@ -25,24 +25,24 @@ final class EventStoreRouterTest extends IsolatedKernelTestCase
         );
 
         // Should not throw.
-        $router->append($event);
+        $store->append($event);
 
-        $events = $router->allFor('parent-ev-router');
+        $events = $store->allFor('parent-ev-router');
         self::assertNotEmpty($events);
         self::assertSame('parent-ev-router', $events[0]->runId);
     }
 
     public function testAllForReturnsEmptyForUnknownRunId(): void
     {
-        $router = self::getContainer()->get(EventStoreRouter::class);
+        $store = self::getContainer()->get(ChildAwareEventStore::class);
 
-        $events = $router->allFor('nonexistent-ev-id');
+        $events = $store->allFor('nonexistent-ev-id');
         self::assertSame([], $events);
     }
 
     public function testAppendManyHandlesMultipleParentEvents(): void
     {
-        $router = self::getContainer()->get(EventStoreRouter::class);
+        $store = self::getContainer()->get(ChildAwareEventStore::class);
 
         $events = [
             new RunEvent(
@@ -61,9 +61,9 @@ final class EventStoreRouterTest extends IsolatedKernelTestCase
             ),
         ];
 
-        $router->appendMany($events);
+        $store->appendMany($events);
 
-        $results = $router->allFor('parent-ev-many');
+        $results = $store->allFor('parent-ev-many');
         self::assertCount(2, $results);
     }
 }

@@ -20,7 +20,7 @@ use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
-use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunLocator;
+use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Definition\McpAgentModeEnum;
@@ -75,7 +75,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
 
         $catalog = new AgentDefinitionCatalog([$def]);
 
-        $locator = self::getContainer()->get(AgentChildRunLocator::class);
+        $directory = self::getContainer()->get(AgentChildRunDirectory::class);
         $eventStore = $this->createStub(EventStoreInterface::class);
         $metadataReader = new SubagentRunMetadataReader($eventStore);
 
@@ -92,7 +92,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             parentRunStore: $parentRunStore,
             eventStore: $eventStore,
             metadataReader: $metadataReader,
-            childRunLocator: $locator,
+            childRunDirectory: $directory,
             contextAccessor: self::getContainer()->get(\Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor::class),
             logger: self::getContainer()->get('logger'),
         );
@@ -145,7 +145,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         );
 
         $catalog = new AgentDefinitionCatalog([$def]);
-        $locator = self::getContainer()->get(AgentChildRunLocator::class);
+        $directory = self::getContainer()->get(AgentChildRunDirectory::class);
         $eventStore = $this->createStub(EventStoreInterface::class);
         $metadataReader = new SubagentRunMetadataReader($eventStore);
         $registry = self::getContainer()->get(AgentArtifactRegistry::class);
@@ -161,7 +161,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             parentRunStore: $parentRunStore,
             eventStore: $eventStore,
             metadataReader: $metadataReader,
-            childRunLocator: $locator,
+            childRunDirectory: $directory,
             contextAccessor: self::getContainer()->get(\Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor::class),
             logger: self::getContainer()->get('logger'),
         );
@@ -178,7 +178,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         self::assertSame('Tool call failed: file not found', $entries[0]->failureReason);
     }
 
-    public function testWaitingHumanBecomesNeedsClarification(): void
+    public function testWaitingHumanFinalizesAsFailedUnsupportedInteraction(): void
     {
         $waitingState = new RunState(
             runId: 'child-waiting',
@@ -204,7 +204,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         $agentRunner->expects(self::once())->method('cancel')
             ->with(
                 self::callback(fn (mixed $id): bool => \is_string($id)),
-                self::stringContains('HITL'),
+                self::stringContains('WaitingHuman'),
             );
 
         $def = new AgentDefinitionDTO(
@@ -216,7 +216,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         );
 
         $catalog = new AgentDefinitionCatalog([$def]);
-        $locator = self::getContainer()->get(AgentChildRunLocator::class);
+        $directory = self::getContainer()->get(AgentChildRunDirectory::class);
         $eventStore = $this->createStub(EventStoreInterface::class);
         $metadataReader = new SubagentRunMetadataReader($eventStore);
         $registry = self::getContainer()->get(AgentArtifactRegistry::class);
@@ -232,48 +232,40 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             parentRunStore: $parentRunStore,
             eventStore: $eventStore,
             metadataReader: $metadataReader,
-            childRunLocator: $locator,
+            childRunDirectory: $directory,
             contextAccessor: self::getContainer()->get(\Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor::class),
             logger: self::getContainer()->get('logger'),
         );
 
         $result = $service->execute('parent-3', 'asker', 'Should I delete Foo.php?');
 
-        self::assertStringContainsString('needs clarification', $result);
-        self::assertStringContainsString('delete Foo.php', $result);
+        self::assertStringContainsString('unsupported human interaction', $result);
+        self::assertStringContainsString('Artifact:', $result);
 
-        // Verify artifact finalized as NeedsClarification.
+        // Verify artifact finalized as Failed.
         $entries = $registry->list('parent-3');
         self::assertCount(1, $entries);
-        self::assertSame(AgentArtifactStatusEnum::NeedsClarification, $entries[0]->status);
+        self::assertSame(AgentArtifactStatusEnum::Failed, $entries[0]->status);
     }
 
-    public function testMaxDepthOneBlocksGrandchildLaunch(): void
+    public function testNestedSubagentLaunchBlockedWhenParentIsAgentChild(): void
     {
-        // Simulate a child agent run whose parent metadata reports
-        // depth=1 and maxDepth=1.  This should block any further
-        // nested launch.
-        $parentDepth = 1;
-
         $def = new AgentDefinitionDTO(
             name: 'nested',
             description: 'Nested',
             tools: ['read'],
             mcp: new McpPolicyDTO(mode: McpAgentModeEnum::None),
             instructions: 'Nested agent.',
-            maxDepth: 1,
         );
 
         $catalog = new AgentDefinitionCatalog([$def]);
-        $locator = self::getContainer()->get(AgentChildRunLocator::class);
+        $directory = self::getContainer()->get(AgentChildRunDirectory::class);
         $registry = self::getContainer()->get(AgentArtifactRegistry::class);
 
         $runStore = $this->createStub(RunStoreInterface::class);
         $parentRunStore = $this->createStub(RunStoreInterface::class);
-
         $agentRunner = $this->createStub(AgentRunnerInterface::class);
 
-        // EventStore returns RunStarted event with agent_depth=1.
         $eventStore = $this->createMock(EventStoreInterface::class);
         $eventStore->expects(self::once())
             ->method('allFor')
@@ -290,9 +282,8 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
                             'metadata' => [
                                 'session' => [
                                     'kind' => 'agent_child',
-                                    'agent_depth' => 1,
-                                    'agent_max_depth' => 1,
-                                    'agents_disabled' => false,
+                                    'parent_run_id' => 'grandparent',
+                                    'artifact_id' => 'agent_abc',
                                 ],
                             ],
                         ],
@@ -313,13 +304,13 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             parentRunStore: $parentRunStore,
             eventStore: $eventStore,
             metadataReader: $metadataReader,
-            childRunLocator: $locator,
+            childRunDirectory: $directory,
             contextAccessor: self::getContainer()->get(\Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor::class),
             logger: self::getContainer()->get('logger'),
         );
 
         $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('depth');
+        $this->expectExceptionMessage('Nested subagent launches are not supported');
 
         $service->execute('parent-child-run', 'nested', 'Go deeper');
     }
@@ -327,7 +318,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
     public function testMissingAgentDefinitionThrowsNonRetryable(): void
     {
         $catalog = new AgentDefinitionCatalog([]);
-        $locator = self::getContainer()->get(AgentChildRunLocator::class);
+        $directory = self::getContainer()->get(AgentChildRunDirectory::class);
         $registry = self::getContainer()->get(AgentArtifactRegistry::class);
         $eventStore = $this->createStub(EventStoreInterface::class);
 
@@ -342,7 +333,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             parentRunStore: $this->createStub(RunStoreInterface::class),
             eventStore: $eventStore,
             metadataReader: new SubagentRunMetadataReader($eventStore),
-            childRunLocator: $locator,
+            childRunDirectory: $directory,
             contextAccessor: self::getContainer()->get(\Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor::class),
             logger: self::getContainer()->get('logger'),
         );
@@ -365,7 +356,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         );
 
         $catalog = new AgentDefinitionCatalog([$def]);
-        $locator = self::getContainer()->get(AgentChildRunLocator::class);
+        $directory = self::getContainer()->get(AgentChildRunDirectory::class);
         $registry = self::getContainer()->get(AgentArtifactRegistry::class);
         $eventStore = $this->createStub(EventStoreInterface::class);
 
@@ -380,7 +371,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             parentRunStore: $this->createStub(RunStoreInterface::class),
             eventStore: $eventStore,
             metadataReader: new SubagentRunMetadataReader($eventStore),
-            childRunLocator: $locator,
+            childRunDirectory: $directory,
             contextAccessor: self::getContainer()->get(\Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor::class),
             logger: self::getContainer()->get('logger'),
         );
@@ -456,7 +447,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         );
 
         $catalog = new AgentDefinitionCatalog([$def]);
-        $locator = self::getContainer()->get(AgentChildRunLocator::class);
+        $directory = self::getContainer()->get(AgentChildRunDirectory::class);
 
         // Collecting event store that tracks appended events per runId.
         $appendedEvents = [];
@@ -498,7 +489,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             parentRunStore: $parentRunStore,
             eventStore: $eventStore,
             metadataReader: $metadataReader,
-            childRunLocator: $locator,
+            childRunDirectory: $directory,
             contextAccessor: $contextAccessor,
             logger: self::getContainer()->get('logger'),
         );
