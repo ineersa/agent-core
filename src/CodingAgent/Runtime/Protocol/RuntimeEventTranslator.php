@@ -54,6 +54,7 @@ final class RuntimeEventTranslator
             RunEventTypeEnum::LlmStepAborted->value => $this->onLlmStepAborted(...),
             // Tool execution
             RunEventTypeEnum::ToolExecutionStart->value => $this->onToolExecutionStarted(...),
+            RunEventTypeEnum::ToolExecutionUpdate->value => $this->onToolExecutionUpdate(...),
             RunEventTypeEnum::ToolExecutionEnd->value => $this->onToolExecutionEnded(...),
             // Model notification (generic, tool-scoped for now)
             RunEventTypeEnum::ModelNotification->value => $this->onModelNotification(...),
@@ -274,6 +275,28 @@ final class RuntimeEventTranslator
             payload: [
                 'tool_call_id' => (string) ($p['tool_call_id'] ?? ''),
                 'tool_name' => (string) ($p['tool_name'] ?? ''),
+                'order_index' => (int) ($p['order_index'] ?? 0),
+            ],
+        );
+    }
+
+    /**
+     * Map domain ToolExecutionUpdate → runtime tool_execution.output_delta.
+     *
+     * Used by SubagentExecutionService to push inline progress updates
+     * from child agent runs into the parent's transcript tool result block.
+     */
+    private function onToolExecutionUpdate(RunEvent $runEvent): RuntimeEvent
+    {
+        $p = $runEvent->payload;
+
+        return new RuntimeEvent(
+            type: RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
+            runId: $runEvent->runId,
+            seq: $runEvent->seq,
+            payload: [
+                'tool_call_id' => (string) ($p['tool_call_id'] ?? ''),
+                'delta' => (string) ($p['delta'] ?? ''),
                 'order_index' => (int) ($p['order_index'] ?? 0),
             ],
         );

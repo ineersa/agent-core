@@ -551,6 +551,7 @@ parameters:
       - AppConfig
       - AppMarkdown
       - AppSession
+      - AppTool
       - AgentCore
       - SymfonyYaml
       - SymfonySerializer
