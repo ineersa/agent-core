@@ -136,9 +136,14 @@ final readonly class CompactRunHandler implements RunMessageHandler
                 ],
             ]]);
 
+            // When the pre-LLM guard triggers compaction and prepare() fails
+            // structurally, the pending LLM turn must still resume on original
+            // messages — otherwise the run remains Running with no active step
+            // and the user message is never answered.
             return new HandlerResult(
                 nextState: $this->incrementState($state, $events),
                 events: $events,
+                effects: $this->continueAfterCompactionEffects($runId, $state->turnNo, $message->continueAfterCompaction),
             );
         }
 
@@ -186,9 +191,13 @@ final readonly class CompactRunHandler implements RunMessageHandler
                 ],
             ]]);
 
+            // When the pre-LLM guard triggers compaction and a before-compaction
+            // hook cancels it, the pending LLM turn must still resume on original
+            // messages — otherwise the run remains Running with no active step.
             return new HandlerResult(
                 nextState: $this->incrementState($state, $events),
                 events: $events,
+                effects: $this->continueAfterCompactionEffects($runId, $state->turnNo, $message->continueAfterCompaction),
             );
         }
 
@@ -421,6 +430,39 @@ final readonly class CompactRunHandler implements RunMessageHandler
             events: array_merge($startedEvents, $compactedEvents),
             effects: $effects,
         );
+    }
+
+    /**
+     * Return an AdvanceRun effect when continueAfterCompaction is true.
+     *
+     * Structural failure paths (prepare-not-ready, hook-cancel) must resume
+     * the pending LLM turn when the pre-LLM guard triggered the compaction.
+     * Without this, the run remains Running with no active step and the user
+     * message is never answered.
+     *
+     * Manual and after-turn hook triggers (continueAfterCompaction=false)
+     * produce an empty array — maintenance compaction doesn't need to continue.
+     *
+     * Uses the same step-id / idempotency-key pattern as the
+     * replacement-summary path.
+     *
+     * @return list<AdvanceRun>
+     */
+    private function continueAfterCompactionEffects(string $runId, int $turnNo, bool $continueAfterCompaction): array
+    {
+        if (!$continueAfterCompaction) {
+            return [];
+        }
+
+        $continueStepId = \sprintf('advance-%d', hrtime(true));
+
+        return [new AdvanceRun(
+            runId: $runId,
+            turnNo: $turnNo,
+            stepId: $continueStepId,
+            attempt: 1,
+            idempotencyKey: hash('sha256', \sprintf('%s|advance|%d|%s', $runId, $turnNo, $continueStepId)),
+        )];
     }
 
     /**

@@ -709,8 +709,157 @@ final class CompactRunHandlerTest extends TestCase
         $this->assertSame('auto', $result->effects[0]->trigger);
     }
 
+    // ── Pre-LLM guard structural failure continuation tests ──
+
     /**
-     * Thesis: prepare failure path does NOT set Compacting status.
+     * Thesis: when the pre-LLM guard triggers compaction and prepare() fails
+     * structurally, the handler must emit an AdvanceRun effect so the pending
+     * LLM turn resumes on original messages. Without this, the run remains
+     * Running with no active step and the user message is never answered.
+     */
+    public function testPrepareNotReadyWithContinueAfterCompactionEmitsAdvanceRun(): void
+    {
+        $messages = [$this->userMsg('hi'), $this->assistantMsg('hello')];
+        $state = $this->createRunState($messages);
+
+        $fakeService = $this->createFailedCompactionService('too_few_messages');
+        $fakeModelSelection = $this->createModelSelectionStub();
+
+        $appConfig = $this->createAppConfig();
+
+        $handler = new CompactRunHandler(
+            $fakeService,
+            $appConfig,
+            new EventFactory(),
+            $fakeModelSelection,
+            new CompactionHookDispatcher([]),
+        );
+
+        $result = $handler->handle(
+            new CompactRun(
+                runId: 'run-1',
+                turnNo: 5,
+                stepId: 'step-1',
+                attempt: 1,
+                idempotencyKey: 'key-1',
+                trigger: 'auto',
+                continueAfterCompaction: true,
+            ),
+            $state,
+        );
+
+        // Emits context_compaction_failed.
+        $this->assertNotNull($result->nextState);
+        $this->assertCount(1, $result->events);
+        $this->assertSame(RunEventTypeEnum::ContextCompactionFailed->value, $result->events[0]->type);
+
+        $payload = $result->events[0]->payload;
+        $this->assertSame('too_few_messages', $payload['reason']);
+        $this->assertFalse($payload['messages_replaced']);
+
+        // Messages preserved.
+        $this->assertCount(\count($messages), $result->nextState->messages);
+
+        // Does NOT set activeStepId (no worker was dispatched).
+        $this->assertNull($result->nextState->activeStepId);
+
+        // Status remains Running (pre-LLM guard hasn't advanced the turn yet).
+        $this->assertSame(RunStatus::Running, $result->nextState->status);
+
+        // Effects MUST contain exactly one AdvanceRun for same run/turn.
+        $this->assertCount(1, $result->effects, 'Pre-LLM structural failure must emit AdvanceRun to resume the pending LLM turn.');
+        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\AdvanceRun::class, $result->effects[0]);
+
+        /** @var \Ineersa\AgentCore\Domain\Message\AdvanceRun $advance */
+        $advance = $result->effects[0];
+        $this->assertSame('run-1', $advance->runId());
+        $this->assertSame(5, $advance->turnNo());
+    }
+
+    /**
+     * Thesis: when the pre-LLM guard triggers compaction and a
+     * before-compaction hook cancels it, the handler must emit an
+     * AdvanceRun effect so the pending LLM turn resumes on original
+     * messages.
+     */
+    public function testHookCancelWithContinueAfterCompactionEmitsAdvanceRun(): void
+    {
+        $messages = [
+            $this->userMsg('question 1'),
+            $this->userMsg('question 2'),
+        ];
+        $state = $this->createRunState($messages);
+
+        $fakeService = $this->createReadyCompactionService(
+            [$messages[0]],
+            [$messages[1]],
+            tokenEstimateBefore: 5000,
+        );
+
+        $cancelHook = new class implements BeforeCompactionHookInterface {
+            public function beforeCompaction(CompactionHookContextDTO $context): CompactionHookResultDTO
+            {
+                return CompactionHookResultDTO::cancel('SafeGuard: session blocked.');
+            }
+        };
+
+        $handler = new CompactRunHandler(
+            $fakeService,
+            $this->createAppConfig(),
+            new EventFactory(),
+            $this->createModelSelectionStub(),
+            new CompactionHookDispatcher([$cancelHook]),
+        );
+
+        $result = $handler->handle(
+            new CompactRun(
+                runId: 'run-1',
+                turnNo: 5,
+                stepId: 'step-1',
+                attempt: 1,
+                idempotencyKey: 'key-1',
+                trigger: 'auto',
+                continueAfterCompaction: true,
+            ),
+            $state,
+        );
+
+        $this->assertNotNull($result->nextState);
+        $this->assertCount(1, $result->events);
+        $this->assertSame(RunEventTypeEnum::ContextCompactionFailed->value, $result->events[0]->type);
+
+        $payload = $result->events[0]->payload;
+        $this->assertStringContainsString('hook_cancelled:', $payload['reason']);
+        $this->assertStringContainsString('SafeGuard: session blocked.', $payload['message']);
+        $this->assertFalse($payload['messages_replaced']);
+        $this->assertTrue($payload['cancelled'] ?? false);
+
+        // No worker dispatched (hook cancelled before worker dispatch).
+        foreach ($result->effects as $effect) {
+            $this->assertNotInstanceOf(ExecuteCompactionStep::class, $effect,
+                'Hook cancel must not dispatch ExecuteCompactionStep worker.');
+        }
+
+        // activeStepId NOT set.
+        $this->assertNull($result->nextState->activeStepId);
+
+        // Messages preserved.
+        $this->assertCount(\count($messages), $result->nextState->messages);
+
+        // Status remains Running (pre-LLM guard hasn't advanced the turn yet).
+        $this->assertSame(RunStatus::Running, $result->nextState->status);
+
+        // Effects MUST contain exactly one AdvanceRun for same run/turn.
+        $this->assertCount(1, $result->effects, 'Pre-LLM hook cancel must emit AdvanceRun to resume the pending LLM turn.');
+        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\AdvanceRun::class, $result->effects[0]);
+
+        /** @var \Ineersa\AgentCore\Domain\Message\AdvanceRun $advance */
+        $advance = $result->effects[0];
+        $this->assertSame('run-1', $advance->runId());
+        $this->assertSame(5, $advance->turnNo());
+    }
+
+    // ── Helpers ──
 
     /**
      * @param list<AgentMessage> $messages
