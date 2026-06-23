@@ -8,9 +8,8 @@ namespace Ineersa\CodingAgent\Agent\Artifact;
  * Lifecycle status for a parent-scoped agent artifact/child run.
  *
  * The status progresses: pending → running → completed|failed|cancelled.
- * needs_clarification is a terminal state for child runs that cannot
- * continue without human input — the parent session must decide what to
- * do with the blocked artifact.
+ * needs_clarification is reserved for future interactive child modes;
+ * AGENT-05 v1 foreground subagents finalize WaitingHuman as failed instead.
  */
 enum AgentArtifactStatusEnum: string
 {
@@ -29,6 +28,10 @@ enum AgentArtifactStatusEnum: string
     /** Child run cancelled by the parent. */
     case Cancelled = 'cancelled';
 
-    /** Child run stopped because it lacks context or needs human input. */
+    /**
+     * Reserved for future interactive child modes (not used by v1 foreground subagents).
+     *
+     * WaitingHuman in non-interactive child runs is finalized as Failed.
+     */
     case NeedsClarification = 'needs_clarification';
 }

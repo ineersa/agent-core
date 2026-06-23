@@ -525,8 +525,23 @@ services:
       $inner: '@Ineersa\CodingAgent\Tool\CodingAgentToolSetResolver'
       $mcpToolRegistrar: '@Ineersa\CodingAgent\Mcp\Tool\McpToolRegistrar'
       $logger: '@logger'
+
+  # Subagent tool-set decorator: wraps the MCP-registering resolver and
+  # intersects the active toolset with per-run child agent policy read
+  # from RunStarted metadata.  Non-child runs pass through unchanged.
+  Ineersa\CodingAgent\Agent\Execution\SubagentToolSetResolver:
+    arguments:
+      $inner: '@Ineersa\CodingAgent\Mcp\Tool\McpCatalogRegisteringToolSetResolver'
+      $metadataReader: '@Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader'
+      $logger: '@logger'
+
+  # Shared reader for child RunStarted metadata payloads.
+  Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader:
+    arguments:
+      $eventStore: '@Ineersa\AgentCore\Contract\EventStoreInterface'
+
   Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface:
-    alias: Ineersa\CodingAgent\Mcp\Tool\McpCatalogRegisteringToolSetResolver
+    alias: Ineersa\CodingAgent\Agent\Execution\SubagentToolSetResolver
 
   # RegistryBackedToolbox — reads ToolRegistry definitions and exposes them through
   # the Symfony AI ToolboxInterface so the existing Execution pipeline can invoke
@@ -747,3 +762,29 @@ services:
   # MCP-backed tools with TransportNamesStamp(['mcp']) before send_message
   # routes them.  Wired in messenger.yaml as bus-level middleware.
   Ineersa\CodingAgent\Mcp\Messenger\McpExecuteToolCallRoutingMiddleware: ~
+
+  # ─── AGENT-05 Subagent execution service ──────────────────────────
+
+  # SubagentExecutionService needs two RunStoreInterface bindings:
+  # $runStore auto-wires to the child-aware decorator (child runs), $parentRunStore to
+  # SessionRunStore (parent run state for prompt/metadata extraction).
+  # $eventStore auto-wires to the ChildAwareEventStore for progress events.
+  Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService:
+    arguments:
+      $parentRunStore: '@Ineersa\CodingAgent\Session\SessionRunStore'
+
+  # ─── AGENT-05 Subagent tool storage routing ─────────────────────────
+
+  # ChildAwareRunStore — delegates RunStoreInterface between parent-scoped
+  # SessionRunStore (parent runs) and AgentChildRunStore (child runs).
+  # Explicit wiring needed because $parentStore must point to the concrete
+  # SessionRunStore, not itself (would be a cycle).
+  Ineersa\CodingAgent\Agent\Artifact\ChildAwareRunStore:
+    arguments:
+      $parentStore: '@Ineersa\CodingAgent\Session\SessionRunStore'
+
+  # ChildAwareEventStore — delegates EventStoreInterface between parent-scoped
+  # SessionRunEventStore (parent runs) and AgentChildRunEventStore (child runs).
+  Ineersa\CodingAgent\Agent\Artifact\ChildAwareEventStore:
+    arguments:
+      $parentStore: '@Ineersa\CodingAgent\Session\SessionRunEventStore'
