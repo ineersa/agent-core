@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Skills;
 
-use Ineersa\CodingAgent\SystemPrompt\LlmProxyDeterministicPromptMode;
-
 /**
  * Renders skills context into XML-ish blocks for the user-context message.
  *
@@ -15,11 +13,6 @@ use Ineersa\CodingAgent\SystemPrompt\LlmProxyDeterministicPromptMode;
  */
 final readonly class SkillContextRenderer
 {
-    public function __construct(
-        private LlmProxyDeterministicPromptMode $llmProxyDeterministicPromptMode,
-    ) {
-    }
-
     /**
      * Render the <skills_instructions> + <available_skills> block.
      *
@@ -43,7 +36,7 @@ final readonly class SkillContextRenderer
             $parts[] = '  <skill>';
             $parts[] = '    <name>'.$this->escapeXml($skill->name).'</name>';
             $parts[] = '    <description>'.$this->escapeXml($skill->description).'</description>';
-            $parts[] = '    <location>'.$this->escapeXml($this->locationForPrompt($skill)).'</location>';
+            $parts[] = '    <location>'.$this->escapeXml($skill->skillFile).'</location>';
             $parts[] = '  </skill>';
         }
 
@@ -59,35 +52,16 @@ final readonly class SkillContextRenderer
     public function renderPreloadedSkill(SkillDefinition $skill, string $body): string
     {
         $escapedName = $this->escapeXml($skill->name);
-        $escapedLocation = $this->escapeXml($this->locationForPrompt($skill));
+        $escapedLocation = $this->escapeXml($skill->skillFile);
 
         $parts = [];
         $parts[] = \sprintf('<skill name="%s" location="%s">', $escapedName, $escapedLocation);
-        $parts[] = 'References are relative to '.$this->escapeXml($this->skillDirectoryForPrompt($skill)).'.';
+        $parts[] = 'References are relative to '.$this->escapeXml($skill->skillDirectory).'.';
         $parts[] = '';
         $parts[] = $body;
         $parts[] = '</skill>';
 
         return implode("\n", $parts);
-    }
-
-
-    private function locationForPrompt(SkillDefinition $skill): string
-    {
-        if (!$this->llmProxyDeterministicPromptMode->enabled()) {
-            return $skill->skillFile;
-        }
-
-        return $this->llmProxyDeterministicPromptMode->fixedCwd().'/.agents/skills/'.$skill->name.'/SKILL.md';
-    }
-
-    private function skillDirectoryForPrompt(SkillDefinition $skill): string
-    {
-        if (!$this->llmProxyDeterministicPromptMode->enabled()) {
-            return $skill->skillDirectory;
-        }
-
-        return $this->llmProxyDeterministicPromptMode->fixedCwd().'/.agents/skills/'.$skill->name;
     }
 
     private function escapeXml(string $value): string

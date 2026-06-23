@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Skills;
 
 use Ineersa\CodingAgent\Skills\SkillContextRenderer;
-use Ineersa\CodingAgent\Tests\SystemPrompt\LlmProxyDeterministicPromptTestSupport;
 use Ineersa\CodingAgent\Skills\SkillDefinition;
 use PHPUnit\Framework\TestCase;
 
@@ -20,7 +19,7 @@ final class SkillContextRendererTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->renderer = new SkillContextRenderer(LlmProxyDeterministicPromptTestSupport::disabledMode());
+        $this->renderer = new SkillContextRenderer();
     }
 
     /* ───────── renderAvailableSkills ───────── */

@@ -9,7 +9,6 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Skills\SkillContextRenderer;
-use Ineersa\CodingAgent\Tests\SystemPrompt\LlmProxyDeterministicPromptTestSupport;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\Skills\SkillsConfig;
@@ -176,7 +175,7 @@ final class SkillsContextBuilderTest extends TestCase
         return new SkillsContextBuilder(
             discovery: $discovery,
             config: $skillsConfig,
-            renderer: new SkillContextRenderer(LlmProxyDeterministicPromptTestSupport::disabledMode()),
+            renderer: new SkillContextRenderer(),
             extractor: new MarkdownFrontmatterExtractor(),
         );
     }

@@ -36,9 +36,6 @@ use Symfony\AI\Platform\Message\TemplateRenderer\StringTemplateRenderer;
  *   {date} — current date (Y-m-d)
  *   {cwd} — current working directory
  *
- * When {@see LlmProxyDeterministicPromptMode} is active, {date} is empty,
- * append templates are omitted, and {cwd} stays the real runtime cwd for tools.
- *
  * Uses SettingsPathResolver for home-directory resolution (shared with
  * other Hatfield config loading) instead of its own environment sniffing.
  *
@@ -55,7 +52,6 @@ final readonly class SystemPromptBuilder
         private StringTemplateRenderer $templateRenderer,
         private AppConfig $appConfig,
         string $projectDir,
-        private LlmProxyDeterministicPromptMode $llmProxyDeterministicPromptMode,
         private ?PromptContributorProviderInterface $promptContributorProvider = null,
     ) {
         $this->projectDir = rtrim($projectDir, '/');
@@ -146,12 +142,6 @@ final readonly class SystemPromptBuilder
      */
     private function buildAppendsContent(string $cwd): string
     {
-        // Live-test / llama-proxy deterministic mode: exclude local APPEND_SYSTEM.md
-        // and extension prompt contributors so identical smoke runs share a cache key.
-        if ($this->llmProxyDeterministicPromptMode->enabled()) {
-            return '';
-        }
-
         $parts = [];
 
         // Home append: ~/.hatfield/APPEND_SYSTEM.md
@@ -204,17 +194,11 @@ final readonly class SystemPromptBuilder
      */
     private function buildVariables(string $cwd, string $appendsContent): array
     {
-        // Proxy deterministic mode: omit volatile {date} and keep real {cwd}.
-        // Tools resolve paths against AppConfig->cwd; a fake cwd breaks edit/write tests.
-        $date = $this->llmProxyDeterministicPromptMode->enabled()
-            ? ''
-            : date('Y-m-d');
-
         return [
             'available_tools_list' => $this->buildToolsList(),
             'registered_guidelines' => $this->buildGuidelines(),
             'appends_part' => $appendsContent,
-            'date' => $date,
+            'date' => date('Y-m-d'),
             'cwd' => $cwd,
         ];
     }

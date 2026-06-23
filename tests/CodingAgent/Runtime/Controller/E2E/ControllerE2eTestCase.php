@@ -135,7 +135,6 @@ abstract class ControllerE2eTestCase extends TestCase
             'HATFIELD_MCP_TRANSPORT_DSN' => "doctrine://default?queue_name=mcp_{$this->sessionId}",
             'HATFIELD_SESSION_ID' => $this->sessionId,
             'LLAMA_CPP_SMOKE_TEST' => '1',
-            'HATFIELD_LLM_PROXY_DETERMINISTIC' => '1',
         ];
 
         $pipes = [];

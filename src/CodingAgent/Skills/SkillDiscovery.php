@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Skills;
 
 use Ineersa\CodingAgent\Config\AppConfig;
-use Ineersa\CodingAgent\SystemPrompt\LlmProxyDeterministicPromptMode;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Psr\Log\LoggerInterface;
@@ -47,15 +46,11 @@ final class SkillDiscovery
     /** @var list<array{winner: string, ignored: string, name: string}> */
     private array $collisions = [];
 
-    private string $projectDir;
-
     public function __construct(
         private readonly SkillsConfig $config,
         private readonly SettingsPathResolver $pathResolver,
         private readonly AppConfig $appConfig,
-        private readonly LlmProxyDeterministicPromptMode $llmProxyDeterministicPromptMode,
         private readonly MarkdownFrontmatterExtractor $extractor,
-        string $projectDir,
         private ?LoggerInterface $logger = null,
     ) {
     }
@@ -72,12 +67,6 @@ final class SkillDiscovery
     public function discover(): array
     {
         if (null !== $this->cachedResult) {
-            return $this->cachedResult;
-        }
-
-        if ($this->llmProxyDeterministicPromptMode->enabled()) {
-            $this->cachedResult = $this->discoverDeterministicFixture();
-
             return $this->cachedResult;
         }
 
@@ -145,36 +134,6 @@ final class SkillDiscovery
         }
 
         $this->cachedResult = $skills;
-
-        return $skills;
-    }
-
-
-    /**
-     * @return list<SkillDefinition>
-     */
-    private function discoverDeterministicFixture(): array
-    {
-        $root = $this->projectDir;
-        if ('' === $root) {
-            return [];
-        }
-
-        $skills = [];
-        foreach (self::AUTO_DISCOVERY_PATTERNS as $pattern) {
-            $searchPath = \sprintf($pattern, $root);
-            if (!is_dir($searchPath)) {
-                continue;
-            }
-            foreach ($this->scanForSkillRoots($searchPath, 0) as $skillDir) {
-                $definition = $this->buildDefinition($skillDir);
-                if (null !== $definition) {
-                    $skills[] = $definition;
-                }
-            }
-        }
-
-        usort($skills, static fn (SkillDefinition $a, SkillDefinition $b): int => $a->name <=> $b->name);
 
         return $skills;
     }

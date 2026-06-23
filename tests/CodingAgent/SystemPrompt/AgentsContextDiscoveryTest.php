@@ -9,7 +9,6 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextDiscovery;
-use Ineersa\CodingAgent\Tests\SystemPrompt\LlmProxyDeterministicPromptTestSupport;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -304,8 +303,6 @@ final class AgentsContextDiscoveryTest extends TestCase
                 logging: new LoggingConfig(),
                 cwd: $cwd ?? $this->tmpDir,
             ),
-            llmProxyDeterministicPromptMode: LlmProxyDeterministicPromptTestSupport::disabledMode(),
-            projectDir: $projectDir,
         );
     }
 

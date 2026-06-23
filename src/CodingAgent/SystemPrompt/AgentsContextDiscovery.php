@@ -39,8 +39,6 @@ final readonly class AgentsContextDiscovery
     public function __construct(
         private SettingsPathResolver $pathResolver,
         private AppConfig $appConfig,
-        private LlmProxyDeterministicPromptMode $llmProxyDeterministicPromptMode,
-        private string $projectDir,
         private ?LoggerInterface $logger = null,
     ) {
     }
@@ -59,10 +57,6 @@ final readonly class AgentsContextDiscovery
     public function discover(): array
     {
         $cwd = $this->resolveCwd();
-
-        if ($this->llmProxyDeterministicPromptMode->enabled()) {
-            return $this->discoverDeterministicFixture();
-        }
 
         $results = [];
         /** @var array<string, bool> $seenPaths */
@@ -113,57 +107,6 @@ final readonly class AgentsContextDiscovery
         }
 
         return $results;
-    }
-
-
-    /**
-     * Stable AGENTS.md context for llama-proxy cache (repo-root AGENTS.md only).
-     *
-     * @return list<array{path: string, content: string}>
-     */
-    private function discoverDeterministicFixture(): array
-    {
-        $root = rtrim($this->projectDir, '/');
-        if ('' === $root) {
-            return [];
-        }
-
-        foreach (self::FILENAMES as $filename) {
-            $rootFile = $root.'/'.$filename;
-            if (is_file($rootFile)) {
-                $content = $this->readFile($rootFile);
-                if (null !== $content) {
-                    return [
-                        [
-                            'path' => $this->llmProxyDeterministicPromptMode->fixedCwd().'/'.$filename,
-                            'content' => $content,
-                        ],
-                    ];
-                }
-            }
-        }
-
-        foreach (self::SUBDIRECTORIES as $subdir) {
-            foreach (self::FILENAMES as $filename) {
-                $path = $root.'/'.$subdir.'/'.$filename;
-                if (!is_file($path)) {
-                    continue;
-                }
-                $content = $this->readFile($path);
-                if (null === $content) {
-                    return [];
-                }
-
-                return [
-                    [
-                        'path' => $this->llmProxyDeterministicPromptMode->fixedCwd().'/'.$subdir.'/'.$filename,
-                        'content' => $content,
-                    ],
-                ];
-            }
-        }
-
-        return [];
     }
 
     /**
