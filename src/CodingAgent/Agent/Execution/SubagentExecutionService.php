@@ -207,7 +207,7 @@ final class SubagentExecutionService
 
             $status = $state->status;
 
-            if (RunStatus::Running === $status || RunStatus::Queued === $status) {
+            if (RunStatus::Running === $status || RunStatus::Queued === $status || RunStatus::Compacting === $status) {
                 // Push inline progress update to parent transcript —
                 // lightweight status line based on RunState, not full event scan.
                 $this->emitProgressUpdate(
