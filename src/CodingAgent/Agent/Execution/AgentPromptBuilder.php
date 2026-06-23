@@ -27,6 +27,15 @@ final readonly class AgentPromptBuilder
     /**
      * Build the child system prompt and messages.
      *
+     * The system prompt text is included both in the return value's
+     * systemPrompt key (for the RunStarted event payload / audit trail)
+     * and as the first message in the messages list (role=system) so it
+     * is stored in RunState::$messages and reaches the LLM via
+     * LlmPlatformAdapter's resolveContextMessages path.
+     *
+     * This mirrors the pattern used by InProcessAgentSessionClient for
+     * parent runs.
+     *
      * @param AgentDefinitionDTO $definition         resolved agent definition
      * @param string             $task               the task text
      * @param string             $artifactId         artifact identifier for context
@@ -61,7 +70,7 @@ final readonly class AgentPromptBuilder
             task: $task,
             artifactId: $artifactId,
             allowedTools: $allowedTools,
-            agentsMd: $agentsMd,
+            systemPrompt: $systemPrompt,
         );
 
         return [
@@ -104,7 +113,11 @@ final readonly class AgentPromptBuilder
     }
 
     /**
-     * Build the initial child messages (user-context + user).
+     * Build the initial child messages (system + user-context + user).
+     *
+     * The system prompt is the first message (role=system) so it is
+     * stored in RunState::$messages and reaches the LLM.  This mirrors
+     * InProcessAgentSessionClient's pattern for parent runs.
      *
      * @param list<string> $allowedTools
      *
@@ -115,9 +128,20 @@ final readonly class AgentPromptBuilder
         string $task,
         string $artifactId,
         array $allowedTools,
-        string $agentsMd,
+        string $systemPrompt,
     ): array {
         $messages = [];
+
+        // System prompt as the first message (LLM-visible).
+        if ('' !== $systemPrompt) {
+            $messages[] = new AgentMessage(
+                role: 'system',
+                content: [[
+                    'type' => 'text',
+                    'text' => $systemPrompt,
+                ]],
+            );
+        }
 
         // Non-interactive contract as user-context.
         $messages[] = new AgentMessage(

@@ -4,13 +4,20 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution;
 
+use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Domain\Run\StartRunInput;
+use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunLocator;
@@ -49,7 +56,14 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         $parentRunStore = $this->createStub(RunStoreInterface::class);
 
         $agentRunner = $this->createMock(AgentRunnerInterface::class);
-        $agentRunner->expects(self::once())->method('start');
+        $capturedInput = null;
+        $agentRunner->expects(self::once())
+            ->method('start')
+            ->willReturnCallback(function (StartRunInput $input) use (&$capturedInput): string {
+                $capturedInput = $input;
+
+                return 'child-uuid';
+            });
 
         $def = new AgentDefinitionDTO(
             name: 'test-agent',
@@ -86,6 +100,13 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         $result = $service->execute('parent-1', 'test-agent', 'Inspect Foo.php');
 
         self::assertStringContainsString('Handoff:', $result);
+
+        // Verify system prompt was included as the first LLM-visible message.
+        self::assertNotNull($capturedInput, 'AgentRunner::start() should have been called.');
+        self::assertNotEmpty($capturedInput->messages, 'Child messages should not be empty.');
+        self::assertSame('system', $capturedInput->messages[0]->role, 'First message should be the system prompt.');
+        $systemText = $capturedInput->messages[0]->content[0]['text'] ?? '';
+        self::assertStringContainsString('Test instructions.', $systemText);
 
         // Verify artifact was finalized — use list() not get() with
         // the result text as a faux artifactId.
@@ -368,5 +389,148 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         $this->expectExceptionMessage('does not allow foreground');
 
         $service->execute('parent-5', 'background-only', 'Task');
+    }
+
+    /**
+     * Prove that parent RunState.lastSeq is advanced after progress events
+     * via compareAndSwap, preventing sequence collisions with later
+     * ToolCallResultHandler-generated events.
+     */
+    public function testProgressUpdatesAdvanceParentSequence(): void
+    {
+        // Use real InMemoryRunStore so compareAndSwap works.
+        $parentRunStore = new InMemoryRunStore();
+
+        // Seed parent state so resolveNextProgressSeq has a starting point.
+        $parentState = new RunState(
+            runId: 'parent-seq',
+            status: RunStatus::Running,
+            version: 3,
+            lastSeq: 5,
+            messages: [],
+        );
+        $parentRunStore->compareAndSwap($parentState, 0);
+
+        // Child polls: first Running, then Completed.
+        $getCount = 0;
+        $runningState = new RunState(
+            runId: 'child-seq',
+            status: RunStatus::Running,
+            version: 1,
+            turnNo: 2,
+            messages: [],
+        );
+        $completedState = new RunState(
+            runId: 'child-seq',
+            status: RunStatus::Completed,
+            version: 2,
+            messages: [
+                new AgentMessage(
+                    role: 'assistant',
+                    content: [['type' => 'text', 'text' => 'done']],
+                ),
+            ],
+        );
+
+        $runStore = $this->createStub(RunStoreInterface::class);
+        $runStore->method('get')->willReturnCallback(
+            function () use (&$getCount, $runningState, $completedState): ?RunState {
+                $state = 0 === $getCount ? $runningState : $completedState;
+                ++$getCount;
+
+                return $state;
+            },
+        );
+
+        $agentRunner = $this->createMock(AgentRunnerInterface::class);
+        $agentRunner->expects(self::once())
+            ->method('start')
+            ->willReturn('child-seq');
+
+        $def = new AgentDefinitionDTO(
+            name: 'seq-agent',
+            description: 'Seq agent',
+            tools: ['read'],
+            mcp: new McpPolicyDTO(mode: McpAgentModeEnum::None),
+            instructions: 'Seq test.',
+        );
+
+        $catalog = new AgentDefinitionCatalog([$def]);
+        $locator = self::getContainer()->get(AgentChildRunLocator::class);
+
+        // Collecting event store that tracks appended events per runId.
+        $appendedEvents = [];
+        $eventStore = $this->createStub(EventStoreInterface::class);
+        $eventStore->method('append')
+            ->willReturnCallback(function (RunEvent $event) use (&$appendedEvents): void {
+                $appendedEvents[] = $event;
+            });
+        $eventStore->method('allFor')
+            ->willReturnCallback(function (string $runId) use (&$appendedEvents): array {
+                return array_values(array_filter(
+                    $appendedEvents,
+                    fn(RunEvent $e): bool => $e->runId === $runId,
+                ));
+            });
+
+        $metadataReader = new SubagentRunMetadataReader($eventStore);
+        $registry = self::getContainer()->get(AgentArtifactRegistry::class);
+
+        // Push a ToolContext so emitProgressUpdate has an active context.
+        $contextAccessor = new StackToolExecutionContextAccessor();
+        $toolContext = new ToolContext(
+            runId: 'parent-seq',
+            turnNo: 0,
+            toolCallId: 'tc-seq',
+            toolName: 'subagent',
+            cancellationToken: new NullCancellationToken(),
+            timeoutSeconds: 120,
+        );
+
+        $service = new SubagentExecutionService(
+            catalog: $catalog,
+            depthGuard: new AgentDepthGuard(),
+            policyResolver: new AgentToolPolicyResolver(),
+            promptBuilder: new AgentPromptBuilder(),
+            artifactRegistry: $registry,
+            agentRunner: $agentRunner,
+            runStore: $runStore,
+            parentRunStore: $parentRunStore,
+            eventStore: $eventStore,
+            metadataReader: $metadataReader,
+            childRunLocator: $locator,
+            contextAccessor: $contextAccessor,
+            logger: self::getContainer()->get('logger'),
+        );
+
+        $result = $contextAccessor->with($toolContext, function () use ($service): string {
+            return $service->execute('parent-seq', 'seq-agent', 'Do work');
+        });
+
+        self::assertStringContainsString('done', $result);
+
+        // Parent lastSeq should have advanced past the initial seed.
+        $finalParentState = $parentRunStore->get('parent-seq');
+        self::assertNotNull($finalParentState);
+        self::assertGreaterThan(
+            5,
+            $finalParentState->lastSeq,
+            'Parent lastSeq should advance past initial seed (5) after progress events.',
+        );
+
+        // At least one progress event should have been emitted.
+        $progressEvents = array_filter(
+            $appendedEvents,
+            fn(RunEvent $e): bool => RunEventTypeEnum::ToolExecutionUpdate->value === $e->type,
+        );
+        self::assertNotEmpty($progressEvents, 'At least one progress event should be emitted.');
+
+        // Progress events should have unique sequences.
+        $progressSeqs = array_map(fn(RunEvent $e): int => $e->seq, $progressEvents);
+        self::assertSame(
+            count($progressEvents),
+            count(array_unique($progressSeqs)),
+            'Progress events should have unique sequence numbers.',
+        );
     }
 }
