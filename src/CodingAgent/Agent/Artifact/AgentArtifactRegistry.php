@@ -253,6 +253,26 @@ final class AgentArtifactRegistry
         }
     }
 
+    // ── Public file writers ─────────────────────────────────────────────
+
+    /**
+     * Write (or overwrite) the handoff.md file for an existing artifact.
+     *
+     * This is a public interface for {@see SubagentExecutionService} to
+     * finalize child agent handoffs after run completion.
+     *
+     * Uses atomic temp-file + rename to avoid partial writes.
+     *
+     * @throws \InvalidArgumentException when IDs contain path separators
+     */
+    public function writeHandoff(string $parentRunId, string $artifactId, string $content): void
+    {
+        $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
+        $this->pathResolver->validatePathComponent($artifactId, 'artifactId');
+
+        $this->writeHandoffInternal($parentRunId, $artifactId, $content);
+    }
+
     // ── Internal read/write methods ─────────────────────────────────────
 
     /**
@@ -381,7 +401,7 @@ final class AgentArtifactRegistry
      * reference is always valid.  Uses atomic temp-file + rename to
      * avoid partial writes.
      */
-    private function writeHandoff(string $parentRunId, string $artifactId, string $content): void
+    private function writeHandoffInternal(string $parentRunId, string $artifactId, string $content): void
     {
         $paths = AgentArtifactPathsDTO::forArtifactId($artifactId);
         $path = $this->pathResolver->absolutePath($parentRunId, $paths->handoffPath);
