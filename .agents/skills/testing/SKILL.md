@@ -14,7 +14,7 @@ castor check                # Full QA gate: deptrac, unit/integration (ParaTest)
 castor test                 # unit/integration tests (ParaTest parallel by default); excludes tui-e2e-replay, llm-real, recording, and controller-replay groups
 castor test --filter=X      # filter tests by name
 castor test --suite=X       # target a specific phpunit.xml test suite (ParaTest parallel)
-castor test:tui [--filter=X]    # TUI E2E journey tests (replay-backed, no live LLM)
+castor test:tui [--filter=X]    # TUI E2E journey tests (replay-backed, no live LLM); full group uses ParaTest (default 2 workers, HATFIELD_TUI_PARATEST_PROCESSES=2–4); --filter stays sequential PHPUnit
 castor test:tui-update [--filter=X]  # update TUI snapshot baselines (filter optional)
 castor test:llm-real [--filter=X]   # real llama.cpp smoke (filter optional)
 castor test:controller [--filter=X] # controller E2E smoke test (live LLM, opt-in)

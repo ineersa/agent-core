@@ -103,6 +103,7 @@ Key commands:
 - `castor test --filter=XxxTest` — filter to specific tests
 - `castor test --suite=coding-agent` — targeted ParaTest run on a suite
 - `castor test:tui` — TUI E2E journey tests (`#[Group('tui-e2e-replay')]`, replay-backed, no live LLM)
+- Full `castor test:tui` uses ParaTest with `tests/paratest-bootstrap.php` (per-worker SQLite + cache; default **2** processes via `HATFIELD_TUI_PARATEST_PROCESSES`, max 4). Filtered runs use sequential PHPUnit. Tmux session names include worker PID (`hatfield-e2e-{pid}-{n}`) so parallel workers do not collide.
 - `castor test:llm-real` — real-LLM smoke (`#[Group('llm-real')]`); same PHPUnit/ParaTest command as the `test:llm-real` lane in `castor check`.
 - `castor test:controller-replay` — controller replay E2E (default, no live LLM)
 - `castor test:controller` — controller smoke test (live LLM, opt-in)

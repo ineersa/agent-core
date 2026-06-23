@@ -116,11 +116,7 @@ function check(): void
         ],
         'test:tui' => [
             'cmd' => timeout_check_command(
-                'APP_ENV=test '.$phpBin.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
-                .' && APP_ENV=test '.$phpBin.' vendor/bin/phpunit'
-                .' --group tui-e2e-replay'
-                .' '.$strictFlags.$llmFlags
-                .(is_llm_mode() ? ' --log-junit='.report_path('phpunit-tui.junit.xml') : ''),
+                build_test_tui_phpunit_command(null),
                 120,
             ),
         ],
