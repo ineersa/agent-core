@@ -197,10 +197,17 @@ quality: ok (%.1fs)
  *
  * Matches leaked PHAR or source `bin/console` messenger:consume /
  * agent --controller children, stale vendor/bin/phpunit processes, and
- * orphaned castor check runs rooted in the current checkout.  Safe:
- * scoped to current project root and current Unix user only.  Does not
- * touch sibling worktrees, root-owned workers, the llama.cpp server, or
- * the current castor process.  Silent when no stale workers exist.
+ * orphaned castor check runs rooted in the current checkout.
+ *
+ * Safety boundaries (Linux `/proc` fail-safe):
+ * - Only PIDs owned by `posix_geteuid()` are considered; root-owned or
+ *   other-user workers are never signaled (Castor is expected to run as the
+ *   normal non-root developer user, not as root).
+ * - Checkout membership uses argv containing `$root` OR `/proc/<pid>/cwd`
+ *   under `$root` (readlink may fail for dead/zombie PIDs — then the PID is
+ *   skipped rather than killed).
+ * - Does not touch sibling worktrees, the llama.cpp server, or the current
+ *   castor process.  Silent when no stale workers exist.
  */
 function _stale_check_worker_owned_by_current_user(int $pid): bool
 {
@@ -216,8 +223,9 @@ function _stale_check_worker_owned_by_current_user(int $pid): bool
 }
 
 /**
- * True when the process cwd is under $root (replay E2E workers often omit
- * $root from argv but run with cwd = isolated var/tmp/test-* under $root).
+ * True when the process cwd is under $root.  Used when argv does not embed
+ * the checkout path (e.g. replay E2E cwd = isolated `var/tmp/test-*`, or
+ * relative `vendor/bin/phpunit` / `castor check` launched from a subdir).
  */
 function _stale_check_worker_cwd_under_root(int $pid, string $root): bool
 {
@@ -292,9 +300,11 @@ function cleanup_stale_check_workers(string $root): void
         }
 
         // ── Leaked messenger consumers / agent controllers (source) ──
-        // Controller replay / TUI E2E spawn `php bin/console messenger:consume`
-        // and `php bin/console agent --controller` under APP_ENV=test; argv may
-        // use absolute script paths without repeating $root in every arg.
+        // Replay E2E uses source `{$root}/bin/console` (not PHAR).  Pre-change
+        // cleanup only matched PHAR-shaped argv, so leaked source workers could
+        // survive across parallel `castor check` lanes.  Match absolute console
+        // path plus messenger/controller subcommands (not bare `agent` — checkout
+        // paths may contain "agent-core").
         if (preg_match("/{$consolePat}/", $cmdline)
             && (str_contains($cmdline, 'messenger:consume')
                 || str_contains($cmdline, 'agent --controller'))) {
@@ -302,7 +312,7 @@ function cleanup_stale_check_workers(string $root): void
             continue;
         }
 
-        // ── Stale vendor/bin/phpunit with this checkout's root ──
+        // ── Stale vendor/bin/phpunit in this checkout (argv or cwd) ──
         if (str_contains($cmdline, 'vendor/bin/phpunit')) {
             $pidsToKill[] = $pid;
             continue;

@@ -424,7 +424,7 @@ function _reap_session(?int $sid): void
  *    create their own session) are NOT supported once reparented to
  *    init/systemd after the parent exits — see the NOTE below.
  */
-#[AsTask(name: 'test:timeout-hardstop', description: 'Verify Castor hard timeout + normal-exit session cleanup (4 smoke proofs) without hangs')]
+#[AsTask(name: 'test:timeout-hardstop', description: 'Verify Castor hard timeout + normal-exit session cleanup (6 smoke proofs: A–E incl. PHAR + source startup cleanup) without hangs')]
 function test_timeout_hardstop(string $cmdOverride = ''): void
 {
     echo "=== Castor timeout hard-stop + normal-exit cleanup smoke proof ===\n\n";
@@ -796,7 +796,7 @@ function test_timeout_hardstop(string $cmdOverride = ''): void
     }
 
     if ($ok) {
-        echo "\n✅ All timeout + normal-exit + startup-cleanup + session + separate-PGID + PHPUnit-leak assertions passed.\n";
+        echo "\n✅ All timeout + normal-exit + PHAR/source startup-cleanup (C/C2) + session + separate-PGID + PHPUnit-leak assertions passed.\n";
     } else {
         echo "\n❌ Some assertions FAILED.\n";
         exit(1);
