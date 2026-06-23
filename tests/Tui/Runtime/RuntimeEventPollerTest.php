@@ -461,4 +461,76 @@ final class RuntimeEventPollerTest extends TestCase
 
         self::assertFalse($called);
     }
+
+    /**
+     * When activity is Cancelling and a queued follow-up exists,
+     * CompactionCompleted must NOT dispatch the follow-up — it
+     * belongs to the RunCancelled branch after cancellation
+     * terminalizes.
+     */
+    public function testQueuedFollowUpNotDispatchedOnCompactionCompletedWhileCancelling(): void
+    {
+        $this->state->queuedFollowUp = 'Continue after cancel';
+        $this->state->activity = RunActivityStateEnum::Cancelling;
+
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::CompactionCompleted->value,
+            runId: 'test-run',
+            seq: 10,
+        );
+
+        $this->client->expects(self::once())
+            ->method('events')
+            ->with('test-run')
+            ->willReturn([$event]);
+
+        // Must NOT dispatch — send() should not be called
+        $this->client->expects(self::never())
+            ->method('send');
+
+        $this->projector->method('accept');
+        $this->projector->method('blocks')->willReturn([]);
+
+        $this->poller->poll($this->state, $this->client);
+
+        // Queued text must survive for the RunCancelled branch
+        self::assertNotNull($this->state->queuedFollowUp);
+        self::assertSame('Continue after cancel', $this->state->queuedFollowUp);
+        // Activity stays Cancelling (not overwritten to Starting)
+        self::assertSame(RunActivityStateEnum::Cancelling, $this->state->activity);
+    }
+
+    /**
+     * When activity is Cancelling and a queued follow-up exists,
+     * CompactionFailed must NOT dispatch the follow-up — same
+     * guard as CompactionCompleted.
+     */
+    public function testQueuedFollowUpNotDispatchedOnCompactionFailedWhileCancelling(): void
+    {
+        $this->state->queuedFollowUp = 'Resume after failed compact';
+        $this->state->activity = RunActivityStateEnum::Cancelling;
+
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::CompactionFailed->value,
+            runId: 'test-run',
+            seq: 11,
+        );
+
+        $this->client->expects(self::once())
+            ->method('events')
+            ->with('test-run')
+            ->willReturn([$event]);
+
+        $this->client->expects(self::never())
+            ->method('send');
+
+        $this->projector->method('accept');
+        $this->projector->method('blocks')->willReturn([]);
+
+        $this->poller->poll($this->state, $this->client);
+
+        self::assertNotNull($this->state->queuedFollowUp);
+        self::assertSame('Resume after failed compact', $this->state->queuedFollowUp);
+        self::assertSame(RunActivityStateEnum::Cancelling, $this->state->activity);
+    }
 }

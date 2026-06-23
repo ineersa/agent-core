@@ -119,6 +119,15 @@ final class ControllerReplayHttpClientFactory
                 $fixture = $fixtures[$index];
                 ++$index;
 
+                // Optional test-only delay: when the fixture has a
+                // response_delay_ms field, sleep before returning the
+                // response.  Used by TUI E2E tests to keep compaction
+                // in-flight long enough for Escape/cancel to be sent.
+                $delayMs = $fixture['response_delay_ms'] ?? 0;
+                if ($delayMs > 0) {
+                    \usleep($delayMs * 1000);
+                }
+
                 // HTTP error fixtures return a non-200 MockResponse directly.
                 if (self::isHttpErrorFixture($fixture)) {
                     return self::buildErrorResponse($fixture);

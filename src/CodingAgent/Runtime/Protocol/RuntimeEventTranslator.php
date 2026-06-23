@@ -488,6 +488,7 @@ final class RuntimeEventTranslator
             'no_boundary' => 'Compaction failed: could not determine a boundary for the retained tail.',
             'no_safe_boundary' => 'Compaction failed: no safe boundary found without splitting tool-call results.',
             'empty_summary' => 'Compaction failed: The model returned an empty summary.',
+            'ineffective_compaction' => 'Compaction failed: the compacted context was not smaller than the original.',
             'model_error' => $this->compactionModelErrorMessage($p),
             'stale_result' => 'Compaction result is no longer relevant — the conversation has moved on.',
             default => \sprintf('Compaction failed: %s', $reason),

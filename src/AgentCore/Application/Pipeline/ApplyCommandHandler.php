@@ -78,6 +78,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         }
 
         if (RunStatus::Cancelling === $state->status
+            && CoreCommandKind::Cancel !== $message->kind
             && !$this->commandMailboxPolicy->isCancelSafeExtensionCommand($message->kind, $routedCommand->options)) {
             return $this->rejectCommand(
                 $state,
@@ -172,7 +173,9 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         // assistant tool_calls, causing the provider to reject the run
         // with "insufficient tool messages following tool_calls message".
         $postCommit = [];
-        $isActive = \in_array($state->status, [RunStatus::Running, RunStatus::Cancelling], true);
+        // Active runs (Running, Cancelling, or Compacting) queue the command
+        // for the next safe boundary.  Non-active runs apply immediately.
+        $isActive = \in_array($state->status, [RunStatus::Running, RunStatus::Cancelling, RunStatus::Compacting], true);
         if (!$isActive) {
             $followUpAdvance = $this->followUpAdvanceCallback($runId, $message->kind);
             if (null !== $followUpAdvance) {
@@ -270,7 +273,83 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             ];
         }
 
+        // Idempotent cancel: when cancellation is already in progress,
+        // accept the command without changing state (no version bump).
+        // Repeated cancel during Cancelling should not be rejected.
+        if (RunStatus::Cancelling === $state->status) {
+            $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, [[
+                'type' => RunEventTypeEnum::AgentCommandApplied->value,
+                'payload' => [
+                    'kind' => $message->kind,
+                    'idempotency_key' => $message->idempotencyKey(),
+                    'options' => [],
+                ],
+            ]]);
+
+            $noopState = new RunState(
+                runId: $state->runId,
+                status: $state->status,
+                version: $state->version + 1,
+                turnNo: $state->turnNo,
+                lastSeq: $state->lastSeq + \count($events),
+                isStreaming: $state->isStreaming,
+                streamingMessage: $state->streamingMessage,
+                pendingToolCalls: $state->pendingToolCalls,
+                errorMessage: $state->errorMessage,
+                messages: $state->messages,
+                activeStepId: $state->activeStepId,
+                retryableFailure: $state->retryableFailure,
+            );
+
+            return new HandlerResult(
+                nextState: $noopState,
+                events: $events,
+            );
+        }
+
         $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
+
+        // When there is no active work to finish cancellation (not streaming,
+        // no active step, no unresolved tool calls), terminalize immediately
+        // to Cancelled.  Otherwise the run can get stuck Cancelling with no
+        // later result/effect to transition it out — the classic cancel hang.
+        $hasActiveWork = $state->isStreaming
+            || null !== $state->activeStepId
+            || \in_array(false, $state->pendingToolCalls, true);
+
+        if (!$hasActiveWork) {
+            // No active work — terminalize to Cancelled with AgentEnd.
+            // Reuse the already-built $eventSpecs (applied + stale rejections)
+            // and append the agent_end event at the correct sequence number.
+            $eventSpecs[] = [
+                'type' => RunEventTypeEnum::AgentEnd->value,
+                'payload' => [
+                    'reason' => 'cancelled',
+                ],
+            ];
+
+            $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
+
+            $nextState = new RunState(
+                runId: $state->runId,
+                status: RunStatus::Cancelled,
+                version: $state->version + 1,
+                turnNo: $state->turnNo,
+                lastSeq: $state->lastSeq + \count($events),
+                isStreaming: $state->isStreaming,
+                streamingMessage: $state->streamingMessage,
+                pendingToolCalls: $state->pendingToolCalls,
+                errorMessage: $reason,
+                messages: $state->messages,
+                activeStepId: null,
+                retryableFailure: false,
+            );
+
+            return new HandlerResult(
+                nextState: $nextState,
+                events: $events,
+            );
+        }
 
         $nextState = new RunState(
             runId: $state->runId,
@@ -432,7 +511,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
     private function applyCompactCommand(RunState $state, ApplyCommand $message): HandlerResult
     {
         $runId = $message->runId();
-        $isActive = \in_array($state->status, [RunStatus::Running, RunStatus::Cancelling], true);
+        $isActive = \in_array($state->status, [RunStatus::Running, RunStatus::Cancelling, RunStatus::Compacting], true);
 
         if (!$isActive) {
             // Terminal/safe boundary: apply immediately.

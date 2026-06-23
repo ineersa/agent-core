@@ -39,9 +39,10 @@ use PHPUnit\Framework\TestCase;
  * Test thesis 5: Cross-server duplicate Hatfield tool names are detected
  * and skipped with a warning log.
  *
- * Test thesis 6: Secret-like substrings in thrown discovery errors
- * (authorization, api_key, bearer, token) are not present in handler
- * log messages.
+ * Test thesis 6: Raw config content and embedded secret values (api_key,
+ * sk-secret-test-abc123) must not leak into structured log context on
+ * config parse failure.  Assertions use the exact secret fixture value,
+ * not broad substrings like 'token' that can match benign filesystem paths.
  *
  * Constructs the handler manually (no kernel boot) so TestLogger can
  * capture exact log records for assertion.
@@ -126,8 +127,12 @@ class McpInitializeSessionHandlerTest extends TestCase
 
     public function testInvalidConfigLogsWarningWithoutThrowing(): void
     {
-        // Write broken JSON that McpConfigLoader will reject.
-        file_put_contents($this->projectDir . '/.hatfield/mcp.json', '{broken');
+        // Write broken JSON containing a secret-like value so we can
+        // assert that raw config content — and embedded secrets — never
+        // leak into the structured log context.  The file is intentionally
+        // not valid JSON (extra garbage after closing brace).
+        $brokenConfig = '{"api_key": "sk-secret-test-abc123"} x {broken';
+        file_put_contents($this->projectDir . '/.hatfield/mcp.json', $brokenConfig);
 
         $command = new McpInitializeSessionCommand(
             runId: 'test-run-bad',
@@ -154,9 +159,14 @@ class McpInitializeSessionHandlerTest extends TestCase
         self::assertArrayHasKey('error_message', $ctx);
 
         // Verify no raw config, env, or secret values leak into the log.
+        // Assert against the specific secret value and config key that
+        // appeared in the broken fixture, not against a broad substring
+        // like 'token' that can match benign filesystem paths.
         $contextJson = json_encode($ctx, \JSON_THROW_ON_ERROR);
+        $lower = strtolower($contextJson);
         self::assertStringNotContainsString('{broken', $contextJson, 'Broken JSON must not appear in log context');
-        self::assertStringNotContainsString('token', strtolower($contextJson));
+        self::assertStringNotContainsString('sk-secret-test-abc123', $lower, 'Embedded secret must not appear in log context');
+        self::assertStringNotContainsString('api_key', $lower, 'Config key must not appear in log context');
 
         // On config failure, an empty catalog must be written to invalidate
         // any previously-discovered tools.

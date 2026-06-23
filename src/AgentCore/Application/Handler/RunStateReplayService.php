@@ -683,7 +683,13 @@ final readonly class RunStateReplayService
      * so that a subsequent CompactionStepResult arriving after a state rebuild is
      * accepted by the result handler's staleness guard.
      *
-     * Messages are not mutated — only activeStepId is restored.
+     * Sets status to Compacting to mirror the live CompactRunHandler which
+     * transitions the run into a dedicated compaction lifecycle.  This
+     * prevents replay from building a state where a compaction is in flight
+     * but the run appears Completed or Running, which would allow follow-up
+     * commands to advance the run concurrently with the active compaction.
+     *
+     * Messages are not mutated — only activeStepId and status are restored.
      *
      * @param array<string, mixed> $payload
      */
@@ -693,7 +699,7 @@ final readonly class RunStateReplayService
 
         return new RunState(
             runId: $state->runId,
-            status: $state->status,
+            status: RunStatus::Compacting,
             version: $state->version,
             turnNo: $state->turnNo,
             lastSeq: $state->lastSeq,
@@ -716,6 +722,10 @@ final readonly class RunStateReplayService
      * Clearing activeStepId mirrors the live CompactionStepResultHandler
      * which sets activeStepId: null on success — compaction is a one-shot
      * cycle and no AdvanceRun follows to reset the step.
+     *
+     * Resolves Compacting status based on trigger:
+     * - auto → Running (the follow-up AdvanceRun effect continues the LLM turn)
+     * - manual → Completed (the /compact command runs on an already-completed run)
      *
      * @param array<string, mixed> $payload
      * @param list<AgentMessage>   $messages
@@ -740,9 +750,13 @@ final readonly class RunStateReplayService
             }
         }
 
+        $trigger = \is_string($payload['trigger'] ?? null) ? $payload['trigger'] : 'manual';
+        $continueAfterCompaction = (bool) ($payload['continue_after_compaction'] ?? false);
+        $finalStatus = $continueAfterCompaction ? RunStatus::Running : RunStatus::Completed;
+
         return new RunState(
             runId: $state->runId,
-            status: $state->status,
+            status: $finalStatus,
             version: $state->version,
             turnNo: $state->turnNo,
             lastSeq: $state->lastSeq,
@@ -757,20 +771,23 @@ final readonly class RunStateReplayService
     }
 
     /**
-     * Handle context_compaction_failed: clears activeStepId only when
-     * the failure belongs to the currently-active compaction step
-     * (payload.step_id matches state.activeStepId) AND the reason is not
-     * stale_result.
+     * Handle context_compaction_failed: clears activeStepId and resolves
+     * Compacting status to mirror the live handlers.
      *
      * Dual-emitter semantics:
      * - CompactRunHandler structural failures (before worker dispatch)
-     *   have no step_id; they preserve whatever activeStepId was already set.
-     * - CompactionStepResultHandler post-start failures include step_id.
-     *   success/model_error/empty_summary clear the matched step.
-     *   stale_result preserves activeStepId even when step_id matches —
-     *   the live handler treats stale as non-current, and clearing would
-     *   lose a newer in-flight compaction's identity.
-     * - Stale failures with a different step_id also preserve activeStepId.
+     *   have no step_id; they preserve activeStepId and prior status.
+     * - CompactionStepResultHandler post-start failures include step_id
+     *   and trigger.  When step_id matches the active step AND reason is
+     *   not stale_result, the step is cleared and Compacting resolves:
+     *   auto → Running, manual → Completed.
+     * - stale_result: step_id matches but result is non-current.
+     *   activeStepId is preserved (a newer in-flight compaction may be
+     *   active).  If status is Compacting, resolve to Running so the
+     *   state is not stuck in an unrecoverable terminal.
+     * - step_id mismatch: the failure is for an old/crossed step.
+     *   activeStepId is preserved.  If status is Compacting, resolve to
+     *   Running.
      *
      * Messages are never mutated by context_compaction_failed.
      *
@@ -780,21 +797,69 @@ final readonly class RunStateReplayService
     {
         $payloadStepId = \is_string($payload['step_id'] ?? null) ? $payload['step_id'] : null;
         $reason = \is_string($payload['reason'] ?? null) ? $payload['reason'] : null;
+        $trigger = \is_string($payload['trigger'] ?? null) ? $payload['trigger'] : null;
 
-        // Clear activeStepId only when this failure resolves the exact
-        // compaction step that was currently active AND is not a stale
-        // result.  stale_result is always non-current — the live handler
-        // preserves activeStepId because the handleable step (the one
-        // whose id still matches the state) is different.
-        $activeStepId = (null !== $payloadStepId
-            && $payloadStepId === $state->activeStepId
-            && 'stale_result' !== $reason)
-            ? null
-            : $state->activeStepId;
+        // Structural failures from CompactRunHandler have no step_id.
+        // They happen before the worker is dispatched — preserve activeStepId
+        // and prior status (no Compacting transition occurred in live handler).
+        if (null === $payloadStepId) {
+            return new RunState(
+                runId: $state->runId,
+                status: $state->status,
+                version: $state->version,
+                turnNo: $state->turnNo,
+                lastSeq: $state->lastSeq,
+                isStreaming: $state->isStreaming,
+                streamingMessage: $state->streamingMessage,
+                pendingToolCalls: $state->pendingToolCalls,
+                errorMessage: $state->errorMessage,
+                messages: $state->messages,
+                activeStepId: $state->activeStepId,
+                retryableFailure: $state->retryableFailure,
+            );
+        }
 
+        // Resolve Compacting status: the terminal failure event ends the
+        // compaction lifecycle.
+        // - Step_id matches AND not stale: terminal resolution — use
+        //   continue_after_compaction flag to distinguish pre-LLM guard
+        //   failures (stay Running so turn can proceed) from maintenance
+        //   failures (return to Completed).
+        // - stale_result or step_id mismatch: always resolve to Running.
+        //   The live handler treats stale as non-current without looking at
+        //   trigger; mismatch means a newer compaction is in flight.
+        $continueAfterCompaction = (bool) ($payload['continue_after_compaction'] ?? false);
+        $isTerminal = $payloadStepId === $state->activeStepId && 'stale_result' !== $reason;
+        $resolveCompacting = RunStatus::Compacting === $state->status
+            ? ($isTerminal && !$continueAfterCompaction ? RunStatus::Completed : RunStatus::Running)
+            : null;
+
+        // Step_id matches AND not stale → clear the step (compaction
+        // lifecycle complete).  Resolve Compacting if applicable.
+        if ($isTerminal) {
+            return new RunState(
+                runId: $state->runId,
+                status: $resolveCompacting ?? $state->status,
+                version: $state->version,
+                turnNo: $state->turnNo,
+                lastSeq: $state->lastSeq,
+                isStreaming: $state->isStreaming,
+                streamingMessage: $state->streamingMessage,
+                pendingToolCalls: $state->pendingToolCalls,
+                errorMessage: $state->errorMessage,
+                messages: $state->messages,
+                activeStepId: null,
+                retryableFailure: $state->retryableFailure,
+            );
+        }
+
+        // Step_id mismatch OR stale_result: preserve activeStepId.
+        // Resolve Compacting to Running if stuck (stale or crossed step
+        // arrived while a newer compaction may be in flight).  The newer
+        // compaction's own started event will set Compacting again.
         return new RunState(
             runId: $state->runId,
-            status: $state->status,
+            status: $resolveCompacting ?? $state->status,
             version: $state->version,
             turnNo: $state->turnNo,
             lastSeq: $state->lastSeq,
@@ -803,7 +868,7 @@ final readonly class RunStateReplayService
             pendingToolCalls: $state->pendingToolCalls,
             errorMessage: $state->errorMessage,
             messages: $state->messages,
-            activeStepId: $activeStepId,
+            activeStepId: $state->activeStepId,
             retryableFailure: $state->retryableFailure,
         );
     }
@@ -922,6 +987,19 @@ final readonly class RunStateReplayService
         $details = \is_array($payload['details'] ?? null) && [] !== $payload['details']
             ? $payload['details']
             : null;
+
+        // Filter thinking-only assistant messages (no content, no tool
+        // calls, reasoning present in details). These were erroneously
+        // persisted from provider reasoning-only responses (e.g. DeepSeek
+        // when max_tokens is exhausted mid-thinking) and cannot be
+        // replayed as valid conversation turns — providers reject
+        // {content: null, reasoning_content: "..."}.
+        if ([] === $rawToolCalls
+            && null !== $details
+            && \is_string($details['thinking'] ?? null)
+        ) {
+            return null;
+        }
 
         return new AgentMessage(
             role: 'assistant',

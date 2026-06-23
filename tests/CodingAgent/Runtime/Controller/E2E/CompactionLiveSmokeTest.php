@@ -49,9 +49,14 @@ final class CompactionLiveSmokeTest extends ControllerE2eTestCase
 
     protected function extraSettingsYaml(): string
     {
+        // keep_recent_tokens=3 lets the short assistant answer alone
+        // become the retained tail in a single-turn session.  The
+        // tentative boundary lands at the assistant message instead
+        // of the user message, and findSafeBoundary accepts it as a
+        // safe cut point when no tool calls are present.
         return <<<YAML
 compaction:
-    keep_recent_tokens: 10
+    keep_recent_tokens: 3
     auto_enabled: false
 YAML;
     }
@@ -65,15 +70,27 @@ YAML;
         // ── Phase 1: Start a run with enough text to be compactable ──
         //
         // keep_recent_tokens=10 → about 32 characters of message
-        // content trigger compaction.  A multi-sentence prompt ensures
-        // the token estimate comfortably exceeds the threshold.
+        // content trigger compaction.  A long, deliberate prompt
+        // ensures the assistant reply + this user message together
+        // form a compactable body large enough for actual token
+        // reduction after summarization.
+        //
+        // We embed the prompt instructions in a large block of
+        // reproducible background text so the user→assistant pair
+        // in the conversation body is well above the compact-after
+        // threshold while the assistant answer stays short.
+        $longContext = str_repeat(
+            "Automated testing is a fundamental practice in modern software engineering. ",
+            30,
+        ) . "Now respond with exactly: Understood.";
+
         $startCmdId = 'cmd_start_'.uniqid();
         $this->writeCommand([
             'v' => 1,
             'id' => $startCmdId,
             'type' => 'start_run',
             'payload' => [
-                'prompt' => 'Write a short paragraph about the benefits of automated testing in software development.',
+                'prompt' => $longContext,
             ],
         ]);
 
@@ -145,9 +162,13 @@ YAML;
 
         if (isset($compactByType['compaction.failed'])) {
             $failedEvent = $compactByType['compaction.failed'][0];
-            $errorMsg = $failedEvent['payload']['error'] ?? ($failedEvent['payload']['reason'] ?? 'unknown');
+            $failPayload = $failedEvent['payload'] ?? [];
+            $reason = $failPayload['reason'] ?? 'unknown';
+            $errorMsg = $failPayload['error'] ?? $reason;
+
             self::fail(
                 'Compaction failed instead of succeeding: '.$errorMsg."\n"
+                .'Reason: '.$reason."\n"
                 .$this->collectDiagnostics($compactEvents),
             );
         }

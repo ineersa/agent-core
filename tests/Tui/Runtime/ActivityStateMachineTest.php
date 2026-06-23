@@ -333,4 +333,205 @@ final class ActivityStateMachineTest extends TestCase
         $result = ActivityStateMachine::transition(RunActivityStateEnum::Cancelling, $event);
         $this->assertSame(RunActivityStateEnum::Cancelling, $result);
     }
+
+    // ── Compaction event transitions (session 13: Escape can't cancel) ──
+
+    /**
+     * Thesis: when the TUI activity is Completed (after a turn) and an
+     * auto-compaction starts, the activity must transition to Compacting
+     * so that CancelListener recognizes the run is still cancellable.
+     *
+     * On HEAD (RED): CompactionStarted is not in the transition table —
+     * ActivityStateMachine returns the current state (Completed).
+     * Completed.isActive() is false, so CancelListener clears the editor
+     * instead of sending cancel.  The user cannot abort a stuck compaction.
+     */
+    public function testCompactionStartedFromCompletedTransitionsToCompacting(): void
+    {
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::CompactionStarted->value,
+            runId: 'test',
+            seq: 1,
+        );
+        $result = ActivityStateMachine::transition(RunActivityStateEnum::Completed, $event);
+        $this->assertSame(
+            RunActivityStateEnum::Compacting,
+            $result,
+            'CompactionStarted from Completed must become Compacting so Escape can cancel.',
+        );
+    }
+
+    /**
+     * CompactionStarted from Idle (no active run yet) transitions to Compacting.
+     */
+    public function testCompactionStartedFromIdleTransitionsToCompacting(): void
+    {
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::CompactionStarted->value,
+            runId: 'test',
+            seq: 1,
+        );
+        $result = ActivityStateMachine::transition(RunActivityStateEnum::Idle, $event);
+        $this->assertSame(RunActivityStateEnum::Compacting, $result);
+    }
+
+    /**
+     * CompactionStarted from Running transitions to Compacting.
+     * Pre-LLM guard compaction starts while the run is Running —
+     * activity transitions to Compacting so Escape can cancel if
+     * the compaction hangs.  Compacting.isActive() is false so
+     * SubmitListener queues user messages instead of sending steer.
+     */
+    public function testCompactionStartedFromRunningTransitionsToCompacting(): void
+    {
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::CompactionStarted->value,
+            runId: 'test',
+            seq: 1,
+        );
+        $result = ActivityStateMachine::transition(RunActivityStateEnum::Running, $event);
+        $this->assertSame(RunActivityStateEnum::Compacting, $result);
+    }
+
+    /**
+     * CompactionCompleted from Compacting returns to Completed (default
+     * for after-turn maintenance compaction).
+     */
+    public function testCompactionCompletedFromCompactingGoesToCompleted(): void
+    {
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::CompactionCompleted->value,
+            runId: 'test',
+            seq: 1,
+        );
+        $result = ActivityStateMachine::transition(RunActivityStateEnum::Compacting, $event);
+        $this->assertSame(RunActivityStateEnum::Completed, $result);
+    }
+
+    /**
+     * CompactionFailed from Compacting returns to Completed.
+     */
+    public function testCompactionFailedFromCompactingGoesToCompleted(): void
+    {
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::CompactionFailed->value,
+            runId: 'test',
+            seq: 1,
+        );
+        $result = ActivityStateMachine::transition(RunActivityStateEnum::Compacting, $event);
+        $this->assertSame(RunActivityStateEnum::Completed, $result);
+    }
+
+    /**
+     * CompactionStarted from Cancelled stays Cancelled — terminal
+     * must not be reopened by auto-compaction.
+     */
+    public function testCompactionStartedOnCancelledStaysCancelled(): void
+    {
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::CompactionStarted->value,
+            runId: 'test',
+            seq: 1,
+        );
+        $result = ActivityStateMachine::transition(RunActivityStateEnum::Cancelled, $event);
+        $this->assertSame(RunActivityStateEnum::Cancelled, $result,
+            'Terminal Cancelled must survive CompactionStarted.'
+        );
+    }
+
+    /**
+     * CompactionStarted from Failed stays Failed — terminal
+     * must not be reopened by auto-compaction.
+     */
+    public function testCompactionStartedOnFailedStaysFailed(): void
+    {
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::CompactionStarted->value,
+            runId: 'test',
+            seq: 1,
+        );
+        $result = ActivityStateMachine::transition(RunActivityStateEnum::Failed, $event);
+        $this->assertSame(RunActivityStateEnum::Failed, $result,
+            'Terminal Failed must survive CompactionStarted.'
+        );
+    }
+
+    /**
+     * CompactionCompleted is a no-op on terminal states (Completed
+     * already).  CompactionCompleted should not undo Cancelled/Failed.
+     */
+    public function testCompactionCompletedOnCancelledStaysCancelled(): void
+    {
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::CompactionCompleted->value,
+            runId: 'test',
+            seq: 1,
+        );
+        $result = ActivityStateMachine::transition(RunActivityStateEnum::Cancelled, $event);
+        $this->assertSame(RunActivityStateEnum::Cancelled, $result,
+            'Terminal Cancelled must survive CompactionCompleted.');
+    }
+
+    /**
+     * CompactionCompleted from Failed stays Failed — terminal
+     * must not be undone.
+     */
+    public function testCompactionCompletedOnFailedStaysFailed(): void
+    {
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::CompactionCompleted->value,
+            runId: 'test',
+            seq: 1,
+        );
+        $result = ActivityStateMachine::transition(RunActivityStateEnum::Failed, $event);
+        $this->assertSame(RunActivityStateEnum::Failed, $result,
+            'Terminal Failed must survive CompactionCompleted.'
+        );
+    }
+
+    /**
+     * CompactionCompleted from Cancelling stays Cancelling (cancelling
+     * is sticky — compaction completion does not move out of it).
+     */
+    public function testCompactionCompletedFromCancellingStaysCancelling(): void
+    {
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::CompactionCompleted->value,
+            runId: 'test',
+            seq: 1,
+        );
+        $result = ActivityStateMachine::transition(RunActivityStateEnum::Cancelling, $event);
+        $this->assertSame(RunActivityStateEnum::Cancelling, $result,
+            'Cancelling must survive CompactionCompleted — stick gate blocks mid-run events.');
+    }
+
+    /**
+     * CompactionCompleted from Running goes to Completed (compaction
+     * finished while run was active — the run may still continue but
+     * compaction maintenance is done).
+     */
+    public function testCompactionCompletedFromRunningGoesToCompleted(): void
+    {
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::CompactionCompleted->value,
+            runId: 'test',
+            seq: 1,
+        );
+        $result = ActivityStateMachine::transition(RunActivityStateEnum::Running, $event);
+        $this->assertSame(RunActivityStateEnum::Completed, $result);
+    }
+
+    /**
+     * CompactionFailed from Running goes to Completed.
+     */
+    public function testCompactionFailedFromRunningGoesToCompleted(): void
+    {
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::CompactionFailed->value,
+            runId: 'test',
+            seq: 1,
+        );
+        $result = ActivityStateMachine::transition(RunActivityStateEnum::Running, $event);
+        $this->assertSame(RunActivityStateEnum::Completed, $result);
+    }
 }

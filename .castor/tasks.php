@@ -12,8 +12,14 @@ declare(strict_types=1);
  *
  * Lanes run concurrently:
  *   deptrac (30s) → test: unit/integration ParaTest (120s) →
- *   test:controller-replay (30s) → test:tui (120s) → phpstan (30s) →
+ *   test:controller-replay (75s) → test:tui (120s) → phpstan (30s) →
  *   cs-check (30s).  No PHAR, no live LLM.
+ *
+ * Budget increase (30s → 75s) for test:controller-replay reflects
+ * expanded replay E2E suite (7 isolated controller subprocess tests
+ * as of COMP-06, each spawning controller + messenger consumers with
+ * SIGTERM → 3s grace → SIGKILL teardown).  Typical suite runtime is
+ * ~56s; 75s provides healthy headroom for build/CI variance.
  *
  * =========================================================================
  * This file was split from the former monolithic .castor/tasks.php.
@@ -111,7 +117,7 @@ function check(): void
                     .' --group=controller-replay'
                     .' '.$strictFlags.$llmFlags
                     .(is_llm_mode() ? ' --log-junit='.report_path('phpunit-controller-replay.junit.xml') : ''),
-                30,
+                75,
             ),
         ],
         'test:tui' => [
