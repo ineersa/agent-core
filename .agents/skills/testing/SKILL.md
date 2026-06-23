@@ -41,7 +41,7 @@ Run the test llama.cpp server deterministically for smoke tests: temperature 0, 
 
 Before `castor test:llm-real` and `castor test:controller` run live-LLM tests,
 Castor runs `check_llm_generation_ready()` — a ~4s curl-based preflight that
-sends a tiny `max_tokens=1` chat completion to `llama_cpp_test/test`. If the
+sends a small chat completion (`max_tokens=512` in `.castor/helpers.php` to avoid truncating reasoning models on the test server) to `llama_cpp_test/test`. If the
 server responds to `/health` and `/v1/models` but generation hangs (corrupted
 model load, stuck slots), this preflight fails immediately with a clear
 diagnostic instead of burning 30-90s Castor step timeouts.
@@ -62,6 +62,65 @@ Restart or fix the llama.cpp server. Health-only checks are insufficient.
 ### HTTP timeout fallback
 
 `SymfonyAiProviderFactory` injects a default 30s `HttpClient` timeout for all LLM requests when no explicit timeout is configured, preventing infinite hangs. The test environment (`config/services_test.yaml`) overrides this to 5s. The `HATFIELD_LLM_HTTP_TIMEOUT` env var allows per-environment override.
+
+
+## Llama-proxy runbook (port 9052)
+
+Repository: `/home/ineersa/projects/llama-proxy` (separate from agent-core). Tests keep using the normal OpenAI-compatible base URL on **9052**; when the proxy is installed, that port is the proxy, not a bare llama.cpp listener.
+
+### What it does
+
+- **Cache miss:** POST is forwarded to `LLAMA_PROXY_UPSTREAM` (e.g. `:8052`), response recorded under `LLAMA_PROXY_CACHE_DIR`.
+- **Cache hit:** Response replayed from disk (streaming chunks preserved); header `x-llama-proxy-cache: hit` on replayed responses.
+- **Key normalization:** `LLAMA_PROXY_CACHE_NORMALIZE_MESSAGES=true` (default) strips leading system/developer and `[user-context]` user messages from the **cache key only**. Tail messages (including the real first user prompt per test) must differ per scenario — live tests use tags like `[llm-real:write-file]`.
+
+Do **not** document or enable app-side deterministic prompt stripping; proxy-side normalization is the supported approach.
+
+### Admin endpoints (evidence: `llama_proxy/app.py`, llama-proxy README)
+
+```bash
+curl http://127.0.0.1:9052/__llama_proxy/health
+curl http://127.0.0.1:9052/__llama_proxy/cache/stats
+curl -X POST http://127.0.0.1:9052/__llama_proxy/cache/clear
+curl -X DELETE http://127.0.0.1:9052/__llama_proxy/cache
+```
+
+If `LLAMA_PROXY_ADMIN_TOKEN` is set, pass `-H 'X-Llama-Proxy-Token: <token>'` on **stats** and **clear** (health is unauthenticated).
+
+### `castor check` live lane
+
+- Runs `check_llm_generation_ready()` once (curl to `…/v1/chat/completions`, model `test`; see `.castor/helpers.php`).
+- Parallel lane **`test:llm-real`**: same shell command as `castor test:llm-real` — `build_test_llm_real_phpunit_command(null)` → ParaTest `--group=llm-real --processes=4`, 180s step timeout. Log: `var/reports/check-test-llm-real.log`.
+- Unit/integration ParaTest lane in check **excludes** `llm-real` (see `build_check_paratest_command()`).
+
+Filtered `castor test:llm-real --filter=…` uses sequential PHPUnit (no `--processes=4`).
+
+### Reset vs warm vs regenerate
+
+| Goal | Action |
+| --- | --- |
+| See proxy config | `curl …/__llama_proxy/health` (`cache_normalize_messages`, `cache_dir`, `upstream`) |
+| See cassette count/size | `curl …/__llama_proxy/cache/stats` |
+| Drop all proxy cassettes | `POST …/cache/clear` or `DELETE …/cache` |
+| Re-record cassettes | Run live tests after clear (`castor test:llm-real` or check lane) |
+| Speed up repeat runs | Leave cache warm; second full `test:llm-real` ~20–30s typical |
+| Force Castor preflight | `rm -f var/tmp/llm-generation-ready.cache` or `HATFIELD_LLM_READY_TTL=0` |
+| Skip expensive preflight briefly | Default TTL 120s on `var/tmp/llm-generation-ready.cache` |
+
+### Proxy cache vs committed LLM replay fixtures
+
+| | llama-proxy | `HATFIELD_LLM_REPLAY_FIXTURE_PATH` |
+| --- | --- | --- |
+| Layer | HTTP on 9052 | Test `MockHttpClient` / `FixtureReplayModelClient` |
+| Commands | `test:llm-real`, check live lane, `test:controller`, `llm:fixtures:record` | `castor test`, `test:controller-replay`, `test:tui` |
+| Offline CI | Needs 9052 + model upstream for live lane | Replay lanes need no model |
+
+Replay infrastructure is **not** removed when using the proxy; both coexist.
+
+### Stale workers before retry
+
+Kill stale **current-user** processes from the failing worktree (`messenger:consume`, `agent --controller`, orphaned PHPUnit). Never signal root-owned long-lived consumers (see root `AGENTS.md`).
+
 
 ## LLM Replay (deterministic, no live LLM)
 

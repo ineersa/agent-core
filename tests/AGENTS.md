@@ -111,7 +111,7 @@ Key commands:
 - `castor deptrac` — layer dependency validation
 - `castor phpstan` — static analysis
 - `castor cs-check` / `castor cs-fix` — code style
-- `LLM_MODE=true castor check` — full quality gate. Runs deptrac, unit/integration (ParaTest), controller replay E2E, TUI replay E2E, live llm-real (ParaTest `--processes=4`, port 9052), phpstan, and cs-check in parallel. Requires llama.cpp/llama-proxy on 9052; warm cache speeds llm-real. No PHAR.
+- `castor check` — full quality gate (see root `AGENTS.md` and testing skill). Includes live `test:llm-real` on port 9052.
 - `castor cleanup` — remove all temp/test artifacts
 
 ## Snapshots and cleanup
@@ -159,6 +159,43 @@ Each ParaTest worker gets a unique compiled Symfony cache directory (via `TEST_T
 - ParaTest paths: `HATFIELD_TEST_DATABASE_PATH=app_test.sqlite` (shared), `HATFIELD_CACHE_DIR=.hatfield/cache-paraT{token}` (per-worker).
 
 ## One test class per production class
+
+
+## Llama-proxy (port 9052) vs committed replay fixtures
+
+Two different “replay” mechanisms:
+
+| Mechanism | Where | Used by | Purpose |
+| --- | --- | --- | --- |
+| **llama-proxy cassettes** | Proxy disk cache (`LLAMA_PROXY_CACHE_DIR`) | Live HTTP to `:9052` — `#[Group('llm-real')]`, `castor check` `test:llm-real` lane, `castor test:controller`, `castor llm:fixtures:record` | Record real chat completions on cache miss; replay on identical normalized keys. Fast warm runs without changing app code. |
+| **Committed replay fixtures** | `tests/**/fixtures/`, `tests/AgentCore/Fixtures/traces/` + `HATFIELD_LLM_REPLAY_FIXTURE_PATH` | `castor test`, `castor test:controller-replay`, `castor test:tui` | Deterministic MockHttpClient / fixture deltas in `APP_ENV=test`; no live model, no proxy required. |
+
+Proxy cache key normalization (default on) drops volatile prologue from the **key** only; see llama-proxy README. App-side “deterministic prompt mode” is not used — normalization is proxy-side.
+
+### When to run what
+
+- **`castor check`** — full gate: replay controller/TUI lanes + live **`test:llm-real`** (ParaTest `--processes=4`). Requires tmux, working generation on **9052** (proxy recommended). Castor runs `check_llm_generation_ready()` once, then parallel lanes.
+- **`castor test:llm-real`** — same PHPUnit/ParaTest command as the check lane; use `--filter=` for one test (sequential PHPUnit, no nested ParaTest).
+- **`castor test:controller-replay`** / **`castor test:tui`** — no live LLM; do not require proxy cache.
+
+### Proxy health, stats, reset, warm
+
+```bash
+curl http://127.0.0.1:9052/__llama_proxy/health
+curl http://127.0.0.1:9052/__llama_proxy/cache/stats
+curl -X POST http://127.0.0.1:9052/__llama_proxy/cache/clear
+# equivalent: curl -X DELETE http://127.0.0.1:9052/__llama_proxy/cache
+```
+
+Optional header when `LLAMA_PROXY_ADMIN_TOKEN` is configured: `-H 'X-Llama-Proxy-Token: …'`.
+
+- **Inspect:** `health` shows `cache_normalize_messages`; `cache/stats` shows `entries` and `bytes`.
+- **Reset proxy cache:** `cache/clear` (or DELETE on `/__llama_proxy/cache`). Next live test run re-records misses (slower until warm).
+- **Regenerate / warm:** run `castor test:llm-real` or `castor check`; each distinct normalized user tail adds or hits a cassette. Second full run is much faster when cache is warm.
+- **Castor generation preflight cache:** `var/tmp/llm-generation-ready.cache` (TTL `HATFIELD_LLM_READY_TTL`, default 120s). Delete file or `HATFIELD_LLM_READY_TTL=0` to force curl preflight before live lanes.
+
+**Cold cache caveats:** First run after clear or new prompts pays upstream latency; parallel `llm-real` workers can still race on identical first-seen keys (proxy serializes per key). **Stale processes:** orphaned `messenger:consume` / `agent --controller` from a prior failed run can make tests look hung — clean up current-user workers before retrying (see root `AGENTS.md`).
+
 
 ## LLM Replay (deterministic, no live LLM)
 
