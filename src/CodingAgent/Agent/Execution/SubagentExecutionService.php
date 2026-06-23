@@ -253,6 +253,7 @@ final class SubagentExecutionService
                 RunStatus::Cancelled, RunStatus::Cancelling => $this->handleCancelled(
                     $parentRunId, $artifactId, $agentName,
                 ),
+                default => throw new \LogicException(\sprintf('Poll loop reached match with non-terminal child status %s.', $status->value)),
             };
         }
     }

@@ -212,8 +212,46 @@ Child runs are stored under the parent session directory:
 - Child events and state use the same Canonical JSONL and CAS patterns as
   parent runs, stored under the parent directory via `AgentChildRunEventStore`
   and `AgentChildRunStore`.
-- A dedicated retrieval tool (to query, list, or load child artifacts for the
-  parent LLM) is **future work** (planned for AGENT-06).
+- Use the `agent_retrieve` tool (AGENT-06) to load handoffs, metadata, or
+  bounded event/history summaries for artifacts in the **current parent session**.
+
+### `agent_retrieve` tool
+
+The model-visible `agent_retrieve` tool reads parent-scoped subagent artifacts
+after `subagent` completes (or fails). It does not launch runs and does not
+replace inline subagent handoffs — use it when a handoff was truncated, you need
+status/metadata, or you want a bounded debug summary.
+
+**Schema (v1):**
+
+```json
+{
+  "artifact_id": "agent_abc123",
+  "agent_run_id": "<child-run-uuid>",
+  "mode": "handoff",
+  "limit": 20
+}
+```
+
+- Provide at least one of `artifact_id` or `agent_run_id` (both must refer to the
+  same artifact when both are set).
+- `mode` (default `handoff`): `handoff`, `metadata`, `events`, `history`, `debug`.
+- `limit` (default 20, max 100): bounds `events` and `history` rows.
+
+**Privacy and bounds:**
+
+- Default modes do not expose raw prompts, full message arrays, tool output,
+  streaming deltas, API keys, environment values, or full event payloads.
+- `history` skips `system` and `user-context` messages and truncates visible text.
+- `events` lists recent child events with sanitized one-line summaries only.
+- `debug` returns **relative** artifact paths under the parent session, not absolute
+  filesystem paths.
+
+**Access rules:**
+
+- Retrieval is limited to the **current parent run** (`ToolContext.runId`).
+- Unknown identifiers and cross-parent access are rejected with actionable errors.
+- Path traversal in `artifact_id` is rejected.
 
 ### Depth and recursion guard (v1)
 
@@ -285,7 +323,7 @@ The following features are **not yet implemented**:
 | `/agents` TUI command | Not implemented | Future |
 | Dedicated dock/overlay for child agent views | Not implemented | Future |
 | Interactive child HITL, approvals, or questions | Not supported (WaitingHuman → Failed) | Future |
-| Child artifact retrieval tool | Not implemented | AGENT-06 |
+| Child artifact retrieval tool | Implemented (`agent_retrieve`) | — |
 
 ## See also
 
