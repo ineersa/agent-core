@@ -10,7 +10,6 @@ use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Agent\Tool\AgentRetrieveTool;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\CoversClass;
-use Symfony\Component\Lock\LockFactory;
 
 #[CoversClass(AgentRetrieveTool::class)]
 final class AgentRetrieveToolTest extends IsolatedKernelTestCase
@@ -42,7 +41,6 @@ final class AgentRetrieveToolTest extends IsolatedKernelTestCase
     {
         $tool = self::getContainer()->get(AgentRetrieveTool::class);
         $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);
-        $lock = self::getContainer()->get(LockFactory::class)->createLock('agent-retrieve-test');
         $context = new ToolContext(
             runId: 'parent-run',
             turnNo: 0,

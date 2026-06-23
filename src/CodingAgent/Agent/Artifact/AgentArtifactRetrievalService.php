@@ -77,8 +77,7 @@ final class AgentArtifactRetrievalService
             }
 
             if (null === $byArtifact) {
-                $foreign = $this->findArtifactInOtherParents($artifactId, $parentRunId);
-                if (null !== $foreign) {
+                if ($this->artifactExistsInOtherParents($artifactId, $parentRunId)) {
                     throw new ToolCallException(\sprintf('Artifact "%s" belongs to a different parent session and cannot be retrieved from the current run.', $artifactId), retryable: false, hint: 'Retrieve only artifacts created under the current parent session.');
                 }
 
@@ -114,10 +113,7 @@ final class AgentArtifactRetrievalService
         return $byArtifact ?? $byRun ?? throw new ToolCallException('Unable to resolve subagent artifact.', retryable: false);
     }
 
-    /**
-     * @return ?array{parentRunId: string}
-     */
-    private function findArtifactInOtherParents(string $artifactId, string $currentParentRunId): ?array
+    private function artifactExistsInOtherParents(string $artifactId, string $currentParentRunId): bool
     {
         $matches = [];
 
@@ -151,16 +147,14 @@ final class AgentArtifactRetrievalService
         }
 
         if ([] === $matches) {
-            return null;
+            return false;
         }
 
         if (\count($matches) > 1) {
             throw new ToolCallException(\sprintf('Artifact id "%s" is ambiguous across multiple parent sessions. Retrieval is limited to the current parent session.', $artifactId), retryable: false);
         }
 
-        $foreignParent = array_key_first($matches);
-
-        return ['parentRunId' => $foreignParent];
+        return true;
     }
 
     private function renderHandoff(AgentArtifactEntryDTO $entry): string
@@ -274,7 +268,7 @@ final class AgentArtifactRetrievalService
             '',
             ...$this->identityLines($entry),
             '',
-            \sprintf('Showing last %d of %d eligible messages (system and user-context omitted).', \count($slice), \count($filtered)),
+            \sprintf('Showing last %d of %d eligible messages (system, user-context, and tool results omitted).', \count($slice), \count($filtered)),
             '',
         ];
 
@@ -365,6 +359,10 @@ final class AgentArtifactRetrievalService
         }
 
         if ('user-context' === $message->role) {
+            return true;
+        }
+
+        if ('tool' === $message->role) {
             return true;
         }
 

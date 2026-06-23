@@ -207,7 +207,7 @@ final class SubagentExecutionService
 
             $status = $state->status;
 
-            if (RunStatus::Running === $status || RunStatus::Queued === $status) {
+            if (RunStatus::Running === $status || RunStatus::Queued === $status || RunStatus::Compacting === $status) {
                 // Push inline progress update to parent transcript —
                 // lightweight status line based on RunState, not full event scan.
                 $this->emitProgressUpdate(
@@ -242,7 +242,7 @@ final class SubagentExecutionService
                     $agentName, $artifactId);
             }
 
-            // Terminal states — exhaustive match over RunStatus.
+            // Terminal states only — non-terminal statuses must continue or return above.
             return match ($status) {
                 RunStatus::Completed => $this->handleCompleted(
                     $parentRunId, $artifactId, $agentName, $state,
@@ -250,10 +250,12 @@ final class SubagentExecutionService
                 RunStatus::Failed => $this->handleFailed(
                     $parentRunId, $artifactId, $agentName, $state,
                 ),
-                RunStatus::Cancelled, RunStatus::Cancelling => $this->handleCancelled(
+                RunStatus::Cancelled => $this->handleCancelled(
                     $parentRunId, $artifactId, $agentName,
                 ),
-                default => throw new \LogicException(\sprintf('Poll loop reached match with non-terminal child status %s.', $status->value)),
+                RunStatus::Cancelling => $this->handleCancelled(
+                    $parentRunId, $artifactId, $agentName,
+                ),
             };
         }
     }

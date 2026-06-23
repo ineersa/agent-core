@@ -76,7 +76,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $childRun = 'child-run-1';
         $this->registry->create($parent, $artifactId, $childRun, 'scout');
         $this->registry->update($parent, $artifactId, status: AgentArtifactStatusEnum::Completed, summary: 'ok');
-        $this->registry->writeHandoff($parent, $artifactId, '## Result\n\nFound routing config.');
+        $this->registry->writeHandoff($parent, $artifactId, "## Result\n\nFound routing config.");
 
         $service = $this->makeService();
         $out = $service->retrieve($parent, ['artifact_id' => $artifactId, 'mode' => 'handoff']);
@@ -226,7 +226,8 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $out = $service->retrieve($parent, ['artifact_id' => $artifactId, 'mode' => 'events', 'limit' => 5]);
 
         self::assertStringContainsString('Showing last 5 of 25 events', $out);
-        self::assertStringNotContainsString('agents md context', $out);
+        self::assertStringNotContainsString($secret, $out);
+        self::assertStringNotContainsString($secret.'-1', $out);
         self::assertStringContainsString('tool end: bash', $out);
     }
 
@@ -238,9 +239,11 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $this->registry->create($parent, $artifactId, $childRun, 'scout');
 
         $secret = 'FULL_PROMPT_SECRET_XYZ';
+        $toolSecret = 'RAW_TOOL_OUTPUT_HISTORY_SECRET_999';
         $messages = [
             new AgentMessage(role: 'system', content: [['type' => 'text', 'text' => $secret]]),
             new AgentMessage(role: 'user-context', content: [['type' => 'text', 'text' => 'agents md context']]),
+            new AgentMessage(role: 'tool', content: [['type' => 'text', 'text' => $toolSecret]], toolName: 'read'),
         ];
         for ($i = 0; $i < 30; ++$i) {
             $messages[] = new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'short user message '.$i]]);
@@ -256,8 +259,27 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
 
         self::assertStringContainsString('Showing last 3 of', $out);
         self::assertStringNotContainsString($secret, $out);
+        self::assertStringNotContainsString($toolSecret, $out);
         self::assertStringNotContainsString('role=system', $out);
         self::assertStringNotContainsString('role=user-context', $out);
+        self::assertStringNotContainsString('role=tool', $out);
+    }
+
+    public function testRejectsCrossParentArtifactIdViaSessionListing(): void
+    {
+        $foreignParent = $this->hatfieldSessionStore->createSession('Foreign parent for artifact retrieve');
+        $artifactId = 'agent_foreign_artifact';
+        $childRun = 'foreign-child-artifact';
+        $this->registry->create($foreignParent, $artifactId, $childRun, 'scout');
+
+        $service = $this->makeService();
+
+        try {
+            $service->retrieve('parent-current-artifact', ['artifact_id' => $artifactId]);
+            self::fail('expected ToolCallException');
+        } catch (ToolCallException $e) {
+            self::assertStringContainsString('different parent session', $e->getMessage());
+        }
     }
 
     private function makeService(

@@ -242,7 +242,7 @@ status/metadata, or you want a bounded debug summary.
 
 - Default modes do not expose raw prompts, full message arrays, tool output,
   streaming deltas, API keys, environment values, or full event payloads.
-- `history` skips `system` and `user-context` messages and truncates visible text.
+- `history` skips `system`, `user-context`, and `tool` messages; other visible text is truncated.
 - `events` lists recent child events with sanitized one-line summaries only.
 - `debug` returns **relative** artifact paths under the parent session, not absolute
   filesystem paths.
