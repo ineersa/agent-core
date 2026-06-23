@@ -26,7 +26,7 @@ final class ControllerSmokeTest extends ControllerE2eTestCase
     {
         $this->spawnController();
 
-        $this->waitForEvent('runtime.ready', 5.0);
+        $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
 
         $startCmdId = 'cmd_start_'.uniqid();
         $this->writeCommand([
@@ -34,11 +34,11 @@ final class ControllerSmokeTest extends ControllerE2eTestCase
             'id' => $startCmdId,
             'type' => 'start_run',
             'payload' => [
-                'prompt' => 'Respond with exactly one word: hello.',
+                'prompt' => '[llm-real:controller-smoke] Respond with exactly one word: hello.',
             ],
         ]);
 
-        $events = $this->collectEvents(15.0);
+        $events = $this->collectEvents($this->liveLlmRunWaitTimeout());
         $byType = $this->indexByType($events);
 
         $this->assertStartRunAcked($events, $startCmdId);

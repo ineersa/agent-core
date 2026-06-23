@@ -932,6 +932,19 @@ function xml_escape(string $value): string
  */
 function check_llm_generation_ready(): void
 {
+    $cacheFile = 'var/tmp/llm-generation-ready.cache';
+    $envTtl = getenv('HATFIELD_LLM_READY_TTL');
+    $ttlSeconds = (int) (false !== $envTtl && '' !== $envTtl ? $envTtl : 120);
+    if ($ttlSeconds > 0 && is_file($cacheFile)) {
+        $mtime = filemtime($cacheFile);
+        if (false !== $mtime && (time() - $mtime) < $ttlSeconds) {
+            echo 'llama.cpp generation: ok (cached, ttl='.$ttlSeconds.'s)
+';
+
+            return;
+        }
+    }
+
     $baseUrl = 'http://192.168.2.38:9052';
     $model = 'test';
     $url = $baseUrl.'/v1/chat/completions';
@@ -951,6 +964,10 @@ function check_llm_generation_ready(): void
     $httpCode = (int) trim($process->getOutput());
 
     if (200 === $httpCode && 0 === $process->getExitCode()) {
+        if (!is_dir('var/tmp')) {
+            @mkdir('var/tmp', 0o777, true);
+        }
+        @touch($cacheFile);
         echo 'llama.cpp generation: ok'."\n";
 
         return;

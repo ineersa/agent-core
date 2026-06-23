@@ -58,6 +58,8 @@ Inherited helpers:
 - `collectEventsUntilToolCompleted(string $toolName, float $timeout): array` — wait for the named tool's matching `tool_execution.completed` using `tool_call_id`
 - `collectDiagnostics(array $events): string` — format diagnostic dump
 
+Live `llm-real` controller tests that share llama-proxy cache normalization must use a **unique first user prompt** per scenario (e.g. `[llm-real:write-file] ...`) so stripped prologue keys do not collide and replay the wrong tool response. Use `liveControllerReadyTimeout()` for `runtime.ready` waits under full `castor check` load (not 5s). Use `liveLlmToolWaitTimeout()` on `ControllerE2eTestCase` for tool-completion waits; 5s is too short for live read/write on real workers. Prefer `liveLlmRunWaitTimeout()` for single-turn runs. Avoid `collectRaw()` full-timeout drains; use `collectEventsUntil()` / `collectEventsUntilToolCompleted()` for early exit. Live controller subprocess uses source `bin/console` with `APP_ENV=test` and `APP_DEBUG=1` so `services_test.yaml` applies (5s HTTP timeout when replay is off) and subprocess failures stay diagnosable. Do not spawn the PHAR with `APP_ENV=test` — dev-only bundles are excluded from the PHAR. Full `castor test:llm-real` uses ParaTest (`--processes=4`); filtered runs use sequential PHPUnit.
+
 Do not write inline `byType` loops or ack searches in test methods. For tool-focused LLM smoke tests, prefer `collectEventsUntilToolCompleted()` over waiting for `run.completed`; assert the intended `tool_name`, matching `tool_call_id`, and absence/presence of `tool_execution.failed` as appropriate.
 
 ### TUI E2E tests
@@ -101,7 +103,8 @@ Key commands:
 - `castor test --filter=XxxTest` — filter to specific tests
 - `castor test --suite=coding-agent` — targeted ParaTest run on a suite
 - `castor test:tui` — TUI E2E journey tests (`#[Group('tui-e2e-replay')]`, replay-backed, no live LLM)
-- `castor test:llm-real` — real-LLM controller E2E tests (`#[Group('llm-real')]`). Run as focused opt-in validation when changes touch provider/LLM-visible code — NOT required for every normal task.
+- Full `castor test:tui` uses ParaTest with `tests/paratest-bootstrap.php` (per-worker SQLite + cache; default **2** processes via `HATFIELD_TUI_PARATEST_PROCESSES`, max 4). Filtered runs use sequential PHPUnit. Tmux session names include worker PID (`hatfield-e2e-{pid}-{n}`) so parallel workers do not collide.
+- `castor test:llm-real` — real-LLM smoke (`#[Group('llm-real')]`); same PHPUnit/ParaTest command as the `test:llm-real` lane in `castor check`.
 - `castor test:controller-replay` — controller replay E2E (default, no live LLM)
 - `castor test:controller` — controller smoke test (live LLM, opt-in)
 - `castor llm:fixtures:record` — re-record LLM replay fixtures from live LLM
@@ -109,7 +112,7 @@ Key commands:
 - `castor deptrac` — layer dependency validation
 - `castor phpstan` — static analysis
 - `castor cs-check` / `castor cs-fix` — code style
-- `LLM_MODE=true castor check` — full quality gate (deterministic — no live LLM). Runs deptrac, unit/integration (ParaTest), controller replay E2E, TUI replay E2E, phpstan, and cs-check in parallel. No PHAR, no llama.cpp requirement.
+- `castor check` — full quality gate (see root `AGENTS.md` and testing skill). Includes live `test:llm-real` on port 9052.
 - `castor cleanup` — remove all temp/test artifacts
 
 ## Snapshots and cleanup
@@ -129,7 +132,7 @@ The `llama_cpp_test/test` server should run deterministically (temperature 0, fi
 
 ### LLM generation preflight
 
-`test:llm-real` and `test:controller` run a ~4s curl-based preflight (`check_llm_generation_ready`) before any live-LLM E2E test starts. It verifies the test LLM can complete a tiny generation request. If the server responds to `/health` and `/v1/models` but generation is stuck (corrupted model load, stuck slots), Castor fails immediately with a diagnostic instead of burning step timeouts. Fix or restart the llama.cpp server before retrying. The default `castor check` is fully deterministic (replay-backed) and does NOT run this preflight.
+`test:llm-real` and `test:controller` run a ~4s curl-based preflight (`check_llm_generation_ready`) before any live-LLM E2E test starts. It verifies the test LLM can complete a tiny generation request. If the server responds to `/health` and `/v1/models` but generation is stuck (corrupted model load, stuck slots), Castor fails immediately with a diagnostic instead of burning step timeouts. Fix or restart the llama.cpp server before retrying. `castor check` runs this preflight once, then runs the live `test:llm-real` lane in parallel with other check steps.
 
 ## TUI behavior proof
 
@@ -157,6 +160,43 @@ Each ParaTest worker gets a unique compiled Symfony cache directory (via `TEST_T
 - ParaTest paths: `HATFIELD_TEST_DATABASE_PATH=app_test.sqlite` (shared), `HATFIELD_CACHE_DIR=.hatfield/cache-paraT{token}` (per-worker).
 
 ## One test class per production class
+
+
+## Llama-proxy (port 9052) vs committed replay fixtures
+
+Two different “replay” mechanisms:
+
+| Mechanism | Where | Used by | Purpose |
+| --- | --- | --- | --- |
+| **llama-proxy cassettes** | Proxy disk cache (`LLAMA_PROXY_CACHE_DIR`) | Live HTTP to `:9052` — `#[Group('llm-real')]`, `castor check` `test:llm-real` lane, `castor test:controller`, `castor llm:fixtures:record` | Record real chat completions on cache miss; replay on identical normalized keys. Fast warm runs without changing app code. |
+| **Committed replay fixtures** | `tests/**/fixtures/`, `tests/AgentCore/Fixtures/traces/` + `HATFIELD_LLM_REPLAY_FIXTURE_PATH` | `castor test`, `castor test:controller-replay`, `castor test:tui` | Deterministic MockHttpClient / fixture deltas in `APP_ENV=test`; no live model, no proxy required. |
+
+Proxy cache key normalization (default on) drops volatile prologue from the **key** only; see llama-proxy README. App-side “deterministic prompt mode” is not used — normalization is proxy-side.
+
+### When to run what
+
+- **`castor check`** — full gate: replay controller/TUI lanes + live **`test:llm-real`** (ParaTest `--processes=4`). Requires tmux, working generation on **9052** (proxy recommended). Castor runs `check_llm_generation_ready()` once, then parallel lanes.
+- **`castor test:llm-real`** — same PHPUnit/ParaTest command as the check lane; use `--filter=` for one test (sequential PHPUnit, no nested ParaTest).
+- **`castor test:controller-replay`** / **`castor test:tui`** — no live LLM; do not require proxy cache.
+
+### Proxy health, stats, reset, warm
+
+```bash
+curl http://127.0.0.1:9052/__llama_proxy/health
+curl http://127.0.0.1:9052/__llama_proxy/cache/stats
+curl -X POST http://127.0.0.1:9052/__llama_proxy/cache/clear
+# equivalent: curl -X DELETE http://127.0.0.1:9052/__llama_proxy/cache
+```
+
+Optional header when `LLAMA_PROXY_ADMIN_TOKEN` is configured: `-H 'X-Llama-Proxy-Token: …'`.
+
+- **Inspect:** `health` shows `cache_normalize_messages`; `cache/stats` shows `entries` and `bytes`.
+- **Reset proxy cache:** `cache/clear` (or DELETE on `/__llama_proxy/cache`). Next live test run re-records misses (slower until warm).
+- **Regenerate / warm:** run `castor test:llm-real` or `castor check`; each distinct normalized user tail adds or hits a cassette. Second full run is much faster when cache is warm.
+- **Castor generation preflight cache:** `var/tmp/llm-generation-ready.cache` (TTL `HATFIELD_LLM_READY_TTL`, default 120s). Delete file or `HATFIELD_LLM_READY_TTL=0` to force curl preflight before live lanes.
+
+**Cold cache caveats:** First run after clear or new prompts pays upstream latency; parallel `llm-real` workers can still race on identical first-seen keys (proxy serializes per key). **Stale processes:** orphaned `messenger:consume` / `agent --controller` from a prior failed run can make tests look hung — clean up current-user workers before retrying (see root `AGENTS.md`).
+
 
 ## LLM Replay (deterministic, no live LLM)
 
