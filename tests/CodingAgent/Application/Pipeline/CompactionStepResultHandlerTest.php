@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Contract\Compaction\CompactionPrepareResult;
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\CompactionStepResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -329,6 +330,155 @@ final class CompactionStepResultHandlerTest extends TestCase
 
         // Run status stays Completed — compaction does not restart the run.
         self::assertSame(RunStatus::Completed, $result->nextState->status);
+    }
+
+    /**
+     * Thesis: auto-triggered compaction success includes an AdvanceRun
+     * effect so the LLM turn can continue after compaction.
+     *
+     * Without this, the pre-LLM guard in AdvanceRunHandler would consume
+     * the AdvanceRun and replace it with CompactRun — leaving the run
+     * stuck after compaction with no pending continuation.
+     */
+    public function testAutoTriggerSuccessIncludesAdvanceRunEffect(): void
+    {
+        $originalMessages = [
+            $this->userMsg('old question'),
+            $this->assistantMsg('old answer'),
+        ];
+        $state = $this->createRunState($originalMessages, turnNo: 5, activeStepId: 'step-1');
+
+        $summaryMsg = $this->userMsg('Summary.');
+        $retained = [$this->userMsg('recent'), $this->assistantMsg('recent answer')];
+        $compactedMessages = [$summaryMsg, ...$retained];
+
+        $fakeService = $this->stubCompactionService($compactedMessages);
+        $handler = new CompactionStepResultHandler($fakeService, new EventFactory());
+
+        $result = $handler->handle(
+            new CompactionStepResult(
+                runId: 'run-1',
+                turnNo: 5,
+                stepId: 'step-1',
+                attempt: 1,
+                idempotencyKey: 'key-1',
+                summaryText: 'Summary.',
+                error: null,
+                retainedTailMessages: array_map(static fn ($m) => $m->toArray(), $retained),
+                messagesCompacted: 1,
+                messagesRetained: 2,
+                firstRetainedIndex: 0,
+                tokenEstimateBefore: 50000,
+                trigger: 'auto',  // <— auto trigger
+                model: 'openai/gpt-4.1-mini',
+                modelOptions: ['thinking_level' => 'low'],
+            ),
+            $state,
+        );
+
+        // ContextCompacted event emitted.
+        self::assertNotNull($result->nextState);
+        self::assertCount(1, $result->events);
+        self::assertSame(RunEventTypeEnum::ContextCompacted->value, $result->events[0]->type);
+
+        // Effects must include exactly one AdvanceRun.
+        self::assertCount(1, $result->effects);
+        self::assertInstanceOf(AdvanceRun::class, $result->effects[0]);
+
+        /** @var AdvanceRun $advanceRun */
+        $advanceRun = $result->effects[0];
+        self::assertSame('run-1', $advanceRun->runId());
+        self::assertSame(5, $advanceRun->turnNo());
+    }
+
+    /**
+     * Thesis: manual-triggered compaction (user typed /compact) must NOT
+     * auto-dispatch an AdvanceRun.  The user drives the next turn.
+     */
+    public function testManualTriggerSuccessDoesNotIncludeAdvanceRunEffect(): void
+    {
+        $originalMessages = [
+            $this->userMsg('old question'),
+            $this->assistantMsg('old answer'),
+        ];
+        $state = $this->createRunState($originalMessages, turnNo: 5, activeStepId: 'step-1');
+
+        $summaryMsg = $this->userMsg('Summary.');
+        $retained = [$this->userMsg('recent'), $this->assistantMsg('recent answer')];
+        $compactedMessages = [$summaryMsg, ...$retained];
+
+        $fakeService = $this->stubCompactionService($compactedMessages);
+        $handler = new CompactionStepResultHandler($fakeService, new EventFactory());
+
+        $result = $handler->handle(
+            new CompactionStepResult(
+                runId: 'run-1',
+                turnNo: 5,
+                stepId: 'step-1',
+                attempt: 1,
+                idempotencyKey: 'key-1',
+                summaryText: 'Summary.',
+                error: null,
+                retainedTailMessages: array_map(static fn ($m) => $m->toArray(), $retained),
+                messagesCompacted: 1,
+                messagesRetained: 2,
+                firstRetainedIndex: 0,
+                tokenEstimateBefore: 50000,
+                trigger: 'manual',  // <— manual trigger
+                model: 'openai/gpt-4.1-mini',
+                modelOptions: ['thinking_level' => 'low'],
+            ),
+            $state,
+        );
+
+        // ContextCompacted event emitted.
+        self::assertNotNull($result->nextState);
+        self::assertCount(1, $result->events);
+        self::assertSame(RunEventTypeEnum::ContextCompacted->value, $result->events[0]->type);
+
+        // Effects must NOT include an AdvanceRun for manual trigger.
+        self::assertCount(0, $result->effects, 'Manual /compact must not auto-advance the run');
+    }
+
+    /**
+     * Thesis: auto-triggered compaction failure (e.g., model_error) must
+     * NOT include an AdvanceRun.  Only successful compaction continues.
+     */
+    public function testAutoTriggerFailureDoesNotIncludeAdvanceRunEffect(): void
+    {
+        $originalMessages = [$this->userMsg('hi')];
+        $state = $this->createRunState($originalMessages, turnNo: 5, activeStepId: 'step-1');
+
+        $fakeService = $this->createNoOpStub();
+        $handler = new CompactionStepResultHandler($fakeService, new EventFactory());
+
+        $result = $handler->handle(
+            new CompactionStepResult(
+                runId: 'run-1',
+                turnNo: 5,
+                stepId: 'step-1',
+                attempt: 1,
+                idempotencyKey: 'key-1',
+                summaryText: null,
+                error: ['type' => 'HttpException', 'message' => 'timeout'],
+                retainedTailMessages: [],
+                messagesCompacted: 0,
+                messagesRetained: 1,
+                firstRetainedIndex: 0,
+                tokenEstimateBefore: 50000,
+                trigger: 'auto',  // <— auto trigger, but failed
+                model: 'openai/gpt-4.1-mini',
+                modelOptions: [],
+            ),
+            $state,
+        );
+
+        self::assertNotNull($result->nextState);
+        self::assertCount(1, $result->events);
+        self::assertSame(RunEventTypeEnum::ContextCompactionFailed->value, $result->events[0]->type);
+
+        // Effects must NOT include an AdvanceRun — only success continues.
+        self::assertCount(0, $result->effects, 'Auto compaction failure must not auto-advance');
     }
 
     // ── helpers ──

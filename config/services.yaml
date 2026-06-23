@@ -114,6 +114,11 @@ services:
       $denormalizer: '@Symfony\Component\Serializer\SerializerInterface'
       $cwd: '%app.cwd%'
 
+  Ineersa\CodingAgent\Config\CompactionConfig:
+    factory: ['Ineersa\CodingAgent\Config\CompactionConfig', 'fromAppConfig']
+    arguments:
+      - '@Ineersa\CodingAgent\Config\AppConfig'
+
   # ─── Prompt Templates ───
 
   Ineersa\CodingAgent\Config\PromptsConfig:
@@ -463,6 +468,32 @@ services:
   # dispatches CompactionStepResult back to the orchestrator within the
   # same consumer process.
   Ineersa\AgentCore\Application\Handler\ExecuteCompactionStepWorker:
+    arguments:
+      $commandBus: '@agent.command.bus'
+
+  # ─── Compaction auto-trigger (COMP-06) ───
+
+  # Active model resolver: thin abstraction over ModelSelectionService
+  # so compaction services can be tested without the full model-selection
+  # dependency tree.
+  Ineersa\CodingAgent\Compaction\ModelSelectionActiveModelResolver: ~
+
+  Ineersa\CodingAgent\Compaction\ActiveModelResolverInterface:
+    alias: Ineersa\CodingAgent\Compaction\ModelSelectionActiveModelResolver
+
+  # Pre-LLM guard: CodingAgent implementation of the AgentCore contract.
+  # Injected into AdvanceRunHandler (AgentCore) so AgentCore can check
+  # auto-compaction policy without depending on CodingAgent internals.
+  Ineersa\CodingAgent\Compaction\CodingAgentPreLlmCompactionGuard: ~
+
+  Ineersa\AgentCore\Contract\Compaction\PreLlmCompactionGuardInterface:
+    alias: Ineersa\CodingAgent\Compaction\CodingAgentPreLlmCompactionGuard
+
+  # Auto-compaction after-turn hook subscriber.
+  # Tagged automatically via _instanceof HookSubscriberInterface.
+  # $commandBus is bound to agent.command.bus so CompactRun dispatch
+  # targets the correct bus.
+  Ineersa\CodingAgent\Compaction\AutoCompactionHookSubscriber:
     arguments:
       $commandBus: '@agent.command.bus'
 

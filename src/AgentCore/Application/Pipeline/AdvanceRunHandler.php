@@ -6,9 +6,11 @@ namespace Ineersa\AgentCore\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
+use Ineersa\AgentCore\Contract\Compaction\PreLlmCompactionGuardInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
+use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -20,6 +22,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
         private EventFactory $eventFactory,
         private ?RunMetrics $metrics = null,
         private ?RunTracer $tracer = null,
+        private ?PreLlmCompactionGuardInterface $preLlmCompactionGuard = null,
     ) {
     }
 
@@ -197,6 +200,73 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
 
         $nextTurnNo = $preparedState->turnNo + 1;
         $nextStepId = $message->stepId();
+
+        // Pre-LLM compaction guard: when the coding-agent-side policy
+        // determines auto-compaction should run before the next LLM call,
+        // emit a CompactRun effect instead of ExecuteLlmStep.  This keeps
+        // the run from advancing until compaction completes (the next
+        // AdvanceRun after compaction will proceed normally).
+        if (null !== $this->preLlmCompactionGuard) {
+            $shouldCompact = null === $this->tracer
+                ? $this->preLlmCompactionGuard->shouldCompactBeforeLlmStep(
+                    $runId,
+                    $nextTurnNo,
+                    $preparedState->messages,
+                    $preparedState->activeStepId,
+                )
+                : $this->tracer->inSpan('compaction.pre_llm_guard', [
+                    'run_id' => $runId,
+                    'turn_no' => $nextTurnNo,
+                ], fn (): bool => $this->preLlmCompactionGuard->shouldCompactBeforeLlmStep(
+                    $runId,
+                    $nextTurnNo,
+                    $preparedState->messages,
+                    $preparedState->activeStepId,
+                ));
+
+            if ($shouldCompact) {
+                $compactStepId = \sprintf('compact-%d', hrtime(true));
+
+                $compactEffect = new CompactRun(
+                    runId: $runId,
+                    turnNo: $nextTurnNo,
+                    stepId: $compactStepId,
+                    attempt: 1,
+                    idempotencyKey: hash('sha256', \sprintf('%s|compact|%d|%s', $runId, $nextTurnNo, $compactStepId)),
+                    trigger: 'auto',
+                );
+
+                // Emit boundary events only — do NOT emit TurnAdvanced
+                // or LeafSet (compaction does not advance the turn).
+                $events = $this->eventFactory->eventsFromSpecs(
+                    $runId,
+                    $preparedState->turnNo,
+                    $state->lastSeq + 1,
+                    $boundaryEventSpecs,
+                );
+
+                $compactedState = new RunState(
+                    runId: $preparedState->runId,
+                    status: $preparedState->status,
+                    version: $state->version + 1,
+                    turnNo: $preparedState->turnNo,
+                    lastSeq: $state->lastSeq + \count($events),
+                    isStreaming: $preparedState->isStreaming,
+                    streamingMessage: $preparedState->streamingMessage,
+                    pendingToolCalls: $preparedState->pendingToolCalls,
+                    errorMessage: $preparedState->errorMessage,
+                    messages: $preparedState->messages,
+                    activeStepId: $preparedState->activeStepId,
+                    retryableFailure: $preparedState->retryableFailure,
+                );
+
+                return new HandlerResult(
+                    nextState: $compactedState,
+                    events: $events,
+                    effects: [$compactEffect],
+                );
+            }
+        }
 
         $effect = new ExecuteLlmStep(
             runId: $runId,
