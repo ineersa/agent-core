@@ -933,7 +933,8 @@ function xml_escape(string $value): string
 function check_llm_generation_ready(): void
 {
     $cacheFile = 'var/tmp/llm-generation-ready.cache';
-    $ttlSeconds = (int) (getenv('HATFIELD_LLM_READY_TTL') ?: 120);
+    $envTtl = getenv('HATFIELD_LLM_READY_TTL');
+    $ttlSeconds = (int) (false !== $envTtl && '' !== $envTtl ? $envTtl : 120);
     if ($ttlSeconds > 0 && is_file($cacheFile)) {
         $mtime = filemtime($cacheFile);
         if (false !== $mtime && (time() - $mtime) < $ttlSeconds) {

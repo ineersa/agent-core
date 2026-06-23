@@ -131,7 +131,7 @@ E2E, live-LLM, recording, and PHAR groups).
 
 | Command | What it tests | Requires |
 |---|---|---|
-| `castor check` | Full QA gate (deterministic): deptrac, unit/integration (ParaTest), controller replay E2E, TUI replay E2E, phpstan, cs-check. No live LLM, no PHAR. | tmux |
+| `castor check` | Full QA gate: deptrac, unit/integration (ParaTest), controller replay E2E, TUI replay E2E, live llm-real (ParaTest, port 9052), phpstan, cs-check. No PHAR. | tmux, llama.cpp/proxy on 9052 |
 | `castor test` | Unit/integration tests (ParaTest parallel by default) | Nothing (pure PHP) |
 | `castor test:llm-real` | Real LLM smoke: `ControllerSmokeTest`, `LlamaCppSmokeTest` (excludes `recording` group). Run as focused opt-in validation when changes touch provider/LLM-visible code — NOT required for every normal task. | llama.cpp on port 9052 |
 | `castor test:controller-replay` | Controller replay E2E: spawns `--controller`, JSONL protocol, replay fixtures (no live LLM) | Nothing (pure PHP) |
@@ -213,17 +213,17 @@ On E2E test failure, the test dumps:
 
 For changes touching TUI runtime behavior, `AgentSessionClient`, model routing, Messenger wiring, `TranscriptProjector`, `RuntimeEventPoller`, transcript rendering, or LLM-visible execution flow, unit/container/mocked tests are not enough.
 
-You MUST run `castor check`. It includes controller replay E2E and TUI replay E2E (both deterministic), so runtime/TUI/error-propagation changes exercise the controller process and interactive user-visible TUI path before handoff. Live LLM validation is opt-in via `castor test:controller`.
+You MUST run `castor check`. It includes controller replay E2E, TUI replay E2E, and the live `llm-real` lane, so runtime/TUI/error-propagation and provider smoke are exercised before handoff. Additional live controller validation remains opt-in via `castor test:controller`.
 
 For especially risky visual or interaction changes, also run `castor run:agent-test` to drive the agent in tmux and capture snapshots.
 
 Validation must exercise the real user flow: start agent, type prompt, submit, wait for visible assistant response or visible error block, and capture TUI snapshot plus session artifacts on failure. Do not claim runtime/TUI work is done based only on DTO tests, mocked pollers, container compilation, or isolated service tests.
 
-If tmux is unavailable, TUI tasks MUST remain IN-PROGRESS with exact environmental blocker output — never mark CODE-REVIEW or DONE without it. The default `castor check` is deterministic and does NOT require llama.cpp.
+If tmux is unavailable, TUI tasks MUST remain IN-PROGRESS with exact environmental blocker output — never mark CODE-REVIEW or DONE without it. `castor check` also requires llama.cpp/llama-proxy on port 9052 for the `llm-real` lane.
 
 ### Focused live LLM provider validation
 
-`castor check` is deterministic and must NOT include `castor test:llm-real` by default. Run `castor test:llm-real` as opt-in focused validation when changes touch:
+`castor check` already runs the full `llm-real` group. Run `castor test:llm-real` alone for focused/filtered live validation when changes touch:
 - Symfony AI provider/factory/platform integration
 - LLM provider config, model catalog/resolution/routing/selection
 - Tool schemas, tool-call conversion, or tool argument prompts
