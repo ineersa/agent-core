@@ -5,11 +5,17 @@ services:
 
   # File-backed stores (canonical container: .hatfield/sessions/<runId>/)
   # session_id === run_id in Hatfield.
+  #
+  # Parent-scoped child agent runs are routed transparently through
+  # RunStoreRouter and EventStoreRouter, which delegate to
+  # AgentChildRunStore / AgentChildRunEventStore when the runId
+  # resolves to a child artifact; otherwise to SessionRunStore /
+  # SessionRunEventStore for normal parent runs.
   Ineersa\AgentCore\Contract\RunStoreInterface:
-    alias: Ineersa\CodingAgent\Session\SessionRunStore
+    alias: Ineersa\CodingAgent\Agent\Artifact\RunStoreRouter
 
   Ineersa\AgentCore\Contract\EventStoreInterface:
-    alias: Ineersa\CodingAgent\Session\SessionRunEventStore
+    alias: Ineersa\CodingAgent\Agent\Artifact\EventStoreRouter
 
   Ineersa\AgentCore\Contract\AgentRunnerInterface:
     alias: Ineersa\AgentCore\Application\Pipeline\AgentRunner
