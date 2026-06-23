@@ -8,16 +8,16 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ExtensionsConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
-use Ineersa\CodingAgent\Extension\ExtensionApiBridge;
+use Ineersa\CodingAgent\Tests\Extension\InMemoryExtensionApiBridge;
 use Ineersa\CodingAgent\Extension\ExtensionManager;
 use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
-use Ineersa\Hatfield\ExtensionApi\ToolCallContextDTO;
-use Ineersa\Hatfield\ExtensionApi\ToolCallDecisionDTO;
-use Ineersa\Hatfield\ExtensionApi\ToolCallHookInterface;
-use Ineersa\Hatfield\ExtensionApi\ToolRegistrationDTO;
-use Ineersa\Hatfield\ExtensionApi\ToolResultContextDTO;
-use Ineersa\Hatfield\ExtensionApi\ToolResultDecisionDTO;
-use Ineersa\Hatfield\ExtensionApi\ToolResultHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallContextDTO;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallDecisionDTO;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultContextDTO;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultDecisionDTO;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultHookInterface;
 use Monolog\Level;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
@@ -42,11 +42,11 @@ final class ExtensionManagerTest extends TestCase
         $this->rmdirRecursive($this->extensionsDir);
     }
 
-    // ── Tests: ExtensionApiBridge ──
+    // ── Tests: InMemoryExtensionApiBridge ──
 
     public function testBridgeCollectsRegistrations(): void
     {
-        $bridge = new ExtensionApiBridge();
+        $bridge = new InMemoryExtensionApiBridge();
 
         $dto1 = new ToolRegistrationDTO(name: 'tool_a', description: 'A', parametersJsonSchema: [], handler: null);
         $dto2 = new ToolRegistrationDTO(name: 'tool_b', description: 'B', parametersJsonSchema: [], handler: null);
@@ -61,7 +61,7 @@ final class ExtensionManagerTest extends TestCase
 
     public function testBridgeDrainClearsRegistrations(): void
     {
-        $bridge = new ExtensionApiBridge();
+        $bridge = new InMemoryExtensionApiBridge();
         $bridge->registerTool(
             new ToolRegistrationDTO(name: 'tool_x', description: 'X', parametersJsonSchema: [], handler: null)
         );
@@ -74,16 +74,16 @@ final class ExtensionManagerTest extends TestCase
 
     public function testBridgeEmptyDrainReturnsEmptyArray(): void
     {
-        $bridge = new ExtensionApiBridge();
+        $bridge = new InMemoryExtensionApiBridge();
         $this->assertSame([], $bridge->drainRegistrations());
         $this->assertSame([], $bridge->getRegistrations());
     }
 
-    // ── ExtensionApiBridge hook methods ──
+    // ── InMemoryExtensionApiBridge hook methods ──
 
     public function testBridgeCollectsToolCallHooks(): void
     {
-        $bridge = new ExtensionApiBridge();
+        $bridge = new InMemoryExtensionApiBridge();
         $hookA = $this->dummyToolCallHook('hook_a');
         $hookB = $this->dummyToolCallHook('hook_b');
 
@@ -97,7 +97,7 @@ final class ExtensionManagerTest extends TestCase
 
     public function testBridgeCollectsToolResultHooks(): void
     {
-        $bridge = new ExtensionApiBridge();
+        $bridge = new InMemoryExtensionApiBridge();
         $hookA = $this->dummyToolResultHook('result_a');
         $hookB = $this->dummyToolResultHook('result_b');
 
@@ -111,7 +111,7 @@ final class ExtensionManagerTest extends TestCase
 
     public function testBridgeHooksCoexistWithTools(): void
     {
-        $bridge = new ExtensionApiBridge();
+        $bridge = new InMemoryExtensionApiBridge();
 
         $bridge->registerTool(new ToolRegistrationDTO(name: 'tool_x', description: 'X', parametersJsonSchema: [], handler: null));
         $bridge->registerToolCallHook($this->dummyToolCallHook('hook_x'));
@@ -127,7 +127,7 @@ final class ExtensionManagerTest extends TestCase
     public function testLoadExtensionsWithEmptyListDoesNothing(): void
     {
         $config = $this->createAppConfig(cwd: $this->extensionsDir, extensions: []);
-        $bridge = new ExtensionApiBridge();
+        $bridge = new InMemoryExtensionApiBridge();
         $logger = new NullLogger();
 
         $manager = new ExtensionManager($config, $bridge, $logger);
@@ -157,7 +157,7 @@ namespace HatfieldExtTest;
 
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
-use Ineersa\Hatfield\ExtensionApi\ToolRegistrationDTO;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
 
 class SampleExtension implements HatfieldExtensionInterface
 {
@@ -181,7 +181,7 @@ PHP;
             cwd: $this->extensionsDir,
             extensions: ['HatfieldExtTest\\SampleExtension']
         );
-        $bridge = new ExtensionApiBridge();
+        $bridge = new InMemoryExtensionApiBridge();
         $logger = new NullLogger();
 
         $manager = new ExtensionManager($config, $bridge, $logger);
@@ -197,7 +197,7 @@ PHP;
             cwd: $this->extensionsDir,
             extensions: ['NoSuch\\NonExistentExtension']
         );
-        $bridge = new ExtensionApiBridge();
+        $bridge = new InMemoryExtensionApiBridge();
         $logger = new LoggerSpy();
 
         $manager = new ExtensionManager($config, $bridge, $logger);
@@ -233,7 +233,7 @@ PHP
             cwd: $this->extensionsDir,
             extensions: ['HatfieldExtTest\\PlainClass']
         );
-        $bridge = new ExtensionApiBridge();
+        $bridge = new InMemoryExtensionApiBridge();
         $logger = new LoggerSpy();
 
         $manager = new ExtensionManager($config, $bridge, $logger);
@@ -270,7 +270,7 @@ namespace HatfieldExtTest;
 
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
-use Ineersa\Hatfield\ExtensionApi\ToolRegistrationDTO;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
 
 class GoodExtension implements HatfieldExtensionInterface
 {
@@ -311,7 +311,7 @@ namespace HatfieldExtTest;
 
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
-use Ineersa\Hatfield\ExtensionApi\ToolRegistrationDTO;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
 
 class AnotherGoodExtension implements HatfieldExtensionInterface
 {
@@ -331,7 +331,7 @@ PHP
                 'HatfieldExtTest\\AnotherGoodExtension',
             ]
         );
-        $bridge = new ExtensionApiBridge();
+        $bridge = new InMemoryExtensionApiBridge();
         $logger = new LoggerSpy();
 
         $manager = new ExtensionManager($config, $bridge, $logger);
@@ -352,7 +352,7 @@ PHP
             cwd: $this->extensionsDir,
             extensions: [],
         );
-        $bridge = new ExtensionApiBridge();
+        $bridge = new InMemoryExtensionApiBridge();
         $logger = new NullLogger();
 
         $manager = new ExtensionManager($config, $bridge, $logger);
@@ -364,7 +364,7 @@ PHP
     public function testLoadExtensionsWithoutAutoloadStillLoadsKnownClasses(): void
     {
         // Don't create the autoload file; load a class that PHP already knows
-        $bridge = new ExtensionApiBridge();
+        $bridge = new InMemoryExtensionApiBridge();
         $logger = new NullLogger();
 
         // HatfieldExtensionInterface does NOT implement HatfieldExtensionInterface,
@@ -400,13 +400,13 @@ namespace HatfieldExtTest;
 
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
-use Ineersa\Hatfield\ExtensionApi\ToolCallContextDTO;
-use Ineersa\Hatfield\ExtensionApi\ToolCallDecisionDTO;
-use Ineersa\Hatfield\ExtensionApi\ToolCallHookInterface;
-use Ineersa\Hatfield\ExtensionApi\ToolRegistrationDTO;
-use Ineersa\Hatfield\ExtensionApi\ToolResultContextDTO;
-use Ineersa\Hatfield\ExtensionApi\ToolResultDecisionDTO;
-use Ineersa\Hatfield\ExtensionApi\ToolResultHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallContextDTO;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallDecisionDTO;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultContextDTO;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultDecisionDTO;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultHookInterface;
 
 class HookRegistrationExtension implements HatfieldExtensionInterface
 {
@@ -434,7 +434,7 @@ PHP
             cwd: $this->extensionsDir,
             extensions: ['HatfieldExtTest\\HookRegistrationExtension']
         );
-        $bridge = new ExtensionApiBridge();
+        $bridge = new InMemoryExtensionApiBridge();
         $logger = new NullLogger();
 
         $manager = new ExtensionManager($config, $bridge, $logger);

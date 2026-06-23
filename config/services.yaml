@@ -148,9 +148,20 @@ services:
 
   # ─── Extension wiring ───
 
+  Ineersa\CodingAgent\Extension\ExtensionExecBridge: ~
+
+  Ineersa\Tui\Extension\TuiCommandRegistryAdapter:
+    arguments:
+      $slashCommandRegistry: '@Ineersa\Tui\Command\SlashCommandRegistry'
+
+  Ineersa\Hatfield\ExtensionApi\Command\CommandRegistryInterface:
+    alias: Ineersa\Tui\Extension\TuiCommandRegistryAdapter
+
   Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge:
     arguments:
       $appConfig: '@Ineersa\CodingAgent\Config\AppConfig'
+      $execBridge: '@Ineersa\CodingAgent\Extension\ExtensionExecBridge'
+      $commandRegistry: '@Ineersa\Hatfield\ExtensionApi\Command\CommandRegistryInterface'
 
   Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface:
     alias: Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge
@@ -429,6 +440,7 @@ services:
   Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder:
     arguments:
       $projectDir: '%kernel.project_dir%'
+      $promptContributorProvider: '@Ineersa\CodingAgent\Extension\ExtensionHookRegistry'
 
   # ─── Compaction prompt builder ───
   Ineersa\CodingAgent\Compaction\CompactionPromptBuilder:
@@ -488,6 +500,7 @@ services:
     arguments:
       $registry: '@Ineersa\CodingAgent\Tool\ToolRegistryInterface'
       $eventDispatcher: '@event_dispatcher'
+      $rewriteHookProvider: '@Ineersa\CodingAgent\Extension\ExtensionHookRegistry'
 
   Symfony\AI\Agent\Toolbox\ToolboxInterface:
     alias: Ineersa\CodingAgent\Tool\RegistryBackedToolbox

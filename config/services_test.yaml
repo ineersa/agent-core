@@ -25,6 +25,14 @@ services:
       $logger: '@Psr\Log\LoggerInterface'
     # No calls: registerShutdownHandler is intentionally omitted.
 
+  # In-memory ExtensionApiInterface test double for extension loading tests.
+  # Does NOT override the production ExtensionApiInterface alias
+  # (which stays on ExtensionToolRegistryBridge so SafeGuard and
+  #  integration tests keep using the real bridge).
+  # Available via container autowiring or direct instantiation.
+  Ineersa\CodingAgent\Tests\Extension\InMemoryExtensionApiBridge:
+    public: true
+
   # Test HTTP client for LLM requests.  Two modes:
   #
   #  1. Replay  (HATFIELD_LLM_REPLAY_FIXTURE_PATH set):

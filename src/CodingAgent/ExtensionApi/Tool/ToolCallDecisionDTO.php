@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\Hatfield\ExtensionApi;
+namespace Ineersa\Hatfield\ExtensionApi\Tool;
 
 /**
  * Decision DTO returned by ToolCallHookInterface::onToolCall().
