@@ -25,7 +25,7 @@
   state.json               AgentCore RunState materialized snapshot/checkpoint
   events.jsonl             AgentCore RunEvent canonical event stream
   attachments/             (future) pasted files, images, diffs
-  artifacts/agents/        (future) parent-scoped child agent artifacts
+  artifacts/agents/        parent-scoped child agent artifacts
     registry.json          canonical artifact entry list
     <artifactId>/
       metadata.json        per-child identity/status/timestamps
