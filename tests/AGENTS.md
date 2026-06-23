@@ -58,7 +58,7 @@ Inherited helpers:
 - `collectEventsUntilToolCompleted(string $toolName, float $timeout): array` — wait for the named tool's matching `tool_execution.completed` using `tool_call_id`
 - `collectDiagnostics(array $events): string` — format diagnostic dump
 
-Live `llm-real` controller tests that share llama-proxy cache normalization must use a **unique first user prompt** per scenario (e.g. `[llm-real:write-file] ...`) so stripped prologue keys do not collide and replay the wrong tool response. Use `liveLlmToolWaitTimeout()` on `ControllerE2eTestCase` for tool-completion waits; 5s is too short for live read/write on real workers.
+Live `llm-real` controller tests that share llama-proxy cache normalization must use a **unique first user prompt** per scenario (e.g. `[llm-real:write-file] ...`) so stripped prologue keys do not collide and replay the wrong tool response. Use `liveLlmToolWaitTimeout()` on `ControllerE2eTestCase` for tool-completion waits; 5s is too short for live read/write on real workers. Prefer `liveLlmRunWaitTimeout()` for single-turn runs. Avoid `collectRaw()` full-timeout drains; use `collectEventsUntil()` / `collectEventsUntilToolCompleted()` for early exit. Live controller subprocess uses source `bin/console` with `APP_ENV=test` and `APP_DEBUG=0` so `services_test.yaml` applies (5s HTTP timeout when replay is off). Do not spawn the PHAR with `APP_ENV=test` — dev-only bundles are excluded from the PHAR.
 
 Do not write inline `byType` loops or ack searches in test methods. For tool-focused LLM smoke tests, prefer `collectEventsUntilToolCompleted()` over waiting for `run.completed`; assert the intended `tool_name`, matching `tool_call_id`, and absence/presence of `tool_execution.failed` as appropriate.
 

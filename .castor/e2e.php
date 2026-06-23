@@ -41,19 +41,8 @@ function test_llm_real(?string $filter = null): void
     }
     check_llm_generation_ready();
 
-    $pharPath = '';
-    try {
-        $pharPath = phar_ensure();
-    } catch (Throwable $e) {
-        echo "PHAR ensure skipped: {$e->getMessage()}
-";
-    }
-    if ('' !== $pharPath) {
-        $GLOBALS['CASTOR_PHAR_READY'] = $pharPath;
-    }
-    $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
-
-    $cmd = 'APP_ENV=test '.$pharEnv.'LLAMA_CPP_SMOKE_TEST=1 '.\PHP_BINARY.' vendor/bin/phpunit'
+    // Live controller E2E spawns source bin/console with APP_ENV=test (not PHAR).
+    $cmd = 'APP_ENV=test LLAMA_CPP_SMOKE_TEST=1 '.\PHP_BINARY.' vendor/bin/phpunit'
         .$filterArg
         .' --exclude-group=recording'
         .' '.phpunit_strict_issue_flags()

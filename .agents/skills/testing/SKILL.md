@@ -46,6 +46,8 @@ server responds to `/health` and `/v1/models` but generation hangs (corrupted
 model load, stuck slots), this preflight fails immediately with a clear
 diagnostic instead of burning 30-90s Castor step timeouts.
 
+Back-to-back `test:llm-real` invocations skip the expensive curl when `var/tmp/llm-generation-ready.cache` is fresh (default TTL 120s; override with `HATFIELD_LLM_READY_TTL`). Force a recheck by deleting that file.
+
 This preflight is NOT run by `castor check` (which is fully deterministic
 and replay-backed).
 
@@ -84,11 +86,11 @@ pre-recorded fixture files under `tests/AgentCore/Fixtures/traces/`.
 
 ## PHAR-based testing
 
-Controller subprocess tests that use the live LLM path run against the built PHAR.
-Castor test tasks (`test:llm-real`, `test:controller`)
-automatically call `phar:ensure` first and set `HATFIELD_BINARY_PATH` so
-`AgentTestExecutable` resolves the PHAR path. If PHAR build fails, these
-test tasks skip gracefully (PHAR ensure failure is non-fatal).
+Live controller E2E (`test:llm-real`, `test:controller`) spawn **source**
+`bin/console` with `APP_ENV=test` via `AgentTestExecutable::sourceConsoleCommand()`
+so `config/services_test.yaml` applies. They do **not** use the PHAR (dev-only
+bundles such as DAMA are excluded from the PHAR). `castor test:controller` may
+still call `phar:ensure` for other paths; `test:llm-real` skips PHAR ensure.
 
 Controller replay tests (`test:controller-replay`) and all TUI E2E tests
 (`test:tui`, `test:tui-update`) use source `bin/console` and do not

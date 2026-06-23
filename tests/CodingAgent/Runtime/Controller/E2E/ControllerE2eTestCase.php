@@ -81,7 +81,15 @@ abstract class ControllerE2eTestCase extends TestCase
      */
     protected function liveLlmToolWaitTimeout(): float
     {
-        return 25.0;
+        return 12.0;
+    }
+
+    /**
+     * Wall-clock budget for a single-turn live LLM run (start_run → terminal state).
+     */
+    protected function liveLlmRunWaitTimeout(): float
+    {
+        return 8.0;
     }
 
     // ── Lifecycle ──
@@ -126,7 +134,7 @@ abstract class ControllerE2eTestCase extends TestCase
 
     protected function spawnController(): void
     {
-        [$php, $script] = AgentTestExecutable::command();
+        [$php, $script] = AgentTestExecutable::sourceConsoleCommand();
         self::assertFileExists($script, 'Agent executable not found at '.$script);
 
         $descriptors = [
@@ -135,9 +143,12 @@ abstract class ControllerE2eTestCase extends TestCase
             2 => ['pipe', 'w'],
         ];
 
+        // APP_ENV=test loads services_test.yaml (5s HttpClient when replay is off).
+        // Source bin/console is required — the PHAR excludes dev/test-only bundles.
         $env = [
-            'APP_ENV' => 'dev',
-            'APP_DEBUG' => '1',
+            'APP_ENV' => 'test',
+            'APP_DEBUG' => '0',
+            'HATFIELD_TEST_DATABASE_PATH' => 'app_test-live-'.$this->sessionId.'.sqlite',
             'HATFIELD_RUN_CONTROL_TRANSPORT_DSN' => "doctrine://default?queue_name=run_control_{$this->sessionId}",
             'HATFIELD_LLM_TRANSPORT_DSN' => "doctrine://default?queue_name=llm_{$this->sessionId}",
             'HATFIELD_TOOL_TRANSPORT_DSN' => "doctrine://default?queue_name=tool_{$this->sessionId}",
@@ -605,6 +616,9 @@ abstract class ControllerE2eTestCase extends TestCase
 ai:
     default_model: llama_cpp_test/test
     default_reasoning: off
+    http:
+        timeout: 8
+        max_retries: 0
     providers:
         llama_cpp_test:
             type: generic

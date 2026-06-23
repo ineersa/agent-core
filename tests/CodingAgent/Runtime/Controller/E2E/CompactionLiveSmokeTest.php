@@ -95,7 +95,7 @@ YAML;
         ]);
 
         // Collect events until the run reaches a terminal state.
-        $runEvents = $this->collectEvents(30.0);
+        $runEvents = $this->collectEvents(15.0);
         $byType = $this->indexByType($runEvents);
 
         $this->assertStartRunAcked($runEvents, $startCmdId);
@@ -113,7 +113,7 @@ YAML;
         if (!isset($byType['run.completed']) && !isset($byType['run.failed'])) {
             // The run might still be running if the model is slow.
             // Collect more events.
-            $moreEvents = $this->collectEvents(30.0);
+            $moreEvents = $this->collectEvents(15.0);
             $runEvents = array_merge($runEvents, $moreEvents);
             $byType = $this->indexByType($runEvents);
         }
@@ -147,7 +147,7 @@ YAML;
         // round-trip.
         $compactEvents = $this->collectEventsUntilTarget(
             targets: ['compaction.completed', 'compaction.failed'],
-            timeout: 30.0,
+            timeout: 25.0,
         );
         $compactByType = $this->indexByType($compactEvents);
 

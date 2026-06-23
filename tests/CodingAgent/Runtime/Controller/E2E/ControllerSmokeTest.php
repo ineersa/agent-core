@@ -38,7 +38,7 @@ final class ControllerSmokeTest extends ControllerE2eTestCase
             ],
         ]);
 
-        $events = $this->collectEvents(15.0);
+        $events = $this->collectEvents($this->liveLlmRunWaitTimeout());
         $byType = $this->indexByType($events);
 
         $this->assertStartRunAcked($events, $startCmdId);

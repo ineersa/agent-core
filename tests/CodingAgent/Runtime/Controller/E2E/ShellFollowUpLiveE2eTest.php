@@ -46,7 +46,7 @@ final class ShellFollowUpLiveE2eTest extends ControllerE2eTestCase
             'payload' => ['prompt' => '[llm-real:shell-followup-no-shell] Respond with exactly one word: hello.'],
         ]);
 
-        $turn1Events = $this->collectEvents(12.0);
+        $turn1Events = $this->collectEvents($this->liveLlmRunWaitTimeout());
         $byType = $this->indexByType($turn1Events);
         $this->assertStartRunAcked($turn1Events, $startCmdId);
 
@@ -80,7 +80,7 @@ final class ShellFollowUpLiveE2eTest extends ControllerE2eTestCase
             'payload' => ['text' => 'Say hello again.'],
         ]);
 
-        $followUpEvents = $this->collectEvents(8.0);
+        $followUpEvents = $this->collectEvents(6.0);
         $followUpByType = $this->indexByType($followUpEvents);
 
         self::assertTrue($this->foundAck($followUpEvents, $followUpCmdId),
@@ -125,7 +125,7 @@ final class ShellFollowUpLiveE2eTest extends ControllerE2eTestCase
             'payload' => ['prompt' => '[llm-real:shell-followup-with-shell] Respond with exactly one word: hello.'],
         ]);
 
-        $turn1Events = $this->collectEvents(12.0);
+        $turn1Events = $this->collectEvents($this->liveLlmRunWaitTimeout());
         $byType = $this->indexByType($turn1Events);
         $this->assertStartRunAcked($turn1Events, $startCmdId);
 
@@ -159,8 +159,7 @@ final class ShellFollowUpLiveE2eTest extends ControllerE2eTestCase
             'payload' => ['text' => 'ls -1'],
         ]);
 
-        // Manually collect events with a tighter loop to get ALL events.
-        $shellEvents = $this->collectRaw(5.0);
+        $shellEvents = $this->collectEventsUntilToolCompleted('bash', 8.0);
         $shellByType = $this->indexByType($shellEvents);
 
         self::assertTrue($this->foundAck($shellEvents, $shellCmdId),
@@ -184,9 +183,12 @@ final class ShellFollowUpLiveE2eTest extends ControllerE2eTestCase
             'payload' => ['text' => 'Say hello again.'],
         ]);
 
-        // Collect ALL events within the timeout — do NOT stop early on any type.
-        $followUpEvents = $this->collectRaw(8.0);
+        $followUpEvents = $this->collectEventsUntil('assistant.text_started', 10.0);
         $followUpByType = $this->indexByType($followUpEvents);
+        if (!isset($followUpByType['run.completed']) && !isset($followUpByType['run.failed'])) {
+            $followUpEvents = array_merge($followUpEvents, $this->collectEvents(6.0));
+            $followUpByType = $this->indexByType($followUpEvents);
+        }
 
         self::assertTrue($this->foundAck($followUpEvents, $followUpCmdId),
             'Follow-up: expected command.ack. '.$this->collectDiagnostics($followUpEvents));
@@ -231,39 +233,4 @@ final class ShellFollowUpLiveE2eTest extends ControllerE2eTestCase
         );
     }
 
-    /**
-     * Collect all events within the timeout WITHOUT stopping early on any
-     * event type.  Unlike collectEvents()/collectEventsUntil(), this does
-     * NOT stop at run.completed/run.failed/run.cancelled — it drains the
-     * full timeout period so we can see ALL events for diagnostics.
-     *
-     * @return list<array<string, mixed>>
-     */
-    private function collectRaw(float $timeout): array
-    {
-        $events = [];
-        $deadline = microtime(true) + $timeout;
-
-        while (microtime(true) < $deadline) {
-            foreach ($this->readEvents() as $event) {
-                $events[] = $event;
-            }
-
-            if (!$this->isRunning()) {
-                foreach ($this->readEvents() as $event) {
-                    $events[] = $event;
-                }
-                break;
-            }
-
-            usleep(10_000);
-        }
-
-        // Drain remaining events.
-        foreach ($this->readEvents() as $event) {
-            $events[] = $event;
-        }
-
-        return $events;
-    }
 }
