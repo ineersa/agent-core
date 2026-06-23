@@ -75,6 +75,15 @@ abstract class ControllerE2eTestCase extends TestCase
         return [];
     }
 
+    /**
+     * Wall-clock budget for live LLM tool smoke tests (first LLM turn + tool execution).
+     * Replay-backed controller tests may pass with shorter timeouts; live llama.cpp is slower.
+     */
+    protected function liveLlmToolWaitTimeout(): float
+    {
+        return 25.0;
+    }
+
     // ── Lifecycle ──
 
     protected function setUp(): void

@@ -56,13 +56,13 @@ final class ViewImageToolE2eTest extends ControllerE2eTestCase
             'id' => $startCmdId,
             'type' => 'start_run',
             'payload' => [
-                'prompt' => 'Use exactly one tool call: tool name `view_image` with arguments `{ "path": "./test-photo.jpeg" }`. '
+                'prompt' => '[llm-real:view-image] Use exactly one tool call: tool name `view_image` with arguments `{ "path": "./test-photo.jpeg" }`. '
                     .'Do not call `read`; `read` is forbidden for this task and cannot view images. '
                     .'Do not use an absolute path. After the tool succeeds, answer exactly `done`.',
             ],
         ]);
 
-        $events = $this->collectEventsUntilToolCompleted('view_image', 5.0);
+        $events = $this->collectEventsUntilToolCompleted('view_image', $this->liveLlmToolWaitTimeout());
         $byType = $this->indexByType($events);
 
         // Verify command acknowledged

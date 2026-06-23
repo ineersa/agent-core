@@ -34,7 +34,7 @@ final class ControllerSmokeTest extends ControllerE2eTestCase
             'id' => $startCmdId,
             'type' => 'start_run',
             'payload' => [
-                'prompt' => 'Respond with exactly one word: hello.',
+                'prompt' => '[llm-real:controller-smoke] Respond with exactly one word: hello.',
             ],
         ]);
 

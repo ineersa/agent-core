@@ -43,7 +43,7 @@ final class ShellFollowUpLiveE2eTest extends ControllerE2eTestCase
         $this->writeCommand([
             'v' => 1, 'id' => $startCmdId,
             'type' => 'start_run',
-            'payload' => ['prompt' => 'Respond with exactly one word: hello.'],
+            'payload' => ['prompt' => '[llm-real:shell-followup-no-shell] Respond with exactly one word: hello.'],
         ]);
 
         $turn1Events = $this->collectEvents(12.0);
@@ -122,7 +122,7 @@ final class ShellFollowUpLiveE2eTest extends ControllerE2eTestCase
         $this->writeCommand([
             'v' => 1, 'id' => $startCmdId,
             'type' => 'start_run',
-            'payload' => ['prompt' => 'Respond with exactly one word: hello.'],
+            'payload' => ['prompt' => '[llm-real:shell-followup-with-shell] Respond with exactly one word: hello.'],
         ]);
 
         $turn1Events = $this->collectEvents(12.0);

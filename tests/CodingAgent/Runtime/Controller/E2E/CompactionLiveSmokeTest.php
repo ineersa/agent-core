@@ -79,7 +79,7 @@ YAML;
         // reproducible background text so the user→assistant pair
         // in the conversation body is well above the compact-after
         // threshold while the assistant answer stays short.
-        $longContext = str_repeat(
+        $longContext = '[llm-real:compaction-live] ' . str_repeat(
             "Automated testing is a fundamental practice in modern software engineering. ",
             30,
         ) . "Now respond with exactly: Understood.";

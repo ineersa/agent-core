@@ -87,14 +87,14 @@ YAML;
             'id' => $startCmdId,
             'type' => 'start_run',
             'payload' => [
-                'prompt' => 'Call the `read` tool now. Set the `path` argument to `./'.$fileBasename.'`. '
+                'prompt' => '[llm-real:output-cap-read] Call the `read` tool now. Set the `path` argument to `./'.$fileBasename.'`. '
                     .'The file exists in the current working directory. Do not ask a question, '
                     .'do not use an absolute path, and do not call any other tool. '
                     .'After the tool succeeds, answer exactly `done`.',
             ],
         ]);
 
-        $events = $this->collectEventsUntilToolCompleted('read', 5.0);
+        $events = $this->collectEventsUntilToolCompleted('read', $this->liveLlmToolWaitTimeout());
         $byType = $this->indexByType($events);
 
         // Mandatory: controller acknowledged the start command.

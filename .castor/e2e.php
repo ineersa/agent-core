@@ -71,7 +71,7 @@ function test_llm_real(?string $filter = null): void
             'log' => report_path('check-test-llm-real.log'),
         ],
     ];
-    $timeouts = ['llm-real' => 30];
+    $timeouts = ['llm-real' => 120]; // full llm-real group: PHAR preflight + multiple live controller tests
 
     $start = hrtime(true);
     $results = run_commands_parallel($commands, $timeouts);
