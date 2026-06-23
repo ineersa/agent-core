@@ -10,7 +10,7 @@ description: "E2E and validation testing strategy. Load this skill when: writing
 All PHPUnit invocations include `--stop-on-error --stop-on-failure --fail-on-all-issues --display-all-issues`.
 
 ```bash
-castor check                # Full QA gate (deterministic — no live LLM): deptrac, unit/integration (ParaTest), controller replay E2E, TUI replay E2E, phpstan, cs-check; per-step timeouts + logs at var/reports/check-*.log
+castor check                # Full QA gate: deptrac, unit/integration (ParaTest), controller replay E2E, TUI replay E2E, live llm-real smoke (ParaTest, port 9052 / llama-proxy), phpstan, cs-check; lanes parallel; logs at var/reports/check-*.log
 castor test                 # unit/integration tests (ParaTest parallel by default); excludes tui-e2e-replay, llm-real, recording, and controller-replay groups
 castor test --filter=X      # filter tests by name
 castor test --suite=X       # target a specific phpunit.xml test suite (ParaTest parallel)
@@ -48,8 +48,7 @@ diagnostic instead of burning 30-90s Castor step timeouts.
 
 Back-to-back `test:llm-real` invocations skip the expensive curl when `var/tmp/llm-generation-ready.cache` is fresh (default TTL 120s; override with `HATFIELD_LLM_READY_TTL`). Force a recheck by deleting that file.
 
-This preflight is NOT run by `castor check` (which is fully deterministic
-and replay-backed).
+`castor check` runs this preflight once before parallel lanes, then includes the live `test:llm-real` lane (requires llama.cpp/llama-proxy on port 9052; warm proxy cache keeps the lane ~22–25s).
 
 If you see:
 ```

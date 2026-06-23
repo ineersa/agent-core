@@ -5,15 +5,16 @@ declare(strict_types=1);
 /**
  * QA orchestration: the `check` command and its direct helpers.
  *
- * MAINT-05G: `check` is now fully deterministic — all lanes use
- * replay-backed fixtures (no live llama.cpp/OpenAI dependency).
- * Live LLM commands remain as opt-in provider compatibility smoke:
- *   castor test:llm-real, castor test:controller, castor llm:fixtures:record
+ * QA gate lanes run concurrently (proc_open).  Unit/integration and
+ * replay-backed E2E lanes do not require a live LLM.  The `test:llm-real`
+ * lane runs the same ParaTest command as `castor test:llm-real` (port 9052 /
+ * llama-proxy; warm cache ~22–25s).  Opt-in live controller smoke:
+ *   castor test:controller, castor llm:fixtures:record
  *
- * Lanes run concurrently:
- *   deptrac (30s) → test: unit/integration ParaTest (120s) →
- *   test:controller-replay (75s) → test:tui (120s) → phpstan (30s) →
- *   cs-check (30s).  No PHAR, no live LLM.
+ * Lanes (typical shell timeouts):
+ *   deptrac (30s), test ParaTest (120s), test:controller-replay (75s),
+ *   test:tui (120s), test:llm-real (180s), phpstan (30s), cs-check (30s).
+ *   No PHAR in the gate.
  *
  * Budget increase (30s → 75s) for test:controller-replay reflects
  * expanded replay E2E suite (7 isolated controller subprocess tests
@@ -42,6 +43,7 @@ declare(strict_types=1);
 
 use Castor\Attribute\AsTask;
 
+use function CastorTasks\check_llm_generation_ready;
 use function CastorTasks\is_llm_mode;
 use function CastorTasks\report_path;
 use function CastorTasks\run_quiet_command;
@@ -55,18 +57,18 @@ require_once __DIR__.'/shared.php';
 // ─── Quality gate ─────────────────────────────────────────────────
 
 /**
- * Run QA gate — fully deterministic.
+ * Run full QA gate.
  *
- * All lanes use replay-backed fixtures or pure-static analysis.
- * No live llama.cpp/OpenAI dependency.  Live LLM smoke is opt-in
- * via `castor test:llm-real`, `castor test:controller`, and
- * `castor llm:fixtures:record`.
+ * Replay-backed controller/TUI E2E and static-analysis lanes run without
+ * production LLM providers.  The `test:llm-real` lane hits llama_cpp_test/test
+ * on port 9052 (llama-proxy with cache normalization recommended).  Preflight
+ * `check_llm_generation_ready()` runs once before parallel lanes start.
  *
  * Lanes run concurrently as external subprocesses (via proc_open)
  * so they do not share memory with the Castor PHAR.  Each lane's
  * output is captured to var/reports/check-<step>.log.
  */
-#[AsTask(description: 'Run full QA gate (deterministic — no live LLM)')]
+#[AsTask(description: 'Run full QA gate (includes live llm-real smoke on port 9052)')]
 function check(): void
 {
     $root = (false !== ($_rp = realpath(__DIR__.'/..')) ? $_rp : __DIR__.'/..');
@@ -86,16 +88,8 @@ function check(): void
     // directly — not through a Castor task closure — to stay safe
     // inside the Castor PHAR (no pcntl_fork shared-memory issues).
     //
-    // MAINT-05G: The PHPUnit lane uses ParaTest (build_check_paratest_command)
-    // with full group exclusions (tui-e2e-replay, llm-real, recording,
-    // controller-replay, phar).  The gate remains deterministic because
-    // all non-unit/integration groups are excluded and replay-backed
-    // E2E lanes run separately.
-    //
-    // MAINT-05G: test:controller and test:llm-real lanes removed.
-    // Replaced with test:controller-replay (deterministic replay
-    // fixtures, no live LLM).  check_llm_generation_ready() is not
-    // called — it is only needed by opt-in live commands.
+    // Unit/integration ParaTest excludes llm-real (build_check_paratest_command).
+    // Live llm-real runs as its own parallel lane (same command as castor test:llm-real).
     $allCheckCommands = [
         'deptrac' => [
             'cmd' => timeout_check_command(
@@ -130,6 +124,12 @@ function check(): void
                 120,
             ),
         ],
+        'test:llm-real' => [
+            'cmd' => timeout_check_command(
+                build_test_llm_real_phpunit_command(null),
+                180,
+            ),
+        ],
         'phpstan' => [
             'cmd' => timeout_check_command(
                 $phpBin.' vendor/bin/phpstan analyse -c phpstan.dist.neon --no-progress'
@@ -161,8 +161,11 @@ function check(): void
     // TUI lane time out or skip silently.
     $which = trim(shell_exec('which tmux 2>/dev/null') ?? '');
     if ('' === $which) {
-        fail_quality('tmux is not installed. The deterministic QA gate requires tmux for the TUI E2E lane. Install it with your package manager.');
+        fail_quality('tmux is not installed. The QA gate requires tmux for the TUI E2E lane. Install it with your package manager.');
     }
+
+    // Fail fast before spawning parallel lanes if port 9052 cannot complete generation.
+    check_llm_generation_ready();
 
     $failures = [];
     $timings = [];

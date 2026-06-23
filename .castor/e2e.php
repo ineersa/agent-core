@@ -32,15 +32,18 @@ require_once __DIR__.'/phpunit.php';
 
 // ─── Real LLM smoke ──────────────────────────────────────────────
 
-#[AsTask(name: 'test:llm-real', description: 'Run real LLM smoke tests')]
-function test_llm_real(?string $filter = null): void
+/**
+ * Shell command for the llm-real PHPUnit/ParaTest lane (full group or filter).
+ *
+ * Shared by `castor test:llm-real` and the `test:llm-real` step in `castor check`.
+ * Does not run generation preflight — callers must invoke check_llm_generation_ready().
+ */
+function build_test_llm_real_phpunit_command(?string $filter = null): string
 {
     $filterArg = null !== $filter ? ' --filter='.escapeshellarg($filter) : '';
     if ('' === $filterArg) {
-        // Explicit filter is mandatory for test:llm-real (run full group).
         $filterArg = ' --group llm-real';
     }
-    check_llm_generation_ready();
 
     $strictFlags = phpunit_strict_issue_flags();
     $llmFlags = is_llm_mode() ? ' --colors=never --no-progress --log-junit='.report_path('phpunit-llm-real.junit.xml') : '';
@@ -50,20 +53,28 @@ function test_llm_real(?string $filter = null): void
     // Filtered runs stay sequential — ParaTest --filter can be unreliable.
     if (null === $filter && class_exists(ParaTest\ParaTestCommand::class)) {
         $bootstrap = paratest_bootstrap_path();
-        $cmd = $envPrefix.\PHP_BINARY.' vendor/bin/paratest'
+
+        return $envPrefix.\PHP_BINARY.' vendor/bin/paratest'
             .' --configuration=phpunit.xml.dist'
             .' --bootstrap='.escapeshellarg($bootstrap)
             .' --group=llm-real'
             .' --exclude-group=recording'
             .' --processes=4'
             .' '.$strictFlags.$llmFlags;
-    } else {
-        // Live controller E2E spawns source bin/console with APP_ENV=test (not PHAR).
-        $cmd = $envPrefix.\PHP_BINARY.' vendor/bin/phpunit'
-            .$filterArg
-            .' --exclude-group=recording'
-            .' '.$strictFlags.$llmFlags;
     }
+
+    return $envPrefix.\PHP_BINARY.' vendor/bin/phpunit'
+        .$filterArg
+        .' --exclude-group=recording'
+        .' '.$strictFlags.$llmFlags;
+}
+
+#[AsTask(name: 'test:llm-real', description: 'Run real LLM smoke tests')]
+function test_llm_real(?string $filter = null): void
+{
+    check_llm_generation_ready();
+
+    $cmd = build_test_llm_real_phpunit_command($filter);
 
     // Run via session-aware process runner to prevent orphaned PHAR workers
     // (messenger:consume children with --time-limit=3600 that outlive PHPUnit

@@ -103,7 +103,7 @@ Key commands:
 - `castor test --filter=XxxTest` — filter to specific tests
 - `castor test --suite=coding-agent` — targeted ParaTest run on a suite
 - `castor test:tui` — TUI E2E journey tests (`#[Group('tui-e2e-replay')]`, replay-backed, no live LLM)
-- `castor test:llm-real` — real-LLM controller E2E tests (`#[Group('llm-real')]`). Run as focused opt-in validation when changes touch provider/LLM-visible code — NOT required for every normal task.
+- `castor test:llm-real` — real-LLM smoke (`#[Group('llm-real')]`); same PHPUnit/ParaTest command as the `test:llm-real` lane in `castor check`.
 - `castor test:controller-replay` — controller replay E2E (default, no live LLM)
 - `castor test:controller` — controller smoke test (live LLM, opt-in)
 - `castor llm:fixtures:record` — re-record LLM replay fixtures from live LLM
@@ -111,7 +111,7 @@ Key commands:
 - `castor deptrac` — layer dependency validation
 - `castor phpstan` — static analysis
 - `castor cs-check` / `castor cs-fix` — code style
-- `LLM_MODE=true castor check` — full quality gate (deterministic — no live LLM). Runs deptrac, unit/integration (ParaTest), controller replay E2E, TUI replay E2E, phpstan, and cs-check in parallel. No PHAR, no llama.cpp requirement.
+- `LLM_MODE=true castor check` — full quality gate. Runs deptrac, unit/integration (ParaTest), controller replay E2E, TUI replay E2E, live llm-real (ParaTest `--processes=4`, port 9052), phpstan, and cs-check in parallel. Requires llama.cpp/llama-proxy on 9052; warm cache speeds llm-real. No PHAR.
 - `castor cleanup` — remove all temp/test artifacts
 
 ## Snapshots and cleanup
@@ -131,7 +131,7 @@ The `llama_cpp_test/test` server should run deterministically (temperature 0, fi
 
 ### LLM generation preflight
 
-`test:llm-real` and `test:controller` run a ~4s curl-based preflight (`check_llm_generation_ready`) before any live-LLM E2E test starts. It verifies the test LLM can complete a tiny generation request. If the server responds to `/health` and `/v1/models` but generation is stuck (corrupted model load, stuck slots), Castor fails immediately with a diagnostic instead of burning step timeouts. Fix or restart the llama.cpp server before retrying. The default `castor check` is fully deterministic (replay-backed) and does NOT run this preflight.
+`test:llm-real` and `test:controller` run a ~4s curl-based preflight (`check_llm_generation_ready`) before any live-LLM E2E test starts. It verifies the test LLM can complete a tiny generation request. If the server responds to `/health` and `/v1/models` but generation is stuck (corrupted model load, stuck slots), Castor fails immediately with a diagnostic instead of burning step timeouts. Fix or restart the llama.cpp server before retrying. `castor check` runs this preflight once, then runs the live `test:llm-real` lane in parallel with other check steps.
 
 ## TUI behavior proof
 

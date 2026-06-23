@@ -60,7 +60,7 @@ Run `castor cleanup` to remove all temp/test artifacts.
 
 For changes touching TUI runtime, `AgentSessionClient`, Messenger, `TranscriptProjector`, `RuntimeEventPoller`, or LLM-visible flow: you MUST run `castor check`. Unit/container/mocked tests are not enough. If tmux is unavailable, TUI tasks MUST stay IN-PROGRESS with the blocker — never mark CODE-REVIEW or DONE without validation.
 
-Default `castor check` is fully deterministic (replay-backed controller and TUI E2E, no live LLM). Live LLM smoke is opt-in via `castor test:llm-real` and `castor test:controller`.
+Default `castor check` includes replay-backed controller/TUI E2E plus the live `llm-real` smoke lane (llama.cpp/llama-proxy on port 9052). Additional live smoke remains opt-in via `castor test:controller`.
 
 ### Replay tests vs. live reproduction
 
@@ -72,7 +72,7 @@ Observed in issue #183: the follow-up-after-shell hang was diagnosed and "fixed"
 
 ### Focused live LLM provider validation
 
-`castor check` is deterministic and must NOT include `castor test:llm-real` by default. Run `castor test:llm-real` as opt-in focused validation when changes touch:
+`castor check` already runs the full `llm-real` group via the `test:llm-real` lane. Run `castor test:llm-real` alone for focused/filtered live validation when changes touch:
 - Symfony AI provider/factory/platform integration
 - LLM provider config, model catalog/resolution/routing/selection
 - Tool schemas, tool-call conversion, or tool argument prompts
