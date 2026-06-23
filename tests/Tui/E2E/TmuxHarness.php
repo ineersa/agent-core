@@ -434,6 +434,23 @@ final class TmuxHarness
      *
      * @throws \RuntimeException if the timeout expires without the callback returning true
      */
+    /**
+     * After the Hatfield logo (█) is visible, poll until idle/work status and footer render.
+     * Replaces fixed post-logo sleeps; exits early when the TUI finishes init.
+     */
+    public function waitForTuiReadyAfterLogo(TmuxPane $pane, float $timeout = 3.0): string
+    {
+        return $this->waitForCallback(
+            $pane,
+            static fn (string $plain): bool => str_contains($plain, '█')
+                && (str_contains($plain, '● idle') || str_contains($plain, '◐ Work'))
+                && str_contains($plain, '◆'),
+            $timeout,
+            'TUI ready after logo',
+            500,
+        );
+    }
+
     public function waitForCallback(
         TmuxPane $pane,
         callable $callback,

@@ -22,9 +22,9 @@ Source: MAINT-05 scouting reports, task logs, and observed run timings.
 | check_llm_generation_ready in check | yes | ~4s preflight before live-LLM lanes |
 | Custom Castor shard discovery | yes | coding_agent_shard_groups + build_test_worker_command + build_test_variants_commands — ~200 lines |
 
-## After (post-MAINT-05G)
+## After (post-MAINT-05G, historical deterministic-only)
 
-Source: metrics from MAINT-05G `castor check` and focused runs.
+Source: metrics from MAINT-05G `castor check` and focused runs (before live `llm-real` was re-added to the gate).
 
 | Metric | After | Notes |
 |--------|-------|-------|
@@ -42,6 +42,20 @@ Source: metrics from MAINT-05G `castor check` and focused runs.
 | `castor test:controller-replay` | **~8s** | Replay-backed, no live LLM |
 
 † May be higher on first run due to doctrine:migration and cache warmup.  Measured at ~77s on a mid-range dev machine.
+
+## Current baseline (llm-real in `castor check`)
+
+Source: `task/llm-proxy-deterministic-live-tests` — live `llm-real` lane restored to the gate with ParaTest (`--processes=4`) and llama-proxy cache normalization on port 9052.
+
+| Metric | Current | Notes |
+|--------|---------|-------|
+| `castor check` wall time | **~55–75s** (warm proxy) | 7 concurrent lanes: deptrac, ParaTest unit/integration, controller-replay, TUI replay, **test:llm-real** (~22–25s warm), phpstan, cs-check; `check_llm_generation_ready()` once (TTL cache 120s) |
+| Live LLM in `castor check` | **yes** | Dedicated `test:llm-real` lane (8 tests); not implicit TUI live calls |
+| `castor test:llm-real` (full) | **~22–25s** warm | ParaTest 4 workers; filtered runs stay sequential PHPUnit |
+| check_llm_generation_ready in check | **yes** | Once before parallel lanes; cached skip on repeat within TTL |
+| llama.cpp / proxy | **required** | Port 9052; proxy `cache_normalize_messages` recommended for stable cache keys |
+
+The **post-MAINT-05G** table below remains the historical deterministic-only baseline (0 live LLM, ~42s) before this change.
 
 ## Opt-in live commands (unchanged behavior)
 

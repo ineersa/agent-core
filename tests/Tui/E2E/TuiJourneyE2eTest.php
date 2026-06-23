@@ -127,10 +127,7 @@ final class TuiJourneyE2eTest extends TestCase
     {
         $this->tmux->waitForCaptureContains($pane, '█', 10.0);
 
-        // Let the TUI finish startup rendering before keystrokes arrive.
-        usleep(500_000);
-
-        $capture = $this->tmux->capturePlainWithHistory($pane, 500);
+        $capture = $this->tmux->waitForTuiReadyAfterLogo($pane);
 
         self::assertStringContainsString('█', $capture, 'Hatfield logo missing');
         self::assertTrue(

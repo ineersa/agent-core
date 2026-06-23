@@ -76,9 +76,7 @@ final class TuiProviderErrorE2eTest extends TestCase
         try {
             // Wait for TUI startup
             $this->tmux->waitForCaptureContains($pane, '█', 10.0);
-
-            // Let the TUI finish startup rendering.
-            usleep(500_000);
+            $this->tmux->waitForTuiReadyAfterLogo($pane);
 
             // Submit a simple prompt that will trigger the LLM call.
             $this->tmux->sendKey($pane, 'C-u');

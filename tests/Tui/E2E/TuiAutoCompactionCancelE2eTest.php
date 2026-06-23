@@ -90,7 +90,7 @@ final class TuiAutoCompactionCancelE2eTest extends TestCase
         try {
             // Wait for TUI startup (logo visible).
             $this->tmux->waitForCaptureContains($pane, '█', 10.0);
-            usleep(500_000);
+            $this->tmux->waitForTuiReadyAfterLogo($pane);
 
             // Submit a prompt with a fixture whose input_tokens=100
             // (well above compact_after_tokens=10) so auto-compaction
