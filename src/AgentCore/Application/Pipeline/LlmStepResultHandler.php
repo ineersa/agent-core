@@ -10,10 +10,12 @@ use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
+use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
+use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
@@ -26,6 +28,7 @@ use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Tool\Tool;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
+use Symfony\Component\Messenger\Stamp\DelayStamp;
 
 final class LlmStepResultHandler implements RunMessageHandler
 {
@@ -52,6 +55,9 @@ final class LlmStepResultHandler implements RunMessageHandler
         private ?RunTracer $tracer = null,
         private ?MessageBusInterface $commandBus = null,
         private ?LlmProviderErrorClassifier $errorClassifier = null,
+        private int $agentRetryMaxAttempts = 2,
+        private int $agentRetryBaseDelayMs = 1000,
+        private int $agentRetryMaxDelayMs = 60000,
     ) {
     }
 
@@ -158,6 +164,7 @@ final class LlmStepResultHandler implements RunMessageHandler
                 messages: $state->messages,
                 activeStepId: $state->activeStepId,
                 retryableFailure: false,
+                retryAttempts: 0,
             );
 
             return new HandlerResult(
@@ -168,26 +175,59 @@ final class LlmStepResultHandler implements RunMessageHandler
         }
 
         if (null !== $message->error) {
-            $errorMessage = \is_string($message->error['message'] ?? null)
-                ? $message->error['message']
+            $error = $message->error;
+            $errorMessage = \is_string($error['message'] ?? null)
+                ? $error['message']
                 : 'LLM worker failed.';
-            $retryable = \is_bool($message->error['retryable'] ?? null)
-                ? $message->error['retryable']
+            $userMessage = \is_string($error['user_message'] ?? null) ? $error['user_message'] : $errorMessage;
+            $retryable = \is_bool($error['retryable'] ?? null)
+                ? $error['retryable']
                 : false;
+
+            $isContextOverflow = null !== $this->errorClassifier
+                && $this->errorClassifier->isContextOverflow($error);
+
+            if ($isContextOverflow) {
+                $retryable = false;
+            }
+
+            $maxAttempts = $this->agentRetryMaxAttempts;
+            $currentAttempts = $state->retryAttempts;
+            $nextRetryAttempt = $currentAttempts + 1;
+            $canAutoRetry = $retryable
+                && !$isContextOverflow
+                && null !== $this->commandBus
+                && $nextRetryAttempt <= $maxAttempts;
+
+            $retriesExhausted = $retryable && !$isContextOverflow && !$canAutoRetry && $currentAttempts >= $maxAttempts;
+
+            if ($retriesExhausted) {
+                $retryable = false;
+                $error += ['retryable' => false];
+                $userMessage = \sprintf(
+                    'Automatic LLM retry attempts exhausted after %d retry attempt(s). Please retry manually or change provider/model.',
+                    $maxAttempts,
+                );
+                $errorMessage = $userMessage;
+                $error['user_message'] = $userMessage;
+            }
+
+            $eventPayload = [
+                'error' => $error,
+                'retryable' => $retryable,
+                'step_id' => $message->stepId(),
+                'retry_attempt' => $canAutoRetry || $retriesExhausted ? $nextRetryAttempt : $currentAttempts,
+                'max_retries' => $maxAttempts,
+            ];
+            if ($retriesExhausted) {
+                $eventPayload['retries_exhausted'] = true;
+            }
 
             $eventSpecs = [[
                 'type' => RunEventTypeEnum::LlmStepFailed->value,
-                'payload' => [
-                    'error' => $message->error,
-                    'retryable' => $retryable,
-                    'step_id' => $message->stepId(),
-                ],
+                'payload' => $eventPayload,
             ]];
 
-            // Emit generic model_notification events for any
-            // notifications produced by transform context hooks
-            // during this LLM step (e.g. defense-in-depth output caps
-            // that fired before the provider error).
             foreach ($this->collectLlmModelNotificationEventSpecs($message->modelNotifications) as $notifSpec) {
                 $eventSpecs[] = $notifSpec;
             }
@@ -201,24 +241,30 @@ final class LlmStepResultHandler implements RunMessageHandler
                 isStreaming: false,
                 streamingMessage: null,
                 pendingToolCalls: [],
-                errorMessage: $errorMessage,
+                errorMessage: $userMessage,
                 messages: $state->messages,
                 activeStepId: $state->activeStepId,
-                retryableFailure: $retryable,
+                retryableFailure: $canAutoRetry,
+                retryAttempts: $canAutoRetry ? $nextRetryAttempt : ($retriesExhausted ? $nextRetryAttempt : $currentAttempts),
             );
 
             $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
 
             $postCommit = $this->turnCompletedCallbacks($runId, $state->turnNo);
 
-            // Context-overflow recovery: when the error indicates the prompt
-            // exceeded the model's context window, attempt at most one
-            // compaction recovery per overflow episode.  The compact step
-            // runs asynchronously; the user can continue after compaction.
+            if ($canAutoRetry) {
+                $postCommit[] = $this->autoRetryContinueCallback(
+                    $runId,
+                    $state->turnNo,
+                    $message->stepId(),
+                    $nextRetryAttempt,
+                );
+            }
+
             $overflowRecovery = $this->maybeScheduleOverflowRecovery(
                 $runId,
                 $state->turnNo,
-                $message->error,
+                $error,
             );
             if (null !== $overflowRecovery) {
                 $postCommit[] = $overflowRecovery;
@@ -306,6 +352,7 @@ final class LlmStepResultHandler implements RunMessageHandler
                 messages: $messages,
                 activeStepId: $state->activeStepId,
                 retryableFailure: false,
+                retryAttempts: 0,
             );
 
             $mailboxResult = null === $this->tracer
@@ -351,6 +398,7 @@ final class LlmStepResultHandler implements RunMessageHandler
                 messages: $stateAfterBoundary->messages,
                 activeStepId: $stateAfterBoundary->activeStepId,
                 retryableFailure: false,
+                retryAttempts: 0,
             );
 
             $postCommit = [
@@ -397,6 +445,7 @@ final class LlmStepResultHandler implements RunMessageHandler
             messages: $messages,
             activeStepId: $state->activeStepId,
             retryableFailure: false,
+            retryAttempts: 0,
         );
 
         $postCommit = [function () use ($runId, $state, $message, $effects): void {
@@ -552,8 +601,56 @@ final class LlmStepResultHandler implements RunMessageHandler
      * Returns a postCommit callback that dispatches CompactRun with
      * trigger 'overflow_recovery', or null when recovery is not
      * applicable or already attempted.
-     *
-     * @param array<string, mixed> $classifiedError The classified error array
+     */
+    private function autoRetryContinueCallback(string $runId, int $turnNo, string $stepId, int $retryAttempt): callable
+    {
+        return function () use ($runId, $turnNo, $stepId, $retryAttempt): void {
+            if (null === $this->commandBus) {
+                return;
+            }
+
+            $continueStepId = \sprintf('auto-retry-%s-%d', $stepId, $retryAttempt);
+            $idempotencyKey = hash('sha256', \sprintf('%s|auto-retry|%s|%d', $runId, $stepId, $retryAttempt));
+
+            $delayMs = 0;
+            if ($this->agentRetryBaseDelayMs > 0) {
+                $exponent = max(0, $retryAttempt - 1);
+                $delayMs = min(
+                    $this->agentRetryBaseDelayMs * (2 ** $exponent),
+                    $this->agentRetryMaxDelayMs,
+                );
+            }
+
+            $stamps = $delayMs > 0 ? [new DelayStamp($delayMs)] : [];
+
+            try {
+                $this->commandBus->dispatch(
+                    new ApplyCommand(
+                        runId: $runId,
+                        turnNo: $turnNo,
+                        stepId: $continueStepId,
+                        attempt: $retryAttempt,
+                        idempotencyKey: $idempotencyKey,
+                        kind: CoreCommandKind::Continue,
+                        payload: [
+                            'auto_retry' => true,
+                            'retry_attempt' => $retryAttempt,
+                        ],
+                        options: [
+                            'auto_retry' => true,
+                            'retry_attempt' => $retryAttempt,
+                        ],
+                    ),
+                    $stamps,
+                );
+            } catch (ExceptionInterface $exception) {
+                throw new \RuntimeException(\sprintf('Failed to dispatch auto-retry Continue for run %s.', $runId), previous: $exception);
+            }
+        };
+    }
+
+    /**
+     * @param array<string, mixed> $classifiedError
      */
     private function maybeScheduleOverflowRecovery(
         string $runId,

@@ -385,6 +385,9 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         $runId = $message->runId();
         $this->commandStore->markApplied($runId, $message->idempotencyKey());
 
+        $isAutoRetry = true === ($options['auto_retry'] ?? $message->payload['auto_retry'] ?? false);
+        $retryAttempts = $isAutoRetry ? $state->retryAttempts : 0;
+
         $nextState = new RunState(
             runId: $state->runId,
             status: RunStatus::Running,
@@ -398,6 +401,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             messages: $state->messages,
             activeStepId: $state->activeStepId,
             retryableFailure: false,
+            retryAttempts: $retryAttempts,
         );
 
         $event = $this->eventFactory->event(
@@ -409,6 +413,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 'kind' => $message->kind,
                 'idempotency_key' => $message->idempotencyKey(),
                 'options' => $options,
+                'payload' => $message->payload,
             ],
         );
 

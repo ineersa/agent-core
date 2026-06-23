@@ -1658,4 +1658,42 @@ final class RunStateReplayServiceTest extends TestCase
         self::assertSame('assistant', $messages[0]->role);
         self::assertSame('Here is the answer.', $messages[0]->content[0]['text']);
     }
+
+    public function testReplayPreservesRetryAttemptsThroughAutoRetryContinue(): void
+    {
+        $this->appendEvent('run_started', 1, ['step_id' => 's1', 'payload' => ['messages' => []]]);
+        $this->appendEvent('llm_step_failed', 2, [
+            'error' => [
+                'message' => 'fail',
+                'retryable' => true,
+                'user_message' => 'retryable',
+            ],
+            'retryable' => true,
+            'step_id' => 's1',
+            'retry_attempt' => 1,
+            'max_retries' => 2,
+        ]);
+        $this->appendEvent('agent_command_applied', 3, [
+            'kind' => 'continue',
+            'idempotency_key' => 'ik-1',
+            'options' => ['auto_retry' => true, 'retry_attempt' => 1],
+            'payload' => ['auto_retry' => true, 'retry_attempt' => 1],
+        ]);
+
+        $state = new RunState(
+            runId: $this->runId,
+            status: RunStatus::Queued,
+            version: 0,
+            turnNo: 0,
+            lastSeq: 0,
+        );
+
+        $result = $this->service->rebuildIfStale($state, $this->runId);
+
+        self::assertTrue($result->rebuilt);
+        self::assertNotNull($result->rebuiltState);
+        self::assertSame(RunStatus::Running, $result->rebuiltState->status);
+        self::assertSame(1, $result->rebuiltState->retryAttempts);
+    }
+
 }

@@ -439,6 +439,12 @@ services:
     arguments:
       $defaultModel: '%app.default_model%'
 
+  Ineersa\AgentCore\Application\Pipeline\LlmStepResultHandler:
+    arguments:
+      $agentRetryMaxAttempts: '@=service("Ineersa\\CodingAgent\\Config\\AppConfig").ai.agentRetry.resolveMaxAttempts()'
+      $agentRetryBaseDelayMs: '@=service("Ineersa\\CodingAgent\\Config\\AppConfig").ai.agentRetry.resolveBaseDelayMs()'
+      $agentRetryMaxDelayMs: '@=service("Ineersa\\CodingAgent\\Config\\AppConfig").ai.agentRetry.resolveMaxDelayMs()'
+
   # ─── System prompt builder ───
   Symfony\AI\Platform\Message\TemplateRenderer\StringTemplateRenderer: ~
 
