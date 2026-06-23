@@ -181,34 +181,29 @@ final class AgentChildRunLocatorTest extends IsolatedKernelTestCase
         $childRunId = 'locator-good-'.bin2hex(random_bytes(4));
         $entry = $this->registry->create($goodParentId, 'worker-001', $childRunId, 'worker');
 
-        // Corrupt the bad parent's registry directory: set permissions
-        // to 0000 so registry reads fail.
+        // Corrupt the bad parent's registry.json by writing invalid JSON.
+        // This makes AgentArtifactRegistry::list() throw, which the
+        // locator's scanAllSessions() catches and skips.  No chmod/permission
+        // tricks needed — portable across filesystems and CI environments.
         $pathResolver = new AgentArtifactPathResolver($this->hatfieldSessionStore);
-        $badArtifactsDir = $pathResolver->resolveArtifactsBasePath($badParentId);
+        $badRegistryPath = $pathResolver->registryPath($badParentId);
+        $badRegistryDir = dirname($badRegistryPath);
 
-        if (!is_dir($badArtifactsDir)) {
-            mkdir($badArtifactsDir, 0700, true);
+        if (!is_dir($badRegistryDir)) {
+            mkdir($badRegistryDir, 0755, true);
         }
-        chmod($badArtifactsDir, 0000);
+        // Write a file that is a file but not valid JSON — triggers
+        // JsonException in loadRegistry().
+        file_put_contents($badRegistryPath, 'NOT JSON {{{');
 
-        // Restore permissions in tearDown to allow cleanup.
-        $this->addToAssertionCount(0); // Intentional: assertion is in the locate() call.
-
-        try {
-            // Locating the good child must still succeed — the corrupt
-            // parent's failure is logged and skipped, not propagated.
-            $found = $this->locator->locate($childRunId);
-            self::assertNotNull(
-                $found,
-                'Locator must find child artifacts in healthy parents even '
-                .'when another parent has a corrupt/unreadable registry',
-            );
-            self::assertSame($childRunId, $found->agentRunId);
-        } finally {
-            // Restore permissions for cleanup.
-            if (is_dir($badArtifactsDir)) {
-                chmod($badArtifactsDir, 0700);
-            }
-        }
+        // Locating the good child must still succeed — the corrupt
+        // parent's failure is logged and skipped, not propagated.
+        $found = $this->locator->locate($childRunId);
+        self::assertNotNull(
+            $found,
+            'Locator must find child artifacts in healthy parents even '
+            .'when another parent has a corrupt registry',
+        );
+        self::assertSame($childRunId, $found->agentRunId);
     }
 }

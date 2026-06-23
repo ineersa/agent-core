@@ -160,18 +160,15 @@ The `subagent` tool is registered as a permanent model-visible tool. It supports
     "type": "object",
     "properties": {
         "agent": { "type": "string", "description": "Name of the agent definition to launch." },
-        "task":  { "type": "string", "description": "The task for the subagent." },
-        "model":    { "type": "string", "description": "Optional model override." },
-        "thinking": { "type": "string", "description": "Optional thinking/reasoning level override." },
-        "context":  { "type": "string", "enum": ["fresh", "fork"], "description": "Execution context. 'fork' is not yet implemented." },
-        "cwd":      { "type": "string", "description": "Optional working directory override." }
+        "task":  { "type": "string", "description": "The task for the subagent." }
     },
     "required": ["agent", "task"],
     "additionalProperties": false
 }
 ```
 
-Only `agent` and `task` are required. The `tasks` array, `concurrency`, and
+Only `agent` and `task` are accepted. Model, thinking, context, and `cwd`
+overrides are not available in v1. The `tasks` array, `concurrency`, and
 `background` fields are explicitly rejected with actionable error messages
 indicating they are not yet implemented.
 

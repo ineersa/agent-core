@@ -46,7 +46,6 @@ final readonly class AgentPromptBuilder
      * @param string             $parentSystemPrompt parent system prompt
      *                                               for append mode (empty
      *                                               when replace mode)
-     * @param list<string>       $allowedTools
      *
      * @return array{systemPrompt: string, messages: list<AgentMessage>}
      */
