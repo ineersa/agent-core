@@ -145,9 +145,10 @@ abstract class ControllerE2eTestCase extends TestCase
 
         // APP_ENV=test loads services_test.yaml (5s HttpClient when replay is off).
         // Source bin/console is required — the PHAR excludes dev/test-only bundles.
+        // APP_DEBUG=1 keeps Symfony verbose errors in subprocess stderr on failure.
         $env = [
             'APP_ENV' => 'test',
-            'APP_DEBUG' => '0',
+            'APP_DEBUG' => '1',
             'HATFIELD_TEST_DATABASE_PATH' => 'app_test-live-'.$this->sessionId.'.sqlite',
             'HATFIELD_RUN_CONTROL_TRANSPORT_DSN' => "doctrine://default?queue_name=run_control_{$this->sessionId}",
             'HATFIELD_LLM_TRANSPORT_DSN' => "doctrine://default?queue_name=llm_{$this->sessionId}",

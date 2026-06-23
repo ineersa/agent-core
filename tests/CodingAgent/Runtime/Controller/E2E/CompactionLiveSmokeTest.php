@@ -94,8 +94,8 @@ YAML;
             ],
         ]);
 
-        // Collect events until the run reaches a terminal state.
-        $runEvents = $this->collectEvents(15.0);
+        // collectEvents() exits early on run.completed/failed (no second 15s drain).
+        $runEvents = $this->collectEvents(12.0);
         $byType = $this->indexByType($runEvents);
 
         $this->assertStartRunAcked($runEvents, $startCmdId);
@@ -109,14 +109,6 @@ YAML;
         $hasAssistant = isset($byType['assistant.text_started'])
             || isset($byType['assistant.message_completed']);
         self::assertTrue($hasAssistant, 'Expected assistant response. Got types: '.implode(', ', array_keys($byType)));
-
-        if (!isset($byType['run.completed']) && !isset($byType['run.failed'])) {
-            // The run might still be running if the model is slow.
-            // Collect more events.
-            $moreEvents = $this->collectEvents(15.0);
-            $runEvents = array_merge($runEvents, $moreEvents);
-            $byType = $this->indexByType($runEvents);
-        }
 
         self::assertTrue(
             isset($byType['run.completed']) || isset($byType['run.failed']),

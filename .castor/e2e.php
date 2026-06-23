@@ -28,6 +28,7 @@ use function CastorTasks\run_quiet_command;
 require_once __DIR__.'/../vendor/autoload.php';
 require_once __DIR__.'/helpers.php';
 require_once __DIR__.'/shared.php';
+require_once __DIR__.'/phpunit.php';
 
 // ─── Real LLM smoke ──────────────────────────────────────────────
 
@@ -41,12 +42,28 @@ function test_llm_real(?string $filter = null): void
     }
     check_llm_generation_ready();
 
-    // Live controller E2E spawns source bin/console with APP_ENV=test (not PHAR).
-    $cmd = 'APP_ENV=test LLAMA_CPP_SMOKE_TEST=1 '.\PHP_BINARY.' vendor/bin/phpunit'
-        .$filterArg
-        .' --exclude-group=recording'
-        .' '.phpunit_strict_issue_flags()
-        .(is_llm_mode() ? ' --colors=never --no-progress --log-junit='.report_path('phpunit-llm-real.junit.xml') : '');
+    $strictFlags = phpunit_strict_issue_flags();
+    $llmFlags = is_llm_mode() ? ' --colors=never --no-progress --log-junit='.report_path('phpunit-llm-real.junit.xml') : '';
+    $envPrefix = 'APP_ENV=test LLAMA_CPP_SMOKE_TEST=1 ';
+
+    // Full group: ParaTest parallel (was a single sequential PHPUnit process).
+    // Filtered runs stay sequential — ParaTest --filter can be unreliable.
+    if (null === $filter && class_exists(ParaTest\ParaTestCommand::class)) {
+        $bootstrap = paratest_bootstrap_path();
+        $cmd = $envPrefix.\PHP_BINARY.' vendor/bin/paratest'
+            .' --configuration=phpunit.xml.dist'
+            .' --bootstrap='.escapeshellarg($bootstrap)
+            .' --group=llm-real'
+            .' --exclude-group=recording'
+            .' --processes=4'
+            .' '.$strictFlags.$llmFlags;
+    } else {
+        // Live controller E2E spawns source bin/console with APP_ENV=test (not PHAR).
+        $cmd = $envPrefix.\PHP_BINARY.' vendor/bin/phpunit'
+            .$filterArg
+            .' --exclude-group=recording'
+            .' '.$strictFlags.$llmFlags;
+    }
 
     // Run via session-aware process runner to prevent orphaned PHAR workers
     // (messenger:consume children with --time-limit=3600 that outlive PHPUnit
@@ -60,7 +77,7 @@ function test_llm_real(?string $filter = null): void
             'log' => report_path('check-test-llm-real.log'),
         ],
     ];
-    $timeouts = ['llm-real' => 120]; // full llm-real group: PHAR preflight + multiple live controller tests
+    $timeouts = ['llm-real' => 180]; // parallel llm-real: controller subprocess + warm proxy replay
 
     $start = hrtime(true);
     $results = run_commands_parallel($commands, $timeouts);
