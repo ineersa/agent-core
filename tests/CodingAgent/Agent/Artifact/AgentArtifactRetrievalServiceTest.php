@@ -270,6 +270,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
             hatfieldSessionStore: $this->hatfieldSessionStore,
             runStore: $runStore ?? $this->createStub(RunStoreInterface::class),
             eventStore: $eventStore ?? $this->createStub(EventStoreInterface::class),
+            logger: self::getContainer()->get('logger'),
         );
     }
 }

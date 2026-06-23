@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Psr\Log\LoggerInterface;
 
 /**
  * Resolves parent-scoped subagent artifacts and renders bounded, privacy-safe
@@ -29,6 +30,7 @@ final class AgentArtifactRetrievalService
         private readonly HatfieldSessionStore $hatfieldSessionStore,
         private readonly RunStoreInterface $runStore,
         private readonly EventStoreInterface $eventStore,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
@@ -128,6 +130,18 @@ final class AgentArtifactRetrievalService
             try {
                 $entry = $this->artifactRegistry->get($sessionId, $artifactId);
             } catch (\InvalidArgumentException) {
+                // Invalid path components on a foreign session — skip without treating as a match.
+                continue;
+            } catch (\Throwable $e) {
+                // Intentional degradation: one corrupt/unreadable foreign registry must not
+                // abort cross-parent detection for other sessions.
+                $this->logger->warning('agent_retrieve.foreign_artifact_scan_skipped', [
+                    'component' => 'agent.retrieve',
+                    'parent_run_id' => $sessionId,
+                    'artifact_id' => $artifactId,
+                    'error' => $e->getMessage(),
+                ]);
+
                 continue;
             }
 
@@ -329,7 +343,17 @@ final class AgentArtifactRetrievalService
     {
         try {
             return $this->runStore->get($entry->agentRunId);
-        } catch (\Throwable) {
+        } catch (\Throwable $e) {
+            // Intentional degradation: metadata/history modes omit child run state when
+            // the child store is missing or unreadable instead of failing retrieval.
+            $this->logger->debug('agent_retrieve.child_state_unavailable', [
+                'component' => 'agent.retrieve',
+                'parent_run_id' => $entry->parentRunId,
+                'agent_run_id' => $entry->agentRunId,
+                'artifact_id' => $entry->artifactId,
+                'error' => $e->getMessage(),
+            ]);
+
             return null;
         }
     }

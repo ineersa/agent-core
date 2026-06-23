@@ -256,17 +256,6 @@ final class AgentArtifactRegistry
     // ── Public file writers ─────────────────────────────────────────────
 
     /**
-     * Write (or overwrite) the handoff.md file for an existing artifact.
-     *
-     * This is a public interface for {@see SubagentExecutionService} to
-     * finalize child agent handoffs after run completion.
-     *
-     * Uses atomic temp-file + rename to avoid partial writes.
-     *
-     * @throws \InvalidArgumentException when IDs contain path separators
-     */
-
-    /**
      * Read handoff.md for an existing artifact within a parent scope.
      *
      * Returns an empty string when the file is missing or empty.
@@ -295,6 +284,16 @@ final class AgentArtifactRegistry
         return false === $content ? '' : $content;
     }
 
+    /**
+     * Write (or overwrite) the handoff.md file for an existing artifact.
+     *
+     * This is a public interface for {@see SubagentExecutionService} to
+     * finalize child agent handoffs after run completion.
+     *
+     * Uses atomic temp-file + rename to avoid partial writes.
+     *
+     * @throws \InvalidArgumentException when IDs contain path separators
+     */
     public function writeHandoff(string $parentRunId, string $artifactId, string $content): void
     {
         $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
