@@ -623,6 +623,56 @@ function test_timeout_hardstop(string $cmdOverride = ''): void
         }
     }
 
+    // ── Test C2: Startup cleanup kills stale source bin/console workers ──
+    echo "\n── Test C2: Startup cleanup_stale_check_workers kills stale source workers ──\n\n";
+
+    $consolePath = $root.'/bin/console';
+    $fakeArgsC2 = ['bash', '-c', 'exec -a '.$consolePath
+        .' tail -f /dev/null -- messenger:consume fake --time-limit=3600'];
+
+    echo "Fake stale source worker args:\n  ".implode(' ', $fakeArgsC2)."\n\n";
+
+    $fakeProcC2 = @proc_open($fakeArgsC2, [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $fakePipesC2);
+    if (!is_resource($fakeProcC2)) {
+        echo "FAIL: could not start fake stale source worker\n";
+        $ok = false;
+    } else {
+        fclose($fakePipesC2[0]);
+        $fakePidC2 = proc_get_status($fakeProcC2)['pid'];
+        echo "Fake stale source worker PID: {$fakePidC2}\n";
+
+        usleep(500_000);
+
+        $psLineC2 = '';
+        @exec('ps -p '.$fakePidC2.' -o args= 2>/dev/null', $psLinesC2);
+        if ([] !== $psLinesC2) {
+            $psLineC2 = trim($psLinesC2[0]);
+        }
+        echo "ps args: {$psLineC2}\n";
+
+        cleanup_stale_check_workers($root);
+        usleep(1_000_000);
+
+        @fclose($fakePipesC2[1]);
+        @fclose($fakePipesC2[2]);
+        @proc_close($fakeProcC2);
+        usleep(200_000);
+
+        $fakeAliveC2 = @posix_kill($fakePidC2, 0);
+        if ($fakeAliveC2) {
+            $psStateC2 = (string) @shell_exec('ps -p '.$fakePidC2.' -o state= 2>/dev/null');
+            $isZombieC2 = str_contains($psStateC2, 'Z');
+            if ($isZombieC2) {
+                echo "PASS: fake stale source PID {$fakePidC2} is zombie (cleaned)\n";
+            } else {
+                echo "FAIL: fake stale source PID {$fakePidC2} still alive after cleanup (state={$psStateC2})\n";
+                $ok = false;
+            }
+        } else {
+            echo "PASS: fake stale source PID {$fakePidC2} killed by startup cleanup\n";
+        }
+    }
+
     // ── Test D: Same-SID separate-PGID grandchild cleanup (session-based) ──
     echo "\n── Test D: Session cleanup kills grandchild in separate PGID (same SID) ──\n\n";
 

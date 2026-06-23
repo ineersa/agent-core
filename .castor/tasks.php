@@ -195,12 +195,57 @@ quality: ok (%.1fs)
 /**
  * Kill stale workers from previous castor check runs in this checkout.
  *
- * Matches leaked PHAR messenger:consume / agent --controller children,
- * stale vendor/bin/phpunit processes, and orphaned castor check runs
- * rooted in the current checkout.  Safe: scoped to current project root
- * only.  Does not touch sibling worktrees, the llama.cpp server, or the
- * current castor process.  Silent when no stale workers exist.
+ * Matches leaked PHAR or source `bin/console` messenger:consume /
+ * agent --controller children, stale vendor/bin/phpunit processes, and
+ * orphaned castor check runs rooted in the current checkout.  Safe:
+ * scoped to current project root and current Unix user only.  Does not
+ * touch sibling worktrees, root-owned workers, the llama.cpp server, or
+ * the current castor process.  Silent when no stale workers exist.
  */
+function _stale_check_worker_owned_by_current_user(int $pid): bool
+{
+    if ($pid <= 1) {
+        return false;
+    }
+    $stat = @stat("/proc/{$pid}");
+    if (false === $stat) {
+        return false;
+    }
+
+    return $stat['uid'] === posix_geteuid();
+}
+
+/**
+ * True when the process cwd is under $root (replay E2E workers often omit
+ * $root from argv but run with cwd = isolated var/tmp/test-* under $root).
+ */
+function _stale_check_worker_cwd_under_root(int $pid, string $root): bool
+{
+    $cwdLink = "/proc/{$pid}/cwd";
+    $cwd = @readlink($cwdLink);
+    if (false === $cwd || '' === $cwd) {
+        return false;
+    }
+    $rootReal = realpath($root);
+    $cwdReal = realpath($cwd);
+    if (false === $rootReal || false === $cwdReal) {
+        return false;
+    }
+    $prefix = rtrim($rootReal, '/').'/';
+
+    return $cwdReal === $rootReal || str_starts_with($cwdReal, $prefix);
+}
+
+function _stale_check_worker_belongs_to_checkout(int $pid, string $cmdline, string $root): bool
+{
+    $rootPat = preg_quote($root, '/');
+    if (preg_match("/{$rootPat}/", $cmdline)) {
+        return true;
+    }
+
+    return _stale_check_worker_cwd_under_root($pid, $root);
+}
+
 function cleanup_stale_check_workers(string $root): void
 {
     $output = [];
@@ -212,8 +257,8 @@ function cleanup_stale_check_workers(string $root): void
     $myPid = getmypid();
     $pharGlob = $root.'/var/tmp/phar/hatfield.phar';
     $pharPat = preg_quote($pharGlob, '/');
+    $consolePat = preg_quote($root.'/bin/console', '/');
 
-    $rootPat = preg_quote($root, '/');
     $pidsToKill = [];
     foreach ($output as $raw) {
         $line = trim($raw);
@@ -229,19 +274,28 @@ function cleanup_stale_check_workers(string $root): void
         if ($pid === $myPid || $pid <= 1) {
             continue;
         }
+        if (!_stale_check_worker_owned_by_current_user($pid)) {
+            continue;
+        }
         $cmdline = $m[2];
 
-        // Skip processes not rooted in this checkout.
-        if (!preg_match("/{$rootPat}/", $cmdline)) {
+        if (!_stale_check_worker_belongs_to_checkout($pid, $cmdline, $root)) {
             continue;
         }
 
-        // ── Leaked messenger consumers / agent controllers ──
-        // PHAR-based E2E tests spawn messenger:consume and
-        // agent --controller children with --time-limit=3600 that
-        // can survive the test process.  Match by the checkout's
-        // own PHAR binary path.
+        // ── Leaked messenger consumers / agent controllers (PHAR) ──
         if (preg_match("/{$pharPat}/", $cmdline)
+            && (str_contains($cmdline, 'messenger:consume')
+                || str_contains($cmdline, 'agent --controller'))) {
+            $pidsToKill[] = $pid;
+            continue;
+        }
+
+        // ── Leaked messenger consumers / agent controllers (source) ──
+        // Controller replay / TUI E2E spawn `php bin/console messenger:consume`
+        // and `php bin/console agent --controller` under APP_ENV=test; argv may
+        // use absolute script paths without repeating $root in every arg.
+        if (preg_match("/{$consolePat}/", $cmdline)
             && (str_contains($cmdline, 'messenger:consume')
                 || str_contains($cmdline, 'agent --controller'))) {
             $pidsToKill[] = $pid;
