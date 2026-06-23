@@ -2,7 +2,7 @@
 
 Agent definitions configure named child-agent roles for your project or user environment. For example, you can define agents named `scout`, `reviewer`, `researcher`, `worker`, or any custom name. Each definition lives in a Markdown file with YAML frontmatter.
 
-**This is a discovery/catalog feature only.** Agent launch, runtime execution, TUI controls, artifacts, and background/foreground orchestration are NOT implemented yet. This document covers the definition format, discovery, and catalog.
+Agent definitions, discovery, and catalog are implemented. The model-visible `subagent` tool supports single foreground child execution with parent-scoped artifact storage. Parallel, background, TUI controls, and interactive child conversations are future work. See [Foreground subagent tool](#foreground-subagent-tool) below.
 
 ## File format
 
@@ -150,7 +150,137 @@ The catalog (`AgentDefinitionCatalog`) provides:
 - `disabled(): list<AgentDefinitionDTO>` — disabled definitions only
 - `diagnostics(): list<AgentDefinitionDiagnosticDTO>` — discovery diagnostics
 
+## Foreground subagent tool
+
+The `subagent` tool is registered as a permanent model-visible tool. It supports
+**single foreground mode only** with the following JSON schema:
+
+```json
+{
+    "type": "object",
+    "properties": {
+        "agent": { "type": "string", "description": "Name of the agent definition to launch." },
+        "task":  { "type": "string", "description": "The task for the subagent." },
+        "model":    { "type": "string", "description": "Optional model override." },
+        "thinking": { "type": "string", "description": "Optional thinking/reasoning level override." },
+        "context":  { "type": "string", "enum": ["fresh", "fork"], "description": "Execution context. 'fork' is not yet implemented." },
+        "cwd":      { "type": "string", "description": "Optional working directory override." }
+    },
+    "required": ["agent", "task"],
+    "additionalProperties": false
+}
+```
+
+Only `agent` and `task` are required. The `tasks` array, `concurrency`, and
+`background` fields are explicitly rejected with actionable error messages
+indicating they are not yet implemented.
+
+### Execution model
+
+1. **Blocking foreground.** The tool handler blocks the parent LLM until the
+   child run reaches a terminal status (Completed, Failed, Cancelled) or
+   requires clarification (NeedsClarification). The tool result is a dense
+   handoff text returned to the parent LLM.
+2. **Parent-scoped storage.** Child runs are stored entirely under the parent
+   session directory — no top-level session rows or directories are created.
+3. **Inline progress.** While the child runs, compact progress status lines
+   (agent name, turn number, tool count, last tool name) appear inline in the
+   parent's tool result widget. The full child transcript is not duplicated.
+4. **Non-interactive.** Child agents cannot ask the human interactively. If a
+   child enters `WaitingHuman` (HITL/approval state), the execution service
+   cancels the child, finalizes the artifact as `NeedsClarification`, and
+   returns an explanation to the parent LLM.
+5. **Cancellation.** If the parent run is cancelled while a child is running,
+   the child is cancelled and the artifact is finalized as `Cancelled`.
+6. **Timeout.** A configurable timeout (default 120 seconds) prevents
+   indefinite child runs. A timed-out child is finalized as `Failed`.
+
+### Artifact storage layout
+
+Child runs are stored under the parent session directory:
+
+```text
+.hatfield/sessions/<parentRunId>/
+  artifacts/agents/
+    registry.json          ── canonical artifact list (AgentArtifactRegistry)
+    <artifactId>/
+      metadata.json        ── inspectable sidecar (not read by production paths)
+      handoff.md           ── human-readable final handoff
+      events.jsonl         ── child RunEvent stream (AgentChildRunEventStore)
+      state.json           ── child RunState cache (AgentChildRunStore)
+```
+
+- `registry.json` is the canonical source for artifact discovery within a
+  parent scope. `metadata.json` is an inspectable sidecar and is never read
+  by production load paths.
+- Child events and state use the same Canonical JSONL and CAS patterns as
+  parent runs, stored under the parent directory via `AgentChildRunEventStore`
+  and `AgentChildRunStore`.
+- A dedicated retrieval tool (to query, list, or load child artifacts for the
+  parent LLM) is **future work** (planned for AGENT-06).
+
+### Depth and recursion guard
+
+Recursive agent launches are prevented through two mechanisms:
+
+1. **Environment variables** (protect subprocess/CLI boundaries):
+   - `HATFIELD_AGENTS_DISABLED=1` — globally blocks all subagent launches.
+   - `HATFIELD_AGENT_CHILD` — marker that this process is a child agent.
+   - `HATFIELD_AGENT_DEPTH=N` — current nesting depth (parent = 0).
+   - `HATFIELD_AGENT_MAX_DEPTH=N` — global per-parent maximum.
+
+2. **Per-definition `maxDepth`** — a definition with `maxDepth: 1` allows
+   parent → child but blocks child → grandchild. The effective max depth is
+   `min(agentMaxDepth, globalMaxDepth)` when the global env var is set.
+
+If a subagent tool call is blocked by depth limits, the tool returns a
+non-retryable error explaining the reason.
+
+### Tool and MCP policy for children
+
+Each child run receives a resolved tool/MCP policy derived from the agent
+definition plus hard safety rules:
+
+- The child's allowed tool names come from the definition's `tools` field.
+- The `subagent` tool is **always excluded** from child tool lists in v1 to
+  prevent recursive agent launches by default.
+- The MCP policy (`none`, `all`, or `specific` with explicit tool names)
+  is read from the definition's `mcp` block.
+- The resolved policy is stored in `RunMetadata::toolsScope` and enforced
+  per-run via a scoped `ToolSetResolver`. The global `ToolRegistry` is never
+  mutated, so concurrent parent runs with different child policies do not
+  leak.
+
+### Child prompt construction
+
+The child system prompt is built from:
+
+1. The agent definition's `instructions` (first, unmodified).
+2. AGENTS.md project context when `inheritAgentsMd: true` (rendered via
+   `AgentsContextDiscovery` + `AgentsContextRenderer`).
+3. The parent system prompt when `systemPromptMode: append`.
+
+A synthetic `user-context` message is prepended with the **non-interactive
+contract** (artifact ID, allowed tools, and rules: no interactive questions,
+return dense handoff, stop with explanation if information is missing). The
+task text follows as the `user` message.
+
+## Current limitations
+
+The following features are **not yet implemented**:
+
+| Feature | Status | Planned |
+|---------|--------|---------|
+| Parallel execution (`tasks` array, `concurrency`) | Not implemented | AGENT-07 |
+| Background/async launches (`background: true`) | Not implemented | Future |
+| `agent_start`, `agent_status` tools | Not implemented | Future |
+| `/agents` TUI command | Not implemented | Future |
+| Dedicated dock/overlay for child agent views | Not implemented | Future |
+| Interactive child HITL, approvals, or questions | Not implemented (becomes NeedsClarification) | Future |
+| Child artifact retrieval tool | Not implemented | AGENT-06 |
+
 ## See also
 
+- [Session storage](session-storage.md) — child artifact layout and invariants
 - [Settings](settings.md) — `agents.enabled`, `agents.paths`
 - [Implementation plan](../.pi/plans/agents-subagents-implementation-plan.md)
