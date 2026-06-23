@@ -79,7 +79,7 @@ final class TuiCompactCommandE2eTest extends TestCase
         try {
             // Wait for TUI startup (logo visible).
             $this->tmux->waitForCaptureContains($pane, '█', 10.0);
-            usleep(500_000);
+            $this->tmux->waitForTuiReadyAfterLogo($pane);
 
             // ── Phase 1: /compact appears in /help ──
             $this->tmux->sendKey($pane, 'C-u');
@@ -258,7 +258,7 @@ final class TuiCompactCommandE2eTest extends TestCase
         try {
             // Wait for TUI startup (logo visible).
             $this->tmux->waitForCaptureContains($pane, '█', 10.0);
-            usleep(500_000);
+            $this->tmux->waitForTuiReadyAfterLogo($pane);
 
             // ── Phase 1: Submit prompt → fixture #1 response ──
             //

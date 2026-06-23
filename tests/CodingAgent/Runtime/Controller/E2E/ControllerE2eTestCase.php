@@ -92,6 +92,17 @@ abstract class ControllerE2eTestCase extends TestCase
         return 8.0;
     }
 
+    /**
+     * Wall-clock budget for controller subprocess to emit runtime.ready.
+     * Under full castor check, ParaTest llm-real (4 workers) competes with
+     * other parallel lanes; 5s flakes while standalone llm-real passes.
+     * Early-exit on event — does not slow passing tests.
+     */
+    protected function liveControllerReadyTimeout(): float
+    {
+        return 12.0;
+    }
+
     // ── Lifecycle ──
 
     protected function setUp(): void

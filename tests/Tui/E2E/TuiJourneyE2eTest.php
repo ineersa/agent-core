@@ -127,14 +127,7 @@ final class TuiJourneyE2eTest extends TestCase
     {
         $this->tmux->waitForCaptureContains($pane, '█', 10.0);
 
-        $capture = $this->tmux->waitForCallback(
-            $pane,
-            static fn (string $plain): bool => str_contains($plain, '█')
-                && (str_contains($plain, '● idle') || str_contains($plain, '◐ Work')),
-            3.0,
-            'TUI startup layout',
-            500,
-        );
+        $capture = $this->tmux->waitForTuiReadyAfterLogo($pane);
 
         self::assertStringContainsString('█', $capture, 'Hatfield logo missing');
         self::assertTrue(

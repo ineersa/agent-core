@@ -85,9 +85,7 @@ final class TuiToolOutputE2eTest extends TestCase
         try {
             // Wait for TUI startup
             $this->tmux->waitForCaptureContains($pane, '█', 10.0);
-
-            // Let the TUI finish startup rendering.
-            usleep(500_000);
+            $this->tmux->waitForTuiReadyAfterLogo($pane);
 
             // Submit a prompt.  The replay fixture serves a read tool_call;
             // the read tool executes for real; then the LLM fixture exhaustion

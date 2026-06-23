@@ -76,7 +76,7 @@ YAML;
     public function testReadLargeFileProducesCappedOutput(): void
     {
         $this->spawnController();
-        $this->waitForEvent('runtime.ready', 5.0);
+        $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
 
         $startCmdId = 'cmd_start_'.uniqid();
 

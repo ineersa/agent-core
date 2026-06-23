@@ -48,7 +48,7 @@ final class ViewImageToolE2eTest extends ControllerE2eTestCase
     public function testViewImageToolCompletesWithoutGatingFailure(): void
     {
         $this->spawnController();
-        $this->waitForEvent('runtime.ready', 5.0);
+        $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
 
         $startCmdId = 'cmd_start_'.uniqid();
         $this->writeCommand([

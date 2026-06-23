@@ -36,7 +36,7 @@ final class ShellFollowUpLiveE2eTest extends ControllerE2eTestCase
     public function testFollowUpWithoutShell(): void
     {
         $this->spawnController();
-        $this->waitForEvent('runtime.ready', 5.0);
+        $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
 
         // ── Turn 1 ──
         $startCmdId = 'cmd_turn1_'.uniqid();
@@ -115,7 +115,7 @@ final class ShellFollowUpLiveE2eTest extends ControllerE2eTestCase
     public function testShellThenFollowUpOnCompletedRun(): void
     {
         $this->spawnController();
-        $this->waitForEvent('runtime.ready', 5.0);
+        $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
 
         // ── Turn 1 ──
         $startCmdId = 'cmd_turn1_'.uniqid();

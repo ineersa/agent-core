@@ -26,7 +26,7 @@ final class ControllerSmokeTest extends ControllerE2eTestCase
     {
         $this->spawnController();
 
-        $this->waitForEvent('runtime.ready', 5.0);
+        $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
 
         $startCmdId = 'cmd_start_'.uniqid();
         $this->writeCommand([

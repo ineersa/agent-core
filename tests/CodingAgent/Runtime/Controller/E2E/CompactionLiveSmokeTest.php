@@ -65,7 +65,7 @@ YAML;
     {
         $this->spawnController();
 
-        $this->waitForEvent('runtime.ready', 5.0);
+        $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
 
         // ── Phase 1: Start a run with enough text to be compactable ──
         //
