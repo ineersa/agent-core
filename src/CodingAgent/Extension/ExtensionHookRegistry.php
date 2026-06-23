@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Extension;
 
-use Ineersa\Hatfield\ExtensionApi\ToolCallHookInterface;
-use Ineersa\Hatfield\ExtensionApi\ToolResultHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
+use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorProviderInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookProviderInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultHookInterface;
 
 /**
  * Internal registry for tool call/result hooks registered by extensions.
@@ -25,7 +29,7 @@ use Ineersa\Hatfield\ExtensionApi\ToolResultHookInterface;
  *
  * @internal this is app-internal wiring, not part of the public ExtensionApi
  */
-final class ExtensionHookRegistry
+final class ExtensionHookRegistry implements PromptContributorProviderInterface, ToolCallRewriteHookProviderInterface
 {
     /**
      * Registered tool call hooks, in registration order.
@@ -40,6 +44,20 @@ final class ExtensionHookRegistry
      * @var list<ToolResultHookInterface>
      */
     private array $toolResultHooks = [];
+
+    /**
+     * Registered prompt contributors, in registration order.
+     *
+     * @var list<PromptContributorInterface>
+     */
+    private array $promptContributors = [];
+
+    /**
+     * Registered rewrite hooks, keyed by tool name.
+     *
+     * @var array<string, list<ToolCallRewriteHookInterface>>
+     */
+    private array $rewriteHooks = [];
 
     /**
      * Hooks indexed by their class name (hookId) for lookup.
@@ -73,6 +91,49 @@ final class ExtensionHookRegistry
     public function toolResultHooks(): array
     {
         return $this->toolResultHooks;
+    }
+
+    public function addPromptContributor(PromptContributorInterface $contributor): void
+    {
+        $this->promptContributors[] = $contributor;
+    }
+
+    /**
+     * @return list<PromptContributorInterface>
+     */
+    public function promptContributors(): array
+    {
+        return $this->promptContributors;
+    }
+
+    /**
+     * Register a tool-call rewrite hook for a specific tool or wildcard.
+     *
+     * @param string $toolName Specific tool name or '*' for all tools
+     */
+    public function addToolCallRewriteHook(string $toolName, ToolCallRewriteHookInterface $hook): void
+    {
+        $this->rewriteHooks[$toolName][] = $hook;
+    }
+
+    /**
+     * Get rewrite hooks matching the given tool name.
+     *
+     * Returns hooks registered for the exact tool name (registration
+     * order), followed by wildcard hooks ('*', registration order).
+     * Duplicates are possible if the same hook is registered for both
+     * the tool name and wildcard.
+     *
+     * @return list<ToolCallRewriteHookInterface>
+     */
+    public function rewriteHooksForTool(string $toolName): array
+    {
+        $specific = $this->rewriteHooks[$toolName] ?? [];
+        $wildcard = $this->rewriteHooks['*'] ?? [];
+
+        // Registration order: specific hooks first, then wildcard.
+        // Within each group, registration order is preserved.
+        return [...$specific, ...$wildcard];
     }
 
     /**

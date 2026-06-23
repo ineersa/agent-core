@@ -4,6 +4,15 @@ declare(strict_types=1);
 
 namespace Ineersa\Hatfield\ExtensionApi;
 
+use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
+use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
+use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
+use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultHookInterface;
+
 /**
  * Public API surface that Hatfield exposes to enabled extensions.
  *
@@ -63,4 +72,50 @@ interface ExtensionApiInterface
      * path resolution and policy evaluation.
      */
     public function getCwd(): string;
+
+    /**
+     * Get the exec capability object.
+     *
+     * Returns an ExecInterface that extensions can use to run shell
+     * commands with argument arrays, configurable working directory,
+     * timeout, and environment variables. Never shell-interpolates.
+     *
+     * @see ExecInterface
+     */
+    public function exec(): ExecInterface;
+
+    /**
+     * Register a prompt contributor that injects markdown into the system prompt.
+     *
+     * The contributor's output is appended after static APPEND_SYSTEM.md content
+     * and before the final prompt is sent to the LLM.
+     *
+     * @see PromptContributorInterface
+     */
+    public function registerPromptContributor(PromptContributorInterface $contributor): void;
+
+    /**
+     * Register a slash command with the TUI command registry.
+     *
+     * The command definition (name, aliases, description, usage) and handler
+     * are forwarded to the SlashCommandRegistry via the TUI adapter bridge.
+     *
+     * @see CommandDefinitionDTO
+     * @see ExtensionCommandHandlerInterface
+     */
+    public function registerCommand(CommandDefinitionDTO $definition, ExtensionCommandHandlerInterface $handler): void;
+
+    /**
+     * Register a tool-call argument rewrite hook.
+     *
+     * Rewrite hooks run BEFORE SafeGuard/policy hooks and transform tool
+     * arguments. The rewritten arguments are visible to subsequent hooks
+     * and to the tool handler.
+     *
+     * @param string                       $toolName Tool name or '*' for wildcard (all tools)
+     * @param ToolCallRewriteHookInterface $hook     The rewrite hook
+     *
+     * @see ToolCallRewriteHookInterface
+     */
+    public function registerToolCallRewriteHook(string $toolName, ToolCallRewriteHookInterface $hook): void;
 }

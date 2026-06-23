@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool;
 
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallContextDTO;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookProviderInterface;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallArgumentsResolved;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallFailed;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallRequested;
@@ -40,6 +42,7 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
     public function __construct(
         private ToolRegistryInterface $registry,
         private ?EventDispatcherInterface $eventDispatcher = null,
+        private ?ToolCallRewriteHookProviderInterface $rewriteHookProvider = null,
     ) {
     }
 
@@ -67,8 +70,11 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
     /**
      * Execute a tool call by name.
      *
-     * Looks up the tool definition from the registry, invokes the stored
-     * handler with decoded arguments, and wraps the result.
+     * Looks up the tool definition from the registry, runs the pre-event
+     * rewrite phase (argument transformation by extension hooks), dispatches
+     * ToolCallRequested with the (possibly rewritten) arguments so SafeGuard
+     * and other policy hooks evaluate the final command, then invokes the
+     * handler with the final arguments.
      *
      * @throws ToolNotFoundException when the tool name is not in the registry
      */
@@ -82,7 +88,42 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
 
         $metadata = $this->toSymfonyTool($definition);
 
-        $requestedEvent = new ToolCallRequested($toolCall, $metadata);
+        // ── Pre-event rewrite phase ──
+        // Rewrite hooks run BEFORE ToolCallRequested is dispatched so that
+        // SafeGuard and other policy hooks (which subscribe to that event)
+        // evaluate the real (rewritten) command. Multiple rewriters compose
+        // left-to-right: each hook receives the output of the previous one.
+        $arguments = $toolCall->getArguments();
+
+        if (null !== $this->rewriteHookProvider) {
+            $rewriteHooks = $this->rewriteHookProvider->rewriteHooksForTool($toolCall->getName());
+
+            $hookIndex = 0;
+            foreach ($rewriteHooks as $hook) {
+                // runId/turnNo/cwd/metadata are intentionally null here;
+                // rewriters in EXT-01 only need arguments. Thread from
+                // worker context if a future hook needs them.
+                $context = new ToolCallContextDTO(
+                    toolCallId: $toolCall->getId(),
+                    toolName: $toolCall->getName(),
+                    arguments: $arguments,
+                    orderIndex: $hookIndex++,
+                );
+
+                $rewritten = $hook->rewriteArguments($context);
+                if (null !== $rewritten) {
+                    $arguments = $rewritten;
+                }
+            }
+        }
+
+        // Construct the event ToolCall — a new instance with rewritten args
+        // if they changed, so SafeGuard/policy hooks see the final command.
+        $eventToolCall = $arguments !== $toolCall->getArguments()
+            ? new ToolCall($toolCall->getId(), $toolCall->getName(), $arguments)
+            : $toolCall;
+
+        $requestedEvent = new ToolCallRequested($eventToolCall, $metadata);
         $this->eventDispatcher?->dispatch($requestedEvent);
 
         if ($requestedEvent->isDenied()) {
@@ -94,7 +135,6 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
         }
 
         $handler = $definition->handler;
-        $arguments = $toolCall->getArguments();
 
         try {
             $this->eventDispatcher?->dispatch(new ToolCallArgumentsResolved($handler, $metadata, $arguments));

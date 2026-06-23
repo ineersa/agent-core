@@ -7,12 +7,13 @@ namespace Ineersa\CodingAgent\Extension;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\CodingAgent\Entity\ToolQuestion;
 use Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface;
-use Ineersa\Hatfield\ExtensionApi\ApprovalAnswerContextDTO;
-use Ineersa\Hatfield\ExtensionApi\ApprovalAnswerHookInterface;
-use Ineersa\Hatfield\ExtensionApi\ToolCallContextDTO;
-use Ineersa\Hatfield\ExtensionApi\ToolCallDecisionKindEnum;
-use Ineersa\Hatfield\ExtensionApi\ToolResultContextDTO;
-use Ineersa\Hatfield\ExtensionApi\ToolResultDecisionKindEnum;
+use Ineersa\Hatfield\ExtensionApi\Approval\ApprovalAnswerContextDTO;
+use Ineersa\Hatfield\ExtensionApi\Approval\ApprovalAnswerHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallContextDTO;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallDecisionDTO;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallDecisionKindEnum;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultContextDTO;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultDecisionKindEnum;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallFailed;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallRequested;
@@ -204,8 +205,8 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
     private function handleRequireApproval(
         ToolCallRequested $event,
         ToolCall $toolCall,
-        \Ineersa\Hatfield\ExtensionApi\ToolCallHookInterface $hook,
-        \Ineersa\Hatfield\ExtensionApi\ToolCallDecisionDTO $decision,
+        \Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface $hook,
+        ToolCallDecisionDTO $decision,
         ToolCallContextDTO $context,
     ): void {
         $runId = $context->runId ?? '';
@@ -338,7 +339,7 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
     private function processResolvedAnswer(
         ToolCallRequested $event,
         ToolCall $toolCall,
-        \Ineersa\Hatfield\ExtensionApi\ToolCallHookInterface $hook,
+        \Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface $hook,
         ToolQuestion $question,
         array $details,
     ): void {
@@ -383,7 +384,7 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
     private function applyApprovalOutcome(
         ToolCallRequested $event,
         ToolCall $toolCall,
-        \Ineersa\Hatfield\ExtensionApi\ToolCallHookInterface $hook,
+        \Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface $hook,
         string $answerText,
         string $questionId,
         array $details,

@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\Hatfield\ExtensionApi;
+namespace Ineersa\Hatfield\ExtensionApi\Approval;
+
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallDecisionDTO;
 
 /**
  * Interface for tool call hooks that requested approval via RequireApproval
@@ -20,9 +22,9 @@ namespace Ineersa\Hatfield\ExtensionApi;
  * The base ToolCallHookInterface stays unchanged — hooks that do
  * not need answers simply do not implement this interface.
  *
- * @see ToolCallHookInterface
+ * @see \Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface
  * @see ToolCallDecisionDTO
- * @see ToolCallDecisionKindEnum
+ * @see \Ineersa\Hatfield\ExtensionApi\Tool\ToolCallDecisionKindEnum
  * @see ApprovalAnswerContextDTO
  */
 interface ApprovalAnswerHookInterface

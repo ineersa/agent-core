@@ -20,14 +20,20 @@ use Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge;
 use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
 use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
-use Ineersa\Hatfield\ExtensionApi\ApprovalAnswerContextDTO;
-use Ineersa\Hatfield\ExtensionApi\ApprovalAnswerHookInterface;
-use Ineersa\Hatfield\ExtensionApi\ToolCallContextDTO;
-use Ineersa\Hatfield\ExtensionApi\ToolCallDecisionDTO;
-use Ineersa\Hatfield\ExtensionApi\ToolCallHookInterface;
-use Ineersa\Hatfield\ExtensionApi\ToolResultContextDTO;
-use Ineersa\Hatfield\ExtensionApi\ToolResultDecisionDTO;
-use Ineersa\Hatfield\ExtensionApi\ToolResultHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
+use Ineersa\Hatfield\ExtensionApi\Command\CommandRegistryInterface;
+use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
+use Ineersa\Hatfield\ExtensionApi\Exec\ExecOptionsDTO;
+use Ineersa\Hatfield\ExtensionApi\Exec\ExecResultDTO;
+use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
+use Ineersa\Hatfield\ExtensionApi\Approval\ApprovalAnswerContextDTO;
+use Ineersa\Hatfield\ExtensionApi\Approval\ApprovalAnswerHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallContextDTO;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallDecisionDTO;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultContextDTO;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultDecisionDTO;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultHookInterface;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 
@@ -45,7 +51,13 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
             logging: new LoggingConfig(),
             cwd: getcwd() ?: '/',
         );
-        $bridge = new ExtensionToolRegistryBridge($registry, $hookRegistry, $appConfig);
+        $bridge = new ExtensionToolRegistryBridge(
+            $registry,
+            $hookRegistry,
+            $appConfig,
+            $this->stubExecBridge(),
+            $this->stubCommandRegistry(),
+        );
         $seenContext = null;
         $bridge->registerToolCallHook(new class($seenContext) implements ToolCallHookInterface {
             public function __construct(
@@ -613,6 +625,23 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
 
                 return $this->result;
             }
+        };
+    }
+
+    private function stubExecBridge(): ExecInterface
+    {
+        return new readonly class implements ExecInterface {
+            public function exec(string $command, array $args = [], ?ExecOptionsDTO $options = null): ExecResultDTO
+            {
+                return new ExecResultDTO('', '', 0);
+            }
+        };
+    }
+
+    private function stubCommandRegistry(): CommandRegistryInterface
+    {
+        return new readonly class implements CommandRegistryInterface {
+            public function register(CommandDefinitionDTO $definition, ExtensionCommandHandlerInterface $handler): void {}
         };
     }
 }

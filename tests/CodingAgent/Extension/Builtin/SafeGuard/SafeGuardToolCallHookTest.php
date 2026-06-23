@@ -10,9 +10,9 @@ use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Policy\SafeGuardPolicy;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardConfig;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardPolicyWriter;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardToolCallHook;
-use Ineersa\Hatfield\ExtensionApi\ApprovalAnswerContextDTO;
-use Ineersa\Hatfield\ExtensionApi\ToolCallContextDTO;
-use Ineersa\Hatfield\ExtensionApi\ToolCallDecisionKindEnum;
+use Ineersa\Hatfield\ExtensionApi\Approval\ApprovalAnswerContextDTO;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallContextDTO;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallDecisionKindEnum;
 use PHPUnit\Framework\TestCase;
 
 /**
