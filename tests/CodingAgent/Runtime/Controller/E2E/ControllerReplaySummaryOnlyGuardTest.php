@@ -440,9 +440,13 @@ YAML;
             }
 
             if (!$this->isRunning()) {
-                \usleep(250_000);
                 foreach ($this->readEvents() as $event) {
                     $events[] = $event;
+                    $lastEventAt = \microtime(true);
+                    $type = $event['type'] ?? '';
+                    if (\in_array($type, ['compaction.completed', 'compaction.failed'], true)) {
+                        return $events;
+                    }
                 }
                 break;
             }
