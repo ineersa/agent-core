@@ -16,21 +16,30 @@ use Psr\Log\LoggerInterface;
  * lookups.
  *
  * This is intentionally a lazy scan — there is no global child-run
- * index.  The first lookup for an unknown agentRunId is O(P) where P
- * is the number of live parent sessions, but subsequent lookups of the
- * same runId are O(1).
+ * index.  A lookup for an unknown agentRunId is O(P) where P is the
+ * number of live parent sessions, but subsequent lookups of the same
+ * runId are O(1) via the in-memory cache.
  *
- * Once the cache is populated (by a successful locate or by the
- * SubagentExecutionService pre-populating it after artifact creation),
- * the router path is fast.
+ * Cache-hit fast path: already-located (or pre-registered) entries
+ * return from the in-memory map without a session-list query or
+ * registry read.
+ *
+ * Cache-miss rescan: when a runId is not in the cache, the locator
+ * rescans all known parent sessions and their registries.  This avoids
+ * a stale process-wide flag that would permanently miss child runs
+ * created later in long-lived messenger consumer or tool processes.
+ * The rescan is intentionally simple in v1 — there is no listener or
+ * cache-invalidation event for new artifacts.
+ *
+ * Pre-population: {@see SubagentExecutionService} calls {@see register()}
+ * immediately after artifact creation so the creating process avoids the
+ * full scan on the first lookup.  Other processes (e.g. messenger
+ * consumers) discover the new child on their next cache-miss lookup.
  */
 final class AgentChildRunLocator
 {
     /** @var array<string, AgentArtifactEntryDTO> agentRunId → entry */
     private array $cache = [];
-
-    /** @var bool whether a full scan has been performed */
-    private bool $scanned = false;
 
     public function __construct(
         private readonly HatfieldSessionStore $hatfieldSessionStore,
@@ -41,6 +50,14 @@ final class AgentChildRunLocator
 
     /**
      * Locate a child artifact entry by agentRunId.
+     *
+     * Cache-hit fast path (O(1)): returns the entry directly when the
+     * runId was already located or pre-registered.
+     *
+     * Cache-miss path (O(P)): rescans all known parent sessions and
+     * their artifact registries.  If the child run was created since
+     * the last scan (e.g. by another long-lived messenger consumer),
+     * the rescan discovers it.
      *
      * Returns null when the run is not a known child run.
      */
@@ -59,7 +76,8 @@ final class AgentChildRunLocator
      * Pre-populate the cache for a known child run (faster than scanning).
      *
      * Called by SubagentExecutionService immediately after artifact creation
-     * so that the routers find the child store on the very first lookup.
+     * so that the routers find the child store on the very first lookup
+     * in the same process.
      */
     public function register(AgentArtifactEntryDTO $entry): void
     {
@@ -68,19 +86,26 @@ final class AgentChildRunLocator
 
     /**
      * Scan all known parent sessions for child artifacts.
+     *
+     * No process-wide scanned guard — long-lived processes (messenger
+     * consumers, tool workers) may see newly created child artifacts
+     * on a subsequent cache-miss lookup after the first scan.
+     *
+     * Failures on individual parent registries are logged and skipped
+     * so that one corrupt registry does not prevent locating child
+     * runs in other parents.
      */
     private function scanAllSessions(): void
     {
-        if ($this->scanned) {
-            return;
-        }
-
-        $this->scanned = true;
-
         $sessions = $this->hatfieldSessionStore->listSessions();
 
+        $this->logger->debug('AgentChildRunLocator scanning for child artifacts', [
+            'component' => 'agent.locator',
+            'session_count' => \count($sessions),
+        ]);
+
         foreach ($sessions as $session) {
-            $parentRunId = $session['session_id'] ?? null;
+            $parentRunId = $session['sessionId'] ?? null;
             if (!\is_string($parentRunId) || '' === $parentRunId) {
                 continue;
             }
