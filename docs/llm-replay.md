@@ -12,6 +12,25 @@ returned during a reference run.
 Live LLM is opt-in: re-record fixtures explicitly with `castor llm:fixtures:record` when
 provider behavior, prompts, or tool schemas change.
 
+
+## llama-proxy (live smoke HTTP cache)
+
+Live tests (`castor test:llm-real`, `castor test:controller`) can run through
+[llama-proxy](file:///home/ineersa/projects/llama-proxy) on port `9052`. The proxy
+SHA-256-caches the full JSON request body (method, path, query, sorted body).
+
+Hatfield enables **deterministic prompt prefix** when `LLAMA_CPP_SMOKE_TEST=1`
+or `HATFIELD_LLM_PROXY_DETERMINISTIC=1`:
+
+- System prompt: `{date}` is empty; `{cwd}` stays the **real** runtime cwd (tools must not see a fake path).
+- `~/.hatfield/APPEND_SYSTEM.md`, `{cwd}/.hatfield/APPEND_SYSTEM.md`, and extension prompt contributors are omitted.
+- AGENTS.md context: repo-root / `.hatfield` / `.agents` AGENTS.md from `%kernel.project_dir%` with stable display paths (`fixedCwd()` in XML only).
+- Skills: discovered from project `.agents/skills` / `.hatfield/skills` only; skill `<location>` uses stable display paths.
+
+DI fixture replay (`HATFIELD_LLM_REPLAY_FIXTURE_PATH`) is unchanged and does not use the proxy.
+
+Proxy admin: `curl http://127.0.0.1:9052/__llama_proxy/cache/stats` and `POST .../cache/clear`.
+
 ## Fixture format (JSON)
 
 ```json

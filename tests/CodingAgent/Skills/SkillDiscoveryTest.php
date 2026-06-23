@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
+use Ineersa\CodingAgent\Tests\SystemPrompt\LlmProxyDeterministicPromptTestSupport;
 use Ineersa\CodingAgent\Skills\SkillsConfig;
 use PHPUnit\Framework\TestCase;
 

@@ -8,7 +8,9 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\SystemPrompt\LlmProxyDeterministicPromptMode;
 use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
+use Ineersa\CodingAgent\Tests\SystemPrompt\LlmProxyDeterministicPromptTestSupport;
 use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
@@ -545,6 +547,7 @@ final class SystemPromptBuilderTest extends TestCase
                 cwd: $cwd ?? $this->tmpDir,
             ),
             projectDir: $projectDir ?? $this->projectDir,
+            llmProxyDeterministicPromptMode: LlmProxyDeterministicPromptTestSupport::disabledMode(),
             promptContributorProvider: $promptContributorProvider,
         );
     }

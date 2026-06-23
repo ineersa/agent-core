@@ -442,6 +442,16 @@ services:
   # ─── System prompt builder ───
   Symfony\AI\Platform\Message\TemplateRenderer\StringTemplateRenderer: ~
 
+  Ineersa\CodingAgent\SystemPrompt\LlmProxyDeterministicPromptMode: ~
+
+  Ineersa\CodingAgent\SystemPrompt\AgentsContextDiscovery:
+    arguments:
+      $projectDir: '%kernel.project_dir%'
+
+  Ineersa\CodingAgent\Skills\SkillDiscovery:
+    arguments:
+      $projectDir: '%kernel.project_dir%'
+
   Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder:
     arguments:
       $projectDir: '%kernel.project_dir%'
