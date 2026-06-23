@@ -1150,7 +1150,7 @@ sensitive information exposure. It is **enabled by default** via
 `extensions.enabled` in `config/hatfield.defaults.yaml`.
 
 SafeGuard registers a `tool_call` hook through the Extension API
-(`Ineersa\Hatfield\ExtensionApi\ToolCallHookInterface`) that intercepts
+(`Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface`) that intercepts
 `bash`, `write`, `edit`, and `read` tool calls before execution and
 returns a structured denial result to the LLM when a policy violation
 is detected.

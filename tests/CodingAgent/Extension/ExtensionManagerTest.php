@@ -42,7 +42,7 @@ final class ExtensionManagerTest extends TestCase
         $this->rmdirRecursive($this->extensionsDir);
     }
 
-    // ── Tests: ExtensionApiBridge ──
+    // ── Tests: InMemoryExtensionApiBridge ──
 
     public function testBridgeCollectsRegistrations(): void
     {
@@ -79,7 +79,7 @@ final class ExtensionManagerTest extends TestCase
         $this->assertSame([], $bridge->getRegistrations());
     }
 
-    // ── ExtensionApiBridge hook methods ──
+    // ── InMemoryExtensionApiBridge hook methods ──
 
     public function testBridgeCollectsToolCallHooks(): void
     {
