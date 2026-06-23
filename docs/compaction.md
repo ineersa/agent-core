@@ -277,7 +277,7 @@ Concise steps to verify compaction manually:
    ```bash
    castor test:llm-real --filter=CompactionLiveSmokeTest
    ```
-   ⚠ This test is opt-in and requires a running llama.cpp server. It is not included in `castor check` by default.
+   ⚠ This test is opt-in and requires a running llama.cpp server. It is included in the `castor check` `llm-real` lane (requires llama.cpp/proxy on port 9052).
 
 3. **Full QA gate (deterministic, before PR):**
    ```bash

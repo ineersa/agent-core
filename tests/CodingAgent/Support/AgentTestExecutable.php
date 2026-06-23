@@ -31,6 +31,22 @@ final class AgentTestExecutable
     }
 
     /**
+     * Source-checkout console only (never the PHAR).
+     *
+     * Live controller E2E with APP_ENV=test loads dev-only bundles and
+     * config/services_test.yaml; the PHAR excludes those dependencies.
+     *
+     * @return string[] [PHP_BINARY, <project>/bin/console]
+     */
+    public static function sourceConsoleCommand(): array
+    {
+        $projectDir = ProjectDir::get();
+        $script = $projectDir.'/bin/console';
+
+        return [\PHP_BINARY, $script];
+    }
+
+    /**
      * Absolute path to the agent executable.
      */
     public static function path(): string

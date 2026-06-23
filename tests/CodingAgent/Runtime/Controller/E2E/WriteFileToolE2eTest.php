@@ -33,7 +33,7 @@ final class WriteFileToolE2eTest extends ControllerE2eTestCase
     public function testWriteFileToolExecutesAndRunCompletes(): void
     {
         $this->spawnController();
-        $this->waitForEvent('runtime.ready', 5.0);
+        $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
 
         $startCmdId = 'cmd_start_'.uniqid();
         $this->writeCommand([
@@ -41,13 +41,13 @@ final class WriteFileToolE2eTest extends ControllerE2eTestCase
             'id' => $startCmdId,
             'type' => 'start_run',
             'payload' => [
-                'prompt' => 'Use exactly one tool call: tool name `write` with arguments `{ "path": "./test-write.txt", "content": "hello world" }`. '
+                'prompt' => '[llm-real:write-file] Use exactly one tool call: tool name `write` with arguments `{ "path": "./test-write.txt", "content": "hello world" }`. '
                     .'Do not use an absolute path, do not omit `./`, and do not call any other tool. '
                     .'After the tool succeeds, answer exactly `done`.',
             ],
         ]);
 
-        $events = $this->collectEventsUntilToolCompleted('write', 5.0);
+        $events = $this->collectEventsUntilToolCompleted('write', $this->liveLlmToolWaitTimeout());
         $byType = $this->indexByType($events);
 
         $this->assertStartRunAcked($events, $startCmdId);

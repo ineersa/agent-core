@@ -69,7 +69,7 @@ final class CancelStickinessE2eTest extends TestCase
         try {
             // Wait for TUI startup.
             $this->tmux->waitForCaptureContains($pane, '█', 10.0);
-            usleep(500_000); // Let TUI finish initialisation
+            $this->tmux->waitForTuiReadyAfterLogo($pane);
 
             // Clear any residual editor state.
             $this->tmux->sendKey($pane, 'Escape');
@@ -92,7 +92,7 @@ final class CancelStickinessE2eTest extends TestCase
             // between the LLM step (instant) and the tool execution phase.
             // Escape sent immediately after this appears lands during the
             // multi-second bash sleep, guaranteeing Cancelling renders.
-            $this->tmux->waitForHistoryContains($pane, 'Running', 10.0);
+            $this->tmux->waitForHistoryContains($pane, 'Running', 20.0);
 
             // Cancel the run — now guaranteed to land during tool execution,
             // not during the instant-replay LLM step.
@@ -103,7 +103,7 @@ final class CancelStickinessE2eTest extends TestCase
                 $pane,
                 static fn (string $cap): bool => str_contains($cap, 'Cancelling')
                     || str_contains($cap, 'cancelling'),
-                timeout: 5.0,
+                timeout: 15.0,
                 message: 'Cancelling status did not appear after Escape',
                 history: 2000,
             );

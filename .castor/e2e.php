@@ -28,36 +28,94 @@ use function CastorTasks\run_quiet_command;
 require_once __DIR__.'/../vendor/autoload.php';
 require_once __DIR__.'/helpers.php';
 require_once __DIR__.'/shared.php';
+require_once __DIR__.'/phpunit.php';
 
 // ─── Real LLM smoke ──────────────────────────────────────────────
+
+/**
+ * Shell command for the llm-real PHPUnit/ParaTest lane (full group or filter).
+ *
+ * Shared by `castor test:llm-real` and the `test:llm-real` step in `castor check`.
+ * Does not run generation preflight — callers must invoke check_llm_generation_ready().
+ */
+function build_test_llm_real_phpunit_command(?string $filter = null): string
+{
+    $filterArg = null !== $filter ? ' --filter='.escapeshellarg($filter) : '';
+    if ('' === $filterArg) {
+        $filterArg = ' --group llm-real';
+    }
+
+    $strictFlags = phpunit_strict_issue_flags();
+    $llmFlags = is_llm_mode() ? ' --colors=never --no-progress --log-junit='.report_path('phpunit-llm-real.junit.xml') : '';
+    $envPrefix = 'APP_ENV=test LLAMA_CPP_SMOKE_TEST=1 ';
+
+    // Full group: ParaTest parallel (was a single sequential PHPUnit process).
+    // Filtered runs stay sequential — ParaTest --filter can be unreliable.
+    if (null === $filter && class_exists(ParaTest\ParaTestCommand::class)) {
+        $bootstrap = paratest_bootstrap_path();
+
+        return $envPrefix.\PHP_BINARY.' vendor/bin/paratest'
+            .' --configuration=phpunit.xml.dist'
+            .' --bootstrap='.escapeshellarg($bootstrap)
+            .' --group=llm-real'
+            .' --exclude-group=recording'
+            .' --processes=4'
+            .' '.$strictFlags.$llmFlags;
+    }
+
+    return $envPrefix.\PHP_BINARY.' vendor/bin/phpunit'
+        .$filterArg
+        .' --exclude-group=recording'
+        .' '.$strictFlags.$llmFlags;
+}
+
+/**
+ * Shell command for the TUI replay E2E lane (full group or filter).
+ *
+ * Shared by `castor test:tui` and the `test:tui` step in `castor check`.
+ * Full group uses ParaTest when available; filtered runs stay sequential PHPUnit.
+ */
+function build_test_tui_phpunit_command(?string $filter = null): string
+{
+    $strictFlags = phpunit_strict_issue_flags();
+    $llmFlags = is_llm_mode() ? ' --colors=never --no-progress --log-junit='.report_path('phpunit-tui.junit.xml') : '';
+    $envPrefix = 'APP_ENV=test ';
+
+    $filterArg = null !== $filter ? ' --filter='.escapeshellarg($filter) : '';
+    if ('' === $filterArg) {
+        $filterArg = ' --group=tui-e2e-replay';
+    }
+
+    if (null === $filter && class_exists(ParaTest\ParaTestCommand::class)) {
+        $bootstrap = paratest_bootstrap_path();
+        $envProcesses = getenv('HATFIELD_TUI_PARATEST_PROCESSES');
+        $processes = (int) (false !== $envProcesses && '' !== $envProcesses ? $envProcesses : '2');
+        if ($processes < 1) {
+            $processes = 2;
+        }
+        if ($processes > 4) {
+            $processes = 4;
+        }
+
+        return $envPrefix.\PHP_BINARY.' vendor/bin/paratest'
+            .' --configuration=phpunit.xml.dist'
+            .' --bootstrap='.escapeshellarg($bootstrap)
+            .$filterArg
+            .' --processes='.$processes
+            .' '.$strictFlags.$llmFlags;
+    }
+
+    return $envPrefix.\PHP_BINARY.' vendor/bin/phpunit'
+        .$filterArg
+        .' '.$strictFlags.$llmFlags;
+}
 
 #[AsTask(name: 'test:llm-real', description: 'Run real LLM smoke tests')]
 function test_llm_real(?string $filter = null): void
 {
-    $filterArg = null !== $filter ? ' --filter='.escapeshellarg($filter) : '';
-    if ('' === $filterArg) {
-        // Explicit filter is mandatory for test:llm-real (run full group).
-        $filterArg = ' --group llm-real';
-    }
     check_llm_generation_ready();
 
-    $pharPath = '';
-    try {
-        $pharPath = phar_ensure();
-    } catch (Throwable $e) {
-        echo "PHAR ensure skipped: {$e->getMessage()}
-";
-    }
-    if ('' !== $pharPath) {
-        $GLOBALS['CASTOR_PHAR_READY'] = $pharPath;
-    }
-    $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
-
-    $cmd = 'APP_ENV=test '.$pharEnv.'LLAMA_CPP_SMOKE_TEST=1 '.\PHP_BINARY.' vendor/bin/phpunit'
-        .$filterArg
-        .' --exclude-group=recording'
-        .' '.phpunit_strict_issue_flags()
-        .(is_llm_mode() ? ' --colors=never --no-progress --log-junit='.report_path('phpunit-llm-real.junit.xml') : '');
+    $cmd = build_test_llm_real_phpunit_command($filter);
 
     // Run via session-aware process runner to prevent orphaned PHAR workers
     // (messenger:consume children with --time-limit=3600 that outlive PHPUnit
@@ -71,7 +129,7 @@ function test_llm_real(?string $filter = null): void
             'log' => report_path('check-test-llm-real.log'),
         ],
     ];
-    $timeouts = ['llm-real' => 30];
+    $timeouts = ['llm-real' => 180]; // parallel llm-real: controller subprocess + warm proxy replay
 
     $start = hrtime(true);
     $results = run_commands_parallel($commands, $timeouts);
@@ -110,30 +168,20 @@ OK (%.1fs)
 #[AsTask(name: 'test:tui', description: 'Run TUI E2E journey tests (replay-backed, no live LLM)')]
 function test_tui(?string $filter = null): void
 {
-    $filterArg = null !== $filter ? ' --filter='.escapeshellarg($filter) : '';
     check_tmux();
 
-    @mkdir('var/test', 0755, true);
-    $migrate = run_quiet_command(
-        'APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
-    );
-    if (0 !== $migrate->getExitCode()) {
-        fail_quality('test database migration failed: '.$migrate->getErrorOutput());
+    // ParaTest bootstrap migrates per-worker DBs; sequential full group still needs default DB.
+    if (null !== $filter || !class_exists(ParaTest\ParaTestCommand::class)) {
+        @mkdir('var/test', 0755, true);
+        $migrate = run_quiet_command(
+            'APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
+        );
+        if (0 !== $migrate->getExitCode()) {
+            fail_quality('test database migration failed: '.$migrate->getErrorOutput());
+        }
     }
 
-    // Run the replay-backed TUI journey test (plus golden-snapshot test)
-    // as a single PHPUnit invocation.  Both use APP_ENV=test + source
-    // bin/console with ControllerReplayHttpClientFactory from
-    // config/services_test.yaml.  No PHAR, no HATFIELD_BINARY_PATH —
-    // the test DI requires autoload-dev paths.
-    $groupArg = '' !== $filterArg
-        ? $filterArg
-        : ' --group tui-e2e-replay';
-
-    $cmd = 'APP_ENV=test '.\PHP_BINARY.' vendor/bin/phpunit'
-        .$groupArg
-        .' '.phpunit_strict_issue_flags()
-        .(is_llm_mode() ? ' --colors=never --no-progress --log-junit='.report_path('phpunit-tui.junit.xml') : '');
+    $cmd = build_test_tui_phpunit_command($filter);
 
     echo "\n=== TUI E2E journey tests (replay-backed, no live LLM) ===\n\n";
 
