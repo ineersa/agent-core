@@ -242,7 +242,7 @@ final class SubagentExecutionService
                     $agentName, $artifactId);
             }
 
-            // Terminal states — exhaustive match over RunStatus.
+            // Terminal states only — non-terminal statuses must continue or return above.
             return match ($status) {
                 RunStatus::Completed => $this->handleCompleted(
                     $parentRunId, $artifactId, $agentName, $state,
@@ -250,7 +250,10 @@ final class SubagentExecutionService
                 RunStatus::Failed => $this->handleFailed(
                     $parentRunId, $artifactId, $agentName, $state,
                 ),
-                RunStatus::Cancelled, RunStatus::Cancelling => $this->handleCancelled(
+                RunStatus::Cancelled => $this->handleCancelled(
+                    $parentRunId, $artifactId, $agentName,
+                ),
+                RunStatus::Cancelling => $this->handleCancelled(
                     $parentRunId, $artifactId, $agentName,
                 ),
             };
@@ -310,7 +313,12 @@ final class SubagentExecutionService
             summary: $finalMessages,
         );
 
-        return $finalMessages;
+        return \sprintf(
+            "Subagent %s completed.\nArtifact: %s\n\n%s",
+            $agentName,
+            $artifactId,
+            $finalMessages,
+        );
     }
 
     /**

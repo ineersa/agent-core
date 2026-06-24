@@ -100,6 +100,8 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         $result = $service->execute('parent-1', 'test-agent', 'Inspect Foo.php');
 
         self::assertStringContainsString('Handoff:', $result);
+        self::assertStringContainsString('Subagent test-agent completed.', $result);
+        self::assertMatchesRegularExpression('/Artifact: agent_[0-9a-f]{16}\n/', $result);
 
         // Verify system prompt was included as the first LLM-visible message.
         self::assertNotNull($capturedInput, 'AgentRunner::start() should have been called.');
@@ -605,6 +607,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         $result = $service->execute('parent-compact', 'compact-agent', 'Compact then finish');
 
         self::assertStringContainsString('Handoff: compaction finished.', $result);
+        self::assertStringContainsString('Artifact:', $result);
 
         $entries = $registry->list('parent-compact');
         self::assertCount(1, $entries);
