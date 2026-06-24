@@ -53,7 +53,18 @@ final class CancelListener implements TuiListenerRegistrar
             // CancelListener must still send cancel during Compacting because
             // CancelListener's own guard checks isActive() — we special-case
             // Compacting here rather than making it report as isActive.
-            if (($state->activity->isActive() || RunActivityStateEnum::Compacting === $state->activity)
+            //
+            // Failed + lastRuntimePollError: RuntimeEventPoller set activity Failed
+            // after any fatal transport/poll error while a run handle may still be
+            // present (broken pipe, controller crash, restart limit, etc.) with no
+            // writable controller stdin. Escape must attempt cancel and surface
+            // recovery text, not clearEditor. Ordinary runtime Failed events without
+            // lastRuntimePollError remain terminal and still clear the editor.
+            $transportFailedWithHandle = RunActivityStateEnum::Failed === $state->activity
+                && null !== $state->handle
+                && '' !== $state->lastRuntimePollError;
+
+            if (($state->activity->isActive() || RunActivityStateEnum::Compacting === $state->activity || $transportFailedWithHandle)
                 && null !== $state->handle) {
                 $logger->info('ESC cancel requested', [
                     'run_id' => $state->handle->runId,
