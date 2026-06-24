@@ -181,7 +181,7 @@ function build_check_paratest_command(): string
     $llmFlags = is_llm_mode() ? ' --colors=never --no-progress' : '';
     $junitFlag = is_llm_mode() ? ' --log-junit='.report_path('phpunit-parallel.junit.xml') : '';
 
-    return qa_observability_env_command().' APP_ENV=test '.$phpBin.' vendor/bin/paratest'
+    return qa_check_run_env_command().' APP_ENV=test '.$phpBin.' vendor/bin/paratest'
         .' --configuration=phpunit.xml.dist'
         .' --bootstrap='.escapeshellarg($bootstrap)
         .' --exclude-group=tui-e2e-replay --exclude-group=llm-real --exclude-group=recording --exclude-group=controller-replay --exclude-group=phar'

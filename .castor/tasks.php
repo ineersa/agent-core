@@ -44,6 +44,7 @@ declare(strict_types=1);
 use Castor\Attribute\AsTask;
 
 use function CastorTasks\check_llm_generation_ready;
+use function CastorTasks\initialize_qa_check_run;
 use function CastorTasks\is_llm_mode;
 use function CastorTasks\report_path;
 use function CastorTasks\run_quiet_command;
@@ -73,6 +74,8 @@ require_once __DIR__.'/env.php';
 function check(): void
 {
     $root = (false !== ($_rp = realpath(__DIR__.'/..')) ? $_rp : __DIR__.'/..');
+    $qaRunId = initialize_qa_check_run();
+    echo 'QA run: '.$qaRunId.'\n';
 
     // No PHAR ensure — the deterministic controller-replay and TUI
     // replay lanes use source bin/console with APP_ENV=test, which
@@ -90,7 +93,7 @@ function check(): void
     $allCheckCommands = [
         'deptrac' => [
             'cmd' => timeout_check_command(
-                qa_observability_env_command().' '.$phpBin.' vendor/bin/deptrac --config-file=depfile.yaml --no-progress --no-ansi'
+                qa_check_run_env_command().' '.$phpBin.' vendor/bin/deptrac --config-file=depfile.yaml --no-progress --no-ansi'
                     .(is_llm_mode() ? ' --formatter=json' : ''),
                 30,
             ),
@@ -104,7 +107,7 @@ function check(): void
         ],
         'test:controller-replay' => [
             'cmd' => timeout_check_command(
-                qa_observability_env_command().' APP_ENV=test '.$phpBin.' vendor/bin/phpunit'
+                qa_check_run_env_command().' APP_ENV=test '.$phpBin.' vendor/bin/phpunit'
                     .' --group=controller-replay'
                     .' '.$strictFlags.$llmFlags
                     .(is_llm_mode() ? ' --log-junit='.report_path('phpunit-controller-replay.junit.xml') : ''),
@@ -125,14 +128,14 @@ function check(): void
         ],
         'phpstan' => [
             'cmd' => timeout_check_command(
-                qa_observability_env_command().' '.$phpBin.' vendor/bin/phpstan analyse -c phpstan.dist.neon --no-progress'
+                qa_check_run_env_command().' '.$phpBin.' vendor/bin/phpstan analyse -c phpstan.dist.neon --no-progress'
                     .(is_llm_mode() ? ' --error-format=json --no-ansi' : ''),
                 90,
             ),
         ],
         'cs-check' => [
             'cmd' => timeout_check_command(
-                qa_observability_env_command().' '.$phpBin.' vendor/bin/php-cs-fixer fix --config=.php-cs-fixer.dist.php --dry-run --no-ansi'
+                qa_check_run_env_command().' '.$phpBin.' vendor/bin/php-cs-fixer fix --config=.php-cs-fixer.dist.php --dry-run --no-ansi'
                     .(is_llm_mode() ? ' --format=json --show-progress=none' : ' --diff'),
                 30,
             ),
@@ -141,9 +144,8 @@ function check(): void
 
     // DB schema must be ready before the test / controller-replay / TUI
     // lanes start.  Migrate once (fast, idempotent).
-    @mkdir('var/test', 0755, true);
     $migrate = run_quiet_command(
-        'APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
+        qa_check_run_env_command().' APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
     );
     if (0 !== $migrate->getExitCode()) {
         fail_quality('test database migration failed: '.$migrate->getErrorOutput());
@@ -509,7 +511,7 @@ function run_check_commands_parallel(array $steps, array &$failures, array &$tim
             $timeouts[$step] = (int) $m[1] + 15;
         }
     }
-    @mkdir(\CastorTasks\REPORTS_DIR, 0755, true);
+    @mkdir(\CastorTasks\reports_dir(), 0755, true);
 
     echo 'Running steps in parallel (proc_open):
 ';

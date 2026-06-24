@@ -215,6 +215,13 @@ final class TmuxHarness
         int $height = 40,
         ?string $cwd = null,
     ): TmuxPane {
+        $qaRunId = getenv('HATFIELD_QA_RUN_ID') ?: '';
+        $qaRunSegment = '' !== $qaRunId
+            ? (preg_replace('/[^a-zA-Z0-9._-]/', '', $qaRunId) ?? 'qa-run')
+            : '';
+        if ('' !== $qaRunSegment) {
+            $prefix = $prefix.'-'.$qaRunSegment;
+        }
         $session = \sprintf('%s-%d-%d', $prefix, $this->pid, \count($this->sessionNames));
         $this->sessionNames[] = $session;
 

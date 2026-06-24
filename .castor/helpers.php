@@ -12,6 +12,65 @@ use function Castor\run;
 const REPORTS_DIR = __DIR__.'/../var/reports';
 
 /**
+ * Sanitize a QA run id segment for filesystem and env use.
+ */
+function sanitize_qa_run_id_segment(string $value): string
+{
+    $sanitized = preg_replace('/[^a-zA-Z0-9._-]/', '', $value) ?? '';
+
+    return '' !== $sanitized ? $sanitized : 'qa-run';
+}
+
+/**
+ * Project root directory for Castor helpers.
+ */
+function project_root_dir(): string
+{
+    return false !== ($_rp = realpath(__DIR__.'/..')) ? $_rp : __DIR__.'/..';
+}
+
+/**
+ * Initialize per-invocation QA resources for castor check().
+ *
+ * Sets process env via putenv() so command builders and child shells inherit
+ * run-scoped report/tmp/cache/DB paths.  Returns the generated run id.
+ */
+function initialize_qa_check_run(): string
+{
+    $random = bin2hex(random_bytes(4));
+    $id = sanitize_qa_run_id_segment(\sprintf('qa-%s-%d-%s', date('Ymd-His'), getmypid(), $random));
+
+    $reportsRel = 'var/reports/'.$id;
+    $tmpRel = 'var/tmp/'.$id;
+    $cacheRel = '.hatfield/cache-'.$id;
+    $dbFile = 'app_test-'.$id.'.sqlite';
+
+    $vars = [
+        'HATFIELD_QA_RUN_ID' => $id,
+        'HATFIELD_QA_REPORTS_DIR' => $reportsRel,
+        'HATFIELD_QA_TMP_DIR' => $tmpRel,
+        'HATFIELD_CACHE_DIR' => $cacheRel,
+        'HATFIELD_TEST_DATABASE_PATH' => $dbFile,
+    ];
+
+    foreach ($vars as $name => $value) {
+        putenv($name.'='.$value);
+        $_ENV[$name] = $value;
+        $_SERVER[$name] = $value;
+    }
+
+    $projectRoot = project_root_dir();
+    foreach ([$reportsRel, $tmpRel, $cacheRel, 'var/test'] as $relative) {
+        $path = $projectRoot.'/'.$relative;
+        if (!is_dir($path) && !mkdir($path, 0777, true) && !is_dir($path)) {
+            throw new \RuntimeException(\sprintf('Unable to create QA directory "%s".', $path));
+        }
+    }
+
+    return $id;
+}
+
+/**
  * Return the most recent modification time among all files in the given directories.
  *
  * Recurses into subdirectories, skips unreadable directories silently,
@@ -238,11 +297,19 @@ function is_llm_mode(): bool
 
 function reports_dir(): string
 {
-    if (!is_dir(REPORTS_DIR) && !mkdir(REPORTS_DIR, 0777, true) && !is_dir(REPORTS_DIR)) {
-        throw new \RuntimeException(\sprintf('Unable to create reports directory "%s".', REPORTS_DIR));
+    $custom = getenv('HATFIELD_QA_REPORTS_DIR');
+    if (false !== $custom && '' !== trim((string) $custom)) {
+        $relative = ltrim((string) $custom, '/');
+        $dir = project_root_dir().'/'.$relative;
+    } else {
+        $dir = REPORTS_DIR;
     }
 
-    return REPORTS_DIR;
+    if (!is_dir($dir) && !mkdir($dir, 0777, true) && !is_dir($dir)) {
+        throw new \RuntimeException(\sprintf('Unable to create reports directory "%s".', $dir));
+    }
+
+    return $dir;
 }
 
 function report_path(string $filename): string
@@ -252,6 +319,11 @@ function report_path(string $filename): string
 
 function relative_report_path(string $filename): string
 {
+    $custom = getenv('HATFIELD_QA_REPORTS_DIR');
+    if (false !== $custom && '' !== trim((string) $custom)) {
+        return rtrim((string) $custom, '/').'/'.$filename;
+    }
+
     return 'var/reports/'.$filename;
 }
 
@@ -932,7 +1004,12 @@ function xml_escape(string $value): string
  */
 function check_llm_generation_ready(): void
 {
-    $cacheFile = 'var/tmp/llm-generation-ready.cache';
+    $tmpDir = getenv('HATFIELD_QA_TMP_DIR');
+    if (false !== $tmpDir && '' !== trim((string) $tmpDir)) {
+        $cacheFile = rtrim((string) $tmpDir, '/').'/llm-generation-ready.cache';
+    } else {
+        $cacheFile = 'var/tmp/llm-generation-ready.cache';
+    }
     $envTtl = getenv('HATFIELD_LLM_READY_TTL');
     $ttlSeconds = (int) (false !== $envTtl && '' !== $envTtl ? $envTtl : 120);
     if ($ttlSeconds > 0 && is_file($cacheFile)) {
@@ -964,8 +1041,9 @@ function check_llm_generation_ready(): void
     $httpCode = (int) trim($process->getOutput());
 
     if (200 === $httpCode && 0 === $process->getExitCode()) {
-        if (!is_dir('var/tmp')) {
-            @mkdir('var/tmp', 0o777, true);
+        $cacheParent = \dirname($cacheFile);
+        if ('' !== $cacheParent && '.' !== $cacheParent && !is_dir($cacheParent)) {
+            @mkdir($cacheParent, 0o777, true);
         }
         @touch($cacheFile);
         echo 'llama.cpp generation: ok'."\n";

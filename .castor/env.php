@@ -95,6 +95,46 @@ function qa_observability_env_command(): string
     return $base.' DD_LOGS_INJECTION=0 DD_TRACE_APPEND_TRACE_IDS_TO_LOGS=false';
 }
 
+/**
+ * Shell env prefix for castor check lanes: QA run-scoped paths plus observability.
+ *
+ * When HATFIELD_QA_RUN_ID is unset (non-check commands), this degrades to
+ * qa_observability_env_command() only.
+ */
+function qa_check_run_env_command(): string
+{
+    $obs = qa_observability_env_command();
+    $runId = getenv('HATFIELD_QA_RUN_ID');
+    if (false === $runId || '' === trim((string) $runId)) {
+        return $obs;
+    }
+
+    $pairs = [];
+    foreach ([
+        'HATFIELD_QA_RUN_ID',
+        'HATFIELD_QA_REPORTS_DIR',
+        'HATFIELD_QA_TMP_DIR',
+        'HATFIELD_CACHE_DIR',
+        'HATFIELD_TEST_DATABASE_PATH',
+    ] as $name) {
+        $value = getenv($name);
+        if (false === $value || '' === trim((string) $value)) {
+            continue;
+        }
+        $pairs[] = $name.'='.escapeshellarg((string) $value);
+    }
+
+    if ([] === $pairs) {
+        return $obs;
+    }
+
+    if (!str_starts_with($obs, 'env ')) {
+        return $obs.' env '.implode(' ', $pairs);
+    }
+
+    return 'env '.implode(' ', $pairs).' '.substr($obs, 4);
+}
+
 function datadog_env_command(bool $enabled): string
 {
     $vars = [
