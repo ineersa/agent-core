@@ -6,6 +6,7 @@ namespace Ineersa\HatfieldExt\TaskWorkflow\Tool;
 
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecOptionsDTO;
+use Ineersa\Hatfield\ExtensionApi\Tool\ExtensionToolHandlerInterface;
 use Ineersa\HatfieldExt\TaskWorkflow\Exec\GitExecutor;
 use Ineersa\HatfieldExt\TaskWorkflow\Pr\PrManager;
 use Ineersa\HatfieldExt\TaskWorkflow\Settings\TaskWorkflowSettings;
@@ -15,7 +16,7 @@ use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskMarkdown;
 use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskStatusEnum;
 use Ineersa\HatfieldExt\TaskWorkflow\Worktree\WorktreeManager;
 
-final readonly class MoveTaskHandler
+final readonly class MoveTaskHandler implements ExtensionToolHandlerInterface
 {
     public function __construct(
         private TaskBoardStore $store,

@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace Ineersa\HatfieldExt\TaskWorkflow\Tool;
 
+use Ineersa\Hatfield\ExtensionApi\Tool\ExtensionToolHandlerInterface;
 use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskBoardLock;
 use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskBoardStore;
 use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskMarkdown;
 use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskStatusEnum;
 
-final readonly class UpdateTaskHandler
+final readonly class UpdateTaskHandler implements ExtensionToolHandlerInterface
 {
     public function __construct(
         private TaskBoardStore $store,

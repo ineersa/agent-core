@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Extension;
 
 use Ineersa\CodingAgent\Config\AppConfig;
-use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandRegistryInterface;
@@ -13,6 +12,7 @@ use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\ExtensionToolHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
@@ -58,17 +58,14 @@ final readonly class ExtensionToolRegistryBridge implements ExtensionApiInterfac
      */
     public function registerTool(ToolRegistrationDTO $tool): void
     {
-        $handler = $tool->handler;
-
-        if (!$handler instanceof ToolHandlerInterface) {
-            throw new \InvalidArgumentException(\sprintf('Tool "%s" handler must be an instance of ToolHandlerInterface, got %s.', $tool->name, get_debug_type($handler)));
-        }
+        // ToolRegistrationDTO enforces ExtensionToolHandlerInterface at construction.
+        $adapter = new ExtensionToolHandlerAdapter($tool->handler);
 
         $this->toolRegistry->registerTool(
             name: $tool->name,
             description: $tool->description,
             parametersJsonSchema: $tool->parametersJsonSchema,
-            handler: $handler,
+            handler: $adapter,
             promptLine: $tool->promptSummary ?? \sprintf('%s: %s', $tool->name, $tool->description),
             promptGuidelines: $tool->promptGuidelines,
         );

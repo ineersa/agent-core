@@ -18,18 +18,18 @@ namespace Ineersa\Hatfield\ExtensionApi\Tool;
 final readonly class ToolRegistrationDTO
 {
     /**
-     * @param string               $name                 unique tool name exposed to the LLM
-     * @param string               $description          short description for the provider schema
-     * @param array<string, mixed> $parametersJsonSchema JSON Schema describing tool parameters
-     * @param mixed                $handler              callable or handler reference for tool execution
-     * @param string|null          $promptSummary        optional one-line summary for the system prompt available-tools section
-     * @param string[]             $promptGuidelines     optional bullet-point guidelines for the system prompt guidelines section
+     * @param string                        $name                 unique tool name exposed to the LLM
+     * @param string                        $description          short description for the provider schema
+     * @param array<string, mixed>          $parametersJsonSchema JSON Schema describing tool parameters
+     * @param ExtensionToolHandlerInterface $handler              extension-facing tool execution handler
+     * @param string|null                   $promptSummary        optional one-line summary for the system prompt available-tools section
+     * @param string[]                      $promptGuidelines     optional bullet-point guidelines for the system prompt guidelines section
      */
     public function __construct(
         public readonly string $name,
         public readonly string $description,
         public readonly array $parametersJsonSchema,
-        public readonly mixed $handler,
+        public readonly ExtensionToolHandlerInterface $handler,
         public readonly ?string $promptSummary = null,
         public readonly array $promptGuidelines = [],
     ) {
