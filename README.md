@@ -53,3 +53,9 @@ castor check
 | `castor lib:phpstan` | Run PHPStan on agent-core |
 | `castor tui:validate` | Validate tui-bundle composer.json |
 | `castor app:check` | Run coding-agent app QA |
+
+## Hello World
+
+This is a dummy test section added by **TEST-01** to exercise the task workflow extension tools.
+
+Hello, world! 🚀
