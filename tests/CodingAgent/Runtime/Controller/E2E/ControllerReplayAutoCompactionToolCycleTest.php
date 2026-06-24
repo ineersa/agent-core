@@ -211,7 +211,7 @@ YAML;
         $this->spawnController();
 
         // ── Wait for runtime.ready ──
-        $this->waitForEvent('runtime.ready', 5.0);
+        $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
 
         // ═════════════════════════════════════════════════════════════
         //  Start run with a prompt — expect tool_call + tool batch +
