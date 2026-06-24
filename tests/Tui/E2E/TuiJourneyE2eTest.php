@@ -20,7 +20,7 @@ use PHPUnit\Framework\TestCase;
  *  - Launches the TUI once with APP_ENV=test + replay fixtures so
  *    model-dependent steps are deterministic and require no live
  *    llama.cpp.
- *  - UI-only tmux steps (shell, file completion) run before
+ *  - UI-only tmux steps (shell) run before
  *    model interaction; /hotkeys and !! rejection are virtual-only
  *    ({@see \Ineersa\Tui\Tests\Screen\TuiVirtualInputTest}).
  *  - A single model-interaction step submits a prompt and verifies
@@ -66,15 +66,15 @@ final class TuiJourneyE2eTest extends TestCase
      *
      * Exercises in order (tmux integration smoke):
      *  1. Startup layout (logo, status, footer)
-     *  3. Shell !ls prefix — real command output proof + ordering
-     *  4. File @ completion
-     *  5. Model interaction via replay fixture (no live LLM)
-     *  6. /export slash command proof
-     *  7. Inline shell on completed run + follow-up (issue #183 repro)
-     *  8. Clean exit via Ctrl+D
+     *  2. Shell !ls prefix — real command output proof + ordering
+     *  3. Model interaction via replay fixture (no live LLM)
+     *  4. /export slash command proof
+     *  5. Inline shell on completed run + follow-up (issue #183 repro)
+     *  6. Clean exit via Ctrl+D
      *
      * Virtual-only (not in this journey): startup detail {@see TuiStartupVirtualRenderTest},
      * Shift+Tab reasoning status/border {@see TuiReasoningCycleTest},
+     * @ file completion menu/accept {@see TuiFileCompletionRenderTest},
      * /hotkeys table, !! rejection — {@see TuiVirtualInputTest}.
      *
      * !! double-bang rejection is covered by {@see \Ineersa\Tui\Tests\Screen\TuiVirtualInputTest}.
@@ -97,7 +97,6 @@ final class TuiJourneyE2eTest extends TestCase
         try {
             $this->journeyPhase1StartupLayout($pane);
             $this->journeyPhase4ShellPrefixOutput($pane);
-            $this->journeyPhase5FileCompletion($pane);
             $this->journeyPhase6ModelInteractionReplay($pane);
             $this->journeyPhase8ExportCommand($pane);
             $this->journeyPhase9InlineShellOnCompletedRun($pane);
@@ -284,44 +283,6 @@ final class TuiJourneyE2eTest extends TestCase
         }
 
         $this->saveAnsiSnapshot($pane, 'journey-inline-shell');
-    }
-
-    /**
-     * Phase 5: @ file completion — triggers completion via Tab and
-     * verifies the completion menu appears with file entries.
-     *
-     * Creates test files under the isolated HOME directory.  Uses a
-     * single-line @ trigger (no C-j/multiline — the C-j newline test
-     * is in HotkeySmokeTest) to avoid a C-j-as-Enter race.
-     */
-    private function journeyPhase5FileCompletion(TmuxPane $pane): void
-    {
-        $this->tmux->sendKey($pane, 'C-u'); // Clear editor
-        $this->tmux->sendLiteral($pane, '@test');
-        $this->tmux->sendKey($pane, 'Tab');
-
-        // Completion menu should appear — any file/dir entry with @
-        // proves the index builder and completion chain work.
-        $this->tmux->waitForCallback(
-            $pane,
-            static function (string $cap): bool {
-                return str_contains($cap, 'testfiles')
-                    || str_contains($cap, '@home');
-            },
-            timeout: 3.0,
-            message: 'File completion menu did not appear',
-            history: 2000,
-        );
-
-        $capture = $this->tmux->capturePlain($pane);
-
-        // The completed path should start with @.
-        self::assertStringContainsString('@', $capture, 'Editor must contain completed @ path after Tab');
-
-        // Dismiss any completion menu before moving on.
-        $this->tmux->sendKey($pane, 'Escape');
-        \usleep(100_000);
-        $this->tmux->sendKey($pane, 'C-u');
     }
 
     /**
@@ -572,11 +533,6 @@ final class TuiJourneyE2eTest extends TestCase
         // Also write for the HOME dir.
         @\mkdir($dir.'/home/.hatfield', 0o777, true);
         \file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
-
-        // Create test files for file mention completion phase
-        // before TUI starts, so the startup index scanner picks them up.
-        @\mkdir($dir.'/home/testfiles', 0o777, true);
-        \file_put_contents($dir.'/home/testfiles/alpha.txt', 'test');
 
         return $dir;
     }
