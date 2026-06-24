@@ -10,7 +10,7 @@ description: "E2E and validation testing strategy. Load this skill when: writing
 All PHPUnit invocations include `--stop-on-error --stop-on-failure --fail-on-all-issues --display-all-issues`.
 
 ```bash
-castor check                # Full QA gate: deptrac, unit/integration (ParaTest), controller replay E2E, TUI replay E2E, live llm-real smoke (ParaTest, port 9052 / llama-proxy), phpstan, cs-check; lanes parallel; logs at var/reports/check-*.log. Multiple simultaneous `castor check` in one checkout queue on var/tmp/castor-check.lock (override stress only: HATFIELD_CASTOR_CHECK_LOCK=0).
+castor check                # Full QA gate: deptrac, unit/integration (ParaTest), controller replay E2E, TUI replay E2E, live llm-real smoke (ParaTest, port 9052 / llama-proxy), phpstan, cs-check; lanes parallel; logs at var/reports/check-*.log. Multiple simultaneous `castor check` for the same repo (sibling worktrees included) queue on a shared Symfony Lock (FlockStore) outside the worktree (override stress only: HATFIELD_CASTOR_CHECK_LOCK=0). `castor check` fails if llama-proxy cache `entries` grow during the run — warm with `castor test:llm-real` first.
 castor test                 # unit/integration tests (ParaTest parallel by default); excludes tui-e2e-replay, llm-real, recording, and controller-replay groups
 castor test --filter=X      # filter tests by name
 castor test --suite=X       # target a specific phpunit.xml test suite (ParaTest parallel)
@@ -86,6 +86,13 @@ curl -X DELETE http://127.0.0.1:9052/__llama_proxy/cache
 ```
 
 If `LLAMA_PROXY_ADMIN_TOKEN` is set, pass `-H 'X-Llama-Proxy-Token: <token>'` on **stats** and **clear** (health is unauthenticated).
+
+### `castor check` llama-proxy cache guard
+
+- Before lanes (and before generation preflight), `castor check` snapshots proxy cache `entries` via `/__llama_proxy/cache/stats`.
+- After all lanes pass, it fails if `entries` increased — meaning uncached live LLM traffic entered the deterministic gate.
+- **Warmup workflow:** run `castor test:llm-real` intentionally, verify stats stabilize, then `castor check`. Clearing proxy cache requires warmup again.
+- Stress-only: `HATFIELD_LLM_CACHE_GUARD=0`. Not applied to focused `castor test:llm-real`.
 
 ### `castor check` live lane
 

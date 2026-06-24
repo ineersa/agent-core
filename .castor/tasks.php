@@ -42,8 +42,11 @@ declare(strict_types=1);
  */
 
 use Castor\Attribute\AsTask;
+use Symfony\Component\Lock\LockInterface;
 
 use function CastorTasks\acquire_castor_check_lock;
+use function CastorTasks\assert_castor_check_llama_proxy_cache_unchanged;
+use function CastorTasks\begin_castor_check_llama_proxy_cache_guard;
 use function CastorTasks\castor_check_lock_enabled;
 use function CastorTasks\check_llm_generation_ready;
 use function CastorTasks\initialize_qa_check_run;
@@ -51,6 +54,7 @@ use function CastorTasks\is_llm_mode;
 use function CastorTasks\release_castor_check_lock;
 use function CastorTasks\report_path;
 use function CastorTasks\run_quiet_command;
+use function CastorTasks\update_castor_check_lock_meta_qa_run_id;
 
 require_once __DIR__.'/../vendor/autoload.php';
 require_once __DIR__.'/helpers.php';
@@ -69,8 +73,8 @@ require_once __DIR__.'/env.php';
  * on port 9052 (llama-proxy with cache normalization recommended).  Preflight
  * `check_llm_generation_ready()` runs once before parallel lanes start.
  *
- * Concurrent `castor check` invocations in the same checkout queue on a flock
- * (var/tmp/castor-check.lock). Lanes run concurrently as external subprocesses (via proc_open)
+ * Concurrent `castor check` invocations for the same git repository (including sibling
+ * worktrees) queue on a shared Symfony Lock (FlockStore) outside the worktree. Lanes run concurrently as external subprocesses (via proc_open)
  * so they do not share memory with the Castor PHAR.  Each lane's
  * output is captured to var/reports/check-<step>.log.
  */
@@ -78,20 +82,24 @@ require_once __DIR__.'/env.php';
 function check(): void
 {
     $root = (false !== ($_rp = realpath(__DIR__.'/..')) ? $_rp : __DIR__.'/..');
-    $lockHandle = null;
+    /** @var LockInterface|null $checkLock */
+    $checkLock = null;
 
     try {
         if (castor_check_lock_enabled()) {
-            $lockHandle = acquire_castor_check_lock($root);
+            $checkLock = acquire_castor_check_lock($root);
         }
 
         $qaRunId = initialize_qa_check_run();
-        echo 'QA run: '.$qaRunId.'\n';
+        if (null !== $checkLock) {
+            update_castor_check_lock_meta_qa_run_id($root, $qaRunId);
+        }
+        echo 'QA run: '.$qaRunId."\n";
 
         _run_castor_check_body($root, $qaRunId);
     } finally {
-        if (null !== $lockHandle) {
-            release_castor_check_lock($lockHandle, $root);
+        if (null !== $checkLock) {
+            release_castor_check_lock($checkLock, $root);
         }
     }
 }
@@ -101,6 +109,8 @@ function check(): void
  */
 function _run_castor_check_body(string $root, string $qaRunId): void
 {
+    $llamaProxyCacheBaseline = begin_castor_check_llama_proxy_cache_guard();
+
     // No PHAR ensure — the deterministic controller-replay and TUI
     // replay lanes use source bin/console with APP_ENV=test, which
     // requires autoload-dev paths not bundled in the PHAR.
@@ -201,6 +211,8 @@ function _run_castor_check_body(string $root, string $qaRunId): void
         unset($GLOBALS['CASTOR_CHECK_AGGREGATING']);
         unset($GLOBALS['CASTOR_PHAR_READY']);
     }
+
+    assert_castor_check_llama_proxy_cache_unchanged($llamaProxyCacheBaseline);
 
     if ([] !== $failures) {
         fail_quality('quality failed:'.\PHP_EOL.format_step_failures($failures));

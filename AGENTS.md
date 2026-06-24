@@ -23,7 +23,7 @@ Castor wraps each tool with correct flag combinations, output summarization for 
 
 Key commands: `castor check` (full validation), `castor test`, `castor deptrac`, `castor phpstan`, `castor cs-check`, `castor cs-fix`.
 
-Concurrent full `castor check` invocations in the **same checkout** serialize on `var/tmp/castor-check.lock` (flock); additional checks wait with a clear message instead of competing for CPU/tmux/controller startup. Focused Castor commands (`castor test`, `castor phpstan`, …) are unaffected. Stress-only override: `HATFIELD_CASTOR_CHECK_LOCK=0`.
+Concurrent full `castor check` invocations for the **same git repository** (including sibling worktrees) serialize on a shared Symfony Lock (FlockStore) under `$XDG_RUNTIME_DIR/hatfield/castor-check/` (fallback: `/tmp/hatfield-castor-check-<uid>/`); additional checks wait with a clear message instead of competing for CPU/tmux/controller startup. Focused Castor commands (`castor test`, `castor phpstan`, …) are unaffected. Stress-only override: `HATFIELD_CASTOR_CHECK_LOCK=0`.
 
 **Load the `testing` skill** when: running any test, writing tests, debugging test failures, touching runtime/TUI/Messenger code, or needing the full command reference.
 
@@ -65,7 +65,10 @@ curl -X POST http://127.0.0.1:9052/__llama_proxy/cache/clear   # or: curl -X DEL
 
 If `LLAMA_PROXY_ADMIN_TOKEN` is set on the proxy, add `-H 'X-Llama-Proxy-Token: …'` to admin calls. Responses on cache hits may include `x-llama-proxy-cache: hit`.
 
-- **Warm cache:** run `castor test:llm-real` or full `castor check` once; unique prompts record cassettes on miss, repeats replay from disk (~20–30s warm lane vs cold upstream).
+- **Warm cache (intentional):** run `castor test:llm-real` to record cassettes on miss; repeats replay from disk (~20–30s warm lane vs cold upstream). Do **not** rely on `castor check` to grow the proxy cache — the gate fails if cache `entries` increase.
+- **`castor check` cache guard:** before lanes, Castor records llama-proxy `entries` from `GET /__llama_proxy/cache/stats`; after all lanes it fails if `entries` increased (uncached live LLM during the gate). Baseline is taken **before** generation preflight so preflight misses count too. Stress-only disable: `HATFIELD_LLM_CACHE_GUARD=0`. Admin URL override: `HATFIELD_LLM_PROXY_ADMIN_URL` (default `http://127.0.0.1:9052`).
+- **First run / warmup (required for `castor check`):** intentionally run `castor test:llm-real` to populate proxy cassettes, confirm `curl http://127.0.0.1:9052/__llama_proxy/cache/stats` stabilizes, then run `castor check`. After `cache/clear`, warmup again before the gate.
+
 - **Cold / stale cache:** `cache/clear`, then rerun the same tests to re-record. Delete Castor preflight cache `var/tmp/llm-generation-ready.cache` or set `HATFIELD_LLM_READY_TTL=0` to force generation preflight.
 - **Leaked workers:** treat survivors as lifecycle/teardown bugs — fix why the run did not exit cleanly (cancel path, subprocess shutdown, test harness cleanup). Use `castor clean:cleanup:workers:list` for diagnostics only. `castor clean:cleanup:workers` is last-resort only after investigation — not routine before retrying `castor check`.
 

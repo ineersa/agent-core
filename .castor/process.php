@@ -31,6 +31,7 @@ declare(strict_types=1);
 use Castor\Attribute\AsTask;
 
 use function CastorTasks\acquire_castor_check_lock;
+use function CastorTasks\castor_check_lock_is_busy;
 use function CastorTasks\release_castor_check_lock;
 use function CastorTasks\report_path;
 
@@ -848,47 +849,93 @@ function test_timeout_hardstop(string $cmdOverride = ''): void
         echo "PASS: no orphan PHAR workers after PHPUnit-like cleanup (pre={$preCountE}, post={$postCountE})\n";
     }
 
-    // ── Test F: Full castor check lock serializes concurrent acquirers ──
-    echo "\n── Test F: castor check lock serializes concurrent acquirers ──\n\n";
+    // ── Test F: Full castor check lock serializes concurrent acquirers (cross-root) ──
+    echo "\n── Test F: castor check lock serializes concurrent acquirers (cross-root) ──\n\n";
 
-    $lockPathF = $root.'/var/tmp/castor-check.lock';
-    @unlink($root.'/var/tmp/castor-check.lock.meta');
-    $phpBinF = \PHP_BINARY;
-    $holderPhp = <<<'PHPCODE'
+    $lockIdentityF = 'castor-check-lock-smoke-'.(string) getmypid();
+    putenv('HATFIELD_CASTOR_CHECK_LOCK_IDENTITY='.$lockIdentityF);
+    $_ENV['HATFIELD_CASTOR_CHECK_LOCK_IDENTITY'] = $lockIdentityF;
+    $lockResourceF = \CastorTasks\castor_check_lock_resource_name($root);
+    $lockDirF = \CastorTasks\castor_check_lock_directory();
+    @unlink(\CastorTasks\castor_check_lock_meta_path($root));
+
+    $altRootF = $root.'/var/tmp/castor-lock-alt-root-'.getmypid();
+    if (is_dir($altRootF)) {
+        @rmdir($altRootF);
+    }
+    $waitDurationF = null;
+    if (!mkdir($altRootF, 0777, true) && !is_dir($altRootF)) {
+        echo "FAIL: could not create alternate project root for lock smoke\n";
+        $ok = false;
+    } else {
+        $phpBinF = \PHP_BINARY;
+        $holderPhp = <<<'PHPCODE'
 <?php
 declare(strict_types=1);
 $root = getenv('CASTOR_LOCK_TEST_ROOT') ?: getcwd();
+$identity = getenv('CASTOR_LOCK_TEST_IDENTITY') ?: '';
+putenv('HATFIELD_CASTOR_CHECK_LOCK_IDENTITY='.$identity);
+$_ENV['HATFIELD_CASTOR_CHECK_LOCK_IDENTITY'] = $identity;
 require $root.'/vendor/autoload.php';
 require $root.'/.castor/helpers.php';
 \CastorTasks\castor_check_lock_smoke_hold($root, 4.0);
 PHPCODE;
-    $holderScript = $root.'/var/tmp/castor-check-lock-holder-'.getmypid().'.php';
-    file_put_contents($holderScript, $holderPhp);
+        $holderScript = $root.'/var/tmp/castor-check-lock-holder-'.getmypid().'.php';
+        file_put_contents($holderScript, $holderPhp);
 
-    $holderEnv = array_merge($_ENV, ['CASTOR_LOCK_TEST_ROOT' => $root]);
-    $holderProc = proc_open([$phpBinF, $holderScript], [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $holderPipes, $root, $holderEnv);
-    if (!is_resource($holderProc)) {
-        echo "FAIL: could not start lock holder\n";
-        $ok = false;
-    } else {
-        fclose($holderPipes[0]);
-        stream_set_blocking($holderPipes[1], false);
-        stream_set_blocking($holderPipes[2], false);
-        usleep(800_000);
+        $holderEnvPrefix = 'CASTOR_LOCK_TEST_ROOT='.escapeshellarg($root)
+            .' CASTOR_LOCK_TEST_IDENTITY='.escapeshellarg($lockIdentityF)
+            .' HATFIELD_CASTOR_CHECK_LOCK_IDENTITY='.escapeshellarg($lockIdentityF);
+        $launchCmd = $holderEnvPrefix.' '.escapeshellarg($phpBinF).' '.escapeshellarg($holderScript).' > /dev/null 2>&1 & echo $!';
+        $holderPid = (int) trim((string) shell_exec($launchCmd));
 
-        $waitStartF = microtime(true);
-        $waiterHandle = acquire_castor_check_lock($root);
-        $waitDurationF = microtime(true) - $waitStartF;
-        release_castor_check_lock($waiterHandle, $root);
-
-        proc_close($holderProc);
-        @unlink($holderScript);
-
-        if ($waitDurationF < 2.5) {
-            echo sprintf("FAIL: waiter acquired lock in %.2fs — expected to block behind holder (~4s)\n", $waitDurationF);
+        if ($holderPid <= 0) {
+            echo "FAIL: could not start lock holder (pid={$holderPid})\n";
             $ok = false;
         } else {
-            echo sprintf("PASS: waiter blocked %.2fs until holder released lock\n", $waitDurationF);
+            $holderReady = false;
+            for ($poll = 0; $poll < 60; ++$poll) {
+                if (!is_dir('/proc/'.$holderPid)) {
+                    echo "FAIL: lock holder process {$holderPid} exited before acquiring lock\n";
+                    $ok = false;
+                    break;
+                }
+                if (castor_check_lock_is_busy($altRootF)) {
+                    $holderReady = true;
+                    break;
+                }
+                usleep(100_000);
+            }
+            if (!$holderReady && $ok) {
+                echo "FAIL: lock holder never acquired shared Symfony Lock\n";
+                $ok = false;
+            }
+
+            if ($ok) {
+                $waitStartF = microtime(true);
+                $waiterLock = acquire_castor_check_lock($altRootF);
+                $waitDurationF = microtime(true) - $waitStartF;
+                release_castor_check_lock($waiterLock, $altRootF);
+            }
+
+            if (is_dir('/proc/'.$holderPid)) {
+                posix_kill($holderPid, \SIGTERM);
+                usleep(200_000);
+                @posix_kill($holderPid, \SIGKILL);
+            }
+            @unlink($holderScript);
+            @rmdir($altRootF);
+
+            $expectedResource = \CastorTasks\castor_check_lock_resource_name($altRootF);
+            if ($ok && $lockResourceF !== $expectedResource) {
+                echo "FAIL: lock resource mismatch holder={$lockResourceF} waiter={$expectedResource}\n";
+                $ok = false;
+            } elseif ($ok && null !== $waitDurationF && $waitDurationF < 2.5) {
+                echo sprintf("FAIL: waiter acquired lock in %.2fs — expected to block behind holder (~4s)\n", $waitDurationF);
+                $ok = false;
+            } elseif ($ok && null !== $waitDurationF) {
+                echo sprintf("PASS: alternate root blocked %.2fs on shared Symfony Lock resource %s (dir %s)\n", $waitDurationF, $expectedResource, $lockDirF);
+            }
         }
     }
 
