@@ -67,7 +67,7 @@ final class ControllerReplaySmokeTest extends ControllerReplayE2eTestCase
         // Wait for runtime.ready with a generous timeout — the controller
         // must boot the Symfony kernel, migrate the test DB, and start the
         // event loop.  5s is sufficient for local dev.
-        $this->waitForEvent('runtime.ready', 5.0);
+        $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
 
         $startCmdId = 'cmd_start_replay_'.uniqid();
         $this->writeCommand([

@@ -771,6 +771,30 @@ ai:
         max_retries: 0
 ```
 
+
+
+### `ai.agent_retry`
+
+Bounded automatic retry for retryable LLM step failures at the agent pipeline
+(after HTTP-level retries). Dispatches a delayed `continue` command with
+exponential backoff between attempts.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `max_attempts` | int | `2` | Maximum agent-level auto-retry attempts per retryable failure episode (context overflow is excluded; overflow uses compaction recovery) |
+| `base_delay_ms` | int | `1000` | Base backoff delay in milliseconds |
+| `max_delay_ms` | int | `60000` | Cap for a single retry delay in milliseconds |
+
+Values support the same `env:VARNAME` syntax as `ai.http`.
+
+**Example:**
+```yaml
+ai:
+    agent_retry:
+        max_attempts: 3
+        base_delay_ms: 500
+```
+
 ### `ai.providers`
 
 A map of provider IDs to provider configuration. Each provider exposes

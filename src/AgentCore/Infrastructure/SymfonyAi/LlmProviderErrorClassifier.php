@@ -71,6 +71,7 @@ final class LlmProviderErrorClassifier
         'maximum context length',
         'max context length',
         'context token limit',
+        'context size',
     ];
 
     /**
@@ -209,6 +210,12 @@ final class LlmProviderErrorClassifier
             }
 
             return [self::CATEGORY_RATE_LIMIT, true, implode(' ', $parts)];
+        }
+
+        if (\in_array($statusCode, [500, 502, 503, 504], true) && self::matchesAny($allErrorText, self::CONTEXT_OVERFLOW_PATTERNS)) {
+            $detail = self::truncate($allErrorText, 200);
+
+            return [self::CATEGORY_BAD_REQUEST, false, \sprintf('LLM provider context limit exceeded (HTTP %d): %s', $statusCode, $detail)];
         }
 
         return match ($statusCode) {

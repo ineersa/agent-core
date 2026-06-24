@@ -184,7 +184,7 @@ YAML;
         $this->spawnController();
 
         // ── Wait for runtime.ready ──
-        $this->waitForEvent('runtime.ready', 5.0);
+        $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
 
         // ═════════════════════════════════════════════════════════════
         //  Turn 1: start_run — collect until run.completed

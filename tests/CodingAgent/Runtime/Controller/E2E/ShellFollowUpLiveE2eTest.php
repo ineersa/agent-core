@@ -58,7 +58,7 @@ final class ShellFollowUpLiveE2eTest extends ControllerE2eTestCase
         self::assertNotEmpty($this->runId);
 
         self::assertTrue(
-            isset($byType['assistant.text_started']) || isset($byType['assistant.message_completed']),
+            $this->hasAssistantResponseEvidence($byType),
             'Turn 1: expected assistant response. '
             .'Event types: '.implode(', ', array_keys($byType))."\n"
             .$this->collectDiagnostics($turn1Events),
@@ -80,19 +80,15 @@ final class ShellFollowUpLiveE2eTest extends ControllerE2eTestCase
             'payload' => ['text' => 'Say hello again.'],
         ]);
 
-        $followUpEvents = $this->collectEvents(6.0);
+        $followUpEvents = $this->collectEvents($this->liveLlmRunWaitTimeout());
         $followUpByType = $this->indexByType($followUpEvents);
 
         self::assertTrue($this->foundAck($followUpEvents, $followUpCmdId),
             'Follow-up: expected command.ack. '.$this->collectDiagnostics($followUpEvents));
 
         // The follow-up MUST produce an assistant response.
-        $hasAssistant = isset($followUpByType['assistant.text_started'])
-            || isset($followUpByType['assistant.message_completed'])
-            || isset($followUpByType['assistant.text_delta'])
-            || isset($followUpByType['assistant.thinking_started']);
         self::assertTrue(
-            $hasAssistant,
+            $this->hasAssistantResponseEvidence($followUpByType),
             'Follow-up without shell: NO assistant response — follow_up broken generically. '
             .'Event types: '.implode(', ', array_keys($followUpByType))."\n"
             .$this->collectDiagnostics($followUpEvents),
@@ -137,7 +133,7 @@ final class ShellFollowUpLiveE2eTest extends ControllerE2eTestCase
         self::assertNotEmpty($this->runId);
 
         self::assertTrue(
-            isset($byType['assistant.text_started']) || isset($byType['assistant.message_completed']),
+            $this->hasAssistantResponseEvidence($byType),
             'Turn 1: expected assistant response. '
             .'Event types: '.implode(', ', array_keys($byType))."\n"
             .$this->collectDiagnostics($turn1Events),
@@ -159,7 +155,7 @@ final class ShellFollowUpLiveE2eTest extends ControllerE2eTestCase
             'payload' => ['text' => 'ls -1'],
         ]);
 
-        $shellEvents = $this->collectEventsUntilToolCompleted('bash', 8.0);
+        $shellEvents = $this->collectEventsUntilToolCompleted('bash', $this->liveLlmToolWaitTimeout());
         $shellByType = $this->indexByType($shellEvents);
 
         self::assertTrue($this->foundAck($shellEvents, $shellCmdId),
@@ -183,10 +179,10 @@ final class ShellFollowUpLiveE2eTest extends ControllerE2eTestCase
             'payload' => ['text' => 'Say hello again.'],
         ]);
 
-        $followUpEvents = $this->collectEventsUntil('assistant.text_started', 10.0);
+        $followUpEvents = $this->collectEventsUntil('assistant.message_started', $this->liveLlmRunWaitTimeout());
         $followUpByType = $this->indexByType($followUpEvents);
         if (!isset($followUpByType['run.completed']) && !isset($followUpByType['run.failed'])) {
-            $followUpEvents = array_merge($followUpEvents, $this->collectEvents(6.0));
+            $followUpEvents = array_merge($followUpEvents, $this->collectEvents($this->liveLlmRunWaitTimeout()));
             $followUpByType = $this->indexByType($followUpEvents);
         }
 
@@ -214,12 +210,8 @@ final class ShellFollowUpLiveE2eTest extends ControllerE2eTestCase
         }
 
         // THE KEY ASSERTION
-        $hasAssistant = isset($followUpByType['assistant.text_started'])
-            || isset($followUpByType['assistant.message_completed'])
-            || isset($followUpByType['assistant.text_delta'])
-            || isset($followUpByType['assistant.thinking_started']);
         self::assertTrue(
-            $hasAssistant,
+            $this->hasAssistantResponseEvidence($followUpByType),
             'Follow-up: NO assistant response — run appears DEAD (issue #183). '
             .'Event types: '.implode(', ', array_keys($followUpByType))."\n"
             .$this->collectDiagnostics($followUpEvents),

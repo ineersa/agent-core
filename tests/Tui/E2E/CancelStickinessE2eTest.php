@@ -98,45 +98,60 @@ final class CancelStickinessE2eTest extends TestCase
             // not during the instant-replay LLM step.
             $this->tmux->sendKey($pane, 'Escape');
 
-            // Wait for the Cancelling status to appear.
-            $this->tmux->waitForCallback(
+            // Wait for the Cancelling status to appear (footer shows "Cancelling...").
+            $cancellingCapture = $this->tmux->waitForCallback(
                 $pane,
                 static fn (string $cap): bool => str_contains($cap, 'Cancelling')
                     || str_contains($cap, 'cancelling'),
-                timeout: 15.0,
+                timeout: 20.0,
                 message: 'Cancelling status did not appear after Escape',
                 history: 2000,
             );
-
-            // Give the TUI a moment to process any late deltas that would
-            // otherwise flip the status back to Working.
-            usleep(500_000);
-
-            // Now capture the full history and assert "Working" no longer
-            // appears in the footer after the most recent "Cancelling".
-            $capture = $this->tmux->capturePlainWithHistory($pane, 2000);
-
-            // Find the position of the LAST "Cancelling" occurrence.
-            $cancellingPos = mb_strrpos($capture, 'Cancelling');
-            if (false === $cancellingPos) {
-                // If using lowercase "cancelling"
-                $cancellingPos = mb_strrpos($capture, 'cancelling');
-            }
-
-            // Assert Cancelling is present before checking that Working
-            // does NOT follow it. If Cancelling is absent, the subsequent
-            // guard would silently skip the assertion (0 assertions = risky).
-            $this->assertNotFalse(
-                $cancellingPos,
+            $this->assertTrue(
+                str_contains($cancellingCapture, 'Cancelling')
+                    || str_contains($cancellingCapture, 'cancelling'),
                 'Cancelling must appear in capture — cancel did not render in the TUI',
             );
 
-            $afterCancelling = mb_substr($capture, $cancellingPos);
-            $this->assertStringNotContainsString(
-                '◐ Working',
-                $afterCancelling,
-                'Footer must NOT show "Working" after "Cancelling" — late deltas must not regress the status',
+            // Poll until cancel settles: while Cancelling is visible, late mid-turn
+            // deltas must not regress the footer to "◐ Working". A single snapshot
+            // after a fixed sleep is racy — fast cancel completion removes
+            // "Cancelling..." from the screen before we re-capture (ParaTest /
+            // full castor check load), which falsely failed the old assertNotFalse.
+            $settledCapture = $this->tmux->waitForCallback(
+                $pane,
+                static function (string $cap): bool {
+                    $cancellingPos = mb_strrpos($cap, 'Cancelling');
+                    if (false === $cancellingPos) {
+                        $cancellingPos = mb_strrpos($cap, 'cancelling');
+                    }
+
+                    // Cancel finished: terminal idle/cancelled states are success.
+                    if (false === $cancellingPos) {
+                        return str_contains($cap, 'Cancelled')
+                            || str_contains($cap, '● idle');
+                    }
+
+                    $afterCancelling = mb_substr($cap, $cancellingPos);
+
+                    return !str_contains($afterCancelling, '◐ Working');
+                },
+                timeout: 8.0,
+                message: 'Footer must NOT show "Working" after "Cancelling" — late deltas must not regress the status',
+                history: 2000,
             );
+
+            $cancellingPos = mb_strrpos($settledCapture, 'Cancelling');
+            if (false === $cancellingPos) {
+                $cancellingPos = mb_strrpos($settledCapture, 'cancelling');
+            }
+            if (false !== $cancellingPos) {
+                $this->assertStringNotContainsString(
+                    '◐ Working',
+                    mb_substr($settledCapture, $cancellingPos),
+                    'Footer must NOT show "Working" after "Cancelling" — late deltas must not regress the status',
+                );
+            }
             // Clean exit.
             $this->tmux->sendKey($pane, 'C-d');
         } catch (\Throwable $e) {

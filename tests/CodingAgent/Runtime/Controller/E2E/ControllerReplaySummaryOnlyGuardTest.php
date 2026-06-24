@@ -233,7 +233,7 @@ YAML;
     {
         $this->spawnController();
 
-        $this->waitForEvent('runtime.ready', 5.0);
+        $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
 
         // ═════════════════════════════════════════════════════════════
         //  Phase 1 — First turn + auto-compaction

@@ -455,4 +455,19 @@ final class LlmProviderErrorClassifierTest extends TestCase
         $classified = $this->classifier->classify($error);
         self::assertTrue($this->classifier->isContextOverflow($classified));
     }
+
+
+    public function testClassifyContextOverflow500IsNonRetryable(): void
+    {
+        $result = $this->classifier->classify([
+            'type' => 'RuntimeException',
+            'message' => 'Context size has been exceeded.',
+            'http_status_code' => 500,
+        ]);
+
+        self::assertFalse($result['retryable']);
+        self::assertTrue($this->classifier->isContextOverflow($result));
+        self::assertStringNotContainsString('Will retry automatically', $result['user_message']);
+    }
+
 }

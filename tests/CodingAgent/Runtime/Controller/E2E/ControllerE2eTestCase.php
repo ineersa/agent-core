@@ -76,6 +76,16 @@ abstract class ControllerE2eTestCase extends TestCase
     }
 
     /**
+     * Extra environment variables for the controller subprocess (and inherited workers).
+     *
+     * @return array<string, string>
+     */
+    protected function controllerSubprocessEnv(): array
+    {
+        return [];
+    }
+
+    /**
      * Wall-clock budget for live LLM tool smoke tests (first LLM turn + tool execution).
      * Replay-backed controller tests may pass with shorter timeouts; live llama.cpp is slower.
      */
@@ -86,10 +96,25 @@ abstract class ControllerE2eTestCase extends TestCase
 
     /**
      * Wall-clock budget for a single-turn live LLM run (start_run → terminal state).
+     * Under full castor check, ParaTest llm-real (4 workers) competes with other
+     * parallel lanes; 8s can expire after run.started before the first LLM response
+     * reaches stdout (collectEvents exits on run.completed only when seen).
      */
     protected function liveLlmRunWaitTimeout(): float
     {
-        return 8.0;
+        return 12.0;
+    }
+
+    /**
+     * True when the indexed event stream shows the assistant began or finished a message.
+     */
+    protected function hasAssistantResponseEvidence(array $byType): bool
+    {
+        return isset($byType['assistant.message_started'])
+            || isset($byType['assistant.text_started'])
+            || isset($byType['assistant.text_delta'])
+            || isset($byType['assistant.thinking_started'])
+            || isset($byType['assistant.message_completed']);
     }
 
     /**
@@ -168,6 +193,7 @@ abstract class ControllerE2eTestCase extends TestCase
             'HATFIELD_SESSION_ID' => $this->sessionId,
             'LLAMA_CPP_SMOKE_TEST' => '1',
         ];
+        $env = array_merge($env, $this->controllerSubprocessEnv());
 
         $pipes = [];
         $process = @proc_open(

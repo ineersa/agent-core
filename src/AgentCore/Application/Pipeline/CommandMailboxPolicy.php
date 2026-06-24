@@ -360,6 +360,7 @@ final readonly class CommandMailboxPolicy
                 ? $overrides['activeStepId']
                 : $state->activeStepId,
             retryableFailure: $overrides['retryableFailure'] ?? $state->retryableFailure,
+            retryAttempts: $overrides['retryAttempts'] ?? $state->retryAttempts,
         );
     }
 

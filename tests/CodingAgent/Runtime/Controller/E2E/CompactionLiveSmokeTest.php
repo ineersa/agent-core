@@ -135,11 +135,12 @@ YAML;
         // CompactionStepResult back through the pipeline.
         //
         // We wait for compaction.completed (success) or compaction.failed
-        // (error).  A 30s timeout accommodates model invocation + transport
-        // round-trip.
+        // (error).  Cold llama-proxy cache misses can exceed 25s for the
+        // compaction summarization request (large prompt body); warm replay
+        // is typically much faster.
         $compactEvents = $this->collectEventsUntilTarget(
             targets: ['compaction.completed', 'compaction.failed'],
-            timeout: 25.0,
+            timeout: 45.0,
         );
         $compactByType = $this->indexByType($compactEvents);
 

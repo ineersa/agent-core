@@ -273,6 +273,12 @@ ai:
     #     base_delay_ms: 1000
     #     max_delay_ms: 60000
 
+    # Agent-level LLM step auto-retry after classified retryable failures:
+    # agent_retry:
+    #     max_attempts: 2
+    #     base_delay_ms: 1000
+    #     max_delay_ms: 60000
+
     providers:
         deepseek:
             type: generic
