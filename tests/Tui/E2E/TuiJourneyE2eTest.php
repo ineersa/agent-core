@@ -68,13 +68,13 @@ final class TuiJourneyE2eTest extends TestCase
      *  1. Startup layout (logo, status, footer)
      *  2. Shell !ls prefix — real command output proof + ordering
      *  3. Model interaction via replay fixture (no live LLM)
-     *  4. /export slash command proof
-     *  5. Inline shell on completed run + follow-up (issue #183 repro)
-     *  6. Clean exit via Ctrl+D
+     *  4. Inline shell on completed run + follow-up (issue #183 repro)
+     *  5. Clean exit via Ctrl+D
      *
      * Virtual-only (not in this journey): startup detail {@see TuiStartupVirtualRenderTest},
      * Shift+Tab reasoning status/border {@see TuiReasoningCycleTest},
      * @ file completion menu/accept {@see TuiFileCompletionRenderTest},
+     * /export confirmation + HTML file {@see TuiExportCommandVirtualTest},
      * /hotkeys table, !! rejection — {@see TuiVirtualInputTest}.
      *
      * !! double-bang rejection is covered by {@see \Ineersa\Tui\Tests\Screen\TuiVirtualInputTest}.
@@ -98,7 +98,6 @@ final class TuiJourneyE2eTest extends TestCase
             $this->journeyPhase1StartupLayout($pane);
             $this->journeyPhase4ShellPrefixOutput($pane);
             $this->journeyPhase6ModelInteractionReplay($pane);
-            $this->journeyPhase8ExportCommand($pane);
             $this->journeyPhase9InlineShellOnCompletedRun($pane);
 
             $this->tmux->sendKey($pane, 'C-d');
@@ -378,40 +377,6 @@ final class TuiJourneyE2eTest extends TestCase
             'Footer must show cache-hit percentage (↻ 78%) when replay fixture provides cache telemetry',
         );
     }
-
-    /**
-     * Phase 8: /export slash command exports a session file.
-     */
-    private function journeyPhase8ExportCommand(TmuxPane $pane): void
-    {
-        $this->tmux->sendKey($pane, 'C-u'); // Clear editor
-        $this->tmux->sendLiteral($pane, '/export');
-        $this->tmux->sendKey($pane, 'Enter');
-
-        // Wait for export confirmation in history
-        $capture = $this->tmux->waitForCallback(
-            $pane,
-            static fn (string $cap): bool => str_contains($cap, 'exported'),
-            timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
-            message: '/export confirmation message never appeared',
-            history: 2000,
-        );
-
-        self::assertStringContainsString('Session exported to:', $capture);
-
-        // Verify the exported HTML file exists in the isolated test directory
-        // The default path is hatfield-session-<id>.html in cwd
-        $sessionGlob = $this->testProjectDir.'/hatfield-session-*.html';
-        $files = glob($sessionGlob);
-        self::assertNotEmpty($files, 'Expected an exported session HTML file in test directory');
-        self::assertCount(1, $files, 'Expected exactly one exported session HTML file');
-
-        $html = file_get_contents($files[0]);
-        self::assertStringContainsString('Hatfield Session', $html);
-        self::assertStringContainsString('<!DOCTYPE html>', $html);
-        self::assertStringNotContainsString('<script>', $html, 'HTML export must not contain unescaped <script> tags');
-    }
-
 
     // ── Helpers ───────────────────────────────────────────────────
 
