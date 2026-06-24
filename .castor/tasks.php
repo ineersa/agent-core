@@ -205,8 +205,9 @@ quality: ok (%.1fs)
  * - Checkout membership uses argv containing `$root` OR `/proc/<pid>/cwd`
  *   under `$root` (readlink may fail for dead/zombie PIDs — then the PID is
  *   skipped rather than killed).
- * - Does not touch sibling worktrees, the llama.cpp server, or the current
- *   castor process.  Silent when no stale workers exist.
+ * - Does not touch sibling worktrees, the llama.cpp server, or any PID on
+ *   the current Castor process ancestry (timeout/shell/Symfony Process/Hatfield
+ *   launchers included).  Silent when no stale workers exist.
  */
 function _stale_check_worker_owned_by_current_user(int $pid): bool
 {
@@ -243,6 +244,66 @@ function _stale_check_worker_cwd_under_root(int $pid, string $root): bool
     return $cwdReal === $rootReal || str_starts_with($cwdReal, $prefix);
 }
 
+/**
+ * Parent PID from Linux /proc, or null when unavailable.
+ */
+function _stale_check_worker_parent_pid(int $pid): ?int
+{
+    if ($pid <= 1) {
+        return null;
+    }
+
+    $status = @file_get_contents("/proc/{$pid}/status");
+    if (false === $status) {
+        return null;
+    }
+
+    if (!preg_match('/^PPid:\s+(\d+)/m', $status, $m)) {
+        return null;
+    }
+
+    $ppid = (int) $m[1];
+    if ($ppid <= 0 || $ppid === $pid) {
+        return null;
+    }
+
+    return $ppid;
+}
+
+/**
+ * PIDs on the chain from the current Castor PHP process up through parents.
+ *
+ * Castor is often launched under timeout, a shell, Symfony Process, or Hatfield
+ * tool workers. Stale cleanup matches `castor check` by cwd-under-checkout plus
+ * cmdline substring; without this guard, an ancestor timeout wrapper can be
+ * killed and abort the active gate before lanes run.
+ *
+ * @return array<int, true> pid => true
+ */
+function _stale_check_worker_protected_launcher_ancestry(): array
+{
+    $protected = [];
+    $pid = getmypid();
+    $seen = [];
+
+    while ($pid > 1) {
+        if (isset($seen[$pid])) {
+            break;
+        }
+        $seen[$pid] = true;
+        $protected[$pid] = true;
+
+        $ppid = _stale_check_worker_parent_pid($pid);
+        if (null === $ppid) {
+            break;
+        }
+
+        $pid = $ppid;
+    }
+
+    return $protected;
+}
+
 function _stale_check_worker_belongs_to_checkout(int $pid, string $cmdline, string $root): bool
 {
     $rootPat = preg_quote($root, '/');
@@ -261,7 +322,7 @@ function cleanup_stale_check_workers(string $root): void
         return;
     }
 
-    $myPid = getmypid();
+    $protectedLauncherPids = _stale_check_worker_protected_launcher_ancestry();
     $pharGlob = $root.'/var/tmp/phar/hatfield.phar';
     $pharPat = preg_quote($pharGlob, '/');
     $consolePat = preg_quote($root.'/bin/console', '/');
@@ -278,7 +339,7 @@ function cleanup_stale_check_workers(string $root): void
             continue;
         }
         $pid = (int) $m[1];
-        if ($pid === $myPid || $pid <= 1) {
+        if ($pid <= 1 || isset($protectedLauncherPids[$pid])) {
             continue;
         }
         if (!_stale_check_worker_owned_by_current_user($pid)) {
@@ -318,7 +379,8 @@ function cleanup_stale_check_workers(string $root): void
         }
 
         // ── Stale castor check with this checkout's root ──
-        // (The self-PID guard above prevents killing ourselves.)
+        // Ancestry guard above skips timeout/shell/Hatfield wrappers; only
+        // unrelated orphaned `castor check` trees in this checkout are killed.
         if (str_contains($cmdline, 'castor check')) {
             $pidsToKill[] = $pid;
             continue;
