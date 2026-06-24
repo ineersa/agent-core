@@ -55,10 +55,11 @@ final class CancelListener implements TuiListenerRegistrar
             // Compacting here rather than making it report as isActive.
             //
             // Failed + lastRuntimePollError: RuntimeEventPoller set activity Failed
-            // after a fatal transport/poll error (e.g. controller restart limit) but
-            // may leave an active run handle with no writable controller stdin.
-            // Escape must attempt cancel and surface recovery text, not clearEditor.
-            // Ordinary terminal run failures (Failed without poll error) still clear.
+            // after any fatal transport/poll error while a run handle may still be
+            // present (broken pipe, controller crash, restart limit, etc.) with no
+            // writable controller stdin. Escape must attempt cancel and surface
+            // recovery text, not clearEditor. Ordinary runtime Failed events without
+            // lastRuntimePollError remain terminal and still clear the editor.
             $transportFailedWithHandle = RunActivityStateEnum::Failed === $state->activity
                 && null !== $state->handle
                 && '' !== $state->lastRuntimePollError;

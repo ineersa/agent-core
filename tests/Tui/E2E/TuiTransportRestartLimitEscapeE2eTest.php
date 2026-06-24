@@ -28,6 +28,10 @@ final class TuiTransportRestartLimitEscapeE2eTest extends TestCase
             self::markTestSkipped('tmux is not installed. Skipping TUI e2e tests.');
         }
 
+        if (!\function_exists('posix_kill') || !\function_exists('posix_getuid')) {
+            self::markTestSkipped('POSIX functions required for controller PID discovery.');
+        }
+
         $this->tmux = new TmuxHarness();
         $this->testProjectDir = $this->createIsolatedProjectDir();
         $this->snapshotDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
@@ -58,7 +62,7 @@ final class TuiTransportRestartLimitEscapeE2eTest extends TestCase
             $this->tmux->sendKey($pane, 'C-u');
             \usleep(100_000);
 
-            $this->tmux->sendLiteral($pane, 'Run sleep 20');
+            $this->tmux->sendLiteral($pane, 'Run sleep 15');
             $this->tmux->sendKey($pane, 'Enter');
 
             $this->tmux->waitForHistoryContains($pane, 'Running', 25.0);
