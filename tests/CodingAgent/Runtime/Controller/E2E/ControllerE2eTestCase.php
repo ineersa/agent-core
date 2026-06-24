@@ -96,10 +96,25 @@ abstract class ControllerE2eTestCase extends TestCase
 
     /**
      * Wall-clock budget for a single-turn live LLM run (start_run → terminal state).
+     * Under full castor check, ParaTest llm-real (4 workers) competes with other
+     * parallel lanes; 8s can expire after run.started before the first LLM response
+     * reaches stdout (collectEvents exits on run.completed only when seen).
      */
     protected function liveLlmRunWaitTimeout(): float
     {
-        return 8.0;
+        return 12.0;
+    }
+
+    /**
+     * True when the indexed event stream shows the assistant began or finished a message.
+     */
+    protected function hasAssistantResponseEvidence(array $byType): bool
+    {
+        return isset($byType['assistant.message_started'])
+            || isset($byType['assistant.text_started'])
+            || isset($byType['assistant.text_delta'])
+            || isset($byType['assistant.thinking_started'])
+            || isset($byType['assistant.message_completed']);
     }
 
     /**
