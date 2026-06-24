@@ -462,9 +462,9 @@ final class SessionInitializerReplayTest extends TestCase
         // 2: tool_batch_committed (DROPPED by RuntimeEventTranslator — no mapped event)
         $this->append($runId, 2, 'tool_batch_committed', []);
 
-        // 3: agent_command_queued (DROPPED by RuntimeEventTranslator)
+        // 3: agent_command_queued kind=compact (still DROPPED by RuntimeEventTranslator)
         $this->append($runId, 3, 'agent_command_queued', [
-            'kind' => 'steer',
+            'kind' => 'compact',
             'idempotency_key' => 'ik-drop',
         ]);
 

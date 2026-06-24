@@ -18,8 +18,28 @@ final readonly class UserMessageProjectionSubscriber implements EventSubscriberI
     {
         return [
             RuntimeEventTypeEnum::UserMessageSubmitted->value => 'onUserMessageSubmitted',
+            RuntimeEventTypeEnum::UserMessageQueued->value => 'onUserMessageQueued',
             RuntimeEventTypeEnum::RunStarted->value => 'onRunStarted',
         ];
+    }
+
+    public function onUserMessageQueued(TranscriptProjectionEvent $event): void
+    {
+        $p = $event->payload();
+        $state = $event->state;
+        $idempotencyKey = (string) ($p['idempotency_key'] ?? '');
+        $blockId = '' !== $idempotencyKey
+            ? \sprintf('user_queued_%s_%s', $event->runId(), $idempotencyKey)
+            : (string) ($p['message_id'] ?? '');
+
+        $state->addBlock(new TranscriptBlock(
+            id: $blockId,
+            kind: TranscriptBlockKindEnum::UserMessageQueued,
+            runId: $event->runId(),
+            seq: $state->nextSeq(),
+            text: (string) ($p['text'] ?? ''),
+            meta: ['idempotency_key' => $idempotencyKey],
+        ));
     }
 
     public function onUserMessageSubmitted(TranscriptProjectionEvent $event): void
@@ -27,8 +47,19 @@ final readonly class UserMessageProjectionSubscriber implements EventSubscriberI
         $p = $event->payload();
         $state = $event->state;
 
+        $idempotencyKey = (string) ($p['idempotency_key'] ?? '');
+        $blockId = (string) ($p['message_id'] ?? '');
+        if ('' !== $idempotencyKey) {
+            // Reconcile pending user.message_queued block into the canonical user message.
+            // Keep the queued block id so TUI transcript sync updates the same row in place
+            // (RuntimeEventPoller synchronizes by block id only; it does not prune removed ids).
+            $queuedId = \sprintf('user_queued_%s_%s', $event->runId(), $idempotencyKey);
+            $state->removeBlock($queuedId);
+            $blockId = $queuedId;
+        }
+
         $state->addBlock(new TranscriptBlock(
-            id: (string) ($p['message_id'] ?? ''),
+            id: $blockId,
             kind: TranscriptBlockKindEnum::UserMessage,
             runId: $event->runId(),
             seq: $state->nextSeq(),

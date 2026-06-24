@@ -72,7 +72,7 @@ final class RuntimeEventTranslator
             // Drop (internal bookkeeping)
             RunEventTypeEnum::ToolCallResultReceived->value => $this->drop(...),
             RunEventTypeEnum::ToolBatchCommitted->value => $this->drop(...),
-            RunEventTypeEnum::AgentCommandQueued->value => $this->drop(...),
+            RunEventTypeEnum::AgentCommandQueued->value => $this->onAgentCommandQueued(...),
             RunEventTypeEnum::AgentCommandSuperseded->value => $this->drop(...),
             // Drop (turn tree metadata — not user-visible)
             RunEventTypeEnum::TurnBranched->value => $this->drop(...),
@@ -430,11 +430,40 @@ final class RuntimeEventTranslator
                 payload: [
                     'message_id' => \sprintf('user_%s_%d_%s', $runEvent->runId, $runEvent->seq, $idempotencyKey),
                     'text' => $text,
+                    'idempotency_key' => $idempotencyKey,
                 ],
             );
         }
 
         return $this->statusUpdatedEvent($runEvent);
+    }
+
+    private function onAgentCommandQueued(RunEvent $runEvent): ?RuntimeEvent
+    {
+        $p = $runEvent->payload;
+        $kind = (string) ($p['kind'] ?? '');
+
+        if (!\in_array($kind, ['steer', 'follow_up'], true)) {
+            return null;
+        }
+
+        $text = \is_string($p['text'] ?? null) ? $p['text'] : '';
+        if ('' === $text) {
+            $text = $this->extractTextFromContent($p['message']['content'] ?? []);
+        }
+
+        $idempotencyKey = (string) ($p['idempotency_key'] ?? '');
+
+        return new RuntimeEvent(
+            type: RuntimeEventTypeEnum::UserMessageQueued->value,
+            runId: $runEvent->runId,
+            seq: $runEvent->seq,
+            payload: [
+                'message_id' => \sprintf('user_queued_%s_%d_%s', $runEvent->runId, $runEvent->seq, $idempotencyKey),
+                'text' => $text,
+                'idempotency_key' => $idempotencyKey,
+            ],
+        );
     }
 
     // ── Cancel / fallback ──────────────────────────────────────────────────

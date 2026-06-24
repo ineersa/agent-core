@@ -588,9 +588,47 @@ final class RuntimeEventMapperTest extends TestCase
         self::assertNull($result);
     }
 
-    public function testSkipsAgentCommandQueued(): void
+    public function testNormalizesAgentCommandQueuedSteerToUserMessageQueued(): void
     {
-        $event = $this->runEvent('agent_command_queued', ['kind' => 'steer']);
+        $event = $this->runEvent('agent_command_queued', [
+            'kind' => 'steer',
+            'idempotency_key' => 'ik-steer-1',
+            'message' => [
+                'content' => [['type' => 'text', 'text' => 'Steer from content']],
+            ],
+        ], seq: 7);
+
+        $result = $this->mapper->toRuntimeEvent($event);
+
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::UserMessageQueued->value, $result->type);
+        self::assertSame('Steer from content', $result->payload['text']);
+        self::assertSame('ik-steer-1', $result->payload['idempotency_key']);
+        self::assertSame(
+            \sprintf('user_queued_%s_%d_%s', $this->runId, 7, 'ik-steer-1'),
+            $result->payload['message_id'],
+        );
+    }
+
+    public function testNormalizesAgentCommandQueuedFollowUpToUserMessageQueued(): void
+    {
+        $event = $this->runEvent('agent_command_queued', [
+            'kind' => 'follow_up',
+            'idempotency_key' => 'ik-fu-2',
+            'text' => 'Direct text',
+        ]);
+
+        $result = $this->mapper->toRuntimeEvent($event);
+
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::UserMessageQueued->value, $result->type);
+        self::assertSame('Direct text', $result->payload['text']);
+        self::assertSame('ik-fu-2', $result->payload['idempotency_key']);
+    }
+
+    public function testSkipsAgentCommandQueuedForCompact(): void
+    {
+        $event = $this->runEvent('agent_command_queued', ['kind' => 'compact']);
 
         $result = $this->mapper->toRuntimeEvent($event);
 

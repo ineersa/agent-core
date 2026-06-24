@@ -119,6 +119,29 @@ final class TranscriptProjectorTest extends TestCase
         $this->assertSame(1, $blocks[1]->seq);
     }
 
+    public function testQueuedUserMessageReconciledOnSubmit(): void
+    {
+        $ik = 'ik-reconcile-1';
+        $this->accept('user.message_queued', [
+            'message_id' => 'user_queued_run_1_0_'.$ik,
+            'text' => 'STEER_QUEUED_MARKER',
+            'idempotency_key' => $ik,
+        ]);
+        $this->accept('user.message_submitted', [
+            'message_id' => 'user_run_1_1_'.$ik,
+            'text' => 'STEER_QUEUED_MARKER',
+            'idempotency_key' => $ik,
+        ]);
+
+        $blocks = $this->projector->blocks();
+        $this->assertCount(1, $blocks);
+        $this->assertSame(TranscriptBlockKindEnum::UserMessage, $blocks[0]->kind);
+        $this->assertSame('STEER_QUEUED_MARKER', $blocks[0]->text);
+        foreach ($blocks as $block) {
+            $this->assertNotSame(TranscriptBlockKindEnum::UserMessageQueued, $block->kind);
+        }
+    }
+
     public function testRunStartedWithUserMessagesProjectsInitialPromptBlocks(): void
     {
         $this->accept('run.started', [
