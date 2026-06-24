@@ -67,6 +67,8 @@ Read-only planning. No status changes, no file edits, no forks.
    - Do NOT run: `castor check`, `move_task(to="CODE-REVIEW")`, `gh pr create`, `git push`, reviewer subagent.
    - Inform user implementation is done. They run `task-to-pr` when ready.
 
+**Validation from an active Hatfield session:** Full `castor check` in the integration checkout is safe after the Castor stale-worker guard (active session consumers with `HATFIELD_SESSION_ID` are not killed). For task branches, prefer running gates in the task worktree to avoid competing with a live session in the same tree.
+
 **Note on task board changes:** Task metadata/status updates modify files in the external task board
 (`/home/ineersa/projects/agent-core-tasks/`). These changes are NOT committed to the agent-core code
 repo. The external task board repo must be committed manually when desired.

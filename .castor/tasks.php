@@ -207,7 +207,10 @@ quality: ok (%.1fs)
  *   skipped rather than killed).
  * - Does not touch sibling worktrees, the llama.cpp server, or any PID on
  *   the current Castor process ancestry (timeout/shell/Symfony Process/Hatfield
- *   launchers included).  Silent when no stale workers exist.
+ *   launchers included).
+ * - Skips messenger:consume / agent --controller PIDs whose /proc environ
+ *   contains HATFIELD_SESSION_ID= (live Hatfield session control-plane workers).
+ *   Silent when no stale workers exist.
  */
 function _stale_check_worker_owned_by_current_user(int $pid): bool
 {
@@ -314,6 +317,27 @@ function _stale_check_worker_belongs_to_checkout(int $pid, string $cmdline, stri
     return _stale_check_worker_cwd_under_root($pid, $root);
 }
 
+/**
+ * True when the process environment marks an active Hatfield session consumer.
+ *
+ * HeadlessController passes HATFIELD_SESSION_ID to controller and messenger
+ * children; stale cleanup must not kill those siblings when castor check runs
+ * from inside the same checkout/session (see issue #208).
+ */
+function _stale_check_worker_has_hatfield_session_env(int $pid): bool
+{
+    if ($pid <= 1) {
+        return false;
+    }
+
+    $pidEnv = @file_get_contents("/proc/{$pid}/environ");
+    if (false === $pidEnv || '' === $pidEnv) {
+        return false;
+    }
+
+    return str_contains($pidEnv, 'HATFIELD_SESSION_ID=');
+}
+
 function cleanup_stale_check_workers(string $root): void
 {
     $output = [];
@@ -355,6 +379,9 @@ function cleanup_stale_check_workers(string $root): void
         if (preg_match("/{$pharPat}/", $cmdline)
             && (str_contains($cmdline, 'messenger:consume')
                 || str_contains($cmdline, 'agent --controller'))) {
+            if (_stale_check_worker_has_hatfield_session_env($pid)) {
+                continue;
+            }
             $pidsToKill[] = $pid;
             continue;
         }
@@ -368,6 +395,9 @@ function cleanup_stale_check_workers(string $root): void
         if (preg_match("/{$consolePat}/", $cmdline)
             && (str_contains($cmdline, 'messenger:consume')
                 || str_contains($cmdline, 'agent --controller'))) {
+            if (_stale_check_worker_has_hatfield_session_env($pid)) {
+                continue;
+            }
             $pidsToKill[] = $pid;
             continue;
         }

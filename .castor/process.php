@@ -424,7 +424,7 @@ function _reap_session(?int $sid): void
  *    create their own session) are NOT supported once reparented to
  *    init/systemd after the parent exits — see the NOTE below.
  */
-#[AsTask(name: 'test:timeout-hardstop', description: 'Verify Castor hard timeout + normal-exit session cleanup (6 smoke proofs: A–E incl. PHAR + source startup cleanup) without hangs')]
+#[AsTask(name: 'test:timeout-hardstop', description: 'Verify Castor hard timeout + normal-exit session cleanup (7 smoke proofs: A–E incl. PHAR + source + active-session startup cleanup) without hangs')]
 function test_timeout_hardstop(string $cmdOverride = ''): void
 {
     echo "=== Castor timeout hard-stop + normal-exit cleanup smoke proof ===\n\n";
@@ -671,6 +671,57 @@ function test_timeout_hardstop(string $cmdOverride = ''): void
         } else {
             echo "PASS: fake stale source PID {$fakePidC2} killed by startup cleanup\n";
         }
+    }
+
+    // ── Test C3: Active Hatfield session workers are preserved ──
+    echo "\n── Test C3: Startup cleanup preserves messenger workers with HATFIELD_SESSION_ID ──\n\n";
+
+    $sessionIdSmoke = 'castor-smoke-active-session-208';
+    $fakeArgsC3 = ['bash', '-c', 'export HATFIELD_SESSION_ID='.$sessionIdSmoke
+        .'; exec -a '.$consolePath
+        .' tail -f /dev/null -- messenger:consume fake --time-limit=3600'];
+
+    echo "Fake active-session worker args:\n  ".implode(' ', $fakeArgsC3)."\n\n";
+
+    $fakeProcC3 = @proc_open($fakeArgsC3, [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $fakePipesC3);
+    if (!is_resource($fakeProcC3)) {
+        echo "FAIL: could not start fake active-session worker\n";
+        $ok = false;
+    } else {
+        fclose($fakePipesC3[0]);
+        $fakePidC3 = proc_get_status($fakeProcC3)['pid'];
+        echo "Fake active-session worker PID: {$fakePidC3}\n";
+
+        usleep(500_000);
+
+        $environC3 = @file_get_contents("/proc/{$fakePidC3}/environ");
+        if (false === $environC3 || !str_contains($environC3, 'HATFIELD_SESSION_ID='.$sessionIdSmoke)) {
+            echo "FAIL: fake active-session worker missing HATFIELD_SESSION_ID in /proc environ\n";
+            $ok = false;
+        } else {
+            echo "PASS: fake worker has HATFIELD_SESSION_ID in environ\n";
+        }
+
+        cleanup_stale_check_workers($root);
+        usleep(500_000);
+
+        $fakeAliveC3 = @posix_kill($fakePidC3, 0);
+        if (!$fakeAliveC3) {
+            echo "FAIL: fake active-session PID {$fakePidC3} was killed by startup cleanup\n";
+            $ok = false;
+        } else {
+            echo "PASS: fake active-session PID {$fakePidC3} preserved by startup cleanup\n";
+        }
+
+        @posix_kill($fakePidC3, \SIGTERM);
+        usleep(200_000);
+        if (@posix_kill($fakePidC3, 0)) {
+            @posix_kill($fakePidC3, \SIGKILL);
+        }
+        @fclose($fakePipesC3[1]);
+        @fclose($fakePipesC3[2]);
+        @proc_close($fakeProcC3);
+        usleep(200_000);
     }
 
     // ── Test D: Same-SID separate-PGID grandchild cleanup (session-based) ──

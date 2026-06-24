@@ -119,7 +119,7 @@ Replay infrastructure is **not** removed when using the proxy; both coexist.
 
 ### Stale workers before retry
 
-Kill stale **current-user** processes from the failing worktree (`messenger:consume`, `agent --controller`, orphaned PHPUnit). Never signal root-owned long-lived consumers (see root `AGENTS.md`).
+`castor check` preflight skips active Hatfield session workers when `/proc/<pid>/environ` contains `HATFIELD_SESSION_ID=`. Before retrying a **failed** gate, kill only stale **current-user** orphans from that worktree (PHPUnit/Castor children, leaked messenger/controller **without** session env). Never signal live session workers or root-owned long-lived consumers (see root `AGENTS.md`). Prefer validating task branches in an isolated task worktree when possible.
 
 
 ## LLM Replay (deterministic, no live LLM)
@@ -292,7 +292,7 @@ If tmux is unavailable, TUI tasks MUST remain IN-PROGRESS with exact environment
 
 `castor test:controller` remains opt-in for live controller E2E when appropriate. Do NOT require live LLM validation for every normal task — only for provider/LLM-visible changes.
 
-Before re-running failed controller/TUI E2E checks, kill stale worker processes from the failed worktree (`messenger:consume`, `agent --controller`, PHPUnit/Castor children). Orphaned consumers can keep queues busy and make a fixed test appear hung.
+Before re-running failed controller/TUI E2E checks, kill only stale orphans from the failed worktree (PHPUnit/Castor children, leaked messenger/controller without `HATFIELD_SESSION_ID`). Active session workers are protected by Castor cleanup; orphaned stale consumers can still steal queue messages and make a fixed test appear hung.
 
 ## TUI E2E (replay-backed journey, default)
 

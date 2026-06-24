@@ -34,7 +34,7 @@ Before writing, editing, debugging, reviewing, or running tests — and before t
 
 This must happen before proposing a test strategy, adding tests, running Castor tests, or handing off validation results. Forks must mention in their handoff that they read both files and followed the shared conventions. A fork handoff that omits this for test-related work is incomplete — the parent agent must not accept the handoff as valid for CODE-REVIEW or DONE without confirming the conventions were followed.
 
-Before re-running `castor check`, `castor test:controller`, or `castor test:tui`, kill stale worker processes from prior runs that are owned by the current user (e.g., `messenger:consume`, `agent --controller`, orphaned PHPUnit/Castor children). Orphaned consumers steal queue messages and can make passing tests appear hung.
+Before re-running `castor check`, `castor test:controller`, or `castor test:tui`, clear only **stale** current-user workers from **failed prior** test/check runs (orphaned PHPUnit/Castor children, leaked messenger/controller processes **without** `HATFIELD_SESSION_ID` in `/proc/<pid>/environ`). `castor check` startup cleanup already skips launcher ancestry and active Hatfield session consumers tagged with `HATFIELD_SESSION_ID`. Do not manually signal workers that belong to a live Hatfield session in the same checkout.
 
 **Never kill, signal, restart, or otherwise touch root-owned worker processes.** In particular, do not touch the root-owned `php bin/console messenger:consume --all --exclude-receivers=failed` process (currently observed as PID 3361). If a root-owned process appears stale, report it to the user and leave it alone.
 
@@ -63,7 +63,7 @@ If `LLAMA_PROXY_ADMIN_TOKEN` is set on the proxy, add `-H 'X-Llama-Proxy-Token: 
 
 - **Warm cache:** run `castor test:llm-real` or full `castor check` once; unique prompts record cassettes on miss, repeats replay from disk (~20–30s warm lane vs cold upstream).
 - **Cold / stale cache:** `cache/clear`, then rerun the same tests to re-record. Delete Castor preflight cache `var/tmp/llm-generation-ready.cache` or set `HATFIELD_LLM_READY_TTL=0` to force generation preflight.
-- **Stale workers:** before retrying `castor check` / `test:tui` / `test:controller`, kill stale **current-user** `messenger:consume` / `agent --controller` children from the failed worktree (see above). Do not touch root-owned workers.
+- **Stale workers:** before retrying `castor check` / `test:tui` / `test:controller`, kill only stale **current-user** orphans from the failed worktree (no `HATFIELD_SESSION_ID` in environ). Active session control-plane workers are protected by Castor cleanup; do not touch root-owned workers.
 
 Load the **`testing`** skill for full command matrix, ParaTest `llm-real` behavior, and failure diagnostics.
 

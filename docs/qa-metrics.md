@@ -36,7 +36,7 @@ Source: metrics from MAINT-05G `castor check` and focused runs (before live `llm
 | TUI harness launches per check | **2** | TuiJourneyE2eTest + TuiStartupSnapshotTest in one session |
 | Controller E2E in check | replay only | ControllerReplaySmokeTest (1 test, 14 assertions) with fixture-driven SSE (MAINT-05D) |
 | PHAR in default QA | **no** | PHAR is opt-in (castor phar:build, castor phar:ensure) |
-| Stale worker risk | low | ParaTest workers + process session tracking via setsid in Castor |
+| Stale worker risk | low (with nuance) | ParaTest + Castor session tracking; `cleanup_stale_check_workers` skips launcher ancestry and active Hatfield workers (`HATFIELD_SESSION_ID`); manual kills should target stale orphans only |
 | check_llm_generation_ready in check | **no** | Only run by opt-in live commands |
 | Custom Castor shard discovery | **removed** | ParaTest handles parallelism for both local dev and gate |
 | `castor test:controller-replay` | **~8s** | Replay-backed, no live LLM |
