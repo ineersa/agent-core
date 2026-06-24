@@ -313,7 +313,12 @@ final class SubagentExecutionService
             summary: $finalMessages,
         );
 
-        return $finalMessages;
+        return \sprintf(
+            "Subagent %s completed.\nArtifact: %s\n\n%s",
+            $agentName,
+            $artifactId,
+            $finalMessages,
+        );
     }
 
     /**

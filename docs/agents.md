@@ -176,7 +176,10 @@ indicating they are not yet implemented.
 
 1. **Blocking foreground.** The tool handler blocks the parent LLM until the
    child run reaches a terminal status (Completed, Failed, Cancelled) or
-   times out. The tool result is the dense handoff text returned to the parent LLM.
+   times out. On **success**, the tool result includes a machine-parseable
+   `Artifact: <artifact_id>` line (along with the child handoff text) so the
+   parent model or user can call `agent_retrieve` for the same artifact.
+   Failed and cancelled paths also include `Artifact: <artifact_id>`.
 2. **Parent-scoped storage.** Child runs are stored entirely under the parent
    session directory — no top-level session rows or directories are created.
 3. **Inline progress.** While the child runs, compact progress status lines
@@ -218,9 +221,11 @@ Child runs are stored under the parent session directory:
 ### `agent_retrieve` tool
 
 The model-visible `agent_retrieve` tool reads parent-scoped subagent artifacts
-after `subagent` completes (or fails). It does not launch runs and does not
-replace inline subagent handoffs — use it when a handoff was truncated, you need
-status/metadata, or you want a bounded debug summary.
+after `subagent` completes (or fails). Copy the `artifact_id` from the
+`Artifact: …` line in the `subagent` tool result (success, failure, or cancel).
+It does not launch runs and does not replace inline subagent handoffs — use it
+when a handoff was truncated, you need status/metadata, or you want a bounded
+debug summary.
 
 **Schema (v1):**
 
