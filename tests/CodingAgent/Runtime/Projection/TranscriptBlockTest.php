@@ -114,6 +114,7 @@ final class TranscriptBlockTest extends TestCase
     {
         $expected = [
             'user_message',
+            'user_message_queued',
             'assistant_message',
             'assistant_thinking',
             'tool_call',
