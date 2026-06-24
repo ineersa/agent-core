@@ -1,0 +1,21 @@
+{
+    "$schema": "ISSUE-206 queued-steer E2E: a real `sleep 15` bash call gives a reliable ~15s active-run window so a steer is queued (agent_command_queued) rather than applied directly",
+    "model": "llama_cpp_test/test",
+    "provider_id": "llama_cpp_test",
+    "reasoning": "off",
+    "recorded_at": "2026-06-24T00:00:00+00:00",
+    "recording_source": "manual",
+    "input": {
+        "messages": [
+            {"role": "user", "content": "Run sleep 15"}
+        ]
+    },
+    "usage": {"input_tokens": 10, "output_tokens": 30, "total_tokens": 40},
+    "stop_reason": "tool_call",
+    "expected_text": "",
+    "deltas": [
+        {"type": "tool_call_start", "id": "call_queued_steer_1", "name": "bash"},
+        {"type": "tool_input_delta", "id": "call_queued_steer_1", "name": "bash", "partial_json": "{\"command\":\"sleep 15\"}"},
+        {"type": "tool_call_complete", "tool_calls": [{"id": "call_queued_steer_1", "name": "bash", "arguments": {"command": "sleep 15"}}]}
+    ]
+}

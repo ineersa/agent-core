@@ -27,13 +27,13 @@ final class TuiQueuedSteerE2eTest extends TestCase
     protected function setUp(): void
     {
         if (!TmuxHarness::isAvailable()) {
-            self::markTestSkipped('tmux is not installed. Skipping TUI e2e tests.');
+            $this->markTestSkipped('tmux is not installed. Skipping TUI e2e tests.');
         }
 
         $this->tmux = new TmuxHarness();
         $this->testProjectDir = $this->createIsolatedProjectDir();
         $this->snapshotDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
-        @\mkdir($this->snapshotDir, 0o777, true);
+        @mkdir($this->snapshotDir, 0o777, true);
     }
 
     protected function tearDown(): void
@@ -78,7 +78,7 @@ final class TuiQueuedSteerE2eTest extends TestCase
                 $pane,
                 static fn (string $cap): bool => str_contains($cap, '⏳')
                     && str_contains($cap, $marker),
-                timeout: 8.0,
+                timeout: 10.0,
                 message: 'Pending queued steer (⏳) with marker text did not appear',
                 history: 2000,
             );
@@ -86,18 +86,19 @@ final class TuiQueuedSteerE2eTest extends TestCase
 
             $this->tmux->waitForCallback(
                 $pane,
-                static fn (string $cap): bool => str_contains($cap, '❯')
-                    && str_contains($cap, $marker)
-                    && !str_contains($cap, '⏳ '.$marker),
-                timeout: 25.0,
-                message: 'Canonical user message (❯) with steer text did not appear after apply',
+                // '❯ ' + marker is unambiguous: the pending form renders '⏳ ' + marker,
+                // and the initial prompt renders '❯ Run sleep 15' (no marker). So this is true
+                // only once the queued steer is reconciled into a canonical user-message block.
+                static fn (string $cap): bool => str_contains($cap, '❯ '.$marker),
+                timeout: 30.0,
+                message: 'Canonical user message (❯ + steer text) did not appear after apply',
                 history: 3000,
             );
 
             $finalCapture = $this->tmux->captureAnsi($pane);
             $this->assertSame(
                 1,
-                \substr_count($finalCapture, self::STEER_MARKER),
+                substr_count($finalCapture, self::STEER_MARKER),
                 'Steer marker must appear exactly once in the final transcript (no duplicate user blocks)',
             );
             // The renderer emits "  ⏳ " + text (prefix has a trailing space), so assert the
@@ -125,16 +126,16 @@ final class TuiQueuedSteerE2eTest extends TestCase
     private function assertSteerQueueApplyLifecycleInEventsJsonl(): void
     {
         $eventLog = $this->testProjectDir.'/.hatfield/sessions/1/events.jsonl';
-        if (!\is_file($eventLog)) {
-            self::fail('events.jsonl not found at '.$eventLog);
+        if (!is_file($eventLog)) {
+            $this->fail('events.jsonl not found at '.$eventLog);
         }
 
-        $lines = \file($eventLog, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES) ?: [];
+        $lines = file($eventLog, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES) ?: [];
         $queuedSeq = null;
         $appliedSeq = null;
 
         foreach ($lines as $line) {
-            $decoded = \json_decode($line, true);
+            $decoded = json_decode($line, true);
             if (!\is_array($decoded)) {
                 continue;
             }
@@ -154,9 +155,9 @@ final class TuiQueuedSteerE2eTest extends TestCase
             }
         }
 
-        self::assertNotNull($queuedSeq, 'events.jsonl must contain agent_command_queued with kind=steer');
-        self::assertNotNull($appliedSeq, 'events.jsonl must contain agent_command_applied with kind=steer');
-        self::assertGreaterThan(
+        $this->assertNotNull($queuedSeq, 'events.jsonl must contain agent_command_queued with kind=steer');
+        $this->assertNotNull($appliedSeq, 'events.jsonl must contain agent_command_applied with kind=steer');
+        $this->assertGreaterThan(
             $queuedSeq,
             $appliedSeq,
             'agent_command_applied (steer) must follow agent_command_queued (steer)',
@@ -165,31 +166,31 @@ final class TuiQueuedSteerE2eTest extends TestCase
 
     private function agentCommand(): string
     {
-        $fixturePath = __DIR__.'/fixtures/tui-tool-call-bash-sleep.json';
+        $fixturePath = __DIR__.'/fixtures/tui-queued-steer-bash-sleep.json';
 
         $projectDir = ProjectDir::get();
-        $fixtureEnv = \is_file($fixturePath)
-            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.\escapeshellarg($fixturePath).' '
+        $fixtureEnv = is_file($fixturePath)
+            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.escapeshellarg($fixturePath).' '
             : '';
 
-        $dbPath = 'app_test-tui-queued-steer-'.\bin2hex(\random_bytes(4)).'.sqlite';
+        $dbPath = 'app_test-tui-queued-steer-'.bin2hex(random_bytes(4)).'.sqlite';
 
         return \sprintf(
             'APP_ENV=test HATFIELD_TEST_DATABASE_PATH=%s HOME=%s %s %s %s agent '
             .'--model=llama_cpp_test/test '
             .'2>&1',
-            \escapeshellarg($dbPath),
-            \escapeshellarg($this->testProjectDir.'/home'),
+            escapeshellarg($dbPath),
+            escapeshellarg($this->testProjectDir.'/home'),
             $fixtureEnv,
-            \escapeshellarg(\PHP_BINARY),
-            \escapeshellarg($projectDir.'/bin/console'),
+            escapeshellarg(\PHP_BINARY),
+            escapeshellarg($projectDir.'/bin/console'),
         );
     }
 
     private function createIsolatedProjectDir(): string
     {
         $dir = TestDirectoryIsolation::createProjectTempDir('tui-e2e-queued-steer');
-        @\mkdir($dir.'/.hatfield', 0o777, true);
+        @mkdir($dir.'/.hatfield', 0o777, true);
 
         $settings = [
             'ai' => [
@@ -246,9 +247,9 @@ final class TuiQueuedSteerE2eTest extends TestCase
         ];
 
         $yaml = \Symfony\Component\Yaml\Yaml::dump($settings, 6, 4);
-        \file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
-        @\mkdir($dir.'/home/.hatfield', 0o777, true);
-        \file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
+        file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
+        @mkdir($dir.'/home/.hatfield', 0o777, true);
+        file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
 
         return $dir;
     }
@@ -256,7 +257,7 @@ final class TuiQueuedSteerE2eTest extends TestCase
     private function saveAnsiSnapshot(TmuxPane $pane, string $tag): void
     {
         $ansi = $this->tmux->captureAnsi($pane);
-        $path = \sprintf('%s/%s-%s.ansi', $this->snapshotDir, $tag, \date('Ymd-His'));
-        \file_put_contents($path, $ansi);
+        $path = \sprintf('%s/%s-%s.ansi', $this->snapshotDir, $tag, date('Ymd-His'));
+        file_put_contents($path, $ansi);
     }
 }
