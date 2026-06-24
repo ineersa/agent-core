@@ -54,7 +54,7 @@ Read-only planning. No status changes, no file edits, no forks.
 
 #
 
-**Leaked QA workers:** `castor check` does not auto-kill. Use `castor cleanup:workers:list` for diagnostics; `castor cleanup:workers` is last-resort only.
+**Leaked QA workers:** `castor check` does not auto-kill. Survivors are lifecycle bugs — fix teardown at root cause; do not kill as routine before retry. Use `castor clean:cleanup:workers:list` for diagnostics; `castor clean:cleanup:workers` only as explicit last resort after investigation.
 ## task-start: Implement (TODO → IN-PROGRESS)
 
 1. `move_task(to="IN-PROGRESS")` — creates worktree branch.

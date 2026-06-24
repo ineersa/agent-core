@@ -424,7 +424,7 @@ function _reap_session(?int $sid): void
  *    create their own session) are NOT supported once reparented to
  *    init/systemd after the parent exits — see the NOTE below.
  */
-#[AsTask(name: 'test:timeout-hardstop', description: 'Verify Castor hard timeout + normal-exit session cleanup (7 smoke proofs: A–E incl. PHAR + source + active-session startup cleanup) without hangs')]
+#[AsTask(name: 'test:timeout-hardstop', description: 'Verify Castor hard timeout + normal-exit session cleanup (7 smoke proofs: A–E incl. PHAR + source + optional worker cleanup) without hangs')]
 function test_timeout_hardstop(string $cmdOverride = ''): void
 {
     echo "=== Castor timeout hard-stop + normal-exit cleanup smoke proof ===\n\n";
@@ -591,7 +591,7 @@ function test_timeout_hardstop(string $cmdOverride = ''): void
         $preCountC = count_alive_descendants();
         echo "Pre-cleanup descendants: {$preCountC}\n";
 
-        // Run the startup cleanup helper.
+        // Run the optional cleanup helper.
         cleanup_stale_check_workers($root);
         usleep(1_000_000); // 1 s settle
 
@@ -619,7 +619,7 @@ function test_timeout_hardstop(string $cmdOverride = ''): void
                 $ok = false;
             }
         } else {
-            echo "PASS: fake stale PID {$fakePid} killed by startup cleanup\n";
+            echo "PASS: fake stale PID {$fakePid} killed by optional cleanup\n";
         }
     }
 
@@ -669,7 +669,7 @@ function test_timeout_hardstop(string $cmdOverride = ''): void
                 $ok = false;
             }
         } else {
-            echo "PASS: fake stale source PID {$fakePidC2} killed by startup cleanup\n";
+            echo "PASS: fake stale source PID {$fakePidC2} killed by optional cleanup\n";
         }
     }
 
@@ -707,10 +707,10 @@ function test_timeout_hardstop(string $cmdOverride = ''): void
 
         $fakeAliveC3 = @posix_kill($fakePidC3, 0);
         if (!$fakeAliveC3) {
-            echo "FAIL: fake active-session PID {$fakePidC3} was killed by startup cleanup\n";
+            echo "FAIL: fake active-session PID {$fakePidC3} was killed by optional cleanup\n";
             $ok = false;
         } else {
-            echo "PASS: fake active-session PID {$fakePidC3} preserved by startup cleanup\n";
+            echo "PASS: fake active-session PID {$fakePidC3} preserved by optional cleanup\n";
         }
 
         @posix_kill($fakePidC3, \SIGTERM);

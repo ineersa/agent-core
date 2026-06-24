@@ -117,9 +117,13 @@ Filtered `castor test:llm-real --filter=…` uses sequential PHPUnit (no `--proc
 
 Replay infrastructure is **not** removed when using the proxy; both coexist.
 
-### Stale workers before retry
+### Leaked workers after Castor / E2E runs
 
-`castor check` preflight skips active Hatfield session workers when `/proc/<pid>/environ` contains `HATFIELD_SESSION_ID=`. Before retrying a **failed** gate, kill only stale **current-user** orphans from that worktree (PHPUnit/Castor children, leaked messenger/controller **without** session env). Never signal live session workers or root-owned long-lived consumers (see root `AGENTS.md`). Prefer validating task branches in an isolated task worktree when possible.
+`castor check` does **not** auto-kill workers. If `messenger:consume`, `agent --controller`, PHPUnit, or Castor children remain after a gate finishes, treat that as a **lifecycle/teardown bug** — investigate and fix the root cause (cancel/teardown path, subprocess shutdown, test harness cleanup) instead of killing processes as routine workflow before retrying.
+
+- **Diagnostics only:** `castor clean:cleanup:workers:list` (dry-run candidates in this checkout).
+- **Last resort only:** `castor clean:cleanup:workers` after you have recorded the leak (PIDs, command lines, which test/lane) and started root-cause work. Never signal root-owned workers or processes with `HATFIELD_SESSION_ID` in `/proc/<pid>/environ` (active Hatfield session workers).
+- Prefer validating task branches in an isolated task worktree when possible.
 
 
 ## LLM Replay (deterministic, no live LLM)

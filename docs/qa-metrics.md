@@ -36,7 +36,7 @@ Source: metrics from MAINT-05G `castor check` and focused runs (before live `llm
 | TUI harness launches per check | **2** | TuiJourneyE2eTest + TuiStartupSnapshotTest in one session |
 | Controller E2E in check | replay only | ControllerReplaySmokeTest (1 test, 14 assertions) with fixture-driven SSE (MAINT-05D) |
 | PHAR in default QA | **no** | PHAR is opt-in (castor phar:build, castor phar:ensure) |
-| Leaked worker risk | investigate-first | `castor check` does not auto-kill; Castor QA child processes disable optional log injection centrally; use `castor cleanup:workers:list` / `castor cleanup:workers` only as explicit debug last resort |
+| Leaked worker risk | investigate-first (fix root cause) | `castor check` does not auto-kill; QA children disable optional log injection centrally; leaked workers = teardown bugs to fix; `castor clean:cleanup:workers:list` / `castor clean:cleanup:workers` only as explicit debug last resort after investigation |
 | check_llm_generation_ready in check | **no** | Only run by opt-in live commands |
 | Custom Castor shard discovery | **removed** | ParaTest handles parallelism for both local dev and gate |
 | `castor test:controller-replay` | **~8s** | Replay-backed, no live LLM |

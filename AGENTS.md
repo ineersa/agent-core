@@ -36,7 +36,7 @@ This must happen before proposing a test strategy, adding tests, running Castor 
 
 Leaked `messenger:consume`, `agent --controller`, PHPUnit, or Castor children are **bugs** — fix lifecycle/teardown at the source instead of treating kills as routine workflow. `castor check` does **not** run automatic worker cleanup.
 
-For diagnostics only: `castor cleanup:workers:list` (dry-run) and `castor cleanup:workers` (explicit last-resort kill for current-user orphans in this checkout). Never signal root-owned workers or processes tagged with `HATFIELD_SESSION_ID` (active Hatfield session workers).
+For diagnostics only: `castor clean:cleanup:workers:list` (dry-run) and `castor clean:cleanup:workers` (explicit last-resort kill for current-user orphans in this checkout **after** you have recorded the leak and started investigating root cause). Never signal root-owned workers or processes tagged with `HATFIELD_SESSION_ID` (active Hatfield session workers).
 
 **Never kill, signal, restart, or otherwise touch root-owned worker processes.** In particular, do not touch the root-owned `php bin/console messenger:consume --all --exclude-receivers=failed` process (currently observed as PID 3361). If a root-owned process appears stale, report it to the user and leave it alone.
 
@@ -65,7 +65,7 @@ If `LLAMA_PROXY_ADMIN_TOKEN` is set on the proxy, add `-H 'X-Llama-Proxy-Token: 
 
 - **Warm cache:** run `castor test:llm-real` or full `castor check` once; unique prompts record cassettes on miss, repeats replay from disk (~20–30s warm lane vs cold upstream).
 - **Cold / stale cache:** `cache/clear`, then rerun the same tests to re-record. Delete Castor preflight cache `var/tmp/llm-generation-ready.cache` or set `HATFIELD_LLM_READY_TTL=0` to force generation preflight.
-- **Leaked workers:** investigate why processes survived a failed run; use `castor cleanup:workers:list` for diagnostics. `castor cleanup:workers` is last-resort only — not part of `castor check`.
+- **Leaked workers:** treat survivors as lifecycle/teardown bugs — fix why the run did not exit cleanly (cancel path, subprocess shutdown, test harness cleanup). Use `castor clean:cleanup:workers:list` for diagnostics only. `castor clean:cleanup:workers` is last-resort only after investigation — not routine before retrying `castor check`.
 
 Load the **`testing`** skill for full command matrix, ParaTest `llm-real` behavior, and failure diagnostics.
 

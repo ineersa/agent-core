@@ -447,7 +447,7 @@ function cleanup_workers_list(): void
     foreach ($candidates as $row) {
         echo sprintf("  pid=%d reason=%s\n    %s\n", $row['pid'], $row['reason'], $row['cmdline']);
     }
-    echo "\nUse castor cleanup:workers only as explicit last resort after investigating leaks.\n";
+    echo "\nUse castor clean:cleanup:workers only as explicit last resort after investigating leaks.\n";
     exit(0);
 }
 
@@ -469,7 +469,7 @@ function cleanup_workers(): void
         exit(0);
     }
 
-    echo "Some candidates may still be alive (zombies or respawned). Re-run castor cleanup:workers:list.\n";
+    echo "Some candidates may still be alive (zombies or respawned). Re-run castor clean:cleanup:workers:list.\n";
     exit(1);
 }
 
