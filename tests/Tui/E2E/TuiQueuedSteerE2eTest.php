@@ -162,19 +162,11 @@ final class TuiQueuedSteerE2eTest extends TestCase
 
     private function agentCommand(): string
     {
-        $fixturePaths = [];
-        $bashSleep = __DIR__.'/fixtures/tui-tool-call-bash-sleep.json';
-        $turn2 = __DIR__.'/fixtures/tui-queued-steer-turn2.json';
-        if (\is_file($bashSleep)) {
-            $fixturePaths[] = $bashSleep;
-        }
-        if (\is_file($turn2)) {
-            $fixturePaths[] = $turn2;
-        }
+        $fixturePath = __DIR__.'/fixtures/tui-tool-call-bash-sleep.json';
 
         $projectDir = ProjectDir::get();
-        $fixtureEnv = [] !== $fixturePaths
-            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.\escapeshellarg(\implode(';', $fixturePaths)).' '
+        $fixtureEnv = \is_file($fixturePath)
+            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.\escapeshellarg($fixturePath).' '
             : '';
 
         $dbPath = 'app_test-tui-queued-steer-'.\bin2hex(\random_bytes(4)).'.sqlite';
