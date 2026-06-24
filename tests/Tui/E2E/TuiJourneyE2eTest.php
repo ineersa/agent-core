@@ -75,6 +75,7 @@ final class TuiJourneyE2eTest extends TestCase
      *  9. Clean exit via Ctrl+D
      *
      * !! double-bang rejection is covered by {@see \Ineersa\Tui\Tests\Screen\TuiVirtualInputTest}.
+     * /hotkeys keyboard shortcuts table is covered by {@see \Ineersa\Tui\Tests\Screen\TuiVirtualInputTest::testHotkeysSlashCommandRoutesLocallyAndRendersKeyboardShortcutsTable}.
      *
      * Ctrl+J newline is tested separately in HotkeySmokeTest
      * (it is sensitive to terminal configuration and a race
@@ -93,7 +94,6 @@ final class TuiJourneyE2eTest extends TestCase
         try {
             $this->journeyPhase1StartupLayout($pane);
             $this->journeyPhase2ReasoningAndBorderColour($pane);
-            $this->journeyPhase3HotkeysTable($pane);
             $this->journeyPhase4ShellPrefixOutput($pane);
             $this->journeyPhase5FileCompletion($pane);
             $this->journeyPhase6ModelInteractionReplay($pane);
@@ -181,47 +181,6 @@ final class TuiJourneyE2eTest extends TestCase
                 $lowColour ?? '(null)',
             ),
         );
-    }
-
-    /**
-     * Phase 3: /hotkeys slash-command renders a keyboard shortcuts table.
-     */
-    private function journeyPhase3HotkeysTable(TmuxPane $pane): void
-    {
-        $this->tmux->sendKey($pane, 'C-u'); // Clear editor
-        $this->tmux->sendLiteral($pane, '/hotkeys');
-        $this->tmux->sendKey($pane, 'Enter');
-
-        $this->tmux->waitForCallback(
-            $pane,
-            static function (string $cap): bool {
-                return str_contains($cap, 'Keyboard shortcuts');
-            },
-            timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
-            message: '/hotkeys table never appeared',
-            history: 2000,
-        );
-
-        $capture = $this->tmux->capturePlainWithHistory($pane, 2000);
-
-        // Structural box-drawing chars must be present.
-        $boxChars = ['┌', '├', '└', '│', '┐', '┤', '┘'];
-        foreach ($boxChars as $ch) {
-            self::assertStringContainsString(
-                $ch,
-                $capture,
-                \sprintf('/hotkeys output should contain box-drawing char "%s"', $ch),
-            );
-        }
-
-        // Representative entries.
-        foreach (['Ctrl+C', 'Ctrl+D', 'Ctrl+J', 'Insert newline', 'Submit prompt', 'Enter', 'Tab'] as $entry) {
-            self::assertStringContainsString(
-                $entry,
-                $capture,
-                \sprintf('/hotkeys output should contain "%s"', $entry),
-            );
-        }
     }
 
     /**
