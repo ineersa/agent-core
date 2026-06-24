@@ -72,7 +72,7 @@ final class TuiStartupSnapshotTest extends TestCase
         $this->tmux->waitForCaptureContains(
             pane: $pane,
             needle: '█',
-            timeout: 5.0,
+            timeout: TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL,
         );
 
         // Wait for the auto-submitted prompt to appear in the transcript.
@@ -82,7 +82,7 @@ final class TuiStartupSnapshotTest extends TestCase
         $this->tmux->waitForCaptureContains(
             pane: $pane,
             needle: 'hello from tmux e2e',
-            timeout: 5.0,
+            timeout: TmuxHarness::TUI_ASSISTANT_BLOCK_TIMEOUT_PARALLEL,
         );
 
         $capture = $this->tmux->capturePlain($pane);
@@ -138,7 +138,7 @@ final class TuiStartupSnapshotTest extends TestCase
         $this->tmux->waitForCaptureContains(
             pane: $pane,
             needle: '█',
-            timeout: 5.0,
+            timeout: TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL,
         );
 
         // Wait for the auto-submitted prompt to appear in the transcript.
@@ -147,7 +147,7 @@ final class TuiStartupSnapshotTest extends TestCase
         $this->tmux->waitForCaptureContains(
             pane: $pane,
             needle: 'hello from tmux e2e',
-            timeout: 5.0,
+            timeout: TmuxHarness::TUI_ASSISTANT_BLOCK_TIMEOUT_PARALLEL,
         );
 
         $capture = $this->tmux->capturePlain($pane);

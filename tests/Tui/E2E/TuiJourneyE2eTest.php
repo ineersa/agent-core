@@ -125,7 +125,7 @@ final class TuiJourneyE2eTest extends TestCase
      */
     private function journeyPhase1StartupLayout(TmuxPane $pane): void
     {
-        $this->tmux->waitForCaptureContains($pane, '█', 10.0);
+        $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
 
         $capture = $this->tmux->waitForTuiReadyAfterLogo($pane);
 
@@ -153,7 +153,7 @@ final class TuiJourneyE2eTest extends TestCase
         $this->tmux->sendLiteral($pane, "\x1b[Z");
 
         // Wait for border colour change (catches the stylesheet repaint).
-        $minimalColour = $this->waitForBorderColorChange($pane, $initialColour, 5.0);
+        $minimalColour = $this->waitForBorderColorChange($pane, $initialColour, TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL);
         self::assertNotSame(
             $initialColour,
             $minimalColour,
@@ -171,7 +171,7 @@ final class TuiJourneyE2eTest extends TestCase
         // Second Shift+Tab: minimal → low
         $this->tmux->sendLiteral($pane, "\x1b[Z");
 
-        $lowColour = $this->waitForBorderColorChange($pane, $minimalColour, 5.0);
+        $lowColour = $this->waitForBorderColorChange($pane, $minimalColour, TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL);
         self::assertNotSame(
             $minimalColour,
             $lowColour,
@@ -197,7 +197,7 @@ final class TuiJourneyE2eTest extends TestCase
             static function (string $cap): bool {
                 return str_contains($cap, 'Keyboard shortcuts');
             },
-            timeout: 5.0,
+            timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
             message: '/hotkeys table never appeared',
             history: 2000,
         );
@@ -246,7 +246,7 @@ final class TuiJourneyE2eTest extends TestCase
             static function (string $cap) use ($marker): bool {
                 return str_contains($cap, $marker);
             },
-            timeout: 5.0,
+            timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
             message: sprintf('Marker file "%s" never appeared in captured output for !ls -1', $marker),
             history: 2000,
         );
@@ -258,7 +258,7 @@ final class TuiJourneyE2eTest extends TestCase
                 return !str_contains($cap, 'Working...')
                     && !str_contains($cap, 'Running...');
             },
-            timeout: 5.0,
+            timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
             message: 'Working/Running status never cleared after !ls -1',
             history: 2000,
         );
@@ -299,7 +299,7 @@ final class TuiJourneyE2eTest extends TestCase
             static function (string $cap) use ($marker): bool {
                 return str_contains($cap, $marker);
             },
-            timeout: 5.0,
+            timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
             message: sprintf('Inline-shell marker file "%s" never appeared in captured output', $marker),
             history: 2000,
         );
@@ -311,7 +311,7 @@ final class TuiJourneyE2eTest extends TestCase
                 return !str_contains($cap, 'Working...')
                     && !str_contains($cap, 'Running...');
             },
-            timeout: 5.0,
+            timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
             message: 'Working/Running status never cleared after inline !ls -1',
             history: 2000,
         );
@@ -357,7 +357,7 @@ final class TuiJourneyE2eTest extends TestCase
                 $pane,
                 static fn (string $cap): bool => str_contains($cap, '◇')
                     && !str_contains($cap, '◐ Working...'),
-                timeout: 5.0,
+                timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
                 message: 'Turn did not complete after follow-up',
                 history: 2000,
             );
@@ -463,7 +463,7 @@ final class TuiJourneyE2eTest extends TestCase
                 $pane,
                 static fn (string $cap): bool => str_contains($cap, '◇')
                     && !str_contains($cap, '◐ Working...'),
-                timeout: 5.0,
+                timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
                 message: 'Turn did not complete after replay response',
                 history: 2000,
             );
@@ -489,7 +489,7 @@ final class TuiJourneyE2eTest extends TestCase
         $footerCapture = $this->tmux->waitForCallback(
             $pane,
             static fn (string $cap): bool => str_contains($cap, '↻ 78%'),
-            timeout: 5.0,
+            timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
             message: 'Footer cache-hit segment (↻ 78%) did not appear after model replay',
             history: 2000,
         );
@@ -513,7 +513,7 @@ final class TuiJourneyE2eTest extends TestCase
         $capture = $this->tmux->waitForCallback(
             $pane,
             static fn (string $cap): bool => str_contains($cap, 'exported'),
-            timeout: 5.0,
+            timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
             message: '/export confirmation message never appeared',
             history: 2000,
         );
@@ -716,7 +716,7 @@ final class TuiJourneyE2eTest extends TestCase
         return 'default';
     }
 
-    private function waitForBorderColorChange(TmuxPane $pane, string $previous, float $timeout = 5.0): ?string
+    private function waitForBorderColorChange(TmuxPane $pane, string $previous, float $timeout = TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL): ?string
     {
         $deadline = \microtime(true) + $timeout;
 

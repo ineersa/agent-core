@@ -56,6 +56,12 @@ final class TmuxHarness
      */
     public const float TUI_ASSISTANT_BLOCK_TIMEOUT_PARALLEL = 20.0;
 
+    /**
+     * Generic transcript/marker/shell-output waits when test:tui runs under
+     * full parallel castor check load (unit + controller-replay + llm-real).
+     */
+    public const float TUI_GATE_CALLBACK_TIMEOUT_PARALLEL = 20.0;
+
     public function __construct()
     {
         $this->root = \Ineersa\CodingAgent\Tests\Support\ProjectDir::get();
