@@ -388,7 +388,7 @@ final class SubagentExecutionService
         } catch (\Throwable $e) {
             $this->abortParallelLaunch($parentRunId, $reports, $e);
 
-            throw new ToolCallException('Parallel subagent launch failed: '.$e->getMessage()."\n\n".$this->formatParallelReport($reports), retryable: false);
+            throw new ToolCallException('Parallel subagent launch failed: '.$e->getMessage()."\n\n".$this->formatParallelReport($reports), retryable: false, previous: $e);
         }
 
         $timeoutSeconds = $this->timeoutSeconds();
@@ -548,11 +548,31 @@ final class SubagentExecutionService
     /**
      * @param array<string, array{index:int,agentName:string,task:string,artifactId:string,agentRunId:string,terminal:bool,status:?AgentArtifactStatusEnum,message:string}> $reports
      */
-    /**
-     * @param array<string, array{index:int,agentName:string,task:string,artifactId:string,agentRunId:string,terminal:bool,status:?AgentArtifactStatusEnum,message:string}> $reports
-     */
     private function abortParallelLaunch(string $parentRunId, array &$reports, \Throwable $cause): void
     {
+        $startedCount = 0;
+        foreach ($reports as $report) {
+            if ($report['terminal']) {
+                continue;
+            }
+
+            $entry = $this->artifactRegistry->get($parentRunId, $report['artifactId']);
+            if (null !== $entry) {
+                ++$startedCount;
+            }
+        }
+
+        $this->logger->warning('subagent_execution.parallel_launch_aborted', [
+            'run_id' => $parentRunId,
+            'component' => 'agent.execution',
+            'event_type' => 'subagent_execution.parallel_launch_aborted',
+            'task_count' => \count($reports),
+            'started_count' => $startedCount,
+            'exception_class' => $cause::class,
+        ]);
+
+        $neverLaunchedMessage = 'Child run was not launched after a parallel launch failure.';
+
         foreach ($reports as $agentRunId => $report) {
             if ($report['terminal']) {
                 continue;
@@ -560,16 +580,22 @@ final class SubagentExecutionService
 
             $entry = $this->artifactRegistry->get($parentRunId, $report['artifactId']);
             if (null === $entry) {
-                $this->finalize(
-                    parentRunId: $parentRunId,
-                    artifactId: $report['artifactId'],
-                    status: AgentArtifactStatusEnum::Failed,
-                    failureReason: $cause->getMessage(),
-                    summary: 'Child run failed to start.',
-                );
                 $reports[$agentRunId]['terminal'] = true;
                 $reports[$agentRunId]['status'] = AgentArtifactStatusEnum::Failed;
-                $reports[$agentRunId]['message'] = 'Child run failed to start.';
+                $reports[$agentRunId]['message'] = $neverLaunchedMessage;
+
+                continue;
+            }
+
+            if (\in_array($entry->status, [
+                AgentArtifactStatusEnum::Completed,
+                AgentArtifactStatusEnum::Failed,
+                AgentArtifactStatusEnum::Cancelled,
+                AgentArtifactStatusEnum::NeedsClarification,
+            ], true)) {
+                $reports[$agentRunId]['terminal'] = true;
+                $reports[$agentRunId]['status'] = $entry->status;
+                $reports[$agentRunId]['message'] = $entry->summary ?? $entry->failureReason ?? $entry->status->value;
 
                 continue;
             }
@@ -590,18 +616,17 @@ final class SubagentExecutionService
                 continue;
             }
 
-            if (AgentArtifactStatusEnum::Pending === $entry->status) {
-                $this->finalize(
-                    parentRunId: $parentRunId,
-                    artifactId: $report['artifactId'],
-                    status: AgentArtifactStatusEnum::Failed,
-                    failureReason: $cause->getMessage(),
-                    summary: 'Child run failed to start.',
-                );
-                $reports[$agentRunId]['terminal'] = true;
-                $reports[$agentRunId]['status'] = AgentArtifactStatusEnum::Failed;
-                $reports[$agentRunId]['message'] = 'Child run failed to start.';
-            }
+            // Remaining non-terminal launch state is Pending (registry entry created, start() not reached).
+            $this->finalize(
+                parentRunId: $parentRunId,
+                artifactId: $report['artifactId'],
+                status: AgentArtifactStatusEnum::Failed,
+                failureReason: $cause->getMessage(),
+                summary: 'Child run failed to start.',
+            );
+            $reports[$agentRunId]['terminal'] = true;
+            $reports[$agentRunId]['status'] = AgentArtifactStatusEnum::Failed;
+            $reports[$agentRunId]['message'] = 'Child run failed to start.';
         }
     }
 

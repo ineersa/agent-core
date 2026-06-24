@@ -832,7 +832,11 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
 
         $registry = self::getContainer()->get(AgentArtifactRegistry::class);
         $service = $this->makeService([
-            'catalog' => new AgentDefinitionCatalog([$def('first-agent'), $def('second-agent')]),
+            'catalog' => new AgentDefinitionCatalog([
+                $def('first-agent'),
+                $def('second-agent'),
+                $def('third-agent'),
+            ]),
             'agentRunner' => $agentRunner,
             'runStore' => $runStore,
         ]);
@@ -841,6 +845,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             $service->executeParallel('parent-launch-fail', [
                 new SubagentTaskDTO(agent: 'first-agent', task: 'ok'),
                 new SubagentTaskDTO(agent: 'second-agent', task: 'boom'),
+                new SubagentTaskDTO(agent: 'third-agent', task: 'never'),
             ]);
             self::fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
@@ -849,6 +854,16 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             self::assertStringContainsString('Artifact:', $e->getMessage());
             self::assertStringContainsString('first-agent', $e->getMessage());
             self::assertStringContainsString('second-agent', $e->getMessage());
+            self::assertStringContainsString('third-agent', $e->getMessage());
+            self::assertStringContainsString('Child run was not launched after a parallel launch failure.', $e->getMessage());
+            self::assertInstanceOf(\RuntimeException::class, $e->getPrevious());
+            self::assertStringContainsString('second child start blew up', (string) $e->getPrevious()?->getMessage());
+
+            if (!preg_match('/#3 third-agent — failed\s+Artifact: (agent_[0-9a-f]{16})/', $e->getMessage(), $matches)) {
+                self::fail('Expected third-agent failed artifact line in aggregate report');
+            }
+            $thirdArtifactId = $matches[1];
+            self::assertNull($registry->get('parent-launch-fail', $thirdArtifactId));
         }
 
         $entries = $registry->list('parent-launch-fail');
