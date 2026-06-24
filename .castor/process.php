@@ -940,6 +940,96 @@ PHPCODE;
         }
     }
 
+    // ── Test F2: Lock acquire timeout (fast override) ──
+    echo "\n── Test F2: castor check lock acquire timeout ──\n\n";
+
+    $lockIdentityF2 = 'castor-check-lock-timeout-'.(string) getmypid();
+    putenv('HATFIELD_CASTOR_CHECK_LOCK_IDENTITY='.$lockIdentityF2);
+    $_ENV['HATFIELD_CASTOR_CHECK_LOCK_IDENTITY'] = $lockIdentityF2;
+    putenv('HATFIELD_CASTOR_CHECK_LOCK_TIMEOUT=1');
+    $_ENV['HATFIELD_CASTOR_CHECK_LOCK_TIMEOUT'] = '1';
+    @unlink(\CastorTasks\castor_check_lock_meta_path($root));
+
+    $altRootF2 = $root.'/var/tmp/castor-lock-timeout-alt-'.getmypid();
+    if (is_dir($altRootF2)) {
+        @rmdir($altRootF2);
+    }
+    if (!mkdir($altRootF2, 0777, true) && !is_dir($altRootF2)) {
+        echo "FAIL: could not create alternate project root for lock timeout smoke\n";
+        $ok = false;
+    } else {
+        $phpBinF2 = \PHP_BINARY;
+        $holderPhpF2 = <<<'PHPCODE'
+<?php
+declare(strict_types=1);
+$root = getenv('CASTOR_LOCK_TEST_ROOT') ?: getcwd();
+$identity = getenv('CASTOR_LOCK_TEST_IDENTITY') ?: '';
+putenv('HATFIELD_CASTOR_CHECK_LOCK_IDENTITY='.$identity);
+$_ENV['HATFIELD_CASTOR_CHECK_LOCK_IDENTITY'] = $identity;
+require $root.'/vendor/autoload.php';
+require $root.'/.castor/helpers.php';
+\CastorTasks\castor_check_lock_smoke_hold($root, 5.0);
+PHPCODE;
+        $holderScriptF2 = $root.'/var/tmp/castor-check-lock-timeout-holder-'.getmypid().'.php';
+        file_put_contents($holderScriptF2, $holderPhpF2);
+        $holderEnvF2 = 'CASTOR_LOCK_TEST_ROOT='.escapeshellarg($root)
+            .' CASTOR_LOCK_TEST_IDENTITY='.escapeshellarg($lockIdentityF2)
+            .' HATFIELD_CASTOR_CHECK_LOCK_IDENTITY='.escapeshellarg($lockIdentityF2);
+        $holderPidF2 = (int) trim((string) shell_exec($holderEnvF2.' '.escapeshellarg($phpBinF2).' '.escapeshellarg($holderScriptF2).' > /dev/null 2>&1 & echo $!'));
+        if ($holderPidF2 <= 0) {
+            echo "FAIL: could not start lock timeout holder\n";
+            $ok = false;
+        } else {
+            $holderReadyF2 = false;
+            for ($pollF2 = 0; $pollF2 < 60; ++$pollF2) {
+                if (!is_dir('/proc/'.$holderPidF2)) {
+                    echo "FAIL: lock timeout holder exited early\n";
+                    $ok = false;
+                    break;
+                }
+                if (castor_check_lock_is_busy($altRootF2)) {
+                    $holderReadyF2 = true;
+                    break;
+                }
+                usleep(100_000);
+            }
+            if ($holderReadyF2 && $ok) {
+                $timeoutCaught = false;
+                $timeoutMessage = '';
+                try {
+                    acquire_castor_check_lock($altRootF2);
+                } catch (RuntimeException $e) {
+                    $timeoutCaught = true;
+                    $timeoutMessage = $e->getMessage();
+                }
+                if (!$timeoutCaught) {
+                    echo "FAIL: acquire_castor_check_lock did not fail while holder still active\n";
+                    $ok = false;
+                } elseif (!str_contains($timeoutMessage, 'failed to acquire Symfony Lock within')) {
+                    echo "FAIL: timeout message missing expected prefix\n";
+                    $ok = false;
+                } elseif (!str_contains($timeoutMessage, 'lock resource:')) {
+                    echo "FAIL: timeout message missing lock resource\n";
+                    $ok = false;
+                } else {
+                    echo "PASS: acquire timed out with diagnostics (holder pid {$holderPidF2})\n";
+                }
+            } elseif ($ok) {
+                echo "FAIL: lock timeout holder never acquired lock\n";
+                $ok = false;
+            }
+            if (is_dir('/proc/'.$holderPidF2)) {
+                posix_kill($holderPidF2, \SIGTERM);
+                usleep(200_000);
+                @posix_kill($holderPidF2, \SIGKILL);
+            }
+            @unlink($holderScriptF2);
+            @rmdir($altRootF2);
+        }
+    }
+    putenv('HATFIELD_CASTOR_CHECK_LOCK_TIMEOUT');
+    unset($_ENV['HATFIELD_CASTOR_CHECK_LOCK_TIMEOUT']);
+
     // ── Test G: QA run id leak detection (no auto-kill) ──
     echo "\n── Test G: QA run leak detection via /proc environ ──\n\n";
 
@@ -989,7 +1079,7 @@ PHPCODE;
     unset($_ENV['HATFIELD_QA_RUN_ID']);
 
     if ($ok) {
-        echo "\n✅ All timeout + normal-exit + PHAR/source startup-cleanup (C/C2) + session + separate-PGID + PHPUnit-leak + castor-check-lock + QA-run-leak assertions passed.\n";
+        echo "\n✅ All timeout + normal-exit + PHAR/source startup-cleanup (C/C2) + session + separate-PGID + PHPUnit-leak + castor-check-lock + lock-acquire-timeout + QA-run-leak assertions passed.\n";
     } else {
         echo "\n❌ Some assertions FAILED.\n";
         exit(1);

@@ -643,8 +643,72 @@ function phar_build_with_lock(string $root): void
 
 // ─── Full QA gate (castor check) cross-worktree lock ───────────────────
 
+/** Default maximum wait to acquire the full-check Symfony Lock (seconds). */
+const CASTOR_CHECK_LOCK_ACQUIRE_TIMEOUT_S = 60;
+
 /** Heartbeat interval while waiting for another check (seconds). */
 const CASTOR_CHECK_LOCK_WAIT_HEARTBEAT_S = 15;
+
+/**
+ * Resolved lock acquire timeout for `castor check` (seconds).
+ *
+ * Override with `HATFIELD_CASTOR_CHECK_LOCK_TIMEOUT` (positive number, max 3600).
+ */
+function castor_check_lock_acquire_timeout_seconds(): float
+{
+    $raw = getenv('HATFIELD_CASTOR_CHECK_LOCK_TIMEOUT');
+    if (false === $raw || '' === trim((string) $raw)) {
+        return (float) CASTOR_CHECK_LOCK_ACQUIRE_TIMEOUT_S;
+    }
+    if (!is_numeric($raw)) {
+        throw new \RuntimeException('HATFIELD_CASTOR_CHECK_LOCK_TIMEOUT must be a positive number of seconds (got: '.$raw.')');
+    }
+    $seconds = (float) $raw;
+    if ($seconds <= 0.0 || $seconds > 3600.0) {
+        throw new \RuntimeException('HATFIELD_CASTOR_CHECK_LOCK_TIMEOUT must be between 0 (exclusive) and 3600 (got: '.$raw.')');
+    }
+
+    return $seconds;
+}
+
+/**
+ * Build a failure message when the castor check lock cannot be acquired in time.
+ */
+function format_castor_check_lock_acquire_timeout_message(
+    string $projectRoot,
+    string $resource,
+    string $lockDir,
+    float $timeoutSeconds,
+    float $elapsedSeconds,
+): string {
+    $lines = [
+        \sprintf(
+            'castor check: failed to acquire Symfony Lock within %.0fs (elapsed %.1fs, pid %d).',
+            $timeoutSeconds,
+            $elapsedSeconds,
+            getmypid()
+        ),
+        '  lock resource: '.$resource,
+        '  lock directory: '.$lockDir,
+    ];
+    $meta = read_castor_check_lock_meta($projectRoot);
+    if (null !== $meta) {
+        $lines[] = '  holder metadata (may be stale if the holder crashed without releasing):';
+        $lines[] = '    pid: '.($meta['pid'] ?? '?');
+        $lines[] = '    started_at: '.($meta['started_at'] ?? '?');
+        $lines[] = '    cwd: '.($meta['cwd'] ?? '?');
+        $lines[] = '    qa_run_id: '.('' !== ($meta['qa_run_id'] ?? '') ? $meta['qa_run_id'] : '(none)');
+        $lines[] = '    project_root: '.($meta['project_root'] ?? '?');
+        $lines[] = '    repo_identity: '.($meta['repo_identity'] ?? '?');
+    } else {
+        $lines[] = '  holder metadata: (none — lock file may exist without meta JSON)';
+    }
+    $lines[] = 'Another full `castor check` for this repository may still be running (including in a sibling worktree).';
+    $lines[] = 'Wait and retry, or inspect the holder process/metadata above. Do not auto-kill processes from this gate.';
+    $lines[] = 'Optional manual listing: `castor clean:cleanup:workers:list` (current-user QA workers only; never signal root-owned processes).';
+
+    return implode("\n", $lines);
+}
 
 /**
  * Whether full `castor check` should acquire the shared repository lock.
@@ -797,7 +861,8 @@ function clear_castor_check_lock_meta(string $projectRoot): void
 }
 
 /**
- * Acquire Symfony Lock for the full QA gate. Blocks with periodic heartbeats.
+ * Acquire Symfony Lock for the full QA gate. Waits up to {@see CASTOR_CHECK_LOCK_ACQUIRE_TIMEOUT_S}
+ * seconds (override: `HATFIELD_CASTOR_CHECK_LOCK_TIMEOUT`) with periodic heartbeats.
  *
  * Sibling worktrees of the same repository share the lock resource name.
  */
@@ -807,6 +872,7 @@ function acquire_castor_check_lock(string $projectRoot): LockInterface
     $resource = castor_check_lock_resource_name($projectRoot);
     $lock = $factory->createLock($resource, null, false);
 
+    $timeoutSeconds = castor_check_lock_acquire_timeout_seconds();
     $waitStart = microtime(true);
     $nextHeartbeat = $waitStart;
     $waitingAnnounced = false;
@@ -814,8 +880,24 @@ function acquire_castor_check_lock(string $projectRoot): LockInterface
 
     while (!$lock->acquire(blocking: false)) {
         $now = microtime(true);
+        $elapsed = $now - $waitStart;
+        if ($elapsed >= $timeoutSeconds) {
+            fail_quality(format_castor_check_lock_acquire_timeout_message(
+                $projectRoot,
+                $resource,
+                $lockDir,
+                $timeoutSeconds,
+                $elapsed,
+            ));
+        }
         if (!$waitingAnnounced) {
-            echo 'castor check: waiting for another full check for this repository (Symfony Lock resource '.$resource.', directory '.$lockDir.', pid '.getmypid().")\n";
+            echo \sprintf(
+                "castor check: waiting for another full check for this repository (Symfony Lock resource %s, directory %s, pid %d, acquire timeout %.0fs)\n",
+                $resource,
+                $lockDir,
+                getmypid(),
+                $timeoutSeconds
+            );
             $meta = read_castor_check_lock_meta($projectRoot);
             if (null !== $meta) {
                 echo '  holder (metadata, may be stale): pid '.($meta['pid'] ?? '?')
@@ -826,7 +908,7 @@ function acquire_castor_check_lock(string $projectRoot): LockInterface
             $waitingAnnounced = true;
         }
         if ($now >= $nextHeartbeat) {
-            echo \sprintf("castor check: still waiting (%.0fs elapsed, pid %d)\n", $now - $waitStart, getmypid());
+            echo \sprintf("castor check: still waiting (%.0fs elapsed, pid %d)\n", $elapsed, getmypid());
             $nextHeartbeat = $now + (float) CASTOR_CHECK_LOCK_WAIT_HEARTBEAT_S;
         }
         usleep(200_000);
