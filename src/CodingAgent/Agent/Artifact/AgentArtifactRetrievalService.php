@@ -11,7 +11,7 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
-use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Config\AgentArtifactRetrievalLimitsConfig;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -20,14 +20,72 @@ use Psr\Log\LoggerInterface;
  */
 final class AgentArtifactRetrievalService
 {
-    private const int DEFAULT_LIMIT = 20;
-    private const int MAX_LIMIT = 100;
-    private const int HISTORY_SUMMARY_CHARS = 240;
+    private const string TEMPLATE_HANDOFF_HEADER = <<<'MD'
+# Subagent handoff
+
+- artifact_id: {artifact_id}
+- agent_run_id: {agent_run_id}
+- agent_name: {agent_name}
+- parent_run_id: {parent_run_id}
+- status: {status}
+MD;
+
+    private const string TEMPLATE_METADATA = <<<'MD'
+# Subagent artifact metadata
+
+- artifact_id: {artifact_id}
+- agent_run_id: {agent_run_id}
+- agent_name: {agent_name}
+- parent_run_id: {parent_run_id}
+
+- status: {status}
+- created_at: {created_at}
+{started_at_line}{completed_at_line}{summary_line}{failure_reason_line}{needs_clarification_line}{child_state_section}{event_log_section}
+MD;
+
+    private const string TEMPLATE_EVENTS_HEADER = <<<'MD'
+# Subagent recent events
+
+- artifact_id: {artifact_id}
+- agent_run_id: {agent_run_id}
+- agent_name: {agent_name}
+- parent_run_id: {parent_run_id}
+
+{summary_line}
+MD;
+
+    private const string TEMPLATE_HISTORY_HEADER = <<<'MD'
+# Subagent message history (bounded)
+
+- artifact_id: {artifact_id}
+- agent_run_id: {agent_run_id}
+- agent_name: {agent_name}
+- parent_run_id: {parent_run_id}
+
+{summary_line}
+MD;
+
+    private const string TEMPLATE_DEBUG = <<<'MD'
+# Subagent artifact debug paths
+
+- artifact_id: {artifact_id}
+- agent_run_id: {agent_run_id}
+- agent_name: {agent_name}
+- parent_run_id: {parent_run_id}
+
+- status: {status}
+- artifact_dir: {artifact_dir}
+- metadata_path: {metadata_path}
+- handoff_path: {handoff_path}
+- events_path: {events_path}
+- state_path: {state_path}
+MD;
 
     public function __construct(
         private readonly AgentArtifactRegistry $artifactRegistry,
         private readonly AgentChildRunDirectory $childRunDirectory,
-        private readonly HatfieldSessionStore $hatfieldSessionStore,
+        private readonly AgentRetrieveArgumentsFactory $argumentsFactory,
+        private readonly AgentArtifactRetrievalLimitsConfig $limits,
         private readonly RunStoreInterface $runStore,
         private readonly EventStoreInterface $eventStore,
         private readonly LoggerInterface $logger,
@@ -43,17 +101,20 @@ final class AgentArtifactRetrievalService
             throw new ToolCallException('agent_retrieve requires an active parent run context.', retryable: false);
         }
 
-        $artifactId = $this->optionalTrimmedString($arguments, 'artifact_id');
-        $agentRunId = $this->optionalTrimmedString($arguments, 'agent_run_id');
+        $args = $this->argumentsFactory->fromToolArguments($arguments);
 
-        if (null === $artifactId && null === $agentRunId) {
-            throw new ToolCallException('Provide at least one identifier: artifact_id or agent_run_id.', retryable: false, hint: 'Example: {"artifact_id": "agent_abc123", "mode": "handoff"} or {"agent_run_id": "<child-run-uuid>"}.');
+        try {
+            $mode = $args->resolvedMode();
+            $limit = $args->resolvedLimit($this->limits->defaultLimit, $this->limits->maxLimit);
+        } catch (\InvalidArgumentException $e) {
+            throw new ToolCallException($e->getMessage(), retryable: false);
         }
 
-        $mode = $this->resolveMode($arguments);
-        $limit = $this->resolveLimit($arguments);
-
-        $entry = $this->resolveEntry($parentRunId, $artifactId, $agentRunId);
+        $entry = $this->resolveEntry(
+            $parentRunId,
+            $args->trimmedArtifactId(),
+            $args->trimmedAgentRunId(),
+        );
 
         return match ($mode) {
             AgentRetrieveModeEnum::Handoff => $this->renderHandoff($entry),
@@ -77,10 +138,6 @@ final class AgentArtifactRetrievalService
             }
 
             if (null === $byArtifact) {
-                if ($this->artifactExistsInOtherParents($artifactId, $parentRunId)) {
-                    throw new ToolCallException(\sprintf('Artifact "%s" belongs to a different parent session and cannot be retrieved from the current run.', $artifactId), retryable: false, hint: 'Retrieve only artifacts created under the current parent session.');
-                }
-
                 throw new ToolCallException(\sprintf('Unknown artifact_id "%s" in the current parent session.', $artifactId), retryable: false, hint: 'List artifacts from subagent completions or use the artifact id from the subagent handoff header.');
             }
         }
@@ -113,54 +170,12 @@ final class AgentArtifactRetrievalService
         return $byArtifact ?? $byRun ?? throw new ToolCallException('Unable to resolve subagent artifact.', retryable: false);
     }
 
-    private function artifactExistsInOtherParents(string $artifactId, string $currentParentRunId): bool
-    {
-        $matches = [];
-
-        foreach ($this->hatfieldSessionStore->listSessions() as $session) {
-            $sessionId = $session['sessionId'] ?? null;
-            if (!\is_string($sessionId) || '' === $sessionId || $sessionId === $currentParentRunId) {
-                continue;
-            }
-
-            try {
-                $entry = $this->artifactRegistry->get($sessionId, $artifactId);
-            } catch (\InvalidArgumentException) {
-                // Invalid path components on a foreign session — skip without treating as a match.
-                continue;
-            } catch (\Throwable $e) {
-                // Intentional degradation: one corrupt/unreadable foreign registry must not
-                // abort cross-parent detection for other sessions.
-                $this->logger->warning('agent_retrieve.foreign_artifact_scan_skipped', [
-                    'component' => 'agent.retrieve',
-                    'parent_run_id' => $sessionId,
-                    'artifact_id' => $artifactId,
-                    'error' => $e->getMessage(),
-                ]);
-
-                continue;
-            }
-
-            if (null !== $entry) {
-                $matches[$sessionId] = true;
-            }
-        }
-
-        if ([] === $matches) {
-            return false;
-        }
-
-        if (\count($matches) > 1) {
-            throw new ToolCallException(\sprintf('Artifact id "%s" is ambiguous across multiple parent sessions. Retrieval is limited to the current parent session.', $artifactId), retryable: false);
-        }
-
-        return true;
-    }
-
     private function renderHandoff(AgentArtifactEntryDTO $entry): string
     {
         $handoff = $this->artifactRegistry->readHandoff($entry->parentRunId, $entry->artifactId);
-        $header = $this->identityHeader($entry);
+        $header = $this->renderTemplate(self::TEMPLATE_HANDOFF_HEADER, $this->identityVars($entry) + [
+            'status' => $entry->status->value,
+        ]);
 
         if ('' === trim($handoff)) {
             return $header."\n\n_(No handoff content stored.)_";
@@ -171,48 +186,49 @@ final class AgentArtifactRetrievalService
 
     private function renderMetadata(AgentArtifactEntryDTO $entry): string
     {
-        $lines = [
-            '# Subagent artifact metadata',
-            '',
-            ...$this->identityLines($entry),
-            '',
-            '- status: '.$entry->status->value,
-            '- created_at: '.$entry->createdAt->format(\DateTimeInterface::ATOM),
+        $vars = $this->identityVars($entry) + [
+            'status' => $entry->status->value,
+            'created_at' => $entry->createdAt->format(\DateTimeInterface::ATOM),
+            'started_at_line' => null !== $entry->startedAt
+                ? '- started_at: '.$entry->startedAt->format(\DateTimeInterface::ATOM)."\n"
+                : '',
+            'completed_at_line' => null !== $entry->completedAt
+                ? '- completed_at: '.$entry->completedAt->format(\DateTimeInterface::ATOM)."\n"
+                : '',
+            'summary_line' => null !== $entry->summary && '' !== trim($entry->summary)
+                ? '- summary: '.$this->truncateLine($entry->summary, 500)."\n"
+                : '',
+            'failure_reason_line' => null !== $entry->failureReason && '' !== trim($entry->failureReason)
+                ? '- failure_reason: '.$this->truncateLine($entry->failureReason, 500)."\n"
+                : '',
+            'needs_clarification_line' => null !== $entry->needsClarification && '' !== trim($entry->needsClarification)
+                ? '- needs_clarification: '.$this->truncateLine($entry->needsClarification, 500)."\n"
+                : '',
+            'child_state_section' => '',
+            'event_log_section' => '',
         ];
-
-        if (null !== $entry->startedAt) {
-            $lines[] = '- started_at: '.$entry->startedAt->format(\DateTimeInterface::ATOM);
-        }
-        if (null !== $entry->completedAt) {
-            $lines[] = '- completed_at: '.$entry->completedAt->format(\DateTimeInterface::ATOM);
-        }
-        if (null !== $entry->summary && '' !== trim($entry->summary)) {
-            $lines[] = '- summary: '.$this->truncateLine($entry->summary, 500);
-        }
-        if (null !== $entry->failureReason && '' !== trim($entry->failureReason)) {
-            $lines[] = '- failure_reason: '.$this->truncateLine($entry->failureReason, 500);
-        }
-        if (null !== $entry->needsClarification && '' !== trim($entry->needsClarification)) {
-            $lines[] = '- needs_clarification: '.$this->truncateLine($entry->needsClarification, 500);
-        }
 
         $state = $this->loadChildState($entry);
         if (null !== $state) {
-            $lines[] = '';
-            $lines[] = '## Child run state';
-            $lines[] = '- run_status: '.$state->status->value;
-            $lines[] = '- turn_no: '.\sprintf('%d', $state->turnNo);
-            $lines[] = '- last_seq: '.\sprintf('%d', $state->lastSeq);
-            $lines[] = '- message_count: '.\sprintf('%d', \count($state->messages));
-            $lines[] = '- pending_tool_calls: '.\sprintf('%d', \count($state->pendingToolCalls));
+            $vars['child_state_section'] = implode("\n", [
+                '',
+                '## Child run state',
+                '- run_status: '.$state->status->value,
+                '- turn_no: '.\sprintf('%d', $state->turnNo),
+                '- last_seq: '.\sprintf('%d', $state->lastSeq),
+                '- message_count: '.\sprintf('%d', \count($state->messages)),
+                '- pending_tool_calls: '.\sprintf('%d', \count($state->pendingToolCalls)),
+            ])."\n";
         }
 
         $events = $this->eventStore->allFor($entry->agentRunId);
-        $lines[] = '';
-        $lines[] = '## Event log';
-        $lines[] = '- event_count: '.\sprintf('%d', \count($events));
+        $vars['event_log_section'] = implode("\n", [
+            '',
+            '## Event log',
+            '- event_count: '.\sprintf('%d', \count($events)),
+        ]);
 
-        return implode("\n", $lines);
+        return rtrim($this->renderTemplate(self::TEMPLATE_METADATA, $vars));
     }
 
     private function renderEvents(AgentArtifactEntryDTO $entry, int $limit): string
@@ -221,17 +237,13 @@ final class AgentArtifactRetrievalService
         usort($events, static fn (RunEvent $a, RunEvent $b): int => $a->seq <=> $b->seq);
         $slice = \array_slice($events, -$limit);
 
-        $lines = [
-            '# Subagent recent events',
-            '',
-            ...$this->identityLines($entry),
-            '',
-        ];
+        $summaryLine = [] === $slice
+            ? ''
+            : \sprintf('Showing last %d of %d events (sanitized summaries only).', \count($slice), \count($events))."\n";
 
-        if ([] !== $slice) {
-            $lines[] = \sprintf('Showing last %d of %d events (sanitized summaries only).', \count($slice), \count($events));
-            $lines[] = '';
-        }
+        $lines = [rtrim($this->renderTemplate(self::TEMPLATE_EVENTS_HEADER, $this->identityVars($entry) + [
+            'summary_line' => $summaryLine,
+        ]))];
 
         foreach ($slice as $event) {
             $lines[] = \sprintf(
@@ -266,17 +278,13 @@ final class AgentArtifactRetrievalService
 
         $slice = \array_slice($filtered, -$limit);
 
-        $lines = [
-            '# Subagent message history (bounded)',
-            '',
-            ...$this->identityLines($entry),
-            '',
-        ];
+        $summaryLine = [] === $slice
+            ? ''
+            : \sprintf('Showing last %d of %d eligible messages (system, user-context, and tool results omitted).', \count($slice), \count($filtered))."\n";
 
-        if ([] !== $slice) {
-            $lines[] = \sprintf('Showing last %d of %d eligible messages (system, user-context, and tool results omitted).', \count($slice), \count($filtered));
-            $lines[] = '';
-        }
+        $lines = [rtrim($this->renderTemplate(self::TEMPLATE_HISTORY_HEADER, $this->identityVars($entry) + [
+            'summary_line' => $summaryLine,
+        ]))];
 
         foreach ($slice as $message) {
             $summary = $this->summarizeMessage($message);
@@ -302,41 +310,40 @@ final class AgentArtifactRetrievalService
     {
         $p = $entry->paths;
 
-        return implode("\n", [
-            '# Subagent artifact debug paths',
-            '',
-            ...$this->identityLines($entry),
-            '',
-            '- status: '.$entry->status->value,
-            '- artifact_dir: '.$p->artifactDir,
-            '- metadata_path: '.$p->metadataPath,
-            '- handoff_path: '.$p->handoffPath,
-            '- events_path: '.$p->eventsPath,
-            '- state_path: '.$p->statePath,
-        ]);
-    }
-
-    private function identityHeader(AgentArtifactEntryDTO $entry): string
-    {
-        return implode("\n", [
-            '# Subagent handoff',
-            '',
-            ...$this->identityLines($entry),
-            '- status: '.$entry->status->value,
+        return $this->renderTemplate(self::TEMPLATE_DEBUG, $this->identityVars($entry) + [
+            'status' => $entry->status->value,
+            'artifact_dir' => $p->artifactDir,
+            'metadata_path' => $p->metadataPath,
+            'handoff_path' => $p->handoffPath,
+            'events_path' => $p->eventsPath,
+            'state_path' => $p->statePath,
         ]);
     }
 
     /**
-     * @return list<string>
+     * @return array<string, string>
      */
-    private function identityLines(AgentArtifactEntryDTO $entry): array
+    private function identityVars(AgentArtifactEntryDTO $entry): array
     {
         return [
-            '- artifact_id: '.$entry->artifactId,
-            '- agent_run_id: '.$entry->agentRunId,
-            '- agent_name: '.$entry->agentName,
-            '- parent_run_id: '.$entry->parentRunId,
+            'artifact_id' => $entry->artifactId,
+            'agent_run_id' => $entry->agentRunId,
+            'agent_name' => $entry->agentName,
+            'parent_run_id' => $entry->parentRunId,
         ];
+    }
+
+    /**
+     * @param array<string, string> $vars
+     */
+    private function renderTemplate(string $template, array $vars): string
+    {
+        $replacements = [];
+        foreach ($vars as $key => $value) {
+            $replacements['{'.$key.'}'] = $value;
+        }
+
+        return strtr($template, $replacements);
     }
 
     private function loadChildState(AgentArtifactEntryDTO $entry): ?RunState
@@ -344,8 +351,6 @@ final class AgentArtifactRetrievalService
         try {
             return $this->runStore->get($entry->agentRunId);
         } catch (\Throwable $e) {
-            // Intentional degradation: metadata/history modes omit child run state when
-            // the child store is missing or unreadable instead of failing retrieval.
             $this->logger->debug('agent_retrieve.child_state_unavailable', [
                 'component' => 'agent.retrieve',
                 'parent_run_id' => $entry->parentRunId,
@@ -360,19 +365,7 @@ final class AgentArtifactRetrievalService
 
     private function shouldSkipHistoryMessage(AgentMessage $message): bool
     {
-        if ('system' === $message->role) {
-            return true;
-        }
-
-        if ('user-context' === $message->role) {
-            return true;
-        }
-
-        if ('tool' === $message->role) {
-            return true;
-        }
-
-        return false;
+        return \in_array($message->role, ['system', 'user-context', 'tool'], true);
     }
 
     private function summarizeMessage(AgentMessage $message): string
@@ -390,7 +383,7 @@ final class AgentArtifactRetrievalService
 
         $text = trim(implode(' ', $parts));
 
-        return $this->truncateLine('' === $text ? '(non-text content omitted)' : $text, self::HISTORY_SUMMARY_CHARS);
+        return $this->truncateLine('' === $text ? '(non-text content omitted)' : $text, $this->limits->historySummaryChars);
     }
 
     private function summarizeEvent(RunEvent $event): string
@@ -461,67 +454,5 @@ final class AgentArtifactRetrievalService
         }
 
         return mb_substr($normalized, 0, $max - 1).'…';
-    }
-
-    /**
-     * @param array<string, mixed> $arguments
-     */
-    private function resolveMode(array $arguments): AgentRetrieveModeEnum
-    {
-        $raw = $arguments['mode'] ?? 'handoff';
-        if (!\is_string($raw) || '' === trim($raw)) {
-            return AgentRetrieveModeEnum::Handoff;
-        }
-
-        $mode = AgentRetrieveModeEnum::tryFrom(trim($raw));
-        if (null === $mode) {
-            throw new ToolCallException(\sprintf('Invalid mode "%s". Supported modes: handoff, metadata, events, history, debug.', $raw), retryable: false);
-        }
-
-        return $mode;
-    }
-
-    /**
-     * @param array<string, mixed> $arguments
-     */
-    private function resolveLimit(array $arguments): int
-    {
-        if (!isset($arguments['limit'])) {
-            return self::DEFAULT_LIMIT;
-        }
-
-        $limit = $arguments['limit'];
-        if (!\is_int($limit) && !(\is_string($limit) && ctype_digit($limit))) {
-            throw new ToolCallException('limit must be an integer between 1 and 100.', retryable: false);
-        }
-
-        $limit = (int) $limit;
-        if ($limit < 1 || $limit > self::MAX_LIMIT) {
-            throw new ToolCallException('limit must be between 1 and 100.', retryable: false);
-        }
-
-        return $limit;
-    }
-
-    /**
-     * @param array<string, mixed> $arguments
-     */
-    private function optionalTrimmedString(array $arguments, string $key): ?string
-    {
-        if (!isset($arguments[$key])) {
-            return null;
-        }
-
-        $value = $arguments[$key];
-        if (!\is_string($value)) {
-            throw new ToolCallException(\sprintf('"%s" must be a string when provided.', $key), retryable: false);
-        }
-
-        $trimmed = trim($value);
-        if ('' === $trimmed) {
-            return null;
-        }
-
-        return $trimmed;
     }
 }

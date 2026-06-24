@@ -255,7 +255,7 @@ debug summary.
 **Access rules:**
 
 - Retrieval is limited to the **current parent run** (`ToolContext.runId`).
-- Unknown identifiers and cross-parent access are rejected with actionable errors.
+- Unknown identifiers are rejected with actionable errors. Cross-parent `agent_run_id` access is rejected; artifact ids are parent-scoped and random per child run.
 - Path traversal in `artifact_id` is rejected.
 
 ### Depth and recursion guard (v1)

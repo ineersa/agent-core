@@ -122,8 +122,8 @@ function test_llm_real(?string $filter = null): void
     // and keep the Castor task alive).  run_commands_parallel() spawns the
     // command inside an isolated session via setsid -w and reaps the ENTIRE
     // session tree on timeout and normal completion, killing separate-PGID
-    // grandchildren that passthru() leaves behind.  Full llm-real group is
-    // ~50-55s wall time (8 tests, ShellFollowUpLiveE2eTest ~22s); 30s was too low.
+    // grandchildren that passthru() leaves behind. 180s is a safety cap for
+    // live controller subprocess startup, multi-turn llm-real tests, and worker teardown.
     $commands = [
         'llm-real' => [
             'cmd' => $cmd,

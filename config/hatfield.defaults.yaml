@@ -332,6 +332,12 @@ agents:
     # Whether agent discovery is enabled.
     enabled: true
 
+    # Bounded output limits for agent_retrieve (optional overrides).
+    # retrieve:
+    #     default_limit: 20
+    #     max_limit: 100
+    #     history_summary_chars: 240
+
     # Additional explicit agent definition file or directory paths.
     # These have the highest precedence (override all auto-discovery).
     # Example:

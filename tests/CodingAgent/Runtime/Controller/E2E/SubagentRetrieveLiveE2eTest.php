@@ -89,7 +89,6 @@ MD;
     }
 
 
-
     public function testSubagentThenAgentRetrieveChain(): void
     {
         $this->spawnController();
@@ -132,8 +131,7 @@ MD;
         if (!isset($subagentByType['tool_execution.completed'])) {
             $failMsg = 'subagent tool must complete. '.$this->collectDiagnostics($subagentEvents);
             if (isset($subagentByType['tool_execution.failed'])) {
-                $failMsg .= "
-Failed payload: ".json_encode($subagentByType['tool_execution.failed'][0]['payload'] ?? [], \JSON_PRETTY_PRINT);
+                $failMsg .= "\nFailed payload: ".json_encode($subagentByType['tool_execution.failed'][0]['payload'] ?? [], \JSON_PRETTY_PRINT);
             }
             self::fail($failMsg);
         }
@@ -169,6 +167,9 @@ Failed payload: ".json_encode($subagentByType['tool_execution.failed'][0]['paylo
 
         $this->assertNoToolFailedForName($subagentEvents, 'subagent');
 
+        // follow_up is sent immediately after subagent tool completion; the controller
+        // interleaves it with the post-subagent model turn so agent_retrieve can run
+        // before the parent run reaches a terminal state.
         $followUpCmdId = 'cmd_retrieve_'.uniqid();
         $retrieveArgs = json_encode([
             'artifact_id' => $artifactId,

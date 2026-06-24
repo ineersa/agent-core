@@ -15,6 +15,8 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathResolver;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRetrievalService;
+use Ineersa\CodingAgent\Agent\Artifact\AgentRetrieveArgumentsFactory;
+use Ineersa\CodingAgent\Config\AgentArtifactRetrievalLimitsConfig;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
@@ -28,6 +30,7 @@ use Symfony\Component\Serializer\Normalizer\DateTimeNormalizer;
 use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 use Symfony\Component\Serializer\Serializer;
+use Symfony\Component\Serializer\Normalizer\ArrayDenormalizer;
 use Symfony\Component\Validator\ValidatorBuilder;
 
 #[CoversClass(AgentArtifactRetrievalService::class)]
@@ -139,6 +142,18 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
 
         self::assertStringContainsString('artifact_id: agent_by_run', $out);
         self::assertStringContainsString('handoff-by-run', $out);
+    }
+
+    public function testRejectsMissingIdentifiers(): void
+    {
+        $service = $this->makeService();
+
+        try {
+            $service->retrieve('parent-x', []);
+            self::fail('expected ToolCallException');
+        } catch (ToolCallException $e) {
+            self::assertStringContainsString('Provide at least one identifier', $e->getMessage());
+        }
     }
 
     public function testRejectsUnknownArtifactId(): void
@@ -289,31 +304,24 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         self::assertStringNotContainsString($isolatedRoot.'/.hatfield/sessions', $out);
     }
 
-    public function testRejectsCrossParentArtifactIdViaSessionListing(): void
-    {
-        $foreignParent = $this->hatfieldSessionStore->createSession('Foreign parent for artifact retrieve');
-        $artifactId = 'agent_foreign_artifact';
-        $childRun = 'foreign-child-artifact';
-        $this->registry->create($foreignParent, $artifactId, $childRun, 'scout');
-
-        $service = $this->makeService();
-
-        try {
-            $service->retrieve('parent-current-artifact', ['artifact_id' => $artifactId]);
-            self::fail('expected ToolCallException');
-        } catch (ToolCallException $e) {
-            self::assertStringContainsString('different parent session', $e->getMessage());
-        }
-    }
 
     private function makeService(
         ?RunStoreInterface $runStore = null,
         ?EventStoreInterface $eventStore = null,
     ): AgentArtifactRetrievalService {
+        $serializer = new Serializer(
+            [new DateTimeNormalizer(), new BackedEnumNormalizer(), new ObjectNormalizer(
+                nameConverter: new CamelCaseToSnakeCaseNameConverter(),
+            ), new ArrayDenormalizer()],
+            [new JsonEncoder()],
+        );
+        $validator = (new ValidatorBuilder())->enableAttributeMapping()->getValidator();
+
         return new AgentArtifactRetrievalService(
             artifactRegistry: $this->registry,
             childRunDirectory: $this->directory,
-            hatfieldSessionStore: $this->hatfieldSessionStore,
+            argumentsFactory: new AgentRetrieveArgumentsFactory($serializer, $validator),
+            limits: new AgentArtifactRetrievalLimitsConfig(),
             runStore: $runStore ?? $this->createStub(RunStoreInterface::class),
             eventStore: $eventStore ?? $this->createStub(EventStoreInterface::class),
             logger: self::getContainer()->get('logger'),

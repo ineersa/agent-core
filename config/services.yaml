@@ -132,6 +132,9 @@ services:
 
   Ineersa\CodingAgent\Config\AgentsConfig:
     factory: ['Ineersa\CodingAgent\Config\AgentsConfig', 'fromAppConfig']
+
+  Ineersa\CodingAgent\Config\AgentArtifactRetrievalLimitsConfig:
+    factory: ['Ineersa\CodingAgent\Config\AgentArtifactRetrievalLimitsConfig', 'fromAppConfig']
     arguments:
       - '@Ineersa\CodingAgent\Config\AppConfig'
 

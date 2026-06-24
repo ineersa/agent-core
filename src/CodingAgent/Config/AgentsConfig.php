@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Config;
 
+use Symfony\Component\Serializer\Attribute\SerializedName;
+
 /**
  * Top-level Hatfield `agents:` settings.
  *
@@ -22,6 +24,8 @@ final readonly class AgentsConfig
     public function __construct(
         public bool $enabled = true,
         public array $paths = [],
+        #[SerializedName('retrieve')]
+        public AgentArtifactRetrievalLimitsConfig $retrieve = new AgentArtifactRetrievalLimitsConfig(),
     ) {
     }
 
@@ -52,7 +56,9 @@ final readonly class AgentsConfig
             }
         }
 
-        return new self(enabled: $enabled, paths: $paths);
+        $retrieve = AgentArtifactRetrievalLimitsConfig::fromRaw($raw['retrieve'] ?? []);
+
+        return new self(enabled: $enabled, paths: $paths, retrieve: $retrieve);
     }
 
     /**
