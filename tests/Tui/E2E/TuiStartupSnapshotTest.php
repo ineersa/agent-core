@@ -4,33 +4,27 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\E2E;
 
-use Ineersa\CodingAgent\Tests\Support\AgentTestExecutable;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Startup snapshot test for the agent TUI.
+ * Minimal real-terminal smoke for the interactive agent TUI.
  *
- * Launches the agent in a detached tmux session at 120×40,
- * waits for the startup layout to render, captures a plain-text
- * snapshot, normalises dynamic content, and compares against
- * the committed golden fixture.
+ * Launches the agent in a detached tmux session, waits for the Hatfield logo,
+ * asserts it appears in the pane, then sends Ctrl+D to exit.
  *
- * After capture, sends Ctrl+D to exit the interactive TUI cleanly.
+ * Runs in an isolated project directory under var/tmp/tui-e2e-* so it does NOT
+ * hit the stale project-root .hatfield/messenger.sqlite.
  *
- * Runs in an isolated project directory under var/tmp/tui-e2e-*
- * so it does NOT hit the stale project-root .hatfield/messenger.sqlite.
- *
- * Element-level startup assertions live in
+ * Element-level startup layout assertions live in
  * {@see \Ineersa\Tui\Tests\Screen\TuiStartupVirtualRenderTest} (no tmux).
- *
  */
+
 #[Group('tui-e2e-replay')]
 final class TuiStartupSnapshotTest extends TestCase
 {
     private TmuxHarness $tmux;
-    private string $goldenPath;
     private string $projectRoot;
     private string $testProjectDir;
 
@@ -42,7 +36,6 @@ final class TuiStartupSnapshotTest extends TestCase
 
         $this->tmux = new TmuxHarness();
         $this->projectRoot = \Ineersa\CodingAgent\Tests\Support\ProjectDir::get();
-        $this->goldenPath = $this->projectRoot.'/tests/Tui/Snapshots/startup-120x40.txt';
         $this->testProjectDir = $this->createIsolatedProjectDir();
     }
 
@@ -170,36 +163,5 @@ final class TuiStartupSnapshotTest extends TestCase
         \file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
 
         return $dir;
-    }
-
-    private function shouldUpdateSnapshots(): bool
-    {
-        return in_array(getenv('HATFIELD_UPDATE_SNAPSHOTS'), ['1', 'true', 'yes'], true);
-    }
-
-    private function diffHint(string $expected, string $actual): string
-    {
-        $expectedLines = explode("\n", $expected);
-        $actualLines = explode("\n", $actual);
-        $maxLen = max(count($expectedLines), count($actualLines));
-
-        $diff = [];
-        for ($i = 0; $i < $maxLen; $i++) {
-            $exp = $expectedLines[$i] ?? '<<< missing >>>';
-            $act = $actualLines[$i] ?? '<<< missing >>>';
-            if ($exp !== $act) {
-                $diff[] = sprintf(
-                    '  line %3d: -"%s"',
-                    $i + 1,
-                    substr($exp, 0, 100),
-                );
-                $diff[] = sprintf(
-                    '           +"%s"',
-                    substr($act, 0, 100),
-                );
-            }
-        }
-
-        return implode("\n", $diff);
     }
 }

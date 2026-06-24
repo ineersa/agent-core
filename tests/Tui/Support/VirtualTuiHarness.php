@@ -15,7 +15,10 @@ use Symfony\Component\Tui\Tui;
 /**
  * Deterministic in-process TUI harness for layout/render assertions.
  *
- * Uses Symfony {@see VirtualTerminal} and {@see ScreenBuffer} instead of tmux.
+ * Mounts {@see ChatScreen} on Symfony {@see VirtualTerminal} and exposes plain
+ * screen text via {@see ScreenBuffer}. Does not start {@see Tui::run()}, so
+ * keyboard input simulation is out of scope here (add in a later phase with
+ * an explicit input-loop test if needed).
  */
 final class VirtualTuiHarness
 {
@@ -73,8 +76,4 @@ final class VirtualTuiHarness
         return $buffer->getScreen();
     }
 
-    public function sendInput(string $keys): void
-    {
-        $this->terminal->simulateInput($keys);
-    }
 }

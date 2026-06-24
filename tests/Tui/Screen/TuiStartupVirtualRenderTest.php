@@ -12,9 +12,9 @@ use PHPUnit\Framework\TestCase;
 /**
  * Deterministic startup layout proof without tmux.
  *
- * Test thesis: stable user-visible startup elements (logo, welcome, status,
- * footer, editor) render from the mounted ChatScreen tree without wall-clock
- * pane polling.
+ * Test thesis: stable user-visible startup elements (logo, welcome, idle
+ * status, session id in footer) render from the mounted ChatScreen tree
+ * without wall-clock pane polling.
  */
 final class TuiStartupVirtualRenderTest extends TestCase
 {
