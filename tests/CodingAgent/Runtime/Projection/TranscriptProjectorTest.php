@@ -142,6 +142,41 @@ final class TranscriptProjectorTest extends TestCase
         }
     }
 
+
+    public function testQueuedUserMessageReconcilePreservesPosition(): void
+    {
+        // First queued steer, then a second distinct queued steer, then apply the FIRST.
+        // The reconciled first message must stay at its original position (in-place replace),
+        // not jump to the end — which is what removeBlock()+addBlock() would do.
+        $ik1 = 'ik-pos-1';
+        $ik2 = 'ik-pos-2';
+
+        $this->accept('user.message_queued', [
+            'message_id' => 'user_queued_run_1_'.$ik1,
+            'text' => 'FIRST_STEER',
+            'idempotency_key' => $ik1,
+        ]);
+        $this->accept('user.message_queued', [
+            'message_id' => 'user_queued_run_1_'.$ik2,
+            'text' => 'SECOND_STEER',
+            'idempotency_key' => $ik2,
+        ]);
+        $this->accept('user.message_submitted', [
+            'message_id' => 'user_run_1_'.$ik1,
+            'text' => 'FIRST_STEER',
+            'idempotency_key' => $ik1,
+        ]);
+
+        $blocks = $this->projector->blocks();
+
+        // Exactly two blocks: FIRST reconciled to UserMessage, SECOND still pending.
+        $this->assertCount(2, $blocks);
+        $this->assertSame(TranscriptBlockKindEnum::UserMessage, $blocks[0]->kind);
+        $this->assertSame('FIRST_STEER', $blocks[0]->text);
+        $this->assertSame(TranscriptBlockKindEnum::UserMessageQueued, $blocks[1]->kind);
+        $this->assertSame('SECOND_STEER', $blocks[1]->text);
+    }
+
     public function testRunStartedWithUserMessagesProjectsInitialPromptBlocks(): void
     {
         $this->accept('run.started', [

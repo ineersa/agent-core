@@ -14,6 +14,12 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
  */
 final readonly class UserMessageProjectionSubscriber implements EventSubscriberInterface
 {
+    /**
+     * Block id shared by a queued user message and its reconciled canonical block, so the
+     * canonical block replaces the pending one in place (same id) instead of appending.
+     */
+    private const QUEUED_BLOCK_ID_FORMAT = 'user_queued_%s_%s';
+
     public static function getSubscribedEvents(): array
     {
         return [
@@ -28,8 +34,10 @@ final readonly class UserMessageProjectionSubscriber implements EventSubscriberI
         $p = $event->payload();
         $state = $event->state;
         $idempotencyKey = (string) ($p['idempotency_key'] ?? '');
+        // idempotency_key is always present for steer/follow_up (SHA-256 hash from AgentRunner);
+        // the message_id branch is a defensive fallback for malformed/legacy payloads.
         $blockId = '' !== $idempotencyKey
-            ? \sprintf('user_queued_%s_%s', $event->runId(), $idempotencyKey)
+            ? $this->queuedBlockId($event->runId(), $idempotencyKey)
             : (string) ($p['message_id'] ?? '');
 
         $state->addBlock(new TranscriptBlock(
@@ -50,12 +58,12 @@ final readonly class UserMessageProjectionSubscriber implements EventSubscriberI
         $idempotencyKey = (string) ($p['idempotency_key'] ?? '');
         $blockId = (string) ($p['message_id'] ?? '');
         if ('' !== $idempotencyKey) {
-            // Reconcile pending user.message_queued block into the canonical user message.
-            // Keep the queued block id so TUI transcript sync updates the same row in place
-            // (RuntimeEventPoller synchronizes by block id only; it does not prune removed ids).
-            $queuedId = \sprintf('user_queued_%s_%s', $event->runId(), $idempotencyKey);
-            $state->removeBlock($queuedId);
-            $blockId = $queuedId;
+            // Reconcile the pending user.message_queued block into the canonical user message by
+            // reusing its block id. TranscriptProjectionState::addBlock() replaces a block in place
+            // (preserving its order position) when the id already exists, so the pending ⏳ row
+            // becomes the finalized ❯ row at the same position — both live (RuntimeEventPoller syncs
+            // by block id and never prunes removed ids) and on resume/replay (rebuilt from events).
+            $blockId = $this->queuedBlockId($event->runId(), $idempotencyKey);
         }
 
         $state->addBlock(new TranscriptBlock(
@@ -99,5 +107,10 @@ final readonly class UserMessageProjectionSubscriber implements EventSubscriberI
                 text: (string) ($userMsg['text'] ?? ''),
             ));
         }
+    }
+
+    private function queuedBlockId(string $runId, string $idempotencyKey): string
+    {
+        return \sprintf(self::QUEUED_BLOCK_ID_FORMAT, $runId, $idempotencyKey);
     }
 }

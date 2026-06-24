@@ -605,7 +605,7 @@ final class RuntimeEventMapperTest extends TestCase
         self::assertSame('Steer from content', $result->payload['text']);
         self::assertSame('ik-steer-1', $result->payload['idempotency_key']);
         self::assertSame(
-            \sprintf('user_queued_%s_%d_%s', $this->runId, 7, 'ik-steer-1'),
+            \sprintf('user_queued_%s_%s', $this->runId, 'ik-steer-1'),
             $result->payload['message_id'],
         );
     }

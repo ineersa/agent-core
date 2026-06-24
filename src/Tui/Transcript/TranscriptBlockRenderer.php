@@ -136,6 +136,7 @@ final readonly class TranscriptBlockRenderer
             TranscriptBlockKindEnum::Cancelled => '[cancelled]',
             TranscriptBlockKindEnum::Error => '[error]',
             TranscriptBlockKindEnum::Progress => '[progress]',
+            TranscriptBlockKindEnum::UserMessageQueued => '[queued]',
             default => '',
         };
     }

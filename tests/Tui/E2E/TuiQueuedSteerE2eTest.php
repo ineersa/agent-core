@@ -87,7 +87,8 @@ final class TuiQueuedSteerE2eTest extends TestCase
             $this->tmux->waitForCallback(
                 $pane,
                 static fn (string $cap): bool => str_contains($cap, '❯')
-                    && str_contains($cap, $marker),
+                    && str_contains($cap, $marker)
+                    && !str_contains($cap, '⏳ '.$marker),
                 timeout: 25.0,
                 message: 'Canonical user message (❯) with steer text did not appear after apply',
                 history: 3000,
@@ -99,8 +100,10 @@ final class TuiQueuedSteerE2eTest extends TestCase
                 \substr_count($finalCapture, self::STEER_MARKER),
                 'Steer marker must appear exactly once in the final transcript (no duplicate user blocks)',
             );
+            // The renderer emits "  ⏳ " + text (prefix has a trailing space), so assert the
+            // spaced form — the unspaced "⏳"+marker substring could never appear (vacuous).
             $this->assertStringNotContainsString(
-                '⏳'.self::STEER_MARKER,
+                '⏳ '.self::STEER_MARKER,
                 $finalCapture,
                 'Pending ⏳ block for the steer must be gone after reconciliation',
             );
