@@ -38,6 +38,9 @@ Source: metrics from MAINT-05G `castor check` and focused runs (before live `llm
 | PHAR in default QA | **no** | PHAR is opt-in (castor phar:build, castor phar:ensure) |
 | Leaked worker risk | investigate-first (fix root cause) | `castor check` does not auto-kill; QA children disable optional log injection centrally; leaked workers = teardown bugs to fix; `castor clean:cleanup:workers:list` / `castor clean:cleanup:workers` only as explicit debug last resort after investigation |
 | Concurrent full checks | serialized per repository | Sibling worktrees share Symfony Lock (FlockStore) keyed by `git rev-parse --git-common-dir`; lock under `$XDG_RUNTIME_DIR/hatfield/castor-check/`; `HATFIELD_CASTOR_CHECK_LOCK=0` stress only |
+| QA run leak assertion | `castor check` only | After lanes: scan `/proc/*/environ` for current-user processes with this run's `HATFIELD_QA_RUN_ID`; fail with pid/ppid/sid/cwd/cmd diagnostics; no auto-kill |
+| Check lane artifacts | `castor check` only | Each parallel lane must write non-empty `check-<lane>.log` under `HATFIELD_QA_REPORTS_DIR` |
+| Check ParaTest budgets | `castor check` lanes | unit=4 (max 8), tui=2 (max 4), llm-real=2 (max 4); overrides `HATFIELD_CHECK_*_PARATEST_PROCESSES` |
 | Llama-proxy cache guard | `castor check` only | Baseline/post `entries` from `/__llama_proxy/cache/stats`; fail if count grows (includes preflight). Warm with `castor test:llm-real` before gate; `HATFIELD_LLM_CACHE_GUARD=0` stress only |
 | check_llm_generation_ready in check | **no** | Only run by opt-in live commands |
 | Custom Castor shard discovery | **removed** | ParaTest handles parallelism for both local dev and gate |

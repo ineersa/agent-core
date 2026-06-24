@@ -418,13 +418,10 @@ abstract class ControllerE2eTestCase extends TestCase
             usleep(10_000);
         }
 
+        $events = $this->parseBuffer($this->stdoutBuf);
         self::fail(
             'Timed out waiting for '.$type.' after '.$timeout.'s. '
-            .'Collected events: '.json_encode(
-                $this->parseBuffer($this->stdoutBuf),
-                \JSON_THROW_ON_ERROR,
-            )."\n"
-            .'Stderr: '.$this->stderrBuf,
+            .$this->collectDiagnostics($events),
         );
     }
 

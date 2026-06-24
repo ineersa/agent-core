@@ -19,6 +19,7 @@ declare(strict_types=1);
 
 use Castor\Attribute\AsTask;
 
+use function CastorTasks\check_lane_paratest_processes;
 use function CastorTasks\check_llm_generation_ready;
 use function CastorTasks\is_llm_mode;
 use function CastorTasks\phar_ensure;
@@ -60,7 +61,7 @@ function build_test_llm_real_phpunit_command(?string $filter = null): string
             .' --bootstrap='.escapeshellarg($bootstrap)
             .' --group=llm-real'
             .' --exclude-group=recording'
-            .' --processes=4'
+            .' --processes='.check_lane_paratest_processes('llm-real', 2, 4)
             .' '.$strictFlags.$llmFlags;
     }
 
@@ -89,13 +90,13 @@ function build_test_tui_phpunit_command(?string $filter = null): string
 
     if (null === $filter && class_exists(ParaTest\ParaTestCommand::class)) {
         $bootstrap = paratest_bootstrap_path();
-        $envProcesses = getenv('HATFIELD_TUI_PARATEST_PROCESSES');
-        $processes = (int) (false !== $envProcesses && '' !== $envProcesses ? $envProcesses : '2');
-        if ($processes < 1) {
-            $processes = 2;
-        }
-        if ($processes > 4) {
-            $processes = 4;
+        $processes = check_lane_paratest_processes('tui', 2, 4);
+        $legacy = getenv('HATFIELD_TUI_PARATEST_PROCESSES');
+        if (false !== $legacy && '' !== trim((string) $legacy)) {
+            $legacyInt = (int) $legacy;
+            if ($legacyInt >= 1 && $legacyInt <= 4) {
+                $processes = $legacyInt;
+            }
         }
 
         return $envPrefix.\PHP_BINARY.' vendor/bin/paratest'

@@ -1239,6 +1239,222 @@ function xml_escape(string $value): string
  * Called before any E2E step that depends on real LLM generation.
  */
 
+// ─── QA check run leak detection and artifact integrity ───────────────
+
+/**
+ * PIDs that must never be reported as QA run leaks (current Castor PHP and ancestors).
+ *
+ * @return list<int>
+ */
+function qa_check_run_protected_pids(): array
+{
+    $protected = [];
+    $pid = getmypid();
+    $seen = [];
+    while ($pid > 0 && !isset($seen[$pid])) {
+        $seen[$pid] = true;
+        $protected[] = $pid;
+        $status = @file_get_contents('/proc/'.$pid.'/status');
+        if (false === $status || !preg_match('/^PPid:\s+(\d+)/m', $status, $m)) {
+            break;
+        }
+        $pid = (int) $m[1];
+    }
+
+    return $protected;
+}
+
+/**
+ * Whether /proc/<pid>/environ contains HATFIELD_QA_RUN_ID for the given run id.
+ */
+function process_environ_has_qa_run_id(int $pid, string $runId): bool
+{
+    $environ = @file_get_contents('/proc/'.$pid.'/environ');
+    if (false === $environ || '' === $runId) {
+        return false;
+    }
+
+    $needle = 'HATFIELD_QA_RUN_ID='.$runId."\0";
+
+    return str_contains($environ, $needle);
+}
+
+/**
+ * @return list<array{pid:int,ppid:int,sid:int,cmd:string,cwd:string}>
+ */
+function collect_qa_check_run_leaked_processes(string $runId): array
+{
+    if ('' === trim($runId) || !\function_exists('posix_geteuid')) {
+        return [];
+    }
+
+    $uid = posix_geteuid();
+    $protected = array_fill_keys(qa_check_run_protected_pids(), true);
+    $leaks = [];
+
+    $procEntries = glob('/proc/[0-9]*');
+    if (false === $procEntries) {
+        $procEntries = [];
+    }
+    foreach ($procEntries as $procDir) {
+        $pid = (int) basename($procDir);
+        if ($pid <= 0 || isset($protected[$pid])) {
+            continue;
+        }
+
+        $stat = @stat($procDir);
+        if (false === $stat || ($stat['uid'] ?? -1) !== $uid) {
+            continue;
+        }
+
+        if (!process_environ_has_qa_run_id($pid, $runId)) {
+            continue;
+        }
+
+        $ppid = 0;
+        $status = @file_get_contents($procDir.'/status');
+        if (false !== $status && preg_match('/^PPid:\s+(\d+)/m', $status, $m)) {
+            $ppid = (int) $m[1];
+        }
+
+        $sid = 0;
+        $statLine = @file_get_contents($procDir.'/stat');
+        if (false !== $statLine) {
+            $close = strrpos($statLine, ')');
+            if (false !== $close) {
+                $rest = trim(substr($statLine, $close + 1));
+                $fields = preg_split('/\s+/', $rest);
+                if (false === $fields) {
+                    $fields = [];
+                }
+                if (isset($fields[3])) {
+                    $sid = (int) $fields[3];
+                }
+            }
+        }
+
+        $cmdRaw = @file_get_contents($procDir.'/cmdline');
+        $cmd = '';
+        if (false !== $cmdRaw) {
+            $cmd = str_replace("\0", ' ', trim($cmdRaw));
+        }
+
+        $cwd = '';
+        $cwdLink = $procDir.'/cwd';
+        if (is_link($cwdLink)) {
+            $resolved = @readlink($cwdLink);
+            if (false !== $resolved) {
+                $cwd = $resolved;
+            }
+        }
+
+        $leaks[] = [
+            'pid' => $pid,
+            'ppid' => $ppid,
+            'sid' => $sid,
+            'cmd' => $cmd,
+            'cwd' => $cwd,
+        ];
+    }
+
+    usort($leaks, static fn (array $a, array $b): int => $a['pid'] <=> $b['pid']);
+
+    return $leaks;
+}
+
+/**
+ * Fail the QA gate if processes tagged with this run id remain (no auto-kill).
+ */
+function assert_castor_check_run_no_process_leaks(string $runId): void
+{
+    $leaks = collect_qa_check_run_leaked_processes($runId);
+    if ([] === $leaks) {
+        echo "QA run leak check: ok (no processes with HATFIELD_QA_RUN_ID={$runId})\n";
+
+        return;
+    }
+
+    $lines = [
+        'QA run leak check FAILED: processes still carry HATFIELD_QA_RUN_ID='.$runId,
+        'Investigate lifecycle teardown (do not auto-kill). Manual cleanup only when safe:',
+        '  castor clean:cleanup:workers:list',
+        '  castor clean:cleanup:workers',
+        '',
+    ];
+    foreach ($leaks as $row) {
+        $lines[] = \sprintf(
+            '  pid=%d ppid=%d sid=%d cwd=%s cmd=%s',
+            $row['pid'],
+            $row['ppid'],
+            $row['sid'],
+            '' !== $row['cwd'] ? $row['cwd'] : '?',
+            '' !== $row['cmd'] ? $row['cmd'] : '?',
+        );
+    }
+
+    fail_quality(implode("\n", $lines));
+}
+
+/**
+ * ParaTest worker budget for check E2E lanes (conservative under parallel castor check).
+ */
+function check_lane_paratest_processes(string $lane, int $default, int $max = 4): int
+{
+    $envMap = [
+        'tui' => 'HATFIELD_CHECK_TUI_PARATEST_PROCESSES',
+        'llm-real' => 'HATFIELD_CHECK_LLM_REAL_PARATEST_PROCESSES',
+        'unit' => 'HATFIELD_CHECK_UNIT_PARATEST_PROCESSES',
+    ];
+    $envName = $envMap[$lane] ?? null;
+    $raw = false;
+    if (null !== $envName) {
+        $raw = getenv($envName);
+    }
+    if (false === $raw || '' === trim((string) $raw)) {
+        $inCheck = false !== getenv('HATFIELD_QA_RUN_ID') && '' !== trim((string) getenv('HATFIELD_QA_RUN_ID'));
+        $processes = $inCheck ? $default : ('llm-real' === $lane ? 4 : $default);
+    } else {
+        $processes = (int) $raw;
+    }
+
+    if ($processes < 1) {
+        $processes = $default;
+    }
+    if ($processes > $max) {
+        $processes = $max;
+    }
+
+    return $processes;
+}
+
+/**
+ * @param list<string> $laneSteps
+ */
+function assert_castor_check_lane_artifacts_integrity(array $laneSteps): void
+{
+    $reportsDir = reports_dir();
+    $runReportsRel = getenv('HATFIELD_QA_REPORTS_DIR');
+    $missing = [];
+    foreach ($laneSteps as $step) {
+        $path = report_path('check-'.$step.'.log');
+        if (!is_file($path)) {
+            $missing[] = 'missing log: '.relative_report_path('check-'.$step.'.log').' (expected under '.$reportsDir.')';
+            continue;
+        }
+        if (0 === filesize($path)) {
+            $missing[] = 'empty log: '.relative_report_path('check-'.$step.'.log');
+        }
+    }
+
+    if ([] === $missing) {
+        echo 'QA artifact integrity: ok ('.\count($laneSteps)." lane logs in {$reportsDir})\n";
+
+        return;
+    }
+
+    fail_quality("QA artifact integrity FAILED:\n".implode("\n", $missing));
+}
+
 // ─── llama-proxy cache guard (castor check only) ───────────────────────
 
 function llama_proxy_admin_base_url(): string
@@ -1387,7 +1603,7 @@ function check_llm_generation_ready(): void
     // preflight would cut off reasoning models and trigger server aborts.
     $payload = '{"model":"'.$model.'","messages":[{"role":"user","content":"Respond with exactly one word: hello."}],"max_tokens":512,"temperature":0,"stream":false}';
 
-    $cmd = 'timeout --kill-after=5s 15s curl -sS -m 10 -o /dev/null -w "%{http_code}"'
+    $cmd = qa_check_run_env_command().' timeout --kill-after=5s 15s curl -sS -m 10 -o /dev/null -w "%{http_code}"'
         .' -H "Content-Type: application/json"'
         .' -d '.escapeshellarg($payload)
         .' '.escapeshellarg($url);

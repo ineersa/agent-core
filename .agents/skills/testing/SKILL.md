@@ -10,11 +10,11 @@ description: "E2E and validation testing strategy. Load this skill when: writing
 All PHPUnit invocations include `--stop-on-error --stop-on-failure --fail-on-all-issues --display-all-issues`.
 
 ```bash
-castor check                # Full QA gate: deptrac, unit/integration (ParaTest), controller replay E2E, TUI replay E2E, live llm-real smoke (ParaTest, port 9052 / llama-proxy), phpstan, cs-check; lanes parallel; logs at var/reports/check-*.log. Multiple simultaneous `castor check` for the same repo (sibling worktrees included) queue on a shared Symfony Lock (FlockStore) outside the worktree (override stress only: HATFIELD_CASTOR_CHECK_LOCK=0). `castor check` fails if llama-proxy cache `entries` grow during the run — warm with `castor test:llm-real` first.
+castor check                # Full QA gate: deptrac, unit/integration (ParaTest), controller replay E2E, TUI replay E2E, live llm-real smoke (ParaTest, port 9052 / llama-proxy), phpstan, cs-check; lanes parallel; logs under per-run `var/reports/qa-<id>/check-*.log`. Deterministic mode: Symfony Lock across sibling worktrees, cache-growth guard, post-run `HATFIELD_QA_RUN_ID` leak assertion (no auto-kill), lane log integrity. Stress overrides (`HATFIELD_CASTOR_CHECK_LOCK=0`, `HATFIELD_LLM_CACHE_GUARD=0`, concurrency envs) are investigation-only — not CODE-REVIEW evidence. Worker budgets: unit=4 (max 8, `HATFIELD_CHECK_UNIT_PARATEST_PROCESSES`), TUI=2 (max 4, `HATFIELD_CHECK_TUI_PARATEST_PROCESSES` / legacy `HATFIELD_TUI_PARATEST_PROCESSES`), llm-real=2 (max 4, `HATFIELD_CHECK_LLM_REAL_PARATEST_PROCESSES`); controller-replay sequential. Warm proxy before gate: `castor test:llm-real`.
 castor test                 # unit/integration tests (ParaTest parallel by default); excludes tui-e2e-replay, llm-real, recording, and controller-replay groups
 castor test --filter=X      # filter tests by name
 castor test --suite=X       # target a specific phpunit.xml test suite (ParaTest parallel)
-castor test:tui [--filter=X]    # TUI E2E journey tests (replay-backed, no live LLM); full group uses ParaTest (default 2 workers, HATFIELD_TUI_PARATEST_PROCESSES=2–4); --filter stays sequential PHPUnit
+castor test:tui [--filter=X]    # TUI E2E journey tests (replay-backed, no live LLM); full group uses ParaTest (default 2 workers; under `castor check` uses `HATFIELD_CHECK_TUI_PARATEST_PROCESSES`, legacy `HATFIELD_TUI_PARATEST_PROCESSES` still honored, max 4); --filter stays sequential PHPUnit
 castor test:tui-update [--filter=X]  # update TUI snapshot baselines (filter optional)
 castor test:llm-real [--filter=X]   # real llama.cpp smoke (filter optional)
 castor test:controller [--filter=X] # controller E2E smoke test (live LLM, opt-in)

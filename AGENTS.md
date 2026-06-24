@@ -25,6 +25,8 @@ Key commands: `castor check` (full validation), `castor test`, `castor deptrac`,
 
 Concurrent full `castor check` invocations for the **same git repository** (including sibling worktrees) serialize on a shared Symfony Lock (FlockStore) under `$XDG_RUNTIME_DIR/hatfield/castor-check/` (fallback: `/tmp/hatfield-castor-check-<uid>/`); additional checks wait with a clear message instead of competing for CPU/tmux/controller startup. Focused Castor commands (`castor test`, `castor phpstan`, …) are unaffected. Stress-only override: `HATFIELD_CASTOR_CHECK_LOCK=0`.
 
+**Deterministic gate mode (`castor check`):** per-run isolated reports/tmp/cache/DB (`HATFIELD_QA_RUN_ID`), Symfony Lock serialization across sibling worktrees, llama-proxy cache-growth guard, post-run leak assertion (processes tagged with `HATFIELD_QA_RUN_ID` must be gone — no auto-kill), and per-lane log artifact integrity under `HATFIELD_QA_REPORTS_DIR`. **Stress/diagnostic mode** (lock/cache-guard/concurrency overrides) is for investigation only — not acceptable CODE-REVIEW gate evidence.
+
 **Load the `testing` skill** when: running any test, writing tests, debugging test failures, touching runtime/TUI/Messenger code, or needing the full command reference.
 
 ## ⚠️ MANDATORY: Read testing docs before touching tests or running QA

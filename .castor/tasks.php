@@ -45,7 +45,9 @@ use Castor\Attribute\AsTask;
 use Symfony\Component\Lock\LockInterface;
 
 use function CastorTasks\acquire_castor_check_lock;
+use function CastorTasks\assert_castor_check_lane_artifacts_integrity;
 use function CastorTasks\assert_castor_check_llama_proxy_cache_unchanged;
+use function CastorTasks\assert_castor_check_run_no_process_leaks;
 use function CastorTasks\begin_castor_check_llama_proxy_cache_guard;
 use function CastorTasks\castor_check_lock_enabled;
 use function CastorTasks\check_llm_generation_ready;
@@ -213,6 +215,21 @@ function _run_castor_check_body(string $root, string $qaRunId): void
     }
 
     assert_castor_check_llama_proxy_cache_unchanged($llamaProxyCacheBaseline);
+
+    finalize_castor_check_run($qaRunId, $failures, $timings, array_keys($allCheckCommands));
+}
+
+/**
+ * Post-lane assertions shared by success and failure paths (no auto-kill).
+ *
+ * @param array<string, string>    $failures
+ * @param array<string, float|int> $timings
+ * @param list<string>             $laneSteps
+ */
+function finalize_castor_check_run(string $qaRunId, array $failures, array $timings, array $laneSteps): void
+{
+    assert_castor_check_lane_artifacts_integrity($laneSteps);
+    assert_castor_check_run_no_process_leaks($qaRunId);
 
     if ([] !== $failures) {
         fail_quality('quality failed:'.\PHP_EOL.format_step_failures($failures));

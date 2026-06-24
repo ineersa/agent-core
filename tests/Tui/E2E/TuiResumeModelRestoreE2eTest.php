@@ -80,14 +80,14 @@ final class TuiResumeModelRestoreE2eTest extends TestCase
 
         try {
             // Wait for startup layout.
-            $this->tmux->waitForCaptureContains($pane1, '█', 5.0);
+            $this->tmux->waitForCaptureContains($pane1, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
             usleep(200_000);
 
             // Wait for assistant block (◇) from the replay fixture.
             $this->tmux->waitForCallback(
                 $pane1,
                 static fn (string $cap): bool => str_contains($cap, '◇') || str_contains($cap, '✕'),
-                timeout: 5.0,
+                timeout: TmuxHarness::TUI_ASSISTANT_BLOCK_TIMEOUT_PARALLEL,
                 message: 'Neither ◇ assistant block nor ✕ error appeared after first submit',
                 history: 2000,
             );
@@ -154,7 +154,7 @@ final class TuiResumeModelRestoreE2eTest extends TestCase
             try {
                 // Wait for the resumed TUI to paint. The header (█) is the
                 // most reliable stable-mount signal.
-                $this->tmux->waitForCaptureContains($pane2, '█', 5.0);
+                $this->tmux->waitForCaptureContains($pane2, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
                 usleep(300_000);
 
                 $resumedPane = $this->tmux->capturePlain($pane2);

@@ -32,6 +32,7 @@ use Castor\Attribute\AsTask;
 
 use function CastorTasks\acquire_castor_check_lock;
 use function CastorTasks\castor_check_lock_is_busy;
+use function CastorTasks\collect_qa_check_run_leaked_processes;
 use function CastorTasks\release_castor_check_lock;
 use function CastorTasks\report_path;
 
@@ -939,8 +940,56 @@ PHPCODE;
         }
     }
 
+    // ── Test G: QA run id leak detection (no auto-kill) ──
+    echo "\n── Test G: QA run leak detection via /proc environ ──\n\n";
+
+    $qaRunIdG = 'qa-smoke-leak-'.getmypid();
+    putenv('HATFIELD_QA_RUN_ID='.$qaRunIdG);
+    $_ENV['HATFIELD_QA_RUN_ID'] = $qaRunIdG;
+
+    $fakeArgsG = ['php', '-r', 'sleep(30);'];
+    $fakeEnvG = array_merge($_ENV, ['HATFIELD_QA_RUN_ID' => $qaRunIdG]);
+    $fakeProcG = @proc_open($fakeArgsG, [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $fakePipesG, null, $fakeEnvG);
+    $fakePidG = 0;
+    if (is_resource($fakeProcG)) {
+        fclose($fakePipesG[0]);
+        stream_set_blocking($fakePipesG[1], false);
+        stream_set_blocking($fakePipesG[2], false);
+        $fakePidG = proc_get_status($fakeProcG)['pid'];
+        usleep(200_000);
+    }
+
+    if ($fakePidG <= 0) {
+        echo "FAIL: could not start fake QA-tagged process\n";
+        $ok = false;
+    } else {
+        $leaksG = collect_qa_check_run_leaked_processes($qaRunIdG);
+        if ([] === $leaksG) {
+            echo "FAIL: leak scanner did not find fake process pid={$fakePidG}\n";
+            $ok = false;
+        } else {
+            echo 'PASS: leak scanner found '.count($leaksG)." process(es) tagged with HATFIELD_QA_RUN_ID\n";
+        }
+        @posix_kill($fakePidG, \SIGTERM);
+        usleep(200_000);
+        @posix_kill($fakePidG, \SIGKILL);
+        if (is_resource($fakeProcG)) {
+            proc_close($fakeProcG);
+        }
+        $leaksAfterG = collect_qa_check_run_leaked_processes($qaRunIdG);
+        if ([] !== $leaksAfterG) {
+            echo 'FAIL: fake process still visible after cleanup: '.json_encode($leaksAfterG)."\n";
+            $ok = false;
+        } else {
+            echo "PASS: no leaked processes after fake cleanup\n";
+        }
+    }
+
+    putenv('HATFIELD_QA_RUN_ID');
+    unset($_ENV['HATFIELD_QA_RUN_ID']);
+
     if ($ok) {
-        echo "\n✅ All timeout + normal-exit + PHAR/source startup-cleanup (C/C2) + session + separate-PGID + PHPUnit-leak + castor-check-lock assertions passed.\n";
+        echo "\n✅ All timeout + normal-exit + PHAR/source startup-cleanup (C/C2) + session + separate-PGID + PHPUnit-leak + castor-check-lock + QA-run-leak assertions passed.\n";
     } else {
         echo "\n❌ Some assertions FAILED.\n";
         exit(1);

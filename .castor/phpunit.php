@@ -22,6 +22,7 @@ declare(strict_types=1);
 
 use Castor\Attribute\AsTask;
 
+use function CastorTasks\check_lane_paratest_processes;
 use function CastorTasks\is_llm_mode;
 use function CastorTasks\phar_ensure;
 use function CastorTasks\report_path;
@@ -181,7 +182,10 @@ function build_check_paratest_command(): string
     $llmFlags = is_llm_mode() ? ' --colors=never --no-progress' : '';
     $junitFlag = is_llm_mode() ? ' --log-junit='.report_path('phpunit-parallel.junit.xml') : '';
 
+    $processes = check_lane_paratest_processes('unit', 4, 8);
+
     return qa_check_run_env_command().' APP_ENV=test '.$phpBin.' vendor/bin/paratest'
+        .' --processes='.$processes
         .' --configuration=phpunit.xml.dist'
         .' --bootstrap='.escapeshellarg($bootstrap)
         .' --exclude-group=tui-e2e-replay --exclude-group=llm-real --exclude-group=recording --exclude-group=controller-replay --exclude-group=phar'

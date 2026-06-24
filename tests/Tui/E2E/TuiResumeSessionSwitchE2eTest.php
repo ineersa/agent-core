@@ -85,7 +85,7 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
 
         try {
             // ── Phase 1: Startup layout ──
-            $this->tmux->waitForCaptureContains($pane, '█', 5.0);
+            $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
             usleep(200_000);
 
             // ── Phase 2: Create a session via "hi" + Enter ──
@@ -96,7 +96,7 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
             $this->tmux->waitForCallback(
                 $pane,
                 static fn (string $cap): bool => str_contains($cap, '◇') || str_contains($cap, '✕'),
-                timeout: 5.0,
+                timeout: TmuxHarness::TUI_ASSISTANT_BLOCK_TIMEOUT_PARALLEL,
                 message: 'Neither ◇ assistant block nor ✕ error appeared after first submit',
                 history: 2000,
             );
@@ -144,7 +144,7 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
             $this->tmux->sendKey($pane, 'Enter');
 
             // Wait for header (█) in the VISIBLE PANE — proves re-render.
-            $this->tmux->waitForCaptureContains($pane, '█', 5.0);
+            $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
             usleep(300_000);
 
             // ── Phase 5: Assert clean visible-pane layout ──
@@ -456,7 +456,7 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
 
         try {
             // ── Phase 1: Startup layout ──
-            $this->tmux->waitForCaptureContains($pane, '█', 5.0);
+            $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
             usleep(200_000);
 
             // ── Phase 2: Create a session so the picker list is non-empty ──
@@ -467,7 +467,7 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
             $this->tmux->waitForCallback(
                 $pane,
                 static fn (string $cap): bool => str_contains($cap, '◇') || str_contains($cap, '✕'),
-                timeout: 5.0,
+                timeout: TmuxHarness::TUI_ASSISTANT_BLOCK_TIMEOUT_PARALLEL,
                 message: 'Neither ◇ assistant block nor ✕ error appeared after first submit',
                 history: 2000,
             );
@@ -586,7 +586,7 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
 
         try {
             // ── Phase 1: Startup layout ──
-            $this->tmux->waitForCaptureContains($pane, '█', 5.0);
+            $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
             usleep(200_000);
 
             // ── Phase 2: Create a session so the picker list is non-empty ──
@@ -597,7 +597,7 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
             $this->tmux->waitForCallback(
                 $pane,
                 static fn (string $cap): bool => str_contains($cap, '◇') || str_contains($cap, '✕'),
-                timeout: 5.0,
+                timeout: TmuxHarness::TUI_ASSISTANT_BLOCK_TIMEOUT_PARALLEL,
                 message: 'Neither ◇ assistant block nor ✕ error appeared after first submit',
                 history: 2000,
             );
@@ -663,7 +663,7 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
             //
             // Wait for the resumed TUI to paint.  The header (█) is the
             // most reliable stable-mount signal.
-            $this->tmux->waitForCaptureContains($pane, '█', 5.0);
+            $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
             usleep(300_000);
 
             $resumedPane = $this->tmux->capturePlain($pane);

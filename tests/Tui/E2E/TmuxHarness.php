@@ -416,7 +416,34 @@ final class TmuxHarness
             \usleep(100_000); // 100ms
         }
 
-        throw new \RuntimeException(\sprintf('Timed out after %.1fs waiting for needle "%s" in pane %s. Last capture (%d lines):'."\n%s", $timeout, $needle, $pane->paneId, \substr_count($lastCapture, "\n") + 1, $lastCapture));
+        throw new \RuntimeException($this->formatCaptureTimeoutDiagnostics($pane, $needle, $timeout, $lastCapture));
+    }
+
+
+    /**
+     * @param non-empty-string $needle
+     */
+    private function formatCaptureTimeoutDiagnostics(TmuxPane $pane, string $needle, float $timeout, string $lastPlainCapture): string
+    {
+        $ansi = '';
+        try {
+            $ansi = $this->captureAnsi($pane);
+        } catch (\Throwable) {
+            $ansi = '[captureAnsi failed]';
+        }
+
+        return \sprintf(
+            "Timed out after %.1fs waiting for needle \"%s\" in pane %s.\n".
+            "Last plain capture (%d lines):\n%s\n".
+            "Last ANSI capture (%d bytes):\n%s",
+            $timeout,
+            $needle,
+            $pane->paneId,
+            \substr_count($lastPlainCapture, "\n") + 1,
+            $lastPlainCapture,
+            \strlen($ansi),
+            $ansi,
+        );
     }
 
     /**
