@@ -51,6 +51,7 @@ final class SubagentTool implements HatfieldToolProviderInterface, ToolHandlerIn
 
             if ($parsed->isParallelMode()) {
                 $tasks = $parsed->parallelTasks();
+                // Defense-in-depth: SubagentExecutionService::executeParallel() repeats this cap for direct service callers.
                 $maxAgents = $this->agentsConfig->maxAgents;
                 if (\count($tasks) > $maxAgents) {
                     throw new ToolCallException(\sprintf('Parallel subagent execution supports at most %d agents per tool call, but %d tasks were requested.', $maxAgents, \count($tasks)), retryable: false, hint: \sprintf('Split the work into multiple subagent calls with at most %d tasks each.', $maxAgents));
@@ -74,7 +75,7 @@ final class SubagentTool implements HatfieldToolProviderInterface, ToolHandlerIn
         return new ToolDefinitionDTO(
             name: 'subagent',
             description: \sprintf(
-                'Launch non-interactive foreground subagent(s). Single mode uses "agent" and "task". Parallel mode uses "tasks" with up to %d agents per call (agents.max_agents). The tool blocks until all children finish and returns per-child artifact IDs.',
+                'Launch non-interactive foreground subagent(s). Single mode uses "agent" and "task". Parallel mode uses "tasks" with up to %d agents per call (agents.max_agents). The tool blocks until all children finish and returns bounded per-child summaries with Artifact: IDs; use agent_retrieve for full child handoffs.',
                 $maxAgents,
             ),
             parametersJsonSchema: [
@@ -115,6 +116,7 @@ final class SubagentTool implements HatfieldToolProviderInterface, ToolHandlerIn
                 'Single mode: {"agent":"scout","task":"..."}.',
                 \sprintf('If more than %d parallel agents are needed, split into multiple subagent calls.', $maxAgents),
                 'The "concurrency" argument is not supported; all tasks in one call run concurrently up to the cap.',
+                'Parallel tool results are bounded summaries only; call agent_retrieve with each Artifact: ID for full child handoffs.',
                 'Successful results include Artifact: lines for agent_retrieve.',
             ],
         );

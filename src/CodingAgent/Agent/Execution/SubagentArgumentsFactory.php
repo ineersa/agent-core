@@ -84,7 +84,10 @@ final class SubagentArgumentsFactory
                 throw new ToolCallException(\sprintf('tasks[%d] must include non-empty "agent" and "task" strings.', $index), retryable: false);
             }
 
-            $tasks[] = new SubagentTaskDTO(agent: trim($agent), task: trim($task));
+            $tasks[] = [
+                'agent' => trim($agent),
+                'task' => trim($task),
+            ];
         }
 
         $normalized = $arguments;

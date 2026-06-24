@@ -794,6 +794,71 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         self::assertContains(AgentArtifactStatusEnum::Failed, $statuses);
     }
 
+    public function testExecuteParallelStartFailureCleansUpStartedChildren(): void
+    {
+        $startCalls = 0;
+
+        $agentRunner = $this->createMock(AgentRunnerInterface::class);
+        $agentRunner->expects(self::exactly(2))
+            ->method('start')
+            ->willReturnCallback(function (StartRunInput $input) use (&$startCalls): string {
+                ++$startCalls;
+                if (2 === $startCalls) {
+                    throw new \RuntimeException('second child start blew up');
+                }
+
+                return (string) $input->runId;
+            });
+        $agentRunner->expects(self::once())
+            ->method('cancel')
+            ->with(self::callback(fn (string $runId): bool => '' !== $runId), self::anything());
+
+        $runStore = $this->createStub(RunStoreInterface::class);
+        $runStore->method('get')->willReturn(new RunState(
+            runId: 'unused',
+            status: RunStatus::Running,
+            version: 1,
+            messages: [],
+        ));
+
+        $def = fn (string $name) => new AgentDefinitionDTO(
+            name: $name,
+            description: $name,
+            tools: ['read'],
+            mcp: new McpPolicyDTO(mode: McpAgentModeEnum::None),
+            instructions: 'x',
+            parallelAllowed: true,
+        );
+
+        $registry = self::getContainer()->get(AgentArtifactRegistry::class);
+        $service = $this->makeService([
+            'catalog' => new AgentDefinitionCatalog([$def('first-agent'), $def('second-agent')]),
+            'agentRunner' => $agentRunner,
+            'runStore' => $runStore,
+        ]);
+
+        try {
+            $service->executeParallel('parent-launch-fail', [
+                new SubagentTaskDTO(agent: 'first-agent', task: 'ok'),
+                new SubagentTaskDTO(agent: 'second-agent', task: 'boom'),
+            ]);
+            self::fail('Expected ToolCallException');
+        } catch (ToolCallException $e) {
+            self::assertStringContainsString('Parallel subagent launch failed', $e->getMessage());
+            self::assertStringContainsString('second child start blew up', $e->getMessage());
+            self::assertStringContainsString('Artifact:', $e->getMessage());
+            self::assertStringContainsString('first-agent', $e->getMessage());
+            self::assertStringContainsString('second-agent', $e->getMessage());
+        }
+
+        $entries = $registry->list('parent-launch-fail');
+        self::assertCount(2, $entries);
+        foreach ($entries as $entry) {
+            self::assertNotSame(AgentArtifactStatusEnum::Running, $entry->status);
+            self::assertSame(AgentArtifactStatusEnum::Failed, $entry->status);
+        }
+    }
+
     /**
      * @param array<string, mixed> $overrides
      */
