@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Tests\Support;
 
 /**
- * Normalizes PSR-3 log messages when ddtrace/Monolog processors append metadata.
+ * Normalizes PSR-3 log messages when processors or extensions append metadata.
  *
- * Datadog log injection can suffix messages with bracketed fields such as
- * [dd.trace_id="..." dd.span_id="..." ...] while preserving the stable
- * event prefix (e.g. agent_loop.trace.start).
+ * Some environments suffix the application event with one or more trailing
+ * bracketed context blocks (e.g. " event.name [key=value ...]") while keeping
+ * the stable event prefix unchanged. Tests assert the prefix, not the suffix.
  */
 final class Psr3LogMessageAssert
 {
@@ -17,7 +17,7 @@ final class Psr3LogMessageAssert
     {
         $trimmed = rtrim($message);
 
-        if (preg_match('/^(.*?)(?:\s+\[dd\.trace_id=.*\])+$/s', $trimmed, $matches)) {
+        if (preg_match('/^(.*?)(?:\s+\[[^\]]*\])+$/s', $trimmed, $matches)) {
             return $matches[1];
         }
 
