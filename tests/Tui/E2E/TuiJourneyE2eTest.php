@@ -20,15 +20,16 @@ use PHPUnit\Framework\TestCase;
  *  - Launches the TUI once with APP_ENV=test + replay fixtures so
  *    model-dependent steps are deterministic and require no live
  *    llama.cpp.
- *  - UI-only steps (hotkeys, reasoning, shell, file completion) run
- *    before any model interaction.
+ *  - UI-only tmux steps (reasoning, shell, file completion) run before
+ *    model interaction; /hotkeys and !! rejection are virtual-only
+ *    ({@see \Ineersa\Tui\Tests\Screen\TuiVirtualInputTest}).
  *  - A single model-interaction step submits a prompt and verifies
  *    the replay-backed assistant block appears.
  *  - Teardown sends Ctrl+D for a clean exit; TmuxHarness destructor
  *    kills the tmux session.
  *
- * Harness launch count: 1 (was 6+ across separate test classes for
- * startup, hotkeys, reasoning, border, shell-prefix, file-completion).
+ * Harness launch count: 1 (integration smoke). Startup, /hotkeys, and
+ * !! proofs live in virtual tests under tests/Tui/Screen/.
  *
  * @group tui-e2e-replay
  */
@@ -63,16 +64,18 @@ final class TuiJourneyE2eTest extends TestCase
     /**
      * Full TUI journey — one session, multiple assertions.
      *
-     * Exercises in order:
+     * Exercises in order (tmux integration smoke):
      *  1. Startup layout (logo, status, footer)
      *  2. Reasoning cycling via Shift+Tab + border colour change
-     *  3. /hotkeys slash-command table
-     *  4. Shell !ls prefix — real command output proof + ordering
-     *  5. File @ completion preserves multiline content
-     *  6. Model interaction via replay fixture (no live LLM)
-     *  7. /export slash command proof
-     *  8. Inline shell on completed run + follow-up (issue #183 repro)
-     *  9. Clean exit via Ctrl+D
+     *  3. Shell !ls prefix — real command output proof + ordering
+     *  4. File @ completion
+     *  5. Model interaction via replay fixture (no live LLM)
+     *  6. /export slash command proof
+     *  7. Inline shell on completed run + follow-up (issue #183 repro)
+     *  8. Clean exit via Ctrl+D
+     *
+     * Virtual-only (not in this journey): startup detail {@see TuiStartupVirtualRenderTest},
+     * /hotkeys table, !! rejection — {@see TuiVirtualInputTest}.
      *
      * !! double-bang rejection is covered by {@see \Ineersa\Tui\Tests\Screen\TuiVirtualInputTest}.
      * /hotkeys keyboard shortcuts table is covered by {@see \Ineersa\Tui\Tests\Screen\TuiVirtualInputTest::testHotkeysSlashCommandRoutesLocallyAndRendersKeyboardShortcutsTable}.

@@ -303,21 +303,26 @@ If tmux is unavailable, TUI tasks MUST remain IN-PROGRESS with exact environment
 
 `castor test:controller` remains opt-in for live controller E2E when appropriate. Do NOT require live LLM validation for every normal task — only for provider/LLM-visible changes.
 
-Before re-running failed controller/TUI E2E checks, kill only stale orphans from the failed worktree (PHPUnit/Castor children, leaked messenger/controller without `HATFIELD_SESSION_ID`). Active session workers are protected by Castor cleanup; orphaned stale consumers can still steal queue messages and make a fixed test appear hung.
+Before re-running failed controller/TUI E2E checks, use `castor clean:cleanup:workers:list` to diagnose leaked current-user orphans from the failed worktree. Fix lifecycle/teardown at the source; do not treat kills as routine pre-retry workflow. Active session workers (`HATFIELD_SESSION_ID`) and root-owned processes must not be signaled.
 
-## TUI E2E (replay-backed journey, default)
+## TUI test pyramid
 
-`castor test:tui` runs the deterministic replay-backed TUI journey test
-(`TuiJourneyE2eTest`, group `tui-e2e-replay`).  It exercises startup
-layout, reasoning cycling, /hotkeys, shell !ls, file completion,
-model interaction via replay fixtures, and double-bang rejection — all
-in a single long-lived tmux session.
+| Layer | Command | Examples |
+| --- | --- | --- |
+| Virtual / in-process | `castor test` | `TuiStartupVirtualRenderTest`, `TuiVirtualInputTest` (`VirtualTuiHarness`): layout, input, `/hotkeys`, `!!` rejection |
+| Controller replay | `castor test:controller-replay` | JSONL runtime, session/events, shell/tool ordering |
+| Minimal tmux smoke | `castor test:tui` | `#[Group('tui-e2e-replay')]`: `TuiJourneyE2eTest` (integration smoke), `TuiStartupSnapshotTest` (golden snapshot) |
 
-- Uses `APP_ENV=test` + source `bin/console` (not PHAR) so
-  `config/services_test.yaml` wires `ControllerReplayHttpClientFactory`
-  for deterministic model responses.
-- No live LLM, no `LLAMA_CPP_SMOKE_TEST`, no PHAR.
-- Golden snapshot test (`TuiStartupSnapshotTest`) also uses replay.
+Do **not** add broad journey phases for features already proven virtually. `castor test:tui` remains the gate’s tmux replay lane; virtual TUI tests are **not** in that group — they run under `castor test`.
+
+**Tmux journey smoke (`TuiJourneyE2eTest`):** one long-lived session for terminal integration (startup, reasoning, shell, completion, replay model step, export, inline shell). Local-only behaviors moved to virtual tests are documented in the Journey class docblock (e.g. `/hotkeys`, `!!` → `TuiVirtualInputTest`).
+
+- Tmux/replay tests use `APP_ENV=test` + source `bin/console` (not PHAR); `config/services_test.yaml` wires `ControllerReplayHttpClientFactory` for deterministic model responses.
+- No live LLM, no `LLAMA_CPP_SMOKE_TEST`, no PHAR for replay lanes.
+
+## Virtual TUI harness
+
+`tests/Tui/Support/VirtualTuiHarness.php` drives `ChatScreen` + Symfony `VirtualTerminal` / `ScreenBuffer` without tmux. Use for deterministic widget, input, and local command/render proofs. See `tests/Tui/Screen/TuiStartupVirtualRenderTest.php` and `TuiVirtualInputTest.php`.
 
 ## TUI E2E snapshot artifacts
 

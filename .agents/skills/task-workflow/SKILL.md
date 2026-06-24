@@ -78,7 +78,7 @@ repo. The external task board repo must be committed manually when desired.
 
 **Worktree IDEA exclusions:** When creating a worktree, the extension updates the parent worktree IDEA module (e.g., `agent-core-worktrees.iml`) by adding an idempotent sentinel block of `<excludeFolder>` entries for the new worktree. The excluded directories (`.hatfield`, `.vera`, `var`, `vendor`, etc.) prevent IDEA from indexing generated content in the worktree. On DONE cleanup, these exclusions are automatically removed. No per-worktree `.idea/` directory is created or modified.
 
-**TUI E2E proof requirement for implementation:** For tasks touching TUI behavior, the fork MUST add or update a real `TmuxHarness` E2E proof (replay-backed, no live LLM required) exercising the user-visible feature path. Fork instructions must explicitly include this as a required deliverable. Mocks, service-only DTO tests, custom PHP smoke scripts, and picker/footer visibility assertions are NOT acceptable substitutes. See the `## TUI E2E proof requirement` section below.
+**TUI behavior proof for implementation:** For tasks touching TUI behavior, the fork MUST add or update automated proof at the **lowest correct layer** (virtual/in-process, controller-replay, or minimal tmux — see pyramid below). Fork instructions must state the test thesis and layer. Mocks, service-only DTO tests, custom PHP smoke scripts, and picker/footer visibility assertions are NOT acceptable as the only proof. See `## TUI behavior proof requirement` below.
 
 ### task-to-pr: Review and create PR (IN-PROGRESS → CODE-REVIEW)
 
@@ -113,18 +113,19 @@ repo. The external task board repo must be committed manually when desired.
 4. Record validation results via `update_task`.
 5. Clean up: confirm `git status` clean, verify worktree removed.
 
-## TUI E2E proof requirement
+## TUI behavior proof requirement (test pyramid)
 
-**TUI implementation is NOT complete until there is an automated test using the real interactive TUI (`TmuxHarness`) with a snapshot or assertion proving the FEATURE works exactly as expected.** This is a hard gate — no exceptions. Default TUI E2E uses replay-backed fixtures for model interaction; live llama.cpp is not required for TUI feature proof.
+**TUI implementation is NOT complete until each touched user-visible behavior has automated proof at the lowest correct layer.** Do not require `TmuxHarness` for purely virtual render/input/local-command work.
 
-- Tests must exercise the real TUI interaction flow, not just mocked services, DTO assembly, or service-only unit tests.
-- Tests must use the project TUI E2E infrastructure (`TmuxHarness`, `#[Group('tui-e2e-replay')]`), replay fixtures where model output is needed, and isolated `var/tmp/test-{uuid}` directories.
-- The following are NOT acceptable substitutes: custom PHP smoke scripts, mocked `AgentSessionClient` passing through a mock runtime, checking only picker visibility or footer text, or manual-run reports from forks.
-- For the task workflow: do **not** move a TUI task to CODE-REVIEW or DONE unless a real TmuxHarness E2E proof exists and passes `castor test:tui`. The default `castor test:tui` is deterministic/replay-backed; it does not require llama.cpp. The orchestrator/user must run focused TUI E2E validation before CODE-REVIEW move. If tmux is unavailable, or no such test has been written, the task MUST stay IN-PROGRESS with that blocker recorded.
-- Fork instructions for TUI tasks must always require adding or updating the real E2E test for each user-visible feature path touched by the implementation.
-- Reviewers reviewing TUI work must explicitly check for the presence and validity of the TmuxHarness E2E proof and reject work that lacks it or substitutes mocks.
+- **Virtual / in-process** (`castor test`, `VirtualTuiHarness`): layout, widgets, editor input, slash commands, local routing/render.
+- **Controller replay** (`castor test:controller-replay`): runtime JSONL, session/events, shell/tool ordering.
+- **Minimal tmux** (`castor test:tui`, `#[Group('tui-e2e-replay')]`, replay fixtures, isolated dirs): terminal integration smoke only when virtual/replay cannot prove the contract.
 
-**Load the `testing` skill** when: writing, running, or debugging TUI E2E proof tests.
+- Do **not** move a TUI task to CODE-REVIEW or DONE without the appropriate layer proof and passing focused Castor validation for that layer. Purely virtual features do **not** need a new tmux test. Require `castor test:tui` only when the change depends on tmux/pty/process boot.
+- Fork instructions for TUI tasks must name the layer, test thesis, and commands to run.
+- Reviewers must verify layer choice and reject tmux-only proof where virtual/replay suffices, or missing proof for the claimed layer.
+
+**Load the `testing` skill** when: writing, running, or debugging TUI proof tests.
 
 ## Compaction resilience
 

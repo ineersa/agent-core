@@ -116,16 +116,22 @@ Observed in issue #183: the follow-up-after-shell hang was diagnosed and "fixed"
 
 `castor test:controller` remains opt-in for live controller E2E when appropriate. Do NOT require live LLM validation for every normal task — only for provider/LLM-visible changes.
 
-## Mandatory TUI feature E2E proof
+## Mandatory TUI behavior proof (test pyramid)
 
-**TUI implementation is NOT complete until there is an automated test using the real interactive TUI (`TmuxHarness`) with a snapshot or assertion proving the FEATURE works exactly as expected.** This is a hard gate — no exceptions. Default TUI E2E uses replay-backed fixtures for model interaction; live llama.cpp is not required for TUI feature proof.
+**TUI implementation is NOT complete until there is automated proof at the lowest correct layer** for each user-visible behavior touched. Do not default every feature to `TmuxHarness`; broad multi-phase tmux journey tests are discouraged when virtual or replay layers can prove the contract.
 
-- Tests must exercise the real TUI interaction flow, not just mocked services, DTO assembly, or service-only unit tests.
-- Tests must use the project TUI E2E infrastructure (`TmuxHarness`, `#[Group('tui-e2e-replay')]`), replay fixtures where model output is needed, and isolated `var/tmp/test-{uuid}` directories.
-- The following are NOT acceptable substitutes: custom PHP smoke scripts, mocked `AgentSessionClient` passing through a mock runtime, checking only picker visibility or footer text, or manual-run reports from forks.
-- For the task workflow: do **not** move a TUI task to CODE-REVIEW or DONE unless a real TmuxHarness E2E proof exists and passes `castor test:tui`. The default `castor test:tui` is deterministic/replay-backed; it does not require llama.cpp. If tmux is unavailable, the task MUST stay IN-PROGRESS with that blocker recorded.
+| Layer | When to use | How to run |
+| --- | --- | --- |
+| **Virtual / in-process** | Widget layout, render, editor input, local slash commands, command routing, transcript blocks on `ChatScreen` — no live controller subprocess required for the assertion | `castor test` (e.g. `VirtualTuiHarness`, `VirtualTerminal`, `ScreenBuffer` under `tests/Tui/Screen/`) |
+| **Controller replay** | Runtime/protocol, JSONL commands/events, session state, shell/tool ordering, `AgentSessionClient` contracts | `castor test:controller-replay` |
+| **Minimal tmux smoke** | Real terminal integration only: raw TTY, process boot, tmux/pty, Revolt event loop with detached session, terminal-specific escape behavior | `castor test:tui` (`#[Group('tui-e2e-replay')]`, replay fixtures where model output is needed, `var/tmp/test-{uuid}` isolation) |
 
-**Load the `testing` skill** when: writing, running, or debugging TUI E2E proof tests.
+- Virtual tests must exercise real TUI screen/editor/command paths where possible (production parsers, routers, renderers), not mocked `AgentSessionClient` stand-ins for the feature under test.
+- The following are NOT acceptable as the **only** proof: custom PHP smoke scripts, service-only DTO tests, picker/footer visibility alone, or manual fork reports.
+- **Task workflow:** CODE-REVIEW/DONE for a TUI task requires proof at the appropriate layer(s) and passing focused Castor validation (`castor test` for virtual, `castor test:controller-replay` for runtime protocol, `castor test:tui` only when the change needs tmux integration). Purely virtual/local-command features do **not** require a new tmux test. If tmux is required but unavailable, stay IN-PROGRESS with the blocker recorded.
+- `castor check` still runs the minimal tmux replay lane; deterministic virtual TUI tests run in the main `castor test` suite.
+
+**Load the `testing` skill** when: writing, running, or debugging TUI proof tests.
 
 ## Test value and scope
 
@@ -133,11 +139,11 @@ Tests must protect a **user-visible behavior**, a **stable runtime/protocol cont
 
 - **Bug fixes**: prefer the smallest failing repro first, then fix. Do not add extra tests unless they protect a distinct contract.
 - **Avoid excessive implementation-mirroring tests**: enum case lists, trivial DTO constructor/getter/roundtrip tests, private-helper exact-behavior mirrors, mapper tests that just repeat the implementation, coverage-only tests, and broad snapshot churn unless justified.
-- **Default test budget** for implementation tasks: one real TUI E2E proof when the change is TUI-visible, plus 1–3 focused contract or regression tests. More tests require explicit justification.
+- **Default test budget** for implementation tasks: one proof at the lowest correct TUI layer when the change is TUI-visible (virtual, controller-replay, or minimal tmux — not always tmux), plus 1–3 focused contract or regression tests. More tests require explicit justification.
 - Ask whether the tests would have caught the actual smoke or user-reported bug; if not, reconsider.
 - **Do not broaden implementation tasks into test refactors.** Broad test cleanup or restructuring belongs in separate tasks, not mixed with production changes.
 
-Existing mandatory Castor QA and TUI E2E proof requirements (above) remain in full force. The goal is to improve test signal density, not to eliminate testing.
+Existing mandatory Castor QA and TUI behavior proof requirements (above) remain in full force. The goal is to improve test signal density, not to eliminate testing.
 
 ## Development rules
 

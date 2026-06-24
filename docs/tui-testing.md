@@ -176,6 +176,16 @@ wires `ControllerReplayHttpClientFactory` for deterministic model responses.
 
 Pure unit/integration tests (`castor test`) remain source-based.
 
+### Test pyramid (preferred over tmux-only)
+
+Automated TUI proof should use the **lowest correct layer**:
+
+1. **Virtual / in-process** — `castor test`, `VirtualTuiHarness` + `ScreenBuffer` (`tests/Tui/Screen/`): layout, editor input, local slash commands, command routing. No tmux required.
+2. **Controller replay** — `castor test:controller-replay`: runtime JSONL and session/event contracts.
+3. **tmux integration** — `castor test:tui`: detached session, pty, process boot, replay-backed steps that still need a real terminal. `TuiJourneyE2eTest` is a **smoke** journey, not the default pattern for every new feature.
+
+Do not add Journey phases for behavior already covered by virtual tests (see `TuiJourneyE2eTest` docblock for moved proofs).
+
 These ARE included in `castor check` (the gate fails if tmux is not installed).
 Run `castor test:tui` explicitly when testing TUI rendering during development.
 Any intentional footer/header/layout change should be followed by
@@ -226,14 +236,12 @@ For footer changes, verify the golden snapshot no longer expects removed legacy
 segments such as `◆ hatfield` or `Ctrl+D`, and that it includes the current
 model/token/elapsed/cwd/branch status line where applicable.
 
-### Adding new e2e tests
+### Adding new TUI tests
 
-1. Place the test class in `tests/Tui/E2E/`.
-2. Add `#[Group('tui-e2e-replay')]` to the class.
-3. Use `TmuxHarness` to start sessions, send keys, capture panes.
-4. Assert against committed golden snapshots or use `contains`
-   assertions for content presence.
-5. Run `castor test:tui` to verify.
+1. Choose the layer: virtual (`tests/Tui/Screen/`, `castor test`) unless you need tmux/pty/process boot.
+2. For tmux tests: place class in `tests/Tui/E2E/`, add `#[Group('tui-e2e-replay')]`, use `TmuxHarness`, isolated `var/tmp/test-{uuid}`, replay fixtures when model output is needed.
+3. Assert on `ScreenBuffer` plain text (virtual) or `capture-pane` / golden snapshots (tmux).
+4. Run `castor test` and/or `castor test:tui` as appropriate — not every TUI feature requires `test:tui`.
 
 ### Extending e2e tests
 
@@ -246,7 +254,7 @@ The TUI event loop is fully interactive now. Future tests can:
 - Capture ANSI snapshots for theme validation
 
 The `castor run:agent-test` task remains the manual/LLM inspection
-harness. The `TmuxHarness` + `test:tui` tasks are the automated counterpart.
+harness. Virtual tests (`castor test`) plus `TmuxHarness` + `test:tui` cover automated proof at the appropriate layers.
 
 ## Troubleshooting
 
