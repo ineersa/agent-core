@@ -7,67 +7,39 @@ namespace Ineersa\CodingAgent\Agent\Tool;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
+use Ineersa\CodingAgent\Agent\Execution\SubagentArgumentsFactory;
 use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
+use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Tool\HatfieldToolProviderInterface;
 use Ineersa\CodingAgent\Tool\ToolDefinitionDTO;
 use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 
 /**
- * Model-visible `subagent` tool for single foreground agent execution.
+ * Model-visible `subagent` tool for foreground agent execution.
  *
- * Launches a parent-scoped child agent run, waits for completion,
- * pushes live progress into the inline tool result widget, and returns
- * the final handoff as the tool result.
- *
- * Only single foreground mode is supported in v1.  Parallel,
- * background, and interactive modes are explicitly rejected with
- * actionable error messages.
- *
- * Implements both HatfieldToolProviderInterface and ToolHandlerInterface
- * for automatic registration as a permanent tool.
+ * Supports single mode ({agent, task}) and parallel mode ({tasks: [...]}).
  */
 final class SubagentTool implements HatfieldToolProviderInterface, ToolHandlerInterface
 {
     public function __construct(
         private readonly SubagentExecutionService $executionService,
+        private readonly SubagentArgumentsFactory $argumentsFactory,
+        private readonly AgentsConfig $agentsConfig,
         private readonly StackToolExecutionContextAccessor $contextAccessor,
         private readonly ToolRuntime $toolRuntime,
     ) {
     }
 
     /**
-     * Execute the subagent tool.
-     *
-     * @param array<string, mixed> $arguments must contain 'agent' (string) and
-     *                                        'task' (string)
-     *
-     * @return string handoff/result text
-     *
-     * @throws ToolCallException on validation or execution errors
+     * @param array<string, mixed> $arguments
      */
     public function __invoke(array $arguments): string
     {
         return $this->toolRuntime->run(function () use ($arguments): string {
-            // Require parent run context.
             $context = $this->contextAccessor->current();
             if (null === $context) {
                 throw new ToolCallException('The subagent tool requires an active parent run context. Subagents cannot be launched outside a session.', retryable: false);
-            }
-
-            // Parse and validate arguments.
-            $agent = $this->validateString($arguments, 'agent');
-            $task = $this->validateString($arguments, 'task');
-
-            // Reject unsupported parallel/background modes at runtime.
-            if (isset($arguments['tasks']) && \is_array($arguments['tasks'])) {
-                throw new ToolCallException('Parallel subagent execution (tasks array) is not yet implemented. Use single agent mode with "agent" and "task" fields.', retryable: false, hint: 'Use {"agent": "scout", "task": "your task here"} instead of {"tasks": [...]}.');
-            }
-            if (isset($arguments['concurrency'])) {
-                throw new ToolCallException('Parallel subagent execution (concurrency) is not yet implemented. Use single agent mode.', retryable: false);
-            }
-            if (isset($arguments['background']) && true === $arguments['background']) {
-                throw new ToolCallException('Background subagent execution is not yet implemented. Use foreground mode by omitting the "background" field.', retryable: false);
             }
 
             $parentRunId = $context->runId();
@@ -75,70 +47,76 @@ final class SubagentTool implements HatfieldToolProviderInterface, ToolHandlerIn
                 throw new ToolCallException('Subagent tool requires a valid parent run ID. No run context is active.', retryable: false);
             }
 
-            // Delegate to the execution service.
+            $parsed = $this->argumentsFactory->fromToolArguments($arguments);
+
+            if ($parsed->isParallelMode()) {
+                $tasks = $parsed->parallelTasks();
+                $maxAgents = $this->agentsConfig->maxAgents;
+                if (\count($tasks) > $maxAgents) {
+                    throw new ToolCallException(\sprintf('Parallel subagent execution supports at most %d agents per tool call, but %d tasks were requested.', $maxAgents, \count($tasks)), retryable: false, hint: \sprintf('Split the work into multiple subagent calls with at most %d tasks each.', $maxAgents));
+                }
+
+                return $this->executionService->executeParallel($parentRunId, $tasks);
+            }
+
             return $this->executionService->execute(
                 parentRunId: $parentRunId,
-                agentName: $agent,
-                task: $task,
+                agentName: (string) $parsed->trimmedAgent(),
+                task: (string) $parsed->trimmedTask(),
             );
         });
     }
 
-    /**
-     * Return the tool definition for automatic provider registration.
-     */
     public function definition(): ToolDefinitionDTO
     {
+        $maxAgents = $this->agentsConfig->maxAgents;
+
         return new ToolDefinitionDTO(
             name: 'subagent',
-            description: 'Launch a non-interactive foreground subagent to perform a focused task. The subagent runs independently and returns a dense handoff when complete. Only single agent mode is supported — use "agent" (name) and "task" (description).',
+            description: \sprintf(
+                'Launch non-interactive foreground subagent(s). Single mode uses "agent" and "task". Parallel mode uses "tasks" with up to %d agents per call (agents.max_agents). The tool blocks until all children finish and returns per-child artifact IDs.',
+                $maxAgents,
+            ),
             parametersJsonSchema: [
                 'type' => 'object',
                 'properties' => [
                     'agent' => [
                         'type' => 'string',
-                        'description' => 'Name of the agent definition to launch (e.g., "scout", "reviewer", "worker"). Must match an enabled agent definition.',
+                        'description' => 'Agent definition name for single mode.',
                     ],
                     'task' => [
                         'type' => 'string',
-                        'description' => 'The task for the subagent. Be specific about what to find, check, or produce.',
+                        'description' => 'Task text for single mode.',
+                    ],
+                    'tasks' => [
+                        'type' => 'array',
+                        'minItems' => 1,
+                        'maxItems' => $maxAgents,
+                        'items' => [
+                            'type' => 'object',
+                            'properties' => [
+                                'agent' => ['type' => 'string'],
+                                'task' => ['type' => 'string'],
+                            ],
+                            'required' => ['agent', 'task'],
+                            'additionalProperties' => false,
+                        ],
+                        'description' => \sprintf('Parallel tasks (max %d per call). Use instead of agent/task for parallel mode.', $maxAgents),
                     ],
                 ],
-                'required' => ['agent', 'task'],
                 'additionalProperties' => false,
             ],
             handler: $this,
             executionMode: ToolExecutionMode::Sequential,
-            promptLine: 'subagent agent=<name> task=<description> — launch a non-interactive foreground subagent to perform a focused task; returns a dense handoff on completion',
+            promptLine: 'subagent — launch one or more non-interactive foreground subagents; returns artifact IDs for agent_retrieve',
             promptGuidelines: [
-                'Use subagent to delegate focused read-only analysis or review work to a specialized child agent.',
-                'Subagents run in the foreground and block until complete. The tool result is the subagent\'s final handoff.',
-                'Specify the agent name (matching an enabled definition like "scout" or "reviewer") and a concrete task.',
-                'Subagents write their results as artifacts under the parent session — no top-level session is created.',
-                'Subagents are non-interactive and cannot ask for human input or approval. If they need information, they must state it in their final handoff text.',
-                'Currently only single-agent mode is supported. Parallel execution and background/async modes are not yet available.',
-                'Use subagent for codebase exploration, code review, research, or focused implementation work.',
+                'Use subagent to delegate focused work to specialized child agents.',
+                \sprintf('Parallel mode: {"tasks":[{"agent":"scout","task":"..."}]} — up to %d agents per call (configured by agents.max_agents).', $maxAgents),
+                'Single mode: {"agent":"scout","task":"..."}.',
+                \sprintf('If more than %d parallel agents are needed, split into multiple subagent calls.', $maxAgents),
+                'The "concurrency" argument is not supported; all tasks in one call run concurrently up to the cap.',
+                'Successful results include Artifact: lines for agent_retrieve.',
             ],
         );
-    }
-
-    /**
-     * Validate a required non-empty string argument.
-     *
-     * @param array<string, mixed> $arguments
-     *
-     * @return string the validated value
-     *
-     * @throws ToolCallException when the argument is missing, empty, or not a string
-     */
-    private function validateString(array $arguments, string $key): string
-    {
-        $value = $arguments[$key] ?? null;
-
-        if (!\is_string($value) || '' === trim($value)) {
-            throw new ToolCallException(\sprintf('The "%s" argument is required and must be a non-empty string.', $key), retryable: false, hint: \sprintf('Provide a non-empty string for "%s", e.g. {"agent": "scout", "task": "inspect routing config"}.', $key));
-        }
-
-        return trim($value);
     }
 }

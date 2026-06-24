@@ -19,11 +19,13 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
+use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
+use Ineersa\CodingAgent\Config\AgentsConfig;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Uid\Uuid;
 
 /**
- * Orchestrates a single foreground subagent execution.
+ * Orchestrates foreground subagent execution (single child or parallel tasks).
  *
  * Implements the full lifecycle:
  *  1. Resolve/enforce agent definition + depth guard + tool policy.
@@ -56,6 +58,7 @@ final class SubagentExecutionService
         private readonly AgentChildRunDirectory $childRunDirectory,
         private readonly StackToolExecutionContextAccessor $contextAccessor,
         private readonly LoggerInterface $logger,
+        private readonly AgentsConfig $agentsConfig,
     ) {
     }
 
@@ -260,6 +263,368 @@ final class SubagentExecutionService
         }
     }
 
+    /**
+     * Execute multiple foreground subagents in parallel (one tool call).
+     *
+     * @param list<SubagentTaskDTO> $tasks
+     *
+     * @throws ToolCallException when validation fails, any child fails, or parent cancels
+     */
+    public function executeParallel(string $parentRunId, array $tasks): string
+    {
+        $maxAgents = $this->agentsConfig->maxAgents;
+        $taskCount = \count($tasks);
+        if ($taskCount > $maxAgents) {
+            throw new ToolCallException(\sprintf('Parallel subagent execution supports at most %d agents per tool call, but %d tasks were requested.', $maxAgents, $taskCount), retryable: false, hint: \sprintf('Split the work into multiple subagent calls with at most %d tasks each.', $maxAgents));
+        }
+
+        $parentIsAgentChild = $this->metadataReader->isAgentChild($parentRunId);
+        $blockReason = $this->depthGuard->checkLaunchAllowed($parentIsAgentChild);
+        if (null !== $blockReason) {
+            throw new ToolCallException($blockReason, retryable: false);
+        }
+
+        $parentSystemPrompt = $this->extractSystemPrompt($parentRunId);
+        $agentsMd = $this->extractAgentsMdContext($parentRunId);
+
+        /** @var list<array{index:int,agentName:string,task:string,artifactId:string,agentRunId:string,definition:AgentDefinitionDTO}> $launches */
+        $launches = [];
+        foreach ($tasks as $index => $taskDto) {
+            $agentName = $taskDto->trimmedAgent();
+            $taskText = $taskDto->trimmedTask();
+
+            try {
+                $definition = $this->catalog->requireEnabled($agentName);
+            } catch (\RuntimeException $e) {
+                throw new ToolCallException(\sprintf('Agent "%s" is not available: %s', $agentName, $e->getMessage()), retryable: false);
+            }
+
+            if (!$definition->foregroundAllowed) {
+                throw new ToolCallException(\sprintf('Agent "%s" does not allow foreground execution.', $agentName), retryable: false);
+            }
+
+            if (!$definition->parallelAllowed) {
+                throw new ToolCallException(\sprintf('Agent "%s" does not allow parallel execution. Set parallelAllowed: true in the agent definition or use single subagent mode.', $agentName), retryable: false);
+            }
+
+            $launches[] = [
+                'index' => $index + 1,
+                'agentName' => $agentName,
+                'task' => $taskText,
+                'artifactId' => 'agent_'.bin2hex(random_bytes(8)),
+                'agentRunId' => Uuid::v4()->toRfc4122(),
+                'definition' => $definition,
+            ];
+        }
+
+        foreach ($launches as $launch) {
+            $entry = $this->artifactRegistry->create(
+                parentRunId: $parentRunId,
+                artifactId: $launch['artifactId'],
+                agentRunId: $launch['agentRunId'],
+                agentName: $launch['agentName'],
+            );
+            $this->childRunDirectory->register($entry);
+
+            $policy = $this->policyResolver->resolve($launch['definition']);
+            $allowedTools = $policy['tools'];
+
+            $prompt = $this->promptBuilder->build(
+                definition: $launch['definition'],
+                task: $launch['task'],
+                artifactId: $launch['artifactId'],
+                allowedTools: $allowedTools,
+                agentsMd: $agentsMd,
+                parentSystemPrompt: $parentSystemPrompt,
+            );
+
+            $childMetadata = new RunMetadata(
+                session: [
+                    'kind' => 'agent_child',
+                    'parent_run_id' => $parentRunId,
+                    'agent_name' => $launch['agentName'],
+                    'artifact_id' => $launch['artifactId'],
+                    'interactive' => false,
+                ],
+                model: $launch['definition']->model,
+                reasoning: $launch['definition']->thinking,
+                toolsScope: [
+                    'allowed_tools' => $allowedTools,
+                    'mcp' => $policy['mcp'],
+                ],
+            );
+
+            $this->agentRunner->start(new StartRunInput(
+                systemPrompt: $prompt['systemPrompt'],
+                messages: $prompt['messages'],
+                runId: $launch['agentRunId'],
+                metadata: $childMetadata,
+            ));
+
+            $this->artifactRegistry->update(
+                parentRunId: $parentRunId,
+                artifactId: $launch['artifactId'],
+                status: AgentArtifactStatusEnum::Running,
+                startedAt: new \DateTimeImmutable(),
+            );
+        }
+
+        $timeoutSeconds = $this->timeoutSeconds();
+        $deadline = hrtime(true) + $timeoutSeconds * 1_000_000_000;
+        $context = $this->contextAccessor->current();
+        $cancelToken = $context?->cancellationToken();
+        $progressSeq = $this->resolveNextProgressSeq($parentRunId);
+
+        /** @var array<string, array{index:int,agentName:string,task:string,artifactId:string,agentRunId:string,terminal:bool,status:?AgentArtifactStatusEnum,message:string}> $reports */
+        $reports = [];
+        foreach ($launches as $launch) {
+            $reports[$launch['agentRunId']] = [
+                'index' => $launch['index'],
+                'agentName' => $launch['agentName'],
+                'task' => $launch['task'],
+                'artifactId' => $launch['artifactId'],
+                'agentRunId' => $launch['agentRunId'],
+                'terminal' => false,
+                'status' => null,
+                'message' => '',
+            ];
+        }
+
+        while ($this->hasActiveParallelChildren($reports)) {
+            if (null !== $cancelToken && $cancelToken->isCancellationRequested()) {
+                foreach ($reports as $agentRunId => $report) {
+                    if ($report['terminal']) {
+                        continue;
+                    }
+                    $this->agentRunner->cancel($agentRunId, 'Parent run cancelled parallel subagent tool.');
+                    $this->finalize(
+                        parentRunId: $parentRunId,
+                        artifactId: $report['artifactId'],
+                        status: AgentArtifactStatusEnum::Cancelled,
+                        summary: 'Cancelled by parent run.',
+                    );
+                    $reports[$agentRunId]['terminal'] = true;
+                    $reports[$agentRunId]['status'] = AgentArtifactStatusEnum::Cancelled;
+                    $reports[$agentRunId]['message'] = 'Cancelled by parent run.';
+                }
+
+                throw new ToolCallException("Parallel subagent tool cancelled by parent run.\n\n".$this->formatParallelReport($reports), retryable: false);
+            }
+
+            if (hrtime(true) > $deadline) {
+                foreach ($reports as $agentRunId => $report) {
+                    if ($report['terminal']) {
+                        continue;
+                    }
+                    $this->agentRunner->cancel($agentRunId, 'Parallel subagent timed out.');
+                    $this->finalize(
+                        parentRunId: $parentRunId,
+                        artifactId: $report['artifactId'],
+                        status: AgentArtifactStatusEnum::Failed,
+                        failureReason: 'Child run timed out.',
+                        summary: 'Timed out after '.$timeoutSeconds.'s.',
+                    );
+                    $reports[$agentRunId]['terminal'] = true;
+                    $reports[$agentRunId]['status'] = AgentArtifactStatusEnum::Failed;
+                    $reports[$agentRunId]['message'] = 'Timed out after '.$timeoutSeconds.'s.';
+                }
+
+                throw new ToolCallException(\sprintf('Parallel subagents timed out after %d seconds.', $timeoutSeconds)."\n\n".$this->formatParallelReport($reports), retryable: false);
+            }
+
+            foreach ($reports as $agentRunId => $report) {
+                if ($report['terminal']) {
+                    continue;
+                }
+
+                $state = $this->runStore->get($agentRunId);
+                if (null === $state) {
+                    continue;
+                }
+
+                $status = $state->status;
+                if (RunStatus::Running === $status || RunStatus::Queued === $status || RunStatus::Compacting === $status) {
+                    continue;
+                }
+
+                match ($status) {
+                    RunStatus::WaitingHuman => (function () use ($parentRunId, $agentRunId, $report, &$reports): void {
+                        $this->agentRunner->cancel($agentRunId, 'Child entered unsupported WaitingHuman state.');
+                        $this->finalize(
+                            parentRunId: $parentRunId,
+                            artifactId: $report['artifactId'],
+                            status: AgentArtifactStatusEnum::Failed,
+                            failureReason: 'Child agent attempted unsupported human interaction or approval.',
+                            summary: 'Child run entered WaitingHuman; foreground subagents are non-interactive.',
+                        );
+                        $reports[$agentRunId]['terminal'] = true;
+                        $reports[$agentRunId]['status'] = AgentArtifactStatusEnum::Failed;
+                        $reports[$agentRunId]['message'] = 'Unsupported human interaction or approval.';
+                    })(),
+                    RunStatus::Completed => (function () use ($parentRunId, $agentRunId, $state, $report, &$reports): void {
+                        $summary = $this->extractLastMessage($state);
+                        $this->finalize(
+                            parentRunId: $parentRunId,
+                            artifactId: $report['artifactId'],
+                            status: AgentArtifactStatusEnum::Completed,
+                            summary: $summary,
+                        );
+                        $reports[$agentRunId]['terminal'] = true;
+                        $reports[$agentRunId]['status'] = AgentArtifactStatusEnum::Completed;
+                        $reports[$agentRunId]['message'] = $summary;
+                    })(),
+                    RunStatus::Failed => (function () use ($parentRunId, $agentRunId, $state, $report, &$reports): void {
+                        $errorMsg = $state->errorMessage ?? 'Run failed without error message.';
+                        $this->finalize(
+                            parentRunId: $parentRunId,
+                            artifactId: $report['artifactId'],
+                            status: AgentArtifactStatusEnum::Failed,
+                            failureReason: $errorMsg,
+                            summary: $errorMsg,
+                        );
+                        $reports[$agentRunId]['terminal'] = true;
+                        $reports[$agentRunId]['status'] = AgentArtifactStatusEnum::Failed;
+                        $reports[$agentRunId]['message'] = $errorMsg;
+                    })(),
+                    default => null,
+                };
+
+                if (RunStatus::Cancelled === $status || RunStatus::Cancelling === $status) {
+                    $this->finalize(
+                        parentRunId: $parentRunId,
+                        artifactId: $report['artifactId'],
+                        status: AgentArtifactStatusEnum::Cancelled,
+                        summary: 'Child run was cancelled.',
+                    );
+                    $reports[$agentRunId]['terminal'] = true;
+                    $reports[$agentRunId]['status'] = AgentArtifactStatusEnum::Cancelled;
+                    $reports[$agentRunId]['message'] = 'Child run was cancelled.';
+                }
+            }
+
+            $this->emitParallelProgressUpdate($parentRunId, $reports, $progressSeq);
+            $this->advanceParentSequence($parentRunId, $progressSeq);
+            ++$progressSeq;
+
+            usleep(self::DEFAULT_POLL_MICROS);
+        }
+
+        $failed = array_filter($reports, static fn (array $r): bool => AgentArtifactStatusEnum::Completed !== $r['status']);
+
+        if ([] !== $failed) {
+            throw new ToolCallException('Parallel subagent execution failed for one or more children.'."\n\n".$this->formatParallelReport($reports), retryable: false);
+        }
+
+        return $this->formatParallelSuccess($reports);
+    }
+
+    /**
+     * @param array<string, array{index:int,agentName:string,task:string,artifactId:string,agentRunId:string,terminal:bool,status:?AgentArtifactStatusEnum,message:string}> $reports
+     */
+    private function hasActiveParallelChildren(array $reports): bool
+    {
+        foreach ($reports as $report) {
+            if (!$report['terminal']) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param array<string, array{index:int,agentName:string,task:string,artifactId:string,agentRunId:string,terminal:bool,status:?AgentArtifactStatusEnum,message:string}> $reports
+     */
+    private function emitParallelProgressUpdate(string $parentRunId, array $reports, int $seq): void
+    {
+        $context = $this->contextAccessor->current();
+        if (null === $context) {
+            return;
+        }
+
+        $lines = ['parallel subagents running'];
+        foreach ($reports as $report) {
+            if ($report['terminal']) {
+                $lines[] = \sprintf('#%d %s %s | artifact %s', $report['index'], $report['agentName'], null !== $report['status'] ? $report['status']->value : 'done', $report['artifactId']);
+                continue;
+            }
+
+            $state = $this->runStore->get($report['agentRunId']);
+            $turn = null !== $state ? $state->turnNo : 0;
+            $lines[] = \sprintf('#%d %s running | turn %d | artifact %s', $report['index'], $report['agentName'], $turn, $report['artifactId']);
+        }
+
+        $delta = implode("\n", $lines)."\n";
+
+        $event = new RunEvent(
+            runId: $parentRunId,
+            seq: $seq,
+            turnNo: $context->turnNo(),
+            type: RunEventTypeEnum::ToolExecutionUpdate->value,
+            payload: [
+                'tool_call_id' => $context->toolCallId(),
+                'tool_name' => $context->toolName(),
+                'delta' => $delta,
+                'order_index' => $context->orderIndex(),
+            ],
+        );
+
+        $this->eventStore->append($event);
+    }
+
+    /**
+     * @param array<string, array{index:int,agentName:string,task:string,artifactId:string,agentRunId:string,terminal:bool,status:?AgentArtifactStatusEnum,message:string}> $reports
+     */
+    private function formatParallelReport(array $reports): string
+    {
+        $sorted = array_values($reports);
+        usort($sorted, static fn (array $a, array $b): int => $a['index'] <=> $b['index']);
+
+        $lines = [];
+        foreach ($sorted as $report) {
+            $status = null !== $report['status'] ? $report['status']->value : 'unknown';
+            $lines[] = \sprintf('#%d %s — %s', $report['index'], $report['agentName'], $status);
+            $lines[] = 'Artifact: '.$report['artifactId'];
+            if ('' !== $report['message']) {
+                $lines[] = $this->truncateParallelMessage($report['message']);
+            }
+            $lines[] = '';
+        }
+
+        return rtrim(implode("\n", $lines));
+    }
+
+    /**
+     * @param array<string, array{index:int,agentName:string,task:string,artifactId:string,agentRunId:string,terminal:bool,status:?AgentArtifactStatusEnum,message:string}> $reports
+     */
+    private function formatParallelSuccess(array $reports): string
+    {
+        $sorted = array_values($reports);
+        usort($sorted, static fn (array $a, array $b): int => $a['index'] <=> $b['index']);
+        $count = \count($sorted);
+
+        $lines = [\sprintf('Parallel subagents completed (%d/%d).', $count, $count), ''];
+        foreach ($sorted as $report) {
+            $lines[] = \sprintf('#%d %s — completed', $report['index'], $report['agentName']);
+            $lines[] = 'Artifact: '.$report['artifactId'];
+            if ('' !== $report['message']) {
+                $lines[] = $this->truncateParallelMessage($report['message']);
+            }
+            $lines[] = '';
+        }
+
+        return rtrim(implode("\n", $lines));
+    }
+
+    private function truncateParallelMessage(string $message): string
+    {
+        $trimmed = trim($message);
+        if (\strlen($trimmed) <= 240) {
+            return $trimmed;
+        }
+
+        return substr($trimmed, 0, 237).'...';
+    }
     // ── Private helpers ──────────────────────────────────────────────
 
     /**

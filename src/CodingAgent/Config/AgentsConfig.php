@@ -18,14 +18,17 @@ use Symfony\Component\Serializer\Attribute\SerializedName;
 final readonly class AgentsConfig
 {
     /**
-     * @param bool         $enabled Whether agent discovery is enabled
-     * @param list<string> $paths   Additional agent definition file or directory paths
+     * @param bool         $enabled   Whether agent discovery is enabled
+     * @param list<string> $paths     Additional agent definition file or directory paths
+     * @param int          $maxAgents Maximum parallel subagents per `subagent` tool call
      */
     public function __construct(
         public bool $enabled = true,
         public array $paths = [],
         #[SerializedName('retrieve')]
         public AgentArtifactRetrievalLimitsConfig $retrieve = new AgentArtifactRetrievalLimitsConfig(),
+        #[SerializedName('max_agents')]
+        public int $maxAgents = 8,
     ) {
     }
 
@@ -58,7 +61,12 @@ final readonly class AgentsConfig
 
         $retrieve = AgentArtifactRetrievalLimitsConfig::fromRaw($raw['retrieve'] ?? []);
 
-        return new self(enabled: $enabled, paths: $paths, retrieve: $retrieve);
+        $maxAgents = 8;
+        if (\array_key_exists('max_agents', $raw) && \is_int($raw['max_agents']) && $raw['max_agents'] > 0) {
+            $maxAgents = $raw['max_agents'];
+        }
+
+        return new self(enabled: $enabled, paths: $paths, retrieve: $retrieve, maxAgents: $maxAgents);
     }
 
     /**

@@ -596,10 +596,17 @@ Auto-discovery directories (`~/.hatfield/agents/`, `~/.agents/`,
 ```yaml
 agents:
     enabled: true
+    max_agents: 8
     paths:
         - ~/shared/agents/custom-reviewer.md
         - .hatfield/team-agents
 ```
+
+### `agents.max_agents`
+
+Maximum number of parallel subagents allowed in a single `subagent` tool call
+(`tasks` array). Default: `8`. Requests above this limit fail fast with a hint
+to split work across multiple tool calls.
 
 See [Agent Definitions](agents.md) for the full definition format,
 discovery precedence, and catalog API.
