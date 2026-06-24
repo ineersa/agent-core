@@ -30,6 +30,8 @@ declare(strict_types=1);
 
 use Castor\Attribute\AsTask;
 
+use function CastorTasks\acquire_castor_check_lock;
+use function CastorTasks\release_castor_check_lock;
 use function CastorTasks\report_path;
 
 require_once __DIR__.'/../vendor/autoload.php';
@@ -846,8 +848,52 @@ function test_timeout_hardstop(string $cmdOverride = ''): void
         echo "PASS: no orphan PHAR workers after PHPUnit-like cleanup (pre={$preCountE}, post={$postCountE})\n";
     }
 
+    // ── Test F: Full castor check lock serializes concurrent acquirers ──
+    echo "\n── Test F: castor check lock serializes concurrent acquirers ──\n\n";
+
+    $lockPathF = $root.'/var/tmp/castor-check.lock';
+    @unlink($root.'/var/tmp/castor-check.lock.meta');
+    $phpBinF = \PHP_BINARY;
+    $holderPhp = <<<'PHPCODE'
+<?php
+declare(strict_types=1);
+$root = getenv('CASTOR_LOCK_TEST_ROOT') ?: getcwd();
+require $root.'/vendor/autoload.php';
+require $root.'/.castor/helpers.php';
+\CastorTasks\castor_check_lock_smoke_hold($root, 4.0);
+PHPCODE;
+    $holderScript = $root.'/var/tmp/castor-check-lock-holder-'.getmypid().'.php';
+    file_put_contents($holderScript, $holderPhp);
+
+    $holderEnv = array_merge($_ENV, ['CASTOR_LOCK_TEST_ROOT' => $root]);
+    $holderProc = proc_open([$phpBinF, $holderScript], [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $holderPipes, $root, $holderEnv);
+    if (!is_resource($holderProc)) {
+        echo "FAIL: could not start lock holder\n";
+        $ok = false;
+    } else {
+        fclose($holderPipes[0]);
+        stream_set_blocking($holderPipes[1], false);
+        stream_set_blocking($holderPipes[2], false);
+        usleep(800_000);
+
+        $waitStartF = microtime(true);
+        $waiterHandle = acquire_castor_check_lock($root);
+        $waitDurationF = microtime(true) - $waitStartF;
+        release_castor_check_lock($waiterHandle, $root);
+
+        proc_close($holderProc);
+        @unlink($holderScript);
+
+        if ($waitDurationF < 2.5) {
+            echo sprintf("FAIL: waiter acquired lock in %.2fs — expected to block behind holder (~4s)\n", $waitDurationF);
+            $ok = false;
+        } else {
+            echo sprintf("PASS: waiter blocked %.2fs until holder released lock\n", $waitDurationF);
+        }
+    }
+
     if ($ok) {
-        echo "\n✅ All timeout + normal-exit + PHAR/source startup-cleanup (C/C2) + session + separate-PGID + PHPUnit-leak assertions passed.\n";
+        echo "\n✅ All timeout + normal-exit + PHAR/source startup-cleanup (C/C2) + session + separate-PGID + PHPUnit-leak + castor-check-lock assertions passed.\n";
     } else {
         echo "\n❌ Some assertions FAILED.\n";
         exit(1);

@@ -637,6 +637,162 @@ function phar_build_with_lock(string $root): void
  * `composer install --optimize-autoloader` step, ensuring the generated
  * autoloader (preserved by Box with dump-autoload:false) has a unique name.
  */
+
+// ─── Full QA gate (castor check) per-checkout lock ─────────────────────
+
+/** Relative path to the flock file serializing concurrent `check()` runs. */
+const CASTOR_CHECK_LOCK_RELATIVE = 'var/tmp/castor-check.lock';
+
+/** Relative path to optional holder metadata (diagnostics only; may be stale). */
+const CASTOR_CHECK_LOCK_META_RELATIVE = 'var/tmp/castor-check.lock.meta';
+
+/** Heartbeat interval while waiting for another check (seconds). */
+const CASTOR_CHECK_LOCK_WAIT_HEARTBEAT_S = 15;
+
+/**
+ * Whether full `castor check` should acquire the per-checkout lock.
+ *
+ * Set `HATFIELD_CASTOR_CHECK_LOCK=0` to disable (stress testing only).
+ */
+function castor_check_lock_enabled(): bool
+{
+    $raw = getenv('HATFIELD_CASTOR_CHECK_LOCK');
+    if (false === $raw) {
+        return true;
+    }
+    $normalized = strtolower(trim((string) $raw));
+
+    return !\in_array($normalized, ['0', 'false', 'no', 'off'], true);
+}
+
+function castor_check_lock_path(string $projectRoot): string
+{
+    return $projectRoot.'/'.CASTOR_CHECK_LOCK_RELATIVE;
+}
+
+function castor_check_lock_meta_path(string $projectRoot): string
+{
+    return $projectRoot.'/'.CASTOR_CHECK_LOCK_META_RELATIVE;
+}
+
+/**
+ * @return array{pid: int, started_at: string, cwd: string, qa_run_id: string}|null
+ */
+function read_castor_check_lock_meta(string $projectRoot): ?array
+{
+    $path = castor_check_lock_meta_path($projectRoot);
+    if (!is_readable($path)) {
+        return null;
+    }
+    $json = file_get_contents($path);
+    if (false === $json || '' === trim($json)) {
+        return null;
+    }
+    $decoded = json_decode($json, true);
+    if (!\is_array($decoded)) {
+        return null;
+    }
+
+    return $decoded;
+}
+
+function write_castor_check_lock_meta(string $projectRoot): void
+{
+    $path = castor_check_lock_meta_path($projectRoot);
+    @mkdir(\dirname($path), 0777, true);
+    $payload = [
+        'pid' => getmypid(),
+        'started_at' => date('c'),
+        'cwd' => (string) getcwd(),
+        'qa_run_id' => (string) (false !== ($qa = getenv('HATFIELD_QA_RUN_ID')) ? $qa : ''),
+    ];
+    file_put_contents($path, json_encode($payload, \JSON_UNESCAPED_SLASHES)."\n", \LOCK_EX);
+}
+
+function clear_castor_check_lock_meta(string $projectRoot): void
+{
+    $path = castor_check_lock_meta_path($projectRoot);
+    if (is_file($path)) {
+        @unlink($path);
+    }
+}
+
+/**
+ * Acquire an exclusive flock for the full QA gate. Blocks with periodic heartbeats.
+ *
+ * @return resource fopen handle; caller must fclose() after LOCK_UN in finally
+ */
+function acquire_castor_check_lock(string $projectRoot)
+{
+    $lockPath = castor_check_lock_path($projectRoot);
+    @mkdir(\dirname($lockPath), 0777, true);
+
+    $handle = fopen($lockPath, 'c+b');
+    if (false === $handle) {
+        throw new \RuntimeException('Unable to open castor check lock at '.$lockPath);
+    }
+
+    $waitStart = microtime(true);
+    $nextHeartbeat = $waitStart;
+    $waitingAnnounced = false;
+
+    while (!flock($handle, \LOCK_EX | \LOCK_NB)) {
+        $now = microtime(true);
+        if (!$waitingAnnounced) {
+            echo 'castor check: waiting for another full check in this checkout (lock '.$lockPath.', pid '.getmypid().')
+';
+            $meta = read_castor_check_lock_meta($projectRoot);
+            if (null !== $meta) {
+                echo '  holder (metadata, may be stale): pid '.($meta['pid'] ?? '?')
+                    .', started '.($meta['started_at'] ?? '?')
+                    .', qa_run_id '.($meta['qa_run_id'] ?? '(none)').'
+';
+            }
+            $waitingAnnounced = true;
+        }
+        if ($now >= $nextHeartbeat) {
+            echo \sprintf('castor check: still waiting (%.0fs elapsed, pid %d)
+', $now - $waitStart, getmypid());
+            $nextHeartbeat = $now + (float) CASTOR_CHECK_LOCK_WAIT_HEARTBEAT_S;
+        }
+        usleep(200_000);
+    }
+
+    if ($waitingAnnounced) {
+        echo \sprintf('castor check: lock acquired after %.1fs (pid %d)
+', microtime(true) - $waitStart, getmypid());
+    }
+
+    write_castor_check_lock_meta($projectRoot);
+
+    return $handle;
+}
+
+/**
+ * Release castor check flock and close handle.
+ *
+ * @param resource $handle
+ */
+function release_castor_check_lock($handle, string $projectRoot): void
+{
+    flock($handle, \LOCK_UN);
+    fclose($handle);
+    clear_castor_check_lock_meta($projectRoot);
+}
+
+/**
+ * Smoke helper: hold the castor check lock then exit (used by test:timeout-hardstop Test F).
+ */
+function castor_check_lock_smoke_hold(string $projectRoot, float $holdSeconds): void
+{
+    $handle = acquire_castor_check_lock($projectRoot);
+    try {
+        usleep((int) max(0, $holdSeconds * 1_000_000));
+    } finally {
+        release_castor_check_lock($handle, $projectRoot);
+    }
+}
+
 const HATFIELD_PHAR_AUTOLOADER_SUFFIX = 'HatfieldPharBuild';
 
 /**

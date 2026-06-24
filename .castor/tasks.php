@@ -43,9 +43,12 @@ declare(strict_types=1);
 
 use Castor\Attribute\AsTask;
 
+use function CastorTasks\acquire_castor_check_lock;
+use function CastorTasks\castor_check_lock_enabled;
 use function CastorTasks\check_llm_generation_ready;
 use function CastorTasks\initialize_qa_check_run;
 use function CastorTasks\is_llm_mode;
+use function CastorTasks\release_castor_check_lock;
 use function CastorTasks\report_path;
 use function CastorTasks\run_quiet_command;
 
@@ -66,7 +69,8 @@ require_once __DIR__.'/env.php';
  * on port 9052 (llama-proxy with cache normalization recommended).  Preflight
  * `check_llm_generation_ready()` runs once before parallel lanes start.
  *
- * Lanes run concurrently as external subprocesses (via proc_open)
+ * Concurrent `castor check` invocations in the same checkout queue on a flock
+ * (var/tmp/castor-check.lock). Lanes run concurrently as external subprocesses (via proc_open)
  * so they do not share memory with the Castor PHAR.  Each lane's
  * output is captured to var/reports/check-<step>.log.
  */
@@ -74,9 +78,29 @@ require_once __DIR__.'/env.php';
 function check(): void
 {
     $root = (false !== ($_rp = realpath(__DIR__.'/..')) ? $_rp : __DIR__.'/..');
-    $qaRunId = initialize_qa_check_run();
-    echo 'QA run: '.$qaRunId.'\n';
+    $lockHandle = null;
 
+    try {
+        if (castor_check_lock_enabled()) {
+            $lockHandle = acquire_castor_check_lock($root);
+        }
+
+        $qaRunId = initialize_qa_check_run();
+        echo 'QA run: '.$qaRunId.'\n';
+
+        _run_castor_check_body($root, $qaRunId);
+    } finally {
+        if (null !== $lockHandle) {
+            release_castor_check_lock($lockHandle, $root);
+        }
+    }
+}
+
+/**
+ * Execute the QA gate after optional per-checkout lock and QA run initialization.
+ */
+function _run_castor_check_body(string $root, string $qaRunId): void
+{
     // No PHAR ensure — the deterministic controller-replay and TUI
     // replay lanes use source bin/console with APP_ENV=test, which
     // requires autoload-dev paths not bundled in the PHAR.

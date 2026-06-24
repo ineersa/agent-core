@@ -23,6 +23,8 @@ Castor wraps each tool with correct flag combinations, output summarization for 
 
 Key commands: `castor check` (full validation), `castor test`, `castor deptrac`, `castor phpstan`, `castor cs-check`, `castor cs-fix`.
 
+Concurrent full `castor check` invocations in the **same checkout** serialize on `var/tmp/castor-check.lock` (flock); additional checks wait with a clear message instead of competing for CPU/tmux/controller startup. Focused Castor commands (`castor test`, `castor phpstan`, …) are unaffected. Stress-only override: `HATFIELD_CASTOR_CHECK_LOCK=0`.
+
 **Load the `testing` skill** when: running any test, writing tests, debugging test failures, touching runtime/TUI/Messenger code, or needing the full command reference.
 
 ## ⚠️ MANDATORY: Read testing docs before touching tests or running QA
