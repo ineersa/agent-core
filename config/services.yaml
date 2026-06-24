@@ -765,6 +765,12 @@ services:
   Ineersa\CodingAgent\Mcp\Tool\McpToolHandler:
     autowire: false
 
+  # ─── AGENT-07 Subagent ExecuteToolCall routing middleware ───────────
+
+  # Stamps toolName=subagent with TransportNamesStamp(['agent']) on
+  # agent.execution.bus. Wired in messenger.yaml before MCP middleware.
+  Ineersa\CodingAgent\Agent\Messenger\SubagentExecuteToolCallRoutingMiddleware: ~
+
   # ─── MCP-05 MCP-aware ExecuteToolCall routing middleware ────────────
 
   # Intercepts outbound ExecuteToolCall on agent.execution.bus and stamps

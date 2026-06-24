@@ -15,6 +15,7 @@ parameters:
     env(HATFIELD_RUN_CONTROL_TRANSPORT_DSN): 'in-memory://'
     env(HATFIELD_LLM_TRANSPORT_DSN): 'in-memory://'
     env(HATFIELD_TOOL_TRANSPORT_DSN): 'in-memory://'
+    env(HATFIELD_AGENT_TRANSPORT_DSN): 'in-memory://'
     env(HATFIELD_MCP_TRANSPORT_DSN): 'in-memory://'
 
 framework:
@@ -31,5 +32,7 @@ framework:
                 dsn: '%env(HATFIELD_LLM_TRANSPORT_DSN)%'
             tool:
                 dsn: '%env(HATFIELD_TOOL_TRANSPORT_DSN)%'
+            agent:
+                dsn: '%env(HATFIELD_AGENT_TRANSPORT_DSN)%'
             mcp:
                 dsn: '%env(HATFIELD_MCP_TRANSPORT_DSN)%'

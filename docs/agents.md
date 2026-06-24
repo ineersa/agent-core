@@ -152,6 +152,11 @@ The catalog (`AgentDefinitionCatalog`) provides:
 
 ## Foreground subagent tool
 
+Parent `subagent` tool calls are routed to a dedicated `agent` Messenger transport
+(`messenger:consume agent`), separate from generic `tool` workers. Foreground
+subagent orchestration may block its worker while polling child runs; isolating it
+prevents starving child agents' `read`/`write`/`shell` calls on the `tool` queue.
+
 The `subagent` tool is registered as a permanent model-visible tool. It supports
 **single or parallel foreground mode** with the following JSON schema:
 
