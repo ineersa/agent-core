@@ -56,7 +56,20 @@ final class ControllerReplayHttpClientFactory
         }
 
         // Default: short timeout for test environment (live LLM smoke
-        // or non-replay controller tests).
+        // or non-replay controller tests). Nested live controller tests
+        // may raise it via HATFIELD_TEST_LLM_HTTP_TIMEOUT (subprocess env).
+        return HttpClient::create(['timeout' => self::liveHttpTimeout()]);
+    }
+
+
+    /**
+     * Live (non-replay) HTTP idle timeout for controller subprocess tests.
+     *
+     * Default 5s matches services_test.yaml; nested multi-turn live tests
+     * override via HATFIELD_TEST_LLM_HTTP_TIMEOUT in controllerSubprocessEnv().
+     */
+    private static function liveHttpTimeout(): float
+    {
         $timeout = 5.0;
         $envTimeout = $_ENV['HATFIELD_TEST_LLM_HTTP_TIMEOUT']
             ?? ($_SERVER['HATFIELD_TEST_LLM_HTTP_TIMEOUT'] ?? getenv('HATFIELD_TEST_LLM_HTTP_TIMEOUT'));
@@ -64,7 +77,7 @@ final class ControllerReplayHttpClientFactory
             $timeout = (float) $envTimeout;
         }
 
-        return HttpClient::create(['timeout' => $timeout]);
+        return $timeout;
     }
 
     // ── Replay client construction ────────────────────────────────
@@ -88,18 +101,11 @@ final class ControllerReplayHttpClientFactory
         }
 
         if ([] === $fixtures) {
-            // No valid fixtures found — fall back to the normal 5s
+            // No valid fixtures found — fall back to the normal live
             // timeout client so the process doesn't fail on a missing
             // HttpClient.  The test will still fail because there are
             // no fixture responses, but the error is easier to debug.
-            $timeout = 5.0;
-        $envTimeout = $_ENV['HATFIELD_TEST_LLM_HTTP_TIMEOUT']
-            ?? ($_SERVER['HATFIELD_TEST_LLM_HTTP_TIMEOUT'] ?? getenv('HATFIELD_TEST_LLM_HTTP_TIMEOUT'));
-        if (false !== $envTimeout && '' !== $envTimeout) {
-            $timeout = (float) $envTimeout;
-        }
-
-        return HttpClient::create(['timeout' => $timeout]);
+            return HttpClient::create(['timeout' => self::liveHttpTimeout()]);
         }
 
         $index = 0;
