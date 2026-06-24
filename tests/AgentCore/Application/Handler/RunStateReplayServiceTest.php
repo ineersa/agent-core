@@ -1658,4 +1658,62 @@ final class RunStateReplayServiceTest extends TestCase
         self::assertSame('assistant', $messages[0]->role);
         self::assertSame('Here is the answer.', $messages[0]->content[0]['text']);
     }
+
+    public function testReplayPreservesRetryAttemptsThroughAutoRetryContinueAndTurnAdvanced(): void
+    {
+        $this->appendEventWithTurn('run_started', 1, 0, ['step_id' => 's1', 'payload' => ['messages' => []]]);
+        $this->appendEventWithTurn(RunEventTypeEnum::TurnAdvanced->value, 2, 1, [
+            'turn_no' => 1,
+            'parent_turn_no' => null,
+            'step_id' => 's1',
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::LeafSet->value, 3, 1, [
+            'turn_no' => 1,
+            'reason' => 'continue',
+        ]);
+        $this->appendEventWithTurn('llm_step_failed', 4, 1, [
+            'error' => [
+                'message' => 'fail',
+                'retryable' => true,
+                'user_message' => 'retryable',
+            ],
+            'retryable' => true,
+            'step_id' => 's1',
+            'retry_attempt' => 1,
+            'max_retries' => 2,
+        ]);
+        $this->appendEventWithTurn('agent_command_applied', 5, 1, [
+            'kind' => 'continue',
+            'idempotency_key' => 'ik-1',
+            'options' => [],
+            'payload' => ['auto_retry' => true, 'retry_attempt' => 1],
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::TurnAdvanced->value, 6, 2, [
+            'step_id' => 's2',
+            'turn_no' => 2,
+            'parent_turn_no' => 1,
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::LeafSet->value, 7, 2, [
+            'turn_no' => 2,
+            'reason' => 'continue',
+        ]);
+
+        $state = new RunState(
+            runId: $this->runId,
+            status: RunStatus::Queued,
+            version: 0,
+            turnNo: 0,
+            lastSeq: 0,
+        );
+
+        $result = $this->service->rebuildIfStale($state, $this->runId);
+
+        self::assertTrue($result->rebuilt);
+        self::assertNotNull($result->rebuiltState);
+        self::assertSame(RunStatus::Running, $result->rebuiltState->status);
+        self::assertSame(2, $result->rebuiltState->turnNo);
+        self::assertSame('s2', $result->rebuiltState->activeStepId);
+        self::assertSame(1, $result->rebuiltState->retryAttempts);
+    }
+
 }
