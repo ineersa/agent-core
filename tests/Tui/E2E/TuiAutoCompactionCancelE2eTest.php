@@ -88,8 +88,8 @@ final class TuiAutoCompactionCancelE2eTest extends TestCase
         );
 
         try {
-            // Wait for TUI startup (logo visible).
-            $this->tmux->waitForCaptureContains($pane, '█', 10.0);
+            // Wait for TUI startup (logo visible). 20s under parallel castor check.
+            $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
             $this->tmux->waitForTuiReadyAfterLogo($pane);
 
             // Submit a prompt with a fixture whose input_tokens=100
@@ -106,7 +106,7 @@ final class TuiAutoCompactionCancelE2eTest extends TestCase
                 $pane,
                 static fn (string $cap): bool => str_contains($cap, '◇')
                     || str_contains($cap, '✕'),
-                timeout: 15.0,
+                timeout: TmuxHarness::TUI_ASSISTANT_BLOCK_TIMEOUT_PARALLEL,
                 message: 'Assistant response block did not appear',
                 history: 2000,
             );

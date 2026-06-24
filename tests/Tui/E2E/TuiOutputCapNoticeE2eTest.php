@@ -75,8 +75,8 @@ final class TuiOutputCapNoticeE2eTest extends TestCase
         );
 
         try {
-            // Wait for TUI startup.
-            $this->tmux->waitForCaptureContains($pane, '█', 10.0);
+            // Wait for TUI startup. 20s under parallel castor check.
+            $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
             $this->tmux->waitForTuiReadyAfterLogo($pane);
 
             // Submit a prompt that triggers read on the oversized file.
@@ -91,7 +91,7 @@ final class TuiOutputCapNoticeE2eTest extends TestCase
                 $pane,
                 static fn (string $cap): bool => str_contains($cap, '◇')
                     || str_contains($cap, '✕'),
-                timeout: 15.0,
+                timeout: TmuxHarness::TUI_ASSISTANT_BLOCK_TIMEOUT_PARALLEL,
                 message: 'Neither ◇ assistant block nor ✕ error block appeared after tool execution',
                 history: 2000,
             );
