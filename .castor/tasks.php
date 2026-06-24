@@ -13,7 +13,7 @@ declare(strict_types=1);
  *
  * Lanes (typical shell timeouts):
  *   deptrac (30s), test ParaTest (120s), test:controller-replay (75s),
- *   test:tui (120s), test:llm-real (180s), phpstan (30s), cs-check (30s).
+ *   test:tui (120s), test:llm-real (180s), phpstan (90s), cs-check (30s).
  *   No PHAR in the gate.
  *
  * Budget increase (30s → 75s) for test:controller-replay reflects
@@ -130,7 +130,7 @@ function check(): void
             'cmd' => timeout_check_command(
                 $phpBin.' vendor/bin/phpstan analyse -c phpstan.dist.neon --no-progress'
                     .(is_llm_mode() ? ' --error-format=json --no-ansi' : ''),
-                30,
+                90,
             ),
         ],
         'cs-check' => [

@@ -9,18 +9,19 @@ use Ineersa\AgentCore\Application\Handler\ExecuteToolCallWorker;
 use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Contract\Model\PlatformInterface;
-use Ineersa\AgentCore\Infrastructure\SymfonyAi\MalformedToolCallSequenceException;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
-use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
-use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
+use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
-use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\MalformedToolCallSequenceException;
+use Ineersa\AgentCore\Tests\Support\Psr3LogMessageAssert;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use PHPUnit\Framework\TestCase;
 
 final class ExecutionWorkerTest extends TestCase
@@ -49,16 +50,16 @@ final class ExecutionWorkerTest extends TestCase
             toolsRef: 'toolset:run:run-worker-1:turn:4',
         ));
 
-        self::assertCount(1, $commandBus->messages);
-        self::assertInstanceOf(LlmStepResult::class, $commandBus->messages[0]);
+        $this->assertCount(1, $commandBus->messages);
+        $this->assertInstanceOf(LlmStepResult::class, $commandBus->messages[0]);
 
         /** @var LlmStepResult $result */
         $result = $commandBus->messages[0];
 
-        self::assertSame('run-worker-1', $result->runId());
-        self::assertSame('turn-4-llm-1', $result->stepId());
-        self::assertNotNull($result->error);
-        self::assertSame('Provider unavailable.', $result->error['message']);
+        $this->assertSame('run-worker-1', $result->runId());
+        $this->assertSame('turn-4-llm-1', $result->stepId());
+        $this->assertNotNull($result->error);
+        $this->assertSame('Provider unavailable.', $result->error['message']);
     }
 
     public function testLlmWorkerConvertsMalformedToolCallSequenceExceptionToStructuredError(): void
@@ -85,19 +86,19 @@ final class ExecutionWorkerTest extends TestCase
             toolsRef: 'toolset:run:run-malformed-1:turn:3',
         ));
 
-        self::assertCount(1, $commandBus->messages);
-        self::assertInstanceOf(LlmStepResult::class, $commandBus->messages[0]);
+        $this->assertCount(1, $commandBus->messages);
+        $this->assertInstanceOf(LlmStepResult::class, $commandBus->messages[0]);
 
         /** @var LlmStepResult $result */
         $result = $commandBus->messages[0];
 
-        self::assertSame('run-malformed-1', $result->runId());
-        self::assertSame('turn-3-llm-1', $result->stepId());
-        self::assertSame('error', $result->stopReason);
-        self::assertNotNull($result->error);
+        $this->assertSame('run-malformed-1', $result->runId());
+        $this->assertSame('turn-3-llm-1', $result->stepId());
+        $this->assertSame('error', $result->stopReason);
+        $this->assertNotNull($result->error);
         // The exception message is preserved in the LlmStepResult error.
-        self::assertStringContainsString('Tool-call sequence violation', $result->error['message'] ?? '');
-        self::assertStringContainsString('MalformedToolCallSequenceException', $result->error['type'] ?? '');
+        $this->assertStringContainsString('Tool-call sequence violation', $result->error['message'] ?? '');
+        $this->assertStringContainsString('MalformedToolCallSequenceException', $result->error['type'] ?? '');
     }
 
     public function testLlmWorkerRecordsLatencyErrorAndTracingSpans(): void
@@ -130,17 +131,17 @@ final class ExecutionWorkerTest extends TestCase
 
         $snapshot = $metrics->snapshot();
 
-        self::assertSame(1, $snapshot['llm']['calls']);
-        self::assertSame(1, $snapshot['llm']['errors']);
+        $this->assertSame(1, $snapshot['llm']['calls']);
+        $this->assertSame(1, $snapshot['llm']['errors']);
 
         $llmFinishSpans = array_values(array_filter(
             $traceLogger->records,
-            static fn (array $record): bool => 'agent_loop.trace.finish' === $record['message']
+            static fn (array $record): bool => Psr3LogMessageAssert::isEvent($record['message'], 'agent_loop.trace.finish')
                 && 'llm.call' === ($record['context']['span_name'] ?? null),
         ));
 
-        self::assertCount(1, $llmFinishSpans);
-        self::assertSame('error', $llmFinishSpans[0]['context']['status']);
+        $this->assertCount(1, $llmFinishSpans);
+        $this->assertSame('error', $llmFinishSpans[0]['context']['status']);
     }
 
     public function testToolWorkerRecordsTimeoutRateFromToolResultDetails(): void
@@ -181,9 +182,9 @@ final class ExecutionWorkerTest extends TestCase
 
         $snapshot = $metrics->snapshot();
 
-        self::assertSame(1, $snapshot['tools']['calls']);
-        self::assertSame(1, $snapshot['tools']['timeouts']);
-        self::assertSame(1.0, $snapshot['tools']['timeout_rate']);
+        $this->assertSame(1, $snapshot['tools']['calls']);
+        $this->assertSame(1, $snapshot['tools']['timeouts']);
+        $this->assertSame(1.0, $snapshot['tools']['timeout_rate']);
     }
 
     public function testToolWorkerDispatchesToolCallResult(): void
@@ -220,15 +221,15 @@ final class ExecutionWorkerTest extends TestCase
             toolIdempotencyKey: 'tool-invocation-1',
         ));
 
-        self::assertCount(1, $commandBus->messages);
-        self::assertInstanceOf(ToolCallResult::class, $commandBus->messages[0]);
+        $this->assertCount(1, $commandBus->messages);
+        $this->assertInstanceOf(ToolCallResult::class, $commandBus->messages[0]);
 
         /** @var ToolCallResult $result */
         $result = $commandBus->messages[0];
 
-        self::assertSame('call-1', $result->toolCallId);
-        self::assertFalse($result->isError);
-        self::assertSame('web_search', $result->result['tool_name']);
+        $this->assertSame('call-1', $result->toolCallId);
+        $this->assertFalse($result->isError);
+        $this->assertSame('web_search', $result->result['tool_name']);
     }
 
     /**
@@ -276,8 +277,8 @@ final class ExecutionWorkerTest extends TestCase
 
         // Metrics: the empty response should be counted as an error call.
         $snapshot = $metrics->snapshot();
-        self::assertSame(1, $snapshot['llm']['calls']);
-        self::assertSame(1, $snapshot['llm']['errors']);
+        $this->assertSame(1, $snapshot['llm']['calls']);
+        $this->assertSame(1, $snapshot['llm']['errors']);
 
         // Logger: should emit llm.request.failed with error_type=empty_response,
         // NOT llm.request.completed.
@@ -286,13 +287,13 @@ final class ExecutionWorkerTest extends TestCase
             static fn (array $record): bool => 'llm.request.failed' === $record['message']
                 && 'empty_response' === ($record['context']['error_type'] ?? null),
         ));
-        self::assertCount(1, $failedLogs, 'Empty response must log llm.request.failed with error_type=empty_response');
+        $this->assertCount(1, $failedLogs, 'Empty response must log llm.request.failed with error_type=empty_response');
 
         $completedLogs = array_values(array_filter(
             $testLogger->records,
             static fn (array $record): bool => 'llm.request.completed' === $record['message'],
         ));
-        self::assertCount(0, $completedLogs, 'Empty response must NOT log llm.request.completed');
+        $this->assertCount(0, $completedLogs, 'Empty response must NOT log llm.request.completed');
     }
 
     /**
@@ -335,18 +336,16 @@ final class ExecutionWorkerTest extends TestCase
             toolsRef: 'toolset:run:run-empty-1:turn:3',
         ));
 
-        self::assertCount(1, $commandBus->messages);
-        self::assertInstanceOf(LlmStepResult::class, $commandBus->messages[0]);
+        $this->assertCount(1, $commandBus->messages);
+        $this->assertInstanceOf(LlmStepResult::class, $commandBus->messages[0]);
 
         /** @var LlmStepResult $result */
         $result = $commandBus->messages[0];
 
-        self::assertSame('run-empty-1', $result->runId());
-        self::assertNull($result->assistantMessage, 'Empty platform response must not produce a fake assistant message');
-        self::assertNotNull($result->error, 'Empty platform response must be treated as an error');
-        self::assertSame('empty_response', $result->error['type'] ?? '');
-        self::assertStringContainsString('empty response', $result->error['message'] ?? '');
+        $this->assertSame('run-empty-1', $result->runId());
+        $this->assertNull($result->assistantMessage, 'Empty platform response must not produce a fake assistant message');
+        $this->assertNotNull($result->error, 'Empty platform response must be treated as an error');
+        $this->assertSame('empty_response', $result->error['type'] ?? '');
+        $this->assertStringContainsString('empty response', $result->error['message'] ?? '');
     }
 }
-
-
