@@ -284,14 +284,14 @@ final class ExecutionWorkerTest extends TestCase
         // NOT llm.request.completed.
         $failedLogs = array_values(array_filter(
             $testLogger->records,
-            static fn (array $record): bool => 'llm.request.failed' === $record['message']
+            static fn (array $record): bool => Psr3LogMessageAssert::isEvent($record['message'], 'llm.request.failed')
                 && 'empty_response' === ($record['context']['error_type'] ?? null),
         ));
         $this->assertCount(1, $failedLogs, 'Empty response must log llm.request.failed with error_type=empty_response');
 
         $completedLogs = array_values(array_filter(
             $testLogger->records,
-            static fn (array $record): bool => 'llm.request.completed' === $record['message'],
+            static fn (array $record): bool => Psr3LogMessageAssert::isEvent($record['message'], 'llm.request.completed'),
         ));
         $this->assertCount(0, $completedLogs, 'Empty response must NOT log llm.request.completed');
     }
