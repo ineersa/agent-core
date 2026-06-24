@@ -128,16 +128,6 @@ abstract class ControllerE2eTestCase extends TestCase
         return 12.0;
     }
 
-    /**
-     * Wall-clock budget for compaction.completed/failed under full castor check.
-     * ParaTest llm-real (4 workers) plus cold llama-proxy cache misses can push
-     * the compaction summarization HTTP call past 45s without a product bug.
-     */
-    protected function liveCompactionEventWaitTimeout(): float
-    {
-        return 60.0;
-    }
-
     // ── Lifecycle ──
 
     protected function setUp(): void
