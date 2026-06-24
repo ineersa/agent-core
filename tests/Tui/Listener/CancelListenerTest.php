@@ -150,15 +150,52 @@ class CancelListenerTest extends TestCase
     }
 
     #[Test]
-    public function cancelFailedDoesNotCallClient(): void
+    public function cancelFailedWithoutRuntimePollErrorDoesNotCallClient(): void
     {
         $this->state->activity = RunActivityStateEnum::Failed;
         $this->state->handle = new RunHandle('run-fail');
+        $this->state->lastRuntimePollError = '';
 
         $this->client->expects($this->never())
             ->method('cancel');
 
         $this->dispatchCancelEvent();
+    }
+
+    #[Test]
+    public function cancelFailedWithRuntimePollErrorSendsCancelAndTransitionsToCancelling(): void
+    {
+        $this->state->activity = RunActivityStateEnum::Failed;
+        $this->state->handle = new RunHandle('run-fail');
+        $this->state->lastRuntimePollError = 'Controller process has crashed too many times (3 restarts in 60s).';
+
+        $this->client->expects($this->once())
+            ->method('cancel')
+            ->with('run-fail');
+
+        $this->dispatchCancelEvent();
+
+        $this->assertSame(RunActivityStateEnum::Cancelling, $this->state->activity);
+    }
+
+    #[Test]
+    public function cancelFailedWithRuntimePollErrorWhenCancelThrowsShowsRecoveryBlock(): void
+    {
+        $this->state->activity = RunActivityStateEnum::Failed;
+        $this->state->handle = new RunHandle('run-fail');
+        $this->state->lastRuntimePollError = 'Controller process has crashed too many times (3 restarts in 60s).';
+
+        $this->client->expects($this->once())
+            ->method('cancel')
+            ->willThrowException(new \RuntimeException('Controller stdin pipe is not available.'));
+
+        $this->dispatchCancelEvent();
+
+        $this->assertSame(RunActivityStateEnum::Failed, $this->state->activity);
+        $this->assertCount(1, $this->state->transcript);
+        $text = $this->state->transcript[0]->text;
+        $this->assertStringContainsString('Cancel failed: Controller stdin pipe is not available.', $text);
+        $this->assertStringContainsString('Please restart the agent', $text);
     }
 
     #[Test]
