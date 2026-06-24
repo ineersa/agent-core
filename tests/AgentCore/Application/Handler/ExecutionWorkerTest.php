@@ -19,7 +19,6 @@ use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\MalformedToolCallSequenceException;
-use Ineersa\AgentCore\Tests\Support\Psr3LogMessageAssert;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use PHPUnit\Framework\TestCase;
@@ -136,7 +135,7 @@ final class ExecutionWorkerTest extends TestCase
 
         $llmFinishSpans = array_values(array_filter(
             $traceLogger->records,
-            static fn (array $record): bool => Psr3LogMessageAssert::isEvent($record['message'], 'agent_loop.trace.finish')
+            static fn (array $record): bool => 'agent_loop.trace.finish' === $record['message']
                 && 'llm.call' === ($record['context']['span_name'] ?? null),
         ));
 
@@ -284,14 +283,14 @@ final class ExecutionWorkerTest extends TestCase
         // NOT llm.request.completed.
         $failedLogs = array_values(array_filter(
             $testLogger->records,
-            static fn (array $record): bool => Psr3LogMessageAssert::isEvent($record['message'], 'llm.request.failed')
+            static fn (array $record): bool => 'llm.request.failed' === $record['message']
                 && 'empty_response' === ($record['context']['error_type'] ?? null),
         ));
         $this->assertCount(1, $failedLogs, 'Empty response must log llm.request.failed with error_type=empty_response');
 
         $completedLogs = array_values(array_filter(
             $testLogger->records,
-            static fn (array $record): bool => Psr3LogMessageAssert::isEvent($record['message'], 'llm.request.completed'),
+            static fn (array $record): bool => 'llm.request.completed' === $record['message'],
         ));
         $this->assertCount(0, $completedLogs, 'Empty response must NOT log llm.request.completed');
     }

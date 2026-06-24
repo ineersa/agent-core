@@ -29,6 +29,7 @@ require_once __DIR__.'/../vendor/autoload.php';
 require_once __DIR__.'/helpers.php';
 require_once __DIR__.'/shared.php';
 require_once __DIR__.'/phpunit.php';
+require_once __DIR__.'/env.php';
 
 // ─── Real LLM smoke ──────────────────────────────────────────────
 
@@ -47,7 +48,7 @@ function build_test_llm_real_phpunit_command(?string $filter = null): string
 
     $strictFlags = phpunit_strict_issue_flags();
     $llmFlags = is_llm_mode() ? ' --colors=never --no-progress --log-junit='.report_path('phpunit-llm-real.junit.xml') : '';
-    $envPrefix = 'APP_ENV=test LLAMA_CPP_SMOKE_TEST=1 ';
+    $envPrefix = qa_observability_env_command().' APP_ENV=test LLAMA_CPP_SMOKE_TEST=1 ';
 
     // Full group: ParaTest parallel (was a single sequential PHPUnit process).
     // Filtered runs stay sequential — ParaTest --filter can be unreliable.
@@ -79,7 +80,7 @@ function build_test_tui_phpunit_command(?string $filter = null): string
 {
     $strictFlags = phpunit_strict_issue_flags();
     $llmFlags = is_llm_mode() ? ' --colors=never --no-progress --log-junit='.report_path('phpunit-tui.junit.xml') : '';
-    $envPrefix = 'APP_ENV=test ';
+    $envPrefix = qa_observability_env_command().' APP_ENV=test ';
 
     $filterArg = null !== $filter ? ' --filter='.escapeshellarg($filter) : '';
     if ('' === $filterArg) {
@@ -212,9 +213,9 @@ function test_tui_update(): void
     echo 'Running TUI E2E tests with snapshot update (replay-backed)...
 ';
     passthru(
-        'APP_ENV=test '.
-        'HATFIELD_UPDATE_SNAPSHOTS=1 '.
-        \PHP_BINARY.' vendor/bin/phpunit'
+        qa_observability_env_command().' APP_ENV=test '
+        .'HATFIELD_UPDATE_SNAPSHOTS=1 '
+        .\PHP_BINARY.' vendor/bin/phpunit'
         .' --group tui-e2e-replay'
         .' --colors=never --no-progress --do-not-cache-result'
         .(is_llm_mode() ? ' --log-junit='.report_path('phpunit-tui-update.junit.xml') : ''),
@@ -257,7 +258,7 @@ function test_controller(): void
     $strictFlags = phpunit_strict_issue_flags();
     $llmFlags = is_llm_mode() ? ' --colors=never --no-progress --log-junit='.report_path('phpunit-controller.junit.xml') : '';
 
-    $cmd = 'APP_ENV=test '.$pharEnv.'LLAMA_CPP_SMOKE_TEST=1 '.\PHP_BINARY.' vendor/bin/phpunit'
+    $cmd = qa_observability_env_command().' APP_ENV=test '.$pharEnv.'LLAMA_CPP_SMOKE_TEST=1 '.\PHP_BINARY.' vendor/bin/phpunit'
         .' --filter=ControllerSmokeTest'
         .' '.$strictFlags.$llmFlags;
 
@@ -308,7 +309,7 @@ function test_controller_replay(): void
     $strictFlags = phpunit_strict_issue_flags();
     $llmFlags = is_llm_mode() ? ' --colors=never --no-progress --log-junit='.report_path('phpunit-controller-replay.junit.xml') : '';
 
-    $cmd = 'APP_ENV=test '.\PHP_BINARY.' vendor/bin/phpunit'
+    $cmd = qa_observability_env_command().' APP_ENV=test '.\PHP_BINARY.' vendor/bin/phpunit'
         .' --group=controller-replay'
         .' '.$strictFlags.$llmFlags;
 

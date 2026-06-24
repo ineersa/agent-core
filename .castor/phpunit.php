@@ -30,6 +30,7 @@ use function CastorTasks\run_quiet_command;
 require_once __DIR__.'/../vendor/autoload.php';
 require_once __DIR__.'/helpers.php';
 require_once __DIR__.'/shared.php';
+require_once __DIR__.'/env.php';
 
 // ─── Sequential baseline (deterministic, default) ────────────────
 
@@ -47,7 +48,7 @@ function build_sequential_phpunit_command(string $pharEnv): string
     $llmFlags = is_llm_mode() ? ' --colors=never --no-progress' : '';
     $junitFlag = is_llm_mode() ? ' --log-junit='.report_path('phpunit-sequential.junit.xml') : '';
 
-    return 'APP_ENV=test '.$pharEnv.$phpBin.' vendor/bin/phpunit'
+    return qa_observability_env_command().' APP_ENV=test '.$pharEnv.$phpBin.' vendor/bin/phpunit'
         .' --exclude-group tui-e2e-replay --exclude-group llm-real --exclude-group recording --exclude-group controller-replay'
         .' '.$strictFlags.$llmFlags.$junitFlag;
 }
@@ -109,7 +110,7 @@ function test(?string $filter = null, ?string $suite = null): void
     if (null !== $filter) {
         // Filtered runs use single PHPUnit (ParaTest --filter can be unreliable).
         // Exclude groups that require live LLM or tmux (same as build_sequential_phpunit_command).
-        $phpunitCmd = 'APP_ENV=test '.$pharEnv.\PHP_BINARY.' vendor/bin/phpunit'
+        $phpunitCmd = qa_observability_env_command().' APP_ENV=test '.$pharEnv.\PHP_BINARY.' vendor/bin/phpunit'
             .$suiteFlag
             .' --filter='.escapeshellarg($filter)
             .' --exclude-group=tui-e2e-replay --exclude-group=llm-real --exclude-group=recording --exclude-group=controller-replay'
@@ -144,7 +145,7 @@ function test(?string $filter = null, ?string $suite = null): void
     $llmFlags = is_llm_mode() ? ' --colors=never --no-progress' : '';
     $junitFlag = is_llm_mode() ? ' --log-junit='.report_path('phpunit-parallel.junit.xml') : '';
 
-    $cmd = 'APP_ENV=test '.$pharEnv.\PHP_BINARY.' vendor/bin/paratest'
+    $cmd = qa_observability_env_command().' APP_ENV=test '.$pharEnv.\PHP_BINARY.' vendor/bin/paratest'
         .' --configuration=phpunit.xml.dist'
         .' --bootstrap='.escapeshellarg($bootstrap)
         .$suiteFlag
@@ -180,7 +181,7 @@ function build_check_paratest_command(): string
     $llmFlags = is_llm_mode() ? ' --colors=never --no-progress' : '';
     $junitFlag = is_llm_mode() ? ' --log-junit='.report_path('phpunit-parallel.junit.xml') : '';
 
-    return 'APP_ENV=test '.$phpBin.' vendor/bin/paratest'
+    return qa_observability_env_command().' APP_ENV=test '.$phpBin.' vendor/bin/paratest'
         .' --configuration=phpunit.xml.dist'
         .' --bootstrap='.escapeshellarg($bootstrap)
         .' --exclude-group=tui-e2e-replay --exclude-group=llm-real --exclude-group=recording --exclude-group=controller-replay --exclude-group=phar'

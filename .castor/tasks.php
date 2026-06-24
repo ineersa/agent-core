@@ -51,6 +51,7 @@ use function CastorTasks\run_quiet_command;
 require_once __DIR__.'/../vendor/autoload.php';
 require_once __DIR__.'/helpers.php';
 require_once __DIR__.'/shared.php';
+require_once __DIR__.'/env.php';
 // The following files are loaded by import() ordering in castor.php
 // before this file; their global functions are already available.
 
@@ -72,10 +73,6 @@ require_once __DIR__.'/shared.php';
 function check(): void
 {
     $root = (false !== ($_rp = realpath(__DIR__.'/..')) ? $_rp : __DIR__.'/..');
-    // Belt-and-suspenders: kill stale messenger/controller workers from
-    // previous castor check runs that may have leaked through per-step
-    // timeouts.  Scoped to this checkout only.
-    cleanup_stale_check_workers($root);
 
     // No PHAR ensure — the deterministic controller-replay and TUI
     // replay lanes use source bin/console with APP_ENV=test, which
@@ -93,7 +90,7 @@ function check(): void
     $allCheckCommands = [
         'deptrac' => [
             'cmd' => timeout_check_command(
-                $phpBin.' vendor/bin/deptrac --config-file=depfile.yaml --no-progress --no-ansi'
+                qa_observability_env_command().' '.$phpBin.' vendor/bin/deptrac --config-file=depfile.yaml --no-progress --no-ansi'
                     .(is_llm_mode() ? ' --formatter=json' : ''),
                 30,
             ),
@@ -107,7 +104,7 @@ function check(): void
         ],
         'test:controller-replay' => [
             'cmd' => timeout_check_command(
-                'APP_ENV=test '.$phpBin.' vendor/bin/phpunit'
+                qa_observability_env_command().' APP_ENV=test '.$phpBin.' vendor/bin/phpunit'
                     .' --group=controller-replay'
                     .' '.$strictFlags.$llmFlags
                     .(is_llm_mode() ? ' --log-junit='.report_path('phpunit-controller-replay.junit.xml') : ''),
@@ -128,14 +125,14 @@ function check(): void
         ],
         'phpstan' => [
             'cmd' => timeout_check_command(
-                $phpBin.' vendor/bin/phpstan analyse -c phpstan.dist.neon --no-progress'
+                qa_observability_env_command().' '.$phpBin.' vendor/bin/phpstan analyse -c phpstan.dist.neon --no-progress'
                     .(is_llm_mode() ? ' --error-format=json --no-ansi' : ''),
                 90,
             ),
         ],
         'cs-check' => [
             'cmd' => timeout_check_command(
-                $phpBin.' vendor/bin/php-cs-fixer fix --config=.php-cs-fixer.dist.php --dry-run --no-ansi'
+                qa_observability_env_command().' '.$phpBin.' vendor/bin/php-cs-fixer fix --config=.php-cs-fixer.dist.php --dry-run --no-ansi'
                     .(is_llm_mode() ? ' --format=json --show-progress=none' : ' --diff'),
                 30,
             ),
@@ -338,12 +335,15 @@ function _stale_check_worker_has_hatfield_session_env(int $pid): bool
     return str_contains($pidEnv, 'HATFIELD_SESSION_ID=');
 }
 
-function cleanup_stale_check_workers(string $root): void
+/**
+ * @return list<array{pid:int, cmdline:string, reason:string}>
+ */
+function collect_stale_check_worker_candidates(string $root): array
 {
     $output = [];
     @exec('ps -eo pid=,args= 2>/dev/null', $output);
     if ([] === $output) {
-        return;
+        return [];
     }
 
     $protectedLauncherPids = _stale_check_worker_protected_launcher_ancestry();
@@ -351,14 +351,12 @@ function cleanup_stale_check_workers(string $root): void
     $pharPat = preg_quote($pharGlob, '/');
     $consolePat = preg_quote($root.'/bin/console', '/');
 
-    $pidsToKill = [];
+    $candidates = [];
     foreach ($output as $raw) {
         $line = trim($raw);
         if ('' === $line) {
             continue;
         }
-        // Parse leading pid then command.  `ps -eo pid=,args=` produces
-        // padded columns: "  1234 /usr/bin/php ..."
         if (!preg_match('/^\s*(\d+)\s+(.+)$/s', $line, $m)) {
             continue;
         }
@@ -375,56 +373,55 @@ function cleanup_stale_check_workers(string $root): void
             continue;
         }
 
-        // ── Leaked messenger consumers / agent controllers (PHAR) ──
         if (preg_match("/{$pharPat}/", $cmdline)
             && (str_contains($cmdline, 'messenger:consume')
                 || str_contains($cmdline, 'agent --controller'))) {
             if (_stale_check_worker_has_hatfield_session_env($pid)) {
                 continue;
             }
-            $pidsToKill[] = $pid;
+            $candidates[] = ['pid' => $pid, 'cmdline' => $cmdline, 'reason' => 'leaked phar messenger/controller'];
             continue;
         }
 
-        // ── Leaked messenger consumers / agent controllers (source) ──
-        // Replay E2E uses source `{$root}/bin/console` (not PHAR).  Pre-change
-        // cleanup only matched PHAR-shaped argv, so leaked source workers could
-        // survive across parallel `castor check` lanes.  Match absolute console
-        // path plus messenger/controller subcommands (not bare `agent` — checkout
-        // paths may contain "agent-core").
         if (preg_match("/{$consolePat}/", $cmdline)
             && (str_contains($cmdline, 'messenger:consume')
                 || str_contains($cmdline, 'agent --controller'))) {
             if (_stale_check_worker_has_hatfield_session_env($pid)) {
                 continue;
             }
-            $pidsToKill[] = $pid;
+            $candidates[] = ['pid' => $pid, 'cmdline' => $cmdline, 'reason' => 'leaked source messenger/controller'];
             continue;
         }
 
-        // ── Stale vendor/bin/phpunit in this checkout (argv or cwd) ──
         if (str_contains($cmdline, 'vendor/bin/phpunit')) {
-            $pidsToKill[] = $pid;
+            $candidates[] = ['pid' => $pid, 'cmdline' => $cmdline, 'reason' => 'stale phpunit'];
             continue;
         }
 
-        // ── Stale castor check with this checkout's root ──
-        // Ancestry guard above skips timeout/shell/Hatfield wrappers; only
-        // unrelated orphaned `castor check` trees in this checkout are killed.
         if (str_contains($cmdline, 'castor check')) {
-            $pidsToKill[] = $pid;
-            continue;
+            $candidates[] = ['pid' => $pid, 'cmdline' => $cmdline, 'reason' => 'stale castor check'];
         }
     }
 
-    if ([] === $pidsToKill) {
+    return $candidates;
+}
+
+/**
+ * Last-resort debug cleanup for leaked QA workers in this checkout.
+ *
+ * Not invoked by `castor check`. Prefer fixing lifecycle leaks at the source.
+ */
+function cleanup_stale_check_workers(string $root): void
+{
+    $candidates = collect_stale_check_worker_candidates($root);
+    if ([] === $candidates) {
         return;
     }
 
+    $pidsToKill = array_map(static fn (array $row): int => $row['pid'], $candidates);
     $pidList = implode(' ', $pidsToKill);
     echo "Killing stale check worker PIDs: {$pidList}\n";
 
-    // SIGTERM first, short grace, then SIGKILL survivors.
     foreach ($pidsToKill as $pid) {
         @posix_kill($pid, \SIGTERM);
     }
@@ -434,6 +431,46 @@ function cleanup_stale_check_workers(string $root): void
             @posix_kill($pid, \SIGKILL);
         }
     }
+}
+
+#[AsTask(name: 'cleanup:workers:list', namespace: 'clean', description: 'List stale QA worker candidates in this checkout (dry-run)')]
+function cleanup_workers_list(): void
+{
+    $root = (false !== ($_rp = realpath(__DIR__.'/..')) ? $_rp : __DIR__.'/..');
+    $candidates = collect_stale_check_worker_candidates($root);
+    if ([] === $candidates) {
+        echo "No stale QA worker candidates in {$root}\n";
+        exit(0);
+    }
+
+    echo "Stale QA worker candidates in {$root}:\n";
+    foreach ($candidates as $row) {
+        echo sprintf("  pid=%d reason=%s\n    %s\n", $row['pid'], $row['reason'], $row['cmdline']);
+    }
+    echo "\nUse castor cleanup:workers only as explicit last resort after investigating leaks.\n";
+    exit(0);
+}
+
+#[AsTask(name: 'cleanup:workers', namespace: 'clean', description: 'Kill stale QA workers in this checkout (last-resort debug only)')]
+function cleanup_workers(): void
+{
+    $root = (false !== ($_rp = realpath(__DIR__.'/..')) ? $_rp : __DIR__.'/..');
+    $before = collect_stale_check_worker_candidates($root);
+    if ([] === $before) {
+        echo "No stale QA worker candidates in {$root}\n";
+        exit(0);
+    }
+
+    echo "Last-resort cleanup — investigate lifecycle leaks instead of relying on this.\n";
+    cleanup_stale_check_workers($root);
+    $after = collect_stale_check_worker_candidates($root);
+    if ([] === $after) {
+        echo "Cleanup complete.\n";
+        exit(0);
+    }
+
+    echo "Some candidates may still be alive (zombies or respawned). Re-run castor cleanup:workers:list.\n";
+    exit(1);
 }
 
 // ─── Check command runners ───────────────────────────────────────

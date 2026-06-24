@@ -553,7 +553,7 @@ function test_timeout_hardstop(string $cmdOverride = ''): void
     }
 
     // ── Test C: Startup stale-worker cleanup ─────────────────
-    echo "\n── Test C: Startup cleanup_stale_check_workers kills stale PHAR workers ──\n\n";
+    echo "\n── Test C: Optional cleanup_stale_check_workers kills stale PHAR workers ──\n\n";
 
     // Spawn a fake stale process whose ps output looks like a leaked
     // messenger consumer.  Use array-form proc_open (no intermediate
@@ -624,7 +624,7 @@ function test_timeout_hardstop(string $cmdOverride = ''): void
     }
 
     // ── Test C2: Startup cleanup kills stale source bin/console workers ──
-    echo "\n── Test C2: Startup cleanup_stale_check_workers kills stale source workers ──\n\n";
+    echo "\n── Test C2: Optional cleanup_stale_check_workers kills stale source workers ──\n\n";
 
     $consolePath = $root.'/bin/console';
     $fakeArgsC2 = ['bash', '-c', 'exec -a '.$consolePath
@@ -674,7 +674,7 @@ function test_timeout_hardstop(string $cmdOverride = ''): void
     }
 
     // ── Test C3: Active Hatfield session workers are preserved ──
-    echo "\n── Test C3: Startup cleanup preserves messenger workers with HATFIELD_SESSION_ID ──\n\n";
+    echo "\n── Test C3: Optional cleanup preserves messenger workers with HATFIELD_SESSION_ID ──\n\n";
 
     $sessionIdSmoke = 'castor-smoke-active-session-208';
     $fakeArgsC3 = ['bash', '-c', 'export HATFIELD_SESSION_ID='.$sessionIdSmoke

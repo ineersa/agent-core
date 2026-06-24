@@ -52,7 +52,10 @@ Read-only planning. No status changes, no file edits, no forks.
 5. Discuss with user. Highlight decision points — do not silently resolve them.
 6. When ready to implement, user runs `task-start`.
 
-### task-start: Implement (TODO → IN-PROGRESS)
+#
+
+**Leaked QA workers:** `castor check` does not auto-kill. Use `castor cleanup:workers:list` for diagnostics; `castor cleanup:workers` is last-resort only.
+## task-start: Implement (TODO → IN-PROGRESS)
 
 1. `move_task(to="IN-PROGRESS")` — creates worktree branch.
    - Worktree creation copies `vendor/` and `.vera/` into the worktree, and updates the parent worktree IDEA module exclusions when present.

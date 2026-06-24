@@ -6,7 +6,6 @@ namespace Ineersa\AgentCore\Tests\Application\Handler;
 
 use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Contract\SpanProviderInterface;
-use Ineersa\AgentCore\Tests\Support\Psr3LogMessageAssert;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\AbstractLogger;
 use Psr\Log\LoggerInterface;
@@ -25,8 +24,8 @@ final class RunTracerTest extends TestCase
 
         $records = $logger->records;
         self::assertCount(2, $records);
-        self::assertSame('agent_loop.trace.start', Psr3LogMessageAssert::normalize($records[0]['message']));
-        self::assertSame('agent_loop.trace.finish', Psr3LogMessageAssert::normalize($records[1]['message']));
+        self::assertSame('agent_loop.trace.start', $records[0]['message']);
+        self::assertSame('agent_loop.trace.finish', $records[1]['message']);
     }
 
     public function testSpanProviderIsCalledCorrectly(): void

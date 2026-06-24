@@ -80,6 +80,21 @@ function datadog_trace_endpoint_available(): bool
  * ddtrace reads its settings before userland PHP boots, so these values must
  * be present in the shell environment that starts `php bin/console`.
  */
+
+/**
+ * Environment prefix for Castor QA/test PHP child processes.
+ *
+ * Disables optional APM/log injection so PHPUnit assertions on PSR-3 message
+ * strings stay deterministic when a host loads tracing extensions. Harmless
+ * when no extension is present.
+ */
+function qa_observability_env_command(): string
+{
+    $base = datadog_env_command(false);
+
+    return $base.' DD_LOGS_INJECTION=0 DD_TRACE_APPEND_TRACE_IDS_TO_LOGS=false';
+}
+
 function datadog_env_command(bool $enabled): string
 {
     $vars = [
