@@ -604,10 +604,7 @@ final class RuntimeEventMapperTest extends TestCase
         self::assertSame(RuntimeEventTypeEnum::UserMessageQueued->value, $result->type);
         self::assertSame('Steer from content', $result->payload['text']);
         self::assertSame('ik-steer-1', $result->payload['idempotency_key']);
-        self::assertSame(
-            \sprintf('user_queued_%s_%s', $this->runId, 'ik-steer-1'),
-            $result->payload['message_id'],
-        );
+        self::assertArrayNotHasKey('message_id', $result->payload);
     }
 
     public function testNormalizesAgentCommandQueuedFollowUpToUserMessageQueued(): void
@@ -624,6 +621,7 @@ final class RuntimeEventMapperTest extends TestCase
         self::assertSame(RuntimeEventTypeEnum::UserMessageQueued->value, $result->type);
         self::assertSame('Direct text', $result->payload['text']);
         self::assertSame('ik-fu-2', $result->payload['idempotency_key']);
+        self::assertArrayNotHasKey('message_id', $result->payload);
     }
 
     public function testSkipsAgentCommandQueuedForCompact(): void

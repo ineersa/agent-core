@@ -11,7 +11,8 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * TUI E2E proof: queued steer during active tool execution renders pending ⏳
- * feedback, then reconciles to canonical ❯ user message (issue #206).
+ * in the queue widget above the editor, then pops from the widget and appends
+ * the canonical ❯ user message to transcript history when applied (issue #206).
  *
  * @group tui-e2e-replay
  */
@@ -79,16 +80,16 @@ final class TuiQueuedSteerE2eTest extends TestCase
                 static fn (string $cap): bool => str_contains($cap, '⏳')
                     && str_contains($cap, $marker),
                 timeout: 10.0,
-                message: 'Pending queued steer (⏳) with marker text did not appear',
+                message: 'Pending queued steer (⏳ in queue widget above editor) with marker text did not appear',
                 history: 2000,
             );
             $this->saveAnsiSnapshot($pane, 'queued-steer-pending');
 
             $this->tmux->waitForCallback(
                 $pane,
-                // '❯ ' + marker is unambiguous: the pending form renders '⏳ ' + marker,
-                // and the initial prompt renders '❯ Run sleep 15' (no marker). So this is true
-                // only once the queued steer is reconciled into a canonical user-message block.
+                // '❯ ' + marker is unambiguous: pending feedback is in the queue widget ('⏳ ' + marker),
+                // not in transcript history. The initial prompt is '❯ Run sleep 15' (no marker).
+                // True only once apply appends the canonical user-message block to history.
                 static fn (string $cap): bool => str_contains($cap, '❯ '.$marker),
                 timeout: 30.0,
                 message: 'Canonical user message (❯ + steer text) did not appear after apply',
@@ -106,7 +107,7 @@ final class TuiQueuedSteerE2eTest extends TestCase
             $this->assertStringNotContainsString(
                 '⏳ '.self::STEER_MARKER,
                 $finalCapture,
-                'Pending ⏳ block for the steer must be gone after reconciliation',
+                'Pending ⏳ queue-widget entry for the steer must be gone after apply (message is in history as ❯)',
             );
             $this->saveAnsiSnapshot($pane, 'queued-steer-reconciled');
 

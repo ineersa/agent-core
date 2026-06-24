@@ -459,7 +459,6 @@ final class RuntimeEventTranslator
             runId: $runEvent->runId,
             seq: $runEvent->seq,
             payload: [
-                'message_id' => \sprintf('user_queued_%s_%s', $runEvent->runId, $idempotencyKey),
                 'text' => $text,
                 'idempotency_key' => $idempotencyKey,
             ],

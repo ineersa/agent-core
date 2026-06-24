@@ -112,6 +112,22 @@ final class RuntimeEventPoller
 
                 $state->activity = ActivityStateMachine::transition($state->activity, $runtimeEvent);
 
+                // Feed the pending-queue widget (above the editor): push queued steer/follow-up
+                // messages, pop them when the canonical user message is applied (matched by
+                // idempotency_key). The finalized ❯ user message is appended to the transcript
+                // by the projector on apply, so the transcript stays clean of transient state.
+                if (RuntimeEventTypeEnum::UserMessageQueued->value === $runtimeEvent->type) {
+                    $key = (string) ($runtimeEvent->payload['idempotency_key'] ?? '');
+                    if ('' !== $key) {
+                        $state->queuedUserMessages[$key] = (string) ($runtimeEvent->payload['text'] ?? '');
+                    }
+                } elseif (RuntimeEventTypeEnum::UserMessageSubmitted->value === $runtimeEvent->type) {
+                    $key = (string) ($runtimeEvent->payload['idempotency_key'] ?? '');
+                    if ('' !== $key && isset($state->queuedUserMessages[$key])) {
+                        unset($state->queuedUserMessages[$key]);
+                    }
+                }
+
                 // Auto-dispatch a queued follow-up when cancellation completes.
                 // The user may have typed a message during the Cancelling grace
                 // window; it was queued in $state->queuedFollowUp instead of

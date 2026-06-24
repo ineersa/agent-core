@@ -59,6 +59,20 @@ final class TuiSessionState
      */
     public ?string $queuedFollowUp = null;
 
+    /**
+     * Steer/follow-up messages queued by AgentCore while the run is active.
+     * Keyed by idempotency_key; value is the message text.
+     *
+     * Pushed by RuntimeEventPoller on user.message_queued and popped on
+     * user.message_submitted (matched by idempotency_key). Rendered by the
+     * PendingMessagesWidget above the editor until the canonical user message
+     * is applied to the run, at which point the entry pops and the finalized
+     * ❯ user message is appended to the transcript.
+     *
+     * @var array<string, string>
+     */
+    public array $queuedUserMessages = [];
+
     /** @var list<TranscriptBlock> Transcript blocks (plain, un-themed) */
     public array $transcript = [];
 

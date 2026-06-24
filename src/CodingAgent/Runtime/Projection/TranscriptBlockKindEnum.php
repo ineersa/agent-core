@@ -16,9 +16,6 @@ enum TranscriptBlockKindEnum: string
     /** A user-submitted message. */
     case UserMessage = 'user_message';
 
-    /** A user steer/follow-up queued during active work; shown as pending until applied. */
-    case UserMessageQueued = 'user_message_queued';
-
     /** A completed assistant message (final text). */
     case AssistantMessage = 'assistant_message';
 

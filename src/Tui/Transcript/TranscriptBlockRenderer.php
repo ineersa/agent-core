@@ -54,7 +54,6 @@ final readonly class TranscriptBlockRenderer
     {
         return match ($block->kind) {
             TranscriptBlockKindEnum::UserMessage => '  ❯',
-            TranscriptBlockKindEnum::UserMessageQueued => '  ⏳',
             TranscriptBlockKindEnum::AssistantMessage => '  ◇',
             TranscriptBlockKindEnum::AssistantThinking => '  ⋯',
             TranscriptBlockKindEnum::ToolCall,
@@ -72,7 +71,6 @@ final readonly class TranscriptBlockRenderer
     {
         return match ($block->kind) {
             TranscriptBlockKindEnum::UserMessage => ThemeColorEnum::UserMessage,
-            TranscriptBlockKindEnum::UserMessageQueued => ThemeColorEnum::Muted,
             TranscriptBlockKindEnum::AssistantMessage => ThemeColorEnum::AssistantMessage,
             TranscriptBlockKindEnum::AssistantThinking => ThemeColorEnum::ThinkingText,
             TranscriptBlockKindEnum::ToolCall => ThemeColorEnum::Tool,
@@ -136,7 +134,6 @@ final readonly class TranscriptBlockRenderer
             TranscriptBlockKindEnum::Cancelled => '[cancelled]',
             TranscriptBlockKindEnum::Error => '[error]',
             TranscriptBlockKindEnum::Progress => '[progress]',
-            TranscriptBlockKindEnum::UserMessageQueued => '[queued]',
             default => '',
         };
     }
