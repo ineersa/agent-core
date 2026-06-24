@@ -76,6 +76,16 @@ abstract class ControllerE2eTestCase extends TestCase
     }
 
     /**
+     * Extra environment variables for the controller subprocess (and inherited workers).
+     *
+     * @return array<string, string>
+     */
+    protected function controllerSubprocessEnv(): array
+    {
+        return [];
+    }
+
+    /**
      * Wall-clock budget for live LLM tool smoke tests (first LLM turn + tool execution).
      * Replay-backed controller tests may pass with shorter timeouts; live llama.cpp is slower.
      */
@@ -168,6 +178,7 @@ abstract class ControllerE2eTestCase extends TestCase
             'HATFIELD_SESSION_ID' => $this->sessionId,
             'LLAMA_CPP_SMOKE_TEST' => '1',
         ];
+        $env = array_merge($env, $this->controllerSubprocessEnv());
 
         $pipes = [];
         $process = @proc_open(

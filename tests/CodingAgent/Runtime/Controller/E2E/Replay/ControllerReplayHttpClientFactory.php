@@ -57,7 +57,14 @@ final class ControllerReplayHttpClientFactory
 
         // Default: short timeout for test environment (live LLM smoke
         // or non-replay controller tests).
-        return HttpClient::create(['timeout' => 5]);
+        $timeout = 5.0;
+        $envTimeout = $_ENV['HATFIELD_TEST_LLM_HTTP_TIMEOUT']
+            ?? ($_SERVER['HATFIELD_TEST_LLM_HTTP_TIMEOUT'] ?? getenv('HATFIELD_TEST_LLM_HTTP_TIMEOUT'));
+        if (false !== $envTimeout && '' !== $envTimeout) {
+            $timeout = (float) $envTimeout;
+        }
+
+        return HttpClient::create(['timeout' => $timeout]);
     }
 
     // ── Replay client construction ────────────────────────────────
@@ -85,7 +92,14 @@ final class ControllerReplayHttpClientFactory
             // timeout client so the process doesn't fail on a missing
             // HttpClient.  The test will still fail because there are
             // no fixture responses, but the error is easier to debug.
-            return HttpClient::create(['timeout' => 5]);
+            $timeout = 5.0;
+        $envTimeout = $_ENV['HATFIELD_TEST_LLM_HTTP_TIMEOUT']
+            ?? ($_SERVER['HATFIELD_TEST_LLM_HTTP_TIMEOUT'] ?? getenv('HATFIELD_TEST_LLM_HTTP_TIMEOUT'));
+        if (false !== $envTimeout && '' !== $envTimeout) {
+            $timeout = (float) $envTimeout;
+        }
+
+        return HttpClient::create(['timeout' => $timeout]);
         }
 
         $index = 0;
