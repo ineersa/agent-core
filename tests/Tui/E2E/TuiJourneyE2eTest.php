@@ -70,10 +70,11 @@ final class TuiJourneyE2eTest extends TestCase
      *  4. Shell !ls prefix — real command output proof + ordering
      *  5. File @ completion preserves multiline content
      *  6. Model interaction via replay fixture (no live LLM)
-     *  7. !! double-bang rejection proof
-     *  8. /export slash command proof
-     *  9. Inline shell on completed run + follow-up (issue #183 repro)
-     * 10. Clean exit via Ctrl+D
+     *  7. /export slash command proof
+     *  8. Inline shell on completed run + follow-up (issue #183 repro)
+     *  9. Clean exit via Ctrl+D
+     *
+     * !! double-bang rejection is covered by {@see \Ineersa\Tui\Tests\Screen\TuiVirtualInputTest}.
      *
      * Ctrl+J newline is tested separately in HotkeySmokeTest
      * (it is sensitive to terminal configuration and a race
@@ -96,7 +97,6 @@ final class TuiJourneyE2eTest extends TestCase
             $this->journeyPhase4ShellPrefixOutput($pane);
             $this->journeyPhase5FileCompletion($pane);
             $this->journeyPhase6ModelInteractionReplay($pane);
-            $this->journeyPhase7DoubleBangRejection($pane);
             $this->journeyPhase8ExportCommand($pane);
             $this->journeyPhase9InlineShellOnCompletedRun($pane);
 
@@ -533,20 +533,6 @@ final class TuiJourneyE2eTest extends TestCase
         self::assertStringNotContainsString('<script>', $html, 'HTML export must not contain unescaped <script> tags');
     }
 
-    /**
-     * Phase 7: !! double-bang shell prefix rejection.
-     */
-    private function journeyPhase7DoubleBangRejection(TmuxPane $pane): void
-    {
-        $this->tmux->sendKey($pane, 'C-u'); // Clear editor
-        $this->tmux->sendLiteral($pane, '!!echo should-not-run');
-        $this->tmux->sendKey($pane, 'Enter');
-
-        $capture = $this->tmux->waitForCaptureContains($pane, 'not supported', 2.0);
-
-        self::assertStringContainsString('not supported', $capture, '!! must show not-supported message');
-        self::assertStringNotContainsString('should-not-run', $capture, '!! must never execute the command');
-    }
 
     // ── Helpers ───────────────────────────────────────────────────
 
