@@ -256,6 +256,35 @@ final class AgentArtifactRegistry
     // ── Public file writers ─────────────────────────────────────────────
 
     /**
+     * Read handoff.md for an existing artifact within a parent scope.
+     *
+     * Returns an empty string when the file is missing or empty.
+     *
+     * @throws \InvalidArgumentException when IDs contain path separators
+     * @throws \RuntimeException         when handoff exists but is unreadable
+     */
+    public function readHandoff(string $parentRunId, string $artifactId): string
+    {
+        $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
+        $this->pathResolver->validatePathComponent($artifactId, 'artifactId');
+
+        $paths = AgentArtifactPathsDTO::forArtifactId($artifactId);
+        $path = $this->pathResolver->absolutePath($parentRunId, $paths->handoffPath);
+
+        if (!is_file($path)) {
+            return '';
+        }
+
+        if (!is_readable($path)) {
+            throw new \RuntimeException(\sprintf('handoff.md for artifact "%s" parent "%s" is not readable.', $artifactId, $parentRunId));
+        }
+
+        $content = file_get_contents($path);
+
+        return false === $content ? '' : $content;
+    }
+
+    /**
      * Write (or overwrite) the handoff.md file for an existing artifact.
      *
      * This is a public interface for {@see SubagentExecutionService} to

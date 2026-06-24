@@ -766,4 +766,27 @@ final class AgentArtifactRegistryTest extends TestCase
 
         $this->registry->list($parentRunId);
     }
+
+    public function testReadHandoffReturnsWrittenContent(): void
+    {
+        $parentRunId = 'parent-'.bin2hex(random_bytes(4));
+        $artifactId = 'agent_read_01';
+        $agentRunId = 'child-'.bin2hex(random_bytes(4));
+
+        $this->registry->create($parentRunId, $artifactId, $agentRunId, 'scout');
+        $this->registry->writeHandoff($parentRunId, $artifactId, "# Handoff
+
+Done.");
+
+        self::assertSame("# Handoff
+
+Done.", $this->registry->readHandoff($parentRunId, $artifactId));
+    }
+
+    public function testReadHandoffRejectsPathTraversalArtifactId(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->registry->readHandoff('parent-1', '../evil');
+    }
+
 }

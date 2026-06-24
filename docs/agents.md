@@ -176,7 +176,10 @@ indicating they are not yet implemented.
 
 1. **Blocking foreground.** The tool handler blocks the parent LLM until the
    child run reaches a terminal status (Completed, Failed, Cancelled) or
-   times out. The tool result is the dense handoff text returned to the parent LLM.
+   times out. On **success**, the tool result includes a machine-parseable
+   `Artifact: <artifact_id>` line (along with the child handoff text) so the
+   parent model or user can call `agent_retrieve` for the same artifact.
+   Failed and cancelled paths also include `Artifact: <artifact_id>`.
 2. **Parent-scoped storage.** Child runs are stored entirely under the parent
    session directory — no top-level session rows or directories are created.
 3. **Inline progress.** While the child runs, compact progress status lines
@@ -212,8 +215,48 @@ Child runs are stored under the parent session directory:
 - Child events and state use the same Canonical JSONL and CAS patterns as
   parent runs, stored under the parent directory via `AgentChildRunEventStore`
   and `AgentChildRunStore`.
-- A dedicated retrieval tool (to query, list, or load child artifacts for the
-  parent LLM) is **future work** (planned for AGENT-06).
+- Use the `agent_retrieve` tool (AGENT-06) to load handoffs, metadata, or
+  bounded event/history summaries for artifacts in the **current parent session**.
+
+### `agent_retrieve` tool
+
+The model-visible `agent_retrieve` tool reads parent-scoped subagent artifacts
+after `subagent` completes (or fails). Copy the `artifact_id` from the
+`Artifact: …` line in the `subagent` tool result (success, failure, or cancel).
+It does not launch runs and does not replace inline subagent handoffs — use it
+when a handoff was truncated, you need status/metadata, or you want a bounded
+debug summary.
+
+**Schema (v1):**
+
+```json
+{
+  "artifact_id": "agent_abc123",
+  "agent_run_id": "<child-run-uuid>",
+  "mode": "handoff",
+  "limit": 20
+}
+```
+
+- Provide at least one of `artifact_id` or `agent_run_id` (both must refer to the
+  same artifact when both are set).
+- `mode` (default `handoff`): `handoff`, `metadata`, `events`, `history`, `debug`.
+- `limit` (default 20, max 100): bounds `events` and `history` rows.
+
+**Privacy and bounds:**
+
+- Default modes do not expose raw prompts, full message arrays, tool output,
+  streaming deltas, API keys, environment values, or full event payloads.
+- `history` skips `system`, `user-context`, and `tool` messages; other visible text is truncated.
+- `events` lists recent child events with sanitized one-line summaries only.
+- `debug` returns **relative** artifact paths under the parent session, not absolute
+  filesystem paths.
+
+**Access rules:**
+
+- Retrieval is limited to the **current parent run** (`ToolContext.runId`).
+- Unknown identifiers are rejected with actionable errors. Cross-parent `agent_run_id` access is rejected; artifact ids are parent-scoped and random per child run.
+- Path traversal in `artifact_id` is rejected.
 
 ### Depth and recursion guard (v1)
 
@@ -285,7 +328,7 @@ The following features are **not yet implemented**:
 | `/agents` TUI command | Not implemented | Future |
 | Dedicated dock/overlay for child agent views | Not implemented | Future |
 | Interactive child HITL, approvals, or questions | Not supported (WaitingHuman → Failed) | Future |
-| Child artifact retrieval tool | Not implemented | AGENT-06 |
+| Child artifact retrieval tool | Implemented (`agent_retrieve`) | — |
 
 ## See also
 
