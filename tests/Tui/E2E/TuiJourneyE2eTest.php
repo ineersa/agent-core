@@ -20,7 +20,7 @@ use PHPUnit\Framework\TestCase;
  *  - Launches the TUI once with APP_ENV=test + replay fixtures so
  *    model-dependent steps are deterministic and require no live
  *    llama.cpp.
- *  - UI-only tmux steps (reasoning, shell, file completion) run before
+ *  - UI-only tmux steps (shell, file completion) run before
  *    model interaction; /hotkeys and !! rejection are virtual-only
  *    ({@see \Ineersa\Tui\Tests\Screen\TuiVirtualInputTest}).
  *  - A single model-interaction step submits a prompt and verifies
@@ -28,7 +28,7 @@ use PHPUnit\Framework\TestCase;
  *  - Teardown sends Ctrl+D for a clean exit; TmuxHarness destructor
  *    kills the tmux session.
  *
- * Harness launch count: 1 (integration smoke). Startup, /hotkeys, and
+ * Harness launch count: 1 (integration smoke). Startup, reasoning, /hotkeys, and
  * !! proofs live in virtual tests under tests/Tui/Screen/.
  *
  * @group tui-e2e-replay
@@ -66,7 +66,6 @@ final class TuiJourneyE2eTest extends TestCase
      *
      * Exercises in order (tmux integration smoke):
      *  1. Startup layout (logo, status, footer)
-     *  2. Reasoning cycling via Shift+Tab + border colour change
      *  3. Shell !ls prefix — real command output proof + ordering
      *  4. File @ completion
      *  5. Model interaction via replay fixture (no live LLM)
@@ -75,6 +74,7 @@ final class TuiJourneyE2eTest extends TestCase
      *  8. Clean exit via Ctrl+D
      *
      * Virtual-only (not in this journey): startup detail {@see TuiStartupVirtualRenderTest},
+     * Shift+Tab reasoning status/border {@see TuiReasoningCycleTest},
      * /hotkeys table, !! rejection — {@see TuiVirtualInputTest}.
      *
      * !! double-bang rejection is covered by {@see \Ineersa\Tui\Tests\Screen\TuiVirtualInputTest}.
@@ -96,7 +96,6 @@ final class TuiJourneyE2eTest extends TestCase
 
         try {
             $this->journeyPhase1StartupLayout($pane);
-            $this->journeyPhase2ReasoningAndBorderColour($pane);
             $this->journeyPhase4ShellPrefixOutput($pane);
             $this->journeyPhase5FileCompletion($pane);
             $this->journeyPhase6ModelInteractionReplay($pane);
@@ -142,49 +141,6 @@ final class TuiJourneyE2eTest extends TestCase
         // At startup the footer shows model, token, timer, CWD, branch.
     }
 
-    /**
-     * Phase 2: Shift+Tab reasoning cycling + editor border colour
-     * change (purely visual, no model involved).
-     */
-    private function journeyPhase2ReasoningAndBorderColour(TmuxPane $pane): void
-    {
-        $initialColour = $this->editorBorderColour($pane);
-        self::assertNotNull($initialColour, 'Border colour should not be null');
-        self::assertNotEmpty($initialColour, 'Border colour should not be empty');
-
-        // Shift+Tab: off → minimal
-        $this->tmux->sendLiteral($pane, "\x1b[Z");
-
-        // Wait for border colour change (catches the stylesheet repaint).
-        $minimalColour = $this->waitForBorderColorChange($pane, $initialColour, TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL);
-        self::assertNotSame(
-            $initialColour,
-            $minimalColour,
-            \sprintf(
-                'Border colour should change after Shift+Tab (off→minimal): %s vs %s',
-                $initialColour,
-                $minimalColour ?? '(null)',
-            ),
-        );
-
-        // Status panel should show reasoning level.
-        $capture = $this->tmux->capturePlainWithHistory($pane, 500);
-        self::assertStringContainsString('reasoning', $capture, 'Status panel should show reasoning key');
-
-        // Second Shift+Tab: minimal → low
-        $this->tmux->sendLiteral($pane, "\x1b[Z");
-
-        $lowColour = $this->waitForBorderColorChange($pane, $minimalColour, TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL);
-        self::assertNotSame(
-            $minimalColour,
-            $lowColour,
-            \sprintf(
-                'Border colour should change again (minimal→low): %s vs %s',
-                $minimalColour,
-                $lowColour ?? '(null)',
-            ),
-        );
-    }
 
     /**
      * Phase 4: !ls shell prefix (standalone, first-input) — creates a
@@ -625,59 +581,6 @@ final class TuiJourneyE2eTest extends TestCase
         return $dir;
     }
 
-    // ── ANSI border colour helpers (from EditorBorderColorTest) ──
-
-    private function editorBorderColour(TmuxPane $pane): ?string
-    {
-        $ansi = $this->tmux->captureAnsi($pane);
-        $lines = explode("\n", $ansi);
-
-        // Find the footer bar anchor: last line containing ◆.
-        $footerIdx = null;
-        for ($i = \count($lines) - 1; $i >= 0; --$i) {
-            if (str_contains($lines[$i], '◆')) {
-                $footerIdx = $i;
-                break;
-            }
-        }
-
-        if (null === $footerIdx) {
-            return null;
-        }
-
-        // Editor bottom border = 2 lines above the footer (skip footer separator).
-        $borderIdx = $footerIdx - 2;
-        if ($borderIdx < 0 || !isset($lines[$borderIdx])) {
-            return null;
-        }
-
-        $borderLine = $lines[$borderIdx];
-
-        // Extract the ANSI SGR colour before the first ─.
-        if (preg_match('/\x1b\[([0-9;]*)m/', $borderLine, $m)) {
-            $colourPart = $m[1];
-            if ('' !== $colourPart) {
-                return $colourPart;
-            }
-        }
-
-        return 'default';
-    }
-
-    private function waitForBorderColorChange(TmuxPane $pane, string $previous, float $timeout = TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL): ?string
-    {
-        $deadline = \microtime(true) + $timeout;
-
-        while (\microtime(true) < $deadline) {
-            $colour = $this->editorBorderColour($pane);
-            if (null !== $colour && $colour !== $previous) {
-                return $colour;
-            }
-            \usleep(100_000);
-        }
-
-        return $this->editorBorderColour($pane);
-    }
 
     private function saveAnsiSnapshot(TmuxPane $pane, string $tag): void
     {

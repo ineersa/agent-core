@@ -7,6 +7,7 @@ namespace Ineersa\Tui\Tests\Support;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\DefaultTheme;
+use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
 use Symfony\Component\Tui\Terminal\ScreenBuffer;
 use Symfony\Component\Tui\Terminal\VirtualTerminal;
@@ -31,9 +32,11 @@ final class VirtualTuiHarness
         int $columns = 120,
         int $rows = 40,
         string $sessionId = 'virtual-startup-session',
+        ?ThemePalette $palette = null,
     ) {
         $this->terminal = new VirtualTerminal(columns: $columns, rows: $rows);
-        $theme = new DefaultTheme(new ThemePalette('default'));
+        $palette ??= self::defaultVirtualPalette();
+        $theme = new DefaultTheme($palette);
         $this->screen = new ChatScreen(
             theme: $theme,
             sessionId: $sessionId,
@@ -101,6 +104,30 @@ final class VirtualTuiHarness
     {
         $this->tui->requestRender(force: true);
         $this->tui->processRender();
+    }
+
+
+    /**
+     * Palette with distinct ANSI thinking tokens for virtual border-colour assertions.
+     */
+    public static function defaultVirtualPalette(): ThemePalette
+    {
+        return new ThemePalette('virtual-test', [
+            ThemeColorEnum::ThinkingOff->value => 'white',
+            ThemeColorEnum::ThinkingMinimal->value => 'cyan',
+            ThemeColorEnum::ThinkingLow->value => 'yellow',
+            ThemeColorEnum::ThinkingMedium->value => 'green',
+            ThemeColorEnum::ThinkingHigh->value => 'magenta',
+            ThemeColorEnum::ThinkingXhigh->value => 'red',
+            ThemeColorEnum::ThinkingText->value => 'bright_white',
+        ]);
+    }
+
+    public function ansiOutput(): string
+    {
+        $this->render();
+
+        return $this->terminal->getOutput();
     }
 
     public function plainScreenText(): string
