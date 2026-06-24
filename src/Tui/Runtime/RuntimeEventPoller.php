@@ -114,19 +114,10 @@ final class RuntimeEventPoller
 
                 // Feed the pending-queue widget (above the editor): push queued steer/follow-up
                 // messages, pop them when the canonical user message is applied (matched by
-                // idempotency_key). The finalized ❯ user message is appended to the transcript
-                // by the projector on apply, so the transcript stays clean of transient state.
-                if (RuntimeEventTypeEnum::UserMessageQueued->value === $runtimeEvent->type) {
-                    $key = (string) ($runtimeEvent->payload['idempotency_key'] ?? '');
-                    if ('' !== $key) {
-                        $state->queuedUserMessages[$key] = (string) ($runtimeEvent->payload['text'] ?? '');
-                    }
-                } elseif (RuntimeEventTypeEnum::UserMessageSubmitted->value === $runtimeEvent->type) {
-                    $key = (string) ($runtimeEvent->payload['idempotency_key'] ?? '');
-                    if ('' !== $key && isset($state->queuedUserMessages[$key])) {
-                        unset($state->queuedUserMessages[$key]);
-                    }
-                }
+                // idempotency_key). Shared with SessionInitializer::replayFromEvents so the
+                // widget is also rebuilt on resume. The finalized ❯ user message is appended
+                // to the transcript by the projector on apply, so the transcript stays clean.
+                $state->applyQueuedUserMessageEvent($runtimeEvent);
 
                 // Auto-dispatch a queued follow-up when cancellation completes.
                 // The user may have typed a message during the Cancelling grace
