@@ -17,6 +17,7 @@ final readonly class AiConfig
      * @param array<string, AiProviderConfig> $providers        Enabled providers keyed by provider ID
      * @param list<string>                    $favoriteModels   Favorited provider/model strings
      * @param AiHttpConfig                    $http             HTTP retry/timeout config from ai.http settings block
+     * @param AiAgentRetryConfig              $agentRetry       Agent-level LLM step auto-retry from ai.agent_retry
      */
     public function __construct(
         public ?string $defaultModel = null,
@@ -24,6 +25,7 @@ final readonly class AiConfig
         public array $providers = [],
         public array $favoriteModels = [],
         public AiHttpConfig $http = new AiHttpConfig(),
+        public AiAgentRetryConfig $agentRetry = new AiAgentRetryConfig(),
     ) {
     }
 
@@ -78,6 +80,7 @@ final readonly class AiConfig
             providers: $providers,
             favoriteModels: $favorites,
             http: AiHttpConfig::fromArray($aiData['http'] ?? []),
+            agentRetry: AiAgentRetryConfig::fromArray($aiData['agent_retry'] ?? []),
         );
     }
 }

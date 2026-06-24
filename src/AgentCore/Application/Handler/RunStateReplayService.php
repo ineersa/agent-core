@@ -147,6 +147,7 @@ final readonly class RunStateReplayService
                 messages: $rebuiltState->messages,
                 activeStepId: $rebuiltState->activeStepId,
                 retryableFailure: $rebuiltState->retryableFailure,
+                retryAttempts: $rebuiltState->retryAttempts,
             );
 
             $this->logger->info('run_state_replay.rebuilt', [
@@ -228,6 +229,7 @@ final readonly class RunStateReplayService
                 messages: $state->messages,
                 activeStepId: $state->activeStepId,
                 retryableFailure: $state->retryableFailure,
+                retryAttempts: $state->retryAttempts,
             );
         }
 
@@ -245,6 +247,7 @@ final readonly class RunStateReplayService
             messages: $messages,
             activeStepId: $state->activeStepId,
             retryableFailure: $state->retryableFailure,
+            retryAttempts: $state->retryAttempts,
         );
     }
 
@@ -356,6 +359,7 @@ final readonly class RunStateReplayService
             messages: $state->messages,
             activeStepId: $stepId,
             retryableFailure: false,
+            retryAttempts: $state->retryAttempts,
         );
     }
 
@@ -441,6 +445,10 @@ final readonly class RunStateReplayService
 
         // continue: restore to Running from WaitingHuman/Failed
         if ('continue' === $kind) {
+            $cmdPayload = \is_array($payload['payload'] ?? null) ? $payload['payload'] : [];
+            $isAutoRetry = true === ($cmdPayload['auto_retry'] ?? false);
+            $retryAttempts = $isAutoRetry ? $state->retryAttempts : 0;
+
             return new RunState(
                 runId: $state->runId,
                 status: RunStatus::Running,
@@ -454,6 +462,7 @@ final readonly class RunStateReplayService
                 messages: $state->messages,
                 activeStepId: $state->activeStepId,
                 retryableFailure: false,
+                retryAttempts: $retryAttempts,
             );
         }
 
@@ -531,6 +540,7 @@ final readonly class RunStateReplayService
             messages: $state->messages,
             activeStepId: $state->activeStepId,
             retryableFailure: false,
+            retryAttempts: 0,
         );
     }
 
@@ -540,8 +550,11 @@ final readonly class RunStateReplayService
     private function applyLlmStepFailed(array $payload, RunState $state): RunState
     {
         $error = \is_array($payload['error'] ?? null) ? $payload['error'] : null;
-        $errorMessage = \is_string($error['message'] ?? null) ? $error['message'] : 'LLM worker failed.';
+        $errorMessage = \is_string($error['user_message'] ?? null)
+            ? $error['user_message']
+            : (\is_string($error['message'] ?? null) ? $error['message'] : 'LLM worker failed.');
         $retryable = \is_bool($payload['retryable'] ?? null) ? $payload['retryable'] : false;
+        $retryAttempt = isset($payload['retry_attempt']) && is_numeric($payload['retry_attempt']) ? (int) $payload['retry_attempt'] : 0;
 
         return new RunState(
             runId: $state->runId,
@@ -556,6 +569,7 @@ final readonly class RunStateReplayService
             messages: $state->messages,
             activeStepId: $state->activeStepId,
             retryableFailure: $retryable,
+            retryAttempts: $retryAttempt,
         );
     }
 

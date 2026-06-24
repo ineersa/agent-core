@@ -27,6 +27,7 @@ use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Message\StartRunPayload;
+use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\HotPromptStateStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
@@ -520,6 +521,27 @@ final class CommandMailboxPolicyTest extends TestCase
                 ],
             ],
         );
+    }
+
+    public function testCopyStatePreservesRetryAttempts(): void
+    {
+        $policy = new CommandMailboxPolicy(
+            commandStore: new InMemoryCommandStore(),
+            commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+        );
+
+        $state = new RunState(
+            runId: 'run-copy-retry',
+            status: RunStatus::Running,
+            retryAttempts: 2,
+        );
+
+        $reflection = new \ReflectionClass($policy);
+        $copyState = $reflection->getMethod('copyState');
+        /** @var RunState $copied */
+        $copied = $copyState->invoke($policy, $state, ['messages' => []]);
+
+        self::assertSame(2, $copied->retryAttempts);
     }
 
     private function deleteDirectory(string $path): void
