@@ -16,15 +16,16 @@ use Symfony\Component\Tui\Tui;
  * Deterministic in-process TUI harness for layout/render assertions.
  *
  * Mounts {@see ChatScreen} on Symfony {@see VirtualTerminal} and exposes plain
- * screen text via {@see ScreenBuffer}. Does not start {@see Tui::run()}, so
- * keyboard input simulation is out of scope here (add in a later phase with
- * an explicit input-loop test if needed).
+ * screen text via {@see ScreenBuffer}. Optional {@see startInputLoop()} wires
+ * the same terminal input callback as {@see Tui::run()} without blocking Revolt.
  */
 final class VirtualTuiHarness
 {
     private readonly VirtualTerminal $terminal;
     private readonly Tui $tui;
     private readonly ChatScreen $screen;
+
+    private bool $inputLoopStarted = false;
 
     public function __construct(
         int $columns = 120,
@@ -57,6 +58,45 @@ final class VirtualTuiHarness
         return $this->terminal;
     }
 
+    /**
+     * Start terminal input handling (matches {@see Tui::start()} input wiring).
+     *
+     * Does not block on {@see Tui::run()}; drive input with {@see sendInput()}.
+     */
+    public function startInputLoop(): void
+    {
+        if ($this->inputLoopStarted) {
+            return;
+        }
+
+        $this->tui->start();
+        $this->tui->setFocus($this->screen->editorWidget());
+        $this->inputLoopStarted = true;
+    }
+
+    /**
+     * Simulate keyboard input through VirtualTerminal → Tui::handleInput().
+     */
+    public function sendInput(string $keys): void
+    {
+        if (!$this->inputLoopStarted) {
+            throw new \LogicException('sendInput() requires startInputLoop() first.');
+        }
+
+        $this->terminal->simulateInput($keys);
+        $this->tui->processRender();
+    }
+
+    public function stopInputLoop(): void
+    {
+        if (!$this->inputLoopStarted) {
+            return;
+        }
+
+        $this->tui->stop();
+        $this->inputLoopStarted = false;
+    }
+
     public function render(): void
     {
         $this->tui->requestRender(force: true);
@@ -75,5 +115,4 @@ final class VirtualTuiHarness
 
         return $buffer->getScreen();
     }
-
 }
