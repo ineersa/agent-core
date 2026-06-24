@@ -359,6 +359,7 @@ final readonly class RunStateReplayService
             messages: $state->messages,
             activeStepId: $stepId,
             retryableFailure: false,
+            retryAttempts: $state->retryAttempts,
         );
     }
 
@@ -444,9 +445,8 @@ final readonly class RunStateReplayService
 
         // continue: restore to Running from WaitingHuman/Failed
         if ('continue' === $kind) {
-            $options = \is_array($payload['options'] ?? null) ? $payload['options'] : [];
             $cmdPayload = \is_array($payload['payload'] ?? null) ? $payload['payload'] : [];
-            $isAutoRetry = true === ($options['auto_retry'] ?? $cmdPayload['auto_retry'] ?? false);
+            $isAutoRetry = true === ($cmdPayload['auto_retry'] ?? false);
             $retryAttempts = $isAutoRetry ? $state->retryAttempts : 0;
 
             return new RunState(

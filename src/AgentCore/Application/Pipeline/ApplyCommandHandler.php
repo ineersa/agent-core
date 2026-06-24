@@ -385,7 +385,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         $runId = $message->runId();
         $this->commandStore->markApplied($runId, $message->idempotencyKey());
 
-        $isAutoRetry = true === ($options['auto_retry'] ?? $message->payload['auto_retry'] ?? false);
+        $isAutoRetry = true === ($message->payload['auto_retry'] ?? false);
         $retryAttempts = $isAutoRetry ? $state->retryAttempts : 0;
 
         $nextState = new RunState(

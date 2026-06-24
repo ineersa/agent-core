@@ -28,6 +28,7 @@ final readonly class RunState
         public array $messages = [],
         public ?string $activeStepId = null,
         public bool $retryableFailure = false,
+        /** Count of completed auto-retry attempts in the active retryable-failure episode; manual continue resets to 0. May be one past max when retries are exhausted. */
         public int $retryAttempts = 0,
     ) {
     }

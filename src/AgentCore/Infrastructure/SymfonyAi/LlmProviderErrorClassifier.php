@@ -72,7 +72,6 @@ final class LlmProviderErrorClassifier
         'max context length',
         'context token limit',
         'context size',
-        'context size has been exceeded',
     ];
 
     /**

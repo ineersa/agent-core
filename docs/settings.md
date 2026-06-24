@@ -760,7 +760,7 @@ exponential backoff between attempts.
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `max_attempts` | int | `2` | Maximum agent-level auto-retry attempts per overflow episode |
+| `max_attempts` | int | `2` | Maximum agent-level auto-retry attempts per retryable failure episode (context overflow is excluded; overflow uses compaction recovery) |
 | `base_delay_ms` | int | `1000` | Base backoff delay in milliseconds |
 | `max_delay_ms` | int | `60000` | Cap for a single retry delay in milliseconds |
 
