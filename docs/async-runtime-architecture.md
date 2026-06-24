@@ -56,26 +56,27 @@ Focus on topology, message flow, event delivery, and process supervision.
 ┌──────────────────────────────────────────────────────────────────┐
 │                    MESSENGER CONSUMER PROCESSES                    │
 │                                                                   │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  │
-│  │ messenger:consume│  │ messenger:consume│  │ messenger:consume│  │
-│  │ run_control      │  │ llm              │  │ tool             │  │
-│  │ (session-scoped  │  │ (session-scoped  │  │ (session-scoped  │  │
-│  │  queue names)    │  │  queue names)    │  │  queue names)    │  │
-│  │                  │  │                  │  │                  │  │
-│  │ RunOrchestrator  │  │ ExecuteLlmStep   │  │ ExecuteToolCall  │  │
-│  │ ├─ onStartRun    │  │ Worker           │  │ Worker           │  │
-│  │ ├─ onApplyCmd    │  │                  │  │                  │  │
-│  │ ├─ onAdvanceRun  │  │ → LLM HTTP call  │  │ → shell/browser  │  │
-│  │ ├─ onLlmStepRes  │  │ → stdout pipe    │  │ → stdout pipe    │  │
-│  │ └─ onToolCallRes │  │   JSONL deltas   │  │   JSONL deltas   │  │
-│  └────────┬─────────┘  └────────┬─────────┘  └────────┬─────────┘
-│           │                     │                     │
-│           ▼                     ▼                     ▼
+│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ │
+│  │messenger:    │ │messenger:    │ │messenger:    │ │messenger:    │ │
+│  │consume       │ │consume       │ │consume       │ │consume       │ │
+│  │run_control   │ │llm           │ │tool          │ │agent         │ │
+│  │(session-     │ │(session-     │ │(session-     │ │(session-     │ │
+│  │ scoped)     │ │ scoped)      │ │ scoped)      │ │ scoped)      │ │
+│  │              │ │              │ │              │ │1 consumer /  │ │
+│  │RunOrchestr.  │ │ExecuteLlm    │ │ExecuteTool   │ │session:      │ │
+│  │              │ │Step Worker   │ │Call Worker   │ │subagent only │ │
+│  │              │ │→ LLM HTTP    │ │→ shell/…     │ │(blocking     │ │
+│  │              │ │→ stdout pipe │ │→ stdout pipe │ │ poll loop)   │ │
+│  └──────┬───────┘ └──────┬───────┘ └──────┬───────┘ └──────┬───────┘ │
+│         │                │                │                │         │
+│         ▼                ▼                ▼                ▼         │
 │  ┌─────────────────────────────────────────────────────────────┐ │
 │  │             Doctrine SQLite (.hatfield/messenger.sqlite)     │ │
 │  │  Per-session queues (sessionId = runId):                    │ │
 │  │   run_control_{sessionId} | llm_{sessionId} | tool_{sessionId} │ │
-│  │  PhpSerializer (run_control) | Symfony Serializer (llm,tool) │ │
+│  │   | agent_{sessionId}                                       │ │
+│  │  PhpSerializer (run_control) | Symfony Serializer (llm,    │ │
+│  │   tool, agent)                                              │ │
 │  └─────────────────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────────────┘
 ```
@@ -84,6 +85,12 @@ Focus on topology, message flow, event delivery, and process supervision.
 - **TUI → Controller**: JSONL over stdin/stdout pipe (proc_open)
 - **Controller → Consumers**: Symfony Process spawn
 - **Consumers ↔ each other**: Doctrine SQLite messenger queues
+- **Subagent vs tool workers**: Built-in `subagent` `ExecuteToolCall` messages are
+  stamped to the dedicated `agent` transport (`agent_{sessionId}` queue, one
+  `messenger:consume agent` process per controller session). Parent subagent
+  orchestration blocks only that agent worker, not generic `tool` workers; child
+  tool calls still use `tool_{sessionId}`. MCP catalog tools use the separate
+  `mcp` transport when configured.
 - **LLM Consumer → Controller**: STDOUT pipe from child process
 - **RunCommit → Controller**: events.jsonl (file-based, shared between processes)
 
@@ -305,15 +312,27 @@ TUI                        Controller(crashed!)       New Controller
 │                              │ Result → command.bus (sync) │                  │
 ├──────────────────────────────┼─────────────────────────────┼──────────────────┤
 │ tool_{sessionId}             │ ExecuteToolCall             │ Symfony          │
-│                              │                             │ Serializer       │
+│                              │ (generic tools; not         │ Serializer       │
+│                              │  toolName=subagent)         │ (scalar/array    │
+│                              │ Processed by:               │ only)            │
+│                              │ ExecuteToolCallWorker       │                  │
+│                              │ Result → command.bus (sync) │                  │
+├──────────────────────────────┼─────────────────────────────┼──────────────────┤
+│ agent_{sessionId}            │ ExecuteToolCall             │ Symfony          │
+│                              │ (toolName=subagent only)    │ Serializer       │
 │                              │ Processed by:               │ (scalar/array    │
 │                              │ ExecuteToolCallWorker       │ only)            │
 │                              │ Result → command.bus (sync) │                  │
+│                              │ Rationale: isolates blocking│                  │
+│                              │ parent subagent orchestration│                  │
+│                              │ from generic child tool work│                  │
+│                              │ on `tool_{sessionId}`       │                  │
 └──────────────────────────────┴─────────────────────────────┴──────────────────┘
 
 Per-session scoping:
   - sessionId = runId (full UUID). session_id === run_id per AGENTS.md.
-  - Each controller session owns its own set of queue names.
+  - Each controller session owns its own set of queue names
+    (`run_control`, `llm`, `tool`, `agent`; MCP uses `mcp` when enabled).
   - No cross-session message stealing: consumer reads only its session's
     queue_name column filter.
   - One session cannot be opened in 2 Hatfield instances simultaneously
@@ -617,13 +636,14 @@ pgrep -f messenger:consume
 ├── messenger.sqlite           Doctrine SQLite transport
 │   └── messenger_messages     Queue table (created by migration; auto_setup fallback)
 │       queue_name column filters by session:
-│         run_control_{runId}, llm_{runId}, tool_{runId}
+│         run_control_{runId}, llm_{runId}, tool_{runId}, agent_{runId}
 │
 ├── env vars (set by JsonlProcessAgentSessionClient::spawnProcess):
 │   HATFIELD_SESSION_ID=<runId>
 │   HATFIELD_RUN_CONTROL_TRANSPORT_DSN=doctrine://default?queue_name=run_control_<runId>
 │   HATFIELD_LLM_TRANSPORT_DSN=doctrine://default?queue_name=llm_<runId>
 │   HATFIELD_TOOL_TRANSPORT_DSN=doctrine://default?queue_name=tool_<runId>
+│   HATFIELD_AGENT_TRANSPORT_DSN=doctrine://default?queue_name=agent_<runId>
 │
 └── sessions/
     └── <runId>/               runId = session_id (DB-issued numeric string)
