@@ -355,6 +355,29 @@ final class TmuxHarness
         return '' !== $output && \str_starts_with($output, '%');
     }
 
+    /**
+     * Shell PID for the tmux pane (bash -c agent ...). Used to scope
+     * descendant process discovery in transport E2E tests.
+     */
+    public function panePid(TmuxPane $pane): int
+    {
+        $output = $this->runTmux(
+            \sprintf(
+                'tmux display-message -p -t %s "#{pane_pid}" 2>/dev/null',
+                \escapeshellarg($pane->paneId),
+            ),
+            2.0,
+            throwOnTimeout: true,
+        );
+
+        $pid = (int) \trim($output);
+        if ($pid <= 0) {
+            throw new \RuntimeException(\sprintf('Could not read pane PID for %s (output: %s)', $pane->paneId, $output));
+        }
+
+        return $pid;
+    }
+
     // ── polling ────────────────────────────────────────────
 
     /**

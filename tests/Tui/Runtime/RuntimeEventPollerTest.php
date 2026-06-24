@@ -294,6 +294,31 @@ final class RuntimeEventPollerTest extends TestCase
         self::assertStringContainsString('Runtime transport error', $result[0]->text);
     }
 
+    public function testPollHandlesControllerRestartLimitWithFailedStateAndPollError(): void
+    {
+        $message = 'Controller process has crashed too many times (3 restarts in 60s).';
+
+        $this->client->expects(self::once())
+            ->method('events')
+            ->with('test-run')
+            ->willThrowException(new \RuntimeException($message));
+
+        $this->logger->expects(self::once())
+            ->method('warning');
+
+        $handleBefore = $this->state->handle;
+
+        $result = $this->poller->poll($this->state, $this->client);
+
+        self::assertIsArray($result);
+        self::assertCount(1, $result);
+        self::assertSame(RunActivityStateEnum::Failed, $this->state->activity);
+        self::assertSame($handleBefore, $this->state->handle);
+        self::assertSame($message, $this->state->lastRuntimePollError);
+        self::assertStringContainsString('Runtime transport error', $result[0]->text);
+        self::assertStringContainsString('crashed too many times', $result[0]->text);
+    }
+
     public function testErrorCountResetOnSuccessfulPoll(): void
     {
         $this->state->runtimePollErrorCount = 3;
