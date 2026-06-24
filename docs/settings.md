@@ -639,6 +639,27 @@ reads `extensions.settings.safe_guard`).
 
 **Default:** `{}` (empty — no settings).
 
+### `extensions.settings.task_workflow`
+
+Settings for the native Hatfield task-workflow extension (`Ineersa\HatfieldExt\TaskWorkflow\TaskWorkflowExtension`).
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `task_root` | string | (auto-detect sibling `<repo>-tasks`) | External task board directory (outside the code repo). Overridden by `HATFIELD_TASK_WORKFLOW_ROOT` env var when set. |
+| `castor_check_timeout_seconds` | int | `480` | Timeout (60–1200) for deterministic `castor check` when moving a task to CODE-REVIEW. |
+
+Example:
+
+```yaml
+extensions:
+    enabled:
+        - Ineersa\HatfieldExt\TaskWorkflow\TaskWorkflowExtension
+    settings:
+        task_workflow:
+            task_root: /path/to/agent-core-tasks
+            castor_check_timeout_seconds: 480
+```
+
 ### `extensions.settings.safe_guard`
 
 SafeGuard policy configuration. All fields are optional — the defaults

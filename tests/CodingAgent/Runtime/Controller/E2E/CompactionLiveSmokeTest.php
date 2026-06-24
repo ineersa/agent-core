@@ -137,10 +137,11 @@ YAML;
         // We wait for compaction.completed (success) or compaction.failed
         // (error).  Cold llama-proxy cache misses can exceed 25s for the
         // compaction summarization request (large prompt body); warm replay
-        // is typically much faster.
+        // is typically much faster. liveCompactionEventWaitTimeout() adds headroom
+        // when test:llm-real runs under parallel castor check.
         $compactEvents = $this->collectEventsUntilTarget(
             targets: ['compaction.completed', 'compaction.failed'],
-            timeout: 45.0,
+            timeout: $this->liveCompactionEventWaitTimeout(),
         );
         $compactByType = $this->indexByType($compactEvents);
 

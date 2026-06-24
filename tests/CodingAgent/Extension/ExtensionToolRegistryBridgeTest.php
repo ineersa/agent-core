@@ -9,8 +9,10 @@ use Ineersa\CodingAgent\Config\ExtensionsConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
+use Ineersa\CodingAgent\Extension\ExtensionToolHandlerAdapter;
 use Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge;
-use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
+use Ineersa\CodingAgent\Tests\Extension\Support\NoOpExtensionToolHandler;
+use Ineersa\CodingAgent\Tests\Extension\Support\RecordingExtensionToolHandler;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandContextInterface;
@@ -21,6 +23,7 @@ use Ineersa\Hatfield\ExtensionApi\Exec\ExecOptionsDTO;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecResultDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\ExtensionToolHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallDecisionDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
@@ -49,7 +52,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
             name: 'ext_tool',
             description: 'An extension-provided tool',
             parametersJsonSchema: ['type' => 'object', 'properties' => ['foo' => ['type' => 'string']]],
-            handler: $this->dummyHandler(),
+            handler: new NoOpExtensionToolHandler(),
             promptSummary: 'ext_tool: do extension stuff',
             promptGuidelines: ['Use ext_tool for extension operations.'],
         ));
@@ -73,7 +76,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
             name: 'my_tool',
             description: 'My custom tool',
             parametersJsonSchema: [],
-            handler: $this->dummyHandler(),
+            handler: new NoOpExtensionToolHandler(),
             // promptSummary intentionally omitted
         ));
 
@@ -90,7 +93,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
             name: 'simple_tool',
             description: 'A simple tool',
             parametersJsonSchema: [],
-            handler: $this->dummyHandler(),
+            handler: new NoOpExtensionToolHandler(),
         ));
 
         $this->assertContains('simple_tool', $registry->activeToolNames());
@@ -103,15 +106,15 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
         $bridge = $this->bridgeFor($registry);
 
         $bridge->registerTool(new ToolRegistrationDTO(
-            name: 'tool_a', description: 'First', parametersJsonSchema: [], handler: $this->dummyHandler(),
+            name: 'tool_a', description: 'First', parametersJsonSchema: [], handler: new NoOpExtensionToolHandler(),
             promptSummary: 'tool_a: first',
         ));
         $bridge->registerTool(new ToolRegistrationDTO(
-            name: 'tool_b', description: 'Second', parametersJsonSchema: [], handler: $this->dummyHandler(),
+            name: 'tool_b', description: 'Second', parametersJsonSchema: [], handler: new NoOpExtensionToolHandler(),
             promptSummary: 'tool_b: second',
         ));
         $bridge->registerTool(new ToolRegistrationDTO(
-            name: 'tool_c', description: 'Third', parametersJsonSchema: [], handler: $this->dummyHandler(),
+            name: 'tool_c', description: 'Third', parametersJsonSchema: [], handler: new NoOpExtensionToolHandler(),
             promptSummary: 'tool_c: third',
         ));
 
@@ -130,7 +133,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
         $bridge = $this->bridgeFor($registry);
 
         $dto = new ToolRegistrationDTO(
-            name: 'dup_tool', description: 'Duplicate', parametersJsonSchema: [], handler: $this->dummyHandler(),
+            name: 'dup_tool', description: 'Duplicate', parametersJsonSchema: [], handler: new NoOpExtensionToolHandler(),
             promptSummary: 'dup_tool: description',
         );
 
@@ -148,44 +151,39 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
         $registry = new ToolRegistry();
         $bridge = $this->bridgeFor($registry);
 
-        $handler = $this->dummyHandler();
+        $handler = new RecordingExtensionToolHandler();
 
         $bridge->registerTool(new ToolRegistrationDTO(
             name: 'callable_tool', description: 'Callable handler', parametersJsonSchema: [], handler: $handler,
         ));
 
-        // Handler is stored — verify through definition lookup
         $def = $registry->toolDefinition('callable_tool');
         $this->assertNotNull($def);
-        $this->assertSame($handler, $def->handler);
+        $this->assertInstanceOf(ExtensionToolHandlerAdapter::class, $def->handler);
+
+        $result = ($def->handler)(['foo' => 'bar']);
+        $this->assertSame('extension handler result', $result);
+        $this->assertSame([['foo' => 'bar']], $handler->invocations);
     }
 
     // ── Handler validation ──
 
-    public function testHandlerMustImplementToolHandlerInterface(): void
+    public function testHandlerMustImplementExtensionToolHandlerInterface(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('must be an instance of ToolHandlerInterface');
+        $this->expectException(\TypeError::class);
 
-        $registry = new ToolRegistry();
-        $bridge = $this->bridgeFor($registry);
-
-        $bridge->registerTool(new ToolRegistrationDTO(
+        new ToolRegistrationDTO(
             name: 'bad_handler_tool', description: 'Bad handler', parametersJsonSchema: [], handler: new \stdClass(),
-        ));
+        );
     }
 
-    public function testNullHandlerThrows(): void
+    public function testNullHandlerIsRejectedByDtoType(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('must be an instance of ToolHandlerInterface');
+        $this->expectException(\TypeError::class);
 
-        $registry = new ToolRegistry();
-        $bridge = $this->bridgeFor($registry);
-
-        $bridge->registerTool(new ToolRegistrationDTO(
+        new ToolRegistrationDTO(
             name: 'null_handler_tool', description: 'Null handler', parametersJsonSchema: [], handler: null,
-        ));
+        );
     }
 
     // ── Guideline deduplication via ToolRegistry ──
@@ -196,13 +194,13 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
         $bridge = $this->bridgeFor($registry);
 
         $bridge->registerTool(new ToolRegistrationDTO(
-            name: 'tool_x', description: 'X', parametersJsonSchema: [], handler: $this->dummyHandler(),
+            name: 'tool_x', description: 'X', parametersJsonSchema: [], handler: new NoOpExtensionToolHandler(),
             promptGuidelines: ['Guideline A', 'Guideline B'],
             promptSummary: 'tool_x: X',
         ));
 
         $bridge->registerTool(new ToolRegistrationDTO(
-            name: 'tool_y', description: 'Y', parametersJsonSchema: [], handler: $this->dummyHandler(),
+            name: 'tool_y', description: 'Y', parametersJsonSchema: [], handler: new NoOpExtensionToolHandler(),
             promptGuidelines: ['Guideline B', 'Guideline C'],
             promptSummary: 'tool_y: Y',
         ));
@@ -225,7 +223,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
         $bridge = $this->bridgeFor($registry);
 
         $bridge->registerTool(new ToolRegistrationDTO(
-            name: '', description: 'Has name but empty', parametersJsonSchema: [], handler: $this->dummyHandler(),
+            name: '', description: 'Has name but empty', parametersJsonSchema: [], handler: new NoOpExtensionToolHandler(),
         ));
     }
 
@@ -238,7 +236,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
         $bridge = $this->bridgeFor($registry);
 
         $bridge->registerTool(new ToolRegistrationDTO(
-            name: 'some_tool', description: '', parametersJsonSchema: [], handler: $this->dummyHandler(),
+            name: 'some_tool', description: '', parametersJsonSchema: [], handler: new NoOpExtensionToolHandler(),
         ));
     }
 
@@ -246,7 +244,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
 
     public function testAcceptsAnyToolRegistryImplementation(): void
     {
-        $mockHandler = $this->createStub(ToolHandlerInterface::class);
+        $mockHandler = $this->createStub(ExtensionToolHandlerInterface::class);
 
         $mock = $this->createMock(ToolRegistryInterface::class);
         $mock->expects($this->once())
@@ -255,7 +253,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
                 'mocked_tool',
                 'Mocked description',
                 ['type' => 'object'],
-                $mockHandler,
+                $this->isInstanceOf(ExtensionToolHandlerAdapter::class),
                 'mocked_tool: Mocked description',
                 ['Guideline'],
             );
@@ -336,7 +334,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
             name: 'coexist_tool',
             description: 'Tool that coexists with hooks',
             parametersJsonSchema: [],
-            handler: $this->dummyHandler(),
+            handler: new NoOpExtensionToolHandler(),
         ));
 
         // Register hooks
@@ -474,15 +472,6 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
         };
     }
 
-    private function dummyHandler(): ToolHandlerInterface
-    {
-        return new class implements ToolHandlerInterface {
-            public function __invoke(array $arguments = []): string
-            {
-                return 'extension handler result';
-            }
-        };
-    }
 
     private function dummyExecBridge(?ExecResultDTO $result = null): ExecInterface
     {

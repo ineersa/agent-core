@@ -10,6 +10,7 @@ parameters:
         - src/
         - castor.php
         - .castor/
+        - .hatfield/extensions/
     scanFiles:
         - .castor.stub.php
         - .castor/helpers.php
@@ -17,5 +18,7 @@ parameters:
     excludePaths:
         - var/*
         - vendor/*
+        - .hatfield/extensions/vendor/*
+        - .hatfield/extensions/task-workflow/tests/*
     parallel:
         maximumNumberOfProcesses: 1

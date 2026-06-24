@@ -10,6 +10,7 @@
 parameters:
   paths:
     - ./src
+    - .hatfield/extensions/task-workflow/src
   exclude_files:
     - .*\.test\.php$
     - .*Test\.php$
@@ -114,6 +115,11 @@ parameters:
       collectors:
         - type: directory
           value: src/CodingAgent/ExtensionApi/.*
+
+    - name: HatfieldExtTaskWorkflow
+      collectors:
+        - type: classNameRegex
+          value: '#^Ineersa\\HatfieldExt\\TaskWorkflow\\#'
 
     - name: AppExtensionBuiltin
       collectors:
@@ -605,6 +611,9 @@ parameters:
     McpSdk: ~
 
     AppExtensionApi: ~
+    HatfieldExtTaskWorkflow:
+      - AppExtensionApi
+      - HatfieldExtTaskWorkflow
     AppExtensionBuiltin:
       - AppExtensionApi
       - SymfonyYaml

@@ -57,7 +57,8 @@
             "Ineersa\\Tui\\": "src/Tui/",
             "DoctrineMigrations\\": "migrations/",
             "Symfony\\AI\\Platform\\Bridge\\OpenAICodex\\": "src/Platform/Bridge/OpenAICodex/",
-            "Ineersa\\Platform\\": "src/Platform/"
+            "Ineersa\\Platform\\": "src/Platform/",
+            "Ineersa\\HatfieldExt\\TaskWorkflow\\": ".hatfield/extensions/task-workflow/src/"
         }
     },
     "autoload-dev": {
@@ -66,7 +67,8 @@
             "Ineersa\\AgentCore\\Tests\\": "tests/AgentCore/",
             "Ineersa\\Tui\\Tests\\": "tests/Tui/",
             "Symfony\\AI\\Platform\\Bridge\\OpenAICodex\\Tests\\": "tests/Platform/Bridge/OpenAICodex/",
-            "Ineersa\\Platform\\Tests\\": "tests/Platform/"
+            "Ineersa\\Platform\\Tests\\": "tests/Platform/",
+            "Ineersa\\HatfieldExt\\TaskWorkflow\\Tests\\": ".hatfield/extensions/task-workflow/tests/"
         }
     },
     "minimum-stability": "dev",

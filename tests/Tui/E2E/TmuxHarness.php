@@ -43,6 +43,19 @@ final class TmuxHarness
      */
     private const float TMUX_SESSION_TIMEOUT = 10.0;
 
+    /**
+     * TUI logo/block-cursor startup wait when castor check runs test:tui in
+     * parallel with the full unit suite and other lanes — 10s flakes with an
+     * empty pane under CPU/tmux contention.
+     */
+    public const float TUI_STARTUP_LOGO_TIMEOUT_PARALLEL = 20.0;
+
+    /**
+     * Wait for assistant (◇) or error (✕) blocks after replay+tool work when
+     * test:tui runs under full parallel castor check load.
+     */
+    public const float TUI_ASSISTANT_BLOCK_TIMEOUT_PARALLEL = 20.0;
+
     public function __construct()
     {
         $this->root = \Ineersa\CodingAgent\Tests\Support\ProjectDir::get();

@@ -14,6 +14,7 @@ use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallDecisionDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
+use Ineersa\CodingAgent\Tests\Extension\Support\NoOpExtensionToolHandler;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultDecisionDTO;
@@ -48,8 +49,8 @@ final class ExtensionManagerTest extends TestCase
     {
         $bridge = new InMemoryExtensionApiBridge();
 
-        $dto1 = new ToolRegistrationDTO(name: 'tool_a', description: 'A', parametersJsonSchema: [], handler: null);
-        $dto2 = new ToolRegistrationDTO(name: 'tool_b', description: 'B', parametersJsonSchema: [], handler: null);
+        $dto1 = new ToolRegistrationDTO(name: 'tool_a', description: 'A', parametersJsonSchema: [], handler: new NoOpExtensionToolHandler());
+        $dto2 = new ToolRegistrationDTO(name: 'tool_b', description: 'B', parametersJsonSchema: [], handler: new NoOpExtensionToolHandler());
 
         $bridge->registerTool($dto1);
         $bridge->registerTool($dto2);
@@ -63,7 +64,7 @@ final class ExtensionManagerTest extends TestCase
     {
         $bridge = new InMemoryExtensionApiBridge();
         $bridge->registerTool(
-            new ToolRegistrationDTO(name: 'tool_x', description: 'X', parametersJsonSchema: [], handler: null)
+            new ToolRegistrationDTO(name: 'tool_x', description: 'X', parametersJsonSchema: [], handler: new NoOpExtensionToolHandler())
         );
 
         $drained = $bridge->drainRegistrations();
@@ -113,7 +114,7 @@ final class ExtensionManagerTest extends TestCase
     {
         $bridge = new InMemoryExtensionApiBridge();
 
-        $bridge->registerTool(new ToolRegistrationDTO(name: 'tool_x', description: 'X', parametersJsonSchema: [], handler: null));
+        $bridge->registerTool(new ToolRegistrationDTO(name: 'tool_x', description: 'X', parametersJsonSchema: [], handler: new NoOpExtensionToolHandler()));
         $bridge->registerToolCallHook($this->dummyToolCallHook('hook_x'));
         $bridge->registerToolResultHook($this->dummyToolResultHook('result_x'));
 
@@ -157,6 +158,8 @@ namespace HatfieldExtTest;
 
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
+use Ineersa\CodingAgent\Tests\Extension\Support\NoOpExtensionToolHandler;
+use Ineersa\Hatfield\ExtensionApi\Tool\ExtensionToolHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
 
 class SampleExtension implements HatfieldExtensionInterface
@@ -167,7 +170,7 @@ class SampleExtension implements HatfieldExtensionInterface
             name: 'sample_tool',
             description: 'A sample extension tool',
             parametersJsonSchema: [],
-            handler: null,
+            handler: new NoOpExtensionToolHandler(),
         ));
     }
 }
@@ -270,13 +273,14 @@ namespace HatfieldExtTest;
 
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
+use Ineersa\CodingAgent\Tests\Extension\Support\NoOpExtensionToolHandler;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
 
 class GoodExtension implements HatfieldExtensionInterface
 {
     public function register(ExtensionApiInterface $api): void
     {
-        $api->registerTool(new ToolRegistrationDTO(name: 'good_tool', description: 'Good', parametersJsonSchema: [], handler: null));
+        $api->registerTool(new ToolRegistrationDTO(name: 'good_tool', description: 'Good', parametersJsonSchema: [], handler: new NoOpExtensionToolHandler()));
     }
 }
 PHP
@@ -311,13 +315,14 @@ namespace HatfieldExtTest;
 
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
+use Ineersa\CodingAgent\Tests\Extension\Support\NoOpExtensionToolHandler;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
 
 class AnotherGoodExtension implements HatfieldExtensionInterface
 {
     public function register(ExtensionApiInterface $api): void
     {
-        $api->registerTool(new ToolRegistrationDTO(name: 'another_tool', description: 'Another', parametersJsonSchema: [], handler: null));
+        $api->registerTool(new ToolRegistrationDTO(name: 'another_tool', description: 'Another', parametersJsonSchema: [], handler: new NoOpExtensionToolHandler()));
     }
 }
 PHP
@@ -403,6 +408,7 @@ use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallDecisionDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
+use Ineersa\CodingAgent\Tests\Extension\Support\NoOpExtensionToolHandler;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultDecisionDTO;
@@ -412,7 +418,7 @@ class HookRegistrationExtension implements HatfieldExtensionInterface
 {
     public function register(ExtensionApiInterface $api): void
     {
-        $api->registerTool(new ToolRegistrationDTO(name: 'hook_ext_tool', description: 'Tool from hook extension', parametersJsonSchema: [], handler: null));
+        $api->registerTool(new ToolRegistrationDTO(name: 'hook_ext_tool', description: 'Tool from hook extension', parametersJsonSchema: [], handler: new NoOpExtensionToolHandler()));
         $api->registerToolCallHook(new class implements ToolCallHookInterface {
             public function onToolCall(ToolCallContextDTO $context): ToolCallDecisionDTO
             {
