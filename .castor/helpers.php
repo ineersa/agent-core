@@ -5,11 +5,73 @@ declare(strict_types=1);
 namespace CastorTasks;
 
 use Castor\Context;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\LockInterface;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Process\Process;
 
 use function Castor\run;
 
 const REPORTS_DIR = __DIR__.'/../var/reports';
+
+/**
+ * Sanitize a QA run id segment for filesystem and env use.
+ */
+function sanitize_qa_run_id_segment(string $value): string
+{
+    $sanitized = preg_replace('/[^a-zA-Z0-9._-]/', '', $value) ?? '';
+
+    return '' !== $sanitized ? $sanitized : 'qa-run';
+}
+
+/**
+ * Project root directory for Castor helpers.
+ */
+function project_root_dir(): string
+{
+    return false !== ($_rp = realpath(__DIR__.'/..')) ? $_rp : __DIR__.'/..';
+}
+
+/**
+ * Initialize per-invocation QA resources for castor check().
+ *
+ * Sets process env via putenv() so command builders and child shells inherit
+ * run-scoped report/tmp/cache/DB paths.  Returns the generated run id.
+ */
+function initialize_qa_check_run(): string
+{
+    $random = bin2hex(random_bytes(4));
+    $id = sanitize_qa_run_id_segment(\sprintf('qa-%s-%d-%s', date('Ymd-His'), getmypid(), $random));
+
+    $reportsRel = 'var/reports/'.$id;
+    $tmpRel = 'var/tmp/'.$id;
+    $cacheRel = '.hatfield/cache-'.$id;
+    $dbFile = 'app_test-'.$id.'.sqlite';
+
+    $vars = [
+        'HATFIELD_QA_RUN_ID' => $id,
+        'HATFIELD_QA_REPORTS_DIR' => $reportsRel,
+        'HATFIELD_QA_TMP_DIR' => $tmpRel,
+        'HATFIELD_CACHE_DIR' => $cacheRel,
+        'HATFIELD_TEST_DATABASE_PATH' => $dbFile,
+    ];
+
+    foreach ($vars as $name => $value) {
+        putenv($name.'='.$value);
+        $_ENV[$name] = $value;
+        $_SERVER[$name] = $value;
+    }
+
+    $projectRoot = project_root_dir();
+    foreach ([$reportsRel, $tmpRel, $cacheRel, 'var/test'] as $relative) {
+        $path = $projectRoot.'/'.$relative;
+        if (!is_dir($path) && !mkdir($path, 0777, true) && !is_dir($path)) {
+            throw new \RuntimeException(\sprintf('Unable to create QA directory "%s".', $path));
+        }
+    }
+
+    return $id;
+}
 
 /**
  * Return the most recent modification time among all files in the given directories.
@@ -238,11 +300,19 @@ function is_llm_mode(): bool
 
 function reports_dir(): string
 {
-    if (!is_dir(REPORTS_DIR) && !mkdir(REPORTS_DIR, 0777, true) && !is_dir(REPORTS_DIR)) {
-        throw new \RuntimeException(\sprintf('Unable to create reports directory "%s".', REPORTS_DIR));
+    $custom = getenv('HATFIELD_QA_REPORTS_DIR');
+    if (false !== $custom && '' !== trim((string) $custom)) {
+        $relative = ltrim((string) $custom, '/');
+        $dir = project_root_dir().'/'.$relative;
+    } else {
+        $dir = REPORTS_DIR;
     }
 
-    return REPORTS_DIR;
+    if (!is_dir($dir) && !mkdir($dir, 0777, true) && !is_dir($dir)) {
+        throw new \RuntimeException(\sprintf('Unable to create reports directory "%s".', $dir));
+    }
+
+    return $dir;
 }
 
 function report_path(string $filename): string
@@ -252,6 +322,11 @@ function report_path(string $filename): string
 
 function relative_report_path(string $filename): string
 {
+    $custom = getenv('HATFIELD_QA_REPORTS_DIR');
+    if (false !== $custom && '' !== trim((string) $custom)) {
+        return rtrim((string) $custom, '/').'/'.$filename;
+    }
+
     return 'var/reports/'.$filename;
 }
 
@@ -565,6 +640,321 @@ function phar_build_with_lock(string $root): void
  * `composer install --optimize-autoloader` step, ensuring the generated
  * autoloader (preserved by Box with dump-autoload:false) has a unique name.
  */
+
+// ─── Full QA gate (castor check) cross-worktree lock ───────────────────
+
+/** Default maximum wait to acquire the full-check Symfony Lock (seconds). */
+const CASTOR_CHECK_LOCK_ACQUIRE_TIMEOUT_S = 60;
+
+/** Heartbeat interval while waiting for another check (seconds). */
+const CASTOR_CHECK_LOCK_WAIT_HEARTBEAT_S = 15;
+
+/**
+ * Resolved lock acquire timeout for `castor check` (seconds).
+ *
+ * Override with `HATFIELD_CASTOR_CHECK_LOCK_TIMEOUT` (positive number, max 3600).
+ */
+function castor_check_lock_acquire_timeout_seconds(): float
+{
+    $raw = getenv('HATFIELD_CASTOR_CHECK_LOCK_TIMEOUT');
+    if (false === $raw || '' === trim((string) $raw)) {
+        return (float) CASTOR_CHECK_LOCK_ACQUIRE_TIMEOUT_S;
+    }
+    if (!is_numeric($raw)) {
+        throw new \RuntimeException('HATFIELD_CASTOR_CHECK_LOCK_TIMEOUT must be a positive number of seconds (got: '.$raw.')');
+    }
+    $seconds = (float) $raw;
+    if ($seconds <= 0.0 || $seconds > 3600.0) {
+        throw new \RuntimeException('HATFIELD_CASTOR_CHECK_LOCK_TIMEOUT must be between 0 (exclusive) and 3600 (got: '.$raw.')');
+    }
+
+    return $seconds;
+}
+
+/**
+ * Build a failure message when the castor check lock cannot be acquired in time.
+ */
+function format_castor_check_lock_acquire_timeout_message(
+    string $projectRoot,
+    string $resource,
+    string $lockDir,
+    float $timeoutSeconds,
+    float $elapsedSeconds,
+): string {
+    $lines = [
+        \sprintf(
+            'castor check: failed to acquire Symfony Lock within %.0fs (elapsed %.1fs, pid %d).',
+            $timeoutSeconds,
+            $elapsedSeconds,
+            getmypid()
+        ),
+        '  lock resource: '.$resource,
+        '  lock directory: '.$lockDir,
+    ];
+    $meta = read_castor_check_lock_meta($projectRoot);
+    if (null !== $meta) {
+        $lines[] = '  holder metadata (may be stale if the holder crashed without releasing):';
+        $lines[] = '    pid: '.($meta['pid'] ?? '?');
+        $lines[] = '    started_at: '.($meta['started_at'] ?? '?');
+        $lines[] = '    cwd: '.($meta['cwd'] ?? '?');
+        $lines[] = '    qa_run_id: '.('' !== ($meta['qa_run_id'] ?? '') ? $meta['qa_run_id'] : '(none)');
+        $lines[] = '    project_root: '.($meta['project_root'] ?? '?');
+        $lines[] = '    repo_identity: '.($meta['repo_identity'] ?? '?');
+    } else {
+        $lines[] = '  holder metadata: (none — lock file may exist without meta JSON)';
+    }
+    $lines[] = 'Another full `castor check` for this repository may still be running (including in a sibling worktree).';
+    $lines[] = 'Wait and retry, or inspect the holder process/metadata above. Do not auto-kill processes from this gate.';
+    $lines[] = 'Optional manual listing: `castor clean:cleanup:workers:list` (current-user QA workers only; never signal root-owned processes).';
+
+    return implode("\n", $lines);
+}
+
+/**
+ * Whether full `castor check` should acquire the shared repository lock.
+ *
+ * Set `HATFIELD_CASTOR_CHECK_LOCK=0` to disable (stress testing only).
+ */
+function castor_check_lock_enabled(): bool
+{
+    $raw = getenv('HATFIELD_CASTOR_CHECK_LOCK');
+    if (false === $raw) {
+        return true;
+    }
+    $normalized = strtolower(trim((string) $raw));
+
+    return !\in_array($normalized, ['0', 'false', 'no', 'off'], true);
+}
+
+/**
+ * Stable identity for sibling worktrees of the same git repository.
+ *
+ * Override with `HATFIELD_CASTOR_CHECK_LOCK_IDENTITY` (tests / smoke only).
+ */
+function castor_check_repo_lock_identity(string $projectRoot): string
+{
+    $override = getenv('HATFIELD_CASTOR_CHECK_LOCK_IDENTITY');
+    if (false !== $override && '' !== trim((string) $override)) {
+        return trim((string) $override);
+    }
+
+    $gitCommon = trim((string) shell_exec(
+        'git -C '.escapeshellarg($projectRoot).' rev-parse --git-common-dir 2>/dev/null'
+    ));
+    if ('' !== $gitCommon) {
+        if (!str_starts_with($gitCommon, '/')) {
+            $gitCommon = rtrim($projectRoot, '/').'/'.$gitCommon;
+        }
+        $resolved = realpath($gitCommon);
+        if (false !== $resolved) {
+            return $resolved;
+        }
+
+        return $gitCommon;
+    }
+
+    $rootReal = realpath($projectRoot);
+
+    return false !== $rootReal ? $rootReal : $projectRoot;
+}
+
+function castor_check_lock_directory(): string
+{
+    $runtime = getenv('XDG_RUNTIME_DIR');
+    if (false !== $runtime && '' !== trim((string) $runtime)) {
+        $dir = rtrim((string) $runtime, '/').'/hatfield/castor-check';
+        if (@mkdir($dir, 0700, true) || is_dir($dir)) {
+            return $dir;
+        }
+    }
+
+    $fallback = rtrim(sys_get_temp_dir(), '/').'/hatfield-castor-check-'.(string) getmyuid();
+    if (!is_dir($fallback) && !mkdir($fallback, 0700, true) && !is_dir($fallback)) {
+        throw new \RuntimeException('Unable to create castor check lock directory at '.$fallback);
+    }
+
+    return $fallback;
+}
+
+function castor_check_lock_resource_name(string $projectRoot): string
+{
+    $identity = castor_check_repo_lock_identity($projectRoot);
+
+    return 'castor-check-'.hash('sha256', $identity);
+}
+
+function create_castor_check_lock_factory(): LockFactory
+{
+    return new LockFactory(new FlockStore(castor_check_lock_directory()));
+}
+
+function castor_check_lock_meta_path(string $projectRoot): string
+{
+    $identity = castor_check_repo_lock_identity($projectRoot);
+
+    return castor_check_lock_directory().'/castor-check-meta-'.hash('sha256', $identity).'.json';
+}
+
+/**
+ * @return array{pid: int, started_at: string, cwd: string, project_root: string, repo_identity: string, qa_run_id: string, lock_resource: string, lock_directory: string}|null
+ */
+function read_castor_check_lock_meta(string $projectRoot): ?array
+{
+    $path = castor_check_lock_meta_path($projectRoot);
+    if (!is_readable($path)) {
+        return null;
+    }
+    $json = file_get_contents($path);
+    if (false === $json || '' === trim($json)) {
+        return null;
+    }
+    $decoded = json_decode($json, true);
+    if (!\is_array($decoded)) {
+        return null;
+    }
+
+    return $decoded;
+}
+
+function write_castor_check_lock_meta(string $projectRoot): void
+{
+    $path = castor_check_lock_meta_path($projectRoot);
+    @mkdir(\dirname($path), 0700, true);
+    $payload = [
+        'pid' => getmypid(),
+        'started_at' => date('c'),
+        'cwd' => (string) getcwd(),
+        'project_root' => $projectRoot,
+        'repo_identity' => castor_check_repo_lock_identity($projectRoot),
+        'qa_run_id' => (string) (false !== ($qa = getenv('HATFIELD_QA_RUN_ID')) ? $qa : ''),
+        'lock_resource' => castor_check_lock_resource_name($projectRoot),
+        'lock_directory' => castor_check_lock_directory(),
+    ];
+    file_put_contents($path, json_encode($payload, \JSON_UNESCAPED_SLASHES)."\n", \LOCK_EX);
+}
+
+function update_castor_check_lock_meta_qa_run_id(string $projectRoot, string $qaRunId): void
+{
+    $path = castor_check_lock_meta_path($projectRoot);
+    $existing = read_castor_check_lock_meta($projectRoot);
+    $payload = null !== $existing ? $existing : [
+        'pid' => getmypid(),
+        'started_at' => date('c'),
+        'cwd' => (string) getcwd(),
+        'project_root' => $projectRoot,
+        'repo_identity' => castor_check_repo_lock_identity($projectRoot),
+        'qa_run_id' => '',
+        'lock_resource' => castor_check_lock_resource_name($projectRoot),
+        'lock_directory' => castor_check_lock_directory(),
+    ];
+    $payload['qa_run_id'] = $qaRunId;
+    @mkdir(\dirname($path), 0700, true);
+    file_put_contents($path, json_encode($payload, \JSON_UNESCAPED_SLASHES)."\n", \LOCK_EX);
+}
+
+function clear_castor_check_lock_meta(string $projectRoot): void
+{
+    $path = castor_check_lock_meta_path($projectRoot);
+    if (is_file($path)) {
+        @unlink($path);
+    }
+}
+
+/**
+ * Acquire Symfony Lock for the full QA gate. Waits up to {@see CASTOR_CHECK_LOCK_ACQUIRE_TIMEOUT_S}
+ * seconds (override: `HATFIELD_CASTOR_CHECK_LOCK_TIMEOUT`) with periodic heartbeats.
+ *
+ * Sibling worktrees of the same repository share the lock resource name.
+ */
+function acquire_castor_check_lock(string $projectRoot): LockInterface
+{
+    $factory = create_castor_check_lock_factory();
+    $resource = castor_check_lock_resource_name($projectRoot);
+    $lock = $factory->createLock($resource, null, false);
+
+    $timeoutSeconds = castor_check_lock_acquire_timeout_seconds();
+    $waitStart = microtime(true);
+    $nextHeartbeat = $waitStart;
+    $waitingAnnounced = false;
+    $lockDir = castor_check_lock_directory();
+
+    while (!$lock->acquire(blocking: false)) {
+        $now = microtime(true);
+        $elapsed = $now - $waitStart;
+        if ($elapsed >= $timeoutSeconds) {
+            fail_quality(format_castor_check_lock_acquire_timeout_message(
+                $projectRoot,
+                $resource,
+                $lockDir,
+                $timeoutSeconds,
+                $elapsed,
+            ));
+        }
+        if (!$waitingAnnounced) {
+            echo \sprintf(
+                "castor check: waiting for another full check for this repository (Symfony Lock resource %s, directory %s, pid %d, acquire timeout %.0fs)\n",
+                $resource,
+                $lockDir,
+                getmypid(),
+                $timeoutSeconds
+            );
+            $meta = read_castor_check_lock_meta($projectRoot);
+            if (null !== $meta) {
+                echo '  holder (metadata, may be stale): pid '.($meta['pid'] ?? '?')
+                    .', started '.($meta['started_at'] ?? '?')
+                    .', cwd '.($meta['cwd'] ?? '?')
+                    .', qa_run_id '.($meta['qa_run_id'] ?? '(none)')."\n";
+            }
+            $waitingAnnounced = true;
+        }
+        if ($now >= $nextHeartbeat) {
+            echo \sprintf("castor check: still waiting (%.0fs elapsed, pid %d)\n", $elapsed, getmypid());
+            $nextHeartbeat = $now + (float) CASTOR_CHECK_LOCK_WAIT_HEARTBEAT_S;
+        }
+        usleep(200_000);
+    }
+
+    if ($waitingAnnounced) {
+        echo \sprintf("castor check: lock acquired after %.1fs (pid %d)\n", microtime(true) - $waitStart, getmypid());
+    }
+
+    write_castor_check_lock_meta($projectRoot);
+
+    return $lock;
+}
+
+function release_castor_check_lock(LockInterface $lock, string $projectRoot): void
+{
+    $lock->release();
+    clear_castor_check_lock_meta($projectRoot);
+}
+
+/**
+ * True when another process holds the castor check Symfony Lock.
+ */
+function castor_check_lock_is_busy(string $projectRoot): bool
+{
+    $factory = create_castor_check_lock_factory();
+    $lock = $factory->createLock(castor_check_lock_resource_name($projectRoot), null, true);
+    if ($lock->acquire(blocking: false)) {
+        $lock->release();
+
+        return false;
+    }
+
+    return true;
+}
+
+function castor_check_lock_smoke_hold(string $projectRoot, float $holdSeconds): void
+{
+    $lock = acquire_castor_check_lock($projectRoot);
+    try {
+        usleep((int) max(0, $holdSeconds * 1_000_000));
+    } finally {
+        release_castor_check_lock($lock, $projectRoot);
+    }
+}
+
 const HATFIELD_PHAR_AUTOLOADER_SUFFIX = 'HatfieldPharBuild';
 
 /**
@@ -930,9 +1320,350 @@ function xml_escape(string $value): string
  *
  * Called before any E2E step that depends on real LLM generation.
  */
+
+// ─── QA check run leak detection and artifact integrity ───────────────
+
+/**
+ * PIDs that must never be reported as QA run leaks (current Castor PHP and ancestors).
+ *
+ * @return list<int>
+ */
+function qa_check_run_protected_pids(): array
+{
+    $protected = [];
+    $pid = getmypid();
+    $seen = [];
+    while ($pid > 0 && !isset($seen[$pid])) {
+        $seen[$pid] = true;
+        $protected[] = $pid;
+        $status = @file_get_contents('/proc/'.$pid.'/status');
+        if (false === $status || !preg_match('/^PPid:\s+(\d+)/m', $status, $m)) {
+            break;
+        }
+        $pid = (int) $m[1];
+    }
+
+    return $protected;
+}
+
+/**
+ * Whether /proc/<pid>/environ contains HATFIELD_QA_RUN_ID for the given run id.
+ */
+function process_environ_has_qa_run_id(int $pid, string $runId): bool
+{
+    $environ = @file_get_contents('/proc/'.$pid.'/environ');
+    if (false === $environ || '' === $runId) {
+        return false;
+    }
+
+    $needle = 'HATFIELD_QA_RUN_ID='.$runId."\0";
+
+    return str_contains($environ, $needle);
+}
+
+/**
+ * @return list<array{pid:int,ppid:int,sid:int,cmd:string,cwd:string}>
+ */
+function collect_qa_check_run_leaked_processes(string $runId): array
+{
+    if ('' === trim($runId) || !\function_exists('posix_geteuid')) {
+        return [];
+    }
+
+    $uid = posix_geteuid();
+    $protected = array_fill_keys(qa_check_run_protected_pids(), true);
+    $leaks = [];
+
+    $procEntries = glob('/proc/[0-9]*');
+    if (false === $procEntries) {
+        $procEntries = [];
+    }
+    foreach ($procEntries as $procDir) {
+        $pid = (int) basename($procDir);
+        if ($pid <= 0 || isset($protected[$pid])) {
+            continue;
+        }
+
+        $stat = @stat($procDir);
+        if (false === $stat || ($stat['uid'] ?? -1) !== $uid) {
+            continue;
+        }
+
+        if (!process_environ_has_qa_run_id($pid, $runId)) {
+            continue;
+        }
+
+        $ppid = 0;
+        $status = @file_get_contents($procDir.'/status');
+        if (false !== $status && preg_match('/^PPid:\s+(\d+)/m', $status, $m)) {
+            $ppid = (int) $m[1];
+        }
+
+        $sid = 0;
+        $statLine = @file_get_contents($procDir.'/stat');
+        if (false !== $statLine) {
+            $close = strrpos($statLine, ')');
+            if (false !== $close) {
+                $rest = trim(substr($statLine, $close + 1));
+                $fields = preg_split('/\s+/', $rest);
+                if (false === $fields) {
+                    $fields = [];
+                }
+                if (isset($fields[3])) {
+                    $sid = (int) $fields[3];
+                }
+            }
+        }
+
+        $cmdRaw = @file_get_contents($procDir.'/cmdline');
+        $cmd = '';
+        if (false !== $cmdRaw) {
+            $cmd = str_replace("\0", ' ', trim($cmdRaw));
+        }
+
+        $cwd = '';
+        $cwdLink = $procDir.'/cwd';
+        if (is_link($cwdLink)) {
+            $resolved = @readlink($cwdLink);
+            if (false !== $resolved) {
+                $cwd = $resolved;
+            }
+        }
+
+        $leaks[] = [
+            'pid' => $pid,
+            'ppid' => $ppid,
+            'sid' => $sid,
+            'cmd' => $cmd,
+            'cwd' => $cwd,
+        ];
+    }
+
+    usort($leaks, static fn (array $a, array $b): int => $a['pid'] <=> $b['pid']);
+
+    return $leaks;
+}
+
+/**
+ * Fail the QA gate if processes tagged with this run id remain (no auto-kill).
+ */
+function assert_castor_check_run_no_process_leaks(string $runId): void
+{
+    $leaks = collect_qa_check_run_leaked_processes($runId);
+    if ([] === $leaks) {
+        echo "QA run leak check: ok (no processes with HATFIELD_QA_RUN_ID={$runId})\n";
+
+        return;
+    }
+
+    $lines = [
+        'QA run leak check FAILED: processes still carry HATFIELD_QA_RUN_ID='.$runId,
+        'Investigate lifecycle teardown (do not auto-kill). Manual cleanup only when safe:',
+        '  castor clean:cleanup:workers:list',
+        '  castor clean:cleanup:workers',
+        '',
+    ];
+    foreach ($leaks as $row) {
+        $lines[] = \sprintf(
+            '  pid=%d ppid=%d sid=%d cwd=%s cmd=%s',
+            $row['pid'],
+            $row['ppid'],
+            $row['sid'],
+            '' !== $row['cwd'] ? $row['cwd'] : '?',
+            '' !== $row['cmd'] ? $row['cmd'] : '?',
+        );
+    }
+
+    fail_quality(implode("\n", $lines));
+}
+
+/**
+ * ParaTest worker budget for check E2E lanes (conservative under parallel castor check).
+ */
+function check_lane_paratest_processes(string $lane, int $default, int $max = 4): int
+{
+    $envMap = [
+        'tui' => 'HATFIELD_CHECK_TUI_PARATEST_PROCESSES',
+        'llm-real' => 'HATFIELD_CHECK_LLM_REAL_PARATEST_PROCESSES',
+        'unit' => 'HATFIELD_CHECK_UNIT_PARATEST_PROCESSES',
+    ];
+    $envName = $envMap[$lane] ?? null;
+    $raw = false;
+    if (null !== $envName) {
+        $raw = getenv($envName);
+    }
+    if (false === $raw || '' === trim((string) $raw)) {
+        $inCheck = false !== getenv('HATFIELD_QA_RUN_ID') && '' !== trim((string) getenv('HATFIELD_QA_RUN_ID'));
+        $processes = $inCheck ? $default : ('llm-real' === $lane ? 4 : $default);
+    } else {
+        $processes = (int) $raw;
+    }
+
+    if ($processes < 1) {
+        $processes = $default;
+    }
+    if ($processes > $max) {
+        $processes = $max;
+    }
+
+    return $processes;
+}
+
+/**
+ * @param list<string> $laneSteps
+ */
+function assert_castor_check_lane_artifacts_integrity(array $laneSteps): void
+{
+    $reportsDir = reports_dir();
+    $runReportsRel = getenv('HATFIELD_QA_REPORTS_DIR');
+    $missing = [];
+    foreach ($laneSteps as $step) {
+        $path = report_path('check-'.$step.'.log');
+        if (!is_file($path)) {
+            $missing[] = 'missing log: '.relative_report_path('check-'.$step.'.log').' (expected under '.$reportsDir.')';
+            continue;
+        }
+        if (0 === filesize($path)) {
+            $missing[] = 'empty log: '.relative_report_path('check-'.$step.'.log');
+        }
+    }
+
+    if ([] === $missing) {
+        echo 'QA artifact integrity: ok ('.\count($laneSteps)." lane logs in {$reportsDir})\n";
+
+        return;
+    }
+
+    fail_quality("QA artifact integrity FAILED:\n".implode("\n", $missing));
+}
+
+// ─── llama-proxy cache guard (castor check only) ───────────────────────
+
+function llama_proxy_admin_base_url(): string
+{
+    $override = getenv('HATFIELD_LLM_PROXY_ADMIN_URL');
+    if (false !== $override && '' !== trim((string) $override)) {
+        return rtrim((string) $override, '/');
+    }
+
+    return 'http://127.0.0.1:9052';
+}
+
+/**
+ * Optional admin token header for llama-proxy stats (when LLAMA_PROXY_ADMIN_TOKEN is set).
+ *
+ * @return list<string>
+ */
+function llama_proxy_admin_curl_headers(): array
+{
+    $token = getenv('LLAMA_PROXY_ADMIN_TOKEN');
+    if (false === $token || '' === trim((string) $token)) {
+        return [];
+    }
+
+    return ['-H', 'X-Llama-Proxy-Token: '.(string) $token];
+}
+
+function llama_proxy_cache_guard_enabled(): bool
+{
+    $raw = getenv('HATFIELD_LLM_CACHE_GUARD');
+    if (false === $raw) {
+        return true;
+    }
+    $normalized = strtolower(trim((string) $raw));
+
+    return !\in_array($normalized, ['0', 'false', 'no', 'off'], true);
+}
+
+/**
+ * @return array{entries: int, bytes: ?int, raw: array<string, mixed>}
+ */
+function fetch_llama_proxy_cache_stats(): array
+{
+    $url = llama_proxy_admin_base_url().'/__llama_proxy/cache/stats';
+    $headerArgs = llama_proxy_admin_curl_headers();
+    $headerShell = '';
+    foreach ($headerArgs as $part) {
+        $headerShell .= ' '.escapeshellarg($part);
+    }
+
+    $cmd = 'timeout --kill-after=3s 8s curl -sS -m 5 -f'.$headerShell.' '.escapeshellarg($url);
+    $process = run_quiet_command($cmd);
+    if (0 !== $process->getExitCode()) {
+        throw new \RuntimeException('llama-proxy cache stats unavailable at '.$url.' (curl exit '.$process->getExitCode().'). Full `castor check` requires llama-proxy on port 9052 with /__llama_proxy/cache/stats. '.trim($process->getErrorOutput().$process->getOutput()));
+    }
+
+    $body = trim($process->getOutput());
+    $decoded = json_decode($body, true);
+    if (!\is_array($decoded)) {
+        throw new \RuntimeException('llama-proxy cache stats returned non-JSON from '.$url.': '.$body);
+    }
+
+    if (!\array_key_exists('entries', $decoded)) {
+        throw new \RuntimeException('llama-proxy cache stats JSON missing "entries" key from '.$url.': '.$body);
+    }
+
+    $entries = $decoded['entries'];
+    if (!\is_int($entries) && !(\is_string($entries) && ctype_digit($entries))) {
+        throw new \RuntimeException('llama-proxy cache stats "entries" is not an integer from '.$url.': '.$body);
+    }
+
+    $bytes = null;
+    if (\array_key_exists('bytes', $decoded)) {
+        $bytesRaw = $decoded['bytes'];
+        if (\is_int($bytesRaw) || (\is_string($bytesRaw) && ctype_digit($bytesRaw))) {
+            $bytes = (int) $bytesRaw;
+        }
+    }
+
+    return [
+        'entries' => (int) $entries,
+        'bytes' => $bytes,
+        'raw' => $decoded,
+    ];
+}
+
+/**
+ * Capture baseline cache entries for `castor check` (before generation preflight).
+ */
+function begin_castor_check_llama_proxy_cache_guard(): ?int
+{
+    if (!llama_proxy_cache_guard_enabled()) {
+        echo "llama-proxy cache guard: disabled (HATFIELD_LLM_CACHE_GUARD=0)\n";
+
+        return null;
+    }
+
+    $stats = fetch_llama_proxy_cache_stats();
+    $entries = $stats['entries'];
+    echo 'llama-proxy cache guard: baseline entries='.$entries."\n";
+
+    return $entries;
+}
+
+function assert_castor_check_llama_proxy_cache_unchanged(?int $baselineEntries): void
+{
+    if (null === $baselineEntries) {
+        return;
+    }
+
+    $stats = fetch_llama_proxy_cache_stats();
+    $after = $stats['entries'];
+    if ($after > $baselineEntries) {
+        throw new \RuntimeException(\sprintf("llama-proxy cache grew from %d to %d entries during `castor check` — uncached live LLM request(s) occurred.\nWarm the proxy cache first: run `castor test:llm-real`, verify `curl %s/__llama_proxy/cache/stats`, then rerun `castor check`.\n".'After clearing the proxy cache you must warm again before the gate passes.', $baselineEntries, $after, llama_proxy_admin_base_url()));
+    }
+
+    echo 'llama-proxy cache guard: ok (entries '.$baselineEntries.' → '.$after.")\n";
+}
+
 function check_llm_generation_ready(): void
 {
-    $cacheFile = 'var/tmp/llm-generation-ready.cache';
+    $tmpDir = getenv('HATFIELD_QA_TMP_DIR');
+    if (false !== $tmpDir && '' !== trim((string) $tmpDir)) {
+        $cacheFile = rtrim((string) $tmpDir, '/').'/llm-generation-ready.cache';
+    } else {
+        $cacheFile = 'var/tmp/llm-generation-ready.cache';
+    }
     $envTtl = getenv('HATFIELD_LLM_READY_TTL');
     $ttlSeconds = (int) (false !== $envTtl && '' !== $envTtl ? $envTtl : 120);
     if ($ttlSeconds > 0 && is_file($cacheFile)) {
@@ -954,7 +1685,7 @@ function check_llm_generation_ready(): void
     // preflight would cut off reasoning models and trigger server aborts.
     $payload = '{"model":"'.$model.'","messages":[{"role":"user","content":"Respond with exactly one word: hello."}],"max_tokens":512,"temperature":0,"stream":false}';
 
-    $cmd = 'timeout --kill-after=5s 15s curl -sS -m 10 -o /dev/null -w "%{http_code}"'
+    $cmd = qa_check_run_env_command().' timeout --kill-after=5s 15s curl -sS -m 10 -o /dev/null -w "%{http_code}"'
         .' -H "Content-Type: application/json"'
         .' -d '.escapeshellarg($payload)
         .' '.escapeshellarg($url);
@@ -964,8 +1695,9 @@ function check_llm_generation_ready(): void
     $httpCode = (int) trim($process->getOutput());
 
     if (200 === $httpCode && 0 === $process->getExitCode()) {
-        if (!is_dir('var/tmp')) {
-            @mkdir('var/tmp', 0o777, true);
+        $cacheParent = \dirname($cacheFile);
+        if ('' !== $cacheParent && '.' !== $cacheParent && !is_dir($cacheParent)) {
+            @mkdir($cacheParent, 0o777, true);
         }
         @touch($cacheFile);
         echo 'llama.cpp generation: ok'."\n";

@@ -43,6 +43,25 @@ final class TmuxHarness
      */
     private const float TMUX_SESSION_TIMEOUT = 10.0;
 
+    /**
+     * TUI logo/block-cursor startup wait when castor check runs test:tui in
+     * parallel with the full unit suite and other lanes — 10s flakes with an
+     * empty pane under CPU/tmux contention.
+     */
+    public const float TUI_STARTUP_LOGO_TIMEOUT_PARALLEL = 20.0;
+
+    /**
+     * Wait for assistant (◇) or error (✕) blocks after replay+tool work when
+     * test:tui runs under full parallel castor check load.
+     */
+    public const float TUI_ASSISTANT_BLOCK_TIMEOUT_PARALLEL = 20.0;
+
+    /**
+     * Generic transcript/marker/shell-output waits when test:tui runs under
+     * full parallel castor check load (unit + controller-replay + llm-real).
+     */
+    public const float TUI_GATE_CALLBACK_TIMEOUT_PARALLEL = 20.0;
+
     public function __construct()
     {
         $this->root = \Ineersa\CodingAgent\Tests\Support\ProjectDir::get();
@@ -202,6 +221,13 @@ final class TmuxHarness
         int $height = 40,
         ?string $cwd = null,
     ): TmuxPane {
+        $qaRunId = getenv('HATFIELD_QA_RUN_ID') ?: '';
+        $qaRunSegment = '' !== $qaRunId
+            ? (preg_replace('/[^a-zA-Z0-9._-]/', '', $qaRunId) ?? 'qa-run')
+            : '';
+        if ('' !== $qaRunSegment) {
+            $prefix = $prefix.'-'.$qaRunSegment;
+        }
         $session = \sprintf('%s-%d-%d', $prefix, $this->pid, \count($this->sessionNames));
         $this->sessionNames[] = $session;
 
@@ -342,6 +368,29 @@ final class TmuxHarness
         return '' !== $output && \str_starts_with($output, '%');
     }
 
+    /**
+     * Shell PID for the tmux pane (bash -c agent ...). Used to scope
+     * descendant process discovery in transport E2E tests.
+     */
+    public function panePid(TmuxPane $pane): int
+    {
+        $output = $this->runTmux(
+            \sprintf(
+                'tmux display-message -p -t %s "#{pane_pid}" 2>/dev/null',
+                \escapeshellarg($pane->paneId),
+            ),
+            2.0,
+            throwOnTimeout: true,
+        );
+
+        $pid = (int) \trim($output);
+        if ($pid <= 0) {
+            throw new \RuntimeException(\sprintf('Could not read pane PID for %s (output: %s)', $pane->paneId, $output));
+        }
+
+        return $pid;
+    }
+
     // ── polling ────────────────────────────────────────────
 
     /**
@@ -373,7 +422,34 @@ final class TmuxHarness
             \usleep(100_000); // 100ms
         }
 
-        throw new \RuntimeException(\sprintf('Timed out after %.1fs waiting for needle "%s" in pane %s. Last capture (%d lines):'."\n%s", $timeout, $needle, $pane->paneId, \substr_count($lastCapture, "\n") + 1, $lastCapture));
+        throw new \RuntimeException($this->formatCaptureTimeoutDiagnostics($pane, $needle, $timeout, $lastCapture));
+    }
+
+
+    /**
+     * @param non-empty-string $needle
+     */
+    private function formatCaptureTimeoutDiagnostics(TmuxPane $pane, string $needle, float $timeout, string $lastPlainCapture): string
+    {
+        $ansi = '';
+        try {
+            $ansi = $this->captureAnsi($pane);
+        } catch (\Throwable) {
+            $ansi = '[captureAnsi failed]';
+        }
+
+        return \sprintf(
+            "Timed out after %.1fs waiting for needle \"%s\" in pane %s.\n".
+            "Last plain capture (%d lines):\n%s\n".
+            "Last ANSI capture (%d bytes):\n%s",
+            $timeout,
+            $needle,
+            $pane->paneId,
+            \substr_count($lastPlainCapture, "\n") + 1,
+            $lastPlainCapture,
+            \strlen($ansi),
+            $ansi,
+        );
     }
 
     /**

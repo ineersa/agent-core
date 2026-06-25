@@ -622,6 +622,26 @@ register tools and other integrations.
 Extension packages installed via Composer under `.hatfield/extensions/vendor/`
 are autoloaded automatically at startup when this list is non-empty.
 
+**After clone or pull** (especially when project extensions such as
+task-workflow were added or `composer.json` changed), refresh **both**
+Composer autoload contexts before starting Hatfield:
+
+1. **Root app** — from the repository root:
+   `composer install` (or `composer dump-autoload` if dependencies are
+   already installed but autoload maps changed). The host may register
+   extension namespaces in root `composer.json` `autoload` for tests and
+   tooling.
+2. **Extension Composer root** — `ExtensionManager` loads
+   `.hatfield/extensions/vendor/autoload.php` when that file exists. Create
+   it with:
+   `composer install -d .hatfield/extensions`
+   (path repository root for packages under `.hatfield/extensions/`).
+
+Extensions register tools and slash commands during startup. **Start a new
+Hatfield session** (or restart the agent/TUI) after install so enabled
+classes are loaded; an already-running session will not pick up new
+extensions.
+
 **Default:** The built-in SafeGuard extension is enabled by default
 (`Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension`).
 
@@ -645,6 +665,32 @@ Each extension reads its own settings section by key (e.g. SafeGuard
 reads `extensions.settings.safe_guard`).
 
 **Default:** `{}` (empty — no settings).
+
+### `extensions.settings.task_workflow`
+
+Settings for the native Hatfield task-workflow extension (`Ineersa\HatfieldExt\TaskWorkflow\TaskWorkflowExtension`).
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `task_root` | string | (auto-detect sibling `<repo>-tasks`) | External task board directory (outside the code repo). Overridden by `HATFIELD_TASK_WORKFLOW_ROOT` env var when set. |
+| `castor_check_timeout_seconds` | int | `480` | Timeout (60–1200) for deterministic `castor check` when moving a task to CODE-REVIEW. |
+
+**Install after pull:** enable the class in `extensions.enabled`, then run
+root `composer install` and `composer install -d .hatfield/extensions`, and
+start a new Hatfield session. See `extensions.enabled` above for the full
+autoload checklist.
+
+Example:
+
+```yaml
+extensions:
+    enabled:
+        - Ineersa\HatfieldExt\TaskWorkflow\TaskWorkflowExtension
+    settings:
+        task_workflow:
+            task_root: /path/to/agent-core-tasks
+            castor_check_timeout_seconds: 480
+```
 
 ### `extensions.settings.safe_guard`
 

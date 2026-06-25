@@ -19,13 +19,14 @@ use function CastorTasks\summarize_phpstan_json;
 require_once __DIR__.'/../vendor/autoload.php';
 require_once __DIR__.'/helpers.php';
 require_once __DIR__.'/shared.php';
+require_once __DIR__.'/env.php';
 
 // ─── Static analysis ──────────────────────────────────────────────
 
 #[AsTask(name: 'deptrac', description: 'Run Deptrac architecture validation')]
 function deptrac(): void
 {
-    $cmd = \PHP_BINARY.' vendor/bin/deptrac --config-file=depfile.yaml --no-progress --no-ansi'
+    $cmd = qa_observability_env_command().' '.\PHP_BINARY.' vendor/bin/deptrac --config-file=depfile.yaml --no-progress --no-ansi'
         .(is_llm_mode() ? ' --formatter=json' : '');
     $exitCode = 0;
     $output = [];
@@ -47,7 +48,7 @@ function deptrac(): void
 #[AsTask(name: 'phpstan', description: 'Run PHPStan static analysis')]
 function phpstan(?string $path = null): void
 {
-    $cmd = \PHP_BINARY.' vendor/bin/phpstan analyse -c phpstan.dist.neon --no-progress'
+    $cmd = qa_observability_env_command().' '.\PHP_BINARY.' vendor/bin/phpstan analyse -c phpstan.dist.neon --no-progress'
         .(is_llm_mode() ? ' --error-format=json --no-ansi' : '');
     if (null !== $path) {
         $cmd .= ' '.$path;
@@ -71,7 +72,7 @@ function phpstan(?string $path = null): void
 #[AsTask(name: 'phpstan:baseline', description: 'Regenerate PHPStan baseline')]
 function phpstan_baseline(): void
 {
-    passthru(\PHP_BINARY.' vendor/bin/phpstan analyse -c phpstan.dist.neon --generate-baseline phpstan-baseline.neon', $exitCode);
+    passthru(qa_observability_env_command().' '.\PHP_BINARY.' vendor/bin/phpstan analyse -c phpstan.dist.neon --generate-baseline phpstan-baseline.neon', $exitCode);
     if (0 !== $exitCode) {
         fail_quality(sprintf('PHPStan baseline generation failed with exit code %d', $exitCode));
     }
@@ -82,7 +83,7 @@ function phpstan_baseline(): void
 #[AsTask(name: 'cs-fix', description: 'Fix coding style')]
 function cs_fix(string $path = ''): void
 {
-    $cmd = \PHP_BINARY.' vendor/bin/php-cs-fixer fix --config=.php-cs-fixer.dist.php --no-ansi'
+    $cmd = qa_observability_env_command().' '.\PHP_BINARY.' vendor/bin/php-cs-fixer fix --config=.php-cs-fixer.dist.php --no-ansi'
         .(is_llm_mode() ? ' --format=json --show-progress=none' : ' --diff');
     if ('' !== $path) {
         $cmd .= ' '.escapeshellarg($path);
@@ -96,7 +97,7 @@ function cs_fix(string $path = ''): void
 #[AsTask(name: 'cs-check', description: 'Check coding style (dry-run)')]
 function cs_check(string $path = ''): void
 {
-    $cmd = \PHP_BINARY.' vendor/bin/php-cs-fixer fix --config=.php-cs-fixer.dist.php --dry-run --no-ansi'
+    $cmd = qa_observability_env_command().' '.\PHP_BINARY.' vendor/bin/php-cs-fixer fix --config=.php-cs-fixer.dist.php --dry-run --no-ansi'
         .(is_llm_mode() ? ' --format=json --show-progress=none' : ' --diff');
     if ('' !== $path) {
         $cmd .= ' '.escapeshellarg($path);

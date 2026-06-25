@@ -24,19 +24,33 @@ declare(strict_types=1);
  *
  * ── Environment overrides ──
  *   TEST_TOKEN              — set by ParaTest (empty string for main)
+ *   HATFIELD_QA_RUN_ID      — castor check run id (optional)
  *   HATFIELD_TEST_DATABASE_PATH — per-worker SQLite path
  *   HATFIELD_CACHE_DIR      — per-worker container cache
  */
 
 $token = getenv('TEST_TOKEN') ?: '0';
 
+$qaRunId = getenv('HATFIELD_QA_RUN_ID') ?: '';
+$qaRunSegment = '' !== $qaRunId
+    ? preg_replace('/[^a-zA-Z0-9._-]/', '', $qaRunId) ?? 'qa-run'
+    : '';
+
 // ── Per-worker DB path ──
-$dbPath = 'app_test-T' . $token . '.sqlite';
+if ('' !== $qaRunSegment) {
+    $dbPath = 'app_test-'.$qaRunSegment.'-T'.$token.'.sqlite';
+} else {
+    $dbPath = 'app_test-T'.$token.'.sqlite';
+}
 putenv("HATFIELD_TEST_DATABASE_PATH={$dbPath}");
 $_ENV['HATFIELD_TEST_DATABASE_PATH'] = $dbPath;
 
 // ── Per-worker cache dir ──
-$cacheDir = '.hatfield/cache-paraT' . $token;
+if ('' !== $qaRunSegment) {
+    $cacheDir = '.hatfield/cache-'.$qaRunSegment.'-paraT'.$token;
+} else {
+    $cacheDir = '.hatfield/cache-paraT'.$token;
+}
 putenv("HATFIELD_CACHE_DIR={$cacheDir}");
 $_ENV['HATFIELD_CACHE_DIR'] = $cacheDir;
 
@@ -54,7 +68,18 @@ $cmd = sprintf(
     $phpBin,
     escapeshellarg($root)
 );
+
+$lockPath = $root.'/var/test/.bootstrap-migrate-'.hash('sha256', $dbPath).'.lock';
+$lock = fopen($lockPath, 'c+');
+if (false === $lock) {
+    fwrite(\STDERR, "ParaTest bootstrap (token={$token}): unable to open migrate lock\n");
+    exit(1);
+}
+flock($lock, LOCK_EX);
 exec($cmd, $output, $exitCode);
+flock($lock, LOCK_UN);
+fclose($lock);
+
 if ($exitCode !== 0) {
     fwrite(\STDERR, "ParaTest bootstrap (token={$token}): migration FAILED\n" . implode("\n", $output) . "\n");
     exit($exitCode);

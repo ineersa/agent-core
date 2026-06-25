@@ -37,9 +37,16 @@ composer install
 # Install all workspace dependencies
 castor install
 
+# Project extensions (e.g. task-workflow): Hatfield loads
+# .hatfield/extensions/vendor/autoload.php — run after clone/pull when
+# extensions.enabled includes packages under .hatfield/extensions/
+composer install -d .hatfield/extensions
+
 # Run QA across all workspaces
 castor check
 ```
+
+After enabling new extensions in `.hatfield/settings.yaml`, start a new Hatfield session so tools and slash commands register at startup.
 
 ## Workspace Commands
 

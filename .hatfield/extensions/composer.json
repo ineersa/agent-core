@@ -1,0 +1,21 @@
+{
+    "name": "ineersa/hatfield-extensions",
+    "description": "Composer root for Hatfield project-level extensions",
+    "type": "project",
+    "license": "MIT",
+    "require": {
+        "php": ">=8.3",
+        "ineersa/hatfield-ext-task-workflow": "@dev"
+    },
+    "repositories": [
+        {
+            "type": "path",
+            "url": "task-workflow"
+        }
+    ],
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
