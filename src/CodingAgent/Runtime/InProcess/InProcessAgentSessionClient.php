@@ -114,11 +114,11 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         // Discover and inject available agent definitions for the parent model.
         // Rendered into <agents_instructions> and <available_agents> blocks between
         // skills context and the user message. Only on new sessions.
-        $agentsContext = $this->agentsContextBuilder->build();
-        if ('' !== $agentsContext) {
+        $availableAgentsContext = $this->agentsContextBuilder->build();
+        if ('' !== $availableAgentsContext) {
             $messages[] = new AgentMessage(
                 role: 'user-context',
-                content: [['type' => 'text', 'text' => $agentsContext]],
+                content: [['type' => 'text', 'text' => $availableAgentsContext]],
                 metadata: ['source' => 'agents_definitions_context'],
             );
         }

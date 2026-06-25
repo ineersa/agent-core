@@ -215,6 +215,139 @@ final class McpCatalogRegisteringToolSetResolverTest extends TestCase
         $this->assertStringContainsString('Catalog storage I/O failure', $warnings[0]['context']['error_message']);
     }
 
+
+    public function testChildRunUsesOwnCatalogWhenPresentBeforeParentFallback(): void
+    {
+        $registry = new ToolRegistry();
+        $inner = new class($registry) implements ToolSetResolverInterface {
+            public function __construct(private ToolRegistry $registry)
+            {
+            }
+
+            public function resolve(string $toolsRef, ?int $turnNo = null, ?string $runId = null): ActiveToolSet
+            {
+                return new ActiveToolSet(
+                    toolNames: $this->registry->activeToolNames(),
+                    allowListNames: $this->registry->activeToolNames(),
+                    executionModes: [],
+                );
+            }
+        };
+
+        $parentCatalog = $this->makeChildParentCatalogPair('srv_parent_only', 'srv_child_only');
+        $store = $this->makeStore([
+            'parent-run' => $parentCatalog['parent'],
+            'child-run' => $parentCatalog['child'],
+        ]);
+
+        $registrar = new McpToolRegistrar($store, $registry, $this->makeHandlerFactory(), new TestLogger());
+        $wrapper = new McpCatalogRegisteringToolSetResolver(
+            $inner,
+            $registrar,
+            $this->metadataReaderForChild('child-run', 'parent-run'),
+            $store,
+            new TestLogger(),
+        );
+        $result = $wrapper->resolve('toolset:run:child-run:turn:1', turnNo: 1, runId: 'child-run');
+
+        $this->assertContains('srv_child_only', $result->toolNames);
+        $this->assertNotContains('srv_parent_only', $result->toolNames);
+    }
+
+    public function testChildRunFallsBackToParentCatalogWhenChildCatalogMissing(): void
+    {
+        $registry = new ToolRegistry();
+        $inner = new class($registry) implements ToolSetResolverInterface {
+            public function __construct(private ToolRegistry $registry)
+            {
+            }
+
+            public function resolve(string $toolsRef, ?int $turnNo = null, ?string $runId = null): ActiveToolSet
+            {
+                return new ActiveToolSet(
+                    toolNames: $this->registry->activeToolNames(),
+                    allowListNames: $this->registry->activeToolNames(),
+                    executionModes: [],
+                );
+            }
+        };
+
+        $pair = $this->makeChildParentCatalogPair('srv_parent_only', 'srv_child_only');
+        $store = $this->makeStore(['parent-run' => $pair['parent']]);
+        $registrar = new McpToolRegistrar($store, $registry, $this->makeHandlerFactory(), new TestLogger());
+        $wrapper = new McpCatalogRegisteringToolSetResolver(
+            $inner,
+            $registrar,
+            $this->metadataReaderForChild('child-run', 'parent-run'),
+            $store,
+            new TestLogger(),
+        );
+        $result = $wrapper->resolve('toolset:run:child-run:turn:1', turnNo: 1, runId: 'child-run');
+
+        $this->assertContains('srv_parent_only', $result->toolNames);
+        $this->assertNotContains('srv_child_only', $result->toolNames);
+    }
+
+    /**
+     * @return array{parent: McpToolCatalogDTO, child: McpToolCatalogDTO}
+     */
+    private function makeChildParentCatalogPair(string $parentToolName, string $childToolName): array
+    {
+        $makeCatalog = static function (string $runId, string $hatfieldName, string $mcpName): McpToolCatalogDTO {
+            return new McpToolCatalogDTO(
+                runId: $runId,
+                servers: [
+                    'srv' => new McpServerCatalogEntryDTO(
+                        serverName: 'srv',
+                        transport: 'stdio',
+                        status: McpServerCatalogStatusEnum::CONNECTED,
+                        tools: [
+                            new McpToolDefinitionDTO(
+                                hatfieldName: $hatfieldName,
+                                serverName: 'srv',
+                                mcpName: $mcpName,
+                                description: 'MCP tool',
+                                inputSchema: [],
+                            ),
+                        ],
+                    ),
+                ],
+            );
+        };
+
+        return [
+            'parent' => $makeCatalog('parent-run', $parentToolName, 'parent'),
+            'child' => $makeCatalog('child-run', $childToolName, 'child'),
+        ];
+    }
+
+    private function metadataReaderForChild(string $childRunId, string $parentRunId): SubagentRunMetadataReader
+    {
+        $event = new \Ineersa\AgentCore\Domain\Event\RunEvent(
+            runId: $childRunId,
+            seq: 1,
+            turnNo: 0,
+            type: \Ineersa\AgentCore\Domain\Event\RunEventTypeEnum::RunStarted->value,
+            payload: [
+                'payload' => [
+                    'metadata' => [
+                        'session' => [
+                            'kind' => 'agent_child',
+                            'parent_run_id' => $parentRunId,
+                        ],
+                    ],
+                ],
+            ],
+        );
+
+        $eventStore = $this->createStub(\Ineersa\AgentCore\Contract\EventStoreInterface::class);
+        $eventStore->method('allFor')->willReturnCallback(
+            static fn (string $runId): array => $childRunId === $runId ? [$event] : [],
+        );
+
+        return new SubagentRunMetadataReader($eventStore);
+    }
+
     private function makeHandlerFactory(): McpToolHandlerFactory
     {
         // McpToolInvoker is final and has autowired deps — Reflection is simplest

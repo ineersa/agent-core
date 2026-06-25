@@ -34,7 +34,7 @@ Explicit `tools` without any `mcp:` entry: non-MCP allowlist only (no MCP).
 
 - **`subagent`** is never available inside child runs.
 - **Child MCP policy** is declared in `tools` using `mcp:` selectors (for example `mcp:websearch_search`, `mcp:websearch_`, `mcp:*`, `mcp:-`).
-- The legacy `mcp:` frontmatter block is not used for child tool exposure; use `tools` entries with `mcp:` selectors instead.
+- The legacy top-level `mcp:` frontmatter block (`mcp.mode` / `mcp.tools`) is not used for child tool exposure; declare MCP in `tools` with `mcp:` selectors instead.
 
 ## Model and context
 
@@ -65,9 +65,10 @@ Explicit `tools` without any `mcp:` entry: non-MCP allowlist only (no MCP).
 ---
 name: scout
 description: Read-only codebase reconnaissance
-tools: read, ide_find_file, ide_search_text
-mcp:
-  mode: none
+tools:
+  - read
+  - ide_find_file
+  - ide_search_text
 parallelAllowed: true
 inheritAgentsMd: true
 systemPromptMode: replace

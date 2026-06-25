@@ -94,7 +94,8 @@ tools:
         default_mode: sequential
 
         # ToolExecutor post-hoc timeout is opt-in per tool (ToolDefinitionDTO.timeoutSeconds).
-        # Omit timeout_seconds here so generic tools are not post-failed by wall-clock caps.
+        # Omit timeout_seconds here: no generic default wall-clock cap on tool calls.
+        # Subagent uses agents.subagent_tool_timeout_seconds (internal poll), not this key.
 
         # Maximum parallelism: how many tool calls to run concurrently.
         # Also controls the number of parallel messenger:consume tool

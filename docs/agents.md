@@ -16,8 +16,6 @@ tools:
   - read
   - ide_find_file
   - ide_search_text
-mcp:
-  mode: none
 inheritProjectContext: true
 inheritAgentsMd: true
 systemPromptMode: replace
@@ -36,9 +34,7 @@ You are a scout. Explore the codebase read-only and return dense findings...
 |---|---|---|---|---|
 | `name` | string | yes | — | Unique agent name. Lowercase `[a-z][a-z0-9-]{0,47}`. |
 | `description` | string | yes | — | Human-readable description. |
-| `tools` | list\<string\> | no | inherit all parent-available tools | Tool allowlist. When omitted, the child inherits all parent-available model-visible tools at launch (pi subagents parity), except `subagent` is always excluded. Explicit non-empty allowlist still restricts tools. YAML list preferred; comma-separated strings are normalized. Invalid: `tools: []`, blank entries, or whitespace-only comma strings. |
-| `tools` MCP selectors | `mcp:` entries in `tools` | no | omitted `tools`: inherit global MCP only; explicit `tools` without `mcp:`: no MCP | Use `mcp:*`, `mcp:-`, `mcp:<exposed_name>`, `mcp:<prefix_>` (e.g. `mcp:websearch_search`, `mcp:websearch_`). Runtime tool names stay `{server}_{tool}` with no `mcp` prefix. Legacy `mcp.mode` / `mcp.tools` frontmatter is ignored for child policy when `tools` uses `mcp:` selectors. |
-| `mcp.tools` | list\<string\> | no | `[]` | Allowed MCP tools when mode is `specific`. |
+| `tools` | list\<string\> | no | inherit all parent-available tools (+ global MCP when omitted) | Non-MCP tool allowlist and MCP selectors in one list. Omitted: inherit parent non-MCP tools and MCP from servers with `availability: all` in `.hatfield/mcp.json` (`subagent` always excluded). Explicit list without `mcp:` entries: non-MCP allowlist only (no MCP). MCP selectors: `mcp:*`, `mcp:-`, `mcp:<exposed_name>`, `mcp:<prefix_>` (runtime names `{server}_{tool}`). Legacy top-level `mcp.mode` / `mcp.tools` frontmatter is ignored for child policy. Invalid: `tools: []`, blank entries. |
 | `model` | string\|null | no | `null` | Optional model override. |
 | `thinking` | string\|null | no | `null` | Reasoning/thinking override (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`). |
 | `skills` | list\<string\> | no | `[]` | Setup skills loaded from start. |
@@ -100,8 +96,6 @@ tools:
   - read
   - ide_search_text
   - semantic-search
-mcp:
-  mode: none
 maxDepth: 1
 ---
 
