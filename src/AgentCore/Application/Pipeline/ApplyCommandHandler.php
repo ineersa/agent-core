@@ -326,6 +326,41 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         // accept the command without changing state (no version bump).
         // Repeated cancel during Cancelling should not be rejected.
         if (RunStatus::Cancelling === $state->status) {
+            if (!self::hasActiveCancellationWork($state)) {
+                $terminalSpecs = [[
+                    'type' => RunEventTypeEnum::AgentCommandApplied->value,
+                    'payload' => [
+                        'kind' => $message->kind,
+                        'idempotency_key' => $message->idempotencyKey(),
+                        'options' => [],
+                    ],
+                ], [
+                    'type' => RunEventTypeEnum::AgentEnd->value,
+                    'payload' => [
+                        'reason' => 'cancelled',
+                    ],
+                ]];
+                $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $terminalSpecs);
+
+                return new HandlerResult(
+                    nextState: new RunState(
+                        runId: $state->runId,
+                        status: RunStatus::Cancelled,
+                        version: $state->version + 1,
+                        turnNo: $state->turnNo,
+                        lastSeq: $state->lastSeq + \count($events),
+                        isStreaming: false,
+                        streamingMessage: null,
+                        pendingToolCalls: [],
+                        errorMessage: $reason,
+                        messages: $state->messages,
+                        activeStepId: null,
+                        retryableFailure: false,
+                    ),
+                    events: $events,
+                );
+            }
+
             $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, [[
                 'type' => RunEventTypeEnum::AgentCommandApplied->value,
                 'payload' => [
@@ -359,14 +394,10 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
 
         // When there is no active work to finish cancellation (not streaming,
-        // no active step, no unresolved tool calls), terminalize immediately
+        // no unresolved tool calls), terminalize immediately
         // to Cancelled.  Otherwise the run can get stuck Cancelling with no
         // later result/effect to transition it out — the classic cancel hang.
-        $hasActiveWork = $state->isStreaming
-            || null !== $state->activeStepId
-            || \in_array(false, $state->pendingToolCalls, true);
-
-        if (!$hasActiveWork) {
+        if (!self::hasActiveCancellationWork($state)) {
             // No active work — terminalize to Cancelled with AgentEnd.
             // Reuse the already-built $eventSpecs (applied + stale rejections)
             // and append the agent_end event at the correct sequence number.
@@ -419,6 +450,25 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             nextState: $nextState,
             events: $events,
         );
+    }
+
+    /**
+     * Whether cancel must wait for in-flight LLM streaming or unresolved tool calls.
+     *
+     * A non-null activeStepId alone is not active work once all pending tool calls
+     * are resolved and streaming has stopped (stale advance-after-tools step).
+     */
+    private static function hasActiveCancellationWork(RunState $state): bool
+    {
+        if ($state->isStreaming) {
+            return true;
+        }
+
+        if (\in_array(false, $state->pendingToolCalls, true)) {
+            return true;
+        }
+
+        return false;
     }
 
     /**

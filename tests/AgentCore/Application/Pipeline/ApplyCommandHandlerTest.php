@@ -659,7 +659,7 @@ final class ApplyCommandHandlerTest extends TestCase
 
         $result = $handler->handle($cancelMessage, $state);
 
-        $this->assertSame(RunStatus::Cancelling, $result->nextState->status);
+        $this->assertSame(RunStatus::Cancelled, $result->nextState->status);
         $this->assertCount(1, $result->nextState->messages);
         $this->assertStringContainsString('[BG_PROCESS_DONE]', $result->nextState->messages[0]->content[0]['text'] ?? '');
 
@@ -1162,12 +1162,165 @@ final class ApplyCommandHandlerTest extends TestCase
 
         // Must be accepted (not rejected), preserving Cancelling status.
         $this->assertNotNull($result->nextState);
-        $this->assertSame(RunStatus::Cancelling, $result->nextState->status,
-            'Repeated cancel while Cancelling must preserve Cancelling status');
+        $this->assertSame(RunStatus::Cancelled, $result->nextState->status,
+            'Cancel while stuck Cancelling with no active work must terminalize');
 
-        // Must emit agent_command_applied (not rejected).
-        $this->assertCount(1, $result->events);
-        $this->assertSame('agent_command_applied', $result->events[0]->type);
+        $eventTypes = array_map(static fn ($e) => $e->type, $result->events);
+        $this->assertContains('agent_command_applied', $eventTypes);
+        $this->assertContains('agent_end', $eventTypes);
     }
-}
 
+    /**
+     * Session 4 class bug: stale activeStepId after all tools resolved must not
+     * block immediate cancel terminalization.
+     */
+    public function testCancelWithStaleActiveStepAndAllPendingToolCallsResolvedTerminalizes(): void
+    {
+        $commandStore = new InMemoryCommandStore();
+        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandMailboxPolicy = new CommandMailboxPolicy(
+            commandStore: $commandStore,
+            commandRouter: $commandRouter,
+        );
+
+        $handler = new ApplyCommandHandler(
+            commandStore: $commandStore,
+            commandRouter: $commandRouter,
+            commandMailboxPolicy: $commandMailboxPolicy,
+            eventFactory: new EventFactory(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            maxPendingCommands: 10,
+        );
+
+        $state = new RunState(
+            runId: 'run-stale-step',
+            status: RunStatus::Running,
+            version: 20,
+            turnNo: 15,
+            lastSeq: 200,
+            isStreaming: false,
+            streamingMessage: null,
+            pendingToolCalls: [
+                'call_00' => true,
+                'call_01' => true,
+            ],
+            errorMessage: null,
+            messages: [],
+            activeStepId: 'advance-after-tools-33525236701801',
+            retryableFailure: false,
+        );
+
+        $cancelMessage = new ApplyCommand(
+            runId: 'run-stale-step',
+            turnNo: 15,
+            stepId: 'cancel-seq201',
+            attempt: 1,
+            idempotencyKey: 'cancel-stale-step-1',
+            kind: CoreCommandKind::Cancel,
+            payload: [],
+        );
+
+        $result = $handler->handle($cancelMessage, $state);
+
+        $this->assertSame(RunStatus::Cancelled, $result->nextState->status);
+        $this->assertNull($result->nextState->activeStepId);
+        $eventTypes = array_map(static fn ($e) => $e->type, $result->events);
+        $this->assertContains('agent_end', $eventTypes);
+    }
+
+    public function testCancelWithUnresolvedPendingToolCallEntersCancelling(): void
+    {
+        $commandStore = new InMemoryCommandStore();
+        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandMailboxPolicy = new CommandMailboxPolicy(
+            commandStore: $commandStore,
+            commandRouter: $commandRouter,
+        );
+
+        $handler = new ApplyCommandHandler(
+            commandStore: $commandStore,
+            commandRouter: $commandRouter,
+            commandMailboxPolicy: $commandMailboxPolicy,
+            eventFactory: new EventFactory(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            maxPendingCommands: 10,
+        );
+
+        $state = new RunState(
+            runId: 'run-pending-tool',
+            status: RunStatus::Running,
+            version: 3,
+            turnNo: 2,
+            lastSeq: 10,
+            isStreaming: false,
+            pendingToolCalls: ['call_00' => false],
+            messages: [],
+            activeStepId: 'step-tools',
+            retryableFailure: false,
+        );
+
+        $cancelMessage = new ApplyCommand(
+            runId: 'run-pending-tool',
+            turnNo: 2,
+            stepId: 'cancel-1',
+            attempt: 1,
+            idempotencyKey: 'cancel-pending-1',
+            kind: CoreCommandKind::Cancel,
+            payload: [],
+        );
+
+        $result = $handler->handle($cancelMessage, $state);
+
+        $this->assertSame(RunStatus::Cancelling, $result->nextState->status);
+        $eventTypes = array_map(static fn ($e) => $e->type, $result->events);
+        $this->assertNotContains('agent_end', $eventTypes);
+    }
+
+    public function testCancelWhileAlreadyCancellingWithNoActiveWorkTerminalizes(): void
+    {
+        $commandStore = new InMemoryCommandStore();
+        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandMailboxPolicy = new CommandMailboxPolicy(
+            commandStore: $commandStore,
+            commandRouter: $commandRouter,
+        );
+
+        $handler = new ApplyCommandHandler(
+            commandStore: $commandStore,
+            commandRouter: $commandRouter,
+            commandMailboxPolicy: $commandMailboxPolicy,
+            eventFactory: new EventFactory(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            maxPendingCommands: 10,
+        );
+
+        $state = new RunState(
+            runId: 'run-stuck-cancelling',
+            status: RunStatus::Cancelling,
+            version: 30,
+            turnNo: 15,
+            lastSeq: 200,
+            isStreaming: false,
+            pendingToolCalls: ['call_00' => true, 'call_01' => true],
+            messages: [],
+            activeStepId: 'advance-after-tools-33525236701801',
+            retryableFailure: false,
+        );
+
+        $cancelMessage = new ApplyCommand(
+            runId: 'run-stuck-cancelling',
+            turnNo: 15,
+            stepId: 'cancel-seq202',
+            attempt: 1,
+            idempotencyKey: 'cancel-stuck-1',
+            kind: CoreCommandKind::Cancel,
+            payload: [],
+        );
+
+        $result = $handler->handle($cancelMessage, $state);
+
+        $this->assertSame(RunStatus::Cancelled, $result->nextState->status);
+        $this->assertContains('agent_end', array_map(static fn ($e) => $e->type, $result->events));
+    }
+
+}

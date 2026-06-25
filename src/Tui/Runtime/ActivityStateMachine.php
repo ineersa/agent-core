@@ -145,6 +145,9 @@ final class ActivityStateMachine
      */
     private static function allowsContinuationAfterTerminal(string $eventType): bool
     {
+        // Only genuine new-turn / in-flight tool-start signals may leave terminal.
+        // Stale terminal outcomes and tool-end events after RunCancelled must not
+        // reopen Cancelled/Completed (session 4 resume regression).
         return match ($eventType) {
             RuntimeEventTypeEnum::RunStarted->value,
             RuntimeEventTypeEnum::TurnStarted->value,
@@ -153,18 +156,7 @@ final class ActivityStateMachine
             RuntimeEventTypeEnum::ToolCallArgumentsDelta->value,
             RuntimeEventTypeEnum::ToolCallArgumentsCompleted->value,
             RuntimeEventTypeEnum::ToolExecutionStarted->value,
-            RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
-            RuntimeEventTypeEnum::ToolExecutionCompleted->value,
-            RuntimeEventTypeEnum::ToolExecutionFailed->value,
-            RuntimeEventTypeEnum::ToolExecutionCancelled->value,
-            RuntimeEventTypeEnum::CancellationRequested->value,
-            RuntimeEventTypeEnum::OperationCancelled->value,
-            RuntimeEventTypeEnum::RunCompleted->value,
-            RuntimeEventTypeEnum::RunFailed->value,
-            RuntimeEventTypeEnum::RunCancelled->value,
-            RuntimeEventTypeEnum::TurnCancelled->value,
-            RuntimeEventTypeEnum::TurnFailed->value,
-            RuntimeEventTypeEnum::AssistantMessageFailed->value => true,
+            RuntimeEventTypeEnum::ToolExecutionOutputDelta->value => true,
             default => false,
         };
     }

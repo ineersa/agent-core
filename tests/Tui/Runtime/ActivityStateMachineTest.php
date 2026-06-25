@@ -270,6 +270,30 @@ final class ActivityStateMachineTest extends TestCase
         $this->assertSame(RunActivityStateEnum::Cancelled, $result);
     }
 
+    public function testCancelledStaysCancelledOnStaleToolExecutionCancelled(): void
+    {
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::ToolExecutionCancelled->value,
+            runId: '4',
+            seq: 999,
+            payload: ['tool_call_id' => 'call_0'],
+        );
+        $result = ActivityStateMachine::transition(RunActivityStateEnum::Cancelled, $event);
+        $this->assertSame(RunActivityStateEnum::Cancelled, $result);
+    }
+
+    public function testCancelledStaysCancelledOnStaleCancellationRequested(): void
+    {
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::CancellationRequested->value,
+            runId: '4',
+            seq: 201,
+            payload: ['kind' => 'cancel'],
+        );
+        $result = ActivityStateMachine::transition(RunActivityStateEnum::Cancelled, $event);
+        $this->assertSame(RunActivityStateEnum::Cancelled, $result);
+    }
+
     // ── Cancelling stickiness tests (issue #151 cosmetic flicker fix) ──
 
     /** @return iterable<array{string, RunActivityStateEnum, RunActivityStateEnum}> */
