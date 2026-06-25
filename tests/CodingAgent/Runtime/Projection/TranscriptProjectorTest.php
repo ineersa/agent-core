@@ -119,6 +119,16 @@ final class TranscriptProjectorTest extends TestCase
         $this->assertSame(1, $blocks[1]->seq);
     }
 
+    public function testQueuedUserMessageDoesNotProjectBlock(): void
+    {
+        $this->accept('user.message_queued', [
+            'text' => 'STEER_QUEUED_MARKER',
+            'idempotency_key' => 'ik-no-block',
+        ]);
+
+        $this->assertCount(0, $this->projector->blocks(), 'Queued user messages must not pollute the transcript (rendered in the TUI widget instead)');
+    }
+
     public function testRunStartedWithUserMessagesProjectsInitialPromptBlocks(): void
     {
         $this->accept('run.started', [

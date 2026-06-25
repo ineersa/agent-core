@@ -462,9 +462,9 @@ final class SessionInitializerReplayTest extends TestCase
         // 2: tool_batch_committed (DROPPED by RuntimeEventTranslator — no mapped event)
         $this->append($runId, 2, 'tool_batch_committed', []);
 
-        // 3: agent_command_queued (DROPPED by RuntimeEventTranslator)
+        // 3: agent_command_queued kind=compact (still DROPPED by RuntimeEventTranslator)
         $this->append($runId, 3, 'agent_command_queued', [
-            'kind' => 'steer',
+            'kind' => 'compact',
             'idempotency_key' => 'ik-drop',
         ]);
 
@@ -479,6 +479,78 @@ final class SessionInitializerReplayTest extends TestCase
         $kinds = array_map(static fn($b) => $b->kind, $blocks);
         self::assertContains(TranscriptBlockKindEnum::UserMessage, $kinds);
         self::assertNotEmpty($blocks, 'Mapped events should produce at least some blocks');
+    }
+
+
+    // ── Pending-queue widget on resume (issue #206) ─────────────────────────
+
+    public function testReplayRebuildsPendingQueuedSteer(): void
+    {
+        $runId = 'run-queued-steer-'.bin2hex(random_bytes(4));
+        $this->ensureSessionDir($runId);
+
+        $this->append($runId, 1, 'run_started', [
+            'step_id' => 'step-1',
+            'payload' => [
+                'messages' => [
+                    ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hello!']]],
+                ],
+            ],
+        ]);
+
+        $this->append($runId, 2, 'agent_command_queued', [
+            'kind' => 'steer',
+            'idempotency_key' => 'ik-pending',
+            'text' => 'STEER_QUEUED_MARKER',
+        ]);
+
+        $state = new TuiSessionState($runId, true);
+        $this->sessionInit->buildInitialTranscript($state);
+
+        self::assertArrayHasKey('ik-pending', $state->queuedUserMessages);
+        self::assertSame('STEER_QUEUED_MARKER', $state->queuedUserMessages['ik-pending']);
+    }
+
+    public function testReplayClearsQueuedSteerAfterApply(): void
+    {
+        $runId = 'run-applied-steer-'.bin2hex(random_bytes(4));
+        $this->ensureSessionDir($runId);
+
+        $this->append($runId, 1, 'run_started', [
+            'step_id' => 'step-1',
+            'payload' => [
+                'messages' => [
+                    ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hello!']]],
+                ],
+            ],
+        ]);
+
+        $this->append($runId, 2, 'agent_command_queued', [
+            'kind' => 'steer',
+            'idempotency_key' => 'ik-applied',
+            'text' => 'STEER_APPLIED_MARKER',
+        ]);
+
+        $this->append($runId, 3, 'agent_command_applied', [
+            'kind' => 'steer',
+            'idempotency_key' => 'ik-applied',
+            'message' => [
+                'role' => 'user',
+                'content' => [['type' => 'text', 'text' => 'STEER_APPLIED_MARKER']],
+            ],
+        ]);
+
+        $state = new TuiSessionState($runId, true);
+        $blocks = $this->sessionInit->buildInitialTranscript($state);
+
+        self::assertArrayNotHasKey('ik-applied', $state->queuedUserMessages);
+        self::assertSame([], $state->queuedUserMessages);
+
+        $userBlocks = array_filter($blocks, static fn ($b) => $b->kind === TranscriptBlockKindEnum::UserMessage);
+        self::assertNotEmpty($userBlocks, 'Applied steer must project a UserMessage block');
+
+        $texts = array_map(static fn ($b) => $b->text, array_values($userBlocks));
+        self::assertContains('STEER_APPLIED_MARKER', $texts);
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────

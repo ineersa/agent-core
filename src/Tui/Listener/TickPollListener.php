@@ -77,6 +77,11 @@ final class TickPollListener implements TuiListenerRegistrar
                 $screen->setTranscriptBlocks($state->transcript);
             }
 
+            // The pending-queue widget (slot 4, above the editor) reflects transient
+            // queued steer/follow-up messages. Sync every tick regardless of transcript
+            // changes, since a user.message_queued event mutates state without a block.
+            $screen->syncQueuedUserMessages($state->queuedUserMessages);
+
             // Open the question overlay whenever the coordinator has an
             // active request and the controller is not already showing it.
             // This handles: (a) new questions becoming active after polling
