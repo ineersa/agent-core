@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller\E2E;
 
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
@@ -49,25 +50,24 @@ YAML;
      */
     protected function controllerSubprocessEnv(): array
     {
-        return ['HATFIELD_TEST_LLM_HTTP_TIMEOUT' => '120'];
+        return ['HATFIELD_TEST_LLM_HTTP_TIMEOUT' => '60'];
     }
 
     protected function liveLlmToolWaitTimeout(): float
     {
-        return 90.0;
+        // Warm llama-proxy replay: parent tool + two child runs typically <10s.
+        return 25.0;
     }
 
     protected function setUp(): void
     {
         parent::setUp();
 
-        $dir = $this->tempDir.'/.hatfield/agents';
-        if (!is_dir($dir) && !mkdir($dir, 0777, true) && !is_dir($dir)) {
-            throw new \RuntimeException('Failed to create agents dir: '.$dir);
-        }
+        $agentsDir = $this->tempDir.'/.hatfield/agents';
+        TestDirectoryIsolation::ensureDirectory($agentsDir, 0o777);
 
-        $this->writeAgent($dir.'/live-parallel-child-a.md', self::CHILD_A, self::TOKEN_A);
-        $this->writeAgent($dir.'/live-parallel-child-b.md', self::CHILD_B, self::TOKEN_B);
+        $this->writeAgent($agentsDir.'/live-parallel-child-a.md', self::CHILD_A, self::TOKEN_A);
+        $this->writeAgent($agentsDir.'/live-parallel-child-b.md', self::CHILD_B, self::TOKEN_B);
     }
 
     public function testParallelSubagentsReturnArtifactReport(): void
