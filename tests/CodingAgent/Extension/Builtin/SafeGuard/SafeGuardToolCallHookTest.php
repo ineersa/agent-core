@@ -904,4 +904,47 @@ final class SafeGuardToolCallHookTest extends TestCase
             autoDenyInNoninteractive: $autoDeny,
         );
     }
+
+    public function testAutoDenyRelaxableForNoninteractiveChildDespiteApprovalChannel(): void
+    {
+        \putenv('HATFIELD_APPROVAL_CHANNEL=controller');
+        try {
+            $hook = $this->createHook(autoDeny: true);
+            $dto = $hook->onToolCall(new ToolCallContextDTO(
+                toolCallId: 'call_child_rm',
+                toolName: 'bash',
+                arguments: ['command' => 'rm -rf /tmp/child-build'],
+                orderIndex: 0,
+                runId: 'child-run',
+                metadata: ['noninteractive_child_run' => true],
+            ));
+
+            self::assertSame(ToolCallDecisionKindEnum::Block, $dto->kind);
+            self::assertTrue((bool) ($dto->details['auto_denied'] ?? false));
+            self::assertSame('destructive', $dto->details['category']);
+        } finally {
+            \putenv('HATFIELD_APPROVAL_CHANNEL');
+        }
+    }
+
+    public function testInteractiveParentStillRequiresApprovalWithApprovalChannel(): void
+    {
+        \putenv('HATFIELD_APPROVAL_CHANNEL=controller');
+        try {
+            $hook = $this->createHook(autoDeny: true);
+            $dto = $hook->onToolCall(new ToolCallContextDTO(
+                toolCallId: 'call_parent_rm',
+                toolName: 'bash',
+                arguments: ['command' => 'rm -rf /tmp/test-build'],
+                orderIndex: 0,
+                runId: 'parent-run',
+                metadata: ['noninteractive_child_run' => false],
+            ));
+
+            self::assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
+        } finally {
+            \putenv('HATFIELD_APPROVAL_CHANNEL');
+        }
+    }
+
 }

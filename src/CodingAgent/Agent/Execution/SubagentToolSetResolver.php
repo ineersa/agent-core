@@ -77,10 +77,18 @@ final readonly class SubagentToolSetResolver implements ToolSetResolverInterface
             }
         }
 
+        $filteredTimeoutSeconds = [];
+        foreach ($inner->timeoutSeconds as $toolName => $seconds) {
+            if (isset($allowedLookup[$toolName])) {
+                $filteredTimeoutSeconds[$toolName] = $seconds;
+            }
+        }
+
         return new ActiveToolSet(
             toolNames: $filteredToolNames,
             allowListNames: $filteredAllowList,
             executionModes: $filteredExecutionModes,
+            timeoutSeconds: $filteredTimeoutSeconds,
         );
     }
 }

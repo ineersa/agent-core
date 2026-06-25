@@ -68,6 +68,7 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
         private string $cwd,
         private ?StackToolExecutionContextAccessor $contextAccessor = null,
         private ?LoggerInterface $logger = null,
+        private ?NoninteractiveChildRunProbe $noninteractiveChildProbe = null,
     ) {
     }
 
@@ -470,6 +471,8 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
             metadata: [
                 'signature' => $toolCall->getSignature(),
                 'timeout_seconds' => $current?->timeoutSeconds(),
+                'noninteractive_child_run' => null !== $this->noninteractiveChildProbe
+                    && $this->noninteractiveChildProbe->isNoninteractiveChildRun($current?->runId()),
             ],
         );
     }

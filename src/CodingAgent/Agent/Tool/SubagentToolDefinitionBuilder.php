@@ -22,7 +22,7 @@ final class SubagentToolDefinitionBuilder
         return new ToolDefinitionDTO(
             name: 'subagent',
             description: \sprintf(
-                'Launch non-interactive foreground subagent(s). Single mode uses "agent" and "task". Parallel mode uses "tasks" with up to %d agents per call (agents.max_agents). The tool blocks until all children finish and returns bounded per-child summaries with Artifact: IDs; use agent_retrieve for full child handoffs.',
+                'Launch non-interactive foreground subagent(s). Single mode uses "agent" and "task". Parallel mode uses "tasks" with up to %d agents per call (agents.max_agents). The tool blocks until all children finish. Single-mode results include the full child handoff inline; parallel results are bounded summaries — use agent_retrieve for complete parallel handoffs or extra detail.',
                 $maxAgents,
             ),
             parametersJsonSchema: [
@@ -56,15 +56,18 @@ final class SubagentToolDefinitionBuilder
             ],
             handler: $handler,
             executionMode: ToolExecutionMode::Sequential,
-            promptLine: 'subagent — launch one or more non-interactive foreground subagents; returns artifact IDs for agent_retrieve',
+            timeoutSeconds: max(60, $agentsConfig->subagentToolTimeoutSeconds),
+            promptLine: 'subagent — launch one or more non-interactive foreground subagents; single mode returns full handoff inline',
             promptGuidelines: [
                 'Use subagent to delegate focused work to specialized child agents.',
                 \sprintf('Parallel mode: {"tasks":[{"agent":"scout","task":"..."}]} — up to %d agents per call (configured by agents.max_agents).', $maxAgents),
                 'Single mode: {"agent":"scout","task":"..."}.',
                 \sprintf('If more than %d parallel agents are needed, split into multiple subagent calls.', $maxAgents),
                 'The "concurrency" argument is not supported; all tasks in one call run concurrently up to the cap.',
-                'Parallel tool results are bounded summaries only; call agent_retrieve with each Artifact: ID for full child handoffs.',
-                'Successful results include Artifact: lines for agent_retrieve.',
+                'Single-mode successful results include the full child handoff inline — agent_retrieve is optional (metadata/history/debug only).',
+                'Parallel results are bounded summaries; use agent_retrieve with each Artifact: ID for complete handoffs.',
+                'Use agent_retrieve for failed/cancelled/timed-out children, truncated output, metadata, events/history, or debug paths.',
+                'Artifact: lines identify child artifacts for tracking and retrieval when needed.',
             ],
         );
     }

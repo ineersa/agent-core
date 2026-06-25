@@ -29,6 +29,9 @@ final readonly class AgentsConfig
         public AgentArtifactRetrievalLimitsConfig $retrieve = new AgentArtifactRetrievalLimitsConfig(),
         #[SerializedName('max_agents')]
         public int $maxAgents = 8,
+
+        #[SerializedName('subagent_tool_timeout_seconds')]
+        public int $subagentToolTimeoutSeconds = 900,
     ) {
     }
 
@@ -66,7 +69,12 @@ final readonly class AgentsConfig
             $maxAgents = $raw['max_agents'];
         }
 
-        return new self(enabled: $enabled, paths: $paths, retrieve: $retrieve, maxAgents: $maxAgents);
+        $subagentToolTimeoutSeconds = 900;
+        if (\array_key_exists('subagent_tool_timeout_seconds', $raw) && \is_int($raw['subagent_tool_timeout_seconds']) && $raw['subagent_tool_timeout_seconds'] > 0) {
+            $subagentToolTimeoutSeconds = $raw['subagent_tool_timeout_seconds'];
+        }
+
+        return new self(enabled: $enabled, paths: $paths, retrieve: $retrieve, maxAgents: $maxAgents, subagentToolTimeoutSeconds: $subagentToolTimeoutSeconds);
     }
 
     /**

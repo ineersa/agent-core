@@ -444,6 +444,7 @@ services:
 
   Ineersa\AgentCore\Application\Pipeline\LlmStepResultHandler:
     arguments:
+      $toolExecutionSettings: '@Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface'
       $agentRetryMaxAttempts: '@=null !== service("Ineersa\\CodingAgent\\Config\\AppConfig").ai ? service("Ineersa\\CodingAgent\\Config\\AppConfig").ai.agentRetry.resolveMaxAttempts() : 2'
       $agentRetryBaseDelayMs: '@=null !== service("Ineersa\\CodingAgent\\Config\\AppConfig").ai ? service("Ineersa\\CodingAgent\\Config\\AppConfig").ai.agentRetry.resolveBaseDelayMs() : 1000'
       $agentRetryMaxDelayMs: '@=null !== service("Ineersa\\CodingAgent\\Config\\AppConfig").ai ? service("Ineersa\\CodingAgent\\Config\\AppConfig").ai.agentRetry.resolveMaxDelayMs() : 60000'

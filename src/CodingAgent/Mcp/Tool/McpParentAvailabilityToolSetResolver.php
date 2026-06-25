@@ -66,10 +66,18 @@ final readonly class McpParentAvailabilityToolSetResolver implements ToolSetReso
             }
         }
 
+        $timeoutSeconds = [];
+        foreach ($inner->timeoutSeconds as $toolName => $seconds) {
+            if (!isset($hiddenLookup[$toolName])) {
+                $timeoutSeconds[$toolName] = $seconds;
+            }
+        }
+
         return new ActiveToolSet(
             toolNames: $toolNames,
             allowListNames: $allowList,
             executionModes: $executionModes,
+            timeoutSeconds: $timeoutSeconds,
         );
     }
 
