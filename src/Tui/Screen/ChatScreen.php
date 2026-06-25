@@ -342,6 +342,23 @@ final class ChatScreen
         $this->transcriptWidget->invalidate();
     }
 
+    /**
+     * Sync the pending-queue widget (layout slot 4, above the editor) with the
+     * current queued steer/follow-up messages from TuiSessionState.
+     *
+     * Called every render tick by TickPollListener. Entries render as muted
+     * "⏳ <text>" lines until the canonical user message is applied to the run,
+     * at which point the entry is popped and the ❯ user message is appended to
+     * the transcript.
+     *
+     * @param array<string, string> $queuedMessages idempotency_key => text
+     */
+    public function syncQueuedUserMessages(array $queuedMessages): void
+    {
+        $this->pendingRenderable->setMessages(array_values($queuedMessages));
+        $this->pendingWidget->invalidate();
+    }
+
     public function setWorkingMessage(?string $message): void
     {
         $this->registry->setWorkingMessage($message);

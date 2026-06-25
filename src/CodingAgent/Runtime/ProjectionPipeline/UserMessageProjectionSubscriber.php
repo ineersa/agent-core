@@ -11,6 +11,9 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
 /**
  * Projects user-message events into UserMessage transcript blocks.
+ *
+ * Queued steer/follow-up feedback is not projected here; the TUI pending-queue
+ * widget above the editor renders user.message_queued until apply.
  */
 final readonly class UserMessageProjectionSubscriber implements EventSubscriberInterface
 {

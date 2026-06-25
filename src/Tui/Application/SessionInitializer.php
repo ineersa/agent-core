@@ -207,6 +207,10 @@ final readonly class SessionInitializer
                 $state->usage->accumulate($runtimeEvent);
             }
 
+            // Rebuild the pending-queue widget state so a steer queued while the
+            // run was active still shows ⏳ after resume (mirrors RuntimeEventPoller).
+            $state->applyQueuedUserMessageEvent($runtimeEvent);
+
             $this->projector->accept($runtimeEvent->toArray());
         }
 

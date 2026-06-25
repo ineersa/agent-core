@@ -29,6 +29,7 @@ enum RuntimeEventTypeEnum: string
     // ── User input ──────────────────────────────────────────────────────
 
     case UserMessageSubmitted = 'user.message_submitted';
+    case UserMessageQueued = 'user.message_queued';
 
     // ── Assistant message stream ────────────────────────────────────────
 
@@ -132,7 +133,8 @@ enum RuntimeEventTypeEnum: string
             self::TurnFailed, self::TurnCancelled, self::RunCompleted,
             self::RunFailed, self::RunCancelled, self::RunResumed => 'lifecycle',
 
-            self::UserMessageSubmitted => 'user_input',
+            self::UserMessageSubmitted,
+            self::UserMessageQueued => 'user_input',
 
             self::AssistantMessageStarted, self::AssistantTextStarted,
             self::AssistantTextDelta, self::AssistantTextCompleted,

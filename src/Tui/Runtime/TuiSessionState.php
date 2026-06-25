@@ -7,6 +7,8 @@ namespace Ineersa\Tui\Runtime;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 
 /**
  * Mutable state bag for the interactive TUI session.
@@ -59,6 +61,20 @@ final class TuiSessionState
      */
     public ?string $queuedFollowUp = null;
 
+    /**
+     * Steer/follow-up messages queued by AgentCore while the run is active.
+     * Keyed by idempotency_key; value is the message text.
+     *
+     * Driven by applyQueuedUserMessageEvent(), called from both
+     * RuntimeEventPoller and SessionInitializer::replayFromEvents. Rendered by
+     * the PendingMessagesWidget above the editor until the canonical user
+     * message is applied to the run, at which point the entry pops and the
+     * finalized ❯ user message is appended to the transcript.
+     *
+     * @var array<string, string>
+     */
+    public array $queuedUserMessages = [];
+
     /** @var list<TranscriptBlock> Transcript blocks (plain, un-themed) */
     public array $transcript = [];
 
@@ -108,5 +124,33 @@ final class TuiSessionState
         $this->sessionId = $sessionId;
         $this->resuming = $resuming;
         $this->usage = new UsageProjection();
+    }
+
+    /**
+     * Apply a queued-user-message runtime event to the pending-queue state.
+     *
+     * Pushes user.message_queued entries (keyed by idempotency_key, value =
+     * message text) and pops the matching entry on user.message_submitted.
+     * The PendingMessagesWidget above the editor renders the pushed entries as
+     * "⏳ <text>" until the canonical ❯ user message is applied to the run.
+     *
+     * Called from BOTH the live RuntimeEventPoller and
+     * SessionInitializer::replayFromEvents so the pending-queue widget is
+     * rebuilt correctly after resume (e.g. a steer queued while the run is
+     * active must still show ⏳ after the TUI is closed and reopened).
+     */
+    public function applyQueuedUserMessageEvent(RuntimeEvent $event): void
+    {
+        if (RuntimeEventTypeEnum::UserMessageQueued->value === $event->type) {
+            $key = (string) ($event->payload['idempotency_key'] ?? '');
+            if ('' !== $key) {
+                $this->queuedUserMessages[$key] = (string) ($event->payload['text'] ?? '');
+            }
+        } elseif (RuntimeEventTypeEnum::UserMessageSubmitted->value === $event->type) {
+            $key = (string) ($event->payload['idempotency_key'] ?? '');
+            if ('' !== $key && isset($this->queuedUserMessages[$key])) {
+                unset($this->queuedUserMessages[$key]);
+            }
+        }
     }
 }

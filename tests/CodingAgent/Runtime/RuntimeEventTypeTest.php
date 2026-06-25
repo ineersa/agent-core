@@ -56,6 +56,7 @@ final class RuntimeEventTypeTest extends TestCase
 
             // User input
             RuntimeEventTypeEnum::UserMessageSubmitted,
+            RuntimeEventTypeEnum::UserMessageQueued,
 
             // Assistant message stream
             RuntimeEventTypeEnum::AssistantMessageStarted,
