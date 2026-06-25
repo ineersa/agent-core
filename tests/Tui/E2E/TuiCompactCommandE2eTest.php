@@ -10,22 +10,10 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
 /**
- * E2E proof for the /compact slash command.
+ * Minimal tmux proof for the compaction-specific visible progress path.
  *
- * Exercises the real interactive TUI via TmuxHarness and verifies
- * user-visible /compact behaviour:
- *  1. /compact is a registered slash command (visible in /help).
- *  2. Without an active session, /compact shows "No active session to compact."
- *  3. With an active session, /compact shows "Compacting conversation..." progress.
- *  4. A second /compact while compacting shows "Compaction already in progress."
- *
- * Design:
- *  - Single tmux session with APP_ENV=test + replay fixture for model interaction.
- *  - Phase 1: verify /compact without session → error message.
- *  - Phase 2: submit prompt, receive assistant response (replay fixture), then
- *    submit /compact → progress message.
- *  - Phase 3: submit /compact again → "already in progress" message.
- *  - Captures ANSI snapshot on success/failure.
+ * Handler/help/re-entrancy/failure/async lifecycle coverage lives in
+ * listener, virtual, controller-replay, and subscriber tests.
  *
  * @group tui-e2e-replay
  */
@@ -40,14 +28,14 @@ final class TuiCompactCommandE2eTest extends TestCase
     protected function setUp(): void
     {
         if (!TmuxHarness::isAvailable()) {
-            self::markTestSkipped('tmux is not installed. Skipping TUI e2e tests.');
+            $this->markTestSkipped('tmux is not installed. Skipping TUI e2e tests.');
         }
 
         $this->tmux = new TmuxHarness();
         $this->projectRoot = ProjectDir::get();
         $this->testProjectDir = $this->createIsolatedProjectDir();
         $this->snapshotDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
-        @\mkdir($this->snapshotDir, 0o777, true);
+        @mkdir($this->snapshotDir, 0o777, true);
     }
 
     protected function tearDown(): void
@@ -57,94 +45,33 @@ final class TuiCompactCommandE2eTest extends TestCase
         }
     }
 
-    /**
-     * Verify /compact slash command visibility and behaviour.
-     *
-     * Asserts in order:
-     *  1. /compact appears in /help output.
-     *  2. /compact without active session shows error.
-     *  3. After starting a session with a prompt, /compact shows progress.
-     *  4. Second /compact shows "already in progress".
-     */
-    public function testCompactCommandVisibleAndFunctional(): void
+    public function testCompactProgressMessageVisibleInRealTui(): void
     {
         $pane = $this->tmux->startDetached(
             command: $this->agentCommand(),
-            prefix: 'tui-compact',
+            prefix: 'tui-compact-smoke',
             width: 120,
             height: 60,
             cwd: $this->testProjectDir,
         );
 
         try {
-            // Wait for TUI startup (logo visible).
-            $this->tmux->waitForCaptureContains($pane, '█', 10.0);
+            $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
             $this->tmux->waitForTuiReadyAfterLogo($pane);
 
-            // ── Phase 1: /compact appears in /help ──
-            $this->tmux->sendKey($pane, 'C-u');
-            usleep(100_000);
-            $this->tmux->sendLiteral($pane, '/help');
+            $this->tmux->sendLiteral($pane, 'Respond with exactly: OK.');
             $this->tmux->sendKey($pane, 'Enter');
 
-            $helpCapture = $this->tmux->waitForCallback(
-                $pane,
-                static fn (string $cap): bool => str_contains($cap, '/compact'),
-                timeout: 5.0,
-                message: '/compact not found in /help output',
-                history: 2000,
-            );
-
-            self::assertStringContainsString(
-                '/compact',
-                $helpCapture,
-                '/compact should appear in /help command listing',
-            );
-            self::assertStringContainsString(
-                'Compact',
-                $helpCapture,
-                '/compact description should appear in /help',
-            );
-
-            // ── Phase 2: /compact without active session → error ──
-            $this->tmux->sendKey($pane, 'C-u');
-            usleep(100_000);
-            $this->tmux->sendLiteral($pane, '/compact');
-            $this->tmux->sendKey($pane, 'Enter');
-
-            $noSessionCapture = $this->tmux->waitForCallback(
-                $pane,
-                static fn (string $cap): bool => str_contains($cap, 'No active session'),
-                timeout: 5.0,
-                message: 'No active session message not shown',
-                history: 2000,
-            );
-
-            self::assertStringContainsString(
-                'No active session to compact.',
-                $noSessionCapture,
-                '/compact without active session must show error message',
-            );
-
-            // ── Phase 3: Start a session via prompt submission ──
-            $this->tmux->sendKey($pane, 'C-u');
-            usleep(100_000);
-            $prompt = 'Respond with exactly: OK.';
-            $this->tmux->sendLiteral($pane, $prompt);
-            $this->tmux->sendKey($pane, 'Enter');
-
-            // Wait for assistant response (◇ block).
             $this->tmux->waitForCallback(
                 $pane,
-                static fn (string $cap): bool => str_contains($cap, '◇'),
-                timeout: 15.0,
-                message: 'Assistant response block ◇ did not appear',
+                static fn (string $cap): bool => str_contains($cap, '◇') || str_contains($cap, '✕'),
+                timeout: TmuxHarness::TUI_ASSISTANT_BLOCK_TIMEOUT_PARALLEL,
+                message: 'Assistant response block did not appear before /compact',
                 history: 2000,
             );
 
-            // ── Phase 4: /compact with active session → progress ──
             $this->tmux->sendKey($pane, 'C-u');
-            usleep(100_000);
+            usleep(50_000);
             $this->tmux->sendLiteral($pane, '/compact');
             $this->tmux->sendKey($pane, 'Enter');
 
@@ -156,65 +83,12 @@ final class TuiCompactCommandE2eTest extends TestCase
                 history: 2000,
             );
 
-            self::assertStringContainsString(
-                'Compacting conversation',
-                $progressCapture,
-                '/compact with active session must show progress message',
-            );
+            $this->assertStringContainsString('Compacting conversation', $progressCapture);
 
-            // ── Phase 5: /compact re-entrancy guard ──
-            $this->tmux->sendKey($pane, 'C-u');
-            usleep(100_000);
-            $this->tmux->sendLiteral($pane, '/compact Focus on key points.');
-            $this->tmux->sendKey($pane, 'Enter');
-
-            $customCapture = $this->tmux->waitForCallback(
-                $pane,
-                static fn (string $cap): bool => str_contains($cap, 'Compaction already in progress'),
-                timeout: 5.0,
-                message: 'Already in progress message not shown',
-                history: 2000,
-            );
-
-            self::assertStringContainsString(
-                'Compaction already in progress.',
-                $customCapture,
-                'Second /compact must show "already in progress" message',
-            );
-
-            // ── Phase 6: Wait for compaction failure block ──
-            // After a tiny 2-message conversation, token usage is below
-            // keepRecentTokens (20000 default), so prepare() returns
-            // BelowKeepRecentTokens.  The RuntimeEventTranslator maps this
-            // to a user-visible message.  This assertion proves the full
-            // runtime event/projection pipeline: core event → runtime event
-            // → CompactionProjectionSubscriber → visible TUI transcript.
-            //
-            // The RuntimeEventTranslator wording mirrors
-            // CompactRunHandler::failureReasonToMessage().  Assert a stable
-            // substring rather than the full message so rewording doesn't
-            // break the test.
-            $failureCapture = $this->tmux->waitForCallback(
-                $pane,
-                static fn (string $cap): bool => str_contains($cap, 'no older context'),
-                timeout: 15.0,
-                message: 'Compaction failure block not shown in TUI',
-                history: 2000,
-            );
-
-            self::assertStringContainsString(
-                'no older context',
-                $failureCapture,
-                '/compact with small conversation must project visible failure block via runtime events',
-            );
-
-            // Save ANSI snapshot for inspection.
-            $this->saveAnsiSnapshot($pane, 'compact-success');
-
-            // Clean exit.
+            $this->saveAnsiSnapshot($pane, 'compact-progress-smoke');
             $this->tmux->sendKey($pane, 'C-d');
         } catch (\Throwable $e) {
-            $this->saveAnsiSnapshot($pane, 'compact-FAILURE');
+            $this->saveAnsiSnapshot($pane, 'compact-progress-smoke-FAILURE');
             try {
                 $this->tmux->sendKey($pane, 'C-d');
             } catch (\Throwable) {
@@ -222,240 +96,33 @@ final class TuiCompactCommandE2eTest extends TestCase
             throw $e;
         }
     }
-
-    /**
-     * Full async compaction lifecycle E2E proof.
-     *
-     * This test exercises the actual worker/result path — NOT the
-     * pre-model structural failure — and would have caught the
-     * stale_result regression (COMP-03 bug fix d6a5a7dfd).
-     *
-     * Chain:
-     *  1. Submit prompt → fixture #1 (assistant text response).
-     *  2. Send /compact → fixture #2 (compaction summarization).
-     *  3. Assert "⧉ Conversation compacted" appears after async result.
-     *
-     * Uses isolated project dir with compaction.keep_recent_tokens=10
-     * so compaction actually runs (not below-threshold failure) on a
-     * small conversation.
-     */
-    public function testCompactAsyncSuccessWithReplay(): void
-    {
-        // Use a compactable project dir so compaction actually runs
-        // instead of failing with below_keep_recent_tokens.
-        $this->testProjectDir = $this->createIsolatedProjectDirCompactable();
-        $this->snapshotDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
-        @\mkdir($this->snapshotDir, 0o777, true);
-
-        $pane = $this->tmux->startDetached(
-            command: $this->agentCommandWithChainedFixtures(),
-            prefix: 'tui-compact-async',
-            width: 120,
-            height: 60,
-            cwd: $this->testProjectDir,
-        );
-
-        try {
-            // Wait for TUI startup (logo visible).
-            $this->tmux->waitForCaptureContains($pane, '█', 10.0);
-            $this->tmux->waitForTuiReadyAfterLogo($pane);
-
-            // ── Phase 1: Submit prompt → fixture #1 response ──
-            //
-            // Use a long prompt (~500 chars) so the compact summary (with
-            // ~159-char XML wrapper overhead) is shorter than the original
-            // user message.  With a short prompt, the token-estimate-after
-            // would exceed the token-estimate-before and the ineffective-
-            // compaction guard (COMP-06) would emit compaction.failed.
-            $this->tmux->sendKey($pane, 'C-u');
-            usleep(100_000);
-            $prompt = 'Explain what automated testing is and why it is important '
-                .'for software quality.  Cover the relationship between unit '
-                .'tests, integration tests, end-to-end tests, and manual '
-                .'testing practices.  Include advantages and disadvantages '
-                .'of each approach.  Discuss how test automation improves '
-                .'developer productivity, reduces regression bugs, and '
-                .'enables continuous integration pipelines.  Answer with '
-                .'exactly: OK.';
-            $this->tmux->sendLiteral($pane, $prompt);
-            $this->tmux->sendKey($pane, 'Enter');
-
-            // Wait for assistant ◇ block.
-            $this->tmux->waitForCallback(
-                $pane,
-                static fn (string $cap): bool => str_contains($cap, '◇')
-                    || str_contains($cap, '✕'),
-                timeout: 15.0,
-                message: 'Assistant response block did not appear',
-                history: 2000,
-            );
-
-            // ── Phase 2: /compact → async worker must accept result ──
-            $this->tmux->sendKey($pane, 'C-u');
-            usleep(100_000);
-            $this->tmux->sendLiteral($pane, '/compact');
-            $this->tmux->sendKey($pane, 'Enter');
-
-            // Assert progress block appears immediately.
-            $this->tmux->waitForCallback(
-                $pane,
-                static fn (string $cap): bool => str_contains($cap, 'Compacting conversation'),
-                timeout: 10.0,
-                message: 'Compacting conversation progress not shown',
-                history: 2000,
-            );
-
-            // ── Phase 3: Assert async compaction succeeded ──
-            // The messenger:consume llm worker picks up ExecuteCompactionStep
-            // and serves fixture #2.  CompactionStepResult returns to
-            // CompactionStepResultHandler which emits context_compacted.
-            // RuntimeEventTranslator → CompactionCompleted →
-            // CompactionProjectionSubscriber → visible "⧉ Conversation compacted."
-            $compactCapture = $this->tmux->waitForCallback(
-                $pane,
-                static fn (string $cap): bool => str_contains($cap, 'Conversation compacted'),
-                timeout: 20.0,
-                message: 'Compaction success block never appeared',
-                history: 2000,
-            );
-
-            self::assertStringContainsString(
-                'Conversation compacted',
-                $compactCapture,
-                '/compact must produce visible success block after async compaction',
-            );
-
-            // Prove it did NOT show stale_result or model_error.
-            self::assertStringNotContainsString(
-                'stale_result',
-                $compactCapture,
-                'Compaction success must not contain stale_result',
-            );
-
-            // Save ANSI snapshot for inspection.
-            $this->saveAnsiSnapshot($pane, 'compact-async-success');
-
-            // Clean exit.
-            $this->tmux->sendKey($pane, 'C-d');
-        } catch (\Throwable $e) {
-            $this->saveAnsiSnapshot($pane, 'compact-async-FAILURE');
-            try {
-                $this->tmux->sendKey($pane, 'C-d');
-            } catch (\Throwable) {
-            }
-            throw $e;
-        }
-    }
-
-    // ── Helpers ───────────────────────────────────────────────────
 
     private function agentCommand(): string
     {
         $fixturePath = $this->projectRoot.'/tests/Tui/E2E/fixtures/tui-startup-prompt-response.json';
-        $fixtureEnv = \is_file($fixturePath)
-            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.\escapeshellarg($fixturePath).' '
+        $fixtureEnv = is_file($fixturePath)
+            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.escapeshellarg($fixturePath).' '
             : '';
 
-        return $this->buildAgentCommand($fixtureEnv);
-    }
-
-    /**
-     * Build agent command with chained replay fixtures for async compaction.
-     *
-     * Fixture 1: initial assistant response (tui-startup-prompt-response.json).
-     * Fixture 2: compaction summarization response (tui-compaction-summary-response.json).
-     *
-     * Uses the ControllerReplayHttpClientFactory multi-fixture support
-     * (fixture paths joined with semicolon). The factory cycles through
-     * them in order: first LLM call → fixture 1, second LLM call → fixture 2.
-     */
-    private function agentCommandWithChainedFixtures(): string
-    {
-        $fixturePaths = [];
-
-        $promptFixture = $this->projectRoot.'/tests/Tui/E2E/fixtures/tui-startup-prompt-response.json';
-        if (\is_file($promptFixture)) {
-            $fixturePaths[] = $promptFixture;
-        }
-
-        $compactFixture = $this->projectRoot.'/tests/Tui/E2E/fixtures/tui-compaction-summary-response.json';
-        if (\is_file($compactFixture)) {
-            $fixturePaths[] = $compactFixture;
-        }
-
-        $fixtureEnv = '' !== $fixturePaths
-            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.\escapeshellarg(\implode(';', $fixturePaths)).' '
-            : '';
-
-        return $this->buildAgentCommand($fixtureEnv);
-    }
-
-    private function buildAgentCommand(string $fixtureEnv): string
-    {
         $php = \PHP_BINARY;
         $script = $this->projectRoot.'/bin/console';
-
         $dbPath = 'app_test-tui-compact-'.bin2hex(random_bytes(4)).'.sqlite';
 
         return \sprintf(
-            'APP_ENV=test HATFIELD_TEST_DATABASE_PATH=%s HOME=%s %s %s %s agent '
-                .'--model=llama_cpp_test/test '
-                .'--tools-excluded=bash 2>&1',
-            \escapeshellarg($dbPath),
-            \escapeshellarg($this->testProjectDir.'/home'),
+            'APP_ENV=test HATFIELD_TEST_DATABASE_PATH=%s HOME=%s %s %s %s agent --model=llama_cpp_test/test --tools-excluded=bash 2>&1',
+            escapeshellarg($dbPath),
+            escapeshellarg($this->testProjectDir.'/home'),
             $fixtureEnv,
-            \escapeshellarg($php),
-            \escapeshellarg($script),
+            escapeshellarg($php),
+            escapeshellarg($script),
         );
     }
 
     private function createIsolatedProjectDir(): string
     {
-        return $this->createIsolatedProjectDirWithSettings([]);
-    }
-
-    /**
-     * Create isolated project dir with compaction.keep_recent_tokens=10
-     * so compaction actually runs on a small conversation (not below-threshold).
-     */
-    private function createIsolatedProjectDirCompactable(): string
-    {
-        return $this->createIsolatedProjectDirWithSettings([
-            'compaction' => [
-                'keep_recent_tokens' => 10,
-                'auto_enabled' => false,
-            ],
-        ]);
-    }
-
-    /**
-     * @param array<string, mixed> $extraSettings merged into the base settings
-     */
-    private function createIsolatedProjectDirWithSettings(array $extraSettings): string
-    {
         $dir = TestDirectoryIsolation::createProjectTempDir('tui-e2e-compact');
-        @\mkdir($dir.'/.hatfield', 0o777, true);
+        @mkdir($dir.'/.hatfield', 0o777, true);
 
-        $settings = $this->buildBaseSettings($extraSettings);
-
-        $yaml = \Symfony\Component\Yaml\Yaml::dump($settings, 6, 4);
-        \file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
-
-        @\mkdir($dir.'/home/.hatfield', 0o777, true);
-        \file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
-
-        return $dir;
-    }
-
-    /**
-     * Build the base settings array, merging in extra keys.
-     *
-     * @param array<string, mixed> $extra
-     *
-     * @return array<string, mixed>
-     */
-    private function buildBaseSettings(array $extra): array
-    {
         $settings = [
             'ai' => [
                 'default_model' => 'llama_cpp_test/test',
@@ -480,12 +147,7 @@ final class TuiCompactCommandE2eTest extends TestCase
                                 'tool_calling' => true,
                                 'reasoning' => true,
                                 'thinking_level_map' => [
-                                    'off' => '0',
-                                    'minimal' => '0',
-                                    'low' => '0',
-                                    'medium' => '0',
-                                    'high' => '0',
-                                    'xhigh' => '0',
+                                    'off' => '0', 'minimal' => '0', 'low' => '0', 'medium' => '0', 'high' => '0', 'xhigh' => '0',
                                 ],
                                 'cost' => ['input' => 0, 'output' => 0],
                             ],
@@ -494,17 +156,10 @@ final class TuiCompactCommandE2eTest extends TestCase
                 ],
             ],
             'extensions' => [
-                'enabled' => [
-                    'Ineersa\\CodingAgent\\Extension\\Builtin\\SafeGuard\\SafeGuardExtension',
-                ],
+                'enabled' => ['Ineersa\\CodingAgent\\Extension\\Builtin\\SafeGuard\\SafeGuardExtension'],
                 'settings' => [
                     'safe_guard' => [
-                        'tool_names' => [
-                            'bash' => 'bash',
-                            'write' => 'write',
-                            'edit' => 'edit',
-                            'read' => 'read',
-                        ],
+                        'tool_names' => ['bash' => 'bash', 'write' => 'write', 'edit' => 'edit', 'read' => 'read'],
                         'allow_command_patterns' => ['^ls\b', '^printf\b', '^echo\b'],
                         'allow_write_outside_cwd' => [],
                         'protected_read_patterns' => [],
@@ -514,14 +169,18 @@ final class TuiCompactCommandE2eTest extends TestCase
             ],
         ];
 
-        return array_merge_recursive($settings, $extra);
+        $yaml = \Symfony\Component\Yaml\Yaml::dump($settings, 6, 4);
+        file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
+        @mkdir($dir.'/home/.hatfield', 0o777, true);
+        file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
+
+        return $dir;
     }
 
     private function saveAnsiSnapshot(TmuxPane $pane, string $tag): void
     {
         $ansi = $this->tmux->captureAnsi($pane);
         $ts = date('Ymd-His');
-        $path = \sprintf('%s/%s-%s.ansi', $this->snapshotDir, $tag, $ts);
-        \file_put_contents($path, $ansi);
+        file_put_contents(\sprintf('%s/%s-%s.ansi', $this->snapshotDir, $tag, $ts), $ansi);
     }
 }

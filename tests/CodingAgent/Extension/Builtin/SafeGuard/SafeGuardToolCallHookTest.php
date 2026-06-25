@@ -25,8 +25,13 @@ final class SafeGuardToolCallHookTest extends TestCase
     private string $cwd;
     private ApprovalSessionTracker $tracker;
 
+    /** @var string|false backup of process env HATFIELD_APPROVAL_CHANNEL (false = unset) */
+    private string|false $approvalChannelEnvBackup = false;
+
     protected function setUp(): void
     {
+        $this->backupAndClearApprovalChannelEnv();
+
         $config = new SafeGuardConfig(autoDenyInNoninteractive: false);
         $classifier = SafeGuardClassifier::fromConfig($config);
         $policy = new SafeGuardPolicy();
@@ -40,6 +45,31 @@ final class SafeGuardToolCallHookTest extends TestCase
             cwd: $this->cwd,
             autoDenyInNoninteractive: false,
         );
+    }
+
+    protected function tearDown(): void
+    {
+        $this->restoreApprovalChannelEnv();
+
+        parent::tearDown();
+    }
+
+    private function backupAndClearApprovalChannelEnv(): void
+    {
+        $value = \getenv('HATFIELD_APPROVAL_CHANNEL');
+        $this->approvalChannelEnvBackup = false === $value ? false : $value;
+        \putenv('HATFIELD_APPROVAL_CHANNEL');
+    }
+
+    private function restoreApprovalChannelEnv(): void
+    {
+        if (false === $this->approvalChannelEnvBackup) {
+            \putenv('HATFIELD_APPROVAL_CHANNEL');
+
+            return;
+        }
+
+        \putenv('HATFIELD_APPROVAL_CHANNEL='.$this->approvalChannelEnvBackup);
     }
 
     // ── Bash tool ──
