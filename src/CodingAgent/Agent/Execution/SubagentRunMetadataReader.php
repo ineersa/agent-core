@@ -48,6 +48,29 @@ final readonly class SubagentRunMetadataReader
     }
 
     /**
+     * Parent session run id for a child run, or null when not a child.
+     */
+    public function readParentRunId(string $runId): ?string
+    {
+        $metadata = $this->readRunStartedMetadata($runId);
+        if (null === $metadata) {
+            return null;
+        }
+
+        $session = $metadata['session'] ?? [];
+        if (!\is_array($session) || 'agent_child' !== ($session['kind'] ?? null)) {
+            return null;
+        }
+
+        $parentRunId = $session['parent_run_id'] ?? null;
+        if (!\is_string($parentRunId) || '' === trim($parentRunId)) {
+            return null;
+        }
+
+        return $parentRunId;
+    }
+
+    /**
      * Read the allowed tool list from the child's RunStarted metadata.
      *
      * Returns null when the run is not a child or the metadata is

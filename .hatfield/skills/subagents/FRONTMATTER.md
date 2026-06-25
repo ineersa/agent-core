@@ -29,6 +29,7 @@ tools:
 ```
 
 Omitted `tools`: inherit parent non-MCP tools + MCP from servers marked `availability: all` in `.hatfield/mcp.json`.
+Parent/main runs only see MCP tools from `availability: all` servers in the active toolset; `availability: specific` servers are hidden until a child agent opts in via `mcp:` selectors in its `tools` list.
 Explicit `tools` without any `mcp:` entry: non-MCP allowlist only (no MCP).
 
 - **`subagent`** is never available inside child runs.

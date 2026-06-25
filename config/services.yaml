@@ -527,12 +527,25 @@ services:
     arguments:
       $toolRegistry: '@Ineersa\CodingAgent\Tool\ToolRegistryInterface'
 
+  # Parent/main runs hide MCP tools from availability=specific servers.
+  Ineersa\CodingAgent\Mcp\Tool\McpParentAvailabilityToolSetResolver:
+    arguments:
+      $inner: '@Ineersa\CodingAgent\Tool\CodingAgentToolSetResolver'
+      $metadataReader: '@Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader'
+      $catalogStore: '@Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface'
+      $configLoader: '@Ineersa\CodingAgent\Mcp\Config\McpConfigLoader'
+      $availability: '@Ineersa\CodingAgent\Mcp\Tool\McpServerToolAvailability'
+
+  Ineersa\CodingAgent\Mcp\Tool\McpServerToolAvailability: ~
+
   # MCP-aware wrapper: calls registrar before delegate so LLM-visible
   # tool schemas and execution allowlists include catalog-backed MCP tools.
   Ineersa\CodingAgent\Mcp\Tool\McpCatalogRegisteringToolSetResolver:
     arguments:
-      $inner: '@Ineersa\CodingAgent\Tool\CodingAgentToolSetResolver'
+      $inner: '@Ineersa\CodingAgent\Mcp\Tool\McpParentAvailabilityToolSetResolver'
       $mcpToolRegistrar: '@Ineersa\CodingAgent\Mcp\Tool\McpToolRegistrar'
+      $metadataReader: '@Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader'
+      $catalogStore: '@Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface'
       $logger: '@logger'
 
   # Subagent tool-set decorator: wraps the MCP-registering resolver and

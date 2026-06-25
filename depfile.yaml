@@ -606,6 +606,7 @@ parameters:
 
     AppMcpTool:
       - AgentCore
+      - AppAgent
       - AppTool
       - AppMcpCatalog
       - AppMcpClient

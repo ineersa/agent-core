@@ -15,7 +15,7 @@ use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogDTO;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolDefinitionDTO;
 use Ineersa\CodingAgent\Mcp\Config\McpConfigDTO;
-use Ineersa\CodingAgent\Mcp\Config\McpConfigLoader;
+use Ineersa\CodingAgent\Tests\Support\Mcp\TestMcpConfigLoaderFactory;
 use Ineersa\CodingAgent\Mcp\Config\McpServerAvailabilityEnum;
 use Ineersa\CodingAgent\Mcp\Config\McpServerDefinitionDTO;
 use Ineersa\CodingAgent\Mcp\Config\McpTransportTypeEnum;
@@ -74,8 +74,7 @@ final class AgentToolPolicyResolverTest extends TestCase
             'context7' => new McpServerDefinitionDTO('context7', url: 'u', transportType: McpTransportTypeEnum::HTTP, availability: McpServerAvailabilityEnum::All),
             'websearch' => new McpServerDefinitionDTO('websearch', url: 'u', transportType: McpTransportTypeEnum::HTTP, availability: McpServerAvailabilityEnum::Specific),
         ]);
-        $loader = $this->createStub(McpConfigLoader::class);
-        $loader->method('load')->willReturn($config);
+        $loader = TestMcpConfigLoaderFactory::loaderForServers($config->servers);
 
         return new AgentMcpToolsResolver($catalogStore, $loader);
     }

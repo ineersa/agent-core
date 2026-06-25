@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Mcp\Tool;
 
+use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
+use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
 use Psr\Log\LoggerInterface;
 
@@ -34,6 +36,8 @@ final readonly class McpCatalogRegisteringToolSetResolver implements ToolSetReso
     public function __construct(
         private ToolSetResolverInterface $inner,
         private McpToolRegistrar $mcpToolRegistrar,
+        private SubagentRunMetadataReader $metadataReader,
+        private McpToolCatalogStoreInterface $catalogStore,
         private LoggerInterface $logger,
     ) {
     }
@@ -46,7 +50,8 @@ final readonly class McpCatalogRegisteringToolSetResolver implements ToolSetReso
         // MCP tools are session-scoped and not relevant there.
         if (null !== $runId && '' !== $runId) {
             try {
-                $this->mcpToolRegistrar->registerForRun($runId);
+                $catalogRunId = $this->resolveCatalogRunId($runId);
+                $this->mcpToolRegistrar->registerUsingCatalogFrom($runId, $catalogRunId);
             } catch (\Throwable $e) {
                 // MCP catalog registration is optional — a failure
                 // here must not prevent the resolver from returning
@@ -72,5 +77,21 @@ final readonly class McpCatalogRegisteringToolSetResolver implements ToolSetReso
         }
 
         return $this->inner->resolve($toolsRef, $turnNo, $runId);
+    }
+
+    private function resolveCatalogRunId(string $runId): string
+    {
+        if ($this->metadataReader->isAgentChild($runId)) {
+            $parentRunId = $this->metadataReader->readParentRunId($runId);
+            if (null !== $parentRunId) {
+                if (null !== $this->catalogStore->read($runId)) {
+                    return $runId;
+                }
+
+                return $parentRunId;
+            }
+        }
+
+        return $runId;
     }
 }
