@@ -147,6 +147,12 @@ tui:
 #         background_prompt_threshold_seconds: 15
 #         poll_interval_micros: 100000
 #         log_tail_chars: 20000
+#
+# Active project override (highest precedence): keeps manual smoke at 15s even
+# when ~/.hatfield/settings.yaml sets a different value (e.g. 30).
+tools:
+    bash:
+        background_prompt_threshold_seconds: 15
 
 # ---------------------------------------------------------------------------
 # Logging configuration
