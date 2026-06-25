@@ -20,5 +20,6 @@ parameters:
         - vendor/*
         - .hatfield/extensions/vendor/*
         - .hatfield/extensions/task-workflow/tests/*
+        - .hatfield/extensions/castor-llm-mode/tests/*
     parallel:
         maximumNumberOfProcesses: 1
