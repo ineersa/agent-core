@@ -70,6 +70,8 @@ HATFIELD_DATADOG=0 castor run:agent   # force-disable
 
 Bubblewrap: when `~/bin/pi-bwrap` is available, `castor run:agent` re-execs under it before tmux (same as other `run:agent*` tasks). Use `HATFIELD_BWRAP=0 castor run:agent` to launch on the host for Datadog/tmux troubleshooting.
 
+Optional: `HATFIELD_CASTOR_EXECUTABLE` overrides which Castor binary is used when auto-wrap re-execs (see `docs/tui-testing.md`).
+
 
 When enabled, the launcher sets:
 

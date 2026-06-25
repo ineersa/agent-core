@@ -24,6 +24,9 @@ final class PiBwrapCastorHelperTest extends TestCase
 
     private array $envBackup = [];
 
+    /** @var list<string> */
+    private array $stubTempDirs = [];
+
     protected function tearDown(): void
     {
         foreach ($this->envBackup as $name => $value) {
@@ -37,6 +40,14 @@ final class PiBwrapCastorHelperTest extends TestCase
             }
         }
         $this->envBackup = [];
+
+        foreach ($this->stubTempDirs as $dir) {
+            if (is_dir($dir)) {
+                TestDirectoryIsolation::removeDirectory($dir);
+            }
+        }
+        $this->stubTempDirs = [];
+
         parent::tearDown();
     }
 
@@ -142,12 +153,6 @@ final class PiBwrapCastorHelperTest extends TestCase
         $this->assertSame($castorBin, $lines[2]);
         $this->assertSame('run:agent', $lines[3]);
 
-        if (is_file($logPath)) {
-            unlink($logPath);
-        }
-        if (is_file($stub)) {
-            unlink($stub);
-        }
     }
 
     /**
@@ -156,6 +161,7 @@ final class PiBwrapCastorHelperTest extends TestCase
     private function createStubWrapperScript(): array
     {
         $dir = TestDirectoryIsolation::createProjectTempDir('pi-bwrap-stub');
+        $this->stubTempDirs[] = $dir;
         $log = $dir.'/argv.log';
         $stub = $dir.'/pi-bwrap-stub.sh';
         $exit = self::REEXEC_STUB_EXIT;

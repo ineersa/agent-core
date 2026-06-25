@@ -20,6 +20,7 @@ When `~/bin/pi-bwrap` exists and is executable, `castor run:agent`, `run:agent-t
 | `HATFIELD_BWRAP=0` | Skip Bubblewrap (host launch, troubleshooting) |
 | `HATFIELD_PI_BWRAP=/path/to/script` | Override wrapper path (default `~/bin/pi-bwrap`) |
 | `HATFIELD_INSIDE_PI_BWRAP=1` | Set automatically after re-exec; prevents recursive wrapping |
+| `HATFIELD_CASTOR_EXECUTABLE=/path/to/castor` | Override Castor CLI used for the Bubblewrap re-exec (default: auto-detect from current invocation `argv[0]`, then `~/.local/bin/castor`, then `PATH`) |
 
 `castor test:tui` does **not** use this auto-wrap (PHPUnit/tmux harness runs on the host). The QA gate still requires host tmux.
 
