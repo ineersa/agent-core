@@ -27,6 +27,16 @@ final class SubagentProgressEventsFixture
             'artifact_id' => $artifactId,
             'task_summary' => 'Inspect TUI subagent rendering',
             'elapsed_ms' => 5000,
+            'tool_count' => 12,
+            'total_tokens' => 49000,
+            'input_tokens' => 35000,
+            'output_tokens' => 14000,
+            'reasoning_tokens' => 584000,
+            'cost' => 0.0104,
+            'model' => 'deepseek/deepseek-v4-flash',
+            'artifact_path' => 'artifacts/agents/'.$artifactId,
+            'recent_tools' => ['read: path="src/Tui/Transcript/SubagentResultRenderer.php"'],
+            'assistant_excerpt' => 'Structured subagent block renders inline.',
         ];
 
         $events = [];
@@ -66,16 +76,10 @@ final class SubagentProgressEventsFixture
             $progress = $progressBase;
             $progress['turn_no'] = $turn;
             $progress['elapsed_ms'] = 5000 + ($turn * 3000);
-            $display = sprintf(
-                "subagent scout running | 00:%02d | turn %d\nTask: Inspect TUI subagent rendering\nArtifact: %s\n",
-                (int) floor($progress['elapsed_ms'] / 1000) % 60,
-                $turn,
-                $artifactId,
-            );
             $events[] = self::event($sessionId, 5 + $turn, 1, 'tool_execution_update', [
                 'tool_call_id' => $toolCallId,
                 'tool_name' => 'subagent',
-                'delta' => $display,
+                'delta' => '',
                 'subagent_progress' => $progress,
                 'order_index' => 0,
             ], $now);

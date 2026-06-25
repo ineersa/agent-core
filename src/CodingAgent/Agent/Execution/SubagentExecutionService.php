@@ -60,7 +60,8 @@ final class SubagentExecutionService
         private readonly StackToolExecutionContextAccessor $contextAccessor,
         private readonly LoggerInterface $logger,
         private readonly AgentsConfig $agentsConfig,
-        private readonly SubagentProgressSnapshotBuilder $progressSnapshotBuilder = new SubagentProgressSnapshotBuilder(),
+        private readonly SubagentProgressSnapshotBuilder $progressSnapshotBuilder,
+        private readonly SubagentChildProgressSummaryBuilder $childProgressSummaryBuilder,
     ) {
     }
 
@@ -218,9 +219,11 @@ final class SubagentExecutionService
                 // lightweight status line based on RunState, not full event scan.
                 $this->emitProgressUpdate(
                     parentRunId: $parentRunId,
+                    agentRunId: $agentRunId,
                     agentName: $agentName,
                     artifactId: $artifactId,
                     taskSummary: $task,
+                    definitionModel: $definition->model,
                     state: $state,
                     seq: $progressSeq,
                     progressStartedHr: $progressStartedHr,
@@ -329,6 +332,7 @@ final class SubagentExecutionService
                 'task' => $launch['task'],
                 'artifactId' => $launch['artifactId'],
                 'agentRunId' => $launch['agentRunId'],
+                'model' => $launch['definition']->model,
                 'terminal' => false,
                 'status' => null,
                 'message' => '',
@@ -674,7 +678,31 @@ final class SubagentExecutionService
         }
 
         $elapsedMs = (int) ((hrtime(true) - $progressStartedHr) / 1_000_000);
-        $progress = $this->progressSnapshotBuilder->parallelSnapshot($reports, $activeTurns, $elapsedMs);
+        $enrichmentByRun = [];
+        foreach ($reports as $agentRunId => $report) {
+            if ($report['terminal']) {
+                continue;
+            }
+            $state = $this->runStore->get($agentRunId);
+            if (null === $state) {
+                continue;
+            }
+            $model = \is_string($report['model'] ?? null) ? $report['model'] : null;
+            $enrichmentByRun[$agentRunId] = $this->childProgressSummaryBuilder->summarize(
+                $parentRunId,
+                $agentRunId,
+                $report['artifactId'],
+                $state,
+                $model,
+            );
+        }
+
+        $progress = $this->progressSnapshotBuilder->parallelSnapshot(
+            $reports,
+            $activeTurns,
+            $elapsedMs,
+            $enrichmentByRun,
+        );
         $event = new RunEvent(
             runId: $parentRunId,
             seq: $seq,
@@ -926,9 +954,11 @@ final class SubagentExecutionService
      */
     private function emitProgressUpdate(
         string $parentRunId,
+        string $agentRunId,
         string $agentName,
         string $artifactId,
         string $taskSummary,
+        ?string $definitionModel,
         RunState $state,
         int $seq,
         int $progressStartedHr,
@@ -939,12 +969,20 @@ final class SubagentExecutionService
         }
 
         $elapsedMs = (int) ((hrtime(true) - $progressStartedHr) / 1_000_000);
+        $enrichment = $this->childProgressSummaryBuilder->summarize(
+            $parentRunId,
+            $agentRunId,
+            $artifactId,
+            $state,
+            $definitionModel,
+        );
         $progress = $this->progressSnapshotBuilder->singleRunning(
             $agentName,
             $artifactId,
             $taskSummary,
             $state,
             $elapsedMs,
+            $enrichment,
         );
         $event = new RunEvent(
             runId: $parentRunId,

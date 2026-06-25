@@ -21,8 +21,9 @@ final class SubagentProgressSnapshotBuilder
         string $taskSummary,
         RunState $childState,
         int $elapsedMs,
+        ?SubagentChildProgressSummary $enrichment = null,
     ): array {
-        return [
+        $base = [
             'mode' => 'single',
             'status' => 'running',
             'agent_name' => $agentName,
@@ -31,11 +32,16 @@ final class SubagentProgressSnapshotBuilder
             'turn_no' => $childState->turnNo,
             'elapsed_ms' => max(0, $elapsedMs),
         ];
+
+        return null !== $enrichment
+            ? array_merge($base, $enrichment->toProgressFields())
+            : $base;
     }
 
     /**
      * @param array<string, array{index:int,agentName:string,task:string,artifactId:string,agentRunId:string,terminal:bool,status:?AgentArtifactStatusEnum,message:string}> $reports
      * @param array<string, int>                                                                                                                                            $activeTurns
+     * @param array<string, SubagentChildProgressSummary>                                                                                                                   $enrichmentByAgentRunId
      *
      * @return array<string, mixed>
      */
@@ -43,6 +49,7 @@ final class SubagentProgressSnapshotBuilder
         array $reports,
         array $activeTurns,
         int $elapsedMs,
+        array $enrichmentByAgentRunId = [],
         string $aggregateStatus = 'running',
     ): array {
         $sorted = array_values($reports);
@@ -51,6 +58,13 @@ final class SubagentProgressSnapshotBuilder
         $total = \count($sorted);
         $completed = 0;
         $children = [];
+        $aggToolCount = 0;
+        $aggInput = 0;
+        $aggOutput = 0;
+        $aggReasoning = 0;
+        $aggTotal = 0;
+        $aggCost = 0.0;
+        $hasCost = false;
 
         foreach ($sorted as $report) {
             $agentRunId = $report['agentRunId'];
@@ -69,7 +83,7 @@ final class SubagentProgressSnapshotBuilder
                 };
             }
 
-            $children[] = [
+            $child = [
                 'index' => $report['index'],
                 'label' => 'Step '.$report['index'],
                 'agent_name' => $report['agentName'],
@@ -78,15 +92,41 @@ final class SubagentProgressSnapshotBuilder
                 'task_summary' => $report['task'],
                 'turn_no' => $activeTurns[$agentRunId] ?? 0,
             ];
+
+            if (isset($enrichmentByAgentRunId[$agentRunId])) {
+                $child = array_merge($child, $enrichmentByAgentRunId[$agentRunId]->toProgressFields());
+                $e = $enrichmentByAgentRunId[$agentRunId];
+                $aggToolCount += $e->toolCount;
+                $aggInput += $e->inputTokens;
+                $aggOutput += $e->outputTokens;
+                $aggReasoning += $e->reasoningTokens;
+                $aggTotal += $e->totalTokens;
+                if (null !== $e->cost) {
+                    $aggCost += $e->cost;
+                    $hasCost = true;
+                }
+            }
+
+            $children[] = $child;
         }
 
-        return [
+        $payload = [
             'mode' => 'parallel',
             'status' => $aggregateStatus,
             'completed_count' => $completed,
             'total_count' => $total,
             'elapsed_ms' => max(0, $elapsedMs),
             'children' => $children,
+            'tool_count' => $aggToolCount,
+            'input_tokens' => $aggInput,
+            'output_tokens' => $aggOutput,
+            'reasoning_tokens' => $aggReasoning,
+            'total_tokens' => $aggTotal,
         ];
+        if ($hasCost) {
+            $payload['cost'] = $aggCost;
+        }
+
+        return $payload;
     }
 }

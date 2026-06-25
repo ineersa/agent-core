@@ -49,10 +49,12 @@ final class SubagentProgressProjectionTest extends TestCase
         self::assertCount(1, $blocks);
         $block = $blocks[0];
         self::assertSame('tool_result_tc_sub', $block->id);
-        self::assertStringContainsString('subagent scout running', $block->text);
-        self::assertStringContainsString('turn 2', $block->text);
+        self::assertStringContainsString('subagent scout', $block->text);
+        self::assertStringContainsString('running scout', $block->text);
+        self::assertStringContainsString('2 turns', $block->text);
         self::assertStringContainsString('Task: Inspect TUI', $block->text);
-        self::assertStringContainsString('Artifact: agent_abc', $block->text);
+        self::assertStringContainsString('Artifacts:', $block->text);
+        self::assertStringContainsString('agent_abc', $block->text);
         self::assertStringNotContainsString('subagent scout running | turn 1', $block->text);
         self::assertSame(2, $block->meta['subagent_progress']['turn_no'] ?? null);
     }
@@ -76,11 +78,51 @@ final class SubagentProgressProjectionTest extends TestCase
         ]);
 
         $text = $this->projector->blocks()[0]->text;
-        self::assertStringContainsString('subagent parallel running 1/2', $text);
+        self::assertStringContainsString('subagent parallel', $text);
+        self::assertStringContainsString('running 1/2', $text);
         self::assertStringContainsString('completed Step 1: reviewer', $text);
         self::assertStringContainsString('running Step 2: scout', $text);
         self::assertStringContainsString('artifact agent_b', $text);
     }
+
+
+    public function testRichSubagentProgressCoalescesWithoutDeltaSpam(): void
+    {
+        $this->accept('tool_execution.started', [
+            'tool_call_id' => 'tc_rich', 'tool_name' => 'subagent',
+        ]);
+
+        $progress1 = [
+            'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
+            'artifact_id' => 'agent_rich', 'task_summary' => 'Inspect docs', 'turn_no' => 2, 'elapsed_ms' => 139000,
+            'tool_count' => 5, 'total_tokens' => 49000, 'input_tokens' => 35000, 'output_tokens' => 14000,
+            'reasoning_tokens' => 584000, 'cost' => 0.0104, 'model' => 'deepseek/deepseek-v4-flash',
+            'artifact_path' => 'artifacts/agents/agent_rich',
+            'recent_tools' => ['read: path="docs/agents.md"'],
+            'assistant_excerpt' => 'Scanning agent docs.',
+        ];
+        $progress2 = $progress1;
+        $progress2['turn_no'] = 3;
+        $progress2['tool_count'] = 38;
+        $progress2['recent_tools'] = ['bash: command="grep -n subagent"'];
+
+        $this->accept('tool_execution.output_delta', [
+            'tool_call_id' => 'tc_rich', 'tool_name' => 'subagent', 'subagent_progress' => $progress1,
+        ]);
+        $this->accept('tool_execution.output_delta', [
+            'tool_call_id' => 'tc_rich', 'tool_name' => 'subagent', 'subagent_progress' => $progress2,
+        ]);
+
+        $blocks = $this->projector->blocks();
+        self::assertCount(1, $blocks);
+        $text = $blocks[0]->text;
+        self::assertStringContainsString('38 tools', $text);
+        self::assertStringContainsString('49k tok', $text);
+        self::assertStringContainsString('grep', $text);
+        self::assertStringNotContainsString('docs/agents.md', $text);
+        self::assertStringNotContainsString('| turn 2 | artifact', $text);
+    }
+
 
     /** @param array<string, mixed> $payload */
     private function accept(string $type, array $payload): void

@@ -68,10 +68,16 @@ final class TuiSubagentProgressE2eTest extends TestCase
 
             $capture = $this->tmux->capturePlainWithHistory($pane, 2500);
 
-            self::assertStringContainsString('subagent scout running', $capture);
+            self::assertStringContainsString('subagent scout', $capture);
+            self::assertStringContainsString('running scout', $capture);
             self::assertStringContainsString('Task: Inspect TUI subagent rendering', $capture);
-            self::assertStringContainsString('Artifact: agent_e2e_progress_fixture', $capture);
-            self::assertStringContainsString('turn 3', $capture);
+            self::assertStringContainsString('Artifacts:', $capture);
+            self::assertStringContainsString('agent_e2e_progress_fixture', $capture);
+            self::assertStringContainsString('3 turns', $capture);
+            self::assertStringContainsString('12 tools', $capture);
+            self::assertStringContainsString('49k tok', $capture);
+            self::assertStringContainsString('SubagentResultRenderer', $capture);
+            self::assertStringContainsString('deepseek/deepseek-v4-flash', $capture);
             self::assertStringNotContainsString('subagent scout running | turn 1 | artifact', $capture);
             self::assertStringNotContainsString('parallel subagents running', $capture);
 
