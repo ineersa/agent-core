@@ -55,7 +55,8 @@ final class TuiQueuedSteerE2eTest extends TestCase
         );
 
         try {
-            $this->tmux->waitForCaptureContains($pane, '█', 10.0);
+            // 20s under parallel castor check (see TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL).
+            $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
             $this->tmux->waitForTuiReadyAfterLogo($pane);
 
             $this->tmux->sendKey($pane, 'C-u');
