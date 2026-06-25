@@ -5,14 +5,12 @@ declare(strict_types=1);
 /**
  * Agent runtime launchers: interactive TUI sessions.
  *
- * These tasks launch the agent TUI in tmux for development and
- * manual test inspection.  They do not require the test LLM
- * endpoint by default (run:agent uses the configured provider;
- * run:agent-test forces the local test model).
+ * run:agent and run:agent-capture launch the TUI in the current terminal.
+ * run:agent-test is the explicit tmux manual test helper.
  *
- * When ~/bin/pi-bwrap exists (override: HATFIELD_PI_BWRAP), each task re-execs
- * itself under Bubblewrap before tmux unless HATFIELD_BWRAP=0 or
- * HATFIELD_INSIDE_PI_BWRAP=1 (set automatically after re-exec).
+ * When ~/bin/pi-bwrap exists (override: HATFIELD_PI_BWRAP), run:agent and
+ * run:agent-capture re-exec Castor under Bubblewrap so php bin/console agent
+ * runs inside the sandbox unless HATFIELD_BWRAP=0 or HATFIELD_INSIDE_PI_BWRAP=1.
  */
 
 use Castor\Attribute\AsTask;
@@ -24,10 +22,7 @@ require_once __DIR__.'/helpers.php';
 require_once __DIR__.'/shared.php';
 
 /**
- * Launch the agent TUI in a tmux session.
- *
- * Inside tmux: creates a new window named "hatfield-agent".
- * Outside tmux: creates or attaches to a session named "hatfield-agent".
+ * Launch the agent TUI in the current terminal.
  *
  * Datadog APM is auto-enabled when ddtrace is loaded and a local trace
  * endpoint is reachable.  Set HATFIELD_DATADOG=0 to force-disable or
@@ -35,15 +30,13 @@ require_once __DIR__.'/shared.php';
  *
  * No relaunch loop — the TUI runs once and exits naturally.
  */
-#[AsTask(name: 'run:agent', description: 'Launch the agent TUI in a tmux session (hatfield-agent)')]
+#[AsTask(name: 'run:agent', description: 'Launch the agent TUI in the current terminal')]
 function run_agent(): void
 {
     maybe_reexec_castor_task_under_pi_bwrap('run:agent');
 
-    launch_agent_tmux_session(
-        sessionName: 'hatfield-agent',
-        windowTitle: 'hatfield-agent',
-        innerShellCommand: build_agent_console_inner_command(datadog_env_command(datadog_auto_enabled())),
+    launch_agent_direct_terminal(
+        build_agent_console_inner_command(datadog_env_command(datadog_auto_enabled())),
     );
 }
 
@@ -55,7 +48,7 @@ function run_agent(): void
 #[AsTask(name: 'run:agent-test', description: 'Run the agent in a tmux window using the local test model')]
 function run_agent_test(): void
 {
-    maybe_reexec_castor_task_under_pi_bwrap('run:agent-test');
+    // Host tmux server starts the pane command outside Bubblewrap; no auto-wrap here.
 
     launch_agent_tmux_session(
         sessionName: 'hatfield-agent-test',
@@ -81,7 +74,7 @@ function run_agent_test(): void
  * Uses the configured provider/model (not the test model). Datadog APM
  * is auto-enabled when ddtrace is loaded.
  */
-#[AsTask(name: 'run:agent-capture', description: 'Launch the agent TUI with raw LLM stream capture enabled')]
+#[AsTask(name: 'run:agent-capture', description: 'Launch the agent TUI with raw LLM stream capture in the current terminal')]
 function run_agent_capture(): void
 {
     maybe_reexec_castor_task_under_pi_bwrap('run:agent-capture');
@@ -105,9 +98,5 @@ function run_agent_capture(): void
         build_agent_console_inner_command(datadog_env_command(datadog_auto_enabled())),
     );
 
-    launch_agent_tmux_session(
-        sessionName: 'hatfield-agent-capture',
-        windowTitle: 'hatfield-agent-capture',
-        innerShellCommand: $inner,
-    );
+    launch_agent_direct_terminal($inner);
 }

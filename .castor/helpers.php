@@ -95,7 +95,7 @@ function pi_bwrap_script_available(): bool
 }
 
 /**
- * Whether run:agent* tasks should re-exec under pi-bwrap before launching tmux.
+ * Whether run:agent / run:agent-capture should re-exec Castor under pi-bwrap before direct TUI launch.
  */
 function should_auto_wrap_agent_castor_task(): bool
 {
