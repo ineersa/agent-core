@@ -67,14 +67,14 @@ final class TuiJourneyE2eTest extends TestCase
      * Exercises in order (tmux integration smoke):
      *  1. Startup layout (logo, status, footer)
      *  2. Shell !ls prefix — real command output proof + ordering
-     *  3. Model interaction via replay fixture (no live LLM)
-     *  4. Inline shell on completed run + follow-up (issue #183 repro)
-     *  5. Clean exit via Ctrl+D
+     *  3. Inline shell on completed run + follow-up (issue #183 repro)
+     *  4. Clean exit via Ctrl+D
      *
      * Virtual-only (not in this journey): startup detail {@see TuiStartupVirtualRenderTest},
      * Shift+Tab reasoning status/border {@see TuiReasoningCycleTest},
      * @ file completion menu/accept {@see TuiFileCompletionRenderTest},
      * /export confirmation + HTML file {@see TuiExportCommandVirtualTest},
+     * model replay assistant block + cache footer {@see TuiModelInteractionVirtualTest},
      * /hotkeys table, !! rejection — {@see TuiVirtualInputTest}.
      *
      * !! double-bang rejection is covered by {@see \Ineersa\Tui\Tests\Screen\TuiVirtualInputTest}.
@@ -97,7 +97,6 @@ final class TuiJourneyE2eTest extends TestCase
         try {
             $this->journeyPhase1StartupLayout($pane);
             $this->journeyPhase4ShellPrefixOutput($pane);
-            $this->journeyPhase6ModelInteractionReplay($pane);
             $this->journeyPhase9InlineShellOnCompletedRun($pane);
 
             $this->tmux->sendKey($pane, 'C-d');
@@ -135,7 +134,7 @@ final class TuiJourneyE2eTest extends TestCase
             'Working/idle status widget missing',
         );
         self::assertStringContainsString('◆', $capture, 'Footer widget missing');
-        // Session ID only appears after first prompt submission (Phase 6).
+        // Session ID in footer is covered by {@see TuiModelInteractionVirtualTest}.
         // At startup the footer shows model, token, timer, CWD, branch.
     }
 
@@ -190,7 +189,8 @@ final class TuiJourneyE2eTest extends TestCase
      * Phase 9: Inline shell on a completed run (subsequent !cmd), then
      * follow-up normal message — the documented residual from issue #183.
      *
-     * After Phase 6 (model interaction), the run is Completed.  Sending
+     * After a completed model turn (virtual proof in {@see TuiModelInteractionVirtualTest}),
+     * Phase 9 seeds a completed run via the follow-up fixture path. Sending
      * !ls -1 at this point exercises the subsequent/terminal shell path
      * where SubmitListener previously sent shell_command + complete_run
      * causing a cross-process ordering race between the controller's sync
@@ -284,112 +284,12 @@ final class TuiJourneyE2eTest extends TestCase
         $this->saveAnsiSnapshot($pane, 'journey-inline-shell');
     }
 
-    /**
-     * Phase 6: Model interaction via deterministic replay fixture.
-     *
-     * Submits a prompt; the TUI processes it through the replay-backed
-     * LLM pipeline (HATFIELD_LLM_REPLAY_FIXTURE_PATH → test services
-     * replay HttpClient). Asserts the assistant block (◇) appears
-     * with fixture text.
-     *
-     * This is the ONLY prompt submission in the journey; earlier phases
-     * only exercise UI behaviour.
-     */
-    private function journeyPhase6ModelInteractionReplay(TmuxPane $pane): void
-    {
-        // After several rounds of Ctrl+U and typing, the editor may
-        // have residual state.  Send Escape to cancel/clear, then a
-        // brief pause so the TUI repaints.
-        $this->tmux->sendKey($pane, 'Escape');
-        usleep(100_000);
-        $this->tmux->sendKey($pane, 'C-u');
-        usleep(100_000);
-
-        $prompt = 'Respond with exactly one sentence: the sky is blue.';
-        $this->tmux->sendLiteral($pane, $prompt);
-        $this->tmux->sendKey($pane, 'Enter');
-
-        // Wait for assistant block (◇) — the replay fixture response
-        // streams in immediately (no network latency).
-        $capture = $this->tmux->waitForCallback(
-            $pane,
-            static fn (string $cap): bool => str_contains($cap, '◇')
-                || str_contains($cap, '✕'),
-            timeout: 10.0,
-            message: 'Neither ◇ assistant block nor ✕ error block appeared after prompt submission',
-            history: 2000,
-        );
-
-        self::assertTrue(
-            str_contains($capture, '◇') || str_contains($capture, '✕'),
-            'Transcript must display either an assistant block (◇) or error block (✕)',
-        );
-
-        // Assert the replay fixture text appears in history.
-        if (str_contains($capture, '◇')) {
-            $fullCapture = $this->tmux->capturePlainWithHistory($pane, 2000);
-            self::assertStringContainsString(
-                'The sky is blue.',
-                $fullCapture,
-                'Replay fixture response text must appear in transcript',
-            );
-        }
-
-        // Wait for turn completion (Working spinner gone).
-        try {
-            $this->tmux->waitForCallback(
-                $pane,
-                static fn (string $cap): bool => str_contains($cap, '◇')
-                    && !str_contains($cap, '◐ Working...'),
-                timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
-                message: 'Turn did not complete after replay response',
-                history: 2000,
-            );
-        } catch (\RuntimeException) {
-            // Timeout on working clear is non-fatal in replay mode
-            // (the fixture response may be faster than the TUI poller).
-        }
-
-        $this->saveAnsiSnapshot($pane, 'journey-model-replay');
-
-        // After the first prompt submission, the session should exist.
-        $sessionCapture = $this->tmux->capturePlainWithHistory($pane, 2000);
-        self::assertStringContainsString('session ', $sessionCapture, 'Session ID should appear in footer after prompt submission');
-
-        // Cache-hit percentage must appear in the footer when the
-        // replay fixture includes cache_read_tokens telemetry.
-        // The fixture reports 100 input_tokens with 78 cache_read_tokens
-        // → footer should show "↻ 78%".
-        //
-        // Use waitForCallback with full scrollback instead of a single
-        // immediate capture to give the TUI poller time to accumulate
-        // and render the UsageProjection cache segment in the footer.
-        $footerCapture = $this->tmux->waitForCallback(
-            $pane,
-            static fn (string $cap): bool => str_contains($cap, '↻ 78%'),
-            timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
-            message: 'Footer cache-hit segment (↻ 78%) did not appear after model replay',
-            history: 2000,
-        );
-        self::assertStringContainsString(
-            '↻ 78%',
-            $footerCapture,
-            'Footer must show cache-hit percentage (↻ 78%) when replay fixture provides cache telemetry',
-        );
-    }
 
     // ── Helpers ───────────────────────────────────────────────────
 
     private function agentCommand(): string
     {
         $fixturePaths = [];
-
-        // Model-interaction step (phase 7): the first explicit prompt submission
-        // gets its response from this fixture.
-        $replyFixture = __DIR__.'/fixtures/tui-simple-text-response.json';
-        if (\is_file($replyFixture)) {
-            $fixturePaths[] = $replyFixture;
-        }
 
         // Follow-up fixture for Phase 9: inline shell + follow-up response.
         $followupFixture = __DIR__.'/fixtures/tui-followup-response.json';
@@ -413,7 +313,7 @@ final class TuiJourneyE2eTest extends TestCase
         $dbPath = 'app_test-tui-journey-'.bin2hex(random_bytes(4)).'.sqlite';
 
         // Do NOT use --prompt (auto-submit) — the journey controls
-        // submission timing explicitly.  Only Phase 7 submits a prompt.
+        // submission timing explicitly.  Phase 9 submits follow-up after inline shell.
         // When HATFIELD_LLM_REPLAY_FIXTURE_PATH is set and a prompt is
         // later submitted, ControllerReplayHttpClientFactory serves the
         // fixture response.
