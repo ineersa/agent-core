@@ -28,6 +28,7 @@ use Ineersa\CodingAgent\Agent\Definition\McpPolicyDTO;
 use Ineersa\CodingAgent\Agent\Execution\AgentDepthGuard;
 use Ineersa\CodingAgent\Agent\Execution\AgentPromptBuilder;
 use Ineersa\CodingAgent\Agent\Execution\AgentToolPolicyResolver;
+use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Agent\Execution\SubagentTaskDTO;
@@ -38,6 +39,60 @@ use PHPUnit\Framework\Attributes\CoversClass;
 #[CoversClass(SubagentExecutionService::class)]
 final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
 {
+
+    public function testExecuteWithOmittedToolsStoresInheritedAllowedToolsInChildMetadata(): void
+    {
+        $completedState = new RunState(
+            runId: 'child-uuid',
+            status: RunStatus::Completed,
+            version: 1,
+            messages: [],
+        );
+
+        $runStore = $this->createStub(RunStoreInterface::class);
+        $runStore->method('get')->willReturn($completedState);
+        $parentRunStore = $this->createStub(RunStoreInterface::class);
+
+        $capturedInput = null;
+        $agentRunner = $this->createMock(AgentRunnerInterface::class);
+        $agentRunner->expects(self::once())
+            ->method('start')
+            ->willReturnCallback(function (StartRunInput $input) use (&$capturedInput): string {
+                $capturedInput = $input;
+
+                return 'child-uuid';
+            });
+
+        $def = new AgentDefinitionDTO(
+            name: 'worker-like',
+            description: 'Worker agent',
+            tools: null,
+            mcp: new McpPolicyDTO(mode: McpAgentModeEnum::None),
+            instructions: 'Worker instructions.',
+        );
+
+        $registryMock = $this->createMock(ToolRegistryInterface::class);
+        $registryMock->method('activeToolNames')->willReturn(['read', 'bash', 'write', 'subagent']);
+
+        $service = $this->makeService([
+            'catalog' => new AgentDefinitionCatalog([$def]),
+            'agentRunner' => $agentRunner,
+            'runStore' => $runStore,
+            'parentRunStore' => $parentRunStore,
+            'policyResolver' => new AgentToolPolicyResolver($registryMock),
+        ]);
+
+        $service->execute('parent-inherit-tools', 'worker-like', 'Do work');
+
+        self::assertNotNull($capturedInput);
+        $allowed = $capturedInput->metadata->toolsScope['allowed_tools'] ?? null;
+        self::assertIsArray($allowed);
+        self::assertContains('read', $allowed);
+        self::assertContains('bash', $allowed);
+        self::assertContains('write', $allowed);
+        self::assertNotContains('subagent', $allowed);
+    }
+
     public function testExecuteCompletesChildRunAndReturnsHandoff(): void
     {
         $completedState = new RunState(
@@ -86,7 +141,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         $service = new SubagentExecutionService(
             catalog: $catalog,
             depthGuard: new AgentDepthGuard(),
-            policyResolver: new AgentToolPolicyResolver(),
+            policyResolver: $this->defaultPolicyResolver(),
             promptBuilder: new AgentPromptBuilder(),
             artifactRegistry: $registry,
             agentRunner: $agentRunner,
@@ -158,7 +213,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         $service = new SubagentExecutionService(
             catalog: $catalog,
             depthGuard: new AgentDepthGuard(),
-            policyResolver: new AgentToolPolicyResolver(),
+            policyResolver: $this->defaultPolicyResolver(),
             promptBuilder: new AgentPromptBuilder(),
             artifactRegistry: $registry,
             agentRunner: $agentRunner,
@@ -230,7 +285,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         $service = new SubagentExecutionService(
             catalog: $catalog,
             depthGuard: new AgentDepthGuard(),
-            policyResolver: new AgentToolPolicyResolver(),
+            policyResolver: $this->defaultPolicyResolver(),
             promptBuilder: new AgentPromptBuilder(),
             artifactRegistry: $registry,
             agentRunner: $agentRunner,
@@ -303,7 +358,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         $service = new SubagentExecutionService(
             catalog: $catalog,
             depthGuard: new AgentDepthGuard(),
-            policyResolver: new AgentToolPolicyResolver(),
+            policyResolver: $this->defaultPolicyResolver(),
             promptBuilder: new AgentPromptBuilder(),
             artifactRegistry: $registry,
             agentRunner: $agentRunner,
@@ -333,7 +388,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         $service = new SubagentExecutionService(
             catalog: $catalog,
             depthGuard: new AgentDepthGuard(),
-            policyResolver: new AgentToolPolicyResolver(),
+            policyResolver: $this->defaultPolicyResolver(),
             promptBuilder: new AgentPromptBuilder(),
             artifactRegistry: $registry,
             agentRunner: $this->createStub(AgentRunnerInterface::class),
@@ -372,7 +427,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         $service = new SubagentExecutionService(
             catalog: $catalog,
             depthGuard: new AgentDepthGuard(),
-            policyResolver: new AgentToolPolicyResolver(),
+            policyResolver: $this->defaultPolicyResolver(),
             promptBuilder: new AgentPromptBuilder(),
             artifactRegistry: $registry,
             agentRunner: $this->createStub(AgentRunnerInterface::class),
@@ -491,7 +546,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         $service = new SubagentExecutionService(
             catalog: $catalog,
             depthGuard: new AgentDepthGuard(),
-            policyResolver: new AgentToolPolicyResolver(),
+            policyResolver: $this->defaultPolicyResolver(),
             promptBuilder: new AgentPromptBuilder(),
             artifactRegistry: $registry,
             agentRunner: $agentRunner,
@@ -600,7 +655,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         $service = new SubagentExecutionService(
             catalog: $catalog,
             depthGuard: new AgentDepthGuard(),
-            policyResolver: new AgentToolPolicyResolver(),
+            policyResolver: $this->defaultPolicyResolver(),
             promptBuilder: new AgentPromptBuilder(),
             artifactRegistry: $registry,
             agentRunner: $agentRunner,
@@ -877,12 +932,20 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
     /**
      * @param array<string, mixed> $overrides
      */
+    private function defaultPolicyResolver(): AgentToolPolicyResolver
+    {
+        $registry = $this->createStub(ToolRegistryInterface::class);
+        $registry->method('activeToolNames')->willReturn(['read']);
+
+        return new AgentToolPolicyResolver($registry);
+    }
+
     private function makeService(array $overrides): SubagentExecutionService
     {
         $defaults = [
             'catalog' => new AgentDefinitionCatalog([]),
             'depthGuard' => new AgentDepthGuard(),
-            'policyResolver' => new AgentToolPolicyResolver(),
+            'policyResolver' => $this->defaultPolicyResolver(),
             'promptBuilder' => new AgentPromptBuilder(),
             'artifactRegistry' => self::getContainer()->get(AgentArtifactRegistry::class),
             'agentRunner' => $this->createStub(AgentRunnerInterface::class),

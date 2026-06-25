@@ -167,7 +167,7 @@ Body
             $byName[$definition->name] = $definition;
         }
         self::assertSame(['read', 'grep', 'bash'], $byName['reviewer']->tools);
-        self::assertSame(['read'], $byName['scout']->tools);
+        self::assertNull($byName['scout']->tools);
     }
 
     public function testDiscoversAgentFromUserHatfieldAgents(): void

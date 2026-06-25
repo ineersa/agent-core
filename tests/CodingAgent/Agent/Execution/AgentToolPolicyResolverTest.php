@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Definition\McpAgentModeEnum;
 use Ineersa\CodingAgent\Agent\Definition\McpPolicyDTO;
 use Ineersa\CodingAgent\Agent\Execution\AgentToolPolicyResolver;
+use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
@@ -18,7 +19,7 @@ final class AgentToolPolicyResolverTest extends TestCase
     {
         $definition = $this->createDefinition(tools: ['read', 'subagent', 'write']);
 
-        $resolver = new AgentToolPolicyResolver();
+        $resolver = $this->createResolver();
         $policy = $resolver->resolve($definition);
 
         self::assertNotContains('subagent', $policy['tools']);
@@ -30,7 +31,7 @@ final class AgentToolPolicyResolverTest extends TestCase
     {
         $definition = $this->createDefinition(tools: ['read', 'subagent']);
 
-        $resolver = new AgentToolPolicyResolver();
+        $resolver = $this->createResolver();
         $policy = $resolver->resolve($definition, allowSubagent: true);
 
         self::assertContains('subagent', $policy['tools']);
@@ -40,7 +41,7 @@ final class AgentToolPolicyResolverTest extends TestCase
     {
         $definition = $this->createDefinition(tools: ['subagent']);
 
-        $resolver = new AgentToolPolicyResolver();
+        $resolver = $this->createResolver();
         $policy = $resolver->resolve($definition);
 
         self::assertSame([], $policy['tools']);
@@ -50,7 +51,7 @@ final class AgentToolPolicyResolverTest extends TestCase
     {
         $definition = $this->createDefinition(tools: ['read'], mcp: new McpPolicyDTO(mode: McpAgentModeEnum::None));
 
-        $resolver = new AgentToolPolicyResolver();
+        $resolver = $this->createResolver();
         $policy = $resolver->resolve($definition);
 
         self::assertSame('none', $policy['mcp']['mode']);
@@ -67,7 +68,7 @@ final class AgentToolPolicyResolverTest extends TestCase
             ),
         );
 
-        $resolver = new AgentToolPolicyResolver();
+        $resolver = $this->createResolver();
         $policy = $resolver->resolve($definition);
 
         self::assertSame('specific', $policy['mcp']['mode']);
@@ -89,7 +90,7 @@ final class AgentToolPolicyResolverTest extends TestCase
             ),
         );
 
-        $resolver = new AgentToolPolicyResolver();
+        $resolver = $this->createResolver();
         $policy = $resolver->resolve($definition);
 
         self::assertSame('specific', $policy['mcp']['mode']);
@@ -105,18 +106,44 @@ final class AgentToolPolicyResolverTest extends TestCase
             mcp: new McpPolicyDTO(mode: McpAgentModeEnum::All),
         );
 
-        $resolver = new AgentToolPolicyResolver();
+        $resolver = $this->createResolver();
         $policy = $resolver->resolve($definition);
 
         self::assertSame('all', $policy['mcp']['mode']);
     }
 
+    public function testOmittedToolsInheritsActiveRegistryToolsExceptSubagent(): void
+    {
+        $registry = $this->createMock(ToolRegistryInterface::class);
+        $registry->method('activeToolNames')->willReturn(['read', 'bash', 'write', 'subagent', 'agent_retrieve']);
+        $resolver = new AgentToolPolicyResolver($registry);
+
+        $definition = $this->createDefinition(tools: null);
+        $policy = $resolver->resolve($definition);
+
+        self::assertContains('read', $policy['tools']);
+        self::assertContains('bash', $policy['tools']);
+        self::assertContains('write', $policy['tools']);
+        self::assertContains('agent_retrieve', $policy['tools']);
+        self::assertNotContains('subagent', $policy['tools']);
+    }
+
     // ── Helpers ──────────────────────────────────────────────────
 
+    private function createResolver(?ToolRegistryInterface $registry = null): AgentToolPolicyResolver
+    {
+        if (null === $registry) {
+            $registry = $this->createStub(ToolRegistryInterface::class);
+            $registry->method('activeToolNames')->willReturn(['read']);
+        }
+
+        return new AgentToolPolicyResolver($registry);
+    }
+
     /**
-     * @param list<string> $tools
+     * @param list<string>|null $tools
      */
-    private function createDefinition(array $tools, ?McpPolicyDTO $mcp = null): AgentDefinitionDTO
+    private function createDefinition(?array $tools, ?McpPolicyDTO $mcp = null): AgentDefinitionDTO
     {
         return new AgentDefinitionDTO(
             name: 'test-agent',

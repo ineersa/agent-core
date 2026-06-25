@@ -9,11 +9,11 @@ Markdown file with YAML frontmatter + instruction body. Unknown keys are rejecte
 | `name` | `[a-z][a-z0-9-]{0,47}` |
 | `description` | Shown in `<available_agents>` for enabled foreground agents |
 
-## Tools (optional in YAML, always non-empty after parse)
+## Tools (optional in YAML; omitted means inherit all)
 
 | Field | Default | Notes |
 | --- | --- | --- |
-| `tools` | `['read']` when omitted | Explicit non-empty allowlist is recommended. YAML list preferred; comma-separated string (`read, grep, find`) is normalized to a list. |
+| `tools` | inherit all parent-available tools when omitted | Child launch resolves the current tool registry snapshot minus `subagent`. Explicit non-empty allowlist is recommended for restricted agents. YAML list preferred; comma-separated string (`read, grep, find`) is normalized to a list. |
 
 Invalid explicit values are rejected: empty list `tools: []`, blank entries, or whitespace-only comma strings.
 

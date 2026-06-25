@@ -49,7 +49,7 @@ Parent sessions also get **`<available_agents>`** (name + description) in contex
 
 | Topic | Behavior |
 | --- | --- |
-| `tools` | Optional in frontmatter; if omitted, defaults to `['read']`. Explicit non-empty allowlist recommended. YAML lists **or** comma-separated strings; `tools: []` or empty entries fail validation. |
+| `tools` | Optional in frontmatter; if omitted, child inherits all parent-available tools (except `subagent`). Explicit non-empty allowlist recommended for restricted agents. YAML lists **or** comma-separated strings; `tools: []` or empty entries fail validation. |
 | `parallelAllowed` | Defaults to **`true`**. Set `parallelAllowed: false` to block use in parallel `tasks`. |
 | `skills` / `skill` | `skill:` merges into `skills`; comma-separated strings are split. |
 | MCP `mode: none` | Default. Child MCP sessions are parent-scoped; `all` does not add MCP tools to the child allowlist the way `specific` does. |

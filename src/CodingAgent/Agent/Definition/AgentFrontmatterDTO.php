@@ -22,8 +22,8 @@ use Symfony\Component\Validator\Context\ExecutionContextInterface;
 final class AgentFrontmatterDTO
 {
     /**
-     * @param list<string> $tools
-     * @param list<string> $skills
+     * @param list<string>|null $tools  null means inherit all parent-available tools at launch (pi parity)
+     * @param list<string>      $skills
      */
     public function __construct(
         // --- Required fields ---
@@ -38,16 +38,21 @@ final class AgentFrontmatterDTO
         #[Assert\NotBlank(normalizer: 'trim', message: '"description" is required and must not be empty.')]
         public readonly string $description,
 
-        #[Assert\Count(min: 1, minMessage: '"tools" must be a non-empty list of strings.')]
-        #[Assert\All([
-            new Assert\Type('string', '"tools[{{ index }}]" must be a string.'),
-            new Assert\NotBlank(message: '"tools[{{ index }}]" must not be empty.'),
-            new Assert\Regex(
-                pattern: '/^\\S+(\\s+\\S+)*$/',
-                message: '"tools[{{ index }}]" must not have leading or trailing whitespace.',
-            ),
-        ])]
-        public readonly array $tools,
+        #[Assert\When(
+            expression: 'this.tools !== null',
+            constraints: [
+                new Assert\Count(min: 1, minMessage: '"tools" must be a non-empty list of strings.'),
+                new Assert\All([
+                    new Assert\Type('string', '"tools[{{ index }}]" must be a string.'),
+                    new Assert\NotBlank(message: '"tools[{{ index }}]" must not be empty.'),
+                    new Assert\Regex(
+                        pattern: '/^\\S+(\\s+\\S+)*$/',
+                        message: '"tools[{{ index }}]" must not have leading or trailing whitespace.',
+                    ),
+                ]),
+            ],
+        )]
+        public readonly ?array $tools = null,
 
         // --- Optional fields with defaults ---
 
@@ -110,7 +115,7 @@ final class AgentFrontmatterDTO
     #[Assert\Callback]
     public function validateCrossField(ExecutionContextInterface $context): void
     {
-        if (!array_is_list($this->tools)) {
+        if (null !== $this->tools && !array_is_list($this->tools)) {
             $context->buildViolation('Must be a list (sequential array), got associative array.')
                 ->atPath('tools')
                 ->addViolation();

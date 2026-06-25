@@ -115,10 +115,8 @@ final class AgentDefinitionParser
 
         if (\array_key_exists('tools', $frontmatter) && \is_string($frontmatter['tools'])) {
             $frontmatter['tools'] = $this->splitCommaSeparatedScalars($frontmatter['tools']);
-        } elseif (!\array_key_exists('tools', $frontmatter)) {
-            // Missing tools is common in ~/.agents definitions; default to read for launch policy.
-            $frontmatter['tools'] = ['read'];
         }
+        // Omitted tools stays absent: child inherits parent-available tools at launch (pi parity).
 
         if (\array_key_exists('skills', $frontmatter) && \is_string($frontmatter['skills'])) {
             $frontmatter['skills'] = $this->splitCommaSeparatedScalars($frontmatter['skills']);
@@ -252,7 +250,7 @@ final class AgentDefinitionParser
         return new AgentDefinitionDTO(
             name: trim($dto->name),
             description: trim($dto->description),
-            tools: array_values($dto->tools),
+            tools: null === $dto->tools ? null : array_values($dto->tools),
             mcp: new McpPolicyDTO(mode: $mcpMode, tools: $mcpTools),
             model: null !== $dto->model ? trim($dto->model) : null,
             thinking: null !== $dto->thinking ? trim($dto->thinking) : null,

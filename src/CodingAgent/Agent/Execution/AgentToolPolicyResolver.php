@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Agent\Execution;
 
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Definition\McpAgentModeEnum;
+use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 
 /**
  * Resolves tool and MCP policy for a child agent run.
@@ -27,6 +28,11 @@ use Ineersa\CodingAgent\Agent\Definition\McpAgentModeEnum;
  */
 final readonly class AgentToolPolicyResolver
 {
+    public function __construct(
+        private ToolRegistryInterface $toolRegistry,
+    ) {
+    }
+
     /**
      * Resolve the effective tool and MCP policy for a child run.
      *
@@ -34,7 +40,9 @@ final readonly class AgentToolPolicyResolver
      */
     public function resolve(AgentDefinitionDTO $definition, bool $allowSubagent = false): array
     {
-        $tools = $definition->tools;
+        $tools = null === $definition->tools
+            ? $this->toolRegistry->activeToolNames()
+            : $definition->tools;
 
         // Hard safety: exclude 'subagent' from child tool lists
         // unless explicitly allowed.  This prevents recursion by default.

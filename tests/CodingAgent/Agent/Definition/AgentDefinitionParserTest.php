@@ -447,14 +447,14 @@ final class AgentDefinitionParserTest extends TestCase
         $this->parser->parseContent($content, '/test/has-type.md');
     }
 
-    public function testMissingToolsDefaultsToRead(): void
+    public function testMissingToolsStaysNullForInheritAll(): void
     {
         $dto = $this->parse([
             'name' => 'no-tools',
             'description' => 'No tools',
         ], '/test/no-tools.md');
 
-        self::assertSame(['read'], $dto->tools);
+        self::assertNull($dto->tools);
     }
 
     public function testUnknownFieldThrowsWithFieldNameAndFilePath(): void
@@ -530,7 +530,7 @@ inheritProjectContext: true
 Body
 ", '/home/user/.agents/scout.md');
         self::assertSame('scout', $scout->name);
-        self::assertSame(['read'], $scout->tools);
+        self::assertNull($scout->tools);
 
         $reviewer = $this->rawParse("---
 name: reviewer
