@@ -65,6 +65,7 @@ final class SystemPromptBuilderTest extends TestCase
         $this->assertStringContainsString('<guidelines>', $result);
         $this->assertStringContainsString('</guidelines>', $result);
         $this->assertStringContainsString('<context_channels>', $result);
+        $this->assertStringContainsString('<available_agents>', $result);
 
         // Verify placeholders are replaced (empty values from empty registry)
         $this->assertStringNotContainsString('{available_tools_list}', $result);

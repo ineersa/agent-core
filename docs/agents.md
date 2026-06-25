@@ -140,6 +140,8 @@ agents:
 
 ## Catalog API
 
+
+On new parent sessions, enabled foreground agent definitions are also injected as a synthetic `user-context` message with `<agents_instructions>` and `<available_agents>` blocks (name and description only — not full agent instructions). The built-in `config/SYSTEM.md` documents this context channel alongside `<available_skills>`.
 The catalog (`AgentDefinitionCatalog`) provides:
 
 - `get(string $name): ?AgentDefinitionDTO` — lookup by name

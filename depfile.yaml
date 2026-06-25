@@ -460,6 +460,7 @@ parameters:
       - AppExtensionApi
       - AppSystemPrompt
       - AppSkills
+      - AppAgent
       - AppTool
       - AppPromptTemplate
       - AgentCore
