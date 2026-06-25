@@ -43,6 +43,12 @@ use Psr\Log\NullLogger;
  */
 final class BashToolTest extends IsolatedKernelTestCase
 {
+    public function testBashToolConfigDefaultBackgroundPromptThresholdIsFifteenSeconds(): void
+    {
+        $config = new BashToolConfig();
+        self::assertSame(15, $config->backgroundPromptThresholdSeconds);
+    }
+
     private const string TEST_SESSION = 'bash-test-session';
 
     private BackgroundProcessManager $manager;
