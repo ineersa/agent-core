@@ -28,19 +28,21 @@ final class ActivityStateMachine
      */
     public static function transition(RunActivityStateEnum $current, RuntimeEvent $event): RunActivityStateEnum
     {
-        // Terminal states are never overridden by later events.
+        // Terminal states are stable until a genuine new turn/run continues the
+        // same session (follow_up after agent_end completed, tools on a new turn,
+        // or a new terminal outcome such as cancelled).  Without this carve-out,
+        // resume replay stops at the first agent_end(completed) and later events
+        // (session 4: follow_up → parallel bash → cancel) never update activity.
         //
         // EXCEPTION: Completed → Compacting for after-turn maintenance
-        // compaction so Escape can cancel (session 13).  The after-turn
-        // hook dispatches auto-compaction after the turn commits; the
-        // compaction.started event arrives while activity is still
-        // Completed.
+        // compaction so Escape can cancel (session 13).
         //
-        // Failed and Cancelled remain fully terminal — CompactionStarted
-        // must not reopen a cancelled or failed run.
+        // Stale mid-turn deltas after terminal (e.g. assistant.text.delta) must
+        // not reopen the run — only explicit continuation events may leave terminal.
         if ($current->isTerminal()
             && !(RunActivityStateEnum::Completed === $current
-                 && RuntimeEventTypeEnum::CompactionStarted->value === $event->type)) {
+                 && RuntimeEventTypeEnum::CompactionStarted->value === $event->type)
+            && !self::allowsContinuationAfterTerminal($event->type)) {
             return $current;
         }
 
@@ -133,6 +135,37 @@ final class ActivityStateMachine
             RuntimeEventTypeEnum::CompactionFailed->value => RunActivityStateEnum::Completed,
 
             default => $current, // No transition for unknown/streaming/internal events
+        };
+    }
+
+    /**
+     * Events that may leave a terminal activity state during multi-turn replay/live.
+     *
+     * @param string $eventType RuntimeEventTypeEnum value
+     */
+    private static function allowsContinuationAfterTerminal(string $eventType): bool
+    {
+        return match ($eventType) {
+            RuntimeEventTypeEnum::RunStarted->value,
+            RuntimeEventTypeEnum::TurnStarted->value,
+            RuntimeEventTypeEnum::UserMessageSubmitted->value,
+            RuntimeEventTypeEnum::ToolCallStarted->value,
+            RuntimeEventTypeEnum::ToolCallArgumentsDelta->value,
+            RuntimeEventTypeEnum::ToolCallArgumentsCompleted->value,
+            RuntimeEventTypeEnum::ToolExecutionStarted->value,
+            RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
+            RuntimeEventTypeEnum::ToolExecutionCompleted->value,
+            RuntimeEventTypeEnum::ToolExecutionFailed->value,
+            RuntimeEventTypeEnum::ToolExecutionCancelled->value,
+            RuntimeEventTypeEnum::CancellationRequested->value,
+            RuntimeEventTypeEnum::OperationCancelled->value,
+            RuntimeEventTypeEnum::RunCompleted->value,
+            RuntimeEventTypeEnum::RunFailed->value,
+            RuntimeEventTypeEnum::RunCancelled->value,
+            RuntimeEventTypeEnum::TurnCancelled->value,
+            RuntimeEventTypeEnum::TurnFailed->value,
+            RuntimeEventTypeEnum::AssistantMessageFailed->value => true,
+            default => false,
         };
     }
 }
