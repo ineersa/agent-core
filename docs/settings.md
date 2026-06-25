@@ -608,8 +608,28 @@ Maximum number of parallel subagents allowed in a single `subagent` tool call
 (`tasks` array). Default: `8`. Requests above this limit fail fast with a hint
 to split work across multiple tool calls.
 
+### `agents.subagent_tool_timeout_seconds`
+
+Maximum time in seconds that a **foreground** `subagent` tool call waits for child
+run(s) to finish. This is enforced inside `SubagentExecutionService` (poll loop
+deadline), not by the generic `tools.execution.timeout_seconds` / ToolExecutor
+post-hoc timeout. The `subagent` tool definition sets **no** ToolExecutor cap so
+long child work is not cut off at the generic tool layer.
+
+**Default:** `900` (15 minutes). Values must be a positive integer; the runtime
+enforces at least 60 seconds.
+
+Set higher when child agents routinely run multi-minute reviews or large
+codebase scouts. Parent cancellation still ends waiting children promptly.
+
+**Example:**
+```yaml
+agents:
+    subagent_tool_timeout_seconds: 1200
+```
+
 See [Agent Definitions](agents.md) for the full definition format,
-discovery precedence, and catalog API.
+discovery precedence, foreground execution (including timeout), and catalog API.
 
 ### `extensions.enabled`
 

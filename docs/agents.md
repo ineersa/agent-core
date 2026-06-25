@@ -206,8 +206,10 @@ Parallel mode (up to `agents.max_agents`, default **8** per tool call):
    returns an explanation to the parent LLM.
 5. **Cancellation.** If the parent run is cancelled while a child is running,
    the child is cancelled and the artifact is finalized as `Cancelled`.
-6. **Timeout.** A configurable timeout (default 120 seconds) prevents
-   indefinite child runs. A timed-out child is finalized as `Failed`.
+6. **Timeout.** Foreground `subagent` execution uses an internal poll timeout
+   (`agents.subagent_tool_timeout_seconds`, default **900** seconds). This is
+   not the generic ToolExecutor timeout (the subagent tool has no ToolExecutor
+   cap). A timed-out child is finalized as `Failed`. See [Settings](settings.md).
 
 ### Artifact storage layout
 
