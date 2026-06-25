@@ -189,12 +189,19 @@ final class TuiJourneyE2eTest extends TestCase
      * Phase 9: Inline shell on a completed run (subsequent !cmd), then
      * follow-up normal message — the documented residual from issue #183.
      *
-     * After a completed model turn (virtual proof in {@see TuiModelInteractionVirtualTest}),
-     * Phase 9 seeds a completed run via the follow-up fixture path. Sending
-     * !ls -1 at this point exercises the subsequent/terminal shell path
-     * where SubmitListener previously sent shell_command + complete_run
-     * causing a cross-process ordering race between the controller's sync
-     * completeRun() and the async tool worker.
+     * Phase 4 (standalone !ls in this same tmux session) has already
+     * completed a shell run and left the session idle. Phase 9 does not
+     * require a model turn; {@see TuiModelInteractionVirtualTest} covers
+     * model replay assistant/footer proof separately. Sending a second
+     * !ls -1 here exercises the subsequent/terminal shell path on that
+     * existing completed run, where SubmitListener previously sent
+     * shell_command + complete_run and caused a cross-process ordering
+     * race between the controller's sync completeRun() and the async
+     * tool worker.
+     *
+     * The follow-up replay fixture (see {@see agentCommand()}) answers
+     * only the normal text message submitted after inline shell — it does
+     * not seed completed-run state.
      *
      * Ordering is [tool_exec_start, tool_exec_end] and the follow-up
      * message succeeds because the root cause was the unresolved
@@ -291,7 +298,8 @@ final class TuiJourneyE2eTest extends TestCase
     {
         $fixturePaths = [];
 
-        // Follow-up fixture for Phase 9: inline shell + follow-up response.
+        // Follow-up fixture for Phase 9: replay assistant text for the normal
+        // message after inline shell (not used to seed completed-run state).
         $followupFixture = __DIR__.'/fixtures/tui-followup-response.json';
         if (\is_file($followupFixture)) {
             $fixturePaths[] = $followupFixture;
