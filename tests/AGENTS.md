@@ -62,20 +62,17 @@ Live `llm-real` controller tests that share llama-proxy cache normalization must
 
 Do not write inline `byType` loops or ack searches in test methods. For tool-focused LLM smoke tests, prefer `collectEventsUntilToolCompleted()` over waiting for `run.completed`; assert the intended `tool_name`, matching `tool_call_id`, and absence/presence of `tool_execution.failed` as appropriate.
 
-### TUI E2E tests
+### TUI tests (pyramid — do not default to Journey)
 
-Default TUI E2E uses the replay-backed journey pattern (`#[Group('tui-e2e-replay')]`).
-Follow the pattern in `TuiJourneyE2eTest`: one long-lived tmux session exercising
-multiple behaviours with replay fixtures for model interaction.  No live LLM
-required — the test infrastructure is entirely deterministic.
+Pick the **lowest layer** that proves the contract:
 
-Use `TmuxHarness`. Follow the pattern in `TuiJourneyE2eTest`:
-- Detached tmux pane via `startDetached()`
-- Isolated project dir with model/provider overrides
-- `--prompt` for auto-submit, `sendLiteral`/`sendKey` for keyboard input
-- `waitForCaptureContains` / `waitForCallback` for exact expectations
-- Short waits for the local smoke model: typically 2-5s for startup/status/UI proof; avoid generic 30-60s waits
-- Prefer explicit waits over fixed `usleep()`; only sleep when timing itself is the behavior under test
+1. **Virtual / in-process** (`tests/Tui/Screen/`, `VirtualTuiHarness`): startup layout, editor input, local slash commands (`/hotkeys`), `!!` rejection, render assertions on `ScreenBuffer`. Run with `castor test`. Prefer this over tmux for widget/render/local-command behavior.
+2. **Controller replay** (`ControllerReplayE2eTestCase`): runtime protocol, events, shell ordering — `castor test:controller-replay`.
+3. **Minimal tmux smoke** (`#[Group('tui-e2e-replay')]`, `castor test:tui`): real terminal integration — detached `TmuxHarness` session, replay fixtures for steps that need model output, `var/tmp/test-{uuid}` isolation. `TuiJourneyE2eTest` is a **narrow integration smoke**, not the template for every feature; do not add feature-by-feature phases when virtual/replay already cover the behavior.
+
+When tmux is required:
+- `startDetached()`, isolated project dir, `sendLiteral`/`sendKey`, `waitForCaptureContains` / `waitForCallback`
+- Short explicit waits; avoid broad 30–60s caps and fixed `usleep()` unless delay is the behavior under test
 - `saveAnsiSnapshot()` for inspection artifacts
 
 ### Config fixtures
@@ -136,7 +133,7 @@ The `llama_cpp_test/test` server should run deterministically (temperature 0, fi
 
 ## TUI behavior proof
 
-TUI implementation is NOT complete without an automated test using the real interactive TUI (`TmuxHarness`), exercising the actual TUI flow. Default TUI E2E uses replay-backed fixtures for model interaction; live llama.cpp is not required for TUI feature proof. Mocked service-only tests are insufficient for TUI feature gate acceptance.
+TUI implementation is NOT complete without automated proof at the lowest correct layer (virtual, controller-replay, or minimal tmux). See root `AGENTS.md` and the `testing` skill. Mocked service-only tests are insufficient when they do not exercise the real screen/editor/command path for the feature.
 
 ## Kernel-test base classes
 

@@ -232,11 +232,7 @@ The following tests exercise compaction. No new tests are added by this document
 
 ### Live LLM smoke
 
-- `CompactionLiveSmokeTest` (`#[Group('llm-real')]`): exercises the real controller + Messenger consumers + `ExecuteCompactionStepWorker` against the llama.cpp test model on port 9052. Verifies structural correctness (compaction occurs, prologue retained, `context_compacted` event present, compact summary marker in messages). Run with:
-
-  ```bash
-  castor test:llm-real --filter=CompactionLiveSmokeTest
-  ```
+There is no dedicated live compaction controller smoke in the `llm-real` group. Compaction async LLM summarization is covered by `ExecuteCompactionStepWorkerTest`, `CompactionStepResultHandlerTest`, and replay-backed controller/TUI E2E tests (`ControllerReplayAutoCompaction*`, `TuiCompactCommandE2eTest`, `TuiAutoCompactionE2eTest`). A prior `CompactionLiveSmokeTest` was removed because it was not deterministic under `castor check` (stall or upstream HTTP 500 on large summarization bodies).
 
 ### Deterministic TUI E2E
 
@@ -273,19 +269,13 @@ Concise steps to verify compaction manually:
    castor test:tui --filter=TuiCompactCommandE2eTest
    ```
 
-2. **Live LLM smoke (opt-in, requires llama.cpp test server on port 9052):**
-   ```bash
-   castor test:llm-real --filter=CompactionLiveSmokeTest
-   ```
-   ⚠ This test is opt-in and requires a running llama.cpp server. It is included in the `castor check` `llm-real` lane (requires llama.cpp/proxy on port 9052).
-
-3. **Full QA gate (deterministic, before PR):**
+2. **Full QA gate (deterministic, before PR):**
    ```bash
    castor check
    ```
    This runs all deterministic tests including replay-backed TUI E2E and controller E2E. It does **not** include live LLM smoke.
 
-4. **Manual TUI exploration:**
+3. **Manual TUI exploration:**
    ```bash
    castor run:agent-test
    ```
