@@ -13,7 +13,7 @@ final class SubagentToolDefinitionBuilderTest extends IsolatedKernelTestCase
     public function testBuildDoesNotSetToolExecutorTimeout(): void
     {
         $handler = self::getContainer()->get(\Ineersa\CodingAgent\Agent\Tool\SubagentToolHandler::class);
-        $def = SubagentToolDefinitionBuilder::build(new AgentsConfig(subagentToolTimeoutSeconds: 900), $handler);
+        $def = SubagentToolDefinitionBuilder::build(new AgentsConfig(subagentToolTimeoutSeconds: 1800), $handler);
 
         self::assertNull($def->timeoutSeconds);
         self::assertStringContainsString('full child handoff inline', $def->description);

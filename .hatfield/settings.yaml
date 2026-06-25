@@ -208,7 +208,7 @@ logging:
 #     max_agents: 8
 #     # Foreground subagent internal poll timeout (seconds). Default 900.
 #     # Not ToolExecutor generic timeout; subagent has no ToolExecutor cap.
-#     # subagent_tool_timeout_seconds: 900
+#     # subagent_tool_timeout_seconds: 1800
 #     paths:
 #         - ~/shared/agents/custom-reviewer.md
 #         - .hatfield/team-agents

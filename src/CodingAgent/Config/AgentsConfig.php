@@ -31,7 +31,7 @@ final readonly class AgentsConfig
         public int $maxAgents = 8,
 
         #[SerializedName('subagent_tool_timeout_seconds')]
-        public int $subagentToolTimeoutSeconds = 900,
+        public int $subagentToolTimeoutSeconds = 1800,
     ) {
     }
 
@@ -69,7 +69,7 @@ final readonly class AgentsConfig
             $maxAgents = $raw['max_agents'];
         }
 
-        $subagentToolTimeoutSeconds = 900;
+        $subagentToolTimeoutSeconds = 1800;
         if (\array_key_exists('subagent_tool_timeout_seconds', $raw) && \is_int($raw['subagent_tool_timeout_seconds']) && $raw['subagent_tool_timeout_seconds'] > 0) {
             $subagentToolTimeoutSeconds = $raw['subagent_tool_timeout_seconds'];
         }

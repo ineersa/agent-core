@@ -40,4 +40,15 @@ interface ToolBatchStoreInterface
      * Remove batch state for a specific run/turn/step.
      */
     public function delete(string $runId, int $turnNo, string $stepId): void;
+
+    /**
+     * Atomically load batch state, apply a callback, and persist when requested.
+     *
+     * Implementations MUST serialize concurrent updates for the same
+     * (runId, turnNo, stepId) so parallel tool result workers cannot
+     * lose updates via read-modify-write races.
+     *
+     * @param callable(array<string, mixed>|null): ToolBatchStoreMutation $callback
+     */
+    public function mutate(string $runId, int $turnNo, string $stepId, callable $callback): mixed;
 }

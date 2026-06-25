@@ -39,7 +39,7 @@ final class AgentsConfigTest extends TestCase
         self::assertTrue($config->enabled);
         self::assertCount(0, $config->paths);
         self::assertSame(8, $config->maxAgents);
-        self::assertSame(900, $config->subagentToolTimeoutSeconds);
+        self::assertSame(1800, $config->subagentToolTimeoutSeconds);
     }
 
     public function testFromRawWithMaxAgents(): void

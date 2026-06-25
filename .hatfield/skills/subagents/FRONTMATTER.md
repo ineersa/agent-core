@@ -33,8 +33,8 @@ Parent/main runs only see MCP tools from `availability: all` servers in the acti
 Explicit `tools` without any `mcp:` entry: non-MCP allowlist only (no MCP).
 
 - **`subagent`** is never available inside child runs.
-- **`mcp.mode: specific`** merges listed MCP tool names into the child allowlist.
-- **`mcp.mode: all`**: metadata only at child scope; do not assume every MCP tool appears in `tools`.
+- **Child MCP policy** is declared in `tools` using `mcp:` selectors (for example `mcp:websearch_search`, `mcp:websearch_`, `mcp:*`, `mcp:-`).
+- The legacy `mcp:` frontmatter block is not used for child tool exposure; use `tools` entries with `mcp:` selectors instead.
 
 ## Model and context
 
