@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller\E2E;
 
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
@@ -60,9 +61,7 @@ YAML;
         parent::setUp();
 
         $hatfieldAgentsDir = $this->tempDir.'/.hatfield/agents';
-        if (!is_dir($hatfieldAgentsDir) && !mkdir($hatfieldAgentsDir, 0777, true) && !is_dir($hatfieldAgentsDir)) {
-            throw new \RuntimeException('Failed to create .hatfield/agents directory: '.$hatfieldAgentsDir);
-        }
+        TestDirectoryIsolation::ensureDirectory($hatfieldAgentsDir, 0o777);
 
         $agentPath = $hatfieldAgentsDir.'/live-retriever-child.md';
         $content = <<<'MD'
