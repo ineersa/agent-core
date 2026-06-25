@@ -38,6 +38,14 @@ final class AgentsConfigTest extends TestCase
 
         self::assertTrue($config->enabled);
         self::assertCount(0, $config->paths);
+        self::assertSame(8, $config->maxAgents);
+    }
+
+    public function testFromRawWithMaxAgents(): void
+    {
+        $config = AgentsConfig::fromRaw(['max_agents' => 4]);
+
+        self::assertSame(4, $config->maxAgents);
     }
 
     public function testFromRawEmptyArray(): void
