@@ -330,10 +330,9 @@ final class TickPollListener implements TuiListenerRegistrar
             return;
         }
 
-        // Fallback: if the schema is unexpected, still show a choice overlay
-        // so the user can type or see something. The extension's prompt and
-        // the server-side AnswerToolQuestionHandler (schema-driven) handle
-        // the actual answer content.
+        // Degenerate fallback: unknown non-confirm schemas degrade to the generic choice
+        // overlay instead of throwing (which would drop later poll-batch events). Producers
+        // should supply enum or string schemas so choices are usable; this path is best-effort.
         self::handleChoiceToolQuestion($p, $schema, $requestId, $runId, $requestIdFromPayload, $client, $questionCoordinator);
     }
 

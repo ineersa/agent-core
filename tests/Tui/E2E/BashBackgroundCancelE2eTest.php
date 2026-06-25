@@ -27,6 +27,7 @@ final class BashBackgroundCancelE2eTest extends TestCase
     private TmuxHarness $tmux;
     private string $testProjectDir;
     private string $testDatabasePath;
+    private string $leakTag;
 
     protected function setUp(): void
     {
@@ -37,6 +38,8 @@ final class BashBackgroundCancelE2eTest extends TestCase
         $this->tmux = new TmuxHarness();
         $this->testProjectDir = $this->createIsolatedProjectDir();
         $this->testDatabasePath = 'app_test-tui-bg-cancel-'.bin2hex(random_bytes(4)).'.sqlite';
+        // Unique per test run: messenger workers often lack project/db paths in ps args.
+        $this->leakTag = 'tui-bg-cancel-'.bin2hex(random_bytes(8));
     }
 
     protected function tearDown(): void
@@ -141,6 +144,7 @@ final class BashBackgroundCancelE2eTest extends TestCase
         $root = ProjectDir::get();
         $dbFragment = $this->testDatabasePath;
         $projectFragment = $this->testProjectDir;
+        $leakTag = $this->leakTag;
         $uid = \function_exists('posix_geteuid') ? posix_geteuid() : null;
 
         $output = [];
@@ -163,13 +167,40 @@ final class BashBackgroundCancelE2eTest extends TestCase
             if (!str_contains($cmd, $root.'/bin/console') && !str_contains($cmd, 'hatfield.phar')) {
                 continue;
             }
-            if (!str_contains($cmd, $dbFragment) && !str_contains($cmd, $projectFragment)) {
+            // Controller argv often includes --cwd; messenger consumers inherit env but not project paths in args.
+            $matchesArgsScope = str_contains($cmd, $dbFragment) || str_contains($cmd, $projectFragment);
+            $matchesLeakTag = $this->processEnvironContainsLeakTag($pid, $leakTag);
+            if (!$matchesArgsScope && !$matchesLeakTag) {
                 continue;
             }
             $leaks[] = $pid.' '.$cmd;
         }
 
         return $leaks;
+    }
+
+    /**
+     * Read-only scan of /proc/<pid>/environ for HATFIELD_E2E_LEAK_TAG (test leak identification).
+     */
+    private function processEnvironContainsLeakTag(int $pid, string $leakTag): bool
+    {
+        if ($pid <= 0 || '' === $leakTag) {
+            return false;
+        }
+
+        $environPath = '/proc/'.$pid.'/environ';
+        if (!is_readable($environPath)) {
+            return false;
+        }
+
+        $raw = @file_get_contents($environPath);
+        if (false === $raw || '' === $raw) {
+            return false;
+        }
+
+        $needle = 'HATFIELD_E2E_LEAK_TAG='.$leakTag;
+
+        return str_contains($raw, $needle);
     }
 
     private function agentCommand(): string
@@ -182,8 +213,9 @@ final class BashBackgroundCancelE2eTest extends TestCase
         $projectDir = ProjectDir::get();
 
         return \sprintf(
-            'APP_ENV=test HATFIELD_TEST_DATABASE_PATH=%s HOME=%s %s%s %s agent --model=llama_cpp_test/test 2>&1',
+            'APP_ENV=test HATFIELD_TEST_DATABASE_PATH=%s HATFIELD_E2E_LEAK_TAG=%s HOME=%s %s%s %s agent --model=llama_cpp_test/test 2>&1',
             escapeshellarg($this->testDatabasePath),
+            escapeshellarg($this->leakTag),
             escapeshellarg($this->testProjectDir.'/home'),
             $fixtureEnv,
             escapeshellarg(\PHP_BINARY),
