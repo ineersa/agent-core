@@ -12,6 +12,7 @@ use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogDTO;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolDefinitionDTO;
 use Ineersa\CodingAgent\Mcp\Messenger\McpExecuteToolCallRoutingMiddleware;
+use Ineersa\CodingAgent\Tests\Support\Messenger\TestStack;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Middleware\MiddlewareInterface;
@@ -305,23 +306,5 @@ final class McpExecuteToolCallRoutingMiddlewareTest extends TestCase
         };
 
         return new McpExecuteToolCallRoutingMiddleware($store, $this->logger);
-    }
-}
-
-/**
- * Minimal {@see StackInterface} stub for middleware unit tests.
- *
- * Does nothing except return the envelope unchanged.
- */
-final class TestStack implements StackInterface
-{
-    public function next(): MiddlewareInterface
-    {
-        return new class implements MiddlewareInterface {
-            public function handle(Envelope $envelope, StackInterface $stack): Envelope
-            {
-                return $envelope;
-            }
-        };
     }
 }

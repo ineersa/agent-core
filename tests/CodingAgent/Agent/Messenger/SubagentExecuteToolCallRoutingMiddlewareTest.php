@@ -6,7 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Agent\Messenger;
 
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\CodingAgent\Agent\Messenger\SubagentExecuteToolCallRoutingMiddleware;
-use Ineersa\CodingAgent\Tests\Mcp\Messenger\TestStack;
+use Ineersa\CodingAgent\Tests\Support\Messenger\TestStack;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Stamp\ReceivedStamp;
