@@ -354,6 +354,30 @@ YAML
         self::assertContains('/app/config/themes', $config['tui']['theme_paths']);
     }
 
+    public function testProjectExtensionsEnabledListReplacesDefaults(): void
+    {
+        $cwd = $this->tmpDir.'/project';
+        @mkdir($cwd.'/.hatfield', 0755, true);
+
+        file_put_contents($cwd.'/.hatfield/settings.yaml', <<<'YAML'
+extensions:
+    enabled:
+        - Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension
+        - Ineersa\HatfieldExt\TaskWorkflow\TaskWorkflowExtension
+YAML
+        );
+
+        $config = $this->loader->load($this->defaultsPath, $cwd);
+
+        self::assertSame(
+            [
+                'Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension',
+                'Ineersa\HatfieldExt\TaskWorkflow\TaskWorkflowExtension',
+            ],
+            $config['extensions']['enabled'],
+        );
+    }
+
     public function testHomeThenProjectLayeredOverlay(): void
     {
         $cwd = $this->tmpDir.'/project';

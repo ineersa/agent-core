@@ -16,36 +16,45 @@ final class ToolExecutionPolicyResolverTest extends TestCase
 {
     public function testResolveReturnsDefaultMode(): void
     {
-        $resolver = new ToolExecutionPolicyResolver('sequential', 300, 4);
+        $resolver = new ToolExecutionPolicyResolver('sequential', null, 4);
 
         $policy = $resolver->resolve('read');
 
         self::assertSame(ToolExecutionMode::Sequential, $policy->mode);
-        self::assertSame(300, $policy->timeoutSeconds);
+        self::assertNull($policy->timeoutSeconds);
         self::assertSame(4, $policy->maxParallelism);
     }
 
     public function testResolveReturnsConfiguredDefaultMode(): void
     {
-        $resolver = new ToolExecutionPolicyResolver('parallel', 300, 4);
+        $resolver = new ToolExecutionPolicyResolver('parallel', null, 4);
 
         $policy = $resolver->resolve('any_tool');
 
         self::assertSame(ToolExecutionMode::Parallel, $policy->mode);
     }
 
-    public function testResolveClampsTimeoutToAtLeastOneSecond(): void
+    public function testResolveWithZeroDefaultTimeoutMeansNoPostHocTimeout(): void
     {
         $resolver = new ToolExecutionPolicyResolver('sequential', 0, 4);
 
         $policy = $resolver->resolve('any_tool');
 
-        self::assertSame(1, $policy->timeoutSeconds);
+        self::assertNull($policy->timeoutSeconds);
+    }
+
+    public function testResolveWithExplicitDefaultTimeout(): void
+    {
+        $resolver = new ToolExecutionPolicyResolver('sequential', 45, 4);
+
+        $policy = $resolver->resolve('any_tool');
+
+        self::assertSame(45, $policy->timeoutSeconds);
     }
 
     public function testResolveClampsMaxParallelismToAtLeastOne(): void
     {
-        $resolver = new ToolExecutionPolicyResolver('sequential', 300, 0);
+        $resolver = new ToolExecutionPolicyResolver('sequential', null, 0);
 
         $policy = $resolver->resolve('any_tool');
 
@@ -56,7 +65,7 @@ final class ToolExecutionPolicyResolverTest extends TestCase
     {
         $settings = $this->createStub(ToolExecutionSettingsInterface::class);
         $settings->method('defaultMode')->willReturn('sequential');
-        $settings->method('defaultTimeoutSeconds')->willReturn(300);
+        $settings->method('defaultTimeoutSeconds')->willReturn(null);
         $settings->method('maxParallelism')->willReturn(4);
 
         $resolver = ToolExecutionPolicyResolver::fromSettings($settings);

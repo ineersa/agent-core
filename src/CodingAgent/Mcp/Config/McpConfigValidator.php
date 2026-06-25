@@ -52,7 +52,7 @@ final class McpConfigValidator
         // Check for unexpected fields
         $allowedFields = [
             'enabled', 'command', 'args', 'env', 'cwd',
-            'url', 'headers', 'timeoutMs', 'startupTimeoutMs', 'excludeTools',
+            'url', 'headers', 'timeoutMs', 'startupTimeoutMs', 'availability', 'excludeTools',
         ];
 
         foreach (array_keys($data) as $key) {
@@ -115,6 +115,12 @@ final class McpConfigValidator
         if (\array_key_exists('timeoutMs', $data)) {
             if (!\is_int($data['timeoutMs']) || $data['timeoutMs'] < 1) {
                 throw new \RuntimeException(\sprintf('MCP server "%s": "timeoutMs" must be a positive integer, got %s.', $name, \is_int($data['timeoutMs']) ? (string) $data['timeoutMs'] : \gettype($data['timeoutMs'])));
+            }
+        }
+
+        if (\array_key_exists('availability', $data)) {
+            if (!\is_string($data['availability']) || !\in_array($data['availability'], ['all', 'specific'], true)) {
+                throw new \RuntimeException(\sprintf('MCP server "%s": "availability" must be one of: all, specific.', $name));
             }
         }
 
