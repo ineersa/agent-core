@@ -32,6 +32,7 @@ final readonly class ToolDefinitionDTO
      * @param string               $promptLine           One-line description for the <available_tools> prompt section
      * @param list<string>         $promptGuidelines     Zero or more guideline strings for the prompt guidelines section
      * @param ToolExecutionMode    $executionMode        Execution mode for this tool (default: Sequential)
+     * @param int|null             $timeoutSeconds       Per-tool execution timeout in seconds; null uses tools.execution default
      */
     public function __construct(
         public readonly string $name,
@@ -41,6 +42,7 @@ final readonly class ToolDefinitionDTO
         public readonly string $promptLine,
         public readonly array $promptGuidelines = [],
         public readonly ToolExecutionMode $executionMode = ToolExecutionMode::Sequential,
+        public readonly ?int $timeoutSeconds = null,
     ) {
     }
 }

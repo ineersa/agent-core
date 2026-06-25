@@ -65,6 +65,7 @@ final class SystemPromptBuilderTest extends TestCase
         $this->assertStringContainsString('<guidelines>', $result);
         $this->assertStringContainsString('</guidelines>', $result);
         $this->assertStringContainsString('<context_channels>', $result);
+        $this->assertStringContainsString('<available_agents>', $result);
 
         // Verify placeholders are replaced (empty values from empty registry)
         $this->assertStringNotContainsString('{available_tools_list}', $result);
@@ -525,6 +526,21 @@ final class SystemPromptBuilderTest extends TestCase
 
         // The built-in template must NOT have a hardcoded <tool_usage> block
         $this->assertStringNotContainsString('<tool_usage>', $result);
+    }
+
+
+    public function testBuildChildHarnessFragmentFiltersTools(): void
+    {
+        $registry = $this->createRegistryWithTools();
+        $builder = $this->createBuilder($registry);
+
+        $fragment = $builder->buildChildHarnessFragment(['read']);
+
+        $this->assertStringContainsString('<available_tools>', $fragment);
+        $this->assertStringContainsString('Read file contents', $fragment);
+        $this->assertStringNotContainsString('Write file contents', $fragment);
+        $this->assertStringNotContainsString('<available_agents>', $fragment);
+        $this->assertStringContainsString('Current working directory:', $fragment);
     }
 
     /* ───────── Private helpers ───────── */

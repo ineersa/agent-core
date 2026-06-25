@@ -7,7 +7,19 @@ namespace Ineersa\CodingAgent\Tests\Agent\Execution;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Definition\McpAgentModeEnum;
 use Ineersa\CodingAgent\Agent\Definition\McpPolicyDTO;
+use Ineersa\CodingAgent\Agent\Execution\AgentMcpToolsResolver;
 use Ineersa\CodingAgent\Agent\Execution\AgentToolPolicyResolver;
+use Ineersa\CodingAgent\Mcp\Catalog\McpServerCatalogEntryDTO;
+use Ineersa\CodingAgent\Mcp\Catalog\McpServerCatalogStatusEnum;
+use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogDTO;
+use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
+use Ineersa\CodingAgent\Mcp\Catalog\McpToolDefinitionDTO;
+use Ineersa\CodingAgent\Mcp\Config\McpConfigDTO;
+use Ineersa\CodingAgent\Tests\Support\Mcp\TestMcpConfigLoaderFactory;
+use Ineersa\CodingAgent\Mcp\Config\McpServerAvailabilityEnum;
+use Ineersa\CodingAgent\Mcp\Config\McpServerDefinitionDTO;
+use Ineersa\CodingAgent\Mcp\Config\McpTransportTypeEnum;
+use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
@@ -16,114 +28,75 @@ final class AgentToolPolicyResolverTest extends TestCase
 {
     public function testResolveExcludesSubagentByDefault(): void
     {
-        $definition = $this->createDefinition(tools: ['read', 'subagent', 'write']);
-
-        $resolver = new AgentToolPolicyResolver();
-        $policy = $resolver->resolve($definition);
-
-        self::assertNotContains('subagent', $policy['tools']);
-        self::assertContains('read', $policy['tools']);
-        self::assertContains('write', $policy['tools']);
-    }
-
-    public function testResolveAllowsSubagentWhenExplicitlyAllowed(): void
-    {
-        $definition = $this->createDefinition(tools: ['read', 'subagent']);
-
-        $resolver = new AgentToolPolicyResolver();
-        $policy = $resolver->resolve($definition, allowSubagent: true);
-
-        self::assertContains('subagent', $policy['tools']);
-    }
-
-    public function testResolveEmptyToolsRemainsEmpty(): void
-    {
-        $definition = $this->createDefinition(tools: ['subagent']);
-
-        $resolver = new AgentToolPolicyResolver();
-        $policy = $resolver->resolve($definition);
-
-        self::assertSame([], $policy['tools']);
-    }
-
-    public function testResolveMcpModeNone(): void
-    {
-        $definition = $this->createDefinition(tools: ['read'], mcp: new McpPolicyDTO(mode: McpAgentModeEnum::None));
-
-        $resolver = new AgentToolPolicyResolver();
-        $policy = $resolver->resolve($definition);
-
-        self::assertSame('none', $policy['mcp']['mode']);
-        self::assertSame([], $policy['mcp']['tools']);
-    }
-
-    public function testResolveMcpModeSpecificMergesMcpToolsIntoAllowedList(): void
-    {
-        $definition = $this->createDefinition(
-            tools: ['read'],
-            mcp: new McpPolicyDTO(
-                mode: McpAgentModeEnum::Specific,
-                tools: ['context7__query-docs', 'websearch__search'],
-            ),
-        );
-
-        $resolver = new AgentToolPolicyResolver();
-        $policy = $resolver->resolve($definition);
-
-        self::assertSame('specific', $policy['mcp']['mode']);
-        // MCP tools appear in the resolved allowed tools list.
-        self::assertContains('context7__query-docs', $policy['tools']);
-        self::assertContains('websearch__search', $policy['tools']);
-        self::assertContains('read', $policy['tools']);
-        // Subagent is still excluded.
+        $resolver = new AgentToolPolicyResolver($this->registry(['read']), $this->mcpResolver([]));
+        $policy = $resolver->resolve($this->definition(['read', 'subagent']), 'run-1');
         self::assertNotContains('subagent', $policy['tools']);
     }
 
-    public function testResolveMcpModeSpecificDoesNotDuplicateAlreadyPresentTools(): void
+    public function testOmittedToolsInheritsRegistryAndGlobalMcp(): void
     {
-        $definition = $this->createDefinition(
-            tools: ['read', 'context7__query-docs'],
-            mcp: new McpPolicyDTO(
-                mode: McpAgentModeEnum::Specific,
-                tools: ['context7__query-docs'],
-            ),
+        $resolver = new AgentToolPolicyResolver(
+            $this->registry(['read', 'subagent']),
+            $this->mcpResolver(['context7_resolve']),
         );
-
-        $resolver = new AgentToolPolicyResolver();
-        $policy = $resolver->resolve($definition);
-
-        self::assertSame('specific', $policy['mcp']['mode']);
-        // context7 should appear exactly once.
-        $counts = array_count_values($policy['tools']);
-        self::assertSame(1, $counts['context7__query-docs'] ?? 0);
+        $policy = $resolver->resolve($this->definition(null), 'run-1');
+        self::assertContains('read', $policy['tools']);
+        self::assertContains('context7_resolve', $policy['tools']);
+        self::assertNotContains('subagent', $policy['tools']);
     }
 
-    public function testResolveMcpModeAll(): void
+    public function testExplicitToolsMergeMcpSelectors(): void
     {
-        $definition = $this->createDefinition(
-            tools: ['read'],
-            mcp: new McpPolicyDTO(mode: McpAgentModeEnum::All),
-        );
-
-        $resolver = new AgentToolPolicyResolver();
-        $policy = $resolver->resolve($definition);
-
-        self::assertSame('all', $policy['mcp']['mode']);
+        $resolver = new AgentToolPolicyResolver($this->registry(['read']), $this->mcpResolver(['context7_resolve', 'websearch_search'], allServers: true));
+        $policy = $resolver->resolve($this->definition(['read', 'mcp:websearch_search']), 'run-1');
+        self::assertSame(['read', 'websearch_search'], $policy['tools']);
     }
 
-    // ── Helpers ──────────────────────────────────────────────────
+    /** @param list<string> $globalTools */
+    private function mcpResolver(array $globalTools, bool $allServers = false): AgentMcpToolsResolver
+    {
+        $catalogTools = $allServers ? ['context7_resolve', 'websearch_search'] : $globalTools;
+        $servers = [];
+        if ($allServers || \in_array('context7_resolve', $catalogTools, true)) {
+            $servers['context7'] = new McpServerCatalogEntryDTO('context7', 'http', McpServerCatalogStatusEnum::CONNECTED, tools: [
+                new McpToolDefinitionDTO('context7_resolve', 'context7', 'resolve', 'd', ['type' => 'object']),
+            ]);
+        }
+        if ($allServers || \in_array('websearch_search', $catalogTools, true)) {
+            $servers['websearch'] = new McpServerCatalogEntryDTO('websearch', 'http', McpServerCatalogStatusEnum::CONNECTED, tools: [
+                new McpToolDefinitionDTO('websearch_search', 'websearch', 'search', 'd', ['type' => 'object']),
+            ]);
+        }
+        $catalog = new McpToolCatalogDTO(runId: 'run-1', generatedAt: 't', configHash: 'h', servers: $servers);
+        $catalogStore = $this->createStub(McpToolCatalogStoreInterface::class);
+        $catalogStore->method('read')->willReturn($catalog);
+        $config = McpConfigDTO::fromServers([
+            'context7' => new McpServerDefinitionDTO('context7', url: 'u', transportType: McpTransportTypeEnum::HTTP, availability: McpServerAvailabilityEnum::All),
+            'websearch' => new McpServerDefinitionDTO('websearch', url: 'u', transportType: McpTransportTypeEnum::HTTP, availability: McpServerAvailabilityEnum::Specific),
+        ]);
+        $loader = TestMcpConfigLoaderFactory::loaderForServers($config->servers);
 
-    /**
-     * @param list<string> $tools
-     */
-    private function createDefinition(array $tools, ?McpPolicyDTO $mcp = null): AgentDefinitionDTO
+        return new AgentMcpToolsResolver($catalogStore, $loader);
+    }
+
+    /** @param list<string> $tools */
+    private function registry(array $tools): ToolRegistryInterface
+    {
+        $registry = $this->createStub(ToolRegistryInterface::class);
+        $registry->method('activeToolNames')->willReturn($tools);
+
+        return $registry;
+    }
+
+    /** @param list<string>|null $tools */
+    private function definition(?array $tools): AgentDefinitionDTO
     {
         return new AgentDefinitionDTO(
             name: 'test-agent',
-            description: 'Test agent',
+            description: 'Test',
             tools: $tools,
-            mcp: $mcp ?? new McpPolicyDTO(mode: McpAgentModeEnum::None),
-            instructions: 'Test instructions.',
+            mcp: new McpPolicyDTO(mode: McpAgentModeEnum::None),
+            instructions: 'x',
         );
     }
 }

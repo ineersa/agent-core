@@ -206,6 +206,9 @@ logging:
 # agents:
 #     enabled: true
 #     max_agents: 8
+#     # Foreground subagent internal poll timeout (seconds). Default 900.
+#     # Not ToolExecutor generic timeout; subagent has no ToolExecutor cap.
+#     # subagent_tool_timeout_seconds: 1800
 #     paths:
 #         - ~/shared/agents/custom-reviewer.md
 #         - .hatfield/team-agents
@@ -446,7 +449,9 @@ ai:
                      cost: { input: 0.75, output: 4.50 }
 
 extensions:
+    # List values replace lower layers entirely (they do not merge). Keep SafeGuard enabled.
     enabled:
+        - Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension
         - Ineersa\HatfieldExt\TaskWorkflow\TaskWorkflowExtension
     settings:
         task_workflow:

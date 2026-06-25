@@ -117,7 +117,7 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
         // - Headless/worker contexts without the env var auto-block (fail-closed),
         //   unless the operator has explicitly set auto_deny_in_noninteractive=false.
         if ($this->isRelaxable($decision->kind)) {
-            if ($this->autoDenyInNoninteractive && !$this->hasApprovalChannel()) {
+            if ($this->shouldAutoDenyRelaxable($context)) {
                 return ToolCallDecisionDTO::block(
                     reason: $decision->reason,
                     details: [
@@ -351,6 +351,22 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
         // The onApprovalAnswered() receives the actual category in the
         // approval context, so the tracker key prefix is informational.
         return $toolName;
+    }
+
+    /**
+     * Auto-deny relaxable operations when no human can answer approvals.
+     */
+    private function shouldAutoDenyRelaxable(ToolCallContextDTO $context): bool
+    {
+        if (!$this->autoDenyInNoninteractive) {
+            return false;
+        }
+
+        if (true === ($context->metadata['noninteractive_child_run'] ?? false)) {
+            return true;
+        }
+
+        return !$this->hasApprovalChannel();
     }
 
     /**

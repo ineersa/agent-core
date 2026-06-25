@@ -61,4 +61,59 @@ final readonly class SkillsContextBuilder
 
         return implode("\n\n", $parts);
     }
+
+    /**
+     * Render preloaded skill bodies for the given skill names (agent frontmatter).
+     *
+     * Unlike {@see build()}, this does not include the <available_skills> catalog —
+     * only full <skill> blocks for resolved names, in request order.
+     *
+     * @param list<string> $skillNames
+     */
+    public function buildFor(array $skillNames): string
+    {
+        $names = [];
+        foreach ($skillNames as $name) {
+            if (!\is_string($name)) {
+                continue;
+            }
+            $trimmed = trim($name);
+            if ('' === $trimmed) {
+                continue;
+            }
+            $names[] = $trimmed;
+        }
+
+        if ([] === $names) {
+            return '';
+        }
+
+        $discovered = $this->discovery->discover();
+        $collisions = $this->discovery->getCollisions();
+        $registry = new SkillRegistry($discovered, extractor: $this->extractor, collisions: $collisions);
+
+        $parts = [];
+        $seen = [];
+        foreach ($names as $preloadName) {
+            if (isset($seen[$preloadName])) {
+                continue;
+            }
+            $seen[$preloadName] = true;
+
+            $skill = $registry->get($preloadName);
+            if (null === $skill) {
+                if (null !== $this->logger) {
+                    $this->logger->warning('Agent skill not found for preload: "{name}"', [
+                        'name' => $preloadName,
+                    ]);
+                }
+                continue;
+            }
+
+            $body = $registry->readBody($skill);
+            $parts[] = $this->renderer->renderPreloadedSkill($skill, $body);
+        }
+
+        return implode("\n\n", $parts);
+    }
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Handler;
 
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreMutation;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
@@ -103,12 +104,83 @@ final class ToolBatchCollector
 
     public function collect(ToolCallResult $result): ToolBatchCollectOutcome
     {
+        if (null !== $this->store) {
+            return $this->collectWithDurableStore($result);
+        }
+
+        return $this->collectInMemory($result);
+    }
+
+    private function collectWithDurableStore(ToolCallResult $result): ToolBatchCollectOutcome
+    {
+        $runId = $result->runId();
+        $turnNo = $result->turnNo();
+        $stepId = $result->stepId();
+
+        /** @var ToolBatchCollectOutcome $outcome */
+        $outcome = $this->store->mutate(
+            $runId,
+            $turnNo,
+            $stepId,
+            function (?array $stored) use ($result, $runId, $turnNo, $stepId): ToolBatchStoreMutation {
+                if (null === $stored) {
+                    return new ToolBatchStoreMutation(ToolBatchCollectOutcome::rejected());
+                }
+
+                $batch = $this->reconstructBatch($runId, $turnNo, $stepId, $stored);
+                $collectOutcome = $this->applyCollectToBatch($batch, $result);
+
+                if (!$collectOutcome->accepted || $collectOutcome->duplicate) {
+                    return new ToolBatchStoreMutation($collectOutcome);
+                }
+
+                return new ToolBatchStoreMutation(
+                    $collectOutcome,
+                    $this->serializeBatch($batch),
+                );
+            },
+        );
+
+        $refreshed = $this->loadBatch($runId, $turnNo, $stepId);
+        if (null !== $refreshed) {
+            $this->batches[$this->batchKey($runId, $turnNo, $stepId)] = $refreshed;
+        } else {
+            unset($this->batches[$this->batchKey($runId, $turnNo, $stepId)]);
+        }
+
+        return $outcome;
+    }
+
+    private function collectInMemory(ToolCallResult $result): ToolBatchCollectOutcome
+    {
         $batch = $this->loadBatch($result->runId(), $result->turnNo(), $result->stepId());
 
         if (null === $batch) {
             return ToolBatchCollectOutcome::rejected();
         }
 
+        $outcome = $this->applyCollectToBatch($batch, $result);
+
+        if ($outcome->accepted && !$outcome->duplicate) {
+            $this->saveBatch($result->runId(), $result->turnNo(), $result->stepId(), $batch);
+        }
+
+        return $outcome;
+    }
+
+    /**
+     * @param array{
+     *   expected_order: array<string, int>,
+     *   calls: array<string, ExecuteToolCall>,
+     *   pending_queue: list<string>,
+     *   in_flight: array<string, true>,
+     *   results: array<string, ToolCallResult>,
+     *   finalized: bool,
+     *   max_parallelism: int
+     * } $batch
+     */
+    private function applyCollectToBatch(array &$batch, ToolCallResult $result): ToolBatchCollectOutcome
+    {
         if (true === ($batch['finalized'] ?? false)) {
             return ToolBatchCollectOutcome::duplicate();
         }
@@ -127,8 +199,6 @@ final class ToolBatchCollector
         $effectsToDispatch = $this->dispatchableCalls($batch);
 
         if (\count($batch['results']) !== \count($batch['expected_order'])) {
-            $this->saveBatch($result->runId(), $result->turnNo(), $result->stepId(), $batch);
-
             return ToolBatchCollectOutcome::acceptedPending($effectsToDispatch);
         }
 
@@ -139,7 +209,6 @@ final class ToolBatchCollector
         );
 
         $batch['finalized'] = true;
-        $this->saveBatch($result->runId(), $result->turnNo(), $result->stepId(), $batch);
 
         return ToolBatchCollectOutcome::acceptedComplete($orderedResults, $effectsToDispatch);
     }

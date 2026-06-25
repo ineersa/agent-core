@@ -31,14 +31,19 @@ final readonly class CodingAgentToolSetResolver implements ToolSetResolverInterf
         // Each ToolDefinitionDTO stores the execution mode set by the
         // tool author/provider. Default is Sequential.
         $executionModes = [];
+        $timeoutSeconds = [];
         foreach ($this->toolRegistry->activeToolDefinitions() as $definition) {
             $executionModes[$definition->name] = $definition->executionMode->value;
+            if (null !== $definition->timeoutSeconds && $definition->timeoutSeconds > 0) {
+                $timeoutSeconds[$definition->name] = $definition->timeoutSeconds;
+            }
         }
 
         return new ActiveToolSet(
             toolNames: $toolNames,
             allowListNames: $toolNames,
             executionModes: $executionModes,
+            timeoutSeconds: $timeoutSeconds,
         );
     }
 }
