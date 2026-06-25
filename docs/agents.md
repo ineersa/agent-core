@@ -291,22 +291,22 @@ but is not used by the v1 foreground subagent launcher.
 ### Tool and MCP policy for children
 
 Each child run receives a resolved tool/MCP policy derived from the agent
-definition plus hard safety rules:
+definition `tools` list (including `mcp:` selectors) plus hard safety rules:
 
-- The child's allowed tool names come from the definition's `tools` field.
-- The `subagent` tool is **always excluded** from child tool lists in v1 to
-  prevent recursive agent launches by default.
-- The MCP policy (`none`, `all`, or `specific` with explicit tool names)
-  is read from the definition's `mcp` block.
-  - `specific` mode: MCP tool names are merged into the resolved allowed
-    tools list so downstream filtering can enforce them.
-  - `all` mode: MCP mode metadata is passed through; per-tool enforcement
-    is at the MCP transport/registrar layer.
-  - `none` mode: no MCP tools are exposed.
+- Omitted `tools`: inherit parent/default non-MCP tools plus MCP tools from
+  servers marked `availability: all` in `.hatfield/mcp.json` (exclude
+  `availability: specific`).
+- Explicit `tools` without any `mcp:` selector: non-MCP allowlist only (no MCP).
+- `mcp:` selectors in `tools` resolve to runtime tool names `{server}_{tool}`
+  (e.g. `mcp:websearch_search`, `mcp:websearch_`, `mcp:*`, `mcp:-`).
+- The `subagent` tool is **always excluded** from child tool lists in v1.
+- Parent/main runs only expose MCP tools from `availability: all` servers in
+  the active toolset; `availability: specific` tools stay hidden until a child
+  opts in via `mcp:` selectors.
 - The resolved policy is stored in `RunMetadata::toolsScope` and enforced
-  per-run via a scoped `ToolSetResolver`. The global `ToolRegistry` is never
-  mutated, so concurrent parent runs with different child policies do not
-  leak.
+  per-run via `SubagentToolSetResolver` intersection. MCP dynamic tools are
+  registered per run from the parent session catalog (child runs reuse the
+  parent catalog when they have no own `mcp-tools.json`).
 
 ### Child prompt construction
 
