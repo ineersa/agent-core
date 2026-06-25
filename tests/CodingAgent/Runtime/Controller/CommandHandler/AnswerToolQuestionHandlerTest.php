@@ -183,7 +183,7 @@ final class AnswerToolQuestionHandlerTest extends TestCase
             toolName: 'bash',
             pid: 1,
             logPath: '/tmp/log',
-            commandPreview: 'sleep 15',
+            commandPreview: 'sleep 8',
             prompt: 'Move it to the background?',
             kind: 'confirm',
             schema: null,
