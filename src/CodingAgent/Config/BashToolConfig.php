@@ -32,7 +32,7 @@ final readonly class BashToolConfig
         public int $maxTimeoutSeconds = 3600,
 
         #[SerializedName('background_prompt_threshold_seconds')]
-        public int $backgroundPromptThresholdSeconds = 30,
+        public int $backgroundPromptThresholdSeconds = 15,
 
         #[SerializedName('poll_interval_micros')]
         public int $pollIntervalMicros = 100_000,

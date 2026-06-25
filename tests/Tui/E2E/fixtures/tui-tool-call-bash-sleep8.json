@@ -1,0 +1,48 @@
+{
+    "$schema": "TUI bash background E2E \u2014 sleep 8 (<15s) for accept overlay",
+    "model": "llama_cpp_test/test",
+    "provider_id": "llama_cpp_test",
+    "reasoning": "off",
+    "recorded_at": "2026-06-25T00:00:00+00:00",
+    "recording_source": "manual",
+    "input": {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Run sleep 8"
+            }
+        ]
+    },
+    "usage": {
+        "input_tokens": 10,
+        "output_tokens": 30,
+        "total_tokens": 40
+    },
+    "stop_reason": "tool_call",
+    "expected_text": "",
+    "deltas": [
+        {
+            "type": "tool_call_start",
+            "id": "call_bash_bg_1",
+            "name": "bash"
+        },
+        {
+            "type": "tool_input_delta",
+            "id": "call_bash_bg_1",
+            "name": "bash",
+            "partial_json": "{\"command\":\"sleep 8\"}"
+        },
+        {
+            "type": "tool_call_complete",
+            "tool_calls": [
+                {
+                    "id": "call_bash_bg_1",
+                    "name": "bash",
+                    "arguments": {
+                        "command": "sleep 8"
+                    }
+                }
+            ]
+        }
+    ]
+}

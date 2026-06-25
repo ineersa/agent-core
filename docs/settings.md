@@ -520,7 +520,7 @@ Elapsed seconds before the bash tool offers to move the command to
 background. The default adapter declines (TOOLS-09); a future TUI
 integration (TOOLS-09B) will wire this to a user question.
 
-**Default:** `30`
+**Default:** `15`
 
 ### `tools.bash.poll_interval_micros`
 
