@@ -85,6 +85,19 @@ final class SubagentProgressEventsFixture
             ], $now);
         }
 
+
+        $progressTerminal = $progressBase;
+        $progressTerminal['turn_no'] = 3;
+        $progressTerminal['status'] = 'completed';
+        $progressTerminal['elapsed_ms'] = 14000;
+        $events[] = self::event($sessionId, 8, 1, 'tool_execution_update', [
+            'tool_call_id' => $toolCallId,
+            'tool_name' => 'subagent',
+            'delta' => '',
+            'subagent_progress' => $progressTerminal,
+            'order_index' => 0,
+        ], $now);
+
         $finalResult = "Subagent scout completed.\nArtifact: {$artifactId}\n\nDone.";
         $events[] = self::event($sessionId, 9, 1, 'tool_execution_end', [
             'tool_call_id' => $toolCallId,

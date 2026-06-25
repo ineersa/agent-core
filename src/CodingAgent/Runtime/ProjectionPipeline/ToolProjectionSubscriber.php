@@ -256,7 +256,17 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
             }
         }
 
-        $state->upsertToolResultBlock($blockId, $event->runId(), $result, $meta, false);
+        $displayText = $result;
+        if (isset($meta['subagent_progress']) && \is_array($meta['subagent_progress'])) {
+            $widgetText = $this->subagentProgressFormatter->format($meta['subagent_progress']);
+            if ('' !== $result) {
+                $displayText = $widgetText."\n\n".$result;
+            } else {
+                $displayText = $widgetText;
+            }
+        }
+
+        $state->upsertToolResultBlock($blockId, $event->runId(), $displayText, $meta, false);
     }
 
     public function onToolExecutionFailed(TranscriptProjectionEvent $event): void

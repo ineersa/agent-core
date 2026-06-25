@@ -176,6 +176,7 @@ final class SubagentExecutionService
         // Monotonically increasing event seq for progress updates,
         // initialised from max(parent state lastSeq, max parent event seq) + 1.
         $progressSeq = $this->resolveNextProgressSeq($parentRunId);
+        $lastSingleProgressSignature = null;
 
         while (true) {
             // Check parent cancellation.
@@ -215,24 +216,30 @@ final class SubagentExecutionService
             $status = $state->status;
 
             if (RunStatus::Running === $status || RunStatus::Queued === $status || RunStatus::Compacting === $status) {
-                // Push inline progress update to parent transcript —
-                // lightweight status line based on RunState, not full event scan.
-                $this->emitProgressUpdate(
-                    parentRunId: $parentRunId,
-                    agentRunId: $agentRunId,
-                    agentName: $agentName,
-                    artifactId: $artifactId,
-                    taskSummary: $task,
-                    definitionModel: $definition->model,
-                    state: $state,
-                    seq: $progressSeq,
-                    progressStartedHr: $progressStartedHr,
+                $signature = $this->singleProgressSignature(
+                    $parentRunId,
+                    $agentRunId,
+                    $artifactId,
+                    $state,
+                    $definition->model,
                 );
-
-                // Advance parent RunState.lastSeq to include the progress
-                // event so later ToolCallResultHandler doesn't reuse this seq.
-                $this->advanceParentSequence($parentRunId, $progressSeq);
-                ++$progressSeq;
+                if (null === $lastSingleProgressSignature || $signature !== $lastSingleProgressSignature) {
+                    $this->emitProgressUpdate(
+                        parentRunId: $parentRunId,
+                        agentRunId: $agentRunId,
+                        agentName: $agentName,
+                        artifactId: $artifactId,
+                        taskSummary: $task,
+                        definitionModel: $definition->model,
+                        state: $state,
+                        seq: $progressSeq,
+                        progressStartedHr: $progressStartedHr,
+                        force: false,
+                    );
+                    $this->advanceParentSequence($parentRunId, $progressSeq);
+                    ++$progressSeq;
+                    $lastSingleProgressSignature = $signature;
+                }
 
                 usleep(self::DEFAULT_POLL_MICROS);
                 continue;
@@ -253,7 +260,23 @@ final class SubagentExecutionService
                     $agentName, $artifactId);
             }
 
-            // Terminal states only — non-terminal statuses must continue or return above.
+            // Terminal states only — emit final structured snapshot before returning.
+            $terminalStatus = $this->mapChildTerminalProgressStatus($status);
+            $this->emitTerminalProgressUpdate(
+                parentRunId: $parentRunId,
+                agentRunId: $agentRunId,
+                agentName: $agentName,
+                artifactId: $artifactId,
+                taskSummary: $task,
+                definitionModel: $definition->model,
+                state: $state,
+                terminalStatus: $terminalStatus,
+                seq: $progressSeq,
+                progressStartedHr: $progressStartedHr,
+            );
+            $this->advanceParentSequence($parentRunId, $progressSeq);
+            ++$progressSeq;
+
             return match ($status) {
                 RunStatus::Completed => $this->handleCompleted(
                     $parentRunId, $artifactId, $agentName, $state,
@@ -261,10 +284,7 @@ final class SubagentExecutionService
                 RunStatus::Failed => $this->handleFailed(
                     $parentRunId, $artifactId, $agentName, $state,
                 ),
-                RunStatus::Cancelled => $this->handleCancelled(
-                    $parentRunId, $artifactId, $agentName,
-                ),
-                RunStatus::Cancelling => $this->handleCancelled(
+                RunStatus::Cancelled, RunStatus::Cancelling => $this->handleCancelled(
                     $parentRunId, $artifactId, $agentName,
                 ),
             };
@@ -531,6 +551,17 @@ final class SubagentExecutionService
             usleep(self::DEFAULT_POLL_MICROS);
         }
 
+        $this->emitParallelProgressUpdate(
+            $parentRunId,
+            $reports,
+            $this->parallelActiveTurns($reports),
+            $progressSeq,
+            $parallelProgressStartedHr,
+            aggregateStatus: 'completed',
+        );
+        $this->advanceParentSequence($parentRunId, $progressSeq);
+        ++$progressSeq;
+
         $failed = array_filter($reports, static fn (array $r): bool => AgentArtifactStatusEnum::Completed !== $r['status']);
 
         if ([] !== $failed) {
@@ -671,6 +702,7 @@ final class SubagentExecutionService
         array $activeTurns,
         int $seq,
         int $progressStartedHr,
+        string $aggregateStatus = 'running',
     ): void {
         $context = $this->contextAccessor->current();
         if (null === $context) {
@@ -680,9 +712,6 @@ final class SubagentExecutionService
         $elapsedMs = (int) ((hrtime(true) - $progressStartedHr) / 1_000_000);
         $enrichmentByRun = [];
         foreach ($reports as $agentRunId => $report) {
-            if ($report['terminal']) {
-                continue;
-            }
             $state = $this->runStore->get($agentRunId);
             if (null === $state) {
                 continue;
@@ -702,6 +731,7 @@ final class SubagentExecutionService
             $activeTurns,
             $elapsedMs,
             $enrichmentByRun,
+            $aggregateStatus,
         );
         $event = new RunEvent(
             runId: $parentRunId,
@@ -946,6 +976,125 @@ final class SubagentExecutionService
         return implode("\n", $lines)."\n";
     }
 
+    private function emitTerminalProgressUpdate(
+        string $parentRunId,
+        string $agentRunId,
+        string $agentName,
+        string $artifactId,
+        string $taskSummary,
+        ?string $definitionModel,
+        RunState $state,
+        string $terminalStatus,
+        int $seq,
+        int $progressStartedHr,
+    ): void {
+        $context = $this->contextAccessor->current();
+        if (null === $context) {
+            return;
+        }
+
+        $elapsedMs = (int) ((hrtime(true) - $progressStartedHr) / 1_000_000);
+        $enrichment = $this->childProgressSummaryBuilder->summarize(
+            $parentRunId,
+            $agentRunId,
+            $artifactId,
+            $state,
+            $definitionModel,
+        );
+        $progress = $this->progressSnapshotBuilder->singleTerminal(
+            $terminalStatus,
+            $agentName,
+            $artifactId,
+            $taskSummary,
+            $state,
+            $elapsedMs,
+            $enrichment,
+        );
+        $this->appendSubagentProgressEvent($parentRunId, $context, $seq, $progress);
+    }
+
+    /**
+     * @param array<string, array{index:int,agentName:string,task:string,artifactId:string,agentRunId:string,terminal:bool,status:?AgentArtifactStatusEnum,message:string}> $reports
+     *
+     * @return array<string, int>
+     */
+    private function parallelActiveTurns(array $reports): array
+    {
+        $activeTurns = [];
+        foreach ($reports as $agentRunId => $report) {
+            $state = $this->runStore->get($agentRunId);
+            if (null !== $state) {
+                $activeTurns[$agentRunId] = $state->turnNo;
+            }
+        }
+
+        return $activeTurns;
+    }
+
+    private function mapChildTerminalProgressStatus(RunStatus $status): string
+    {
+        return match ($status) {
+            RunStatus::Completed => 'completed',
+            RunStatus::Failed => 'failed',
+            RunStatus::Cancelled, RunStatus::Cancelling => 'cancelled',
+            default => 'done',
+        };
+    }
+
+    private function singleProgressSignature(
+        string $parentRunId,
+        string $agentRunId,
+        string $artifactId,
+        RunState $state,
+        ?string $definitionModel,
+    ): string {
+        $enrichment = $this->childProgressSummaryBuilder->summarize(
+            $parentRunId,
+            $agentRunId,
+            $artifactId,
+            $state,
+            $definitionModel,
+        );
+
+        return implode('|', [
+            (string) $state->turnNo,
+            $state->status->value,
+            (string) $enrichment->toolCount,
+            (string) $enrichment->totalTokens,
+            (string) $enrichment->inputTokens,
+            (string) $enrichment->outputTokens,
+            $enrichment->activeToolLine ?? '',
+            implode(',', $enrichment->recentTools),
+            $enrichment->assistantExcerpt ?? '',
+        ]);
+    }
+
+    /**
+     * @param array<string, mixed> $progress
+     */
+    private function appendSubagentProgressEvent(
+        string $parentRunId,
+        \Ineersa\AgentCore\Application\Tool\ToolContext $context,
+        int $seq,
+        array $progress,
+    ): void {
+        $event = new RunEvent(
+            runId: $parentRunId,
+            seq: $seq,
+            turnNo: $context->turnNo(),
+            type: RunEventTypeEnum::ToolExecutionUpdate->value,
+            payload: [
+                'tool_call_id' => $context->toolCallId(),
+                'tool_name' => $context->toolName(),
+                'delta' => '',
+                'subagent_progress' => $progress,
+                'order_index' => $context->orderIndex(),
+            ],
+        );
+
+        $this->eventStore->append($event);
+    }
+
     /**
      * Emit a ToolExecutionUpdate event into the parent run's event stream.
      *
@@ -962,6 +1111,7 @@ final class SubagentExecutionService
         RunState $state,
         int $seq,
         int $progressStartedHr,
+        bool $force = false,
     ): void {
         $context = $this->contextAccessor->current();
         if (null === $context) {
@@ -984,21 +1134,7 @@ final class SubagentExecutionService
             $elapsedMs,
             $enrichment,
         );
-        $event = new RunEvent(
-            runId: $parentRunId,
-            seq: $seq,
-            turnNo: $context->turnNo(),
-            type: RunEventTypeEnum::ToolExecutionUpdate->value,
-            payload: [
-                'tool_call_id' => $context->toolCallId(),
-                'tool_name' => $context->toolName(),
-                'delta' => '',
-                'subagent_progress' => $progress,
-                'order_index' => $context->orderIndex(),
-            ],
-        );
-
-        $this->eventStore->append($event);
+        $this->appendSubagentProgressEvent($parentRunId, $context, $seq, $progress);
     }
 
     /**

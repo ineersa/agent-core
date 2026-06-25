@@ -57,14 +57,42 @@ final readonly class SubagentResultRenderer
     private function resolveText(TranscriptBlock $block): string
     {
         $progress = $block->meta['subagent_progress'] ?? null;
+        $result = $block->meta['result'] ?? null;
+        $resultText = \is_string($result) && '' !== $result ? $result : $block->text;
+
         if (\is_array($progress)) {
-            return $this->formatter->format($progress);
+            $widget = $this->formatter->format($progress);
+            if ('' !== $resultText && !$this->isRedundantHandoff($widget, $resultText)) {
+                return $widget."\n\n".$this->truncateResult($resultText);
+            }
+
+            return $widget;
         }
 
-        if ('' !== $block->text) {
-            return $block->text;
+        if ('' !== $resultText) {
+            return $resultText;
         }
 
         return 'subagent';
+    }
+
+    private function isRedundantHandoff(string $widget, string $resultText): bool
+    {
+        $normalized = trim($resultText);
+        if ('' === $normalized) {
+            return true;
+        }
+
+        return str_contains($widget, $normalized);
+    }
+
+    private function truncateResult(string $resultText): string
+    {
+        $lines = explode("\n", trim($resultText));
+        if (\count($lines) <= 8) {
+            return trim($resultText);
+        }
+
+        return implode("\n", \array_slice($lines, 0, 8))."\n…";
     }
 }

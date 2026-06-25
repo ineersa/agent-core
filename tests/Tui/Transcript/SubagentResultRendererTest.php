@@ -97,6 +97,29 @@ final class SubagentResultRendererTest extends TestCase
         self::assertStringNotContainsString('running Step', $joined);
     }
 
+
+    public function testRendersTerminalWidgetWithHandoff(): void
+    {
+        $progress = [
+            'mode' => 'single', 'status' => 'completed', 'agent_name' => 'scout',
+            'artifact_id' => 'agent_done', 'task_summary' => 'task', 'turn_no' => 3,
+            'artifact_path' => 'artifacts/agents/agent_done',
+        ];
+        $block = new TranscriptBlock(
+            id: 'tool_result_tc', kind: TranscriptBlockKindEnum::ToolResult, runId: 'run1', seq: 1,
+            text: 'fallback', meta: [
+                'tool_name' => 'subagent',
+                'subagent_progress' => $progress,
+                'subagent_final' => true,
+                'result' => "Subagent scout completed.\nArtifact: agent_done\n\nUnique handoff body.",
+            ],
+            streaming: false,
+        );
+        $joined = implode("\n", (new SubagentResultRenderer())->render($block, new TuiRenderContext(terminalWidth: 120)));
+        self::assertStringContainsString('completed scout', $joined);
+        self::assertStringContainsString('Unique handoff body', $joined);
+    }
+
     public function testSubagentResultRendererSupportsMetaOnly(): void
     {
         $renderer = new SubagentResultRenderer();

@@ -39,12 +39,36 @@ final class SubagentProgressSnapshotBuilder
     }
 
     /**
-     * @param array<string, array{index:int,agentName:string,task:string,artifactId:string,agentRunId:string,terminal:bool,status:?AgentArtifactStatusEnum,message:string}> $reports
-     * @param array<string, int>                                                                                                                                            $activeTurns
-     * @param array<string, SubagentChildProgressSummary>                                                                                                                   $enrichmentByAgentRunId
-     *
      * @return array<string, mixed>
      */
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function singleTerminal(
+        string $status,
+        string $agentName,
+        string $artifactId,
+        string $taskSummary,
+        RunState $childState,
+        int $elapsedMs,
+        ?SubagentChildProgressSummary $enrichment = null,
+    ): array {
+        $base = [
+            'mode' => 'single',
+            'status' => $status,
+            'agent_name' => $agentName,
+            'artifact_id' => $artifactId,
+            'task_summary' => $taskSummary,
+            'turn_no' => $childState->turnNo,
+            'elapsed_ms' => max(0, $elapsedMs),
+        ];
+
+        return null !== $enrichment
+            ? array_merge($base, $enrichment->toProgressFields())
+            : $base;
+    }
+
     public function parallelSnapshot(
         array $reports,
         array $activeTurns,

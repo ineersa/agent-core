@@ -103,7 +103,7 @@ final class SubagentProgressDisplayFormatter
         }
 
         $excerpt = $this->string($progress, 'assistant_excerpt', '');
-        if ('' !== $excerpt && 'running' === $status) {
+        if ('' !== $excerpt) {
             $lines[] = $this->truncate($excerpt, 200);
         }
 

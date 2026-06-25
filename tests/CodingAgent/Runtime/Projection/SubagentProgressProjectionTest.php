@@ -142,6 +142,43 @@ final class SubagentProgressProjectionTest extends TestCase
     }
 
 
+
+    public function testSubagentProgressTerminalAfterCompleted(): void
+    {
+        $this->accept('tool_execution.started', [
+            'tool_call_id' => 'tc_done', 'tool_name' => 'subagent',
+        ]);
+
+        $running = [
+            'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
+            'artifact_id' => 'agent_done', 'task_summary' => 'Inspect TUI', 'turn_no' => 2, 'elapsed_ms' => 5000,
+        ];
+        $completed = $running;
+        $completed['status'] = 'completed';
+        $completed['turn_no'] = 3;
+        $completed['tool_count'] = 5;
+        $completed['artifact_path'] = 'artifacts/agents/agent_done';
+
+        $this->accept('tool_execution.output_delta', [
+            'tool_call_id' => 'tc_done', 'tool_name' => 'subagent', 'subagent_progress' => $running,
+        ]);
+        $this->accept('tool_execution.output_delta', [
+            'tool_call_id' => 'tc_done', 'tool_name' => 'subagent', 'subagent_progress' => $completed,
+        ]);
+
+        $handoff = "Subagent scout completed.\nArtifact: agent_done\n\nDone.";
+        $this->accept('tool_execution.completed', [
+            'tool_call_id' => 'tc_done', 'result' => $handoff,
+        ]);
+
+        $block = $this->projector->blocks()[0];
+        self::assertStringContainsString('completed scout', $block->text);
+        self::assertStringNotContainsString('running scout', $block->text);
+        self::assertStringContainsString('agent_done', $block->text);
+        self::assertStringContainsString('Done.', $block->text);
+        self::assertTrue($block->meta['subagent_final'] ?? false);
+    }
+
     /** @param array<string, mixed> $payload */
     private function accept(string $type, array $payload): void
     {
