@@ -127,8 +127,7 @@ final class SubagentExecutionService
             artifactId: $artifactId,
             allowedTools: $allowedTools,
             agentsMd: $launchContext['agentsMd'],
-            parentSystemPrompt: $launchContext['parentSystemPrompt'],
-            skillsContext: $launchContext['skillsContext'],
+                        skillsContext: $launchContext['skillsContext'],
         );
 
         // 8. Build child metadata with policy and artifact paths.
@@ -353,8 +352,7 @@ final class SubagentExecutionService
                     artifactId: $launch['artifactId'],
                     allowedTools: $allowedTools,
                     agentsMd: $launchContext['agentsMd'],
-                    parentSystemPrompt: $launchContext['parentSystemPrompt'],
-                    skillsContext: $launchContext['skillsContext'],
+                                        skillsContext: $launchContext['skillsContext'],
                 );
 
                 $childMetadata = new RunMetadata(
@@ -1055,40 +1053,15 @@ final class SubagentExecutionService
         ]);
     }
 
-    /**
-     * Extract the system prompt from the parent run's messages.
-     */
-    private function extractSystemPrompt(string $parentRunId): string
-    {
-        $state = $this->parentRunStore->get($parentRunId);
-        if (null === $state) {
-            return '';
-        }
-
-        foreach ($state->messages as $message) {
-            if ('system' !== $message->role) {
-                continue;
-            }
-            foreach ($message->content as $block) {
-                if ('text' === ($block['type'] ?? '') && isset($block['text'])) {
-                    return (string) $block['text'];
-                }
-            }
-        }
-
-        return '';
-    }
 
     /**
      * Resolve project/AGENTS/skills context for a child launch from parent state
      * and agent definition frontmatter flags.
      *
-     * @return array{parentSystemPrompt: string, agentsMd: string, skillsContext: string}
+     * @return array{agentsMd: string, skillsContext: string}
      */
     private function resolveChildLaunchContext(string $parentRunId, AgentDefinitionDTO $definition): array
     {
-        $parentSystemPrompt = $this->extractSystemPrompt($parentRunId);
-
         $inheritProject = $definition->inheritProjectContext;
         $inheritAgents = $definition->inheritAgentsMd;
         $agentsMd = ($inheritProject || $inheritAgents)
@@ -1098,7 +1071,6 @@ final class SubagentExecutionService
         $skillsContext = $this->resolveSkillsContextForChild($definition);
 
         return [
-            'parentSystemPrompt' => $parentSystemPrompt,
             'agentsMd' => $agentsMd,
             'skillsContext' => $skillsContext,
         ];

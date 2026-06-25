@@ -7,40 +7,29 @@ namespace Ineersa\CodingAgent\Agent\Execution;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Definition\SystemPromptModeEnum;
+use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
 
 /**
  * Builds the system prompt and initial messages for a child agent run.
  *
- * The child prompt includes:
- *  1. Agent definition's instructions as the system prompt.
- *  2. AGENTS.md / project context (when inherited) in the system prompt.
- *  3. Preloaded skills from agent frontmatter as user-context (skills_context).
- *  4. Non-interactive contract as user-context.
- *  5. The task text as the user message.
+ * Child system prompt includes:
+ *  1. Agent definition instructions.
+ *  2. Child-safe harness ({available_tools}, {guidelines}, date, cwd) from
+ *     SystemPromptBuilder — not the parent SYSTEM.md (no available_agents).
+ *  3. Inherited AGENTS.md / project context when provided.
+ *  4. APPEND_SYSTEM.md (+ contributors) when systemPromptMode is append.
  *
- * Only the foreground (non-interactive) v1 mode is implemented.
+ * Messages: system, optional skills_context, agent_child_contract, user task.
  */
 final readonly class AgentPromptBuilder
 {
+    public function __construct(
+        private SystemPromptBuilder $systemPromptBuilder,
+    ) {
+    }
+
     /**
-     * Build the child system prompt and messages.
-     *
-     * The system prompt text is included both in the return value's
-     * systemPrompt key (for the RunStarted event payload / audit trail)
-     * and as the first message in the messages list (role=system) so it
-     * is stored in RunState::$messages and reaches the LLM via
-     * LlmPlatformAdapter's resolveContextMessages path.
-     *
-     * This mirrors the pattern used by InProcessAgentSessionClient for
-     * parent runs.
-     *
-     * @param AgentDefinitionDTO $definition         resolved agent definition
-     * @param string             $task               the task text
-     * @param string             $artifactId         artifact identifier for context
-     * @param list<string>       $allowedTools       allowed tool names
-     * @param string             $agentsMd           pre-rendered AGENTS.md / project context
-     * @param string             $parentSystemPrompt parent system prompt for append mode
-     * @param string             $skillsContext      pre-rendered preloaded skill bodies
+     * @param list<string> $allowedTools
      *
      * @return array{systemPrompt: string, messages: list<AgentMessage>}
      */
@@ -50,18 +39,15 @@ final readonly class AgentPromptBuilder
         string $artifactId,
         array $allowedTools,
         string $agentsMd,
-        string $parentSystemPrompt,
         string $skillsContext = '',
     ): array {
         $systemPrompt = $this->buildSystemPrompt(
             definition: $definition,
             allowedTools: $allowedTools,
             agentsMd: $agentsMd,
-            parentSystemPrompt: $parentSystemPrompt,
         );
 
         $messages = $this->buildMessages(
-            definition: $definition,
             task: $task,
             artifactId: $artifactId,
             allowedTools: $allowedTools,
@@ -76,51 +62,42 @@ final readonly class AgentPromptBuilder
     }
 
     /**
-     * Build the child system prompt.
-     *
      * @param list<string> $allowedTools
      */
     private function buildSystemPrompt(
         AgentDefinitionDTO $definition,
         array $allowedTools,
         string $agentsMd,
-        string $parentSystemPrompt,
     ): string {
         $parts = [];
 
-        // Agent instructions always come first.
         $instructions = trim($definition->instructions);
         if ('' !== $instructions) {
             $parts[] = $instructions;
         }
 
-        // AGENTS.md project context (when inherited).
+        $parts[] = $this->systemPromptBuilder->buildChildHarnessFragment($allowedTools);
+
         if ('' !== $agentsMd) {
             $parts[] = $agentsMd;
         }
 
-        // Append parent system prompt for append mode.
-        if (SystemPromptModeEnum::Append === $definition->systemPromptMode
-            && '' !== $parentSystemPrompt) {
-            $parts[] = $parentSystemPrompt;
+        if (SystemPromptModeEnum::Append === $definition->systemPromptMode) {
+            $appends = $this->systemPromptBuilder->buildChildAppendsFragment($allowedTools);
+            if ('' !== trim($appends)) {
+                $parts[] = $appends;
+            }
         }
 
         return implode("\n\n", $parts);
     }
 
     /**
-     * Build the initial child messages (system + user-context + user).
-     *
-     * The system prompt is the first message (role=system) so it is
-     * stored in RunState::$messages and reaches the LLM.  This mirrors
-     * InProcessAgentSessionClient's pattern for parent runs.
-     *
      * @param list<string> $allowedTools
      *
      * @return list<AgentMessage>
      */
     private function buildMessages(
-        AgentDefinitionDTO $definition,
         string $task,
         string $artifactId,
         array $allowedTools,
@@ -129,7 +106,6 @@ final readonly class AgentPromptBuilder
     ): array {
         $messages = [];
 
-        // System prompt as the first message (LLM-visible).
         if ('' !== $systemPrompt) {
             $messages[] = new AgentMessage(
                 role: 'system',
@@ -151,7 +127,6 @@ final readonly class AgentPromptBuilder
             );
         }
 
-        // Non-interactive contract as user-context.
         $messages[] = new AgentMessage(
             role: 'user-context',
             content: [[
@@ -164,7 +139,6 @@ final readonly class AgentPromptBuilder
             metadata: ['source' => 'agent_child_contract'],
         );
 
-        // The task text as the user message.
         $messages[] = new AgentMessage(
             role: 'user',
             content: [[
@@ -177,8 +151,6 @@ final readonly class AgentPromptBuilder
     }
 
     /**
-     * Build the non-interactive contract explaining child constraints.
-     *
      * @param list<string> $allowedTools
      */
     private function buildNonInteractiveContract(

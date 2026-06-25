@@ -88,6 +88,56 @@ final readonly class SystemPromptBuilder
     }
 
     /**
+     * Build the child-safe harness fragment for subagent system prompts.
+     *
+     * Uses config/SUBAGENT_SYSTEM.md (no available_agents / subagent guidance).
+     * Tool lines and guidelines are limited to {@see $allowedToolNames}.
+     *
+     * @param list<string> $allowedToolNames runtime tool names for the child
+     */
+    public function buildChildHarnessFragment(array $allowedToolNames): string
+    {
+        if ('' === $this->appConfig->cwd) {
+            throw new \RuntimeException('CWD is not configured. Ensure AppConfig::$cwd is set.');
+        }
+
+        $cwd = rtrim($this->appConfig->cwd, '/');
+        $templatePath = $this->projectDir.'/config/SUBAGENT_SYSTEM.md';
+        if (!is_file($templatePath)) {
+            throw new \RuntimeException(\sprintf('Built-in SUBAGENT_SYSTEM.md not found at "%s".', $templatePath));
+        }
+
+        $content = file_get_contents($templatePath);
+        if (false === $content) {
+            throw new \RuntimeException(\sprintf('Failed to read SUBAGENT_SYSTEM.md: %s', $templatePath));
+        }
+
+        $variables = $this->buildChildVariables($cwd, $allowedToolNames, '');
+
+        return $this->render($content, $variables);
+    }
+
+    /**
+     * Build rendered APPEND_SYSTEM.md (+ prompt contributors) for child append mode.
+     *
+     * Uses child-safe placeholders ({available_tools_list}, {registered_guidelines},
+     * date, cwd) and empty {appends_part} to avoid recursion.
+     *
+     * @param list<string> $allowedToolNames runtime tool names for the child
+     */
+    public function buildChildAppendsFragment(array $allowedToolNames): string
+    {
+        if ('' === $this->appConfig->cwd) {
+            throw new \RuntimeException('CWD is not configured. Ensure AppConfig::$cwd is set.');
+        }
+
+        $cwd = rtrim($this->appConfig->cwd, '/');
+
+        return $this->buildChildAppendsContent($cwd, $allowedToolNames);
+    }
+
+
+    /**
      * Load the base template content based on precedence.
      *
      * 1. {cwd}/.hatfield/SYSTEM.md
@@ -244,6 +294,129 @@ final readonly class SystemPromptBuilder
 
         return implode("\n", $guidelines);
     }
+
+
+    /**
+     * @param list<string> $allowedToolNames
+     *
+     * @return array<string, string>
+     */
+    private function buildChildVariables(string $cwd, array $allowedToolNames, string $appendsContent): array
+    {
+        return [
+            'available_tools_list' => $this->buildToolsListForNames($allowedToolNames),
+            'registered_guidelines' => $this->buildGuidelinesForNames($allowedToolNames),
+            'appends_part' => $appendsContent,
+            'date' => date('Y-m-d'),
+            'cwd' => $cwd,
+        ];
+    }
+
+    /**
+     * @param list<string> $allowedToolNames
+     */
+    private function buildChildAppendsContent(string $cwd, array $allowedToolNames): string
+    {
+        $parts = [];
+
+        $homeDir = $this->pathResolver->getHomeDir();
+        $homeAppend = $homeDir.'/.hatfield/APPEND_SYSTEM.md';
+        if (is_file($homeAppend)) {
+            $content = file_get_contents($homeAppend);
+            if (false !== $content && '' !== $content) {
+                $parts[] = $content;
+            }
+        }
+
+        $projectAppend = $cwd.'/.hatfield/APPEND_SYSTEM.md';
+        if (is_file($projectAppend)) {
+            $content = file_get_contents($projectAppend);
+            if (false !== $content && '' !== $content) {
+                $parts[] = $content;
+            }
+        }
+
+        $contributorOutput = $this->drainContributors();
+        if ('' !== $contributorOutput) {
+            $parts[] = $contributorOutput;
+        }
+
+        if ([] === $parts) {
+            return '';
+        }
+
+        $concatenated = implode("\n\n", $parts);
+        $appendVariables = $this->buildChildVariables($cwd, $allowedToolNames, '');
+
+        return $this->render($concatenated, $appendVariables);
+    }
+
+    /**
+     * @param list<string> $allowedToolNames
+     */
+    private function buildToolsListForNames(array $allowedToolNames): string
+    {
+        $lines = [];
+        $seen = [];
+
+        foreach ($allowedToolNames as $name) {
+            $name = trim($name);
+            if ('' === $name) {
+                continue;
+            }
+
+            $definition = $this->toolRegistry->toolDefinition($name);
+            if (null === $definition) {
+                continue;
+            }
+
+            $line = $definition->promptLine;
+            if ('' === $line) {
+                $line = '- '.$name.': '.$definition->description;
+            }
+
+            if (!isset($seen[$line])) {
+                $seen[$line] = true;
+                $lines[] = $line;
+            }
+        }
+
+        return implode("\n", $lines);
+    }
+
+    /**
+     * @param list<string> $allowedToolNames
+     */
+    private function buildGuidelinesForNames(array $allowedToolNames): string
+    {
+        $guidelines = [];
+        $seen = [];
+
+        foreach ($allowedToolNames as $name) {
+            $name = trim($name);
+            if ('' === $name) {
+                continue;
+            }
+
+            $definition = $this->toolRegistry->toolDefinition($name);
+            if (null === $definition) {
+                continue;
+            }
+
+            foreach ($definition->promptGuidelines as $guideline) {
+                if ('' === $guideline) {
+                    continue;
+                }
+                if (!isset($seen[$guideline])) {
+                    $seen[$guideline] = true;
+                    $guidelines[] = $guideline;
+                }
+            }
+        }
+
+        return implode("\n", $guidelines);
+    }
+
 
     /**
      * Render a template using Symfony AI's StringTemplateRenderer.

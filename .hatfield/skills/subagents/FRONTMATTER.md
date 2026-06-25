@@ -46,7 +46,7 @@ Explicit `tools` without any `mcp:` entry: non-MCP allowlist only (no MCP).
 | `skill` | — | Alias merged into `skills` (comma-separated OK) |
 | `inheritProjectContext` | true | Include parent `agents_context` (`<project_context>`) in child system prompt |
 | `inheritAgentsMd` | true | Same as project context today: parent `agents_context` in child system prompt when true |
-| `systemPromptMode` | `replace` | `replace` or `append` parent system prompt |
+| `systemPromptMode` | `replace` | `replace` = child harness only; `append` = also APPEND_SYSTEM.md with child tool placeholders |
 
 ## Launch policy
 

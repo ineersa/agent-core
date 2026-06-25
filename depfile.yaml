@@ -556,6 +556,7 @@ parameters:
 
     AppAgent:
       - AppConfig
+      - AppSystemPrompt
       - AppMarkdown
       - AppMcpCatalog
       - AppMcpConfig

@@ -44,7 +44,7 @@ You are a scout. Explore the codebase read-only and return dense findings...
 | `skills` | list\<string\> | no | `[]` | Setup skills loaded from start. |
 | `inheritProjectContext` | bool | no | `true` | Include project context in child system prompt. |
 | `inheritAgentsMd` | bool | no | `true` | Include `AGENTS.md` in child system prompt. |
-| `systemPromptMode` | enum | no | `replace` | How child system prompt is composed: `replace` or `append`. |
+| `systemPromptMode` | enum | no | `replace` | `replace` = harness only; `append` = also include APPEND_SYSTEM.md (+ contributors) with child placeholders. |
 | `maxDepth` | int | no | `1` | Per-agent recursion cap (0–5). |
 | `backgroundAllowed` | bool | no | `true` | Whether background launches are allowed. |
 | `foregroundAllowed` | bool | no | `true` | Whether foreground launches are allowed. |
@@ -312,21 +312,24 @@ definition `tools` list (including `mcp:` selectors) plus hard safety rules:
 
 The child system prompt is built from:
 
-1. The agent definition's `instructions` (first, unmodified).
-2. Parent AGENTS.md / project context when `inheritAgentsMd: true` **or**
+1. The agent definition's `instructions` (first).
+2. A **child-safe harness** from `config/SUBAGENT_SYSTEM.md`: `<available_tools>`
+   and `<guidelines>` rendered only for the child's resolved `allowed_tools`,
+   plus current date and cwd. This does **not** include parent `<available_agents>`,
+   subagent tool guidance, or the full parent `SYSTEM.md`.
+3. Parent AGENTS.md / project context when `inheritAgentsMd: true` **or**
    `inheritProjectContext: true`, copied from the parent run's `user-context`
-   message with metadata source `agents_context` (rendered `<project_context>`
-   blocks). When both flags are `false`, that context is omitted.
-3. The parent system prompt when `systemPromptMode: append`, extracted from
-   the parent run's `system` role message.
+   message with metadata source `agents_context`.
+4. When `systemPromptMode: append`, rendered `APPEND_SYSTEM.md` (home + project)
+   and extension prompt contributors using **child-safe** placeholders — not
+   the parent system prompt.
+
+`systemPromptMode: replace` (default) omits step 4.
 
 Child `user-context` messages (in order):
 
-1. **Preloaded skills** when the agent definition lists `skills` / `skill`:
-   full `<skill>` bodies resolved from Hatfield skill discovery (not a catalog
-   hint to load the skill later).
-2. **Non-interactive contract** (artifact ID, allowed tools, foreground worker
-   rules).
+1. **Preloaded skills** when the agent definition lists `skills` / `skill`.
+2. **Non-interactive contract** (artifact ID, allowed tools, foreground worker rules).
 
 The task text follows as the `user` message.
 
