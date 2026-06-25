@@ -21,6 +21,7 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Config\AgentsConfig;
+use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Uid\Uuid;
 
@@ -49,6 +50,7 @@ final class SubagentExecutionService
         private readonly AgentDepthGuard $depthGuard,
         private readonly AgentToolPolicyResolver $policyResolver,
         private readonly AgentPromptBuilder $promptBuilder,
+        private readonly SkillsContextBuilder $skillsContextBuilder,
         private readonly AgentArtifactRegistry $artifactRegistry,
         private readonly AgentRunnerInterface $agentRunner,
         private readonly RunStoreInterface $runStore,
@@ -115,9 +117,8 @@ final class SubagentExecutionService
         // Pre-populate the locator so routers find the child store immediately.
         $this->childRunDirectory->register($entry);
 
-        // 6. Extract parent system prompt and AGENTS.md context.
-        $parentSystemPrompt = $this->extractSystemPrompt($parentRunId);
-        $agentsMd = $this->extractAgentsMdContext($parentRunId);
+        // 6. Resolve inherited project/AGENTS/skills context for the child.
+        $launchContext = $this->resolveChildLaunchContext($parentRunId, $definition);
 
         // 7. Build prompt and messages.
         $prompt = $this->promptBuilder->build(
@@ -125,8 +126,9 @@ final class SubagentExecutionService
             task: $task,
             artifactId: $artifactId,
             allowedTools: $allowedTools,
-            agentsMd: $agentsMd,
-            parentSystemPrompt: $parentSystemPrompt,
+            agentsMd: $launchContext['agentsMd'],
+            parentSystemPrompt: $launchContext['parentSystemPrompt'],
+            skillsContext: $launchContext['skillsContext'],
         );
 
         // 8. Build child metadata with policy and artifact paths.
@@ -285,9 +287,6 @@ final class SubagentExecutionService
             throw new ToolCallException($blockReason, retryable: false);
         }
 
-        $parentSystemPrompt = $this->extractSystemPrompt($parentRunId);
-        $agentsMd = $this->extractAgentsMdContext($parentRunId);
-
         /** @var list<array{index:int,agentName:string,task:string,artifactId:string,agentRunId:string,definition:AgentDefinitionDTO}> $launches */
         $launches = [];
         foreach ($tasks as $index => $taskDto) {
@@ -346,13 +345,16 @@ final class SubagentExecutionService
                 $policy = $this->policyResolver->resolve($launch['definition']);
                 $allowedTools = $policy['tools'];
 
+                $launchContext = $this->resolveChildLaunchContext($parentRunId, $launch['definition']);
+
                 $prompt = $this->promptBuilder->build(
                     definition: $launch['definition'],
                     task: $launch['task'],
                     artifactId: $launch['artifactId'],
                     allowedTools: $allowedTools,
-                    agentsMd: $agentsMd,
-                    parentSystemPrompt: $parentSystemPrompt,
+                    agentsMd: $launchContext['agentsMd'],
+                    parentSystemPrompt: $launchContext['parentSystemPrompt'],
+                    skillsContext: $launchContext['skillsContext'],
                 );
 
                 $childMetadata = new RunMetadata(
@@ -1078,26 +1080,54 @@ final class SubagentExecutionService
     }
 
     /**
-     * Extract AGENTS.md context from parent run's user-context messages.
+     * Resolve project/AGENTS/skills context for a child launch from parent state
+     * and agent definition frontmatter flags.
      *
-     * Looks for messages with role 'user-context' and metadata source
-     * 'agents_context', falling back to any user-context message when
-     * the metadata tag is absent.
+     * @return array{parentSystemPrompt: string, agentsMd: string, skillsContext: string}
      */
-    private function extractAgentsMdContext(string $parentRunId): string
+    private function resolveChildLaunchContext(string $parentRunId, AgentDefinitionDTO $definition): array
+    {
+        $parentSystemPrompt = $this->extractSystemPrompt($parentRunId);
+
+        $inheritProject = $definition->inheritProjectContext;
+        $inheritAgents = $definition->inheritAgentsMd;
+        $agentsMd = ($inheritProject || $inheritAgents)
+            ? $this->extractUserContextBySource($parentRunId, 'agents_context')
+            : '';
+
+        $skillsContext = $this->resolveSkillsContextForChild($definition);
+
+        return [
+            'parentSystemPrompt' => $parentSystemPrompt,
+            'agentsMd' => $agentsMd,
+            'skillsContext' => $skillsContext,
+        ];
+    }
+
+    private function resolveSkillsContextForChild(AgentDefinitionDTO $definition): string
+    {
+        if ([] === $definition->skills) {
+            return '';
+        }
+
+        return $this->skillsContextBuilder->buildFor($definition->skills);
+    }
+
+    /**
+     * Extract text from a parent user-context message by metadata source.
+     */
+    private function extractUserContextBySource(string $parentRunId, string $source): string
     {
         $state = $this->parentRunStore->get($parentRunId);
         if (null === $state) {
             return '';
         }
 
-        // Prefer explicitly tagged agents_context.
         foreach ($state->messages as $message) {
             if ('user-context' !== $message->role) {
                 continue;
             }
-            $source = $message->metadata['source'] ?? null;
-            if ('agents_context' !== $source) {
+            if ($source !== ($message->metadata['source'] ?? null)) {
                 continue;
             }
             foreach ($message->content as $block) {

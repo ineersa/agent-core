@@ -558,6 +558,7 @@ parameters:
       - AppConfig
       - AppMarkdown
       - AppSession
+      - AppSkills
       - AppTool
       - AgentCore
       - SymfonyYaml

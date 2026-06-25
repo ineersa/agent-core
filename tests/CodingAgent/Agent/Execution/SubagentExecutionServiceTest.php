@@ -32,6 +32,15 @@ use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Agent\Execution\SubagentTaskDTO;
+use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
+use Ineersa\CodingAgent\Skills\SkillContextRenderer;
+use Ineersa\CodingAgent\Skills\SkillDiscovery;
+use Ineersa\CodingAgent\Skills\SkillsConfig;
+use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
+use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\SettingsPathResolver;
+use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -143,6 +152,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             depthGuard: new AgentDepthGuard(),
             policyResolver: $this->defaultPolicyResolver(),
             promptBuilder: new AgentPromptBuilder(),
+            skillsContextBuilder: self::getContainer()->get(SkillsContextBuilder::class),
             artifactRegistry: $registry,
             agentRunner: $agentRunner,
             runStore: $runStore,
@@ -215,6 +225,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             depthGuard: new AgentDepthGuard(),
             policyResolver: $this->defaultPolicyResolver(),
             promptBuilder: new AgentPromptBuilder(),
+            skillsContextBuilder: self::getContainer()->get(SkillsContextBuilder::class),
             artifactRegistry: $registry,
             agentRunner: $agentRunner,
             runStore: $runStore,
@@ -287,6 +298,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             depthGuard: new AgentDepthGuard(),
             policyResolver: $this->defaultPolicyResolver(),
             promptBuilder: new AgentPromptBuilder(),
+            skillsContextBuilder: self::getContainer()->get(SkillsContextBuilder::class),
             artifactRegistry: $registry,
             agentRunner: $agentRunner,
             runStore: $runStore,
@@ -360,6 +372,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             depthGuard: new AgentDepthGuard(),
             policyResolver: $this->defaultPolicyResolver(),
             promptBuilder: new AgentPromptBuilder(),
+            skillsContextBuilder: self::getContainer()->get(SkillsContextBuilder::class),
             artifactRegistry: $registry,
             agentRunner: $agentRunner,
             runStore: $runStore,
@@ -390,6 +403,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             depthGuard: new AgentDepthGuard(),
             policyResolver: $this->defaultPolicyResolver(),
             promptBuilder: new AgentPromptBuilder(),
+            skillsContextBuilder: self::getContainer()->get(SkillsContextBuilder::class),
             artifactRegistry: $registry,
             agentRunner: $this->createStub(AgentRunnerInterface::class),
             runStore: $this->createStub(RunStoreInterface::class),
@@ -429,6 +443,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             depthGuard: new AgentDepthGuard(),
             policyResolver: $this->defaultPolicyResolver(),
             promptBuilder: new AgentPromptBuilder(),
+            skillsContextBuilder: self::getContainer()->get(SkillsContextBuilder::class),
             artifactRegistry: $registry,
             agentRunner: $this->createStub(AgentRunnerInterface::class),
             runStore: $this->createStub(RunStoreInterface::class),
@@ -548,6 +563,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             depthGuard: new AgentDepthGuard(),
             policyResolver: $this->defaultPolicyResolver(),
             promptBuilder: new AgentPromptBuilder(),
+            skillsContextBuilder: self::getContainer()->get(SkillsContextBuilder::class),
             artifactRegistry: $registry,
             agentRunner: $agentRunner,
             runStore: $runStore,
@@ -657,6 +673,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             depthGuard: new AgentDepthGuard(),
             policyResolver: $this->defaultPolicyResolver(),
             promptBuilder: new AgentPromptBuilder(),
+            skillsContextBuilder: self::getContainer()->get(SkillsContextBuilder::class),
             artifactRegistry: $registry,
             agentRunner: $agentRunner,
             runStore: $runStore,
@@ -929,6 +946,176 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         }
     }
 
+
+    public function testExecuteInjectsPreloadedSkillContentFromDefinition(): void
+    {
+        $tmpDir = sys_get_temp_dir().'/subagent_skill_'.bin2hex(random_bytes(6));
+        mkdir($tmpDir.'/.hatfield/skills/child-skill', 0777, true);
+        file_put_contents(
+            $tmpDir.'/.hatfield/skills/child-skill/SKILL.md',
+            "---
+name: child-skill
+description: Child skill
+---
+
+CHILD_SKILL_BODY_UNIQUE",
+        );
+
+        $completedState = new RunState(runId: 'child-uuid', status: RunStatus::Completed, version: 1, messages: []);
+        $runStore = $this->createStub(RunStoreInterface::class);
+        $runStore->method('get')->willReturn($completedState);
+        $parentRunStore = $this->createStub(RunStoreInterface::class);
+
+        $capturedInput = null;
+        $agentRunner = $this->createMock(AgentRunnerInterface::class);
+        $agentRunner->expects(self::once())->method('start')->willReturnCallback(function (StartRunInput $input) use (&$capturedInput): string {
+            $capturedInput = $input;
+            return 'child-uuid';
+        });
+
+        $def = new AgentDefinitionDTO(
+            name: 'skill-agent',
+            description: 'd',
+            tools: ['read'],
+            mcp: new McpPolicyDTO(mode: McpAgentModeEnum::None),
+            skills: ['child-skill'],
+            instructions: 'Go.',
+        );
+
+        $skillsBuilder = $this->makeSkillsContextBuilder($tmpDir);
+
+        $service = $this->makeService([
+            'catalog' => new AgentDefinitionCatalog([$def]),
+            'agentRunner' => $agentRunner,
+            'runStore' => $runStore,
+            'parentRunStore' => $parentRunStore,
+            'skillsContextBuilder' => $skillsBuilder,
+        ]);
+
+        try {
+            $service->execute('parent-skill', 'skill-agent', 'Task');
+        } finally {
+            $this->rmdirRecursive($tmpDir);
+        }
+
+        self::assertNotNull($capturedInput);
+        $found = false;
+        foreach ($capturedInput->messages as $message) {
+            if ('user-context' !== $message->role) {
+                continue;
+            }
+            if ('skills_context' !== ($message->metadata['source'] ?? null)) {
+                continue;
+            }
+            $text = (string) ($message->content[0]['text'] ?? '');
+            self::assertStringContainsString('CHILD_SKILL_BODY_UNIQUE', $text);
+            $found = true;
+        }
+        self::assertTrue($found, 'Expected skills_context message with preloaded body');
+    }
+
+    public function testExecuteHonorsInheritAgentsMdFalse(): void
+    {
+        $parentState = new RunState(
+            runId: 'parent-run',
+            status: RunStatus::Running,
+            version: 1,
+            messages: [
+                new AgentMessage(
+                    role: 'user-context',
+                    content: [['type' => 'text', 'text' => '<project_context>SHOULD_NOT_APPEAR</project_context>']],
+                    metadata: ['source' => 'agents_context'],
+                ),
+            ],
+        );
+
+        $completedState = new RunState(runId: 'child-uuid', status: RunStatus::Completed, version: 1, messages: []);
+        $runStore = $this->createStub(RunStoreInterface::class);
+        $runStore->method('get')->willReturn($completedState);
+        $parentRunStore = $this->createStub(RunStoreInterface::class);
+        $parentRunStore->method('get')->willReturn($parentState);
+
+        $capturedInput = null;
+        $agentRunner = $this->createMock(AgentRunnerInterface::class);
+        $agentRunner->expects(self::once())->method('start')->willReturnCallback(function (StartRunInput $input) use (&$capturedInput): string {
+            $capturedInput = $input;
+            return 'child-uuid';
+        });
+
+        $def = new AgentDefinitionDTO(
+            name: 'no-agents',
+            description: 'd',
+            tools: ['read'],
+            mcp: new McpPolicyDTO(mode: McpAgentModeEnum::None),
+            inheritAgentsMd: false,
+            inheritProjectContext: false,
+            instructions: 'Only instructions.',
+        );
+
+        $service = $this->makeService([
+            'catalog' => new AgentDefinitionCatalog([$def]),
+            'agentRunner' => $agentRunner,
+            'runStore' => $runStore,
+            'parentRunStore' => $parentRunStore,
+        ]);
+
+        $service->execute('parent-run', 'no-agents', 'Task');
+
+        self::assertNotNull($capturedInput);
+        self::assertStringNotContainsString('SHOULD_NOT_APPEAR', $capturedInput->systemPrompt);
+    }
+
+    public function testExecuteIncludesParentAgentsContextWhenInheritTrue(): void
+    {
+        $parentState = new RunState(
+            runId: 'parent-run2',
+            status: RunStatus::Running,
+            version: 1,
+            messages: [
+                new AgentMessage(
+                    role: 'user-context',
+                    content: [['type' => 'text', 'text' => '<project_context>AGENTS_INHERIT_OK</project_context>']],
+                    metadata: ['source' => 'agents_context'],
+                ),
+            ],
+        );
+
+        $completedState = new RunState(runId: 'child-uuid', status: RunStatus::Completed, version: 1, messages: []);
+        $runStore = $this->createStub(RunStoreInterface::class);
+        $runStore->method('get')->willReturn($completedState);
+        $parentRunStore = $this->createStub(RunStoreInterface::class);
+        $parentRunStore->method('get')->willReturn($parentState);
+
+        $capturedInput = null;
+        $agentRunner = $this->createMock(AgentRunnerInterface::class);
+        $agentRunner->expects(self::once())->method('start')->willReturnCallback(function (StartRunInput $input) use (&$capturedInput): string {
+            $capturedInput = $input;
+            return 'child-uuid';
+        });
+
+        $def = new AgentDefinitionDTO(
+            name: 'inherit-agents',
+            description: 'd',
+            tools: ['read'],
+            mcp: new McpPolicyDTO(mode: McpAgentModeEnum::None),
+            inheritAgentsMd: true,
+            inheritProjectContext: true,
+            instructions: 'Child.',
+        );
+
+        $service = $this->makeService([
+            'catalog' => new AgentDefinitionCatalog([$def]),
+            'agentRunner' => $agentRunner,
+            'runStore' => $runStore,
+            'parentRunStore' => $parentRunStore,
+        ]);
+
+        $service->execute('parent-run2', 'inherit-agents', 'Task');
+
+        self::assertNotNull($capturedInput);
+        self::assertStringContainsString('AGENTS_INHERIT_OK', $capturedInput->systemPrompt);
+    }
+
     /**
      * @param array<string, mixed> $overrides
      */
@@ -940,6 +1127,57 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         return new AgentToolPolicyResolver($registry);
     }
 
+
+    private function makeSkillsContextBuilder(string $cwd): SkillsContextBuilder
+    {
+        $homeDir = $cwd.'/home';
+        if (!is_dir($homeDir)) {
+            mkdir($homeDir, 0777, true);
+        }
+        $skillsConfig = new SkillsConfig(noSkills: false, skillsPaths: [], preloadSkills: []);
+
+        $discovery = new SkillDiscovery(
+            config: $skillsConfig,
+            pathResolver: new SettingsPathResolver($cwd, $homeDir),
+            appConfig: new AppConfig(
+                tui: new TuiConfig(theme: 'test'),
+                logging: new LoggingConfig(),
+                cwd: $cwd,
+            ),
+            extractor: new MarkdownFrontmatterExtractor(),
+        );
+
+        return new SkillsContextBuilder(
+            discovery: $discovery,
+            config: $skillsConfig,
+            renderer: new SkillContextRenderer(),
+            extractor: new MarkdownFrontmatterExtractor(),
+        );
+    }
+
+    private function rmdirRecursive(string $dir): void
+    {
+        if (!is_dir($dir)) {
+            return;
+        }
+        $items = scandir($dir);
+        if (false === $items) {
+            return;
+        }
+        foreach ($items as $item) {
+            if ('.' === $item || '..' === $item) {
+                continue;
+            }
+            $path = $dir.'/'.$item;
+            if (is_dir($path)) {
+                $this->rmdirRecursive($path);
+            } else {
+                unlink($path);
+            }
+        }
+        rmdir($dir);
+    }
+
     private function makeService(array $overrides): SubagentExecutionService
     {
         $defaults = [
@@ -947,6 +1185,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'depthGuard' => new AgentDepthGuard(),
             'policyResolver' => $this->defaultPolicyResolver(),
             'promptBuilder' => new AgentPromptBuilder(),
+            'skillsContextBuilder' => self::getContainer()->get(SkillsContextBuilder::class),
             'artifactRegistry' => self::getContainer()->get(AgentArtifactRegistry::class),
             'agentRunner' => $this->createStub(AgentRunnerInterface::class),
             'runStore' => $this->createStub(RunStoreInterface::class),
@@ -966,6 +1205,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             depthGuard: $args['depthGuard'],
             policyResolver: $args['policyResolver'],
             promptBuilder: $args['promptBuilder'],
+            skillsContextBuilder: $args['skillsContextBuilder'],
             artifactRegistry: $args['artifactRegistry'],
             agentRunner: $args['agentRunner'],
             runStore: $args['runStore'],

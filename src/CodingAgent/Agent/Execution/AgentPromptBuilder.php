@@ -13,12 +13,10 @@ use Ineersa\CodingAgent\Agent\Definition\SystemPromptModeEnum;
  *
  * The child prompt includes:
  *  1. Agent definition's instructions as the system prompt.
- *  2. AGENTS.md project context (when inheritAgentsMd=true) rendered
- *     via AgentsContextDiscovery + AgentsContextRenderer.
- *  3. The task text as the user message.
- *  4. A non-interactive contract explaining the child is a foreground
- *     worker and must not ask the user interactively.
- *  5. Allowed tools and artifact ID context.
+ *  2. AGENTS.md / project context (when inherited) in the system prompt.
+ *  3. Preloaded skills from agent frontmatter as user-context (skills_context).
+ *  4. Non-interactive contract as user-context.
+ *  5. The task text as the user message.
  *
  * Only the foreground (non-interactive) v1 mode is implemented.
  */
@@ -40,12 +38,9 @@ final readonly class AgentPromptBuilder
      * @param string             $task               the task text
      * @param string             $artifactId         artifact identifier for context
      * @param list<string>       $allowedTools       allowed tool names
-     * @param string             $agentsMd           pre-rendered AGENTS.md project context
-     *                                               (empty string when none or not
-     *                                               inherited)
-     * @param string             $parentSystemPrompt parent system prompt
-     *                                               for append mode (empty
-     *                                               when replace mode)
+     * @param string             $agentsMd           pre-rendered AGENTS.md / project context
+     * @param string             $parentSystemPrompt parent system prompt for append mode
+     * @param string             $skillsContext      pre-rendered preloaded skill bodies
      *
      * @return array{systemPrompt: string, messages: list<AgentMessage>}
      */
@@ -56,6 +51,7 @@ final readonly class AgentPromptBuilder
         array $allowedTools,
         string $agentsMd,
         string $parentSystemPrompt,
+        string $skillsContext = '',
     ): array {
         $systemPrompt = $this->buildSystemPrompt(
             definition: $definition,
@@ -70,6 +66,7 @@ final readonly class AgentPromptBuilder
             artifactId: $artifactId,
             allowedTools: $allowedTools,
             systemPrompt: $systemPrompt,
+            skillsContext: $skillsContext,
         );
 
         return [
@@ -128,6 +125,7 @@ final readonly class AgentPromptBuilder
         string $artifactId,
         array $allowedTools,
         string $systemPrompt,
+        string $skillsContext,
     ): array {
         $messages = [];
 
@@ -139,6 +137,17 @@ final readonly class AgentPromptBuilder
                     'type' => 'text',
                     'text' => $systemPrompt,
                 ]],
+            );
+        }
+
+        if ('' !== trim($skillsContext)) {
+            $messages[] = new AgentMessage(
+                role: 'user-context',
+                content: [[
+                    'type' => 'text',
+                    'text' => $skillsContext,
+                ]],
+                metadata: ['source' => 'skills_context'],
             );
         }
 

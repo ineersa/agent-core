@@ -313,16 +313,22 @@ definition plus hard safety rules:
 The child system prompt is built from:
 
 1. The agent definition's `instructions` (first, unmodified).
-2. AGENTS.md project context when `inheritAgentsMd: true`, extracted from
-   the parent run's `user-context` message with metadata source
-   `agents_context`.
+2. Parent AGENTS.md / project context when `inheritAgentsMd: true` **or**
+   `inheritProjectContext: true`, copied from the parent run's `user-context`
+   message with metadata source `agents_context` (rendered `<project_context>`
+   blocks). When both flags are `false`, that context is omitted.
 3. The parent system prompt when `systemPromptMode: append`, extracted from
    the parent run's `system` role message.
 
-A synthetic `user-context` message is prepended with the **non-interactive
-contract** (artifact ID, allowed tools, and rules: no interactive questions,
-return dense handoff, stop with explanation if information is missing). The
-task text follows as the `user` message.
+Child `user-context` messages (in order):
+
+1. **Preloaded skills** when the agent definition lists `skills` / `skill`:
+   full `<skill>` bodies resolved from Hatfield skill discovery (not a catalog
+   hint to load the skill later).
+2. **Non-interactive contract** (artifact ID, allowed tools, foreground worker
+   rules).
+
+The task text follows as the `user` message.
 
 ### Known limitations
 

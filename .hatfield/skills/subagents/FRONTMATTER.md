@@ -38,10 +38,10 @@ mcp:
 | --- | --- | --- |
 | `model` | null | Optional override |
 | `thinking` | null | `off`, `minimal`, `low`, `medium`, `high`, `xhigh` |
-| `skills` | `[]` | Setup skills for the child |
+| `skills` | `[]` | Preload full skill bodies into child `user-context` (`skills_context`) |
 | `skill` | — | Alias merged into `skills` (comma-separated OK) |
-| `inheritProjectContext` | true | Project context in child prompt |
-| `inheritAgentsMd` | true | `AGENTS.md` via parent `agents_context` message |
+| `inheritProjectContext` | true | Include parent `agents_context` (`<project_context>`) in child system prompt |
+| `inheritAgentsMd` | true | Same as project context today: parent `agents_context` in child system prompt when true |
 | `systemPromptMode` | `replace` | `replace` or `append` parent system prompt |
 
 ## Launch policy
