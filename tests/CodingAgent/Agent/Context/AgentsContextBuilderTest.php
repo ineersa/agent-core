@@ -74,6 +74,36 @@ final class AgentsContextBuilderTest extends TestCase
         self::assertSame('', $builder->build());
     }
 
+    public function testBuildIncludesRepresentativeParsedAgentNames(): void
+    {
+        $definitions = [
+            new AgentDefinitionDTO(
+                name: 'scout',
+                description: 'Fast codebase recon that returns compressed context for handoff',
+                tools: ['read'],
+                mcp: new McpPolicyDTO(McpAgentModeEnum::None, []),
+            ),
+            new AgentDefinitionDTO(
+                name: 'reviewer',
+                description: 'Senior code reviewer',
+                tools: ['read', 'bash'],
+                mcp: new McpPolicyDTO(McpAgentModeEnum::None, []),
+            ),
+        ];
+
+        $builder = new AgentsContextBuilder(
+            new AgentDefinitionCatalog($definitions),
+            new AgentsConfig(enabled: true),
+            new AgentContextRenderer(),
+        );
+
+        $output = $builder->build();
+
+        self::assertStringContainsString('<name>reviewer</name>', $output);
+        self::assertStringContainsString('<name>scout</name>', $output);
+        self::assertStringNotContainsString('You are a scout', $output);
+    }
+
     public function testBuildReturnsEmptyWhenNoLaunchableAgents(): void
     {
         $builder = new AgentsContextBuilder(

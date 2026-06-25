@@ -136,6 +136,40 @@ final class AgentDefinitionDiscoveryTest extends TestCase
         );
     }
 
+    public function testDiscoversUserAgentsWithCommaSeparatedToolsAndMissingTools(): void
+    {
+        $this->createValidDefinition(
+            $this->homeDir.'/.agents/reviewer.md',
+            'reviewer',
+            ['tools' => 'read, grep, bash'],
+        );
+
+        $scoutDir = $this->homeDir.'/.agents';
+        if (!is_dir($scoutDir)) {
+            mkdir($scoutDir, 0755, true);
+        }
+        file_put_contents(
+            $scoutDir.'/scout.md',
+            "---
+name: scout
+description: Scout agent
+inheritProjectContext: true
+---
+Body
+",
+        );
+
+        $catalog = $this->createDiscovery()->discover();
+
+        self::assertCount(2, $catalog->enabled());
+        $byName = [];
+        foreach ($catalog->enabled() as $definition) {
+            $byName[$definition->name] = $definition;
+        }
+        self::assertSame(['read', 'grep', 'bash'], $byName['reviewer']->tools);
+        self::assertSame(['read'], $byName['scout']->tools);
+    }
+
     public function testDiscoversAgentFromUserHatfieldAgents(): void
     {
         $this->createValidDefinition(
