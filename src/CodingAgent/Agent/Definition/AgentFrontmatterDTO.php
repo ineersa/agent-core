@@ -95,7 +95,7 @@ final class AgentFrontmatterDTO
         public readonly bool $foregroundAllowed = true,
 
         #[Assert\Type('bool', '"parallelAllowed" must be a boolean.')]
-        public readonly bool $parallelAllowed = false,
+        public readonly bool $parallelAllowed = true,
 
         #[Assert\Type('bool', '"disabled" must be a boolean.')]
         public readonly bool $disabled = false,

@@ -230,7 +230,7 @@ final class AgentDefinitionParserTest extends TestCase
         self::assertSame(1, $dto->maxDepth);
         self::assertTrue($dto->backgroundAllowed);
         self::assertTrue($dto->foregroundAllowed);
-        self::assertFalse($dto->parallelAllowed);
+        self::assertTrue($dto->parallelAllowed);
         self::assertFalse($dto->disabled);
         self::assertNull($dto->handoffFormat);
         self::assertSame(McpAgentModeEnum::None, $dto->mcp->mode);
@@ -298,12 +298,24 @@ final class AgentDefinitionParserTest extends TestCase
         self::assertSame(5, $dto->maxDepth);
     }
 
-    public function testParallelAllowedFalseByDefault(): void
+    public function testParallelAllowedTrueByDefault(): void
     {
         $dto = $this->parse([
             'name' => 'solo',
             'description' => 'Solo agent',
             'tools' => ['read'],
+        ]);
+
+        self::assertTrue($dto->parallelAllowed);
+    }
+
+    public function testParallelAllowedExplicitFalse(): void
+    {
+        $dto = $this->parse([
+            'name' => 'solo',
+            'description' => 'Solo agent',
+            'tools' => ['read'],
+            'parallelAllowed' => false,
         ]);
 
         self::assertFalse($dto->parallelAllowed);

@@ -645,12 +645,18 @@ extensions.
 **Default:** The built-in SafeGuard extension is enabled by default
 (`Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension`).
 
+**List replacement:** YAML list values (including `extensions.enabled`) **replace** the
+lower-priority list entirely; they are not merged or appended. If project
+`.hatfield/settings.yaml` sets `extensions.enabled`, include every extension class
+you still want loaded (for example SafeGuard and task-workflow).
+
 **Example:**
 
 ```yaml
 extensions:
   enabled:
-    - Acme\HatfieldTaskWorkflow\TaskWorkflowExtension
+    - Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension
+    - Ineersa\HatfieldExt\TaskWorkflow\TaskWorkflowExtension
 ```
 
 See `.pi/plans/extension-api-phar-plan.md` for the full extension loading

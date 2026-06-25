@@ -48,7 +48,7 @@ You are a scout. Explore the codebase read-only and return dense findings...
 | `maxDepth` | int | no | `1` | Per-agent recursion cap (0–5). |
 | `backgroundAllowed` | bool | no | `true` | Whether background launches are allowed. |
 | `foregroundAllowed` | bool | no | `true` | Whether foreground launches are allowed. |
-| `parallelAllowed` | bool | no | `false` | Whether parallel execution is allowed. |
+| `parallelAllowed` | bool | no | `true` | Whether parallel execution is allowed. Set `false` to opt out. |
 | `disabled` | bool | no | `false` | Disable definition without deleting it. |
 | `handoffFormat` | string\|null | no | `null` | Optional named handoff template. |
 

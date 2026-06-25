@@ -34,7 +34,7 @@ final readonly class AgentDefinitionDTO
         public int $maxDepth = 1,
         public bool $backgroundAllowed = true,
         public bool $foregroundAllowed = true,
-        public bool $parallelAllowed = false,
+        public bool $parallelAllowed = true,
         public bool $disabled = false,
         public ?string $handoffFormat = null,
         public string $instructions = '',
