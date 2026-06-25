@@ -557,6 +557,8 @@ parameters:
     AppAgent:
       - AppConfig
       - AppMarkdown
+      - AppMcpCatalog
+      - AppMcpConfig
       - AppSession
       - AppSkills
       - AppTool

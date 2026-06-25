@@ -37,7 +37,7 @@ You are a scout. Explore the codebase read-only and return dense findings...
 | `name` | string | yes | — | Unique agent name. Lowercase `[a-z][a-z0-9-]{0,47}`. |
 | `description` | string | yes | — | Human-readable description. |
 | `tools` | list\<string\> | no | inherit all parent-available tools | Tool allowlist. When omitted, the child inherits all parent-available model-visible tools at launch (pi subagents parity), except `subagent` is always excluded. Explicit non-empty allowlist still restricts tools. YAML list preferred; comma-separated strings are normalized. Invalid: `tools: []`, blank entries, or whitespace-only comma strings. |
-| `mcp.mode` | enum | no | `none` | MCP tool policy: `none`, `all`, or `specific`. |
+| `tools` MCP selectors | `mcp:` entries in `tools` | no | omitted `tools`: inherit global MCP only; explicit `tools` without `mcp:`: no MCP | Use `mcp:*`, `mcp:-`, `mcp:<exposed_name>`, `mcp:<prefix_>` (e.g. `mcp:websearch_search`, `mcp:websearch_`). Runtime tool names stay `{server}_{tool}` with no `mcp` prefix. Legacy `mcp.mode` / `mcp.tools` frontmatter is ignored for child policy when `tools` uses `mcp:` selectors. |
 | `mcp.tools` | list\<string\> | no | `[]` | Allowed MCP tools when mode is `specific`. |
 | `model` | string\|null | no | `null` | Optional model override. |
 | `thinking` | string\|null | no | `null` | Reasoning/thinking override (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`). |

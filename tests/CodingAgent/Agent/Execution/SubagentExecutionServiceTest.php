@@ -27,7 +27,11 @@ use Ineersa\CodingAgent\Agent\Definition\McpAgentModeEnum;
 use Ineersa\CodingAgent\Agent\Definition\McpPolicyDTO;
 use Ineersa\CodingAgent\Agent\Execution\AgentDepthGuard;
 use Ineersa\CodingAgent\Agent\Execution\AgentPromptBuilder;
+use Ineersa\CodingAgent\Agent\Execution\AgentMcpToolsResolver;
 use Ineersa\CodingAgent\Agent\Execution\AgentToolPolicyResolver;
+use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
+use Ineersa\CodingAgent\Mcp\Config\McpConfigDTO;
+use Ineersa\CodingAgent\Mcp\Config\McpConfigLoader;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
@@ -88,7 +92,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'agentRunner' => $agentRunner,
             'runStore' => $runStore,
             'parentRunStore' => $parentRunStore,
-            'policyResolver' => new AgentToolPolicyResolver($registryMock),
+            'policyResolver' => new AgentToolPolicyResolver($registryMock, $this->emptyMcpToolsResolver()),
         ]);
 
         $service->execute('parent-inherit-tools', 'worker-like', 'Do work');
@@ -1119,12 +1123,23 @@ CHILD_SKILL_BODY_UNIQUE",
     /**
      * @param array<string, mixed> $overrides
      */
+
     private function defaultPolicyResolver(): AgentToolPolicyResolver
     {
         $registry = $this->createStub(ToolRegistryInterface::class);
         $registry->method('activeToolNames')->willReturn(['read']);
 
-        return new AgentToolPolicyResolver($registry);
+        return new AgentToolPolicyResolver($registry, $this->emptyMcpToolsResolver());
+    }
+
+    private function emptyMcpToolsResolver(): AgentMcpToolsResolver
+    {
+        $catalogStore = $this->createStub(McpToolCatalogStoreInterface::class);
+        $catalogStore->method('read')->willReturn(null);
+        $loader = $this->createStub(McpConfigLoader::class);
+        $loader->method('load')->willReturn(McpConfigDTO::fromServers([]));
+
+        return new AgentMcpToolsResolver($catalogStore, $loader);
     }
 
 

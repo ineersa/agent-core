@@ -803,3 +803,13 @@ services:
   Ineersa\CodingAgent\Agent\Artifact\ChildAwareEventStore:
     arguments:
       $parentStore: '@Ineersa\CodingAgent\Session\SessionRunEventStore'
+
+  Ineersa\CodingAgent\Agent\Execution\AgentMcpToolsResolver:
+    arguments:
+      $catalogStore: '@Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface'
+      $configLoader: '@Ineersa\CodingAgent\Mcp\Config\McpConfigLoader'
+
+  Ineersa\CodingAgent\Agent\Execution\AgentToolPolicyResolver:
+    arguments:
+      $toolRegistry: '@Ineersa\CodingAgent\Tool\ToolRegistryInterface'
+      $mcpToolsResolver: '@Ineersa\CodingAgent\Agent\Execution\AgentMcpToolsResolver'

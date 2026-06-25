@@ -99,7 +99,7 @@ final class SubagentExecutionService
         }
 
         // 3. Resolve tool/MCP policy.
-        $policy = $this->policyResolver->resolve($definition);
+        $policy = $this->policyResolver->resolve($definition, $parentRunId);
         $allowedTools = $policy['tools'];
 
         // 4. Create artifact ID and child run ID (RFC 4122).
@@ -342,7 +342,7 @@ final class SubagentExecutionService
                 );
                 $this->childRunDirectory->register($entry);
 
-                $policy = $this->policyResolver->resolve($launch['definition']);
+                $policy = $this->policyResolver->resolve($launch['definition'], $parentRunId);
                 $allowedTools = $policy['tools'];
 
                 $launchContext = $this->resolveChildLaunchContext($parentRunId, $launch['definition']);

@@ -22,11 +22,14 @@ Invalid explicit values are rejected: empty list `tools: []`, blank entries, or 
 ```yaml
 tools:
   - read
-  - ide_search_text
-mcp:
-  mode: none          # none | all | specific
-  tools: []           # when mode is specific
+  - mcp:context7_resolve   # one exposed MCP tool (runtime name, no mcp prefix)
+  - mcp:websearch_         # all tools whose exposed names start with websearch_
+  - mcp:*                  # all MCP tools including specific servers
+  - mcp:-                  # no MCP tools
 ```
+
+Omitted `tools`: inherit parent non-MCP tools + MCP from servers marked `availability: all` in `.hatfield/mcp.json`.
+Explicit `tools` without any `mcp:` entry: non-MCP allowlist only (no MCP).
 
 - **`subagent`** is never available inside child runs.
 - **`mcp.mode: specific`** merges listed MCP tool names into the child allowlist.
