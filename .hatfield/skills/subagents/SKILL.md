@@ -54,7 +54,7 @@ Parent sessions also get **`<available_agents>`** (name + description) in contex
 | `skills` / `skill` | `skill:` merges into `skills`; comma-separated strings are split. |
 | MCP `mode: none` | Default. Child MCP sessions are parent-scoped; `all` does not add MCP tools to the child allowlist the way `specific` does. |
 | Parallel cap | More than `max_agents` tasks → fail fast; split across multiple `subagent` calls. |
-| Subagent wait timeout | `agents.subagent_tool_timeout_seconds` (default **1800** s) — internal poll deadline for foreground child runs; not ToolExecutor generic timeout. |
+| Subagent wait timeout | `agents.subagent_tool_timeout_seconds` (default **1800** s, min **60**; below min fails config load) — internal poll deadline for foreground child runs; not ToolExecutor generic timeout. |
 
 ## Workflows
 

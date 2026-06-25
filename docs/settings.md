@@ -616,8 +616,8 @@ deadline), not by the generic `tools.execution.timeout_seconds` / ToolExecutor
 post-hoc timeout. The `subagent` tool definition sets **no** ToolExecutor cap so
 long child work is not cut off at the generic tool layer.
 
-**Default:** `1800` (30 minutes). Values must be a positive integer; the runtime
-enforces at least 60 seconds.
+**Default:** `1800` (30 minutes). Must be an integer **>= 60**. Values below 60
+are rejected at config load with an error (not silently adjusted).
 
 Set higher when child agents routinely run multi-minute reviews or large
 codebase scouts. Parent cancellation still ends waiting children promptly.

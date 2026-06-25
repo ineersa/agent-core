@@ -144,6 +144,29 @@ final class AgentsConfigTest extends TestCase
         self::assertSame($agentsConfig, $result);
     }
 
+    public function testFromRawRejectsSubagentToolTimeoutBelowMinimum(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('below the minimum of 60');
+
+        AgentsConfig::fromRaw(['subagent_tool_timeout_seconds' => 30]);
+    }
+
+    public function testFromRawRejectsNonIntegerSubagentToolTimeout(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('agents.subagent_tool_timeout_seconds');
+
+        AgentsConfig::fromRaw(['subagent_tool_timeout_seconds' => '1200']);
+    }
+
+    public function testFromRawAcceptsMinimumSubagentToolTimeout(): void
+    {
+        $config = AgentsConfig::fromRaw(['subagent_tool_timeout_seconds' => 60]);
+
+        self::assertSame(60, $config->subagentToolTimeoutSeconds);
+    }
+
     public function testFromRawWithSubagentToolTimeoutSeconds(): void
     {
         $config = AgentsConfig::fromRaw(['subagent_tool_timeout_seconds' => 600]);

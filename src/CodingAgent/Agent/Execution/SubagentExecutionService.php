@@ -1115,6 +1115,6 @@ final class SubagentExecutionService
      */
     private function timeoutSeconds(): int
     {
-        return max(60, $this->agentsConfig->subagentToolTimeoutSeconds);
+        return $this->agentsConfig->subagentToolTimeoutSeconds;
     }
 }
