@@ -31,7 +31,7 @@ final class BashBackgroundAcceptE2eTest extends TestCase
 
     protected function tearDown(): void
     {
-        if (null !== $this->backgroundedPid && $this->backgroundedPid > 0) {
+        if (null !== $this->backgroundedPid && $this->backgroundedPid > 0 && \function_exists('posix_kill')) {
             @posix_kill($this->backgroundedPid, \SIGTERM);
         }
         $this->tearDownBashBackgroundE2e();
@@ -67,7 +67,7 @@ final class BashBackgroundAcceptE2eTest extends TestCase
             $this->tmux->waitForCallback(
                 $pane,
                 function (string $cap): bool {
-                    if (!str_contains($cap, 'Command moved to background') && !str_contains($cap, 'moved to background')) {
+                    if (!str_contains($cap, 'moved to background')) {
                         return false;
                     }
                     if (preg_match('/PID:\s*(\d+)/', $cap, $m)) {

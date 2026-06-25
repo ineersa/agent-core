@@ -516,9 +516,10 @@ from tying up a tool worker with unbounded execution time.
 
 ### `tools.bash.background_prompt_threshold_seconds`
 
-Elapsed seconds before the bash tool offers to move the command to
-background. The default adapter declines (TOOLS-09); a future TUI
-integration (TOOLS-09B) will wire this to a user question.
+Elapsed seconds before the bash tool shows a TUI confirm prompt to move a
+still-running command to the background. Choosing Yes detaches the process and
+registers it for `bg_status`; No keeps foreground supervision until timeout or
+completion.
 
 **Default:** `15`
 
