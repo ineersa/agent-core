@@ -36,7 +36,7 @@ You are a scout. Explore the codebase read-only and return dense findings...
 |---|---|---|---|---|
 | `name` | string | yes | — | Unique agent name. Lowercase `[a-z][a-z0-9-]{0,47}`. |
 | `description` | string | yes | — | Human-readable description. |
-| `tools` | list\<string\> | yes | — | Explicit tool allowlist. |
+| `tools` | list\<string\> | no | `['read']` | Tool allowlist. When omitted, parser defaults to `read` only; an explicit non-empty allowlist is recommended. YAML list preferred; comma-separated strings are normalized. Invalid: `tools: []`, blank entries, or whitespace-only comma strings. |
 | `mcp.mode` | enum | no | `none` | MCP tool policy: `none`, `all`, or `specific`. |
 | `mcp.tools` | list\<string\> | no | `[]` | Allowed MCP tools when mode is `specific`. |
 | `model` | string\|null | no | `null` | Optional model override. |
