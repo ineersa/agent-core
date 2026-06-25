@@ -88,7 +88,6 @@ final class BashToolTest extends IsolatedKernelTestCase
 
     /* ── Successful completion ── */
 
-
     public function testSuccessfulCommand(): void
     {
         $this->createManager();
@@ -537,6 +536,7 @@ final class BashToolTest extends IsolatedKernelTestCase
 
         $this->assertSame('bash', $def->name);
         $this->assertSame($tool, $def->handler);
+        self::assertSame(ToolExecutionMode::Parallel, $def->executionMode);
 
         // Schema must have 'command' required
         $this->assertContains('command', $def->parametersJsonSchema['required'] ?? []);

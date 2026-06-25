@@ -172,6 +172,49 @@ final class AnswerToolQuestionHandlerTest extends TestCase
         self::assertFalse($this->spyStore->lastAnswer);
     }
 
+
+    public function testStoredConfirmKindWithNullSchemaAcceptsBooleanFalse(): void
+    {
+        $stored = \Ineersa\CodingAgent\Entity\ToolQuestion::create(
+            requestId: 'bash_bg_run-confirm-null',
+            runId: 'run-confirm',
+            toolCallId: 'tc1',
+            toolName: 'bash',
+            pid: 1,
+            logPath: '/tmp/log',
+            commandPreview: 'sleep 15',
+            prompt: 'Move it to the background?',
+            kind: 'confirm',
+            schema: null,
+        );
+        $this->spyStore->storedByRequestId['bash_bg_run-confirm-null'] = $stored;
+
+        $handler = new AnswerToolQuestionHandler($this->spyStore);
+
+        $emittedEvents = [];
+        $emit = static function (RuntimeEvent $event) use (&$emittedEvents): void {
+            $emittedEvents[] = $event;
+        };
+
+        $command = new RuntimeCommand(
+            id: 'cmd_confirm_null',
+            type: 'answer_tool_question',
+            runId: 'run-confirm',
+            payload: [
+                'request_id' => 'bash_bg_run-confirm-null',
+                'answer' => false,
+            ],
+        );
+
+        $event = new ControllerCommandEvent($command, $emit);
+        $handler($event);
+
+        self::assertSame([], $emittedEvents);
+        self::assertSame('bash_bg_run-confirm-null', $this->spyStore->lastRequestId);
+        self::assertFalse($this->spyStore->lastAnswer);
+        self::assertNull($this->spyStore->lastAnswerText);
+    }
+
     public function testEmitsProtocolErrorOnStoreFailure(): void
     {
         $this->spyStore->throwOnAnswer = new \RuntimeException('DB connection lost');
@@ -216,6 +259,11 @@ final class SpyToolQuestionStore implements \Ineersa\CodingAgent\Tool\ToolQuesti
     public ?string $lastRequestId = null;
     public ?bool $lastAnswer = null;
 
+    /** @var array<string, \Ineersa\CodingAgent\Entity\ToolQuestion> */
+    public array $storedByRequestId = [];
+
+    public ?string $lastAnswerText = null;
+
     /**
      * When set, answer() throws this exception instead of recording.
      */
@@ -240,7 +288,7 @@ final class SpyToolQuestionStore implements \Ineersa\CodingAgent\Tool\ToolQuesti
 
     public function findByRequestId(string $requestId): ?\Ineersa\CodingAgent\Entity\ToolQuestion
     {
-        return null;
+        return $this->storedByRequestId[$requestId] ?? null;
     }
 
     public function markEmitted(string $requestId): void
@@ -263,6 +311,9 @@ final class SpyToolQuestionStore implements \Ineersa\CodingAgent\Tool\ToolQuesti
 
     public function answerWithText(string $requestId, string $answer): bool
     {
+        $this->lastRequestId = $requestId;
+        $this->lastAnswerText = $answer;
+
         return true;
     }
 

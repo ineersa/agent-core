@@ -312,8 +312,8 @@ final class TickPollListener implements TuiListenerRegistrar
         $kind = (string) ($p['kind'] ?? '');
         $rawSchema = $p['schema'] ?? null;
         $schema = \is_string($rawSchema)
-            ? (json_decode($rawSchema, true) ?? ['type' => 'boolean'])
-            : (\is_array($rawSchema) ? $rawSchema : ['type' => 'boolean']);
+            ? (json_decode($rawSchema, true) ?? [])
+            : (\is_array($rawSchema) ? $rawSchema : []);
 
         $hasEnum = isset($schema['enum']) && \is_array($schema['enum']) && [] !== $schema['enum'];
         $isBoolean = ($schema['type'] ?? '') === 'boolean';

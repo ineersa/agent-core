@@ -21,14 +21,15 @@ use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
  * This handler writes the answer to the ToolQuestionStore so the blocked
  * tool worker can pick it up.
  *
- * The handler routes the answer by the STORED question's schema type:
- * - boolean schema (type=boolean) -> stores the boolean answer (legacy confirm path)
- * - string/enum schema -> stores the string answer via answerWithText
+ * The handler routes the answer by the stored question's schema type, with
+ * kind=confirm as a fallback when schema is missing or invalid:
+ * - enum schema -> string answer via answerWithText
+ * - boolean schema or kind=confirm -> boolean answer via answer()
+ * - otherwise -> string answer via answerWithText
  *
- * This is schema-driven, not kind-driven — the handler contains ZERO
- * references to any specific extension. The extension supplies the
- * schema via ToolCallDecisionDTO::requireApproval(); the infra routes
- * generically.
+ * Explicit schema from the extension (via ToolCallDecisionDTO::requireApproval())
+ * is primary; kind=confirm covers malformed/missing confirm schema without
+ * rejecting boolean false as an empty string.
  */
 #[AsEventListener(event: ControllerCommandEvent::class)]
 final readonly class AnswerToolQuestionHandler
@@ -72,9 +73,7 @@ final readonly class AnswerToolQuestionHandler
             return;
         }
 
-        // Route by the stored question's schema type — no kind-based routing.
-        // The extension's schema (supplied via requireApproval) determines
-        // whether the answer is stored as boolean or string.
+        // Route by stored schema; kind=confirm is fallback when schema is absent/invalid.
         $stored = $this->store->findByRequestId($requestId);
 
         if (null === $stored) {
@@ -96,16 +95,21 @@ final readonly class AnswerToolQuestionHandler
         $schema = $this->parseSchema($stored->schema);
         $isEnum = isset($schema['enum']) && \is_array($schema['enum']) && [] !== $schema['enum'];
         $isBoolean = ($schema['type'] ?? '') === 'boolean';
+        $kind = $stored->kind;
 
-        if ($isEnum || !$isBoolean) {
-            // Enum/string schema → store as text answer
+        if ($isEnum) {
             $this->handleStringAnswer($event, $requestId, $command);
 
             return;
         }
 
-        // Boolean schema → store as boolean answer
-        $this->handleBooleanAnswer($event, $requestId, $command);
+        if ($isBoolean || 'confirm' === $kind) {
+            $this->handleBooleanAnswer($event, $requestId, $command);
+
+            return;
+        }
+
+        $this->handleStringAnswer($event, $requestId, $command);
     }
 
     private function handleBooleanAnswer(ControllerCommandEvent $event, string $requestId, RuntimeCommand $command): void

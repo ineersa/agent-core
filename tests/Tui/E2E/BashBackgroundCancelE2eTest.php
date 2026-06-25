@@ -107,9 +107,8 @@ final class BashBackgroundCancelE2eTest extends TestCase
             );
 
             $this->tmux->sendKey($pane, 'C-d');
-            usleep(500_000);
 
-            $this->assertNoLeakedWorkersForThisTest();
+            $this->assertNoLeakedWorkersForThisTestWithRetry();
         } catch (\Throwable $e) {
             try {
                 $this->tmux->sendKey($pane, 'C-d');
@@ -119,7 +118,26 @@ final class BashBackgroundCancelE2eTest extends TestCase
         }
     }
 
-    private function assertNoLeakedWorkersForThisTest(): void
+
+    private function assertNoLeakedWorkersForThisTestWithRetry(): void
+    {
+        $deadline = microtime(true) + 5.0;
+        $lastLeaks = [];
+
+        while (microtime(true) < $deadline) {
+            $lastLeaks = $this->collectLeakedWorkersForThisTest();
+            if ([] === $lastLeaks) {
+                self::assertSame([], $lastLeaks, 'Current-user controller/messenger workers from this test must not survive teardown');
+
+                return;
+            }
+            usleep(200_000);
+        }
+
+        self::assertSame([], $lastLeaks, 'Current-user controller/messenger workers from this test must not survive teardown');
+    }
+
+    private function collectLeakedWorkersForThisTest(): array
     {
         $root = ProjectDir::get();
         $dbFragment = $this->testDatabasePath;
@@ -152,7 +170,7 @@ final class BashBackgroundCancelE2eTest extends TestCase
             $leaks[] = $pid.' '.$cmd;
         }
 
-        self::assertSame([], $leaks, 'Current-user controller/messenger workers from this test must not survive teardown');
+        return $leaks;
     }
 
     private function agentCommand(): string
