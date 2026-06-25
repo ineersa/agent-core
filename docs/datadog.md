@@ -68,6 +68,11 @@ HATFIELD_DATADOG=1 castor run:agent   # force-enable if ddtrace is loaded
 HATFIELD_DATADOG=0 castor run:agent   # force-disable
 ```
 
+Bubblewrap: when `~/bin/pi-bwrap` is available, `castor run:agent` and `run:agent-capture` re-exec Castor under it, then launch the TUI in the current terminal inside the sandbox. Use `HATFIELD_BWRAP=0 castor run:agent` for host launch (Datadog/troubleshooting). `run:agent-test` stays host tmux and is not auto-wrapped.
+
+Optional: `HATFIELD_CASTOR_EXECUTABLE` overrides which Castor binary is used when auto-wrap re-execs (see `docs/tui-testing.md`).
+
+
 When enabled, the launcher sets:
 
 - `DD_TRACE_ENABLED=1`
