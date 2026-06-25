@@ -9,9 +9,15 @@ declare(strict_types=1);
  * manual test inspection.  They do not require the test LLM
  * endpoint by default (run:agent uses the configured provider;
  * run:agent-test forces the local test model).
+ *
+ * When ~/bin/pi-bwrap exists (override: HATFIELD_PI_BWRAP), each task re-execs
+ * itself under Bubblewrap before tmux unless HATFIELD_BWRAP=0 or
+ * HATFIELD_INSIDE_PI_BWRAP=1 (set automatically after re-exec).
  */
 
 use Castor\Attribute\AsTask;
+
+use function CastorTasks\maybe_reexec_castor_task_under_pi_bwrap;
 
 require_once __DIR__.'/../vendor/autoload.php';
 require_once __DIR__.'/helpers.php';
@@ -32,36 +38,13 @@ require_once __DIR__.'/shared.php';
 #[AsTask(name: 'run:agent', description: 'Launch the agent TUI in a tmux session (hatfield-agent)')]
 function run_agent(): void
 {
-    check_tmux();
+    maybe_reexec_castor_task_under_pi_bwrap('run:agent');
 
-    $root = realpath(__DIR__.'/..');
-    $session = 'hatfield-agent';
-    $insideTmux = false !== getenv('TMUX');
-
-    $innerCmd = sprintf(
-        'cd %s && exec %s php bin/console agent',
-        escapeshellarg($root),
-        datadog_env_command(datadog_auto_enabled()),
+    launch_agent_tmux_session(
+        sessionName: 'hatfield-agent',
+        windowTitle: 'hatfield-agent',
+        innerShellCommand: build_agent_console_inner_command(datadog_env_command(datadog_auto_enabled())),
     );
-
-    if ($insideTmux) {
-        shell_exec(sprintf(
-            'tmux new-window -n %s bash -c %s',
-            escapeshellarg($session),
-            escapeshellarg($innerCmd)
-        ));
-        echo "Created tmux window '{$session}'.\n";
-    } else {
-        $cmd = sprintf(
-            'tmux new-session -A -s %s bash -lc %s',
-            escapeshellarg($session),
-            escapeshellarg($innerCmd)
-        );
-        passthru($cmd, $exitCode);
-        if (0 !== $exitCode) {
-            throw new RuntimeException(sprintf('Agent session exited with code %d.', $exitCode));
-        }
-    }
 }
 
 /**
@@ -72,36 +55,16 @@ function run_agent(): void
 #[AsTask(name: 'run:agent-test', description: 'Run the agent in a tmux window using the local test model')]
 function run_agent_test(): void
 {
-    check_tmux();
+    maybe_reexec_castor_task_under_pi_bwrap('run:agent-test');
 
-    $root = realpath(__DIR__.'/..');
-    $session = 'hatfield-agent-test';
-    $insideTmux = false !== getenv('TMUX');
-
-    $innerCmd = sprintf(
-        'cd %s && exec %s php bin/console agent --model=llama_cpp_test/test',
-        escapeshellarg($root),
-        datadog_env_command(false),
+    launch_agent_tmux_session(
+        sessionName: 'hatfield-agent-test',
+        windowTitle: 'hatfield-agent-test',
+        innerShellCommand: build_agent_console_inner_command(
+            datadog_env_command(false),
+            'php bin/console agent --model=llama_cpp_test/test',
+        ),
     );
-
-    if ($insideTmux) {
-        shell_exec(sprintf(
-            'tmux new-window -n %s bash -c %s',
-            escapeshellarg($session),
-            escapeshellarg($innerCmd)
-        ));
-        echo "Created tmux window '{$session}'.\n";
-    } else {
-        $cmd = sprintf(
-            'tmux new-session -A -s %s bash -lc %s',
-            escapeshellarg($session),
-            escapeshellarg($innerCmd)
-        );
-        passthru($cmd, $exitCode);
-        if (0 !== $exitCode) {
-            throw new RuntimeException(sprintf('Agent test session exited with code %d.', $exitCode));
-        }
-    }
 }
 
 /**
@@ -121,11 +84,12 @@ function run_agent_test(): void
 #[AsTask(name: 'run:agent-capture', description: 'Launch the agent TUI with raw LLM stream capture enabled')]
 function run_agent_capture(): void
 {
-    check_tmux();
+    maybe_reexec_castor_task_under_pi_bwrap('run:agent-capture');
 
     $root = realpath(__DIR__.'/..');
-    $session = 'hatfield-agent-capture';
-    $insideTmux = false !== getenv('TMUX');
+    if (false === $root) {
+        throw new RuntimeException('Unable to resolve project root.');
+    }
 
     $ts = date('Ymd-His');
     $capturePath = sprintf('%s/var/tmp/llm-raw-stream-capture-%s-%s.jsonl', $root, $ts, bin2hex(random_bytes(4)));
@@ -135,29 +99,15 @@ function run_agent_capture(): void
     echo "[raw-capture] Treat as sensitive. Delete or redact before sharing.\n";
     echo "\n";
 
-    $innerCmd = sprintf(
-        'cd %s && export HATFIELD_LLM_RAW_STREAM_CAPTURE=1 && export HATFIELD_LLM_RAW_STREAM_CAPTURE_PATH=%s && exec %s php bin/console agent',
-        escapeshellarg($root),
+    $inner = sprintf(
+        'export HATFIELD_LLM_RAW_STREAM_CAPTURE=1 && export HATFIELD_LLM_RAW_STREAM_CAPTURE_PATH=%s && %s',
         escapeshellarg($capturePath),
-        datadog_env_command(datadog_auto_enabled()),
+        build_agent_console_inner_command(datadog_env_command(datadog_auto_enabled())),
     );
 
-    if ($insideTmux) {
-        shell_exec(sprintf(
-            'tmux new-window -n %s bash -c %s',
-            escapeshellarg($session),
-            escapeshellarg($innerCmd)
-        ));
-        echo "Created tmux window '{$session}'.\n";
-    } else {
-        $cmd = sprintf(
-            'tmux new-session -A -s %s bash -lc %s',
-            escapeshellarg($session),
-            escapeshellarg($innerCmd)
-        );
-        passthru($cmd, $exitCode);
-        if (0 !== $exitCode) {
-            throw new RuntimeException(sprintf('Agent session exited with code %d.', $exitCode));
-        }
-    }
+    launch_agent_tmux_session(
+        sessionName: 'hatfield-agent-capture',
+        windowTitle: 'hatfield-agent-capture',
+        innerShellCommand: $inner,
+    );
 }

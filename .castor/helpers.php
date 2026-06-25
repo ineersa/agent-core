@@ -33,6 +33,111 @@ function project_root_dir(): string
 }
 
 /**
+ * Default path to the personal Bubblewrap launcher (~/.local bin layout).
+ */
+function default_pi_bwrap_script_path(): string
+{
+    $home = getenv('HOME');
+    if (false === $home || '' === $home) {
+        return '/bin/pi-bwrap';
+    }
+
+    return rtrim($home, '/').'/bin/pi-bwrap';
+}
+
+/**
+ * Resolved pi-bwrap executable path (override with HATFIELD_PI_BWRAP).
+ */
+function pi_bwrap_script_path(): string
+{
+    $override = getenv('HATFIELD_PI_BWRAP');
+    if (false !== $override && '' !== trim($override)) {
+        return $override;
+    }
+
+    return default_pi_bwrap_script_path();
+}
+
+/**
+ * Whether agent-launch Castor tasks should skip Bubblewrap (HATFIELD_BWRAP=0).
+ */
+function pi_bwrap_disabled_by_env(): bool
+{
+    $flag = getenv('HATFIELD_BWRAP');
+    if (false === $flag) {
+        return false;
+    }
+
+    return \in_array(strtolower(trim($flag)), ['0', 'false', 'no', 'off'], true);
+}
+
+/**
+ * True when the current Castor process was re-execed under pi-bwrap (recursion guard).
+ */
+function pi_bwrap_already_inside(): bool
+{
+    $flag = getenv('HATFIELD_INSIDE_PI_BWRAP');
+    if (false === $flag) {
+        return false;
+    }
+
+    return \in_array(strtolower(trim($flag)), ['1', 'true', 'yes', 'on'], true);
+}
+
+/**
+ * Whether ~/bin/pi-bwrap (or override) exists and is executable.
+ */
+function pi_bwrap_script_available(): bool
+{
+    $path = pi_bwrap_script_path();
+
+    return is_file($path) && is_executable($path);
+}
+
+/**
+ * Whether run:agent* tasks should re-exec under pi-bwrap before launching tmux.
+ */
+function should_auto_wrap_agent_castor_task(): bool
+{
+    if (pi_bwrap_disabled_by_env() || pi_bwrap_already_inside()) {
+        return false;
+    }
+
+    return pi_bwrap_script_available();
+}
+
+/**
+ * Re-exec the current Castor task under pi-bwrap when should_auto_wrap_agent_castor_task().
+ *
+ * Sets HATFIELD_INSIDE_PI_BWRAP=1 in the child via env(1) so nested calls do not wrap again.
+ * Exits with the child status when re-exec happens.
+ */
+function maybe_reexec_castor_task_under_pi_bwrap(string $taskName): void
+{
+    if (!should_auto_wrap_agent_castor_task()) {
+        return;
+    }
+
+    $root = project_root_dir();
+    $wrapper = pi_bwrap_script_path();
+    $castorScript = $root.'/castor.php';
+    if (!is_file($castorScript)) {
+        return;
+    }
+
+    $inner = \sprintf(
+        'env HATFIELD_INSIDE_PI_BWRAP=1 %s %s %s',
+        escapeshellarg(\PHP_BINARY),
+        escapeshellarg($castorScript),
+        escapeshellarg($taskName),
+    );
+
+    $command = \sprintf('%s %s', escapeshellarg($wrapper), escapeshellarg($inner));
+    passthru($command, $exitCode);
+    exit((int) $exitCode);
+}
+
+/**
  * Initialize per-invocation QA resources for castor check().
  *
  * Sets process env via putenv() so command builders and child shells inherit

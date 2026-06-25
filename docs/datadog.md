@@ -68,6 +68,9 @@ HATFIELD_DATADOG=1 castor run:agent   # force-enable if ddtrace is loaded
 HATFIELD_DATADOG=0 castor run:agent   # force-disable
 ```
 
+Bubblewrap: when `~/bin/pi-bwrap` is available, `castor run:agent` re-execs under it before tmux (same as other `run:agent*` tasks). Use `HATFIELD_BWRAP=0 castor run:agent` to launch on the host for Datadog/tmux troubleshooting.
+
+
 When enabled, the launcher sets:
 
 - `DD_TRACE_ENABLED=1`

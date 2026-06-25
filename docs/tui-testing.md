@@ -10,6 +10,21 @@ castor run:agent           # Launch interactive TUI in tmux
 castor run:agent-test      # Deterministic test session with snapshot
 ```
 
+
+## Bubblewrap auto-wrap (`run:agent*`)
+
+When `~/bin/pi-bwrap` exists and is executable, `castor run:agent`, `run:agent-test`, and `run:agent-capture` re-exec themselves under that wrapper before starting tmux. Datadog flags (`HATFIELD_DATADOG`) are unchanged; only the Castor launcher process is sandboxed.
+
+| Variable | Effect |
+| --- | --- |
+| `HATFIELD_BWRAP=0` | Skip Bubblewrap (host launch, troubleshooting) |
+| `HATFIELD_PI_BWRAP=/path/to/script` | Override wrapper path (default `~/bin/pi-bwrap`) |
+| `HATFIELD_INSIDE_PI_BWRAP=1` | Set automatically after re-exec; prevents recursive wrapping |
+
+`castor test:tui` does **not** use this auto-wrap (PHPUnit/tmux harness runs on the host). The QA gate still requires host tmux.
+
+Empirical checks on the stock `~/bin/pi-bwrap` script: writes under unshared `$HOME` paths fail; writes under the project tree (via `~/projects` bind) succeed; detached `tmux` sessions work. If interactive attach fails, relax `--unshare-all` or `/dev` in the personal script while keeping read-only `$HOME`.
+
 ## `castor run:agent`
 
 Launches the agent TUI in tmux. The TUI blocks until the user exits

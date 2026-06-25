@@ -155,6 +155,55 @@ function check_tmux(): void
 }
 
 /**
+ * Shell command run inside tmux for `php bin/console agent` (cd project root, optional env prefix).
+ */
+function build_agent_console_inner_command(string $envPrefix, string $agentInvocation = 'php bin/console agent'): string
+{
+    $root = realpath(__DIR__.'/..');
+    if (false === $root) {
+        throw new RuntimeException('Unable to resolve project root.');
+    }
+
+    return sprintf(
+        'cd %s && exec %s %s',
+        escapeshellarg($root),
+        $envPrefix,
+        $agentInvocation,
+    );
+}
+
+/**
+ * Launch the agent TUI in tmux (new window when already inside tmux, else new/attach session).
+ */
+function launch_agent_tmux_session(string $sessionName, string $windowTitle, string $innerShellCommand): void
+{
+    check_tmux();
+
+    $insideTmux = false !== getenv('TMUX');
+
+    if ($insideTmux) {
+        shell_exec(sprintf(
+            'tmux new-window -n %s bash -c %s',
+            escapeshellarg($windowTitle),
+            escapeshellarg($innerShellCommand),
+        ));
+        echo "Created tmux window '{$windowTitle}'.\n";
+
+        return;
+    }
+
+    $cmd = sprintf(
+        'tmux new-session -A -s %s bash -lc %s',
+        escapeshellarg($sessionName),
+        escapeshellarg($innerShellCommand),
+    );
+    passthru($cmd, $exitCode);
+    if (0 !== $exitCode) {
+        throw new RuntimeException(sprintf('Agent session exited with code %d.', $exitCode));
+    }
+}
+
+/**
  * Return a project-root-relative path for absolute paths under the
  * project root; return the input unchanged otherwise.
  */
