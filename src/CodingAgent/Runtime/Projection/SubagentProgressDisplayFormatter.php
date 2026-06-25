@@ -29,14 +29,50 @@ final class SubagentProgressDisplayFormatter
      */
     private function formatSingle(array $progress): string
     {
+        return implode("\n", $this->formatSingleWidgetLines($progress, null));
+    }
+
+    /**
+     * @param array<string, mixed> $progress
+     *
+     * @return list<string>
+     */
+    private function formatSingleWidgetLines(array $progress, ?int $childIndex): array
+    {
         $agentName = $this->string($progress, 'agent_name', 'subagent');
         $status = $this->string($progress, 'status', 'running');
+
+        $lines = [];
+        if (null === $childIndex) {
+            $lines[] = \sprintf('subagent %s', $agentName);
+        } else {
+            $lines[] = \sprintf('#%d subagent %s', $childIndex, $agentName);
+        }
+
+        $lines = array_merge($lines, $this->formatSingleWidgetBodyLines($progress, $agentName, $status));
+
+        if (null === $childIndex && \in_array($status, ['completed', 'failed', 'cancelled'], true)) {
+            $lines[] = $this->retrieveGuidance($status);
+        }
+
+        return $lines;
+    }
+
+    /**
+     * Shared body for single and per-child parallel widgets (header line excluded).
+     *
+     * @param array<string, mixed> $progress
+     *
+     * @return list<string>
+     */
+    private function formatSingleWidgetBodyLines(array $progress, string $agentName, string $status): array
+    {
         $artifactId = $this->string($progress, 'artifact_id', '');
         $task = $this->string($progress, 'task_summary', '');
         $turn = $this->intOrNull($progress, 'turn_no');
         $elapsed = $this->formatElapsedHuman($progress);
 
-        $lines = [\sprintf('subagent %s', $agentName)];
+        $lines = [];
 
         $summary = $this->formatRunningSummary($status, $agentName, $progress, $elapsed, $turn);
         if ('' !== $summary) {
@@ -76,11 +112,7 @@ final class SubagentProgressDisplayFormatter
             $lines[] = $footer;
         }
 
-        if (\in_array($status, ['completed', 'failed', 'cancelled'], true)) {
-            $lines[] = $this->retrieveGuidance($status);
-        }
-
-        return implode("\n", $lines);
+        return $lines;
     }
 
     /**
@@ -90,77 +122,35 @@ final class SubagentProgressDisplayFormatter
     {
         $status = $this->string($progress, 'status', 'running');
         $completed = $this->intOrNull($progress, 'completed_count') ?? 0;
-        $total = $this->intOrNull($progress, 'total_count') ?? 0;
-        $elapsed = $this->formatElapsedHuman($progress);
+        $total = max($this->intOrNull($progress, 'total_count') ?? 0, 1);
 
-        $lines = ['subagent parallel'];
-        $header = \sprintf('running %d/%d', $completed, max($total, 1));
-        $toolCount = $this->intOrNull($progress, 'tool_count');
-        $tok = $this->formatTokenCompact($progress);
-        $parts = [$header];
-        if (null !== $toolCount && $toolCount > 0) {
-            $parts[] = \sprintf('%d tools', $toolCount);
+        if ('running' === $status) {
+            $lines = [\sprintf('parallel subagents running (%d/%d completed)', $completed, $total)];
+        } else {
+            $lines = [\sprintf('parallel subagents (%d/%d completed)', $completed, $total)];
         }
-        if (null !== $tok) {
-            $parts[] = $tok;
-        }
-        if (null !== $elapsed) {
-            $parts[] = $elapsed;
-        }
-        $lines[] = implode(', ', $parts);
 
         $children = $progress['children'] ?? [];
         if (!\is_array($children)) {
             $children = [];
         }
 
+        $sections = [];
         foreach ($children as $child) {
             if (!\is_array($child)) {
                 continue;
             }
-            $label = $this->string($child, 'label', '');
-            $agentName = $this->string($child, 'agent_name', 'agent');
-            $childStatus = $this->string($child, 'status', 'running');
-            $artifactId = $this->string($child, 'artifact_id', '');
-            $task = $this->string($child, 'task_summary', '');
-            $turn = $this->intOrNull($child, 'turn_no');
-            $childTools = $this->intOrNull($child, 'tool_count');
-            $childTok = $this->formatTokenCompact($child);
-
-            $row = \sprintf('%s %s', $childStatus, '' !== $label ? $label.': ' : '');
-            $row .= $agentName;
-            $bits = [];
-            if (null !== $childTools && $childTools > 0) {
-                $bits[] = \sprintf('%d tools', $childTools);
-            }
-            if (null !== $childTok) {
-                $bits[] = $childTok;
-            }
-            if (null !== $turn && 'running' === $childStatus) {
-                $bits[] = \sprintf('turn %d', $turn);
-            }
-            if ([] !== $bits) {
-                $row .= ' | '.implode(', ', $bits);
-            }
-            if ('' !== $artifactId) {
-                $row .= ' | artifact '.$artifactId;
-            }
-            $lines[] = $row;
-            if ('' !== $task && 'running' === $childStatus) {
-                $lines[] = '  task: '.$this->truncate($task, 100);
-            }
-            $active = $this->string($child, 'active_tool', '');
-            if ('' !== $active && 'running' === $childStatus) {
-                $lines[] = '  > '.$active;
-            }
+            $index = $this->intOrNull($child, 'index') ?? (\count($sections) + 1);
+            $sections[] = implode("\n", $this->formatSingleWidgetLines($child, $index));
         }
 
-        $footer = $this->formatFooter($progress, null);
-        if ('' !== $footer) {
-            $lines[] = $footer;
+        if ([] !== $sections) {
+            $lines[] = '';
+            $lines[] = implode("\n\n", $sections);
         }
 
         if (\in_array($status, ['completed', 'failed', 'cancelled'], true)) {
+            $lines[] = '';
             $lines[] = $this->retrieveGuidance($status);
         }
 

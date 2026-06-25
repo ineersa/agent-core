@@ -65,6 +65,38 @@ final class SubagentResultRendererTest extends TestCase
         self::assertStringContainsString('deepseek/deepseek-v4-flash', $joined);
     }
 
+
+    public function testRendersParallelProgressAsStackedSingleWidgets(): void
+    {
+        $progress = [
+            'mode' => 'parallel', 'status' => 'running', 'completed_count' => 0, 'total_count' => 2, 'elapsed_ms' => 60000,
+            'children' => [
+                [
+                    'index' => 1, 'agent_name' => 'scout', 'status' => 'running', 'artifact_id' => 'agent_1',
+                    'task_summary' => 'Read docs', 'turn_no' => 4, 'tool_count' => 3, 'total_tokens' => 9000,
+                    'artifact_path' => 'artifacts/agents/agent_1',
+                ],
+                [
+                    'index' => 2, 'agent_name' => 'reviewer', 'status' => 'running', 'artifact_id' => 'agent_2',
+                    'task_summary' => 'Review patch', 'turn_no' => 1, 'active_tool' => 'read: path="AGENTS.md"',
+                ],
+            ],
+        ];
+        $block = new TranscriptBlock(
+            id: 'tool_result_tc_par', kind: TranscriptBlockKindEnum::ToolResult, runId: 'run1', seq: 1,
+            text: '', meta: ['tool_name' => 'subagent', 'subagent_progress' => $progress], streaming: true,
+        );
+        $joined = implode("
+", (new TranscriptBlockRenderer())->renderBlock($block, new TuiRenderContext(terminalWidth: 120)));
+        self::assertStringContainsString('parallel subagents running (0/2 completed)', $joined);
+        self::assertStringContainsString('#1 subagent scout', $joined);
+        self::assertStringContainsString('#2 subagent reviewer', $joined);
+        self::assertStringContainsString('Task: Read docs', $joined);
+        self::assertStringContainsString('Task: Review patch', $joined);
+        self::assertStringContainsString('AGENTS.md', $joined);
+        self::assertStringNotContainsString('running Step', $joined);
+    }
+
     public function testSubagentResultRendererSupportsMetaOnly(): void
     {
         $renderer = new SubagentResultRenderer();
