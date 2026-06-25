@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Tool;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
@@ -285,6 +286,13 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
         );
 
         return $this->contextAccessor->with($toolContext, $callback);
+    }
+
+
+    public function testDefinitionUsesParallelExecutionMode(): void
+    {
+        $definition = $this->tool->definition();
+        self::assertSame(ToolExecutionMode::Parallel, $definition->executionMode);
     }
 
 }

@@ -236,4 +236,50 @@ final class RuntimeBashBackgroundPromptAdapterTest extends TestCase
 
         self::assertFalse($result);
     }
+
+    public function testCreateStoresExplicitBooleanSchema(): void
+    {
+        $contextAccessor = new StackToolExecutionContextAccessor();
+
+        $captured = null;
+        $store = $this->createMock(ToolQuestionStoreInterface::class);
+        $store->expects(self::once())
+            ->method('create')
+            ->with(self::callback(static function (ToolQuestion $q) use (&$captured): bool {
+                $captured = $q;
+
+                return true;
+            }));
+        $store->method('pollAnswer')->willReturn(true);
+
+        $adapter = new RuntimeBashBackgroundPromptAdapter(
+            contextAccessor: $contextAccessor,
+            store: $store,
+            logger: $this->createStub(LoggerInterface::class),
+            processStatusChecker: $this->notFinishedChecker(),
+        );
+
+        $cancellationToken = $this->createStub(CancellationTokenInterface::class);
+        $cancellationToken->method('isCancellationRequested')->willReturn(false);
+
+        $context = new ToolContext(
+            runId: 'run-schema',
+            turnNo: 1,
+            toolCallId: 'tc-schema',
+            toolName: 'bash',
+            cancellationToken: $cancellationToken,
+            timeoutSeconds: 30,
+        );
+
+        $contextAccessor->with($context, fn (): bool => $adapter->shouldBackground(
+            command: 'sleep 60',
+            pid: 4242,
+            logPath: '/tmp/schema.log',
+            elapsedSeconds: 5.0,
+        ));
+
+        self::assertInstanceOf(ToolQuestion::class, $captured);
+        self::assertSame('{"type":"boolean"}', $captured->schema);
+    }
+
 }

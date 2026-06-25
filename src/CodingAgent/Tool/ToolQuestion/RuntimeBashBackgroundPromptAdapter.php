@@ -97,6 +97,7 @@ final readonly class RuntimeBashBackgroundPromptAdapter implements BashBackgroun
             logPath: $logPath,
             commandPreview: $commandPreview,
             prompt: $prompt,
+            schema: json_encode(['type' => 'boolean'], \JSON_THROW_ON_ERROR),
         );
 
         $this->store->create($question);

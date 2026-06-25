@@ -165,13 +165,24 @@ final class RuntimeEventPoller
 
                 $this->projector->accept($runtimeEvent->toArray());
 
-                // Notify handlers for specific event types.
+                // Notify handlers for specific event types (isolated: one bad overlay callback
+                // must not drop later events in the same batch, e.g. run.cancelled).
                 if (null !== $onHumanInputRequested && RuntimeEventTypeEnum::HumanInputRequested->value === $runtimeEvent->type) {
-                    $onHumanInputRequested($runtimeEvent);
+                    $this->invokeEventCallback(
+                        $onHumanInputRequested,
+                        $runtimeEvent,
+                        $state,
+                        'onHumanInputRequested',
+                    );
                 }
 
                 if (null !== $onToolQuestionRequested && RuntimeEventTypeEnum::ToolQuestionRequested->value === $runtimeEvent->type) {
-                    $onToolQuestionRequested($runtimeEvent);
+                    $this->invokeEventCallback(
+                        $onToolQuestionRequested,
+                        $runtimeEvent,
+                        $state,
+                        'onToolQuestionRequested',
+                    );
                 }
 
                 if (null !== $onToolTerminal && (
@@ -179,7 +190,12 @@ final class RuntimeEventPoller
                     || RuntimeEventTypeEnum::ToolExecutionFailed->value === $runtimeEvent->type
                     || RuntimeEventTypeEnum::ToolExecutionCancelled->value === $runtimeEvent->type
                 )) {
-                    $onToolTerminal($runtimeEvent);
+                    $this->invokeEventCallback(
+                        $onToolTerminal,
+                        $runtimeEvent,
+                        $state,
+                        'onToolTerminal',
+                    );
                 }
 
                 if (!$processingRemoved) {
@@ -237,6 +253,27 @@ final class RuntimeEventPoller
             $state->transcript[] = $block;
 
             return [$block];
+        }
+    }
+
+    /**
+     * @param callable(RuntimeEvent): void $callback
+     */
+    private function invokeEventCallback(callable $callback, RuntimeEvent $runtimeEvent, TuiSessionState $state, string $callbackName): void
+    {
+        try {
+            $callback($runtimeEvent);
+        } catch (\Throwable $e) {
+            $this->logger->warning('RuntimeEventPoller event callback failed', [
+                'component' => 'tui.runtime_event_poller',
+                'event_type' => 'runtime_event_poller.callback_failed',
+                'run_id' => $state->handle->runId,
+                'callback' => $callbackName,
+                'runtime_event_type' => $runtimeEvent->type,
+                'seq' => $runtimeEvent->seq,
+                'exception_class' => $e::class,
+                'exception_message' => $e->getMessage(),
+            ]);
         }
     }
 

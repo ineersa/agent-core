@@ -309,10 +309,11 @@ final class TickPollListener implements TuiListenerRegistrar
         }
 
         // Parse schema to determine the overlay type.
+        $kind = (string) ($p['kind'] ?? '');
         $rawSchema = $p['schema'] ?? null;
         $schema = \is_string($rawSchema)
-            ? (json_decode($rawSchema, true) ?? ['type' => 'string'])
-            : (\is_array($rawSchema) ? $rawSchema : ['type' => 'string']);
+            ? (json_decode($rawSchema, true) ?? ['type' => 'boolean'])
+            : (\is_array($rawSchema) ? $rawSchema : ['type' => 'boolean']);
 
         $hasEnum = isset($schema['enum']) && \is_array($schema['enum']) && [] !== $schema['enum'];
         $isBoolean = ($schema['type'] ?? '') === 'boolean';
@@ -323,7 +324,7 @@ final class TickPollListener implements TuiListenerRegistrar
             return;
         }
 
-        if ($isBoolean) {
+        if ($isBoolean || 'confirm' === $kind) {
             self::handleConfirmToolQuestion($p, $requestId, $runId, $requestIdFromPayload, $client, $questionCoordinator);
 
             return;
@@ -333,11 +334,6 @@ final class TickPollListener implements TuiListenerRegistrar
         // so the user can type or see something. The extension's prompt and
         // the server-side AnswerToolQuestionHandler (schema-driven) handle
         // the actual answer content.
-        trigger_error(
-            \sprintf('ToolQuestionPoller emitted unexpected schema type for request_id=%s — falling back to choice overlay', $requestIdFromPayload),
-            \E_USER_WARNING,
-        );
-
         self::handleChoiceToolQuestion($p, $schema, $requestId, $runId, $requestIdFromPayload, $client, $questionCoordinator);
     }
 

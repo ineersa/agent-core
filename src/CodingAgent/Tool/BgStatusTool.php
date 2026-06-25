@@ -91,7 +91,7 @@ final class BgStatusTool implements HatfieldToolProviderInterface, ToolHandlerIn
                 'additionalProperties' => false,
             ],
             handler: $this,
-            executionMode: ToolExecutionMode::Sequential,
+            executionMode: ToolExecutionMode::Parallel,
             promptLine: 'bg_status action [pid] — inspect, log, or stop background processes; use after launching background jobs',
             promptGuidelines: [
                 'Use bg_status list to see all background processes with PID, status, and log path.',

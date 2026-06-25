@@ -90,7 +90,7 @@ class ToolQuestion
 
     /**
      * JSON schema for the question (e.g. {'type':'string','enum':['Allow once','Always allow','Deny']}).
-     * Stored as serialized JSON text; null for boolean Confirm-kind questions.
+     * Stored as serialized JSON text; e.g. {"type":"boolean"} for bash background confirm.
      */
     #[ORM\Column(type: 'text', nullable: true)]
     public ?string $schema = null;

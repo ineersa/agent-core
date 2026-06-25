@@ -10,6 +10,11 @@ use Ineersa\Tui\Listener\TickPollListener;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Question\QuestionOption;
 use Ineersa\Tui\Question\QuestionRequest;
+
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\Tui\Question\QuestionKind;
+
 use Ineersa\Tui\Question\QuestionSource;
 use PHPUnit\Framework\TestCase;
 
@@ -78,4 +83,71 @@ final class TickPollListenerTest extends TestCase
         $this->assertSame('cancel', $sentCommand->payload['answer'] ?? null);
         $this->assertNotEmpty($sentCommand->payload['answer'] ?? '', 'Cancel answer must be non-empty to prevent poll wedge');
     }
+
+    public function testConfirmToolQuestionWithNullSchemaEnqueuesConfirmWithoutWarning(): void
+    {
+        $warnings = [];
+        set_error_handler(static function (int $severity, string $message) use (&$warnings): bool {
+            if (\E_USER_WARNING === $severity) {
+                $warnings[] = $message;
+            }
+
+            return true;
+        });
+
+        try {
+            $client = $this->createStub(AgentSessionClient::class);
+            $coordinator = new QuestionCoordinator();
+
+            $ref = new \ReflectionMethod(TickPollListener::class, 'handleToolQuestionRequested');
+            $event = new RuntimeEvent(
+                type: RuntimeEventTypeEnum::ToolQuestionRequested->value,
+                runId: 'run-bg',
+                seq: 0,
+                payload: [
+                    'request_id' => 'bash_bg_run1_tc1_99',
+                    'kind' => 'confirm',
+                    'schema' => null,
+                    'prompt' => 'Move it to the background?',
+                ],
+            );
+
+            $ref->invoke(null, $event, $client, $coordinator);
+
+            self::assertSame([], $warnings, 'Confirm with null schema must not emit E_USER_WARNING');
+            self::assertTrue($coordinator->actionRequired());
+
+            $active = $coordinator->activeRequest();
+            self::assertNotNull($active);
+            self::assertSame(QuestionKind::Confirm, $active->kind);
+        } finally {
+            restore_error_handler();
+        }
+    }
+
+    public function testConfirmToolQuestionWithBooleanSchemaEnqueuesConfirm(): void
+    {
+        $client = $this->createStub(AgentSessionClient::class);
+        $coordinator = new QuestionCoordinator();
+
+        $ref = new \ReflectionMethod(TickPollListener::class, 'handleToolQuestionRequested');
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::ToolQuestionRequested->value,
+            runId: 'run-bg',
+            seq: 0,
+            payload: [
+                'request_id' => 'bash_bg_run1_tc1_100',
+                'kind' => 'confirm',
+                'schema' => '{"type":"boolean"}',
+                'prompt' => 'Move it to the background?',
+            ],
+        );
+
+        $ref->invoke(null, $event, $client, $coordinator);
+
+        $active = $coordinator->activeRequest();
+        self::assertNotNull($active);
+        self::assertSame(QuestionKind::Confirm, $active->kind);
+    }
+
 }
