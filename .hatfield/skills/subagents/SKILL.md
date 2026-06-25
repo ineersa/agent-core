@@ -49,7 +49,7 @@ Parent sessions also get **`<available_agents>`** (name + description) in contex
 
 | Topic | Behavior |
 | --- | --- |
-| `tools` | Required for a valid definition. Parser accepts YAML lists **or** comma-separated strings; if omitted, defaults to `['read']`. |
+| `tools` | Optional in frontmatter; if omitted, defaults to `['read']`. Explicit non-empty allowlist recommended. YAML lists **or** comma-separated strings; `tools: []` or empty entries fail validation. |
 | `parallelAllowed` | Defaults to **`true`**. Set `parallelAllowed: false` to block use in parallel `tasks`. |
 | `skills` / `skill` | `skill:` merges into `skills`; comma-separated strings are split. |
 | MCP `mode: none` | Default. Child MCP sessions are parent-scoped; `all` does not add MCP tools to the child allowlist the way `specific` does. |
