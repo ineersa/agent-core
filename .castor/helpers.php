@@ -210,7 +210,7 @@ function maybe_reexec_castor_task_under_pi_bwrap(string $taskName): void
     }
 
     passthru($command, $exitCode);
-    exit((int) $exitCode);
+    exit($exitCode);
 }
 
 /**
