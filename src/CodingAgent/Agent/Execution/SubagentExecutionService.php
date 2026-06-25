@@ -195,6 +195,23 @@ final class SubagentExecutionService
             // Check timeout.
             if (hrtime(true) > $deadline) {
                 $this->agentRunner->cancel($agentRunId, 'Subagent timed out.');
+                $timeoutState = $this->runStore->get($agentRunId);
+                if (null !== $timeoutState) {
+                    $this->emitTerminalProgressUpdate(
+                        parentRunId: $parentRunId,
+                        agentRunId: $agentRunId,
+                        agentName: $agentName,
+                        artifactId: $artifactId,
+                        taskSummary: $task,
+                        definitionModel: $definition->model,
+                        state: $timeoutState,
+                        terminalStatus: 'failed',
+                        seq: $progressSeq,
+                        progressStartedHr: $progressStartedHr,
+                    );
+                    $this->advanceParentSequence($parentRunId, $progressSeq);
+                    ++$progressSeq;
+                }
                 $this->finalize(
                     parentRunId: $parentRunId,
                     artifactId: $artifactId,
@@ -234,7 +251,6 @@ final class SubagentExecutionService
                         state: $state,
                         seq: $progressSeq,
                         progressStartedHr: $progressStartedHr,
-                        force: false,
                     );
                     $this->advanceParentSequence($parentRunId, $progressSeq);
                     ++$progressSeq;
@@ -248,6 +264,20 @@ final class SubagentExecutionService
             // WaitingHuman should not occur for non-interactive child runs.
             if (RunStatus::WaitingHuman === $status) {
                 $this->agentRunner->cancel($agentRunId, 'Child entered unsupported WaitingHuman state.');
+                $this->emitTerminalProgressUpdate(
+                    parentRunId: $parentRunId,
+                    agentRunId: $agentRunId,
+                    agentName: $agentName,
+                    artifactId: $artifactId,
+                    taskSummary: $task,
+                    definitionModel: $definition->model,
+                    state: $state,
+                    terminalStatus: 'failed',
+                    seq: $progressSeq,
+                    progressStartedHr: $progressStartedHr,
+                );
+                $this->advanceParentSequence($parentRunId, $progressSeq);
+                ++$progressSeq;
                 $this->finalize(
                     parentRunId: $parentRunId,
                     artifactId: $artifactId,
@@ -557,7 +587,7 @@ final class SubagentExecutionService
             $this->parallelActiveTurns($reports),
             $progressSeq,
             $parallelProgressStartedHr,
-            aggregateStatus: 'completed',
+            aggregateStatus: $this->resolveParallelAggregateStatus($reports),
         );
         $this->advanceParentSequence($parentRunId, $progressSeq);
         ++$progressSeq;
@@ -1031,6 +1061,39 @@ final class SubagentExecutionService
         return $activeTurns;
     }
 
+    /**
+     * @param array<string, array{index:int,agentName:string,task:string,artifactId:string,agentRunId:string,terminal:bool,status:?AgentArtifactStatusEnum,message:string}> $reports
+     */
+    private function resolveParallelAggregateStatus(array $reports): string
+    {
+        $hasFailed = false;
+        $hasCancelled = false;
+
+        foreach ($reports as $report) {
+            if (!$report['terminal'] || null === $report['status']) {
+                continue;
+            }
+
+            if (AgentArtifactStatusEnum::Failed === $report['status']) {
+                $hasFailed = true;
+            }
+
+            if (AgentArtifactStatusEnum::Cancelled === $report['status']) {
+                $hasCancelled = true;
+            }
+        }
+
+        if ($hasFailed) {
+            return 'failed';
+        }
+
+        if ($hasCancelled) {
+            return 'cancelled';
+        }
+
+        return 'completed';
+    }
+
     private function mapChildTerminalProgressStatus(RunStatus $status): string
     {
         return match ($status) {
@@ -1111,7 +1174,6 @@ final class SubagentExecutionService
         RunState $state,
         int $seq,
         int $progressStartedHr,
-        bool $force = false,
     ): void {
         $context = $this->contextAccessor->current();
         if (null === $context) {

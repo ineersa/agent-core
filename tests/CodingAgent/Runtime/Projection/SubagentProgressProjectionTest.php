@@ -179,6 +179,34 @@ final class SubagentProgressProjectionTest extends TestCase
         self::assertTrue($block->meta['subagent_final'] ?? false);
     }
 
+
+    public function testSubagentProgressFailedPreservesStructuredWidget(): void
+    {
+        $this->accept('tool_execution.started', [
+            'tool_call_id' => 'tc_fail', 'tool_name' => 'subagent',
+        ]);
+
+        $failed = [
+            'mode' => 'single', 'status' => 'failed', 'agent_name' => 'scout',
+            'artifact_id' => 'agent_fail', 'task_summary' => 'Inspect TUI', 'turn_no' => 2, 'elapsed_ms' => 5000,
+            'artifact_path' => 'artifacts/agents/agent_fail',
+        ];
+
+        $this->accept('tool_execution.output_delta', [
+            'tool_call_id' => 'tc_fail', 'tool_name' => 'subagent', 'subagent_progress' => $failed,
+        ]);
+        $this->accept('tool_execution.failed', [
+            'tool_call_id' => 'tc_fail', 'result' => 'Subagent tool failed: child denied approval.',
+        ]);
+
+        $block = $this->projector->blocks()[0];
+        self::assertStringContainsString('failed scout', $block->text);
+        self::assertStringContainsString('agent_fail', $block->text);
+        self::assertStringContainsString('child denied approval', $block->text);
+        self::assertTrue($block->meta['subagent_final'] ?? false);
+        self::assertSame('subagent', $block->meta['tool_name'] ?? null);
+    }
+
     /** @param array<string, mixed> $payload */
     private function accept(string $type, array $payload): void
     {

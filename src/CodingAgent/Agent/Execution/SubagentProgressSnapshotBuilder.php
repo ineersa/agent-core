@@ -41,10 +41,6 @@ final class SubagentProgressSnapshotBuilder
     /**
      * @return array<string, mixed>
      */
-
-    /**
-     * @return array<string, mixed>
-     */
     public function singleTerminal(
         string $status,
         string $agentName,
@@ -69,6 +65,13 @@ final class SubagentProgressSnapshotBuilder
             : $base;
     }
 
+    /**
+     * @param array<string, array{index:int,agentName:string,task:string,artifactId:string,agentRunId:string,terminal:bool,status:?AgentArtifactStatusEnum,message:string,model?:?string}> $reports
+     * @param array<string, int>                                                                                                                                                           $activeTurns
+     * @param array<string, SubagentChildProgressSummary>                                                                                                                                  $enrichmentByAgentRunId
+     *
+     * @return array<string, mixed>
+     */
     public function parallelSnapshot(
         array $reports,
         array $activeTurns,

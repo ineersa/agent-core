@@ -90,7 +90,7 @@ final class SubagentProgressEventsFixture
         $progressTerminal['turn_no'] = 3;
         $progressTerminal['status'] = 'completed';
         $progressTerminal['elapsed_ms'] = 14000;
-        $events[] = self::event($sessionId, 8, 1, 'tool_execution_update', [
+        $events[] = self::event($sessionId, 9, 1, 'tool_execution_update', [
             'tool_call_id' => $toolCallId,
             'tool_name' => 'subagent',
             'delta' => '',
@@ -99,14 +99,14 @@ final class SubagentProgressEventsFixture
         ], $now);
 
         $finalResult = "Subagent scout completed.\nArtifact: {$artifactId}\n\nDone.";
-        $events[] = self::event($sessionId, 9, 1, 'tool_execution_end', [
+        $events[] = self::event($sessionId, 10, 1, 'tool_execution_end', [
             'tool_call_id' => $toolCallId,
             'order_index' => 0,
             'is_error' => false,
             'result' => $finalResult,
         ], $now);
-        $events[] = self::event($sessionId, 10, 2, 'turn_advanced', ['step_id' => 'turn-2', 'turn_no' => 2, 'parent_turn_no' => null], $now);
-        $events[] = self::event($sessionId, 11, 2, 'llm_step_completed', [
+        $events[] = self::event($sessionId, 11, 2, 'turn_advanced', ['step_id' => 'turn-2', 'turn_no' => 2, 'parent_turn_no' => null], $now);
+        $events[] = self::event($sessionId, 12, 2, 'llm_step_completed', [
             'step_id' => 'turn-2',
             'stop_reason' => 'stop',
             'text' => 'Subagent finished.',

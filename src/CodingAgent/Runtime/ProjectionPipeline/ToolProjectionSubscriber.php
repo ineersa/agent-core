@@ -277,6 +277,7 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
         $result = (string) ($p['result'] ?? '');
         $blockId = 'tool_result_'.$toolCallId;
 
+        $existing = $state->getBlock($blockId);
         $meta = [
             'tool_call_id' => $toolCallId,
             'is_error' => true,
@@ -284,8 +285,27 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
         if ('' !== $result) {
             $meta['result'] = $result;
         }
+        if (null !== $existing) {
+            if (isset($existing->meta['tool_name'])) {
+                $meta['tool_name'] = $existing->meta['tool_name'];
+            }
+            if (isset($existing->meta['subagent_progress']) && \is_array($existing->meta['subagent_progress'])) {
+                $meta['subagent_progress'] = $existing->meta['subagent_progress'];
+                $meta['subagent_final'] = true;
+            }
+        }
 
-        $state->upsertToolResultBlock($blockId, $event->runId(), $result, $meta, false);
+        $displayText = $result;
+        if (isset($meta['subagent_progress']) && \is_array($meta['subagent_progress'])) {
+            $widgetText = $this->subagentProgressFormatter->format($meta['subagent_progress']);
+            if ('' !== $result) {
+                $displayText = $widgetText."\n\n".$result;
+            } else {
+                $displayText = $widgetText;
+            }
+        }
+
+        $state->upsertToolResultBlock($blockId, $event->runId(), $displayText, $meta, false);
     }
 
     public function onToolExecutionCancelled(TranscriptProjectionEvent $event): void
