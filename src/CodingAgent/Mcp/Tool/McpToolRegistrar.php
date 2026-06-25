@@ -60,6 +60,17 @@ final class McpToolRegistrar
      */
     public function registerForRun(string $runId): void
     {
+        $this->registerUsingCatalogFrom($runId, $runId);
+    }
+
+    /**
+     * Register MCP dynamic tools for a run using a catalog snapshot from another run id.
+     *
+     * Child agent runs typically reuse the parent session catalog (parent_run_id)
+     * while tool invocation context remains the active run id.
+     */
+    public function registerUsingCatalogFrom(string $runId, string $catalogRunId): void
+    {
         // Remove previously MCP-owned dynamic tools from this registrar
         // instance so stale tools from prior runs/catalogs are cleared
         // before new registration.  Unrelated dynamic tools are never
@@ -68,7 +79,7 @@ final class McpToolRegistrar
 
         // Read the current-run catalog.  Null means no catalog exists
         // yet — this is acceptable (no-op after stale removal).
-        $catalog = $this->catalogStore->read($runId);
+        $catalog = $this->catalogStore->read($catalogRunId);
         if (null === $catalog) {
             return;
         }

@@ -460,6 +460,7 @@ parameters:
       - AppExtensionApi
       - AppSystemPrompt
       - AppSkills
+      - AppAgent
       - AppTool
       - AppPromptTemplate
       - AgentCore
@@ -555,8 +556,12 @@ parameters:
 
     AppAgent:
       - AppConfig
+      - AppSystemPrompt
       - AppMarkdown
+      - AppMcpCatalog
+      - AppMcpConfig
       - AppSession
+      - AppSkills
       - AppTool
       - AgentCore
       - SymfonyYaml
@@ -602,6 +607,7 @@ parameters:
 
     AppMcpTool:
       - AgentCore
+      - AppAgent
       - AppTool
       - AppMcpCatalog
       - AppMcpClient

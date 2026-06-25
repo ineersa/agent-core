@@ -74,6 +74,8 @@ final class AgentDefinitionParser
         $frontmatter = $parsed['frontmatter'];
         $body = $parsed['body'];
 
+        $frontmatter = $this->normalizeFrontmatterFields($frontmatter);
+
         // 2. Denormalize frontmatter array → AgentFrontmatterDTO
         //    (strict type enforcement + unknown-field rejection via Serializer)
         $frontmatterDto = $this->denormalizeFrontmatter($frontmatter, $filePath);
@@ -84,6 +86,62 @@ final class AgentDefinitionParser
 
         // 4. Map to final AgentDefinitionDTO (trim strings, convert enums)
         return $this->mapToDefinition($frontmatterDto, $body, $filePath);
+    }
+
+    /**
+     * Normalize observed real-world agent frontmatter shapes before strict denormalization.
+     *
+     * @param array<string, mixed> $frontmatter
+     *
+     * @return array<string, mixed>
+     */
+    private function normalizeFrontmatterFields(array $frontmatter): array
+    {
+        if (\array_key_exists('skill', $frontmatter)) {
+            $fromSkill = \is_string($frontmatter['skill'])
+                ? $this->splitCommaSeparatedScalars($frontmatter['skill'])
+                : [];
+            unset($frontmatter['skill']);
+            $existing = [];
+            if (\array_key_exists('skills', $frontmatter)) {
+                if (\is_string($frontmatter['skills'])) {
+                    $existing = $this->splitCommaSeparatedScalars($frontmatter['skills']);
+                } elseif (\is_array($frontmatter['skills']) && array_is_list($frontmatter['skills'])) {
+                    $existing = $frontmatter['skills'];
+                }
+            }
+            $frontmatter['skills'] = array_values(array_unique(array_merge($existing, $fromSkill)));
+        }
+
+        if (\array_key_exists('tools', $frontmatter) && \is_string($frontmatter['tools'])) {
+            $frontmatter['tools'] = $this->splitCommaSeparatedScalars($frontmatter['tools']);
+        }
+        // Omitted tools stays absent: child inherits parent-available tools at launch (pi parity).
+
+        if (\array_key_exists('skills', $frontmatter) && \is_string($frontmatter['skills'])) {
+            $frontmatter['skills'] = $this->splitCommaSeparatedScalars($frontmatter['skills']);
+        }
+
+        return $frontmatter;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function splitCommaSeparatedScalars(string $value): array
+    {
+        $trimmed = trim($value);
+        if ('' === $trimmed) {
+            return [];
+        }
+
+        if (!str_contains($trimmed, ',')) {
+            return [$trimmed];
+        }
+
+        $parts = array_map(trim(...), explode(',', $trimmed));
+
+        return array_values(array_filter($parts, static fn (string $part): bool => '' !== $part));
     }
 
     /**
@@ -192,7 +250,7 @@ final class AgentDefinitionParser
         return new AgentDefinitionDTO(
             name: trim($dto->name),
             description: trim($dto->description),
-            tools: array_values($dto->tools),
+            tools: null === $dto->tools ? null : array_values($dto->tools),
             mcp: new McpPolicyDTO(mode: $mcpMode, tools: $mcpTools),
             model: null !== $dto->model ? trim($dto->model) : null,
             thinking: null !== $dto->thinking ? trim($dto->thinking) : null,

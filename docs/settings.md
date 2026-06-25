@@ -608,8 +608,28 @@ Maximum number of parallel subagents allowed in a single `subagent` tool call
 (`tasks` array). Default: `8`. Requests above this limit fail fast with a hint
 to split work across multiple tool calls.
 
+### `agents.subagent_tool_timeout_seconds`
+
+Maximum time in seconds that a **foreground** `subagent` tool call waits for child
+run(s) to finish. This is enforced inside `SubagentExecutionService` (poll loop
+deadline), not by the generic `tools.execution.timeout_seconds` / ToolExecutor
+post-hoc timeout. The `subagent` tool definition sets **no** ToolExecutor cap so
+long child work is not cut off at the generic tool layer.
+
+**Default:** `1800` (30 minutes). Must be an integer **>= 60**. Values below 60
+are rejected at config load with an error (not silently adjusted).
+
+Set higher when child agents routinely run multi-minute reviews or large
+codebase scouts. Parent cancellation still ends waiting children promptly.
+
+**Example:**
+```yaml
+agents:
+    subagent_tool_timeout_seconds: 1200
+```
+
 See [Agent Definitions](agents.md) for the full definition format,
-discovery precedence, and catalog API.
+discovery precedence, foreground execution (including timeout), and catalog API.
 
 ### `extensions.enabled`
 
@@ -645,12 +665,18 @@ extensions.
 **Default:** The built-in SafeGuard extension is enabled by default
 (`Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension`).
 
+**List replacement:** YAML list values (including `extensions.enabled`) **replace** the
+lower-priority list entirely; they are not merged or appended. If project
+`.hatfield/settings.yaml` sets `extensions.enabled`, include every extension class
+you still want loaded (for example SafeGuard and task-workflow).
+
 **Example:**
 
 ```yaml
 extensions:
   enabled:
-    - Acme\HatfieldTaskWorkflow\TaskWorkflowExtension
+    - Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension
+    - Ineersa\HatfieldExt\TaskWorkflow\TaskWorkflowExtension
 ```
 
 See `.pi/plans/extension-api-phar-plan.md` for the full extension loading

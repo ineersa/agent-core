@@ -660,4 +660,53 @@ final class LlmStepResultHandlerTest extends TestCase
         $this->assertTrue($hasCompact, 'Overflow recovery should dispatch CompactRun, not Continue.');
     }
 
+    public function testExecuteToolCallHasNullTimeoutWithoutPerToolOverride(): void
+    {
+        $executionBus = new TestMessageBus();
+        $stepDispatcher = new StepDispatcher($executionBus);
+        $handler = new LlmStepResultHandler(
+            toolBatchCollector: new ToolBatchCollector(),
+            commandMailboxPolicy: new CommandMailboxPolicy(
+                commandStore: new InMemoryCommandStore(),
+                commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+            ),
+            eventFactory: new EventFactory(),
+            toolCallExtractor: new ToolCallExtractor(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            stepDispatcher: $stepDispatcher,
+        );
+
+        $state = new RunState(
+            runId: 'run-timeout-null',
+            status: RunStatus::Running,
+            version: 1,
+            turnNo: 1,
+            lastSeq: 1,
+            activeStepId: 'step-1',
+        );
+
+        $message = new LlmStepResult(
+            runId: 'run-timeout-null',
+            turnNo: 1,
+            stepId: 'step-1',
+            attempt: 1,
+            idempotencyKey: 'llm-timeout-null',
+            assistantMessage: SymfonyAiTestMessages::assistantWithToolCalls([
+                ['id' => 'tool-call-read', 'name' => 'read', 'arguments' => ['path' => 'README.md']],
+            ], 'read file'),
+            usage: [],
+            stopReason: 'tool_call',
+            error: null,
+        );
+
+        $result = $handler->handle($message, $state);
+        self::assertCount(1, $result->postCommit);
+        ($result->postCommit[0])();
+
+        self::assertCount(1, $executionBus->messages);
+        $execute = $executionBus->messages[0];
+        self::assertInstanceOf(ExecuteToolCall::class, $execute);
+        self::assertNull($execute->timeoutSeconds);
+    }
+
 }

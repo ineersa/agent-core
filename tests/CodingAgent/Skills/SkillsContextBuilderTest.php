@@ -150,6 +150,31 @@ final class SkillsContextBuilderTest extends TestCase
 
     /* ───────── Private helpers ───────── */
 
+
+    public function testBuildForRendersNamedSkillBodies(): void
+    {
+        $skillDir = $this->tmpDir.'/.hatfield/skills/arch';
+        mkdir($skillDir, 0777, true);
+        file_put_contents($skillDir.'/SKILL.md', "---
+name: arch
+description: Arch skill
+---
+
+ARCH_BODY_UNIQUE");
+
+        $builder = $this->createBuilder(cwd: $this->tmpDir);
+        $output = $builder->buildFor(['arch']);
+
+        $this->assertStringContainsString('<skill name="arch"', $output);
+        $this->assertStringContainsString('ARCH_BODY_UNIQUE', $output);
+        $this->assertStringNotContainsString('<available_skills>', $output);
+    }
+
+    public function testBuildForReturnsEmptyForEmptyNames(): void
+    {
+        $builder = $this->createBuilder(cwd: $this->tmpDir);
+        $this->assertSame('', $builder->buildFor([]));
+    }
     private function createBuilder(
         ?string $cwd = null,
         ?SkillsConfig $config = null,

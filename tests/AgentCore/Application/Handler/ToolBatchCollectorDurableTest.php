@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Tests\Application\Handler;
 use Ineersa\AgentCore\Application\Handler\InMemoryToolBatchStore;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreMutation;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use PHPUnit\Framework\TestCase;
@@ -184,7 +185,7 @@ final class ToolBatchCollectorDurableTest extends TestCase
         $store = new class implements ToolBatchStoreInterface {
             /** @var array<string, array> */
             public array $states = [];
-            public bool $failNextSave = false;
+            public bool $failNextMutate = false;
 
             public function load(string $runId, int $turnNo, string $stepId): ?array
             {
@@ -193,18 +194,34 @@ final class ToolBatchCollectorDurableTest extends TestCase
 
             public function save(string $runId, int $turnNo, string $stepId, array $batchState): void
             {
-                if ($this->failNextSave) {
-                    $this->failNextSave = false;
-
-                    throw new \RuntimeException('Simulated durable write failure.');
-                }
-
                 $this->states[$this->key($runId, $turnNo, $stepId)] = $batchState;
             }
 
             public function delete(string $runId, int $turnNo, string $stepId): void
             {
                 unset($this->states[$this->key($runId, $turnNo, $stepId)]);
+            }
+
+            public function mutate(string $runId, int $turnNo, string $stepId, callable $callback): mixed
+            {
+                if ($this->failNextMutate) {
+                    $this->failNextMutate = false;
+
+                    throw new \RuntimeException('Simulated durable write failure.');
+                }
+
+                $key = $this->key($runId, $turnNo, $stepId);
+                $current = $this->states[$key] ?? null;
+                $outcome = $callback($current);
+                if (!$outcome instanceof ToolBatchStoreMutation) {
+                    throw new \LogicException('Tool batch store mutate callback must return ToolBatchStoreMutation.');
+                }
+
+                if (null !== $outcome->nextSerializedState) {
+                    $this->states[$key] = $outcome->nextSerializedState;
+                }
+
+                return $outcome->returnValue;
             }
 
             private function key(string $runId, int $turnNo, string $stepId): string
@@ -218,7 +235,7 @@ final class ToolBatchCollectorDurableTest extends TestCase
             $this->executeToolCall('run-6', 'step-1', 'call-1', 0, 'sequential'),
         ]);
 
-        $store->failNextSave = true;
+        $store->failNextMutate = true;
 
         try {
             $collector->collect($this->toolResult('run-6', 'step-1', 'call-1', 0));

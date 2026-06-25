@@ -230,7 +230,7 @@ final class AgentDefinitionParserTest extends TestCase
         self::assertSame(1, $dto->maxDepth);
         self::assertTrue($dto->backgroundAllowed);
         self::assertTrue($dto->foregroundAllowed);
-        self::assertFalse($dto->parallelAllowed);
+        self::assertTrue($dto->parallelAllowed);
         self::assertFalse($dto->disabled);
         self::assertNull($dto->handoffFormat);
         self::assertSame(McpAgentModeEnum::None, $dto->mcp->mode);
@@ -298,12 +298,24 @@ final class AgentDefinitionParserTest extends TestCase
         self::assertSame(5, $dto->maxDepth);
     }
 
-    public function testParallelAllowedFalseByDefault(): void
+    public function testParallelAllowedTrueByDefault(): void
     {
         $dto = $this->parse([
             'name' => 'solo',
             'description' => 'Solo agent',
             'tools' => ['read'],
+        ]);
+
+        self::assertTrue($dto->parallelAllowed);
+    }
+
+    public function testParallelAllowedExplicitFalse(): void
+    {
+        $dto = $this->parse([
+            'name' => 'solo',
+            'description' => 'Solo agent',
+            'tools' => ['read'],
+            'parallelAllowed' => false,
         ]);
 
         self::assertFalse($dto->parallelAllowed);
@@ -435,17 +447,14 @@ final class AgentDefinitionParserTest extends TestCase
         $this->parser->parseContent($content, '/test/has-type.md');
     }
 
-    public function testMissingToolsThrows(): void
+    public function testMissingToolsStaysNullForInheritAll(): void
     {
-        $content = $this->wrapContent([
+        $dto = $this->parse([
             'name' => 'no-tools',
             'description' => 'No tools',
-        ]);
+        ], '/test/no-tools.md');
 
-        $this->expectException(AgentDefinitionValidationException::class);
-        $this->expectExceptionMessageMatches('/"tools" is required/');
-
-        $this->parser->parseContent($content, '/test/no-tools.md');
+        self::assertNull($dto->tools);
     }
 
     public function testUnknownFieldThrowsWithFieldNameAndFilePath(): void
@@ -464,17 +473,75 @@ final class AgentDefinitionParserTest extends TestCase
         $this->parser->parseContent($content, '/test/unknown-field.md');
     }
 
-    public function testToolsNotAListThrows(): void
+    public function testToolsCommaSeparatedStringIsNormalized(): void
     {
-        $content = $this->wrapContent([
-            'name' => 'bad-tools',
-            'description' => 'Bad tools',
-            'tools' => 'read',
+        $dto = $this->parse([
+            'name' => 'reviewer-like',
+            'description' => 'Comma-separated tools',
+            'tools' => 'read, grep, find, ls, bash',
         ]);
 
-        $this->expectException(AgentDefinitionValidationException::class);
+        self::assertSame(['read', 'grep', 'find', 'ls', 'bash'], $dto->tools);
+    }
 
-        $this->parser->parseContent($content, '/test/bad-tools.md');
+    public function testToolsCommaSeparatedStringWithoutSpaces(): void
+    {
+        $dto = $this->parse([
+            'name' => 'browser-like',
+            'description' => 'Tight comma list',
+            'tools' => 'read,bash,grep,find,ls',
+        ]);
+
+        self::assertSame(['read', 'bash', 'grep', 'find', 'ls'], $dto->tools);
+    }
+
+    public function testSkillSingularStringMergesIntoSkills(): void
+    {
+        $dto = $this->parse([
+            'name' => 'architect-like',
+            'description' => 'Singular skill alias',
+            'tools' => ['read'],
+            'skill' => 'improve-codebase-architecture',
+        ]);
+
+        self::assertSame(['improve-codebase-architecture'], $dto->skills);
+    }
+
+    public function testSkillsStringIsNormalized(): void
+    {
+        $dto = $this->parse([
+            'name' => 'browser-like',
+            'description' => 'String skills',
+            'tools' => ['read'],
+            'skills' => 'playwright-cli',
+        ]);
+
+        self::assertSame(['playwright-cli'], $dto->skills);
+    }
+
+    public function testRepresentativeUserAgentFrontmatterShapes(): void
+    {
+        $scout = $this->rawParse("---
+name: scout
+description: Fast codebase recon that returns compressed context for handoff
+model: deepseek/deepseek-v4-flash
+inheritProjectContext: true
+---
+Body
+", '/home/user/.agents/scout.md');
+        self::assertSame('scout', $scout->name);
+        self::assertNull($scout->tools);
+
+        $reviewer = $this->rawParse("---
+name: reviewer
+description: Senior code reviewer
+tools: read, grep, find, ls, bash
+---
+Body
+", '/home/user/.agents/reviewer.md');
+        self::assertSame('reviewer', $reviewer->name);
+        self::assertContains('read', $reviewer->tools);
+        self::assertContains('bash', $reviewer->tools);
     }
 
     public function testToolsEmptyListThrows(): void
@@ -776,19 +843,16 @@ final class AgentDefinitionParserTest extends TestCase
         $this->parser->parseContent($content, '/test/string-mcp.md');
     }
 
-    public function testSkillsRejectsNonArray(): void
+    public function testSkillsStringScalarIsNormalized(): void
     {
-        $content = $this->wrapContent([
+        $dto = $this->parse([
             'name' => 'string-skills',
             'description' => 'String skills',
             'tools' => ['read'],
             'skills' => 'testing',
         ]);
 
-        $this->expectException(AgentDefinitionValidationException::class);
-        $this->expectExceptionMessageMatches('/skills/');
-
-        $this->parser->parseContent($content, '/test/string-skills.md');
+        self::assertSame(['testing'], $dto->skills);
     }
 
     public function testDescriptionEmptyStringThrows(): void

@@ -104,10 +104,15 @@ final readonly class RuntimeBashBackgroundPromptAdapter implements BashBackgroun
         // Compute remaining timeout budget for polling.
         // If the context has a timeout, we should not poll indefinitely.
         $timeoutSeconds = $context->timeoutSeconds();
-        $remainingSeconds = max(0, $timeoutSeconds - $elapsedSeconds);
-        $pollDeadline = $remainingSeconds > 0
-            ? hrtime(true) + (int) ($remainingSeconds * 1_000_000_000)
-            : null;
+        if (null === $timeoutSeconds) {
+            $remainingSeconds = null;
+            $pollDeadline = null;
+        } else {
+            $remainingSeconds = max(0, $timeoutSeconds - $elapsedSeconds);
+            $pollDeadline = $remainingSeconds > 0
+                ? hrtime(true) + (int) ($remainingSeconds * 1_000_000_000)
+                : null;
+        }
 
         $this->logger->info('bash_tool.background_prompt_created', [
             'component' => 'tool.bash.background_prompt',

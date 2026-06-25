@@ -23,6 +23,7 @@ final readonly class McpServerDefinitionDTO
      * @param array<string, string>     $headers          HTTP request headers (interpolated)
      * @param int                       $timeoutMs        Tool-call timeout in milliseconds
      * @param int                       $startupTimeoutMs STDIO startup timeout in milliseconds
+     * @param McpServerAvailabilityEnum $availability     Global (all) vs opt-in (specific) exposure for default runs
      * @param list<string>              $excludeTools     Tool names to exclude from registration
      * @param McpTransportTypeEnum|null $transportType    Resolved transport type; null only when neither command nor url is set (e.g. inherited disable-only)
      */
@@ -37,6 +38,7 @@ final readonly class McpServerDefinitionDTO
         public array $headers = [],
         public int $timeoutMs = 30000,
         public int $startupTimeoutMs = 30000,
+        public McpServerAvailabilityEnum $availability = McpServerAvailabilityEnum::All,
         public array $excludeTools = [],
         public ?McpTransportTypeEnum $transportType = null,
     ) {
@@ -114,6 +116,16 @@ final readonly class McpServerDefinitionDTO
             $startupTimeoutMs = self::requirePositiveInt($data['startupTimeoutMs'], $name, 'startupTimeoutMs');
         }
 
+        $availability = McpServerAvailabilityEnum::All;
+        if (\array_key_exists('availability', $data)) {
+            $rawAvailability = $data['availability'];
+            if (!\is_string($rawAvailability)) {
+                throw new \RuntimeException(\sprintf('MCP server "%s": "availability" must be a string, got %s.', $name, \gettype($rawAvailability)));
+            }
+            $availability = McpServerAvailabilityEnum::tryFrom($rawAvailability)
+                ?? throw new \RuntimeException(\sprintf('MCP server "%s": "availability" must be one of: all, specific.', $name));
+        }
+
         $excludeTools = [];
         if (isset($data['excludeTools'])) {
             $excludeTools = self::requireStringList($data['excludeTools'], $name, 'excludeTools');
@@ -130,6 +142,7 @@ final readonly class McpServerDefinitionDTO
             headers: $headers,
             timeoutMs: $timeoutMs,
             startupTimeoutMs: $startupTimeoutMs,
+            availability: $availability,
             excludeTools: $excludeTools,
             transportType: $transportType,
         );

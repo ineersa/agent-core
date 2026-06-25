@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Mcp\Config\McpConfigLoader;
 use Ineersa\CodingAgent\Mcp\Config\McpConfigValidator;
 use Ineersa\CodingAgent\Mcp\Config\McpEnvInterpolator;
+use Ineersa\CodingAgent\Mcp\Config\McpServerAvailabilityEnum;
 use Ineersa\CodingAgent\Mcp\Config\McpTransportTypeEnum;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
@@ -58,6 +59,31 @@ class McpConfigLoaderTest extends TestCase
         putenv('MCP_TEST_TOKEN');
         putenv('MCP_TEST_API_KEY');
         putenv('MCP_EMPTY_VAR');
+    }
+
+
+    public function testAvailabilityFieldDefaultsToAllAndParsesSpecific(): void
+    {
+        $json = <<<'JSON'
+{
+  "mcpServers": {
+    "global": {
+      "url": "https://example.test/mcp",
+      "availability": "specific"
+    },
+    "plain": {
+      "url": "https://example.test/other"
+    }
+  }
+}
+JSON;
+        file_put_contents($this->projectDir.'/.hatfield/mcp.json', $json);
+
+        $loader = $this->createLoader($this->projectDir);
+        $config = $loader->load();
+
+        $this->assertSame(McpServerAvailabilityEnum::Specific, $config->servers['global']->availability);
+        $this->assertSame(McpServerAvailabilityEnum::All, $config->servers['plain']->availability);
     }
 
     // ─── Empty / missing config ───
