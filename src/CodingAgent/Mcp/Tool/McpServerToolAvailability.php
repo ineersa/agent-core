@@ -58,6 +58,6 @@ final readonly class McpServerToolAvailability
             }
         }
 
-        return array_values(array_keys($names));
+        return array_keys($names);
     }
 }
