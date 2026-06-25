@@ -10,12 +10,12 @@ use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 
 final class SubagentToolDefinitionBuilderTest extends IsolatedKernelTestCase
 {
-    public function testBuildSetsLongSubagentTimeout(): void
+    public function testBuildDoesNotSetToolExecutorTimeout(): void
     {
         $handler = self::getContainer()->get(\Ineersa\CodingAgent\Agent\Tool\SubagentToolHandler::class);
         $def = SubagentToolDefinitionBuilder::build(new AgentsConfig(subagentToolTimeoutSeconds: 900), $handler);
 
-        self::assertSame(900, $def->timeoutSeconds);
+        self::assertNull($def->timeoutSeconds);
         self::assertStringContainsString('full child handoff inline', $def->description);
     }
 }

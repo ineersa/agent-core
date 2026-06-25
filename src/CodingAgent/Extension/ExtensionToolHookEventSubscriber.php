@@ -210,6 +210,34 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
         ToolCallDecisionDTO $decision,
         ToolCallContextDTO $context,
     ): void {
+        if (true === ($context->metadata['noninteractive_child_run'] ?? false)) {
+            $reason = $decision->reason ?? 'approval_denied_noninteractive_child';
+            $event->setResult(new ToolResult($toolCall, array_replace(
+                [
+                    'denied' => true,
+                    'reason' => $reason,
+                    'message' => \sprintf(
+                        'Tool "%s" was denied: human approval is not available for noninteractive child subagent runs.',
+                        $toolCall->getName(),
+                    ),
+                    'auto_denied' => true,
+                    'noninteractive_child_run' => true,
+                ],
+                $decision->details,
+            )));
+
+            $this->logger?->info('tool.approval_denied_noninteractive_child', [
+                'run_id' => $context->runId ?? '',
+                'component' => 'extension.tool_hook_subscriber',
+                'event_type' => 'tool.approval_denied_noninteractive_child',
+                'tool_call_id' => $toolCall->getId(),
+                'tool_name' => $toolCall->getName(),
+                'hook_class' => $hook::class,
+            ]);
+
+            return;
+        }
+
         $runId = $context->runId ?? '';
         $toolCallId = $toolCall->getId();
         $details = $decision->details;

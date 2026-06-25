@@ -93,8 +93,8 @@ tools:
         # Parallel mode requires TOOLS-R05 / multi-consumer tool dispatch.
         default_mode: sequential
 
-        # Default timeout in seconds exposed to tool implementations.
-        timeout_seconds: 300
+        # ToolExecutor post-hoc timeout is opt-in per tool (ToolDefinitionDTO.timeoutSeconds).
+        # Omit timeout_seconds here so generic tools are not post-failed by wall-clock caps.
 
         # Maximum parallelism: how many tool calls to run concurrently.
         # Also controls the number of parallel messenger:consume tool

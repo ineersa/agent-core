@@ -20,20 +20,20 @@ use Symfony\Component\Serializer\Attribute\SerializedName;
 final readonly class ToolExecutionConfig
 {
     public const string DEFAULT_MODE = 'sequential';
-    public const int DEFAULT_TIMEOUT_SECONDS = 300;
+    // No global ToolExecutor post-hoc timeout by default; tools opt in via ToolDefinitionDTO.
     public const int DEFAULT_MAX_PARALLELISM = 4;
 
     /**
-     * @param string $defaultMode    Default execution mode ('sequential' or 'parallel')
-     * @param int    $timeoutSeconds Default timeout in seconds for tool execution
-     * @param int    $maxParallelism Maximum concurrent tool calls
+     * @param string   $defaultMode    Default execution mode ('sequential' or 'parallel')
+     * @param int|null $timeoutSeconds Optional global ToolExecutor timeout; null disables post-hoc timeout
+     * @param int      $maxParallelism Maximum concurrent tool calls
      */
     public function __construct(
         #[SerializedName('default_mode')]
         public string $defaultMode = self::DEFAULT_MODE,
 
         #[SerializedName('timeout_seconds')]
-        public int $timeoutSeconds = self::DEFAULT_TIMEOUT_SECONDS,
+        public ?int $timeoutSeconds = null,
 
         #[SerializedName('max_parallelism')]
         public int $maxParallelism = self::DEFAULT_MAX_PARALLELISM,

@@ -43,7 +43,6 @@ use Symfony\Component\Uid\Uuid;
 final class SubagentExecutionService
 {
     private const int DEFAULT_POLL_MICROS = 250_000;
-    private const int DEFAULT_TIMEOUT_SECONDS = 120;
 
     public function __construct(
         private readonly AgentDefinitionCatalog $catalog,
@@ -1116,11 +1115,6 @@ final class SubagentExecutionService
      */
     private function timeoutSeconds(): int
     {
-        $context = $this->contextAccessor->current();
-        if (null !== $context && $context->timeoutSeconds() > 0) {
-            return $context->timeoutSeconds();
-        }
-
-        return self::DEFAULT_TIMEOUT_SECONDS;
+        return max(60, $this->agentsConfig->subagentToolTimeoutSeconds);
     }
 }

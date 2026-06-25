@@ -56,7 +56,7 @@ final class SubagentToolDefinitionBuilder
             ],
             handler: $handler,
             executionMode: ToolExecutionMode::Sequential,
-            timeoutSeconds: max(60, $agentsConfig->subagentToolTimeoutSeconds),
+            timeoutSeconds: null,
             promptLine: 'subagent — launch one or more non-interactive foreground subagents; single mode returns full handoff inline',
             promptGuidelines: [
                 'Use subagent to delegate focused work to specialized child agents.',
