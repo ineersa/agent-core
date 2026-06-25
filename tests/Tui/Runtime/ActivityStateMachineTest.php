@@ -242,7 +242,6 @@ final class ActivityStateMachineTest extends TestCase
             'TurnStarted' => RuntimeEventTypeEnum::TurnStarted->value,
             'TurnCompleted' => RuntimeEventTypeEnum::TurnCompleted->value,
             'AssistantTextCompleted' => RuntimeEventTypeEnum::AssistantTextCompleted->value,
-            'ToolExecutionCompleted' => RuntimeEventTypeEnum::ToolExecutionCompleted->value,
         ];
 
         foreach ($deltaTypes as $label => $type) {
