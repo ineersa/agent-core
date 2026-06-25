@@ -61,7 +61,7 @@ final class TuiQueuedSteerE2eTest extends TestCase
 
             $this->tmux->sendKey($pane, 'C-u');
             usleep(100_000);
-            $this->tmux->sendLiteral($pane, 'Run sleep 15');
+            $this->tmux->sendLiteral($pane, 'Run sleep 3');
             $this->tmux->sendKey($pane, 'Enter');
 
             $this->tmux->waitForCallback(
@@ -89,7 +89,7 @@ final class TuiQueuedSteerE2eTest extends TestCase
             $this->tmux->waitForCallback(
                 $pane,
                 // '❯ ' + marker is unambiguous: pending feedback is in the queue widget ('⏳ ' + marker),
-                // not in transcript history. The initial prompt is '❯ Run sleep 15' (no marker).
+                // not in transcript history. The initial prompt is '❯ Run sleep 3' (no marker).
                 // True only once apply appends the canonical user-message block to history.
                 static fn (string $cap): bool => str_contains($cap, '❯ '.$marker),
                 timeout: 30.0,
