@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\ProjectionPipeline;
 
+use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
@@ -15,6 +16,11 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
  */
 final readonly class ToolProjectionSubscriber implements EventSubscriberInterface
 {
+    public function __construct(
+        private readonly SubagentProgressDisplayFormatter $subagentProgressFormatter = new SubagentProgressDisplayFormatter(),
+    ) {
+    }
+
     public static function getSubscribedEvents(): array
     {
         return [
@@ -187,6 +193,23 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
             return;
         }
 
+        $progress = $p['subagent_progress'] ?? null;
+        if (\is_array($progress)) {
+            $meta = $block->meta;
+            $meta['subagent_progress'] = $progress;
+            if (isset($p['tool_name']) && \is_string($p['tool_name']) && '' !== $p['tool_name']) {
+                $meta['tool_name'] = $p['tool_name'];
+            }
+            $displayText = $this->subagentProgressFormatter->format($progress);
+            $state->updateBlock($blockId, $block->with(
+                text: $displayText,
+                streaming: true,
+                meta: $meta,
+            ));
+
+            return;
+        }
+
         $state->updateBlock($blockId, $block->appendText($delta));
     }
 
@@ -212,6 +235,7 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
             }
         }
 
+        $existing = $state->getBlock($blockId);
         $meta = [
             'tool_call_id' => $toolCallId,
             'is_error' => false,
@@ -221,6 +245,15 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
         }
         if ('' !== $result) {
             $meta['result'] = $result;
+        }
+        if (null !== $existing) {
+            if (isset($existing->meta['tool_name'])) {
+                $meta['tool_name'] = $existing->meta['tool_name'];
+            }
+            if (isset($existing->meta['subagent_progress']) && \is_array($existing->meta['subagent_progress'])) {
+                $meta['subagent_progress'] = $existing->meta['subagent_progress'];
+                $meta['subagent_final'] = true;
+            }
         }
 
         $state->upsertToolResultBlock($blockId, $event->runId(), $result, $meta, false);

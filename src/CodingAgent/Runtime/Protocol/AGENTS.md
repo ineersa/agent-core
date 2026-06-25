@@ -98,6 +98,7 @@ Payload:
     'tool_name'    => string,
     'arguments'    => ?array,  // complete args when available
     'delta'        => ?string, // streaming args/output fragment
+    'subagent_progress' => ?array, // structured inline subagent snapshot (replaces delta append semantics in projection)
     'result'       => ?string, // final rendered/capped result
     'is_error'     => bool,
     'duration_ms'  => ?int,

@@ -60,6 +60,7 @@ final class SubagentExecutionService
         private readonly StackToolExecutionContextAccessor $contextAccessor,
         private readonly LoggerInterface $logger,
         private readonly AgentsConfig $agentsConfig,
+        private readonly SubagentProgressSnapshotBuilder $progressSnapshotBuilder = new SubagentProgressSnapshotBuilder(),
     ) {
     }
 
@@ -163,6 +164,8 @@ final class SubagentExecutionService
             startedAt: $startedAt,
         );
 
+        $progressStartedHr = hrtime(true);
+
         // 11. Poll child until terminal, timeout, or cancellation.
         $timeoutSeconds = $this->timeoutSeconds();
         $deadline = hrtime(true) + $timeoutSeconds * 1_000_000_000;
@@ -217,8 +220,10 @@ final class SubagentExecutionService
                     parentRunId: $parentRunId,
                     agentName: $agentName,
                     artifactId: $artifactId,
+                    taskSummary: $task,
                     state: $state,
                     seq: $progressSeq,
+                    progressStartedHr: $progressStartedHr,
                 );
 
                 // Advance parent RunState.lastSeq to include the progress
@@ -396,6 +401,7 @@ final class SubagentExecutionService
         $cancelToken = $context?->cancellationToken();
         $progressSeq = $this->resolveNextProgressSeq($parentRunId);
         $lastProgressSignature = null;
+        $parallelProgressStartedHr = hrtime(true);
 
         while ($this->hasActiveParallelChildren($reports)) {
             if (null !== $cancelToken && $cancelToken->isCancellationRequested()) {
@@ -512,7 +518,7 @@ final class SubagentExecutionService
 
             $signature = $this->parallelProgressSignature($reports, $activeTurns);
             if (null === $lastProgressSignature || $signature !== $lastProgressSignature) {
-                $this->emitParallelProgressUpdate($parentRunId, $reports, $activeTurns, $progressSeq);
+                $this->emitParallelProgressUpdate($parentRunId, $reports, $activeTurns, $progressSeq, $parallelProgressStartedHr);
                 $this->advanceParentSequence($parentRunId, $progressSeq);
                 ++$progressSeq;
                 $lastProgressSignature = $signature;
@@ -655,26 +661,20 @@ final class SubagentExecutionService
      * @param array<string, array{index:int,agentName:string,task:string,artifactId:string,agentRunId:string,terminal:bool,status:?AgentArtifactStatusEnum,message:string}> $reports
      * @param array<string, int>                                                                                                                                            $activeTurns
      */
-    private function emitParallelProgressUpdate(string $parentRunId, array $reports, array $activeTurns, int $seq): void
-    {
+    private function emitParallelProgressUpdate(
+        string $parentRunId,
+        array $reports,
+        array $activeTurns,
+        int $seq,
+        int $progressStartedHr,
+    ): void {
         $context = $this->contextAccessor->current();
         if (null === $context) {
             return;
         }
 
-        $lines = ['parallel subagents running'];
-        foreach ($reports as $report) {
-            if ($report['terminal']) {
-                $lines[] = \sprintf('#%d %s %s | artifact %s', $report['index'], $report['agentName'], null !== $report['status'] ? $report['status']->value : 'done', $report['artifactId']);
-                continue;
-            }
-
-            $turn = $activeTurns[$report['agentRunId']] ?? 0;
-            $lines[] = \sprintf('#%d %s running | turn %d | artifact %s', $report['index'], $report['agentName'], $turn, $report['artifactId']);
-        }
-
-        $delta = implode("\n", $lines)."\n";
-
+        $elapsedMs = (int) ((hrtime(true) - $progressStartedHr) / 1_000_000);
+        $progress = $this->progressSnapshotBuilder->parallelSnapshot($reports, $activeTurns, $elapsedMs);
         $event = new RunEvent(
             runId: $parentRunId,
             seq: $seq,
@@ -683,7 +683,8 @@ final class SubagentExecutionService
             payload: [
                 'tool_call_id' => $context->toolCallId(),
                 'tool_name' => $context->toolName(),
-                'delta' => $delta,
+                'delta' => '',
+                'subagent_progress' => $progress,
                 'order_index' => $context->orderIndex(),
             ],
         );
@@ -927,17 +928,24 @@ final class SubagentExecutionService
         string $parentRunId,
         string $agentName,
         string $artifactId,
+        string $taskSummary,
         RunState $state,
         int $seq,
+        int $progressStartedHr,
     ): void {
         $context = $this->contextAccessor->current();
         if (null === $context) {
             return;
         }
 
-        $delta = \sprintf("subagent %s running | turn %d | artifact %s\n",
-            $agentName, $state->turnNo, $artifactId);
-
+        $elapsedMs = (int) ((hrtime(true) - $progressStartedHr) / 1_000_000);
+        $progress = $this->progressSnapshotBuilder->singleRunning(
+            $agentName,
+            $artifactId,
+            $taskSummary,
+            $state,
+            $elapsedMs,
+        );
         $event = new RunEvent(
             runId: $parentRunId,
             seq: $seq,
@@ -946,7 +954,8 @@ final class SubagentExecutionService
             payload: [
                 'tool_call_id' => $context->toolCallId(),
                 'tool_name' => $context->toolName(),
-                'delta' => $delta,
+                'delta' => '',
+                'subagent_progress' => $progress,
                 'order_index' => $context->orderIndex(),
             ],
         );
