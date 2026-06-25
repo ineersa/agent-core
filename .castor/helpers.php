@@ -107,6 +107,96 @@ function should_auto_wrap_agent_castor_task(): bool
 }
 
 /**
+ * Shell-escape argv pieces for passthru()/exec() (one quoted token per argument).
+ *
+ * @param list<string> $argv
+ */
+function shell_quote_argv(array $argv): string
+{
+    return implode(' ', array_map(static fn (string $part): string => escapeshellarg($part), $argv));
+}
+
+/**
+ * Castor CLI used to re-exec tasks (global `castor` PHAR, not raw project castor.php).
+ *
+ * Override with HATFIELD_CASTOR_EXECUTABLE. When unset, prefers $_SERVER['argv'][0] when it
+ * looks like a castor entrypoint, then ~/.local/bin/castor, then `castor` on PATH.
+ */
+function castor_cli_executable(): ?string
+{
+    $override = getenv('HATFIELD_CASTOR_EXECUTABLE');
+    if (false !== $override && '' !== trim($override)) {
+        $path = trim($override);
+
+        return is_file($path) && is_executable($path) ? $path : null;
+    }
+
+    $argv0 = $_SERVER['argv'][0] ?? '';
+    if ('' !== $argv0) {
+        $resolved = realpath($argv0);
+        if (false !== $resolved && is_executable($resolved) && (str_ends_with($resolved, '/castor') || str_ends_with($resolved, 'castor.php'))) {
+            return $resolved;
+        }
+    }
+
+    $home = getenv('HOME');
+    if (false !== $home && '' !== $home) {
+        $local = rtrim($home, '/').'/.local/bin/castor';
+        if (is_file($local) && is_executable($local)) {
+            return $local;
+        }
+    }
+
+    $which = trim((string) shell_exec('command -v castor 2>/dev/null'));
+    if ('' !== $which && is_executable($which)) {
+        return $which;
+    }
+
+    return null;
+}
+
+/**
+ * Build the passthru command to re-exec a Castor task under pi-bwrap, or null when wrapping is skipped.
+ *
+ * pi-bwrap ends with `bwrap ... -- "$@"` (no shell), so each logical argv must be a separate token:
+ * `wrapper env HATFIELD_INSIDE_PI_BWRAP=1 <castor> <taskName>`.
+ *
+ * @return list<string>|null argv vector when wrapping should happen (for tests); null otherwise
+ */
+function build_pi_bwrap_castor_reexec_argv(string $taskName): ?array
+{
+    if (!should_auto_wrap_agent_castor_task()) {
+        return null;
+    }
+
+    $castorBin = castor_cli_executable();
+    if (null === $castorBin) {
+        return null;
+    }
+
+    return [
+        pi_bwrap_script_path(),
+        'env',
+        'HATFIELD_INSIDE_PI_BWRAP=1',
+        $castorBin,
+        $taskName,
+    ];
+}
+
+/**
+ * @see build_pi_bwrap_castor_reexec_argv()
+ */
+function build_pi_bwrap_castor_reexec_command(string $taskName): ?string
+{
+    $argv = build_pi_bwrap_castor_reexec_argv($taskName);
+    if (null === $argv) {
+        return null;
+    }
+
+    return shell_quote_argv($argv);
+}
+
+/**
  * Re-exec the current Castor task under pi-bwrap when should_auto_wrap_agent_castor_task().
  *
  * Sets HATFIELD_INSIDE_PI_BWRAP=1 in the child via env(1) so nested calls do not wrap again.
@@ -114,25 +204,11 @@ function should_auto_wrap_agent_castor_task(): bool
  */
 function maybe_reexec_castor_task_under_pi_bwrap(string $taskName): void
 {
-    if (!should_auto_wrap_agent_castor_task()) {
+    $command = build_pi_bwrap_castor_reexec_command($taskName);
+    if (null === $command) {
         return;
     }
 
-    $root = project_root_dir();
-    $wrapper = pi_bwrap_script_path();
-    $castorScript = $root.'/castor.php';
-    if (!is_file($castorScript)) {
-        return;
-    }
-
-    $inner = \sprintf(
-        'env HATFIELD_INSIDE_PI_BWRAP=1 %s %s %s',
-        escapeshellarg(\PHP_BINARY),
-        escapeshellarg($castorScript),
-        escapeshellarg($taskName),
-    );
-
-    $command = \sprintf('%s %s', escapeshellarg($wrapper), escapeshellarg($inner));
     passthru($command, $exitCode);
     exit((int) $exitCode);
 }
