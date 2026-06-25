@@ -675,6 +675,103 @@ final class ApplyCommandHandlerTest extends TestCase
         $this->assertStringContainsString('[BG_PROCESS_DONE]', $appliedFollowUp[0]->payload['text'] ?? '');
     }
 
+    public function testBgProcessDoneFollowUpAppliedWhileCancelling(): void
+    {
+        $commandStore = new InMemoryCommandStore();
+        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandMailboxPolicy = new CommandMailboxPolicy(
+            commandStore: $commandStore,
+            commandRouter: $commandRouter,
+        );
+
+        $handler = new ApplyCommandHandler(
+            commandStore: $commandStore,
+            commandRouter: $commandRouter,
+            commandMailboxPolicy: $commandMailboxPolicy,
+            eventFactory: new EventFactory(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            maxPendingCommands: 10,
+        );
+
+        $bgText = "[BG_PROCESS_DONE] PID 393404 finished (exit 0)\nCommand: sleep 20\n\nOutput (last 3000 chars):\nDone\n";
+
+        $state = new RunState(
+            runId: 'run-bg-cancelling',
+            status: RunStatus::Cancelling,
+            version: 4,
+            turnNo: 1,
+            lastSeq: 58,
+            activeStepId: 'step-active',
+            messages: [new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'prior']])],
+        );
+
+        $message = new ApplyCommand(
+            runId: 'run-bg-cancelling',
+            turnNo: 1,
+            stepId: 'followup-bg-1',
+            attempt: 1,
+            idempotencyKey: 'bg-done-cancelling-1',
+            kind: CoreCommandKind::FollowUp,
+            payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => $bgText]]]],
+        );
+
+        $result = $handler->handle($message, $state);
+
+        $this->assertSame(RunStatus::Cancelling, $result->nextState->status);
+        $this->assertCount(2, $result->nextState->messages);
+        $this->assertStringContainsString('[BG_PROCESS_DONE]', $result->nextState->messages[1]->content[0]['text'] ?? '');
+
+        $eventTypes = array_map(static fn ($e) => $e->type, $result->events);
+        $this->assertSame(['agent_command_applied'], $eventTypes);
+        $this->assertStringContainsString('PID 393404', $result->events[0]->payload['text'] ?? '');
+        $this->assertTrue($commandStore->has('run-bg-cancelling', 'bg-done-cancelling-1'));
+    }
+
+    public function testOrdinaryFollowUpRejectedWhileCancelling(): void
+    {
+        $commandStore = new InMemoryCommandStore();
+        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandMailboxPolicy = new CommandMailboxPolicy(
+            commandStore: $commandStore,
+            commandRouter: $commandRouter,
+        );
+
+        $handler = new ApplyCommandHandler(
+            commandStore: $commandStore,
+            commandRouter: $commandRouter,
+            commandMailboxPolicy: $commandMailboxPolicy,
+            eventFactory: new EventFactory(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            maxPendingCommands: 10,
+        );
+
+        $state = new RunState(
+            runId: 'run-user-cancelling',
+            status: RunStatus::Cancelling,
+            version: 2,
+            turnNo: 1,
+            lastSeq: 5,
+            messages: [],
+        );
+
+        $message = new ApplyCommand(
+            runId: 'run-user-cancelling',
+            turnNo: 1,
+            stepId: 'followup-user-1',
+            attempt: 1,
+            idempotencyKey: 'user-followup-1',
+            kind: CoreCommandKind::FollowUp,
+            payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Please continue']]]],
+        );
+
+        $result = $handler->handle($message, $state);
+
+        $this->assertSame(RunStatus::Cancelling, $result->nextState->status);
+        $this->assertCount(0, $result->nextState->messages);
+        $this->assertSame('agent_command_rejected', $result->events[0]->type);
+        $this->assertStringContainsString('cancellation is in progress', $result->events[0]->payload['reason'] ?? '');
+    }
+
     /**
      * Terminal compact must mark applied and dispatch CompactRun
      * immediately — no enqueue.  This prevents duplicate compact

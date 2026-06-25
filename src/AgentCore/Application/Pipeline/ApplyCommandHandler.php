@@ -81,6 +81,11 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         if (RunStatus::Cancelling === $state->status
             && CoreCommandKind::Cancel !== $message->kind
             && !$this->commandMailboxPolicy->isCancelSafeExtensionCommand($message->kind, $routedCommand->options)) {
+            if (CoreCommandKind::FollowUp === $message->kind
+                && $this->isBackgroundProcessDoneFollowUpPayload($message->payload)) {
+                return $this->applyBackgroundProcessDoneFollowUpWhileCancelling($state, $message, $routedCommand->options);
+            }
+
             return $this->rejectCommand(
                 $state,
                 $message,
@@ -416,9 +421,12 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         );
     }
 
-    private function isBackgroundProcessDoneFollowUp(PendingCommand $pendingCommand): bool
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private function isBackgroundProcessDoneFollowUpPayload(array $payload): bool
     {
-        $messagePayload = $pendingCommand->payload['message'] ?? null;
+        $messagePayload = $payload['message'] ?? null;
         if (!\is_array($messagePayload)) {
             return false;
         }
@@ -444,6 +452,72 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         }
 
         return false;
+    }
+
+    private function isBackgroundProcessDoneFollowUp(PendingCommand $pendingCommand): bool
+    {
+        return $this->isBackgroundProcessDoneFollowUpPayload($pendingCommand->payload);
+    }
+
+    /**
+     * @param array<string, mixed> $options
+     */
+    private function applyBackgroundProcessDoneFollowUpWhileCancelling(
+        RunState $state,
+        ApplyCommand $message,
+        array $options,
+    ): HandlerResult {
+        $runId = $message->runId();
+        $messagePayload = $message->payload['message'] ?? null;
+        if (!\is_array($messagePayload)) {
+            return $this->rejectCommand($state, $message, 'Invalid command payload: missing message envelope.');
+        }
+
+        $hydrated = AgentMessage::fromPayload($messagePayload);
+        if (null === $hydrated) {
+            return $this->rejectCommand($state, $message, 'Invalid command payload: malformed message envelope.');
+        }
+
+        $this->commandStore->markApplied($runId, $message->idempotencyKey());
+
+        $messages = $state->messages;
+        $messages[] = $hydrated;
+
+        $messageArray = $hydrated->toArray();
+
+        $nextState = new RunState(
+            runId: $state->runId,
+            status: RunStatus::Cancelling,
+            version: $state->version + 1,
+            turnNo: $state->turnNo,
+            lastSeq: $state->lastSeq + 1,
+            isStreaming: $state->isStreaming,
+            streamingMessage: $state->streamingMessage,
+            pendingToolCalls: $state->pendingToolCalls,
+            errorMessage: $state->errorMessage,
+            messages: $messages,
+            activeStepId: $state->activeStepId,
+            retryableFailure: $state->retryableFailure,
+        );
+
+        $event = $this->eventFactory->event(
+            runId: $runId,
+            seq: $nextState->lastSeq,
+            turnNo: $nextState->turnNo,
+            type: RunEventTypeEnum::AgentCommandApplied->value,
+            payload: [
+                'kind' => $message->kind,
+                'idempotency_key' => $message->idempotencyKey(),
+                'message' => $messageArray,
+                'text' => $this->extractMessageText($messageArray),
+                'options' => $options,
+            ],
+        );
+
+        return new HandlerResult(
+            nextState: $nextState,
+            events: [$event],
+        );
     }
 
     private function hydratePendingUserMessage(PendingCommand $pendingCommand): ?AgentMessage
