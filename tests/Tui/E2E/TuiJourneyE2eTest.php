@@ -20,15 +20,16 @@ use PHPUnit\Framework\TestCase;
  *  - Launches the TUI once with APP_ENV=test + replay fixtures so
  *    model-dependent steps are deterministic and require no live
  *    llama.cpp.
- *  - UI-only steps (hotkeys, reasoning, shell, file completion) run
- *    before any model interaction.
+ *  - UI-only tmux steps (shell) run before
+ *    model interaction; /hotkeys and !! rejection are virtual-only
+ *    ({@see \Ineersa\Tui\Tests\Screen\TuiVirtualInputTest}).
  *  - A single model-interaction step submits a prompt and verifies
  *    the replay-backed assistant block appears.
  *  - Teardown sends Ctrl+D for a clean exit; TmuxHarness destructor
  *    kills the tmux session.
  *
- * Harness launch count: 1 (was 6+ across separate test classes for
- * startup, hotkeys, reasoning, border, shell-prefix, file-completion).
+ * Harness launch count: 1 (integration smoke). Startup, reasoning, /hotkeys, and
+ * !! proofs live in virtual tests under tests/Tui/Screen/.
  *
  * @group tui-e2e-replay
  */
@@ -63,17 +64,21 @@ final class TuiJourneyE2eTest extends TestCase
     /**
      * Full TUI journey — one session, multiple assertions.
      *
-     * Exercises in order:
+     * Exercises in order (tmux integration smoke):
      *  1. Startup layout (logo, status, footer)
-     *  2. Reasoning cycling via Shift+Tab + border colour change
-     *  3. /hotkeys slash-command table
-     *  4. Shell !ls prefix — real command output proof + ordering
-     *  5. File @ completion preserves multiline content
-     *  6. Model interaction via replay fixture (no live LLM)
-     *  7. !! double-bang rejection proof
-     *  8. /export slash command proof
-     *  9. Inline shell on completed run + follow-up (issue #183 repro)
-     * 10. Clean exit via Ctrl+D
+     *  2. Shell !ls prefix — real command output proof + ordering
+     *  3. Inline shell on completed run + follow-up (issue #183 repro)
+     *  4. Clean exit via Ctrl+D
+     *
+     * Virtual-only (not in this journey): startup detail {@see TuiStartupVirtualRenderTest},
+     * Shift+Tab reasoning status/border {@see TuiReasoningCycleTest},
+     * @ file completion menu/accept {@see TuiFileCompletionRenderTest},
+     * /export confirmation + HTML file {@see TuiExportCommandVirtualTest},
+     * model replay assistant block + cache footer {@see TuiModelInteractionVirtualTest},
+     * /hotkeys table, !! rejection — {@see TuiVirtualInputTest}.
+     *
+     * !! double-bang rejection is covered by {@see \Ineersa\Tui\Tests\Screen\TuiVirtualInputTest}.
+     * /hotkeys keyboard shortcuts table is covered by {@see \Ineersa\Tui\Tests\Screen\TuiVirtualInputTest::testHotkeysSlashCommandRoutesLocallyAndRendersKeyboardShortcutsTable}.
      *
      * Ctrl+J newline is tested separately in HotkeySmokeTest
      * (it is sensitive to terminal configuration and a race
@@ -91,13 +96,7 @@ final class TuiJourneyE2eTest extends TestCase
 
         try {
             $this->journeyPhase1StartupLayout($pane);
-            $this->journeyPhase2ReasoningAndBorderColour($pane);
-            $this->journeyPhase3HotkeysTable($pane);
             $this->journeyPhase4ShellPrefixOutput($pane);
-            $this->journeyPhase5FileCompletion($pane);
-            $this->journeyPhase6ModelInteractionReplay($pane);
-            $this->journeyPhase7DoubleBangRejection($pane);
-            $this->journeyPhase8ExportCommand($pane);
             $this->journeyPhase9InlineShellOnCompletedRun($pane);
 
             $this->tmux->sendKey($pane, 'C-d');
@@ -125,7 +124,7 @@ final class TuiJourneyE2eTest extends TestCase
      */
     private function journeyPhase1StartupLayout(TmuxPane $pane): void
     {
-        $this->tmux->waitForCaptureContains($pane, '█', 10.0);
+        $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
 
         $capture = $this->tmux->waitForTuiReadyAfterLogo($pane);
 
@@ -135,94 +134,10 @@ final class TuiJourneyE2eTest extends TestCase
             'Working/idle status widget missing',
         );
         self::assertStringContainsString('◆', $capture, 'Footer widget missing');
-        // Session ID only appears after first prompt submission (Phase 6).
+        // Session ID in footer is covered by {@see TuiModelInteractionVirtualTest}.
         // At startup the footer shows model, token, timer, CWD, branch.
     }
 
-    /**
-     * Phase 2: Shift+Tab reasoning cycling + editor border colour
-     * change (purely visual, no model involved).
-     */
-    private function journeyPhase2ReasoningAndBorderColour(TmuxPane $pane): void
-    {
-        $initialColour = $this->editorBorderColour($pane);
-        self::assertNotNull($initialColour, 'Border colour should not be null');
-        self::assertNotEmpty($initialColour, 'Border colour should not be empty');
-
-        // Shift+Tab: off → minimal
-        $this->tmux->sendLiteral($pane, "\x1b[Z");
-
-        // Wait for border colour change (catches the stylesheet repaint).
-        $minimalColour = $this->waitForBorderColorChange($pane, $initialColour, 5.0);
-        self::assertNotSame(
-            $initialColour,
-            $minimalColour,
-            \sprintf(
-                'Border colour should change after Shift+Tab (off→minimal): %s vs %s',
-                $initialColour,
-                $minimalColour ?? '(null)',
-            ),
-        );
-
-        // Status panel should show reasoning level.
-        $capture = $this->tmux->capturePlainWithHistory($pane, 500);
-        self::assertStringContainsString('reasoning', $capture, 'Status panel should show reasoning key');
-
-        // Second Shift+Tab: minimal → low
-        $this->tmux->sendLiteral($pane, "\x1b[Z");
-
-        $lowColour = $this->waitForBorderColorChange($pane, $minimalColour, 5.0);
-        self::assertNotSame(
-            $minimalColour,
-            $lowColour,
-            \sprintf(
-                'Border colour should change again (minimal→low): %s vs %s',
-                $minimalColour,
-                $lowColour ?? '(null)',
-            ),
-        );
-    }
-
-    /**
-     * Phase 3: /hotkeys slash-command renders a keyboard shortcuts table.
-     */
-    private function journeyPhase3HotkeysTable(TmuxPane $pane): void
-    {
-        $this->tmux->sendKey($pane, 'C-u'); // Clear editor
-        $this->tmux->sendLiteral($pane, '/hotkeys');
-        $this->tmux->sendKey($pane, 'Enter');
-
-        $this->tmux->waitForCallback(
-            $pane,
-            static function (string $cap): bool {
-                return str_contains($cap, 'Keyboard shortcuts');
-            },
-            timeout: 5.0,
-            message: '/hotkeys table never appeared',
-            history: 2000,
-        );
-
-        $capture = $this->tmux->capturePlainWithHistory($pane, 2000);
-
-        // Structural box-drawing chars must be present.
-        $boxChars = ['┌', '├', '└', '│', '┐', '┤', '┘'];
-        foreach ($boxChars as $ch) {
-            self::assertStringContainsString(
-                $ch,
-                $capture,
-                \sprintf('/hotkeys output should contain box-drawing char "%s"', $ch),
-            );
-        }
-
-        // Representative entries.
-        foreach (['Ctrl+C', 'Ctrl+D', 'Ctrl+J', 'Insert newline', 'Submit prompt', 'Enter', 'Tab'] as $entry) {
-            self::assertStringContainsString(
-                $entry,
-                $capture,
-                \sprintf('/hotkeys output should contain "%s"', $entry),
-            );
-        }
-    }
 
     /**
      * Phase 4: !ls shell prefix (standalone, first-input) — creates a
@@ -246,7 +161,7 @@ final class TuiJourneyE2eTest extends TestCase
             static function (string $cap) use ($marker): bool {
                 return str_contains($cap, $marker);
             },
-            timeout: 5.0,
+            timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
             message: sprintf('Marker file "%s" never appeared in captured output for !ls -1', $marker),
             history: 2000,
         );
@@ -258,7 +173,7 @@ final class TuiJourneyE2eTest extends TestCase
                 return !str_contains($cap, 'Working...')
                     && !str_contains($cap, 'Running...');
             },
-            timeout: 5.0,
+            timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
             message: 'Working/Running status never cleared after !ls -1',
             history: 2000,
         );
@@ -274,11 +189,19 @@ final class TuiJourneyE2eTest extends TestCase
      * Phase 9: Inline shell on a completed run (subsequent !cmd), then
      * follow-up normal message — the documented residual from issue #183.
      *
-     * After Phase 6 (model interaction), the run is Completed.  Sending
-     * !ls -1 at this point exercises the subsequent/terminal shell path
-     * where SubmitListener previously sent shell_command + complete_run
-     * causing a cross-process ordering race between the controller's sync
-     * completeRun() and the async tool worker.
+     * Phase 4 (standalone !ls in this same tmux session) has already
+     * completed a shell run and left the session idle. Phase 9 does not
+     * require a model turn; {@see TuiModelInteractionVirtualTest} covers
+     * model replay assistant/footer proof separately. Sending a second
+     * !ls -1 here exercises the subsequent/terminal shell path on that
+     * existing completed run, where SubmitListener previously sent
+     * shell_command + complete_run and caused a cross-process ordering
+     * race between the controller's sync completeRun() and the async
+     * tool worker.
+     *
+     * The follow-up replay fixture (see {@see agentCommand()}) answers
+     * only the normal text message submitted after inline shell — it does
+     * not seed completed-run state.
      *
      * Ordering is [tool_exec_start, tool_exec_end] and the follow-up
      * message succeeds because the root cause was the unresolved
@@ -299,7 +222,7 @@ final class TuiJourneyE2eTest extends TestCase
             static function (string $cap) use ($marker): bool {
                 return str_contains($cap, $marker);
             },
-            timeout: 5.0,
+            timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
             message: sprintf('Inline-shell marker file "%s" never appeared in captured output', $marker),
             history: 2000,
         );
@@ -311,7 +234,7 @@ final class TuiJourneyE2eTest extends TestCase
                 return !str_contains($cap, 'Working...')
                     && !str_contains($cap, 'Running...');
             },
-            timeout: 5.0,
+            timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
             message: 'Working/Running status never cleared after inline !ls -1',
             history: 2000,
         );
@@ -357,7 +280,7 @@ final class TuiJourneyE2eTest extends TestCase
                 $pane,
                 static fn (string $cap): bool => str_contains($cap, '◇')
                     && !str_contains($cap, '◐ Working...'),
-                timeout: 5.0,
+                timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
                 message: 'Turn did not complete after follow-up',
                 history: 2000,
             );
@@ -368,185 +291,6 @@ final class TuiJourneyE2eTest extends TestCase
         $this->saveAnsiSnapshot($pane, 'journey-inline-shell');
     }
 
-    /**
-     * Phase 5: @ file completion — triggers completion via Tab and
-     * verifies the completion menu appears with file entries.
-     *
-     * Creates test files under the isolated HOME directory.  Uses a
-     * single-line @ trigger (no C-j/multiline — the C-j newline test
-     * is in HotkeySmokeTest) to avoid a C-j-as-Enter race.
-     */
-    private function journeyPhase5FileCompletion(TmuxPane $pane): void
-    {
-        $this->tmux->sendKey($pane, 'C-u'); // Clear editor
-        $this->tmux->sendLiteral($pane, '@test');
-        $this->tmux->sendKey($pane, 'Tab');
-
-        // Completion menu should appear — any file/dir entry with @
-        // proves the index builder and completion chain work.
-        $this->tmux->waitForCallback(
-            $pane,
-            static function (string $cap): bool {
-                return str_contains($cap, 'testfiles')
-                    || str_contains($cap, '@home');
-            },
-            timeout: 3.0,
-            message: 'File completion menu did not appear',
-            history: 2000,
-        );
-
-        $capture = $this->tmux->capturePlain($pane);
-
-        // The completed path should start with @.
-        self::assertStringContainsString('@', $capture, 'Editor must contain completed @ path after Tab');
-
-        // Dismiss any completion menu before moving on.
-        $this->tmux->sendKey($pane, 'Escape');
-        \usleep(100_000);
-        $this->tmux->sendKey($pane, 'C-u');
-    }
-
-    /**
-     * Phase 6: Model interaction via deterministic replay fixture.
-     *
-     * Submits a prompt; the TUI processes it through the replay-backed
-     * LLM pipeline (HATFIELD_LLM_REPLAY_FIXTURE_PATH → test services
-     * replay HttpClient). Asserts the assistant block (◇) appears
-     * with fixture text.
-     *
-     * This is the ONLY prompt submission in the journey; earlier phases
-     * only exercise UI behaviour.
-     */
-    private function journeyPhase6ModelInteractionReplay(TmuxPane $pane): void
-    {
-        // After several rounds of Ctrl+U and typing, the editor may
-        // have residual state.  Send Escape to cancel/clear, then a
-        // brief pause so the TUI repaints.
-        $this->tmux->sendKey($pane, 'Escape');
-        usleep(100_000);
-        $this->tmux->sendKey($pane, 'C-u');
-        usleep(100_000);
-
-        $prompt = 'Respond with exactly one sentence: the sky is blue.';
-        $this->tmux->sendLiteral($pane, $prompt);
-        $this->tmux->sendKey($pane, 'Enter');
-
-        // Wait for assistant block (◇) — the replay fixture response
-        // streams in immediately (no network latency).
-        $capture = $this->tmux->waitForCallback(
-            $pane,
-            static fn (string $cap): bool => str_contains($cap, '◇')
-                || str_contains($cap, '✕'),
-            timeout: 10.0,
-            message: 'Neither ◇ assistant block nor ✕ error block appeared after prompt submission',
-            history: 2000,
-        );
-
-        self::assertTrue(
-            str_contains($capture, '◇') || str_contains($capture, '✕'),
-            'Transcript must display either an assistant block (◇) or error block (✕)',
-        );
-
-        // Assert the replay fixture text appears in history.
-        if (str_contains($capture, '◇')) {
-            $fullCapture = $this->tmux->capturePlainWithHistory($pane, 2000);
-            self::assertStringContainsString(
-                'The sky is blue.',
-                $fullCapture,
-                'Replay fixture response text must appear in transcript',
-            );
-        }
-
-        // Wait for turn completion (Working spinner gone).
-        try {
-            $this->tmux->waitForCallback(
-                $pane,
-                static fn (string $cap): bool => str_contains($cap, '◇')
-                    && !str_contains($cap, '◐ Working...'),
-                timeout: 5.0,
-                message: 'Turn did not complete after replay response',
-                history: 2000,
-            );
-        } catch (\RuntimeException) {
-            // Timeout on working clear is non-fatal in replay mode
-            // (the fixture response may be faster than the TUI poller).
-        }
-
-        $this->saveAnsiSnapshot($pane, 'journey-model-replay');
-
-        // After the first prompt submission, the session should exist.
-        $sessionCapture = $this->tmux->capturePlainWithHistory($pane, 2000);
-        self::assertStringContainsString('session ', $sessionCapture, 'Session ID should appear in footer after prompt submission');
-
-        // Cache-hit percentage must appear in the footer when the
-        // replay fixture includes cache_read_tokens telemetry.
-        // The fixture reports 100 input_tokens with 78 cache_read_tokens
-        // → footer should show "↻ 78%".
-        //
-        // Use waitForCallback with full scrollback instead of a single
-        // immediate capture to give the TUI poller time to accumulate
-        // and render the UsageProjection cache segment in the footer.
-        $footerCapture = $this->tmux->waitForCallback(
-            $pane,
-            static fn (string $cap): bool => str_contains($cap, '↻ 78%'),
-            timeout: 5.0,
-            message: 'Footer cache-hit segment (↻ 78%) did not appear after model replay',
-            history: 2000,
-        );
-        self::assertStringContainsString(
-            '↻ 78%',
-            $footerCapture,
-            'Footer must show cache-hit percentage (↻ 78%) when replay fixture provides cache telemetry',
-        );
-    }
-
-    /**
-     * Phase 8: /export slash command exports a session file.
-     */
-    private function journeyPhase8ExportCommand(TmuxPane $pane): void
-    {
-        $this->tmux->sendKey($pane, 'C-u'); // Clear editor
-        $this->tmux->sendLiteral($pane, '/export');
-        $this->tmux->sendKey($pane, 'Enter');
-
-        // Wait for export confirmation in history
-        $capture = $this->tmux->waitForCallback(
-            $pane,
-            static fn (string $cap): bool => str_contains($cap, 'exported'),
-            timeout: 5.0,
-            message: '/export confirmation message never appeared',
-            history: 2000,
-        );
-
-        self::assertStringContainsString('Session exported to:', $capture);
-
-        // Verify the exported HTML file exists in the isolated test directory
-        // The default path is hatfield-session-<id>.html in cwd
-        $sessionGlob = $this->testProjectDir.'/hatfield-session-*.html';
-        $files = glob($sessionGlob);
-        self::assertNotEmpty($files, 'Expected an exported session HTML file in test directory');
-        self::assertCount(1, $files, 'Expected exactly one exported session HTML file');
-
-        $html = file_get_contents($files[0]);
-        self::assertStringContainsString('Hatfield Session', $html);
-        self::assertStringContainsString('<!DOCTYPE html>', $html);
-        self::assertStringNotContainsString('<script>', $html, 'HTML export must not contain unescaped <script> tags');
-    }
-
-    /**
-     * Phase 7: !! double-bang shell prefix rejection.
-     */
-    private function journeyPhase7DoubleBangRejection(TmuxPane $pane): void
-    {
-        $this->tmux->sendKey($pane, 'C-u'); // Clear editor
-        $this->tmux->sendLiteral($pane, '!!echo should-not-run');
-        $this->tmux->sendKey($pane, 'Enter');
-
-        $capture = $this->tmux->waitForCaptureContains($pane, 'not supported', 2.0);
-
-        self::assertStringContainsString('not supported', $capture, '!! must show not-supported message');
-        self::assertStringNotContainsString('should-not-run', $capture, '!! must never execute the command');
-    }
 
     // ── Helpers ───────────────────────────────────────────────────
 
@@ -554,14 +298,8 @@ final class TuiJourneyE2eTest extends TestCase
     {
         $fixturePaths = [];
 
-        // Model-interaction step (phase 7): the first explicit prompt submission
-        // gets its response from this fixture.
-        $replyFixture = __DIR__.'/fixtures/tui-simple-text-response.json';
-        if (\is_file($replyFixture)) {
-            $fixturePaths[] = $replyFixture;
-        }
-
-        // Follow-up fixture for Phase 9: inline shell + follow-up response.
+        // Follow-up fixture for Phase 9: replay assistant text for the normal
+        // message after inline shell (not used to seed completed-run state).
         $followupFixture = __DIR__.'/fixtures/tui-followup-response.json';
         if (\is_file($followupFixture)) {
             $fixturePaths[] = $followupFixture;
@@ -583,7 +321,7 @@ final class TuiJourneyE2eTest extends TestCase
         $dbPath = 'app_test-tui-journey-'.bin2hex(random_bytes(4)).'.sqlite';
 
         // Do NOT use --prompt (auto-submit) — the journey controls
-        // submission timing explicitly.  Only Phase 7 submits a prompt.
+        // submission timing explicitly.  Phase 9 submits follow-up after inline shell.
         // When HATFIELD_LLM_REPLAY_FIXTURE_PATH is set and a prompt is
         // later submitted, ControllerReplayHttpClientFactory serves the
         // fixture response.
@@ -669,67 +407,9 @@ final class TuiJourneyE2eTest extends TestCase
         @\mkdir($dir.'/home/.hatfield', 0o777, true);
         \file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
 
-        // Create test files for file mention completion phase
-        // before TUI starts, so the startup index scanner picks them up.
-        @\mkdir($dir.'/home/testfiles', 0o777, true);
-        \file_put_contents($dir.'/home/testfiles/alpha.txt', 'test');
-
         return $dir;
     }
 
-    // ── ANSI border colour helpers (from EditorBorderColorTest) ──
-
-    private function editorBorderColour(TmuxPane $pane): ?string
-    {
-        $ansi = $this->tmux->captureAnsi($pane);
-        $lines = explode("\n", $ansi);
-
-        // Find the footer bar anchor: last line containing ◆.
-        $footerIdx = null;
-        for ($i = \count($lines) - 1; $i >= 0; --$i) {
-            if (str_contains($lines[$i], '◆')) {
-                $footerIdx = $i;
-                break;
-            }
-        }
-
-        if (null === $footerIdx) {
-            return null;
-        }
-
-        // Editor bottom border = 2 lines above the footer (skip footer separator).
-        $borderIdx = $footerIdx - 2;
-        if ($borderIdx < 0 || !isset($lines[$borderIdx])) {
-            return null;
-        }
-
-        $borderLine = $lines[$borderIdx];
-
-        // Extract the ANSI SGR colour before the first ─.
-        if (preg_match('/\x1b\[([0-9;]*)m/', $borderLine, $m)) {
-            $colourPart = $m[1];
-            if ('' !== $colourPart) {
-                return $colourPart;
-            }
-        }
-
-        return 'default';
-    }
-
-    private function waitForBorderColorChange(TmuxPane $pane, string $previous, float $timeout = 5.0): ?string
-    {
-        $deadline = \microtime(true) + $timeout;
-
-        while (\microtime(true) < $deadline) {
-            $colour = $this->editorBorderColour($pane);
-            if (null !== $colour && $colour !== $previous) {
-                return $colour;
-            }
-            \usleep(100_000);
-        }
-
-        return $this->editorBorderColour($pane);
-    }
 
     private function saveAnsiSnapshot(TmuxPane $pane, string $tag): void
     {

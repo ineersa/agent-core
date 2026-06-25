@@ -10,11 +10,11 @@ description: "E2E and validation testing strategy. Load this skill when: writing
 All PHPUnit invocations include `--stop-on-error --stop-on-failure --fail-on-all-issues --display-all-issues`.
 
 ```bash
-castor check                # Full QA gate: deptrac, unit/integration (ParaTest), controller replay E2E, TUI replay E2E, live llm-real smoke (ParaTest, port 9052 / llama-proxy), phpstan, cs-check; lanes parallel; logs at var/reports/check-*.log
+castor check                # Full QA gate: deptrac, unit/integration (ParaTest), controller replay E2E, TUI replay E2E, live llm-real smoke (ParaTest, port 9052 / llama-proxy), phpstan, cs-check; lanes parallel; logs under per-run `var/reports/qa-<id>/check-*.log`. Deterministic mode: Symfony Lock across sibling worktrees (60s acquire timeout, `HATFIELD_CASTOR_CHECK_LOCK_TIMEOUT`), cache-growth guard, post-run `HATFIELD_QA_RUN_ID` leak assertion (no auto-kill), lane log integrity. Stress overrides (`HATFIELD_CASTOR_CHECK_LOCK=0`, `HATFIELD_LLM_CACHE_GUARD=0`, concurrency envs) are investigation-only — not CODE-REVIEW evidence. Worker budgets: unit=4 (max 8, `HATFIELD_CHECK_UNIT_PARATEST_PROCESSES`), TUI=2 (max 4, `HATFIELD_CHECK_TUI_PARATEST_PROCESSES` / legacy `HATFIELD_TUI_PARATEST_PROCESSES`), llm-real=2 (max 4, `HATFIELD_CHECK_LLM_REAL_PARATEST_PROCESSES`); controller-replay sequential. Warm proxy before gate: `castor test:llm-real`.
 castor test                 # unit/integration tests (ParaTest parallel by default); excludes tui-e2e-replay, llm-real, recording, and controller-replay groups
 castor test --filter=X      # filter tests by name
 castor test --suite=X       # target a specific phpunit.xml test suite (ParaTest parallel)
-castor test:tui [--filter=X]    # TUI E2E journey tests (replay-backed, no live LLM); full group uses ParaTest (default 2 workers, HATFIELD_TUI_PARATEST_PROCESSES=2–4); --filter stays sequential PHPUnit
+castor test:tui [--filter=X]    # TUI E2E journey tests (replay-backed, no live LLM); full group uses ParaTest (default 2 workers; under `castor check` uses `HATFIELD_CHECK_TUI_PARATEST_PROCESSES`, legacy `HATFIELD_TUI_PARATEST_PROCESSES` still honored, max 4); --filter stays sequential PHPUnit
 castor test:tui-update [--filter=X]  # update TUI snapshot baselines (filter optional)
 castor test:llm-real [--filter=X]   # real llama.cpp smoke (filter optional)
 castor test:controller [--filter=X] # controller E2E smoke test (live LLM, opt-in)
@@ -87,6 +87,13 @@ curl -X DELETE http://127.0.0.1:9052/__llama_proxy/cache
 
 If `LLAMA_PROXY_ADMIN_TOKEN` is set, pass `-H 'X-Llama-Proxy-Token: <token>'` on **stats** and **clear** (health is unauthenticated).
 
+### `castor check` llama-proxy cache guard
+
+- Before lanes (and before generation preflight), `castor check` snapshots proxy cache `entries` via `/__llama_proxy/cache/stats`.
+- After all lanes pass, it fails if `entries` increased — meaning uncached live LLM traffic entered the deterministic gate.
+- **Warmup workflow:** run `castor test:llm-real` intentionally, verify stats stabilize, then `castor check`. Clearing proxy cache requires warmup again.
+- Stress-only: `HATFIELD_LLM_CACHE_GUARD=0`. Not applied to focused `castor test:llm-real`.
+
 ### `castor check` live lane
 
 - Runs `check_llm_generation_ready()` once (curl to `…/v1/chat/completions`, model `test`; see `.castor/helpers.php`).
@@ -117,9 +124,13 @@ Filtered `castor test:llm-real --filter=…` uses sequential PHPUnit (no `--proc
 
 Replay infrastructure is **not** removed when using the proxy; both coexist.
 
-### Stale workers before retry
+### Leaked workers after Castor / E2E runs
 
-Kill stale **current-user** processes from the failing worktree (`messenger:consume`, `agent --controller`, orphaned PHPUnit). Never signal root-owned long-lived consumers (see root `AGENTS.md`).
+`castor check` does **not** auto-kill workers. If `messenger:consume`, `agent --controller`, PHPUnit, or Castor children remain after a gate finishes, treat that as a **lifecycle/teardown bug** — investigate and fix the root cause (cancel/teardown path, subprocess shutdown, test harness cleanup) instead of killing processes as routine workflow before retrying.
+
+- **Diagnostics only:** `castor clean:cleanup:workers:list` (dry-run candidates in this checkout).
+- **Last resort only:** `castor clean:cleanup:workers` after you have recorded the leak (PIDs, command lines, which test/lane) and started root-cause work. Never signal root-owned workers or processes with `HATFIELD_SESSION_ID` in `/proc/<pid>/environ` (active Hatfield session workers).
+- Prefer validating task branches in an isolated task worktree when possible.
 
 
 ## LLM Replay (deterministic, no live LLM)
@@ -292,21 +303,26 @@ If tmux is unavailable, TUI tasks MUST remain IN-PROGRESS with exact environment
 
 `castor test:controller` remains opt-in for live controller E2E when appropriate. Do NOT require live LLM validation for every normal task — only for provider/LLM-visible changes.
 
-Before re-running failed controller/TUI E2E checks, kill stale worker processes from the failed worktree (`messenger:consume`, `agent --controller`, PHPUnit/Castor children). Orphaned consumers can keep queues busy and make a fixed test appear hung.
+Before re-running failed controller/TUI E2E checks, use `castor clean:cleanup:workers:list` to diagnose leaked current-user orphans from the failed worktree. Fix lifecycle/teardown at the source; do not treat kills as routine pre-retry workflow. Active session workers (`HATFIELD_SESSION_ID`) and root-owned processes must not be signaled.
 
-## TUI E2E (replay-backed journey, default)
+## TUI test pyramid
 
-`castor test:tui` runs the deterministic replay-backed TUI journey test
-(`TuiJourneyE2eTest`, group `tui-e2e-replay`).  It exercises startup
-layout, reasoning cycling, /hotkeys, shell !ls, file completion,
-model interaction via replay fixtures, and double-bang rejection — all
-in a single long-lived tmux session.
+| Layer | Command | Examples |
+| --- | --- | --- |
+| Virtual / in-process | `castor test` | `TuiStartupVirtualRenderTest`, `TuiVirtualInputTest` (`VirtualTuiHarness`): layout, input, `/hotkeys`, `!!` rejection |
+| Controller replay | `castor test:controller-replay` | JSONL runtime, session/events, shell/tool ordering |
+| Minimal tmux smoke | `castor test:tui` | `#[Group('tui-e2e-replay')]`: `TuiJourneyE2eTest` (integration smoke), `TuiStartupSnapshotTest` (golden snapshot) |
 
-- Uses `APP_ENV=test` + source `bin/console` (not PHAR) so
-  `config/services_test.yaml` wires `ControllerReplayHttpClientFactory`
-  for deterministic model responses.
-- No live LLM, no `LLAMA_CPP_SMOKE_TEST`, no PHAR.
-- Golden snapshot test (`TuiStartupSnapshotTest`) also uses replay.
+Do **not** add broad journey phases for features already proven virtually. `castor test:tui` remains the gate’s tmux replay lane; virtual TUI tests are **not** in that group — they run under `castor test`.
+
+**Tmux journey smoke (`TuiJourneyE2eTest`):** one long-lived session for terminal integration (startup, reasoning, shell, completion, replay model step, export, inline shell). Local-only behaviors moved to virtual tests are documented in the Journey class docblock (e.g. `/hotkeys`, `!!` → `TuiVirtualInputTest`).
+
+- Tmux/replay tests use `APP_ENV=test` + source `bin/console` (not PHAR); `config/services_test.yaml` wires `ControllerReplayHttpClientFactory` for deterministic model responses.
+- No live LLM, no `LLAMA_CPP_SMOKE_TEST`, no PHAR for replay lanes.
+
+## Virtual TUI harness
+
+`tests/Tui/Support/VirtualTuiHarness.php` drives `ChatScreen` + Symfony `VirtualTerminal` / `ScreenBuffer` without tmux. Use for deterministic widget, input, and local command/render proofs. See `tests/Tui/Screen/TuiStartupVirtualRenderTest.php` and `TuiVirtualInputTest.php`.
 
 ## TUI E2E snapshot artifacts
 

@@ -128,16 +128,6 @@ abstract class ControllerE2eTestCase extends TestCase
         return 12.0;
     }
 
-    /**
-     * Wall-clock budget for compaction.completed/failed under full castor check.
-     * ParaTest llm-real (4 workers) plus cold llama-proxy cache misses can push
-     * the compaction summarization HTTP call past 45s without a product bug.
-     */
-    protected function liveCompactionEventWaitTimeout(): float
-    {
-        return 60.0;
-    }
-
     // ── Lifecycle ──
 
     protected function setUp(): void
@@ -428,13 +418,10 @@ abstract class ControllerE2eTestCase extends TestCase
             usleep(10_000);
         }
 
+        $events = $this->parseBuffer($this->stdoutBuf);
         self::fail(
             'Timed out waiting for '.$type.' after '.$timeout.'s. '
-            .'Collected events: '.json_encode(
-                $this->parseBuffer($this->stdoutBuf),
-                \JSON_THROW_ON_ERROR,
-            )."\n"
-            .'Stderr: '.$this->stderrBuf,
+            .$this->collectDiagnostics($events),
         );
     }
 

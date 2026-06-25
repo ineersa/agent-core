@@ -23,6 +23,10 @@ Castor wraps each tool with correct flag combinations, output summarization for 
 
 Key commands: `castor check` (full validation), `castor test`, `castor deptrac`, `castor phpstan`, `castor cs-check`, `castor cs-fix`.
 
+Concurrent full `castor check` invocations for the **same git repository** (including sibling worktrees) serialize on a shared Symfony Lock (FlockStore) under `$XDG_RUNTIME_DIR/hatfield/castor-check/` (fallback: `/tmp/hatfield-castor-check-<uid>/`); additional checks wait with a clear message (default **60s** acquire timeout via `HATFIELD_CASTOR_CHECK_LOCK_TIMEOUT`, then fail with lock resource/directory and holder metadata diagnostics) instead of competing for CPU/tmux/controller startup. Focused Castor commands (`castor test`, `castor phpstan`, …) are unaffected. Stress-only override: `HATFIELD_CASTOR_CHECK_LOCK=0`.
+
+**Deterministic gate mode (`castor check`):** per-run isolated reports/tmp/cache/DB (`HATFIELD_QA_RUN_ID`), Symfony Lock serialization across sibling worktrees, llama-proxy cache-growth guard, post-run leak assertion (processes tagged with `HATFIELD_QA_RUN_ID` must be gone — no auto-kill), and per-lane log artifact integrity under `HATFIELD_QA_REPORTS_DIR`. **Stress/diagnostic mode** (lock/cache-guard/concurrency overrides) is for investigation only — not acceptable CODE-REVIEW gate evidence.
+
 **Load the `testing` skill** when: running any test, writing tests, debugging test failures, touching runtime/TUI/Messenger code, or needing the full command reference.
 
 ## ⚠️ MANDATORY: Read testing docs before touching tests or running QA
@@ -34,7 +38,9 @@ Before writing, editing, debugging, reviewing, or running tests — and before t
 
 This must happen before proposing a test strategy, adding tests, running Castor tests, or handing off validation results. Forks must mention in their handoff that they read both files and followed the shared conventions. A fork handoff that omits this for test-related work is incomplete — the parent agent must not accept the handoff as valid for CODE-REVIEW or DONE without confirming the conventions were followed.
 
-Before re-running `castor check`, `castor test:controller`, or `castor test:tui`, kill stale worker processes from prior runs that are owned by the current user (e.g., `messenger:consume`, `agent --controller`, orphaned PHPUnit/Castor children). Orphaned consumers steal queue messages and can make passing tests appear hung.
+Leaked `messenger:consume`, `agent --controller`, PHPUnit, or Castor children are **bugs** — fix lifecycle/teardown at the source instead of treating kills as routine workflow. `castor check` does **not** run automatic worker cleanup.
+
+For diagnostics only: `castor clean:cleanup:workers:list` (dry-run) and `castor clean:cleanup:workers` (explicit last-resort kill for current-user orphans in this checkout **after** you have recorded the leak and started investigating root cause). Never signal root-owned workers or processes tagged with `HATFIELD_SESSION_ID` (active Hatfield session workers).
 
 **Never kill, signal, restart, or otherwise touch root-owned worker processes.** In particular, do not touch the root-owned `php bin/console messenger:consume --all --exclude-receivers=failed` process (currently observed as PID 3361). If a root-owned process appears stale, report it to the user and leave it alone.
 
@@ -61,9 +67,12 @@ curl -X POST http://127.0.0.1:9052/__llama_proxy/cache/clear   # or: curl -X DEL
 
 If `LLAMA_PROXY_ADMIN_TOKEN` is set on the proxy, add `-H 'X-Llama-Proxy-Token: …'` to admin calls. Responses on cache hits may include `x-llama-proxy-cache: hit`.
 
-- **Warm cache:** run `castor test:llm-real` or full `castor check` once; unique prompts record cassettes on miss, repeats replay from disk (~20–30s warm lane vs cold upstream).
+- **Warm cache (intentional):** run `castor test:llm-real` to record cassettes on miss; repeats replay from disk (~20–30s warm lane vs cold upstream). Do **not** rely on `castor check` to grow the proxy cache — the gate fails if cache `entries` increase.
+- **`castor check` cache guard:** before lanes, Castor records llama-proxy `entries` from `GET /__llama_proxy/cache/stats`; after all lanes it fails if `entries` increased (uncached live LLM during the gate). Baseline is taken **before** generation preflight so preflight misses count too. Stress-only disable: `HATFIELD_LLM_CACHE_GUARD=0`. Admin URL override: `HATFIELD_LLM_PROXY_ADMIN_URL` (default `http://127.0.0.1:9052`).
+- **First run / warmup (required for `castor check`):** intentionally run `castor test:llm-real` to populate proxy cassettes, confirm `curl http://127.0.0.1:9052/__llama_proxy/cache/stats` stabilizes, then run `castor check`. After `cache/clear`, warmup again before the gate.
+
 - **Cold / stale cache:** `cache/clear`, then rerun the same tests to re-record. Delete Castor preflight cache `var/tmp/llm-generation-ready.cache` or set `HATFIELD_LLM_READY_TTL=0` to force generation preflight.
-- **Stale workers:** before retrying `castor check` / `test:tui` / `test:controller`, kill stale **current-user** `messenger:consume` / `agent --controller` children from the failed worktree (see above). Do not touch root-owned workers.
+- **Leaked workers:** treat survivors as lifecycle/teardown bugs — fix why the run did not exit cleanly (cancel path, subprocess shutdown, test harness cleanup). Use `castor clean:cleanup:workers:list` for diagnostics only. `castor clean:cleanup:workers` is last-resort only after investigation — not routine before retrying `castor check`.
 
 Load the **`testing`** skill for full command matrix, ParaTest `llm-real` behavior, and failure diagnostics.
 
@@ -107,16 +116,22 @@ Observed in issue #183: the follow-up-after-shell hang was diagnosed and "fixed"
 
 `castor test:controller` remains opt-in for live controller E2E when appropriate. Do NOT require live LLM validation for every normal task — only for provider/LLM-visible changes.
 
-## Mandatory TUI feature E2E proof
+## Mandatory TUI behavior proof (test pyramid)
 
-**TUI implementation is NOT complete until there is an automated test using the real interactive TUI (`TmuxHarness`) with a snapshot or assertion proving the FEATURE works exactly as expected.** This is a hard gate — no exceptions. Default TUI E2E uses replay-backed fixtures for model interaction; live llama.cpp is not required for TUI feature proof.
+**TUI implementation is NOT complete until there is automated proof at the lowest correct layer** for each user-visible behavior touched. Do not default every feature to `TmuxHarness`; broad multi-phase tmux journey tests are discouraged when virtual or replay layers can prove the contract.
 
-- Tests must exercise the real TUI interaction flow, not just mocked services, DTO assembly, or service-only unit tests.
-- Tests must use the project TUI E2E infrastructure (`TmuxHarness`, `#[Group('tui-e2e-replay')]`), replay fixtures where model output is needed, and isolated `var/tmp/test-{uuid}` directories.
-- The following are NOT acceptable substitutes: custom PHP smoke scripts, mocked `AgentSessionClient` passing through a mock runtime, checking only picker visibility or footer text, or manual-run reports from forks.
-- For the task workflow: do **not** move a TUI task to CODE-REVIEW or DONE unless a real TmuxHarness E2E proof exists and passes `castor test:tui`. The default `castor test:tui` is deterministic/replay-backed; it does not require llama.cpp. If tmux is unavailable, the task MUST stay IN-PROGRESS with that blocker recorded.
+| Layer | When to use | How to run |
+| --- | --- | --- |
+| **Virtual / in-process** | Widget layout, render, editor input, local slash commands, command routing, transcript blocks on `ChatScreen` — no live controller subprocess required for the assertion | `castor test` (e.g. `VirtualTuiHarness`, `VirtualTerminal`, `ScreenBuffer` under `tests/Tui/Screen/`) |
+| **Controller replay** | Runtime/protocol, JSONL commands/events, session state, shell/tool ordering, `AgentSessionClient` contracts | `castor test:controller-replay` |
+| **Minimal tmux smoke** | Real terminal integration only: raw TTY, process boot, tmux/pty, Revolt event loop with detached session, terminal-specific escape behavior | `castor test:tui` (`#[Group('tui-e2e-replay')]`, replay fixtures where model output is needed, `var/tmp/test-{uuid}` isolation) |
 
-**Load the `testing` skill** when: writing, running, or debugging TUI E2E proof tests.
+- Virtual tests must exercise real TUI screen/editor/command paths where possible (production parsers, routers, renderers), not mocked `AgentSessionClient` stand-ins for the feature under test.
+- The following are NOT acceptable as the **only** proof: custom PHP smoke scripts, service-only DTO tests, picker/footer visibility alone, or manual fork reports.
+- **Task workflow:** CODE-REVIEW/DONE for a TUI task requires proof at the appropriate layer(s) and passing focused Castor validation (`castor test` for virtual, `castor test:controller-replay` for runtime protocol, `castor test:tui` only when the change needs tmux integration). Purely virtual/local-command features do **not** require a new tmux test. If tmux is required but unavailable, stay IN-PROGRESS with the blocker recorded.
+- `castor check` still runs the minimal tmux replay lane; deterministic virtual TUI tests run in the main `castor test` suite.
+
+**Load the `testing` skill** when: writing, running, or debugging TUI proof tests.
 
 ## Test value and scope
 
@@ -124,11 +139,11 @@ Tests must protect a **user-visible behavior**, a **stable runtime/protocol cont
 
 - **Bug fixes**: prefer the smallest failing repro first, then fix. Do not add extra tests unless they protect a distinct contract.
 - **Avoid excessive implementation-mirroring tests**: enum case lists, trivial DTO constructor/getter/roundtrip tests, private-helper exact-behavior mirrors, mapper tests that just repeat the implementation, coverage-only tests, and broad snapshot churn unless justified.
-- **Default test budget** for implementation tasks: one real TUI E2E proof when the change is TUI-visible, plus 1–3 focused contract or regression tests. More tests require explicit justification.
+- **Default test budget** for implementation tasks: one proof at the lowest correct TUI layer when the change is TUI-visible (virtual, controller-replay, or minimal tmux — not always tmux), plus 1–3 focused contract or regression tests. More tests require explicit justification.
 - Ask whether the tests would have caught the actual smoke or user-reported bug; if not, reconsider.
 - **Do not broaden implementation tasks into test refactors.** Broad test cleanup or restructuring belongs in separate tasks, not mixed with production changes.
 
-Existing mandatory Castor QA and TUI E2E proof requirements (above) remain in full force. The goal is to improve test signal density, not to eliminate testing.
+Existing mandatory Castor QA and TUI behavior proof requirements (above) remain in full force. The goal is to improve test signal density, not to eliminate testing.
 
 ## Development rules
 

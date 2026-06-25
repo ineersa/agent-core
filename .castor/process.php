@@ -30,6 +30,10 @@ declare(strict_types=1);
 
 use Castor\Attribute\AsTask;
 
+use function CastorTasks\acquire_castor_check_lock;
+use function CastorTasks\castor_check_lock_is_busy;
+use function CastorTasks\collect_qa_check_run_leaked_processes;
+use function CastorTasks\release_castor_check_lock;
 use function CastorTasks\report_path;
 
 require_once __DIR__.'/../vendor/autoload.php';
@@ -424,7 +428,7 @@ function _reap_session(?int $sid): void
  *    create their own session) are NOT supported once reparented to
  *    init/systemd after the parent exits — see the NOTE below.
  */
-#[AsTask(name: 'test:timeout-hardstop', description: 'Verify Castor hard timeout + normal-exit session cleanup (6 smoke proofs: A–E incl. PHAR + source startup cleanup) without hangs')]
+#[AsTask(name: 'test:timeout-hardstop', description: 'Verify Castor hard timeout + normal-exit session cleanup (7 smoke proofs: A–E incl. PHAR + source + optional worker cleanup) without hangs')]
 function test_timeout_hardstop(string $cmdOverride = ''): void
 {
     echo "=== Castor timeout hard-stop + normal-exit cleanup smoke proof ===\n\n";
@@ -553,7 +557,7 @@ function test_timeout_hardstop(string $cmdOverride = ''): void
     }
 
     // ── Test C: Startup stale-worker cleanup ─────────────────
-    echo "\n── Test C: Startup cleanup_stale_check_workers kills stale PHAR workers ──\n\n";
+    echo "\n── Test C: Optional cleanup_stale_check_workers kills stale PHAR workers ──\n\n";
 
     // Spawn a fake stale process whose ps output looks like a leaked
     // messenger consumer.  Use array-form proc_open (no intermediate
@@ -591,7 +595,7 @@ function test_timeout_hardstop(string $cmdOverride = ''): void
         $preCountC = count_alive_descendants();
         echo "Pre-cleanup descendants: {$preCountC}\n";
 
-        // Run the startup cleanup helper.
+        // Run the optional cleanup helper.
         cleanup_stale_check_workers($root);
         usleep(1_000_000); // 1 s settle
 
@@ -619,12 +623,12 @@ function test_timeout_hardstop(string $cmdOverride = ''): void
                 $ok = false;
             }
         } else {
-            echo "PASS: fake stale PID {$fakePid} killed by startup cleanup\n";
+            echo "PASS: fake stale PID {$fakePid} killed by optional cleanup\n";
         }
     }
 
     // ── Test C2: Startup cleanup kills stale source bin/console workers ──
-    echo "\n── Test C2: Startup cleanup_stale_check_workers kills stale source workers ──\n\n";
+    echo "\n── Test C2: Optional cleanup_stale_check_workers kills stale source workers ──\n\n";
 
     $consolePath = $root.'/bin/console';
     $fakeArgsC2 = ['bash', '-c', 'exec -a '.$consolePath
@@ -669,8 +673,59 @@ function test_timeout_hardstop(string $cmdOverride = ''): void
                 $ok = false;
             }
         } else {
-            echo "PASS: fake stale source PID {$fakePidC2} killed by startup cleanup\n";
+            echo "PASS: fake stale source PID {$fakePidC2} killed by optional cleanup\n";
         }
+    }
+
+    // ── Test C3: Active Hatfield session workers are preserved ──
+    echo "\n── Test C3: Optional cleanup preserves messenger workers with HATFIELD_SESSION_ID ──\n\n";
+
+    $sessionIdSmoke = 'castor-smoke-active-session-208';
+    $fakeArgsC3 = ['bash', '-c', 'export HATFIELD_SESSION_ID='.$sessionIdSmoke
+        .'; exec -a '.$consolePath
+        .' tail -f /dev/null -- messenger:consume fake --time-limit=3600'];
+
+    echo "Fake active-session worker args:\n  ".implode(' ', $fakeArgsC3)."\n\n";
+
+    $fakeProcC3 = @proc_open($fakeArgsC3, [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $fakePipesC3);
+    if (!is_resource($fakeProcC3)) {
+        echo "FAIL: could not start fake active-session worker\n";
+        $ok = false;
+    } else {
+        fclose($fakePipesC3[0]);
+        $fakePidC3 = proc_get_status($fakeProcC3)['pid'];
+        echo "Fake active-session worker PID: {$fakePidC3}\n";
+
+        usleep(500_000);
+
+        $environC3 = @file_get_contents("/proc/{$fakePidC3}/environ");
+        if (false === $environC3 || !str_contains($environC3, 'HATFIELD_SESSION_ID='.$sessionIdSmoke)) {
+            echo "FAIL: fake active-session worker missing HATFIELD_SESSION_ID in /proc environ\n";
+            $ok = false;
+        } else {
+            echo "PASS: fake worker has HATFIELD_SESSION_ID in environ\n";
+        }
+
+        cleanup_stale_check_workers($root);
+        usleep(500_000);
+
+        $fakeAliveC3 = @posix_kill($fakePidC3, 0);
+        if (!$fakeAliveC3) {
+            echo "FAIL: fake active-session PID {$fakePidC3} was killed by optional cleanup\n";
+            $ok = false;
+        } else {
+            echo "PASS: fake active-session PID {$fakePidC3} preserved by optional cleanup\n";
+        }
+
+        @posix_kill($fakePidC3, \SIGTERM);
+        usleep(200_000);
+        if (@posix_kill($fakePidC3, 0)) {
+            @posix_kill($fakePidC3, \SIGKILL);
+        }
+        @fclose($fakePipesC3[1]);
+        @fclose($fakePipesC3[2]);
+        @proc_close($fakeProcC3);
+        usleep(200_000);
     }
 
     // ── Test D: Same-SID separate-PGID grandchild cleanup (session-based) ──
@@ -795,8 +850,236 @@ function test_timeout_hardstop(string $cmdOverride = ''): void
         echo "PASS: no orphan PHAR workers after PHPUnit-like cleanup (pre={$preCountE}, post={$postCountE})\n";
     }
 
+    // ── Test F: Full castor check lock serializes concurrent acquirers (cross-root) ──
+    echo "\n── Test F: castor check lock serializes concurrent acquirers (cross-root) ──\n\n";
+
+    $lockIdentityF = 'castor-check-lock-smoke-'.(string) getmypid();
+    putenv('HATFIELD_CASTOR_CHECK_LOCK_IDENTITY='.$lockIdentityF);
+    $_ENV['HATFIELD_CASTOR_CHECK_LOCK_IDENTITY'] = $lockIdentityF;
+    $lockResourceF = \CastorTasks\castor_check_lock_resource_name($root);
+    $lockDirF = \CastorTasks\castor_check_lock_directory();
+    @unlink(\CastorTasks\castor_check_lock_meta_path($root));
+
+    $altRootF = $root.'/var/tmp/castor-lock-alt-root-'.getmypid();
+    if (is_dir($altRootF)) {
+        @rmdir($altRootF);
+    }
+    $waitDurationF = null;
+    if (!mkdir($altRootF, 0777, true) && !is_dir($altRootF)) {
+        echo "FAIL: could not create alternate project root for lock smoke\n";
+        $ok = false;
+    } else {
+        $phpBinF = \PHP_BINARY;
+        $holderPhp = <<<'PHPCODE'
+<?php
+declare(strict_types=1);
+$root = getenv('CASTOR_LOCK_TEST_ROOT') ?: getcwd();
+$identity = getenv('CASTOR_LOCK_TEST_IDENTITY') ?: '';
+putenv('HATFIELD_CASTOR_CHECK_LOCK_IDENTITY='.$identity);
+$_ENV['HATFIELD_CASTOR_CHECK_LOCK_IDENTITY'] = $identity;
+require $root.'/vendor/autoload.php';
+require $root.'/.castor/helpers.php';
+\CastorTasks\castor_check_lock_smoke_hold($root, 4.0);
+PHPCODE;
+        $holderScript = $root.'/var/tmp/castor-check-lock-holder-'.getmypid().'.php';
+        file_put_contents($holderScript, $holderPhp);
+
+        $holderEnvPrefix = 'CASTOR_LOCK_TEST_ROOT='.escapeshellarg($root)
+            .' CASTOR_LOCK_TEST_IDENTITY='.escapeshellarg($lockIdentityF)
+            .' HATFIELD_CASTOR_CHECK_LOCK_IDENTITY='.escapeshellarg($lockIdentityF);
+        $launchCmd = $holderEnvPrefix.' '.escapeshellarg($phpBinF).' '.escapeshellarg($holderScript).' > /dev/null 2>&1 & echo $!';
+        $holderPid = (int) trim((string) shell_exec($launchCmd));
+
+        if ($holderPid <= 0) {
+            echo "FAIL: could not start lock holder (pid={$holderPid})\n";
+            $ok = false;
+        } else {
+            $holderReady = false;
+            for ($poll = 0; $poll < 60; ++$poll) {
+                if (!is_dir('/proc/'.$holderPid)) {
+                    echo "FAIL: lock holder process {$holderPid} exited before acquiring lock\n";
+                    $ok = false;
+                    break;
+                }
+                if (castor_check_lock_is_busy($altRootF)) {
+                    $holderReady = true;
+                    break;
+                }
+                usleep(100_000);
+            }
+            if (!$holderReady && $ok) {
+                echo "FAIL: lock holder never acquired shared Symfony Lock\n";
+                $ok = false;
+            }
+
+            if ($ok) {
+                $waitStartF = microtime(true);
+                $waiterLock = acquire_castor_check_lock($altRootF);
+                $waitDurationF = microtime(true) - $waitStartF;
+                release_castor_check_lock($waiterLock, $altRootF);
+            }
+
+            if (is_dir('/proc/'.$holderPid)) {
+                posix_kill($holderPid, \SIGTERM);
+                usleep(200_000);
+                @posix_kill($holderPid, \SIGKILL);
+            }
+            @unlink($holderScript);
+            @rmdir($altRootF);
+
+            $expectedResource = \CastorTasks\castor_check_lock_resource_name($altRootF);
+            if ($ok && $lockResourceF !== $expectedResource) {
+                echo "FAIL: lock resource mismatch holder={$lockResourceF} waiter={$expectedResource}\n";
+                $ok = false;
+            } elseif ($ok && null !== $waitDurationF && $waitDurationF < 2.5) {
+                echo sprintf("FAIL: waiter acquired lock in %.2fs — expected to block behind holder (~4s)\n", $waitDurationF);
+                $ok = false;
+            } elseif ($ok && null !== $waitDurationF) {
+                echo sprintf("PASS: alternate root blocked %.2fs on shared Symfony Lock resource %s (dir %s)\n", $waitDurationF, $expectedResource, $lockDirF);
+            }
+        }
+    }
+
+    // ── Test F2: Lock acquire timeout (fast override) ──
+    echo "\n── Test F2: castor check lock acquire timeout ──\n\n";
+
+    $lockIdentityF2 = 'castor-check-lock-timeout-'.(string) getmypid();
+    putenv('HATFIELD_CASTOR_CHECK_LOCK_IDENTITY='.$lockIdentityF2);
+    $_ENV['HATFIELD_CASTOR_CHECK_LOCK_IDENTITY'] = $lockIdentityF2;
+    putenv('HATFIELD_CASTOR_CHECK_LOCK_TIMEOUT=1');
+    $_ENV['HATFIELD_CASTOR_CHECK_LOCK_TIMEOUT'] = '1';
+    @unlink(\CastorTasks\castor_check_lock_meta_path($root));
+
+    $altRootF2 = $root.'/var/tmp/castor-lock-timeout-alt-'.getmypid();
+    if (is_dir($altRootF2)) {
+        @rmdir($altRootF2);
+    }
+    if (!mkdir($altRootF2, 0777, true) && !is_dir($altRootF2)) {
+        echo "FAIL: could not create alternate project root for lock timeout smoke\n";
+        $ok = false;
+    } else {
+        $phpBinF2 = \PHP_BINARY;
+        $holderPhpF2 = <<<'PHPCODE'
+<?php
+declare(strict_types=1);
+$root = getenv('CASTOR_LOCK_TEST_ROOT') ?: getcwd();
+$identity = getenv('CASTOR_LOCK_TEST_IDENTITY') ?: '';
+putenv('HATFIELD_CASTOR_CHECK_LOCK_IDENTITY='.$identity);
+$_ENV['HATFIELD_CASTOR_CHECK_LOCK_IDENTITY'] = $identity;
+require $root.'/vendor/autoload.php';
+require $root.'/.castor/helpers.php';
+\CastorTasks\castor_check_lock_smoke_hold($root, 5.0);
+PHPCODE;
+        $holderScriptF2 = $root.'/var/tmp/castor-check-lock-timeout-holder-'.getmypid().'.php';
+        file_put_contents($holderScriptF2, $holderPhpF2);
+        $holderEnvF2 = 'CASTOR_LOCK_TEST_ROOT='.escapeshellarg($root)
+            .' CASTOR_LOCK_TEST_IDENTITY='.escapeshellarg($lockIdentityF2)
+            .' HATFIELD_CASTOR_CHECK_LOCK_IDENTITY='.escapeshellarg($lockIdentityF2);
+        $holderPidF2 = (int) trim((string) shell_exec($holderEnvF2.' '.escapeshellarg($phpBinF2).' '.escapeshellarg($holderScriptF2).' > /dev/null 2>&1 & echo $!'));
+        if ($holderPidF2 <= 0) {
+            echo "FAIL: could not start lock timeout holder\n";
+            $ok = false;
+        } else {
+            $holderReadyF2 = false;
+            for ($pollF2 = 0; $pollF2 < 60; ++$pollF2) {
+                if (!is_dir('/proc/'.$holderPidF2)) {
+                    echo "FAIL: lock timeout holder exited early\n";
+                    $ok = false;
+                    break;
+                }
+                if (castor_check_lock_is_busy($altRootF2)) {
+                    $holderReadyF2 = true;
+                    break;
+                }
+                usleep(100_000);
+            }
+            if ($holderReadyF2 && $ok) {
+                $timeoutCaught = false;
+                $timeoutMessage = '';
+                try {
+                    acquire_castor_check_lock($altRootF2);
+                } catch (RuntimeException $e) {
+                    $timeoutCaught = true;
+                    $timeoutMessage = $e->getMessage();
+                }
+                if (!$timeoutCaught) {
+                    echo "FAIL: acquire_castor_check_lock did not fail while holder still active\n";
+                    $ok = false;
+                } elseif (!str_contains($timeoutMessage, 'failed to acquire Symfony Lock within')) {
+                    echo "FAIL: timeout message missing expected prefix\n";
+                    $ok = false;
+                } elseif (!str_contains($timeoutMessage, 'lock resource:')) {
+                    echo "FAIL: timeout message missing lock resource\n";
+                    $ok = false;
+                } else {
+                    echo "PASS: acquire timed out with diagnostics (holder pid {$holderPidF2})\n";
+                }
+            } elseif ($ok) {
+                echo "FAIL: lock timeout holder never acquired lock\n";
+                $ok = false;
+            }
+            if (is_dir('/proc/'.$holderPidF2)) {
+                posix_kill($holderPidF2, \SIGTERM);
+                usleep(200_000);
+                @posix_kill($holderPidF2, \SIGKILL);
+            }
+            @unlink($holderScriptF2);
+            @rmdir($altRootF2);
+        }
+    }
+    putenv('HATFIELD_CASTOR_CHECK_LOCK_TIMEOUT');
+    unset($_ENV['HATFIELD_CASTOR_CHECK_LOCK_TIMEOUT']);
+
+    // ── Test G: QA run id leak detection (no auto-kill) ──
+    echo "\n── Test G: QA run leak detection via /proc environ ──\n\n";
+
+    $qaRunIdG = 'qa-smoke-leak-'.getmypid();
+    putenv('HATFIELD_QA_RUN_ID='.$qaRunIdG);
+    $_ENV['HATFIELD_QA_RUN_ID'] = $qaRunIdG;
+
+    $fakeArgsG = ['php', '-r', 'sleep(30);'];
+    $fakeEnvG = array_merge($_ENV, ['HATFIELD_QA_RUN_ID' => $qaRunIdG]);
+    $fakeProcG = @proc_open($fakeArgsG, [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $fakePipesG, null, $fakeEnvG);
+    $fakePidG = 0;
+    if (is_resource($fakeProcG)) {
+        fclose($fakePipesG[0]);
+        stream_set_blocking($fakePipesG[1], false);
+        stream_set_blocking($fakePipesG[2], false);
+        $fakePidG = proc_get_status($fakeProcG)['pid'];
+        usleep(200_000);
+    }
+
+    if ($fakePidG <= 0) {
+        echo "FAIL: could not start fake QA-tagged process\n";
+        $ok = false;
+    } else {
+        $leaksG = collect_qa_check_run_leaked_processes($qaRunIdG);
+        if ([] === $leaksG) {
+            echo "FAIL: leak scanner did not find fake process pid={$fakePidG}\n";
+            $ok = false;
+        } else {
+            echo 'PASS: leak scanner found '.count($leaksG)." process(es) tagged with HATFIELD_QA_RUN_ID\n";
+        }
+        @posix_kill($fakePidG, \SIGTERM);
+        usleep(200_000);
+        @posix_kill($fakePidG, \SIGKILL);
+        if (is_resource($fakeProcG)) {
+            proc_close($fakeProcG);
+        }
+        $leaksAfterG = collect_qa_check_run_leaked_processes($qaRunIdG);
+        if ([] !== $leaksAfterG) {
+            echo 'FAIL: fake process still visible after cleanup: '.json_encode($leaksAfterG)."\n";
+            $ok = false;
+        } else {
+            echo "PASS: no leaked processes after fake cleanup\n";
+        }
+    }
+
+    putenv('HATFIELD_QA_RUN_ID');
+    unset($_ENV['HATFIELD_QA_RUN_ID']);
+
     if ($ok) {
-        echo "\n✅ All timeout + normal-exit + PHAR/source startup-cleanup (C/C2) + session + separate-PGID + PHPUnit-leak assertions passed.\n";
+        echo "\n✅ All timeout + normal-exit + PHAR/source startup-cleanup (C/C2) + session + separate-PGID + PHPUnit-leak + castor-check-lock + lock-acquire-timeout + QA-run-leak assertions passed.\n";
     } else {
         echo "\n❌ Some assertions FAILED.\n";
         exit(1);
