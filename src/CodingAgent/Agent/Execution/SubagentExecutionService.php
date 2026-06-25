@@ -127,7 +127,7 @@ final class SubagentExecutionService
             artifactId: $artifactId,
             allowedTools: $allowedTools,
             agentsMd: $launchContext['agentsMd'],
-                        skillsContext: $launchContext['skillsContext'],
+            skillsContext: $launchContext['skillsContext'],
         );
 
         // 8. Build child metadata with policy and artifact paths.
@@ -352,7 +352,7 @@ final class SubagentExecutionService
                     artifactId: $launch['artifactId'],
                     allowedTools: $allowedTools,
                     agentsMd: $launchContext['agentsMd'],
-                                        skillsContext: $launchContext['skillsContext'],
+                    skillsContext: $launchContext['skillsContext'],
                 );
 
                 $childMetadata = new RunMetadata(
@@ -1052,7 +1052,6 @@ final class SubagentExecutionService
             'parent_state_last_seq' => $parentState->lastSeq,
         ]);
     }
-
 
     /**
      * Resolve project/AGENTS/skills context for a child launch from parent state

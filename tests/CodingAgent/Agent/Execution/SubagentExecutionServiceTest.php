@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution;
 
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
@@ -33,6 +35,7 @@ use Ineersa\CodingAgent\Agent\Execution\AgentToolPolicyResolver;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
 use Ineersa\CodingAgent\Mcp\Config\McpConfigDTO;
 use Ineersa\CodingAgent\Mcp\Config\McpConfigLoader;
+use Ineersa\CodingAgent\Tests\Support\Mcp\TestMcpConfigLoaderFactory;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
@@ -85,15 +88,15 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             instructions: 'Worker instructions.',
         );
 
-        $registryMock = $this->createMock(ToolRegistryInterface::class);
-        $registryMock->method('activeToolNames')->willReturn(['read', 'bash', 'write', 'subagent']);
+        $registryStub = $this->createStub(ToolRegistryInterface::class);
+        $registryStub->method('activeToolNames')->willReturn(['read', 'bash', 'write', 'subagent']);
 
         $service = $this->makeService([
             'catalog' => new AgentDefinitionCatalog([$def]),
             'agentRunner' => $agentRunner,
             'runStore' => $runStore,
             'parentRunStore' => $parentRunStore,
-            'policyResolver' => new AgentToolPolicyResolver($registryMock, $this->emptyMcpToolsResolver()),
+            'policyResolver' => new AgentToolPolicyResolver($registryStub, $this->emptyMcpToolsResolver()),
         ]);
 
         $service->execute('parent-inherit-tools', 'worker-like', 'Do work');
@@ -1137,8 +1140,7 @@ CHILD_SKILL_BODY_UNIQUE",
     {
         $catalogStore = $this->createStub(McpToolCatalogStoreInterface::class);
         $catalogStore->method('read')->willReturn(null);
-        $loader = $this->createStub(McpConfigLoader::class);
-        $loader->method('load')->willReturn(McpConfigDTO::fromServers([]));
+        $loader = TestMcpConfigLoaderFactory::loaderForServers([]);
 
         return new AgentMcpToolsResolver($catalogStore, $loader);
     }

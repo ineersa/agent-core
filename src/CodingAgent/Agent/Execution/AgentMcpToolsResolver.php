@@ -121,7 +121,7 @@ final readonly class AgentMcpToolsResolver
             }
         }
 
-        return array_values(array_keys($allowed));
+        return array_keys($allowed);
     }
 
     /**
@@ -180,7 +180,7 @@ final readonly class AgentMcpToolsResolver
             }
         }
 
-        return array_values(array_keys($all));
+        return array_keys($all);
     }
 
     /**

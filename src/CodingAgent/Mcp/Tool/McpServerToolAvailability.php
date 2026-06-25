@@ -15,7 +15,7 @@ use Ineersa\CodingAgent\Mcp\Config\McpServerAvailabilityEnum;
 final readonly class McpServerToolAvailability
 {
     /**
-     * @return list<string> Hatfield MCP tool names from servers marked availability=all.
+     * @return list<string> hatfield MCP tool names from servers marked availability=all
      */
     public function globalRuntimeToolNames(?McpToolCatalogDTO $catalog, McpConfigDTO $config): array
     {
@@ -23,7 +23,7 @@ final readonly class McpServerToolAvailability
     }
 
     /**
-     * @return list<string> Hatfield MCP tool names from servers marked availability=specific.
+     * @return list<string> hatfield MCP tool names from servers marked availability=specific
      */
     public function specificRuntimeToolNames(?McpToolCatalogDTO $catalog, McpConfigDTO $config): array
     {

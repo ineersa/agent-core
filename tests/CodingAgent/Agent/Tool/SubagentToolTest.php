@@ -7,16 +7,18 @@ namespace Ineersa\CodingAgent\Tests\Agent\Tool;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
-use Ineersa\CodingAgent\Agent\Tool\SubagentTool;
+use Ineersa\CodingAgent\Agent\Tool\SubagentToolDefinitionProvider;
+use Ineersa\CodingAgent\Agent\Tool\SubagentToolHandler;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\CoversClass;
 
-#[CoversClass(SubagentTool::class)]
+#[CoversClass(SubagentToolDefinitionProvider::class)]
+#[CoversClass(SubagentToolHandler::class)]
 final class SubagentToolTest extends IsolatedKernelTestCase
 {
     public function testDefinitionHasCorrectNameAndParallelSchema(): void
     {
-        $tool = self::getContainer()->get(SubagentTool::class);
+        $tool = self::getContainer()->get(SubagentToolDefinitionProvider::class);
         $def = $tool->definition();
 
         self::assertSame('subagent', $def->name);
@@ -27,22 +29,22 @@ final class SubagentToolTest extends IsolatedKernelTestCase
 
     public function testInvokeRejectsWithoutToolContext(): void
     {
-        $tool = self::getContainer()->get(SubagentTool::class);
+        $handler = self::getContainer()->get(SubagentToolHandler::class);
 
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('requires an active parent run context');
-        $tool->__invoke(['agent' => 'scout', 'task' => 'do something']);
+        $handler->__invoke(['agent' => 'scout', 'task' => 'do something']);
     }
 
     public function testInvokeWithContextRejectsConcurrency(): void
     {
-        $tool = self::getContainer()->get(SubagentTool::class);
+        $handler = self::getContainer()->get(SubagentToolHandler::class);
         $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);
         $context = $this->toolContext('tc-concurrency');
 
-        $message = $accessor->with($context, function () use ($tool): string {
+        $message = $accessor->with($context, function () use ($handler): string {
             try {
-                $tool->__invoke(['tasks' => [['agent' => 'scout', 'task' => 't']], 'concurrency' => 2]);
+                $handler->__invoke(['tasks' => [['agent' => 'scout', 'task' => 't']], 'concurrency' => 2]);
                 return '';
             } catch (ToolCallException $e) {
                 return $e->getMessage();
@@ -55,13 +57,13 @@ final class SubagentToolTest extends IsolatedKernelTestCase
 
     public function testInvokeWithContextRejectsBackground(): void
     {
-        $tool = self::getContainer()->get(SubagentTool::class);
+        $handler = self::getContainer()->get(SubagentToolHandler::class);
         $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);
         $context = $this->toolContext('tc-bg');
 
-        $message = $accessor->with($context, function () use ($tool): string {
+        $message = $accessor->with($context, function () use ($handler): string {
             try {
-                $tool->__invoke(['agent' => 'scout', 'task' => 't', 'background' => true]);
+                $handler->__invoke(['agent' => 'scout', 'task' => 't', 'background' => true]);
                 return '';
             } catch (ToolCallException $e) {
                 return $e->getMessage();
@@ -73,13 +75,13 @@ final class SubagentToolTest extends IsolatedKernelTestCase
 
     public function testInvokeWithContextRejectsMixedSingleAndParallel(): void
     {
-        $tool = self::getContainer()->get(SubagentTool::class);
+        $handler = self::getContainer()->get(SubagentToolHandler::class);
         $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);
         $context = $this->toolContext('tc-mixed');
 
         $this->expectException(ToolCallException::class);
-        $accessor->with($context, function () use ($tool): void {
-            $tool->__invoke([
+        $accessor->with($context, function () use ($handler): void {
+            $handler->__invoke([
                 'agent' => 'scout',
                 'task' => 'single',
                 'tasks' => [['agent' => 'scout', 'task' => 'parallel']],
@@ -89,7 +91,7 @@ final class SubagentToolTest extends IsolatedKernelTestCase
 
     public function testInvokeWithContextRejectsTooManyParallelTasks(): void
     {
-        $tool = self::getContainer()->get(SubagentTool::class);
+        $handler = self::getContainer()->get(SubagentToolHandler::class);
         $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);
         $context = $this->toolContext('tc-cap');
 
@@ -101,14 +103,14 @@ final class SubagentToolTest extends IsolatedKernelTestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('at most 8 agents');
 
-        $accessor->with($context, function () use ($tool, $tasks): void {
-            $tool->__invoke(['tasks' => $tasks]);
+        $accessor->with($context, function () use ($handler, $tasks): void {
+            $handler->__invoke(['tasks' => $tasks]);
         });
     }
 
     public function testProviderIsAutoRegistered(): void
     {
-        $tool = self::getContainer()->get(SubagentTool::class);
+        $tool = self::getContainer()->get(SubagentToolDefinitionProvider::class);
 
         self::assertInstanceOf(
             \Ineersa\CodingAgent\Tool\HatfieldToolProviderInterface::class,

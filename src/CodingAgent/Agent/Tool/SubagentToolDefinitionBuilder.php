@@ -4,73 +4,20 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Tool;
 
-use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
-use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
-use Ineersa\CodingAgent\Agent\Execution\SubagentArgumentsFactory;
-use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
 use Ineersa\CodingAgent\Config\AgentsConfig;
-use Ineersa\CodingAgent\Tool\HatfieldToolProviderInterface;
 use Ineersa\CodingAgent\Tool\ToolDefinitionDTO;
 use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
-use Ineersa\CodingAgent\Tool\ToolRuntime;
 
 /**
- * Model-visible `subagent` tool for foreground agent execution.
- *
- * Supports single mode ({agent, task}) and parallel mode ({tasks: [...]}).
+ * Builds the permanent `subagent` tool definition metadata shared by the
+ * definition provider and tests.
  */
-final class SubagentTool implements HatfieldToolProviderInterface, ToolHandlerInterface
+final class SubagentToolDefinitionBuilder
 {
-    public function __construct(
-        private readonly SubagentExecutionService $executionService,
-        private readonly SubagentArgumentsFactory $argumentsFactory,
-        private readonly AgentsConfig $agentsConfig,
-        private readonly StackToolExecutionContextAccessor $contextAccessor,
-        private readonly ToolRuntime $toolRuntime,
-    ) {
-    }
-
-    /**
-     * @param array<string, mixed> $arguments
-     */
-    public function __invoke(array $arguments): string
+    public static function build(AgentsConfig $agentsConfig, ToolHandlerInterface $handler): ToolDefinitionDTO
     {
-        return $this->toolRuntime->run(function () use ($arguments): string {
-            $context = $this->contextAccessor->current();
-            if (null === $context) {
-                throw new ToolCallException('The subagent tool requires an active parent run context. Subagents cannot be launched outside a session.', retryable: false);
-            }
-
-            $parentRunId = $context->runId();
-            if ('' === $parentRunId) {
-                throw new ToolCallException('Subagent tool requires a valid parent run ID. No run context is active.', retryable: false);
-            }
-
-            $parsed = $this->argumentsFactory->fromToolArguments($arguments);
-
-            if ($parsed->isParallelMode()) {
-                $tasks = $parsed->parallelTasks();
-                // Defense-in-depth: SubagentExecutionService::executeParallel() repeats this cap for direct service callers.
-                $maxAgents = $this->agentsConfig->maxAgents;
-                if (\count($tasks) > $maxAgents) {
-                    throw new ToolCallException(\sprintf('Parallel subagent execution supports at most %d agents per tool call, but %d tasks were requested.', $maxAgents, \count($tasks)), retryable: false, hint: \sprintf('Split the work into multiple subagent calls with at most %d tasks each.', $maxAgents));
-                }
-
-                return $this->executionService->executeParallel($parentRunId, $tasks);
-            }
-
-            return $this->executionService->execute(
-                parentRunId: $parentRunId,
-                agentName: (string) $parsed->trimmedAgent(),
-                task: (string) $parsed->trimmedTask(),
-            );
-        });
-    }
-
-    public function definition(): ToolDefinitionDTO
-    {
-        $maxAgents = $this->agentsConfig->maxAgents;
+        $maxAgents = $agentsConfig->maxAgents;
 
         return new ToolDefinitionDTO(
             name: 'subagent',
@@ -107,7 +54,7 @@ final class SubagentTool implements HatfieldToolProviderInterface, ToolHandlerIn
                 ],
                 'additionalProperties' => false,
             ],
-            handler: $this,
+            handler: $handler,
             executionMode: ToolExecutionMode::Sequential,
             promptLine: 'subagent — launch one or more non-interactive foreground subagents; returns artifact IDs for agent_retrieve',
             promptGuidelines: [

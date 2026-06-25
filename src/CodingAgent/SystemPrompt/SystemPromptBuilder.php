@@ -136,7 +136,6 @@ final readonly class SystemPromptBuilder
         return $this->buildChildAppendsContent($cwd, $allowedToolNames);
     }
 
-
     /**
      * Load the base template content based on precedence.
      *
@@ -295,7 +294,6 @@ final readonly class SystemPromptBuilder
         return implode("\n", $guidelines);
     }
 
-
     /**
      * @param list<string> $allowedToolNames
      *
@@ -416,7 +414,6 @@ final readonly class SystemPromptBuilder
 
         return implode("\n", $guidelines);
     }
-
 
     /**
      * Render a template using Symfony AI's StringTemplateRenderer.

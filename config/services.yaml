@@ -519,6 +519,15 @@ services:
   Ineersa\CodingAgent\Tool\ToolRegistryInterface:
     alias: Ineersa\CodingAgent\Tool\ToolRegistry
 
+  # Subagent tool: definition provider is tagged; handler resolves execution at invoke time only.
+  Ineersa\CodingAgent\Agent\Tool\SubagentToolHandler:
+    arguments:
+      $executionServiceLocator: !service_locator
+        execution: '@Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService'
+
+  Ineersa\CodingAgent\Agent\Tool\SubagentToolDefinitionProvider:
+    tags: ['hatfield.tool_provider']
+
   # CodingAgent ToolSetResolver — bridges ToolRegistry to AgentCore resolver seam.
   # The inner resolver (CodingAgentToolSetResolver) is wrapped by
   # McpCatalogRegisteringToolSetResolver so MCP dynamic tools from the
