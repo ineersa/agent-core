@@ -2,7 +2,7 @@
 
 Agent definitions configure named child-agent roles for your project or user environment. For example, you can define agents named `scout`, `reviewer`, `researcher`, `worker`, or any custom name. Each definition lives in a Markdown file with YAML frontmatter.
 
-Agent definitions, discovery, and catalog are implemented. The model-visible `subagent` tool supports single foreground child execution with parent-scoped artifact storage. Parallel, background, TUI controls, and interactive child conversations are future work. See [Foreground subagent tool](#foreground-subagent-tool) below.
+Agent definitions, discovery, and catalog are implemented. The model-visible `subagent` tool supports single and parallel foreground child execution with parent-scoped artifact storage. Background launch, TUI controls, and interactive child conversations are future work. See [Foreground subagent tool](#foreground-subagent-tool) below.
 
 ## File format
 
@@ -152,34 +152,47 @@ The catalog (`AgentDefinitionCatalog`) provides:
 
 ## Foreground subagent tool
 
+Parent `subagent` tool calls are routed to a dedicated `agent` Messenger transport
+(`messenger:consume agent`), separate from generic `tool` workers. Foreground
+subagent orchestration may block its worker while polling child runs; isolating it
+prevents starving child agents' `read`/`write`/`shell` calls on the `tool` queue.
+
 The `subagent` tool is registered as a permanent model-visible tool. It supports
-**single foreground mode only** with the following JSON schema:
+**single or parallel foreground mode** with the following JSON schema:
+
+Single mode:
+
+```json
+{ "agent": "scout", "task": "Inspect routing config" }
+```
+
+Parallel mode (up to `agents.max_agents`, default **8** per tool call):
 
 ```json
 {
-    "type": "object",
-    "properties": {
-        "agent": { "type": "string", "description": "Name of the agent definition to launch." },
-        "task":  { "type": "string", "description": "The task for the subagent." }
-    },
-    "required": ["agent", "task"],
-    "additionalProperties": false
+  "tasks": [
+    { "agent": "scout", "task": "..." },
+    { "agent": "reviewer", "task": "..." }
+  ]
 }
 ```
 
-Only `agent` and `task` are accepted. Model, thinking, context, and `cwd`
-overrides are not available in v1. The `tasks` array, `concurrency`, and
-`background` fields are explicitly rejected with actionable error messages
-indicating they are not yet implemented.
+- Use **either** single mode or parallel `tasks`, never both.
+- All tasks in one call run concurrently (no `concurrency` argument).
+- If more than `agents.max_agents` tasks are requested, the tool fails fast
+  before creating artifacts — split work across multiple `subagent` calls.
+- Each child agent definition used in parallel mode must set
+  `parallelAllowed: true`.
+- `background` remains unsupported.
 
 ### Execution model
 
-1. **Blocking foreground.** The tool handler blocks the parent LLM until the
-   child run reaches a terminal status (Completed, Failed, Cancelled) or
-   times out. On **success**, the tool result includes a machine-parseable
-   `Artifact: <artifact_id>` line (along with the child handoff text) so the
-   parent model or user can call `agent_retrieve` for the same artifact.
-   Failed and cancelled paths also include `Artifact: <artifact_id>`.
+1. **Blocking foreground.** The tool handler blocks the parent LLM until all
+   child runs reach a terminal status (Completed, Failed, Cancelled) or the
+   tool times out. On **success**, the tool result includes per-child
+   `Artifact: <artifact_id>` lines (and bounded handoff summaries) so the
+   parent model or user can call `agent_retrieve`. If any child fails, the
+   overall tool call fails with a report that still lists every child artifact.
 2. **Parent-scoped storage.** Child runs are stored entirely under the parent
    session directory — no top-level session rows or directories are created.
 3. **Inline progress.** While the child runs, compact progress status lines

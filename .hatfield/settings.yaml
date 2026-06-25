@@ -205,6 +205,7 @@ logging:
 #
 # agents:
 #     enabled: true
+#     max_agents: 8
 #     paths:
 #         - ~/shared/agents/custom-reviewer.md
 #         - .hatfield/team-agents
