@@ -56,11 +56,12 @@ final class ActivityStateMachine
         // not Cancelling, and transitions normally.
         if (RunActivityStateEnum::Cancelling === $current) {
             return match ($event->type) {
-                // Cancel-class events: remain in Cancelling (confirming state)
+                // Cancel-request events: remain in Cancelling (confirming state)
                 RuntimeEventTypeEnum::CancellationRequested->value,
-                RuntimeEventTypeEnum::OperationCancelled->value,
-                RuntimeEventTypeEnum::ToolExecutionCancelled->value => RunActivityStateEnum::Cancelling,
-                RuntimeEventTypeEnum::ToolExecutionFailed->value => RunActivityStateEnum::Cancelled,
+                RuntimeEventTypeEnum::OperationCancelled->value => RunActivityStateEnum::Cancelling,
+                // Terminal tool end (including user-cancelled tool result mapped by RuntimeEventTranslator)
+                RuntimeEventTypeEnum::ToolExecutionCancelled->value,
+                RuntimeEventTypeEnum::ToolExecutionFailed->value,
                 RuntimeEventTypeEnum::ToolExecutionCompleted->value => RunActivityStateEnum::Cancelled,
                 // Terminal events: cancel completes or run fails
                 RuntimeEventTypeEnum::RunCancelled->value,

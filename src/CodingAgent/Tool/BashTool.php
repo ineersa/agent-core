@@ -180,6 +180,10 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
                     if ($elapsedSeconds >= $this->config->backgroundPromptThresholdSeconds) {
                         $promptTriggered = true;
 
+                        // batchToolCallCount is the assistant message's declared tool-call
+                        // count for this step, not a live in-flight counter. When parallel mode
+                        // dispatches multiple bash tools together, suppress per-tool background
+                        // prompts for the whole batch (one overlay per tool would wedge the TUI).
                         $skipBackgroundPrompt = null !== $context
                             && ToolExecutionMode::Parallel === $context->executionMode()
                             && $context->batchToolCallCount() > 1;

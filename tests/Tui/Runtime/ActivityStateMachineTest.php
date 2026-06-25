@@ -315,7 +315,6 @@ final class ActivityStateMachineTest extends TestCase
         foreach ([
             RuntimeEventTypeEnum::CancellationRequested->value,
             RuntimeEventTypeEnum::OperationCancelled->value,
-            RuntimeEventTypeEnum::ToolExecutionCancelled->value,
         ] as $type) {
             $event = new RuntimeEvent(type: $type, runId: 'test', seq: 1);
             $result = ActivityStateMachine::transition(RunActivityStateEnum::Cancelling, $event);
@@ -353,6 +352,18 @@ final class ActivityStateMachineTest extends TestCase
             runId: 'test',
             seq: 132,
             payload: ['tool_call_id' => 'call_1'],
+        );
+        $result = ActivityStateMachine::transition(RunActivityStateEnum::Cancelling, $event);
+        $this->assertSame(RunActivityStateEnum::Cancelled, $result);
+    }
+
+    public function testCancellingToolExecutionCancelledTransitionsToCancelled(): void
+    {
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::ToolExecutionCancelled->value,
+            runId: 'test',
+            seq: 128,
+            payload: ['tool_call_id' => 'call_1', 'is_error' => true, 'result' => 'Tool execution cancelled by user.'],
         );
         $result = ActivityStateMachine::transition(RunActivityStateEnum::Cancelling, $event);
         $this->assertSame(RunActivityStateEnum::Cancelled, $result);
