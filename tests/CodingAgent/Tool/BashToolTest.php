@@ -511,10 +511,13 @@ final class BashToolTest extends IsolatedKernelTestCase
     }
 
 
-    public function testSkipsBackgroundPromptForMultiToolParallelBatch(): void
+    public function testParallelBatchStillInvokesBackgroundPromptAdapter(): void
     {
         $promptAdapter = $this->createMock(BashBackgroundPromptAdapterInterface::class);
-        $promptAdapter->expects($this->never())->method('shouldBackground');
+        $promptAdapter
+            ->expects($this->once())
+            ->method('shouldBackground')
+            ->willReturn(false);
 
         $this->bashConfig = new BashToolConfig(
             defaultTimeoutSeconds: 30,

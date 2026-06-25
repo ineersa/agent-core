@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Tool\ToolQuestion;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
+use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\CodingAgent\Entity\ToolQuestion;
 use Ineersa\CodingAgent\Tool\ToolQuestion\BackgroundProcessStatusCheckerInterface;
@@ -280,6 +281,52 @@ final class RuntimeBashBackgroundPromptAdapterTest extends TestCase
 
         self::assertInstanceOf(ToolQuestion::class, $captured);
         self::assertSame('{"type":"boolean"}', $captured->schema);
+    }
+
+    public function testParallelBatchUsesSharedRequestIdAcrossToolCalls(): void
+    {
+        $contextAccessor = new StackToolExecutionContextAccessor();
+
+        $capturedRequestIds = [];
+        $store = $this->createMock(ToolQuestionStoreInterface::class);
+        $store->expects(self::once())
+            ->method('create')
+            ->with(self::callback(static function (ToolQuestion $q) use (&$capturedRequestIds): bool {
+                $capturedRequestIds[] = $q->requestId;
+
+                return true;
+            }));
+        $store->method('pollAnswer')->willReturn(true);
+
+        $adapter = new RuntimeBashBackgroundPromptAdapter(
+            contextAccessor: $contextAccessor,
+            store: $store,
+            logger: $this->createStub(LoggerInterface::class),
+            processStatusChecker: $this->notFinishedChecker(),
+        );
+
+        $cancellationToken = $this->createStub(CancellationTokenInterface::class);
+        $cancellationToken->method('isCancellationRequested')->willReturn(false);
+
+        $context = new ToolContext(
+            runId: 'run-batch',
+            turnNo: 3,
+            toolCallId: 'tc-b',
+            toolName: 'bash',
+            cancellationToken: $cancellationToken,
+            timeoutSeconds: 60,
+            executionMode: \Ineersa\AgentCore\Domain\Tool\ToolExecutionMode::Parallel,
+            batchToolCallCount: 2,
+        );
+
+        $contextAccessor->with($context, fn (): bool => $adapter->shouldBackground(
+            command: 'sleep 30',
+            pid: 4242,
+            logPath: '/tmp/batch.log',
+            elapsedSeconds: 16.0,
+        ));
+
+        self::assertSame(['bash_bg_batch_run-batch_3_n2'], $capturedRequestIds);
     }
 
 }

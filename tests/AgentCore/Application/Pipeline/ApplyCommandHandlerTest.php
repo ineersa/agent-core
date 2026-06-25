@@ -610,6 +610,71 @@ final class ApplyCommandHandlerTest extends TestCase
         );
     }
 
+    public function testCancelPreservesQueuedBgProcessDoneFollowUpInMessages(): void
+    {
+        $commandStore = new InMemoryCommandStore();
+        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandMailboxPolicy = new CommandMailboxPolicy(
+            commandStore: $commandStore,
+            commandRouter: $commandRouter,
+        );
+
+        $handler = new ApplyCommandHandler(
+            commandStore: $commandStore,
+            commandRouter: $commandRouter,
+            commandMailboxPolicy: $commandMailboxPolicy,
+            eventFactory: new EventFactory(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            maxPendingCommands: 10,
+        );
+
+        $bgText = "[BG_PROCESS_DONE] PID 354749 finished (exit 0)\nCommand: sleep 30\n\nOutput (last 3000 chars):\nDone\n";
+        $commandStore->enqueue(new \Ineersa\AgentCore\Domain\Command\PendingCommand(
+            runId: 'run-bg-cancel',
+            kind: CoreCommandKind::FollowUp,
+            idempotencyKey: 'bg-done-1',
+            payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => $bgText]]]],
+            options: new \Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions(safe: false),
+        ));
+
+        $state = new RunState(
+            runId: 'run-bg-cancel',
+            status: RunStatus::Running,
+            version: 2,
+            turnNo: 1,
+            lastSeq: 5,
+            activeStepId: 'step-active',
+            messages: [],
+        );
+
+        $cancelMessage = new ApplyCommand(
+            runId: 'run-bg-cancel',
+            turnNo: 1,
+            stepId: 'cancel-bg',
+            attempt: 1,
+            idempotencyKey: 'cancel-bg-1',
+            kind: CoreCommandKind::Cancel,
+            payload: [],
+        );
+
+        $result = $handler->handle($cancelMessage, $state);
+
+        $this->assertSame(RunStatus::Cancelling, $result->nextState->status);
+        $this->assertCount(1, $result->nextState->messages);
+        $this->assertStringContainsString('[BG_PROCESS_DONE]', $result->nextState->messages[0]->content[0]['text'] ?? '');
+
+        $eventTypes = array_map(static fn ($e) => $e->type, $result->events);
+        $this->assertContains('agent_command_applied', $eventTypes);
+        $this->assertNotContains('agent_command_rejected', $eventTypes);
+
+        $appliedFollowUp = array_values(array_filter(
+            $result->events,
+            static fn ($e) => 'agent_command_applied' === $e->type && 'follow_up' === ($e->payload['kind'] ?? null),
+        ));
+        $this->assertCount(1, $appliedFollowUp);
+        $this->assertStringContainsString('[BG_PROCESS_DONE]', $appliedFollowUp[0]->payload['text'] ?? '');
+    }
+
     /**
      * Terminal compact must mark applied and dispatch CompactRun
      * immediately — no enqueue.  This prevents duplicate compact

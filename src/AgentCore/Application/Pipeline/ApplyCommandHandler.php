@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
+use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
@@ -241,22 +242,30 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
 
         $this->commandStore->markApplied($runId, $message->idempotencyKey());
 
-        // Reject all pending queueable user-input commands (steer,
-        // follow_up, continue) so stale queued commands are never
-        // consumed after cancel/restart.  This prevents #152 where
-        // queued steer/follow-up from before a cancel could be drained
-        // unexpectedly after the run restarts.
-        $rejectedKinds = self::REJECT_ON_CANCEL_KINDS;
+        // Reject stale queued user-input commands after cancel (#152), except
+        // system-generated background-process completion follow-ups — those must
+        // land in run messages so the model sees output after the user cancels.
         $rejectedCommands = [];
-        foreach ($rejectedKinds as $kind) {
-            $rejected = $this->commandStore->rejectPendingByKind(
-                $runId,
-                $kind,
-                'Rejected because cancel command was accepted.',
-            );
-            $rejectedCommands = array_merge($rejectedCommands, $rejected);
+        $preservedBgDoneCommands = [];
+        $cancelRejectReason = 'Rejected because cancel command was accepted.';
+
+        foreach ($this->commandStore->pending($runId) as $pendingCommand) {
+            if (CoreCommandKind::FollowUp === $pendingCommand->kind
+                && $this->isBackgroundProcessDoneFollowUp($pendingCommand)) {
+                $preservedBgDoneCommands[] = $pendingCommand;
+
+                continue;
+            }
+
+            if (!\in_array($pendingCommand->kind, self::REJECT_ON_CANCEL_KINDS, true)) {
+                continue;
+            }
+
+            $this->commandStore->markRejected($runId, $pendingCommand->idempotencyKey, $cancelRejectReason);
+            $rejectedCommands[] = $pendingCommand;
         }
 
+        $messages = $state->messages;
         $eventSpecs = [[
             'type' => RunEventTypeEnum::AgentCommandApplied->value,
             'payload' => [
@@ -266,13 +275,44 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             ],
         ]];
 
+        foreach ($preservedBgDoneCommands as $preservedCommand) {
+            $hydrated = $this->hydratePendingUserMessage($preservedCommand);
+            if (null === $hydrated) {
+                $this->commandStore->markRejected(
+                    $runId,
+                    $preservedCommand->idempotencyKey,
+                    'Invalid command payload: malformed message envelope.',
+                );
+                $rejectedCommands[] = $preservedCommand;
+
+                continue;
+            }
+
+            $messages[] = $hydrated;
+            $this->commandStore->markApplied($runId, $preservedCommand->idempotencyKey);
+
+            $messageArray = $hydrated->toArray();
+            $eventSpecs[] = [
+                'type' => RunEventTypeEnum::AgentCommandApplied->value,
+                'payload' => [
+                    'kind' => $preservedCommand->kind,
+                    'idempotency_key' => $preservedCommand->idempotencyKey,
+                    'message' => $messageArray,
+                    'text' => $this->extractMessageText($messageArray),
+                    'options' => [
+                        'cancel_safe' => $preservedCommand->options->safe,
+                    ],
+                ],
+            ];
+        }
+
         foreach ($rejectedCommands as $rejectedCommand) {
             $eventSpecs[] = [
                 'type' => RunEventTypeEnum::AgentCommandRejected->value,
                 'payload' => [
                     'kind' => $rejectedCommand->kind,
                     'idempotency_key' => $rejectedCommand->idempotencyKey,
-                    'reason' => 'Rejected because cancel command was accepted.',
+                    'reason' => $cancelRejectReason,
                 ],
             ];
         }
@@ -344,7 +384,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 streamingMessage: $state->streamingMessage,
                 pendingToolCalls: $state->pendingToolCalls,
                 errorMessage: $reason,
-                messages: $state->messages,
+                messages: $messages,
                 activeStepId: null,
                 retryableFailure: false,
             );
@@ -365,7 +405,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             streamingMessage: $state->streamingMessage,
             pendingToolCalls: $state->pendingToolCalls,
             errorMessage: $reason,
-            messages: $state->messages,
+            messages: $messages,
             activeStepId: $state->activeStepId,
             retryableFailure: false,
         );
@@ -374,6 +414,66 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             nextState: $nextState,
             events: $events,
         );
+    }
+
+    private function isBackgroundProcessDoneFollowUp(PendingCommand $pendingCommand): bool
+    {
+        $messagePayload = $pendingCommand->payload['message'] ?? null;
+        if (!\is_array($messagePayload)) {
+            return false;
+        }
+
+        $content = $messagePayload['content'] ?? null;
+        if (!\is_array($content)) {
+            return false;
+        }
+
+        foreach ($content as $block) {
+            if (!\is_array($block)) {
+                continue;
+            }
+
+            if ('text' !== ($block['type'] ?? null)) {
+                continue;
+            }
+
+            $text = $block['text'] ?? '';
+            if (\is_string($text) && str_starts_with($text, '[BG_PROCESS_DONE]')) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function hydratePendingUserMessage(PendingCommand $pendingCommand): ?AgentMessage
+    {
+        $messagePayload = $pendingCommand->payload['message'] ?? null;
+        if (!\is_array($messagePayload)) {
+            return null;
+        }
+
+        return AgentMessage::fromPayload($messagePayload);
+    }
+
+    /**
+     * @param array<string, mixed> $messageArray
+     */
+    private function extractMessageText(array $messageArray): string
+    {
+        $content = $messageArray['content'] ?? [];
+        if (!\is_array($content)) {
+            return '';
+        }
+
+        $parts = [];
+        foreach ($content as $block) {
+            if (\is_array($block) && isset($block['text']) && ('text' === ($block['type'] ?? null))) {
+                $parts[] = (string) $block['text'];
+            }
+        }
+
+        return implode('', $parts);
     }
 
     /**
