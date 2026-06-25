@@ -88,7 +88,6 @@ final class AgentDefinitionParser
         return $this->mapToDefinition($frontmatterDto, $body, $filePath);
     }
 
-
     /**
      * Normalize observed real-world agent frontmatter shapes before strict denormalization.
      *
@@ -127,8 +126,6 @@ final class AgentDefinitionParser
 
         return $frontmatter;
     }
-
-
 
     /**
      * @return list<string>

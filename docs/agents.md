@@ -331,19 +331,23 @@ task text follows as the `user` message.
   is managed by the subagent tool's own timeout mechanism.  A future task
   should add child scanning when background/async child modes are introduced.
 
+## Project skill
+
+Tracked quick reference for models and authors: `.hatfield/skills/subagents/SKILL.md` (discovered from `{cwd}/.hatfield/skills` like other Hatfield skills). See also `FRONTMATTER.md` in that directory.
+
 ## Current limitations
 
 The following features are **not yet implemented**:
 
 | Feature | Status | Planned |
 |---------|--------|---------|
-| Parallel execution (`tasks` array, `concurrency`) | Not implemented | AGENT-07 |
 | Background/async launches (`background: true`) | Not implemented | Future |
 | `agent_start`, `agent_status` tools | Not implemented | Future |
 | `/agents` TUI command | Not implemented | Future |
-| Dedicated dock/overlay for child agent views | Not implemented | Future |
+| Dedicated dock/overlay or structured subagent transcript widget | Not implemented | Future |
 | Interactive child HITL, approvals, or questions | Not supported (WaitingHuman → Failed) | Future |
-| Child artifact retrieval tool | Implemented (`agent_retrieve`) | — |
+| Parallel execution (`tasks` array) | Implemented (cap: `agents.max_agents`) | — |
+| Child artifact retrieval (`agent_retrieve`) | Implemented | — |
 
 ## See also
 
