@@ -334,6 +334,31 @@ final class ActivityStateMachineTest extends TestCase
         $this->assertSame(RunActivityStateEnum::Cancelling, $result);
     }
 
+
+    public function testCancellingToolExecutionFailedTransitionsToCancelled(): void
+    {
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::ToolExecutionFailed->value,
+            runId: 'test',
+            seq: 128,
+            payload: ['tool_call_id' => 'call_1', 'is_error' => true, 'result' => 'Tool execution cancelled by user.'],
+        );
+        $result = ActivityStateMachine::transition(RunActivityStateEnum::Cancelling, $event);
+        $this->assertSame(RunActivityStateEnum::Cancelled, $result);
+    }
+
+    public function testCancellingToolExecutionCompletedTransitionsToCancelledWhenRunAlreadyEnded(): void
+    {
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::ToolExecutionCompleted->value,
+            runId: 'test',
+            seq: 132,
+            payload: ['tool_call_id' => 'call_1'],
+        );
+        $result = ActivityStateMachine::transition(RunActivityStateEnum::Cancelling, $event);
+        $this->assertSame(RunActivityStateEnum::Cancelled, $result);
+    }
+
     // ── Compaction event transitions (session 13: Escape can't cancel) ──
 
     /**

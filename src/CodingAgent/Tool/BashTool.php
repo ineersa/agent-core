@@ -180,7 +180,18 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
                     if ($elapsedSeconds >= $this->config->backgroundPromptThresholdSeconds) {
                         $promptTriggered = true;
 
-                        if ($this->promptAdapter->shouldBackground($command, $pid, $logPath, $elapsedSeconds)) {
+                        $skipBackgroundPrompt = null !== $context
+                            && ToolExecutionMode::Parallel === $context->executionMode()
+                            && $context->batchToolCallCount() > 1;
+
+                        if ($skipBackgroundPrompt) {
+                            $this->logger->info('bash_tool.background_prompt_skipped_parallel_batch', [
+                                'component' => 'tool.bash',
+                                'event_type' => 'bash_tool.background_prompt_skipped_parallel_batch',
+                                'process_pid' => $pid,
+                                'batch_tool_call_count' => $context->batchToolCallCount(),
+                            ]);
+                        } elseif ($this->promptAdapter->shouldBackground($command, $pid, $logPath, $elapsedSeconds)) {
                             // Re-check process status — it may have finished while we
                             // were waiting for the user's decision. If the process
                             // completed, return the finished output instead of the

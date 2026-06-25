@@ -432,6 +432,42 @@ final class RuntimeEventPollerTest extends TestCase
         self::assertSame(RunActivityStateEnum::Starting, $this->state->activity);
     }
 
+
+    public function testCancellingClearsToCancelledOnRunCancelledWithoutQueuedFollowUp(): void
+    {
+        $this->state->activity = RunActivityStateEnum::Cancelling;
+
+        $events = [
+            new RuntimeEvent(
+                type: RuntimeEventTypeEnum::ToolExecutionFailed->value,
+                runId: 'test-run',
+                seq: 128,
+                payload: ['tool_call_id' => 'call_1', 'is_error' => true],
+            ),
+            new RuntimeEvent(
+                type: RuntimeEventTypeEnum::RunCancelled->value,
+                runId: 'test-run',
+                seq: 132,
+                payload: ['reason' => 'cancelled'],
+            ),
+        ];
+
+        $this->client->expects(self::once())
+            ->method('events')
+            ->with('test-run')
+            ->willReturn($events);
+
+        $this->client->expects(self::never())->method('send');
+
+        $this->projector->method('accept');
+        $this->projector->method('blocks')->willReturn([]);
+
+        $this->poller->poll($this->state, $this->client);
+
+        self::assertSame(RunActivityStateEnum::Cancelled, $this->state->activity);
+        self::assertFalse($this->state->activity->isActive());
+    }
+
     public function testQueuedFollowUpNotDispatchedWithoutRunCancelled(): void
     {
         $this->state->queuedFollowUp = 'Waiting message';

@@ -306,6 +306,7 @@ final class RuntimeEventTranslator
     {
         $p = $runEvent->payload;
         $isError = (bool) ($p['is_error'] ?? false);
+        $resultText = isset($p['result']) && \is_string($p['result']) ? $p['result'] : '';
 
         $payload = [
             'tool_call_id' => (string) ($p['tool_call_id'] ?? ''),
@@ -315,18 +316,24 @@ final class RuntimeEventTranslator
 
         // Pass through result text when present (e.g. shell command output
         // injected directly via EventStore, bypassing the normal pipeline).
-        if (isset($p['result']) && \is_string($p['result'])) {
-            $payload['result'] = $p['result'];
+        if ('' !== $resultText) {
+            $payload['result'] = $resultText;
         }
 
         if (isset($p['duration_ms']) && \is_int($p['duration_ms'])) {
             $payload['duration_ms'] = $p['duration_ms'];
         }
 
+        $isUserCancelled = $isError && str_contains(strtolower($resultText), 'cancelled by user');
+
+        $type = match (true) {
+            $isUserCancelled => RuntimeEventTypeEnum::ToolExecutionCancelled->value,
+            $isError => RuntimeEventTypeEnum::ToolExecutionFailed->value,
+            default => RuntimeEventTypeEnum::ToolExecutionCompleted->value,
+        };
+
         return new RuntimeEvent(
-            type: $isError
-                ? RuntimeEventTypeEnum::ToolExecutionFailed->value
-                : RuntimeEventTypeEnum::ToolExecutionCompleted->value,
+            type: $type,
             runId: $runEvent->runId,
             seq: $runEvent->seq,
             payload: $payload,

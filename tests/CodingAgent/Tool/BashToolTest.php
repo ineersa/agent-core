@@ -510,6 +510,58 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->assertStringNotContainsString('Output capped', $result);
     }
 
+
+    public function testSkipsBackgroundPromptForMultiToolParallelBatch(): void
+    {
+        $promptAdapter = $this->createMock(BashBackgroundPromptAdapterInterface::class);
+        $promptAdapter->expects($this->never())->method('shouldBackground');
+
+        $this->bashConfig = new BashToolConfig(
+            defaultTimeoutSeconds: 30,
+            backgroundPromptThresholdSeconds: 0,
+            pollIntervalMicros: 50_000,
+            logTailChars: 20000,
+        );
+        $this->createManager();
+
+        $result = $this->withContext(
+            self::TEST_SESSION,
+            function () use ($promptAdapter): string {
+                return ($this->makeBashTool($promptAdapter))(['command' => 'echo "parallel batch" && sleep 0.2']);
+            },
+            executionMode: ToolExecutionMode::Parallel,
+            batchToolCallCount: 2,
+        );
+
+        $this->assertStringContainsString('parallel batch', $result);
+    }
+
+    public function testSingleParallelBatchStillPromptsForBackground(): void
+    {
+        $promptAdapter = $this->createMock(BashBackgroundPromptAdapterInterface::class);
+        $promptAdapter
+            ->expects($this->once())
+            ->method('shouldBackground')
+            ->willReturn(false);
+
+        $this->bashConfig = new BashToolConfig(
+            defaultTimeoutSeconds: 30,
+            backgroundPromptThresholdSeconds: 0,
+            pollIntervalMicros: 50_000,
+            logTailChars: 20000,
+        );
+        $this->createManager();
+
+        $this->withContext(
+            self::TEST_SESSION,
+            function () use ($promptAdapter): string {
+                return ($this->makeBashTool($promptAdapter))(['command' => 'echo "single" && sleep 0.2']);
+            },
+            executionMode: ToolExecutionMode::Parallel,
+            batchToolCallCount: 1,
+        );
+    }
+
     /* ── Registry exposure ── */
 
     public function testRegistryExposesTool(): void
@@ -632,8 +684,12 @@ final class BashToolTest extends IsolatedKernelTestCase
         );
     }
 
-    private function withContext(string $sessionId, callable $callback): mixed
-    {
+    private function withContext(
+        string $sessionId,
+        callable $callback,
+        ?ToolExecutionMode $executionMode = null,
+        int $batchToolCallCount = 1,
+    ): mixed {
         $cancellationToken = $this->createStub(CancellationTokenInterface::class);
         $cancellationToken->method('isCancellationRequested')->willReturn(false);
 
@@ -644,6 +700,8 @@ final class BashToolTest extends IsolatedKernelTestCase
             toolName: 'bash',
             cancellationToken: $cancellationToken,
             timeoutSeconds: 30,
+            executionMode: $executionMode,
+            batchToolCallCount: $batchToolCallCount,
         );
 
         return $this->contextAccessor->with($context, $callback);

@@ -125,6 +125,22 @@ final class RuntimeEventMapperTest extends TestCase
         self::assertSame('completed', $result->payload['reason']);
     }
 
+
+    public function testNormalizesToolExecutionEndCancelledToToolExecutionCancelled(): void
+    {
+        $event = $this->runEvent('tool_execution_end', [
+            'tool_call_id' => 'call-cancel',
+            'order_index' => 0,
+            'is_error' => true,
+            'result' => 'Tool execution cancelled by user.',
+        ]);
+
+        $result = $this->mapper->toRuntimeEvent($event);
+
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::ToolExecutionCancelled->value, $result->type);
+    }
+
     public function testNormalizesAgentEndCancelledToRunCancelled(): void
     {
         $event = $this->runEvent('agent_end', ['reason' => 'cancelled']);

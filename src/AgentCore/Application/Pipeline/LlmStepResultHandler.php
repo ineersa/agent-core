@@ -58,6 +58,7 @@ final class LlmStepResultHandler implements RunMessageHandler
         private int $agentRetryMaxAttempts = 2,
         private int $agentRetryBaseDelayMs = 1000,
         private int $agentRetryMaxDelayMs = 60000,
+        private int $maxParallelism = 1,
     ) {
     }
 
@@ -489,7 +490,7 @@ final class LlmStepResultHandler implements RunMessageHandler
         return [
             'mode' => $mode,
             'timeout_seconds' => 90,
-            'max_parallelism' => 1,
+            'max_parallelism' => max(1, $this->maxParallelism),
         ];
     }
 

@@ -60,6 +60,8 @@ final class ActivityStateMachine
                 RuntimeEventTypeEnum::CancellationRequested->value,
                 RuntimeEventTypeEnum::OperationCancelled->value,
                 RuntimeEventTypeEnum::ToolExecutionCancelled->value => RunActivityStateEnum::Cancelling,
+                RuntimeEventTypeEnum::ToolExecutionFailed->value => RunActivityStateEnum::Cancelled,
+                RuntimeEventTypeEnum::ToolExecutionCompleted->value => RunActivityStateEnum::Cancelled,
                 // Terminal events: cancel completes or run fails
                 RuntimeEventTypeEnum::RunCancelled->value,
                 RuntimeEventTypeEnum::TurnCancelled->value => RunActivityStateEnum::Cancelled,

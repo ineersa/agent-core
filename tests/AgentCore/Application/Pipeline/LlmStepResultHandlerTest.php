@@ -10,6 +10,9 @@ use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Application\Pipeline\LlmStepResultHandler;
+use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
+use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
+use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
@@ -660,4 +663,69 @@ final class LlmStepResultHandlerTest extends TestCase
         $this->assertTrue($hasCompact, 'Overflow recovery should dispatch CompactRun, not Continue.');
     }
 
+    public function testParallelToolCallsCarryConfiguredMaxParallelism(): void
+    {
+        $executionBus = new TestMessageBus();
+        $stepDispatcher = new StepDispatcher($executionBus);
+
+        $toolSetResolver = new class implements ToolSetResolverInterface {
+            public function resolve(string $toolsRef, ?int $turnNo = null, ?string $runId = null): ActiveToolSet
+            {
+                return new ActiveToolSet(
+                    toolNames: ['bash'],
+                    allowListNames: ['bash'],
+                    executionModes: ['bash' => ToolExecutionMode::Parallel->value],
+                );
+            }
+        };
+
+        $handler = new LlmStepResultHandler(
+            toolBatchCollector: new ToolBatchCollector(),
+            commandMailboxPolicy: new CommandMailboxPolicy(
+                commandStore: new InMemoryCommandStore(),
+                commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+            ),
+            eventFactory: new EventFactory(),
+            toolCallExtractor: new ToolCallExtractor(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            stepDispatcher: $stepDispatcher,
+            toolSetResolver: $toolSetResolver,
+            maxParallelism: 4,
+        );
+
+        $state = new RunState(
+            runId: 'run-parallel-max',
+            status: RunStatus::Running,
+            version: 3,
+            turnNo: 1,
+            lastSeq: 4,
+            activeStepId: 'turn-1-step',
+        );
+
+        $message = new LlmStepResult(
+            runId: 'run-parallel-max',
+            turnNo: 1,
+            stepId: 'turn-1-step',
+            attempt: 1,
+            idempotencyKey: 'llm-parallel-max',
+            assistantMessage: SymfonyAiTestMessages::assistantWithToolCalls([
+                ['id' => 'tool-call-a', 'name' => 'bash', 'arguments' => ['command' => 'sleep 1']],
+                ['id' => 'tool-call-b', 'name' => 'bash', 'arguments' => ['command' => 'sleep 2']],
+            ], 'parallel bash'),
+            usage: [],
+            stopReason: 'tool_call',
+            error: null,
+            toolsRef: 'default',
+        );
+
+        $result = $handler->handle($message, $state);
+        ($result->postCommit[0])();
+
+        $this->assertCount(2, $executionBus->messages);
+        foreach ($executionBus->messages as $dispatched) {
+            $this->assertInstanceOf(ExecuteToolCall::class, $dispatched);
+            $this->assertSame(4, $dispatched->maxParallelism);
+            $this->assertSame('parallel', $dispatched->mode);
+        }
+    }
 }
