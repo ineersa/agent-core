@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller\CommandHandler;
 
+use Ineersa\CodingAgent\Entity\ToolQuestion;
 use Ineersa\CodingAgent\Runtime\Controller\CommandHandler\AnswerToolQuestionHandler;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
@@ -175,7 +176,7 @@ final class AnswerToolQuestionHandlerTest extends TestCase
 
     public function testStoredConfirmKindWithNullSchemaAcceptsBooleanFalse(): void
     {
-        $stored = \Ineersa\CodingAgent\Entity\ToolQuestion::create(
+        $stored = ToolQuestion::create(
             requestId: 'bash_bg_run-confirm-null',
             runId: 'run-confirm',
             toolCallId: 'tc1',
@@ -259,7 +260,7 @@ final class SpyToolQuestionStore implements \Ineersa\CodingAgent\Tool\ToolQuesti
     public ?string $lastRequestId = null;
     public ?bool $lastAnswer = null;
 
-    /** @var array<string, \Ineersa\CodingAgent\Entity\ToolQuestion> */
+    /** @var array<string, ToolQuestion> */
     public array $storedByRequestId = [];
 
     public ?string $lastAnswerText = null;
@@ -286,7 +287,7 @@ final class SpyToolQuestionStore implements \Ineersa\CodingAgent\Tool\ToolQuesti
         return [];
     }
 
-    public function findByRequestId(string $requestId): ?\Ineersa\CodingAgent\Entity\ToolQuestion
+    public function findByRequestId(string $requestId): ?ToolQuestion
     {
         return $this->storedByRequestId[$requestId] ?? null;
     }
@@ -322,7 +323,7 @@ final class SpyToolQuestionStore implements \Ineersa\CodingAgent\Tool\ToolQuesti
         return null;
     }
 
-    public function create(\Ineersa\CodingAgent\Entity\ToolQuestion $question): \Ineersa\CodingAgent\Entity\ToolQuestion
+    public function create(ToolQuestion $question): ToolQuestion
     {
         return $question;
     }

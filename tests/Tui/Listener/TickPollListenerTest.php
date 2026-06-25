@@ -6,15 +6,13 @@ namespace Ineersa\Tui\Tests\Listener;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
-use Ineersa\Tui\Listener\TickPollListener;
-use Ineersa\Tui\Question\QuestionCoordinator;
-use Ineersa\Tui\Question\QuestionOption;
-use Ineersa\Tui\Question\QuestionRequest;
-
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\Tui\Listener\TickPollListener;
+use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Question\QuestionKind;
-
+use Ineersa\Tui\Question\QuestionOption;
+use Ineersa\Tui\Question\QuestionRequest;
 use Ineersa\Tui\Question\QuestionSource;
 use PHPUnit\Framework\TestCase;
 

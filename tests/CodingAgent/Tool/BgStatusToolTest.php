@@ -187,6 +187,12 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
         $this->assertSame('bg_status', $definition->name);
     }
 
+    public function testDefinitionUsesParallelExecutionMode(): void
+    {
+        $definition = $this->tool->definition();
+        self::assertSame(ToolExecutionMode::Parallel, $definition->executionMode);
+    }
+
     /* ── Invalid action ── */
 
     public function testInvalidActionThrowsException(): void
@@ -287,12 +293,4 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
 
         return $this->contextAccessor->with($toolContext, $callback);
     }
-
-
-    public function testDefinitionUsesParallelExecutionMode(): void
-    {
-        $definition = $this->tool->definition();
-        self::assertSame(ToolExecutionMode::Parallel, $definition->executionMode);
-    }
-
 }

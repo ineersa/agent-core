@@ -118,7 +118,6 @@ final class BashBackgroundCancelE2eTest extends TestCase
         }
     }
 
-
     private function assertNoLeakedWorkersForThisTestWithRetry(): void
     {
         $deadline = microtime(true) + 5.0;

@@ -103,6 +103,8 @@ final readonly class AnswerToolQuestionHandler
             return;
         }
 
+        // Expected production path: explicit boolean schema on the stored question.
+        // kind=confirm is defensive local degradation for malformed/missing confirm schema.
         if ($isBoolean || 'confirm' === $kind) {
             $this->handleBooleanAnswer($event, $requestId, $command);
 
