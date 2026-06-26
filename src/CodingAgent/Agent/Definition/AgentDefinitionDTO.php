@@ -17,13 +17,13 @@ namespace Ineersa\CodingAgent\Agent\Definition;
 final readonly class AgentDefinitionDTO
 {
     /**
-     * @param list<string> $tools
-     * @param list<string> $skills
+     * @param list<string>|null $tools  null means inherit all parent-available tools at child launch
+     * @param list<string>      $skills
      */
     public function __construct(
         public string $name,
         public string $description,
-        public array $tools,
+        public ?array $tools,
         public McpPolicyDTO $mcp,
         public ?string $model = null,
         public ?string $thinking = null,
@@ -34,7 +34,7 @@ final readonly class AgentDefinitionDTO
         public int $maxDepth = 1,
         public bool $backgroundAllowed = true,
         public bool $foregroundAllowed = true,
-        public bool $parallelAllowed = false,
+        public bool $parallelAllowed = true,
         public bool $disabled = false,
         public ?string $handoffFormat = null,
         public string $instructions = '',

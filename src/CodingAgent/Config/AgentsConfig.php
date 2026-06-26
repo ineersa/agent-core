@@ -17,6 +17,10 @@ use Symfony\Component\Serializer\Attribute\SerializedName;
  */
 final readonly class AgentsConfig
 {
+    private const SUBAGENT_TOOL_TIMEOUT_SECONDS_MIN = 60;
+
+    private const SUBAGENT_TOOL_TIMEOUT_SECONDS_DEFAULT = 1800;
+
     /**
      * @param bool         $enabled   Whether agent discovery is enabled
      * @param list<string> $paths     Additional agent definition file or directory paths
@@ -29,6 +33,9 @@ final readonly class AgentsConfig
         public AgentArtifactRetrievalLimitsConfig $retrieve = new AgentArtifactRetrievalLimitsConfig(),
         #[SerializedName('max_agents')]
         public int $maxAgents = 8,
+
+        #[SerializedName('subagent_tool_timeout_seconds')]
+        public int $subagentToolTimeoutSeconds = 1800,
     ) {
     }
 
@@ -66,7 +73,9 @@ final readonly class AgentsConfig
             $maxAgents = $raw['max_agents'];
         }
 
-        return new self(enabled: $enabled, paths: $paths, retrieve: $retrieve, maxAgents: $maxAgents);
+        $subagentToolTimeoutSeconds = self::resolveSubagentToolTimeoutSeconds($raw);
+
+        return new self(enabled: $enabled, paths: $paths, retrieve: $retrieve, maxAgents: $maxAgents, subagentToolTimeoutSeconds: $subagentToolTimeoutSeconds);
     }
 
     /**
@@ -75,5 +84,26 @@ final readonly class AgentsConfig
     public static function fromAppConfig(AppConfig $appConfig): self
     {
         return $appConfig->agents;
+    }
+
+    /**
+     * @param array<string, mixed> $raw
+     */
+    private static function resolveSubagentToolTimeoutSeconds(array $raw): int
+    {
+        if (!\array_key_exists('subagent_tool_timeout_seconds', $raw)) {
+            return self::SUBAGENT_TOOL_TIMEOUT_SECONDS_DEFAULT;
+        }
+
+        $value = $raw['subagent_tool_timeout_seconds'];
+        if (!\is_int($value)) {
+            throw new \InvalidArgumentException(\sprintf('Invalid value for agents.subagent_tool_timeout_seconds: expected integer >= %d, got %s.', self::SUBAGENT_TOOL_TIMEOUT_SECONDS_MIN, get_debug_type($value)));
+        }
+
+        if ($value < self::SUBAGENT_TOOL_TIMEOUT_SECONDS_MIN) {
+            throw new \InvalidArgumentException(\sprintf('Invalid value for agents.subagent_tool_timeout_seconds: %d is below the minimum of %d seconds.', $value, self::SUBAGENT_TOOL_TIMEOUT_SECONDS_MIN));
+        }
+
+        return $value;
     }
 }

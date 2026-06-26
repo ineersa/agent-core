@@ -141,9 +141,9 @@ function format_step_failures(array $failures): string
 /**
  * Assert tmux is installed.
  *
- * Several Castor tasks (test:tui, test:tui-update, run:agent,
- * run:agent-test) require tmux for TUI E2E snapshots or interactive
- * agent sessions.  Call this at the top of those tasks to fail early
+ * Several Castor tasks (test:tui, test:tui-update, run:agent-test)
+ * require tmux for TUI E2E snapshots or the manual tmux test helper.
+ * Call this at the top of those tasks to fail early
  * with a clear diagnostic instead of a cryptic proc_open error.
  */
 function check_tmux(): void
@@ -151,6 +151,70 @@ function check_tmux(): void
     $which = trim(shell_exec('which tmux 2>/dev/null') ?? '');
     if ('' === $which) {
         throw new RuntimeException('tmux is not installed. Install it with your package manager before using run:* tasks.');
+    }
+}
+
+/**
+ * Shell command run inside tmux for `php bin/console agent` (cd project root, optional env prefix).
+ */
+function build_agent_console_inner_command(string $envPrefix, string $agentInvocation = 'php bin/console agent'): string
+{
+    $root = realpath(__DIR__.'/..');
+    if (false === $root) {
+        throw new RuntimeException('Unable to resolve project root.');
+    }
+
+    return sprintf(
+        'cd %s && exec %s %s',
+        escapeshellarg($root),
+        $envPrefix,
+        $agentInvocation,
+    );
+}
+
+/**
+ * Run the agent TUI in the current terminal (bash -lc + exec php bin/console agent).
+ *
+ * Used by run:agent and run:agent-capture so the agent process inherits the caller TTY
+ * and stays inside Bubblewrap when Castor re-execed under pi-bwrap.
+ */
+function launch_agent_direct_terminal(string $innerShellCommand): void
+{
+    $cmd = sprintf('exec bash -lc %s', escapeshellarg($innerShellCommand));
+    passthru($cmd, $exitCode);
+    if (0 !== $exitCode) {
+        throw new RuntimeException(sprintf('Agent exited with code %d.', $exitCode));
+    }
+}
+
+/**
+ * Launch the agent TUI in tmux (new window when already inside tmux, else new/attach session).
+ */
+function launch_agent_tmux_session(string $sessionName, string $windowTitle, string $innerShellCommand): void
+{
+    check_tmux();
+
+    $insideTmux = false !== getenv('TMUX');
+
+    if ($insideTmux) {
+        shell_exec(sprintf(
+            'tmux new-window -n %s bash -c %s',
+            escapeshellarg($windowTitle),
+            escapeshellarg($innerShellCommand),
+        ));
+        echo "Created tmux window '{$windowTitle}'.\n";
+
+        return;
+    }
+
+    $cmd = sprintf(
+        'tmux new-session -A -s %s bash -lc %s',
+        escapeshellarg($sessionName),
+        escapeshellarg($innerShellCommand),
+    );
+    passthru($cmd, $exitCode);
+    if (0 !== $exitCode) {
+        throw new RuntimeException(sprintf('Agent session exited with code %d.', $exitCode));
     }
 }
 

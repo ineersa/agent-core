@@ -18,7 +18,7 @@ final readonly class ToolContext
         private string $toolCallId,
         private string $toolName,
         private CancellationTokenInterface $cancellationToken,
-        private int $timeoutSeconds,
+        private ?int $timeoutSeconds,
         private int $orderIndex = 0,
         private ?ToolExecutionMode $executionMode = null,
         private int $batchToolCallCount = 1,
@@ -50,7 +50,7 @@ final readonly class ToolContext
         return $this->cancellationToken;
     }
 
-    public function timeoutSeconds(): int
+    public function timeoutSeconds(): ?int
     {
         return $this->timeoutSeconds;
     }

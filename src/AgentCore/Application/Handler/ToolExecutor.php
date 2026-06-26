@@ -38,7 +38,7 @@ final class ToolExecutor implements ToolExecutorInterface
      */
     public function __construct(
         string $defaultMode,
-        int $defaultTimeoutSeconds,
+        ?int $defaultTimeoutSeconds,
         int $maxParallelism,
         private readonly ToolExecutionResultStore $resultStore,
         ?ToolboxInterface $toolbox = null,
@@ -164,7 +164,7 @@ final class ToolExecutor implements ToolExecutorInterface
 
         $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
 
-        if ($durationMs > $policy->timeoutSeconds * 1000) {
+        if (null !== $policy->timeoutSeconds && $durationMs > $policy->timeoutSeconds * 1000) {
             $result = $this->errorResult(
                 toolCallId: $toolCall->toolCallId,
                 toolName: $toolCall->toolName,
@@ -276,9 +276,19 @@ final class ToolExecutor implements ToolExecutorInterface
 
         return new ToolExecutionPolicy(
             mode: $toolCall->mode ?? $resolved->mode,
-            timeoutSeconds: max(1, $toolCall->timeoutSeconds ?? $resolved->timeoutSeconds),
+            timeoutSeconds: $this->resolveTimeoutSeconds($toolCall->timeoutSeconds, $resolved->timeoutSeconds),
             maxParallelism: max(1, (int) ($toolCall->context['max_parallelism'] ?? $resolved->maxParallelism)),
         );
+    }
+
+    private function resolveTimeoutSeconds(?int $callTimeout, ?int $resolvedTimeout): ?int
+    {
+        $effective = $callTimeout ?? $resolvedTimeout;
+        if (null === $effective || $effective <= 0) {
+            return null;
+        }
+
+        return max(1, $effective);
     }
 
     private function rememberAndReturn(

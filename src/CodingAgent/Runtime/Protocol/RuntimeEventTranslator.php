@@ -290,15 +290,23 @@ final class RuntimeEventTranslator
     {
         $p = $runEvent->payload;
 
+        $payload = [
+            'tool_call_id' => (string) ($p['tool_call_id'] ?? ''),
+            'delta' => (string) ($p['delta'] ?? ''),
+            'order_index' => (int) ($p['order_index'] ?? 0),
+        ];
+        if (isset($p['tool_name']) && \is_string($p['tool_name']) && '' !== $p['tool_name']) {
+            $payload['tool_name'] = $p['tool_name'];
+        }
+        if (isset($p['subagent_progress']) && \is_array($p['subagent_progress'])) {
+            $payload['subagent_progress'] = $p['subagent_progress'];
+        }
+
         return new RuntimeEvent(
             type: RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
             runId: $runEvent->runId,
             seq: $runEvent->seq,
-            payload: [
-                'tool_call_id' => (string) ($p['tool_call_id'] ?? ''),
-                'delta' => (string) ($p['delta'] ?? ''),
-                'order_index' => (int) ($p['order_index'] ?? 0),
-            ],
+            payload: $payload,
         );
     }
 

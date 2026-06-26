@@ -8,7 +8,9 @@ use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
+use Ineersa\AgentCore\Application\Handler\ToolExecutionPolicyResolver;
 use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
+use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
@@ -55,6 +57,7 @@ final class LlmStepResultHandler implements RunMessageHandler
         private ?RunTracer $tracer = null,
         private ?MessageBusInterface $commandBus = null,
         private ?LlmProviderErrorClassifier $errorClassifier = null,
+        private ?ToolExecutionSettingsInterface $toolExecutionSettings = null,
         private int $agentRetryMaxAttempts = 2,
         private int $agentRetryBaseDelayMs = 1000,
         private int $agentRetryMaxDelayMs = 60000,
@@ -472,25 +475,35 @@ final class LlmStepResultHandler implements RunMessageHandler
     /**
      * Resolve the execution policy for a tool from its registered definition.
      *
-     * The execution mode comes from the tool's ToolDefinitionDTO (set by the
-     * tool author/provider). Timeout and parallelism use fixed defaults
-     * since these are managed by the ToolExecutor's own policy resolver.
+     * The execution mode comes from the tool's ToolDefinitionDTO via ActiveToolSet.
+     * Per-tool timeout overrides come from ActiveToolSet.timeoutSeconds when set.
+     * Absent overrides mean no ToolExecutor post-hoc timeout (null).
      *
-     * @return array{mode: ToolExecutionMode, timeout_seconds: int, max_parallelism: int}
+     * @return array{mode: ToolExecutionMode, timeout_seconds: ?int, max_parallelism: int}
      */
     private function resolveToolPolicy(string $toolName, ?ActiveToolSet $activeSet = null): array
     {
         $mode = ToolExecutionMode::Sequential;
+        $timeoutSeconds = null;
+        $maxParallelism = max(1, $this->maxParallelism);
+
+        if (null !== $this->toolExecutionSettings) {
+            $defaults = ToolExecutionPolicyResolver::fromSettings($this->toolExecutionSettings)->resolve($toolName);
+            $maxParallelism = $defaults->maxParallelism;
+        }
 
         if (null !== $activeSet) {
             $modeValue = $activeSet->executionModes[$toolName] ?? ToolExecutionMode::Sequential->value;
             $mode = ToolExecutionMode::tryFrom($modeValue) ?? ToolExecutionMode::Sequential;
+            if (isset($activeSet->timeoutSeconds[$toolName]) && $activeSet->timeoutSeconds[$toolName] > 0) {
+                $timeoutSeconds = $activeSet->timeoutSeconds[$toolName];
+            }
         }
 
         return [
             'mode' => $mode,
-            'timeout_seconds' => 90,
-            'max_parallelism' => max(1, $this->maxParallelism),
+            'timeout_seconds' => null !== $timeoutSeconds && $timeoutSeconds > 0 ? max(1, $timeoutSeconds) : null,
+            'max_parallelism' => max(1, $maxParallelism),
         ];
     }
 

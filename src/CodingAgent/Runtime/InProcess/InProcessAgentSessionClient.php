@@ -13,6 +13,7 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
+use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Config\SessionMetadataStore;
@@ -51,6 +52,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         private readonly AgentsContextDiscovery $agentsContextDiscovery,
         private readonly AgentsContextRenderer $agentsContextRenderer,
         private readonly SkillsContextBuilder $skillsContextBuilder,
+        private readonly AgentsContextBuilder $agentsContextBuilder,
         private readonly PromptTemplateService $promptTemplateService,
         private readonly SessionMetadataStore $sessionMetaStore,
         private readonly ModelResolver $modelResolver,
@@ -106,6 +108,18 @@ final class InProcessAgentSessionClient implements AgentSessionClient
                 role: 'user-context',
                 content: [['type' => 'text', 'text' => $skillsContext]],
                 metadata: ['source' => 'skills_context'],
+            );
+        }
+
+        // Discover and inject available agent definitions for the parent model.
+        // Rendered into <agents_instructions> and <available_agents> blocks between
+        // skills context and the user message. Only on new sessions.
+        $availableAgentsContext = $this->agentsContextBuilder->build();
+        if ('' !== $availableAgentsContext) {
+            $messages[] = new AgentMessage(
+                role: 'user-context',
+                content: [['type' => 'text', 'text' => $availableAgentsContext]],
+                metadata: ['source' => 'agents_definitions_context'],
             );
         }
 

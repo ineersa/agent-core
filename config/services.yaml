@@ -453,6 +453,7 @@ services:
 
   Ineersa\AgentCore\Application\Pipeline\LlmStepResultHandler:
     arguments:
+      $toolExecutionSettings: '@Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface'
       $agentRetryMaxAttempts: '@=null !== service("Ineersa\\CodingAgent\\Config\\AppConfig").ai ? service("Ineersa\\CodingAgent\\Config\\AppConfig").ai.agentRetry.resolveMaxAttempts() : 2'
       $agentRetryBaseDelayMs: '@=null !== service("Ineersa\\CodingAgent\\Config\\AppConfig").ai ? service("Ineersa\\CodingAgent\\Config\\AppConfig").ai.agentRetry.resolveBaseDelayMs() : 1000'
       $agentRetryMaxDelayMs: '@=null !== service("Ineersa\\CodingAgent\\Config\\AppConfig").ai ? service("Ineersa\\CodingAgent\\Config\\AppConfig").ai.agentRetry.resolveMaxDelayMs() : 60000'
@@ -529,6 +530,15 @@ services:
   Ineersa\CodingAgent\Tool\ToolRegistryInterface:
     alias: Ineersa\CodingAgent\Tool\ToolRegistry
 
+  # Subagent tool: definition provider is tagged; handler resolves execution at invoke time only.
+  Ineersa\CodingAgent\Agent\Tool\SubagentToolHandler:
+    arguments:
+      $executionServiceLocator: !service_locator
+        execution: '@Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService'
+
+  Ineersa\CodingAgent\Agent\Tool\SubagentToolDefinitionProvider:
+    tags: ['hatfield.tool_provider']
+
   # CodingAgent ToolSetResolver — bridges ToolRegistry to AgentCore resolver seam.
   # The inner resolver (CodingAgentToolSetResolver) is wrapped by
   # McpCatalogRegisteringToolSetResolver so MCP dynamic tools from the
@@ -537,12 +547,25 @@ services:
     arguments:
       $toolRegistry: '@Ineersa\CodingAgent\Tool\ToolRegistryInterface'
 
+  # Parent/main runs hide MCP tools from availability=specific servers.
+  Ineersa\CodingAgent\Mcp\Tool\McpParentAvailabilityToolSetResolver:
+    arguments:
+      $inner: '@Ineersa\CodingAgent\Tool\CodingAgentToolSetResolver'
+      $metadataReader: '@Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader'
+      $catalogStore: '@Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface'
+      $configLoader: '@Ineersa\CodingAgent\Mcp\Config\McpConfigLoader'
+      $availability: '@Ineersa\CodingAgent\Mcp\Tool\McpServerToolAvailability'
+
+  Ineersa\CodingAgent\Mcp\Tool\McpServerToolAvailability: ~
+
   # MCP-aware wrapper: calls registrar before delegate so LLM-visible
   # tool schemas and execution allowlists include catalog-backed MCP tools.
   Ineersa\CodingAgent\Mcp\Tool\McpCatalogRegisteringToolSetResolver:
     arguments:
-      $inner: '@Ineersa\CodingAgent\Tool\CodingAgentToolSetResolver'
+      $inner: '@Ineersa\CodingAgent\Mcp\Tool\McpParentAvailabilityToolSetResolver'
       $mcpToolRegistrar: '@Ineersa\CodingAgent\Mcp\Tool\McpToolRegistrar'
+      $metadataReader: '@Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader'
+      $catalogStore: '@Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface'
       $logger: '@logger'
 
   # Subagent tool-set decorator: wraps the MCP-registering resolver and
@@ -813,3 +836,13 @@ services:
   Ineersa\CodingAgent\Agent\Artifact\ChildAwareEventStore:
     arguments:
       $parentStore: '@Ineersa\CodingAgent\Session\SessionRunEventStore'
+
+  Ineersa\CodingAgent\Agent\Execution\AgentMcpToolsResolver:
+    arguments:
+      $catalogStore: '@Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface'
+      $configLoader: '@Ineersa\CodingAgent\Mcp\Config\McpConfigLoader'
+
+  Ineersa\CodingAgent\Agent\Execution\AgentToolPolicyResolver:
+    arguments:
+      $toolRegistry: '@Ineersa\CodingAgent\Tool\ToolRegistryInterface'
+      $mcpToolsResolver: '@Ineersa\CodingAgent\Agent\Execution\AgentMcpToolsResolver'

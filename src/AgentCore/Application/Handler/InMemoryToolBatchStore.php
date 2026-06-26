@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Handler;
 
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreMutation;
 
 /**
  * In-memory implementation of ToolBatchStoreInterface.
@@ -36,6 +37,22 @@ final class InMemoryToolBatchStore implements ToolBatchStoreInterface
     public function delete(string $runId, int $turnNo, string $stepId): void
     {
         unset($this->batches[$this->key($runId, $turnNo, $stepId)]);
+    }
+
+    public function mutate(string $runId, int $turnNo, string $stepId, callable $callback): mixed
+    {
+        $key = $this->key($runId, $turnNo, $stepId);
+        $current = $this->batches[$key] ?? null;
+        $outcome = $callback($current);
+        if (!$outcome instanceof ToolBatchStoreMutation) {
+            throw new \LogicException('Tool batch store mutate callback must return ToolBatchStoreMutation.');
+        }
+
+        if (null !== $outcome->nextSerializedState) {
+            $this->batches[$key] = $outcome->nextSerializedState;
+        }
+
+        return $outcome->returnValue;
     }
 
     private function key(string $runId, int $turnNo, string $stepId): string

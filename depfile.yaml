@@ -101,6 +101,11 @@ parameters:
         - type: directory
           value: src/Tui/Question/.*
 
+    - name: TuiStartup
+      collectors:
+        - type: directory
+          value: src/Tui/Startup/.*
+
     - name: TuiUtility
       collectors:
         - type: directory
@@ -110,6 +115,11 @@ parameters:
       collectors:
         - type: directory
           value: src/CodingAgent/Runtime/(Contract|Protocol)/.*
+
+    - name: AppLoadedResources
+      collectors:
+        - type: directory
+          value: src/CodingAgent/Runtime/LoadedResources/.*
 
     - name: AppExtensionApi
       collectors:
@@ -368,6 +378,8 @@ parameters:
       - SymfonyTui
 
     TuiScreen:
+      - AppRuntimeContract
+      - TuiStartup
       - TuiLayout
       - TuiExtension
       - TuiHeader
@@ -434,11 +446,17 @@ parameters:
       - TuiWidget
       - TuiTheme
 
+    TuiStartup:
+      - AppRuntimeContract
+      - TuiTheme
+      - TuiWidget
+
     TuiWidget:
       - TuiTheme
       - SymfonyTui
 
     TuiTheme:
+      - AppRuntimeContract
       - AppConfig
       - SymfonyTui
       - SymfonyConsole
@@ -460,6 +478,7 @@ parameters:
       - AppExtensionApi
       - AppSystemPrompt
       - AppSkills
+      - AppAgent
       - AppTool
       - AppPromptTemplate
       - AgentCore
@@ -469,6 +488,15 @@ parameters:
       - SymfonyMessenger
       - SymfonyAiPlatform
       - SymfonyEventDispatcher
+
+    AppLoadedResources:
+      - AppRuntimeContract
+      - AppSystemPrompt
+      - AppSkills
+      - AppPromptTemplate
+      - AppAgent
+      - AppExtension
+      - AppConfig
 
     AppRuntimeContract:
       - AppRuntimeProjection
@@ -555,8 +583,12 @@ parameters:
 
     AppAgent:
       - AppConfig
+      - AppSystemPrompt
       - AppMarkdown
+      - AppMcpCatalog
+      - AppMcpConfig
       - AppSession
+      - AppSkills
       - AppTool
       - AgentCore
       - SymfonyYaml
@@ -602,6 +634,7 @@ parameters:
 
     AppMcpTool:
       - AgentCore
+      - AppAgent
       - AppTool
       - AppMcpCatalog
       - AppMcpClient

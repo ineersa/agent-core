@@ -6,24 +6,38 @@ Hatfield TUI using tmux and Castor commands.
 ## Quick start
 
 ```bash
-castor run:agent           # Launch interactive TUI in tmux
-castor run:agent-test      # Deterministic test session with snapshot
+castor run:agent           # Launch interactive TUI in the current terminal
+castor run:agent-test      # Manual tmux test helper (deterministic snapshot)
 ```
+
+
+## Bubblewrap auto-wrap (`run:agent`, `run:agent-capture`)
+
+When `~/bin/pi-bwrap` exists and is executable, `castor run:agent` and `run:agent-capture` re-exec Castor under that wrapper, then launch `php bin/console agent` in the **current terminal** inside the sandbox. Datadog flags (`HATFIELD_DATADOG`) are unchanged.
+
+`run:agent-test` does **not** use auto-wrap: the host tmux server starts the pane command outside Bubblewrap. Use `run:agent` for local read-only-home sandboxing.
+
+| Variable | Effect |
+| --- | --- |
+| `HATFIELD_BWRAP=0` | Skip Bubblewrap (host launch, troubleshooting) |
+| `HATFIELD_PI_BWRAP=/path/to/script` | Override wrapper path (default `~/bin/pi-bwrap`) |
+| `HATFIELD_INSIDE_PI_BWRAP=1` | Set automatically after re-exec; prevents recursive wrapping |
+| `HATFIELD_CASTOR_EXECUTABLE=/path/to/castor` | Override Castor CLI used for the Bubblewrap re-exec (default: auto-detect from current invocation `argv[0]`, then `~/.local/bin/castor`, then `PATH`) |
+
+`castor test:tui` / `TmuxHarness` do **not** use Bubblewrap (PHPUnit runs on the host). Bubblewrap is optional local sandboxing only; Hatfield behavior is the same with or without it. The QA gate still requires host tmux.
+
+Manual checks on stock `~/bin/pi-bwrap`: writes under unshared `$HOME` paths should fail; writes under the project tree (via `~/projects` bind) should succeed. After `castor run:agent`, asking the agent to write `~/test.md` should fail when bwrap is active.
 
 ## `castor run:agent`
 
-Launches the agent TUI in tmux. The TUI blocks until the user exits
-via Ctrl+D or double Ctrl+C.
+Launches the agent TUI in the **current terminal**. The TUI blocks until you exit
+via Ctrl+D or double Ctrl+C. Castor uses `exec bash -lc 'cd <root> && exec … php bin/console agent'`
+so raw keys and terminal dimensions pass through correctly.
 
-**Inside tmux:** creates a new window named `hatfield-agent` in the
-current session. This keeps your existing session layout intact.
+When `~/bin/pi-bwrap` is available, Castor re-execs under it first; the agent process
+then runs inside the sandbox in this same terminal.
 
-**Outside tmux:** creates a new session named `hatfield-agent` (or
-attaches to it if it already exists). This task attaches tmux directly
-to the caller's TTY rather than through Castor's process runner so raw
-keys and terminal dimensions pass through correctly.
-
-The command run in the tmux pane/window is simply:
+Equivalent console command from the project root:
 
 ```bash
 php bin/console agent
@@ -36,8 +50,8 @@ On startup the footer should render live status information, for example:
 ```
 
 The elapsed-time segment is expected to update while the TUI is idle. If the
-window opens and immediately exits, run `php bin/console agent` directly from
-the project root to see the fatal error before tmux closes the pane.
+TUI exits immediately, run `php bin/console agent` directly from the project
+root to see the fatal error.
 
 ### TUI keybindings
 
@@ -265,34 +279,29 @@ sudo apt install tmux       # Debian/Ubuntu
 brew install tmux           # macOS
 ```
 
-**Session already exists but pane is dead**
+**`castor run:agent-test` session is dead or stale**
 ```bash
-tmux kill-session -t hatfield-agent
-castor run:agent
-
-# or for the deterministic test session
 tmux kill-session -t hatfield-agent-test
 castor run:agent-test
 ```
 
-**`castor run:agent` opens a window but the agent does not stay running**
+**`castor run:agent` exits immediately**
 Run the console command directly to surface the PHP error:
 
 ```bash
 php bin/console agent
 ```
 
-After fixing the error, re-run `castor run:agent` and confirm tmux shows a live
-`php` process in the `hatfield-agent` window/pane.
-
-**Keys show up as escape sequences / Ctrl keys do not work**
-This usually means tmux was attached through a non-TTY wrapper or you are
-attached to a stale session. Kill and recreate the session:
+**Keys show up as escape sequences / Ctrl keys do not work (tmux test helper only)**
+For `run:agent-test`, kill and recreate the tmux session:
 
 ```bash
-tmux kill-session -t hatfield-agent
-castor run:agent
+tmux kill-session -t hatfield-agent-test
+castor run:agent-test
 ```
+
+For `run:agent` in the current terminal, ensure you are on a real TTY (not a pipe)
+and that your terminal emulator passes through Ctrl sequences.
 
 **Snapshot is empty or truncated**
 Wait a bit longer before capturing. The agent may still be starting.

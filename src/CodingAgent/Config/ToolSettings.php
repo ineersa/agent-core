@@ -20,7 +20,7 @@ use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
 final readonly class ToolSettings implements ToolExecutionSettingsInterface
 {
     public string $mode;
-    public int $timeoutSeconds;
+    public ?int $timeoutSeconds;
     public int $maxParallelism;
 
     public function __construct(
@@ -29,7 +29,7 @@ final readonly class ToolSettings implements ToolExecutionSettingsInterface
         ?int $maxParallelism = null,
     ) {
         $this->mode = $mode ?? ToolExecutionConfig::DEFAULT_MODE;
-        $this->timeoutSeconds = $timeoutSeconds ?? ToolExecutionConfig::DEFAULT_TIMEOUT_SECONDS;
+        $this->timeoutSeconds = $timeoutSeconds;
         $this->maxParallelism = $maxParallelism ?? ToolExecutionConfig::DEFAULT_MAX_PARALLELISM;
     }
 
@@ -52,7 +52,7 @@ final readonly class ToolSettings implements ToolExecutionSettingsInterface
         return $this->mode;
     }
 
-    public function defaultTimeoutSeconds(): int
+    public function defaultTimeoutSeconds(): ?int
     {
         return $this->timeoutSeconds;
     }

@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Extension;
 
 use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
+use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Application\Handler\ToolExecutor;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
@@ -16,6 +19,7 @@ use Ineersa\CodingAgent\Config\ToolsConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\Extension\ExtensionToolHookEventSubscriber;
+use Ineersa\CodingAgent\Extension\NoninteractiveChildRunProbe;
 use Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge;
 use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
 use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
@@ -563,6 +567,89 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
             }
         };
     }
+
+    public function testRequireApprovalDeniedImmediatelyForNoninteractiveChildRun(): void
+    {
+        $registry = new ToolRegistry();
+        $handler = $this->countingHandler('should not run');
+        $registry->registerTool('approval-tool', 'Tool needing approval', [], $handler, 'approval-tool');
+
+        $hookRegistry = new ExtensionHookRegistry();
+        $hookRegistry->addToolCallHook($this->toolCallHook(static fn (): ToolCallDecisionDTO => ToolCallDecisionDTO::requireApproval(
+            prompt: 'Allow?',
+            questionId: 'qid_child',
+            schema: ['type' => 'string', 'enum' => ['Allow once', 'Deny']],
+            details: ['category' => 'destructive'],
+        )));
+
+        $store = $this->createMock(\Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface::class);
+        $store->expects($this->never())->method('create');
+        $store->expects($this->never())->method('pollAnswerText');
+
+        $childEvent = new RunEvent(
+            runId: 'child-run-1',
+            seq: 1,
+            turnNo: 0,
+            type: RunEventTypeEnum::RunStarted->value,
+            payload: [
+                'payload' => [
+                    'metadata' => [
+                        'session' => [
+                            'kind' => 'agent_child',
+                            'interactive' => false,
+                        ],
+                    ],
+                ],
+            ],
+            createdAt: new \DateTimeImmutable(),
+        );
+        $childEventStore = $this->createStub(EventStoreInterface::class);
+        $childEventStore->method('allFor')->willReturn([$childEvent]);
+        $probe = new NoninteractiveChildRunProbe($childEventStore);
+
+        $contextAccessor = new StackToolExecutionContextAccessor();
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber(
+            $hookRegistry,
+            $store,
+            getcwd() ?: '/',
+            $contextAccessor,
+            noninteractiveChildProbe: $probe,
+        ));
+
+        $executor = new ToolExecutor(
+            defaultMode: 'parallel',
+            defaultTimeoutSeconds: null,
+            maxParallelism: 2,
+            resultStore: new ToolExecutionResultStore(),
+            toolbox: new RegistryBackedToolbox($registry, $dispatcher),
+            contextAccessor: $contextAccessor,
+        );
+
+        $result = $contextAccessor->with(new \Ineersa\AgentCore\Application\Tool\ToolContext(
+            runId: 'child-run-1',
+            turnNo: 1,
+            toolCallId: 'call-child-1',
+            toolName: 'approval-tool',
+            cancellationToken: new class implements \Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface {
+                public function isCancellationRequested(): bool { return false; }
+            },
+            timeoutSeconds: null,
+        ), fn () => $executor->execute(new ToolCall(
+            toolCallId: 'call-child-1',
+            toolName: 'approval-tool',
+            arguments: ['cmd' => 'cat ~/.bashrc'],
+            orderIndex: 0,
+            runId: 'child-run-1',
+            context: ['turn_no' => 1],
+        )));
+
+        $this->assertSame(0, $handler->calls);
+        $this->assertIsArray($result->details['raw_result'] ?? null);
+        $this->assertTrue($result->details['raw_result']['denied'] ?? null);
+        $this->assertTrue($result->details['raw_result']['noninteractive_child_run'] ?? null);
+    }
+
 
     private function toolCallHook(callable $callback): ToolCallHookInterface
     {

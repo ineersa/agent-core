@@ -425,6 +425,29 @@ final class ToolExecutorTest extends TestCase
         $this->assertFalse($result->isError);
         $this->assertNull($accessor->current());
     }
+    public function testNoPostHocTimeoutWhenPolicyTimeoutIsNull(): void
+    {
+        $toolbox = new SlowToolbox();
+        $executor = new ToolExecutor(
+            defaultMode: 'parallel',
+            defaultTimeoutSeconds: null,
+            maxParallelism: 2,
+            toolbox: $toolbox,
+            resultStore: new ToolExecutionResultStore(),
+        );
+
+        $result = $executor->execute(ToolCallBuilder::create('call-slow')
+            ->withToolName('slow_tool')
+            ->withArguments([])
+            ->withOrderIndex(0)
+            ->withTimeoutSeconds(null)
+            ->build());
+
+        $this->assertFalse($result->isError);
+        $this->assertSame('slow-ok', $result->content[0]['text']);
+        $this->assertNull($result->details['timeout_seconds'] ?? null);
+    }
+
 }
 
 final class ContextCheckingToolbox implements ToolboxInterface
@@ -508,5 +531,21 @@ final class SymfonySearchTool
             'query' => $query,
             'status' => 'ok',
         ];
+    }
+}
+
+
+final class SlowToolbox implements ToolboxInterface
+{
+    public function execute(SymfonyToolCall $toolCall): SymfonyToolResult
+    {
+        usleep(50_000);
+
+        return new SymfonyToolResult($toolCall, 'slow-ok');
+    }
+
+    public function getTools(): array
+    {
+        return [];
     }
 }
