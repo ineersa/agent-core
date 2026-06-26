@@ -203,9 +203,10 @@ final class TuiJourneyE2eTest extends TestCase
      * only the normal text message submitted after inline shell — it does
      * not seed completed-run state.
      *
-     * Ordering is [tool_exec_start, tool_exec_end] and the follow-up
-     * message succeeds because the root cause was the unresolved
-     * pendingToolCalls in state replay (issue #183).
+     * Ordering is [tool_exec_start, tool_exec_end, agent_end] (standalone
+     * inline shell on a terminal run) and the follow-up message succeeds
+     * because the root cause was the unresolved pendingToolCalls in state
+     * replay (issue #183).
      */
     private function journeyPhase9InlineShellOnCompletedRun(TmuxPane $pane): void
     {
@@ -240,7 +241,7 @@ final class TuiJourneyE2eTest extends TestCase
         );
 
         // Ordering assertion for inline shell: AgentEnd must be last.
-        $this->assertShellEventsOrder($this->testProjectDir, 'inline-!ls', 'tool_execution_end');
+        $this->assertShellEventsOrder($this->testProjectDir, 'inline-!ls');
 
         // Follow-up normal message: must NOT die (the original bug symptom).
         // The run was completed before the shell; the shell wrote a fresh

@@ -277,6 +277,10 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
                 'request_id' => $command->payload['request_id'] ?? '',
                 'answer' => $command->payload['answer'] ?? null,
             ], static fn (mixed $v): bool => null !== $v),
+            'shell_command' => array_filter([
+                'text' => $command->text,
+                'standalone' => ($command->payload['standalone'] ?? false) ? true : null,
+            ], static fn (mixed $v): bool => null !== $v),
             default => array_filter([
                 'text' => $command->text,
                 'question_id' => $command->payload['question_id'] ?? null,

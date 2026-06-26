@@ -220,7 +220,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
                 $command->payload['answer'] ?? null,
             ),
             'answer_tool_question' => $this->handleAnswerToolQuestion($runId, $command),
-            'shell_command' => $this->executeShellCommand($runId, $command),
+            'shell_command' => $this->handleShellCommandSend($runId, $command),
             default => throw new \InvalidArgumentException(\sprintf('Unknown UserCommand type: "%s"', $command->type)),
         };
     }
@@ -332,6 +332,15 @@ final class InProcessAgentSessionClient implements AgentSessionClient
      * When no ToolExecutor is configured (null), a diagnostic error
      * event is emitted instead so the user sees a clear message.
      */
+    private function handleShellCommandSend(string $runId, UserCommand $command): void
+    {
+        $this->executeShellCommand($runId, $command);
+
+        if ((bool) ($command->payload['standalone'] ?? false)) {
+            $this->completeRun($runId);
+        }
+    }
+
     private function executeShellCommand(string $runId, UserCommand $command): void
     {
         $commandText = $command->text ?? '';
