@@ -18,8 +18,8 @@ use Ineersa\Tui\Listener\CompletionListener;
 use Ineersa\Tui\Listener\CompletionMenu;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
-use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
+use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -144,9 +144,9 @@ final class CompletionListenerTest extends TestCase
 
         // Editor should contain the literal tab inserted by the editor,
         // not a completed suggestion.
-        $this->assertStringNotContainsString('/exit', $this->editor->getText());
-        $this->assertStringNotContainsString('/clear', $this->editor->getText());
-        $this->assertStringNotContainsString('/help', $this->editor->getText());
+        self::assertStringNotContainsString('/exit', $this->editor->getText());
+        self::assertStringNotContainsString('/clear', $this->editor->getText());
+        self::assertStringNotContainsString('/help', $this->editor->getText());
     }
 
     #[Test]
@@ -160,7 +160,7 @@ final class CompletionListenerTest extends TestCase
         $this->tui->handleInput("\t");
 
         // Editor should contain literal tab, not "/exit ".
-        $this->assertStringNotContainsString('/exit', $this->editor->getText());
+        self::assertStringNotContainsString('/exit', $this->editor->getText());
     }
 
     // ── Escape closes completion ──────────────────────────────────
@@ -912,7 +912,7 @@ final class CompletionListenerTest extends TestCase
             // Typing @ should open completion live.
             $isolatedEditor->typeText('');
             // handleInput("@") both inserts @ and triggers live completion.
-            $isolatedTui->handleInput('@');
+            $isolatedTui->handleInput("@");
 
             // Tab should accept.
             $isolatedTui->handleInput("\t");
@@ -998,7 +998,7 @@ final class CompletionListenerTest extends TestCase
             $reader = new \Ineersa\Tui\Completion\FileMentionIndexReader($indexPath);
             $fileProvider = new \Ineersa\Tui\Completion\FileMentionCompletionProvider($reader);
 
-            $isolatedTui = new Tui();
+            $isolatedTui = new \Symfony\Component\Tui\Tui();
             $isolatedEditor = new PromptEditor();
             $theme = new DefaultTheme(new ThemePalette('default'));
             $isolatedScreen = new ChatScreen($theme, 'test-session', $isolatedEditor);
@@ -1040,7 +1040,7 @@ final class CompletionListenerTest extends TestCase
             $this->assertStringContainsString('Hello', $isolatedEditor->getText());
             $this->assertStringContainsString('@src/', $isolatedEditor->getText());
             // The editor must NOT be empty or collapsed to a single line.
-            $this->assertStringNotContainsString('Hello@', $isolatedEditor->getText());
+            $this->assertStringNotContainsString("Hello@", $isolatedEditor->getText());
         } finally {
             @unlink($indexPath);
             @rmdir($tmpDir);

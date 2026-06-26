@@ -77,19 +77,19 @@ final class TuiExportCommandVirtualTest extends TestCase
         $router = new SubmissionRouter(new CommandParser(), $registry);
         $result = $router->route('/export');
 
-        $this->assertInstanceOf(TranscriptMessage::class, $result);
-        $this->assertNotInstanceOf(DispatchRuntime::class, $result);
-        $this->assertStringContainsString('Session exported to:', $result->text);
+        self::assertInstanceOf(TranscriptMessage::class, $result);
+        self::assertNotInstanceOf(DispatchRuntime::class, $result);
+        self::assertStringContainsString('Session exported to:', $result->text);
 
         $expectedPath = $this->projectDir.'/hatfield-session-'.self::SESSION_ID.'.html';
-        $this->assertStringContainsString($expectedPath, $result->text);
-        $this->assertFileExists($expectedPath);
+        self::assertStringContainsString($expectedPath, $result->text);
+        self::assertFileExists($expectedPath);
 
         $html = file_get_contents($expectedPath);
-        $this->assertIsString($html);
-        $this->assertStringContainsString('<!DOCTYPE html>', $html);
-        $this->assertStringContainsString('Hatfield Session', $html);
-        $this->assertStringNotContainsString('<script>', $html);
+        self::assertIsString($html);
+        self::assertStringContainsString('<!DOCTYPE html>', $html);
+        self::assertStringContainsString('Hatfield Session', $html);
+        self::assertStringNotContainsString('<script>', $html);
 
         $factory = new TranscriptBlockFactory();
         $block = $factory->system(
@@ -101,8 +101,8 @@ final class TuiExportCommandVirtualTest extends TestCase
         $harness->screen()->setTranscriptBlocks([$block]);
 
         $screen = $harness->plainScreenText();
-        $this->assertStringContainsString('Session exported to:', $screen);
-        $this->assertStringContainsString('hatfield-session-'.self::SESSION_ID.'.html', $screen);
+        self::assertStringContainsString('Session exported to:', $screen);
+        self::assertStringContainsString('hatfield-session-'.self::SESSION_ID.'.html', $screen);
     }
 
     private function createSessionStoreForProject(): HatfieldSessionStore

@@ -5,18 +5,18 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller;
 
 use Doctrine\ORM\EntityManagerInterface;
-use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
+use Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessCompletionPoller;
+use Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
-use Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessCompletionPoller;
-use Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
+use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use PHPUnit\Framework\Attributes\CoversClass;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -29,7 +29,6 @@ use Symfony\Component\EventDispatcher\EventDispatcher;
  * cannot be mocked. We use real instances with a real DB and filesystem.
  *
  * @covers \Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessCompletionPoller
- *
  * @requires extension pdo_sqlite
  * @requires OS Linux
  */
@@ -102,6 +101,55 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         $this->rmDir($this->tmpDir);
 
         parent::tearDown();
+    }
+
+    /**
+     * Persist a BackgroundProcess entity via EntityManager.
+     */
+    private function persistProcess(
+        int $pid,
+        string $logPath,
+        string $command,
+        ?\DateTimeImmutable $backgroundedAt,
+        \DateTimeImmutable $finishedAt,
+        ?int $exitCode,
+        BackgroundProcessStatusEnum $status,
+        string $sessionId = 'test-poller-run',
+    ): BackgroundProcess {
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+
+        $proc = new BackgroundProcess();
+        $proc->pid = $pid;
+        $proc->sessionId = $sessionId;
+        $proc->command = $command;
+        $proc->logPath = $logPath;
+        $proc->statusPath = $this->tmpDir.'/'.$pid.'.status';
+        $proc->backgroundedAt = $backgroundedAt;
+        $proc->finishedAt = $finishedAt;
+        $proc->exitCode = $exitCode;
+        $proc->status = $status;
+        $proc->startedAt = $finishedAt->modify('-60 seconds');
+
+        $em->persist($proc);
+        $em->flush();
+
+        return $proc;
+    }
+
+    private function findProcess(int $pid): ?BackgroundProcess
+    {
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+
+        return $em->getRepository(BackgroundProcess::class)->findOneBy(['pid' => $pid]);
+    }
+
+    private function createBgConfig(): BackgroundProcessConfig
+    {
+        return new BackgroundProcessConfig(
+            storageDir: $this->tmpDir,
+            stopGraceSeconds: 1,
+            logTailChars: 5000,
+        );
     }
 
     public function testPollSendsFollowUpAndMarksNotified(): void
@@ -324,55 +372,6 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         $this->assertNotNull($entity->finishedAt, 'finishedAt must be populated after refresh');
         $this->assertSame(BackgroundProcessStatusEnum::Finished, $entity->status);
         $this->assertNotNull($entity->completionNotifiedAt, 'completionNotifiedAt must be set after notification');
-    }
-
-    /**
-     * Persist a BackgroundProcess entity via EntityManager.
-     */
-    private function persistProcess(
-        int $pid,
-        string $logPath,
-        string $command,
-        ?\DateTimeImmutable $backgroundedAt,
-        \DateTimeImmutable $finishedAt,
-        ?int $exitCode,
-        BackgroundProcessStatusEnum $status,
-        string $sessionId = 'test-poller-run',
-    ): BackgroundProcess {
-        $em = self::getContainer()->get(EntityManagerInterface::class);
-
-        $proc = new BackgroundProcess();
-        $proc->pid = $pid;
-        $proc->sessionId = $sessionId;
-        $proc->command = $command;
-        $proc->logPath = $logPath;
-        $proc->statusPath = $this->tmpDir.'/'.$pid.'.status';
-        $proc->backgroundedAt = $backgroundedAt;
-        $proc->finishedAt = $finishedAt;
-        $proc->exitCode = $exitCode;
-        $proc->status = $status;
-        $proc->startedAt = $finishedAt->modify('-60 seconds');
-
-        $em->persist($proc);
-        $em->flush();
-
-        return $proc;
-    }
-
-    private function findProcess(int $pid): ?BackgroundProcess
-    {
-        $em = self::getContainer()->get(EntityManagerInterface::class);
-
-        return $em->getRepository(BackgroundProcess::class)->findOneBy(['pid' => $pid]);
-    }
-
-    private function createBgConfig(): BackgroundProcessConfig
-    {
-        return new BackgroundProcessConfig(
-            storageDir: $this->tmpDir,
-            stopGraceSeconds: 1,
-            logTailChars: 5000,
-        );
     }
 
     private function createPoller(ProcessStore $store, BackgroundProcessManager $manager): BackgroundProcessCompletionPoller

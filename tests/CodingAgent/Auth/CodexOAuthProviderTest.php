@@ -85,10 +85,10 @@ final class CodexOAuthProviderTest extends TestCase
         $httpClient = $this->createMock(ClientInterface::class);
         $httpClient
             ->method('send')
-            ->willReturnCallback(static function (RequestInterface $request) use (&$capturedRequest): Response {
+            ->willReturnCallback(function (RequestInterface $request) use (&$capturedRequest): Response {
                 $capturedRequest = $request;
 
-                return new Response(200, [], json_encode([
+                return new Response(200, [], \json_encode([
                     'access_token' => 'test-access-token',
                     'refresh_token' => 'test-refresh-token',
                     'expires_in' => 3600,
@@ -136,10 +136,10 @@ final class CodexOAuthProviderTest extends TestCase
         $httpClient = $this->createMock(ClientInterface::class);
         $httpClient
             ->method('send')
-            ->willReturnCallback(static function (RequestInterface $request) use (&$capturedRequest): Response {
+            ->willReturnCallback(function (RequestInterface $request) use (&$capturedRequest): Response {
                 $capturedRequest = $request;
 
-                return new Response(200, [], json_encode([
+                return new Response(200, [], \json_encode([
                     'access_token' => 'refreshed-access-token',
                     'refresh_token' => 'new-refresh-token',
                     'expires_in' => 3600,

@@ -20,6 +20,5 @@ final readonly class TmuxPane
         public string $paneId,
         public int $width,
         public int $height,
-    ) {
-    }
+    ) {}
 }

@@ -20,8 +20,8 @@ class ProjectedSymfonyModelCatalogTest extends TestCase
 
         $model = $catalog->getModel('deepseek-v4-pro');
 
-        $this->assertInstanceOf(CompletionsModel::class, $model);
-        $this->assertSame('deepseek-v4-pro', $model->getName());
+        self::assertInstanceOf(CompletionsModel::class, $model);
+        self::assertSame('deepseek-v4-pro', $model->getName());
     }
 
     public function testUnknownModelThrowsModelNotFoundException(): void
@@ -38,9 +38,9 @@ class ProjectedSymfonyModelCatalogTest extends TestCase
         $model = $catalog->getModel('deepseek-v4-pro');
 
         // All projected models get these baseline capabilities.
-        $this->assertTrue($model->supports(Capability::INPUT_MESSAGES));
-        $this->assertTrue($model->supports(Capability::OUTPUT_TEXT));
-        $this->assertTrue($model->supports(Capability::OUTPUT_STREAMING));
+        self::assertTrue($model->supports(Capability::INPUT_MESSAGES));
+        self::assertTrue($model->supports(Capability::OUTPUT_TEXT));
+        self::assertTrue($model->supports(Capability::OUTPUT_STREAMING));
     }
 
     public function testToolCallingCapabilityWhenEnabled(): void
@@ -48,7 +48,7 @@ class ProjectedSymfonyModelCatalogTest extends TestCase
         $catalog = $this->createCatalog();
         $model = $catalog->getModel('deepseek-v4-pro');
 
-        $this->assertTrue($model->supports(Capability::TOOL_CALLING));
+        self::assertTrue($model->supports(Capability::TOOL_CALLING));
     }
 
     public function testToolCallingCapabilityWhenDisabled(): void
@@ -56,7 +56,7 @@ class ProjectedSymfonyModelCatalogTest extends TestCase
         $catalog = $this->createCatalog();
         $model = $catalog->getModel('flash');
 
-        $this->assertFalse($model->supports(Capability::TOOL_CALLING));
+        self::assertFalse($model->supports(Capability::TOOL_CALLING));
     }
 
     public function testThinkingCapabilityWhenReasoningEnabled(): void
@@ -64,7 +64,7 @@ class ProjectedSymfonyModelCatalogTest extends TestCase
         $catalog = $this->createCatalog();
         $model = $catalog->getModel('deepseek-v4-pro');
 
-        $this->assertTrue($model->supports(Capability::THINKING));
+        self::assertTrue($model->supports(Capability::THINKING));
     }
 
     public function testThinkingCapabilityWhenReasoningDisabled(): void
@@ -72,7 +72,7 @@ class ProjectedSymfonyModelCatalogTest extends TestCase
         $catalog = $this->createCatalog();
         $model = $catalog->getModel('deepseek-v4-flash');
 
-        $this->assertFalse($model->supports(Capability::THINKING));
+        self::assertFalse($model->supports(Capability::THINKING));
     }
 
     public function testGetModelsReturnsAllRegistered(): void
@@ -81,11 +81,11 @@ class ProjectedSymfonyModelCatalogTest extends TestCase
 
         $all = $catalog->getModels();
 
-        $this->assertCount(4, $all);
-        $this->assertArrayHasKey('deepseek-v4-pro', $all);
-        $this->assertArrayHasKey('deepseek-v4-flash', $all);
-        $this->assertArrayHasKey('flash', $all);
-        $this->assertArrayHasKey('glm-5.1', $all);
+        self::assertCount(4, $all);
+        self::assertArrayHasKey('deepseek-v4-pro', $all);
+        self::assertArrayHasKey('deepseek-v4-flash', $all);
+        self::assertArrayHasKey('flash', $all);
+        self::assertArrayHasKey('glm-5.1', $all);
     }
 
     public function testEachRegisteredModelUsesCompletionsModelClass(): void
@@ -93,7 +93,7 @@ class ProjectedSymfonyModelCatalogTest extends TestCase
         $catalog = $this->createCatalog();
 
         foreach ($catalog->getModels() as $modelEntry) {
-            $this->assertSame(CompletionsModel::class, $modelEntry['class']);
+            self::assertSame(CompletionsModel::class, $modelEntry['class']);
         }
     }
 
@@ -103,9 +103,9 @@ class ProjectedSymfonyModelCatalogTest extends TestCase
 
         foreach ($catalog->getModels() as $modelEntry) {
             $capabilities = $modelEntry['capabilities'];
-            $this->assertIsArray($capabilities);
+            self::assertIsArray($capabilities);
             foreach ($capabilities as $cap) {
-                $this->assertInstanceOf(Capability::class, $cap);
+                self::assertInstanceOf(Capability::class, $cap);
             }
         }
     }
@@ -114,7 +114,7 @@ class ProjectedSymfonyModelCatalogTest extends TestCase
     {
         $catalog = new ProjectedSymfonyModelCatalog([]);
 
-        $this->assertSame([], $catalog->getModels());
+        self::assertSame([], $catalog->getModels());
 
         $this->expectException(ModelNotFoundException::class);
         $catalog->getModel('any-model');
@@ -131,11 +131,11 @@ class ProjectedSymfonyModelCatalogTest extends TestCase
         $catalog = new ProjectedSymfonyModelCatalog(['full-model' => $def]);
         $model = $catalog->getModel('full-model');
 
-        $this->assertTrue($model->supports(Capability::INPUT_MESSAGES));
-        $this->assertTrue($model->supports(Capability::OUTPUT_TEXT));
-        $this->assertTrue($model->supports(Capability::OUTPUT_STREAMING));
-        $this->assertTrue($model->supports(Capability::TOOL_CALLING));
-        $this->assertTrue($model->supports(Capability::THINKING));
+        self::assertTrue($model->supports(Capability::INPUT_MESSAGES));
+        self::assertTrue($model->supports(Capability::OUTPUT_TEXT));
+        self::assertTrue($model->supports(Capability::OUTPUT_STREAMING));
+        self::assertTrue($model->supports(Capability::TOOL_CALLING));
+        self::assertTrue($model->supports(Capability::THINKING));
     }
 
     public function testModelWithAllFeaturesDisabled(): void
@@ -149,11 +149,11 @@ class ProjectedSymfonyModelCatalogTest extends TestCase
         $catalog = new ProjectedSymfonyModelCatalog(['minimal-model' => $def]);
         $model = $catalog->getModel('minimal-model');
 
-        $this->assertTrue($model->supports(Capability::INPUT_MESSAGES));
-        $this->assertTrue($model->supports(Capability::OUTPUT_TEXT));
-        $this->assertTrue($model->supports(Capability::OUTPUT_STREAMING));
-        $this->assertFalse($model->supports(Capability::TOOL_CALLING));
-        $this->assertFalse($model->supports(Capability::THINKING));
+        self::assertTrue($model->supports(Capability::INPUT_MESSAGES));
+        self::assertTrue($model->supports(Capability::OUTPUT_TEXT));
+        self::assertTrue($model->supports(Capability::OUTPUT_STREAMING));
+        self::assertFalse($model->supports(Capability::TOOL_CALLING));
+        self::assertFalse($model->supports(Capability::THINKING));
     }
 
     public function testZaiStreamingToolModel(): void
@@ -162,9 +162,9 @@ class ProjectedSymfonyModelCatalogTest extends TestCase
         $catalog = $this->createCatalog();
         $model = $catalog->getModel('glm-5.1');
 
-        $this->assertTrue($model->supports(Capability::TOOL_CALLING));
-        $this->assertTrue($model->supports(Capability::THINKING));
-        $this->assertTrue($model->supports(Capability::OUTPUT_STREAMING));
+        self::assertTrue($model->supports(Capability::TOOL_CALLING));
+        self::assertTrue($model->supports(Capability::THINKING));
+        self::assertTrue($model->supports(Capability::OUTPUT_STREAMING));
     }
 
     // ── Provider-qualified model names ────────────────────
@@ -181,12 +181,12 @@ class ProjectedSymfonyModelCatalogTest extends TestCase
 
         $model = $catalog->getModel('llama_cpp/flash');
 
-        $this->assertInstanceOf(CompletionsModel::class, $model);
+        self::assertInstanceOf(CompletionsModel::class, $model);
         // The resolved model should use the bare name after catalog lookup.
         // AbstractModelCatalog::getModel() returns a model whose name
         // comes from the original $modelName param, which might be
         // "llama_cpp/flash".  The key assertion is: no exception.
-        $this->assertNotEmpty($model->getName());
+        self::assertNotEmpty($model->getName());
     }
 
     public function testProviderQualifiedModelNameWithUnknownBareModelFails(): void
@@ -205,8 +205,8 @@ class ProjectedSymfonyModelCatalogTest extends TestCase
 
         $model = $catalog->getModel('deepseek/deepseek-v4-pro:23b');
 
-        $this->assertInstanceOf(CompletionsModel::class, $model);
-        $this->assertNotEmpty($model->getName());
+        self::assertInstanceOf(CompletionsModel::class, $model);
+        self::assertNotEmpty($model->getName());
     }
 
     public function testCustomModelClassProducesCodexModel(): void
@@ -224,10 +224,10 @@ class ProjectedSymfonyModelCatalogTest extends TestCase
 
         $model = $catalog->getModel('gpt-5.5');
 
-        $this->assertInstanceOf(CodexModel::class, $model);
-        $this->assertSame('gpt-5.5', $model->getName());
-        $this->assertTrue($model->supports(Capability::TOOL_CALLING));
-        $this->assertTrue($model->supports(Capability::THINKING));
+        self::assertInstanceOf(CodexModel::class, $model);
+        self::assertSame('gpt-5.5', $model->getName());
+        self::assertTrue($model->supports(Capability::TOOL_CALLING));
+        self::assertTrue($model->supports(Capability::THINKING));
     }
 
     // — helpers —

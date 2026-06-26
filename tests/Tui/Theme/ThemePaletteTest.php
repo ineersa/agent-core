@@ -15,35 +15,35 @@ final class ThemePaletteTest extends TestCase
     {
         $palette = new ThemePalette('test');
 
-        $this->assertSame('test', $palette->name);
+        self::assertSame('test', $palette->name);
     }
 
     public function testGetKnownColor(): void
     {
         $palette = new ThemePalette('test', ['accent' => '#ff00ff']);
 
-        $this->assertSame('#ff00ff', $palette->get(\Ineersa\Tui\Theme\ThemeColorEnum::Accent));
+        self::assertSame('#ff00ff', $palette->get(\Ineersa\Tui\Theme\ThemeColorEnum::Accent));
     }
 
     public function testGetMissingColorReturnsEmpty(): void
     {
         $palette = new ThemePalette('test', []);
 
-        $this->assertSame('', $palette->get(\Ineersa\Tui\Theme\ThemeColorEnum::Accent));
+        self::assertSame('', $palette->get(\Ineersa\Tui\Theme\ThemeColorEnum::Accent));
     }
 
     public function testHasReturnsTrueForNonEmpty(): void
     {
         $palette = new ThemePalette('test', ['accent' => 'cyan']);
 
-        $this->assertTrue($palette->has(\Ineersa\Tui\Theme\ThemeColorEnum::Accent));
+        self::assertTrue($palette->has(\Ineersa\Tui\Theme\ThemeColorEnum::Accent));
     }
 
     public function testHasReturnsFalseForEmpty(): void
     {
         $palette = new ThemePalette('test', []);
 
-        $this->assertFalse($palette->has(\Ineersa\Tui\Theme\ThemeColorEnum::Accent));
+        self::assertFalse($palette->has(\Ineersa\Tui\Theme\ThemeColorEnum::Accent));
     }
 
     public function testWithOverrides(): void
@@ -52,11 +52,11 @@ final class ThemePaletteTest extends TestCase
 
         $overridden = $palette->withOverrides(['accent' => 'magenta', 'muted' => '#888']);
 
-        $this->assertSame('test', $overridden->name);
-        $this->assertSame('magenta', $overridden->get(\Ineersa\Tui\Theme\ThemeColorEnum::Accent));
-        $this->assertSame('#888', $overridden->get(\Ineersa\Tui\Theme\ThemeColorEnum::Muted));
+        self::assertSame('test', $overridden->name);
+        self::assertSame('magenta', $overridden->get(\Ineersa\Tui\Theme\ThemeColorEnum::Accent));
+        self::assertSame('#888', $overridden->get(\Ineersa\Tui\Theme\ThemeColorEnum::Muted));
         // Original unchanged
-        $this->assertSame('cyan', $palette->get(\Ineersa\Tui\Theme\ThemeColorEnum::Accent));
+        self::assertSame('cyan', $palette->get(\Ineersa\Tui\Theme\ThemeColorEnum::Accent));
     }
 
     public function testFromArray(): void
@@ -75,13 +75,13 @@ final class ThemePaletteTest extends TestCase
 
         $palette = ThemePalette::fromArray($data);
 
-        $this->assertSame('cyberpunk', $palette->name);
+        self::assertSame('cyberpunk', $palette->name);
         // Var 'neon' resolves to #ff00ff
-        $this->assertSame('#ff00ff', $palette->get(\Ineersa\Tui\Theme\ThemeColorEnum::Accent));
+        self::assertSame('#ff00ff', $palette->get(\Ineersa\Tui\Theme\ThemeColorEnum::Accent));
         // Empty stays empty
-        $this->assertSame('', $palette->get(\Ineersa\Tui\Theme\ThemeColorEnum::Text));
+        self::assertSame('', $palette->get(\Ineersa\Tui\Theme\ThemeColorEnum::Text));
         // Direct hex stays
-        $this->assertSame('#718096', $palette->get(\Ineersa\Tui\Theme\ThemeColorEnum::Muted));
+        self::assertSame('#718096', $palette->get(\Ineersa\Tui\Theme\ThemeColorEnum::Muted));
     }
 
     public function testFromArrayWithoutVars(): void
@@ -95,14 +95,14 @@ final class ThemePaletteTest extends TestCase
 
         $palette = ThemePalette::fromArray($data);
 
-        $this->assertSame('simple', $palette->name);
-        $this->assertSame('#abc', $palette->get(\Ineersa\Tui\Theme\ThemeColorEnum::Accent));
+        self::assertSame('simple', $palette->name);
+        self::assertSame('#abc', $palette->get(\Ineersa\Tui\Theme\ThemeColorEnum::Accent));
     }
 
     public function testFromArrayDefaultName(): void
     {
         $palette = ThemePalette::fromArray(['colors' => []]);
 
-        $this->assertSame('unnamed', $palette->name);
+        self::assertSame('unnamed', $palette->name);
     }
 }

@@ -29,10 +29,10 @@ final class LlmRetryingHttpClientTest extends TestCase
         $client = new LlmRetryingHttpClient($mock, $policy);
 
         $response = $client->request('POST', 'https://api.test/chat');
-        $this->assertSame(200, $response->getStatusCode());
-        $this->assertSame('ok', $response->getContent(false));
+        self::assertSame(200, $response->getStatusCode());
+        self::assertSame('ok', $response->getContent(false));
         // Only 1 request should be made (no retries).
-        $this->assertSame(1, $mock->getRequestsCount());
+        self::assertSame(1, $mock->getRequestsCount());
     }
 
     // ── Transient 503 is retried and succeeds ─────────────────────────────
@@ -49,10 +49,10 @@ final class LlmRetryingHttpClientTest extends TestCase
         $client = new LlmRetryingHttpClient($mock, $policy);
 
         $response = $client->request('POST', 'https://api.test/chat');
-        $this->assertSame(200, $response->getStatusCode());
-        $this->assertSame('ok', $response->getContent(false));
+        self::assertSame(200, $response->getStatusCode());
+        self::assertSame('ok', $response->getContent(false));
         // Initial attempt + 1 retry = 2 requests.
-        $this->assertSame(2, $mock->getRequestsCount());
+        self::assertSame(2, $mock->getRequestsCount());
     }
 
     // ── Transient 429 with Retry-After is retried ─────────────────────────
@@ -72,8 +72,8 @@ final class LlmRetryingHttpClientTest extends TestCase
         $client = new LlmRetryingHttpClient($mock, $policy);
 
         $response = $client->request('POST', 'https://api.test/chat');
-        $this->assertSame(200, $response->getStatusCode());
-        $this->assertSame(2, $mock->getRequestsCount());
+        self::assertSame(200, $response->getStatusCode());
+        self::assertSame(2, $mock->getRequestsCount());
     }
 
     // ── Terminal billing 429 is NOT retried ───────────────────────────────
@@ -90,9 +90,9 @@ final class LlmRetryingHttpClientTest extends TestCase
         $client = new LlmRetryingHttpClient($mock, $policy);
 
         $response = $client->request('POST', 'https://api.test/chat');
-        $this->assertSame(429, $response->getStatusCode());
+        self::assertSame(429, $response->getStatusCode());
         // Only 1 attempt — terminal error, no retry.
-        $this->assertSame(1, $mock->getRequestsCount());
+        self::assertSame(1, $mock->getRequestsCount());
     }
 
     // ── Non-retryable 400 is NOT retried ──────────────────────────────────
@@ -108,8 +108,8 @@ final class LlmRetryingHttpClientTest extends TestCase
         $client = new LlmRetryingHttpClient($mock, $policy);
 
         $response = $client->request('POST', 'https://api.test/chat');
-        $this->assertSame(400, $response->getStatusCode());
-        $this->assertSame(1, $mock->getRequestsCount());
+        self::assertSame(400, $response->getStatusCode());
+        self::assertSame(1, $mock->getRequestsCount());
     }
 
     // ── All retries exhausted ─────────────────────────────────────────────
@@ -128,8 +128,8 @@ final class LlmRetryingHttpClientTest extends TestCase
 
         $response = $client->request('POST', 'https://api.test/chat');
         // 2 retries + initial = 3 total attempts, all 503.
-        $this->assertSame(503, $response->getStatusCode());
-        $this->assertSame(3, $mock->getRequestsCount());
+        self::assertSame(503, $response->getStatusCode());
+        self::assertSame(3, $mock->getRequestsCount());
     }
 
     // ── Transport timeout is retried ──────────────────────────────────────
@@ -139,7 +139,7 @@ final class LlmRetryingHttpClientTest extends TestCase
         $attempts = 0;
 
         $mock = new MockHttpClient(
-            static function (string $method, string $url, array $options) use (&$attempts): MockResponse {
+            function (string $method, string $url, array $options) use (&$attempts): MockResponse {
                 ++$attempts;
 
                 if (1 === $attempts) {
@@ -155,8 +155,8 @@ final class LlmRetryingHttpClientTest extends TestCase
         $client = new LlmRetryingHttpClient($mock, $policy);
 
         $response = $client->request('POST', 'https://api.test/chat');
-        $this->assertSame(200, $response->getStatusCode());
-        $this->assertSame(2, $attempts);
+        self::assertSame(200, $response->getStatusCode());
+        self::assertSame(2, $attempts);
     }
 
     // ── Non-retryable transport error is NOT retried ───────────────────────
@@ -164,7 +164,7 @@ final class LlmRetryingHttpClientTest extends TestCase
     public function testRequestDoesNotRetryNonRetryableTransportError(): void
     {
         $mock = new MockHttpClient(
-            static function (): MockResponse {
+            function (): MockResponse {
                 throw new \RuntimeException('HTTP 400 Bad Request');
             },
         );
@@ -194,12 +194,12 @@ final class LlmRetryingHttpClientTest extends TestCase
         $client = new LlmRetryingHttpClient($mock, $policy);
 
         $cloned = $client->withOptions(['timeout' => 15]);
-        $this->assertNotSame($client, $cloned);
+        self::assertNotSame($client, $cloned);
 
         // The cloned client should still use the retry policy
         // (verified by the types and the response).
         $response = $cloned->request('POST', 'https://api.test/chat');
-        $this->assertSame(200, $response->getStatusCode());
+        self::assertSame(200, $response->getStatusCode());
     }
 
     // ── Integration: real retry with two 503s then 200 ────────────────────
@@ -217,10 +217,10 @@ final class LlmRetryingHttpClientTest extends TestCase
         $client = new LlmRetryingHttpClient($mock, $policy);
 
         $response = $client->request('POST', 'https://api.test/chat');
-        $this->assertSame(200, $response->getStatusCode());
-        $this->assertSame('ok', $response->getContent(false));
+        self::assertSame(200, $response->getStatusCode());
+        self::assertSame('ok', $response->getContent(false));
         // Initial + 2 retries = 3 requests.
-        $this->assertSame(3, $mock->getRequestsCount());
+        self::assertSame(3, $mock->getRequestsCount());
     }
 
     // ── 401 passes through without retry ──────────────────────────────────
@@ -236,8 +236,8 @@ final class LlmRetryingHttpClientTest extends TestCase
         $client = new LlmRetryingHttpClient($mock, $policy);
 
         $response = $client->request('POST', 'https://api.test/chat');
-        $this->assertSame(401, $response->getStatusCode());
-        $this->assertSame(1, $mock->getRequestsCount());
+        self::assertSame(401, $response->getStatusCode());
+        self::assertSame(1, $mock->getRequestsCount());
     }
 
     // ── stream delegates to inner ─────────────────────────────────────────
@@ -246,7 +246,7 @@ final class LlmRetryingHttpClientTest extends TestCase
     public function testStreamDelegatesToInner(): void
     {
         $inner = $this->createMock(HttpClientInterface::class);
-        $inner->expects($this->once())
+        $inner->expects(self::once())
             ->method('stream')
             ->willReturn(
                 $this->createMock(\Symfony\Contracts\HttpClient\ResponseStreamInterface::class),
@@ -256,6 +256,6 @@ final class LlmRetryingHttpClientTest extends TestCase
         $client = new LlmRetryingHttpClient($inner, $policy);
 
         $result = $client->stream([]);
-        $this->assertInstanceOf(\Symfony\Contracts\HttpClient\ResponseStreamInterface::class, $result);
+        self::assertInstanceOf(\Symfony\Contracts\HttpClient\ResponseStreamInterface::class, $result);
     }
 }

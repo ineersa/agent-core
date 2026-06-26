@@ -14,8 +14,6 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\ModelResolverRoutingSubscriber;
-use Ineersa\AgentCore\Tests\Infrastructure\SymfonyAi\Replay\FixtureReplayModelClient;
-use Ineersa\AgentCore\Tests\Infrastructure\SymfonyAi\Replay\FixtureReplayResultConverter;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
@@ -29,12 +27,14 @@ use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\AgentCore\Tests\Infrastructure\SymfonyAi\Replay\FixtureReplayModelClient;
+use Ineersa\AgentCore\Tests\Infrastructure\SymfonyAi\Replay\FixtureReplayResultConverter;
+use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Psr\Log\NullLogger;
 use Symfony\AI\Platform\ModelCatalog\FallbackModelCatalog;
 use Symfony\AI\Platform\Platform;
 use Symfony\AI\Platform\PlatformInterface as SymfonyPlatformInterface;
 use Symfony\AI\Platform\Provider;
-use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 
 /**
@@ -46,6 +46,14 @@ use Symfony\Component\EventDispatcher\EventDispatcher;
  */
 final class TraceReplayTest extends KernelTestCase
 {
+    protected static function createKernel(array $options = []): \Ineersa\CodingAgent\Kernel
+    {
+        $env = $options['environment'] ?? 'test';
+        $debug = (bool) ($options['debug'] ?? false);
+
+        return new \Ineersa\CodingAgent\Kernel($env, $debug);
+    }
+
     private string $tempDir;
     private string $homeDir;
     private SessionMetadataStore $sessionMetaStore;
@@ -371,14 +379,6 @@ final class TraceReplayTest extends KernelTestCase
         $this->assertSame($fixture['usage']['total_tokens'], $result->usage['total_tokens']);
     }
 
-    protected static function createKernel(array $options = []): \Ineersa\CodingAgent\Kernel
-    {
-        $env = $options['environment'] ?? 'test';
-        $debug = (bool) ($options['debug'] ?? false);
-
-        return new \Ineersa\CodingAgent\Kernel($env, $debug);
-    }
-
     // ──────────────────────────────────────────────
     //  Common helpers
     // ──────────────────────────────────────────────
@@ -404,7 +404,7 @@ final class TraceReplayTest extends KernelTestCase
         $appConfig = $this->makeAppConfig($aiData);
         $selectionService = new ModelSelectionService($appConfig, new \Ineersa\CodingAgent\Config\ModelResolver($appConfig, $this->sessionMetaStore), new \Ineersa\CodingAgent\Config\ModelSettingsPersister($homeWriter, $this->sessionMetaStore));
         $catalog = $appConfig->catalog
-            ?? new HatfieldModelCatalog(new AiConfig(defaultModel: '', defaultReasoning: 'medium', providers: []));
+            ?? new \Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog(new \Ineersa\CodingAgent\Config\Ai\AiConfig(defaultModel: '', defaultReasoning: 'medium', providers: []));
 
         return new SessionAwareModelResolver($selectionService, $catalog);
     }
@@ -571,7 +571,7 @@ final class TraceReplayTest extends KernelTestCase
             providers: [new Provider(
                 name: 'replay',
                 modelClients: [$modelClient],
-                resultConverters: [new FixtureReplayResultConverter($fixture)],
+                resultConverters: [new \Ineersa\AgentCore\Tests\Infrastructure\SymfonyAi\Replay\FixtureReplayResultConverter($fixture)],
                 modelCatalog: new FallbackModelCatalog(),
                 eventDispatcher: $eventDispatcher,
             )],

@@ -60,7 +60,7 @@ class KernelCacheIsolationTest extends IsolatedKernelTestCase
 
         // Simulate what getCacheDir would return if isPhar() were true.
         // The PHAR cache dir appends a hash of __FILE__ to the base path.
-        $pharCacheDir = $sourceCacheDir.'-'.substr(md5(__FILE__), 0, 8);
+        $pharCacheDir = $sourceCacheDir . '-' . substr(md5(__FILE__), 0, 8);
 
         $this->assertNotEquals(
             $sourceCacheDir,

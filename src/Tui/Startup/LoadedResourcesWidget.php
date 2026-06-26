@@ -127,17 +127,13 @@ final class LoadedResourcesWidget implements TuiWidget
 
     private function formatConflict(LoadedResourceConflictDTO $conflict): string
     {
-        $name = '' !== $conflict->name ? $conflict->name : 'resource';
+        if ('' !== $conflict->message && '' === $conflict->winnerPath) {
+            return '⚠ '.$conflict->name.': '.$conflict->message;
+        }
+
         $winner = '' !== $conflict->winnerPath ? $conflict->winnerPath : '(unknown)';
         $loser = '' !== $conflict->loserPath ? $conflict->loserPath : '(unknown)';
-
-        if ('' !== $conflict->message && ('' !== $conflict->winnerPath || '' !== $conflict->loserPath)) {
-            return \sprintf('⚠ %s: %s (won %s, ignored %s)', $name, $conflict->message, $winner, $loser);
-        }
-
-        if ('' !== $conflict->message) {
-            return '⚠ '.$name.': '.$conflict->message;
-        }
+        $name = '' !== $conflict->name ? $conflict->name : 'resource';
 
         return \sprintf('⚠ %s: won %s, ignored %s', $name, $winner, $loser);
     }

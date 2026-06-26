@@ -9,6 +9,23 @@ use PHPUnit\Framework\TestCase;
 
 final class CodexAccountIdExtractorTest extends TestCase
 {
+    /**
+     * Build a valid JWT with the given payload.
+     */
+    private static function createJwt(array $payload): string
+    {
+        $header = self::base64urlEncode(\json_encode(['alg' => 'RS256', 'typ' => 'JWT']));
+        $body = self::base64urlEncode(\json_encode($payload));
+        $sig = self::base64urlEncode('fake-signature');
+
+        return $header.'.'.$body.'.'.$sig;
+    }
+
+    private static function base64urlEncode(string $data): string
+    {
+        return \rtrim(\strtr(\base64_encode($data), '+/', '-_'), '=');
+    }
+
     public function testExtractsAccountIdFromValidJwt(): void
     {
         $jwt = self::createJwt([
@@ -73,22 +90,5 @@ final class CodexAccountIdExtractorTest extends TestCase
         $result = CodexAccountIdExtractor::extract($jwt);
 
         $this->assertNull($result);
-    }
-
-    /**
-     * Build a valid JWT with the given payload.
-     */
-    private static function createJwt(array $payload): string
-    {
-        $header = self::base64urlEncode(json_encode(['alg' => 'RS256', 'typ' => 'JWT']));
-        $body = self::base64urlEncode(json_encode($payload));
-        $sig = self::base64urlEncode('fake-signature');
-
-        return $header.'.'.$body.'.'.$sig;
-    }
-
-    private static function base64urlEncode(string $data): string
-    {
-        return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
     }
 }

@@ -58,34 +58,34 @@ final class ExecuteCompactionStepSerializerTest extends TestCase
 
         // Encode to JSON.
         $json = $serializer->serialize($step, 'json');
-        $this->assertIsString($json);
-        $this->assertNotEmpty($json);
+        self::assertIsString($json);
+        self::assertNotEmpty($json);
 
         // Decode back.
         $decoded = $serializer->deserialize($json, ExecuteCompactionStep::class, 'json');
-        $this->assertInstanceOf(ExecuteCompactionStep::class, $decoded);
+        self::assertInstanceOf(ExecuteCompactionStep::class, $decoded);
 
         // Assert scalar properties survive round-trip.
-        $this->assertSame('run-1', $decoded->runId());
-        $this->assertSame(5, $decoded->turnNo());
-        $this->assertSame('step-compact-1', $decoded->stepId());
-        $this->assertSame(1, $decoded->attempt());
-        $this->assertSame('key-1', $decoded->idempotencyKey());
-        $this->assertSame('openai/gpt-4.1-mini', $decoded->model);
-        $this->assertSame(['thinking_level' => 'low'], $decoded->modelOptions);
-        $this->assertSame(10, $decoded->messagesCompacted);
-        $this->assertSame(5, $decoded->messagesRetained);
-        $this->assertSame(10, $decoded->firstRetainedIndex);
-        $this->assertSame(42000, $decoded->tokenEstimateBefore);
-        $this->assertSame('manual', $decoded->trigger);
+        self::assertSame('run-1', $decoded->runId());
+        self::assertSame(5, $decoded->turnNo());
+        self::assertSame('step-compact-1', $decoded->stepId());
+        self::assertSame(1, $decoded->attempt());
+        self::assertSame('key-1', $decoded->idempotencyKey());
+        self::assertSame('openai/gpt-4.1-mini', $decoded->model);
+        self::assertSame(['thinking_level' => 'low'], $decoded->modelOptions);
+        self::assertSame(10, $decoded->messagesCompacted);
+        self::assertSame(5, $decoded->messagesRetained);
+        self::assertSame(10, $decoded->firstRetainedIndex);
+        self::assertSame(42000, $decoded->tokenEstimateBefore);
+        self::assertSame('manual', $decoded->trigger);
 
         // Assert message arrays survive round-trip.
-        $this->assertCount(\count($summarizationMessages), $decoded->summarizationMessages);
-        $this->assertSame('Summarize this.', $decoded->summarizationMessages[0]['content'][0]['text']);
+        self::assertCount(\count($summarizationMessages), $decoded->summarizationMessages);
+        self::assertSame('Summarize this.', $decoded->summarizationMessages[0]['content'][0]['text']);
 
-        $this->assertCount(\count($retainedTailMessages), $decoded->retainedTailMessages);
-        $this->assertSame('Recent question.', $decoded->retainedTailMessages[0]['content'][0]['text']);
-        $this->assertSame('Recent answer.', $decoded->retainedTailMessages[1]['content'][0]['text']);
+        self::assertCount(\count($retainedTailMessages), $decoded->retainedTailMessages);
+        self::assertSame('Recent question.', $decoded->retainedTailMessages[0]['content'][0]['text']);
+        self::assertSame('Recent answer.', $decoded->retainedTailMessages[1]['content'][0]['text']);
     }
 
     public function testEmptyMessageArraysRoundTrip(): void
@@ -111,11 +111,11 @@ final class ExecuteCompactionStepSerializerTest extends TestCase
         $json = $serializer->serialize($step, 'json');
         $decoded = $serializer->deserialize($json, ExecuteCompactionStep::class, 'json');
 
-        $this->assertInstanceOf(ExecuteCompactionStep::class, $decoded);
-        $this->assertSame([], $decoded->summarizationMessages);
-        $this->assertSame([], $decoded->retainedTailMessages);
-        $this->assertSame('auto', $decoded->trigger);
-        $this->assertSame([], $decoded->modelOptions);
+        self::assertInstanceOf(ExecuteCompactionStep::class, $decoded);
+        self::assertSame([], $decoded->summarizationMessages);
+        self::assertSame([], $decoded->retainedTailMessages);
+        self::assertSame('auto', $decoded->trigger);
+        self::assertSame([], $decoded->modelOptions);
     }
 
     private function createSerializer(): Serializer

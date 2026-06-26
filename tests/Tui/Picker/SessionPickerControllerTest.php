@@ -21,6 +21,11 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(SessionPickerController::class)]
 final class SessionPickerControllerTest extends TestCase
 {
+    private function createTheme(): DefaultTheme
+    {
+        return new DefaultTheme(new ThemePalette('test'));
+    }
+
     #[Test]
     public function testIsOpenIsFalseInitially(): void
     {
@@ -32,7 +37,7 @@ final class SessionPickerControllerTest extends TestCase
         );
         $controller = new SessionPickerController($sessionStore, $switch);
 
-        $this->assertFalse($controller->isOpen());
+        self::assertFalse($controller->isOpen());
     }
 
     #[Test]
@@ -54,15 +59,15 @@ final class SessionPickerControllerTest extends TestCase
         $theme = $this->createTheme();
         $items = SessionPickerController::buildItemsStatic($sessions, $theme);
 
-        $this->assertCount(2, $items);
-        $this->assertSame('1', $items[0]['value']);
-        $this->assertSame('#1 — My Coding Session', $items[0]['label']);
-        $this->assertSame('42', $items[1]['value']);
-        $this->assertSame('#42 — Fix Auth Bug', $items[1]['label']);
+        self::assertCount(2, $items);
+        self::assertSame('1', $items[0]['value']);
+        self::assertSame('#1 — My Coding Session', $items[0]['label']);
+        self::assertSame('42', $items[1]['value']);
+        self::assertSame('#42 — Fix Auth Bug', $items[1]['label']);
 
         // No description key — full-width single-column rendering
-        $this->assertArrayNotHasKey('description', $items[0]);
-        $this->assertArrayNotHasKey('description', $items[1]);
+        self::assertArrayNotHasKey('description', $items[0]);
+        self::assertArrayNotHasKey('description', $items[1]);
     }
 
     #[Test]
@@ -70,7 +75,7 @@ final class SessionPickerControllerTest extends TestCase
     {
         $items = SessionPickerController::buildItemsStatic([], $this->createTheme());
 
-        $this->assertSame([], $items);
+        self::assertSame([], $items);
     }
 
     #[Test]
@@ -86,12 +91,12 @@ final class SessionPickerControllerTest extends TestCase
         $theme = new DefaultTheme($palette);
         $accented = SessionPickerController::buildItemsStatic($sessions, $theme, selectedIndex: 0);
 
-        $this->assertStringContainsString('#1 — Session A', $accented[0]['label']);
-        $this->assertStringContainsString('#2 — Session B', $accented[1]['label']);
+        self::assertStringContainsString('#1 — Session A', $accented[0]['label']);
+        self::assertStringContainsString('#2 — Session B', $accented[1]['label']);
         // The accent-coloured label contains ANSI escape codes;
         // the non-selected label does not.
-        $this->assertStringContainsString("\x1b", $accented[0]['label']);
-        $this->assertStringNotContainsString("\x1b", $accented[1]['label']);
+        self::assertStringContainsString("\x1b", $accented[0]['label']);
+        self::assertStringNotContainsString("\x1b", $accented[1]['label']);
     }
 
     #[Test]
@@ -108,9 +113,9 @@ final class SessionPickerControllerTest extends TestCase
         $accented = SessionPickerController::buildItemsStatic($sessions, $theme, selectedIndex: 1);
 
         // Row 0 not accented, row 1 accented, row 2 not accented
-        $this->assertStringNotContainsString("\x1b", $accented[0]['label']);
-        $this->assertStringContainsString("\x1b", $accented[1]['label']);
-        $this->assertStringNotContainsString("\x1b", $accented[2]['label']);
+        self::assertStringNotContainsString("\x1b", $accented[0]['label']);
+        self::assertStringContainsString("\x1b", $accented[1]['label']);
+        self::assertStringNotContainsString("\x1b", $accented[2]['label']);
     }
 
     #[Test]
@@ -151,7 +156,7 @@ final class SessionPickerControllerTest extends TestCase
 
         $controller->applySelectEffect('42');
 
-        $this->assertSame('42', $switch->resumedSessionId);
+        self::assertSame('42', $switch->resumedSessionId);
     }
 
     #[Test]
@@ -168,7 +173,7 @@ final class SessionPickerControllerTest extends TestCase
         // Should not throw when no picker is open
         $controller->closePicker();
 
-        $this->assertFalse($controller->isOpen());
+        self::assertFalse($controller->isOpen());
     }
 
     #[Test]
@@ -186,7 +191,7 @@ final class SessionPickerControllerTest extends TestCase
         // and must not throw.
         $controller->openForRenameCommand();
 
-        $this->assertFalse($controller->isOpen(), 'Picker should not be open without TUI refs');
+        self::assertFalse($controller->isOpen(), 'Picker should not be open without TUI refs');
     }
 
     #[Test]
@@ -207,11 +212,6 @@ final class SessionPickerControllerTest extends TestCase
         // the method never references $this->switch at all.
         $controller->openForRenameCommand();
 
-        $this->assertFalse($controller->isOpen());
-    }
-
-    private function createTheme(): DefaultTheme
-    {
-        return new DefaultTheme(new ThemePalette('test'));
+        self::assertFalse($controller->isOpen());
     }
 }

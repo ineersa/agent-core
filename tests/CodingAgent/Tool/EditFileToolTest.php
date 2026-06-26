@@ -283,7 +283,6 @@ DIFF;
      * declared header numbers.
      *
      * Here the file has "X\na\nb\nc\nd\n" and the patch declares
-     *
      * @@ -1,3 +1,3 @@ for the block "a\nb\nc", but that block only
      * matches at positions 2-4 (after "X").  GNU patch applies with
      * an offset of 1.  The arrows must mark the actual patched-file
@@ -507,7 +506,7 @@ DIFF;
             $this->assertStringContainsString('target file is untouched', $message);
 
             // Must NOT include confusing partial-success diagnostics
-            $this->assertStringNotContainsString('Hunk succeeded', $message);
+            $this->assertStringNotContainsString("Hunk succeeded", $message);
             $this->assertStringNotContainsString('diagnostics only', $message);
             $this->assertStringNotContainsString('offset', strtolower($message));
             $this->assertStringNotContainsString('fuzz', strtolower($message));
@@ -1472,6 +1471,7 @@ DIFF;
         }
     }
 
+
     /**
      * Reviewer regression: a both-sides-under-declared numbered hunk whose
      * body ends on a context line AND whose old-side block matches the file
@@ -1489,7 +1489,7 @@ DIFF;
      */
     public function testTruncatedBothSidesUnderShotEndingOnContextLineStillFailsClosed(): void
     {
-        $targetPath = $this->tmpDir.'/truncated_ends_on_context_target.txt';
+        $targetPath = $this->tmpDir . '/truncated_ends_on_context_target.txt';
         // 5-line file: lines 1–5
         $original = "line 1\nline 2\nline 3\nline 4\nline 5\n";
         file_put_contents($targetPath, $original);
@@ -2013,4 +2013,5 @@ DIFF;
             timeoutSeconds: 30,
         );
     }
+
 }

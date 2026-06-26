@@ -41,8 +41,8 @@ final class CommandRouterContractTest extends TestCase
 
         $routed = $router->route($command);
 
-        $this->assertSame('extension', $routed->status);
-        $this->assertNull($routed->reason);
+        self::assertSame('extension', $routed->status);
+        self::assertNull($routed->reason);
     }
 
     public function testRejectsExtensionCommandWhenCancelSafeCapabilityIsMissing(): void
@@ -72,8 +72,8 @@ final class CommandRouterContractTest extends TestCase
 
         $routed = $router->route($command);
 
-        $this->assertSame('rejected', $routed->status);
-        $this->assertStringContainsString('does not allow cancel_safe=true', (string) $routed->reason);
+        self::assertSame('rejected', $routed->status);
+        self::assertStringContainsString('does not allow cancel_safe=true', (string) $routed->reason);
     }
 
     public function testRejectsUnknownExtensionCommandDeterministically(): void
@@ -84,8 +84,8 @@ final class CommandRouterContractTest extends TestCase
 
         $routed = $router->route($command);
 
-        $this->assertSame('rejected', $routed->status);
-        $this->assertStringContainsString('No extension command handler registered', (string) $routed->reason);
+        self::assertSame('rejected', $routed->status);
+        self::assertStringContainsString('No extension command handler registered', (string) $routed->reason);
     }
 
     public function testRejectsUnknownExtensionCommandOptionKeys(): void
@@ -96,8 +96,8 @@ final class CommandRouterContractTest extends TestCase
 
         $routed = $router->route($command);
 
-        $this->assertSame('rejected', $routed->status);
-        $this->assertStringContainsString('Unknown command options', (string) $routed->reason);
+        self::assertSame('rejected', $routed->status);
+        self::assertStringContainsString('Unknown command options', (string) $routed->reason);
     }
 
     public function testInvalidCancelSafeOptionTypeDefaultsToFalseForExtensionCommands(): void
@@ -127,9 +127,10 @@ final class CommandRouterContractTest extends TestCase
 
         $routed = $router->route($command);
 
-        $this->assertSame('extension', $routed->status);
-        $this->assertSame(['cancel_safe' => false], $routed->options);
+        self::assertSame('extension', $routed->status);
+        self::assertSame(['cancel_safe' => false], $routed->options);
     }
+
 
     public function testRoutesCoreContinueWithAutoRetryMetadataInPayloadOnly(): void
     {
@@ -151,11 +152,11 @@ final class CommandRouterContractTest extends TestCase
 
         $routed = $router->route($command);
 
-        $this->assertSame('core', $routed->status);
-        $this->assertNull($routed->reason);
-        $this->assertSame(CoreCommandKind::Continue, $routed->kind);
-        $this->assertTrue($routed->payload['auto_retry'] ?? false);
-        $this->assertSame(1, $routed->payload['retry_attempt'] ?? null);
+        self::assertSame('core', $routed->status);
+        self::assertNull($routed->reason);
+        self::assertSame(CoreCommandKind::Continue, $routed->kind);
+        self::assertTrue($routed->payload['auto_retry'] ?? false);
+        self::assertSame(1, $routed->payload['retry_attempt'] ?? null);
     }
 
     public function testRejectsAutoRetryMetadataInOptionsForCoreContinue(): void
@@ -181,8 +182,8 @@ final class CommandRouterContractTest extends TestCase
 
         $routed = $router->route($command);
 
-        $this->assertSame('rejected', $routed->status);
-        $this->assertStringContainsString('Unknown command options', (string) $routed->reason);
+        self::assertSame('rejected', $routed->status);
+        self::assertStringContainsString('Unknown command options', (string) $routed->reason);
     }
 
     public function testRejectsCancelSafeOptionForCoreCommands(): void
@@ -202,8 +203,8 @@ final class CommandRouterContractTest extends TestCase
 
         $routed = $router->route($command);
 
-        $this->assertSame('rejected', $routed->status);
-        $this->assertStringContainsString('reserved for extension commands', (string) $routed->reason);
+        self::assertSame('rejected', $routed->status);
+        self::assertStringContainsString('reserved for extension commands', (string) $routed->reason);
     }
 
     /**

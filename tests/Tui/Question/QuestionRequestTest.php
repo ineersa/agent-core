@@ -23,21 +23,21 @@ final class QuestionRequestTest extends TestCase
             prompt: 'What is your name?',
         );
 
-        $this->assertSame('req-1', $request->requestId);
-        $this->assertSame(QuestionSource::Tui, $request->source);
-        $this->assertSame(QuestionKind::Text, $request->kind);
-        $this->assertSame('What is your name?', $request->prompt);
-        $this->assertSame(['type' => 'string'], $request->schema);
-        $this->assertSame([], $request->choices);
-        $this->assertNull($request->default);
-        $this->assertNull($request->header);
-        $this->assertTrue($request->allowOther);
-        $this->assertFalse($request->secret);
-        $this->assertNull($request->runId);
-        $this->assertNull($request->questionId);
-        $this->assertNull($request->toolCallId);
-        $this->assertNull($request->toolName);
-        $this->assertFalse($request->transcript);
+        self::assertSame('req-1', $request->requestId);
+        self::assertSame(QuestionSource::Tui, $request->source);
+        self::assertSame(QuestionKind::Text, $request->kind);
+        self::assertSame('What is your name?', $request->prompt);
+        self::assertSame(['type' => 'string'], $request->schema);
+        self::assertSame([], $request->choices);
+        self::assertNull($request->default);
+        self::assertNull($request->header);
+        self::assertTrue($request->allowOther);
+        self::assertFalse($request->secret);
+        self::assertNull($request->runId);
+        self::assertNull($request->questionId);
+        self::assertNull($request->toolCallId);
+        self::assertNull($request->toolName);
+        self::assertFalse($request->transcript);
     }
 
     public function testFullConstruction(): void
@@ -65,24 +65,26 @@ final class QuestionRequestTest extends TestCase
             transcript: true,
         );
 
-        $this->assertSame('req-2', $request->requestId);
-        $this->assertSame(QuestionSource::AgentCore, $request->source);
-        $this->assertSame(QuestionKind::Choice, $request->kind);
-        $this->assertSame('Which strategy?', $request->prompt);
-        $this->assertSame(['type' => 'string', 'enum' => ['simple', 'robust']], $request->schema);
-        $this->assertCount(2, $request->choices);
-        $this->assertSame('simple', $request->choices[0]->label);
-        $this->assertSame('Fast, minimal change', $request->choices[0]->description);
-        $this->assertSame('robust', $request->choices[1]->label);
-        $this->assertSame('More complete implementation', $request->choices[1]->description);
-        $this->assertSame('simple', $request->default);
-        $this->assertSame('Choose Strategy', $request->header);
-        $this->assertFalse($request->allowOther);
-        $this->assertFalse($request->secret);
-        $this->assertSame('run-123', $request->runId);
-        $this->assertSame('q-456', $request->questionId);
-        $this->assertSame('tc-789', $request->toolCallId);
-        $this->assertSame('ask_human', $request->toolName);
-        $this->assertTrue($request->transcript);
+        self::assertSame('req-2', $request->requestId);
+        self::assertSame(QuestionSource::AgentCore, $request->source);
+        self::assertSame(QuestionKind::Choice, $request->kind);
+        self::assertSame('Which strategy?', $request->prompt);
+        self::assertSame(['type' => 'string', 'enum' => ['simple', 'robust']], $request->schema);
+        self::assertCount(2, $request->choices);
+        self::assertSame('simple', $request->choices[0]->label);
+        self::assertSame('Fast, minimal change', $request->choices[0]->description);
+        self::assertSame('robust', $request->choices[1]->label);
+        self::assertSame('More complete implementation', $request->choices[1]->description);
+        self::assertSame('simple', $request->default);
+        self::assertSame('Choose Strategy', $request->header);
+        self::assertFalse($request->allowOther);
+        self::assertFalse($request->secret);
+        self::assertSame('run-123', $request->runId);
+        self::assertSame('q-456', $request->questionId);
+        self::assertSame('tc-789', $request->toolCallId);
+        self::assertSame('ask_human', $request->toolName);
+        self::assertTrue($request->transcript);
     }
+
+
 }

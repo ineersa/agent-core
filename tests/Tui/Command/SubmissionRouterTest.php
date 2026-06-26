@@ -8,6 +8,9 @@ use Ineersa\Tui\Command\ClearTranscript;
 use Ineersa\Tui\Command\CommandParser;
 use Ineersa\Tui\Command\DispatchShellCommand;
 use Ineersa\Tui\Command\ExitApplication;
+use Ineersa\Tui\Command\NormalPromptCommand;
+use Ineersa\Tui\Command\ShellCommand;
+use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Command\SubmissionRouter;
 use Ineersa\Tui\Command\TranscriptMessage;
@@ -35,7 +38,7 @@ final class SubmissionRouterTest extends TestCase
     {
         $result = $this->router->route('hello world');
 
-        $this->assertNull($result);
+        self::assertNull($result);
     }
 
     #[Test]
@@ -43,7 +46,7 @@ final class SubmissionRouterTest extends TestCase
     {
         $result = $this->router->route('');
 
-        $this->assertNull($result);
+        self::assertNull($result);
     }
 
     #[Test]
@@ -51,7 +54,7 @@ final class SubmissionRouterTest extends TestCase
     {
         $result = $this->router->route('   ');
 
-        $this->assertNull($result);
+        self::assertNull($result);
     }
 
     #[Test]
@@ -60,7 +63,7 @@ final class SubmissionRouterTest extends TestCase
         // "//something" is an escaped slash — not a command
         $result = $this->router->route('//not-a-command');
 
-        $this->assertNull($result);
+        self::assertNull($result);
     }
 
     // ─── Slash commands → CommandResult ─────────────────────────────
@@ -70,9 +73,9 @@ final class SubmissionRouterTest extends TestCase
     {
         $result = $this->router->route('/help');
 
-        $this->assertInstanceOf(TranscriptMessage::class, $result);
-        $this->assertStringContainsString('Available commands', $result->text);
-        $this->assertSame('system', $result->role);
+        self::assertInstanceOf(TranscriptMessage::class, $result);
+        self::assertStringContainsString('Available commands', $result->text);
+        self::assertSame('system', $result->role);
     }
 
     #[Test]
@@ -80,8 +83,8 @@ final class SubmissionRouterTest extends TestCase
     {
         $result = $this->router->route('/help clear');
 
-        $this->assertInstanceOf(TranscriptMessage::class, $result);
-        $this->assertStringContainsString('Command: /clear', $result->text);
+        self::assertInstanceOf(TranscriptMessage::class, $result);
+        self::assertStringContainsString('Command: /clear', $result->text);
     }
 
     #[Test]
@@ -89,8 +92,8 @@ final class SubmissionRouterTest extends TestCase
     {
         $result = $this->router->route('/h');
 
-        $this->assertInstanceOf(TranscriptMessage::class, $result);
-        $this->assertStringContainsString('Available commands', $result->text);
+        self::assertInstanceOf(TranscriptMessage::class, $result);
+        self::assertStringContainsString('Available commands', $result->text);
     }
 
     #[Test]
@@ -98,7 +101,7 @@ final class SubmissionRouterTest extends TestCase
     {
         $result = $this->router->route('/clear');
 
-        $this->assertInstanceOf(ClearTranscript::class, $result);
+        self::assertInstanceOf(ClearTranscript::class, $result);
     }
 
     #[Test]
@@ -106,7 +109,7 @@ final class SubmissionRouterTest extends TestCase
     {
         $result = $this->router->route('/cls');
 
-        $this->assertInstanceOf(ClearTranscript::class, $result);
+        self::assertInstanceOf(ClearTranscript::class, $result);
     }
 
     #[Test]
@@ -114,7 +117,7 @@ final class SubmissionRouterTest extends TestCase
     {
         $result = $this->router->route('/exit');
 
-        $this->assertInstanceOf(ExitApplication::class, $result);
+        self::assertInstanceOf(ExitApplication::class, $result);
     }
 
     #[Test]
@@ -122,7 +125,7 @@ final class SubmissionRouterTest extends TestCase
     {
         $result = $this->router->route('/quit');
 
-        $this->assertInstanceOf(ExitApplication::class, $result);
+        self::assertInstanceOf(ExitApplication::class, $result);
     }
 
     #[Test]
@@ -130,7 +133,7 @@ final class SubmissionRouterTest extends TestCase
     {
         $result = $this->router->route('/q');
 
-        $this->assertInstanceOf(ExitApplication::class, $result);
+        self::assertInstanceOf(ExitApplication::class, $result);
     }
 
     #[Test]
@@ -138,10 +141,10 @@ final class SubmissionRouterTest extends TestCase
     {
         $result = $this->router->route('/nonexistent');
 
-        $this->assertInstanceOf(TranscriptMessage::class, $result);
-        $this->assertStringContainsString('Unknown command', $result->text);
-        $this->assertStringContainsString('/nonexistent', $result->text);
-        $this->assertSame('muted', $result->style);
+        self::assertInstanceOf(TranscriptMessage::class, $result);
+        self::assertStringContainsString('Unknown command', $result->text);
+        self::assertStringContainsString('/nonexistent', $result->text);
+        self::assertSame('muted', $result->style);
     }
 
     #[Test]
@@ -150,7 +153,7 @@ final class SubmissionRouterTest extends TestCase
         // /exit --force → still routes to exit handler
         $result = $this->router->route('/exit --force');
 
-        $this->assertInstanceOf(ExitApplication::class, $result);
+        self::assertInstanceOf(ExitApplication::class, $result);
     }
 
     // ─── Shell commands ────────────────────────────────────────────
@@ -160,9 +163,9 @@ final class SubmissionRouterTest extends TestCase
     {
         $result = $this->router->route('!echo hello');
 
-        $this->assertInstanceOf(DispatchShellCommand::class, $result);
-        $this->assertSame('echo hello', $result->command);
-        $this->assertSame('!echo hello', $result->originalText);
+        self::assertInstanceOf(DispatchShellCommand::class, $result);
+        self::assertSame('echo hello', $result->command);
+        self::assertSame('!echo hello', $result->originalText);
     }
 
     #[Test]
@@ -170,9 +173,9 @@ final class SubmissionRouterTest extends TestCase
     {
         $result = $this->router->route('!!secret cmd');
 
-        $this->assertInstanceOf(TranscriptMessage::class, $result);
-        $this->assertStringContainsString('not supported', $result->text);
-        $this->assertSame('muted', $result->style);
+        self::assertInstanceOf(TranscriptMessage::class, $result);
+        self::assertStringContainsString('not supported', $result->text);
+        self::assertSame('muted', $result->style);
     }
 
     #[Test]
@@ -180,9 +183,9 @@ final class SubmissionRouterTest extends TestCase
     {
         $result = $this->router->route('!');
 
-        $this->assertInstanceOf(TranscriptMessage::class, $result);
-        $this->assertStringContainsString('empty', $result->text);
-        $this->assertSame('muted', $result->style);
+        self::assertInstanceOf(TranscriptMessage::class, $result);
+        self::assertStringContainsString('empty', $result->text);
+        self::assertSame('muted', $result->style);
     }
 
     #[Test]
@@ -190,9 +193,9 @@ final class SubmissionRouterTest extends TestCase
     {
         $result = $this->router->route('!   ');
 
-        $this->assertInstanceOf(TranscriptMessage::class, $result);
-        $this->assertStringContainsString('empty', $result->text);
-        $this->assertSame('muted', $result->style);
+        self::assertInstanceOf(TranscriptMessage::class, $result);
+        self::assertStringContainsString('empty', $result->text);
+        self::assertSame('muted', $result->style);
     }
 
     // ─── Trailing whitespace handling ────────────────────────────────
@@ -202,7 +205,7 @@ final class SubmissionRouterTest extends TestCase
     {
         $result = $this->router->route('/help   ');
 
-        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        self::assertInstanceOf(TranscriptMessage::class, $result);
     }
 
     #[Test]
@@ -210,6 +213,6 @@ final class SubmissionRouterTest extends TestCase
     {
         $result = $this->router->route('hello   ');
 
-        $this->assertNull($result);
+        self::assertNull($result);
     }
 }

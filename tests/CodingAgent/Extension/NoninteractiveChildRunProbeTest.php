@@ -43,7 +43,7 @@ final class NoninteractiveChildRunProbeTest extends TestCase
         $probeChild = new NoninteractiveChildRunProbe($childStore);
         $probeEmpty = new NoninteractiveChildRunProbe($emptyStore);
 
-        $this->assertTrue($probeChild->isNoninteractiveChildRun($runId));
-        $this->assertFalse($probeEmpty->isNoninteractiveChildRun('parent-1'));
+        self::assertTrue($probeChild->isNoninteractiveChildRun($runId));
+        self::assertFalse($probeEmpty->isNoninteractiveChildRun('parent-1'));
     }
 }

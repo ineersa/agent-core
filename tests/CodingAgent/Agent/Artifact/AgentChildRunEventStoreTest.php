@@ -77,11 +77,11 @@ final class AgentChildRunEventStoreTest extends TestCase
         $store->append($event);
 
         $events = $store->allFor($agentRunId);
-        $this->assertCount(1, $events);
-        $this->assertSame($agentRunId, $events[0]->runId);
-        $this->assertSame(1, $events[0]->seq);
-        $this->assertSame('run_started', $events[0]->type);
-        $this->assertSame('Explore codebase', $events[0]->payload['prompt']);
+        self::assertCount(1, $events);
+        self::assertSame($agentRunId, $events[0]->runId);
+        self::assertSame(1, $events[0]->seq);
+        self::assertSame('run_started', $events[0]->type);
+        self::assertSame('Explore codebase', $events[0]->payload['prompt']);
     }
 
     public function testEventsStoredUnderParentArtifactPath(): void
@@ -101,10 +101,10 @@ final class AgentChildRunEventStoreTest extends TestCase
 
         // Verify events exist at the parent-scoped artifact path
         $expectedPath = "{$this->projectDir}/.hatfield/sessions/{$parentRunId}/artifacts/agents/{$artifactId}/events.jsonl";
-        $this->assertFileExists($expectedPath);
+        self::assertFileExists($expectedPath);
 
         // Verify no top-level child session directory was created
-        $this->assertDirectoryDoesNotExist("{$this->projectDir}/.hatfield/sessions/{$agentRunId}");
+        self::assertDirectoryDoesNotExist("{$this->projectDir}/.hatfield/sessions/{$agentRunId}");
     }
 
     public function testAllForReturnsEmptyForMismatchedRunId(): void
@@ -124,7 +124,7 @@ final class AgentChildRunEventStoreTest extends TestCase
 
         // Different runId returns empty
         $events = $store->allFor('different-run');
-        $this->assertCount(0, $events);
+        self::assertCount(0, $events);
     }
 
     public function testAppendRejectsMismatchedRunId(): void
@@ -149,7 +149,7 @@ final class AgentChildRunEventStoreTest extends TestCase
     public function testAllForReturnsEmptyForMissingEvents(): void
     {
         $store = $this->createStore('parent-x', 'child-x', 'artifact-x');
-        $this->assertCount(0, $store->allFor('child-x'));
+        self::assertCount(0, $store->allFor('child-x'));
     }
 
     public function testAppendManyAndRetrieveSorted(): void
@@ -169,12 +169,12 @@ final class AgentChildRunEventStoreTest extends TestCase
         $store->appendMany($events);
 
         $retrieved = $store->allFor($agentRunId);
-        $this->assertCount(3, $retrieved);
+        self::assertCount(3, $retrieved);
 
         // Events are sorted by seq
-        $this->assertSame(1, $retrieved[0]->seq);
-        $this->assertSame(2, $retrieved[1]->seq);
-        $this->assertSame(3, $retrieved[2]->seq);
+        self::assertSame(1, $retrieved[0]->seq);
+        self::assertSame(2, $retrieved[1]->seq);
+        self::assertSame(3, $retrieved[2]->seq);
     }
 
     public function testMultipleChildrenDoNotInterfere(): void
@@ -188,10 +188,10 @@ final class AgentChildRunEventStoreTest extends TestCase
         $storeB->append(new RunEvent(runId: 'child-b', seq: 1, turnNo: 0, type: 'run_started'));
 
         // Each store only returns its own events
-        $this->assertCount(1, $storeA->allFor('child-a'));
-        $this->assertCount(0, $storeA->allFor('child-b'));
-        $this->assertCount(1, $storeB->allFor('child-b'));
-        $this->assertCount(0, $storeB->allFor('child-a'));
+        self::assertCount(1, $storeA->allFor('child-a'));
+        self::assertCount(0, $storeA->allFor('child-b'));
+        self::assertCount(1, $storeB->allFor('child-b'));
+        self::assertCount(0, $storeB->allFor('child-a'));
     }
 
     // ── Constructor path validation ──────────────────────────────────────

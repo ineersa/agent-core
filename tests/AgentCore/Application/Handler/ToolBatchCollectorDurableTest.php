@@ -30,34 +30,34 @@ final class ToolBatchCollectorDurableTest extends TestCase
             $this->executeToolCall('run-1', 'step-1', 'call-2', 1, 'sequential'),
         ]);
 
-        $this->assertCount(1, $initial);
-        $this->assertSame('call-1', $initial[0]->toolCallId);
+        self::assertCount(1, $initial);
+        self::assertSame('call-1', $initial[0]->toolCallId);
 
         $firstOutcome = $collector->collect($this->toolResult('run-1', 'step-1', 'call-1', 0));
 
-        $this->assertTrue($firstOutcome->accepted);
-        $this->assertFalse($firstOutcome->complete);
-        $this->assertCount(1, $firstOutcome->effectsToDispatch);
-        $this->assertSame('call-2', $firstOutcome->effectsToDispatch[0]->toolCallId);
+        self::assertTrue($firstOutcome->accepted);
+        self::assertFalse($firstOutcome->complete);
+        self::assertCount(1, $firstOutcome->effectsToDispatch);
+        self::assertSame('call-2', $firstOutcome->effectsToDispatch[0]->toolCallId);
 
         // Verify state persisted in store
         $loaded = $store->load('run-1', 1, 'step-1');
-        $this->assertIsArray($loaded);
-        $this->assertFalse($loaded['finalized']);
-        $this->assertCount(1, $loaded['result_data']);
+        self::assertIsArray($loaded);
+        self::assertFalse($loaded['finalized']);
+        self::assertCount(1, $loaded['result_data']);
 
         $secondOutcome = $collector->collect($this->toolResult('run-1', 'step-1', 'call-2', 1));
 
-        $this->assertTrue($secondOutcome->accepted);
-        $this->assertTrue($secondOutcome->complete);
-        $this->assertSame(['call-1', 'call-2'], array_map(
+        self::assertTrue($secondOutcome->accepted);
+        self::assertTrue($secondOutcome->complete);
+        self::assertSame(['call-1', 'call-2'], array_map(
             static fn (ToolCallResult $result): string => $result->toolCallId,
             $secondOutcome->orderedResults,
         ));
 
         // Verify finalized in store
         $finalized = $store->load('run-1', 1, 'step-1');
-        $this->assertTrue($finalized['finalized']);
+        self::assertTrue($finalized['finalized']);
     }
 
     public function testCrossProcessRecoveryWithStore(): void
@@ -71,7 +71,7 @@ final class ToolBatchCollectorDurableTest extends TestCase
             $this->executeToolCall('run-2', 'step-1', 'call-2', 1, 'parallel', maxParallelism: 2),
         ]);
 
-        $this->assertCount(2, $initial);
+        self::assertCount(2, $initial);
 
         // Drop the original collector (simulates process restart)
         unset($registrar);
@@ -81,15 +81,15 @@ final class ToolBatchCollectorDurableTest extends TestCase
 
         // Collect first result - should find batch from store
         $firstOutcome = $recovering->collect($this->toolResult('run-2', 'step-1', 'call-1', 0));
-        $this->assertTrue($firstOutcome->accepted);
-        $this->assertFalse($firstOutcome->complete);
+        self::assertTrue($firstOutcome->accepted);
+        self::assertFalse($firstOutcome->complete);
         // The other call (call-2) is already in_flight from registration, so no new effects
-        $this->assertEmpty($firstOutcome->effectsToDispatch);
+        self::assertEmpty($firstOutcome->effectsToDispatch);
 
         $secondOutcome = $recovering->collect($this->toolResult('run-2', 'step-1', 'call-2', 1));
-        $this->assertTrue($secondOutcome->accepted);
-        $this->assertTrue($secondOutcome->complete);
-        $this->assertSame(['call-1', 'call-2'], array_map(
+        self::assertTrue($secondOutcome->accepted);
+        self::assertTrue($secondOutcome->complete);
+        self::assertSame(['call-1', 'call-2'], array_map(
             static fn (ToolCallResult $result): string => $result->toolCallId,
             $secondOutcome->orderedResults,
         ));
@@ -107,7 +107,7 @@ final class ToolBatchCollectorDurableTest extends TestCase
             $this->executeToolCall('run-3', 'step-1', 'call-3', 2, 'parallel', maxParallelism: 2),
         ]);
 
-        $this->assertCount(2, $initial); // call-1 and call-2 dispatched
+        self::assertCount(2, $initial); // call-1 and call-2 dispatched
 
         // Drop original collector (simulates crash of one process)
         unset($registrar);
@@ -116,14 +116,14 @@ final class ToolBatchCollectorDurableTest extends TestCase
         $recovering = new ToolBatchCollector(defaultMaxParallelism: 2, store: $store);
         $firstOutcome = $recovering->collect($this->toolResult('run-3', 'step-1', 'call-1', 0));
 
-        $this->assertTrue($firstOutcome->accepted);
-        $this->assertFalse($firstOutcome->complete);
+        self::assertTrue($firstOutcome->accepted);
+        self::assertFalse($firstOutcome->complete);
         // call-3 should now be dispatchable (1 in_flight, max 2)
         // call-2 is still in_flight from original registration
         // actually, call-2 was dispatched initially. When call-1 completes,
         // only 1 remains in_flight (call-2), so call-3 can be dispatched
-        $this->assertCount(1, $firstOutcome->effectsToDispatch);
-        $this->assertSame('call-3', $firstOutcome->effectsToDispatch[0]->toolCallId);
+        self::assertCount(1, $firstOutcome->effectsToDispatch);
+        self::assertSame('call-3', $firstOutcome->effectsToDispatch[0]->toolCallId);
     }
 
     public function testRejectedWhenStoreIsEmpty(): void
@@ -132,8 +132,8 @@ final class ToolBatchCollectorDurableTest extends TestCase
         $collector = new ToolBatchCollector(store: $store);
 
         $outcome = $collector->collect($this->toolResult('run-nonexistent', 'step-1', 'call-1', 0));
-        $this->assertFalse($outcome->accepted);
-        $this->assertFalse($outcome->duplicate);
+        self::assertFalse($outcome->accepted);
+        self::assertFalse($outcome->duplicate);
     }
 
     public function testDuplicateResultWithStore(): void
@@ -146,11 +146,11 @@ final class ToolBatchCollectorDurableTest extends TestCase
         ]);
 
         $firstOutcome = $collector->collect($this->toolResult('run-4', 'step-1', 'call-1', 0));
-        $this->assertTrue($firstOutcome->accepted);
+        self::assertTrue($firstOutcome->accepted);
 
         // Duplicate collect
         $dupOutcome = $collector->collect($this->toolResult('run-4', 'step-1', 'call-1', 0));
-        $this->assertTrue($dupOutcome->duplicate);
+        self::assertTrue($dupOutcome->duplicate);
     }
 
     public function testCrossProcessParallelDispatchRecovery(): void
@@ -165,19 +165,19 @@ final class ToolBatchCollectorDurableTest extends TestCase
             $this->executeToolCall('run-5', 'step-1', 'call-3', 2, 'parallel', maxParallelism: 4),
         ]);
 
-        $this->assertCount(1, $initial); // only call-1 (sequential blocks parallel)
+        self::assertCount(1, $initial); // only call-1 (sequential blocks parallel)
         unset($registrar);
 
         // Process 2: collect call-1 result → should dispatch call-2
         $recovering = new ToolBatchCollector(defaultMaxParallelism: 4, store: $store);
         $firstOutcome = $recovering->collect($this->toolResult('run-5', 'step-1', 'call-1', 0));
 
-        $this->assertTrue($firstOutcome->accepted);
-        $this->assertFalse($firstOutcome->complete);
+        self::assertTrue($firstOutcome->accepted);
+        self::assertFalse($firstOutcome->complete);
         // After call-1 completes, call-2 and call-3 are both parallel and dispatchable
-        $this->assertCount(2, $firstOutcome->effectsToDispatch);
-        $this->assertSame('call-2', $firstOutcome->effectsToDispatch[0]->toolCallId);
-        $this->assertSame('call-3', $firstOutcome->effectsToDispatch[1]->toolCallId);
+        self::assertCount(2, $firstOutcome->effectsToDispatch);
+        self::assertSame('call-2', $firstOutcome->effectsToDispatch[0]->toolCallId);
+        self::assertSame('call-3', $firstOutcome->effectsToDispatch[1]->toolCallId);
     }
 
     public function testFailedDurableSaveDoesNotDirtyInMemoryCache(): void
@@ -239,16 +239,16 @@ final class ToolBatchCollectorDurableTest extends TestCase
 
         try {
             $collector->collect($this->toolResult('run-6', 'step-1', 'call-1', 0));
-            $this->fail('Expected simulated durable write failure.');
+            self::fail('Expected simulated durable write failure.');
         } catch (\RuntimeException $e) {
-            $this->assertSame('Simulated durable write failure.', $e->getMessage());
+            self::assertSame('Simulated durable write failure.', $e->getMessage());
         }
 
         $retryOutcome = $collector->collect($this->toolResult('run-6', 'step-1', 'call-1', 0));
 
-        $this->assertTrue($retryOutcome->accepted);
-        $this->assertFalse($retryOutcome->duplicate);
-        $this->assertTrue($retryOutcome->complete);
+        self::assertTrue($retryOutcome->accepted);
+        self::assertFalse($retryOutcome->duplicate);
+        self::assertTrue($retryOutcome->complete);
     }
 
     private function executeToolCall(

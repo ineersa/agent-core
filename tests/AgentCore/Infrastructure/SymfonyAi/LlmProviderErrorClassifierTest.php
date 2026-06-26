@@ -32,9 +32,9 @@ final class LlmProviderErrorClassifierTest extends TestCase
             'http_status_code' => 401,
         ]);
 
-        $this->assertFalse($result['retryable']);
-        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_AUTH, $result['error_category']);
-        $this->assertStringContainsString('authentication failed', strtolower($result['user_message']));
+        self::assertFalse($result['retryable']);
+        self::assertSame(LlmProviderErrorClassifier::CATEGORY_AUTH, $result['error_category']);
+        self::assertStringContainsString('authentication failed', strtolower($result['user_message']));
         // The detail message is included but truncated — it's not a raw body leak.
     }
 
@@ -46,8 +46,8 @@ final class LlmProviderErrorClassifierTest extends TestCase
             'http_status_code' => 401,
         ]);
 
-        $this->assertFalse($result['retryable']);
-        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_AUTH, $result['error_category']);
+        self::assertFalse($result['retryable']);
+        self::assertSame(LlmProviderErrorClassifier::CATEGORY_AUTH, $result['error_category']);
     }
 
     // ── Bad request errors ─────────────────────────────────────────────────
@@ -60,8 +60,8 @@ final class LlmProviderErrorClassifierTest extends TestCase
             'http_status_code' => 400,
         ]);
 
-        $this->assertFalse($result['retryable']);
-        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_BAD_REQUEST, $result['error_category']);
+        self::assertFalse($result['retryable']);
+        self::assertSame(LlmProviderErrorClassifier::CATEGORY_BAD_REQUEST, $result['error_category']);
     }
 
     public function testClassify400StatusCode(): void
@@ -72,8 +72,8 @@ final class LlmProviderErrorClassifierTest extends TestCase
             'http_status_code' => 400,
         ]);
 
-        $this->assertFalse($result['retryable']);
-        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_BAD_REQUEST, $result['error_category']);
+        self::assertFalse($result['retryable']);
+        self::assertSame(LlmProviderErrorClassifier::CATEGORY_BAD_REQUEST, $result['error_category']);
     }
 
     // ── Transient 429 rate limit (retryable) ───────────────────────────────
@@ -86,9 +86,9 @@ final class LlmProviderErrorClassifierTest extends TestCase
             'http_status_code' => 429,
         ]);
 
-        $this->assertTrue($result['retryable']);
-        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_RATE_LIMIT, $result['error_category']);
-        $this->assertStringContainsString('rate limit', strtolower($result['user_message']));
+        self::assertTrue($result['retryable']);
+        self::assertSame(LlmProviderErrorClassifier::CATEGORY_RATE_LIMIT, $result['error_category']);
+        self::assertStringContainsString('rate limit', strtolower($result['user_message']));
     }
 
     public function testClassifyTransient429StatusCode(): void
@@ -99,8 +99,8 @@ final class LlmProviderErrorClassifierTest extends TestCase
             'http_status_code' => 429,
         ]);
 
-        $this->assertTrue($result['retryable']);
-        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_RATE_LIMIT, $result['error_category']);
+        self::assertTrue($result['retryable']);
+        self::assertSame(LlmProviderErrorClassifier::CATEGORY_RATE_LIMIT, $result['error_category']);
     }
 
     public function testClassifyTransient429IncludesRetryAfter(): void
@@ -112,10 +112,10 @@ final class LlmProviderErrorClassifierTest extends TestCase
             'retry_after_ms' => 30000,
         ]);
 
-        $this->assertTrue($result['retryable']);
-        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_RATE_LIMIT, $result['error_category']);
-        $this->assertStringContainsString('30s', $result['user_message'], 'User message should include retry-after hint');
-        $this->assertStringContainsString('rate limit', strtolower($result['user_message']));
+        self::assertTrue($result['retryable']);
+        self::assertSame(LlmProviderErrorClassifier::CATEGORY_RATE_LIMIT, $result['error_category']);
+        self::assertStringContainsString('30s', $result['user_message'], 'User message should include retry-after hint');
+        self::assertStringContainsString('rate limit', strtolower($result['user_message']));
     }
 
     public function testClassifyTransient429IncludesProviderCode(): void
@@ -127,11 +127,11 @@ final class LlmProviderErrorClassifierTest extends TestCase
             'response_error_code' => 'rate_limit_exceeded',
         ]);
 
-        $this->assertTrue($result['retryable']);
-        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_RATE_LIMIT, $result['error_category']);
-        $this->assertStringContainsString('rate_limit_exceeded', $result['user_message'], 'User message should include provider code');
+        self::assertTrue($result['retryable']);
+        self::assertSame(LlmProviderErrorClassifier::CATEGORY_RATE_LIMIT, $result['error_category']);
+        self::assertStringContainsString('rate_limit_exceeded', $result['user_message'], 'User message should include provider code');
         // Raw message text must not be leaked as-is in user_message
-        $this->assertStringNotContainsString('raw sentinel', $result['user_message']);
+        self::assertStringNotContainsString('raw sentinel', $result['user_message']);
     }
 
     // ── Terminal billing/quota 429 ─────────────────────────────────────────
@@ -144,9 +144,9 @@ final class LlmProviderErrorClassifierTest extends TestCase
             'http_status_code' => 429,
         ]);
 
-        $this->assertFalse($result['retryable']);
-        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_QUOTA_BILLING, $result['error_category']);
-        $this->assertStringContainsString('quota or billing', strtolower($result['user_message']));
+        self::assertFalse($result['retryable']);
+        self::assertSame(LlmProviderErrorClassifier::CATEGORY_QUOTA_BILLING, $result['error_category']);
+        self::assertStringContainsString('quota or billing', strtolower($result['user_message']));
     }
 
     /**
@@ -162,9 +162,9 @@ final class LlmProviderErrorClassifierTest extends TestCase
             'response_error_code' => 'insufficient_quota',
         ]);
 
-        $this->assertFalse($result['retryable'], 'Billing from response_error_code should be terminal');
-        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_QUOTA_BILLING, $result['error_category']);
-        $this->assertStringContainsString('quota or billing', strtolower($result['user_message']));
+        self::assertFalse($result['retryable'], 'Billing from response_error_code should be terminal');
+        self::assertSame(LlmProviderErrorClassifier::CATEGORY_QUOTA_BILLING, $result['error_category']);
+        self::assertStringContainsString('quota or billing', strtolower($result['user_message']));
     }
 
     public function testClassifyBillingFromResponseErrorMessage(): void
@@ -176,9 +176,9 @@ final class LlmProviderErrorClassifierTest extends TestCase
             'response_error_message' => 'quota exceeded for current billing cycle',
         ]);
 
-        $this->assertFalse($result['retryable'], 'Billing from response_error_message should be terminal');
-        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_QUOTA_BILLING, $result['error_category']);
-        $this->assertStringContainsString('quota or billing', strtolower($result['user_message']));
+        self::assertFalse($result['retryable'], 'Billing from response_error_message should be terminal');
+        self::assertSame(LlmProviderErrorClassifier::CATEGORY_QUOTA_BILLING, $result['error_category']);
+        self::assertStringContainsString('quota or billing', strtolower($result['user_message']));
     }
 
     public function testClassifyBillingFromResponseErrorType(): void
@@ -190,8 +190,8 @@ final class LlmProviderErrorClassifierTest extends TestCase
             'response_error_type' => 'insufficient_credits',
         ]);
 
-        $this->assertFalse($result['retryable'], 'Billing from response_error_type should be terminal');
-        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_QUOTA_BILLING, $result['error_category']);
+        self::assertFalse($result['retryable'], 'Billing from response_error_type should be terminal');
+        self::assertSame(LlmProviderErrorClassifier::CATEGORY_QUOTA_BILLING, $result['error_category']);
     }
 
     public function testClassifyBilling429WithQuotaExceeded(): void
@@ -202,8 +202,8 @@ final class LlmProviderErrorClassifierTest extends TestCase
             'http_status_code' => 429,
         ]);
 
-        $this->assertFalse($result['retryable']);
-        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_QUOTA_BILLING, $result['error_category']);
+        self::assertFalse($result['retryable']);
+        self::assertSame(LlmProviderErrorClassifier::CATEGORY_QUOTA_BILLING, $result['error_category']);
     }
 
     // ── Server errors (retryable) ──────────────────────────────────────────
@@ -216,8 +216,8 @@ final class LlmProviderErrorClassifierTest extends TestCase
             'http_status_code' => 500,
         ]);
 
-        $this->assertTrue($result['retryable']);
-        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_SERVER, $result['error_category']);
+        self::assertTrue($result['retryable']);
+        self::assertSame(LlmProviderErrorClassifier::CATEGORY_SERVER, $result['error_category']);
     }
 
     #[DataProvider('retryableServerStatusCodes')]
@@ -229,8 +229,8 @@ final class LlmProviderErrorClassifierTest extends TestCase
             'http_status_code' => $statusCode,
         ]);
 
-        $this->assertTrue($result['retryable']);
-        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_SERVER, $result['error_category']);
+        self::assertTrue($result['retryable']);
+        self::assertSame(LlmProviderErrorClassifier::CATEGORY_SERVER, $result['error_category']);
     }
 
     /** @return list<array{int}> */
@@ -250,8 +250,8 @@ final class LlmProviderErrorClassifierTest extends TestCase
             'http_status_code' => $statusCode,
         ]);
 
-        $this->assertTrue($result['retryable']);
-        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_TIMEOUT, $result['error_category']);
+        self::assertTrue($result['retryable']);
+        self::assertSame(LlmProviderErrorClassifier::CATEGORY_TIMEOUT, $result['error_category']);
     }
 
     /** @return list<array{int}> */
@@ -271,9 +271,9 @@ final class LlmProviderErrorClassifierTest extends TestCase
             // No http_status_code — transport exception
         ]);
 
-        $this->assertTrue($result['retryable']);
-        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_NETWORK, $result['error_category']);
-        $this->assertStringContainsString('network error', strtolower($result['user_message']));
+        self::assertTrue($result['retryable']);
+        self::assertSame(LlmProviderErrorClassifier::CATEGORY_NETWORK, $result['error_category']);
+        self::assertStringContainsString('network error', strtolower($result['user_message']));
     }
 
     /** @return list<array{string}> */
@@ -299,8 +299,8 @@ final class LlmProviderErrorClassifierTest extends TestCase
             'message' => $message,
         ]);
 
-        $this->assertFalse($result['retryable']);
-        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_QUOTA_BILLING, $result['error_category']);
+        self::assertFalse($result['retryable']);
+        self::assertSame(LlmProviderErrorClassifier::CATEGORY_QUOTA_BILLING, $result['error_category']);
     }
 
     /** @return list<array{string}> */
@@ -323,9 +323,9 @@ final class LlmProviderErrorClassifierTest extends TestCase
             'http_status_code' => 418, // I'm a teapot
         ]);
 
-        $this->assertFalse($result['retryable']);
-        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_PROVIDER, $result['error_category']);
-        $this->assertStringContainsString('Something unexpected', $result['user_message']);
+        self::assertFalse($result['retryable']);
+        self::assertSame(LlmProviderErrorClassifier::CATEGORY_PROVIDER, $result['error_category']);
+        self::assertStringContainsString('Something unexpected', $result['user_message']);
     }
 
     // ── Response body preview is stripped ──────────────────────────────────
@@ -339,7 +339,7 @@ final class LlmProviderErrorClassifierTest extends TestCase
             'response_body_preview' => 'sensitive data that should not be exposed',
         ]);
 
-        $this->assertArrayNotHasKey('response_body_preview', $result);
+        self::assertArrayNotHasKey('response_body_preview', $result);
     }
 
     // ── Original error fields preserved ────────────────────────────────────
@@ -356,18 +356,18 @@ final class LlmProviderErrorClassifierTest extends TestCase
         ]);
 
         // Original fields preserved
-        $this->assertSame('RuntimeException', $result['type']);
-        $this->assertSame('Server Error', $result['message']);
-        $this->assertSame(500, $result['http_status_code']);
-        $this->assertSame('internal_error', $result['response_error_code']);
-        $this->assertSame('server_error', $result['response_error_type']);
-        $this->assertSame('gpt-4', $result['request_model']);
+        self::assertSame('RuntimeException', $result['type']);
+        self::assertSame('Server Error', $result['message']);
+        self::assertSame(500, $result['http_status_code']);
+        self::assertSame('internal_error', $result['response_error_code']);
+        self::assertSame('server_error', $result['response_error_type']);
+        self::assertSame('gpt-4', $result['request_model']);
 
         // New classification fields
-        $this->assertTrue($result['retryable']);
-        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_SERVER, $result['error_category']);
-        $this->assertIsString($result['user_message']);
-        $this->assertStringContainsString('500', $result['user_message']);
+        self::assertTrue($result['retryable']);
+        self::assertSame(LlmProviderErrorClassifier::CATEGORY_SERVER, $result['error_category']);
+        self::assertIsString($result['user_message']);
+        self::assertStringContainsString('500', $result['user_message']);
     }
 
     // ── Empty error ────────────────────────────────────────────────────────
@@ -379,8 +379,8 @@ final class LlmProviderErrorClassifierTest extends TestCase
             'message' => '',
         ]);
 
-        $this->assertFalse($result['retryable']);
-        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_PROVIDER, $result['error_category']);
+        self::assertFalse($result['retryable']);
+        self::assertSame(LlmProviderErrorClassifier::CATEGORY_PROVIDER, $result['error_category']);
     }
 
     // ── Context-overflow detection ────────────────────────────────────────
@@ -394,7 +394,7 @@ final class LlmProviderErrorClassifierTest extends TestCase
         }
 
         $classified = $this->classifier->classify($error);
-        $this->assertTrue(
+        self::assertTrue(
             $this->classifier->isContextOverflow($classified),
             \sprintf('Expected context overflow for message: %s', $message),
         );
@@ -425,7 +425,7 @@ final class LlmProviderErrorClassifierTest extends TestCase
         $error = ['type' => 'RuntimeException', 'message' => $message, 'http_status_code' => $statusCode];
         $classified = $this->classifier->classify($error);
 
-        $this->assertFalse(
+        self::assertFalse(
             $this->classifier->isContextOverflow($classified),
             \sprintf('Expected non-overflow for status=%d message=%s', $statusCode, $message),
         );
@@ -453,8 +453,9 @@ final class LlmProviderErrorClassifierTest extends TestCase
         ];
 
         $classified = $this->classifier->classify($error);
-        $this->assertTrue($this->classifier->isContextOverflow($classified));
+        self::assertTrue($this->classifier->isContextOverflow($classified));
     }
+
 
     public function testClassifyContextOverflow500IsNonRetryable(): void
     {
@@ -464,8 +465,9 @@ final class LlmProviderErrorClassifierTest extends TestCase
             'http_status_code' => 500,
         ]);
 
-        $this->assertFalse($result['retryable']);
-        $this->assertTrue($this->classifier->isContextOverflow($result));
-        $this->assertStringNotContainsString('Will retry automatically', $result['user_message']);
+        self::assertFalse($result['retryable']);
+        self::assertTrue($this->classifier->isContextOverflow($result));
+        self::assertStringNotContainsString('Will retry automatically', $result['user_message']);
     }
+
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Artifact;
 
+use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Artifact\ChildAwareRunStore;
@@ -17,7 +18,7 @@ final class ChildAwareRunStoreTest extends IsolatedKernelTestCase
         $store = self::getContainer()->get(ChildAwareRunStore::class);
 
         $result = $store->get('nonexistent-run-id');
-        $this->assertNull($result);
+        self::assertNull($result);
     }
 
     public function testGetHandlesParentRun(): void
@@ -30,8 +31,8 @@ final class ChildAwareRunStoreTest extends IsolatedKernelTestCase
         $parentStore->compareAndSwap($state, 0);
 
         $result = $store->get('parent-99');
-        $this->assertNotNull($result);
-        $this->assertSame('parent-99', $result->runId);
+        self::assertNotNull($result);
+        self::assertSame('parent-99', $result->runId);
 
         // Cleanup: mark cancelled.
         $current = $store->get('parent-99');
@@ -47,12 +48,12 @@ final class ChildAwareRunStoreTest extends IsolatedKernelTestCase
 
         $state = new RunState(runId: 'parent-cas', status: RunStatus::Running, version: 0);
         $success = $store->compareAndSwap($state, 0);
-        $this->assertTrue($success);
+        self::assertTrue($success);
 
         // Verify the state was written.
         $read = $store->get('parent-cas');
-        $this->assertNotNull($read);
-        $this->assertSame('parent-cas', $read->runId);
+        self::assertNotNull($read);
+        self::assertSame('parent-cas', $read->runId);
 
         // Cleanup: write cancelled.
         $current = $store->get('parent-cas');

@@ -42,20 +42,20 @@ final class CompactionProjectionSubscriberTest extends TestCase
         $this->subscriber->onCompactionCompleted($event);
 
         $blocks = $this->state->blocks();
-        $this->assertCount(1, $blocks, 'Expected one transcript block.');
+        self::assertCount(1, $blocks, 'Expected one transcript block.');
 
         $block = $blocks[0];
-        $this->assertSame(
+        self::assertSame(
             TranscriptBlockKindEnum::System,
             $block->kind,
             'Compaction completed block should be System kind.',
         );
-        $this->assertStringNotContainsString(
+        self::assertStringNotContainsString(
             'Token estimate',
             $block->text,
             'User-visible text must not include token estimates.',
         );
-        $this->assertStringContainsString(
+        self::assertStringContainsString(
             'Conversation compacted',
             $block->text,
             'Text should contain the compressed-intro message.',
@@ -78,15 +78,15 @@ final class CompactionProjectionSubscriberTest extends TestCase
         $this->subscriber->onCompactionCompleted($event);
 
         $blocks = $this->state->blocks();
-        $this->assertCount(1, $blocks);
+        self::assertCount(1, $blocks);
 
         $block = $blocks[0];
         $meta = $block->meta;
 
-        $this->assertArrayHasKey('estimated_tokens_before', $meta);
-        $this->assertSame(12708, $meta['estimated_tokens_before']);
-        $this->assertArrayHasKey('estimated_tokens_after', $meta);
-        $this->assertSame(7255, $meta['estimated_tokens_after']);
+        self::assertArrayHasKey('estimated_tokens_before', $meta);
+        self::assertSame(12708, $meta['estimated_tokens_before']);
+        self::assertArrayHasKey('estimated_tokens_after', $meta);
+        self::assertSame(7255, $meta['estimated_tokens_after']);
     }
 
     /**
@@ -103,13 +103,13 @@ final class CompactionProjectionSubscriberTest extends TestCase
         $this->subscriber->onCompactionCompleted($event);
 
         $blocks = $this->state->blocks();
-        $this->assertCount(1, $blocks);
-        $this->assertStringContainsString(
+        self::assertCount(1, $blocks);
+        self::assertStringContainsString(
             'Conversation compacted',
             $blocks[0]->text,
         );
-        $this->assertNull($blocks[0]->meta['estimated_tokens_before']);
-        $this->assertNull($blocks[0]->meta['estimated_tokens_after']);
+        self::assertNull($blocks[0]->meta['estimated_tokens_before']);
+        self::assertNull($blocks[0]->meta['estimated_tokens_after']);
     }
 
     // ── private helpers ────────────────────────────────────────────────

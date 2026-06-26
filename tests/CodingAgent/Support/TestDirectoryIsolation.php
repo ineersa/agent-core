@@ -21,8 +21,8 @@ final class TestDirectoryIsolation
      *
      * Returns the full path, created with the given permissions.
      *
-     * @param string $prefix      directory name prefix
-     * @param int    $permissions directory permissions (octal)
+     * @param string $prefix      Directory name prefix.
+     * @param int    $permissions Directory permissions (octal).
      */
     public static function createProjectTempDir(string $prefix = 'test', int $permissions = 0o750): string
     {
@@ -38,8 +38,8 @@ final class TestDirectoryIsolation
      *
      * Returns the full path, created with the given permissions.
      *
-     * @param string $prefix      directory name prefix
-     * @param int    $permissions directory permissions (octal)
+     * @param string $prefix      Directory name prefix.
+     * @param int    $permissions Directory permissions (octal).
      */
     public static function createOsTempDir(string $prefix = 'test', int $permissions = 0o750): string
     {
@@ -52,7 +52,7 @@ final class TestDirectoryIsolation
     /**
      * Ensure a directory exists, creating it recursively if needed.
      *
-     * @throws \RuntimeException if a non-directory filesystem entry exists at the path
+     * @throws \RuntimeException if a non-directory filesystem entry exists at the path.
      */
     public static function ensureDirectory(string $dir, int $permissions = 0o755): void
     {
@@ -61,7 +61,10 @@ final class TestDirectoryIsolation
         }
 
         if (file_exists($dir)) {
-            throw new \RuntimeException(\sprintf('Cannot create directory: a non-directory filesystem entry exists at "%s".', $dir));
+            throw new \RuntimeException(\sprintf(
+                'Cannot create directory: a non-directory filesystem entry exists at "%s".',
+                $dir,
+            ));
         }
 
         mkdir($dir, $permissions, true);
@@ -77,8 +80,8 @@ final class TestDirectoryIsolation
      *   <root>/.hatfield/sessions/   (optional, when $withSessions=true)
      *
      * @param string $root         Root directory under which .hatfield/ is created.
-     * @param bool   $withSessions whether to create the sessions subdirectory
-     * @param int    $permissions  permissions for directories
+     * @param bool   $withSessions Whether to create the sessions subdirectory.
+     * @param int    $permissions  Permissions for directories.
      */
     public static function createHatfieldTree(string $root, bool $withSessions = false, int $permissions = 0o755): void
     {
@@ -106,7 +109,7 @@ final class TestDirectoryIsolation
      * Normalizes file permissions to ensure writability before unlinking,
      * matching the robustness pattern used in E2E test cleanup.
      *
-     * @param string $dir path to the directory to remove
+     * @param string $dir Path to the directory to remove.
      */
     public static function removeDirectory(string $dir): void
     {

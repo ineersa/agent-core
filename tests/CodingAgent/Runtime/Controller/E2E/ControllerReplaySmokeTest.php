@@ -25,12 +25,35 @@ final class ControllerReplaySmokeTest extends ControllerReplayE2eTestCase
 {
     private string $targetPath;
 
+    protected function tempDirPrefix(): string
+    {
+        return 'test-controller-replay';
+    }
+
     protected function setUp(): void
     {
         parent::setUp();
 
         $this->targetPath = $this->tempDir.'/notes.txt';
         file_put_contents($this->targetPath, 'Hello from controller replay test');
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    protected function replayFixtures(): array
+    {
+        // Load the known-good tool-call fixture.
+        $fixturePath = __DIR__.'/fixtures/controller-tool-call-replay.json';
+        $fixture = json_decode(
+            (string) file_get_contents($fixturePath),
+            true,
+            512,
+            \JSON_THROW_ON_ERROR,
+        );
+        \PHPUnit\Framework\Assert::assertIsArray($fixture);
+
+        return [$fixture];
     }
 
     /**
@@ -68,46 +91,46 @@ final class ControllerReplaySmokeTest extends ControllerReplayE2eTestCase
         $this->assertStartRunAcked($events, $startCmdId);
 
         // ── Mandatory: run started ──
-        $this->assertArrayHasKey('run.started', $byType, 'Expected run.started. '
+        self::assertArrayHasKey('run.started', $byType, 'Expected run.started. '
             .$this->collectDiagnostics($events));
 
         $runStarted = $byType['run.started'][0];
         $this->runId = (string) ($runStarted['runId'] ?? $runStarted['payload']['runId'] ?? '');
-        $this->assertNotEmpty($this->runId, 'run.started must have a runId');
+        self::assertNotEmpty($this->runId, 'run.started must have a runId');
 
         // ── Tool execution proof ──
-        $this->assertArrayHasKey('tool_execution.started', $byType,
+        self::assertArrayHasKey('tool_execution.started', $byType,
             'read tool must start. '
             .'Event types: '.implode(', ', array_keys($byType))."\n"
             .$this->collectDiagnostics($events),
         );
 
-        $this->assertSame(
+        self::assertSame(
             'read',
             $byType['tool_execution.started'][0]['payload']['tool_name'] ?? null,
             'The LLM must call the read tool. '
             .$this->collectDiagnostics($events),
         );
 
-        $this->assertArrayHasKey('tool_execution.completed', $byType,
+        self::assertArrayHasKey('tool_execution.completed', $byType,
             'read tool must complete. '
             .$this->collectDiagnostics($events),
         );
 
-        $this->assertSame(
+        self::assertSame(
             $byType['tool_execution.started'][0]['payload']['tool_call_id'] ?? null,
             $byType['tool_execution.completed'][0]['payload']['tool_call_id'] ?? null,
             'The completed tool execution must match the started call. '
             .$this->collectDiagnostics($events),
         );
 
-        $this->assertArrayNotHasKey('tool_execution.failed', $byType,
+        self::assertArrayNotHasKey('tool_execution.failed', $byType,
             'read tool must not fail. '
             .$this->collectDiagnostics($events),
         );
 
         // ── File-system side effect: the read tool was executed ──
-        $this->assertFileExists($this->targetPath,
+        self::assertFileExists($this->targetPath,
             'The target file must still exist after the read tool ran.',
         );
 
@@ -117,33 +140,10 @@ final class ControllerReplaySmokeTest extends ControllerReplayE2eTestCase
 
         // ── The tool execution was recorded in events.jsonl ──
         $eventsJsonl = $sessionDir.'/events.jsonl';
-        $this->assertFileExists($eventsJsonl, 'events.jsonl must exist.');
+        self::assertFileExists($eventsJsonl, 'events.jsonl must exist.');
         $jsonlContent = (string) file_get_contents($eventsJsonl);
-        $this->assertStringContainsString('tool_execution_end', $jsonlContent,
+        self::assertStringContainsString('tool_execution_end', $jsonlContent,
             'events.jsonl must record the completed tool execution.',
         );
-    }
-
-    protected function tempDirPrefix(): string
-    {
-        return 'test-controller-replay';
-    }
-
-    /**
-     * @return list<array<string, mixed>>
-     */
-    protected function replayFixtures(): array
-    {
-        // Load the known-good tool-call fixture.
-        $fixturePath = __DIR__.'/fixtures/controller-tool-call-replay.json';
-        $fixture = json_decode(
-            (string) file_get_contents($fixturePath),
-            true,
-            512,
-            \JSON_THROW_ON_ERROR,
-        );
-        \PHPUnit\Framework\Assert::assertIsArray($fixture);
-
-        return [$fixture];
     }
 }

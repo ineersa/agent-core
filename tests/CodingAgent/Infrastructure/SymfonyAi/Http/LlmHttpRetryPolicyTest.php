@@ -24,28 +24,28 @@ final class LlmHttpRetryPolicyTest extends TestCase
             maxDelayMs: 120_000,
         );
 
-        $this->assertSame(60, $policy->timeout);
-        $this->assertSame(300, $policy->maxDuration);
-        $this->assertSame(5, $policy->maxRetries);
-        $this->assertSame(2_000, $policy->baseDelayMs);
-        $this->assertSame(120_000, $policy->maxDelayMs);
+        self::assertSame(60, $policy->timeout);
+        self::assertSame(300, $policy->maxDuration);
+        self::assertSame(5, $policy->maxRetries);
+        self::assertSame(2_000, $policy->baseDelayMs);
+        self::assertSame(120_000, $policy->maxDelayMs);
     }
 
     public function testConstructDefaults(): void
     {
         $policy = new LlmHttpRetryPolicy();
 
-        $this->assertSame(LlmHttpRetryPolicy::DEFAULT_TIMEOUT, $policy->timeout);
-        $this->assertSame(LlmHttpRetryPolicy::DEFAULT_MAX_DURATION, $policy->maxDuration);
-        $this->assertSame(LlmHttpRetryPolicy::DEFAULT_MAX_RETRIES, $policy->maxRetries);
-        $this->assertSame(LlmHttpRetryPolicy::DEFAULT_BASE_DELAY_MS, $policy->baseDelayMs);
-        $this->assertSame(LlmHttpRetryPolicy::DEFAULT_MAX_DELAY_MS, $policy->maxDelayMs);
+        self::assertSame(LlmHttpRetryPolicy::DEFAULT_TIMEOUT, $policy->timeout);
+        self::assertSame(LlmHttpRetryPolicy::DEFAULT_MAX_DURATION, $policy->maxDuration);
+        self::assertSame(LlmHttpRetryPolicy::DEFAULT_MAX_RETRIES, $policy->maxRetries);
+        self::assertSame(LlmHttpRetryPolicy::DEFAULT_BASE_DELAY_MS, $policy->baseDelayMs);
+        self::assertSame(LlmHttpRetryPolicy::DEFAULT_MAX_DELAY_MS, $policy->maxDelayMs);
     }
 
     public function testConstructWithZeroRetriesDisablesRetry(): void
     {
         $policy = new LlmHttpRetryPolicy(maxRetries: 0);
-        $this->assertSame(0, $policy->maxRetries);
+        self::assertSame(0, $policy->maxRetries);
     }
 
     public function testConstructRejectsNegativeTimeout(): void
@@ -74,7 +74,7 @@ final class LlmHttpRetryPolicyTest extends TestCase
         $body = '{"error": {"message": "Service unavailable"}}';
 
         foreach ([408, 425, 429, 500, 502, 503, 504] as $status) {
-            $this->assertTrue(
+            self::assertTrue(
                 $policy->isRetryableError($status, $body),
                 \sprintf('Status %d should be retryable', $status),
             );
@@ -87,7 +87,7 @@ final class LlmHttpRetryPolicyTest extends TestCase
 
         // 4xx client errors other than 408/425/429 are not retryable.
         foreach ([400, 401, 403, 404, 405, 413, 422, 451] as $status) {
-            $this->assertFalse(
+            self::assertFalse(
                 $policy->isRetryableError($status, 'error body'),
                 \sprintf('Status %d should not be retryable', $status),
             );
@@ -98,9 +98,9 @@ final class LlmHttpRetryPolicyTest extends TestCase
     {
         $policy = new LlmHttpRetryPolicy();
 
-        $this->assertFalse($policy->isRetryableError(200, 'ok'));
-        $this->assertFalse($policy->isRetryableError(201, 'created'));
-        $this->assertFalse($policy->isRetryableError(204, 'no content'));
+        self::assertFalse($policy->isRetryableError(200, 'ok'));
+        self::assertFalse($policy->isRetryableError(201, 'created'));
+        self::assertFalse($policy->isRetryableError(204, 'no content'));
     }
 
     public function testIsRetryableErrorForTransientErrorTextPattern(): void
@@ -108,9 +108,9 @@ final class LlmHttpRetryPolicyTest extends TestCase
         $policy = new LlmHttpRetryPolicy();
 
         // Non-standard retryable code but with transient text.
-        $this->assertTrue($policy->isRetryableError(400, 'upstream connect error'));
-        $this->assertTrue($policy->isRetryableError(400, 'overloaded'));
-        $this->assertTrue($policy->isRetryableError(400, 'service unavailable'));
+        self::assertTrue($policy->isRetryableError(400, 'upstream connect error'));
+        self::assertTrue($policy->isRetryableError(400, 'overloaded'));
+        self::assertTrue($policy->isRetryableError(400, 'service unavailable'));
     }
 
     public function testIsRetryableErrorReturnsFalseForTerminalBilling429(): void
@@ -125,7 +125,7 @@ final class LlmHttpRetryPolicyTest extends TestCase
         ];
 
         foreach ($billingBodies as $body) {
-            $this->assertFalse(
+            self::assertFalse(
                 $policy->isRetryableError(429, $body),
                 \sprintf('429 with body "%s" should NOT be retryable', $body),
             );
@@ -138,29 +138,29 @@ final class LlmHttpRetryPolicyTest extends TestCase
     {
         $policy = new LlmHttpRetryPolicy();
 
-        $this->assertTrue($policy->isTerminalBillingError(429, 'insufficient_quota'));
-        $this->assertTrue($policy->isTerminalBillingError(429, 'quota exceeded'));
-        $this->assertTrue($policy->isTerminalBillingError(429, 'billing limit'));
-        $this->assertTrue($policy->isTerminalBillingError(429, 'out of budget'));
+        self::assertTrue($policy->isTerminalBillingError(429, 'insufficient_quota'));
+        self::assertTrue($policy->isTerminalBillingError(429, 'quota exceeded'));
+        self::assertTrue($policy->isTerminalBillingError(429, 'billing limit'));
+        self::assertTrue($policy->isTerminalBillingError(429, 'out of budget'));
     }
 
     public function testIsTerminalBillingErrorIgnoresNon429(): void
     {
         $policy = new LlmHttpRetryPolicy();
 
-        $this->assertFalse($policy->isTerminalBillingError(503, 'insufficient_quota'));
-        $this->assertFalse($policy->isTerminalBillingError(400, 'billing'));
-        $this->assertFalse($policy->isTerminalBillingError(500, 'quota exceeded'));
+        self::assertFalse($policy->isTerminalBillingError(503, 'insufficient_quota'));
+        self::assertFalse($policy->isTerminalBillingError(400, 'billing'));
+        self::assertFalse($policy->isTerminalBillingError(500, 'quota exceeded'));
     }
 
     public function testIsTerminalBillingErrorReturnsFalseForTransient429(): void
     {
         $policy = new LlmHttpRetryPolicy();
 
-        $this->assertFalse($policy->isTerminalBillingError(429, 'rate limit exceeded'));
-        $this->assertFalse($policy->isTerminalBillingError(429, 'Too Many Requests'));
-        $this->assertFalse($policy->isTerminalBillingError(429, null));
-        $this->assertFalse($policy->isTerminalBillingError(429, ''));
+        self::assertFalse($policy->isTerminalBillingError(429, 'rate limit exceeded'));
+        self::assertFalse($policy->isTerminalBillingError(429, 'Too Many Requests'));
+        self::assertFalse($policy->isTerminalBillingError(429, null));
+        self::assertFalse($policy->isTerminalBillingError(429, ''));
     }
 
     // ── isRetryableTransportError ──────────────────────────────────────────
@@ -183,7 +183,7 @@ final class LlmHttpRetryPolicyTest extends TestCase
 
         foreach ($retryableMessages as $msg) {
             $e = new \RuntimeException($msg);
-            $this->assertTrue(
+            self::assertTrue(
                 $policy->isRetryableTransportError($e),
                 \sprintf('Message "%s" should be retryable transport error', $msg),
             );
@@ -195,7 +195,7 @@ final class LlmHttpRetryPolicyTest extends TestCase
         $policy = new LlmHttpRetryPolicy();
 
         $e = new \RuntimeException('HTTP 500 Internal Server Error');
-        $this->assertFalse($policy->isRetryableTransportError($e));
+        self::assertFalse($policy->isRetryableTransportError($e));
     }
 
     // ── parseRetryAfterMs ──────────────────────────────────────────────────
@@ -205,7 +205,7 @@ final class LlmHttpRetryPolicyTest extends TestCase
         $policy = new LlmHttpRetryPolicy();
 
         $result = $policy->parseRetryAfterMs(['retry-after-ms' => ['5000']]);
-        $this->assertSame(5000, $result);
+        self::assertSame(5000, $result);
     }
 
     public function testParseRetryAfterMsForStandardSeconds(): void
@@ -213,7 +213,7 @@ final class LlmHttpRetryPolicyTest extends TestCase
         $policy = new LlmHttpRetryPolicy();
 
         $result = $policy->parseRetryAfterMs(['retry-after' => ['30']]);
-        $this->assertSame(30_000, $result);
+        self::assertSame(30_000, $result);
     }
 
     public function testParseRetryAfterMsPrefersMsOverSeconds(): void
@@ -225,15 +225,15 @@ final class LlmHttpRetryPolicyTest extends TestCase
             'retry-after' => ['60'],
         ]);
         // retry-after-ms should take priority
-        $this->assertSame(2000, $result);
+        self::assertSame(2000, $result);
     }
 
     public function testParseRetryAfterMsReturnsNullWhenNoHeader(): void
     {
         $policy = new LlmHttpRetryPolicy();
 
-        $this->assertNull($policy->parseRetryAfterMs([]));
-        $this->assertNull($policy->parseRetryAfterMs(['content-type' => ['application/json']]));
+        self::assertNull($policy->parseRetryAfterMs([]));
+        self::assertNull($policy->parseRetryAfterMs(['content-type' => ['application/json']]));
     }
 
     // ── calculateDelayMs ──────────────────────────────────────────────────
@@ -242,8 +242,8 @@ final class LlmHttpRetryPolicyTest extends TestCase
     {
         $policy = new LlmHttpRetryPolicy(maxDelayMs: 120_000);
 
-        $this->assertSame(5000, $policy->calculateDelayMs(0, 5000));
-        $this->assertSame(30000, $policy->calculateDelayMs(2, 30000));
+        self::assertSame(5000, $policy->calculateDelayMs(0, 5000));
+        self::assertSame(30000, $policy->calculateDelayMs(2, 30000));
     }
 
     public function testCalculateDelayMsCapsToMaxDelay(): void
@@ -251,19 +251,19 @@ final class LlmHttpRetryPolicyTest extends TestCase
         $policy = new LlmHttpRetryPolicy(maxDelayMs: 10_000);
 
         // retry-after exceeds cap
-        $this->assertSame(10000, $policy->calculateDelayMs(0, 30000));
+        self::assertSame(10000, $policy->calculateDelayMs(0, 30000));
         // backoff exceeds cap
-        $this->assertSame(10000, $policy->calculateDelayMs(10, null));
+        self::assertSame(10000, $policy->calculateDelayMs(10, null));
     }
 
     public function testCalculateDelayMsExponentialBackoff(): void
     {
         $policy = new LlmHttpRetryPolicy(baseDelayMs: 1000, maxDelayMs: 120_000);
 
-        $this->assertSame(1000, $policy->calculateDelayMs(0, null));  // 1000 * 2^0
-        $this->assertSame(2000, $policy->calculateDelayMs(1, null));  // 1000 * 2^1
-        $this->assertSame(4000, $policy->calculateDelayMs(2, null));  // 1000 * 2^2
-        $this->assertSame(8000, $policy->calculateDelayMs(3, null));  // 1000 * 2^3
+        self::assertSame(1000, $policy->calculateDelayMs(0, null));  // 1000 * 2^0
+        self::assertSame(2000, $policy->calculateDelayMs(1, null));  // 1000 * 2^1
+        self::assertSame(4000, $policy->calculateDelayMs(2, null));  // 1000 * 2^2
+        self::assertSame(8000, $policy->calculateDelayMs(3, null));  // 1000 * 2^3
     }
 
     // ── httpClientOptions ─────────────────────────────────────────────────
@@ -273,7 +273,7 @@ final class LlmHttpRetryPolicyTest extends TestCase
         $policy = new LlmHttpRetryPolicy(timeout: 45, maxDuration: 180);
         $options = $policy->httpClientOptions();
 
-        $this->assertSame(45, $options['timeout']);
-        $this->assertSame(180, $options['max_duration']);
+        self::assertSame(45, $options['timeout']);
+        self::assertSame(180, $options['max_duration']);
     }
 }

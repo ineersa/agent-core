@@ -14,6 +14,7 @@ use Ineersa\AgentCore\Domain\Message\StartRunPayload;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Tests\Support\Builder\AdvanceRunMessageBuilder;
+use Ineersa\AgentCore\Tests\Support\Builder\StartRunMessageBuilder;
 use Ineersa\AgentCore\Tests\Support\Builder\ToolCallResultBuilder;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -30,12 +31,12 @@ final class AgentBusMessageContractTest extends TestCase
         int $expectedAttempt,
         string $expectedIdempotencyKey,
     ): void {
-        $this->assertInstanceOf($class, $message);
-        $this->assertSame($expectedRunId, $message->runId());
-        $this->assertSame($expectedTurnNo, $message->turnNo());
-        $this->assertSame($expectedStepId, $message->stepId());
-        $this->assertSame($expectedAttempt, $message->attempt());
-        $this->assertSame($expectedIdempotencyKey, $message->idempotencyKey());
+        self::assertInstanceOf($class, $message);
+        self::assertSame($expectedRunId, $message->runId());
+        self::assertSame($expectedTurnNo, $message->turnNo());
+        self::assertSame($expectedStepId, $message->stepId());
+        self::assertSame($expectedAttempt, $message->attempt());
+        self::assertSame($expectedIdempotencyKey, $message->idempotencyKey());
     }
 
     /**
@@ -138,9 +139,9 @@ final class AgentBusMessageContractTest extends TestCase
             ),
         );
 
-        $this->assertSame('You are helpful', $message->payload->systemPrompt);
-        $this->assertSame([], $message->payload->messages);
-        $this->assertSame('gpt-4', $message->payload->metadata?->model);
+        self::assertSame('You are helpful', $message->payload->systemPrompt);
+        self::assertSame([], $message->payload->messages);
+        self::assertSame('gpt-4', $message->payload->metadata?->model);
     }
 
     public function testAdvanceRunPreservesPayload(): void
@@ -151,9 +152,9 @@ final class AgentBusMessageContractTest extends TestCase
             ->withIdempotencyKey('ik-adv')
             ->build();
 
-        $this->assertSame(['reason' => 'continue', 'turn' => 3], $message->payload);
-        $this->assertSame('run-adv', $message->runId());
-        $this->assertSame(3, $message->turnNo());
+        self::assertSame(['reason' => 'continue', 'turn' => 3], $message->payload);
+        self::assertSame('run-adv', $message->runId());
+        self::assertSame(3, $message->turnNo());
     }
 
     public function testApplyCommandPreservesKindPayloadAndOptions(): void
@@ -166,9 +167,9 @@ final class AgentBusMessageContractTest extends TestCase
             options: ['cancel_safe' => false],
         );
 
-        $this->assertSame('human_response', $message->kind);
-        $this->assertSame(['response' => 'proceed'], $message->payload);
-        $this->assertSame(['cancel_safe' => false], $message->options);
+        self::assertSame('human_response', $message->kind);
+        self::assertSame(['response' => 'proceed'], $message->payload);
+        self::assertSame(['cancel_safe' => false], $message->options);
     }
 
     public function testExecuteLlmStepPreservesRefs(): void
@@ -180,8 +181,8 @@ final class AgentBusMessageContractTest extends TestCase
             toolsRef: 'tools-v2',
         );
 
-        $this->assertSame('ctx-main', $message->contextRef);
-        $this->assertSame('tools-v2', $message->toolsRef);
+        self::assertSame('ctx-main', $message->contextRef);
+        self::assertSame('tools-v2', $message->toolsRef);
     }
 
     public function testExecuteToolCallPreservesAllFields(): void
@@ -198,17 +199,17 @@ final class AgentBusMessageContractTest extends TestCase
             toolsRef: 'tools-v3',
         );
 
-        $this->assertSame('tc-1', $message->toolCallId);
-        $this->assertSame('web_search', $message->toolName);
-        $this->assertSame(['query' => 'php 8.4'], $message->args);
-        $this->assertSame(0, $message->orderIndex);
-        $this->assertSame('tik-xyz', $message->toolIdempotencyKey);
-        $this->assertSame('parallel', $message->mode);
-        $this->assertSame(30, $message->timeoutSeconds);
-        $this->assertSame(2, $message->maxParallelism);
-        $this->assertSame(['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'checking']]], $message->assistantMessage);
-        $this->assertSame(['type' => 'object', 'properties' => ['query' => ['type' => 'string']]], $message->argSchema);
-        $this->assertSame('tools-v3', $message->toolsRef);
+        self::assertSame('tc-1', $message->toolCallId);
+        self::assertSame('web_search', $message->toolName);
+        self::assertSame(['query' => 'php 8.4'], $message->args);
+        self::assertSame(0, $message->orderIndex);
+        self::assertSame('tik-xyz', $message->toolIdempotencyKey);
+        self::assertSame('parallel', $message->mode);
+        self::assertSame(30, $message->timeoutSeconds);
+        self::assertSame(2, $message->maxParallelism);
+        self::assertSame(['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'checking']]], $message->assistantMessage);
+        self::assertSame(['type' => 'object', 'properties' => ['query' => ['type' => 'string']]], $message->argSchema);
+        self::assertSame('tools-v3', $message->toolsRef);
     }
 
     public function testLlmStepResultPreservesAllFields(): void
@@ -223,11 +224,11 @@ final class AgentBusMessageContractTest extends TestCase
             toolsRef: 'tools-def',
         );
 
-        $this->assertNull($message->assistantMessage);
-        $this->assertSame(['prompt_tokens' => 100, 'completion_tokens' => 50], $message->usage);
-        $this->assertSame('max_tokens', $message->stopReason);
-        $this->assertNull($message->error);
-        $this->assertSame('tools-def', $message->toolsRef);
+        self::assertNull($message->assistantMessage);
+        self::assertSame(['prompt_tokens' => 100, 'completion_tokens' => 50], $message->usage);
+        self::assertSame('max_tokens', $message->stopReason);
+        self::assertNull($message->error);
+        self::assertSame('tools-def', $message->toolsRef);
     }
 
     public function testToolCallResultPreservesAllFields(): void
@@ -240,12 +241,12 @@ final class AgentBusMessageContractTest extends TestCase
             ->withIdempotencyKey('ik-tcr')
             ->build();
 
-        $this->assertSame('run-tcr', $message->runId());
-        $this->assertSame(2, $message->turnNo());
-        $this->assertSame('tc-abc', $message->toolCallId);
-        $this->assertSame(5, $message->orderIndex);
-        $this->assertSame(['status' => 'completed'], $message->result);
-        $this->assertFalse($message->isError);
-        $this->assertNull($message->error);
+        self::assertSame('run-tcr', $message->runId());
+        self::assertSame(2, $message->turnNo());
+        self::assertSame('tc-abc', $message->toolCallId);
+        self::assertSame(5, $message->orderIndex);
+        self::assertSame(['status' => 'completed'], $message->result);
+        self::assertFalse($message->isError);
+        self::assertNull($message->error);
     }
 }

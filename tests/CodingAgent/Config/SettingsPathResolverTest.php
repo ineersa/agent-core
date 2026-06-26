@@ -26,31 +26,31 @@ class SettingsPathResolverTest extends TestCase
     public function testResolveProjectDirPlaceholder(): void
     {
         $result = $this->resolver->resolve('%kernel.project_dir%/config/themes', '/tmp');
-        $this->assertSame('/app/config/themes', $result);
+        self::assertSame('/app/config/themes', $result);
     }
 
     public function testResolveTilde(): void
     {
         $result = $this->resolver->resolve('~/.hatfield/themes', '/tmp');
-        $this->assertSame('/home/user/.hatfield/themes', $result);
+        self::assertSame('/home/user/.hatfield/themes', $result);
     }
 
     public function testResolveRelativePathUsesBaseDir(): void
     {
         $result = $this->resolver->resolve('.hatfield/themes', '/tmp/project');
-        $this->assertSame('/tmp/project/.hatfield/themes', $result);
+        self::assertSame('/tmp/project/.hatfield/themes', $result);
     }
 
     public function testAbsolutePathPassesThrough(): void
     {
         $result = $this->resolver->resolve('/etc/some/path', '/tmp');
-        $this->assertSame('/etc/some/path', $result);
+        self::assertSame('/etc/some/path', $result);
     }
 
     public function testEmptyStringPassesThrough(): void
     {
         $result = $this->resolver->resolve('', '/tmp');
-        $this->assertSame('', $result);
+        self::assertSame('', $result);
     }
 
     public function testResolveListResolvesAll(): void
@@ -62,7 +62,7 @@ class SettingsPathResolverTest extends TestCase
         ];
         $result = $this->resolver->resolveList($paths, '/tmp/project');
 
-        $this->assertSame([
+        self::assertSame([
             '/app/config/themes',
             '/home/user/.hatfield/themes',
             '/tmp/project/.hatfield/themes',
@@ -71,11 +71,11 @@ class SettingsPathResolverTest extends TestCase
 
     public function testGetAppRoot(): void
     {
-        $this->assertSame('/app', $this->resolver->getAppRoot());
+        self::assertSame('/app', $this->resolver->getAppRoot());
     }
 
     public function testGetHomeDir(): void
     {
-        $this->assertSame('/home/user', $this->resolver->getHomeDir());
+        self::assertSame('/home/user', $this->resolver->getHomeDir());
     }
 }

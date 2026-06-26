@@ -13,9 +13,17 @@ use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ModelResolverRoutingSubscriber;
+use Ineersa\CodingAgent\Config\Ai\AiConfig;
+use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
+use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\SessionsConfig;
+use Ineersa\CodingAgent\Config\TuiConfig;
 use Psr\Log\NullLogger;
 use Symfony\AI\Platform\Message\Content\Text;
 use Symfony\AI\Platform\Message\Content\Thinking;
+use Symfony\AI\Platform\Message\Content\ToolCall as ToolCallContent;
 use Symfony\AI\Platform\ModelCatalog\FallbackModelCatalog;
 use Symfony\AI\Platform\Platform;
 use Symfony\AI\Platform\Provider;
@@ -267,7 +275,7 @@ final class ReplayTest extends \PHPUnit\Framework\TestCase
             'tool_call',
             [['type' => 'text', 'content' => 'hello']],
         );
-        $this->assertSame('tool_call', $result);
+        self::assertSame('tool_call', $result);
     }
 
     public function testResolveFixtureStopReasonDetectsToolCallFromDeltas(): void
@@ -281,7 +289,7 @@ final class ReplayTest extends \PHPUnit\Framework\TestCase
                 ['type' => 'tool_call_complete', 'tool_calls' => [['id' => 'call_1', 'name' => 'read', 'arguments' => []]]],
             ],
         );
-        $this->assertSame('tool_call', $result);
+        self::assertSame('tool_call', $result);
     }
 
     public function testResolveFixtureStopReasonReturnsStopForTextOnlyDeltas(): void
@@ -290,7 +298,7 @@ final class ReplayTest extends \PHPUnit\Framework\TestCase
             null,
             [['type' => 'text', 'content' => 'hello world']],
         );
-        $this->assertSame('stop', $result);
+        self::assertSame('stop', $result);
     }
 
     public function testResolveFixtureStopReasonReturnsStopForThinkingOnlyDeltas(): void
@@ -302,13 +310,13 @@ final class ReplayTest extends \PHPUnit\Framework\TestCase
                 ['type' => 'thinking_signature', 'content' => 'sig123'],
             ],
         );
-        $this->assertSame('stop', $result);
+        self::assertSame('stop', $result);
     }
 
     public function testResolveFixtureStopReasonReturnsStopForEmptyDeltas(): void
     {
         $result = StreamRecorderObserver::resolveFixtureStopReason(null, []);
-        $this->assertSame('stop', $result);
+        self::assertSame('stop', $result);
     }
 
     public function testResolveFixtureStopReasonReturnsStopForMixedTextAndThinking(): void
@@ -320,7 +328,7 @@ final class ReplayTest extends \PHPUnit\Framework\TestCase
                 ['type' => 'text', 'content' => 'Hello'],
             ],
         );
-        $this->assertSame('stop', $result);
+        self::assertSame('stop', $result);
     }
 
     // ─── Helpers ───────────────────────────────────────────────────

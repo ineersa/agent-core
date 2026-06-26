@@ -17,6 +17,11 @@ use PHPUnit\Framework\Attributes\Group;
 #[Group('llm-real')]
 final class ControllerSmokeTest extends ControllerE2eTestCase
 {
+    protected function tempDirPrefix(): string
+    {
+        return 'test-controller';
+    }
+
     public function testControllerSpawnAndCompleteRun(): void
     {
         $this->spawnController();
@@ -38,7 +43,7 @@ final class ControllerSmokeTest extends ControllerE2eTestCase
 
         $this->assertStartRunAcked($events, $startCmdId);
 
-        $this->assertArrayHasKey(
+        self::assertArrayHasKey(
             'run.started',
             $byType,
             'Expected run.started event.'."\n"
@@ -47,18 +52,18 @@ final class ControllerSmokeTest extends ControllerE2eTestCase
 
         $runStarted = $byType['run.started'][0];
         $this->runId = (string) ($runStarted['runId'] ?? $runStarted['payload']['runId'] ?? '');
-        $this->assertNotEmpty($this->runId, 'run.started must have a runId');
+        self::assertNotEmpty($this->runId, 'run.started must have a runId');
 
         $hasStreaming = isset($byType['assistant.text_started']);
         $hasMessageCompleted = isset($byType['assistant.message_completed']);
-        $this->assertTrue(
+        self::assertTrue(
             $hasStreaming || $hasMessageCompleted,
             'Expected assistant.text_started or assistant.message_completed. '
             .'Available event types: '.implode(', ', array_keys($byType))."\n"
             .$this->collectDiagnostics($events),
         );
 
-        $this->assertTrue(
+        self::assertTrue(
             isset($byType['run.completed']) || isset($byType['run.failed']),
             'Expected run.completed or run.failed. '
             .'Available event types: '.implode(', ', array_keys($byType))."\n"
@@ -67,10 +72,5 @@ final class ControllerSmokeTest extends ControllerE2eTestCase
 
         $sessionDir = $this->tempDir.'/.hatfield/sessions/'.$this->runId;
         $this->assertSessionArtifactsExist($sessionDir, $events);
-    }
-
-    protected function tempDirPrefix(): string
-    {
-        return 'test-controller';
     }
 }

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution;
 
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
@@ -21,39 +23,42 @@ use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
-use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Definition\McpAgentModeEnum;
 use Ineersa\CodingAgent\Agent\Definition\McpPolicyDTO;
 use Ineersa\CodingAgent\Agent\Execution\AgentDepthGuard;
-use Ineersa\CodingAgent\Agent\Execution\AgentMcpToolsResolver;
 use Ineersa\CodingAgent\Agent\Execution\AgentPromptBuilder;
+use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
+use Ineersa\CodingAgent\Agent\Execution\AgentMcpToolsResolver;
 use Ineersa\CodingAgent\Agent\Execution\AgentToolPolicyResolver;
+use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
+use Ineersa\CodingAgent\Mcp\Config\McpConfigDTO;
+use Ineersa\CodingAgent\Mcp\Config\McpConfigLoader;
+use Ineersa\CodingAgent\Tests\Support\Mcp\TestMcpConfigLoaderFactory;
+use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
+use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder;
 use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Agent\Execution\SubagentTaskDTO;
-use Ineersa\CodingAgent\Config\AgentsConfig;
-use Ineersa\CodingAgent\Config\AppConfig;
-use Ineersa\CodingAgent\Config\LoggingConfig;
-use Ineersa\CodingAgent\Config\SettingsPathResolver;
-use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
-use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
 use Ineersa\CodingAgent\Skills\SkillContextRenderer;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\Skills\SkillsConfig;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
-use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
-use Ineersa\CodingAgent\Tests\Support\Mcp\TestMcpConfigLoaderFactory;
+use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\SettingsPathResolver;
+use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
-use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use PHPUnit\Framework\Attributes\CoversClass;
 
 #[CoversClass(SubagentExecutionService::class)]
 final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
 {
+
     public function testExecuteWithOmittedToolsStoresInheritedAllowedToolsInChildMetadata(): void
     {
         $completedState = new RunState(
@@ -69,9 +74,9 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
 
         $capturedInput = null;
         $agentRunner = $this->createMock(AgentRunnerInterface::class);
-        $agentRunner->expects($this->once())
+        $agentRunner->expects(self::once())
             ->method('start')
-            ->willReturnCallback(static function (StartRunInput $input) use (&$capturedInput): string {
+            ->willReturnCallback(function (StartRunInput $input) use (&$capturedInput): string {
                 $capturedInput = $input;
 
                 return 'child-uuid';
@@ -98,13 +103,13 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
 
         $service->execute('parent-inherit-tools', 'worker-like', 'Do work');
 
-        $this->assertNotNull($capturedInput);
+        self::assertNotNull($capturedInput);
         $allowed = $capturedInput->metadata->toolsScope['allowed_tools'] ?? null;
-        $this->assertIsArray($allowed);
-        $this->assertContains('read', $allowed);
-        $this->assertContains('bash', $allowed);
-        $this->assertContains('write', $allowed);
-        $this->assertNotContains('subagent', $allowed);
+        self::assertIsArray($allowed);
+        self::assertContains('read', $allowed);
+        self::assertContains('bash', $allowed);
+        self::assertContains('write', $allowed);
+        self::assertNotContains('subagent', $allowed);
     }
 
     public function testExecuteCompletesChildRunAndReturnsHandoff(): void
@@ -128,9 +133,9 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
 
         $agentRunner = $this->createMock(AgentRunnerInterface::class);
         $capturedInput = null;
-        $agentRunner->expects($this->once())
+        $agentRunner->expects(self::once())
             ->method('start')
-            ->willReturnCallback(static function (StartRunInput $input) use (&$capturedInput): string {
+            ->willReturnCallback(function (StartRunInput $input) use (&$capturedInput): string {
                 $capturedInput = $input;
 
                 return 'child-uuid';
@@ -165,7 +170,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             eventStore: $eventStore,
             metadataReader: $metadataReader,
             childRunDirectory: $directory,
-            contextAccessor: self::getContainer()->get(StackToolExecutionContextAccessor::class),
+            contextAccessor: self::getContainer()->get(\Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor::class),
             logger: self::getContainer()->get('logger'),
             agentsConfig: new AgentsConfig(),
             progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
@@ -174,25 +179,25 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
 
         $result = $service->execute('parent-1', 'test-agent', 'Inspect Foo.php');
 
-        $this->assertStringContainsString('Handoff:', $result);
-        $this->assertStringContainsString('Subagent test-agent completed.', $result);
-        $this->assertMatchesRegularExpression('/Artifact: agent_[0-9a-f]{16}\n/', $result);
+        self::assertStringContainsString('Handoff:', $result);
+        self::assertStringContainsString('Subagent test-agent completed.', $result);
+        self::assertMatchesRegularExpression('/Artifact: agent_[0-9a-f]{16}\n/', $result);
 
         // Verify system prompt was included as the first LLM-visible message.
-        $this->assertNotNull($capturedInput, 'AgentRunner::start() should have been called.');
-        $this->assertNotEmpty($capturedInput->messages, 'Child messages should not be empty.');
-        $this->assertSame('system', $capturedInput->messages[0]->role, 'First message should be the system prompt.');
+        self::assertNotNull($capturedInput, 'AgentRunner::start() should have been called.');
+        self::assertNotEmpty($capturedInput->messages, 'Child messages should not be empty.');
+        self::assertSame('system', $capturedInput->messages[0]->role, 'First message should be the system prompt.');
         $systemText = $capturedInput->messages[0]->content[0]['text'] ?? '';
-        $this->assertStringContainsString('Test instructions.', $systemText);
+        self::assertStringContainsString('Test instructions.', $systemText);
 
         // Verify artifact was finalized — use list() not get() with
         // the result text as a faux artifactId.
         $entries = $registry->list('parent-1');
-        $this->assertCount(1, $entries);
+        self::assertCount(1, $entries);
         $entry = $entries[0];
-        $this->assertSame(AgentArtifactStatusEnum::Completed, $entry->status);
-        $this->assertNotNull($entry->summary);
-        $this->assertStringContainsString('Handoff:', $entry->summary ?? '');
+        self::assertSame(AgentArtifactStatusEnum::Completed, $entry->status);
+        self::assertNotNull($entry->summary);
+        self::assertStringContainsString('Handoff:', $entry->summary ?? '');
     }
 
     public function testFailedChildRunReturnsErrorMessage(): void
@@ -211,7 +216,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         $parentRunStore = $this->createStub(RunStoreInterface::class);
 
         $agentRunner = $this->createMock(AgentRunnerInterface::class);
-        $agentRunner->expects($this->once())->method('start');
+        $agentRunner->expects(self::once())->method('start');
 
         $def = new AgentDefinitionDTO(
             name: 'fail-agent',
@@ -240,7 +245,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             eventStore: $eventStore,
             metadataReader: $metadataReader,
             childRunDirectory: $directory,
-            contextAccessor: self::getContainer()->get(StackToolExecutionContextAccessor::class),
+            contextAccessor: self::getContainer()->get(\Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor::class),
             logger: self::getContainer()->get('logger'),
             agentsConfig: new AgentsConfig(),
             progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
@@ -249,14 +254,14 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
 
         $result = $service->execute('parent-2', 'fail-agent', 'Try to read nothing');
 
-        $this->assertStringContainsString('failed', $result);
-        $this->assertStringContainsString('file not found', $result);
+        self::assertStringContainsString('failed', $result);
+        self::assertStringContainsString('file not found', $result);
 
         // Verify artifact finalized as Failed.
         $entries = $registry->list('parent-2');
-        $this->assertCount(1, $entries);
-        $this->assertSame(AgentArtifactStatusEnum::Failed, $entries[0]->status);
-        $this->assertSame('Tool call failed: file not found', $entries[0]->failureReason);
+        self::assertCount(1, $entries);
+        self::assertSame(AgentArtifactStatusEnum::Failed, $entries[0]->status);
+        self::assertSame('Tool call failed: file not found', $entries[0]->failureReason);
     }
 
     public function testWaitingHumanFinalizesAsFailedUnsupportedInteraction(): void
@@ -281,11 +286,11 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         $parentRunStore = $this->createStub(RunStoreInterface::class);
 
         $agentRunner = $this->createMock(AgentRunnerInterface::class);
-        $agentRunner->expects($this->once())->method('start');
-        $agentRunner->expects($this->once())->method('cancel')
+        $agentRunner->expects(self::once())->method('start');
+        $agentRunner->expects(self::once())->method('cancel')
             ->with(
-                $this->callback(static fn (mixed $id): bool => \is_string($id)),
-                $this->stringContains('WaitingHuman'),
+                self::callback(fn (mixed $id): bool => \is_string($id)),
+                self::stringContains('WaitingHuman'),
             );
 
         $def = new AgentDefinitionDTO(
@@ -315,7 +320,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             eventStore: $eventStore,
             metadataReader: $metadataReader,
             childRunDirectory: $directory,
-            contextAccessor: self::getContainer()->get(StackToolExecutionContextAccessor::class),
+            contextAccessor: self::getContainer()->get(\Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor::class),
             logger: self::getContainer()->get('logger'),
             agentsConfig: new AgentsConfig(),
             progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
@@ -324,13 +329,13 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
 
         $result = $service->execute('parent-3', 'asker', 'Should I delete Foo.php?');
 
-        $this->assertStringContainsString('unsupported human interaction', $result);
-        $this->assertStringContainsString('Artifact:', $result);
+        self::assertStringContainsString('unsupported human interaction', $result);
+        self::assertStringContainsString('Artifact:', $result);
 
         // Verify artifact finalized as Failed.
         $entries = $registry->list('parent-3');
-        $this->assertCount(1, $entries);
-        $this->assertSame(AgentArtifactStatusEnum::Failed, $entries[0]->status);
+        self::assertCount(1, $entries);
+        self::assertSame(AgentArtifactStatusEnum::Failed, $entries[0]->status);
     }
 
     public function testNestedSubagentLaunchBlockedWhenParentIsAgentChild(): void
@@ -352,15 +357,15 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         $agentRunner = $this->createStub(AgentRunnerInterface::class);
 
         $eventStore = $this->createMock(EventStoreInterface::class);
-        $eventStore->expects($this->once())
+        $eventStore->expects(self::once())
             ->method('allFor')
             ->with('parent-child-run')
             ->willReturn([
-                new RunEvent(
+                new \Ineersa\AgentCore\Domain\Event\RunEvent(
                     runId: 'parent-child-run',
                     seq: 1,
                     turnNo: 0,
-                    type: RunEventTypeEnum::RunStarted->value,
+                    type: \Ineersa\AgentCore\Domain\Event\RunEventTypeEnum::RunStarted->value,
                     payload: [
                         'step_id' => 's',
                         'payload' => [
@@ -391,7 +396,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             eventStore: $eventStore,
             metadataReader: $metadataReader,
             childRunDirectory: $directory,
-            contextAccessor: self::getContainer()->get(StackToolExecutionContextAccessor::class),
+            contextAccessor: self::getContainer()->get(\Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor::class),
             logger: self::getContainer()->get('logger'),
             agentsConfig: new AgentsConfig(),
             progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
@@ -424,7 +429,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             eventStore: $eventStore,
             metadataReader: new SubagentRunMetadataReader($eventStore),
             childRunDirectory: $directory,
-            contextAccessor: self::getContainer()->get(StackToolExecutionContextAccessor::class),
+            contextAccessor: self::getContainer()->get(\Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor::class),
             logger: self::getContainer()->get('logger'),
             agentsConfig: new AgentsConfig(),
             progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
@@ -466,7 +471,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             eventStore: $eventStore,
             metadataReader: new SubagentRunMetadataReader($eventStore),
             childRunDirectory: $directory,
-            contextAccessor: self::getContainer()->get(StackToolExecutionContextAccessor::class),
+            contextAccessor: self::getContainer()->get(\Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor::class),
             logger: self::getContainer()->get('logger'),
             agentsConfig: new AgentsConfig(),
             progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
@@ -522,7 +527,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
 
         $runStore = $this->createStub(RunStoreInterface::class);
         $runStore->method('get')->willReturnCallback(
-            static function () use (&$getCount, $runningState, $completedState): ?RunState {
+            function () use (&$getCount, $runningState, $completedState): ?RunState {
                 $state = 0 === $getCount ? $runningState : $completedState;
                 ++$getCount;
 
@@ -531,7 +536,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         );
 
         $agentRunner = $this->createMock(AgentRunnerInterface::class);
-        $agentRunner->expects($this->once())
+        $agentRunner->expects(self::once())
             ->method('start')
             ->willReturn('child-seq');
 
@@ -550,14 +555,14 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         $appendedEvents = [];
         $eventStore = $this->createStub(EventStoreInterface::class);
         $eventStore->method('append')
-            ->willReturnCallback(static function (RunEvent $event) use (&$appendedEvents): void {
+            ->willReturnCallback(function (RunEvent $event) use (&$appendedEvents): void {
                 $appendedEvents[] = $event;
             });
         $eventStore->method('allFor')
-            ->willReturnCallback(static function (string $runId) use (&$appendedEvents): array {
+            ->willReturnCallback(function (string $runId) use (&$appendedEvents): array {
                 return array_values(array_filter(
                     $appendedEvents,
-                    static fn (RunEvent $e): bool => $e->runId === $runId,
+                    fn(RunEvent $e): bool => $e->runId === $runId,
                 ));
             });
 
@@ -595,16 +600,16 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
         );
 
-        $result = $contextAccessor->with($toolContext, static function () use ($service): string {
+        $result = $contextAccessor->with($toolContext, function () use ($service): string {
             return $service->execute('parent-seq', 'seq-agent', 'Do work');
         });
 
-        $this->assertStringContainsString('done', $result);
+        self::assertStringContainsString('done', $result);
 
         // Parent lastSeq should have advanced past the initial seed.
         $finalParentState = $parentRunStore->get('parent-seq');
-        $this->assertNotNull($finalParentState);
-        $this->assertGreaterThan(
+        self::assertNotNull($finalParentState);
+        self::assertGreaterThan(
             5,
             $finalParentState->lastSeq,
             'Parent lastSeq should advance past initial seed (5) after progress events.',
@@ -613,15 +618,15 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         // At least one progress event should have been emitted.
         $progressEvents = array_filter(
             $appendedEvents,
-            static fn (RunEvent $e): bool => RunEventTypeEnum::ToolExecutionUpdate->value === $e->type,
+            fn(RunEvent $e): bool => RunEventTypeEnum::ToolExecutionUpdate->value === $e->type,
         );
-        $this->assertNotEmpty($progressEvents, 'At least one progress event should be emitted.');
+        self::assertNotEmpty($progressEvents, 'At least one progress event should be emitted.');
 
         // Progress events should have unique sequences.
-        $progressSeqs = array_map(static fn (RunEvent $e): int => $e->seq, $progressEvents);
-        $this->assertSame(
-            \count($progressEvents),
-            \count(array_unique($progressSeqs)),
+        $progressSeqs = array_map(fn(RunEvent $e): int => $e->seq, $progressEvents);
+        self::assertSame(
+            count($progressEvents),
+            count(array_unique($progressSeqs)),
             'Progress events should have unique sequence numbers.',
         );
     }
@@ -660,7 +665,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
 
         $runStore = $this->createStub(RunStoreInterface::class);
         $runStore->method('get')->willReturnCallback(
-            static function () use (&$getCount, $compactingState, $completedState): ?RunState {
+            function () use (&$getCount, $compactingState, $completedState): ?RunState {
                 $state = 0 === $getCount ? $compactingState : $completedState;
                 ++$getCount;
 
@@ -669,7 +674,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         );
 
         $agentRunner = $this->createMock(AgentRunnerInterface::class);
-        $agentRunner->expects($this->once())
+        $agentRunner->expects(self::once())
             ->method('start')
             ->willReturn('child-compact');
 
@@ -709,23 +714,22 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
 
         $result = $service->execute('parent-compact', 'compact-agent', 'Compact then finish');
 
-        $this->assertStringContainsString('Handoff: compaction finished.', $result);
-        $this->assertStringContainsString('Artifact:', $result);
+        self::assertStringContainsString('Handoff: compaction finished.', $result);
+        self::assertStringContainsString('Artifact:', $result);
 
         $entries = $registry->list('parent-compact');
-        $this->assertCount(1, $entries);
-        $this->assertSame(AgentArtifactStatusEnum::Completed, $entries[0]->status);
+        self::assertCount(1, $entries);
+        self::assertSame(AgentArtifactStatusEnum::Completed, $entries[0]->status);
     }
-
     public function testExecuteParallelCompletesDistinctArtifacts(): void
     {
         /** @var array<string, string> $handoffByRunId */
         $handoffByRunId = [];
 
         $agentRunner = $this->createMock(AgentRunnerInterface::class);
-        $agentRunner->expects($this->exactly(2))
+        $agentRunner->expects(self::exactly(2))
             ->method('start')
-            ->willReturnCallback(static function (StartRunInput $input) use (&$handoffByRunId): string {
+            ->willReturnCallback(function (StartRunInput $input) use (&$handoffByRunId): string {
                 $agentName = (string) ($input->metadata?->session['agent_name'] ?? 'unknown');
                 $handoffByRunId[(string) $input->runId] = 'parallel-a' === $agentName ? 'A_OK' : 'B_OK';
 
@@ -733,7 +737,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             });
 
         $runStore = $this->createStub(RunStoreInterface::class);
-        $runStore->method('get')->willReturnCallback(static function (string $runId) use (&$handoffByRunId): ?RunState {
+        $runStore->method('get')->willReturnCallback(function (string $runId) use (&$handoffByRunId): ?RunState {
             if (!isset($handoffByRunId[$runId])) {
                 return null;
             }
@@ -746,7 +750,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             );
         });
 
-        $def = static fn (string $name) => new AgentDefinitionDTO(
+        $def = fn (string $name) => new AgentDefinitionDTO(
             name: $name,
             description: $name,
             tools: ['read'],
@@ -767,15 +771,15 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             new SubagentTaskDTO(agent: 'parallel-b', task: 'Task B'),
         ]);
 
-        $this->assertStringContainsString('Parallel subagents completed', $result);
-        $this->assertStringContainsString('A_OK', $result);
-        $this->assertStringContainsString('B_OK', $result);
-        $this->assertMatchesRegularExpression('/Artifact: agent_[0-9a-f]{16}/', $result);
+        self::assertStringContainsString('Parallel subagents completed', $result);
+        self::assertStringContainsString('A_OK', $result);
+        self::assertStringContainsString('B_OK', $result);
+        self::assertMatchesRegularExpression('/Artifact: agent_[0-9a-f]{16}/', $result);
 
         $entries = $registry->list('parent-parallel-ok');
-        $this->assertCount(2, $entries);
+        self::assertCount(2, $entries);
         foreach ($entries as $entry) {
-            $this->assertSame(AgentArtifactStatusEnum::Completed, $entry->status);
+            self::assertSame(AgentArtifactStatusEnum::Completed, $entry->status);
         }
     }
 
@@ -791,7 +795,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         );
         $registry = self::getContainer()->get(AgentArtifactRegistry::class);
         $agentRunner = $this->createMock(AgentRunnerInterface::class);
-        $agentRunner->expects($this->never())->method('start');
+        $agentRunner->expects(self::never())->method('start');
 
         $service = $this->makeService([
             'catalog' => new AgentDefinitionCatalog([$def]),
@@ -809,7 +813,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
                 new SubagentTaskDTO(agent: 'parallel-cap', task: '3'),
             ]);
         } finally {
-            $this->assertCount(0, $registry->list('parent-cap'));
+            self::assertCount(0, $registry->list('parent-cap'));
         }
     }
 
@@ -819,9 +823,9 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         $statusByRunId = [];
 
         $agentRunner = $this->createMock(AgentRunnerInterface::class);
-        $agentRunner->expects($this->exactly(2))
+        $agentRunner->expects(self::exactly(2))
             ->method('start')
-            ->willReturnCallback(static function (StartRunInput $input) use (&$statusByRunId): string {
+            ->willReturnCallback(function (StartRunInput $input) use (&$statusByRunId): string {
                 $agentName = (string) ($input->metadata?->session['agent_name'] ?? '');
                 $statusByRunId[(string) $input->runId] = 'ok-agent' === $agentName ? RunStatus::Completed : RunStatus::Failed;
 
@@ -829,7 +833,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             });
 
         $runStore = $this->createStub(RunStoreInterface::class);
-        $runStore->method('get')->willReturnCallback(static function (string $runId) use (&$statusByRunId): ?RunState {
+        $runStore->method('get')->willReturnCallback(function (string $runId) use (&$statusByRunId): ?RunState {
             if (!isset($statusByRunId[$runId])) {
                 return null;
             }
@@ -852,7 +856,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             );
         });
 
-        $def = static fn (string $name) => new AgentDefinitionDTO(
+        $def = fn (string $name) => new AgentDefinitionDTO(
             name: $name,
             description: $name,
             tools: ['read'],
@@ -873,19 +877,19 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
                 new SubagentTaskDTO(agent: 'ok-agent', task: 'ok'),
                 new SubagentTaskDTO(agent: 'fail-agent', task: 'fail'),
             ]);
-            $this->fail('Expected ToolCallException');
+            self::fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
-            $this->assertStringContainsString('failed for one or more children', $e->getMessage());
-            $this->assertStringContainsString('Artifact:', $e->getMessage());
-            $this->assertStringContainsString('boom', $e->getMessage());
-            $this->assertStringContainsString('OK_HANDOFF', $e->getMessage());
+            self::assertStringContainsString('failed for one or more children', $e->getMessage());
+            self::assertStringContainsString('Artifact:', $e->getMessage());
+            self::assertStringContainsString('boom', $e->getMessage());
+            self::assertStringContainsString('OK_HANDOFF', $e->getMessage());
         }
 
         $entries = $registry->list('parent-partial');
-        $this->assertCount(2, $entries);
+        self::assertCount(2, $entries);
         $statuses = array_map(static fn ($e) => $e->status, $entries);
-        $this->assertContains(AgentArtifactStatusEnum::Completed, $statuses);
-        $this->assertContains(AgentArtifactStatusEnum::Failed, $statuses);
+        self::assertContains(AgentArtifactStatusEnum::Completed, $statuses);
+        self::assertContains(AgentArtifactStatusEnum::Failed, $statuses);
     }
 
     public function testExecuteParallelStartFailureCleansUpStartedChildren(): void
@@ -893,9 +897,9 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         $startCalls = 0;
 
         $agentRunner = $this->createMock(AgentRunnerInterface::class);
-        $agentRunner->expects($this->exactly(2))
+        $agentRunner->expects(self::exactly(2))
             ->method('start')
-            ->willReturnCallback(static function (StartRunInput $input) use (&$startCalls): string {
+            ->willReturnCallback(function (StartRunInput $input) use (&$startCalls): string {
                 ++$startCalls;
                 if (2 === $startCalls) {
                     throw new \RuntimeException('second child start blew up');
@@ -903,9 +907,9 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
 
                 return (string) $input->runId;
             });
-        $agentRunner->expects($this->once())
+        $agentRunner->expects(self::once())
             ->method('cancel')
-            ->with($this->callback(static fn (string $runId): bool => '' !== $runId), $this->anything());
+            ->with(self::callback(fn (string $runId): bool => '' !== $runId), self::anything());
 
         $runStore = $this->createStub(RunStoreInterface::class);
         $runStore->method('get')->willReturn(new RunState(
@@ -915,7 +919,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             messages: [],
         ));
 
-        $def = static fn (string $name) => new AgentDefinitionDTO(
+        $def = fn (string $name) => new AgentDefinitionDTO(
             name: $name,
             description: $name,
             tools: ['read'],
@@ -941,32 +945,33 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
                 new SubagentTaskDTO(agent: 'second-agent', task: 'boom'),
                 new SubagentTaskDTO(agent: 'third-agent', task: 'never'),
             ]);
-            $this->fail('Expected ToolCallException');
+            self::fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
-            $this->assertStringContainsString('Parallel subagent launch failed', $e->getMessage());
-            $this->assertStringContainsString('second child start blew up', $e->getMessage());
-            $this->assertStringContainsString('Artifact:', $e->getMessage());
-            $this->assertStringContainsString('first-agent', $e->getMessage());
-            $this->assertStringContainsString('second-agent', $e->getMessage());
-            $this->assertStringContainsString('third-agent', $e->getMessage());
-            $this->assertStringContainsString('Child run was not launched after a parallel launch failure.', $e->getMessage());
-            $this->assertInstanceOf(\RuntimeException::class, $e->getPrevious());
-            $this->assertStringContainsString('second child start blew up', (string) $e->getPrevious()?->getMessage());
+            self::assertStringContainsString('Parallel subagent launch failed', $e->getMessage());
+            self::assertStringContainsString('second child start blew up', $e->getMessage());
+            self::assertStringContainsString('Artifact:', $e->getMessage());
+            self::assertStringContainsString('first-agent', $e->getMessage());
+            self::assertStringContainsString('second-agent', $e->getMessage());
+            self::assertStringContainsString('third-agent', $e->getMessage());
+            self::assertStringContainsString('Child run was not launched after a parallel launch failure.', $e->getMessage());
+            self::assertInstanceOf(\RuntimeException::class, $e->getPrevious());
+            self::assertStringContainsString('second child start blew up', (string) $e->getPrevious()?->getMessage());
 
             if (!preg_match('/#3 third-agent — failed\s+Artifact: (agent_[0-9a-f]{16})/', $e->getMessage(), $matches)) {
-                $this->fail('Expected third-agent failed artifact line in aggregate report');
+                self::fail('Expected third-agent failed artifact line in aggregate report');
             }
             $thirdArtifactId = $matches[1];
-            $this->assertNull($registry->get('parent-launch-fail', $thirdArtifactId));
+            self::assertNull($registry->get('parent-launch-fail', $thirdArtifactId));
         }
 
         $entries = $registry->list('parent-launch-fail');
-        $this->assertCount(2, $entries);
+        self::assertCount(2, $entries);
         foreach ($entries as $entry) {
-            $this->assertNotSame(AgentArtifactStatusEnum::Running, $entry->status);
-            $this->assertSame(AgentArtifactStatusEnum::Failed, $entry->status);
+            self::assertNotSame(AgentArtifactStatusEnum::Running, $entry->status);
+            self::assertSame(AgentArtifactStatusEnum::Failed, $entry->status);
         }
     }
+
 
     public function testExecuteInjectsPreloadedSkillContentFromDefinition(): void
     {
@@ -974,12 +979,12 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         mkdir($tmpDir.'/.hatfield/skills/child-skill', 0777, true);
         file_put_contents(
             $tmpDir.'/.hatfield/skills/child-skill/SKILL.md',
-            '---
+            "---
 name: child-skill
 description: Child skill
 ---
 
-CHILD_SKILL_BODY_UNIQUE',
+CHILD_SKILL_BODY_UNIQUE",
         );
 
         $completedState = new RunState(runId: 'child-uuid', status: RunStatus::Completed, version: 1, messages: []);
@@ -989,9 +994,8 @@ CHILD_SKILL_BODY_UNIQUE',
 
         $capturedInput = null;
         $agentRunner = $this->createMock(AgentRunnerInterface::class);
-        $agentRunner->expects($this->once())->method('start')->willReturnCallback(static function (StartRunInput $input) use (&$capturedInput): string {
+        $agentRunner->expects(self::once())->method('start')->willReturnCallback(function (StartRunInput $input) use (&$capturedInput): string {
             $capturedInput = $input;
-
             return 'child-uuid';
         });
 
@@ -1020,7 +1024,7 @@ CHILD_SKILL_BODY_UNIQUE',
             $this->rmdirRecursive($tmpDir);
         }
 
-        $this->assertNotNull($capturedInput);
+        self::assertNotNull($capturedInput);
         $found = false;
         foreach ($capturedInput->messages as $message) {
             if ('user-context' !== $message->role) {
@@ -1030,10 +1034,10 @@ CHILD_SKILL_BODY_UNIQUE',
                 continue;
             }
             $text = (string) ($message->content[0]['text'] ?? '');
-            $this->assertStringContainsString('CHILD_SKILL_BODY_UNIQUE', $text);
+            self::assertStringContainsString('CHILD_SKILL_BODY_UNIQUE', $text);
             $found = true;
         }
-        $this->assertTrue($found, 'Expected skills_context message with preloaded body');
+        self::assertTrue($found, 'Expected skills_context message with preloaded body');
     }
 
     public function testExecuteHonorsInheritAgentsMdFalse(): void
@@ -1059,9 +1063,8 @@ CHILD_SKILL_BODY_UNIQUE',
 
         $capturedInput = null;
         $agentRunner = $this->createMock(AgentRunnerInterface::class);
-        $agentRunner->expects($this->once())->method('start')->willReturnCallback(static function (StartRunInput $input) use (&$capturedInput): string {
+        $agentRunner->expects(self::once())->method('start')->willReturnCallback(function (StartRunInput $input) use (&$capturedInput): string {
             $capturedInput = $input;
-
             return 'child-uuid';
         });
 
@@ -1084,8 +1087,8 @@ CHILD_SKILL_BODY_UNIQUE',
 
         $service->execute('parent-run', 'no-agents', 'Task');
 
-        $this->assertNotNull($capturedInput);
-        $this->assertStringNotContainsString('SHOULD_NOT_APPEAR', $capturedInput->systemPrompt);
+        self::assertNotNull($capturedInput);
+        self::assertStringNotContainsString('SHOULD_NOT_APPEAR', $capturedInput->systemPrompt);
     }
 
     public function testExecuteIncludesParentAgentsContextWhenInheritTrue(): void
@@ -1111,9 +1114,8 @@ CHILD_SKILL_BODY_UNIQUE',
 
         $capturedInput = null;
         $agentRunner = $this->createMock(AgentRunnerInterface::class);
-        $agentRunner->expects($this->once())->method('start')->willReturnCallback(static function (StartRunInput $input) use (&$capturedInput): string {
+        $agentRunner->expects(self::once())->method('start')->willReturnCallback(function (StartRunInput $input) use (&$capturedInput): string {
             $capturedInput = $input;
-
             return 'child-uuid';
         });
 
@@ -1136,9 +1138,13 @@ CHILD_SKILL_BODY_UNIQUE',
 
         $service->execute('parent-run2', 'inherit-agents', 'Task');
 
-        $this->assertNotNull($capturedInput);
-        $this->assertStringContainsString('AGENTS_INHERIT_OK', $capturedInput->systemPrompt);
+        self::assertNotNull($capturedInput);
+        self::assertStringContainsString('AGENTS_INHERIT_OK', $capturedInput->systemPrompt);
     }
+
+    /**
+     * @param array<string, mixed> $overrides
+     */
 
     private function defaultPolicyResolver(): AgentToolPolicyResolver
     {
@@ -1156,6 +1162,7 @@ CHILD_SKILL_BODY_UNIQUE',
 
         return new AgentMcpToolsResolver($catalogStore, $loader);
     }
+
 
     private function makeSkillsContextBuilder(string $cwd): SkillsContextBuilder
     {
@@ -1251,4 +1258,5 @@ CHILD_SKILL_BODY_UNIQUE',
             childProgressSummaryBuilder: $args['childProgressSummaryBuilder'],
         );
     }
+
 }

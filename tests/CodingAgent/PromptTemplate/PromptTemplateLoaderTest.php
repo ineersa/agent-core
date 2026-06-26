@@ -39,6 +39,27 @@ final class PromptTemplateLoaderTest extends TestCase
         TestDirectoryIsolation::removeDirectory($this->tmpDir);
     }
 
+    private function createLoader(?PromptsConfig $promptsConfig = null, ?PromptTemplatesRuntimeConfig $runtimeConfig = null): PromptTemplateLoader
+    {
+        return new PromptTemplateLoader(
+            promptsConfig: $promptsConfig ?? new PromptsConfig(),
+            runtimeConfig: $runtimeConfig ?? new PromptTemplatesRuntimeConfig(),
+            pathResolver: $this->pathResolver,
+            cwd: $this->cwd,
+            frontmatterParser: new PromptTemplateFrontmatterParser(new MarkdownFrontmatterExtractor()),
+            logger: $this->logger,
+        );
+    }
+
+    private function writeFile(string $path, string $content): void
+    {
+        $dir = \dirname($path);
+        if (!is_dir($dir)) {
+            mkdir($dir, 0755, true);
+        }
+        file_put_contents($path, $content);
+    }
+
     // ─── Auto-discovery directories ───
 
     public function testAutoGlobalDirectory(): void
@@ -47,10 +68,10 @@ final class PromptTemplateLoaderTest extends TestCase
         $loader = $this->createLoader();
         $result = $loader->load();
 
-        $this->assertCount(1, $result->templates);
-        $this->assertSame('review', $result->templates[0]->name);
-        $this->assertSame("Review the code.\n", $result->templates[0]->content);
-        $this->assertEmpty($result->diagnostics);
+        self::assertCount(1, $result->templates);
+        self::assertSame('review', $result->templates[0]->name);
+        self::assertSame("Review the code.\n", $result->templates[0]->content);
+        self::assertEmpty($result->diagnostics);
     }
 
     public function testAutoProjectDirectory(): void
@@ -59,8 +80,8 @@ final class PromptTemplateLoaderTest extends TestCase
         $loader = $this->createLoader();
         $result = $loader->load();
 
-        $this->assertCount(1, $result->templates);
-        $this->assertSame('summarize', $result->templates[0]->name);
+        self::assertCount(1, $result->templates);
+        self::assertSame('summarize', $result->templates[0]->name);
     }
 
     public function testAutoDiscoveryOrderGlobalFirst(): void
@@ -71,10 +92,10 @@ final class PromptTemplateLoaderTest extends TestCase
         $loader = $this->createLoader();
         $result = $loader->load();
 
-        $this->assertCount(1, $result->templates);
-        $this->assertSame("Global review.\n", $result->templates[0]->content);
-        $this->assertCount(1, $result->diagnostics);
-        $this->assertSame('collision', $result->diagnostics[0]->type);
+        self::assertCount(1, $result->templates);
+        self::assertSame("Global review.\n", $result->templates[0]->content);
+        self::assertCount(1, $result->diagnostics);
+        self::assertSame('collision', $result->diagnostics[0]->type);
     }
 
     // ─── Settings explicit paths ───
@@ -86,8 +107,8 @@ final class PromptTemplateLoaderTest extends TestCase
         $loader = $this->createLoader(new PromptsConfig([$filePath]));
         $result = $loader->load();
 
-        $this->assertCount(1, $result->templates);
-        $this->assertSame('custom', $result->templates[0]->name);
+        self::assertCount(1, $result->templates);
+        self::assertSame('custom', $result->templates[0]->name);
     }
 
     public function testSettingsExplicitDirectory(): void
@@ -98,10 +119,10 @@ final class PromptTemplateLoaderTest extends TestCase
         $loader = $this->createLoader(new PromptsConfig([$dir]));
         $result = $loader->load();
 
-        $this->assertCount(2, $result->templates);
-        $names = array_map(static fn ($t) => $t->name, $result->templates);
+        self::assertCount(2, $result->templates);
+        $names = array_map(fn ($t) => $t->name, $result->templates);
         // Sorted lexically.
-        $this->assertSame(['alpha', 'beta'], $names);
+        self::assertSame(['alpha', 'beta'], $names);
     }
 
     // ─── CLI explicit paths ───
@@ -115,8 +136,8 @@ final class PromptTemplateLoaderTest extends TestCase
         $loader = $this->createLoader(runtimeConfig: $runtimeConfig);
         $result = $loader->load();
 
-        $this->assertCount(1, $result->templates);
-        $this->assertSame('cli-template', $result->templates[0]->name);
+        self::assertCount(1, $result->templates);
+        self::assertSame('cli-template', $result->templates[0]->name);
     }
 
     public function testCliExplicitDirectory(): void
@@ -128,8 +149,8 @@ final class PromptTemplateLoaderTest extends TestCase
         $loader = $this->createLoader(runtimeConfig: $runtimeConfig);
         $result = $loader->load();
 
-        $this->assertCount(1, $result->templates);
-        $this->assertSame('quick', $result->templates[0]->name);
+        self::assertCount(1, $result->templates);
+        self::assertSame('quick', $result->templates[0]->name);
     }
 
     // ─── noPromptTemplates ───
@@ -150,7 +171,7 @@ final class PromptTemplateLoaderTest extends TestCase
         $result = $loader->load();
 
         // Auto and settings paths are skipped.
-        $this->assertEmpty($result->templates);
+        self::assertEmpty($result->templates);
     }
 
     public function testNoPromptTemplatesStillLoadsCliPaths(): void
@@ -164,8 +185,8 @@ final class PromptTemplateLoaderTest extends TestCase
         $loader = $this->createLoader(runtimeConfig: $runtimeConfig);
         $result = $loader->load();
 
-        $this->assertCount(1, $result->templates);
-        $this->assertSame('cli', $result->templates[0]->name);
+        self::assertCount(1, $result->templates);
+        self::assertSame('cli', $result->templates[0]->name);
     }
 
     // ─── Non-recursive scanning ───
@@ -178,8 +199,8 @@ final class PromptTemplateLoaderTest extends TestCase
         $loader = $this->createLoader(new PromptsConfig([$dir]));
         $result = $loader->load();
 
-        $this->assertCount(1, $result->templates);
-        $this->assertSame('top', $result->templates[0]->name);
+        self::assertCount(1, $result->templates);
+        self::assertSame('top', $result->templates[0]->name);
     }
 
     // ─── Exact .md suffix only ───
@@ -193,8 +214,8 @@ final class PromptTemplateLoaderTest extends TestCase
         $loader = $this->createLoader(new PromptsConfig([$dir]));
         $result = $loader->load();
 
-        $this->assertCount(1, $result->templates);
-        $this->assertSame('valid', $result->templates[0]->name);
+        self::assertCount(1, $result->templates);
+        self::assertSame('valid', $result->templates[0]->name);
     }
 
     // ─── Missing dirs/paths ───
@@ -205,8 +226,8 @@ final class PromptTemplateLoaderTest extends TestCase
         $loader = $this->createLoader();
         $result = $loader->load();
 
-        $this->assertEmpty($result->templates);
-        $this->assertEmpty($result->diagnostics);
+        self::assertEmpty($result->templates);
+        self::assertEmpty($result->diagnostics);
     }
 
     public function testMissingExplicitPathProducesDiagnostic(): void
@@ -214,10 +235,10 @@ final class PromptTemplateLoaderTest extends TestCase
         $loader = $this->createLoader(new PromptsConfig(['/nonexistent/path.md']));
         $result = $loader->load();
 
-        $this->assertEmpty($result->templates);
-        $this->assertCount(1, $result->diagnostics);
-        $this->assertSame('invalid_path', $result->diagnostics[0]->type);
-        $this->assertSame('/nonexistent/path.md', $result->diagnostics[0]->path);
+        self::assertEmpty($result->templates);
+        self::assertCount(1, $result->diagnostics);
+        self::assertSame('invalid_path', $result->diagnostics[0]->type);
+        self::assertSame('/nonexistent/path.md', $result->diagnostics[0]->path);
     }
 
     // ─── Description fallback ───
@@ -229,7 +250,7 @@ final class PromptTemplateLoaderTest extends TestCase
         $loader = $this->createLoader(new PromptsConfig([$filePath]));
         $result = $loader->load();
 
-        $this->assertSame('My description', $result->templates[0]->description);
+        self::assertSame('My description', $result->templates[0]->description);
     }
 
     public function testDescriptionFallbackFirstNonEmptyLine(): void
@@ -239,7 +260,7 @@ final class PromptTemplateLoaderTest extends TestCase
         $loader = $this->createLoader(new PromptsConfig([$filePath]));
         $result = $loader->load();
 
-        $this->assertSame('Review the staged changes carefully.', $result->templates[0]->description);
+        self::assertSame('Review the staged changes carefully.', $result->templates[0]->description);
     }
 
     public function testDescriptionTruncatedAtSixtyChars(): void
@@ -249,8 +270,8 @@ final class PromptTemplateLoaderTest extends TestCase
         $loader = $this->createLoader(new PromptsConfig([$filePath]));
         $result = $loader->load();
 
-        $this->assertSame(63, mb_strlen($result->templates[0]->description));
-        $this->assertStringEndsWith('...', $result->templates[0]->description);
+        self::assertSame(63, \mb_strlen($result->templates[0]->description));
+        self::assertStringEndsWith('...', $result->templates[0]->description);
     }
 
     // ─── Lowercase canonicalization ───
@@ -262,8 +283,8 @@ final class PromptTemplateLoaderTest extends TestCase
         $loader = $this->createLoader(new PromptsConfig([$filePath]));
         $result = $loader->load();
 
-        $this->assertCount(1, $result->templates);
-        $this->assertSame('mytemplate', $result->templates[0]->name);
+        self::assertCount(1, $result->templates);
+        self::assertSame('mytemplate', $result->templates[0]->name);
     }
 
     public function testMixedCaseCollision(): void
@@ -276,12 +297,12 @@ final class PromptTemplateLoaderTest extends TestCase
         $loader = $this->createLoader(new PromptsConfig([$file1, $file2]));
         $result = $loader->load();
 
-        $this->assertCount(1, $result->templates);
-        $this->assertSame('review', $result->templates[0]->name);
-        $this->assertCount(1, $result->diagnostics);
-        $this->assertSame('collision', $result->diagnostics[0]->type);
-        $this->assertSame($file1, $result->diagnostics[0]->winnerPath);
-        $this->assertSame($file2, $result->diagnostics[0]->loserPath);
+        self::assertCount(1, $result->templates);
+        self::assertSame('review', $result->templates[0]->name);
+        self::assertCount(1, $result->diagnostics);
+        self::assertSame('collision', $result->diagnostics[0]->type);
+        self::assertSame($file1, $result->diagnostics[0]->winnerPath);
+        self::assertSame($file2, $result->diagnostics[0]->loserPath);
     }
 
     // ─── Unknown frontmatter keys ignored ───
@@ -293,8 +314,8 @@ final class PromptTemplateLoaderTest extends TestCase
         $loader = $this->createLoader(new PromptsConfig([$filePath]));
         $result = $loader->load();
 
-        $this->assertSame('Good', $result->templates[0]->description);
-        $this->assertEmpty($result->diagnostics);
+        self::assertSame('Good', $result->templates[0]->description);
+        self::assertEmpty($result->diagnostics);
     }
 
     // ─── No raw content in logs/diagnostics ───
@@ -310,41 +331,20 @@ final class PromptTemplateLoaderTest extends TestCase
 
         // Diagnostic should have paths but no content.
         $diag = $result->diagnostics[0];
-        $this->assertSame('collision', $diag->type);
-        $this->assertSame($file1, $diag->winnerPath);
-        $this->assertSame($file2, $diag->loserPath);
+        self::assertSame('collision', $diag->type);
+        self::assertSame($file1, $diag->winnerPath);
+        self::assertSame($file2, $diag->loserPath);
         // Message should not contain template content.
-        $this->assertStringNotContainsString('Secret', $diag->message);
+        self::assertStringNotContainsString('Secret', $diag->message);
 
         // Log should not contain template content.
         foreach ($this->logger->records as $record) {
             $msg = $record['message'];
-            $this->assertStringNotContainsString('Secret', $msg);
+            self::assertStringNotContainsString('Secret', $msg);
             if (isset($record['context'])) {
-                $ctxStr = json_encode($record['context'], \JSON_THROW_ON_ERROR);
-                $this->assertStringNotContainsString('Secret', $ctxStr);
+                $ctxStr = json_encode($record['context'], JSON_THROW_ON_ERROR);
+                self::assertStringNotContainsString('Secret', $ctxStr);
             }
         }
-    }
-
-    private function createLoader(?PromptsConfig $promptsConfig = null, ?PromptTemplatesRuntimeConfig $runtimeConfig = null): PromptTemplateLoader
-    {
-        return new PromptTemplateLoader(
-            promptsConfig: $promptsConfig ?? new PromptsConfig(),
-            runtimeConfig: $runtimeConfig ?? new PromptTemplatesRuntimeConfig(),
-            pathResolver: $this->pathResolver,
-            cwd: $this->cwd,
-            frontmatterParser: new PromptTemplateFrontmatterParser(new MarkdownFrontmatterExtractor()),
-            logger: $this->logger,
-        );
-    }
-
-    private function writeFile(string $path, string $content): void
-    {
-        $dir = \dirname($path);
-        if (!is_dir($dir)) {
-            mkdir($dir, 0755, true);
-        }
-        file_put_contents($path, $content);
     }
 }

@@ -595,14 +595,13 @@ final class CompactRunHandlerTest extends TestCase
         // sanitiseMetadata() strips objects/Closures while keeping scalars.
         $unsafeObject = new \stdClass();
         $unsafeObject->key = 'should-be-dropped';
-        $unsafeClosure = static fn () => 'also-unsafe';
+        $unsafeClosure = fn () => 'also-unsafe';
 
         $cancelHook = new class($unsafeObject, $unsafeClosure) implements BeforeCompactionHookInterface {
             public function __construct(
                 private object $unsafeObject,
                 private \Closure $unsafeClosure,
-            ) {
-            }
+            ) {}
 
             public function beforeCompaction(CompactionHookContextDTO $context): CompactionHookResultDTO
             {

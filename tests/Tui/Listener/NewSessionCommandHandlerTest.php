@@ -48,8 +48,8 @@ final class NewSessionCommandHandlerTest extends TestCase
 
         $result = $handler->handle(new SlashCommand('new', '', '/new'));
 
-        $this->assertInstanceOf(NoOp::class, $result);
-        $this->assertTrue($switch->draftRequested, 'Expected requestNewDraft() to be called');
+        self::assertInstanceOf(NoOp::class, $result);
+        self::assertTrue($switch->draftRequested, 'Expected requestNewDraft() to be called');
     }
 
     #[Test]
@@ -61,6 +61,6 @@ final class NewSessionCommandHandlerTest extends TestCase
         // /new with extra args — handler ignores them
         $result = $handler->handle(new SlashCommand('new', 'some args', '/new some args'));
 
-        $this->assertInstanceOf(NoOp::class, $result);
+        self::assertInstanceOf(NoOp::class, $result);
     }
 }

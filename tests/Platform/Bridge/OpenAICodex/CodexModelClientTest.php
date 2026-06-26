@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace Symfony\AI\Platform\Bridge\OpenAICodex\Tests;
 
 use PHPUnit\Framework\TestCase;
-use Psr\Log\LoggerInterface;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModel;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModelClient;
 use Symfony\AI\Platform\Model;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 use Symfony\Contracts\HttpClient\ResponseInterface as HttpResponse;
@@ -40,7 +40,7 @@ final class CodexModelClientTest extends TestCase
             self::assertSame('OpenAI-Beta: responses=experimental', $options['normalized_headers']['openai-beta'][0]);
             self::assertArrayHasKey('x-client-request-id', $options['normalized_headers']);
 
-            $body = json_decode($options['body'], true);
+            $body = \json_decode($options['body'], true);
             self::assertSame('POST', $method);
             self::assertSame('gpt-5.5', $body['model']);
             self::assertSame('test message', $body['input'][0]['content']);
@@ -85,7 +85,7 @@ final class CodexModelClientTest extends TestCase
             self::assertSame('POST', $method);
             self::assertSame('https://chatgpt.com/backend-api/codex/responses', $url);
 
-            $body = json_decode($options['body'], true);
+            $body = \json_decode($options['body'], true);
             // Verify structured output fields are preserved
             self::assertSame('json', $body['text']['format']['type']);
             self::assertSame('foo', $body['text']['format']['name']);
@@ -133,7 +133,7 @@ final class CodexModelClientTest extends TestCase
     public function testItStripsInternalHatfieldKeysFromBody(): void
     {
         $resultCallback = static function (string $method, string $url, array $options): HttpResponse {
-            $body = json_decode($options['body'], true);
+            $body = \json_decode($options['body'], true);
             self::assertArrayNotHasKey('_agent_core_invocation', $body);
             self::assertArrayNotHasKey('_hatfield_reasoning', $body);
             // stream is NOT stripped — it is a valid Codex API field and is preserved
@@ -168,7 +168,7 @@ final class CodexModelClientTest extends TestCase
     public function testItPreservesValidCodexApiKeysInBody(): void
     {
         $resultCallback = static function (string $method, string $url, array $options): HttpResponse {
-            $body = json_decode($options['body'], true);
+            $body = \json_decode($options['body'], true);
             // Valid Codex API keys must be preserved
             self::assertArrayHasKey('reasoning', $body);
             self::assertSame('high', $body['reasoning']['effort']);
@@ -202,7 +202,7 @@ final class CodexModelClientTest extends TestCase
     public function testItStripsInternalKeysWhilePreservingPayloadAndModel(): void
     {
         $resultCallback = static function (string $method, string $url, array $options): HttpResponse {
-            $body = json_decode($options['body'], true);
+            $body = \json_decode($options['body'], true);
             // Internal keys stripped (_hatfield_ prefix)
             self::assertArrayNotHasKey('_hatfield_reasoning', $body);
             // stream is preserved (valid Codex API field)
@@ -228,7 +228,7 @@ final class CodexModelClientTest extends TestCase
     public function testItIncludesCodexRequiredDefaultsInBody(): void
     {
         $resultCallback = static function (string $method, string $url, array $options): HttpResponse {
-            $body = json_decode($options['body'], true);
+            $body = \json_decode($options['body'], true);
 
             // Codex Responses API required fields
             self::assertFalse($body['store']);
@@ -270,7 +270,7 @@ final class CodexModelClientTest extends TestCase
     public function testCodexDefaultsDoNotOverrideExplicitValues(): void
     {
         $resultCallback = static function (string $method, string $url, array $options): HttpResponse {
-            $body = json_decode($options['body'], true);
+            $body = \json_decode($options['body'], true);
 
             // Explicit values must not be overridden by defaults
             self::assertTrue($body['store']);
@@ -379,7 +379,7 @@ final class CodexModelClientTest extends TestCase
     public function testItSetsPromptCacheKeyFromRunId(): void
     {
         $resultCallback = static function (string $method, string $url, array $options): HttpResponse {
-            $body = json_decode($options['body'], true, 512, \JSON_THROW_ON_ERROR);
+            $body = \json_decode($options['body'], true, 512, \JSON_THROW_ON_ERROR);
             self::assertArrayHasKey('prompt_cache_key', $body);
             self::assertSame('session-abc-123', $body['prompt_cache_key']);
 
@@ -406,7 +406,7 @@ final class CodexModelClientTest extends TestCase
     public function testItDoesNotSetPromptCacheKeyWithoutRunId(): void
     {
         $resultCallback = static function (string $method, string $url, array $options): HttpResponse {
-            $body = json_decode($options['body'], true, 512, \JSON_THROW_ON_ERROR);
+            $body = \json_decode($options['body'], true, 512, \JSON_THROW_ON_ERROR);
             self::assertArrayNotHasKey('prompt_cache_key', $body);
 
             return new MockResponse();
@@ -432,7 +432,7 @@ final class CodexModelClientTest extends TestCase
     public function testExplicitPromptCacheKeyOverridesRunIdValue(): void
     {
         $resultCallback = static function (string $method, string $url, array $options): HttpResponse {
-            $body = json_decode($options['body'], true, 512, \JSON_THROW_ON_ERROR);
+            $body = \json_decode($options['body'], true, 512, \JSON_THROW_ON_ERROR);
             self::assertArrayHasKey('prompt_cache_key', $body);
             self::assertSame('explicit-key', $body['prompt_cache_key'], 'Explicit value must win over run_id');
 

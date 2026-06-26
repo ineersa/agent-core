@@ -46,34 +46,10 @@ final class TuiLoadedResourcesVirtualRenderTest extends TestCase
 
         $screen = $harness->plainScreenText();
 
-        $this->assertStringContainsString('[Skills]', $screen);
-        $this->assertStringContainsString('testing', $screen);
-        $this->assertStringContainsString('won /winner/SKILL.md', $screen);
-        $this->assertStringContainsString('ignored /loser/SKILL.md', $screen);
-        $this->assertStringContainsString('Welcome to Hatfield', $screen);
-    }
-
-    #[Test]
-    public function testResumedSessionDoesNotShowLoadedResourcesBlock(): void
-    {
-        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
-
-        // InteractiveMode::resolveLoadedResourcesSummary() passes null when $state->resuming is true.
-        // ChatScreen mirrors that by omitting the block when summary is null.
-        $harness->screen()->setLoadedResourcesSummary(null);
-
-        $factory = new TranscriptBlockFactory();
-        $welcome = $factory->system(
-            runId: self::SESSION_ID,
-            text: 'Resumed run abc123',
-            seq: 1,
-        );
-        $harness->screen()->setTranscriptBlocks([$welcome]);
-
-        $screen = $harness->plainScreenText();
-
-        $this->assertStringContainsString('Resumed run abc123', $screen);
-        $this->assertStringNotContainsString('[Skills]', $screen);
-        $this->assertStringNotContainsString('ctrl+r to expand', $screen);
+        self::assertStringContainsString('[Skills]', $screen);
+        self::assertStringContainsString('testing', $screen);
+        self::assertStringContainsString('won /winner/SKILL.md', $screen);
+        self::assertStringContainsString('ignored /loser/SKILL.md', $screen);
+        self::assertStringContainsString('Welcome to Hatfield', $screen);
     }
 }

@@ -61,6 +61,7 @@ class McpConfigLoaderTest extends TestCase
         putenv('MCP_EMPTY_VAR');
     }
 
+
     public function testAvailabilityFieldDefaultsToAllAndParsesSpecific(): void
     {
         $json = <<<'JSON'

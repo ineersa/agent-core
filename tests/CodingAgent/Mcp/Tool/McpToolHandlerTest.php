@@ -46,7 +46,7 @@ final class McpToolHandlerTest extends TestCase
 
         $result = $this->contextAccessor->with(
             new ToolContext('run-1', 1, 'tc1', 'echo_reverse', new NullCancellationToken(), 30),
-            static fn () => $handler(['text' => 'hello']),
+            fn () => $handler(['text' => 'hello']),
         );
 
         $this->assertSame('hello from mcp', $result);
@@ -66,7 +66,7 @@ final class McpToolHandlerTest extends TestCase
 
         $this->contextAccessor->with(
             new ToolContext('run-1', 1, 'tc1', 'broken_fetch', new NullCancellationToken(), 30),
-            static fn () => $handler([]),
+            fn () => $handler([]),
         );
     }
 
@@ -94,7 +94,7 @@ final class McpToolHandlerTest extends TestCase
         try {
             $this->contextAccessor->with(
                 new ToolContext('run-1', 1, 'tc1', 'api_query', new NullCancellationToken(), 30),
-                static fn () => $handler(['q' => 'search']),
+                fn () => $handler(['q' => 'search']),
             );
             $this->fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
@@ -114,27 +114,11 @@ final class McpToolHandlerTest extends TestCase
     private function makeInvokerWithResult(string $fakeResult): McpToolInvoker
     {
         $connectionManager = new class($fakeResult) implements McpConnectionManagerInterface {
-            public function __construct(private string $fakeResult)
-            {
-            }
-
-            public function discover(string $runId, ?callable $onServerDiscovered = null): array
-            {
-                return [];
-            }
-
-            public function getClient(string $runId, string $serverName): ?\Ineersa\CodingAgent\Mcp\Client\McpClientInterface
-            {
-                return null;
-            }
-
-            public function disconnectServer(string $runId, string $serverName): void
-            {
-            }
-
-            public function disconnectAll(string $runId): void
-            {
-            }
+            public function __construct(private string $fakeResult) {}
+            public function discover(string $runId, ?callable $onServerDiscovered = null): array { return []; }
+            public function getClient(string $runId, string $serverName): ?\Ineersa\CodingAgent\Mcp\Client\McpClientInterface { return null; }
+            public function disconnectServer(string $runId, string $serverName): void {}
+            public function disconnectAll(string $runId): void {}
 
             public function callTool(string $runId, string $serverName, string $toolName, array $arguments = []): array
             {
@@ -156,27 +140,11 @@ final class McpToolHandlerTest extends TestCase
     private function makeInvokerThatThrows(\Throwable $exception): McpToolInvoker
     {
         $connectionManager = new class($exception) implements McpConnectionManagerInterface {
-            public function __construct(private \Throwable $exception)
-            {
-            }
-
-            public function discover(string $runId, ?callable $onServerDiscovered = null): array
-            {
-                return [];
-            }
-
-            public function getClient(string $runId, string $serverName): ?\Ineersa\CodingAgent\Mcp\Client\McpClientInterface
-            {
-                return null;
-            }
-
-            public function disconnectServer(string $runId, string $serverName): void
-            {
-            }
-
-            public function disconnectAll(string $runId): void
-            {
-            }
+            public function __construct(private \Throwable $exception) {}
+            public function discover(string $runId, ?callable $onServerDiscovered = null): array { return []; }
+            public function getClient(string $runId, string $serverName): ?\Ineersa\CodingAgent\Mcp\Client\McpClientInterface { return null; }
+            public function disconnectServer(string $runId, string $serverName): void {}
+            public function disconnectAll(string $runId): void {}
 
             public function callTool(string $runId, string $serverName, string $toolName, array $arguments = []): array
             {

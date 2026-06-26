@@ -34,9 +34,9 @@ final class ModelInvocationContractTest extends TestCase
 
         $result = $request->applyOn($defaultModel, $defaultInput, $defaultOptions);
 
-        $this->assertSame($expectedModel, $result['model']);
-        $this->assertSame($expectedInput, $result['input']);
-        $this->assertSame($expectedOptions, $result['options']);
+        self::assertSame($expectedModel, $result['model']);
+        self::assertSame($expectedInput, $result['input']);
+        self::assertSame($expectedOptions, $result['options']);
     }
 
     /**
@@ -78,7 +78,7 @@ final class ModelInvocationContractTest extends TestCase
         $request = new ProviderRequest(model: 'm', input: ['i'], options: ['o']);
         $result = $request->applyOn('x', ['y'], ['z']);
 
-        $this->assertSame(['model', 'input', 'options'], array_keys($result));
+        self::assertSame(['model', 'input', 'options'], array_keys($result));
     }
 
     /* ─── ModelInvocationInput ─── */
@@ -96,25 +96,25 @@ final class ModelInvocationContractTest extends TestCase
             messages: [$message],
         );
 
-        $this->assertSame('run-input', $input->runId);
-        $this->assertSame(2, $input->turnNo);
-        $this->assertSame('step-1', $input->stepId);
-        $this->assertSame('ctx-abc', $input->contextRef);
-        $this->assertSame('tools-xyz', $input->toolsRef);
-        $this->assertCount(1, $input->messages);
-        $this->assertSame('hello', $input->messages[0]->content[0]['text']);
+        self::assertSame('run-input', $input->runId);
+        self::assertSame(2, $input->turnNo);
+        self::assertSame('step-1', $input->stepId);
+        self::assertSame('ctx-abc', $input->contextRef);
+        self::assertSame('tools-xyz', $input->toolsRef);
+        self::assertCount(1, $input->messages);
+        self::assertSame('hello', $input->messages[0]->content[0]['text']);
     }
 
     public function testModelInvocationInputAllNullByDefault(): void
     {
         $input = new ModelInvocationInput();
 
-        $this->assertNull($input->runId);
-        $this->assertNull($input->turnNo);
-        $this->assertNull($input->stepId);
-        $this->assertNull($input->contextRef);
-        $this->assertNull($input->toolsRef);
-        $this->assertNull($input->messages);
+        self::assertNull($input->runId);
+        self::assertNull($input->turnNo);
+        self::assertNull($input->stepId);
+        self::assertNull($input->contextRef);
+        self::assertNull($input->toolsRef);
+        self::assertNull($input->messages);
     }
 
     /* ─── ModelInvocationRequest ─── */
@@ -126,9 +126,9 @@ final class ModelInvocationContractTest extends TestCase
             input: new ModelInvocationInput(),
         );
 
-        $this->assertSame('gpt-4', $request->model);
-        $this->assertInstanceOf(ModelInvocationOptions::class, $request->options);
-        $this->assertNull($request->options->cancelToken);
+        self::assertSame('gpt-4', $request->model);
+        self::assertInstanceOf(ModelInvocationOptions::class, $request->options);
+        self::assertNull($request->options->cancelToken);
     }
 
     public function testModelInvocationRequestPreservesExplicitOptions(): void
@@ -142,8 +142,8 @@ final class ModelInvocationContractTest extends TestCase
             options: $options,
         );
 
-        $this->assertSame($cancellationToken, $request->options->cancelToken);
-        $this->assertTrue($request->options->cancelToken->isCancellationRequested());
+        self::assertSame($cancellationToken, $request->options->cancelToken);
+        self::assertTrue($request->options->cancelToken->isCancellationRequested());
     }
 
     /* ─── PlatformInvocationResult ─── */
@@ -158,11 +158,11 @@ final class ModelInvocationContractTest extends TestCase
             error: null,
         );
 
-        $this->assertNull($result->assistantMessage);
-        $this->assertSame([], $result->deltas());
-        $this->assertSame(['prompt_tokens' => 100, 'completion_tokens' => 50], $result->usage);
-        $this->assertSame('end_turn', $result->stopReason);
-        $this->assertNull($result->error);
+        self::assertNull($result->assistantMessage);
+        self::assertSame([], $result->deltas());
+        self::assertSame(['prompt_tokens' => 100, 'completion_tokens' => 50], $result->usage);
+        self::assertSame('end_turn', $result->stopReason);
+        self::assertNull($result->error);
     }
 
     public function testPlatformInvocationResultWithError(): void
@@ -175,8 +175,8 @@ final class ModelInvocationContractTest extends TestCase
             error: ['code' => 429, 'message' => 'Rate limited'],
         );
 
-        $this->assertSame(['code' => 429, 'message' => 'Rate limited'], $result->error);
-        $this->assertNull($result->stopReason);
+        self::assertSame(['code' => 429, 'message' => 'Rate limited'], $result->error);
+        self::assertNull($result->stopReason);
     }
 
     /**

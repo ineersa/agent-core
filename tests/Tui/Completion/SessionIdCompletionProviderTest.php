@@ -53,7 +53,7 @@ final class SessionIdCompletionProviderTest extends IsolatedKernelTestCase
             CompletionContext::forCursorAtEnd('/resume'),
         );
 
-        $this->assertSame([], $suggestions);
+        self::assertSame([], $suggestions);
     }
 
     #[Test]
@@ -63,7 +63,7 @@ final class SessionIdCompletionProviderTest extends IsolatedKernelTestCase
             CompletionContext::forCursorAtEnd('/rename'),
         );
 
-        $this->assertSame([], $suggestions);
+        self::assertSame([], $suggestions);
     }
 
     #[Test]
@@ -73,7 +73,7 @@ final class SessionIdCompletionProviderTest extends IsolatedKernelTestCase
             CompletionContext::forCursorAtEnd('/help '),
         );
 
-        $this->assertSame([], $suggestions);
+        self::assertSame([], $suggestions);
     }
 
     #[Test]
@@ -83,7 +83,7 @@ final class SessionIdCompletionProviderTest extends IsolatedKernelTestCase
             CompletionContext::forCursorAtEnd('hello world'),
         );
 
-        $this->assertSame([], $suggestions);
+        self::assertSame([], $suggestions);
     }
 
     #[Test]
@@ -93,7 +93,7 @@ final class SessionIdCompletionProviderTest extends IsolatedKernelTestCase
             CompletionContext::forCursorAtEnd(''),
         );
 
-        $this->assertSame([], $suggestions);
+        self::assertSame([], $suggestions);
     }
 
     #[Test]
@@ -103,7 +103,7 @@ final class SessionIdCompletionProviderTest extends IsolatedKernelTestCase
             CompletionContext::forCursorAtEnd('/resume 1 '),
         );
 
-        $this->assertSame([], $suggestions);
+        self::assertSame([], $suggestions);
     }
 
     #[Test]
@@ -113,7 +113,7 @@ final class SessionIdCompletionProviderTest extends IsolatedKernelTestCase
             CompletionContext::forCursorAtEnd('/rename 1 '),
         );
 
-        $this->assertSame([], $suggestions);
+        self::assertSame([], $suggestions);
     }
 
     #[Test]
@@ -123,7 +123,7 @@ final class SessionIdCompletionProviderTest extends IsolatedKernelTestCase
             CompletionContext::forCursorAtEnd('/resume abc'),
         );
 
-        $this->assertSame([], $suggestions);
+        self::assertSame([], $suggestions);
     }
 
     #[Test]
@@ -133,7 +133,7 @@ final class SessionIdCompletionProviderTest extends IsolatedKernelTestCase
             CompletionContext::forCursorAtEnd('/resume 1a'),
         );
 
-        $this->assertSame([], $suggestions);
+        self::assertSame([], $suggestions);
     }
 
     // ── With session data ──────────────────────────────────────────────
@@ -145,7 +145,7 @@ final class SessionIdCompletionProviderTest extends IsolatedKernelTestCase
             CompletionContext::forCursorAtEnd('/resume '),
         );
 
-        $this->assertSame([], $suggestions);
+        self::assertSame([], $suggestions);
     }
 
     #[Test]
@@ -157,9 +157,9 @@ final class SessionIdCompletionProviderTest extends IsolatedKernelTestCase
             CompletionContext::forCursorAtEnd('/resume '),
         );
 
-        $this->assertNotEmpty($suggestions);
+        self::assertNotEmpty($suggestions);
         $displays = array_map(static fn (CompletionSuggestion $s) => $s->display, $suggestions);
-        $this->assertStringContainsString('Session Alpha', $displays[0]);
+        self::assertStringContainsString('Session Alpha', $displays[0]);
     }
 
     #[Test]
@@ -171,7 +171,7 @@ final class SessionIdCompletionProviderTest extends IsolatedKernelTestCase
             CompletionContext::forCursorAtEnd('/r '),
         );
 
-        $this->assertNotEmpty($suggestions);
+        self::assertNotEmpty($suggestions);
     }
 
     #[Test]
@@ -183,9 +183,9 @@ final class SessionIdCompletionProviderTest extends IsolatedKernelTestCase
             CompletionContext::forCursorAtEnd('/rename '),
         );
 
-        $this->assertNotEmpty($suggestions);
+        self::assertNotEmpty($suggestions);
         $displays = array_map(static fn (CompletionSuggestion $s) => $s->display, $suggestions);
-        $this->assertStringContainsString('Session Alpha', $displays[0]);
+        self::assertStringContainsString('Session Alpha', $displays[0]);
     }
 
     #[Test]
@@ -201,8 +201,8 @@ final class SessionIdCompletionProviderTest extends IsolatedKernelTestCase
             CompletionContext::forCursorAtEnd('/resume 1'),
         );
 
-        $this->assertCount(1, $suggestions);
-        $this->assertSame($id1.' ', $suggestions[0]->insertText);
+        self::assertCount(1, $suggestions);
+        self::assertSame($id1.' ', $suggestions[0]->insertText);
     }
 
     #[Test]
@@ -214,15 +214,15 @@ final class SessionIdCompletionProviderTest extends IsolatedKernelTestCase
             CompletionContext::forCursorAtEnd('/resume '.$id),
         );
 
-        $this->assertCount(1, $suggestions);
+        self::assertCount(1, $suggestions);
         $suggestion = $suggestions[0];
 
         // replacementStart = strlen('/resume ') = 8
         // replacementLength = strlen($id)
-        $this->assertSame(8, $suggestion->replacementStart);
-        $this->assertSame(\strlen($id), $suggestion->replacementLength);
-        $this->assertSame($id.' ', $suggestion->insertText);
-        $this->assertSame('Session '.$id, $suggestion->description);
+        self::assertSame(8, $suggestion->replacementStart);
+        self::assertSame(\strlen($id), $suggestion->replacementLength);
+        self::assertSame($id.' ', $suggestion->insertText);
+        self::assertSame('Session '.$id, $suggestion->description);
     }
 
     #[Test]
@@ -234,13 +234,13 @@ final class SessionIdCompletionProviderTest extends IsolatedKernelTestCase
             CompletionContext::forCursorAtEnd('/rename '.$id),
         );
 
-        $this->assertCount(1, $suggestions);
+        self::assertCount(1, $suggestions);
         $suggestion = $suggestions[0];
 
         // replacementStart = strlen('/rename ') = 8
-        $this->assertSame(8, $suggestion->replacementStart);
-        $this->assertSame(\strlen($id), $suggestion->replacementLength);
-        $this->assertSame($id.' ', $suggestion->insertText);
+        self::assertSame(8, $suggestion->replacementStart);
+        self::assertSame(\strlen($id), $suggestion->replacementLength);
+        self::assertSame($id.' ', $suggestion->insertText);
     }
 
     #[Test]
@@ -252,12 +252,12 @@ final class SessionIdCompletionProviderTest extends IsolatedKernelTestCase
             CompletionContext::forCursorAtEnd('/r '),
         );
 
-        $this->assertCount(1, $suggestions);
+        self::assertCount(1, $suggestions);
         $suggestion = $suggestions[0];
 
         // replacementStart = strlen('/r ') = 3
-        $this->assertSame(3, $suggestion->replacementStart);
-        $this->assertSame(0, $suggestion->replacementLength);
-        $this->assertSame($id.' ', $suggestion->insertText);
+        self::assertSame(3, $suggestion->replacementStart);
+        self::assertSame(0, $suggestion->replacementLength);
+        self::assertSame($id.' ', $suggestion->insertText);
     }
 }

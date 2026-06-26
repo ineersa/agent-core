@@ -612,7 +612,7 @@ final class FileMentionCompletionProviderTest extends TestCase
     {
         // Write a temporary index file so the reader can load it.
         $indexPath = $this->tmpDir.'/index.jsonl';
-        $handle = fopen($indexPath, 'wb');
+        $handle = fopen($indexPath, 'w');
         foreach ($entries as $entry) {
             fwrite($handle, json_encode([
                 'path' => $entry->path,

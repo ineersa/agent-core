@@ -5,10 +5,11 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Agent\Definition;
 
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
-use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDiagnosticDTO;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
+use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDiagnosticDTO;
 use Ineersa\CodingAgent\Agent\Definition\McpAgentModeEnum;
 use Ineersa\CodingAgent\Agent\Definition\McpPolicyDTO;
+use Ineersa\CodingAgent\Agent\Definition\SystemPromptModeEnum;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -59,10 +60,10 @@ final class AgentDefinitionCatalogTest extends TestCase
 
         $all = $catalog->all();
 
-        $this->assertCount(2, $all);
+        self::assertCount(2, $all);
         $names = array_map(static fn (AgentDefinitionDTO $d): string => $d->name, $all);
-        $this->assertContains('scout', $names);
-        $this->assertContains('worker', $names);
+        self::assertContains('scout', $names);
+        self::assertContains('worker', $names);
     }
 
     public function testEnabledExcludesDisabled(): void
@@ -75,11 +76,11 @@ final class AgentDefinitionCatalogTest extends TestCase
 
         $enabled = $catalog->enabled();
 
-        $this->assertCount(2, $enabled);
+        self::assertCount(2, $enabled);
         $names = array_map(static fn (AgentDefinitionDTO $d): string => $d->name, $enabled);
-        $this->assertContains('scout', $names);
-        $this->assertContains('reviewer', $names);
-        $this->assertNotContains('worker', $names);
+        self::assertContains('scout', $names);
+        self::assertContains('reviewer', $names);
+        self::assertNotContains('worker', $names);
     }
 
     public function testDisabledOnlyDisabledDefinitions(): void
@@ -91,8 +92,8 @@ final class AgentDefinitionCatalogTest extends TestCase
 
         $disabled = $catalog->disabled();
 
-        $this->assertCount(1, $disabled);
-        $this->assertSame('worker', $disabled[0]->name);
+        self::assertCount(1, $disabled);
+        self::assertSame('worker', $disabled[0]->name);
     }
 
     public function testDisabledReturnsEmptyWhenNoneDisabled(): void
@@ -102,7 +103,7 @@ final class AgentDefinitionCatalogTest extends TestCase
             $this->reviewer,
         ]);
 
-        $this->assertCount(0, $catalog->disabled());
+        self::assertCount(0, $catalog->disabled());
     }
 
     public function testGetReturnsDefinitionByName(): void
@@ -110,19 +111,19 @@ final class AgentDefinitionCatalogTest extends TestCase
         $catalog = new AgentDefinitionCatalog([$this->scout, $this->reviewer]);
 
         $scout = $catalog->get('scout');
-        $this->assertNotNull($scout);
-        $this->assertSame('Scout agent', $scout->description);
+        self::assertNotNull($scout);
+        self::assertSame('Scout agent', $scout->description);
 
         $reviewer = $catalog->get('reviewer');
-        $this->assertNotNull($reviewer);
-        $this->assertSame('Reviewer agent', $reviewer->description);
+        self::assertNotNull($reviewer);
+        self::assertSame('Reviewer agent', $reviewer->description);
     }
 
     public function testGetReturnsNullForMissingName(): void
     {
         $catalog = new AgentDefinitionCatalog([$this->scout]);
 
-        $this->assertNull($catalog->get('nonexistent'));
+        self::assertNull($catalog->get('nonexistent'));
     }
 
     public function testGetReturnsDisabledDefinition(): void
@@ -130,8 +131,8 @@ final class AgentDefinitionCatalogTest extends TestCase
         $catalog = new AgentDefinitionCatalog([$this->workerDisabled]);
 
         $worker = $catalog->get('worker');
-        $this->assertNotNull($worker);
-        $this->assertTrue($worker->disabled);
+        self::assertNotNull($worker);
+        self::assertTrue($worker->disabled);
     }
 
     public function testRequireReturnsDefinition(): void
@@ -140,7 +141,7 @@ final class AgentDefinitionCatalogTest extends TestCase
 
         $definition = $catalog->require('scout');
 
-        $this->assertSame('scout', $definition->name);
+        self::assertSame('scout', $definition->name);
     }
 
     public function testRequireThrowsForMissingDefinition(): void
@@ -159,8 +160,8 @@ final class AgentDefinitionCatalogTest extends TestCase
 
         $definition = $catalog->requireEnabled('scout');
 
-        $this->assertSame('scout', $definition->name);
-        $this->assertFalse($definition->disabled);
+        self::assertSame('scout', $definition->name);
+        self::assertFalse($definition->disabled);
     }
 
     public function testRequireEnabledThrowsForDisabledDefinition(): void
@@ -198,19 +199,19 @@ final class AgentDefinitionCatalogTest extends TestCase
 
         $catalog = new AgentDefinitionCatalog([$this->scout], $diagnostics);
 
-        $this->assertCount(1, $catalog->diagnostics());
-        $this->assertSame('collision', $catalog->diagnostics()[0]->type);
+        self::assertCount(1, $catalog->diagnostics());
+        self::assertSame('collision', $catalog->diagnostics()[0]->type);
     }
 
     public function testEmptyCatalog(): void
     {
         $catalog = new AgentDefinitionCatalog([]);
 
-        $this->assertCount(0, $catalog->all());
-        $this->assertCount(0, $catalog->enabled());
-        $this->assertCount(0, $catalog->disabled());
-        $this->assertCount(0, $catalog->diagnostics());
-        $this->assertNull($catalog->get('anything'));
+        self::assertCount(0, $catalog->all());
+        self::assertCount(0, $catalog->enabled());
+        self::assertCount(0, $catalog->disabled());
+        self::assertCount(0, $catalog->diagnostics());
+        self::assertNull($catalog->get('anything'));
     }
 
     public function testLastDuplicateWinsByName(): void
@@ -231,8 +232,8 @@ final class AgentDefinitionCatalogTest extends TestCase
         $catalog = new AgentDefinitionCatalog([$scout1, $scout2]);
 
         $scout = $catalog->get('scout');
-        $this->assertNotNull($scout);
-        $this->assertSame('Scout v2', $scout->description);
-        $this->assertCount(1, $catalog->all());
+        self::assertNotNull($scout);
+        self::assertSame('Scout v2', $scout->description);
+        self::assertCount(1, $catalog->all());
     }
 }

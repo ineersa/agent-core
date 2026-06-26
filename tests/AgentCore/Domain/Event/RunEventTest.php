@@ -21,34 +21,34 @@ final class RunEventTest extends TestCase
             payload: ['strategy' => 'summary'],
         );
 
-        $this->assertInstanceOf(RunEvent::class, $event);
-        $this->assertSame('run-ext', $event->runId);
-        $this->assertSame(1, $event->seq);
-        $this->assertSame(0, $event->turnNo);
-        $this->assertSame('ext_compaction_start', $event->type);
-        $this->assertSame(['strategy' => 'summary'], $event->payload);
+        self::assertInstanceOf(RunEvent::class, $event);
+        self::assertSame('run-ext', $event->runId);
+        self::assertSame(1, $event->seq);
+        self::assertSame(0, $event->turnNo);
+        self::assertSame('ext_compaction_start', $event->type);
+        self::assertSame(['strategy' => 'summary'], $event->payload);
     }
 
     public function testIsExtensionEventWithDefaultPrefix(): void
     {
         $event = new RunEvent(runId: 'r', seq: 1, turnNo: 0, type: 'ext_foo');
 
-        $this->assertTrue($event->isExtensionEvent());
+        self::assertTrue($event->isExtensionEvent());
     }
 
     public function testIsExtensionEventWithCustomPrefix(): void
     {
         $event = new RunEvent(runId: 'r', seq: 1, turnNo: 0, type: 'hook_pre_llm');
 
-        $this->assertTrue($event->isExtensionEvent('hook_'));
-        $this->assertFalse($event->isExtensionEvent('ext_'));
+        self::assertTrue($event->isExtensionEvent('hook_'));
+        self::assertFalse($event->isExtensionEvent('ext_'));
     }
 
     public function testIsExtensionEventForCoreType(): void
     {
         $event = new RunEvent(runId: 'r', seq: 1, turnNo: 0, type: 'agent_start');
 
-        $this->assertFalse($event->isExtensionEvent());
+        self::assertFalse($event->isExtensionEvent());
     }
 
     public function testExtensionEventWithInvalidPrefixThrowsInvalidArgumentException(): void

@@ -18,7 +18,7 @@ final class CodexAuthRecordTest extends TestCase
         $record = new CodexAuthRecord(
             access: 'tok',
             refresh: 'ref',
-            expires: time() + 3600, // 1 hour from now (seconds)
+            expires: \time() + 3600, // 1 hour from now (seconds)
             accountId: 'acct',
         );
 
@@ -30,7 +30,7 @@ final class CodexAuthRecordTest extends TestCase
         $record = new CodexAuthRecord(
             access: 'tok',
             refresh: 'ref',
-            expires: time() - 3600, // 1 hour ago (seconds)
+            expires: \time() - 3600, // 1 hour ago (seconds)
             accountId: 'acct',
         );
 
@@ -43,7 +43,7 @@ final class CodexAuthRecordTest extends TestCase
         $record = new CodexAuthRecord(
             access: 'tok',
             refresh: 'ref',
-            expires: time() + 30,
+            expires: \time() + 30,
             accountId: 'acct',
         );
 
@@ -57,7 +57,7 @@ final class CodexAuthRecordTest extends TestCase
         $record = new CodexAuthRecord(
             access: 'access-token-123',
             refresh: 'refresh-token-456',
-            expires: time() + 3600,
+            expires: \time() + 3600,
             accountId: 'chat-abc789',
             type: 'oauth',
         );

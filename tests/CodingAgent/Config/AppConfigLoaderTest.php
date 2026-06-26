@@ -15,7 +15,6 @@ class AppConfigLoaderTest extends TestCase
     private AppConfigLoader $loader;
     private SettingsPathResolver $pathResolver;
     private string $defaultsPath;
-
     protected function setUp(): void
     {
         $this->tmpDir = sys_get_temp_dir().'/hatfield_test_'.bin2hex(random_bytes(8));
@@ -60,9 +59,9 @@ YAML
 
         $config = $this->loader->load($this->defaultsPath, $cwd);
 
-        $this->assertSame('cyberpunk', $config['tui']['theme']);
-        $this->assertNotEmpty($config['tui']['theme_paths']);
-        $this->assertContains('/app/config/themes', $config['tui']['theme_paths']);
+        self::assertSame('cyberpunk', $config['tui']['theme']);
+        self::assertNotEmpty($config['tui']['theme_paths']);
+        self::assertContains('/app/config/themes', $config['tui']['theme_paths']);
     }
 
     public function testHomeSettingsOverrideDefaults(): void
@@ -79,10 +78,10 @@ YAML
 
         $config = $this->loader->load($this->defaultsPath, $cwd);
 
-        $this->assertSame('tokyo-night', $config['tui']['theme']);
+        self::assertSame('tokyo-night', $config['tui']['theme']);
         // Home should still have the default paths (merged, not replaced)
-        $this->assertNotEmpty($config['tui']['theme_paths']);
-        $this->assertContains('/app/config/themes', $config['tui']['theme_paths']);
+        self::assertNotEmpty($config['tui']['theme_paths']);
+        self::assertContains('/app/config/themes', $config['tui']['theme_paths']);
     }
 
     public function testProjectSettingsOverrideHomeSettings(): void
@@ -106,7 +105,7 @@ YAML
 
         $config = $this->loader->load($this->defaultsPath, $cwd);
 
-        $this->assertSame('nord', $config['tui']['theme']);
+        self::assertSame('nord', $config['tui']['theme']);
     }
 
     public function testMissingSettingsFilesAreIgnored(): void
@@ -117,7 +116,7 @@ YAML
 
         $config = $this->loader->load($this->defaultsPath, $cwd);
 
-        $this->assertSame('cyberpunk', $config['tui']['theme']);
+        self::assertSame('cyberpunk', $config['tui']['theme']);
     }
 
     public function testNestedMergePreservesUnchangedKeys(): void
@@ -135,10 +134,10 @@ YAML
         $config = $this->loader->load($this->defaultsPath, $cwd);
 
         // Theme overridden
-        $this->assertSame('nord', $config['tui']['theme']);
+        self::assertSame('nord', $config['tui']['theme']);
         // theme_paths still from defaults (not wiped)
-        $this->assertNotEmpty($config['tui']['theme_paths']);
-        $this->assertContains('/app/config/themes', $config['tui']['theme_paths']);
+        self::assertNotEmpty($config['tui']['theme_paths']);
+        self::assertContains('/app/config/themes', $config['tui']['theme_paths']);
     }
 
     public function testListArraysReplaceNotMerge(): void
@@ -158,9 +157,9 @@ YAML
         $config = $this->loader->load($this->defaultsPath, $cwd);
 
         // theme_paths from project (not merged with defaults)
-        $this->assertCount(2, $config['tui']['theme_paths']);
-        $this->assertContains('/custom/themes', $config['tui']['theme_paths']);
-        $this->assertNotContains('/app/config/themes', $config['tui']['theme_paths']);
+        self::assertCount(2, $config['tui']['theme_paths']);
+        self::assertContains('/custom/themes', $config['tui']['theme_paths']);
+        self::assertNotContains('/app/config/themes', $config['tui']['theme_paths']);
     }
 
     public function testSessionsPathResolved(): void
@@ -170,8 +169,8 @@ YAML
 
         $config = $this->loader->load($this->defaultsPath, $cwd);
 
-        $this->assertArrayHasKey('path', $config['sessions']);
-        $this->assertStringContainsString('.hatfield/sessions', (string) $config['sessions']['path']);
+        self::assertArrayHasKey('path', $config['sessions']);
+        self::assertStringContainsString('.hatfield/sessions', (string) $config['sessions']['path']);
     }
 
     public function testLoggingPathResolvedToCwd(): void
@@ -181,10 +180,10 @@ YAML
 
         $config = $this->loader->load($this->defaultsPath, $cwd);
 
-        $this->assertArrayHasKey('path', $config['logging']);
+        self::assertArrayHasKey('path', $config['logging']);
         $logPath = (string) $config['logging']['path'];
-        $this->assertStringContainsString($cwd, $logPath);
-        $this->assertStringContainsString('.hatfield/logs', $logPath);
+        self::assertStringContainsString($cwd, $logPath);
+        self::assertStringContainsString('.hatfield/logs', $logPath);
     }
 
     public function testLoggingPathNotKernelProjectDir(): void
@@ -196,9 +195,9 @@ YAML
 
         $logPath = (string) $config['logging']['path'];
         // Must NOT contain the app install dir — logs are project-local
-        $this->assertStringNotContainsString('/app', $logPath);
+        self::assertStringNotContainsString('/app', $logPath);
         // Must contain the actual project CWD
-        $this->assertStringContainsString($cwd, $logPath);
+        self::assertStringContainsString($cwd, $logPath);
     }
 
     // ── overlayConfig() unit tests (no file I/O) ──────────────────────────
@@ -210,8 +209,8 @@ YAML
 
         $result = $this->loader->overlayConfig($base, $over);
 
-        $this->assertSame('nord', $result['theme']);
-        $this->assertSame(1, $result['version']);
+        self::assertSame('nord', $result['theme']);
+        self::assertSame(1, $result['version']);
     }
 
     public function testOverlayConfigScalarWinsNotArray(): void
@@ -223,8 +222,8 @@ YAML
 
         $result = $this->loader->overlayConfig($base, $over);
 
-        $this->assertIsString($result['theme']);
-        $this->assertSame('nord', $result['theme']);
+        self::assertIsString($result['theme']);
+        self::assertSame('nord', $result['theme']);
     }
 
     public function testOverlayConfigNestedAssociativeDeepOverlay(): void
@@ -250,11 +249,11 @@ YAML
 
         $result = $this->loader->overlayConfig($base, $over);
 
-        $this->assertSame('nord', $result['tui']['theme']);
+        self::assertSame('nord', $result['tui']['theme']);
         // Deeper associative key not touched by overlay survives
-        $this->assertTrue($result['tui']['options']['animations']);
+        self::assertTrue($result['tui']['options']['animations']);
         // Deeper associative key in overlay replaces base value
-        $this->assertSame(30, $result['tui']['options']['fps']);
+        self::assertSame(30, $result['tui']['options']['fps']);
     }
 
     public function testOverlayConfigListReplacesEntirely(): void
@@ -264,8 +263,8 @@ YAML
 
         $result = $this->loader->overlayConfig($base, $over);
 
-        $this->assertCount(1, $result['paths']);
-        $this->assertSame('/project/x', $result['paths'][0]);
+        self::assertCount(1, $result['paths']);
+        self::assertSame('/project/x', $result['paths'][0]);
     }
 
     public function testOverlayConfigListDoesNotIndexMerge(): void
@@ -278,7 +277,7 @@ YAML
 
         $result = $this->loader->overlayConfig($base, $over);
 
-        $this->assertSame(['X'], $result['items']);
+        self::assertSame(['X'], $result['items']);
     }
 
     public function testOverlayConfigNullOverridesValue(): void
@@ -288,7 +287,7 @@ YAML
 
         $result = $this->loader->overlayConfig($base, $over);
 
-        $this->assertNull($result['key']);
+        self::assertNull($result['key']);
     }
 
     public function testOverlayConfigNewKeyAdded(): void
@@ -298,8 +297,8 @@ YAML
 
         $result = $this->loader->overlayConfig($base, $over);
 
-        $this->assertTrue($result['existing']);
-        $this->assertSame('added', $result['new_key']);
+        self::assertTrue($result['existing']);
+        self::assertSame('added', $result['new_key']);
     }
 
     public function testOverlayConfigBoolOverride(): void
@@ -309,7 +308,7 @@ YAML
 
         $result = $this->loader->overlayConfig($base, $over);
 
-        $this->assertTrue($result['enabled']);
+        self::assertTrue($result['enabled']);
     }
 
     public function testOverlayConfigIntOverride(): void
@@ -319,7 +318,7 @@ YAML
 
         $result = $this->loader->overlayConfig($base, $over);
 
-        $this->assertSame(50, $result['limit']);
+        self::assertSame(50, $result['limit']);
     }
 
     public function testOverlayConfigMixedTypeOverride(): void
@@ -330,8 +329,8 @@ YAML
 
         $result = $this->loader->overlayConfig($base, $over);
 
-        $this->assertIsArray($result['key']);
-        $this->assertSame('value', $result['key']['nested']);
+        self::assertIsArray($result['key']);
+        self::assertSame('value', $result['key']['nested']);
     }
 
     // ── Integration-style tests via load() ─────────────────────────────────
@@ -350,9 +349,9 @@ YAML
 
         $config = $this->loader->load($this->defaultsPath, $cwd);
 
-        $this->assertSame('gruvbox-dark', $config['tui']['theme']);
-        $this->assertNotEmpty($config['tui']['theme_paths']);
-        $this->assertContains('/app/config/themes', $config['tui']['theme_paths']);
+        self::assertSame('gruvbox-dark', $config['tui']['theme']);
+        self::assertNotEmpty($config['tui']['theme_paths']);
+        self::assertContains('/app/config/themes', $config['tui']['theme_paths']);
     }
 
     public function testProjectExtensionsEnabledListReplacesDefaults(): void
@@ -370,7 +369,7 @@ YAML
 
         $config = $this->loader->load($this->defaultsPath, $cwd);
 
-        $this->assertSame(
+        self::assertSame(
             [
                 'Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension',
                 'Ineersa\HatfieldExt\TaskWorkflow\TaskWorkflowExtension',
@@ -403,11 +402,11 @@ YAML
         $config = $this->loader->load($this->defaultsPath, $cwd);
 
         // Project scalar wins
-        $this->assertSame('project-theme', $config['tui']['theme']);
+        self::assertSame('project-theme', $config['tui']['theme']);
         // Home's list replaced defaults; project didn't touch list, so home's list survives
-        $this->assertCount(1, $config['tui']['theme_paths']);
-        $this->assertContains('/home/custom', $config['tui']['theme_paths']);
-        $this->assertNotContains('/app/config/themes', $config['tui']['theme_paths']);
+        self::assertCount(1, $config['tui']['theme_paths']);
+        self::assertContains('/home/custom', $config['tui']['theme_paths']);
+        self::assertNotContains('/app/config/themes', $config['tui']['theme_paths']);
     }
 
     // ──────────────────────────────────────────────
@@ -425,15 +424,15 @@ YAML
         // All path-bearing keys should be resolved (not containing placeholders)
         // theme_paths is a list — each entry should be resolved
         foreach ($config['tui']['theme_paths'] as $path) {
-            $this->assertStringNotContainsString('%', $path);
-            $this->assertStringNotContainsString('~', $path);
+            self::assertStringNotContainsString('%', $path);
+            self::assertStringNotContainsString('~', $path);
         }
 
         // sessions.path should be an absolute path
-        $this->assertStringStartsWith('/', $config['sessions']['path']);
+        self::assertStringStartsWith('/', $config['sessions']['path']);
 
         // logging.path should be resolved
-        $this->assertStringStartsWith('/', $config['logging']['path']);
+        self::assertStringStartsWith('/', $config['logging']['path']);
     }
 
     public function testPathMapHandlesMissingKeysGracefully(): void
@@ -455,9 +454,9 @@ YAML
 
         // Path keys that don't exist in YAML should be absent from result
         // but the loader should not throw or crash.
-        $this->assertArrayNotHasKey('sessions', $config);
-        $this->assertArrayNotHasKey('logging', $config);
-        $this->assertSame('cyberpunk', $config['tui']['theme']);
+        self::assertArrayNotHasKey('sessions', $config);
+        self::assertArrayNotHasKey('logging', $config);
+        self::assertSame('cyberpunk', $config['tui']['theme']);
     }
 
     private function removeDir(string $dir): void

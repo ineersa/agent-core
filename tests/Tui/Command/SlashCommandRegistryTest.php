@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Command;
 
+use Ineersa\Tui\Command\ClearScreenCommand;
 use Ineersa\Tui\Command\ClearTranscript;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\ExitApplication;
+use Ineersa\Tui\Command\ExitTuiCommand;
 use Ineersa\Tui\Command\NoOp;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandHandler;
@@ -37,8 +39,8 @@ final class SlashCommandRegistryTest extends TestCase
 
         $this->registry->register($metadata, $handler);
 
-        $this->assertTrue($this->registry->has('foo'));
-        $this->assertSame($metadata, $this->registry->getMetadata('foo'));
+        self::assertTrue($this->registry->has('foo'));
+        self::assertSame($metadata, $this->registry->getMetadata('foo'));
     }
 
     #[Test]
@@ -49,22 +51,22 @@ final class SlashCommandRegistryTest extends TestCase
 
         $this->registry->register($metadata, $handler);
 
-        $this->assertTrue($this->registry->has('f'));
-        $this->assertTrue($this->registry->has('bar'));
-        $this->assertSame($metadata, $this->registry->getMetadata('f'));
-        $this->assertSame($metadata, $this->registry->getMetadata('bar'));
+        self::assertTrue($this->registry->has('f'));
+        self::assertTrue($this->registry->has('bar'));
+        self::assertSame($metadata, $this->registry->getMetadata('f'));
+        self::assertSame($metadata, $this->registry->getMetadata('bar'));
     }
 
     #[Test]
     public function hasReturnsFalseForUnregisteredName(): void
     {
-        $this->assertFalse($this->registry->has('nonexistent'));
+        self::assertFalse($this->registry->has('nonexistent'));
     }
 
     #[Test]
     public function getMetadataReturnsNullForUnregisteredName(): void
     {
-        $this->assertNull($this->registry->getMetadata('nonexistent'));
+        self::assertNull($this->registry->getMetadata('nonexistent'));
     }
 
     #[Test]
@@ -125,11 +127,11 @@ final class SlashCommandRegistryTest extends TestCase
     {
         $result = $this->registry->execute(new SlashCommand('help', '', '/help'));
 
-        $this->assertInstanceOf(TranscriptMessage::class, $result);
-        $this->assertStringContainsString('Available commands:', $result->text);
-        $this->assertStringContainsString('/help', $result->text);
-        $this->assertStringContainsString('/clear', $result->text);
-        $this->assertStringContainsString('/exit', $result->text);
+        self::assertInstanceOf(TranscriptMessage::class, $result);
+        self::assertStringContainsString('Available commands:', $result->text);
+        self::assertStringContainsString('/help', $result->text);
+        self::assertStringContainsString('/clear', $result->text);
+        self::assertStringContainsString('/exit', $result->text);
     }
 
     #[Test]
@@ -142,8 +144,8 @@ final class SlashCommandRegistryTest extends TestCase
 
         $result = $this->registry->execute(new SlashCommand('help', '', '/help'));
 
-        $this->assertStringContainsString('A custom command', $result->text);
-        $this->assertStringContainsString('/custom', $result->text);
+        self::assertStringContainsString('A custom command', $result->text);
+        self::assertStringContainsString('/custom', $result->text);
     }
 
     #[Test]
@@ -156,7 +158,7 @@ final class SlashCommandRegistryTest extends TestCase
 
         $result = $this->registry->execute(new SlashCommand('help', '', '/help'));
 
-        $this->assertStringContainsString('(c, cmd)', $result->text);
+        self::assertStringContainsString('(c, cmd)', $result->text);
     }
 
     #[Test]
@@ -164,10 +166,10 @@ final class SlashCommandRegistryTest extends TestCase
     {
         $result = $this->registry->execute(new SlashCommand('help', 'clear', '/help clear'));
 
-        $this->assertInstanceOf(TranscriptMessage::class, $result);
-        $this->assertStringContainsString('Command: /clear', $result->text);
-        $this->assertStringContainsString('Clear the conversation transcript', $result->text);
-        $this->assertStringNotContainsString('Available commands:', $result->text);
+        self::assertInstanceOf(TranscriptMessage::class, $result);
+        self::assertStringContainsString('Command: /clear', $result->text);
+        self::assertStringContainsString('Clear the conversation transcript', $result->text);
+        self::assertStringNotContainsString('Available commands:', $result->text);
     }
 
     #[Test]
@@ -177,9 +179,9 @@ final class SlashCommandRegistryTest extends TestCase
         // instead of returning an "Unknown command" error.
         $result = $this->registry->execute(new SlashCommand('help', 'nonexistent', '/help nonexistent'));
 
-        $this->assertInstanceOf(TranscriptMessage::class, $result);
-        $this->assertStringContainsString('Available commands:', $result->text);
-        $this->assertStringNotContainsString('Unknown command: /nonexistent', $result->text);
+        self::assertInstanceOf(TranscriptMessage::class, $result);
+        self::assertStringContainsString('Available commands:', $result->text);
+        self::assertStringNotContainsString('Unknown command: /nonexistent', $result->text);
     }
 
     #[Test]
@@ -188,10 +190,10 @@ final class SlashCommandRegistryTest extends TestCase
         // `/help 123` should NOT report "Unknown command: /123".
         $result = $this->registry->execute(new SlashCommand('help', '123', '/help 123'));
 
-        $this->assertInstanceOf(TranscriptMessage::class, $result);
-        $this->assertStringContainsString('Available commands:', $result->text);
-        $this->assertStringNotContainsString('Unknown command: /123', $result->text);
-        $this->assertStringNotContainsString('/123', $result->text);
+        self::assertInstanceOf(TranscriptMessage::class, $result);
+        self::assertStringContainsString('Available commands:', $result->text);
+        self::assertStringNotContainsString('Unknown command: /123', $result->text);
+        self::assertStringNotContainsString('/123', $result->text);
     }
 
     #[Test]
@@ -200,8 +202,8 @@ final class SlashCommandRegistryTest extends TestCase
         // '?' is an alias for 'help'
         $result = $this->registry->execute(new SlashCommand('?', '', '/?'));
 
-        $this->assertInstanceOf(TranscriptMessage::class, $result);
-        $this->assertStringContainsString('Available commands:', $result->text);
+        self::assertInstanceOf(TranscriptMessage::class, $result);
+        self::assertStringContainsString('Available commands:', $result->text);
     }
 
     #[Test]
@@ -209,8 +211,8 @@ final class SlashCommandRegistryTest extends TestCase
     {
         $result = $this->registry->execute(new SlashCommand('h', '', '/h'));
 
-        $this->assertInstanceOf(TranscriptMessage::class, $result);
-        $this->assertStringContainsString('Available commands:', $result->text);
+        self::assertInstanceOf(TranscriptMessage::class, $result);
+        self::assertStringContainsString('Available commands:', $result->text);
     }
 
     #[Test]
@@ -222,7 +224,7 @@ final class SlashCommandRegistryTest extends TestCase
 
         $result = $this->registry->execute(new SlashCommand('help', '', '/help'));
 
-        $this->assertSame('CUSTOM HELP OUTPUT', $result->text);
+        self::assertSame('CUSTOM HELP OUTPUT', $result->text);
     }
 
     #[Test]
@@ -247,7 +249,7 @@ final class SlashCommandRegistryTest extends TestCase
         $this->registry->setHandler('mc', $handler);
 
         $result = $this->registry->execute(new SlashCommand('mycmd', '', '/mycmd'));
-        $this->assertSame('replaced', $result->text);
+        self::assertSame('replaced', $result->text);
     }
 
     // ─── Built-in: /hotkeys table ────────────────────────────────────
@@ -258,12 +260,12 @@ final class SlashCommandRegistryTest extends TestCase
         // Default registry has an empty HotkeyRegistry → HotkeyTableData with isEmpty=true
         $result = $this->registry->execute(new SlashCommand('hotkeys', '', '/hotkeys'));
 
-        $this->assertInstanceOf(
+        self::assertInstanceOf(
             \Ineersa\Tui\Command\Hotkey\HotkeyTableData::class,
             $result,
         );
         // @phpstan-ignore-next-line
-        $this->assertTrue($result->isEmpty());
+        self::assertTrue($result->isEmpty());
     }
 
     #[Test]
@@ -295,32 +297,32 @@ final class SlashCommandRegistryTest extends TestCase
         $reg = new SlashCommandRegistry($hotkeyReg);
         $result = $reg->execute(new SlashCommand('hotkeys', '', '/hotkeys'));
 
-        $this->assertInstanceOf(
+        self::assertInstanceOf(
             \Ineersa\Tui\Command\Hotkey\HotkeyTableData::class,
             $result,
         );
 
         // @phpstan-ignore-next-line
-        $this->assertFalse($result->isEmpty());
+        self::assertFalse($result->isEmpty());
 
         // @phpstan-ignore-next-line
         $groups = $result->groups;
-        $this->assertArrayHasKey('Global', $groups);
-        $this->assertArrayHasKey('Editor', $groups);
+        self::assertArrayHasKey('Global', $groups);
+        self::assertArrayHasKey('Editor', $groups);
 
         // Check representative hotkey data is present in the groups
         $globalBindings = $groups['Global'];
-        $this->assertCount(1, $globalBindings);
-        $this->assertSame('Clear editor / cancel', $globalBindings[0]->action);
+        self::assertCount(1, $globalBindings);
+        self::assertSame('Clear editor / cancel', $globalBindings[0]->action);
 
         $editorBindings = $groups['Editor'];
-        $this->assertCount(2, $editorBindings);
+        self::assertCount(2, $editorBindings);
         $actions = array_map(
             static fn (\Ineersa\Tui\Command\Hotkey\HotkeyBindingDTO $b): string => $b->action,
             $editorBindings,
         );
-        $this->assertContains('Submit prompt', $actions);
-        $this->assertContains('Insert newline', $actions);
+        self::assertContains('Submit prompt', $actions);
+        self::assertContains('Insert newline', $actions);
     }
 
     #[Test]
@@ -329,12 +331,12 @@ final class SlashCommandRegistryTest extends TestCase
         // 'hk' is an alias for 'hotkeys'
         $result = $this->registry->execute(new SlashCommand('hk', '', '/hk'));
 
-        $this->assertInstanceOf(
+        self::assertInstanceOf(
             \Ineersa\Tui\Command\Hotkey\HotkeyTableData::class,
             $result,
         );
         // @phpstan-ignore-next-line
-        $this->assertTrue($result->isEmpty());
+        self::assertTrue($result->isEmpty());
     }
 
     // ─── Built-in: /clear ────────────────────────────────────────────
@@ -344,7 +346,7 @@ final class SlashCommandRegistryTest extends TestCase
     {
         $result = $this->registry->execute(new SlashCommand('clear', '', '/clear'));
 
-        $this->assertInstanceOf(ClearTranscript::class, $result);
+        self::assertInstanceOf(ClearTranscript::class, $result);
     }
 
     #[Test]
@@ -352,7 +354,7 @@ final class SlashCommandRegistryTest extends TestCase
     {
         $result = $this->registry->execute(new SlashCommand('cls', '', '/cls'));
 
-        $this->assertInstanceOf(ClearTranscript::class, $result);
+        self::assertInstanceOf(ClearTranscript::class, $result);
     }
 
     // ─── Built-in: /exit ─────────────────────────────────────────────
@@ -362,7 +364,7 @@ final class SlashCommandRegistryTest extends TestCase
     {
         $result = $this->registry->execute(new SlashCommand('exit', '', '/exit'));
 
-        $this->assertInstanceOf(ExitApplication::class, $result);
+        self::assertInstanceOf(ExitApplication::class, $result);
     }
 
     #[Test]
@@ -370,7 +372,7 @@ final class SlashCommandRegistryTest extends TestCase
     {
         $result = $this->registry->execute(new SlashCommand('quit', '', '/quit'));
 
-        $this->assertInstanceOf(ExitApplication::class, $result);
+        self::assertInstanceOf(ExitApplication::class, $result);
     }
 
     #[Test]
@@ -378,7 +380,7 @@ final class SlashCommandRegistryTest extends TestCase
     {
         $result = $this->registry->execute(new SlashCommand('q', '', '/q'));
 
-        $this->assertInstanceOf(ExitApplication::class, $result);
+        self::assertInstanceOf(ExitApplication::class, $result);
     }
 
     // ─── Unknown commands ────────────────────────────────────────────
@@ -388,11 +390,11 @@ final class SlashCommandRegistryTest extends TestCase
     {
         $result = $this->registry->execute(new SlashCommand('unknown', 'arg', '/unknown arg'));
 
-        $this->assertInstanceOf(TranscriptMessage::class, $result);
-        $this->assertStringContainsString('Unknown command: /unknown', $result->text);
-        $this->assertStringContainsString('/help', $result->text);
-        $this->assertSame('system', $result->role);
-        $this->assertSame('muted', $result->style);
+        self::assertInstanceOf(TranscriptMessage::class, $result);
+        self::assertStringContainsString('Unknown command: /unknown', $result->text);
+        self::assertStringContainsString('/help', $result->text);
+        self::assertSame('system', $result->role);
+        self::assertSame('muted', $result->style);
     }
 
     #[Test]
@@ -401,7 +403,7 @@ final class SlashCommandRegistryTest extends TestCase
         // Should not throw — returns typed result instead
         $result = $this->registry->execute(new SlashCommand('garbage', '', '/garbage'));
 
-        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        self::assertInstanceOf(TranscriptMessage::class, $result);
     }
 
     // ─── Custom handler execution ────────────────────────────────────
@@ -416,7 +418,7 @@ final class SlashCommandRegistryTest extends TestCase
 
         $result = $this->registry->execute(new SlashCommand('noop', '', '/noop'));
 
-        $this->assertInstanceOf(NoOp::class, $result);
+        self::assertInstanceOf(NoOp::class, $result);
     }
 
     #[Test]
@@ -431,8 +433,8 @@ final class SlashCommandRegistryTest extends TestCase
 
         $result = $this->registry->execute(new SlashCommand('e', 'hello world', '/e hello world'));
 
-        $this->assertInstanceOf(TranscriptMessage::class, $result);
-        $this->assertStringContainsString('got args: hello world', $result->text);
+        self::assertInstanceOf(TranscriptMessage::class, $result);
+        self::assertStringContainsString('got args: hello world', $result->text);
     }
 
     // ─── Argument expectations ────────────────────────────────────────
@@ -443,7 +445,7 @@ final class SlashCommandRegistryTest extends TestCase
         // /clear (acceptsArguments=false by default) — args are stripped.
         $result = $this->registry->execute(new SlashCommand('clear', 'whatever', '/clear whatever'));
 
-        $this->assertInstanceOf(ClearTranscript::class, $result);
+        self::assertInstanceOf(ClearTranscript::class, $result);
     }
 
     #[Test]
@@ -452,7 +454,7 @@ final class SlashCommandRegistryTest extends TestCase
         // /exit (acceptsArguments=false by default) — args are stripped.
         $result = $this->registry->execute(new SlashCommand('exit', 'now', '/exit now'));
 
-        $this->assertInstanceOf(ExitApplication::class, $result);
+        self::assertInstanceOf(ExitApplication::class, $result);
     }
 
     #[Test]
@@ -466,8 +468,8 @@ final class SlashCommandRegistryTest extends TestCase
 
         $result = $this->registry->execute(new SlashCommand('argcmd', 'hello world', '/argcmd hello world'));
 
-        $this->assertInstanceOf(TranscriptMessage::class, $result);
-        $this->assertStringContainsString('got args: hello world', $result->text);
+        self::assertInstanceOf(TranscriptMessage::class, $result);
+        self::assertStringContainsString('got args: hello world', $result->text);
     }
 
     #[Test]
@@ -483,8 +485,8 @@ final class SlashCommandRegistryTest extends TestCase
 
         $result = $this->registry->execute(new SlashCommand('noarg', 'stripped', '/noarg stripped'));
 
-        $this->assertInstanceOf(TranscriptMessage::class, $result);
-        $this->assertStringContainsString('got args: (none)', $result->text);
+        self::assertInstanceOf(TranscriptMessage::class, $result);
+        self::assertStringContainsString('got args: (none)', $result->text);
     }
 
     // ─── Metadata access ─────────────────────────────────────────────
@@ -506,7 +508,7 @@ final class SlashCommandRegistryTest extends TestCase
         $names = array_map(static fn (CommandMetadata $m) => $m->name, $all);
 
         // Should be sorted alphabetically
-        $this->assertSame(['alpha', 'clear', 'exit', 'help', 'hotkeys', 'zebra'], $names);
+        self::assertSame(['alpha', 'clear', 'exit', 'help', 'hotkeys', 'zebra'], $names);
     }
 
     #[Test]
@@ -519,24 +521,24 @@ final class SlashCommandRegistryTest extends TestCase
 
         $map = $this->registry->allMetadataMap();
 
-        $this->assertArrayHasKey('help', $map);
-        $this->assertArrayHasKey('clear', $map);
-        $this->assertArrayHasKey('exit', $map);
-        $this->assertArrayHasKey('hotkeys', $map);
-        $this->assertArrayHasKey('custom', $map);
+        self::assertArrayHasKey('help', $map);
+        self::assertArrayHasKey('clear', $map);
+        self::assertArrayHasKey('exit', $map);
+        self::assertArrayHasKey('hotkeys', $map);
+        self::assertArrayHasKey('custom', $map);
     }
 
     #[Test]
     public function countReflectsRegisteredCommands(): void
     {
-        $this->assertSame(4, $this->registry->count()); // help, clear, exit, hotkeys
+        self::assertSame(4, $this->registry->count()); // help, clear, exit, hotkeys
 
         $this->registry->register(
             new CommandMetadata(name: 'extra'),
             $this->createMockHandler(),
         );
 
-        $this->assertSame(5, $this->registry->count());
+        self::assertSame(5, $this->registry->count());
     }
 
     // ─── Built-in command metadata ───────────────────────────────────
@@ -546,12 +548,12 @@ final class SlashCommandRegistryTest extends TestCase
     {
         $meta = $this->registry->getMetadata('help');
 
-        $this->assertNotNull($meta);
-        $this->assertSame('help', $meta->name);
-        $this->assertContains('h', $meta->aliases);
-        $this->assertContains('?', $meta->aliases);
-        $this->assertNotEmpty($meta->description);
-        $this->assertNotEmpty($meta->usage);
+        self::assertNotNull($meta);
+        self::assertSame('help', $meta->name);
+        self::assertContains('h', $meta->aliases);
+        self::assertContains('?', $meta->aliases);
+        self::assertNotEmpty($meta->description);
+        self::assertNotEmpty($meta->usage);
     }
 
     #[Test]
@@ -559,10 +561,10 @@ final class SlashCommandRegistryTest extends TestCase
     {
         $meta = $this->registry->getMetadata('clear');
 
-        $this->assertNotNull($meta);
-        $this->assertSame('clear', $meta->name);
-        $this->assertContains('cls', $meta->aliases);
-        $this->assertNotEmpty($meta->description);
+        self::assertNotNull($meta);
+        self::assertSame('clear', $meta->name);
+        self::assertContains('cls', $meta->aliases);
+        self::assertNotEmpty($meta->description);
     }
 
     #[Test]
@@ -570,11 +572,11 @@ final class SlashCommandRegistryTest extends TestCase
     {
         $meta = $this->registry->getMetadata('exit');
 
-        $this->assertNotNull($meta);
-        $this->assertSame('exit', $meta->name);
-        $this->assertContains('quit', $meta->aliases);
-        $this->assertContains('q', $meta->aliases);
-        $this->assertNotEmpty($meta->description);
+        self::assertNotNull($meta);
+        self::assertSame('exit', $meta->name);
+        self::assertContains('quit', $meta->aliases);
+        self::assertContains('q', $meta->aliases);
+        self::assertNotEmpty($meta->description);
     }
 
     // ─── Private helpers ─────────────────────────────────────────────

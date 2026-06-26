@@ -15,7 +15,7 @@ final class StackToolExecutionContextAccessorTest extends TestCase
     {
         $accessor = new StackToolExecutionContextAccessor();
 
-        $this->assertNull($accessor->current());
+        self::assertNull($accessor->current());
     }
 
     public function testRequireCurrentThrowsWhenNoContext(): void
@@ -31,14 +31,14 @@ final class StackToolExecutionContextAccessorTest extends TestCase
         $accessor = new StackToolExecutionContextAccessor();
         $context = $this->createContext('run-a', 1, 'call-1', 'test_tool');
 
-        $result = $accessor->with($context, static function () use ($accessor, $context): string {
+        $result = $accessor->with($context, function () use ($accessor, $context): string {
             self::assertSame($context, $accessor->current());
 
             return 'done';
         });
 
-        $this->assertSame('done', $result);
-        $this->assertNull($accessor->current());
+        self::assertSame('done', $result);
+        self::assertNull($accessor->current());
     }
 
     public function testWithPopsContextOnException(): void
@@ -47,14 +47,14 @@ final class StackToolExecutionContextAccessorTest extends TestCase
         $context = $this->createContext('run-a', 1, 'call-1', 'test_tool');
 
         try {
-            $accessor->with($context, static function (): never {
+            $accessor->with($context, function () use ($accessor): never {
                 throw new \RuntimeException('test error');
             });
         } catch (\RuntimeException) {
             // Expected.
         }
 
-        $this->assertNull($accessor->current());
+        self::assertNull($accessor->current());
     }
 
     public function testNestedContext(): void
@@ -63,14 +63,14 @@ final class StackToolExecutionContextAccessorTest extends TestCase
         $outer = $this->createContext('run-a', 1, 'call-1', 'outer');
         $inner = $this->createContext('run-a', 2, 'call-2', 'inner');
 
-        $result = $accessor->with($outer, static function () use ($accessor, $inner): string {
-            return $accessor->with($inner, static function () use ($accessor): string {
+        $result = $accessor->with($outer, function () use ($accessor, $inner): string {
+            return $accessor->with($inner, function () use ($accessor): string {
                 return $accessor->requireCurrent()->toolName();
             });
         });
 
-        $this->assertSame('inner', $result);
-        $this->assertNull($accessor->current());
+        self::assertSame('inner', $result);
+        self::assertNull($accessor->current());
     }
 
     private function createContext(
@@ -85,10 +85,7 @@ final class StackToolExecutionContextAccessorTest extends TestCase
             toolCallId: $toolCallId,
             toolName: $toolName,
             cancellationToken: new class implements CancellationTokenInterface {
-                public function isCancellationRequested(): bool
-                {
-                    return false;
-                }
+                public function isCancellationRequested(): bool { return false; }
             },
             timeoutSeconds: 30,
         );

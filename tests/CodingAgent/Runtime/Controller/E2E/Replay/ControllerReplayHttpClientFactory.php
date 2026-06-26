@@ -61,6 +61,7 @@ final class ControllerReplayHttpClientFactory
         return HttpClient::create(['timeout' => self::liveHttpTimeout()]);
     }
 
+
     /**
      * Live (non-replay) HTTP idle timeout for controller subprocess tests.
      *
@@ -144,7 +145,7 @@ final class ControllerReplayHttpClientFactory
                 // in-flight long enough for Escape/cancel to be sent.
                 $delayMs = $fixture['response_delay_ms'] ?? 0;
                 if ($delayMs > 0) {
-                    usleep($delayMs * 1000);
+                    \usleep($delayMs * 1000);
                 }
 
                 // HTTP error fixtures return a non-200 MockResponse directly.

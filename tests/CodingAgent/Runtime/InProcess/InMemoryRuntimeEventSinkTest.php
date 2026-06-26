@@ -24,9 +24,9 @@ final class InMemoryRuntimeEventSinkTest extends TestCase
         $sink->emit($e2);
 
         $drained = iterator_to_array($sink->drain('run-1'));
-        $this->assertCount(2, $drained);
-        $this->assertSame($e1, $drained[0]);
-        $this->assertSame($e2, $drained[1]);
+        self::assertCount(2, $drained);
+        self::assertSame($e1, $drained[0]);
+        self::assertSame($e2, $drained[1]);
     }
 
     #[Test]
@@ -38,7 +38,7 @@ final class InMemoryRuntimeEventSinkTest extends TestCase
         iterator_to_array($sink->drain('run-1'));
         $second = iterator_to_array($sink->drain('run-1'));
 
-        $this->assertCount(0, $second);
+        self::assertCount(0, $second);
     }
 
     #[Test]
@@ -52,8 +52,8 @@ final class InMemoryRuntimeEventSinkTest extends TestCase
         $sink->emit($e2);
 
         $drained = iterator_to_array($sink->drain('run-1'));
-        $this->assertCount(1, $drained);
-        $this->assertSame($e1, $drained[0]);
+        self::assertCount(1, $drained);
+        self::assertSame($e1, $drained[0]);
     }
 
     #[Test]
@@ -68,8 +68,8 @@ final class InMemoryRuntimeEventSinkTest extends TestCase
 
         // run-2 events should still be buffered
         $drained = iterator_to_array($sink->drain('run-2'));
-        $this->assertCount(1, $drained);
-        $this->assertSame('run-2', $drained[0]->runId);
+        self::assertCount(1, $drained);
+        self::assertSame('run-2', $drained[0]->runId);
     }
 
     #[Test]
@@ -80,6 +80,6 @@ final class InMemoryRuntimeEventSinkTest extends TestCase
         $sink->emit(new RuntimeEvent('test.type', 'run-2', 0));
 
         $drained = iterator_to_array($sink->drain(''));
-        $this->assertCount(2, $drained);
+        self::assertCount(2, $drained);
     }
 }

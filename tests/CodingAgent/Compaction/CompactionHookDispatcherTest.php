@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Compaction\CompactionHookContextDTO;
 use Ineersa\CodingAgent\Compaction\CompactionHookDispatcher;
 use Ineersa\CodingAgent\Compaction\CompactionHookResultDTO;
 use PHPUnit\Framework\TestCase;
+use stdClass;
 
 /**
  * Contract tests for {@see CompactionHookDispatcher} aggregation semantics.
@@ -219,6 +220,23 @@ final class CompactionHookDispatcherTest extends TestCase
         $this->assertSame('rate_limit', $result->metadata['block_reason'] ?? null);
     }
 
+    private function createContext(): CompactionHookContextDTO
+    {
+        return new CompactionHookContextDTO(
+            runId: 'run-1',
+            turnNo: 5,
+            trigger: 'manual',
+            tokenEstimateBefore: 10000,
+            messagesCompacted: 5,
+            messagesRetained: 3,
+            firstRetainedIndex: 0,
+            priorSummaryPresent: false,
+            customInstructions: null,
+            resolvedModel: 'openai/gpt-4',
+            thinkingLevel: null,
+        );
+    }
+
     /**
      * Thesis: {@see CompactionHookDispatcher::sanitiseMetadata()} drops
      * objects, resources, and closures while preserving null, scalars, and
@@ -229,7 +247,7 @@ final class CompactionHookDispatcherTest extends TestCase
     {
         $dispatcher = new CompactionHookDispatcher([]);
 
-        $fh = fopen('php://memory', 'rb');
+        $fh = \fopen('php://memory', 'r');
         \assert(false !== $fh);
 
         try {
@@ -240,7 +258,7 @@ final class CompactionHookDispatcherTest extends TestCase
                 'null_val' => null,
                 'list' => [1, 2, 3],
                 'map' => ['nested' => 'ok', 'deep' => [true, false]],
-                'object' => new \stdClass(),
+                'object' => new stdClass(),
                 'resource' => $fh,
             ];
 
@@ -255,7 +273,7 @@ final class CompactionHookDispatcherTest extends TestCase
             $this->assertArrayNotHasKey('object', $safe, 'stdClass must be dropped.');
             $this->assertArrayNotHasKey('resource', $safe, 'resource must be dropped.');
         } finally {
-            fclose($fh);
+            \fclose($fh);
         }
     }
 
@@ -278,22 +296,5 @@ final class CompactionHookDispatcherTest extends TestCase
         $this->assertArrayNotHasKey(0, $safe);
         $this->assertArrayNotHasKey(1, $safe);
         $this->assertSame('value', $safe['key']);
-    }
-
-    private function createContext(): CompactionHookContextDTO
-    {
-        return new CompactionHookContextDTO(
-            runId: 'run-1',
-            turnNo: 5,
-            trigger: 'manual',
-            tokenEstimateBefore: 10000,
-            messagesCompacted: 5,
-            messagesRetained: 3,
-            firstRetainedIndex: 0,
-            priorSummaryPresent: false,
-            customInstructions: null,
-            resolvedModel: 'openai/gpt-4',
-            thinkingLevel: null,
-        );
     }
 }

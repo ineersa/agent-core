@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Projection;
 
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use PHPUnit\Framework\TestCase;
@@ -45,17 +46,17 @@ final class SubagentProgressProjectionTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(1, $blocks);
+        self::assertCount(1, $blocks);
         $block = $blocks[0];
-        $this->assertSame('tool_result_tc_sub', $block->id);
-        $this->assertStringContainsString('subagent scout', $block->text);
-        $this->assertStringContainsString('running scout', $block->text);
-        $this->assertStringContainsString('2 turns', $block->text);
-        $this->assertStringContainsString('Task: Inspect TUI', $block->text);
-        $this->assertStringContainsString('Artifacts:', $block->text);
-        $this->assertStringContainsString('agent_abc', $block->text);
-        $this->assertStringNotContainsString('subagent scout running | turn 1', $block->text);
-        $this->assertSame(2, $block->meta['subagent_progress']['turn_no'] ?? null);
+        self::assertSame('tool_result_tc_sub', $block->id);
+        self::assertStringContainsString('subagent scout', $block->text);
+        self::assertStringContainsString('running scout', $block->text);
+        self::assertStringContainsString('2 turns', $block->text);
+        self::assertStringContainsString('Task: Inspect TUI', $block->text);
+        self::assertStringContainsString('Artifacts:', $block->text);
+        self::assertStringContainsString('agent_abc', $block->text);
+        self::assertStringNotContainsString('subagent scout running | turn 1', $block->text);
+        self::assertSame(2, $block->meta['subagent_progress']['turn_no'] ?? null);
     }
 
     public function testParallelSubagentProgressRendersChildSingleWidgetSections(): void
@@ -89,18 +90,19 @@ final class SubagentProgressProjectionTest extends TestCase
         ]);
 
         $text = $this->projector->blocks()[0]->text;
-        $this->assertStringContainsString('parallel subagents running (1/2 completed)', $text);
-        $this->assertStringContainsString('#1 subagent reviewer', $text);
-        $this->assertStringContainsString('#2 subagent scout', $text);
-        $this->assertStringContainsString('running scout | 12 tools | 49k tok', $text);
-        $this->assertStringContainsString('Task: Inspect TUI', $text);
-        $this->assertStringContainsString('Artifacts: artifacts/agents/agent_b', $text);
-        $this->assertStringContainsString('SubagentResultRenderer', $text);
-        $this->assertStringContainsString('Tracing projection path.', $text);
-        $this->assertStringNotContainsString('completed Step 1: reviewer', $text);
-        $this->assertStringNotContainsString('running Step 2: scout', $text);
-        $this->assertStringNotContainsString('| artifact agent_b', $text);
+        self::assertStringContainsString('parallel subagents running (1/2 completed)', $text);
+        self::assertStringContainsString('#1 subagent reviewer', $text);
+        self::assertStringContainsString('#2 subagent scout', $text);
+        self::assertStringContainsString('running scout | 12 tools | 49k tok', $text);
+        self::assertStringContainsString('Task: Inspect TUI', $text);
+        self::assertStringContainsString('Artifacts: artifacts/agents/agent_b', $text);
+        self::assertStringContainsString('SubagentResultRenderer', $text);
+        self::assertStringContainsString('Tracing projection path.', $text);
+        self::assertStringNotContainsString('completed Step 1: reviewer', $text);
+        self::assertStringNotContainsString('running Step 2: scout', $text);
+        self::assertStringNotContainsString('| artifact agent_b', $text);
     }
+
 
     public function testRichSubagentProgressCoalescesWithoutDeltaSpam(): void
     {
@@ -130,14 +132,16 @@ final class SubagentProgressProjectionTest extends TestCase
         ]);
 
         $blocks = $this->projector->blocks();
-        $this->assertCount(1, $blocks);
+        self::assertCount(1, $blocks);
         $text = $blocks[0]->text;
-        $this->assertStringContainsString('38 tools', $text);
-        $this->assertStringContainsString('49k tok', $text);
-        $this->assertStringContainsString('grep', $text);
-        $this->assertStringNotContainsString('docs/agents.md', $text);
-        $this->assertStringNotContainsString('| turn 2 | artifact', $text);
+        self::assertStringContainsString('38 tools', $text);
+        self::assertStringContainsString('49k tok', $text);
+        self::assertStringContainsString('grep', $text);
+        self::assertStringNotContainsString('docs/agents.md', $text);
+        self::assertStringNotContainsString('| turn 2 | artifact', $text);
     }
+
+
 
     public function testSubagentProgressTerminalAfterCompleted(): void
     {
@@ -168,12 +172,13 @@ final class SubagentProgressProjectionTest extends TestCase
         ]);
 
         $block = $this->projector->blocks()[0];
-        $this->assertStringContainsString('completed scout', $block->text);
-        $this->assertStringNotContainsString('running scout', $block->text);
-        $this->assertStringContainsString('agent_done', $block->text);
-        $this->assertStringContainsString('Done.', $block->text);
-        $this->assertTrue($block->meta['subagent_final'] ?? false);
+        self::assertStringContainsString('completed scout', $block->text);
+        self::assertStringNotContainsString('running scout', $block->text);
+        self::assertStringContainsString('agent_done', $block->text);
+        self::assertStringContainsString('Done.', $block->text);
+        self::assertTrue($block->meta['subagent_final'] ?? false);
     }
+
 
     public function testSubagentProgressFailedPreservesStructuredWidget(): void
     {
@@ -195,11 +200,11 @@ final class SubagentProgressProjectionTest extends TestCase
         ]);
 
         $block = $this->projector->blocks()[0];
-        $this->assertStringContainsString('failed scout', $block->text);
-        $this->assertStringContainsString('agent_fail', $block->text);
-        $this->assertStringContainsString('child denied approval', $block->text);
-        $this->assertTrue($block->meta['subagent_final'] ?? false);
-        $this->assertSame('subagent', $block->meta['tool_name'] ?? null);
+        self::assertStringContainsString('failed scout', $block->text);
+        self::assertStringContainsString('agent_fail', $block->text);
+        self::assertStringContainsString('child denied approval', $block->text);
+        self::assertTrue($block->meta['subagent_final'] ?? false);
+        self::assertSame('subagent', $block->meta['tool_name'] ?? null);
     }
 
     /** @param array<string, mixed> $payload */

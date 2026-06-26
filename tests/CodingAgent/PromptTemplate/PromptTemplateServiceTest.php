@@ -7,13 +7,13 @@ namespace Ineersa\CodingAgent\PromptTemplate\Tests;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\PromptsConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
-use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateArgumentParser;
+use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateFrontmatterParser;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateLoader;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateService;
-use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateSubstitutor;
+use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
 use Ineersa\CodingAgent\Runtime\Contract\PromptTemplateCommand;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
@@ -58,6 +58,15 @@ final class PromptTemplateServiceTest extends TestCase
         TestDirectoryIsolation::removeDirectory($this->tmpDir);
     }
 
+    private function writeFile(string $path, string $content): void
+    {
+        $dir = \dirname($path);
+        if (!is_dir($dir)) {
+            mkdir($dir, 0755, true);
+        }
+        file_put_contents($path, $content);
+    }
+
     // ─── Catalog ───
 
     public function testCatalogReturnsNameAndDescription(): void
@@ -80,11 +89,11 @@ final class PromptTemplateServiceTest extends TestCase
         );
 
         $commands = $this->service->allPromptTemplateCommands();
-        $this->assertCount(2, $commands);
-        $this->assertContainsOnlyInstancesOf(PromptTemplateCommand::class, $commands);
+        self::assertCount(2, $commands);
+        self::assertContainsOnlyInstancesOf(PromptTemplateCommand::class, $commands);
 
         $names = array_map(static fn (PromptTemplateCommand $c): string => $c->name, $commands);
-        $this->assertSame(['review', 'summarize'], $names);
+        self::assertSame(['review', 'summarize'], $names);
     }
 
     public function testServiceCachesLoadResult(): void
@@ -106,21 +115,21 @@ final class PromptTemplateServiceTest extends TestCase
 
         // Prime the cache via public catalog call — only "test" is loaded.
         $commands = $this->service->allPromptTemplateCommands();
-        $this->assertCount(1, $commands);
-        $this->assertSame('test', $commands[0]->name);
+        self::assertCount(1, $commands);
+        self::assertSame('test', $commands[0]->name);
 
         // Write a second template AFTER the cache is primed.
         $this->writeFile($this->homeDir.'/.hatfield/prompts/second.md', "Second template.\n");
 
         // Catalog still returns only the first template (process-lifetime cache).
         $commands2 = $this->service->allPromptTemplateCommands();
-        $this->assertCount(1, $commands2);
+        self::assertCount(1, $commands2);
 
         // Expanding the second template name passthrough because it was not in cache.
-        $this->assertSame('/second', $this->service->expandPromptTemplate('/second'));
+        self::assertSame('/second', $this->service->expandPromptTemplate('/second'));
 
         // Expanding the cached template still works.
-        $this->assertStringContainsString('Test content', $this->service->expandPromptTemplate('/test'));
+        self::assertStringContainsString('Test content', $this->service->expandPromptTemplate('/test'));
     }
 
     // ─── Expansion ───
@@ -143,17 +152,17 @@ final class PromptTemplateServiceTest extends TestCase
         );
 
         $expanded = $this->service->expandPromptTemplate('/review security performance');
-        $this->assertSame("Review changes with focus on:\nsecurity performance", $expanded);
+        self::assertSame("Review changes with focus on:\nsecurity performance", $expanded);
     }
 
     public function testNonSlashTextPassthrough(): void
     {
-        $this->assertSame('hello world', $this->service->expandPromptTemplate('hello world'));
+        self::assertSame('hello world', $this->service->expandPromptTemplate('hello world'));
     }
 
     public function testNoMatchRegexPassthrough(): void
     {
-        $this->assertSame('/', $this->service->expandPromptTemplate('/'));
+        self::assertSame('/', $this->service->expandPromptTemplate('/'));
     }
 
     public function testNoTemplateFoundPassthrough(): void
@@ -173,7 +182,7 @@ final class PromptTemplateServiceTest extends TestCase
             new PromptTemplateSubstitutor(),
         );
 
-        $this->assertSame('/unknown', $this->service->expandPromptTemplate('/unknown'));
+        self::assertSame('/unknown', $this->service->expandPromptTemplate('/unknown'));
     }
 
     public function testNewlineArgs(): void
@@ -195,7 +204,7 @@ final class PromptTemplateServiceTest extends TestCase
 
         // Newlines inside quotes are preserved as one argument.
         $expanded = $this->service->expandPromptTemplate("/echo \"line1\nline2\"");
-        $this->assertSame("line1\nline2", $expanded);
+        self::assertSame("line1\nline2", $expanded);
     }
 
     public function testSinglePassNoRecursiveExpansion(): void
@@ -218,7 +227,7 @@ final class PromptTemplateServiceTest extends TestCase
 
         // first expands to "/second arg" — NOT expanded further to "expanded: arg".
         $result = $this->service->expandPromptTemplate('/first');
-        $this->assertSame('/second arg', $result);
+        self::assertSame('/second arg', $result);
     }
 
     public function testExpandWithNoArgs(): void
@@ -238,7 +247,7 @@ final class PromptTemplateServiceTest extends TestCase
             new PromptTemplateSubstitutor(),
         );
 
-        $this->assertSame('pong', $this->service->expandPromptTemplate('/ping'));
+        self::assertSame('pong', $this->service->expandPromptTemplate('/ping'));
     }
 
     public function testExpandPreservesArgsWithSpaces(): void
@@ -258,15 +267,6 @@ final class PromptTemplateServiceTest extends TestCase
             new PromptTemplateSubstitutor(),
         );
 
-        $this->assertSame('Hello World User!', $this->service->expandPromptTemplate('/greet "World User"'));
-    }
-
-    private function writeFile(string $path, string $content): void
-    {
-        $dir = \dirname($path);
-        if (!is_dir($dir)) {
-            mkdir($dir, 0755, true);
-        }
-        file_put_contents($path, $content);
+        self::assertSame('Hello World User!', $this->service->expandPromptTemplate('/greet "World User"'));
     }
 }

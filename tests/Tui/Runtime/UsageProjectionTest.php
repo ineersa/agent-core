@@ -39,22 +39,22 @@ final class UsageProjectionTest extends TestCase
         $this->usage->resetTurn();
 
         // Per-turn fields must be reset
-        $this->assertSame(0, $this->usage->turnOutputTokens);
-        $this->assertSame(0.0, $this->usage->llmEndTime);
+        self::assertSame(0, $this->usage->turnOutputTokens);
+        self::assertSame(0.0, $this->usage->llmEndTime);
 
         // latestInputTokens must be PRESERVED across turns to prevent the
         // context window percentage footer from flickering to 0% during
         // Working... between TurnStarted and the next response.
-        $this->assertSame(500, $this->usage->latestInputTokens);
+        self::assertSame(500, $this->usage->latestInputTokens);
 
         // turnStartTime must be set to a recent timestamp
-        $this->assertGreaterThan(0.0, $this->usage->turnStartTime);
-        $this->assertGreaterThan(time() - 10, $this->usage->turnStartTime);
+        self::assertGreaterThan(0.0, $this->usage->turnStartTime);
+        self::assertGreaterThan(time() - 10, $this->usage->turnStartTime);
 
         // Session-level fields must NOT be reset
-        $this->assertSame(999, $this->usage->inputTokens);
-        $this->assertSame(888, $this->usage->outputTokens);
-        $this->assertEqualsWithDelta(12.34, $this->usage->totalCost, 0.001);
+        self::assertSame(999, $this->usage->inputTokens);
+        self::assertSame(888, $this->usage->outputTokens);
+        self::assertEqualsWithDelta(12.34, $this->usage->totalCost, 0.001);
     }
 
     // ── Accumulate ──
@@ -71,12 +71,12 @@ final class UsageProjectionTest extends TestCase
 
         $this->usage->accumulate($event);
 
-        $this->assertSame(100, $this->usage->latestInputTokens);
-        $this->assertSame(100, $this->usage->inputTokens);
-        $this->assertSame(50, $this->usage->outputTokens);
-        $this->assertSame(50, $this->usage->turnOutputTokens);
-        $this->assertEqualsWithDelta(0.0015, $this->usage->totalCost, 0.00001);
-        $this->assertGreaterThan(0.0, $this->usage->llmEndTime);
+        self::assertSame(100, $this->usage->latestInputTokens);
+        self::assertSame(100, $this->usage->inputTokens);
+        self::assertSame(50, $this->usage->outputTokens);
+        self::assertSame(50, $this->usage->turnOutputTokens);
+        self::assertEqualsWithDelta(0.0015, $this->usage->totalCost, 0.00001);
+        self::assertGreaterThan(0.0, $this->usage->llmEndTime);
     }
 
     public function testAccumulateWithFallbackKeys(): void
@@ -91,11 +91,11 @@ final class UsageProjectionTest extends TestCase
 
         $this->usage->accumulate($event);
 
-        $this->assertSame(200, $this->usage->latestInputTokens);
-        $this->assertSame(200, $this->usage->inputTokens);
-        $this->assertSame(75, $this->usage->outputTokens);
-        $this->assertSame(75, $this->usage->turnOutputTokens);
-        $this->assertEqualsWithDelta(0.0025, $this->usage->totalCost, 0.00001);
+        self::assertSame(200, $this->usage->latestInputTokens);
+        self::assertSame(200, $this->usage->inputTokens);
+        self::assertSame(75, $this->usage->outputTokens);
+        self::assertSame(75, $this->usage->turnOutputTokens);
+        self::assertEqualsWithDelta(0.0025, $this->usage->totalCost, 0.00001);
     }
 
     public function testAccumulateWithMissingUsage(): void
@@ -105,12 +105,12 @@ final class UsageProjectionTest extends TestCase
         // Should not crash or modify defaults
         $this->usage->accumulate($event);
 
-        $this->assertSame(0, $this->usage->latestInputTokens);
-        $this->assertSame(0, $this->usage->inputTokens);
-        $this->assertSame(0, $this->usage->outputTokens);
-        $this->assertSame(0, $this->usage->turnOutputTokens);
-        $this->assertEqualsWithDelta(0.0, $this->usage->totalCost, 0.001);
-        $this->assertGreaterThan(0.0, $this->usage->llmEndTime);
+        self::assertSame(0, $this->usage->latestInputTokens);
+        self::assertSame(0, $this->usage->inputTokens);
+        self::assertSame(0, $this->usage->outputTokens);
+        self::assertSame(0, $this->usage->turnOutputTokens);
+        self::assertEqualsWithDelta(0.0, $this->usage->totalCost, 0.001);
+        self::assertGreaterThan(0.0, $this->usage->llmEndTime);
     }
 
     public function testAccumulateIgnoresNonAssistantMessageCompleted(): void
@@ -128,9 +128,9 @@ final class UsageProjectionTest extends TestCase
         $this->usage->accumulate($event);
 
         // Must not change anything
-        $this->assertSame(100, $this->usage->inputTokens);
-        $this->assertSame(0, $this->usage->latestInputTokens);
-        $this->assertSame(0.0, $this->usage->llmEndTime);
+        self::assertSame(100, $this->usage->inputTokens);
+        self::assertSame(0, $this->usage->latestInputTokens);
+        self::assertSame(0.0, $this->usage->llmEndTime);
     }
 
     // ── Turn lifecycle ──
@@ -149,21 +149,21 @@ final class UsageProjectionTest extends TestCase
         $this->usage->accumulate($event2);
 
         // Session-level: accumulated across both events
-        $this->assertSame(200, $this->usage->inputTokens);
-        $this->assertSame(80, $this->usage->outputTokens);
-        $this->assertEqualsWithDelta(0.0015, $this->usage->totalCost, 0.00001);
+        self::assertSame(200, $this->usage->inputTokens);
+        self::assertSame(80, $this->usage->outputTokens);
+        self::assertEqualsWithDelta(0.0015, $this->usage->totalCost, 0.00001);
         // Per-turn: accumulated within turn
-        $this->assertSame(80, $this->usage->turnOutputTokens);
+        self::assertSame(80, $this->usage->turnOutputTokens);
 
         // Reset for turn 2
         $this->usage->resetTurn();
 
         // Session-level still accumulated
-        $this->assertSame(200, $this->usage->inputTokens);
-        $this->assertSame(80, $this->usage->outputTokens);
+        self::assertSame(200, $this->usage->inputTokens);
+        self::assertSame(80, $this->usage->outputTokens);
 
         // Per-turn fields reset
-        $this->assertSame(0, $this->usage->turnOutputTokens);
+        self::assertSame(0, $this->usage->turnOutputTokens);
 
         // Turn 2: accumulate one event
         $event3 = $this->makeAssistantMessageCompletedEvent([
@@ -172,11 +172,11 @@ final class UsageProjectionTest extends TestCase
         $this->usage->accumulate($event3);
 
         // Session-level continues accumulating
-        $this->assertSame(250, $this->usage->inputTokens);
-        $this->assertSame(100, $this->usage->outputTokens);
-        $this->assertEqualsWithDelta(0.0018, $this->usage->totalCost, 0.00001);
+        self::assertSame(250, $this->usage->inputTokens);
+        self::assertSame(100, $this->usage->outputTokens);
+        self::assertEqualsWithDelta(0.0018, $this->usage->totalCost, 0.00001);
         // Per-turn reflects only turn 2
-        $this->assertSame(20, $this->usage->turnOutputTokens);
+        self::assertSame(20, $this->usage->turnOutputTokens);
     }
 
     // ── latestInputTokens preservation across turns ──
@@ -188,18 +188,18 @@ final class UsageProjectionTest extends TestCase
             'usage' => ['input_tokens' => 300, 'output_tokens' => 100],
         ]);
         $this->usage->accumulate($event1);
-        $this->assertSame(300, $this->usage->latestInputTokens);
+        self::assertSame(300, $this->usage->latestInputTokens);
 
         // Turn 2 starts: reset per-turn fields but PRESERVE latestInputTokens
         $this->usage->resetTurn();
-        $this->assertSame(300, $this->usage->latestInputTokens, 'latestInputTokens must survive reset so context % footer does not flicker to 0% during Working');
+        self::assertSame(300, $this->usage->latestInputTokens, 'latestInputTokens must survive reset so context % footer does not flicker to 0% during Working');
 
         // Turn 2 completes: fresh usage overwrites the preserved value
         $event2 = $this->makeAssistantMessageCompletedEvent([
             'usage' => ['input_tokens' => 500, 'output_tokens' => 50],
         ]);
         $this->usage->accumulate($event2);
-        $this->assertSame(500, $this->usage->latestInputTokens, 'Fresh turn usage must replace the carried-forward value');
+        self::assertSame(500, $this->usage->latestInputTokens, 'Fresh turn usage must replace the carried-forward value');
     }
 
     // ── Cache telemetry ──
@@ -216,9 +216,9 @@ final class UsageProjectionTest extends TestCase
 
         $this->usage->accumulate($event);
 
-        $this->assertSame(78, $this->usage->cacheReadTokens);
-        $this->assertTrue($this->usage->hasCacheTelemetry);
-        $this->assertSame(78.0, $this->usage->cacheReadHitPercentage());
+        self::assertSame(78, $this->usage->cacheReadTokens);
+        self::assertTrue($this->usage->hasCacheTelemetry);
+        self::assertSame(78.0, $this->usage->cacheReadHitPercentage());
     }
 
     public function testCacheReadTokensFallbackToCachedTokens(): void
@@ -235,9 +235,9 @@ final class UsageProjectionTest extends TestCase
 
         $this->usage->accumulate($event);
 
-        $this->assertSame(120, $this->usage->cacheReadTokens);
-        $this->assertTrue($this->usage->hasCacheTelemetry);
-        $this->assertSame(60.0, $this->usage->cacheReadHitPercentage());
+        self::assertSame(120, $this->usage->cacheReadTokens);
+        self::assertTrue($this->usage->hasCacheTelemetry);
+        self::assertSame(60.0, $this->usage->cacheReadHitPercentage());
     }
 
     public function testCacheCreationTokensAccumulated(): void
@@ -253,9 +253,9 @@ final class UsageProjectionTest extends TestCase
 
         $this->usage->accumulate($event);
 
-        $this->assertSame(78, $this->usage->cacheReadTokens);
-        $this->assertSame(20, $this->usage->cacheCreationTokens);
-        $this->assertTrue($this->usage->hasCacheTelemetry);
+        self::assertSame(78, $this->usage->cacheReadTokens);
+        self::assertSame(20, $this->usage->cacheCreationTokens);
+        self::assertTrue($this->usage->hasCacheTelemetry);
     }
 
     public function testCacheTelemetryAbsentReturnsNullPercentage(): void
@@ -270,9 +270,9 @@ final class UsageProjectionTest extends TestCase
 
         $this->usage->accumulate($event);
 
-        $this->assertFalse($this->usage->hasCacheTelemetry);
-        $this->assertSame(0, $this->usage->cacheReadTokens);
-        $this->assertNull($this->usage->cacheReadHitPercentage());
+        self::assertFalse($this->usage->hasCacheTelemetry);
+        self::assertSame(0, $this->usage->cacheReadTokens);
+        self::assertNull($this->usage->cacheReadHitPercentage());
     }
 
     public function testReportedZeroCacheReadTokensShowsZeroPercent(): void
@@ -289,9 +289,9 @@ final class UsageProjectionTest extends TestCase
 
         $this->usage->accumulate($event);
 
-        $this->assertTrue($this->usage->hasCacheTelemetry);
-        $this->assertSame(0, $this->usage->cacheReadTokens);
-        $this->assertSame(0.0, $this->usage->cacheReadHitPercentage());
+        self::assertTrue($this->usage->hasCacheTelemetry);
+        self::assertSame(0, $this->usage->cacheReadTokens);
+        self::assertSame(0.0, $this->usage->cacheReadHitPercentage());
     }
 
     public function testCacheReadTokensSurviveResetTurn(): void
@@ -307,16 +307,16 @@ final class UsageProjectionTest extends TestCase
 
         $this->usage->accumulate($event);
 
-        $this->assertSame(78, $this->usage->cacheReadTokens);
-        $this->assertTrue($this->usage->hasCacheTelemetry);
+        self::assertSame(78, $this->usage->cacheReadTokens);
+        self::assertTrue($this->usage->hasCacheTelemetry);
 
         $this->usage->resetTurn();
 
         // Cache fields must survive reset.
-        $this->assertSame(78, $this->usage->cacheReadTokens);
-        $this->assertTrue($this->usage->hasCacheTelemetry);
+        self::assertSame(78, $this->usage->cacheReadTokens);
+        self::assertTrue($this->usage->hasCacheTelemetry);
         // Percentage is based on session-level accumulators.
-        $this->assertSame(78.0, $this->usage->cacheReadHitPercentage());
+        self::assertSame(78.0, $this->usage->cacheReadHitPercentage());
     }
 
     public function testCacheReadHitPercentageCappedAt100(): void
@@ -331,8 +331,8 @@ final class UsageProjectionTest extends TestCase
 
         $this->usage->accumulate($event);
 
-        $this->assertSame(200, $this->usage->cacheReadTokens);
-        $this->assertSame(100.0, $this->usage->cacheReadHitPercentage());
+        self::assertSame(200, $this->usage->cacheReadTokens);
+        self::assertSame(100.0, $this->usage->cacheReadHitPercentage());
     }
 
     public function testCacheReadTokensAccumulateAcrossEvents(): void
@@ -356,9 +356,9 @@ final class UsageProjectionTest extends TestCase
         $this->usage->accumulate($event2);
 
         // Session-level: accumulated across both events.
-        $this->assertSame(100, $this->usage->cacheReadTokens);
+        self::assertSame(100, $this->usage->cacheReadTokens);
         // inputTokens = 100 + 150 = 250, cacheRead = 40 + 60 = 100
-        $this->assertSame(40.0, $this->usage->cacheReadHitPercentage());
+        self::assertSame(40.0, $this->usage->cacheReadHitPercentage());
     }
 
     // ── Cost edge cases ──
@@ -371,7 +371,7 @@ final class UsageProjectionTest extends TestCase
 
         $this->usage->accumulate($event);
 
-        $this->assertSame(5.0, $this->usage->totalCost);
+        self::assertSame(5.0, $this->usage->totalCost);
     }
 
     public function testCostWithNullValue(): void
@@ -383,7 +383,7 @@ final class UsageProjectionTest extends TestCase
         $this->usage->accumulate($event);
 
         // Cost should remain 0
-        $this->assertEqualsWithDelta(0.0, $this->usage->totalCost, 0.001);
+        self::assertEqualsWithDelta(0.0, $this->usage->totalCost, 0.001);
     }
 
     public function testZeroOutputTokens(): void
@@ -394,9 +394,9 @@ final class UsageProjectionTest extends TestCase
 
         $this->usage->accumulate($event);
 
-        $this->assertSame(10, $this->usage->inputTokens);
-        $this->assertSame(0, $this->usage->outputTokens);
-        $this->assertSame(0, $this->usage->turnOutputTokens);
+        self::assertSame(10, $this->usage->inputTokens);
+        self::assertSame(0, $this->usage->outputTokens);
+        self::assertSame(0, $this->usage->turnOutputTokens);
     }
 
     // ── Helpers ──

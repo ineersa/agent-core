@@ -10,6 +10,8 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Runtime\Stream\AssistantTextStreamSubscriber;
 use Ineersa\CodingAgent\Runtime\Stream\AssistantThinkingStreamSubscriber;
 use Ineersa\CodingAgent\Runtime\Stream\LlmStreamDispatchObserver;
+use Ineersa\CodingAgent\Runtime\Stream\RuntimeStreamDeltaEvent;
+use Ineersa\CodingAgent\Runtime\Stream\RuntimeStreamLifecycleEvent;
 use Ineersa\CodingAgent\Runtime\Stream\ToolCallStreamSubscriber;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
@@ -45,9 +47,7 @@ final class StreamDeltaSubscriberTest extends TestCase
 
         $sink = new class($this->captured) implements RuntimeEventSinkInterface {
             /** @param list<RuntimeEvent> $captured */
-            public function __construct(private array &$captured)
-            {
-            }
+            public function __construct(private array &$captured) {}
 
             public function emit(RuntimeEvent $event): void
             {
@@ -70,11 +70,11 @@ final class StreamDeltaSubscriberTest extends TestCase
     {
         $this->observer->onStreamStart('run-1', 'step-1');
 
-        $this->assertCount(1, $this->captured);
-        $this->assertSame(RuntimeEventTypeEnum::AssistantMessageStarted->value, $this->captured[0]->type);
-        $this->assertSame('run-1', $this->captured[0]->runId);
-        $this->assertSame('step-1', $this->captured[0]->payload['step_id']);
-        $this->assertSame(0, $this->captured[0]->seq);
+        self::assertCount(1, $this->captured);
+        self::assertSame(RuntimeEventTypeEnum::AssistantMessageStarted->value, $this->captured[0]->type);
+        self::assertSame('run-1', $this->captured[0]->runId);
+        self::assertSame('step-1', $this->captured[0]->payload['step_id']);
+        self::assertSame(0, $this->captured[0]->seq);
     }
 
     // ── Text delta mapping ───────────────────────────────────────────────────
@@ -87,10 +87,10 @@ final class StreamDeltaSubscriberTest extends TestCase
 
         $this->observer->onDelta('run-1', 'step-1', new TextDelta('Hello'));
 
-        $this->assertCount(1, $this->captured);
-        $this->assertSame(RuntimeEventTypeEnum::AssistantTextStarted->value, $this->captured[0]->type);
-        $this->assertSame('Hello', $this->captured[0]->payload['text']);
-        $this->assertStringContainsString('text', $this->captured[0]->payload['block_id'] ?? '');
+        self::assertCount(1, $this->captured);
+        self::assertSame(RuntimeEventTypeEnum::AssistantTextStarted->value, $this->captured[0]->type);
+        self::assertSame('Hello', $this->captured[0]->payload['text']);
+        self::assertStringContainsString('text', $this->captured[0]->payload['block_id'] ?? '');
     }
 
     #[Test]
@@ -100,13 +100,13 @@ final class StreamDeltaSubscriberTest extends TestCase
         $this->observer->onDelta('run-1', 'step-1', new TextDelta('Hello'));
         $this->observer->onDelta('run-1', 'step-1', new TextDelta(' World'));
 
-        $events = array_values(array_filter(
+        $events = \array_values(\array_filter(
             $this->captured,
             static fn (RuntimeEvent $e): bool => RuntimeEventTypeEnum::AssistantTextDelta->value === $e->type,
         ));
 
-        $this->assertCount(1, $events);
-        $this->assertSame(' World', $events[0]->payload['text']);
+        self::assertCount(1, $events);
+        self::assertSame(' World', $events[0]->payload['text']);
     }
 
     // ── Thinking delta mapping ───────────────────────────────────────────────
@@ -119,9 +119,9 @@ final class StreamDeltaSubscriberTest extends TestCase
 
         $this->observer->onDelta('run-1', 'step-1', new ThinkingStart());
 
-        $this->assertCount(1, $this->captured);
-        $this->assertSame(RuntimeEventTypeEnum::AssistantThinkingStarted->value, $this->captured[0]->type);
-        $this->assertStringContainsString('thinking', $this->captured[0]->payload['block_id'] ?? '');
+        self::assertCount(1, $this->captured);
+        self::assertSame(RuntimeEventTypeEnum::AssistantThinkingStarted->value, $this->captured[0]->type);
+        self::assertStringContainsString('thinking', $this->captured[0]->payload['block_id'] ?? '');
     }
 
     #[Test]
@@ -131,13 +131,13 @@ final class StreamDeltaSubscriberTest extends TestCase
         $this->observer->onDelta('run-1', 'step-1', new ThinkingStart());
         $this->observer->onDelta('run-1', 'step-1', new ThinkingDelta('ponder...'));
 
-        $events = array_values(array_filter(
+        $events = \array_values(\array_filter(
             $this->captured,
             static fn (RuntimeEvent $e): bool => RuntimeEventTypeEnum::AssistantThinkingDelta->value === $e->type,
         ));
 
-        $this->assertCount(1, $events);
-        $this->assertSame('ponder...', $events[0]->payload['thinking']);
+        self::assertCount(1, $events);
+        self::assertSame('ponder...', $events[0]->payload['thinking']);
     }
 
     #[Test]
@@ -148,10 +148,10 @@ final class StreamDeltaSubscriberTest extends TestCase
 
         $this->observer->onDelta('run-1', 'step-1', new ThinkingDelta('lonely thought'));
 
-        $types = array_map(static fn (RuntimeEvent $e): string => $e->type, $this->captured);
+        $types = \array_map(static fn (RuntimeEvent $e): string => $e->type, $this->captured);
 
-        $this->assertContains(RuntimeEventTypeEnum::AssistantThinkingStarted->value, $types);
-        $this->assertContains(RuntimeEventTypeEnum::AssistantThinkingDelta->value, $types);
+        self::assertContains(RuntimeEventTypeEnum::AssistantThinkingStarted->value, $types);
+        self::assertContains(RuntimeEventTypeEnum::AssistantThinkingDelta->value, $types);
     }
 
     #[Test]
@@ -162,10 +162,10 @@ final class StreamDeltaSubscriberTest extends TestCase
 
         $this->observer->onDelta('run-1', 'step-1', new ThinkingComplete('full thought', 'sig-42'));
 
-        $this->assertCount(1, $this->captured);
-        $this->assertSame(RuntimeEventTypeEnum::AssistantThinkingCompleted->value, $this->captured[0]->type);
-        $this->assertSame('full thought', $this->captured[0]->payload['thinking']);
-        $this->assertSame('sig-42', $this->captured[0]->payload['signature']);
+        self::assertCount(1, $this->captured);
+        self::assertSame(RuntimeEventTypeEnum::AssistantThinkingCompleted->value, $this->captured[0]->type);
+        self::assertSame('full thought', $this->captured[0]->payload['thinking']);
+        self::assertSame('sig-42', $this->captured[0]->payload['signature']);
     }
 
     // ── Tool call delta mapping ──────────────────────────────────────────────
@@ -178,11 +178,11 @@ final class StreamDeltaSubscriberTest extends TestCase
 
         $this->observer->onDelta('run-1', 'step-1', new ToolCallStart('tc-1', 'search_file'));
 
-        $this->assertCount(1, $this->captured);
-        $this->assertSame(RuntimeEventTypeEnum::ToolCallStarted->value, $this->captured[0]->type);
-        $this->assertSame('tc-1', $this->captured[0]->payload['tool_call_id']);
-        $this->assertSame('search_file', $this->captured[0]->payload['tool_name']);
-        $this->assertSame('tool_call_tc-1', $this->captured[0]->payload['block_id']);
+        self::assertCount(1, $this->captured);
+        self::assertSame(RuntimeEventTypeEnum::ToolCallStarted->value, $this->captured[0]->type);
+        self::assertSame('tc-1', $this->captured[0]->payload['tool_call_id']);
+        self::assertSame('search_file', $this->captured[0]->payload['tool_name']);
+        self::assertSame('tool_call_tc-1', $this->captured[0]->payload['block_id']);
     }
 
     #[Test]
@@ -193,9 +193,9 @@ final class StreamDeltaSubscriberTest extends TestCase
 
         $this->observer->onDelta('run-1', 'step-1', new ToolInputDelta('tc-1', 'search_file', '{"pattern"'));
 
-        $this->assertCount(1, $this->captured);
-        $this->assertSame(RuntimeEventTypeEnum::ToolCallArgumentsDelta->value, $this->captured[0]->type);
-        $this->assertSame('{"pattern"', $this->captured[0]->payload['partial_json']);
+        self::assertCount(1, $this->captured);
+        self::assertSame(RuntimeEventTypeEnum::ToolCallArgumentsDelta->value, $this->captured[0]->type);
+        self::assertSame('{"pattern"', $this->captured[0]->payload['partial_json']);
     }
 
     #[Test]
@@ -207,10 +207,10 @@ final class StreamDeltaSubscriberTest extends TestCase
         $toolCall = new ToolCall('tc-1', 'search_file', ['pattern' => '*.php']);
         $this->observer->onDelta('run-1', 'step-1', new ToolCallComplete([$toolCall]));
 
-        $this->assertCount(1, $this->captured);
-        $this->assertSame(RuntimeEventTypeEnum::ToolCallArgumentsCompleted->value, $this->captured[0]->type);
-        $this->assertSame('tc-1', $this->captured[0]->payload['tool_call_id']);
-        $this->assertSame(['pattern' => '*.php'], $this->captured[0]->payload['arguments']);
+        self::assertCount(1, $this->captured);
+        self::assertSame(RuntimeEventTypeEnum::ToolCallArgumentsCompleted->value, $this->captured[0]->type);
+        self::assertSame('tc-1', $this->captured[0]->payload['tool_call_id']);
+        self::assertSame(['pattern' => '*.php'], $this->captured[0]->payload['arguments']);
     }
 
     // ── Empty-ID suppression (defense-in-depth) ──────────────────────────────
@@ -223,7 +223,7 @@ final class StreamDeltaSubscriberTest extends TestCase
 
         $this->observer->onDelta('run-1', 'step-1', new ToolCallStart('', 'phantom'));
 
-        $this->assertCount(0, $this->captured, 'Empty-ID ToolCallStart must be suppressed');
+        self::assertCount(0, $this->captured, 'Empty-ID ToolCallStart must be suppressed');
     }
 
     #[Test]
@@ -234,7 +234,7 @@ final class StreamDeltaSubscriberTest extends TestCase
 
         $this->observer->onDelta('run-1', 'step-1', new ToolInputDelta('', 'phantom', '{"x":1}'));
 
-        $this->assertCount(0, $this->captured, 'Empty-ID ToolInputDelta must be suppressed');
+        self::assertCount(0, $this->captured, 'Empty-ID ToolInputDelta must be suppressed');
     }
 
     #[Test]
@@ -245,9 +245,9 @@ final class StreamDeltaSubscriberTest extends TestCase
 
         $this->observer->onDelta('run-1', 'step-1', new ToolCallStart('tc-42', 'bash'));
 
-        $this->assertCount(1, $this->captured, 'Non-empty ToolCallStart should still emit');
-        $this->assertSame(RuntimeEventTypeEnum::ToolCallStarted->value, $this->captured[0]->type);
-        $this->assertSame('tc-42', $this->captured[0]->payload['tool_call_id']);
+        self::assertCount(1, $this->captured, 'Non-empty ToolCallStart should still emit');
+        self::assertSame(RuntimeEventTypeEnum::ToolCallStarted->value, $this->captured[0]->type);
+        self::assertSame('tc-42', $this->captured[0]->payload['tool_call_id']);
     }
 
     // ── Seq and payload invariants ───────────────────────────────────────────
@@ -261,7 +261,7 @@ final class StreamDeltaSubscriberTest extends TestCase
         $this->observer->onDelta('run-1', 'step-1', new ToolCallStart('tc-1', 'bash'));
 
         foreach ($this->captured as $event) {
-            $this->assertSame(0, $event->seq, \sprintf('Event type %s should have seq=0', $event->type));
+            self::assertSame(0, $event->seq, \sprintf('Event type %s should have seq=0', $event->type));
         }
     }
 
@@ -273,7 +273,7 @@ final class StreamDeltaSubscriberTest extends TestCase
 
         $this->observer->onDelta('run-1', 's-42', new TextDelta('x'));
 
-        $this->assertSame('s-42', $this->captured[0]->payload['step_id']);
+        self::assertSame('s-42', $this->captured[0]->payload['step_id']);
     }
 
     #[Test]
@@ -284,7 +284,7 @@ final class StreamDeltaSubscriberTest extends TestCase
 
         $this->observer->onDelta('run-1', null, new TextDelta('x'));
 
-        $this->assertArrayNotHasKey('step_id', $this->captured[0]->payload);
+        self::assertArrayNotHasKey('step_id', $this->captured[0]->payload);
     }
 
     // ── State reset on new stream ────────────────────────────────────────────
@@ -302,9 +302,9 @@ final class StreamDeltaSubscriberTest extends TestCase
         $this->observer->onStreamStart('run-2', 'step-2');
         $this->observer->onDelta('run-2', 'step-2', new TextDelta('Second'));
 
-        $this->assertCount(2, $this->captured); // message_started + text_started
-        $this->assertSame(RuntimeEventTypeEnum::AssistantTextStarted->value, $this->captured[1]->type);
-        $this->assertSame('Second', $this->captured[1]->payload['text']);
+        self::assertCount(2, $this->captured); // message_started + text_started
+        self::assertSame(RuntimeEventTypeEnum::AssistantTextStarted->value, $this->captured[1]->type);
+        self::assertSame('Second', $this->captured[1]->payload['text']);
     }
 
     // ── Text extraction edge case ────────────────────────────────────────────
@@ -317,8 +317,8 @@ final class StreamDeltaSubscriberTest extends TestCase
 
         $this->observer->onDelta('run-1', 'step-1', new TextDelta(''));
 
-        $this->assertCount(1, $this->captured);
-        $this->assertSame(RuntimeEventTypeEnum::AssistantTextStarted->value, $this->captured[0]->type);
-        $this->assertSame('', $this->captured[0]->payload['text']);
+        self::assertCount(1, $this->captured);
+        self::assertSame(RuntimeEventTypeEnum::AssistantTextStarted->value, $this->captured[0]->type);
+        self::assertSame('', $this->captured[0]->payload['text']);
     }
 }

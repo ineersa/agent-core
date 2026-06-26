@@ -13,11 +13,21 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(DefaultTheme::class)]
 final class DefaultThemeTest extends TestCase
 {
+    private function createTheme(): DefaultTheme
+    {
+        return new DefaultTheme(new ThemePalette('test', [
+            'accent' => 'cyan',
+            'muted' => '#6a6a7a',
+            'error' => 'red',
+            'text' => '',
+        ]));
+    }
+
     public function testName(): void
     {
         $theme = $this->createTheme();
 
-        $this->assertSame('test', $theme->name());
+        self::assertSame('test', $theme->name());
     }
 
     public function testAccentAppliesAnsiStyle(): void
@@ -26,9 +36,9 @@ final class DefaultThemeTest extends TestCase
 
         $result = $theme->accent('Hello');
 
-        $this->assertStringContainsString('Hello', $result);
+        self::assertStringContainsString('Hello', $result);
         // ANSI-styled text should differ from plain text
-        $this->assertNotSame('Hello', $result);
+        self::assertNotSame('Hello', $result);
     }
 
     public function testMutedAppliesColor(): void
@@ -37,8 +47,8 @@ final class DefaultThemeTest extends TestCase
 
         $result = $theme->muted('quiet');
 
-        $this->assertStringContainsString('quiet', $result);
-        $this->assertNotSame('quiet', $result);
+        self::assertStringContainsString('quiet', $result);
+        self::assertNotSame('quiet', $result);
     }
 
     public function testErrorAppliesColor(): void
@@ -47,8 +57,8 @@ final class DefaultThemeTest extends TestCase
 
         $result = $theme->error('failure');
 
-        $this->assertStringContainsString('failure', $result);
-        $this->assertNotSame('failure', $result);
+        self::assertStringContainsString('failure', $result);
+        self::assertNotSame('failure', $result);
     }
 
     public function testEmptyColorIsUnstyled(): void
@@ -59,7 +69,7 @@ final class DefaultThemeTest extends TestCase
 
         // Text with empty spec should be plain (or just ANSI wrapped with no color change)
         // At minimum, the text is present
-        $this->assertStringContainsString('plain', $result);
+        self::assertStringContainsString('plain', $result);
     }
 
     public function testColorViaEnum(): void
@@ -68,8 +78,8 @@ final class DefaultThemeTest extends TestCase
 
         $result = $theme->color(ThemeColorEnum::Accent, 'accented');
 
-        $this->assertStringContainsString('accented', $result);
-        $this->assertNotSame('accented', $result);
+        self::assertStringContainsString('accented', $result);
+        self::assertNotSame('accented', $result);
     }
 
     public function testSuccess(): void
@@ -78,7 +88,7 @@ final class DefaultThemeTest extends TestCase
 
         $result = $theme->success('OK');
 
-        $this->assertStringContainsString('OK', $result);
+        self::assertStringContainsString('OK', $result);
     }
 
     public function testWarning(): void
@@ -87,7 +97,7 @@ final class DefaultThemeTest extends TestCase
 
         $result = $theme->warning('caution');
 
-        $this->assertStringContainsString('caution', $result);
+        self::assertStringContainsString('caution', $result);
     }
 
     public function testGetPalette(): void
@@ -95,16 +105,6 @@ final class DefaultThemeTest extends TestCase
         $palette = new ThemePalette('test', ['accent' => 'cyan']);
         $theme = new DefaultTheme($palette);
 
-        $this->assertSame($palette, $theme->getPalette());
-    }
-
-    private function createTheme(): DefaultTheme
-    {
-        return new DefaultTheme(new ThemePalette('test', [
-            'accent' => 'cyan',
-            'muted' => '#6a6a7a',
-            'error' => 'red',
-            'text' => '',
-        ]));
+        self::assertSame($palette, $theme->getPalette());
     }
 }

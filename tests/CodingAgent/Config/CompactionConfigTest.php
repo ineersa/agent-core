@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Config;
 
+use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppConfigLoader;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
@@ -18,6 +19,7 @@ use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
 use Symfony\Component\Serializer\NameConverter\MetadataAwareNameConverter;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 use Symfony\Component\Serializer\Serializer;
+use Symfony\Component\Serializer\SerializerInterface;
 use Symfony\Component\Yaml\Yaml;
 
 #[CoversClass(CompactionConfig::class)]
@@ -30,13 +32,13 @@ final class CompactionConfigTest extends TestCase
     {
         $config = new CompactionConfig();
 
-        $this->assertTrue($config->autoEnabled);
-        $this->assertSame(120000, $config->compactAfterTokens);
-        $this->assertSame(20000, $config->keepRecentTokens);
-        $this->assertNull($config->model);
-        $this->assertNull($config->thinkingLevel);
-        $this->assertSame([], $config->providerOverrides);
-        $this->assertSame([], $config->modelOverrides);
+        self::assertTrue($config->autoEnabled);
+        self::assertSame(120000, $config->compactAfterTokens);
+        self::assertSame(20000, $config->keepRecentTokens);
+        self::assertNull($config->model);
+        self::assertNull($config->thinkingLevel);
+        self::assertSame([], $config->providerOverrides);
+        self::assertSame([], $config->modelOverrides);
     }
 
     /**
@@ -46,7 +48,7 @@ final class CompactionConfigTest extends TestCase
     {
         $config = new CompactionConfig(model: null);
 
-        $this->assertNull($config->resolveModelReference());
+        self::assertNull($config->resolveModelReference());
     }
 
     /**
@@ -57,9 +59,9 @@ final class CompactionConfigTest extends TestCase
         $config = new CompactionConfig(model: 'llama_cpp/flash');
 
         $ref = $config->resolveModelReference();
-        $this->assertNotNull($ref);
-        $this->assertSame('llama_cpp', $ref->providerId);
-        $this->assertSame('flash', $ref->modelName);
+        self::assertNotNull($ref);
+        self::assertSame('llama_cpp', $ref->providerId);
+        self::assertSame('flash', $ref->modelName);
     }
 
     /**
@@ -88,11 +90,11 @@ final class CompactionConfigTest extends TestCase
 
         $runtime = $config->resolveRuntimeSettings('openai/gpt-4.1');
 
-        $this->assertTrue($runtime->autoEnabled);
-        $this->assertSame(120000, $runtime->compactAfterTokens);
-        $this->assertSame(20000, $runtime->keepRecentTokens);
-        $this->assertSame('llama_cpp/flash', $runtime->model);
-        $this->assertSame('medium', $runtime->thinkingLevel);
+        self::assertTrue($runtime->autoEnabled);
+        self::assertSame(120000, $runtime->compactAfterTokens);
+        self::assertSame(20000, $runtime->keepRecentTokens);
+        self::assertSame('llama_cpp/flash', $runtime->model);
+        self::assertSame('medium', $runtime->thinkingLevel);
     }
 
     /**
@@ -115,9 +117,9 @@ final class CompactionConfigTest extends TestCase
 
         $runtime = $config->resolveRuntimeSettings('openai/gpt-4.1');
 
-        $this->assertSame(80000, $runtime->compactAfterTokens);
-        $this->assertSame('openai/gpt-4.1-mini', $runtime->model);
-        $this->assertSame('low', $runtime->thinkingLevel);
+        self::assertSame(80000, $runtime->compactAfterTokens);
+        self::assertSame('openai/gpt-4.1-mini', $runtime->model);
+        self::assertSame('low', $runtime->thinkingLevel);
     }
 
     /**
@@ -145,8 +147,8 @@ final class CompactionConfigTest extends TestCase
         $runtime = $config->resolveRuntimeSettings('openai/gpt-4.1');
 
         // Model override wins over provider.
-        $this->assertSame(140000, $runtime->compactAfterTokens);
-        $this->assertSame('off', $runtime->thinkingLevel);
+        self::assertSame(140000, $runtime->compactAfterTokens);
+        self::assertSame('off', $runtime->thinkingLevel);
     }
 
     /**
@@ -226,25 +228,26 @@ final class CompactionConfigTest extends TestCase
             $compaction = $appConfig->compaction;
 
             // Global settings survived denormalization.
-            $this->assertTrue($compaction->autoEnabled);
-            $this->assertSame(120000, $compaction->compactAfterTokens);
-            $this->assertSame('llama_cpp/flash', $compaction->model);
-            $this->assertSame('low', $compaction->thinkingLevel);
+            self::assertTrue($compaction->autoEnabled);
+            self::assertSame(120000, $compaction->compactAfterTokens);
+            self::assertSame('llama_cpp/flash', $compaction->model);
+            self::assertSame('low', $compaction->thinkingLevel);
 
             // Provider overrides survived denormalization.
-            $this->assertArrayHasKey('openai', $compaction->providerOverrides);
-            $this->assertSame(80000, $compaction->providerOverrides['openai']['compact_after_tokens']);
-            $this->assertSame('off', $compaction->providerOverrides['openai']['thinking_level']);
+            self::assertArrayHasKey('openai', $compaction->providerOverrides);
+            self::assertSame(80000, $compaction->providerOverrides['openai']['compact_after_tokens']);
+            self::assertSame('off', $compaction->providerOverrides['openai']['thinking_level']);
 
             // Model overrides survived denormalization.
-            $this->assertArrayHasKey('openai/gpt-4.1', $compaction->modelOverrides);
-            $this->assertSame(140000, $compaction->modelOverrides['openai/gpt-4.1']['compact_after_tokens']);
-            $this->assertSame('high', $compaction->modelOverrides['openai/gpt-4.1']['thinking_level']);
+            self::assertArrayHasKey('openai/gpt-4.1', $compaction->modelOverrides);
+            self::assertSame(140000, $compaction->modelOverrides['openai/gpt-4.1']['compact_after_tokens']);
+            self::assertSame('high', $compaction->modelOverrides['openai/gpt-4.1']['thinking_level']);
 
             // Runtime resolution uses the denormalized overrides.
             $runtime = $compaction->resolveRuntimeSettings('openai/gpt-4.1');
-            $this->assertSame(140000, $runtime->compactAfterTokens);
-            $this->assertSame('high', $runtime->thinkingLevel);
+            self::assertSame(140000, $runtime->compactAfterTokens);
+            self::assertSame('high', $runtime->thinkingLevel);
+
         } finally {
             TestDirectoryIsolation::removeDirectory($projectDir);
         }
@@ -266,6 +269,6 @@ final class CompactionConfigTest extends TestCase
         );
 
         $runtime = $config->resolveRuntimeSettings('noproviderslash');
-        $this->assertSame(CompactionConfig::DEFAULT_COMPACT_AFTER_TOKENS, $runtime->compactAfterTokens);
+        self::assertSame(CompactionConfig::DEFAULT_COMPACT_AFTER_TOKENS, $runtime->compactAfterTokens);
     }
 }

@@ -8,6 +8,8 @@ use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Contract\SpanProviderInterface;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\AbstractLogger;
+use Psr\Log\LoggerInterface;
+use Stringable;
 
 final class RunTracerTest extends TestCase
 {
@@ -16,14 +18,14 @@ final class RunTracerTest extends TestCase
         $logger = new TraceLogger();
         $tracer = new RunTracer($logger);
 
-        $result = $tracer->inSpan('test.noop', [], static fn (): string => 'hello');
+        $result = $tracer->inSpan('test.noop', [], fn (): string => 'hello');
 
-        $this->assertSame('hello', $result);
+        self::assertSame('hello', $result);
 
         $records = $logger->records;
-        $this->assertCount(2, $records);
-        $this->assertSame('agent_loop.trace.start', $records[0]['message']);
-        $this->assertSame('agent_loop.trace.finish', $records[1]['message']);
+        self::assertCount(2, $records);
+        self::assertSame('agent_loop.trace.start', $records[0]['message']);
+        self::assertSame('agent_loop.trace.finish', $records[1]['message']);
     }
 
     public function testSpanProviderIsCalledCorrectly(): void
@@ -35,22 +37,22 @@ final class RunTracerTest extends TestCase
         $result = $tracer->inSpan('test.operation', [
             'run_id' => 'run-1',
             'turn_no' => 3,
-        ], static fn (): string => 'result');
+        ], fn (): string => 'result');
 
-        $this->assertSame('result', $result);
+        self::assertSame('result', $result);
 
         // Verify provider was called
-        $this->assertCount(1, $provider->started);
-        $this->assertCount(1, $provider->closed);
-        $this->assertSame('test.operation', $provider->started[0]['name']);
-        $this->assertSame('run-1', $provider->started[0]['tags']['run_id']);
-        $this->assertSame(3, $provider->started[0]['tags']['turn_no']);
+        self::assertCount(1, $provider->started);
+        self::assertCount(1, $provider->closed);
+        self::assertSame('test.operation', $provider->started[0]['name']);
+        self::assertSame('run-1', $provider->started[0]['tags']['run_id']);
+        self::assertSame(3, $provider->started[0]['tags']['turn_no']);
 
         // Close tags include duration, status, outcome
         $closeTags = $provider->closed[0]['tags'];
-        $this->assertArrayHasKey('duration_ms', $closeTags);
-        $this->assertSame('ok', $closeTags['status']);
-        $this->assertSame('success', $closeTags['outcome']);
+        self::assertArrayHasKey('duration_ms', $closeTags);
+        self::assertSame('ok', $closeTags['status']);
+        self::assertSame('success', $closeTags['outcome']);
     }
 
     public function testSpanProviderOnError(): void
@@ -62,17 +64,17 @@ final class RunTracerTest extends TestCase
         $this->expectException(\RuntimeException::class);
 
         try {
-            $tracer->inSpan('test.error', ['run_id' => 'run-1'], static function (): never {
+            $tracer->inSpan('test.error', ['run_id' => 'run-1'], function (): never {
                 throw new \RuntimeException('test error');
             });
         } finally {
             // Provider should have both start and close
-            $this->assertCount(1, $provider->started);
-            $this->assertCount(1, $provider->closed);
+            self::assertCount(1, $provider->started);
+            self::assertCount(1, $provider->closed);
 
             $closeTags = $provider->closed[0]['tags'];
-            $this->assertSame('error', $closeTags['status']);
-            $this->assertSame('error', $closeTags['outcome']);
+            self::assertSame('error', $closeTags['status']);
+            self::assertSame('error', $closeTags['outcome']);
         }
     }
 
@@ -82,22 +84,22 @@ final class RunTracerTest extends TestCase
         $provider = new FakeSpanProvider();
         $tracer = new RunTracer($logger, $provider);
 
-        $result = $tracer->inSpan('parent', ['run_id' => 'run-1'], static function () use ($tracer): string {
-            $inner = $tracer->inSpan('child', ['step_id' => 'step-1'], static fn (): string => 'done');
+        $result = $tracer->inSpan('parent', ['run_id' => 'run-1'], function () use ($tracer): string {
+            $inner = $tracer->inSpan('child', ['step_id' => 'step-1'], fn (): string => 'done');
 
             return 'parent-'.$inner;
         });
 
-        $this->assertSame('parent-done', $result);
+        self::assertSame('parent-done', $result);
 
         // Two startSpan and two closeSpan calls
-        $this->assertCount(2, $provider->started);
-        $this->assertCount(2, $provider->closed);
+        self::assertCount(2, $provider->started);
+        self::assertCount(2, $provider->closed);
 
         // Parent started first, child started second,
         // child closed first (LIFO), parent closed second
-        $this->assertSame('parent', $provider->started[0]['name']);
-        $this->assertSame('child', $provider->started[1]['name']);
+        self::assertSame('parent', $provider->started[0]['name']);
+        self::assertSame('child', $provider->started[1]['name']);
     }
 
     public function testSpanProviderRootSpanDoesNotSetParent(): void
@@ -106,10 +108,10 @@ final class RunTracerTest extends TestCase
         $provider = new FakeSpanProvider();
         $tracer = new RunTracer($logger, $provider);
 
-        $tracer->inSpan('root.op', ['run_id' => 'run-1'], static fn (): string => 'ok', root: true);
+        $tracer->inSpan('root.op', ['run_id' => 'run-1'], fn (): string => 'ok', root: true);
 
         $startRecord = $logger->records[0];
-        $this->assertNull($startRecord['context']['parent_span_id']);
+        self::assertNull($startRecord['context']['parent_span_id']);
     }
 }
 
@@ -118,7 +120,7 @@ final class TraceLogger extends AbstractLogger
     /** @var list<array{message: string, context: array<string, mixed>}> */
     public array $records = [];
 
-    public function log($level, \Stringable|string $message, array $context = []): void
+    public function log($level, Stringable|string $message, array $context = []): void
     {
         unset($level);
 

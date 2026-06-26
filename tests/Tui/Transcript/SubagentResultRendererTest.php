@@ -32,10 +32,10 @@ final class SubagentResultRendererTest extends TestCase
         $renderer = new TranscriptBlockRenderer();
         $lines = $renderer->renderBlock($block, new TuiRenderContext(terminalWidth: 100));
         $joined = implode(' ', $lines);
-        $this->assertStringContainsString('subagent scout', $joined);
-        $this->assertStringContainsString('Task: inspect runtime events', $joined);
-        $this->assertStringContainsString('agent_01HX', $joined);
-        $this->assertStringContainsString('3 turns', $joined);
+        self::assertStringContainsString('subagent scout', $joined);
+        self::assertStringContainsString('Task: inspect runtime events', $joined);
+        self::assertStringContainsString('agent_01HX', $joined);
+        self::assertStringContainsString('3 turns', $joined);
     }
 
     public function testRendersRichSingleProgress(): void
@@ -55,15 +55,16 @@ final class SubagentResultRendererTest extends TestCase
             text: '', meta: ['tool_name' => 'subagent', 'subagent_progress' => $progress], streaming: true,
         );
         $lines = (new TranscriptBlockRenderer())->renderBlock($block, new TuiRenderContext(terminalWidth: 120));
-        $joined = implode('
-', $lines);
-        $this->assertStringContainsString('subagent scout', $joined);
-        $this->assertStringContainsString('38 tools', $joined);
-        $this->assertStringContainsString('49k tok', $joined);
-        $this->assertStringContainsString('RuntimeEventTranslator', $joined);
-        $this->assertStringContainsString('in:35k', $joined);
-        $this->assertStringContainsString('deepseek/deepseek-v4-flash', $joined);
+        $joined = implode("
+", $lines);
+        self::assertStringContainsString('subagent scout', $joined);
+        self::assertStringContainsString('38 tools', $joined);
+        self::assertStringContainsString('49k tok', $joined);
+        self::assertStringContainsString('RuntimeEventTranslator', $joined);
+        self::assertStringContainsString('in:35k', $joined);
+        self::assertStringContainsString('deepseek/deepseek-v4-flash', $joined);
     }
+
 
     public function testRendersParallelProgressAsStackedSingleWidgets(): void
     {
@@ -85,16 +86,17 @@ final class SubagentResultRendererTest extends TestCase
             id: 'tool_result_tc_par', kind: TranscriptBlockKindEnum::ToolResult, runId: 'run1', seq: 1,
             text: '', meta: ['tool_name' => 'subagent', 'subagent_progress' => $progress], streaming: true,
         );
-        $joined = implode('
-', (new TranscriptBlockRenderer())->renderBlock($block, new TuiRenderContext(terminalWidth: 120)));
-        $this->assertStringContainsString('parallel subagents running (0/2 completed)', $joined);
-        $this->assertStringContainsString('#1 subagent scout', $joined);
-        $this->assertStringContainsString('#2 subagent reviewer', $joined);
-        $this->assertStringContainsString('Task: Read docs', $joined);
-        $this->assertStringContainsString('Task: Review patch', $joined);
-        $this->assertStringContainsString('AGENTS.md', $joined);
-        $this->assertStringNotContainsString('running Step', $joined);
+        $joined = implode("
+", (new TranscriptBlockRenderer())->renderBlock($block, new TuiRenderContext(terminalWidth: 120)));
+        self::assertStringContainsString('parallel subagents running (0/2 completed)', $joined);
+        self::assertStringContainsString('#1 subagent scout', $joined);
+        self::assertStringContainsString('#2 subagent reviewer', $joined);
+        self::assertStringContainsString('Task: Read docs', $joined);
+        self::assertStringContainsString('Task: Review patch', $joined);
+        self::assertStringContainsString('AGENTS.md', $joined);
+        self::assertStringNotContainsString('running Step', $joined);
     }
+
 
     public function testRendersTerminalWidgetWithHandoff(): void
     {
@@ -114,8 +116,8 @@ final class SubagentResultRendererTest extends TestCase
             streaming: false,
         );
         $joined = implode("\n", (new SubagentResultRenderer())->render($block, new TuiRenderContext(terminalWidth: 120)));
-        $this->assertStringContainsString('completed scout', $joined);
-        $this->assertStringContainsString('Unique handoff body', $joined);
+        self::assertStringContainsString('completed scout', $joined);
+        self::assertStringContainsString('Unique handoff body', $joined);
     }
 
     public function testSubagentResultRendererSupportsMetaOnly(): void
@@ -129,6 +131,6 @@ final class SubagentResultRendererTest extends TestCase
             text: '',
             meta: ['tool_name' => 'subagent'],
         );
-        $this->assertTrue($renderer->supports($block));
+        self::assertTrue($renderer->supports($block));
     }
 }

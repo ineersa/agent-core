@@ -12,7 +12,7 @@ final class AgentMessageTest extends TestCase
 {
     public function testFromPayloadReturnsNullWhenRequiredFieldsAreNull(): void
     {
-        $this->assertNull(AgentMessage::fromPayload([
+        self::assertNull(AgentMessage::fromPayload([
             'role' => null,
             'content' => null,
         ]));
@@ -20,7 +20,7 @@ final class AgentMessageTest extends TestCase
 
     public function testFromPayloadReturnsNullWhenRoleIsMissing(): void
     {
-        $this->assertNull(AgentMessage::fromPayload([
+        self::assertNull(AgentMessage::fromPayload([
             'content' => [],
         ]));
     }
@@ -37,8 +37,8 @@ final class AgentMessageTest extends TestCase
             ],
         ]);
 
-        $this->assertInstanceOf(AgentMessage::class, $message);
-        $this->assertSame([
+        self::assertInstanceOf(AgentMessage::class, $message);
+        self::assertSame([
             ['type' => 'text', 'text' => 'hello'],
             ['type' => 'tool_call', 'name' => 'search'],
         ], $message->content);
@@ -58,14 +58,14 @@ final class AgentMessageTest extends TestCase
             'metadata' => ['trace' => 'abc'],
         ]);
 
-        $this->assertInstanceOf(AgentMessage::class, $message);
-        $this->assertSame('2026-04-20T10:30:00+00:00', $message->timestamp?->format(\DATE_ATOM));
-        $this->assertSame('alice', $message->name);
-        $this->assertSame('call-1', $message->toolCallId);
-        $this->assertSame('weather', $message->toolName);
-        $this->assertSame(['foo' => 'bar'], $message->details);
-        $this->assertTrue($message->isError);
-        $this->assertSame(['trace' => 'abc'], $message->metadata);
+        self::assertInstanceOf(AgentMessage::class, $message);
+        self::assertSame('2026-04-20T10:30:00+00:00', $message->timestamp?->format(\DATE_ATOM));
+        self::assertSame('alice', $message->name);
+        self::assertSame('call-1', $message->toolCallId);
+        self::assertSame('weather', $message->toolName);
+        self::assertSame(['foo' => 'bar'], $message->details);
+        self::assertTrue($message->isError);
+        self::assertSame(['trace' => 'abc'], $message->metadata);
     }
 
     public function testFromPayloadThrowsOnInvalidTimestamp(): void
@@ -88,8 +88,8 @@ final class AgentMessageTest extends TestCase
             'name' => ['not', 'a', 'string'],
         ]);
 
-        $this->assertInstanceOf(AgentMessage::class, $message);
-        $this->assertNull($message->name);
+        self::assertInstanceOf(AgentMessage::class, $message);
+        self::assertNull($message->name);
     }
 
     public function testFromPayloadReturnsNullWhenContentIsNotArray(): void
@@ -99,7 +99,7 @@ final class AgentMessageTest extends TestCase
             'content' => 'plain-text',
         ]);
 
-        $this->assertNull($message);
+        self::assertNull($message);
     }
 
     /* ─── toArray() ─── */
@@ -113,16 +113,16 @@ final class AgentMessageTest extends TestCase
 
         $payload = $message->toArray();
 
-        $this->assertSame(['role', 'content', 'is_error'], array_keys($payload));
-        $this->assertSame('assistant', $payload['role']);
-        $this->assertSame([['type' => 'text', 'text' => 'hello']], $payload['content']);
-        $this->assertFalse($payload['is_error']);
-        $this->assertArrayNotHasKey('timestamp', $payload);
-        $this->assertArrayNotHasKey('name', $payload);
-        $this->assertArrayNotHasKey('tool_call_id', $payload);
-        $this->assertArrayNotHasKey('tool_name', $payload);
-        $this->assertArrayNotHasKey('details', $payload);
-        $this->assertArrayNotHasKey('metadata', $payload);
+        self::assertSame(['role', 'content', 'is_error'], array_keys($payload));
+        self::assertSame('assistant', $payload['role']);
+        self::assertSame([['type' => 'text', 'text' => 'hello']], $payload['content']);
+        self::assertFalse($payload['is_error']);
+        self::assertArrayNotHasKey('timestamp', $payload);
+        self::assertArrayNotHasKey('name', $payload);
+        self::assertArrayNotHasKey('tool_call_id', $payload);
+        self::assertArrayNotHasKey('tool_name', $payload);
+        self::assertArrayNotHasKey('details', $payload);
+        self::assertArrayNotHasKey('metadata', $payload);
     }
 
     public function testToArrayIncludesAllOptionalFields(): void
@@ -141,15 +141,15 @@ final class AgentMessageTest extends TestCase
 
         $payload = $message->toArray();
 
-        $this->assertSame('tool', $payload['role']);
-        $this->assertSame([['type' => 'text', 'text' => 'result']], $payload['content']);
-        $this->assertTrue($payload['is_error']);
-        $this->assertSame('2026-05-15T12:00:00+00:00', $payload['timestamp']);
-        $this->assertSame('weather_service', $payload['name']);
-        $this->assertSame('call-42', $payload['tool_call_id']);
-        $this->assertSame('get_weather', $payload['tool_name']);
-        $this->assertSame(['temp' => 22], $payload['details']);
-        $this->assertSame(['trace_id' => 'abc123'], $payload['metadata']);
+        self::assertSame('tool', $payload['role']);
+        self::assertSame([['type' => 'text', 'text' => 'result']], $payload['content']);
+        self::assertTrue($payload['is_error']);
+        self::assertSame('2026-05-15T12:00:00+00:00', $payload['timestamp']);
+        self::assertSame('weather_service', $payload['name']);
+        self::assertSame('call-42', $payload['tool_call_id']);
+        self::assertSame('get_weather', $payload['tool_name']);
+        self::assertSame(['temp' => 22], $payload['details']);
+        self::assertSame(['trace_id' => 'abc123'], $payload['metadata']);
     }
 
     public function testToArrayRoundTripsThroughFromPayload(): void
@@ -169,16 +169,16 @@ final class AgentMessageTest extends TestCase
         $payload = $original->toArray();
         $restored = AgentMessage::fromPayload($payload);
 
-        $this->assertInstanceOf(AgentMessage::class, $restored);
-        $this->assertSame('assistant', $restored->role);
-        $this->assertSame([['type' => 'text', 'text' => 'Hello world']], $restored->content);
-        $this->assertSame('2026-06-01T10:00:00+00:00', $restored->timestamp?->format(\DATE_ATOM));
-        $this->assertSame('assistant', $restored->name);
-        $this->assertNull($restored->toolCallId);
-        $this->assertNull($restored->toolName);
-        $this->assertSame(['confidence' => 0.95], $restored->details);
-        $this->assertFalse($restored->isError);
-        $this->assertSame(['source' => 'test'], $restored->metadata);
+        self::assertInstanceOf(AgentMessage::class, $restored);
+        self::assertSame('assistant', $restored->role);
+        self::assertSame([['type' => 'text', 'text' => 'Hello world']], $restored->content);
+        self::assertSame('2026-06-01T10:00:00+00:00', $restored->timestamp?->format(\DATE_ATOM));
+        self::assertSame('assistant', $restored->name);
+        self::assertNull($restored->toolCallId);
+        self::assertNull($restored->toolName);
+        self::assertSame(['confidence' => 0.95], $restored->details);
+        self::assertFalse($restored->isError);
+        self::assertSame(['source' => 'test'], $restored->metadata);
     }
 
     /* ─── isCustomRole() ─── */
@@ -188,7 +188,7 @@ final class AgentMessageTest extends TestCase
     {
         $message = new AgentMessage(role: $role, content: []);
 
-        $this->assertSame($expected, $message->isCustomRole());
+        self::assertSame($expected, $message->isCustomRole());
     }
 
     /**

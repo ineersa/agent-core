@@ -30,11 +30,11 @@ use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ProjectedSymfonyModelCatalog;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use PHPUnit\Framework\Attributes\Group;
+use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Psr\Log\NullLogger;
 use Symfony\AI\Platform\Bridge\Generic\Factory as GenericFactory;
 use Symfony\AI\Platform\Platform;
 use Symfony\AI\Platform\ProviderInterface;
-use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Yaml\Yaml;
 
@@ -48,6 +48,17 @@ use Symfony\Component\Yaml\Yaml;
 #[Group('llm-real')]
 final class LlamaCppSmokeTest extends KernelTestCase
 {
+    protected static function createKernel(array $options = []): \Ineersa\CodingAgent\Kernel
+    {
+        // Use debug from options (default false) to prevent Symfony ErrorHandler
+        // from registering exception handlers that trigger PHPUnit's risky
+        // 'did not remove its own exception handlers' warning.
+        return new \Ineersa\CodingAgent\Kernel(
+            $options['environment'] ?? 'test',
+            $options['debug'] ?? false,
+        );
+    }
+
     /** Set to true after setUp() successfully boots the kernel, to guard
      * restore_exception_handler() in tearDown() against the skipped case
      * where no handler was pushed. */
@@ -253,17 +264,6 @@ final class LlamaCppSmokeTest extends KernelTestCase
             'Session metadata model should be preserved after invocation');
     }
 
-    protected static function createKernel(array $options = []): \Ineersa\CodingAgent\Kernel
-    {
-        // Use debug from options (default false) to prevent Symfony ErrorHandler
-        // from registering exception handlers that trigger PHPUnit's risky
-        // 'did not remove its own exception handlers' warning.
-        return new \Ineersa\CodingAgent\Kernel(
-            $options['environment'] ?? 'test',
-            $options['debug'] ?? false,
-        );
-    }
-
     // ── Helpers ──
 
     /**
@@ -277,7 +277,7 @@ final class LlamaCppSmokeTest extends KernelTestCase
         $homeWriter = new HomeSettingsWriter($pathResolver);
         $selectionService = new ModelSelectionService($appConfig, new \Ineersa\CodingAgent\Config\ModelResolver($appConfig, $this->sessionMetaStore), new \Ineersa\CodingAgent\Config\ModelSettingsPersister($homeWriter, $this->sessionMetaStore));
         $catalog = $appConfig->catalog
-            ?? new HatfieldModelCatalog(new AiConfig(defaultModel: '', defaultReasoning: 'medium', providers: []));
+            ?? new \Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog(new \Ineersa\CodingAgent\Config\Ai\AiConfig(defaultModel: '', defaultReasoning: 'medium', providers: []));
 
         return new SessionAwareModelResolver($selectionService, $catalog);
     }

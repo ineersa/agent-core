@@ -23,8 +23,8 @@ final class CodexOAuthServiceTest extends TestCase
     {
         parent::setUp();
 
-        $this->tmpDir = sys_get_temp_dir().'/hatfield-oauth-test-'.bin2hex(random_bytes(8));
-        @mkdir($this->tmpDir.'/.hatfield', 0755, true);
+        $this->tmpDir = \sys_get_temp_dir() . '/hatfield-oauth-test-' . \bin2hex(\random_bytes(8));
+        @\mkdir($this->tmpDir . '/.hatfield', 0755, true);
 
         $store = new FlockStore($this->tmpDir);
         $lockFactory = new LockFactory($store);
@@ -36,12 +36,12 @@ final class CodexOAuthServiceTest extends TestCase
     {
         parent::tearDown();
 
-        $path = $this->tmpDir.'/'.CodexOAuthConfig::AUTH_FILE;
-        if (file_exists($path)) {
-            @unlink($path);
+        $path = $this->tmpDir . '/' . CodexOAuthConfig::AUTH_FILE;
+        if (\file_exists($path)) {
+            @\unlink($path);
         }
-        @rmdir($this->tmpDir.'/.hatfield');
-        @rmdir($this->tmpDir);
+        @\rmdir($this->tmpDir . '/.hatfield');
+        @\rmdir($this->tmpDir);
     }
 
     public function testConstructWithStorage(): void
@@ -95,7 +95,7 @@ final class CodexOAuthServiceTest extends TestCase
         $valid = new CodexAuthRecord(
             access: 'work-access',
             refresh: 'work-refresh',
-            expires: time() + 3600,
+            expires: \time() + 3600,
             accountId: 'work-account',
         );
         $this->storage->saveCredentials('openai-codex-work', $valid);
@@ -115,7 +115,7 @@ final class CodexOAuthServiceTest extends TestCase
         $defaultRecord = new CodexAuthRecord(
             access: 'default-access',
             refresh: 'default-refresh',
-            expires: time() + 3600,
+            expires: \time() + 3600,
             accountId: 'default-account',
         );
         $this->storage->saveCredentials('openai-codex', $defaultRecord);
@@ -134,7 +134,7 @@ final class CodexOAuthServiceTest extends TestCase
         $expired = new CodexAuthRecord(
             access: 'expired-access',
             refresh: 'expired-refresh-token',
-            expires: time() - 3600,
+            expires: \time() - 3600,
             accountId: 'expired-account',
         );
         $this->storage->saveCredentials('openai-codex', $expired);
@@ -152,7 +152,7 @@ final class CodexOAuthServiceTest extends TestCase
         $expired = new CodexAuthRecord(
             access: 'expired-access',
             refresh: 'expired-refresh-token',
-            expires: time() - 3600,
+            expires: \time() - 3600,
             accountId: 'expired-account',
         );
         $this->storage->saveCredentials('openai-codex', $expired);
@@ -171,7 +171,7 @@ final class CodexOAuthServiceTest extends TestCase
         $record = new CodexAuthRecord(
             access: 'tok',
             refresh: 'ref',
-            expires: time() + 30,
+            expires: \time() + 30,
             accountId: 'acct',
         );
 
@@ -186,7 +186,7 @@ final class CodexOAuthServiceTest extends TestCase
         $valid = new CodexAuthRecord(
             access: 'work-access',
             refresh: 'work-refresh',
-            expires: time() + 3600,
+            expires: \time() + 3600,
             accountId: 'work-account',
         );
         $this->storage->saveCredentials('openai-codex-work', $valid);
@@ -211,7 +211,7 @@ final class CodexOAuthServiceTest extends TestCase
         $valid = new CodexAuthRecord(
             access: 'default-access',
             refresh: 'default-refresh',
-            expires: time() + 3600,
+            expires: \time() + 3600,
             accountId: 'default-account',
         );
         $this->storage->saveCredentials('openai-codex', $valid);

@@ -34,9 +34,7 @@ final class TuiCommandRegistryAdapterTest extends TestCase
         );
 
         $handler = new readonly class implements ExtensionCommandHandlerInterface {
-            public function handle(string $args, CommandContextInterface $context): void
-            {
-            }
+            public function handle(string $args, CommandContextInterface $context): void {}
         };
 
         $adapter->register($definition, $handler);
@@ -110,18 +108,14 @@ final class TuiCommandRegistryAdapterTest extends TestCase
         $adapter->register(
             new CommandDefinitionDTO(name: 'tasks'),
             new readonly class implements ExtensionCommandHandlerInterface {
-                public function handle(string $args, CommandContextInterface $context): void
-                {
-                }
+                public function handle(string $args, CommandContextInterface $context): void {}
             },
         );
 
         $adapter->register(
             new CommandDefinitionDTO(name: 'summary'),
             new readonly class implements ExtensionCommandHandlerInterface {
-                public function handle(string $args, CommandContextInterface $context): void
-                {
-                }
+                public function handle(string $args, CommandContextInterface $context): void {}
             },
         );
 
@@ -137,9 +131,7 @@ final class TuiCommandRegistryAdapterTest extends TestCase
         $adapter->register(
             new CommandDefinitionDTO(name: 'dup'),
             new readonly class implements ExtensionCommandHandlerInterface {
-                public function handle(string $args, CommandContextInterface $context): void
-                {
-                }
+                public function handle(string $args, CommandContextInterface $context): void {}
             },
         );
 
@@ -149,9 +141,7 @@ final class TuiCommandRegistryAdapterTest extends TestCase
         $adapter->register(
             new CommandDefinitionDTO(name: 'dup'),
             new readonly class implements ExtensionCommandHandlerInterface {
-                public function handle(string $args, CommandContextInterface $context): void
-                {
-                }
+                public function handle(string $args, CommandContextInterface $context): void {}
             },
         );
     }

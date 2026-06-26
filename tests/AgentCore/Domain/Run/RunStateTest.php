@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 final class RunStateTest extends TestCase
@@ -16,18 +17,18 @@ final class RunStateTest extends TestCase
     {
         $state = RunState::queued('run-test-1');
 
-        $this->assertSame('run-test-1', $state->runId);
-        $this->assertSame(RunStatus::Queued, $state->status);
-        $this->assertSame(0, $state->version);
-        $this->assertSame(0, $state->turnNo);
-        $this->assertSame(0, $state->lastSeq);
-        $this->assertFalse($state->isStreaming);
-        $this->assertNull($state->streamingMessage);
-        $this->assertSame([], $state->pendingToolCalls);
-        $this->assertNull($state->errorMessage);
-        $this->assertSame([], $state->messages);
-        $this->assertNull($state->activeStepId);
-        $this->assertFalse($state->retryableFailure);
+        self::assertSame('run-test-1', $state->runId);
+        self::assertSame(RunStatus::Queued, $state->status);
+        self::assertSame(0, $state->version);
+        self::assertSame(0, $state->turnNo);
+        self::assertSame(0, $state->lastSeq);
+        self::assertFalse($state->isStreaming);
+        self::assertNull($state->streamingMessage);
+        self::assertSame([], $state->pendingToolCalls);
+        self::assertNull($state->errorMessage);
+        self::assertSame([], $state->messages);
+        self::assertNull($state->activeStepId);
+        self::assertFalse($state->retryableFailure);
     }
 
     public function testConstructorWithRunningBuilderPreservesAllFields(): void
@@ -47,19 +48,19 @@ final class RunStateTest extends TestCase
             ->withRetryableFailure(true)
             ->build();
 
-        $this->assertSame('run-x', $state->runId);
-        $this->assertSame(RunStatus::Running, $state->status);
-        $this->assertSame(3, $state->version);
-        $this->assertSame(2, $state->turnNo);
-        $this->assertSame(7, $state->lastSeq);
-        $this->assertTrue($state->isStreaming);
-        $this->assertSame(['chunk' => 'data'], $state->streamingMessage);
-        $this->assertSame(['call-1' => false], $state->pendingToolCalls);
-        $this->assertSame('something broke', $state->errorMessage);
-        $this->assertCount(1, $state->messages);
-        $this->assertSame('hello', $state->messages[0]->content[0]['text']);
-        $this->assertSame('step-42', $state->activeStepId);
-        $this->assertTrue($state->retryableFailure);
+        self::assertSame('run-x', $state->runId);
+        self::assertSame(RunStatus::Running, $state->status);
+        self::assertSame(3, $state->version);
+        self::assertSame(2, $state->turnNo);
+        self::assertSame(7, $state->lastSeq);
+        self::assertTrue($state->isStreaming);
+        self::assertSame(['chunk' => 'data'], $state->streamingMessage);
+        self::assertSame(['call-1' => false], $state->pendingToolCalls);
+        self::assertSame('something broke', $state->errorMessage);
+        self::assertCount(1, $state->messages);
+        self::assertSame('hello', $state->messages[0]->content[0]['text']);
+        self::assertSame('step-42', $state->activeStepId);
+        self::assertTrue($state->retryableFailure);
     }
 
     /**
@@ -69,7 +70,7 @@ final class RunStateTest extends TestCase
     public function testRunStatusRoundTrip(): void
     {
         foreach (RunStatus::cases() as $status) {
-            $this->assertSame($status, RunStatus::from($status->value));
+            self::assertSame($status, RunStatus::from($status->value));
         }
 
         $this->expectException(\ValueError::class);

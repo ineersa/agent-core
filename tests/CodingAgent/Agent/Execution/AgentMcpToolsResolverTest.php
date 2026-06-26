@@ -11,10 +11,10 @@ use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogDTO;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolDefinitionDTO;
 use Ineersa\CodingAgent\Mcp\Config\McpConfigDTO;
+use Ineersa\CodingAgent\Tests\Support\Mcp\TestMcpConfigLoaderFactory;
 use Ineersa\CodingAgent\Mcp\Config\McpServerAvailabilityEnum;
 use Ineersa\CodingAgent\Mcp\Config\McpServerDefinitionDTO;
 use Ineersa\CodingAgent\Mcp\Config\McpTransportTypeEnum;
-use Ineersa\CodingAgent\Tests\Support\Mcp\TestMcpConfigLoaderFactory;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
@@ -29,9 +29,9 @@ final class AgentMcpToolsResolverTest extends TestCase
         $resolver = $this->createResolver();
         $result = $resolver->resolve(null, 'parent-run');
 
-        $this->assertSame([], $result['non_mcp_tools']);
-        $this->assertSame(['context7_resolve'], $result['mcp_runtime_tools']);
-        $this->assertSame('inherited_global', $result['mcp_policy']['mode']);
+        self::assertSame([], $result['non_mcp_tools']);
+        self::assertSame(['context7_resolve'], $result['mcp_runtime_tools']);
+        self::assertSame('inherited_global', $result['mcp_policy']['mode']);
     }
 
     public function testExplicitToolsWithoutMcpSelectorsDeniesMcp(): void
@@ -39,9 +39,9 @@ final class AgentMcpToolsResolverTest extends TestCase
         $resolver = $this->createResolver();
         $result = $resolver->resolve(['read', 'bash'], 'parent-run');
 
-        $this->assertSame(['read', 'bash'], $result['non_mcp_tools']);
-        $this->assertSame([], $result['mcp_runtime_tools']);
-        $this->assertSame('none', $result['mcp_policy']['mode']);
+        self::assertSame(['read', 'bash'], $result['non_mcp_tools']);
+        self::assertSame([], $result['mcp_runtime_tools']);
+        self::assertSame('none', $result['mcp_policy']['mode']);
     }
 
     public function testMcpDenySelector(): void
@@ -49,7 +49,7 @@ final class AgentMcpToolsResolverTest extends TestCase
         $resolver = $this->createResolver();
         $result = $resolver->resolve(['read', 'mcp:-'], 'parent-run');
 
-        $this->assertSame([], $result['mcp_runtime_tools']);
+        self::assertSame([], $result['mcp_runtime_tools']);
     }
 
     public function testMcpStarAllowsSpecificServerTools(): void
@@ -57,9 +57,9 @@ final class AgentMcpToolsResolverTest extends TestCase
         $resolver = $this->createResolver();
         $result = $resolver->resolve(['mcp:*'], 'parent-run');
 
-        $this->assertContains('context7_resolve', $result['mcp_runtime_tools']);
-        $this->assertContains('websearch_search', $result['mcp_runtime_tools']);
-        $this->assertSame('all', $result['mcp_policy']['mode']);
+        self::assertContains('context7_resolve', $result['mcp_runtime_tools']);
+        self::assertContains('websearch_search', $result['mcp_runtime_tools']);
+        self::assertSame('all', $result['mcp_policy']['mode']);
     }
 
     public function testConcreteAndPrefixSelectors(): void
@@ -67,8 +67,8 @@ final class AgentMcpToolsResolverTest extends TestCase
         $resolver = $this->createResolver();
         $result = $resolver->resolve(['mcp:websearch_search', 'mcp:context7_'], 'parent-run');
 
-        $this->assertSame(['websearch_search', 'context7_resolve'], $result['mcp_runtime_tools']);
-        $this->assertSame('specific', $result['mcp_policy']['mode']);
+        self::assertSame(['websearch_search', 'context7_resolve'], $result['mcp_runtime_tools']);
+        self::assertSame('specific', $result['mcp_policy']['mode']);
     }
 
     private function createResolver(): AgentMcpToolsResolver

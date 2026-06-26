@@ -7,12 +7,12 @@ namespace Ineersa\CodingAgent\Tests\Mcp\Tool;
 use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
-use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Mcp\Catalog\McpServerCatalogEntryDTO;
 use Ineersa\CodingAgent\Mcp\Catalog\McpServerCatalogStatusEnum;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogDTO;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolDefinitionDTO;
+use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Mcp\Tool\McpCatalogRegisteringToolSetResolver;
 use Ineersa\CodingAgent\Mcp\Tool\McpToolHandlerFactory;
 use Ineersa\CodingAgent\Mcp\Tool\McpToolRegistrar;
@@ -215,6 +215,7 @@ final class McpCatalogRegisteringToolSetResolverTest extends TestCase
         $this->assertStringContainsString('Catalog storage I/O failure', $warnings[0]['context']['error_message']);
     }
 
+
     public function testChildRunUsesOwnCatalogWhenPresentBeforeParentFallback(): void
     {
         $registry = new ToolRegistry();
@@ -356,6 +357,7 @@ final class McpCatalogRegisteringToolSetResolverTest extends TestCase
         return new McpToolHandlerFactory($invoker);
     }
 
+    /** @param array<string, McpToolCatalogDTO> $data */
     private function metadataReader(): SubagentRunMetadataReader
     {
         $eventStore = $this->createStub(\Ineersa\AgentCore\Contract\EventStoreInterface::class);

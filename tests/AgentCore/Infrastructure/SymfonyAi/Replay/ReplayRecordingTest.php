@@ -132,7 +132,7 @@ final class ReplayRecordingTest extends \PHPUnit\Framework\TestCase
         $this->assertFileExists($outputPath);
 
         // Optional: print recorded deltas for diagnostic visibility
-        echo "\n\nRecorded {$outputPath} (".\count($deltas)." deltas, {$bytes} bytes)\n";
+        echo "\n\nRecorded {$outputPath} (" . \count($deltas) . " deltas, {$bytes} bytes)\n";
     }
 
     /**
@@ -189,7 +189,7 @@ final class ReplayRecordingTest extends \PHPUnit\Framework\TestCase
         ]);
 
         $this->assertGreaterThan(0, $bytes, 'Fixture file should be non-empty');
-        echo "\nRecorded TUI simple text fixture → {$outputPath} (".\count($deltas)." deltas, {$bytes} bytes)\n";
+        echo "\nRecorded TUI simple text fixture → {$outputPath} (" . \count($deltas) . " deltas, {$bytes} bytes)\n";
     }
 
     /**
@@ -246,7 +246,7 @@ final class ReplayRecordingTest extends \PHPUnit\Framework\TestCase
         ]);
 
         $this->assertGreaterThan(0, $bytes, 'Fixture file should be non-empty');
-        echo "\nRecorded TUI startup fixture → {$outputPath} (".\count($deltas)." deltas, {$bytes} bytes)\n";
+        echo "\nRecorded TUI startup fixture → {$outputPath} (" . \count($deltas) . " deltas, {$bytes} bytes)\n";
     }
 
     /**

@@ -30,69 +30,69 @@ class McpToolNameMapperTest extends TestCase
     public function testMapsSimpleNames(): void
     {
         $result = $this->mapper->mapHatfieldName('filesystem', 'read_file');
-        $this->assertSame('filesystem_read_file', $result);
+        self::assertSame('filesystem_read_file', $result);
     }
 
     public function testMapsNamesWithHyphens(): void
     {
         $result = $this->mapper->mapHatfieldName('my-server', 'get-data');
-        $this->assertSame('my-server_get-data', $result);
+        self::assertSame('my-server_get-data', $result);
     }
 
     public function testMapsCamelCaseServerNames(): void
     {
         $result = $this->mapper->mapHatfieldName('GitHub', 'search_issues');
-        $this->assertSame('GitHub_search_issues', $result);
+        self::assertSame('GitHub_search_issues', $result);
     }
 
     public function testSanitizeReplacesSpecialCharacters(): void
     {
         // Dots, spaces, and slashes should be replaced with underscores
         $result = $this->mapper->sanitize('my.server/name with space');
-        $this->assertSame('my_server_name_with_space', $result);
+        self::assertSame('my_server_name_with_space', $result);
     }
 
     public function testSanitizeCollapsesConsecutiveUnderscores(): void
     {
         // Multiple special chars adjacent → single underscore
         $result = $this->mapper->sanitize('a..b//c');
-        $this->assertSame('a_b_c', $result);
+        self::assertSame('a_b_c', $result);
     }
 
     public function testSanitizeTrimsLeadingAndTrailingUnderscores(): void
     {
         $result = $this->mapper->sanitize('...trim-me...');
-        $this->assertSame('trim-me', $result);
+        self::assertSame('trim-me', $result);
     }
 
     public function testSanitizeEmptyStringReturnsUnknown(): void
     {
         $result = $this->mapper->sanitize('');
-        $this->assertSame('unknown', $result);
+        self::assertSame('unknown', $result);
     }
 
     public function testSanitizeAllSpecialCharsReturnsUnknown(): void
     {
         $result = $this->mapper->sanitize('...///...');
-        $this->assertSame('unknown', $result);
+        self::assertSame('unknown', $result);
     }
 
     public function testSanitizePreservesLettersNumbersUnderscoresHyphens(): void
     {
         $result = $this->mapper->sanitize('abc-123_def-456');
-        $this->assertSame('abc-123_def-456', $result);
+        self::assertSame('abc-123_def-456', $result);
     }
 
     public function testReverseKeyIsConsistent(): void
     {
         $key = $this->mapper->reverseKey('filesystem', 'read_file');
-        $this->assertSame('filesystem:read_file', $key);
+        self::assertSame('filesystem:read_file', $key);
     }
 
     public function testMappingIsIdempotentForCleanNames(): void
     {
         $name1 = $this->mapper->mapHatfieldName('server', 'tool');
         $name2 = $this->mapper->mapHatfieldName('server', 'tool');
-        $this->assertSame($name1, $name2, 'Same inputs should produce same mapped name');
+        self::assertSame($name1, $name2, 'Same inputs should produce same mapped name');
     }
 }

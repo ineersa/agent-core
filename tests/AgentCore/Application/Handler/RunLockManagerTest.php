@@ -17,7 +17,7 @@ final class RunLockManagerTest extends TestCase
 
         $result = $manager->synchronized('run-lock-1', static fn (): string => 'ok');
 
-        $this->assertSame('ok', $result);
+        self::assertSame('ok', $result);
     }
 
     public function testSynchronizedFailsFastWhenAnotherWorkerOwnsLock(): void
@@ -26,7 +26,7 @@ final class RunLockManagerTest extends TestCase
         $factory = new LockFactory($store);
 
         $stranded = $factory->createLock('agent_loop.run.run-lock-2', 30.0, autoRelease: false);
-        $this->assertTrue($stranded->acquire());
+        self::assertTrue($stranded->acquire());
 
         $manager = new RunLockManager($factory, ttlSeconds: 30.0, acquireTimeoutSeconds: 0.05);
 
@@ -34,9 +34,9 @@ final class RunLockManagerTest extends TestCase
 
         try {
             $manager->synchronized('run-lock-2', static fn (): string => 'should-not-run');
-            $this->fail('Expected lock acquisition timeout exception.');
+            self::fail('Expected lock acquisition timeout exception.');
         } catch (\RuntimeException $exception) {
-            $this->assertStringContainsString('Failed to acquire run lock for "run-lock-2"', $exception->getMessage());
+            self::assertStringContainsString('Failed to acquire run lock for "run-lock-2"', $exception->getMessage());
         } finally {
             if ($stranded->isAcquired()) {
                 $stranded->release();
@@ -44,7 +44,7 @@ final class RunLockManagerTest extends TestCase
         }
 
         $elapsedSeconds = microtime(true) - $startedAt;
-        $this->assertLessThan(1.0, $elapsedSeconds);
+        self::assertLessThan(1.0, $elapsedSeconds);
     }
 
     /**
@@ -63,17 +63,17 @@ final class RunLockManagerTest extends TestCase
         $outerRan = false;
         $innerRan = false;
 
-        $manager->synchronized('reentrant-run', static function () use ($manager, &$outerRan, &$innerRan): void {
+        $manager->synchronized('reentrant-run', function () use ($manager, &$outerRan, &$innerRan): void {
             $outerRan = true;
 
             // Nested call for the SAME runId — must not deadlock.
-            $manager->synchronized('reentrant-run', static function () use (&$innerRan): void {
+            $manager->synchronized('reentrant-run', function () use (&$innerRan): void {
                 $innerRan = true;
             });
         });
 
-        $this->assertTrue($outerRan, 'Outer critical section must execute');
-        $this->assertTrue($innerRan, 'Inner (re-entrant) critical section must execute');
+        self::assertTrue($outerRan, 'Outer critical section must execute');
+        self::assertTrue($innerRan, 'Inner (re-entrant) critical section must execute');
     }
 
     /**
@@ -91,7 +91,7 @@ final class RunLockManagerTest extends TestCase
 
         // Pre-acquire one lock externally to simulate contention.
         $extLock = (new LockFactory($store))->createLock('agent_loop.run.run-a', 30.0, autoRelease: false);
-        $this->assertTrue($extLock->acquire());
+        self::assertTrue($extLock->acquire());
 
         try {
             // run-a should fail (externally held) ...

@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\CLI;
 
 use Ineersa\CodingAgent\CLI\CompletionFileIndexRefreshCommand;
 use Ineersa\CodingAgent\CLI\FileMentionIndexBuilder;
+use Ineersa\CodingAgent\CLI\FileMentionIndexLockHeldException;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -29,6 +30,28 @@ final class CompletionFileIndexRefreshCommandTest extends TestCase
     protected function tearDown(): void
     {
         $this->removeDir($this->tmpDir);
+    }
+
+    private function createLockFactory(): LockFactory
+    {
+        return new LockFactory(new FlockStore($this->tmpDir));
+    }
+
+    private function createLogger(): LoggerInterface
+    {
+        return $this->createStub(LoggerInterface::class);
+    }
+
+    private function createCommand(string $cwd, string $indexPath, ?LockFactory $lockFactory = null): Command
+    {
+        $builder = new FileMentionIndexBuilder(
+            $cwd,
+            $indexPath,
+            logger: $this->createLogger(),
+            lockFactory: $lockFactory ?? $this->createLockFactory(),
+        );
+
+        return new CompletionFileIndexRefreshCommand($builder, $this->createLogger());
     }
 
     #[Test]
@@ -86,28 +109,6 @@ final class CompletionFileIndexRefreshCommandTest extends TestCase
 
         $this->assertSame(Command::FAILURE, $exitCode);
         $this->assertEmpty($tester->getDisplay(), 'Should write no stdout output on failure.');
-    }
-
-    private function createLockFactory(): LockFactory
-    {
-        return new LockFactory(new FlockStore($this->tmpDir));
-    }
-
-    private function createLogger(): LoggerInterface
-    {
-        return $this->createStub(LoggerInterface::class);
-    }
-
-    private function createCommand(string $cwd, string $indexPath, ?LockFactory $lockFactory = null): Command
-    {
-        $builder = new FileMentionIndexBuilder(
-            $cwd,
-            $indexPath,
-            logger: $this->createLogger(),
-            lockFactory: $lockFactory ?? $this->createLockFactory(),
-        );
-
-        return new CompletionFileIndexRefreshCommand($builder, $this->createLogger());
     }
 
     private function removeDir(string $dir): void

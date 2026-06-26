@@ -37,14 +37,14 @@ final class TuiProviderErrorE2eTest extends TestCase
     protected function setUp(): void
     {
         if (!TmuxHarness::isAvailable()) {
-            $this->markTestSkipped('tmux is not installed. Skipping TUI e2e tests.');
+            self::markTestSkipped('tmux is not installed. Skipping TUI e2e tests.');
         }
 
         $this->tmux = new TmuxHarness();
         $this->projectRoot = ProjectDir::get();
         $this->testProjectDir = $this->createIsolatedProjectDir();
         $this->snapshotDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
-        @mkdir($this->snapshotDir, 0o777, true);
+        @\mkdir($this->snapshotDir, 0o777, true);
     }
 
     protected function tearDown(): void
@@ -98,11 +98,11 @@ final class TuiProviderErrorE2eTest extends TestCase
             );
 
             // 1. Must show an error block, not an assistant block.
-            $this->assertTrue(
+            self::assertTrue(
                 str_contains($capture, '✕'),
                 'Transcript must display ✕ error block for provider error fixture',
             );
-            $this->assertStringNotContainsString(
+            self::assertStringNotContainsString(
                 '◇',
                 $capture,
                 'Transcript must NOT show assistant block for provider error fixture',
@@ -111,19 +111,19 @@ final class TuiProviderErrorE2eTest extends TestCase
             // 2. Sanitized user-facing text must be visible.
             // The classifier produces "LLM provider rate limit" for 429.
             $fullCapture = $this->tmux->capturePlainWithHistory($pane, 2000);
-            $this->assertStringContainsString(
+            self::assertStringContainsString(
                 'rate limit',
                 strtolower($fullCapture),
                 'Sanitized rate limit message must be visible in transcript',
             );
-            $this->assertStringContainsString(
+            self::assertStringContainsString(
                 'retryable',
                 strtolower($fullCapture),
                 'Sanitized retryable indicator must be visible in transcript',
             );
 
             // 3. Raw sentinel body text must NOT be visible.
-            $this->assertStringNotContainsString(
+            self::assertStringNotContainsString(
                 'DO_NOT_LEAK_PROVIDER_BODY',
                 $fullCapture,
                 'Raw provider body sentinel must NOT be leaked in TUI',
@@ -134,7 +134,7 @@ final class TuiProviderErrorE2eTest extends TestCase
 
             // Optionally check that the session metadata shows the error.
             $sessionCapture = $this->tmux->capturePlainWithHistory($pane, 2000);
-            $this->assertStringContainsString(
+            self::assertStringContainsString(
                 'session ',
                 $sessionCapture,
                 'Session ID should appear in footer after prompt submission',
@@ -157,8 +157,8 @@ final class TuiProviderErrorE2eTest extends TestCase
     private function agentCommand(): string
     {
         $fixturePath = __DIR__.'/fixtures/tui-provider-rate-limit-error.json';
-        $fixtureEnv = is_file($fixturePath)
-            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.escapeshellarg($fixturePath).' '
+        $fixtureEnv = \is_file($fixturePath)
+            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.\escapeshellarg($fixturePath).' '
             : '';
 
         $projectDir = ProjectDir::get();
@@ -171,18 +171,18 @@ final class TuiProviderErrorE2eTest extends TestCase
             'APP_ENV=test HATFIELD_TEST_DATABASE_PATH=%s HOME=%s %s %s %s agent '
                 .'--model=llama_cpp_test/test '
                 .'--tools-excluded=bash 2>&1',
-            escapeshellarg($dbPath),
-            escapeshellarg($this->testProjectDir.'/home'),
+            \escapeshellarg($dbPath),
+            \escapeshellarg($this->testProjectDir.'/home'),
             $fixtureEnv,
-            escapeshellarg($php),
-            escapeshellarg($script),
+            \escapeshellarg($php),
+            \escapeshellarg($script),
         );
     }
 
     private function createIsolatedProjectDir(): string
     {
         $dir = TestDirectoryIsolation::createProjectTempDir('tui-e2e-provider-error');
-        @mkdir($dir.'/.hatfield', 0o777, true);
+        @\mkdir($dir.'/.hatfield', 0o777, true);
 
         $settings = [
             'ai' => [
@@ -243,10 +243,10 @@ final class TuiProviderErrorE2eTest extends TestCase
         ];
 
         $yaml = \Symfony\Component\Yaml\Yaml::dump($settings, 6, 4);
-        file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
+        \file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
 
-        @mkdir($dir.'/home/.hatfield', 0o777, true);
-        file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
+        @\mkdir($dir.'/home/.hatfield', 0o777, true);
+        \file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
 
         return $dir;
     }
@@ -256,7 +256,7 @@ final class TuiProviderErrorE2eTest extends TestCase
         $ansi = $this->tmux->captureAnsi($pane);
         $ts = date('Ymd-His');
         $path = \sprintf('%s/%s-%s.ansi', $this->snapshotDir, $tag, $ts);
-        file_put_contents($path, $ansi);
+        \file_put_contents($path, $ansi);
     }
 
     private function savePlainSnapshot(TmuxPane $pane, string $tag): void
@@ -264,6 +264,6 @@ final class TuiProviderErrorE2eTest extends TestCase
         $plain = $this->tmux->capturePlainWithHistory($pane, 2000);
         $ts = date('Ymd-His');
         $path = \sprintf('%s/%s-%s.txt', $this->snapshotDir, $tag, $ts);
-        file_put_contents($path, $plain);
+        \file_put_contents($path, $plain);
     }
 }

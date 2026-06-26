@@ -167,4 +167,5 @@ final class AfterTurnCommitSerializerRegressionTest extends TestCase
         $this->assertSame(10, $event->seq);
         $this->assertSame('agent_command_applied', $event->type);
     }
+
 }

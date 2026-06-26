@@ -16,40 +16,11 @@ use Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderFactory;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Bridge\Generic\CompletionsModel;
+use Symfony\AI\Platform\ProviderInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 final class SymfonyAiProviderFactoryTest extends TestCase
 {
-    // ── Raw stream capture writer (env-gated) ──────────────────────────
-
-    private ?string $savedCaptureEnv = null;
-    private ?string $savedCapturePathEnv = null;
-
-    protected function setUp(): void
-    {
-        parent::setUp();
-        // Save env vars so we can restore them in tearDown
-        $this->savedCaptureEnv = false !== getenv('HATFIELD_LLM_RAW_STREAM_CAPTURE') ? getenv('HATFIELD_LLM_RAW_STREAM_CAPTURE') : null;
-        $this->savedCapturePathEnv = false !== getenv('HATFIELD_LLM_RAW_STREAM_CAPTURE_PATH') ? getenv('HATFIELD_LLM_RAW_STREAM_CAPTURE_PATH') : null;
-    }
-
-    protected function tearDown(): void
-    {
-        // Restore env vars
-        if (null !== $this->savedCaptureEnv) {
-            putenv('HATFIELD_LLM_RAW_STREAM_CAPTURE='.$this->savedCaptureEnv);
-        } else {
-            putenv('HATFIELD_LLM_RAW_STREAM_CAPTURE');
-        }
-        if (null !== $this->savedCapturePathEnv) {
-            putenv('HATFIELD_LLM_RAW_STREAM_CAPTURE_PATH='.$this->savedCapturePathEnv);
-        } else {
-            putenv('HATFIELD_LLM_RAW_STREAM_CAPTURE_PATH');
-        }
-        unset($_ENV['HATFIELD_LLM_RAW_STREAM_CAPTURE'], $_ENV['HATFIELD_LLM_RAW_STREAM_CAPTURE_PATH']);
-        parent::tearDown();
-    }
-
     public function testGenericTypeBuildsProvider(): void
     {
         $appConfig = $this->appConfig();
@@ -155,6 +126,58 @@ final class SymfonyAiProviderFactoryTest extends TestCase
         $this->assertArrayHasKey('deepseek', $providers);
     }
 
+    /**
+     * @param array<string, AiProviderConfig> $providers
+     */
+    private function createFactory(array $providers): SymfonyAiProviderFactory
+    {
+        $aiConfig = new AiConfig(
+            defaultModel: 'openai-codex/gpt-5.5',
+            providers: $providers,
+        );
+
+        $appConfig = new AppConfig(
+            tui: TuiConfig::fromArray(['theme' => 'cyberpunk']),
+            logging: new LoggingConfig(),
+            catalog: new HatfieldModelCatalog($aiConfig),
+        );
+
+        return new SymfonyAiProviderFactory(
+            $appConfig,
+            $this->createStub(EventDispatcherInterface::class),
+        );
+    }
+
+    // ── Raw stream capture writer (env-gated) ──────────────────────────
+
+    private ?string $savedCaptureEnv = null;
+    private ?string $savedCapturePathEnv = null;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        // Save env vars so we can restore them in tearDown
+        $this->savedCaptureEnv = false !== getenv('HATFIELD_LLM_RAW_STREAM_CAPTURE') ? getenv('HATFIELD_LLM_RAW_STREAM_CAPTURE') : null;
+        $this->savedCapturePathEnv = false !== getenv('HATFIELD_LLM_RAW_STREAM_CAPTURE_PATH') ? getenv('HATFIELD_LLM_RAW_STREAM_CAPTURE_PATH') : null;
+    }
+
+    protected function tearDown(): void
+    {
+        // Restore env vars
+        if (null !== $this->savedCaptureEnv) {
+            putenv('HATFIELD_LLM_RAW_STREAM_CAPTURE='.$this->savedCaptureEnv);
+        } else {
+            putenv('HATFIELD_LLM_RAW_STREAM_CAPTURE');
+        }
+        if (null !== $this->savedCapturePathEnv) {
+            putenv('HATFIELD_LLM_RAW_STREAM_CAPTURE_PATH='.$this->savedCapturePathEnv);
+        } else {
+            putenv('HATFIELD_LLM_RAW_STREAM_CAPTURE_PATH');
+        }
+        unset($_ENV['HATFIELD_LLM_RAW_STREAM_CAPTURE'], $_ENV['HATFIELD_LLM_RAW_STREAM_CAPTURE_PATH']);
+        parent::tearDown();
+    }
+
     public function testCaptureDisabledByDefaultDoesNotCreateFile(): void
     {
         // Ensure env is not set
@@ -174,7 +197,7 @@ final class SymfonyAiProviderFactoryTest extends TestCase
 
         $capture = $this->invokeBuildCaptureListener($factory, 'test-provider');
 
-        $this->assertNull($capture, 'buildCaptureListener should return null when env is not set');
+        self::assertNull($capture, 'buildCaptureListener should return null when env is not set');
     }
 
     public function testCaptureEnabledReturnsClosureThatWritesValidJsonl(): void
@@ -200,19 +223,19 @@ final class SymfonyAiProviderFactoryTest extends TestCase
 
             $capture = $this->invokeBuildCaptureListener($factory, 'test-provider');
 
-            $this->assertNotNull($capture, 'buildCaptureListener should return a closure when env is set');
-            $this->assertFileExists($capturePath, 'Capture file should be created');
+            self::assertNotNull($capture, 'buildCaptureListener should return a closure when env is set');
+            self::assertFileExists($capturePath, 'Capture file should be created');
 
             // Check file permissions are restrictive (0600)
             $perms = fileperms($capturePath) & 0o777;
-            $this->assertSame(0o600, $perms, 'Capture file should have 0600 permissions');
+            self::assertSame(0o600, $perms, 'Capture file should have 0600 permissions');
 
             // Check directory permissions are restrictive (0700)
             $dirPerms = fileperms($tmpDir) & 0o777;
-            $this->assertSame(0o750, $dirPerms, 'Temp dir should have 0750 permissions');
-            $captureDirPerms = fileperms(\dirname($capturePath)) & 0o777;
+            self::assertSame(0o750, $dirPerms, 'Temp dir should have 0750 permissions');
+            $captureDirPerms = fileperms(dirname($capturePath)) & 0o777;
             // The immediate parent is $tmpDir which we set to 0750
-            $this->assertSame(0o750, $captureDirPerms);
+            self::assertSame(0o750, $captureDirPerms);
 
             // Write sample events through the closure
             $capture('capture_start', -1, ['provider_id' => 'test-provider']);
@@ -222,32 +245,32 @@ final class SymfonyAiProviderFactoryTest extends TestCase
 
             // Read back and validate JSONL
             $lines = file($capturePath, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES);
-            $this->assertCount(4, $lines, 'Should have 4 JSONL lines');
+            self::assertCount(4, $lines, 'Should have 4 JSONL lines');
 
             $records = array_map(static fn (string $line) => json_decode($line, true, flags: \JSON_THROW_ON_ERROR), $lines);
 
             // capture_start
-            $this->assertSame('capture_start', $records[0]['event']);
-            $this->assertSame('test-provider', $records[0]['provider_id']);
-            $this->assertArrayHasKey('timestamp', $records[0]);
-            $this->assertSame(-1, $records[0]['ordinal']);
+            self::assertSame('capture_start', $records[0]['event']);
+            self::assertSame('test-provider', $records[0]['provider_id']);
+            self::assertArrayHasKey('timestamp', $records[0]);
+            self::assertSame(-1, $records[0]['ordinal']);
 
             // raw_chunk
-            $this->assertSame('raw_chunk', $records[1]['event']);
-            $this->assertSame('test-provider', $records[1]['provider_id']);
-            $this->assertSame(0, $records[1]['ordinal']);
-            $this->assertArrayHasKey('data', $records[1]);
+            self::assertSame('raw_chunk', $records[1]['event']);
+            self::assertSame('test-provider', $records[1]['provider_id']);
+            self::assertSame(0, $records[1]['ordinal']);
+            self::assertArrayHasKey('data', $records[1]);
 
             // converted_delta
-            $this->assertSame('converted_delta', $records[2]['event']);
-            $this->assertSame('test-provider', $records[2]['provider_id']);
-            $this->assertSame(0, $records[2]['ordinal']);
-            $this->assertSame('TextDelta', $records[2]['type']);
+            self::assertSame('converted_delta', $records[2]['event']);
+            self::assertSame('test-provider', $records[2]['provider_id']);
+            self::assertSame(0, $records[2]['ordinal']);
+            self::assertSame('TextDelta', $records[2]['type']);
 
             // capture_end
-            $this->assertSame('capture_end', $records[3]['event']);
-            $this->assertSame('test-provider', $records[3]['provider_id']);
-            $this->assertSame('stop', $records[3]['stop_reason']);
+            self::assertSame('capture_end', $records[3]['event']);
+            self::assertSame('test-provider', $records[3]['provider_id']);
+            self::assertSame('stop', $records[3]['stop_reason']);
         } finally {
             TestDirectoryIsolation::removeDirectory($tmpDir);
         }
@@ -276,33 +299,11 @@ final class SymfonyAiProviderFactoryTest extends TestCase
 
             $capture = $this->invokeBuildCaptureListener($factory, 'test-provider');
 
-            $this->assertNull($capture, 'buildCaptureListener should return null when HATFIELD_LLM_RAW_STREAM_CAPTURE=0');
-            $this->assertFileDoesNotExist($capturePath, 'Capture file should not be created when disabled');
+            self::assertNull($capture, 'buildCaptureListener should return null when HATFIELD_LLM_RAW_STREAM_CAPTURE=0');
+            self::assertFileDoesNotExist($capturePath, 'Capture file should not be created when disabled');
         } finally {
             TestDirectoryIsolation::removeDirectory($tmpDir);
         }
-    }
-
-    /**
-     * @param array<string, AiProviderConfig> $providers
-     */
-    private function createFactory(array $providers): SymfonyAiProviderFactory
-    {
-        $aiConfig = new AiConfig(
-            defaultModel: 'openai-codex/gpt-5.5',
-            providers: $providers,
-        );
-
-        $appConfig = new AppConfig(
-            tui: TuiConfig::fromArray(['theme' => 'cyberpunk']),
-            logging: new LoggingConfig(),
-            catalog: new HatfieldModelCatalog($aiConfig),
-        );
-
-        return new SymfonyAiProviderFactory(
-            $appConfig,
-            $this->createStub(EventDispatcherInterface::class),
-        );
     }
 
     /**

@@ -14,11 +14,12 @@
 
 declare(strict_types=1);
 
+use Mcp\Schema\ToolAnnotations;
 use Mcp\Server;
 use Mcp\Server\Transport\StdioTransport;
 
 // Load Composer autoload relative to this script's location within the worktree.
-$autoloadPath = __DIR__.'/../../../../vendor/autoload.php';
+$autoloadPath = __DIR__ . '/../../../../vendor/autoload.php';
 require_once $autoloadPath;
 
 $server = Server::builder()
@@ -34,7 +35,7 @@ $server = Server::builder()
                 'content' => [
                     [
                         'type' => 'text',
-                        'text' => 'echo: '.($arguments['text'] ?? ''),
+                        'text' => 'echo: ' . ($arguments['text'] ?? ''),
                     ],
                 ],
             ];
@@ -56,7 +57,6 @@ $server = Server::builder()
     ->addTool(
         handler: static function (array $arguments): array {
             $input = $arguments['input'] ?? '';
-
             return [
                 'content' => [
                     [

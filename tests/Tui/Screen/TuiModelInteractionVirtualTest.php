@@ -18,6 +18,7 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\Tui\Listener\FooterStateSegmentProvider;
 use Ineersa\Tui\Runtime\TuiSessionState;
+use Ineersa\Tui\Runtime\UsageProjection;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -46,10 +47,10 @@ final class TuiModelInteractionVirtualTest extends TestCase
         $this->projectAssistantTextResponse($projector);
 
         $blocks = $projector->blocks();
-        $this->assertCount(1, $blocks);
-        $this->assertSame(TranscriptBlockKindEnum::AssistantMessage, $blocks[0]->kind);
-        $this->assertSame(self::ASSISTANT_TEXT, $blocks[0]->text);
-        $this->assertFalse($blocks[0]->streaming);
+        self::assertCount(1, $blocks);
+        self::assertSame(TranscriptBlockKindEnum::AssistantMessage, $blocks[0]->kind);
+        self::assertSame(self::ASSISTANT_TEXT, $blocks[0]->text);
+        self::assertFalse($blocks[0]->streaming);
 
         $state = new TuiSessionState(self::SESSION_ID);
         $state->footerModel = 'llama_cpp_test/test';
@@ -63,11 +64,11 @@ final class TuiModelInteractionVirtualTest extends TestCase
 
         $screen = $harness->plainScreenText();
 
-        $this->assertStringContainsString('◇', $screen, 'Assistant block glyph missing');
-        $this->assertStringContainsString(self::ASSISTANT_TEXT, $screen, 'Fixture assistant text missing');
-        $this->assertStringContainsString('session '.self::SESSION_ID, $screen, 'Session label missing in footer');
-        $this->assertStringContainsString('↻ 78%', $screen, 'Cache-hit footer segment missing');
-        $this->assertStringNotContainsString('◐ Working...', $screen, 'Working spinner should be hidden after completion');
+        self::assertStringContainsString('◇', $screen, 'Assistant block glyph missing');
+        self::assertStringContainsString(self::ASSISTANT_TEXT, $screen, 'Fixture assistant text missing');
+        self::assertStringContainsString('session '.self::SESSION_ID, $screen, 'Session label missing in footer');
+        self::assertStringContainsString('↻ 78%', $screen, 'Cache-hit footer segment missing');
+        self::assertStringNotContainsString('◐ Working...', $screen, 'Working spinner should be hidden after completion');
     }
 
     private function createTranscriptProjector(): TranscriptProjector

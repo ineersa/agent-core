@@ -10,10 +10,11 @@ use Ineersa\AgentCore\Domain\Tool\ToolResult;
 
 final class FakeToolExecutor implements ToolExecutorInterface
 {
-    /** @var list<ToolCall> */
-    public array $calls = [];
     /** @var array<string, callable(ToolCall): ToolResult> */
     private array $handlersByTool = [];
+
+    /** @var list<ToolCall> */
+    public array $calls = [];
 
     /**
      * @param array<string, callable(ToolCall): ToolResult> $handlersByTool

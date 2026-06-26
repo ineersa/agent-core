@@ -62,29 +62,29 @@ final class TuiReasoningCycleTest extends TestCase
             $harness->screen()->applyEditorBorderColor('off');
             $harness->render();
             $offBorder = $this->editorBottomBorderSgr($harness->ansiOutput());
-            $this->assertNotNull($offBorder, 'Editor border SGR should be readable before Shift+Tab');
+            self::assertNotNull($offBorder, 'Editor border SGR should be readable before Shift+Tab');
 
             $harness->sendInput(self::SHIFT_TAB);
-            $this->assertSame('minimal', $state->footerReasoning);
+            self::assertSame('minimal', $state->footerReasoning);
 
             $minimalScreen = $harness->plainScreenText();
-            $this->assertStringContainsString('reasoning', $minimalScreen);
-            $this->assertStringContainsString('minimal', $minimalScreen);
+            self::assertStringContainsString('reasoning', $minimalScreen);
+            self::assertStringContainsString('minimal', $minimalScreen);
 
             $minimalBorder = $this->editorBottomBorderSgr($harness->ansiOutput());
-            $this->assertNotNull($minimalBorder);
-            $this->assertNotSame($offBorder, $minimalBorder, 'Border SGR should change off→minimal');
+            self::assertNotNull($minimalBorder);
+            self::assertNotSame($offBorder, $minimalBorder, 'Border SGR should change off→minimal');
 
             $harness->sendInput(self::SHIFT_TAB);
-            $this->assertSame('low', $state->footerReasoning);
+            self::assertSame('low', $state->footerReasoning);
 
             $lowScreen = $harness->plainScreenText();
-            $this->assertStringContainsString('reasoning', $lowScreen);
-            $this->assertStringContainsString('low', $lowScreen);
+            self::assertStringContainsString('reasoning', $lowScreen);
+            self::assertStringContainsString('low', $lowScreen);
 
             $lowBorder = $this->editorBottomBorderSgr($harness->ansiOutput());
-            $this->assertNotNull($lowBorder);
-            $this->assertNotSame($minimalBorder, $lowBorder, 'Border SGR should change minimal→low');
+            self::assertNotNull($lowBorder);
+            self::assertNotSame($minimalBorder, $lowBorder, 'Border SGR should change minimal→low');
         } finally {
             $harness->stopInputLoop();
         }

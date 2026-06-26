@@ -41,13 +41,13 @@ final class TuiResumeModelRestoreE2eTest extends TestCase
     protected function setUp(): void
     {
         if (!TmuxHarness::isAvailable()) {
-            $this->markTestSkipped('tmux is not installed. Skipping TUI e2e tests.');
+            self::markTestSkipped('tmux is not installed. Skipping TUI e2e tests.');
         }
 
         $this->tmux = new TmuxHarness();
         $this->testProjectDir = $this->createIsolatedProjectDir();
         $this->snapshotDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
-        @mkdir($this->snapshotDir, 0o777, true);
+        @\mkdir($this->snapshotDir, 0o777, true);
 
         // Shared DB path so both TUI launches use the same database.
         $this->dbPath = 'app_test-tui-model-resume-'.bin2hex(random_bytes(4)).'.sqlite';
@@ -95,7 +95,7 @@ final class TuiResumeModelRestoreE2eTest extends TestCase
             // Extract session ID from footer.
             $firstCapture = $this->tmux->capturePlainWithHistory($pane1, 2000);
             $matched = preg_match('/session\s+(\d+)/', $firstCapture, $matches);
-            $this->assertSame(1, $matched,
+            self::assertSame(1, $matched,
                 'Footer must show numeric session ID after first submit');
             $this->sessionId = $matches[1];
 
@@ -129,7 +129,7 @@ final class TuiResumeModelRestoreE2eTest extends TestCase
                 }
                 usleep(200_000);
             }
-            $this->assertTrue($exited, 'First TUI session must exit after Ctrl+D');
+            self::assertTrue($exited, 'First TUI session must exit after Ctrl+D');
 
             // Kill the pane to clean up (session may already be dead).
             try {
@@ -160,13 +160,13 @@ final class TuiResumeModelRestoreE2eTest extends TestCase
                 $resumedPane = $this->tmux->capturePlain($pane2);
 
                 // A) Header and footer present.
-                $this->assertStringContainsString('█', $resumedPane,
+                self::assertStringContainsString('█', $resumedPane,
                     'Header must be visible after resume');
-                $this->assertStringContainsString('◆', $resumedPane,
+                self::assertStringContainsString('◆', $resumedPane,
                     'Footer must be visible after resume');
 
                 // B) Session ID must match.
-                $this->assertStringContainsString($this->sessionId, $resumedPane,
+                self::assertStringContainsString($this->sessionId, $resumedPane,
                     'Session ID must appear after resume');
 
                 // C) The footer model segment (around ◆) must show the
@@ -175,20 +175,20 @@ final class TuiResumeModelRestoreE2eTest extends TestCase
                 //    Extracting only the footer segment eliminates false positives
                 //    from transcript text that happens to contain the same substring.
                 $footerPos = strpos($resumedPane, '◆');
-                $this->assertNotFalse($footerPos,
+                self::assertNotFalse($footerPos,
                     'Footer model marker ◆ must be visible after resume');
-                $footerSegment = substr($resumedPane, (int) $footerPos);
+                $footerSegment = substr($resumedPane, (int)$footerPos);
                 $newlinePos = strpos($footerSegment, "\n");
                 if (false !== $newlinePos) {
-                    $footerSegment = substr($footerSegment, 0, (int) $newlinePos);
+                    $footerSegment = substr($footerSegment, 0, (int)$newlinePos);
                 }
-                $this->assertStringContainsString('alpha', $footerSegment,
+                self::assertStringContainsString('alpha', $footerSegment,
                     'Footer must show the session-selected model (alpha) after resume');
-                $this->assertStringNotContainsString('default', $footerSegment,
+                self::assertStringNotContainsString('default', $footerSegment,
                     'Footer must NOT show the global default model on resume');
 
                 // E) Idle status — proves TUI is alive.
-                $this->assertStringContainsString('● idle', $resumedPane,
+                self::assertStringContainsString('● idle', $resumedPane,
                     'Idle status must be visible after resume');
 
                 $this->saveAnsiSnapshot($pane2, 'model-resume-step2-resumed');
@@ -221,8 +221,8 @@ final class TuiResumeModelRestoreE2eTest extends TestCase
     private function firstAgentCommand(string $model = 'llama_cpp_test/alpha'): string
     {
         $fixturePath = __DIR__.'/fixtures/tui-resume-minimal.json';
-        if (!is_file($fixturePath)) {
-            $this->fail("Fixture not found: {$fixturePath}");
+        if (!\is_file($fixturePath)) {
+            self::fail("Fixture not found: {$fixturePath}");
         }
 
         $projectDir = ProjectDir::get();
@@ -233,15 +233,15 @@ final class TuiResumeModelRestoreE2eTest extends TestCase
                 .'HOME=%s '
                 .'HATFIELD_LLM_REPLAY_FIXTURE_PATH=%s '
                 .'%s %s agent '
-                .'--model='.escapeshellarg($model).' '
+                .'--model='.\escapeshellarg($model).' '
                 .'--prompt=hi '
                 .'--tools-excluded=bash '
                 .'2>&1',
-            escapeshellarg($this->dbPath),
-            escapeshellarg($this->testProjectDir.'/home'),
-            escapeshellarg($fixturePath),
-            escapeshellarg(\PHP_BINARY),
-            escapeshellarg($projectDir.'/bin/console'),
+            \escapeshellarg($this->dbPath),
+            \escapeshellarg($this->testProjectDir.'/home'),
+            \escapeshellarg($fixturePath),
+            \escapeshellarg(\PHP_BINARY),
+            \escapeshellarg($projectDir.'/bin/console'),
         );
     }
 
@@ -262,19 +262,19 @@ final class TuiResumeModelRestoreE2eTest extends TestCase
                 .'--resume=%s '
                 .'--tools-excluded=bash '
                 .'2>&1',
-            escapeshellarg($this->dbPath),
-            escapeshellarg($this->testProjectDir.'/home'),
-            escapeshellarg($fixturePath),
-            escapeshellarg(\PHP_BINARY),
-            escapeshellarg($projectDir.'/bin/console'),
-            escapeshellarg($sessionId),
+            \escapeshellarg($this->dbPath),
+            \escapeshellarg($this->testProjectDir.'/home'),
+            \escapeshellarg($fixturePath),
+            \escapeshellarg(\PHP_BINARY),
+            \escapeshellarg($projectDir.'/bin/console'),
+            \escapeshellarg($sessionId),
         );
     }
 
     private function createIsolatedProjectDir(): string
     {
         $dir = TestDirectoryIsolation::createProjectTempDir('tui-e2e');
-        @mkdir($dir.'/.hatfield', 0o777, true);
+        @\mkdir($dir.'/.hatfield', 0o777, true);
 
         // Two providers: llama_cpp_test (with model 'alpha') and
         // a fictitious 'other' provider as the default.  This proves
@@ -362,11 +362,11 @@ final class TuiResumeModelRestoreE2eTest extends TestCase
         ];
 
         $yaml = \Symfony\Component\Yaml\Yaml::dump($settings, 6, 4);
-        file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
+        \file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
 
         // Also write for the HOME dir.
-        @mkdir($dir.'/home/.hatfield', 0o777, true);
-        file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
+        @\mkdir($dir.'/home/.hatfield', 0o777, true);
+        \file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
 
         return $dir;
     }
@@ -377,7 +377,7 @@ final class TuiResumeModelRestoreE2eTest extends TestCase
     private function tmuxSessionAlive(string $sessionName): bool
     {
         $output = $this->runTmuxRaw(
-            \sprintf('tmux has-session -t %s 2>&1', escapeshellarg($sessionName)),
+            \sprintf('tmux has-session -t %s 2>&1', \escapeshellarg($sessionName)),
             1.0,
         );
 
@@ -416,6 +416,6 @@ final class TuiResumeModelRestoreE2eTest extends TestCase
         $ansi = $this->tmux->captureAnsi($pane);
         $ts = date('Ymd-His');
         $path = \sprintf('%s/%s-%s.ansi', $this->snapshotDir, $tag, $ts);
-        file_put_contents($path, $ansi);
+        \file_put_contents($path, $ansi);
     }
 }

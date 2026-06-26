@@ -49,11 +49,11 @@ final class AgentsContextBuilderTest extends TestCase
 
         $output = $builder->build();
 
-        $this->assertStringContainsString('<available_agents>', $output);
-        $this->assertStringContainsString('<name>scout</name>', $output);
-        $this->assertStringNotContainsString('<name>worker</name>', $output);
-        $this->assertStringNotContainsString('<name>bg-only</name>', $output);
-        $this->assertStringNotContainsString('Disabled worker', $output);
+        self::assertStringContainsString('<available_agents>', $output);
+        self::assertStringContainsString('<name>scout</name>', $output);
+        self::assertStringNotContainsString('<name>worker</name>', $output);
+        self::assertStringNotContainsString('<name>bg-only</name>', $output);
+        self::assertStringNotContainsString('Disabled worker', $output);
     }
 
     public function testBuildReturnsEmptyWhenAgentsDisabledInConfig(): void
@@ -71,7 +71,7 @@ final class AgentsContextBuilderTest extends TestCase
             new AgentContextRenderer(),
         );
 
-        $this->assertSame('', $builder->build());
+        self::assertSame('', $builder->build());
     }
 
     public function testBuildIncludesRepresentativeParsedAgentNames(): void
@@ -99,9 +99,9 @@ final class AgentsContextBuilderTest extends TestCase
 
         $output = $builder->build();
 
-        $this->assertStringContainsString('<name>reviewer</name>', $output);
-        $this->assertStringContainsString('<name>scout</name>', $output);
-        $this->assertStringNotContainsString('You are a scout', $output);
+        self::assertStringContainsString('<name>reviewer</name>', $output);
+        self::assertStringContainsString('<name>scout</name>', $output);
+        self::assertStringNotContainsString('You are a scout', $output);
     }
 
     public function testBuildReturnsEmptyWhenNoLaunchableAgents(): void
@@ -112,6 +112,6 @@ final class AgentsContextBuilderTest extends TestCase
             new AgentContextRenderer(),
         );
 
-        $this->assertSame('', $builder->build());
+        self::assertSame('', $builder->build());
     }
 }

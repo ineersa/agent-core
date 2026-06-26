@@ -43,7 +43,7 @@ class SessionFileMcpToolCatalogStoreTest extends TestCase
     public function testReadReturnsNullWhenNoCatalogWritten(): void
     {
         $catalog = $this->store->read('no-catalog-run');
-        $this->assertNull($catalog, 'Read should return null when catalog does not exist');
+        self::assertNull($catalog, 'Read should return null when catalog does not exist');
     }
 
     public function testRoundTripWithConnectedAndFailedServers(): void
@@ -96,29 +96,29 @@ class SessionFileMcpToolCatalogStoreTest extends TestCase
         $this->store->write($runId, $catalog);
         $read = $this->store->read($runId);
 
-        $this->assertNotNull($read, 'Catalog should exist after write');
-        $this->assertSame(1, $read->schemaVersion);
-        $this->assertSame($runId, $read->runId);
-        $this->assertSame('2026-06-18T12:00:00Z', $read->generatedAt);
-        $this->assertSame(1, $read->generation);
-        $this->assertSame('abc123', $read->configHash);
+        self::assertNotNull($read, 'Catalog should exist after write');
+        self::assertSame(1, $read->schemaVersion);
+        self::assertSame($runId, $read->runId);
+        self::assertSame('2026-06-18T12:00:00Z', $read->generatedAt);
+        self::assertSame(1, $read->generation);
+        self::assertSame('abc123', $read->configHash);
 
         // Verify connected server
-        $this->assertArrayHasKey('filesystem', $read->servers);
-        $this->assertSame(McpServerCatalogStatusEnum::CONNECTED, $read->servers['filesystem']->status);
-        $this->assertSame('stdio', $read->servers['filesystem']->transport);
-        $this->assertCount(2, $read->servers['filesystem']->tools);
-        $this->assertSame('filesystem_read_file', $read->servers['filesystem']->tools[0]->hatfieldName);
-        $this->assertSame('read_file', $read->servers['filesystem']->tools[0]->mcpName);
-        $this->assertSame('filesystem', $read->servers['filesystem']->tools[0]->serverName);
-        $this->assertSame('Read a file from the filesystem', $read->servers['filesystem']->tools[0]->description);
-        $this->assertSame('object', $read->servers['filesystem']->tools[0]->inputSchema['type']);
+        self::assertArrayHasKey('filesystem', $read->servers);
+        self::assertSame(McpServerCatalogStatusEnum::CONNECTED, $read->servers['filesystem']->status);
+        self::assertSame('stdio', $read->servers['filesystem']->transport);
+        self::assertCount(2, $read->servers['filesystem']->tools);
+        self::assertSame('filesystem_read_file', $read->servers['filesystem']->tools[0]->hatfieldName);
+        self::assertSame('read_file', $read->servers['filesystem']->tools[0]->mcpName);
+        self::assertSame('filesystem', $read->servers['filesystem']->tools[0]->serverName);
+        self::assertSame('Read a file from the filesystem', $read->servers['filesystem']->tools[0]->description);
+        self::assertSame('object', $read->servers['filesystem']->tools[0]->inputSchema['type']);
 
         // Verify failed server
-        $this->assertArrayHasKey('github', $read->servers);
-        $this->assertSame(McpServerCatalogStatusEnum::FAILED, $read->servers['github']->status);
-        $this->assertSame('Connection refused', $read->servers['github']->errorMessage);
-        $this->assertCount(0, $read->servers['github']->tools);
+        self::assertArrayHasKey('github', $read->servers);
+        self::assertSame(McpServerCatalogStatusEnum::FAILED, $read->servers['github']->status);
+        self::assertSame('Connection refused', $read->servers['github']->errorMessage);
+        self::assertCount(0, $read->servers['github']->tools);
     }
 
     public function testWriteReplacesPreviousCatalog(): void
@@ -129,8 +129,8 @@ class SessionFileMcpToolCatalogStoreTest extends TestCase
         $catalog1 = McpToolCatalogDTO::empty($runId, 1, 'hash-v1');
         $this->store->write($runId, $catalog1);
         $read1 = $this->store->read($runId);
-        $this->assertSame(1, $read1->generation);
-        $this->assertSame('hash-v1', $read1->configHash);
+        self::assertSame(1, $read1->generation);
+        self::assertSame('hash-v1', $read1->configHash);
 
         // Write second catalog with different config hash — replaces first
         $tools = [
@@ -162,11 +162,11 @@ class SessionFileMcpToolCatalogStoreTest extends TestCase
 
         // Read back — should be the new catalog, not the old one
         $read2 = $this->store->read($runId);
-        $this->assertSame(2, $read2->generation);
-        $this->assertSame('hash-v2', $read2->configHash);
-        $this->assertCount(1, $read2->servers);
-        $this->assertArrayHasKey('echo', $read2->servers);
-        $this->assertCount(1, $read2->servers['echo']->tools);
+        self::assertSame(2, $read2->generation);
+        self::assertSame('hash-v2', $read2->configHash);
+        self::assertCount(1, $read2->servers);
+        self::assertArrayHasKey('echo', $read2->servers);
+        self::assertCount(1, $read2->servers['echo']->tools);
     }
 
     public function testEmptyCatalogReplacesPreviousTools(): void
@@ -206,9 +206,9 @@ class SessionFileMcpToolCatalogStoreTest extends TestCase
         $this->store->write($runId, $catalog2);
 
         $read = $this->store->read($runId);
-        $this->assertSame(2, $read->generation);
-        $this->assertSame('new', $read->configHash);
-        $this->assertCount(0, $read->servers, 'Stale tools must not survive empty refresh');
+        self::assertSame(2, $read->generation);
+        self::assertSame('new', $read->configHash);
+        self::assertCount(0, $read->servers, 'Stale tools must not survive empty refresh');
     }
 
     public function testRunIdRejectsEmptyString(): void
@@ -243,17 +243,17 @@ class SessionFileMcpToolCatalogStoreTest extends TestCase
 
         $this->store->write($runId, $catalog);
 
-        $catalogPath = $this->projectDir.'/.hatfield/sessions/'.$runId.'/mcp-tools.json';
-        $this->assertFileExists($catalogPath, 'Catalog file should exist at the expected session path');
+        $catalogPath = $this->projectDir . '/.hatfield/sessions/' . $runId . '/mcp-tools.json';
+        self::assertFileExists($catalogPath, 'Catalog file should exist at the expected session path');
 
         $content = file_get_contents($catalogPath);
-        $this->assertIsString($content);
+        self::assertIsString($content);
 
         $decoded = json_decode($content, true);
-        $this->assertIsArray($decoded);
-        $this->assertArrayHasKey('schemaVersion', $decoded);
-        $this->assertArrayHasKey('runId', $decoded);
-        $this->assertArrayHasKey('servers', $decoded);
+        self::assertIsArray($decoded);
+        self::assertArrayHasKey('schemaVersion', $decoded);
+        self::assertArrayHasKey('runId', $decoded);
+        self::assertArrayHasKey('servers', $decoded);
     }
 
     public function testCrossRunIdsAreIsolated(): void
@@ -293,11 +293,11 @@ class SessionFileMcpToolCatalogStoreTest extends TestCase
 
         // Run1 should still have its tools
         $read1 = $this->store->read($run1);
-        $this->assertCount(1, $read1->servers);
-        $this->assertArrayHasKey('aaa', $read1->servers);
+        self::assertCount(1, $read1->servers);
+        self::assertArrayHasKey('aaa', $read1->servers);
 
         // Run2 should be empty
         $read2 = $this->store->read($run2);
-        $this->assertCount(0, $read2->servers);
+        self::assertCount(0, $read2->servers);
     }
 }

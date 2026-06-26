@@ -27,41 +27,41 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $sessionId = $this->store->createSession('Hello');
 
         // ID is a numeric string from DB auto-increment.
-        $this->assertNotEmpty($sessionId);
-        $this->assertMatchesRegularExpression('/^\d+$/', $sessionId);
+        self::assertNotEmpty($sessionId);
+        self::assertMatchesRegularExpression('/^\d+$/', $sessionId);
 
         // Directory exists
         $sessionPath = $this->store->resolveSessionsBasePath().'/'.$sessionId;
-        $this->assertDirectoryExists($sessionPath);
+        self::assertDirectoryExists($sessionPath);
 
         // Metadata lives in the DB, not as metadata.yaml
-        $this->assertFileDoesNotExist($sessionPath.'/metadata.yaml');
+        self::assertFileDoesNotExist($sessionPath.'/metadata.yaml');
         $meta = $this->store->loadMetadata($sessionId);
-        $this->assertNotNull($meta);
-        $this->assertSame($sessionId, $meta['session_id']);
-        $this->assertSame($sessionId, $meta['run_id'], 'session_id must equal run_id');
-        $this->assertNull($meta['parent_id'], 'parent_id must be null for new sessions');
-        $this->assertNull($meta['root_id'], 'root_id must be null for new sessions');
-        $this->assertSame('Hello', $meta['prompt']);
-        $this->assertArrayHasKey('created_at', $meta);
+        self::assertNotNull($meta);
+        self::assertSame($sessionId, $meta['session_id']);
+        self::assertSame($sessionId, $meta['run_id'], 'session_id must equal run_id');
+        self::assertNull($meta['parent_id'], 'parent_id must be null for new sessions');
+        self::assertNull($meta['root_id'], 'root_id must be null for new sessions');
+        self::assertSame('Hello', $meta['prompt']);
+        self::assertArrayHasKey('created_at', $meta);
         // Name is always present as a non-empty string.
-        $this->assertArrayHasKey('name', $meta);
-        $this->assertSame('Hello', $meta['name']);
+        self::assertArrayHasKey('name', $meta);
+        self::assertSame('Hello', $meta['name']);
 
         // Core files created (no metadata.yaml)
-        $this->assertFileExists($sessionPath.'/state.json');
-        $this->assertFileExists($sessionPath.'/events.jsonl');
-        $this->assertFileDoesNotExist($sessionPath.'/transcript.jsonl');
+        self::assertFileExists($sessionPath.'/state.json');
+        self::assertFileExists($sessionPath.'/events.jsonl');
+        self::assertFileDoesNotExist($sessionPath.'/transcript.jsonl');
     }
 
     public function testExistsReturnsFalseForMissingSession(): void
     {
-        $this->assertFalse($this->store->exists('nonexistent-session-id'));
+        self::assertFalse($this->store->exists('nonexistent-session-id'));
     }
 
     public function testLoadMetadataReturnsNullForMissingSession(): void
     {
-        $this->assertNull($this->store->loadMetadata('nonexistent-session-id'));
+        self::assertNull($this->store->loadMetadata('nonexistent-session-id'));
     }
 
     public function testUpdateMetadataMergesFields(): void
@@ -74,11 +74,11 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         ]);
 
         $meta = $this->store->loadMetadata($sessionId);
-        $this->assertNotNull($meta);
-        $this->assertSame($sessionId, $meta['run_id'], 'run_id always equals session_id (id from DB)');
-        $this->assertSame('deepseek-v4', $meta['model']);
-        $this->assertArrayHasKey('session_id', $meta);
-        $this->assertArrayHasKey('updated_at', $meta);
+        self::assertNotNull($meta);
+        self::assertSame($sessionId, $meta['run_id'], 'run_id always equals session_id (id from DB)');
+        self::assertSame('deepseek-v4', $meta['model']);
+        self::assertArrayHasKey('session_id', $meta);
+        self::assertArrayHasKey('updated_at', $meta);
     }
 
     public function testCreateSessionReturnsAutoIncrementIds(): void
@@ -87,34 +87,34 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $id1 = $this->store->createSession('session one');
         $id2 = $this->store->createSession('session two');
 
-        $this->assertNotSame($id1, $id2);
-        $this->assertMatchesRegularExpression('/^\d+$/', $id1);
-        $this->assertMatchesRegularExpression('/^\d+$/', $id2);
+        self::assertNotSame($id1, $id2);
+        self::assertMatchesRegularExpression('/^\d+$/', $id1);
+        self::assertMatchesRegularExpression('/^\d+$/', $id2);
 
-        $this->assertDirectoryExists($this->store->resolveSessionsBasePath().'/'.$id1);
-        $this->assertDirectoryExists($this->store->resolveSessionsBasePath().'/'.$id2);
+        self::assertDirectoryExists($this->store->resolveSessionsBasePath().'/'.$id1);
+        self::assertDirectoryExists($this->store->resolveSessionsBasePath().'/'.$id2);
 
         $meta1 = $this->store->loadMetadata($id1);
-        $this->assertNotNull($meta1);
-        $this->assertSame('session one', $meta1['prompt']);
+        self::assertNotNull($meta1);
+        self::assertSame('session one', $meta1['prompt']);
         // Name is derived from prompt
-        $this->assertSame('session one', $meta1['name']);
+        self::assertSame('session one', $meta1['name']);
 
         $meta2 = $this->store->loadMetadata($id2);
-        $this->assertNotNull($meta2);
-        $this->assertSame('session two', $meta2['prompt']);
-        $this->assertSame('session two', $meta2['name']);
+        self::assertNotNull($meta2);
+        self::assertSame('session two', $meta2['prompt']);
+        self::assertSame('session two', $meta2['name']);
     }
 
     public function testResolveSessionsBasePath(): void
     {
         $basePath = $this->store->resolveSessionsBasePath();
-        $this->assertNotEmpty($basePath);
+        self::assertNotEmpty($basePath);
 
         // The resolved base path must match what createSession uses
         $sessionId = $this->store->createSession();
         $expectedSessionDir = $basePath.'/'.$sessionId;
-        $this->assertDirectoryExists($expectedSessionDir);
+        self::assertDirectoryExists($expectedSessionDir);
     }
 
     // ── Session name generation ───────────────────────────────────────────
@@ -124,9 +124,9 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $sessionId = $this->store->createSession('Write a README');
 
         $meta = $this->store->loadMetadata($sessionId);
-        $this->assertNotNull($meta);
-        $this->assertArrayHasKey('name', $meta);
-        $this->assertSame('Write a README', $meta['name']);
+        self::assertNotNull($meta);
+        self::assertArrayHasKey('name', $meta);
+        self::assertSame('Write a README', $meta['name']);
     }
 
     public function testCreateSessionGeneratesNameFromLongMultilinePrompt(): void
@@ -136,9 +136,9 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $sessionId = $this->store->createSession($prompt);
 
         $meta = $this->store->loadMetadata($sessionId);
-        $this->assertNotNull($meta);
+        self::assertNotNull($meta);
         // Internal whitespace collapsed to single spaces.
-        $this->assertSame(
+        self::assertSame(
             'Write a comprehensive README for the project',
             $meta['name'],
         );
@@ -151,11 +151,11 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $sessionId = $this->store->createSession($longPrompt);
 
         $meta = $this->store->loadMetadata($sessionId);
-        $this->assertNotNull($meta);
-        $this->assertLessThanOrEqual(200, mb_strlen($meta['name']));
-        $this->assertStringStartsWith('x', $meta['name']);
+        self::assertNotNull($meta);
+        self::assertLessThanOrEqual(200, mb_strlen($meta['name']));
+        self::assertStringStartsWith('x', $meta['name']);
         // Truncated with no ellipsis — name is exactly 200 chars.
-        $this->assertSame(200, mb_strlen($meta['name']));
+        self::assertSame(200, mb_strlen($meta['name']));
     }
 
     public function testCreateSessionGeneratesFallbackNameForEmptyPrompt(): void
@@ -163,8 +163,8 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $sessionId = $this->store->createSession('');
 
         $meta = $this->store->loadMetadata($sessionId);
-        $this->assertNotNull($meta);
-        $this->assertSame('Session', $meta['name']);
+        self::assertNotNull($meta);
+        self::assertSame('Session', $meta['name']);
     }
 
     public function testCreateSessionGeneratesFallbackNameForWhitespaceOnlyPrompt(): void
@@ -172,8 +172,8 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $sessionId = $this->store->createSession("  \n\t  ");
 
         $meta = $this->store->loadMetadata($sessionId);
-        $this->assertNotNull($meta);
-        $this->assertSame('Session', $meta['name']);
+        self::assertNotNull($meta);
+        self::assertSame('Session', $meta['name']);
     }
 
     // ── Session name update (rename / clear) ──────────────────────────────
@@ -184,8 +184,8 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
 
         $this->store->updateMetadata($sessionId, ['name' => 'My Session']);
         $meta = $this->store->loadMetadata($sessionId);
-        $this->assertNotNull($meta);
-        $this->assertSame('My Session', $meta['name']);
+        self::assertNotNull($meta);
+        self::assertSame('My Session', $meta['name']);
     }
 
     public function testUpdateMetadataTrimsAndCollapsesName(): void
@@ -194,9 +194,9 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
 
         $this->store->updateMetadata($sessionId, ['name' => "  Padded\n\tMultiline  Name  "]);
         $meta = $this->store->loadMetadata($sessionId);
-        $this->assertNotNull($meta);
+        self::assertNotNull($meta);
         // Whitespace trimmed and internal whitespace collapsed to single spaces.
-        $this->assertSame('Padded Multiline Name', $meta['name']);
+        self::assertSame('Padded Multiline Name', $meta['name']);
     }
 
     public function testUpdateMetadataTruncatesLongName(): void
@@ -206,11 +206,11 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
 
         $this->store->updateMetadata($sessionId, ['name' => $longName]);
         $meta = $this->store->loadMetadata($sessionId);
-        $this->assertNotNull($meta);
-        $this->assertSame(200, mb_strlen($meta['name']));
-        $this->assertStringStartsWith('y', $meta['name']);
+        self::assertNotNull($meta);
+        self::assertSame(200, mb_strlen($meta['name']));
+        self::assertStringStartsWith('y', $meta['name']);
         // No ellipsis suffix.
-        $this->assertStringEndsWith('y', $meta['name']);
+        self::assertStringEndsWith('y', $meta['name']);
     }
 
     public function testUpdateMetadataFallsBackForEmptyName(): void
@@ -220,12 +220,12 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         // Set a name first, then clear via empty string.
         $this->store->updateMetadata($sessionId, ['name' => 'Will Clear']);
         $meta = $this->store->loadMetadata($sessionId);
-        $this->assertSame('Will Clear', $meta['name']);
+        self::assertSame('Will Clear', $meta['name']);
 
         $this->store->updateMetadata($sessionId, ['name' => '']);
         $meta = $this->store->loadMetadata($sessionId);
         // Name stays non-null; falls back to deterministic 'Session'.
-        $this->assertSame('Session', $meta['name']);
+        self::assertSame('Session', $meta['name']);
     }
 
     public function testUpdateMetadataFallsBackForNullName(): void
@@ -234,12 +234,12 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
 
         $this->store->updateMetadata($sessionId, ['name' => 'To Be Nulled']);
         $meta = $this->store->loadMetadata($sessionId);
-        $this->assertSame('To Be Nulled', $meta['name']);
+        self::assertSame('To Be Nulled', $meta['name']);
 
         $this->store->updateMetadata($sessionId, ['name' => null]);
         $meta = $this->store->loadMetadata($sessionId);
         // Null → deterministic non-null fallback.
-        $this->assertSame('Session', $meta['name']);
+        self::assertSame('Session', $meta['name']);
     }
 
     public function testUpdateMetadataFallsBackForNonStringName(): void
@@ -248,7 +248,7 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
 
         $this->store->updateMetadata($sessionId, ['name' => 123]);
         $meta = $this->store->loadMetadata($sessionId);
-        $this->assertSame('Session', $meta['name']);
+        self::assertSame('Session', $meta['name']);
     }
 
     public function testUpdateMetadataFallsBackForWhitespaceOnlyName(): void
@@ -257,12 +257,12 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
 
         $this->store->updateMetadata($sessionId, ['name' => 'Named']);
         $meta = $this->store->loadMetadata($sessionId);
-        $this->assertSame('Named', $meta['name']);
+        self::assertSame('Named', $meta['name']);
 
         $this->store->updateMetadata($sessionId, ['name' => '   ']);
         $meta = $this->store->loadMetadata($sessionId);
         // Whitespace-only → deterministic fallback, never null.
-        $this->assertSame('Session', $meta['name']);
+        self::assertSame('Session', $meta['name']);
     }
 
     public function testUpdateMetadataIgnoresUnknownKeys(): void
@@ -271,8 +271,8 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
 
         $this->store->updateMetadata($sessionId, ['random_unknown_key' => 'value']);
         $meta = $this->store->loadMetadata($sessionId);
-        $this->assertNotNull($meta);
-        $this->assertArrayNotHasKey('random_unknown_key', $meta);
+        self::assertNotNull($meta);
+        self::assertArrayNotHasKey('random_unknown_key', $meta);
     }
 
     // ── Session listing / catalog ─────────────────────────────────────────
@@ -288,11 +288,11 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
             $id2 = $this->store->createSession('second session');
 
             $list = $this->store->listSessions();
-            $this->assertCount(2, $list);
+            self::assertCount(2, $list);
 
             // All sessions returned, sorted by updated_at DESC — most recent first.
-            $this->assertSame($id2, $list[0]['sessionId']);
-            $this->assertSame($id1, $list[1]['sessionId']);
+            self::assertSame($id2, $list[0]['sessionId']);
+            self::assertSame($id1, $list[1]['sessionId']);
         } finally {
             Clock::set($originalClock);
         }
@@ -303,17 +303,17 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         // Create multiple sessions and verify all are returned;
         // the catalog query no longer applies a max-result cap.
         $ids = [];
-        for ($i = 0; $i < 3; ++$i) {
+        for ($i = 0; $i < 3; $i++) {
             $ids[] = $this->store->createSession("session {$i}");
         }
 
         $list = $this->store->listSessions();
-        $this->assertCount(3, $list);
+        self::assertCount(3, $list);
         // Verify IDs match — all sessions returned.
         $returnedIds = array_column($list, 'sessionId');
         sort($ids);
         sort($returnedIds);
-        $this->assertSame($ids, $returnedIds);
+        self::assertSame($ids, $returnedIds);
     }
 
     public function testListSessionsIncludesExpectedFields(): void
@@ -321,41 +321,41 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $this->store->createSession('Hello World');
 
         $list = $this->store->listSessions();
-        $this->assertNotEmpty($list);
+        self::assertNotEmpty($list);
 
         $row = $list[0];
 
-        $this->assertArrayHasKey('sessionId', $row);
-        $this->assertArrayHasKey('name', $row);
-        $this->assertArrayHasKey('displayTitle', $row);
-        $this->assertArrayHasKey('cwd', $row);
-        $this->assertArrayHasKey('prompt', $row);
-        $this->assertArrayHasKey('promptPreview', $row);
+        self::assertArrayHasKey('sessionId', $row);
+        self::assertArrayHasKey('name', $row);
+        self::assertArrayHasKey('displayTitle', $row);
+        self::assertArrayHasKey('cwd', $row);
+        self::assertArrayHasKey('prompt', $row);
+        self::assertArrayHasKey('promptPreview', $row);
         // Stable picker DTO: model fields are always present (nullable).
-        $this->assertArrayHasKey('model', $row);
-        $this->assertArrayHasKey('model_provider', $row);
-        $this->assertArrayHasKey('model_name', $row);
-        $this->assertArrayHasKey('reasoning', $row);
-        $this->assertArrayHasKey('created_at', $row);
-        $this->assertArrayHasKey('updated_at', $row);
+        self::assertArrayHasKey('model', $row);
+        self::assertArrayHasKey('model_provider', $row);
+        self::assertArrayHasKey('model_name', $row);
+        self::assertArrayHasKey('reasoning', $row);
+        self::assertArrayHasKey('created_at', $row);
+        self::assertArrayHasKey('updated_at', $row);
 
         // Name is always a non-empty string, derived from the prompt.
-        $this->assertIsString($row['name']);
-        $this->assertSame('Hello World', $row['name']);
-        $this->assertSame('Hello World', $row['displayTitle']);
-        $this->assertNull($row['model']);
-        $this->assertNull($row['model_provider']);
-        $this->assertNull($row['model_name']);
-        $this->assertNull($row['reasoning']);
-        $this->assertSame('Hello World', $row['prompt']);
-        $this->assertSame('Hello World', $row['promptPreview']);
+        self::assertIsString($row['name']);
+        self::assertSame('Hello World', $row['name']);
+        self::assertSame('Hello World', $row['displayTitle']);
+        self::assertNull($row['model']);
+        self::assertNull($row['model_provider']);
+        self::assertNull($row['model_name']);
+        self::assertNull($row['reasoning']);
+        self::assertSame('Hello World', $row['prompt']);
+        self::assertSame('Hello World', $row['promptPreview']);
     }
 
     public function testListSessionsEmptyWhenNoSessions(): void
     {
         $list = $this->store->listSessions();
-        $this->assertIsArray($list);
-        $this->assertEmpty($list);
+        self::assertIsArray($list);
+        self::assertEmpty($list);
     }
 
     // ── Display / catalog row shape ───────────────────────────────────────
@@ -366,12 +366,12 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
 
         $this->store->updateMetadata($sessionId, ['name' => 'Renamed Session']);
         $list = $this->store->listSessions();
-        $this->assertNotEmpty($list);
+        self::assertNotEmpty($list);
 
         $row = $this->findRow($list, $sessionId);
-        $this->assertSame('Renamed Session', $row['name']);
-        $this->assertSame('Renamed Session', $row['displayTitle']);
-        $this->assertSame('original prompt', $row['prompt']);
+        self::assertSame('Renamed Session', $row['name']);
+        self::assertSame('Renamed Session', $row['displayTitle']);
+        self::assertSame('original prompt', $row['prompt']);
     }
 
     public function testDisplayTitleEqualsGeneratedName(): void
@@ -379,7 +379,7 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         // Name is derived from the prompt; displayTitle equals name since
         // name is guaranteed non-empty.
         $longPrompt = str_repeat('Write a comprehensive README ', 4);
-        $this->assertGreaterThan(60, mb_strlen($longPrompt));
+        self::assertGreaterThan(60, mb_strlen($longPrompt));
 
         $sessionId = $this->store->createSession($longPrompt);
 
@@ -388,13 +388,13 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
 
         // name is the prompt truncated to 200 chars (no ellipsis),
         // with whitespace collapsed.
-        $this->assertStringStartsWith('Write a comprehensive', $row['name']);
-        $this->assertSame($row['name'], $row['displayTitle']);
+        self::assertStringStartsWith('Write a comprehensive', $row['name']);
+        self::assertSame($row['name'], $row['displayTitle']);
         // promptPreview is independently truncated to 60 chars + ellipsis.
-        $this->assertStringEndsWith('...', $row['promptPreview'] ?? '');
-        $this->assertLessThanOrEqual(63, mb_strlen($row['promptPreview'] ?? ''));
+        self::assertStringEndsWith('...', $row['promptPreview'] ?? '');
+        self::assertLessThanOrEqual(63, mb_strlen($row['promptPreview'] ?? ''));
         // name is MUCH longer than promptPreview for a long prompt.
-        $this->assertGreaterThan(100, mb_strlen($row['name']));
+        self::assertGreaterThan(100, mb_strlen($row['name']));
     }
 
     public function testDisplayTitleForFallbackName(): void
@@ -405,10 +405,10 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $list = $this->store->listSessions();
         $row = $this->findRow($list, $sessionId);
 
-        $this->assertSame('Session', $row['name']);
-        $this->assertSame('Session', $row['displayTitle']);
-        $this->assertNull($row['prompt']);
-        $this->assertNull($row['promptPreview']);
+        self::assertSame('Session', $row['name']);
+        self::assertSame('Session', $row['displayTitle']);
+        self::assertNull($row['prompt']);
+        self::assertNull($row['promptPreview']);
     }
 
     public function testListSessionsDoesNotMutateDbName(): void
@@ -417,14 +417,14 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
 
         // Load metadata to capture the generated name.
         $meta = $this->store->loadMetadata($sessionId);
-        $this->assertNotNull($meta);
+        self::assertNotNull($meta);
         $originalName = $meta['name'];
 
         // Calling listSessions must not change the persisted name.
         $this->store->listSessions();
 
         $metaAfter = $this->store->loadMetadata($sessionId);
-        $this->assertSame($originalName, $metaAfter['name']);
+        self::assertSame($originalName, $metaAfter['name']);
     }
 
     // ── Name with model metadata ──────────────────────────────────────────
@@ -443,17 +443,16 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $list = $this->store->listSessions();
         $row = $this->findRow($list, $sessionId);
 
-        $this->assertSame('deepseek/deepseek-v4-pro', $row['model'] ?? null);
-        $this->assertSame('deepseek', $row['model_provider'] ?? null);
-        $this->assertSame('deepseek-v4-pro', $row['model_name'] ?? null);
-        $this->assertSame('high', $row['reasoning'] ?? null);
+        self::assertSame('deepseek/deepseek-v4-pro', $row['model'] ?? null);
+        self::assertSame('deepseek', $row['model_provider'] ?? null);
+        self::assertSame('deepseek-v4-pro', $row['model_name'] ?? null);
+        self::assertSame('high', $row['reasoning'] ?? null);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────
 
     /**
      * @param list<array<string, mixed>> $list
-     *
      * @return array<string, mixed>
      */
     private function findRow(array $list, string $sessionId): array
@@ -464,6 +463,6 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
             }
         }
 
-        $this->fail("Session {$sessionId} not found in list");
+        self::fail("Session {$sessionId} not found in list");
     }
 }

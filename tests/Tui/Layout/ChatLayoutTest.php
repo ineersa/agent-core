@@ -64,9 +64,9 @@ final class ChatLayoutTest extends TestCase
         $lines = $this->layout->render($this->context);
 
         // Header, separator, welcome, working status, editor separator, editor, footer separator, footer
-        $this->assertGreaterThanOrEqual(6, \count($lines));
-        $this->assertStringContainsString('Test App', $lines[0]);
-        $this->assertStringContainsString('Welcome to Agent Core', $lines[2]);
+        self::assertGreaterThanOrEqual(6, \count($lines));
+        self::assertStringContainsString('Test App', $lines[0]);
+        self::assertStringContainsString('Welcome to Agent Core', $lines[2]);
     }
 
     public function testRenderOrder(): void
@@ -74,20 +74,20 @@ final class ChatLayoutTest extends TestCase
         $lines = $this->layout->render($this->context);
 
         // Verify order: header first
-        $this->assertStringContainsString('Test App', $lines[0]);
+        self::assertStringContainsString('Test App', $lines[0]);
 
         // Separator after header
-        $this->assertStringContainsString('─', $lines[1]);
+        self::assertStringContainsString('─', $lines[1]);
 
         // Separator before editor
         $editorSepIndex = null;
         $footerSepIndex = null;
         foreach ($lines as $i => $line) {
-            if (str_contains($line, '❯')) {
+            if (\str_contains($line, '❯')) {
                 $editorSepIndex = $i - 1; // line before editor prompt
             }
         }
-        $this->assertNotNull($editorSepIndex, 'Editor prompt should exist in output');
+        self::assertNotNull($editorSepIndex, 'Editor prompt should exist in output');
     }
 
     public function testReplacementHeaderRendersInsteadOfDefault(): void
@@ -102,8 +102,8 @@ final class ChatLayoutTest extends TestCase
         $this->registry->setHeader($customHeader);
         $lines = $this->layout->render($this->context);
 
-        $this->assertStringContainsString('CUSTOM HEADER', $lines[0]);
-        $this->assertStringNotContainsString('Test App', $lines[0]);
+        self::assertStringContainsString('CUSTOM HEADER', $lines[0]);
+        self::assertStringNotContainsString('Test App', $lines[0]);
     }
 
     public function testReplacementFooterRendersInsteadOfDefault(): void
@@ -120,14 +120,14 @@ final class ChatLayoutTest extends TestCase
 
         // Last non-empty line should contain custom footer
         $lastLine = '';
-        foreach (array_reverse($lines) as $line) {
-            if ('' !== trim($line)) {
+        foreach (\array_reverse($lines) as $line) {
+            if (\trim($line) !== '') {
                 $lastLine = $line;
                 break;
             }
         }
 
-        $this->assertStringContainsString('CUSTOM FOOTER', $lastLine);
+        self::assertStringContainsString('CUSTOM FOOTER', $lastLine);
     }
 
     public function testReplacementEditorRendersInsteadOfDefault(): void
@@ -145,16 +145,16 @@ final class ChatLayoutTest extends TestCase
         $foundEditor = false;
         $foundCustom = false;
         foreach ($lines as $line) {
-            if (str_contains($line, '❯')) {
+            if (\str_contains($line, '❯')) {
                 $foundEditor = true;
             }
-            if (str_contains($line, 'CUSTOM EDITOR')) {
+            if (\str_contains($line, 'CUSTOM EDITOR')) {
                 $foundCustom = true;
             }
         }
 
-        $this->assertFalse($foundEditor, 'Default editor should not appear when custom is set');
-        $this->assertTrue($foundCustom, 'Custom editor should appear');
+        self::assertFalse($foundEditor, 'Default editor should not appear when custom is set');
+        self::assertTrue($foundCustom, 'Custom editor should appear');
     }
 
     public function testWidgetAboveEditorAppearsInCorrectPosition(): void
@@ -172,17 +172,17 @@ final class ChatLayoutTest extends TestCase
         $aboveIdx = null;
         $editorIdx = null;
         foreach ($lines as $i => $line) {
-            if (str_contains($line, 'WIDGET ABOVE')) {
+            if (\str_contains($line, 'WIDGET ABOVE')) {
                 $aboveIdx = $i;
             }
-            if (str_contains($line, '❯')) {
+            if (\str_contains($line, '❯')) {
                 $editorIdx = $i;
             }
         }
 
-        $this->assertNotNull($aboveIdx, 'Above-editor widget should render');
-        $this->assertNotNull($editorIdx, 'Editor should render');
-        $this->assertLessThan($editorIdx, $aboveIdx, 'Above-editor widget should be above editor');
+        self::assertNotNull($aboveIdx, 'Above-editor widget should render');
+        self::assertNotNull($editorIdx, 'Editor should render');
+        self::assertLessThan($editorIdx, $aboveIdx, 'Above-editor widget should be above editor');
     }
 
     public function testWidgetBelowEditorAppearsInCorrectPosition(): void
@@ -200,17 +200,17 @@ final class ChatLayoutTest extends TestCase
         $belowIdx = null;
         $editorIdx = null;
         foreach ($lines as $i => $line) {
-            if (str_contains($line, 'WIDGET BELOW')) {
+            if (\str_contains($line, 'WIDGET BELOW')) {
                 $belowIdx = $i;
             }
-            if (str_contains($line, '❯')) {
+            if (\str_contains($line, '❯')) {
                 $editorIdx = $i;
             }
         }
 
-        $this->assertNotNull($belowIdx, 'Below-editor widget should render');
-        $this->assertNotNull($editorIdx, 'Editor should render');
-        $this->assertGreaterThan($editorIdx, $belowIdx, 'Below-editor widget should be below editor');
+        self::assertNotNull($belowIdx, 'Below-editor widget should render');
+        self::assertNotNull($editorIdx, 'Editor should render');
+        self::assertGreaterThan($editorIdx, $belowIdx, 'Below-editor widget should be below editor');
     }
 
     public function testStatusEntriesRender(): void
@@ -223,16 +223,16 @@ final class ChatLayoutTest extends TestCase
         $foundModel = false;
         $foundCwd = false;
         foreach ($lines as $line) {
-            if (str_contains($line, 'model') && str_contains($line, 'claude-sonnet')) {
+            if (\str_contains($line, 'model') && \str_contains($line, 'claude-sonnet')) {
                 $foundModel = true;
             }
-            if (str_contains($line, 'cwd') && str_contains($line, '/project')) {
+            if (\str_contains($line, 'cwd') && \str_contains($line, '/project')) {
                 $foundCwd = true;
             }
         }
 
-        $this->assertTrue($foundModel, 'Status entry should render');
-        $this->assertTrue($foundCwd, 'Status entry should render');
+        self::assertTrue($foundModel, 'Status entry should render');
+        self::assertTrue($foundCwd, 'Status entry should render');
     }
 
     public function testRemovingStatusEntryHidesIt(): void
@@ -243,7 +243,7 @@ final class ChatLayoutTest extends TestCase
         $lines = $this->layout->render($this->context);
 
         foreach ($lines as $line) {
-            $this->assertStringNotContainsString('visible', $line);
+            self::assertStringNotContainsString('visible', $line);
         }
     }
 
@@ -256,22 +256,22 @@ final class ChatLayoutTest extends TestCase
         $lines = $this->layout->render($this->context);
         $foundWorking = false;
         foreach ($lines as $line) {
-            if (str_contains($line, 'Processing')) {
+            if (\str_contains($line, 'Processing')) {
                 $foundWorking = true;
             }
         }
-        $this->assertTrue($foundWorking);
+        self::assertTrue($foundWorking);
 
         // Now hide it
         $this->workingStatus->setVisible(false);
         $lines = $this->layout->render($this->context);
         $foundHidden = false;
         foreach ($lines as $line) {
-            if (str_contains($line, 'Processing')) {
+            if (\str_contains($line, 'Processing')) {
                 $foundHidden = true;
             }
         }
-        $this->assertFalse($foundHidden, 'Working status should not render when hidden');
+        self::assertFalse($foundHidden, 'Working status should not render when hidden');
     }
 
     public function testPendingMessagesRenderWhenNotEmpty(): void
@@ -281,11 +281,11 @@ final class ChatLayoutTest extends TestCase
         $lines = $this->layout->render($this->context);
         $found = false;
         foreach ($lines as $line) {
-            if (str_contains($line, 'Waiting')) {
+            if (\str_contains($line, 'Waiting')) {
                 $found = true;
             }
         }
-        $this->assertTrue($found);
+        self::assertTrue($found);
     }
 
     public function testEmptyPendingMessagesDoNotRender(): void
@@ -293,7 +293,7 @@ final class ChatLayoutTest extends TestCase
         // PendingMessagesWidget is empty by default
         $lines = $this->layout->render($this->context);
         foreach ($lines as $line) {
-            $this->assertStringNotContainsString('⏳', $line);
+            self::assertStringNotContainsString('⏳', $line);
         }
     }
 

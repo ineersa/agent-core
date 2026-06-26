@@ -15,7 +15,7 @@ final class SubagentToolDefinitionBuilderTest extends IsolatedKernelTestCase
         $handler = self::getContainer()->get(\Ineersa\CodingAgent\Agent\Tool\SubagentToolHandler::class);
         $def = SubagentToolDefinitionBuilder::build(new AgentsConfig(subagentToolTimeoutSeconds: 1800), $handler);
 
-        $this->assertNull($def->timeoutSeconds);
-        $this->assertStringContainsString('full child handoff inline', $def->description);
+        self::assertNull($def->timeoutSeconds);
+        self::assertStringContainsString('full child handoff inline', $def->description);
     }
 }

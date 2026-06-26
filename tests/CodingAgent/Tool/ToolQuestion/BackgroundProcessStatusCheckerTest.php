@@ -25,35 +25,35 @@ final class BackgroundProcessStatusCheckerTest extends TestCase
     {
         $checker = FakeStatusChecker::withStatus(BackgroundProcessStatusEnum::Running);
 
-        $this->assertFalse($checker->isFinished(12345, 'session-a'));
+        self::assertFalse($checker->isFinished(12345, 'session-a'));
     }
 
     public function testFinishedProcessReturnsTrue(): void
     {
         $checker = FakeStatusChecker::withStatus(BackgroundProcessStatusEnum::Finished);
 
-        $this->assertTrue($checker->isFinished(12345, 'session-a'));
+        self::assertTrue($checker->isFinished(12345, 'session-a'));
     }
 
     public function testStoppedProcessReturnsTrue(): void
     {
         $checker = FakeStatusChecker::withStatus(BackgroundProcessStatusEnum::Stopped);
 
-        $this->assertTrue($checker->isFinished(12345, 'session-a'));
+        self::assertTrue($checker->isFinished(12345, 'session-a'));
     }
 
     public function testFinishedUncleanProcessReturnsTrue(): void
     {
         $checker = FakeStatusChecker::withStatus(BackgroundProcessStatusEnum::FinishedUnclean);
 
-        $this->assertTrue($checker->isFinished(12345, 'session-a'));
+        self::assertTrue($checker->isFinished(12345, 'session-a'));
     }
 
     public function testVanishedProcessReturnsTrue(): void
     {
         $checker = FakeStatusChecker::vanished();
 
-        $this->assertTrue($checker->isFinished(12345, 'session-a'));
+        self::assertTrue($checker->isFinished(12345, 'session-a'));
     }
 }
 

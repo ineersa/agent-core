@@ -25,18 +25,42 @@ use Symfony\Component\Tui\Tui;
 #[CoversClass(TuiSessionSwitchService::class)]
 final class SessionSwitchServiceTest extends TestCase
 {
+    private function createCoordinator(): QuestionCoordinator
+    {
+        return new QuestionCoordinator();
+    }
+
+    private function createController(QuestionCoordinator $coordinator): QuestionController
+    {
+        return new QuestionController($coordinator);
+    }
+
+    private function createService(
+        ?QuestionCoordinator $coordinator = null,
+        ?QuestionController $controller = null,
+        ?TranscriptProjectorInterface $projector = null,
+        ?LoggerInterface $logger = null,
+    ): TuiSessionSwitchService {
+        return new TuiSessionSwitchService(
+            $coordinator ?? $this->createCoordinator(),
+            $controller ?? $this->createController($coordinator ?? $this->createCoordinator()),
+            $projector ?? $this->createStub(TranscriptProjectorInterface::class),
+            $logger ?? $this->createStub(LoggerInterface::class),
+        );
+    }
+
     public function testHasPendingSwitchIsFalseInitially(): void
     {
         $service = $this->createService();
 
-        $this->assertFalse($service->hasPendingSwitch());
+        self::assertFalse($service->hasPendingSwitch());
     }
 
     public function testConsumePendingSwitchReturnsNullWhenNothingPending(): void
     {
         $service = $this->createService();
 
-        $this->assertNull($service->consumePendingSwitch());
+        self::assertNull($service->consumePendingSwitch());
     }
 
     public function testRequestResumeSetsPendingResumeTarget(): void
@@ -51,17 +75,17 @@ final class SessionSwitchServiceTest extends TestCase
 
         $service->requestResume('42');
 
-        $this->assertTrue($service->hasPendingSwitch());
+        self::assertTrue($service->hasPendingSwitch());
 
         $target = $service->consumePendingSwitch();
-        $this->assertNotNull($target);
-        $this->assertFalse($target->isDraft);
-        $this->assertSame('42', $target->sessionId);
-        $this->assertNull($target->request);
+        self::assertNotNull($target);
+        self::assertFalse($target->isDraft);
+        self::assertSame('42', $target->sessionId);
+        self::assertNull($target->request);
 
         // After consume, nothing pending
-        $this->assertFalse($service->hasPendingSwitch());
-        $this->assertNull($service->consumePendingSwitch());
+        self::assertFalse($service->hasPendingSwitch());
+        self::assertNull($service->consumePendingSwitch());
     }
 
     public function testRequestNewDraftSetsPendingDraftTarget(): void
@@ -76,15 +100,15 @@ final class SessionSwitchServiceTest extends TestCase
 
         $service->requestNewDraft();
 
-        $this->assertTrue($service->hasPendingSwitch());
+        self::assertTrue($service->hasPendingSwitch());
 
         $target = $service->consumePendingSwitch();
-        $this->assertNotNull($target);
-        $this->assertTrue($target->isDraft);
-        $this->assertNull($target->sessionId);
-        $this->assertNull($target->request);
+        self::assertNotNull($target);
+        self::assertTrue($target->isDraft);
+        self::assertNull($target->sessionId);
+        self::assertNull($target->request);
 
-        $this->assertFalse($service->hasPendingSwitch());
+        self::assertFalse($service->hasPendingSwitch());
     }
 
     public function testRequestNewDraftWithRequestPassesThrough(): void
@@ -101,9 +125,9 @@ final class SessionSwitchServiceTest extends TestCase
         $service->requestNewDraft($req);
 
         $target = $service->consumePendingSwitch();
-        $this->assertNotNull($target);
-        $this->assertTrue($target->isDraft);
-        $this->assertSame($req, $target->request);
+        self::assertNotNull($target);
+        self::assertTrue($target->isDraft);
+        self::assertSame($req, $target->request);
     }
 
     public function testSwitchResetsQuestionCoordinatorState(): void
@@ -132,8 +156,8 @@ final class SessionSwitchServiceTest extends TestCase
         $service->requestNewDraft();
 
         // After switch request, coordinator should be reset
-        $this->assertNull($coordinator->activeRequest());
-        $this->assertFalse($coordinator->actionRequired());
+        self::assertNull($coordinator->activeRequest());
+        self::assertFalse($coordinator->actionRequired());
 
         // Queued items should be cleared — enqueue fresh works
         $coordinator->enqueue(new QuestionRequest(
@@ -142,7 +166,7 @@ final class SessionSwitchServiceTest extends TestCase
             kind: QuestionKind::Text,
             prompt: 'New?',
         ));
-        $this->assertSame('q3', $coordinator->activeRequest()?->requestId);
+        self::assertSame('q3', $coordinator->activeRequest()?->requestId);
     }
 
     public function testSwitchCancelsActiveRun(): void
@@ -153,7 +177,7 @@ final class SessionSwitchServiceTest extends TestCase
         $tui = new Tui();
 
         $client = $this->createMock(AgentSessionClient::class);
-        $client->expects($this->once())
+        $client->expects(self::once())
             ->method('cancel')
             ->with('old-run-id');
 
@@ -166,8 +190,8 @@ final class SessionSwitchServiceTest extends TestCase
         $service->requestResume('42');
 
         $target = $service->consumePendingSwitch();
-        $this->assertNotNull($target);
-        $this->assertSame('42', $target->sessionId);
+        self::assertNotNull($target);
+        self::assertSame('42', $target->sessionId);
     }
 
     public function testSwitchWithoutActiveRunDoesNotThrow(): void
@@ -185,7 +209,7 @@ final class SessionSwitchServiceTest extends TestCase
 
         // Should not throw
         $service->requestResume('42');
-        $this->assertTrue($service->hasPendingSwitch());
+        self::assertTrue($service->hasPendingSwitch());
     }
 
     public function testSwitchCallsProjectorReset(): void
@@ -194,7 +218,7 @@ final class SessionSwitchServiceTest extends TestCase
         $controller = $this->createController($coordinator);
 
         $projector = $this->createMock(TranscriptProjectorInterface::class);
-        $projector->expects($this->once())
+        $projector->expects(self::once())
             ->method('reset');
 
         $tui = new Tui();
@@ -233,7 +257,7 @@ final class SessionSwitchServiceTest extends TestCase
 
         $client = $this->createMock(AgentSessionClient::class);
         // Expect cancel to NEVER be called for terminal runs
-        $client->expects($this->never())->method('cancel');
+        $client->expects(self::never())->method('cancel');
 
         $state = new TuiSessionState('old', false);
         $state->handle = new RunHandle('old-run-id', 'completed');
@@ -244,10 +268,10 @@ final class SessionSwitchServiceTest extends TestCase
 
         $service->requestResume('42');
 
-        $this->assertTrue($service->hasPendingSwitch());
+        self::assertTrue($service->hasPendingSwitch());
         $target = $service->consumePendingSwitch();
-        $this->assertNotNull($target);
-        $this->assertSame('42', $target->sessionId);
+        self::assertNotNull($target);
+        self::assertSame('42', $target->sessionId);
     }
 
     #[DataProvider('terminalActivityStates')]
@@ -260,7 +284,7 @@ final class SessionSwitchServiceTest extends TestCase
 
         $client = $this->createMock(AgentSessionClient::class);
         // Expect cancel to NEVER be called for terminal runs
-        $client->expects($this->never())->method('cancel');
+        $client->expects(self::never())->method('cancel');
 
         $state = new TuiSessionState('old', false);
         $state->handle = new RunHandle('old-run-id', 'completed');
@@ -271,10 +295,10 @@ final class SessionSwitchServiceTest extends TestCase
 
         $service->requestNewDraft();
 
-        $this->assertTrue($service->hasPendingSwitch());
+        self::assertTrue($service->hasPendingSwitch());
         $target = $service->consumePendingSwitch();
-        $this->assertNotNull($target);
-        $this->assertTrue($target->isDraft);
+        self::assertNotNull($target);
+        self::assertTrue($target->isDraft);
     }
 
     public function testSwitchProceedsWhenCancelFails(): void
@@ -287,17 +311,17 @@ final class SessionSwitchServiceTest extends TestCase
         // Client whose cancel() throws — simulating a terminal run that
         // cannot be cancelled (e.g. process already exited).
         $client = $this->createMock(AgentSessionClient::class);
-        $client->expects($this->once())
+        $client->expects(self::once())
             ->method('cancel')
             ->with('old-run-id')
             ->willThrowException(new \RuntimeException('Run already finished'));
 
         $logger = $this->createMock(LoggerInterface::class);
-        $logger->expects($this->once())
+        $logger->expects(self::once())
             ->method('warning')
             ->with(
-                $this->stringContains('Session switch'),
-                $this->callback(static fn (array $c) => 'old-run-id' === $c['run_id']
+                self::stringContains('Session switch'),
+                self::callback(static fn (array $c) => 'old-run-id' === $c['run_id']
                     && 'switch_cancel_failed' === ($c['event_type'] ?? null)),
             );
 
@@ -309,34 +333,10 @@ final class SessionSwitchServiceTest extends TestCase
 
         // Should not throw — switch must proceed
         $service->requestResume('42');
-        $this->assertTrue($service->hasPendingSwitch());
+        self::assertTrue($service->hasPendingSwitch());
 
         $target = $service->consumePendingSwitch();
-        $this->assertNotNull($target);
-        $this->assertSame('42', $target->sessionId);
-    }
-
-    private function createCoordinator(): QuestionCoordinator
-    {
-        return new QuestionCoordinator();
-    }
-
-    private function createController(QuestionCoordinator $coordinator): QuestionController
-    {
-        return new QuestionController($coordinator);
-    }
-
-    private function createService(
-        ?QuestionCoordinator $coordinator = null,
-        ?QuestionController $controller = null,
-        ?TranscriptProjectorInterface $projector = null,
-        ?LoggerInterface $logger = null,
-    ): TuiSessionSwitchService {
-        return new TuiSessionSwitchService(
-            $coordinator ?? $this->createCoordinator(),
-            $controller ?? $this->createController($coordinator ?? $this->createCoordinator()),
-            $projector ?? $this->createStub(TranscriptProjectorInterface::class),
-            $logger ?? $this->createStub(LoggerInterface::class),
-        );
+        self::assertNotNull($target);
+        self::assertSame('42', $target->sessionId);
     }
 }

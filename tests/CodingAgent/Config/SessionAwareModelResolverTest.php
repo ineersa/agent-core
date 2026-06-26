@@ -8,19 +8,19 @@ use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelResolutionOptions;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\HomeSettingsWriter;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Config\ModelSettingsPersister;
+use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\SessionAwareModelResolver;
 use Ineersa\CodingAgent\Config\SessionMetadataStore;
-use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
-use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\AI\Platform\Message\MessageBag;
@@ -64,9 +64,9 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
             new ModelResolutionOptions(),
         );
 
-        $this->assertSame('llama_cpp/flash', $result->model);
-        $this->assertSame('llama_cpp', $result->providerId);
-        $this->assertSame('medium', $result->reasoning);
+        self::assertSame('llama_cpp/flash', $result->model);
+        self::assertSame('llama_cpp', $result->providerId);
+        self::assertSame('medium', $result->reasoning);
     }
 
     public function testExplicitModelWinsOverSessionMetadata(): void
@@ -84,8 +84,8 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
             new ModelResolutionOptions(),
         );
 
-        $this->assertSame('deepseek/deepseek-v4-pro', $result->model);
-        $this->assertSame('deepseek', $result->providerId);
+        self::assertSame('deepseek/deepseek-v4-pro', $result->model);
+        self::assertSame('deepseek', $result->providerId);
     }
 
     public function testResolveReturnsDefaultModelWhenNoSessionMetadata(): void
@@ -99,9 +99,9 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
             new ModelResolutionOptions(),
         );
 
-        $this->assertSame('deepseek/deepseek-v4-pro', $result->model);
-        $this->assertSame('deepseek', $result->providerId);
-        $this->assertSame('medium', $result->reasoning);
+        self::assertSame('deepseek/deepseek-v4-pro', $result->model);
+        self::assertSame('deepseek', $result->providerId);
+        self::assertSame('medium', $result->reasoning);
     }
 
     public function testResolveReturnsFirstAvailableWhenNoSessionOrDefault(): void
@@ -117,8 +117,8 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
             new ModelResolutionOptions(),
         );
 
-        $this->assertNotEmpty($result->model);
-        $this->assertNotEmpty($result->providerId);
+        self::assertNotEmpty($result->model);
+        self::assertNotEmpty($result->providerId);
     }
 
     public function testResolveThrowsWhenNoModelsConfigured(): void
@@ -134,7 +134,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
             new ModelInvocationInput(),
             new ModelResolutionOptions(),
         );
-    }
+   }
 
     public function testNameMetadataDoesNotAffectModelResolution(): void
     {
@@ -153,9 +153,9 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         );
 
         // name metadata must not affect model or reasoning resolution
-        $this->assertSame('llama_cpp/flash', $result->model);
-        $this->assertSame('llama_cpp', $result->providerId);
-        $this->assertSame('medium', $result->reasoning);
+        self::assertSame('llama_cpp/flash', $result->model);
+        self::assertSame('llama_cpp', $result->providerId);
+        self::assertSame('medium', $result->reasoning);
     }
 
     public function testResolveThrowsWhenNoModelsConfiguredAndLegacyDefaultProvided(): void
@@ -186,7 +186,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
             new ModelResolutionOptions(),
         );
 
-        $this->assertSame('high', $result->reasoning);
+        self::assertSame('high', $result->reasoning);
     }
 
     public function testThinkingLevelOptionOverridesSessionReasoning(): void
@@ -202,7 +202,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
             new ModelResolutionOptions(['thinking_level' => 'low']),
         );
 
-        $this->assertSame('low', $result->reasoning);
+        self::assertSame('low', $result->reasoning);
     }
 
     public function testEmptyThinkingLevelDoesNotOverrideSessionReasoning(): void
@@ -218,7 +218,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
             new ModelResolutionOptions(['thinking_level' => '']),
         );
 
-        $this->assertSame('high', $result->reasoning);
+        self::assertSame('high', $result->reasoning);
     }
 
     // ──────────────────────────────────────────────

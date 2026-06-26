@@ -105,7 +105,7 @@ final class McpToolRegistrarTest extends TestCase
 
         $this->contextAccessor->with(
             new \Ineersa\AgentCore\Application\Tool\ToolContext('run-1', 1, 'tc1', 'my_server_read', new \Ineersa\AgentCore\Contract\Hook\NullCancellationToken(), 30),
-            static fn () => ($handler)(['path' => 'test.txt']),
+            fn () => ($handler)(['path' => 'test.txt']),
         );
     }
 
@@ -125,7 +125,7 @@ final class McpToolRegistrarTest extends TestCase
         try {
             $this->contextAccessor->with(
                 new \Ineersa\AgentCore\Application\Tool\ToolContext('run-1', 1, 'tc1', 'my_server_read', new \Ineersa\AgentCore\Contract\Hook\NullCancellationToken(), 30),
-                static fn () => ($handler)([]),
+                fn () => ($handler)([]),
             );
         } catch (ToolCallException $e) {
             // The invoker translates McpClientInvocationException → retryable:true
@@ -502,32 +502,12 @@ final class McpToolRegistrarTest extends TestCase
         $resultMapper = new \Ineersa\CodingAgent\Mcp\Tool\McpResultMapper();
 
         $stubManager = new class($exception) implements \Ineersa\CodingAgent\Mcp\Client\McpConnectionManagerInterface {
-            public function __construct(private \Throwable $exception)
-            {
-            }
-
-            public function discover(string $runId, ?callable $onServerDiscovered = null): array
-            {
-                return [];
-            }
-
-            public function getClient(string $runId, string $serverName): ?\Ineersa\CodingAgent\Mcp\Client\McpClientInterface
-            {
-                return null;
-            }
-
-            public function disconnectServer(string $runId, string $serverName): void
-            {
-            }
-
-            public function disconnectAll(string $runId): void
-            {
-            }
-
-            public function callTool(string $runId, string $serverName, string $toolName, array $arguments = []): array
-            {
-                throw new \Ineersa\CodingAgent\Mcp\Client\McpClientInvocationException($this->exception->getMessage(), 0, $this->exception);
-            }
+            public function __construct(private \Throwable $exception) {}
+            public function discover(string $runId, ?callable $onServerDiscovered = null): array { return []; }
+            public function getClient(string $runId, string $serverName): ?\Ineersa\CodingAgent\Mcp\Client\McpClientInterface { return null; }
+            public function disconnectServer(string $runId, string $serverName): void {}
+            public function disconnectAll(string $runId): void {}
+            public function callTool(string $runId, string $serverName, string $toolName, array $arguments = []): array { throw new \Ineersa\CodingAgent\Mcp\Client\McpClientInvocationException($this->exception->getMessage(), 0, $this->exception); }
         };
 
         return new McpToolInvoker(

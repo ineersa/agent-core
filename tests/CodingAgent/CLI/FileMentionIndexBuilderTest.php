@@ -29,6 +29,17 @@ final class FileMentionIndexBuilderTest extends TestCase
         $this->removeDir($this->tmpDir);
     }
 
+    private function createLockFactory(): LockFactory
+    {
+        // FlockStore in the test tmp dir so locks are isolated to this test.
+        return new LockFactory(new FlockStore($this->tmpDir));
+    }
+
+    private function createLogger(): LoggerInterface
+    {
+        return $this->createStub(LoggerInterface::class);
+    }
+
     #[Test]
     public function includesFilesAndDirectories(): void
     {
@@ -202,8 +213,7 @@ final class FileMentionIndexBuilderTest extends TestCase
 
     /**
      * Round-trip: builder writes index → reader reloads → provider
-     * creates suggestion → applying replacement produces expected.
-     *
+     * creates suggestion → applying replacement produces expected
      * @ path text.  Exercises the full index → completion chain.
      */
     #[Test]
@@ -310,41 +320,41 @@ final class FileMentionIndexBuilderTest extends TestCase
         // (e.g. var/tmp/test-* in agent-core's .gitignore).
         // The builder should skip ignoreVCSIgnored so the index is
         // not empty — the explicit exclude list handles noisy dirs.
-        $gitExec = exec('which git 2>/dev/null');
+        $gitExec = \exec('which git 2>/dev/null');
         if ('' === $gitExec) {
-            $this->markTestSkipped('git is not available for VCS-ignored CWD test.');
+            self::markTestSkipped('git is not available for VCS-ignored CWD test.');
         }
 
         // ── Create a temporary git repo with a .gitignore ──
         $gitRepo = $this->tmpDir.'/parent-repo';
-        mkdir($gitRepo, 0755, true);
-        file_put_contents($gitRepo.'/.gitignore', "/ignored-scratch/\n");
+        \mkdir($gitRepo, 0755, true);
+        \file_put_contents($gitRepo.'/.gitignore', "/ignored-scratch/\n");
 
         // Init git repo so .git/ exists (which is what Finder uses to
         // detect the repo root for VcsIgnoredFilterIterator).
-        $cwd = getcwd();
-        chdir($gitRepo);
-        exec('git init -q 2>/dev/null', output: $initOut, result_code: $initCode);
-        chdir($cwd);
+        $cwd = \getcwd();
+        \chdir($gitRepo);
+        \exec('git init -q 2>/dev/null', output: $initOut, result_code: $initCode);
+        \chdir($cwd);
         if (0 !== $initCode) {
-            $this->markTestSkipped('git init failed in '.$gitRepo);
+            self::markTestSkipped('git init failed in '.$gitRepo);
         }
 
         // ── Create the CWD inside the ignored directory ──
         $cwd = $gitRepo.'/ignored-scratch/my-project';
-        mkdir($cwd, 0755, true);
-        touch($cwd.'/included.php');
-        mkdir($cwd.'/vendor', 0755, true);
-        touch($cwd.'/vendor/excluded.php');
+        \mkdir($cwd, 0755, true);
+        \touch($cwd.'/included.php');
+        \mkdir($cwd.'/vendor', 0755, true);
+        \touch($cwd.'/vendor/excluded.php');
 
         // ── Verify git sees the cwd as ignored ──
-        exec(
-            'git -C '.escapeshellarg($cwd).' check-ignore . 2>/dev/null',
+        \exec(
+            'git -C '.\escapeshellarg($cwd).' check-ignore . 2>/dev/null',
             output: $ignoreOut,
             result_code: $isIgnored,
         );
         if (0 !== $isIgnored) {
-            $this->markTestSkipped('CWD is not recognized as git-ignored; test setup may need adjustment.');
+            self::markTestSkipped('CWD is not recognized as git-ignored; test setup may need adjustment.');
         }
 
         $indexPath = $cwd.'/index.jsonl';
@@ -353,9 +363,9 @@ final class FileMentionIndexBuilderTest extends TestCase
 
         $this->assertGreaterThan(0, $count, 'Index must contain entries even when CWD is VCS-ignored.');
 
-        $lines = file($indexPath, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES);
+        $lines = \file($indexPath, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES);
         $this->assertNotFalse($lines);
-        $paths = array_map(static fn (string $l): string => json_decode($l, true)['path'], $lines);
+        $paths = \array_map(static fn (string $l): string => \json_decode($l, true)['path'], $lines);
 
         // included.php should appear (not filtered by VCS ignore).
         $this->assertContains('included.php', $paths);
@@ -364,17 +374,6 @@ final class FileMentionIndexBuilderTest extends TestCase
         foreach ($paths as $path) {
             $this->assertStringNotContainsString('vendor/', $path);
         }
-    }
-
-    private function createLockFactory(): LockFactory
-    {
-        // FlockStore in the test tmp dir so locks are isolated to this test.
-        return new LockFactory(new FlockStore($this->tmpDir));
-    }
-
-    private function createLogger(): LoggerInterface
-    {
-        return $this->createStub(LoggerInterface::class);
     }
 
     private function removeDir(string $dir): void

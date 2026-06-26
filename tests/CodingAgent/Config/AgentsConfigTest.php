@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Config;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppConfigLoader;
+use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
@@ -35,40 +36,40 @@ final class AgentsConfigTest extends TestCase
     {
         $config = new AgentsConfig();
 
-        $this->assertTrue($config->enabled);
-        $this->assertCount(0, $config->paths);
-        $this->assertSame(8, $config->maxAgents);
-        $this->assertSame(1800, $config->subagentToolTimeoutSeconds);
+        self::assertTrue($config->enabled);
+        self::assertCount(0, $config->paths);
+        self::assertSame(8, $config->maxAgents);
+        self::assertSame(1800, $config->subagentToolTimeoutSeconds);
     }
 
     public function testFromRawWithMaxAgents(): void
     {
         $config = AgentsConfig::fromRaw(['max_agents' => 4]);
 
-        $this->assertSame(4, $config->maxAgents);
+        self::assertSame(4, $config->maxAgents);
     }
 
     public function testFromRawEmptyArray(): void
     {
         $config = AgentsConfig::fromRaw([]);
 
-        $this->assertTrue($config->enabled);
-        $this->assertCount(0, $config->paths);
+        self::assertTrue($config->enabled);
+        self::assertCount(0, $config->paths);
     }
 
     public function testFromRawNonArray(): void
     {
         $config = AgentsConfig::fromRaw('not-an-array');
 
-        $this->assertTrue($config->enabled);
-        $this->assertCount(0, $config->paths);
+        self::assertTrue($config->enabled);
+        self::assertCount(0, $config->paths);
     }
 
     public function testFromRawWithEnabled(): void
     {
         $config = AgentsConfig::fromRaw(['enabled' => false]);
 
-        $this->assertFalse($config->enabled);
+        self::assertFalse($config->enabled);
     }
 
     public function testFromRawWithPaths(): void
@@ -80,10 +81,10 @@ final class AgentsConfigTest extends TestCase
             ],
         ]);
 
-        $this->assertTrue($config->enabled);
-        $this->assertCount(2, $config->paths);
-        $this->assertSame('~/custom/agent.md', $config->paths[0]);
-        $this->assertSame('.hatfield/team-agents', $config->paths[1]);
+        self::assertTrue($config->enabled);
+        self::assertCount(2, $config->paths);
+        self::assertSame('~/custom/agent.md', $config->paths[0]);
+        self::assertSame('.hatfield/team-agents', $config->paths[1]);
     }
 
     public function testFromRawIgnoresBlankPaths(): void
@@ -92,8 +93,8 @@ final class AgentsConfigTest extends TestCase
             'paths' => ['', '  ', 'valid-path'],
         ]);
 
-        $this->assertCount(1, $config->paths);
-        $this->assertSame('valid-path', $config->paths[0]);
+        self::assertCount(1, $config->paths);
+        self::assertSame('valid-path', $config->paths[0]);
     }
 
     public function testFromRawIgnoresNonStringPaths(): void
@@ -102,8 +103,8 @@ final class AgentsConfigTest extends TestCase
             'paths' => [123, true, null, 'valid-path'],
         ]);
 
-        $this->assertCount(1, $config->paths);
-        $this->assertSame('valid-path', $config->paths[0]);
+        self::assertCount(1, $config->paths);
+        self::assertSame('valid-path', $config->paths[0]);
     }
 
     public function testPathResolutionThroughAppConfigLoader(): void
@@ -123,10 +124,10 @@ final class AgentsConfigTest extends TestCase
 
         $merged = $loader->load($defaultsPath, $cwd);
 
-        $this->assertArrayHasKey('agents', $merged);
-        $this->assertArrayHasKey('paths', $merged['agents']);
+        self::assertArrayHasKey('agents', $merged);
+        self::assertArrayHasKey('paths', $merged['agents']);
         // The relative path './custom' should be resolved to an absolute path under $cwd
-        $this->assertStringStartsWith($cwd, $merged['agents']['paths'][0]);
+        self::assertStringStartsWith($cwd, $merged['agents']['paths'][0]);
     }
 
     public function testFromAppConfigReturnsAgentsConfig(): void
@@ -140,7 +141,7 @@ final class AgentsConfigTest extends TestCase
 
         $result = AgentsConfig::fromAppConfig($appConfig);
 
-        $this->assertSame($agentsConfig, $result);
+        self::assertSame($agentsConfig, $result);
     }
 
     public function testFromRawRejectsSubagentToolTimeoutBelowMinimum(): void
@@ -163,13 +164,13 @@ final class AgentsConfigTest extends TestCase
     {
         $config = AgentsConfig::fromRaw(['subagent_tool_timeout_seconds' => 60]);
 
-        $this->assertSame(60, $config->subagentToolTimeoutSeconds);
+        self::assertSame(60, $config->subagentToolTimeoutSeconds);
     }
 
     public function testFromRawWithSubagentToolTimeoutSeconds(): void
     {
         $config = AgentsConfig::fromRaw(['subagent_tool_timeout_seconds' => 600]);
 
-        $this->assertSame(600, $config->subagentToolTimeoutSeconds);
+        self::assertSame(600, $config->subagentToolTimeoutSeconds);
     }
 }

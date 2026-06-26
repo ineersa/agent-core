@@ -48,10 +48,10 @@ final class TuiVirtualInputTest extends TestCase
             $harness->startInputLoop();
             $harness->sendInput('hello virtual');
 
-            $this->assertSame('hello virtual', $harness->screen()->editorText());
+            self::assertSame('hello virtual', $harness->screen()->editorText());
 
             $screen = $harness->plainScreenText();
-            $this->assertStringContainsString('hello virtual', $screen, 'Typed text should appear on rendered screen');
+            self::assertStringContainsString('hello virtual', $screen, 'Typed text should appear on rendered screen');
         } finally {
             $harness->stopInputLoop();
         }
@@ -65,10 +65,10 @@ final class TuiVirtualInputTest extends TestCase
 
         $result = $router->route($submitted);
 
-        $this->assertInstanceOf(TranscriptMessage::class, $result);
-        $this->assertNotInstanceOf(DispatchShellCommand::class, $result);
-        $this->assertSame(self::DOUBLE_BANG_UNSUPPORTED, $result->text);
-        $this->assertSame('muted', $result->style);
+        self::assertInstanceOf(TranscriptMessage::class, $result);
+        self::assertNotInstanceOf(DispatchShellCommand::class, $result);
+        self::assertSame(self::DOUBLE_BANG_UNSUPPORTED, $result->text);
+        self::assertSame('muted', $result->style);
 
         $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
         $factory = new TranscriptBlockFactory();
@@ -82,8 +82,8 @@ final class TuiVirtualInputTest extends TestCase
         $harness->screen()->setTranscriptBlocks([$block]);
 
         $screen = $harness->plainScreenText();
-        $this->assertStringContainsString(self::DOUBLE_BANG_UNSUPPORTED, $screen);
-        $this->assertStringContainsString('not supported', $screen);
+        self::assertStringContainsString(self::DOUBLE_BANG_UNSUPPORTED, $screen);
+        self::assertStringContainsString('not supported', $screen);
     }
 
     #[Test]
@@ -105,16 +105,16 @@ final class TuiVirtualInputTest extends TestCase
         $router = new SubmissionRouter(new CommandParser(), new SlashCommandRegistry($hotkeyRegistry));
         $result = $router->route('/hotkeys');
 
-        $this->assertInstanceOf(HotkeyTableData::class, $result);
-        $this->assertNotInstanceOf(DispatchRuntime::class, $result);
-        $this->assertFalse($result->isEmpty());
+        self::assertInstanceOf(HotkeyTableData::class, $result);
+        self::assertNotInstanceOf(DispatchRuntime::class, $result);
+        self::assertFalse($result->isEmpty());
 
         $styledText = $this->applyHotkeyTableToScreen($result, $state, $harness->screen());
 
-        $this->assertStringContainsString('Keyboard shortcuts', $styledText);
+        self::assertStringContainsString('Keyboard shortcuts', $styledText);
 
         foreach (['┌', '├', '└', '│', '┐', '┤', '┘'] as $boxChar) {
-            $this->assertStringContainsString(
+            self::assertStringContainsString(
                 $boxChar,
                 $styledText,
                 \sprintf('/hotkeys output should contain box-drawing char "%s"', $boxChar),
@@ -122,7 +122,7 @@ final class TuiVirtualInputTest extends TestCase
         }
 
         foreach (['Ctrl+C', 'Ctrl+D', 'Shift+Enter', 'Insert newline', 'Submit prompt', 'Enter', 'Tab'] as $entry) {
-            $this->assertStringContainsString(
+            self::assertStringContainsString(
                 $entry,
                 $styledText,
                 \sprintf('/hotkeys output should contain "%s"', $entry),
@@ -131,7 +131,7 @@ final class TuiVirtualInputTest extends TestCase
 
         $screen = $harness->plainScreenText();
         foreach (['Tab', 'Enter', 'Ctrl+P', 'Shift+Tab'] as $visibleEntry) {
-            $this->assertStringContainsString(
+            self::assertStringContainsString(
                 $visibleEntry,
                 $screen,
                 \sprintf('Virtual screen should surface hotkeys table entry "%s"', $visibleEntry),

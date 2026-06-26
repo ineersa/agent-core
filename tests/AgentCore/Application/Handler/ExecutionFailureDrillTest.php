@@ -58,21 +58,21 @@ final class ExecutionFailureDrillTest extends TestCase
 
         try {
             $failingWorker($message);
-            $this->fail('Expected dispatch crash to bubble as RuntimeException.');
+            self::fail('Expected dispatch crash to bubble as RuntimeException.');
         } catch (\RuntimeException $exception) {
-            $this->assertSame('Failed to dispatch LLM result to command bus.', $exception->getMessage());
+            self::assertSame('Failed to dispatch LLM result to command bus.', $exception->getMessage());
         }
 
         $collectingBus = new TestMessageBus();
         $retryWorker = new ExecuteLlmStepWorker($platform, $collectingBus, 'test-model');
         $retryWorker($message);
 
-        $this->assertCount(1, $collectingBus->messages);
-        $this->assertInstanceOf(LlmStepResult::class, $collectingBus->messages[0]);
+        self::assertCount(1, $collectingBus->messages);
+        self::assertInstanceOf(LlmStepResult::class, $collectingBus->messages[0]);
 
         /** @var LlmStepResult $result */
         $result = $collectingBus->messages[0];
-        $this->assertSame('retry-attempt', $result->assistantMessage?->asText());
+        self::assertSame('retry-attempt', $result->assistantMessage?->asText());
     }
 
     public function testToolWorkerCanBeRetriedAfterCommandBusDispatchCrash(): void
@@ -109,22 +109,22 @@ final class ExecutionFailureDrillTest extends TestCase
 
         try {
             $failingWorker($message);
-            $this->fail('Expected dispatch crash to bubble as RuntimeException.');
+            self::fail('Expected dispatch crash to bubble as RuntimeException.');
         } catch (\RuntimeException $exception) {
-            $this->assertSame('Failed to dispatch tool result to command bus.', $exception->getMessage());
+            self::assertSame('Failed to dispatch tool result to command bus.', $exception->getMessage());
         }
 
         $collectingBus = new TestMessageBus();
         $retryWorker = new ExecuteToolCallWorker($toolExecutor, $collectingBus);
         $retryWorker($message);
 
-        $this->assertCount(1, $collectingBus->messages);
-        $this->assertInstanceOf(ToolCallResult::class, $collectingBus->messages[0]);
+        self::assertCount(1, $collectingBus->messages);
+        self::assertInstanceOf(ToolCallResult::class, $collectingBus->messages[0]);
 
         /** @var ToolCallResult $result */
         $result = $collectingBus->messages[0];
-        $this->assertSame('web_search', $result->result['tool_name']);
-        $this->assertFalse($result->isError);
+        self::assertSame('web_search', $result->result['tool_name']);
+        self::assertFalse($result->isError);
     }
 }
 
@@ -147,3 +147,5 @@ final class FailingOnceMessageBus implements MessageBusInterface
         return new Envelope($message, $stamps);
     }
 }
+
+

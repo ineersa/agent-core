@@ -143,18 +143,18 @@ class ChatScreenTest extends TestCase
         $children = $this->getRootChildren();
 
         // Widget count increased by exactly 1.
-        $this->assertCount($initialCount + 1, $children, 'Root should have one more child after overlay insertion');
+        self::assertCount($initialCount + 1, $children, 'Root should have one more child after overlay insertion');
 
         // Overlay exists.
         $ids = array_map(static fn (AbstractWidget $w) => $w->getId(), $children);
-        $this->assertContains('approval-overlay', $ids, 'Overlay widget must be present in root container');
+        self::assertContains('approval-overlay', $ids, 'Overlay widget must be present in root container');
 
         // Overlay is not the last child — footer must be after it.
         // ChatScreen::mount() appends footer last; insertOverlayBeforeEditor()
         // re-adds footer as the last step, so it should always be last.
         $lastIdx = \count($children) - 1;
         $overlayIdx = array_search('approval-overlay', $ids, true);
-        $this->assertLessThan($lastIdx, $overlayIdx, 'Overlay must not appear after footer');
+        self::assertLessThan($lastIdx, $overlayIdx, 'Overlay must not appear after footer');
     }
 
     // ── Removal ──
@@ -173,7 +173,7 @@ class ChatScreenTest extends TestCase
 
         // Verify overlay is present.
         $idsBefore = array_map(static fn (AbstractWidget $w) => $w->getId(), $this->getRootChildren());
-        $this->assertContains('approval-overlay', $idsBefore, 'Overlay must be present before removal');
+        self::assertContains('approval-overlay', $idsBefore, 'Overlay must be present before removal');
 
         // Remove overlay.
         $this->screen->removeOverlay($overlay);
@@ -182,70 +182,8 @@ class ChatScreenTest extends TestCase
         $childrenAfter = $this->getRootChildren();
         $idsAfter = array_map(static fn (AbstractWidget $w) => $w->getId(), $childrenAfter);
 
-        $this->assertNotContains('approval-overlay', $idsAfter, 'Overlay must be removed from the widget tree');
-        $this->assertCount($initialCount - 1, $childrenAfter, 'Root should have one fewer child after overlay removal');
-    }
-
-    // ── Session ID update ──
-
-    #[Test]
-    public function testUpdateSessionIdUpdatesFooterSegmentText(): void
-    {
-        // Call updateSessionId to change the session displayed in the footer.
-        $this->screen->updateSessionId('new-session-id');
-
-        // Assert the default footer segment text now reflects the new session ID.
-        $segments = $this->getFooterSegments();
-        $sessionSegment = array_values(array_filter(
-            $segments,
-            static fn (FooterSegment $s) => str_contains($s->text, 'session'),
-        ));
-        $this->assertCount(1, $sessionSegment);
-        $this->assertStringContainsString('new-session-id', $sessionSegment[0]->text);
-    }
-
-    #[Test]
-    public function testUpdateSessionIdAfterMountUpdatesFooter(): void
-    {
-        $this->screen->mount($this->tui);
-
-        $this->screen->updateSessionId('new-session-id');
-
-        $segments = $this->getFooterSegments();
-        $sessionSegment = array_values(array_filter(
-            $segments,
-            static fn (FooterSegment $s) => str_contains($s->text, 'session'),
-        ));
-        $this->assertCount(1, $sessionSegment);
-        $this->assertStringContainsString('new-session-id', $sessionSegment[0]->text);
-    }
-
-    /**
-     * Draft sessions (empty session ID) produce no default footer
-     * segment, leaving only extension-contributed footer content.
-     */
-    #[Test]
-    public function testDraftFooterHasNoSessionSegment(): void
-    {
-        $draftScreen = new ChatScreen(
-            theme: $this->getTestTheme(),
-            sessionId: '',
-            promptEditor: new PromptEditor(),
-        );
-
-        $draftScreen->mount($this->tui);
-
-        // Reflect into the draft screen's footer data provider.
-        $screenRef = new \ReflectionClass($draftScreen);
-        $fdProp = $screenRef->getProperty('footerDataProvider');
-        /** @var FooterDataProvider $fd */
-        $fd = $fdProp->getValue($draftScreen);
-
-        $segments = $fd->getSegments();
-        $this->assertEmpty(
-            $segments,
-            'Draft session with empty ID must produce zero default footer segments.',
-        );
+        self::assertNotContains('approval-overlay', $idsAfter, 'Overlay must be removed from the widget tree');
+        self::assertCount($initialCount - 1, $childrenAfter, 'Root should have one fewer child after overlay removal');
     }
 
     // ── Helpers ──
@@ -280,6 +218,68 @@ class ChatScreenTest extends TestCase
         return $fd->getSegments();
     }
 
+    // ── Session ID update ──
+
+    #[Test]
+    public function testUpdateSessionIdUpdatesFooterSegmentText(): void
+    {
+        // Call updateSessionId to change the session displayed in the footer.
+        $this->screen->updateSessionId('new-session-id');
+
+        // Assert the default footer segment text now reflects the new session ID.
+        $segments = $this->getFooterSegments();
+        $sessionSegment = array_values(array_filter(
+            $segments,
+            static fn (FooterSegment $s) => str_contains($s->text, 'session'),
+        ));
+        self::assertCount(1, $sessionSegment);
+        self::assertStringContainsString('new-session-id', $sessionSegment[0]->text);
+    }
+
+    #[Test]
+    public function testUpdateSessionIdAfterMountUpdatesFooter(): void
+    {
+        $this->screen->mount($this->tui);
+
+        $this->screen->updateSessionId('new-session-id');
+
+        $segments = $this->getFooterSegments();
+        $sessionSegment = array_values(array_filter(
+            $segments,
+            static fn (FooterSegment $s) => str_contains($s->text, 'session'),
+        ));
+        self::assertCount(1, $sessionSegment);
+        self::assertStringContainsString('new-session-id', $sessionSegment[0]->text);
+    }
+
+    /**
+     * Draft sessions (empty session ID) produce no default footer
+     * segment, leaving only extension-contributed footer content.
+     */
+    #[Test]
+    public function testDraftFooterHasNoSessionSegment(): void
+    {
+        $draftScreen = new ChatScreen(
+            theme: $this->getTestTheme(),
+            sessionId: '',
+            promptEditor: new PromptEditor(),
+        );
+
+        $draftScreen->mount($this->tui);
+
+        // Reflect into the draft screen's footer data provider.
+        $screenRef = new \ReflectionClass($draftScreen);
+        $fdProp = $screenRef->getProperty('footerDataProvider');
+        /** @var FooterDataProvider $fd */
+        $fd = $fdProp->getValue($draftScreen);
+
+        $segments = $fd->getSegments();
+        self::assertEmpty(
+            $segments,
+            'Draft session with empty ID must produce zero default footer segments.',
+        );
+    }
+
     /**
      * Return a real ChatScreen-compatible theme for constructing
      * additional screens without leaking the setUp instance.
@@ -287,46 +287,14 @@ class ChatScreenTest extends TestCase
     private function getTestTheme(): TuiTheme
     {
         return new readonly class implements TuiTheme {
-            public function name(): string
-            {
-                return 'test';
-            }
-
-            public function color(ThemeColorEnum $color, string $text): string
-            {
-                return $text;
-            }
-
-            public function accent(string $text): string
-            {
-                return $text;
-            }
-
-            public function text(string $text): string
-            {
-                return $text;
-            }
-
-            public function muted(string $text): string
-            {
-                return $text;
-            }
-
-            public function success(string $text): string
-            {
-                return $text;
-            }
-
-            public function warning(string $text): string
-            {
-                return $text;
-            }
-
-            public function error(string $text): string
-            {
-                return $text;
-            }
-
+            public function name(): string { return 'test'; }
+            public function color(ThemeColorEnum $color, string $text): string { return $text; }
+            public function accent(string $text): string { return $text; }
+            public function text(string $text): string { return $text; }
+            public function muted(string $text): string { return $text; }
+            public function success(string $text): string { return $text; }
+            public function warning(string $text): string { return $text; }
+            public function error(string $text): string { return $text; }
             public function getPalette(): \Ineersa\Tui\Theme\ThemePalette
             {
                 return new \Ineersa\Tui\Theme\ThemePalette(name: 'test', colors: []);

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Transcript;
 
 use Ineersa\Tui\Theme\DefaultTheme;
+use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Transcript\HotkeyTableRenderer;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -35,10 +36,10 @@ final class HotkeyTableRendererTest extends TestCase
         $output = $renderer->render([], $this->theme, 'No hotkeys yet.');
 
         // Should contain the muted message
-        $this->assertStringContainsString('No hotkeys yet.', $output);
+        self::assertStringContainsString('No hotkeys yet.', $output);
         // Should NOT contain box-drawing chars (no tables rendered)
-        $this->assertStringNotContainsString('┌', $output);
-        $this->assertStringNotContainsString('│', $output);
+        self::assertStringNotContainsString('┌', $output);
+        self::assertStringNotContainsString('│', $output);
     }
 
     #[Test]
@@ -56,32 +57,32 @@ final class HotkeyTableRendererTest extends TestCase
         ], $this->theme);
 
         // Must contain the heading
-        $this->assertStringContainsString('Keyboard shortcuts', $output);
+        self::assertStringContainsString('Keyboard shortcuts', $output);
 
         // Must contain box-drawing table chars
-        $this->assertStringContainsString('┌', $output);
-        $this->assertStringContainsString('│', $output);
-        $this->assertStringContainsString('└', $output);
+        self::assertStringContainsString('┌', $output);
+        self::assertStringContainsString('│', $output);
+        self::assertStringContainsString('└', $output);
 
         // Must contain the hotkey data
-        $this->assertStringContainsString('Ctrl+C', $output);
-        $this->assertStringContainsString('Clear editor', $output);
-        $this->assertStringContainsString('Clear or double-exit', $output);
+        self::assertStringContainsString('Ctrl+C', $output);
+        self::assertStringContainsString('Clear editor', $output);
+        self::assertStringContainsString('Clear or double-exit', $output);
 
         // Must contain the accent-styled heading (ANSI codes from theme)
         // The heading text should have ANSI sequences around it
         $accentedHeading = $this->theme->accent('Keyboard shortcuts');
-        $this->assertStringContainsString($accentedHeading, $output);
+        self::assertStringContainsString($accentedHeading, $output);
 
         // Must contain the accent-styled context name
         $accentedGlobal = $this->theme->accent('Global');
-        $this->assertStringContainsString($accentedGlobal, $output);
+        self::assertStringContainsString($accentedGlobal, $output);
 
         // Must contain muted footer
         $mutedFooter = $this->theme->muted(
             'App shortcuts (Ctrl+C, Ctrl+D) are global and cannot be remapped.',
         );
-        $this->assertStringContainsString($mutedFooter, $output);
+        self::assertStringContainsString($mutedFooter, $output);
     }
 
     #[Test]
@@ -100,55 +101,55 @@ final class HotkeyTableRendererTest extends TestCase
         ], $this->theme);
 
         // Both context names should appear
-        $this->assertStringContainsString('Global', $output);
-        $this->assertStringContainsString('Editor', $output);
+        self::assertStringContainsString('Global', $output);
+        self::assertStringContainsString('Editor', $output);
 
         // All hotkeys should appear with formatted key display
-        $this->assertStringContainsString('Ctrl+C', $output);
-        $this->assertStringContainsString('Ctrl+D', $output);
-        $this->assertStringContainsString('Enter', $output);
-        $this->assertStringContainsString('Ctrl+J', $output);
+        self::assertStringContainsString('Ctrl+C', $output);
+        self::assertStringContainsString('Ctrl+D', $output);
+        self::assertStringContainsString('Enter', $output);
+        self::assertStringContainsString('Ctrl+J', $output);
 
         // Action names
-        $this->assertStringContainsString('Submit prompt', $output);
-        $this->assertStringContainsString('Insert newline', $output);
+        self::assertStringContainsString('Submit prompt', $output);
+        self::assertStringContainsString('Insert newline', $output);
 
         // Check that ANSI-styled key text has accent/success sequences
         // (the themed accent/success tokens wrap key/action names)
         // Verify by stripping ANSI and checking plain content still present
         $stripped = preg_replace('/\e\[[0-9;]*m/', '', $output);
-        $this->assertStringContainsString('Keyboard shortcuts', $stripped);
-        $this->assertStringContainsString('Global', $stripped);
-        $this->assertStringContainsString('Editor', $stripped);
-        $this->assertStringContainsString('Ctrl+C', $stripped);
-        $this->assertStringContainsString('Submit prompt', $stripped);
+        self::assertStringContainsString('Keyboard shortcuts', $stripped);
+        self::assertStringContainsString('Global', $stripped);
+        self::assertStringContainsString('Editor', $stripped);
+        self::assertStringContainsString('Ctrl+C', $stripped);
+        self::assertStringContainsString('Submit prompt', $stripped);
     }
 
     #[Test]
     public function formatKeyDisplayConvertsIdentifiers(): void
     {
-        $this->assertSame('Ctrl+C', HotkeyTableRenderer::formatKeyDisplay('ctrl+c'));
-        $this->assertSame('Shift+Enter', HotkeyTableRenderer::formatKeyDisplay('shift+enter'));
-        $this->assertSame('↑', HotkeyTableRenderer::formatKeyDisplay('up'));
-        $this->assertSame('↓', HotkeyTableRenderer::formatKeyDisplay('down'));
-        $this->assertSame('←', HotkeyTableRenderer::formatKeyDisplay('left'));
-        $this->assertSame('→', HotkeyTableRenderer::formatKeyDisplay('right'));
-        $this->assertSame('Esc', HotkeyTableRenderer::formatKeyDisplay('escape'));
-        $this->assertSame('Tab', HotkeyTableRenderer::formatKeyDisplay('tab'));
-        $this->assertSame('Space', HotkeyTableRenderer::formatKeyDisplay('space'));
-        $this->assertSame('Enter', HotkeyTableRenderer::formatKeyDisplay('enter'));
-        $this->assertSame('Ctrl+Alt+Del', HotkeyTableRenderer::formatKeyDisplay('ctrl+alt+delete'));
-        $this->assertSame('F1', HotkeyTableRenderer::formatKeyDisplay('f1'));
+        self::assertSame('Ctrl+C', HotkeyTableRenderer::formatKeyDisplay('ctrl+c'));
+        self::assertSame('Shift+Enter', HotkeyTableRenderer::formatKeyDisplay('shift+enter'));
+        self::assertSame('↑', HotkeyTableRenderer::formatKeyDisplay('up'));
+        self::assertSame('↓', HotkeyTableRenderer::formatKeyDisplay('down'));
+        self::assertSame('←', HotkeyTableRenderer::formatKeyDisplay('left'));
+        self::assertSame('→', HotkeyTableRenderer::formatKeyDisplay('right'));
+        self::assertSame('Esc', HotkeyTableRenderer::formatKeyDisplay('escape'));
+        self::assertSame('Tab', HotkeyTableRenderer::formatKeyDisplay('tab'));
+        self::assertSame('Space', HotkeyTableRenderer::formatKeyDisplay('space'));
+        self::assertSame('Enter', HotkeyTableRenderer::formatKeyDisplay('enter'));
+        self::assertSame('Ctrl+Alt+Del', HotkeyTableRenderer::formatKeyDisplay('ctrl+alt+delete'));
+        self::assertSame('F1', HotkeyTableRenderer::formatKeyDisplay('f1'));
     }
 
     #[Test]
     public function padDisplayWidthPadsCorrectly(): void
     {
-        $this->assertSame('abc   ', HotkeyTableRenderer::padDisplayWidth('abc', 6));
-        $this->assertSame('abc', HotkeyTableRenderer::padDisplayWidth('abc', 3));
-        $this->assertSame('abc', HotkeyTableRenderer::padDisplayWidth('abc', 1));
+        self::assertSame('abc   ', HotkeyTableRenderer::padDisplayWidth('abc', 6));
+        self::assertSame('abc', HotkeyTableRenderer::padDisplayWidth('abc', 3));
+        self::assertSame('abc', HotkeyTableRenderer::padDisplayWidth('abc', 1));
         // Multi-byte: ↑ is 3 bytes but 1 display column
-        $this->assertSame('↑  ', HotkeyTableRenderer::padDisplayWidth('↑', 3));
+        self::assertSame('↑  ', HotkeyTableRenderer::padDisplayWidth('↑', 3));
     }
 
     #[Test]
@@ -156,8 +157,8 @@ final class HotkeyTableRendererTest extends TestCase
     {
         $long = 'This is a very long string that should be truncated';
         $result = HotkeyTableRenderer::truncPadDisplayWidth($long, 20);
-        $this->assertLessThanOrEqual(20, mb_strwidth($result));
-        $this->assertStringEndsWith('…', rtrim($result));
+        self::assertLessThanOrEqual(20, mb_strwidth($result));
+        self::assertStringEndsWith('…', rtrim($result));
     }
 
     #[Test]
@@ -171,11 +172,11 @@ final class HotkeyTableRendererTest extends TestCase
         ], $this->theme);
 
         // The output must contain ANSI escape sequences — theme colors are active
-        $this->assertMatchesRegularExpression('/\e\[[0-9;]+m/', $output);
+        self::assertMatchesRegularExpression('/\e\[[0-9;]+m/', $output);
 
         // Verify that after stripping ANSI, the plain content matches
         $stripped = preg_replace('/\e\[[0-9;]*m/', '', $output);
-        $this->assertStringContainsString('Ctrl+J', $stripped);
-        $this->assertStringContainsString('Insert newline', $stripped);
+        self::assertStringContainsString('Ctrl+J', $stripped);
+        self::assertStringContainsString('Insert newline', $stripped);
     }
 }

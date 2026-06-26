@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Mcp\Handler;
 
-use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogDTO;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolNameMapper;
+use Ineersa\CodingAgent\Mcp\Client\McpClientInterface;
 use Ineersa\CodingAgent\Mcp\Client\McpConnectionManagerInterface;
 use Ineersa\CodingAgent\Mcp\Config\McpConfigLoader;
 use Ineersa\CodingAgent\Mcp\Config\McpConfigValidator;
@@ -16,7 +16,9 @@ use Ineersa\CodingAgent\Mcp\Config\McpEnvInterpolator;
 use Ineersa\CodingAgent\Mcp\Handler\McpInitializeSessionHandler;
 use Ineersa\CodingAgent\Mcp\Message\McpInitializeSessionCommand;
 use Ineersa\CodingAgent\Mcp\Message\McpRefreshCatalogCommand;
+use Ineersa\CodingAgent\Mcp\Message\McpDisconnectSessionCommand;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -103,24 +105,24 @@ class McpInitializeSessionHandlerTest extends TestCase
         // Verify info log
         $infoRecords = array_values(array_filter(
             $this->logger->records,
-            static fn (array $r): bool => 'info' === $r['level'],
+            static fn(array $r): bool => $r['level'] === 'info',
         ));
-        $this->assertGreaterThanOrEqual(1, $infoRecords, 'Expected at least one info log');
+        self::assertGreaterThanOrEqual(1, $infoRecords, 'Expected at least one info log');
 
         // Find the session.initialize log
         $initLogs = array_values(array_filter(
             $infoRecords,
-            static fn (array $r): bool => ($r['context']['mcp_event'] ?? '') === 'session.initialize',
+            static fn(array $r): bool => ($r['context']['mcp_event'] ?? '') === 'session.initialize',
         ));
-        $this->assertCount(1, $initLogs);
-        $this->assertSame(0, $initLogs[0]['context']['enabled_server_count']);
-        $this->assertSame('start_run', $initLogs[0]['context']['reason']);
+        self::assertCount(1, $initLogs);
+        self::assertSame(0, $initLogs[0]['context']['enabled_server_count']);
+        self::assertSame('start_run', $initLogs[0]['context']['reason']);
 
         // Verify catalog was written (empty)
-        $this->assertTrue($this->catalogStore->wasWritten, 'Catalog should be written even for empty config');
-        $this->assertSame('test-run-abc', $this->catalogStore->lastRunId);
-        $this->assertNotNull($this->catalogStore->lastCatalog);
-        $this->assertCount(0, $this->catalogStore->lastCatalog->servers);
+        self::assertTrue($this->catalogStore->wasWritten, 'Catalog should be written even for empty config');
+        self::assertSame('test-run-abc', $this->catalogStore->lastRunId);
+        self::assertNotNull($this->catalogStore->lastCatalog);
+        self::assertCount(0, $this->catalogStore->lastCatalog->servers);
     }
 
     public function testInvalidConfigLogsWarningWithoutThrowing(): void
@@ -130,7 +132,7 @@ class McpInitializeSessionHandlerTest extends TestCase
         // leak into the structured log context.  The file is intentionally
         // not valid JSON (extra garbage after closing brace).
         $brokenConfig = '{"api_key": "sk-secret-test-abc123"} x {broken';
-        file_put_contents($this->projectDir.'/.hatfield/mcp.json', $brokenConfig);
+        file_put_contents($this->projectDir . '/.hatfield/mcp.json', $brokenConfig);
 
         $command = new McpInitializeSessionCommand(
             runId: 'test-run-bad',
@@ -143,18 +145,18 @@ class McpInitializeSessionHandlerTest extends TestCase
 
         $warnings = array_values(array_filter(
             $this->logger->records,
-            static fn (array $r): bool => 'warning' === $r['level'],
+            static fn(array $r): bool => $r['level'] === 'warning',
         ));
-        $this->assertCount(1, $warnings, 'Expected one warning for config failure');
+        self::assertCount(1, $warnings, 'Expected one warning for config failure');
 
         $warn = $warnings[0];
-        $this->assertStringContainsString('MCP initialize failed', $warn['message']);
+        self::assertStringContainsString('MCP initialize failed', $warn['message']);
 
         $ctx = $warn['context'];
-        $this->assertSame('mcp', $ctx['component']);
-        $this->assertSame('session.initialize', $ctx['mcp_event']);
-        $this->assertArrayHasKey('error_class', $ctx);
-        $this->assertArrayHasKey('error_message', $ctx);
+        self::assertSame('mcp', $ctx['component']);
+        self::assertSame('session.initialize', $ctx['mcp_event']);
+        self::assertArrayHasKey('error_class', $ctx);
+        self::assertArrayHasKey('error_message', $ctx);
 
         // Verify no raw config, env, or secret values leak into the log.
         // Assert against the specific secret value and config key that
@@ -162,14 +164,14 @@ class McpInitializeSessionHandlerTest extends TestCase
         // like 'token' that can match benign filesystem paths.
         $contextJson = json_encode($ctx, \JSON_THROW_ON_ERROR);
         $lower = strtolower($contextJson);
-        $this->assertStringNotContainsString('{broken', $contextJson, 'Broken JSON must not appear in log context');
-        $this->assertStringNotContainsString('sk-secret-test-abc123', $lower, 'Embedded secret must not appear in log context');
-        $this->assertStringNotContainsString('api_key', $lower, 'Config key must not appear in log context');
+        self::assertStringNotContainsString('{broken', $contextJson, 'Broken JSON must not appear in log context');
+        self::assertStringNotContainsString('sk-secret-test-abc123', $lower, 'Embedded secret must not appear in log context');
+        self::assertStringNotContainsString('api_key', $lower, 'Config key must not appear in log context');
 
         // On config failure, an empty catalog must be written to invalidate
         // any previously-discovered tools.
-        $this->assertTrue($this->catalogStore->wasWritten);
-        $this->assertCount(0, $this->catalogStore->lastCatalog->servers);
+        self::assertTrue($this->catalogStore->wasWritten);
+        self::assertCount(0, $this->catalogStore->lastCatalog->servers);
     }
 
     public function testInitializeHandlesResumeReasonProperly(): void
@@ -184,20 +186,20 @@ class McpInitializeSessionHandlerTest extends TestCase
 
         $infoRecords = array_values(array_filter(
             $this->logger->records,
-            static fn (array $r): bool => 'info' === $r['level'],
+            static fn(array $r): bool => $r['level'] === 'info',
         ));
         $initLogs = array_values(array_filter(
             $infoRecords,
-            static fn (array $r): bool => ($r['context']['mcp_event'] ?? '') === 'session.initialize',
+            static fn(array $r): bool => ($r['context']['mcp_event'] ?? '') === 'session.initialize',
         ));
-        $this->assertCount(1, $initLogs);
-        $this->assertSame('resume', $initLogs[0]['context']['reason']);
+        self::assertCount(1, $initLogs);
+        self::assertSame('resume', $initLogs[0]['context']['reason']);
     }
 
     public function testRefreshCatalogFailureInvalidatesCatalog(): void
     {
         // Write broken JSON to trigger refresh failure
-        file_put_contents($this->projectDir.'/.hatfield/mcp.json', '{broken');
+        file_put_contents($this->projectDir . '/.hatfield/mcp.json', '{broken');
 
         $message = new McpRefreshCatalogCommand(
             runId: 'test-run-cat-fail',
@@ -209,17 +211,17 @@ class McpInitializeSessionHandlerTest extends TestCase
         // Should log a warning
         $warnings = array_values(array_filter(
             $this->logger->records,
-            static fn (array $r): bool => 'warning' === $r['level'],
+            static fn(array $r): bool => $r['level'] === 'warning',
         ));
-        $this->assertCount(1, $warnings);
-        $this->assertStringContainsString('catalog invalidated', $warnings[0]['message']);
+        self::assertCount(1, $warnings);
+        self::assertStringContainsString('catalog invalidated', $warnings[0]['message']);
 
         // On refresh failure, an empty catalog MUST be written to invalidate
         // any previously-discovered tools.  Stale tools must never silently
         // survive a refresh failure.
-        $this->assertTrue($this->catalogStore->wasWritten, 'Catalog should be written (invalidated) on refresh failure');
-        $this->assertNotNull($this->catalogStore->lastCatalog);
-        $this->assertCount(0, $this->catalogStore->lastCatalog->servers, 'Empty catalog on refresh failure');
+        self::assertTrue($this->catalogStore->wasWritten, 'Catalog should be written (invalidated) on refresh failure');
+        self::assertNotNull($this->catalogStore->lastCatalog);
+        self::assertCount(0, $this->catalogStore->lastCatalog->servers, 'Empty catalog on refresh failure');
     }
 
     public function testRefreshCatalogLogsStructuredInfo(): void
@@ -233,15 +235,15 @@ class McpInitializeSessionHandlerTest extends TestCase
 
         $infoRecords = array_values(array_filter(
             $this->logger->records,
-            static fn (array $r): bool => 'info' === $r['level'],
+            static fn(array $r): bool => $r['level'] === 'info',
         ));
         $refreshLogs = array_values(array_filter(
             $infoRecords,
-            static fn (array $r): bool => ($r['context']['mcp_event'] ?? '') === 'catalog.refresh',
+            static fn(array $r): bool => ($r['context']['mcp_event'] ?? '') === 'catalog.refresh',
         ));
-        $this->assertCount(1, $refreshLogs);
-        $this->assertSame('test-run-cat', $refreshLogs[0]['context']['run_id']);
-        $this->assertSame('corr-cat', $refreshLogs[0]['context']['correlation_id']);
+        self::assertCount(1, $refreshLogs);
+        self::assertSame('test-run-cat', $refreshLogs[0]['context']['run_id']);
+        self::assertSame('corr-cat', $refreshLogs[0]['context']['correlation_id']);
     }
 
     /**
@@ -256,15 +258,15 @@ class McpInitializeSessionHandlerTest extends TestCase
         $mcpConfig = [
             'mcpServers' => [
                 'a.b' => [
-                    'command' => \PHP_BINARY,
-                    'args' => [__DIR__.'/../Fixtures/stdio-echo-server.php'],
+                    'command' => PHP_BINARY,
+                    'args' => [__DIR__ . '/../Fixtures/stdio-echo-server.php'],
                     'timeoutMs' => 10000,
                     'startupTimeoutMs' => 10000,
                 ],
             ],
         ];
         file_put_contents(
-            $this->projectDir.'/.hatfield/mcp.json',
+            $this->projectDir . '/.hatfield/mcp.json',
             json_encode($mcpConfig, \JSON_PRETTY_PRINT),
         );
 
@@ -312,9 +314,9 @@ class McpInitializeSessionHandlerTest extends TestCase
         ($handler)($command);
 
         // Both servers should appear in the catalog
-        $this->assertTrue($this->catalogStore->wasWritten);
-        $this->assertNotNull($this->catalogStore->lastCatalog);
-        $this->assertCount(2, $this->catalogStore->lastCatalog->servers);
+        self::assertTrue($this->catalogStore->wasWritten);
+        self::assertNotNull($this->catalogStore->lastCatalog);
+        self::assertCount(2, $this->catalogStore->lastCatalog->servers);
 
         // But only ONE of the two servers should have tools — the second
         // one's tool was skipped due to name collision.
@@ -322,15 +324,16 @@ class McpInitializeSessionHandlerTest extends TestCase
         foreach ($this->catalogStore->lastCatalog->servers as $entry) {
             $totalTools += \count($entry->tools);
         }
-        $this->assertSame(1, $totalTools, 'Exactly one tool should survive cross-server duplicate detection');
+        self::assertSame(1, $totalTools, 'Exactly one tool should survive cross-server duplicate detection');
 
         // A warning for the duplicate should have been logged
         $warnings = array_values(array_filter(
             $this->logger->records,
-            static fn (array $r): bool => 'warning' === $r['level']
-                && ($r['context']['mcp_event'] ?? '') === 'tool.duplicate',
+            static fn(array $r): bool =>
+                $r['level'] === 'warning' &&
+                ($r['context']['mcp_event'] ?? '') === 'tool.duplicate',
         ));
-        $this->assertCount(1, $warnings, 'Expected one duplicate-tool warning');
+        self::assertCount(1, $warnings, 'Expected one duplicate-tool warning');
     }
 
     public function testHandlerErrorLogRedactsSecretsInExceptionMessage(): void
@@ -345,15 +348,15 @@ class McpInitializeSessionHandlerTest extends TestCase
         $mcpConfig = [
             'mcpServers' => [
                 'secret-server' => [
-                    'command' => \PHP_BINARY,
-                    'args' => [__DIR__.'/../Fixtures/stdio-echo-server.php'],
+                    'command' => PHP_BINARY,
+                    'args' => [__DIR__ . '/../Fixtures/stdio-echo-server.php'],
                     'timeoutMs' => 10000,
                     'startupTimeoutMs' => 10000,
                 ],
             ],
         ];
         file_put_contents(
-            $this->projectDir.'/.hatfield/mcp.json',
+            $this->projectDir . '/.hatfield/mcp.json',
             json_encode($mcpConfig, \JSON_PRETTY_PRINT),
         );
 
@@ -379,29 +382,29 @@ class McpInitializeSessionHandlerTest extends TestCase
         ($handler)($command);
 
         // Catalog should be empty (config failure after exception)
-        $this->assertTrue($this->catalogStore->wasWritten);
-        $this->assertCount(0, $this->catalogStore->lastCatalog->servers);
+        self::assertTrue($this->catalogStore->wasWritten);
+        self::assertCount(0, $this->catalogStore->lastCatalog->servers);
 
         // The warning log must NOT contain the raw bearer token
         $warnings = array_values(array_filter(
             $this->logger->records,
-            static fn (array $r): bool => 'warning' === $r['level'],
+            static fn(array $r): bool => $r['level'] === 'warning',
         ));
 
         // Find the initialize-failed warning
         $initWarnings = array_values(array_filter(
             $warnings,
-            static fn (array $r): bool => str_contains($r['message'], 'MCP initialize failed'),
+            static fn(array $r): bool => str_contains($r['message'], 'MCP initialize failed'),
         ));
 
         if ([] !== $initWarnings) {
             $logJson = json_encode($initWarnings, \JSON_THROW_ON_ERROR);
-            $this->assertStringNotContainsString(
+            self::assertStringNotContainsString(
                 'top-secret-token-abc123',
                 $logJson,
                 'Raw bearer token must not appear in log context',
             );
-            $this->assertStringNotContainsString(
+            self::assertStringNotContainsString(
                 'Authorization: Bearer top-secret',
                 $logJson,
                 'Raw authorization header must not appear in log',
@@ -424,15 +427,15 @@ class McpInitializeSessionHandlerTest extends TestCase
                     'timeoutMs' => 5000,
                 ],
                 'slow-stdio' => [
-                    'command' => \PHP_BINARY,
-                    'args' => [__DIR__.'/../Fixtures/stdio-echo-server.php'],
+                    'command' => PHP_BINARY,
+                    'args' => [__DIR__ . '/../Fixtures/stdio-echo-server.php'],
                     'timeoutMs' => 10000,
                     'startupTimeoutMs' => 10000,
                 ],
             ],
         ];
         file_put_contents(
-            $this->projectDir.'/.hatfield/mcp.json',
+            $this->projectDir . '/.hatfield/mcp.json',
             json_encode($mcpConfig, \JSON_PRETTY_PRINT),
         );
 
@@ -440,7 +443,7 @@ class McpInitializeSessionHandlerTest extends TestCase
         // discovery with the callback invoked after each server.
         $stubManager = $this->createStub(McpConnectionManagerInterface::class);
         $stubManager->method('discover')
-            ->willReturnCallback(static function (string $runId, ?callable $onServerDiscovered = null) {
+            ->willReturnCallback(function (string $runId, ?callable $onServerDiscovered = null) {
                 // First server succeeds — callback fires with 1 server
                 $results = [
                     'fast-http' => [
@@ -491,41 +494,42 @@ class McpInitializeSessionHandlerTest extends TestCase
         ($handler)($command);
 
         // The catalog was written in order: partial(1 server) → partial(2 servers) → final(2 servers).
-        $this->assertCount(3, $this->catalogStore->writeLog, 'Expected 3 writes: 2 partial + 1 final');
+        self::assertCount(3, $this->catalogStore->writeLog, 'Expected 3 writes: 2 partial + 1 final');
 
         // First write: only fast-http is present, slow-stdio hasn't been
         // discovered yet. This is the partial catalog that would make
         // HTTP tools visible before STDIO discovery completes.
         $firstWrite = $this->catalogStore->writeLog[0];
-        $this->assertSame('test-run-partial', $firstWrite['runId']);
+        self::assertSame('test-run-partial', $firstWrite['runId']);
         $firstServers = $firstWrite['catalog']->servers;
-        $this->assertCount(1, $firstServers, 'First partial write: only fast-http before slow-stdio result');
-        $this->assertArrayHasKey('fast-http', $firstServers);
-        $this->assertSame('connected', $firstServers['fast-http']->status->value);
-        $this->assertCount(1, $firstServers['fast-http']->tools);
-        $this->assertArrayNotHasKey('slow-stdio', $firstServers,
+        self::assertCount(1, $firstServers, 'First partial write: only fast-http before slow-stdio result');
+        self::assertArrayHasKey('fast-http', $firstServers);
+        self::assertSame('connected', $firstServers['fast-http']->status->value);
+        self::assertCount(1, $firstServers['fast-http']->tools);
+        self::assertArrayNotHasKey('slow-stdio', $firstServers,
             'Slow server must NOT appear in first partial catalog');
 
         // Second write: both servers present (second server failed)
         $secondWrite = $this->catalogStore->writeLog[1];
         $secondServers = $secondWrite['catalog']->servers;
-        $this->assertCount(2, $secondServers, 'Second write: both servers present');
-        $this->assertArrayHasKey('fast-http', $secondServers);
-        $this->assertArrayHasKey('slow-stdio', $secondServers);
-        $this->assertSame('failed', $secondServers['slow-stdio']->status->value);
+        self::assertCount(2, $secondServers, 'Second write: both servers present');
+        self::assertArrayHasKey('fast-http', $secondServers);
+        self::assertArrayHasKey('slow-stdio', $secondServers);
+        self::assertSame('failed', $secondServers['slow-stdio']->status->value);
 
         // Final write matches the final discovery results
         $finalWrite = $this->catalogStore->writeLog[2];
-        $this->assertSame('test-run-partial', $finalWrite['runId']);
-        $this->assertCount(2, $finalWrite['catalog']->servers);
+        self::assertSame('test-run-partial', $finalWrite['runId']);
+        self::assertCount(2, $finalWrite['catalog']->servers);
 
         // Partial-write debug logs should be present
         $partialLogs = array_values(array_filter(
             $this->logger->records,
-            static fn (array $r): bool => 'debug' === $r['level']
-                && ($r['context']['mcp_event'] ?? '') === 'catalog.partial_written',
+            static fn(array $r): bool =>
+                $r['level'] === 'debug' &&
+                ($r['context']['mcp_event'] ?? '') === 'catalog.partial_written',
         ));
-        $this->assertCount(2, $partialLogs, 'Expected 2 partial-write debug logs');
+        self::assertCount(2, $partialLogs, 'Expected 2 partial-write debug logs');
     }
 
     /**
@@ -543,13 +547,13 @@ class McpInitializeSessionHandlerTest extends TestCase
             ],
         ];
         file_put_contents(
-            $this->projectDir.'/.hatfield/mcp.json',
+            $this->projectDir . '/.hatfield/mcp.json',
             json_encode($mcpConfig, \JSON_PRETTY_PRINT),
         );
 
         $stubManager = $this->createStub(McpConnectionManagerInterface::class);
         $stubManager->method('discover')
-            ->willReturnCallback(static function (string $runId, ?callable $onServerDiscovered = null) {
+            ->willReturnCallback(function (string $runId, ?callable $onServerDiscovered = null) {
                 $results = [
                     'server-a' => [
                         'status' => 'connected',
@@ -587,14 +591,15 @@ class McpInitializeSessionHandlerTest extends TestCase
         $handler->onRefreshCatalog($message);
 
         // Partial write + final write = 2 writes
-        $this->assertCount(2, $this->catalogStore->writeLog, 'Expected 2 writes: 1 partial + 1 final');
+        self::assertCount(2, $this->catalogStore->writeLog, 'Expected 2 writes: 1 partial + 1 final');
 
         $partialLogs = array_values(array_filter(
             $this->logger->records,
-            static fn (array $r): bool => 'debug' === $r['level']
-                && ($r['context']['mcp_event'] ?? '') === 'catalog.partial_written',
+            static fn(array $r): bool =>
+                $r['level'] === 'debug' &&
+                ($r['context']['mcp_event'] ?? '') === 'catalog.partial_written',
         ));
-        $this->assertCount(1, $partialLogs);
+        self::assertCount(1, $partialLogs);
     }
 }
 

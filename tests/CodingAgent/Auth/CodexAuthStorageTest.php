@@ -20,8 +20,8 @@ final class CodexAuthStorageTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->tmpDir = sys_get_temp_dir().'/hatfield-auth-test-'.bin2hex(random_bytes(8));
-        @mkdir($this->tmpDir.'/.hatfield', 0755, true);
+        $this->tmpDir = \sys_get_temp_dir().'/hatfield-auth-test-'.\bin2hex(\random_bytes(8));
+        @\mkdir($this->tmpDir.'/.hatfield', 0755, true);
 
         $store = new FlockStore($this->tmpDir);
         $lockFactory = new LockFactory($store);
@@ -31,12 +31,12 @@ final class CodexAuthStorageTest extends TestCase
 
     protected function tearDown(): void
     {
-        $path = $this->tmpDir.'/'.CodexOAuthConfig::AUTH_FILE;
-        if (file_exists($path)) {
-            @unlink($path);
+        $path = $this->tmpDir.'/' . CodexOAuthConfig::AUTH_FILE;
+        if (\file_exists($path)) {
+            @\unlink($path);
         }
-        @rmdir($this->tmpDir.'/.hatfield');
-        @rmdir($this->tmpDir);
+        @\rmdir($this->tmpDir.'/.hatfield');
+        @\rmdir($this->tmpDir);
     }
 
     public function testSaveAndLoadRoundTrip(): void
@@ -44,7 +44,7 @@ final class CodexAuthStorageTest extends TestCase
         $record = new CodexAuthRecord(
             access: 'test-access-token',
             refresh: 'test-refresh-token',
-            expires: time() + 3600, // 1 hour from now (seconds)
+            expires: \time() + 3600, // 1 hour from now (seconds)
             accountId: 'chat-abc123',
         );
 
@@ -72,7 +72,7 @@ final class CodexAuthStorageTest extends TestCase
         $expiredRecord = new CodexAuthRecord(
             access: 'expired-access',
             refresh: 'i-will-be-refreshed',
-            expires: time() - 3600, // already expired (seconds)
+            expires: \time() - 3600, // already expired (seconds)
             accountId: 'chat-old',
         );
 
@@ -93,7 +93,7 @@ final class CodexAuthStorageTest extends TestCase
         $expiredRecord = new CodexAuthRecord(
             access: 'expired-access',
             refresh: 'invalid-refresh-token',
-            expires: time() - 3600,
+            expires: \time() - 3600,
             accountId: 'chat-old',
         );
 
@@ -110,7 +110,7 @@ final class CodexAuthStorageTest extends TestCase
         $expiredRecord = new CodexAuthRecord(
             access: 'expired-access-raw',
             refresh: 'some-refresh',
-            expires: time() - 3600,
+            expires: \time() - 3600,
             accountId: 'chat-raw',
         );
 
@@ -127,8 +127,8 @@ final class CodexAuthStorageTest extends TestCase
 
     public function testMultipleProviderKeysCoexist(): void
     {
-        $record1 = new CodexAuthRecord('tok1', 'ref1', time() + 3600, 'acct1');
-        $record2 = new CodexAuthRecord('tok2', 'ref2', time() + 3600, 'acct2');
+        $record1 = new CodexAuthRecord('tok1', 'ref1', \time() + 3600, 'acct1');
+        $record2 = new CodexAuthRecord('tok2', 'ref2', \time() + 3600, 'acct2');
 
         $this->storage->saveCredentials('openai-codex', $record1);
         $this->storage->saveCredentials('other-provider', $record2);
@@ -142,7 +142,7 @@ final class CodexAuthStorageTest extends TestCase
 
     public function testRemoveCredentials(): void
     {
-        $record = new CodexAuthRecord('tok', 'ref', time() + 3600, 'acct');
+        $record = new CodexAuthRecord('tok', 'ref', \time() + 3600, 'acct');
         $this->storage->saveCredentials('openai-codex', $record);
         $this->storage->removeCredentials('openai-codex');
 
@@ -154,7 +154,7 @@ final class CodexAuthStorageTest extends TestCase
     {
         $dir = $this->tmpDir.'/.hatfield';
         $path = $dir.'/auth.json';
-        @file_put_contents($path, '{corrupt-json');
+        @\file_put_contents($path, '{corrupt-json');
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Corrupt auth.json');
@@ -187,7 +187,7 @@ final class CodexAuthStorageTest extends TestCase
         $expiredRecord = new CodexAuthRecord(
             access: 'expired-access',
             refresh: 'invalid-refresh-token',
-            expires: time() - 3600,
+            expires: \time() - 3600,
             accountId: 'chat-old',
         );
 
@@ -217,7 +217,7 @@ final class CodexAuthStorageTest extends TestCase
         $expiredRecord = new CodexAuthRecord(
             access: 'expired-access',
             refresh: 'invalid-refresh-token',
-            expires: time() - 3600,
+            expires: \time() - 3600,
             accountId: 'chat-old',
         );
 

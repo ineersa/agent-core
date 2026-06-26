@@ -17,6 +17,17 @@ use PHPUnit\Framework\Attributes\Group;
 #[Group('llm-real')]
 final class ShellFollowUpLiveE2eTest extends ControllerE2eTestCase
 {
+    protected function tempDirPrefix(): string
+    {
+        return 'test-shell-followup';
+    }
+
+    protected function controllerExtraArgs(): array
+    {
+        // Do NOT exclude bash — shell commands are the feature under test.
+        return [];
+    }
+
     /**
      * Isolation test: follow_up on a completed run with NO shell in between.
      * If this fails, the issue is in the follow_up path itself (generic),
@@ -39,21 +50,21 @@ final class ShellFollowUpLiveE2eTest extends ControllerE2eTestCase
         $byType = $this->indexByType($turn1Events);
         $this->assertStartRunAcked($turn1Events, $startCmdId);
 
-        $this->assertArrayHasKey('run.started', $byType,
+        self::assertArrayHasKey('run.started', $byType,
             'Turn 1: expected run.started. '.$this->collectDiagnostics($turn1Events));
 
         $this->runId = (string) ($byType['run.started'][0]['runId']
             ?? $byType['run.started'][0]['payload']['runId'] ?? '');
-        $this->assertNotEmpty($this->runId);
+        self::assertNotEmpty($this->runId);
 
-        $this->assertTrue(
+        self::assertTrue(
             $this->hasAssistantResponseEvidence($byType),
             'Turn 1: expected assistant response. '
             .'Event types: '.implode(', ', array_keys($byType))."\n"
             .$this->collectDiagnostics($turn1Events),
         );
 
-        $this->assertTrue(
+        self::assertTrue(
             isset($byType['run.completed']) || isset($byType['run.failed']),
             'Turn 1: expected run.completed/run.failed. '
             .'Event types: '.implode(', ', array_keys($byType))."\n"
@@ -72,18 +83,18 @@ final class ShellFollowUpLiveE2eTest extends ControllerE2eTestCase
         $followUpEvents = $this->collectEvents($this->liveLlmRunWaitTimeout());
         $followUpByType = $this->indexByType($followUpEvents);
 
-        $this->assertTrue($this->foundAck($followUpEvents, $followUpCmdId),
+        self::assertTrue($this->foundAck($followUpEvents, $followUpCmdId),
             'Follow-up: expected command.ack. '.$this->collectDiagnostics($followUpEvents));
 
         // The follow-up MUST produce an assistant response.
-        $this->assertTrue(
+        self::assertTrue(
             $this->hasAssistantResponseEvidence($followUpByType),
             'Follow-up without shell: NO assistant response — follow_up broken generically. '
             .'Event types: '.implode(', ', array_keys($followUpByType))."\n"
             .$this->collectDiagnostics($followUpEvents),
         );
 
-        $this->assertTrue(
+        self::assertTrue(
             isset($followUpByType['run.completed']) || isset($followUpByType['run.failed']),
             'Follow-up without shell: expected terminal state. '
             .'Event types: '.implode(', ', array_keys($followUpByType))."\n"
@@ -114,21 +125,21 @@ final class ShellFollowUpLiveE2eTest extends ControllerE2eTestCase
         $byType = $this->indexByType($turn1Events);
         $this->assertStartRunAcked($turn1Events, $startCmdId);
 
-        $this->assertArrayHasKey('run.started', $byType,
+        self::assertArrayHasKey('run.started', $byType,
             'Turn 1: expected run.started. '.$this->collectDiagnostics($turn1Events));
 
         $this->runId = (string) ($byType['run.started'][0]['runId']
             ?? $byType['run.started'][0]['payload']['runId'] ?? '');
-        $this->assertNotEmpty($this->runId);
+        self::assertNotEmpty($this->runId);
 
-        $this->assertTrue(
+        self::assertTrue(
             $this->hasAssistantResponseEvidence($byType),
             'Turn 1: expected assistant response. '
             .'Event types: '.implode(', ', array_keys($byType))."\n"
             .$this->collectDiagnostics($turn1Events),
         );
 
-        $this->assertTrue(
+        self::assertTrue(
             isset($byType['run.completed']) || isset($byType['run.failed']),
             'Turn 1: expected run.completed/run.failed. '
             .'Event types: '.implode(', ', array_keys($byType))."\n"
@@ -147,14 +158,14 @@ final class ShellFollowUpLiveE2eTest extends ControllerE2eTestCase
         $shellEvents = $this->collectEventsUntilToolCompleted('bash', $this->liveLlmToolWaitTimeout());
         $shellByType = $this->indexByType($shellEvents);
 
-        $this->assertTrue($this->foundAck($shellEvents, $shellCmdId),
+        self::assertTrue($this->foundAck($shellEvents, $shellCmdId),
             'Shell: expected command.ack. '.$this->collectDiagnostics($shellEvents));
 
-        $this->assertTrue(
+        self::assertTrue(
             isset($shellByType['tool_execution.started']),
             'Shell: expected tool_execution.started. '.$this->collectDiagnostics($shellEvents),
         );
-        $this->assertTrue(
+        self::assertTrue(
             isset($shellByType['tool_execution.completed']),
             'Shell: expected tool_execution.completed. '.$this->collectDiagnostics($shellEvents),
         );
@@ -175,13 +186,13 @@ final class ShellFollowUpLiveE2eTest extends ControllerE2eTestCase
             $followUpByType = $this->indexByType($followUpEvents);
         }
 
-        $this->assertTrue($this->foundAck($followUpEvents, $followUpCmdId),
+        self::assertTrue($this->foundAck($followUpEvents, $followUpCmdId),
             'Follow-up: expected command.ack. '.$this->collectDiagnostics($followUpEvents));
 
         // Check for command rejection.
         if (isset($followUpByType['command.rejected'])) {
             $rejected = $followUpByType['command.rejected'][0];
-            $this->fail(
+            self::fail(
                 'Follow-up was REJECTED: '
                 .json_encode($rejected, \JSON_PRETTY_PRINT)."\n"
                 .$this->collectDiagnostics($followUpEvents),
@@ -191,7 +202,7 @@ final class ShellFollowUpLiveE2eTest extends ControllerE2eTestCase
         // Check for protocol error.
         if (isset($followUpByType['protocol.error'])) {
             $err = $followUpByType['protocol.error'][0];
-            $this->fail(
+            self::fail(
                 'Follow-up produced protocol.error: '
                 .json_encode($err, \JSON_PRETTY_PRINT)."\n"
                 .$this->collectDiagnostics($followUpEvents),
@@ -199,14 +210,14 @@ final class ShellFollowUpLiveE2eTest extends ControllerE2eTestCase
         }
 
         // THE KEY ASSERTION
-        $this->assertTrue(
+        self::assertTrue(
             $this->hasAssistantResponseEvidence($followUpByType),
             'Follow-up: NO assistant response — run appears DEAD (issue #183). '
             .'Event types: '.implode(', ', array_keys($followUpByType))."\n"
             .$this->collectDiagnostics($followUpEvents),
         );
 
-        $this->assertTrue(
+        self::assertTrue(
             isset($followUpByType['run.completed']) || isset($followUpByType['run.failed']),
             'Follow-up: expected terminal state. '
             .'Event types: '.implode(', ', array_keys($followUpByType))."\n"
@@ -214,14 +225,4 @@ final class ShellFollowUpLiveE2eTest extends ControllerE2eTestCase
         );
     }
 
-    protected function tempDirPrefix(): string
-    {
-        return 'test-shell-followup';
-    }
-
-    protected function controllerExtraArgs(): array
-    {
-        // Do NOT exclude bash — shell commands are the feature under test.
-        return [];
-    }
 }

@@ -54,15 +54,15 @@ final class SafeGuardCommandMatcherTest extends TestCase
     public static function destructiveProvider(): iterable
     {
         $cases = [
-            'rm' => 'rm file.txt',
-            'rmdir' => 'rmdir some/dir',
-            'git clean' => 'git clean -fd',
+            'rm'           => 'rm file.txt',
+            'rmdir'        => 'rmdir some/dir',
+            'git clean'    => 'git clean -fd',
             'git reset --hard' => 'git reset --hard HEAD~1',
             'git checkout .' => 'git checkout -- .',
-            'mkfs' => 'mkfs.ext4 /dev/sdb',
-            'dd' => 'dd if=/dev/zero of=/dev/sdb',
-            'chmod 777' => 'chmod 777 file',
-            'chown -R' => 'chown -R user:group /',
+            'mkfs'         => 'mkfs.ext4 /dev/sdb',
+            'dd'           => 'dd if=/dev/zero of=/dev/sdb',
+            'chmod 777'    => 'chmod 777 file',
+            'chown -R'     => 'chown -R user:group /',
             'mv to /dev/null' => 'mv file.txt /dev/null',
         ];
         foreach ($cases as $name => $cmd) {
@@ -90,13 +90,13 @@ final class SafeGuardCommandMatcherTest extends TestCase
     public static function dangerousGitProvider(): iterable
     {
         $cases = [
-            'push --force' => 'git push --force origin main',
-            'push -f' => 'git push -f',
-            'branch -d' => 'git branch -d old-branch',
-            'branch -D' => 'git branch -D old-branch',
-            'tag -d' => 'git tag -d v1.0',
-            'rebase' => 'git rebase main',
-            'reflog expire' => 'git reflog expire --all',
+            'push --force'     => 'git push --force origin main',
+            'push -f'          => 'git push -f',
+            'branch -d'        => 'git branch -d old-branch',
+            'branch -D'        => 'git branch -D old-branch',
+            'tag -d'           => 'git tag -d v1.0',
+            'rebase'           => 'git rebase main',
+            'reflog expire'    => 'git reflog expire --all',
         ];
         foreach ($cases as $name => $cmd) {
             yield $name => [$cmd];
@@ -115,9 +115,9 @@ final class SafeGuardCommandMatcherTest extends TestCase
     /** @return iterable<string, array{string}> */
     public static function sensitiveProvider(): iterable
     {
-        yield 'env' => ['env'];
-        yield 'printenv' => ['printenv'];
-        yield 'env pipe' => ['env | grep SECRET'];
+        yield 'env'         => ['env'];
+        yield 'printenv'    => ['printenv'];
+        yield 'env pipe'    => ['env | grep SECRET'];
         yield 'printenv pipe' => ['printenv | sort'];
     }
 
@@ -134,8 +134,8 @@ final class SafeGuardCommandMatcherTest extends TestCase
     /** @return iterable<string, array{string, list<string>}> */
     public static function customDangerousProvider(): iterable
     {
-        yield 'substring match' => ['some-risky-command --option', ['risky']];
-        yield 'case insensitive' => ['RISKY-COMMAND', ['risky']];
+        yield 'substring match'   => ['some-risky-command --option', ['risky']];
+        yield 'case insensitive'  => ['RISKY-COMMAND', ['risky']];
         yield 'whitespace collapse' => ['risky    command', ['risky command']];
     }
 
@@ -151,9 +151,9 @@ final class SafeGuardCommandMatcherTest extends TestCase
     public static function allowlistProvider(): iterable
     {
         yield 'bypass destructive' => [['rm -rf'], 'rm -rf /tmp/safe', true];
-        yield 'substring match' => [['rm'], 'rm -rf /tmp/safe', true];
-        yield 'unrelated' => [['ls'], 'rm -rf /tmp', false];
-        yield 'case insensitive' => [['RM'], 'rm file', true];
+        yield 'substring match'    => [['rm'], 'rm -rf /tmp/safe', true];
+        yield 'unrelated'          => [['ls'], 'rm -rf /tmp', false];
+        yield 'case insensitive'   => [['RM'], 'rm file', true];
     }
 
     // ── Safe commands ──

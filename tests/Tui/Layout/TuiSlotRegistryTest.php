@@ -4,10 +4,17 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Layout;
 
+use Ineersa\Tui\Extension\SlotBasedTuiExtensionContext;
 use Ineersa\Tui\Footer\FooterBarWidget;
 use Ineersa\Tui\Footer\FooterDataProvider;
+use Ineersa\Tui\Footer\FooterSegment;
+use Ineersa\Tui\Footer\FooterSegmentProvider;
 use Ineersa\Tui\Header\HeaderWidget;
+use Ineersa\Tui\Layout\ChatLayout;
 use Ineersa\Tui\Layout\TuiSlotRegistry;
+use Ineersa\Tui\Status\WorkingStatusWidget;
+use Ineersa\Tui\Transcript\PendingMessagesWidget;
+use Ineersa\Tui\Transcript\TranscriptWidget;
 use Ineersa\Tui\Widget\TuiRenderContext;
 use Ineersa\Tui\Widget\TuiWidget;
 use Ineersa\Tui\Widget\WidgetPlacementEnum;
@@ -26,24 +33,24 @@ final class TuiSlotRegistryTest extends TestCase
 
     public function testDefaultState(): void
     {
-        $this->assertNull($this->registry->getHeader());
-        $this->assertNull($this->registry->getFooter());
-        $this->assertNull($this->registry->getEditorComponent());
-        $this->assertSame([], $this->registry->getStatusEntries());
-        $this->assertSame([], $this->registry->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor));
-        $this->assertSame([], $this->registry->getWidgetsByPlacement(WidgetPlacementEnum::BelowEditor));
-        $this->assertTrue($this->registry->isWorkingVisible());
-        $this->assertSame('', $this->registry->getWorkingMessage());
+        self::assertNull($this->registry->getHeader());
+        self::assertNull($this->registry->getFooter());
+        self::assertNull($this->registry->getEditorComponent());
+        self::assertSame([], $this->registry->getStatusEntries());
+        self::assertSame([], $this->registry->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor));
+        self::assertSame([], $this->registry->getWidgetsByPlacement(WidgetPlacementEnum::BelowEditor));
+        self::assertTrue($this->registry->isWorkingVisible());
+        self::assertSame('', $this->registry->getWorkingMessage());
     }
 
     public function testSetHeader(): void
     {
         $widget = new HeaderWidget();
         $this->registry->setHeader($widget);
-        $this->assertSame($widget, $this->registry->getHeader());
+        self::assertSame($widget, $this->registry->getHeader());
 
         $this->registry->setHeader(null);
-        $this->assertNull($this->registry->getHeader());
+        self::assertNull($this->registry->getHeader());
     }
 
     public function testSetFooter(): void
@@ -51,20 +58,20 @@ final class TuiSlotRegistryTest extends TestCase
         $dataProvider = new FooterDataProvider();
         $widget = new FooterBarWidget($dataProvider);
         $this->registry->setFooter($widget);
-        $this->assertSame($widget, $this->registry->getFooter());
+        self::assertSame($widget, $this->registry->getFooter());
 
         $this->registry->setFooter(null);
-        $this->assertNull($this->registry->getFooter());
+        self::assertNull($this->registry->getFooter());
     }
 
     public function testSetEditorComponent(): void
     {
         $dummy = $this->createDummyWidget();
         $this->registry->setEditorComponent($dummy);
-        $this->assertSame($dummy, $this->registry->getEditorComponent());
+        self::assertSame($dummy, $this->registry->getEditorComponent());
 
         $this->registry->setEditorComponent(null);
-        $this->assertNull($this->registry->getEditorComponent());
+        self::assertNull($this->registry->getEditorComponent());
     }
 
     public function testSetWidgetAndGetByPlacement(): void
@@ -78,10 +85,10 @@ final class TuiSlotRegistryTest extends TestCase
         $above = $this->registry->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor);
         $below = $this->registry->getWidgetsByPlacement(WidgetPlacementEnum::BelowEditor);
 
-        $this->assertCount(1, $above);
-        $this->assertCount(1, $below);
-        $this->assertSame($widgetAbove, $above[0]);
-        $this->assertSame($widgetBelow, $below[0]);
+        self::assertCount(1, $above);
+        self::assertCount(1, $below);
+        self::assertSame($widgetAbove, $above[0]);
+        self::assertSame($widgetBelow, $below[0]);
     }
 
     public function testRemoveWidget(): void
@@ -89,11 +96,11 @@ final class TuiSlotRegistryTest extends TestCase
         $widget = $this->createDummyWidget();
         $this->registry->setWidget('test', $widget, WidgetPlacementEnum::AboveEditor);
 
-        $this->assertCount(1, $this->registry->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor));
+        self::assertCount(1, $this->registry->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor));
 
         $this->registry->removeWidget('test');
 
-        $this->assertCount(0, $this->registry->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor));
+        self::assertCount(0, $this->registry->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor));
     }
 
     public function testMultipleWidgetsInSamePlacementOrder(): void
@@ -106,9 +113,9 @@ final class TuiSlotRegistryTest extends TestCase
 
         $widgets = $this->registry->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor);
 
-        $this->assertCount(2, $widgets);
-        $this->assertSame($w1, $widgets[0]);
-        $this->assertSame($w2, $widgets[1]);
+        self::assertCount(2, $widgets);
+        self::assertSame($w1, $widgets[0]);
+        self::assertSame($w2, $widgets[1]);
     }
 
     public function testStatusEntries(): void
@@ -116,37 +123,37 @@ final class TuiSlotRegistryTest extends TestCase
         $this->registry->setStatus('key1', 'value1');
         $this->registry->setStatus('key2', 'value2');
 
-        $this->assertSame(['key1' => 'value1', 'key2' => 'value2'], $this->registry->getStatusEntries());
+        self::assertSame(['key1' => 'value1', 'key2' => 'value2'], $this->registry->getStatusEntries());
 
         $this->registry->setStatus('key1', null);
-        $this->assertSame(['key2' => 'value2'], $this->registry->getStatusEntries());
+        self::assertSame(['key2' => 'value2'], $this->registry->getStatusEntries());
     }
 
     public function testWorkingState(): void
     {
         $this->registry->setWorkingMessage('Loading...');
-        $this->assertSame('Loading...', $this->registry->getWorkingMessage());
-        $this->assertTrue($this->registry->isWorkingVisible());
+        self::assertSame('Loading...', $this->registry->getWorkingMessage());
+        self::assertTrue($this->registry->isWorkingVisible());
 
         $this->registry->setWorkingVisible(false);
-        $this->assertFalse($this->registry->isWorkingVisible());
+        self::assertFalse($this->registry->isWorkingVisible());
 
         $this->registry->setWorkingMessage(null);
-        $this->assertSame('', $this->registry->getWorkingMessage());
+        self::assertSame('', $this->registry->getWorkingMessage());
     }
 
     public function testInputHandlers(): void
     {
-        $h1 = static function (string $data): void {};
-        $h2 = static function (string $data): void {};
+        $h1 = function (string $data): void {};
+        $h2 = function (string $data): void {};
 
         $this->registry->addInputHandler($h1);
         $this->registry->addInputHandler($h2);
 
         $handlers = $this->registry->getInputHandlers();
-        $this->assertCount(2, $handlers);
-        $this->assertSame($h1, $handlers[0]);
-        $this->assertSame($h2, $handlers[1]);
+        self::assertCount(2, $handlers);
+        self::assertSame($h1, $handlers[0]);
+        self::assertSame($h2, $handlers[1]);
     }
 
     private function createDummyWidget(): TuiWidget

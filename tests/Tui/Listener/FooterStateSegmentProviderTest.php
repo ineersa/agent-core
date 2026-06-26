@@ -4,6 +4,17 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
+use Ineersa\CodingAgent\Config\Ai\AiConfig;
+use Ineersa\CodingAgent\Config\Ai\AiModelReference;
+use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
+use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\HomeSettingsWriter;
+use Ineersa\CodingAgent\Config\ModelSelectionService;
+use Ineersa\CodingAgent\Config\SessionMetadataStore;
+use Ineersa\CodingAgent\Config\SettingsPathResolver;
+use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\Tui\Footer\FooterDataProvider;
+use Ineersa\Tui\Footer\FooterBarWidget;
 use Ineersa\Tui\Footer\FooterSegment;
 use Ineersa\Tui\Listener\FooterStateSegmentProvider;
 use Ineersa\Tui\Runtime\TuiSessionState;
@@ -35,45 +46,45 @@ class FooterStateSegmentProviderTest extends TestCase
         // off → ThinkingOff
         $state->footerReasoning = 'off';
         $segments = $provider->getSegments();
-        $this->assertSame(ThemeColorEnum::ThinkingOff, $segments[0]->color);
-        $this->assertSame('◆', $segments[0]->text);
-        $this->assertSame(ThemeColorEnum::ThinkingOff, $segments[1]->color);
+        self::assertSame(ThemeColorEnum::ThinkingOff, $segments[0]->color);
+        self::assertSame('◆', $segments[0]->text);
+        self::assertSame(ThemeColorEnum::ThinkingOff, $segments[1]->color);
 
         // minimal → ThinkingMinimal
         $state->footerReasoning = 'minimal';
         $segments = $provider->getSegments();
-        $this->assertSame(ThemeColorEnum::ThinkingMinimal, $segments[0]->color);
-        $this->assertSame(ThemeColorEnum::ThinkingMinimal, $segments[1]->color);
+        self::assertSame(ThemeColorEnum::ThinkingMinimal, $segments[0]->color);
+        self::assertSame(ThemeColorEnum::ThinkingMinimal, $segments[1]->color);
 
         // low → ThinkingLow
         $state->footerReasoning = 'low';
         $segments = $provider->getSegments();
-        $this->assertSame(ThemeColorEnum::ThinkingLow, $segments[0]->color);
-        $this->assertSame(ThemeColorEnum::ThinkingLow, $segments[1]->color);
+        self::assertSame(ThemeColorEnum::ThinkingLow, $segments[0]->color);
+        self::assertSame(ThemeColorEnum::ThinkingLow, $segments[1]->color);
 
         // medium → ThinkingMedium
         $state->footerReasoning = 'medium';
         $segments = $provider->getSegments();
-        $this->assertSame(ThemeColorEnum::ThinkingMedium, $segments[0]->color);
-        $this->assertSame(ThemeColorEnum::ThinkingMedium, $segments[1]->color);
+        self::assertSame(ThemeColorEnum::ThinkingMedium, $segments[0]->color);
+        self::assertSame(ThemeColorEnum::ThinkingMedium, $segments[1]->color);
 
         // high → ThinkingHigh
         $state->footerReasoning = 'high';
         $segments = $provider->getSegments();
-        $this->assertSame(ThemeColorEnum::ThinkingHigh, $segments[0]->color);
-        $this->assertSame(ThemeColorEnum::ThinkingHigh, $segments[1]->color);
+        self::assertSame(ThemeColorEnum::ThinkingHigh, $segments[0]->color);
+        self::assertSame(ThemeColorEnum::ThinkingHigh, $segments[1]->color);
 
         // xhigh → ThinkingXhigh
         $state->footerReasoning = 'xhigh';
         $segments = $provider->getSegments();
-        $this->assertSame(ThemeColorEnum::ThinkingXhigh, $segments[0]->color);
-        $this->assertSame(ThemeColorEnum::ThinkingXhigh, $segments[1]->color, 'Model name should use same thinking colour as diamond');
+        self::assertSame(ThemeColorEnum::ThinkingXhigh, $segments[0]->color);
+        self::assertSame(ThemeColorEnum::ThinkingXhigh, $segments[1]->color, 'Model name should use same thinking colour as diamond');
 
         // Unknown / empty → ThinkingText
         $state->footerReasoning = '';
         $segments = $provider->getSegments();
-        $this->assertSame(ThemeColorEnum::ThinkingText, $segments[0]->color);
-        $this->assertSame(ThemeColorEnum::ThinkingText, $segments[1]->color);
+        self::assertSame(ThemeColorEnum::ThinkingText, $segments[0]->color);
+        self::assertSame(ThemeColorEnum::ThinkingText, $segments[1]->color);
     }
 
     #[Test]
@@ -88,9 +99,9 @@ class FooterStateSegmentProviderTest extends TestCase
 
         // Model name segment (priority 1) uses thinking color, NOT Accent
         $modelSegment = $segments[1];
-        $this->assertSame('glm-5.1', $modelSegment->text);
-        $this->assertSame(ThemeColorEnum::ThinkingHigh, $modelSegment->color);
-        $this->assertNotSame(ThemeColorEnum::Accent, $modelSegment->color);
+        self::assertSame('glm-5.1', $modelSegment->text);
+        self::assertSame(ThemeColorEnum::ThinkingHigh, $modelSegment->color);
+        self::assertNotSame(ThemeColorEnum::Accent, $modelSegment->color);
     }
 
     #[Test]
@@ -105,7 +116,7 @@ class FooterStateSegmentProviderTest extends TestCase
 
         // Verify that the word "medium" does not appear as a text segment
         foreach ($segments as $segment) {
-            $this->assertStringNotContainsString(
+            self::assertStringNotContainsString(
                 'medium',
                 $segment->text,
                 'Reasoning level text should not appear in footer segments',
@@ -125,7 +136,7 @@ class FooterStateSegmentProviderTest extends TestCase
             $segments = $provider->getSegments();
 
             // Priority 0 = ◆, priority 1 = model name — same color
-            $this->assertSame(
+            self::assertSame(
                 $segments[0]->color,
                 $segments[1]->color,
                 "Diamond and model name should share the same thinking colour for level '{$level}'",
@@ -153,12 +164,12 @@ class FooterStateSegmentProviderTest extends TestCase
             $segments,
             static fn (FooterSegment $s): bool => 12 === $s->priority,
         );
-        $this->assertCount(1, $cacheSegments, 'Cache segment should exist when telemetry is present');
+        self::assertCount(1, $cacheSegments, 'Cache segment should exist when telemetry is present');
 
         $cacheSegment = array_values($cacheSegments)[0];
-        $this->assertStringContainsString('↻', $cacheSegment->text, 'Cache segment should contain ↻ symbol');
-        $this->assertStringContainsString('78%', $cacheSegment->text, 'Cache segment should show 78%');
-        $this->assertSame(ThemeColorEnum::Success, $cacheSegment->color);
+        self::assertStringContainsString('↻', $cacheSegment->text, 'Cache segment should contain ↻ symbol');
+        self::assertStringContainsString('78%', $cacheSegment->text, 'Cache segment should show 78%');
+        self::assertSame(ThemeColorEnum::Success, $cacheSegment->color);
     }
 
     #[Test]
@@ -169,8 +180,8 @@ class FooterStateSegmentProviderTest extends TestCase
         $state->contextWindow = 32768;
 
         // No cache telemetry set.
-        $this->assertFalse($state->usage->hasCacheTelemetry);
-        $this->assertSame(0, $state->usage->cacheReadTokens);
+        self::assertFalse($state->usage->hasCacheTelemetry);
+        self::assertSame(0, $state->usage->cacheReadTokens);
 
         $provider = new FooterStateSegmentProvider($state);
         $segments = $provider->getSegments();
@@ -180,7 +191,7 @@ class FooterStateSegmentProviderTest extends TestCase
             $segments,
             static fn (FooterSegment $s): bool => 12 === $s->priority,
         );
-        $this->assertCount(0, $cacheSegments, 'Cache segment should NOT exist when telemetry is absent');
+        self::assertCount(0, $cacheSegments, 'Cache segment should NOT exist when telemetry is absent');
     }
 
     #[Test]
@@ -209,14 +220,14 @@ class FooterStateSegmentProviderTest extends TestCase
             static fn (FooterSegment $s): bool => str_contains($s->text, '/') && str_contains($s->text, '%'),
         );
 
-        $this->assertCount(1, $cacheSegments, 'Cache segment should exist when telemetry is present');
-        $this->assertCount(1, $ctxSegments, 'Context window segment should exist');
+        self::assertCount(1, $cacheSegments, 'Cache segment should exist when telemetry is present');
+        self::assertCount(1, $ctxSegments, 'Context window segment should exist');
 
         $cacheSegment = array_values($cacheSegments)[0];
         $ctxSegment = array_values($ctxSegments)[0];
 
         // Cache segment must render before the context window segment.
-        $this->assertLessThan(
+        self::assertLessThan(
             $ctxSegment->priority,
             $cacheSegment->priority,
             'Cache segment priority must be less than context window priority (cache renders first)',

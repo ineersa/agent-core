@@ -4,19 +4,19 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Session;
 
-use Ineersa\AgentCore\Domain\Event\RunEvent;
-use Ineersa\AgentCore\Domain\Run\RunState;
-use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\CodingAgent\Session\SessionRunStore;
-use PHPUnit\Framework\TestCase;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
+use PHPUnit\Framework\TestCase;
 use Symfony\Component\Serializer\Encoder\JsonEncoder;
 use Symfony\Component\Serializer\Normalizer\BackedEnumNormalizer;
 use Symfony\Component\Serializer\Normalizer\DateTimeNormalizer;
@@ -92,7 +92,7 @@ final class AggregateResumeTest extends TestCase
         // Create run state
         $initialState = new RunState(runId: $runId, status: RunStatus::Queued, version: 1);
         $casResult = $runStore1->compareAndSwap($initialState, 0);
-        $this->assertTrue($casResult, 'First CAS must succeed');
+        self::assertTrue($casResult, 'First CAS must succeed');
 
         // Append events
         $eventStore1->append(new RunEvent(runId: $runId, seq: 1, turnNo: 0, type: 'run_started'));
@@ -114,28 +114,28 @@ final class AggregateResumeTest extends TestCase
 
         // Phase 4: Verify state survives
         $loadedState = $runStore2->get($runId);
-        $this->assertNotNull($loadedState, 'RunState must survive store recreation');
-        $this->assertSame($runId, $loadedState->runId);
-        $this->assertSame(RunStatus::Queued, $loadedState->status);
-        $this->assertSame(1, $loadedState->version);
+        self::assertNotNull($loadedState, 'RunState must survive store recreation');
+        self::assertSame($runId, $loadedState->runId);
+        self::assertSame(RunStatus::Queued, $loadedState->status);
+        self::assertSame(1, $loadedState->version);
 
         // Phase 5: Verify events survive
         $events = $eventStore2->allFor($runId);
-        $this->assertCount(2, $events, 'Events must survive store recreation');
-        $this->assertSame('run_started', $events[0]->type);
-        $this->assertSame('tool_execution_start', $events[1]->type);
-        $this->assertSame(1, $events[0]->seq);
-        $this->assertSame(2, $events[1]->seq);
+        self::assertCount(2, $events, 'Events must survive store recreation');
+        self::assertSame('run_started', $events[0]->type);
+        self::assertSame('tool_execution_start', $events[1]->type);
+        self::assertSame(1, $events[0]->seq);
+        self::assertSame(2, $events[1]->seq);
 
         // Phase 6: Continue the run (CAS to next version)
         $nextState = new RunState(runId: $runId, status: RunStatus::Running, version: 2, turnNo: 1);
         $casResult2 = $runStore2->compareAndSwap($nextState, 1);
-        $this->assertTrue($casResult2, 'CAS after resume must succeed');
+        self::assertTrue($casResult2, 'CAS after resume must succeed');
 
         $finalState = $runStore2->get($runId);
-        $this->assertNotNull($finalState);
-        $this->assertSame(RunStatus::Running, $finalState->status);
-        $this->assertSame(2, $finalState->version);
+        self::assertNotNull($finalState);
+        self::assertSame(RunStatus::Running, $finalState->status);
+        self::assertSame(2, $finalState->version);
     }
 
     private function rmDir(string $dir): void

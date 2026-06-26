@@ -22,7 +22,7 @@ final class InMemoryRunStoreCasTest extends TestCase
             turnNo: 1,
             lastSeq: 1,
         );
-        $this->assertTrue($store->compareAndSwap($initialState, expectedVersion: 0));
+        self::assertTrue($store->compareAndSwap($initialState, expectedVersion: 0));
 
         // Writer B acquires lock after takeover and commits version=2.
         $writerBState = new RunState(
@@ -32,7 +32,7 @@ final class InMemoryRunStoreCasTest extends TestCase
             turnNo: 2,
             lastSeq: 2,
         );
-        $this->assertTrue($store->compareAndSwap($writerBState, expectedVersion: 1));
+        self::assertTrue($store->compareAndSwap($writerBState, expectedVersion: 1));
 
         // Writer A still holds stale expectedVersion=1 and must be rejected.
         $writerAStaleState = new RunState(
@@ -42,19 +42,19 @@ final class InMemoryRunStoreCasTest extends TestCase
             turnNo: 99,
             lastSeq: 99,
         );
-        $this->assertFalse($store->compareAndSwap($writerAStaleState, expectedVersion: 1));
+        self::assertFalse($store->compareAndSwap($writerAStaleState, expectedVersion: 1));
 
         $currentState = $store->get('run-cas-1');
-        $this->assertNotNull($currentState);
-        $this->assertSame(2, $currentState->version);
-        $this->assertSame(2, $currentState->turnNo);
+        self::assertNotNull($currentState);
+        self::assertSame(2, $currentState->version);
+        self::assertSame(2, $currentState->turnNo);
     }
 
     public function testFindRunningStaleBeforeReturnsOnlyRunningRuns(): void
     {
         $store = new InMemoryRunStore();
 
-        $this->assertTrue($store->compareAndSwap(new RunState(
+        self::assertTrue($store->compareAndSwap(new RunState(
             runId: 'run-stale-running',
             status: RunStatus::Running,
             version: 1,
@@ -62,7 +62,7 @@ final class InMemoryRunStoreCasTest extends TestCase
             lastSeq: 1,
         ), expectedVersion: 0));
 
-        $this->assertTrue($store->compareAndSwap(new RunState(
+        self::assertTrue($store->compareAndSwap(new RunState(
             runId: 'run-stale-completed',
             status: RunStatus::Completed,
             version: 1,
@@ -72,7 +72,7 @@ final class InMemoryRunStoreCasTest extends TestCase
 
         $staleRuns = $store->findRunningStaleBefore((new \DateTimeImmutable())->setTimestamp(time() + 1));
 
-        $this->assertCount(1, $staleRuns);
-        $this->assertSame('run-stale-running', $staleRuns[0]->runId);
+        self::assertCount(1, $staleRuns);
+        self::assertSame('run-stale-running', $staleRuns[0]->runId);
     }
 }

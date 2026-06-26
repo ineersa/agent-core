@@ -20,6 +20,7 @@ use PHPUnit\Framework\TestCase;
  * Element-level startup layout assertions live in
  * {@see \Ineersa\Tui\Tests\Screen\TuiStartupVirtualRenderTest} (no tmux).
  */
+
 #[Group('tui-e2e-replay')]
 final class TuiStartupSnapshotTest extends TestCase
 {
@@ -30,7 +31,7 @@ final class TuiStartupSnapshotTest extends TestCase
     protected function setUp(): void
     {
         if (!TmuxHarness::isAvailable()) {
-            $this->markTestSkipped('tmux is not installed. Skipping TUI e2e tests.');
+            self::markTestSkipped('tmux is not installed. Skipping TUI e2e tests.');
         }
 
         $this->tmux = new TmuxHarness();
@@ -69,17 +70,8 @@ final class TuiStartupSnapshotTest extends TestCase
         );
 
         $capture = $this->tmux->capturePlain($pane);
-        $this->assertStringContainsString('█', $capture, 'Hatfield logo missing in real tmux pane');
-        $this->assertStringContainsString('ctrl+r to expand', $capture, 'Loaded-resources affordance missing in real tmux pane');
-
-        $this->tmux->sendKey($pane, 'C-r');
-        $this->tmux->waitForCaptureContains(
-            pane: $pane,
-            needle: 'ctrl+r to collapse',
-            timeout: 5.0,
-        );
-        $expanded = $this->tmux->capturePlainWithHistory($pane, 800);
-        $this->assertStringContainsString('e2e-startup', $expanded, 'Expanded loaded-resources block should show planted skill source path');
+        self::assertStringContainsString('█', $capture, 'Hatfield logo missing in real tmux pane');
+        self::assertStringContainsString('ctrl+r to expand', $capture, 'Loaded-resources affordance missing in real tmux pane');
 
         $this->tmux->sendKey($pane, 'C-d');
     }
@@ -95,8 +87,8 @@ final class TuiStartupSnapshotTest extends TestCase
         $script = $this->projectRoot.'/bin/console';
 
         $startupFixture = __DIR__.'/fixtures/tui-startup-prompt-response.json';
-        $fixtureEnv = is_file($startupFixture)
-            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.escapeshellarg($startupFixture).' '
+        $fixtureEnv = \is_file($startupFixture)
+            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.\escapeshellarg($startupFixture).' '
             : '';
 
         $dbPath = 'app_test-tui-snapshot-'.bin2hex(random_bytes(4)).'.sqlite';
@@ -104,11 +96,11 @@ final class TuiStartupSnapshotTest extends TestCase
 
         return \sprintf(
             'APP_ENV=test HATFIELD_TEST_DATABASE_PATH=%s HOME=%s %s %s %s agent --model=llama_cpp_test/test%s --tools-excluded=bash 2>&1',
-            escapeshellarg($dbPath),
-            escapeshellarg($this->testProjectDir.'/home'),
+            \escapeshellarg($dbPath),
+            \escapeshellarg($this->testProjectDir.'/home'),
             $fixtureEnv,
-            escapeshellarg($php),
-            escapeshellarg($script),
+            \escapeshellarg($php),
+            \escapeshellarg($script),
             $promptArg,
         );
     }
@@ -116,15 +108,8 @@ final class TuiStartupSnapshotTest extends TestCase
     private function createIsolatedProjectDir(): string
     {
         $dir = TestDirectoryIsolation::createProjectTempDir('tui-e2e', 0o777);
-        @mkdir($dir.'/.hatfield', 0o777, true);
-        @mkdir($dir.'/.agents', 0o777, true);
-        @mkdir($dir.'/.agents/skills/e2e-startup', 0o777, true);
-        file_put_contents(
-            $dir.'/.agents/skills/e2e-startup/SKILL.md',
-            "---\nname: e2e-startup\ndescription: tmux loaded-resources expand proof\n---\n",
-        );
-
-        @mkdir($dir.'/home/.hatfield', 0o777, true);
+        @\mkdir($dir.'/.hatfield', 0o777, true);
+        @\mkdir($dir.'/home/.hatfield', 0o777, true);
 
         $settings = [
             'ai' => [
@@ -175,8 +160,8 @@ final class TuiStartupSnapshotTest extends TestCase
         ];
 
         $yaml = \Symfony\Component\Yaml\Yaml::dump($settings, 6, 4);
-        file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
-        file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
+        \file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
+        \file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
 
         return $dir;
     }

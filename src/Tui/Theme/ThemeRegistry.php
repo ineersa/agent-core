@@ -6,9 +6,6 @@ namespace Ineersa\Tui\Theme;
 
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
-use Ineersa\CodingAgent\Runtime\Contract\LoadedResourceConflictDTO;
-use Ineersa\CodingAgent\Runtime\Contract\LoadedResourceItemDTO;
-use Ineersa\CodingAgent\Runtime\Contract\ThemeLoadedResourcesProviderInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Yaml\Yaml;
 
@@ -22,7 +19,7 @@ use Symfony\Component\Yaml\Yaml;
  * ({@see config/hatfield.defaults.yaml}) — this registry itself carries
  * no opinion about which theme is "default".
  */
-final class ThemeRegistry implements ThemeLoadedResourcesProviderInterface
+final class ThemeRegistry
 {
     /** @var array<string, ThemePalette> */
     private array $themes = [];
@@ -70,33 +67,6 @@ final class ThemeRegistry implements ThemeLoadedResourcesProviderInterface
         return $this->themeCollisions;
     }
 
-    public function getLoadedThemeResourceItems(): array
-    {
-        $items = [];
-        foreach ($this->getLoadedThemes() as $theme) {
-            $items[] = new LoadedResourceItemDTO(
-                name: $theme->name,
-                sourcePath: $theme->sourcePath,
-            );
-        }
-
-        return $items;
-    }
-
-    public function getThemeResourceConflicts(): array
-    {
-        $conflicts = [];
-        foreach ($this->getThemeCollisions() as $collision) {
-            $conflicts[] = new LoadedResourceConflictDTO(
-                name: $collision['name'],
-                winnerPath: $collision['winnerPath'],
-                loserPath: $collision['loserPath'],
-            );
-        }
-
-        return $conflicts;
-    }
-
     /**
      * Register a palette in the registry (runtime additions only).
      *
@@ -104,10 +74,6 @@ final class ThemeRegistry implements ThemeLoadedResourcesProviderInterface
      * loading from Hatfield theme paths. This method exists for
      * programmatic registration post-construction — e.g. when a test
      * or extension wants to add a palette without writing a YAML file.
-     *
-     * Duplicate names are first-wins: the existing palette is kept and a
-     * collision row is recorded ({@see getThemeCollisions()}); later
-     * registrations with the same name are ignored.
      */
     public function register(ThemePalette $palette, string $sourcePath = ''): void
     {

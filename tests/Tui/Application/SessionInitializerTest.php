@@ -94,14 +94,14 @@ final class SessionInitializerTest extends TestCase
     {
         // Fresh session does not call projector, but PHPUnit
         // expects mock expectations on setUp-managed mocks.
-        $this->projector->expects($this->never())->method('reset');
+        $this->projector->expects(self::never())->method('reset');
 
         $state = new TuiSessionState('test-fresh', false);
         $blocks = $this->sessionInit->buildInitialTranscript($state);
 
-        $this->assertCount(1, $blocks);
-        $this->assertSame(TranscriptBlockKindEnum::System, $blocks[0]->kind);
-        $this->assertStringContainsString('Welcome to Hatfield', $blocks[0]->text);
+        self::assertCount(1, $blocks);
+        self::assertSame(TranscriptBlockKindEnum::System, $blocks[0]->kind);
+        self::assertStringContainsString('Welcome to Hatfield', $blocks[0]->text);
     }
 
     public function testReplayFromEmptyEventsReturnsFallback(): void
@@ -112,14 +112,14 @@ final class SessionInitializerTest extends TestCase
         mkdir($sessionDir, 0777, true);
         file_put_contents($sessionDir.'/events.jsonl', '');
 
-        $this->projector->expects($this->once())->method('reset');
+        $this->projector->expects(self::once())->method('reset');
 
         $state = new TuiSessionState($runId, true);
         $blocks = $this->sessionInit->buildInitialTranscript($state);
 
-        $this->assertCount(1, $blocks);
-        $this->assertSame(TranscriptBlockKindEnum::System, $blocks[0]->kind);
-        $this->assertStringContainsString('no messages yet', $blocks[0]->text);
+        self::assertCount(1, $blocks);
+        self::assertSame(TranscriptBlockKindEnum::System, $blocks[0]->kind);
+        self::assertStringContainsString('no messages yet', $blocks[0]->text);
     }
 
     public function testReplayFromEventsSetsLastSeqAndReturnsProjectedBlocks(): void
@@ -165,13 +165,13 @@ final class SessionInitializerTest extends TestCase
             text: 'Hello from replayed steer',
         );
 
-        $this->projector->expects($this->once())->method('reset');
-        $this->projector->expects($this->exactly(1))
+        $this->projector->expects(self::once())->method('reset');
+        $this->projector->expects(self::exactly(1))
             ->method('accept')
             ->willReturnCallback(static function (array $event) use (&$acceptedEvents): void {
                 $acceptedEvents[] = $event;
             });
-        $this->projector->expects($this->once())
+        $this->projector->expects(self::once())
             ->method('blocks')
             ->willReturn([$projectedBlock]);
 
@@ -179,17 +179,17 @@ final class SessionInitializerTest extends TestCase
         $blocks = $this->sessionInit->buildInitialTranscript($state);
 
         // One block projected (steer), one dropped (tool_batch_committed)
-        $this->assertCount(1, $acceptedEvents);
-        $this->assertSame('user.message_submitted', $acceptedEvents[0]['type']);
-        $this->assertSame('Hello from replayed steer', $acceptedEvents[0]['payload']['text']);
+        self::assertCount(1, $acceptedEvents);
+        self::assertSame('user.message_submitted', $acceptedEvents[0]['type']);
+        self::assertSame('Hello from replayed steer', $acceptedEvents[0]['payload']['text']);
 
         // lastSeq = max(5 mapped, 7 source) = 7
-        $this->assertSame(7, $state->lastSeq);
+        self::assertSame(7, $state->lastSeq);
 
         // Blocks returned are from the projector
-        $this->assertCount(1, $blocks);
-        $this->assertSame(TranscriptBlockKindEnum::UserMessage, $blocks[0]->kind);
-        $this->assertStringContainsString('Hello from replayed steer', $blocks[0]->text);
+        self::assertCount(1, $blocks);
+        self::assertSame(TranscriptBlockKindEnum::UserMessage, $blocks[0]->kind);
+        self::assertStringContainsString('Hello from replayed steer', $blocks[0]->text);
     }
 
     public function testReplayAllDroppedEventsSetsLastSeqFromSourceSeq(): void
@@ -208,9 +208,9 @@ final class SessionInitializerTest extends TestCase
         );
         $this->eventStore->append($droppedEvent);
 
-        $this->projector->expects($this->once())->method('reset');
-        $this->projector->expects($this->never())->method('accept');
-        $this->projector->expects($this->once())
+        $this->projector->expects(self::once())->method('reset');
+        $this->projector->expects(self::never())->method('accept');
+        $this->projector->expects(self::once())
             ->method('blocks')
             ->willReturn([]);
 
@@ -218,9 +218,9 @@ final class SessionInitializerTest extends TestCase
         $blocks = $this->sessionInit->buildInitialTranscript($state);
 
         // All events dropped by mapper, projector returned no blocks → fallback
-        $this->assertSame(3, $state->lastSeq);
-        $this->assertCount(1, $blocks);
-        $this->assertStringContainsString('no messages yet', $blocks[0]->text);
+        self::assertSame(3, $state->lastSeq);
+        self::assertCount(1, $blocks);
+        self::assertStringContainsString('no messages yet', $blocks[0]->text);
     }
 
     // ── initializeDraft (lazy draft sessions) ────────────────────────
@@ -228,41 +228,41 @@ final class SessionInitializerTest extends TestCase
     public function testInitializeDraftReturnsEmptySessionId(): void
     {
         // Draft init is pure in-memory — no projector interaction.
-        $this->projector->expects($this->never())->method('reset');
-        $this->projector->expects($this->never())->method('accept');
+        $this->projector->expects(self::never())->method('reset');
+        $this->projector->expects(self::never())->method('accept');
 
         $state = $this->sessionInit->initializeDraft();
 
-        $this->assertSame('', $state->sessionId);
-        $this->assertFalse($state->resuming);
-        $this->assertNull($state->request);
-        $this->assertNull($state->handle);
+        self::assertSame('', $state->sessionId);
+        self::assertFalse($state->resuming);
+        self::assertNull($state->request);
+        self::assertNull($state->handle);
     }
 
     public function testInitializeDraftWithRequestPreservesRequest(): void
     {
-        $this->projector->expects($this->never())->method('reset');
-        $this->projector->expects($this->never())->method('accept');
+        $this->projector->expects(self::never())->method('reset');
+        $this->projector->expects(self::never())->method('accept');
 
         $request = new StartRunRequest(prompt: '', runId: '', model: 'gpt-4');
         $state = $this->sessionInit->initializeDraft($request);
 
-        $this->assertSame('', $state->sessionId);
-        $this->assertSame($request, $state->request);
+        self::assertSame('', $state->sessionId);
+        self::assertSame($request, $state->request);
     }
 
     public function testBuildInitialTranscriptForDraftReturnsWelcome(): void
     {
         // Draft sessions never enter the replay path, so projector is unused.
-        $this->projector->expects($this->never())->method('reset');
-        $this->projector->expects($this->never())->method('accept');
+        $this->projector->expects(self::never())->method('reset');
+        $this->projector->expects(self::never())->method('accept');
 
         $state = $this->sessionInit->initializeDraft();
         $blocks = $this->sessionInit->buildInitialTranscript($state);
 
-        $this->assertCount(1, $blocks);
-        $this->assertSame(TranscriptBlockKindEnum::System, $blocks[0]->kind);
-        $this->assertStringContainsString('Welcome to Hatfield', $blocks[0]->text);
+        self::assertCount(1, $blocks);
+        self::assertSame(TranscriptBlockKindEnum::System, $blocks[0]->kind);
+        self::assertStringContainsString('Welcome to Hatfield', $blocks[0]->text);
     }
 
     // ── Draft promotion request construction ─────────────────────────
@@ -276,8 +276,8 @@ final class SessionInitializerTest extends TestCase
     public function testDraftPromotionStartRunRequestNullDefaultsDoNotTypeError(): void
     {
         // Does not touch projector — this is a pure DTO construction test.
-        $this->projector->expects($this->never())->method('reset');
-        $this->projector->expects($this->never())->method('accept');
+        $this->projector->expects(self::never())->method('reset');
+        $this->projector->expects(self::never())->method('accept');
 
         $stateRequest = null;
         $sessionId = 'promo-test-42';
@@ -292,12 +292,12 @@ final class SessionInitializerTest extends TestCase
             reasoning: $stateRequest?->reasoning,
         );
 
-        $this->assertSame('Hello from draft', $request->prompt);
-        $this->assertSame('promo-test-42', $request->runId);
-        $this->assertSame('', $request->cwd);
-        $this->assertSame([], $request->options);
-        $this->assertNull($request->model);
-        $this->assertNull($request->reasoning);
+        self::assertSame('Hello from draft', $request->prompt);
+        self::assertSame('promo-test-42', $request->runId);
+        self::assertSame('', $request->cwd);
+        self::assertSame([], $request->options);
+        self::assertNull($request->model);
+        self::assertNull($request->reasoning);
     }
 
     /**
@@ -308,8 +308,8 @@ final class SessionInitializerTest extends TestCase
     public function testDraftPromotionStartRunRequestPreservesDraftValues(): void
     {
         // Does not touch projector — pure DTO construction test.
-        $this->projector->expects($this->never())->method('reset');
-        $this->projector->expects($this->never())->method('accept');
+        $this->projector->expects(self::never())->method('reset');
+        $this->projector->expects(self::never())->method('accept');
 
         $stateRequest = new StartRunRequest(
             prompt: 'stale',
@@ -331,12 +331,12 @@ final class SessionInitializerTest extends TestCase
             reasoning: $stateRequest->reasoning,
         );
 
-        $this->assertSame('Real user message', $request->prompt);
-        $this->assertSame('promo-test-43', $request->runId);
-        $this->assertSame('/custom/path', $request->cwd);
-        $this->assertSame(['foo' => 'bar'], $request->options);
-        $this->assertSame('gpt-4', $request->model);
-        $this->assertSame('high', $request->reasoning);
+        self::assertSame('Real user message', $request->prompt);
+        self::assertSame('promo-test-43', $request->runId);
+        self::assertSame('/custom/path', $request->cwd);
+        self::assertSame(['foo' => 'bar'], $request->options);
+        self::assertSame('gpt-4', $request->model);
+        self::assertSame('high', $request->reasoning);
     }
 
     /**

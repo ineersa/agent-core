@@ -11,9 +11,9 @@ use Ineersa\CodingAgent\Runtime\Contract\LoadedResourceConflictDTO;
 use Ineersa\CodingAgent\Runtime\Contract\LoadedResourceItemDTO;
 use Ineersa\CodingAgent\Runtime\Contract\LoadedResourceSectionDTO;
 use Ineersa\CodingAgent\Runtime\Contract\LoadedResourcesSummaryDTO;
-use Ineersa\CodingAgent\Runtime\Contract\ThemeLoadedResourcesProviderInterface;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextDiscovery;
+use Ineersa\Tui\Theme\ThemeRegistry;
 
 /**
  * Aggregates discovery/load results into a display-only startup summary DTO.
@@ -25,7 +25,7 @@ final readonly class LoadedResourcesSummaryBuilder
         private SkillDiscovery $skillDiscovery,
         private PromptTemplateLoader $promptTemplateLoader,
         private AgentDefinitionDiscovery $agentDefinitionDiscovery,
-        private ThemeLoadedResourcesProviderInterface $themeLoadedResourcesProvider,
+        private ThemeRegistry $themeRegistry,
         private ExtensionManager $extensionManager,
     ) {
     }
@@ -121,11 +121,28 @@ final readonly class LoadedResourcesSummaryBuilder
 
     private function buildThemesSection(): LoadedResourceSectionDTO
     {
+        $items = [];
+        foreach ($this->themeRegistry->getLoadedThemes() as $theme) {
+            $items[] = new LoadedResourceItemDTO(
+                name: $theme->name,
+                sourcePath: $theme->sourcePath,
+            );
+        }
+
+        $conflicts = [];
+        foreach ($this->themeRegistry->getThemeCollisions() as $collision) {
+            $conflicts[] = new LoadedResourceConflictDTO(
+                name: $collision['name'],
+                winnerPath: $collision['winnerPath'],
+                loserPath: $collision['loserPath'],
+            );
+        }
+
         return new LoadedResourceSectionDTO(
             key: 'themes',
             label: 'Themes',
-            items: $this->themeLoadedResourcesProvider->getLoadedThemeResourceItems(),
-            conflicts: $this->themeLoadedResourcesProvider->getThemeResourceConflicts(),
+            items: $items,
+            conflicts: $conflicts,
         );
     }
 

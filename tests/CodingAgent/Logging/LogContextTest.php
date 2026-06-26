@@ -34,7 +34,7 @@ final class LogContextTest extends TestCase
     {
         $result = LogContext::scoped(
             ['run_id' => 'run-1'],
-            static fn (): string => 'ok',
+            fn (): string => 'ok',
         );
 
         $this->assertSame('ok', $result);

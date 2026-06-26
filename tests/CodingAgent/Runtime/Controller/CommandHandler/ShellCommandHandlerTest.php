@@ -49,12 +49,12 @@ final class ShellCommandHandlerTest extends TestCase
 
         // Shell commands are now dispatched via the async Messenger bus
         // instead of the synchronous in-process client (issue #183).
-        $this->assertNull($this->spyClient->lastCommand, 'Client send() should NOT be called for shell commands');
-        $this->assertNotNull($this->spyBus->lastMessage);
-        $this->assertInstanceOf(ExecuteShellToolCall::class, $this->spyBus->lastMessage);
-        $this->assertSame('run-123', $this->spyBus->lastMessage->runId());
-        $this->assertSame('echo hello', $this->spyBus->lastMessage->commandText);
-        $this->assertFalse($this->spyBus->lastMessage->standalone, 'Payload without standalone flag defaults to false');
+        self::assertNull($this->spyClient->lastCommand, 'Client send() should NOT be called for shell commands');
+        self::assertNotNull($this->spyBus->lastMessage);
+        self::assertInstanceOf(ExecuteShellToolCall::class, $this->spyBus->lastMessage);
+        self::assertSame('run-123', $this->spyBus->lastMessage->runId());
+        self::assertSame('echo hello', $this->spyBus->lastMessage->commandText);
+        self::assertFalse($this->spyBus->lastMessage->standalone, 'Payload without standalone flag defaults to false');
     }
 
     public function testEmitsProtocolErrorWhenRunIdMissing(): void
@@ -76,10 +76,10 @@ final class ShellCommandHandlerTest extends TestCase
         $event = new ControllerCommandEvent($command, $emit);
         $handler($event);
 
-        $this->assertNull($this->spyClient->lastCommand);
-        $this->assertNull($this->spyBus->lastMessage);
-        $this->assertCount(1, $emittedEvents);
-        $this->assertSame(RuntimeEventTypeEnum::ProtocolError->value, $emittedEvents[0]->type);
+        self::assertNull($this->spyClient->lastCommand);
+        self::assertNull($this->spyBus->lastMessage);
+        self::assertCount(1, $emittedEvents);
+        self::assertSame(RuntimeEventTypeEnum::ProtocolError->value, $emittedEvents[0]->type);
     }
 
     public function testIgnoresNonShellCommands(): void
@@ -97,8 +97,8 @@ final class ShellCommandHandlerTest extends TestCase
         $event = new ControllerCommandEvent($command, static function (): void {});
         $handler($event);
 
-        $this->assertSame(0, $this->spyClient->completeRunCalls, 'complete_run must NOT be handled (worker owns AgentEnd)');
-        $this->assertNull($this->spyBus->lastMessage);
+        self::assertSame(0, $this->spyClient->completeRunCalls, 'complete_run must NOT be handled (worker owns AgentEnd)');
+        self::assertNull($this->spyBus->lastMessage);
 
         $command2 = new RuntimeCommand(
             id: 'cmd_3',
@@ -110,8 +110,8 @@ final class ShellCommandHandlerTest extends TestCase
         $event2 = new ControllerCommandEvent($command2, static function (): void {});
         $handler($event2);
 
-        $this->assertNull($this->spyClient->lastCommand);
-        $this->assertNull($this->spyBus->lastMessage);
+        self::assertNull($this->spyClient->lastCommand);
+        self::assertNull($this->spyBus->lastMessage);
     }
 
     public function testEmptyCommandTextDoesNotDispatchToBus(): void
@@ -131,9 +131,9 @@ final class ShellCommandHandlerTest extends TestCase
         // Empty command text: the worker returns early (no-op),
         // but the dispatch still happens — ExecuteShellToolCallWorker
         // handles the empty-command case.
-        $this->assertNotNull($this->spyBus->lastMessage);
-        $this->assertInstanceOf(ExecuteShellToolCall::class, $this->spyBus->lastMessage);
-        $this->assertSame('', $this->spyBus->lastMessage->commandText);
+        self::assertNotNull($this->spyBus->lastMessage);
+        self::assertInstanceOf(ExecuteShellToolCall::class, $this->spyBus->lastMessage);
+        self::assertSame('', $this->spyBus->lastMessage->commandText);
     }
 
     public function testStandaloneShellCommandPassesFlagToWorker(): void
@@ -157,11 +157,11 @@ final class ShellCommandHandlerTest extends TestCase
         // to the worker so it writes the terminal AgentEnd event in guaranteed
         // order after tool_exec events (issue #183).  The handler no longer
         // calls completeRun() itself — the worker owns the terminal event.
-        $this->assertNotNull($this->spyBus->lastMessage);
-        $this->assertInstanceOf(ExecuteShellToolCall::class, $this->spyBus->lastMessage);
-        $this->assertTrue($this->spyBus->lastMessage->standalone, 'Standalone flag must be passed to the worker');
-        $this->assertSame('run-standalone-1', $this->spyBus->lastMessage->runId());
-        $this->assertSame(0, $this->spyClient->completeRunCalls, 'Handler must NOT call completeRun for standalone — worker owns AgentEnd');
+        self::assertNotNull($this->spyBus->lastMessage);
+        self::assertInstanceOf(ExecuteShellToolCall::class, $this->spyBus->lastMessage);
+        self::assertTrue($this->spyBus->lastMessage->standalone, 'Standalone flag must be passed to the worker');
+        self::assertSame('run-standalone-1', $this->spyBus->lastMessage->runId());
+        self::assertSame(0, $this->spyClient->completeRunCalls, 'Handler must NOT call completeRun for standalone — worker owns AgentEnd');
     }
 
     public function testInlineShellCommandDoesNotCompleteRun(): void
@@ -180,11 +180,12 @@ final class ShellCommandHandlerTest extends TestCase
         $event = new ControllerCommandEvent($command, static function (): void {});
         $handler($event);
 
-        $this->assertNotNull($this->spyBus->lastMessage);
-        $this->assertInstanceOf(ExecuteShellToolCall::class, $this->spyBus->lastMessage);
-        $this->assertFalse($this->spyBus->lastMessage->standalone);
-        $this->assertSame(0, $this->spyClient->completeRunCalls);
+        self::assertNotNull($this->spyBus->lastMessage);
+        self::assertInstanceOf(ExecuteShellToolCall::class, $this->spyBus->lastMessage);
+        self::assertFalse($this->spyBus->lastMessage->standalone);
+        self::assertSame(0, $this->spyClient->completeRunCalls);
     }
+
 }
 
 /**
@@ -195,7 +196,7 @@ final class ShellCommandHandlerTest extends TestCase
 final class ShellCommandSpyBus implements MessageBusInterface
 {
     /** @var object|null */
-    public $lastMessage;
+    public $lastMessage = null;
 
     /** @var list<Envelope> */
     public array $dispatched = [];

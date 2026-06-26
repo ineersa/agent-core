@@ -18,23 +18,23 @@ final class PromptTemplateArgumentParserTest extends TestCase
 
     public function testSimpleArgs(): void
     {
-        $this->assertSame(['foo', 'bar', 'baz'], $this->parser->parse('foo bar baz'));
+        self::assertSame(['foo', 'bar', 'baz'], $this->parser->parse('foo bar baz'));
     }
 
     public function testDoubleQuotedArg(): void
     {
-        $this->assertSame(['hello world', 'foo'], $this->parser->parse('"hello world" foo'));
+        self::assertSame(['hello world', 'foo'], $this->parser->parse('"hello world" foo'));
     }
 
     public function testSingleQuotedArg(): void
     {
         // Single quotes group whitespace; backslash has no special meaning.
-        $this->assertSame(['hello world', 'yes'], $this->parser->parse("'hello world' yes"));
+        self::assertSame(['hello world', 'yes'], $this->parser->parse("'hello world' yes"));
     }
 
     public function testMixedQuotes(): void
     {
-        $this->assertSame(
+        self::assertSame(
             ['one', 'two three', 'four', 'five six'],
             $this->parser->parse("one \"two three\" four 'five six'"),
         );
@@ -42,43 +42,43 @@ final class PromptTemplateArgumentParserTest extends TestCase
 
     public function testEmptyString(): void
     {
-        $this->assertSame([], $this->parser->parse(''));
+        self::assertSame([], $this->parser->parse(''));
     }
 
     public function testExtraSpaces(): void
     {
-        $this->assertSame(['a', 'b'], $this->parser->parse('  a   b  '));
+        self::assertSame(['a', 'b'], $this->parser->parse('  a   b  '));
     }
 
     public function testTabsAsSeparators(): void
     {
-        $this->assertSame(['a', 'b', 'c'], $this->parser->parse("a\tb\tc"));
+        self::assertSame(['a', 'b', 'c'], $this->parser->parse("a\tb\tc"));
     }
 
     public function testNewlinesAsSeparators(): void
     {
-        $this->assertSame(['a', 'b', 'c'], $this->parser->parse("a\nb\nc"));
+        self::assertSame(['a', 'b', 'c'], $this->parser->parse("a\nb\nc"));
     }
 
     public function testNewlinesInsideQuotesPreserved(): void
     {
-        $this->assertSame(["line1\nline2"], $this->parser->parse("\"line1\nline2\""));
+        self::assertSame(["line1\nline2"], $this->parser->parse("\"line1\nline2\""));
     }
 
     public function testEmptyQuotesSkipped(): void
     {
-        $this->assertSame(['a', 'b'], $this->parser->parse('a "" b'));
-        $this->assertSame(['a', 'b'], $this->parser->parse("a '' b"));
+        self::assertSame(['a', 'b'], $this->parser->parse('a "" b'));
+        self::assertSame(['a', 'b'], $this->parser->parse("a '' b"));
     }
 
     public function testSpecialCharacters(): void
     {
-        $this->assertSame(['$ARGUMENTS', '$@', '${@:1}'], $this->parser->parse('$ARGUMENTS $@ ${@:1}'));
+        self::assertSame(['$ARGUMENTS', '$@', '${@:1}'], $this->parser->parse('$ARGUMENTS $@ ${@:1}'));
     }
 
     public function testUnicode(): void
     {
-        $this->assertSame(['café', 'naïve', 'résumé'], $this->parser->parse('café naïve résumé'));
+        self::assertSame(['café', 'naïve', 'résumé'], $this->parser->parse('café naïve résumé'));
     }
 
     public function testBackslashLiteralNoEscaping(): void
@@ -88,22 +88,22 @@ final class PromptTemplateArgumentParserTest extends TestCase
         // The opening " starts a quote after the first backslash is buffered,
         // then the closing " ends it after the second backslash.
         $expected = ['\\still-quoted\\'];
-        $this->assertSame($expected, $this->parser->parse('\"still-quoted\"'));
+        self::assertSame($expected, $this->parser->parse('\"still-quoted\"'));
     }
 
     public function testLeadingTrailingWhitespace(): void
     {
-        $this->assertSame(['hello', 'world'], $this->parser->parse(" \t hello \n world \t "));
+        self::assertSame(['hello', 'world'], $this->parser->parse(" \t hello \n world \t "));
     }
 
     public function testUnclosedDoubleQuote(): void
     {
         // The rest of the string after the opening quote becomes one arg.
-        $this->assertSame(['hello world'], $this->parser->parse('"hello world'));
+        self::assertSame(['hello world'], $this->parser->parse('"hello world'));
     }
 
     public function testUnclosedSingleQuote(): void
     {
-        $this->assertSame(['hello world'], $this->parser->parse("'hello world"));
+        self::assertSame(["hello world"], $this->parser->parse("'hello world"));
     }
 }

@@ -34,11 +34,11 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNotNull($result);
-        $this->assertSame(RuntimeEventTypeEnum::RunStarted->value, $result->type);
-        $this->assertSame('start-1', $result->payload['step_id']);
-        $this->assertSame($this->runId, $result->runId);
-        $this->assertSame(1, $result->seq);
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::RunStarted->value, $result->type);
+        self::assertSame('start-1', $result->payload['step_id']);
+        self::assertSame($this->runId, $result->runId);
+        self::assertSame(1, $result->seq);
     }
 
     public function testNormalizesRunStartedWithUserMessages(): void
@@ -55,15 +55,15 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNotNull($result);
-        $this->assertSame(RuntimeEventTypeEnum::RunStarted->value, $result->type);
-        $this->assertSame('start-2', $result->payload['step_id']);
-        $this->assertArrayHasKey('user_messages', $result->payload);
-        $this->assertCount(1, $result->payload['user_messages']);
-        $this->assertSame('Initial prompt', $result->payload['user_messages'][0]['text']);
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::RunStarted->value, $result->type);
+        self::assertSame('start-2', $result->payload['step_id']);
+        self::assertArrayHasKey('user_messages', $result->payload);
+        self::assertCount(1, $result->payload['user_messages']);
+        self::assertSame('Initial prompt', $result->payload['user_messages'][0]['text']);
         // System/user-context messages are not included
         $texts = array_column($result->payload['user_messages'], 'text');
-        $this->assertNotContains('System prompt', $texts, 'System messages must not appear in user_messages');
+        self::assertNotContains('System prompt', $texts, 'System messages must not appear in user_messages');
     }
 
     public function testNormalizesRunStartedWithoutUserMessages(): void
@@ -80,9 +80,9 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNotNull($result);
-        $this->assertSame('start-3', $result->payload['step_id']);
-        $this->assertArrayNotHasKey('user_messages', $result->payload);
+        self::assertNotNull($result);
+        self::assertSame('start-3', $result->payload['step_id']);
+        self::assertArrayNotHasKey('user_messages', $result->payload);
     }
 
     public function testNormalizesRunStartedWithEmptyUserMessageSkipped(): void
@@ -99,8 +99,8 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNotNull($result);
-        $this->assertArrayNotHasKey('user_messages', $result->payload);
+        self::assertNotNull($result);
+        self::assertArrayNotHasKey('user_messages', $result->payload);
     }
 
     public function testNormalizesTurnAdvancedToTurnStarted(): void
@@ -109,9 +109,9 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNotNull($result);
-        $this->assertSame(RuntimeEventTypeEnum::TurnStarted->value, $result->type);
-        $this->assertSame(3, $result->payload['turn_no']);
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::TurnStarted->value, $result->type);
+        self::assertSame(3, $result->payload['turn_no']);
     }
 
     public function testNormalizesAgentEndCompletedToRunCompleted(): void
@@ -120,9 +120,9 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNotNull($result);
-        $this->assertSame(RuntimeEventTypeEnum::RunCompleted->value, $result->type);
-        $this->assertSame('completed', $result->payload['reason']);
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::RunCompleted->value, $result->type);
+        self::assertSame('completed', $result->payload['reason']);
     }
 
     public function testNormalizesAgentEndCancelledToRunCancelled(): void
@@ -131,9 +131,9 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNotNull($result);
-        $this->assertSame(RuntimeEventTypeEnum::RunCancelled->value, $result->type);
-        $this->assertSame('cancelled', $result->payload['reason']);
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::RunCancelled->value, $result->type);
+        self::assertSame('cancelled', $result->payload['reason']);
     }
 
     public function testNormalizesAgentEndFailedToRunFailed(): void
@@ -146,11 +146,11 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNotNull($result);
-        $this->assertSame(RuntimeEventTypeEnum::RunFailed->value, $result->type);
-        $this->assertSame('failed', $result->payload['reason']);
-        $this->assertSame('CAS conflict exhausted', $result->payload['error']);
-        $this->assertSame('StartRun', $result->payload['message_type']);
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::RunFailed->value, $result->type);
+        self::assertSame('failed', $result->payload['reason']);
+        self::assertSame('CAS conflict exhausted', $result->payload['error']);
+        self::assertSame('StartRun', $result->payload['message_type']);
     }
 
     public function testNormalizesAgentEndUnknownReasonToRunCompleted(): void
@@ -159,9 +159,9 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNotNull($result);
-        $this->assertSame(RuntimeEventTypeEnum::RunCompleted->value, $result->type);
-        $this->assertSame('some_unknown_reason', $result->payload['reason']);
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::RunCompleted->value, $result->type);
+        self::assertSame('some_unknown_reason', $result->payload['reason']);
     }
 
     public function testNormalizesAgentEndMissingReasonToRunCompleted(): void
@@ -170,9 +170,9 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNotNull($result);
-        $this->assertSame(RuntimeEventTypeEnum::RunCompleted->value, $result->type);
-        $this->assertSame('completed', $result->payload['reason']);
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::RunCompleted->value, $result->type);
+        self::assertSame('completed', $result->payload['reason']);
     }
 
     // ── Assistant stream normalization ───────────────────────────────────────
@@ -193,12 +193,12 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNotNull($result);
-        $this->assertSame(RuntimeEventTypeEnum::AssistantMessageCompleted->value, $result->type);
-        $this->assertSame('turn-1-llm-1', $result->payload['message_id']);
-        $this->assertSame('Hello, world!', $result->payload['text']);
-        $this->assertSame('stop', $result->payload['stop_reason']);
-        $this->assertSame(100, $result->payload['usage']['total_tokens']);
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::AssistantMessageCompleted->value, $result->type);
+        self::assertSame('turn-1-llm-1', $result->payload['message_id']);
+        self::assertSame('Hello, world!', $result->payload['text']);
+        self::assertSame('stop', $result->payload['stop_reason']);
+        self::assertSame(100, $result->payload['usage']['total_tokens']);
     }
 
     public function testNormalizesLlmStepCompletedWithMultipleTextBlocks(): void
@@ -217,8 +217,8 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNotNull($result);
-        $this->assertSame('Part one. Part two.', $result->payload['text']);
+        self::assertNotNull($result);
+        self::assertSame('Part one. Part two.', $result->payload['text']);
     }
 
     public function testNormalizesLlmStepCompletedWithNoText(): void
@@ -234,9 +234,9 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNotNull($result);
-        $this->assertSame('', $result->payload['text']);
-        $this->assertSame('tool_use', $result->payload['stop_reason']);
+        self::assertNotNull($result);
+        self::assertSame('', $result->payload['text']);
+        self::assertSame('tool_use', $result->payload['stop_reason']);
     }
 
     public function testNormalizesLlmStepCompletedUsesExplicitTextKey(): void
@@ -258,8 +258,8 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNotNull($result);
-        $this->assertSame(
+        self::assertNotNull($result);
+        self::assertSame(
             'Source-extracted via AssistantMessage::asText()',
             $result->payload['text'],
             'Should use explicit text key, not walk the normalized payload',
@@ -284,8 +284,8 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNotNull($result);
-        $this->assertSame('Legacy text here', $result->payload['text']);
+        self::assertNotNull($result);
+        self::assertSame('Legacy text here', $result->payload['text']);
     }
 
     public function testNormalizesLlmStepCompletedMissingAssistantMessage(): void
@@ -297,8 +297,8 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNotNull($result);
-        $this->assertSame('', $result->payload['text']);
+        self::assertNotNull($result);
+        self::assertSame('', $result->payload['text']);
     }
 
     public function testNormalizesLlmStepFailedToAssistantMessageFailed(): void
@@ -311,11 +311,11 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNotNull($result);
-        $this->assertSame(RuntimeEventTypeEnum::AssistantMessageFailed->value, $result->type);
-        $this->assertSame('turn-1-llm-5', $result->payload['message_id']);
-        $this->assertStringContainsString('APIConnectionError', $result->payload['text']);
-        $this->assertSame('error', $result->payload['stop_reason']);
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::AssistantMessageFailed->value, $result->type);
+        self::assertSame('turn-1-llm-5', $result->payload['message_id']);
+        self::assertStringContainsString('APIConnectionError', $result->payload['text']);
+        self::assertSame('error', $result->payload['stop_reason']);
     }
 
     public function testNormalizesLlmStepFailedWithoutErrorMessage(): void
@@ -327,9 +327,9 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNotNull($result);
-        $this->assertSame(RuntimeEventTypeEnum::AssistantMessageFailed->value, $result->type);
-        $this->assertSame('LLM step failed', $result->payload['text']);
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::AssistantMessageFailed->value, $result->type);
+        self::assertSame('LLM step failed', $result->payload['text']);
     }
 
     public function testNormalizesLlmStepAbortedToTurnCancelled(): void
@@ -341,9 +341,9 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNotNull($result);
-        $this->assertSame(RuntimeEventTypeEnum::TurnCancelled->value, $result->type);
-        $this->assertSame('timeout', $result->payload['reason']);
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::TurnCancelled->value, $result->type);
+        self::assertSame('timeout', $result->payload['reason']);
     }
 
     // ── Tool normalization ───────────────────────────────────────────────────
@@ -358,11 +358,11 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNotNull($result);
-        $this->assertSame(RuntimeEventTypeEnum::ToolExecutionStarted->value, $result->type);
-        $this->assertSame('call-read', $result->payload['tool_call_id']);
-        $this->assertSame('read_file', $result->payload['tool_name']);
-        $this->assertSame(0, $result->payload['order_index']);
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::ToolExecutionStarted->value, $result->type);
+        self::assertSame('call-read', $result->payload['tool_call_id']);
+        self::assertSame('read_file', $result->payload['tool_name']);
+        self::assertSame(0, $result->payload['order_index']);
     }
 
     public function testNormalizesToolExecutionEndSuccess(): void
@@ -375,9 +375,9 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNotNull($result);
-        $this->assertSame(RuntimeEventTypeEnum::ToolExecutionCompleted->value, $result->type);
-        $this->assertFalse($result->payload['is_error']);
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::ToolExecutionCompleted->value, $result->type);
+        self::assertFalse($result->payload['is_error']);
     }
 
     public function testNormalizesToolExecutionEndError(): void
@@ -390,9 +390,9 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNotNull($result);
-        $this->assertSame(RuntimeEventTypeEnum::ToolExecutionFailed->value, $result->type);
-        $this->assertTrue($result->payload['is_error']);
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::ToolExecutionFailed->value, $result->type);
+        self::assertTrue($result->payload['is_error']);
     }
 
     public function testNormalizesToolExecutionEndPassesThroughResultText(): void
@@ -406,10 +406,10 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNotNull($result);
-        $this->assertSame(RuntimeEventTypeEnum::ToolExecutionCompleted->value, $result->type);
-        $this->assertArrayHasKey('result', $result->payload);
-        $this->assertSame('actual tool output content', $result->payload['result'],
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::ToolExecutionCompleted->value, $result->type);
+        self::assertArrayHasKey('result', $result->payload);
+        self::assertSame('actual tool output content', $result->payload['result'],
             'Translator must pass through result text to the protocol event');
     }
 
@@ -424,11 +424,11 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNotNull($result);
-        $this->assertSame(RuntimeEventTypeEnum::ToolExecutionCompleted->value, $result->type);
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::ToolExecutionCompleted->value, $result->type);
         // Translator only forwards string results; non-string should be omitted
         // so the projector falls back to "{tool_name} completed".
-        $this->assertArrayNotHasKey('result', $result->payload);
+        self::assertArrayNotHasKey('result', $result->payload);
     }
 
     // ── HITL normalization ───────────────────────────────────────────────────
@@ -445,13 +445,13 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNotNull($result);
-        $this->assertSame(RuntimeEventTypeEnum::HumanInputRequested->value, $result->type);
-        $this->assertSame('q-approve-1', $result->payload['question_id']);
-        $this->assertSame('Approve deployment?', $result->payload['prompt']);
-        $this->assertSame(['type' => 'boolean'], $result->payload['schema']);
-        $this->assertSame('call-ask', $result->payload['tool_call_id']);
-        $this->assertSame('ask_user', $result->payload['tool_name']);
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::HumanInputRequested->value, $result->type);
+        self::assertSame('q-approve-1', $result->payload['question_id']);
+        self::assertSame('Approve deployment?', $result->payload['prompt']);
+        self::assertSame(['type' => 'boolean'], $result->payload['schema']);
+        self::assertSame('call-ask', $result->payload['tool_call_id']);
+        self::assertSame('ask_user', $result->payload['tool_name']);
     }
 
     public function testNormalizesWaitingHumanMinimalPayload(): void
@@ -462,10 +462,10 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNotNull($result);
-        $this->assertSame(RuntimeEventTypeEnum::HumanInputRequested->value, $result->type);
-        $this->assertSame('q-minimal-1', $result->payload['question_id']);
-        $this->assertSame('Human input required.', $result->payload['prompt']);
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::HumanInputRequested->value, $result->type);
+        self::assertSame('q-minimal-1', $result->payload['question_id']);
+        self::assertSame('Human input required.', $result->payload['prompt']);
     }
 
     // ── HITL answers ─────────────────────────────────────────────────────────
@@ -480,10 +480,10 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNotNull($result);
-        $this->assertSame(RuntimeEventTypeEnum::HumanInputAnswered->value, $result->type);
-        $this->assertSame('q-approve-1', $result->payload['question_id']);
-        $this->assertSame('yes', $result->payload['answer']);
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::HumanInputAnswered->value, $result->type);
+        self::assertSame('q-approve-1', $result->payload['question_id']);
+        self::assertSame('yes', $result->payload['answer']);
     }
 
     // ── Cancel normalization ─────────────────────────────────────────────────
@@ -497,10 +497,10 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNotNull($result);
-        $this->assertSame(RuntimeEventTypeEnum::CancellationRequested->value, $result->type);
-        $this->assertSame('cancel', $result->payload['kind']);
-        $this->assertSame('user_cancelled', $result->payload['reason']);
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::CancellationRequested->value, $result->type);
+        self::assertSame('cancel', $result->payload['kind']);
+        self::assertSame('user_cancelled', $result->payload['reason']);
     }
 
     public function testNormalizesAgentCommandAppliedSteerToUserMessageSubmitted(): void
@@ -519,10 +519,10 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNotNull($result);
-        $this->assertSame(RuntimeEventTypeEnum::UserMessageSubmitted->value, $result->type);
-        $this->assertSame('Hello, steer message', $result->payload['text']);
-        $this->assertStringContainsString('steer-key-1', $result->payload['message_id']);
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::UserMessageSubmitted->value, $result->type);
+        self::assertSame('Hello, steer message', $result->payload['text']);
+        self::assertStringContainsString('steer-key-1', $result->payload['message_id']);
     }
 
     public function testNormalizesAgentCommandAppliedFollowUpToUserMessageSubmitted(): void
@@ -541,10 +541,10 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNotNull($result);
-        $this->assertSame(RuntimeEventTypeEnum::UserMessageSubmitted->value, $result->type);
-        $this->assertSame('A follow-up question', $result->payload['text']);
-        $this->assertStringContainsString('follow-key-1', $result->payload['message_id']);
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::UserMessageSubmitted->value, $result->type);
+        self::assertSame('A follow-up question', $result->payload['text']);
+        self::assertStringContainsString('follow-key-1', $result->payload['message_id']);
     }
 
     public function testNormalizesAgentCommandAppliedFollowUpExtractsTextFromMessage(): void
@@ -563,9 +563,9 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNotNull($result);
-        $this->assertSame(RuntimeEventTypeEnum::UserMessageSubmitted->value, $result->type);
-        $this->assertSame('Extracted from content', $result->payload['text']);
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::UserMessageSubmitted->value, $result->type);
+        self::assertSame('Extracted from content', $result->payload['text']);
     }
 
     // ── Skipped internal events ──────────────────────────────────────────────
@@ -576,7 +576,7 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNull($result);
+        self::assertNull($result);
     }
 
     public function testSkipsToolBatchCommitted(): void
@@ -585,7 +585,7 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNull($result);
+        self::assertNull($result);
     }
 
     public function testNormalizesAgentCommandQueuedSteerToUserMessageQueued(): void
@@ -600,11 +600,11 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNotNull($result);
-        $this->assertSame(RuntimeEventTypeEnum::UserMessageQueued->value, $result->type);
-        $this->assertSame('Steer from content', $result->payload['text']);
-        $this->assertSame('ik-steer-1', $result->payload['idempotency_key']);
-        $this->assertArrayNotHasKey('message_id', $result->payload);
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::UserMessageQueued->value, $result->type);
+        self::assertSame('Steer from content', $result->payload['text']);
+        self::assertSame('ik-steer-1', $result->payload['idempotency_key']);
+        self::assertArrayNotHasKey('message_id', $result->payload);
     }
 
     public function testNormalizesAgentCommandQueuedFollowUpToUserMessageQueued(): void
@@ -617,11 +617,11 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNotNull($result);
-        $this->assertSame(RuntimeEventTypeEnum::UserMessageQueued->value, $result->type);
-        $this->assertSame('Direct text', $result->payload['text']);
-        $this->assertSame('ik-fu-2', $result->payload['idempotency_key']);
-        $this->assertArrayNotHasKey('message_id', $result->payload);
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::UserMessageQueued->value, $result->type);
+        self::assertSame('Direct text', $result->payload['text']);
+        self::assertSame('ik-fu-2', $result->payload['idempotency_key']);
+        self::assertArrayNotHasKey('message_id', $result->payload);
     }
 
     public function testSkipsAgentCommandQueuedForCompact(): void
@@ -630,7 +630,7 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNull($result);
+        self::assertNull($result);
     }
 
     public function testSkipsAgentCommandSuperseded(): void
@@ -639,7 +639,7 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNull($result);
+        self::assertNull($result);
     }
 
     public function testSkipsTurnBranched(): void
@@ -652,7 +652,7 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNull($result, 'turn_branched is tree metadata and must not produce a runtime event');
+        self::assertNull($result, 'turn_branched is tree metadata and must not produce a runtime event');
     }
 
     public function testSkipsLeafSet(): void
@@ -666,7 +666,7 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNull($result, 'leaf_set is tree metadata and must not produce a runtime event');
+        self::assertNull($result, 'leaf_set is tree metadata and must not produce a runtime event');
     }
 
     // ── Status fallback normalization ────────────────────────────────────────
@@ -680,9 +680,9 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNotNull($result);
-        $this->assertSame(RuntimeEventTypeEnum::StatusUpdated->value, $result->type);
-        $this->assertSame('agent_command_rejected', $result->payload['debug.raw_type']);
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::StatusUpdated->value, $result->type);
+        self::assertSame('agent_command_rejected', $result->payload['debug.raw_type']);
     }
 
     public function testNormalizesStaleResultIgnoredToStatusUpdated(): void
@@ -694,9 +694,9 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNotNull($result);
-        $this->assertSame(RuntimeEventTypeEnum::StatusUpdated->value, $result->type);
-        $this->assertSame('stale_result_ignored', $result->payload['debug.raw_type']);
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::StatusUpdated->value, $result->type);
+        self::assertSame('stale_result_ignored', $result->payload['debug.raw_type']);
     }
 
     // ── Compaction ───────────────────────────────────────────────────────────
@@ -711,10 +711,10 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNotNull($result);
-        $this->assertSame(RuntimeEventTypeEnum::CompactionFailed->value, $result->type);
-        $this->assertSame('empty_summary', $result->payload['reason']);
-        $this->assertSame(
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::CompactionFailed->value, $result->type);
+        self::assertSame('empty_summary', $result->payload['reason']);
+        self::assertSame(
             'Compaction failed: The model returned an empty summary.',
             $result->payload['error'],
         );
@@ -739,14 +739,14 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNotNull($result);
-        $this->assertSame(RuntimeEventTypeEnum::CompactionFailed->value, $result->type);
-        $this->assertSame('model_error', $result->payload['reason']);
-        $this->assertStringStartsWith(
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::CompactionFailed->value, $result->type);
+        self::assertSame('model_error', $result->payload['reason']);
+        self::assertStringStartsWith(
             'Compaction failed:',
             $result->payload['error'],
         );
-        $this->assertStringContainsString(
+        self::assertStringContainsString(
             'LLM provider rejected',
             $result->payload['error'],
         );
@@ -761,10 +761,10 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNotNull($result);
-        $this->assertSame(RuntimeEventTypeEnum::CompactionFailed->value, $result->type);
-        $this->assertSame('model_error', $result->payload['reason']);
-        $this->assertStringContainsString(
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::CompactionFailed->value, $result->type);
+        self::assertSame('model_error', $result->payload['reason']);
+        self::assertStringContainsString(
             'unexpected error',
             $result->payload['error'],
         );
@@ -778,10 +778,10 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNotNull($result);
-        $this->assertSame(RuntimeEventTypeEnum::StatusUpdated->value, $result->type);
-        $this->assertSame('some_future_event', $result->payload['debug.raw_type']);
-        $this->assertSame('value', $result->payload['debug.raw_payload']['future_key']);
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::StatusUpdated->value, $result->type);
+        self::assertSame('some_future_event', $result->payload['debug.raw_type']);
+        self::assertSame('value', $result->payload['debug.raw_payload']['future_key']);
     }
 
     // ── toRunEventData backward compat ───────────────────────────────────────
@@ -796,15 +796,15 @@ final class RuntimeEventMapperTest extends TestCase
         ]);
         $runtime = $this->mapper->toRuntimeEvent($raw);
 
-        $this->assertNotNull($runtime);
+        self::assertNotNull($runtime);
         $data = $this->mapper->toRunEventData($runtime);
 
-        $this->assertArrayHasKey('runId', $data);
-        $this->assertArrayHasKey('seq', $data);
-        $this->assertArrayHasKey('turnNo', $data);
-        $this->assertArrayHasKey('type', $data);
-        $this->assertArrayHasKey('payload', $data);
-        $this->assertSame(RuntimeEventTypeEnum::AssistantMessageCompleted->value, $data['type']);
+        self::assertArrayHasKey('runId', $data);
+        self::assertArrayHasKey('seq', $data);
+        self::assertArrayHasKey('turnNo', $data);
+        self::assertArrayHasKey('type', $data);
+        self::assertArrayHasKey('payload', $data);
+        self::assertSame(RuntimeEventTypeEnum::AssistantMessageCompleted->value, $data['type']);
     }
 
     // ── Field mapping fidelity ───────────────────────────────────────────────
@@ -815,9 +815,9 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        $this->assertNotNull($result);
-        $this->assertSame($this->runId, $result->runId);
-        $this->assertSame(42, $result->seq);
+        self::assertNotNull($result);
+        self::assertSame($this->runId, $result->runId);
+        self::assertSame(42, $result->seq);
     }
 
     // ── Test helpers ─────────────────────────────────────────────────────────

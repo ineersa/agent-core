@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Config;
 
+use Ineersa\CodingAgent\Config\Ai\AiConfig;
+use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppConfigLoader;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\LoggingConfig;
-use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Config\SessionsConfig;
+use Ineersa\CodingAgent\Config\TuiConfig;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Serializer\SerializerInterface;
 
@@ -88,10 +91,10 @@ class AppConfigTest extends TestCase
     {
         $config = $this->buildConfig();
 
-        $this->assertNotNull($config->ai);
-        $this->assertSame('deepseek/deepseek-v4-pro', $config->ai->defaultModel);
-        $this->assertNotNull($config->catalog);
-        $this->assertTrue($config->catalog->isAvailable('deepseek/deepseek-v4-pro'));
+        self::assertNotNull($config->ai);
+        self::assertSame('deepseek/deepseek-v4-pro', $config->ai->defaultModel);
+        self::assertNotNull($config->catalog);
+        self::assertTrue($config->catalog->isAvailable('deepseek/deepseek-v4-pro'));
     }
 
     // ──────────────────────────────────────────────
@@ -126,9 +129,9 @@ class AppConfigTest extends TestCase
 
         $config = $this->buildConfig();
 
-        $this->assertNotNull($config->ai);
-        $this->assertNull($config->ai->defaultModel);
-        $this->assertNotNull($config->catalog);
+        self::assertNotNull($config->ai);
+        self::assertNull($config->ai->defaultModel);
+        self::assertNotNull($config->catalog);
     }
 
     // ──────────────────────────────────────────────
@@ -271,4 +274,6 @@ class AppConfigTest extends TestCase
             encoders: [],
         );
     }
+
+
 }
