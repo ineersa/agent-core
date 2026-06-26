@@ -160,8 +160,8 @@ final class SessionInitializerReplayTest extends TestCase
         // lastSeq = 2 (max persistent source seq)
         $this->assertSame(2, $state->lastSeq);
 
-        // Activity: Running (run was in-progress at event seq=2)
-        $this->assertSame(RunActivityStateEnum::Running, $state->activity);
+        // Passive resume: in-progress history must not leave active activity.
+        $this->assertSame(RunActivityStateEnum::Idle, $state->activity);
 
         // No replayed blocks should be left in streaming state
         foreach ($blocks as $block) {
@@ -242,8 +242,8 @@ final class SessionInitializerReplayTest extends TestCase
         // lastSeq = 6
         $this->assertSame(6, $state->lastSeq);
 
-        // Activity: Running (human_input.answered transitioned to Running)
-        $this->assertSame(RunActivityStateEnum::Running, $state->activity);
+        // Passive resume: mid-sequence history does not leave active activity.
+        $this->assertSame(RunActivityStateEnum::Idle, $state->activity);
     }
 
     // ── Cancellation resume ────────────────────────────────────────────────
@@ -504,8 +504,8 @@ final class SessionInitializerReplayTest extends TestCase
         $state = new TuiSessionState($runId, true);
         $this->sessionInit->buildInitialTranscript($state);
 
-        // Activity should be WaitingHuman after last event
-        $this->assertSame(RunActivityStateEnum::WaitingHuman, $state->activity);
+        // Passive resume clears active HITL state until a new live turn starts.
+        $this->assertSame(RunActivityStateEnum::Idle, $state->activity);
     }
 
     // ── Dropped/null-mapped events ─────────────────────────────────────────
@@ -616,6 +616,53 @@ final class SessionInitializerReplayTest extends TestCase
 
         $texts = array_map(static fn ($b) => $b->text, array_values($userBlocks));
         $this->assertContains('STEER_APPLIED_MARKER', $texts);
+    }
+
+
+    public function testReplayShellOnlySessionRestoresIsShellRun(): void
+    {
+        $runId = 'run-shell-only-'.bin2hex(random_bytes(4));
+        $this->ensureSessionDir($runId);
+
+        $this->append($runId, 1, 'tool_execution_start', [
+            'tool_call_id' => 'sh_1',
+            'tool_name' => 'bash',
+            'order_index' => 0,
+        ]);
+        $this->append($runId, 2, 'tool_execution_end', [
+            'tool_call_id' => 'sh_1',
+            'is_error' => false,
+            'result' => 'ok',
+        ]);
+        $this->append($runId, 3, 'agent_end', ['reason' => 'completed']);
+
+        $state = new TuiSessionState($runId, true);
+        $this->sessionInit->buildInitialTranscript($state);
+
+        $this->assertTrue($state->isShellRun, 'Shell-only canonical history must restore isShellRun');
+        $this->assertSame(RunActivityStateEnum::Completed, $state->activity);
+    }
+
+    public function testReplayMidTurnRunningNormalizesToIdleOnResume(): void
+    {
+        $runId = 'run-mid-turn-'.bin2hex(random_bytes(4));
+        $this->ensureSessionDir($runId);
+
+        $this->append($runId, 1, 'run_started', [
+            'step_id' => 'step-1',
+            'payload' => [
+                'messages' => [
+                    ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Go']]],
+                ],
+            ],
+        ]);
+        $this->append($runId, 2, 'turn_started', ['turn_no' => 1]);
+
+        $state = new TuiSessionState($runId, true);
+        $this->sessionInit->buildInitialTranscript($state);
+
+        $this->assertSame(RunActivityStateEnum::Idle, $state->activity);
+        $this->assertFalse($state->isCompacting);
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────

@@ -137,6 +137,45 @@ final class RuntimeEventEmitterTest extends TestCase
         $this->assertContains(159, $seqs);
     }
 
+
+    public function testDrainRegistersCursorOnRunResumedAndForwardsCanonicalEvents(): void
+    {
+        $runId = 'resumed-session-7';
+        $client = new FlakySeqDrainAgentSessionClient(
+            throwOnCall: 0,
+            eventsByCall: [
+                1 => [
+                    new RuntimeEvent(RuntimeEventTypeEnum::ToolExecutionCompleted->value, $runId, 5, ['tool_name' => 'bash']),
+                ],
+            ],
+        );
+
+        $emitter = new RuntimeEventEmitter($client, new RuntimeExceptionBoundary(new EventDispatcher()), $this->createStub(LoggerInterface::class));
+        $emitter->openStdout();
+        $this->replaceStdoutWithMemory($emitter);
+
+        $emitter->emit(new RuntimeEvent(
+            type: RuntimeEventTypeEnum::RunResumed->value,
+            runId: $runId,
+            seq: 1,
+            payload: ['status' => 'attached'],
+        ));
+
+        $emitter->drainRegisteredRunsOnce();
+
+        $this->assertSame(1, $client->eventsCallCount);
+
+        $stdout = $this->stdoutHandle($emitter);
+        rewind($stdout);
+        $raw = stream_get_contents($stdout) ?: '';
+        $lines = array_values(array_filter(array_map('trim', explode("\n", $raw))));
+        $decoded = array_map(static fn (string $line): RuntimeEvent => JsonlCodec::decodeEvent($line), $lines);
+
+        $types = array_map(static fn (RuntimeEvent $e): string => $e->type, $decoded);
+        $this->assertContains(RuntimeEventTypeEnum::RunResumed->value, $types);
+        $this->assertContains(RuntimeEventTypeEnum::ToolExecutionCompleted->value, $types);
+    }
+
     private function createEmitter(): RuntimeEventEmitter
     {
         $boundary = new RuntimeExceptionBoundary(new EventDispatcher());
