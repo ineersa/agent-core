@@ -19,6 +19,8 @@ use Symfony\Component\Messenger\MessageBusInterface;
 
 final readonly class ToolCallResultHandler implements RunMessageHandler
 {
+    private const string SYNTHETIC_USER_CANCEL_MESSAGE = 'Tool execution cancelled by user.';
+
     public function __construct(
         private ToolBatchCollector $toolBatchCollector,
         private EventFactory $eventFactory,
@@ -82,6 +84,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
                     eventSpecs: $eventSpecs,
                     messages: $messages,
                     result: $message,
+                    toolExecutionEndExtras: $this->cancellationToolExecutionEndExtras(),
                 );
             } else {
                 $eventSpecs[] = [
@@ -115,7 +118,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
                     $info = $toolCallInfoMap[$tcId] ?? null;
                     $toolName = \is_string($info['name'] ?? null) ? $info['name'] : 'unknown';
                     $orderIndex = \is_int($info['order_index'] ?? null) ? $info['order_index'] : 0;
-                    $cancelMessage = 'Tool execution cancelled by user.';
+                    $cancelMessage = self::SYNTHETIC_USER_CANCEL_MESSAGE;
 
                     $syntheticResult = new ToolCallResult(
                         runId: $runId,
@@ -127,6 +130,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
                         orderIndex: $orderIndex,
                         result: [
                             'tool_name' => $toolName,
+                            'content' => [['type' => 'text', 'text' => $cancelMessage]],
                         ],
                         isError: true,
                         error: [
@@ -139,6 +143,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
                         eventSpecs: $eventSpecs,
                         messages: $messages,
                         result: $syntheticResult,
+                        toolExecutionEndExtras: $this->cancellationToolExecutionEndExtras(),
                     );
                     ++$resolvedCount;
                 }
@@ -354,9 +359,24 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
     /**
      * @param list<array{type: string, payload: array<string, mixed>}> $eventSpecs
      * @param list<AgentMessage>                                       $messages
+     * @param array<string, mixed>|null                                $toolExecutionEndExtras
      */
-    private function appendCommittedToolResultEvents(array &$eventSpecs, array &$messages, ToolCallResult $result): void
-    {
+    private function appendCommittedToolResultEvents(
+        array &$eventSpecs,
+        array &$messages,
+        ToolCallResult $result,
+        ?array $toolExecutionEndExtras = null,
+    ): void {
+        $toolExecutionEndPayload = [
+            'tool_call_id' => $result->toolCallId,
+            'order_index' => $result->orderIndex,
+            'is_error' => $result->isError,
+            'result' => $this->extractResultText($result->result),
+        ];
+        if (null !== $toolExecutionEndExtras) {
+            $toolExecutionEndPayload = array_merge($toolExecutionEndPayload, $toolExecutionEndExtras);
+        }
+
         $eventSpecs[] = [
             'type' => RunEventTypeEnum::ToolCallResultReceived->value,
             'payload' => [
@@ -367,12 +387,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
         ];
         $eventSpecs[] = [
             'type' => RunEventTypeEnum::ToolExecutionEnd->value,
-            'payload' => [
-                'tool_call_id' => $result->toolCallId,
-                'order_index' => $result->orderIndex,
-                'is_error' => $result->isError,
-                'result' => $this->extractResultText($result->result),
-            ],
+            'payload' => $toolExecutionEndPayload,
         ];
 
         $toolMsg = $this->messageNormalizer->toolMessage($result);
@@ -393,6 +408,17 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
                 'tool_call_id' => $result->toolCallId,
                 'message' => $toolMsgArray,
             ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function cancellationToolExecutionEndExtras(): array
+    {
+        return [
+            'cancelled' => true,
+            'cancellation_reason' => 'user',
         ];
     }
 

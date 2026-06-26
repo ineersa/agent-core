@@ -766,6 +766,9 @@ final class ToolCallResultHandlerTest extends TestCase
         $this->assertTrue($result->events[4]->payload['is_error']);
         $this->assertSame('tool_execution_end', $result->events[5]->type);
         $this->assertSame('tc-read-2', $result->events[5]->payload['tool_call_id']);
+        $this->assertSame('Tool execution cancelled by user.', $result->events[5]->payload['result'] ?? null);
+        $this->assertTrue($result->events[5]->payload['cancelled'] ?? false);
+        $this->assertSame('user', $result->events[5]->payload['cancellation_reason'] ?? null);
         $this->assertSame('message_start', $result->events[6]->type);
         $this->assertSame('message_end', $result->events[7]->type);
 
@@ -947,6 +950,64 @@ final class ToolCallResultHandlerTest extends TestCase
         self::assertSame($richMessage, $result->events[1]->payload['result']);
         self::assertSame('tool', $result->nextState->messages[1]->role);
         self::assertStringContainsString('Artifact: agent_41d4ca5566368a6b', $result->nextState->messages[1]->content[0]['text'] ?? '');
+        self::assertTrue($result->events[1]->payload['cancelled'] ?? false);
+        self::assertSame('user', $result->events[1]->payload['cancellation_reason'] ?? null);
+    }
+
+    public function testCancellingSyntheticUnresolvedToolExecutionEndHasResultAndCancellationMetadata(): void
+    {
+        $handler = new ToolCallResultHandler(
+            toolBatchCollector: new ToolBatchCollector(),
+            eventFactory: new EventFactory(),
+            toolCallExtractor: new ToolCallExtractor(),
+            messageNormalizer: new AgentMessageNormalizer(),
+        );
+
+        $assistantMsg = new AgentMessage(
+            role: 'assistant',
+            content: [['type' => 'text', 'text' => 'Running']],
+            metadata: [
+                'tool_calls' => [
+                    ['id' => 'tc-only', 'name' => 'bash', 'arguments' => [], 'order_index' => 0],
+                ],
+            ],
+        );
+
+        $state = RunStateBuilder::running('run-cancel-synth-meta')
+            ->withStatus(RunStatus::Cancelling)
+            ->withVersion(1)
+            ->withTurnNo(1)
+            ->withLastSeq(2)
+            ->withPendingToolCalls(['tc-only' => false])
+            ->withActiveStepId('turn-step-1')
+            ->withMessages([$assistantMsg])
+            ->build();
+
+        // Stale unrelated result triggers synthesis for unresolved pending only.
+        $message = ToolCallResultBuilder::success('run-cancel-synth-meta')
+            ->withTurnNo(1)
+            ->withStepId('turn-step-1')
+            ->withIdempotencyKey('stale')
+            ->withToolCallId('tc-other')
+            ->withOrderIndex(0)
+            ->withResult(['tool_name' => 'read', 'content' => [['type' => 'text', 'text' => 'ignored']]])
+            ->build();
+
+        $result = $handler->handle($message, $state);
+
+        $toolEnd = null;
+        foreach ($result->events as $event) {
+            if ('tool_execution_end' === $event->type) {
+                $toolEnd = $event;
+                break;
+            }
+        }
+
+        self::assertNotNull($toolEnd);
+        self::assertSame('Tool execution cancelled by user.', $toolEnd->payload['result'] ?? null);
+        self::assertTrue($toolEnd->payload['cancelled'] ?? false);
+        self::assertSame('user', $toolEnd->payload['cancellation_reason'] ?? null);
+        self::assertSame('Tool execution cancelled by user.', $result->nextState->messages[1]->content[0]['text'] ?? null);
     }
 }
 
