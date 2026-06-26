@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tool\ToolQuestion;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Entity\ToolQuestion;
 use Ineersa\CodingAgent\Tool\BashBackgroundPromptAdapterInterface;
 use Psr\Log\LoggerInterface;
@@ -74,9 +75,14 @@ final readonly class RuntimeBashBackgroundPromptAdapter implements BashBackgroun
         $toolCallId = $context->toolCallId();
         $cancelToken = $context->cancellationToken();
 
-        // Build a deterministic request ID based on the prompt context.
-        // Sanitize to avoid DB issues with special characters.
-        $requestId = \sprintf('bash_bg_%s_%s_%d', $runId, $toolCallId, $pid);
+        // Parallel multi-tool batches share one overlay: one request_id per run/turn/batch
+        // so concurrent bash workers reuse the same ToolQuestion answer (store create is idempotent).
+        $batchCount = $context->batchToolCallCount();
+        $isSharedParallelBatch = ToolExecutionMode::Parallel === $context->executionMode()
+            && $batchCount > 1;
+        $requestId = $isSharedParallelBatch
+            ? \sprintf('bash_bg_batch_%s_%d_n%d', $runId, $context->turnNo(), $batchCount)
+            : \sprintf('bash_bg_%s_%s_%d', $runId, $toolCallId, $pid);
 
         // Cap and normalize the command preview using the entity-defined max length.
         // The entity factory validates the cap, so this adapter truncates before creation.
@@ -97,6 +103,7 @@ final readonly class RuntimeBashBackgroundPromptAdapter implements BashBackgroun
             logPath: $logPath,
             commandPreview: $commandPreview,
             prompt: $prompt,
+            schema: json_encode(['type' => 'boolean'], \JSON_THROW_ON_ERROR),
         );
 
         $this->store->create($question);

@@ -179,7 +179,7 @@ tools:
         # Seconds before the bash tool asks whether to move a still-running
         # command to background. TOOLS-09 default declines; TOOLS-09B wires
         # this to the TUI question system.
-        background_prompt_threshold_seconds: 30
+        background_prompt_threshold_seconds: 15
 
         # Supervision loop poll interval in microseconds.
         poll_interval_micros: 100000

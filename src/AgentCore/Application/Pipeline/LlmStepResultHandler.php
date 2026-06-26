@@ -61,6 +61,7 @@ final class LlmStepResultHandler implements RunMessageHandler
         private int $agentRetryMaxAttempts = 2,
         private int $agentRetryBaseDelayMs = 1000,
         private int $agentRetryMaxDelayMs = 60000,
+        private int $maxParallelism = 1,
     ) {
     }
 
@@ -484,7 +485,7 @@ final class LlmStepResultHandler implements RunMessageHandler
     {
         $mode = ToolExecutionMode::Sequential;
         $timeoutSeconds = null;
-        $maxParallelism = 1;
+        $maxParallelism = max(1, $this->maxParallelism);
 
         if (null !== $this->toolExecutionSettings) {
             $defaults = ToolExecutionPolicyResolver::fromSettings($this->toolExecutionSettings)->resolve($toolName);

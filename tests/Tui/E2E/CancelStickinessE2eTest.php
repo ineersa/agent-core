@@ -51,7 +51,7 @@ final class CancelStickinessE2eTest extends TestCase
      * without regressing to Working.
      *
      * Strategy: submit a prompt that triggers a bash tool-call fixture
-     * (sleep 15), wait for the tool-execution indicator (ToolResult
+     * (sleep 8), wait for the tool-execution indicator (ToolResult
      * "Running…" block) so Escape is guaranteed to land during the
      * multi-second tool phase rather than the instant-replay LLM step,
      * then verify the footer never shows "Working" after "Cancelling".
@@ -77,12 +77,10 @@ final class CancelStickinessE2eTest extends TestCase
             $this->tmux->sendKey($pane, 'C-u');
             usleep(100_000);
 
-            // Send a slow bash tool-call prompt (sleep 15). The 15-second
-            // window guarantees Escape always lands during tool execution, not
-            // the instant-replay LLM step. With `sleep 3` the tool could
-            // complete before Escape, especially with replay fixtures where
-            // LLM deltas are instantaneous.
-            $this->tmux->sendLiteral($pane, 'Run sleep 15');
+            // Send a slow bash tool-call prompt (sleep 8). The multi-second
+            // window guarantees Escape lands during tool execution, not the
+            // instant-replay LLM step, while keeping wall time under 15s.
+            $this->tmux->sendLiteral($pane, 'Run sleep 8');
             $this->tmux->sendKey($pane, 'Enter');
 
             // Wait for the tool execution indicator: the ToolResult block
@@ -167,9 +165,9 @@ final class CancelStickinessE2eTest extends TestCase
     {
         $fixturePaths = [];
 
-        // Use the bash-sleep fixture: triggers a real bash sleep 15,
-        // giving the cancel mechanism several seconds to propagate and
-        // the TUI time to render the Cancelling status.
+        // Use the bash-sleep fixture: triggers a real bash sleep 8,
+        // giving the cancel mechanism time to propagate and the TUI time
+        // to render the Cancelling status.
         $toolCallFixture = __DIR__.'/fixtures/tui-tool-call-bash-sleep.json';
         if (is_file($toolCallFixture)) {
             $fixturePaths[] = $toolCallFixture;

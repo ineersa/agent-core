@@ -73,13 +73,18 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             );
         }
 
-        if (RunStatus::Cancelled === $state->status && CoreCommandKind::FollowUp !== $message->kind) {
+        if (RunStatus::Cancelled === $state->status
+            && !\in_array($message->kind, [CoreCommandKind::FollowUp, CoreCommandKind::AppendMessage], true)) {
             return $this->rejectCommand($state, $message, 'Run is already cancelled.');
         }
 
         if (RunStatus::Cancelling === $state->status
             && CoreCommandKind::Cancel !== $message->kind
             && !$this->commandMailboxPolicy->isCancelSafeExtensionCommand($message->kind, $routedCommand->options)) {
+            if (CoreCommandKind::AppendMessage === $message->kind) {
+                return $this->enqueueModelVisibleMessageCommand($state, $message, $routedCommand->options);
+            }
+
             return $this->rejectCommand(
                 $state,
                 $message,
@@ -180,7 +185,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         // Active runs (Running, Cancelling, or Compacting) queue the command
         // for the next safe boundary.  Non-active runs apply immediately.
         $isActive = \in_array($state->status, [RunStatus::Running, RunStatus::Cancelling, RunStatus::Compacting], true);
-        if (!$isActive) {
+        if (!$isActive && \in_array($message->kind, [CoreCommandKind::Steer, CoreCommandKind::FollowUp, CoreCommandKind::AppendMessage], true)) {
             $followUpAdvance = $this->followUpAdvanceCallback($runId, $message->kind);
             if (null !== $followUpAdvance) {
                 $postCommit[] = $followUpAdvance;
@@ -241,20 +246,25 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
 
         $this->commandStore->markApplied($runId, $message->idempotencyKey());
 
-        // Reject all pending queueable user-input commands (steer,
-        // follow_up, continue) so stale queued commands are never
-        // consumed after cancel/restart.  This prevents #152 where
-        // queued steer/follow-up from before a cancel could be drained
-        // unexpectedly after the run restarts.
-        $rejectedKinds = self::REJECT_ON_CANCEL_KINDS;
+        // Reject stale queued user-input commands after cancel (#152).
+        // AppendMessage stays pending in the mailbox for post-cancel AdvanceRun drain.
         $rejectedCommands = [];
-        foreach ($rejectedKinds as $kind) {
-            $rejected = $this->commandStore->rejectPendingByKind(
-                $runId,
-                $kind,
-                'Rejected because cancel command was accepted.',
-            );
-            $rejectedCommands = array_merge($rejectedCommands, $rejected);
+        $hasPendingAppendMessage = false;
+        $cancelRejectReason = 'Rejected because cancel command was accepted.';
+
+        foreach ($this->commandStore->pending($runId) as $pendingCommand) {
+            if (CoreCommandKind::AppendMessage === $pendingCommand->kind) {
+                $hasPendingAppendMessage = true;
+
+                continue;
+            }
+
+            if (!\in_array($pendingCommand->kind, self::REJECT_ON_CANCEL_KINDS, true)) {
+                continue;
+            }
+
+            $this->commandStore->markRejected($runId, $pendingCommand->idempotencyKey, $cancelRejectReason);
+            $rejectedCommands[] = $pendingCommand;
         }
 
         $eventSpecs = [[
@@ -272,7 +282,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 'payload' => [
                     'kind' => $rejectedCommand->kind,
                     'idempotency_key' => $rejectedCommand->idempotencyKey,
-                    'reason' => 'Rejected because cancel command was accepted.',
+                    'reason' => $cancelRejectReason,
                 ],
             ];
         }
@@ -281,6 +291,50 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         // accept the command without changing state (no version bump).
         // Repeated cancel during Cancelling should not be rejected.
         if (RunStatus::Cancelling === $state->status) {
+            if (!self::hasActiveCancellationWork($state)) {
+                $terminalSpecs = [[
+                    'type' => RunEventTypeEnum::AgentCommandApplied->value,
+                    'payload' => [
+                        'kind' => $message->kind,
+                        'idempotency_key' => $message->idempotencyKey(),
+                        'options' => [],
+                    ],
+                ], [
+                    'type' => RunEventTypeEnum::AgentEnd->value,
+                    'payload' => [
+                        'reason' => 'cancelled',
+                    ],
+                ]];
+                $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $terminalSpecs);
+
+                $postCommit = [];
+                if ($hasPendingAppendMessage) {
+                    $followUpAdvance = $this->followUpAdvanceCallback($runId, 'post-cancel-advance');
+                    if (null !== $followUpAdvance) {
+                        $postCommit[] = $followUpAdvance;
+                    }
+                }
+
+                return new HandlerResult(
+                    nextState: new RunState(
+                        runId: $state->runId,
+                        status: RunStatus::Cancelled,
+                        version: $state->version + 1,
+                        turnNo: $state->turnNo,
+                        lastSeq: $state->lastSeq + \count($events),
+                        isStreaming: false,
+                        streamingMessage: null,
+                        pendingToolCalls: [],
+                        errorMessage: $reason,
+                        messages: $state->messages,
+                        activeStepId: null,
+                        retryableFailure: false,
+                    ),
+                    events: $events,
+                    postCommit: $postCommit,
+                );
+            }
+
             $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, [[
                 'type' => RunEventTypeEnum::AgentCommandApplied->value,
                 'payload' => [
@@ -314,14 +368,10 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
 
         // When there is no active work to finish cancellation (not streaming,
-        // no active step, no unresolved tool calls), terminalize immediately
+        // no unresolved tool calls), terminalize immediately
         // to Cancelled.  Otherwise the run can get stuck Cancelling with no
         // later result/effect to transition it out — the classic cancel hang.
-        $hasActiveWork = $state->isStreaming
-            || null !== $state->activeStepId
-            || \in_array(false, $state->pendingToolCalls, true);
-
-        if (!$hasActiveWork) {
+        if (!self::hasActiveCancellationWork($state)) {
             // No active work — terminalize to Cancelled with AgentEnd.
             // Reuse the already-built $eventSpecs (applied + stale rejections)
             // and append the agent_end event at the correct sequence number.
@@ -349,9 +399,18 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 retryableFailure: false,
             );
 
+            $postCommit = [];
+            if ($hasPendingAppendMessage) {
+                $followUpAdvance = $this->followUpAdvanceCallback($runId, 'post-cancel-advance');
+                if (null !== $followUpAdvance) {
+                    $postCommit[] = $followUpAdvance;
+                }
+            }
+
             return new HandlerResult(
                 nextState: $nextState,
                 events: $events,
+                postCommit: $postCommit,
             );
         }
 
@@ -373,6 +432,80 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         return new HandlerResult(
             nextState: $nextState,
             events: $events,
+        );
+    }
+
+    /**
+     * Whether cancel must wait for in-flight LLM streaming or unresolved tool calls.
+     *
+     * A non-null activeStepId alone is not active work once all pending tool calls
+     * are resolved and streaming has stopped (stale advance-after-tools step).
+     */
+    private static function hasActiveCancellationWork(RunState $state): bool
+    {
+        if ($state->isStreaming) {
+            return true;
+        }
+
+        if (\in_array(false, $state->pendingToolCalls, true)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * @param array<string, mixed> $options
+     */
+    private function enqueueModelVisibleMessageCommand(RunState $state, ApplyCommand $message, array $options): HandlerResult
+    {
+        $runId = $message->runId();
+
+        $pendingCommand = new PendingCommand(
+            runId: $runId,
+            kind: $message->kind,
+            idempotencyKey: $message->idempotencyKey(),
+            payload: $message->payload,
+            options: new CommandCancellationOptions(
+                safe: true === ($options['cancel_safe'] ?? false),
+            ),
+        );
+
+        if (!$this->commandStore->enqueue($pendingCommand)) {
+            return new HandlerResult();
+        }
+
+        $nextState = new RunState(
+            runId: $state->runId,
+            status: $state->status,
+            version: $state->version + 1,
+            turnNo: $state->turnNo,
+            lastSeq: $state->lastSeq + 1,
+            isStreaming: $state->isStreaming,
+            streamingMessage: $state->streamingMessage,
+            pendingToolCalls: $state->pendingToolCalls,
+            errorMessage: $state->errorMessage,
+            messages: $state->messages,
+            activeStepId: $state->activeStepId,
+            retryableFailure: $state->retryableFailure,
+        );
+
+        $queuedEvent = $this->eventFactory->event(
+            runId: $runId,
+            seq: $nextState->lastSeq,
+            turnNo: $nextState->turnNo,
+            type: RunEventTypeEnum::AgentCommandQueued->value,
+            payload: [
+                'kind' => $message->kind,
+                'idempotency_key' => $message->idempotencyKey(),
+                'options' => $options,
+                'message' => $message->payload['message'] ?? null,
+            ],
+        );
+
+        return new HandlerResult(
+            nextState: $nextState,
+            events: [$queuedEvent],
         );
     }
 

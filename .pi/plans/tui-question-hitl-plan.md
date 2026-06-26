@@ -210,7 +210,7 @@ The TUI should display one active question at a time, but the coordinator should
 
 Examples:
 
-- bash foreground command runs >30s: "Move to background?"
+- bash foreground command runs >15s: "Move to background?"
 - model setting confirmation
 - destructive local UI action confirmation
 

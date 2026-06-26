@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Controller;
 
+use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
-use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
@@ -14,7 +14,7 @@ use Revolt\EventLoop;
 
 /**
  * Owns the controller stdout emit pipeline, per-run event cursoring, and
- * canonical event drain from InProcessAgentSessionClient.
+ * canonical event drain from the headless AgentSessionClient.
  *
  * All runtime event writes go through this class. Cursor tracking auto-registers
  * on RunStarted events and cursors are never released (issue #183). The drain loop polls eventClient per
@@ -31,11 +31,14 @@ final class RuntimeEventEmitter
     /** @var array<string, int> runId => lastForwardedSeq */
     private array $runEventCursors = [];
 
+    /** @var array<string, int> runId => consecutive drain failures without a successful poll */
+    private array $runDrainFailureCounts = [];
+
     /** @var (\Closure(): void)|null Callback invoked on fatal stdout write failure before event loop stop. */
     private ?\Closure $onFatalShutdown = null;
 
     public function __construct(
-        private readonly ?InProcessAgentSessionClient $eventClient,
+        private readonly ?AgentSessionClient $eventClient,
         private readonly RuntimeExceptionBoundary $boundary,
         private readonly LoggerInterface $logger,
     ) {
@@ -117,58 +120,79 @@ final class RuntimeEventEmitter
     public function startDrainLoop(float $interval = 0.05): void
     {
         EventLoop::repeat($interval, function (): void {
-            if ($this->shuttingDown || null === $this->eventClient) {
-                return;
+            $this->drainRegisteredRunsOnce();
+        });
+    }
+
+    /**
+     * Poll each registered run once and forward unseen canonical events to stdout.
+     *
+     * A transient failure while draining must not unregister the run; the cursor
+     * is preserved so the next tick can resume from the last successfully forwarded seq.
+     */
+    public function drainRegisteredRunsOnce(): void
+    {
+        if ($this->shuttingDown || null === $this->eventClient) {
+            return;
+        }
+
+        // Snapshot active run IDs to avoid modification during iteration.
+        // PHP auto-casts numeric-string array keys to ints, so cast back
+        // to string before passing to string-typed methods like events().
+        $activeRuns = array_keys($this->runEventCursors);
+
+        foreach ($activeRuns as $runId) {
+            $runId = (string) $runId;
+            $cursor = $this->runEventCursors[$runId] ?? null;
+            if (null === $cursor) {
+                continue;
             }
 
-            // Snapshot active run IDs to avoid modification during iteration.
-            // PHP auto-casts numeric-string array keys to ints, so cast back
-            // to string before passing to string-typed methods like events().
-            $activeRuns = array_keys($this->runEventCursors);
+            try {
+                foreach ($this->eventClient->events($runId) as $event) {
+                    // Skip transient streaming deltas (seq=0) — these are
+                    // delivered via LLM consumer stdout pipe, not canonical events.
+                    if (0 === $event->seq) {
+                        continue;
+                    }
 
-            foreach ($activeRuns as $runId) {
-                $runId = (string) $runId;
-                $cursor = $this->runEventCursors[$runId] ?? null;
-                if (null === $cursor) {
-                    continue; // Run was cleaned up during iteration.
+                    if ($event->seq <= $cursor) {
+                        continue;
+                    }
+
+                    $this->emitInternal($event);
+
+                    if ($event->seq > 0) {
+                        $this->runEventCursors[$runId] = max($cursor, $event->seq);
+                        $cursor = $this->runEventCursors[$runId];
+                    }
                 }
 
-                try {
-                    foreach ($this->eventClient->events($runId) as $event) {
-                        // Skip transient streaming deltas (seq=0) — these are
-                        // delivered via LLM consumer stdout pipe, not canonical events.
-                        if (0 === $event->seq) {
-                            continue;
-                        }
+                unset($this->runDrainFailureCounts[$runId]);
+            } catch (\Throwable $e) {
+                $failures = ($this->runDrainFailureCounts[$runId] ?? 0) + 1;
+                $this->runDrainFailureCounts[$runId] = $failures;
 
-                        if ($event->seq <= $cursor) {
-                            continue;
-                        }
+                // Delegate capture=0 rethrow to boundary. If we reach here, capture mode is enabled.
+                $this->boundary->catch($e, 'headless_controller.event_drain_failed', [
+                    'run_id' => $runId,
+                ]);
 
-                        $this->emitInternal($event);
+                $logContext = [
+                    'component' => 'RuntimeEventEmitter',
+                    'event_type' => 'headless_controller.event_drain_failed',
+                    'run_id' => $runId,
+                    'exception_class' => $e::class,
+                    'exception_message' => $e->getMessage(),
+                    'consecutive_failures' => $failures,
+                    'last_forwarded_seq' => $this->runEventCursors[$runId] ?? 0,
+                ];
 
-                        if ($event->seq > 0) {
-                            $this->runEventCursors[$runId] = max($cursor, $event->seq);
-                            $cursor = $this->runEventCursors[$runId];
-                        }
-                    }
-                } catch (\Throwable $e) {
-                    // Event drain failures can stall the TUI silently.
-                    // Delegate capture=0 rethrow to boundary.
-                    // If we reach here, capture mode is enabled.
-                    $this->boundary->catch($e, 'headless_controller.event_drain_failed', [
-                        'run_id' => $runId,
-                    ]);
+                if (1 === $failures || 0 === $failures % 10) {
+                    $this->logger->warning('Canonical event drain failed; will retry on next tick', $logContext);
+                }
 
-                    // Capture mode: emit protocol error for TUI visibility
-                    // and release cursor so subsequent polls start fresh.
-                    $this->emitInternal(new RuntimeEvent(
-                        type: RuntimeEventTypeEnum::RuntimeReady->value, // broadcast to unstick
-                        runId: $runId,
-                        seq: 0,
-                        payload: [],
-                    ));
-
+                if (1 === $failures) {
                     $this->emitInternal(new RuntimeEvent(
                         type: RuntimeEventTypeEnum::ProtocolError->value,
                         runId: $runId,
@@ -178,18 +202,12 @@ final class RuntimeEventEmitter
                             'run_id' => $runId,
                         ],
                     ));
-
-                    unset($this->runEventCursors[$runId]);
-
-                    $this->logger->error('Event drain failed', [
-                        'run_id' => $runId,
-                        'exception' => $e,
-                    ]);
-
-                    // Event drain will retry next tick.
                 }
+
+                // Keep runEventCursors[$runId] — abandoning the run after one failure
+                // left the TUI stuck in Cancelling while backend events continued (issue #205).
             }
-        });
+        }
     }
 
     // ── Internal ────────────────────────────────────────────────────────

@@ -80,6 +80,14 @@ final readonly class ExecuteToolCallWorker
             ? new RunCancellationToken($this->runStore, $message->runId())
             : new NullCancellationToken();
 
+        $batchToolCallCount = 1;
+        if (\is_array($message->assistantMessage)) {
+            $toolCallsInStep = $message->assistantMessage['tool_calls'] ?? null;
+            if (\is_array($toolCallsInStep) && [] !== $toolCallsInStep) {
+                $batchToolCallCount = \count($toolCallsInStep);
+            }
+        }
+
         $toolCall = new ToolCall(
             toolCallId: $message->toolCallId,
             toolName: $message->toolName,
@@ -97,6 +105,7 @@ final readonly class ExecuteToolCallWorker
                 'max_parallelism' => $message->maxParallelism,
                 'cancel_token' => $cancelToken,
                 'tools_ref' => $message->toolsRef,
+                'assistant_batch_tool_call_count' => $batchToolCallCount,
             ],
         );
 

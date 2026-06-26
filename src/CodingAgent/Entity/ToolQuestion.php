@@ -90,7 +90,10 @@ class ToolQuestion
 
     /**
      * JSON schema for the question (e.g. {'type':'string','enum':['Allow once','Always allow','Deny']}).
-     * Stored as serialized JSON text; null for boolean Confirm-kind questions.
+     * Stored as serialized JSON text. Confirm questions should supply an explicit
+     * {"type":"boolean"} schema (e.g. bash background prompt); null or invalid JSON
+     * may still be stored when a producer omits schema — TUI and AnswerToolQuestionHandler
+     * then fall back to kind=confirm for boolean routing.
      */
     #[ORM\Column(type: 'text', nullable: true)]
     public ?string $schema = null;
