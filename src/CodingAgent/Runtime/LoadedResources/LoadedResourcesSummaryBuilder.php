@@ -45,7 +45,7 @@ final readonly class LoadedResourcesSummaryBuilder
     private function buildContextSection(): LoadedResourceSectionDTO
     {
         $items = [];
-        foreach ($this->agentsContextDiscovery->discover() as $entry) {
+        foreach ($this->agentsContextDiscovery->discoverPaths() as $entry) {
             $path = (string) ($entry['path'] ?? '');
             $items[] = new LoadedResourceItemDTO(
                 name: '' !== basename($path) ? basename($path) : 'AGENTS.md',

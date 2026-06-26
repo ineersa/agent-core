@@ -210,6 +210,10 @@ final class ThemeRegistry implements ThemeLoadedResourcesProviderInterface
         $name = $palette->name;
         if (isset($this->themes[$name])) {
             $winner = $this->loadedByName[$name];
+            if ($this->themeSourcePathsEqual($winner->sourcePath, $sourcePath)) {
+                return;
+            }
+
             $this->themeCollisions[] = [
                 'name' => $name,
                 'winnerPath' => $winner->sourcePath,
@@ -221,6 +225,27 @@ final class ThemeRegistry implements ThemeLoadedResourcesProviderInterface
 
         $this->themes[$name] = $palette;
         $this->loadedByName[$name] = new ThemeLoadedEntryDTO($name, $sourcePath, $userSource);
+    }
+
+    /**
+     * True when two theme file paths refer to the same on-disk file.
+     *
+     * Used to skip bogus collisions when built-in themes are ingested from both
+     * configured theme_paths and the builtin directory (same YAML file).
+     */
+    private function themeSourcePathsEqual(string $a, string $b): bool
+    {
+        if ('' === $a || '' === $b) {
+            return $a === $b;
+        }
+
+        $realA = realpath($a);
+        $realB = realpath($b);
+        if (false !== $realA && false !== $realB) {
+            return $realA === $realB;
+        }
+
+        return $a === $b;
     }
 
     /**

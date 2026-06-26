@@ -4,18 +4,41 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
+use Ineersa\CodingAgent\Runtime\LoadedResources\LoadedResourcesSummaryBuilder;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Symfony\Component\Tui\Event\InputEvent;
+use Symfony\Component\Tui\Event\TickEvent;
 
 /**
- * Toggles loaded-resources source-path expansion with ctrl+r.
+ * Defers loaded-resources summary build to the first tick (keeps pre-loop startup fast)
+ * and toggles source-path expansion with ctrl+r.
  */
 final readonly class LoadedResourcesStartupRegistrar implements TuiListenerRegistrar
 {
+    public function __construct(
+        private LoadedResourcesSummaryBuilder $loadedResourcesSummaryBuilder,
+    ) {
+    }
+
     public function register(TuiRuntimeContext $context): void
     {
         $screen = $context->screen;
         $tui = $context->tui;
+        $state = $context->state;
+        $builder = $this->loadedResourcesSummaryBuilder;
+
+        $loaded = false;
+        $context->ticks->add(static function (TickEvent $event) use ($screen, $tui, $state, $builder, &$loaded): ?bool {
+            if ($loaded || $state->resuming) {
+                return null;
+            }
+
+            $loaded = true;
+            $screen->setLoadedResourcesSummary($builder->build());
+            $tui->requestRender();
+
+            return null;
+        });
 
         $tui->addListener(static function (InputEvent $event) use ($screen, $tui): void {
             if ("\x12" !== $event->getData()) { // ctrl+r
