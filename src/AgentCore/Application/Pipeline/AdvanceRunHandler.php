@@ -63,6 +63,59 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             return new HandlerResult();
         }
 
+        // Terminalize cancellation before draining the mailbox so pending
+        // model-visible commands (e.g. AppendMessage) are applied only after
+        // AgentEnd(cancelled), not in the same event batch.
+        if (RunStatus::Cancelling === $state->status) {
+            $eventSpecs = [
+                [
+                    'type' => RunEventTypeEnum::AgentEnd->value,
+                    'payload' => ['reason' => 'cancelled'],
+                ],
+            ];
+
+            $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
+            $nextState = new RunState(
+                runId: $state->runId,
+                status: RunStatus::Cancelled,
+                version: $state->version + 1,
+                turnNo: $state->turnNo,
+                lastSeq: $state->lastSeq + \count($events),
+                isStreaming: false,
+                streamingMessage: null,
+                pendingToolCalls: [],
+                errorMessage: $state->errorMessage,
+                messages: $state->messages,
+                activeStepId: $state->activeStepId,
+                retryableFailure: false,
+            );
+
+            $postCommit = [];
+            if (null !== $this->commandBus) {
+                $postCommit[] = function () use ($runId): void {
+                    $stepId = \sprintf('post-cancel-advance-%d', hrtime(true));
+
+                    try {
+                        $this->commandBus->dispatch(new AdvanceRun(
+                            runId: $runId,
+                            turnNo: 0,
+                            stepId: $stepId,
+                            attempt: 1,
+                            idempotencyKey: hash('sha256', \sprintf('%s|%s', $runId, $stepId)),
+                        ));
+                    } catch (ExceptionInterface $exception) {
+                        throw new \RuntimeException('Failed to dispatch AdvanceRun after cancellation terminalized.', previous: $exception);
+                    }
+                };
+            }
+
+            return new HandlerResult(
+                nextState: $nextState,
+                events: $events,
+                postCommit: $postCommit,
+            );
+        }
+
         $mailboxResult = null === $this->tracer
             ? $this->commandMailboxPolicy->applyPendingTurnStartCommands($state)
             : $this->tracer->inSpan('command.application.turn_start_boundary', [
@@ -75,68 +128,6 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
         $preparedState = $mailboxResult->state;
         $boundaryEventSpecs = $mailboxResult->eventSpecs;
         $mailboxEffects = $mailboxResult->effects;
-
-        if (RunStatus::Cancelling === $preparedState->status) {
-            $eventSpecs = [
-                ...$boundaryEventSpecs,
-                [
-                    'type' => RunEventTypeEnum::AgentEnd->value,
-                    'payload' => ['reason' => 'cancelled'],
-                ],
-            ];
-
-            $events = $this->eventFactory->eventsFromSpecs($runId, $preparedState->turnNo, $state->lastSeq + 1, $eventSpecs);
-            $nextState = new RunState(
-                runId: $preparedState->runId,
-                status: RunStatus::Cancelled,
-                version: $state->version + 1,
-                turnNo: $preparedState->turnNo,
-                lastSeq: $state->lastSeq + \count($events),
-                isStreaming: false,
-                streamingMessage: null,
-                pendingToolCalls: [],
-                errorMessage: $preparedState->errorMessage,
-                messages: $preparedState->messages,
-                activeStepId: $preparedState->activeStepId,
-                retryableFailure: false,
-            );
-
-            $postCommit = [];
-            if ([] !== $boundaryEventSpecs && null !== $this->commandBus) {
-                $hasNonCompactBoundaryEvent = false;
-                foreach ($boundaryEventSpecs as $spec) {
-                    if ('compact' !== (string) ($spec['payload']['kind'] ?? '')) {
-                        $hasNonCompactBoundaryEvent = true;
-                        break;
-                    }
-                }
-
-                if ($hasNonCompactBoundaryEvent) {
-                    $postCommit[] = function () use ($runId): void {
-                        $stepId = \sprintf('append-message-after-cancel-%d', hrtime(true));
-
-                        try {
-                            $this->commandBus->dispatch(new AdvanceRun(
-                                runId: $runId,
-                                turnNo: 0,
-                                stepId: $stepId,
-                                attempt: 1,
-                                idempotencyKey: hash('sha256', \sprintf('%s|%s', $runId, $stepId)),
-                            ));
-                        } catch (ExceptionInterface $exception) {
-                            throw new \RuntimeException('Failed to dispatch AdvanceRun after cancellation terminalized.', previous: $exception);
-                        }
-                    };
-                }
-            }
-
-            return new HandlerResult(
-                nextState: $nextState,
-                events: $events,
-                effects: $mailboxEffects,
-                postCommit: $postCommit,
-            );
-        }
 
         // When pending commands (steer/follow-up/append_message) added new messages while
         // the run was Completed or Failed, transition to Running and proceed

@@ -391,7 +391,7 @@ final class RuntimeEventTranslator
 
     /**
      * Resolve agent_command_applied with explicit priority:
-     * steer/follow_up → user.message_submitted,
+     * steer / follow_up / append_message → user.message_submitted,
      * human_response → human_input.answered,
      * cancel → cancellation.requested,
      * everything else → status.updated.

@@ -348,7 +348,7 @@ final class TurnTreeProjector
     {
         $payload = $event->payload;
 
-        // agent_command_applied with steer/follow_up: user input
+        // agent_command_applied with steer / follow_up / append_message: user input
         if (RunEventTypeEnum::AgentCommandApplied->value === $event->type) {
             $kind = \is_string($payload['kind'] ?? null) ? $payload['kind'] : null;
             if (\in_array($kind, ['steer', 'follow_up', 'append_message'], true)) {

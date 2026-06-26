@@ -248,8 +248,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         $this->commandStore->markApplied($runId, $message->idempotencyKey());
 
         // Reject stale queued user-input commands after cancel (#152), except
-        // append_message commands that must land in run messages for model-visible
-        // runtime notifications.
+        // model-visible AppendMessage commands that must land in run messages.
         $rejectedCommands = [];
         $preservedAppendMessageCommands = [];
         $cancelRejectReason = 'Rejected because cancel command was accepted.';

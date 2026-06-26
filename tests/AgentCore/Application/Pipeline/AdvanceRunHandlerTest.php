@@ -491,7 +491,7 @@ final class AdvanceRunHandlerTest extends TestCase
         $this->assertSame(2, $result->nextState->turnNo, 'Steer should advance the turn.');
     }
 
-    public function testCancellingWithPendingAppendMessageDispatchesFollowUpAdvance(): void
+    public function testCancellingWithPendingAppendMessageTerminalizesBeforeMailboxDrain(): void
     {
         $commandStore = new InMemoryCommandStore();
         $commandStore->enqueue(new PendingCommand(
@@ -530,12 +530,106 @@ final class AdvanceRunHandlerTest extends TestCase
         $result = $handler->handle($message, $state);
 
         $this->assertSame(RunStatus::Cancelled, $result->nextState->status);
-        $this->assertCount(1, $result->nextState->messages);
-        $this->assertSame('After cancel', $result->nextState->messages[0]->content[0]['text'] ?? '');
+        $this->assertSame([], $result->nextState->messages, 'AppendMessage must not be applied before cancel terminalizes');
+        $this->assertCount(1, $result->events);
+        $this->assertSame('agent_end', $result->events[0]->type);
+        $this->assertSame('cancelled', $result->events[0]->payload['reason'] ?? null);
         $this->assertCount(1, $result->postCommit);
         ($result->postCommit[0])();
         $this->assertCount(1, $commandBus->messages);
         $this->assertInstanceOf(AdvanceRun::class, $commandBus->messages[0]);
+        $this->assertStringStartsWith('post-cancel-advance-', $commandBus->messages[0]->stepId());
+    }
+
+    public function testPostCancelAdvanceDrainsPendingAppendMessageAndContinues(): void
+    {
+        $commandStore = new InMemoryCommandStore();
+        $commandStore->enqueue(new PendingCommand(
+            runId: 'run-post-cancel-append',
+            kind: CoreCommandKind::AppendMessage,
+            idempotencyKey: 'append-pending-2',
+            payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'After cancel']]]],
+            options: new CommandCancellationOptions(safe: false),
+        ));
+
+        $commandMailboxPolicy = new CommandMailboxPolicy(
+            commandStore: $commandStore,
+            commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+        );
+
+        $handler = new AdvanceRunHandler(
+            commandMailboxPolicy: $commandMailboxPolicy,
+            eventFactory: new EventFactory(),
+        );
+
+        $state = RunStateBuilder::create('run-post-cancel-append')
+            ->withStatus(RunStatus::Cancelled)
+            ->withVersion(5)
+            ->withTurnNo(1)
+            ->withLastSeq(21)
+            ->build();
+
+        $message = AdvanceRunMessageBuilder::create('run-post-cancel-append')
+            ->withTurnNo(1)
+            ->withStepId('post-cancel-advance-step')
+            ->withIdempotencyKey('advance-post-cancel-1')
+            ->build();
+
+        $result = $handler->handle($message, $state);
+
+        $this->assertSame(RunStatus::Running, $result->nextState->status);
+        $this->assertCount(1, $result->nextState->messages);
+        $this->assertSame('After cancel', $result->nextState->messages[0]->content[0]['text'] ?? '');
+        $this->assertCount(1, $result->effects);
+        $this->assertInstanceOf(ExecuteLlmStep::class, $result->effects[0]);
+        $eventTypes = array_map(static fn ($e) => $e->type, $result->events);
+        $this->assertContains('agent_command_applied', $eventTypes);
+        $this->assertContains('turn_advanced', $eventTypes);
+    }
+
+    public function testCancellingWithUnresolvedToolCallsDoesNotTerminalize(): void
+    {
+        $commandStore = new InMemoryCommandStore();
+        $commandStore->enqueue(new PendingCommand(
+            runId: 'run-cancel-tools-pending',
+            kind: CoreCommandKind::AppendMessage,
+            idempotencyKey: 'append-pending-3',
+            payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'After cancel']]]],
+            options: new CommandCancellationOptions(safe: false),
+        ));
+
+        $commandMailboxPolicy = new CommandMailboxPolicy(
+            commandStore: $commandStore,
+            commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+        );
+        $commandBus = new TestMessageBus();
+
+        $handler = new AdvanceRunHandler(
+            commandMailboxPolicy: $commandMailboxPolicy,
+            eventFactory: new EventFactory(),
+            commandBus: $commandBus,
+        );
+
+        $state = RunStateBuilder::create('run-cancel-tools-pending')
+            ->withStatus(RunStatus::Cancelling)
+            ->withVersion(4)
+            ->withTurnNo(1)
+            ->withLastSeq(20)
+            ->withPendingToolCalls(['tool-call-1' => false])
+            ->build();
+
+        $message = AdvanceRunMessageBuilder::create('run-cancel-tools-pending')
+            ->withTurnNo(1)
+            ->withStepId('cancel-wait-tools')
+            ->withIdempotencyKey('advance-cancel-tools-1')
+            ->build();
+
+        $result = $handler->handle($message, $state);
+
+        $this->assertNull($result->nextState);
+        $this->assertSame([], $result->events);
+        $this->assertSame([], $result->postCommit);
+        $this->assertSame([], $commandBus->messages);
     }
 
 }
