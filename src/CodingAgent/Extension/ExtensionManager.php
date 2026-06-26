@@ -40,6 +40,16 @@ final class ExtensionManager
     }
 
     /**
+     * Structured outcomes from the most recent {@see loadExtensions()} call.
+     *
+     * @return list<LoadedExtensionItemDTO>
+     */
+    public function getLoadOutcomes(): array
+    {
+        return $this->loadOutcomes;
+    }
+
+    /**
      * Load all enabled extensions.
      *
      * Returns diagnostic messages for any extension that failed to
@@ -50,16 +60,6 @@ final class ExtensionManager
      *
      * @return list<string> Human-readable diagnostic messages for failed extensions
      */
-    /**
-     * Structured outcomes from the most recent {@see loadExtensions()} call.
-     *
-     * @return list<LoadedExtensionItemDTO>
-     */
-    public function getLoadOutcomes(): array
-    {
-        return $this->loadOutcomes;
-    }
-
     public function loadExtensions(): array
     {
         $this->loadOutcomes = [];

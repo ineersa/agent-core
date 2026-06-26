@@ -175,10 +175,10 @@ final class ThemeRegistry
     {
         $name = $palette->name;
         if (isset($this->themes[$name])) {
-            $winner = $this->loadedByName[$name] ?? null;
+            $winner = $this->loadedByName[$name];
             $this->themeCollisions[] = [
                 'name' => $name,
-                'winnerPath' => $winner?->sourcePath ?? '',
+                'winnerPath' => $winner->sourcePath,
                 'loserPath' => $sourcePath,
             ];
 
