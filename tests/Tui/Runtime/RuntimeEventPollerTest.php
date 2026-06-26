@@ -12,6 +12,7 @@ use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\Tui\Runtime\RuntimeEventPoller;
+use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
@@ -50,7 +51,7 @@ final class RuntimeEventPollerTest extends TestCase
         $this->logger = $this->createMock(LoggerInterface::class);
 
         $this->poller = new RuntimeEventPoller(
-            $this->projector,
+            new TuiRuntimeEventApplier($this->projector),
             $this->logger,
             new RuntimeExceptionBoundary(
                 $this->createStub(EventDispatcherInterface::class),

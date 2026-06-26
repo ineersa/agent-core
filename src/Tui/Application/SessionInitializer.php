@@ -8,10 +8,9 @@ use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
-use Ineersa\Tui\Runtime\ActivityStateMachine;
+use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use Psr\Log\LoggerInterface;
@@ -41,6 +40,7 @@ final readonly class SessionInitializer
         private TranscriptProjectorInterface $projector,
         private TranscriptBlockFactory $blockFactory,
         private LoggerInterface $logger,
+        private TuiRuntimeEventApplier $eventApplier,
     ) {
     }
 
@@ -192,26 +192,7 @@ final readonly class SessionInitializer
                 $maxMappedSeq = $runtimeEvent->seq;
             }
 
-            // Restore activity state alongside transcript projection
-            // so the TUI correctly reflects the run's last known activity
-            // (e.g. WaitingHuman, Cancelled, Failed) after resume.
-            $state->activity = ActivityStateMachine::transition($state->activity, $runtimeEvent);
-
-            // Restore usage projection alongside transcript and activity
-            // so the TUI footer correctly shows accumulated token counts
-            // after resume instead of starting at 0/0.
-            if (RuntimeEventTypeEnum::TurnStarted->value === $runtimeEvent->type) {
-                $state->usage->resetTurn();
-            }
-            if (RuntimeEventTypeEnum::AssistantMessageCompleted->value === $runtimeEvent->type) {
-                $state->usage->accumulate($runtimeEvent);
-            }
-
-            // Rebuild the pending-queue widget state so a steer queued while the
-            // run was active still shows ⏳ after resume (mirrors RuntimeEventPoller).
-            $state->applyQueuedUserMessageEvent($runtimeEvent);
-
-            $this->projector->accept($runtimeEvent->toArray());
+            $this->eventApplier->apply($state, $runtimeEvent, replayMode: true);
         }
 
         // Set lastSeq so the live poller does not re-process replayed events.

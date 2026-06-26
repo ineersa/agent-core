@@ -18,6 +18,7 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\Tui\Application\SessionInitializer;
+use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -61,6 +62,7 @@ final class SessionInitializerTest extends TestCase
             eventPayloadNormalizer: new EventPayloadNormalizer(),
             lockFactory: new LockFactory(new FlockStore()),
             logger: new NullLogger(),
+            eventApplier: new TuiRuntimeEventApplier($this->projector),
         );
 
         $mapper = new RuntimeEventMapper(
@@ -78,6 +80,7 @@ final class SessionInitializerTest extends TestCase
             projector: $this->projector,
             blockFactory: new TranscriptBlockFactory(),
             logger: new NullLogger(),
+            eventApplier: new TuiRuntimeEventApplier($this->projector),
         );
     }
 

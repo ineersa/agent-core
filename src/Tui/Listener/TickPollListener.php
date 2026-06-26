@@ -113,6 +113,9 @@ final class TickPollListener implements TuiListenerRegistrar
             $msg = match (true) {
                 RunActivityStateEnum::Cancelling === $state->activity => 'Cancelling...',
                 RunActivityStateEnum::Idle === $state->activity || $state->activity->isTerminal() => null,
+                // Resumed sessions replay activity but have no live handle until
+                // start_run/follow_up attaches the controller — do not show Working.
+                null === $state->handle && $state->activity->isActive() => null,
                 default => 'Working...',
             };
 

@@ -23,6 +23,7 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\Tui\Application\SessionInitializer;
+use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
@@ -75,13 +76,6 @@ final class SessionInitializerReplayTest extends TestCase
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
         );
 
-        $this->eventStore = new SessionRunEventStore(
-            hatfieldSessionStore: $hatfieldSessionStore,
-            eventPayloadNormalizer: new EventPayloadNormalizer(),
-            lockFactory: new LockFactory(new FlockStore()),
-            logger: new NullLogger(),
-        );
-
         $mapper = new RuntimeEventMapper(
             new RuntimeEventTranslator(new EventDispatcher()),
         );
@@ -97,6 +91,13 @@ final class SessionInitializerReplayTest extends TestCase
         $dispatcher->addSubscriber(new RunLifecycleProjectionSubscriber());
         $this->projector = new TranscriptProjector($dispatcher, $state);
 
+        $this->eventStore = new SessionRunEventStore(
+            hatfieldSessionStore: $hatfieldSessionStore,
+            eventPayloadNormalizer: new EventPayloadNormalizer(),
+            lockFactory: new LockFactory(new FlockStore()),
+            logger: new NullLogger(),
+        );
+
         $this->sessionInit = new SessionInitializer(
             sessionStore: $hatfieldSessionStore,
             eventStore: $this->eventStore,
@@ -104,6 +105,7 @@ final class SessionInitializerReplayTest extends TestCase
             projector: $this->projector,
             blockFactory: new TranscriptBlockFactory(),
             logger: new NullLogger(),
+            eventApplier: new TuiRuntimeEventApplier($this->projector),
         );
     }
 

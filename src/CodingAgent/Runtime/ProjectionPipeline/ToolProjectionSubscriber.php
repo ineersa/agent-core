@@ -222,20 +222,32 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
         $durationMs = isset($p['duration_ms']) ? (int) $p['duration_ms'] : null;
         $blockId = 'tool_result_'.$toolCallId;
 
-        // On replay the canonical tool_execution_end often has no result
-        // text, so the ToolResult block created by tool_execution_start
-        // would remain stuck at "Running…".  Resolve the tool name from
-        // the existing block's meta and use it as a fallback label so
-        // the user sees e.g. "read completed" instead of "Running…".
+        $existing = $state->getBlock($blockId);
+
+        // Non-empty completion result wins over accumulated progress text.
+        // Empty canonical tool_execution_end must preserve useful progress
+        // output (e.g. subagent deltas) and only fall back to tool-name label
+        // when the block is still the initial "Running…" placeholder.
         if ('' === $result) {
-            $existing = $state->getBlock($blockId);
-            if (null !== $existing && 'Running…' === $existing->text) {
-                $toolName = (string) ($existing->meta['tool_name'] ?? '');
-                $result = '' !== $toolName ? $toolName.' completed' : 'Completed';
+            if (null !== $existing && '' !== $existing->text) {
+                $prior = $existing->text;
+                if (str_starts_with($prior, 'Running…')) {
+                    $trimmed = substr($prior, \strlen('Running…'));
+                    if ('' !== $trimmed) {
+                        $result = $trimmed;
+                    }
+                } else {
+                    $result = $prior;
+                }
+            }
+            if ('' === $result && null !== $existing) {
+                $prior = $existing->text;
+                if ('Running…' === $prior || str_starts_with($prior, 'Running…')) {
+                    $toolName = (string) ($existing->meta['tool_name'] ?? '');
+                    $result = '' !== $toolName ? $toolName.' completed' : 'Completed';
+                }
             }
         }
-
-        $existing = $state->getBlock($blockId);
         $meta = [
             'tool_call_id' => $toolCallId,
             'is_error' => false,

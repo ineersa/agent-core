@@ -6,7 +6,6 @@ namespace Ineersa\Tui\Runtime;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
-use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
@@ -28,7 +27,7 @@ final class RuntimeEventPoller
     private const float POLL_INTERVAL = 0.05;
 
     public function __construct(
-        private readonly TranscriptProjectorInterface $projector,
+        private readonly TuiRuntimeEventApplier $eventApplier,
         private readonly LoggerInterface $logger,
         private readonly RuntimeExceptionBoundary $boundary,
     ) {
@@ -91,33 +90,7 @@ final class RuntimeEventPoller
                 }
                 $hasNew = true;
 
-                if (RuntimeEventTypeEnum::TurnStarted->value === $runtimeEvent->type) {
-                    $state->usage->resetTurn();
-                } elseif (RuntimeEventTypeEnum::AssistantMessageCompleted->value === $runtimeEvent->type) {
-                    $state->usage->accumulate($runtimeEvent);
-                }
-
-                // Clear the isCompacting flag when compaction completes or fails.
-                // Set the isCompacting flag when compaction starts — auto-compaction
-                // fires asynchronously via the after-turn hook and the flag must be
-                // set from runtime events (not synchronously like manual /compact).
-                if (RuntimeEventTypeEnum::CompactionStarted->value === $runtimeEvent->type) {
-                    $state->isCompacting = true;
-                } elseif (
-                    RuntimeEventTypeEnum::CompactionCompleted->value === $runtimeEvent->type
-                    || RuntimeEventTypeEnum::CompactionFailed->value === $runtimeEvent->type
-                ) {
-                    $state->isCompacting = false;
-                }
-
-                $state->activity = ActivityStateMachine::transition($state->activity, $runtimeEvent);
-
-                // Feed the pending-queue widget (above the editor): push queued steer/follow-up
-                // messages, pop them when the canonical user message is applied (matched by
-                // idempotency_key). Shared with SessionInitializer::replayFromEvents so the
-                // widget is also rebuilt on resume. The finalized ❯ user message is appended
-                // to the transcript by the projector on apply, so the transcript stays clean.
-                $state->applyQueuedUserMessageEvent($runtimeEvent);
+                $this->eventApplier->apply($state, $runtimeEvent);
 
                 // Auto-dispatch a queued follow-up when cancellation completes.
                 // The user may have typed a message during the Cancelling grace
@@ -163,8 +136,6 @@ final class RuntimeEventPoller
                     $state->activity = RunActivityStateEnum::Starting;
                 }
 
-                $this->projector->accept($runtimeEvent->toArray());
-
                 // Notify handlers for specific event types.
                 if (null !== $onHumanInputRequested && RuntimeEventTypeEnum::HumanInputRequested->value === $runtimeEvent->type) {
                     $onHumanInputRequested($runtimeEvent);
@@ -192,7 +163,7 @@ final class RuntimeEventPoller
                 return null;
             }
 
-            return self::synchronizeProjectedBlocks($state, $this->projector->blocks());
+            return self::synchronizeProjectedBlocks($state, $this->eventApplier->projectedBlocks());
         } catch (\Throwable $e) {
             ++$state->runtimePollErrorCount;
             $state->lastRuntimePollError = $e->getMessage();

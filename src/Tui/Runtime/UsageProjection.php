@@ -80,6 +80,20 @@ final class UsageProjection
      * cacheReadTokens, cacheCreationTokens) are NOT reset — they
      * accumulate across the entire session.
      */
+
+    /**
+     * Reset per-turn metrics during canonical event replay.
+     *
+     * Wall-clock turn timing is not persisted in events.jsonl, so throughput
+     * (t/s) is unavailable after resume until a new live turn streams.
+     */
+    public function resetTurnForReplay(): void
+    {
+        $this->turnOutputTokens = 0;
+        $this->turnStartTime = 0.0;
+        $this->llmEndTime = 0.0;
+    }
+
     public function resetTurn(): void
     {
         $this->turnOutputTokens = 0;

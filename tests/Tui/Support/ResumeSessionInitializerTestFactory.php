@@ -23,6 +23,7 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\Tui\Application\SessionInitializer;
+use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use Psr\Log\NullLogger;
 use Symfony\Component\EventDispatcher\EventDispatcher;
@@ -73,6 +74,7 @@ final class ResumeSessionInitializerTestFactory
             projector: $projector,
             blockFactory: new TranscriptBlockFactory(),
             logger: new NullLogger(),
+            eventApplier: new TuiRuntimeEventApplier($projector),
         );
     }
 }

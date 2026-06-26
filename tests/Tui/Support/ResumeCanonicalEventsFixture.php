@@ -62,11 +62,12 @@ final class ResumeCanonicalEventsFixture
         ];
         $events[] = ['schema_version' => '1.0', 'run_id' => $sessionId, 'seq' => 8, 'turn_no' => 2, 'type' => 'tool_execution_start', 'payload' => ['tool_call_id' => 'call_read_e2e_001', 'tool_name' => 'read', 'order_index' => 0, 'mode' => 'sequential'], 'ts' => $now];
         $events[] = ['schema_version' => '1.0', 'run_id' => $sessionId, 'seq' => 9, 'turn_no' => 2, 'type' => 'tool_call_result_received', 'payload' => ['tool_call_id' => 'call_read_e2e_001', 'order_index' => 0, 'is_error' => false], 'ts' => $now];
-        $events[] = ['schema_version' => '1.0', 'run_id' => $sessionId, 'seq' => 10, 'turn_no' => 2, 'type' => 'tool_execution_end', 'payload' => ['tool_call_id' => 'call_read_e2e_001', 'order_index' => 0, 'is_error' => false], 'ts' => $now];
-        $events[] = ['schema_version' => '1.0', 'run_id' => $sessionId, 'seq' => 11, 'turn_no' => 3, 'type' => 'turn_advanced', 'payload' => ['step_id' => 'turn-3', 'turn_no' => 3, 'parent_turn_no' => null], 'ts' => $now];
-        $events[] = ['schema_version' => '1.0', 'run_id' => $sessionId, 'seq' => 12, 'turn_no' => 3, 'type' => 'leaf_set', 'payload' => ['turn_no' => 3, 'previous_turn_no' => 2, 'parent_turn_no' => null, 'reason' => 'continue'], 'ts' => $now];
-        $events[] = ['schema_version' => '1.0', 'run_id' => $sessionId, 'seq' => 13, 'turn_no' => 3, 'type' => 'tool_execution_start', 'payload' => ['tool_call_id' => 'call_cancel_e2e', 'tool_name' => 'bash', 'order_index' => 0, 'mode' => 'sequential'], 'ts' => $now];
-        $events[] = ['schema_version' => '1.0', 'run_id' => $sessionId, 'seq' => 14, 'turn_no' => 3, 'type' => 'llm_step_aborted', 'payload' => ['step_id' => 'turn-3', 'stop_reason' => 'aborted', 'usage' => []], 'ts' => $now];
+        $events[] = ['schema_version' => '1.0', 'run_id' => $sessionId, 'seq' => 10, 'turn_no' => 2, 'type' => 'tool_execution_update', 'payload' => ['tool_call_id' => 'call_read_e2e_001', 'tool_name' => 'read', 'delta' => '', 'order_index' => 0], 'ts' => $now];
+        $events[] = ['schema_version' => '1.0', 'run_id' => $sessionId, 'seq' => 11, 'turn_no' => 2, 'type' => 'tool_execution_end', 'payload' => ['tool_call_id' => 'call_read_e2e_001', 'order_index' => 0, 'is_error' => false, 'result' => 'FILE CONTENTS HERE'], 'ts' => $now];
+        $events[] = ['schema_version' => '1.0', 'run_id' => $sessionId, 'seq' => 12, 'turn_no' => 3, 'type' => 'turn_advanced', 'payload' => ['step_id' => 'turn-3', 'turn_no' => 3, 'parent_turn_no' => null], 'ts' => $now];
+        $events[] = ['schema_version' => '1.0', 'run_id' => $sessionId, 'seq' => 13, 'turn_no' => 3, 'type' => 'leaf_set', 'payload' => ['turn_no' => 3, 'previous_turn_no' => 2, 'parent_turn_no' => null, 'reason' => 'continue'], 'ts' => $now];
+        $events[] = ['schema_version' => '1.0', 'run_id' => $sessionId, 'seq' => 14, 'turn_no' => 3, 'type' => 'tool_execution_start', 'payload' => ['tool_call_id' => 'call_cancel_e2e', 'tool_name' => 'bash', 'order_index' => 0, 'mode' => 'sequential'], 'ts' => $now];
+        $events[] = ['schema_version' => '1.0', 'run_id' => $sessionId, 'seq' => 15, 'turn_no' => 3, 'type' => 'llm_step_aborted', 'payload' => ['step_id' => 'turn-3', 'stop_reason' => 'aborted', 'usage' => []], 'ts' => $now];
 
         $jsonl = '';
         foreach ($events as $event) {
