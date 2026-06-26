@@ -17,6 +17,8 @@ interface AgentRunnerInterface
 
     public function followUp(string $runId, AgentMessage $message): void;
 
+    public function appendMessage(string $runId, AgentMessage $message): void;
+
     public function cancel(string $runId, ?string $reason = null): void;
 
     public function answerHuman(string $runId, string $questionId, mixed $answer): void;

@@ -183,20 +183,13 @@ final class ActivityStateMachineTest extends TestCase
         $this->assertSame($expected, $result);
     }
 
-    public function testTerminalGuardPreventsOverride(): void
+    public function testTerminalGuardBlocksStaleDeltasAfterTerminal(): void
     {
-        // Starting from a terminal state, any event should return the same terminal state
-        $terminalStates = [
-            RunActivityStateEnum::Completed,
-            RunActivityStateEnum::Failed,
-            RunActivityStateEnum::Cancelled,
-        ];
+        $stale = new RuntimeEvent(type: RuntimeEventTypeEnum::AssistantTextDelta->value, runId: 'test', seq: 99);
 
-        $event = new RuntimeEvent(type: RuntimeEventTypeEnum::RunStarted->value, runId: 'test', seq: 1);
-
-        foreach ($terminalStates as $terminal) {
-            $result = ActivityStateMachine::transition($terminal, $event);
-            $this->assertSame($terminal, $result, 'Terminal state must not be overridden');
+        foreach ([RunActivityStateEnum::Completed, RunActivityStateEnum::Failed, RunActivityStateEnum::Cancelled] as $terminal) {
+            $result = ActivityStateMachine::transition($terminal, $stale);
+            $this->assertSame($terminal, $result, 'Stale deltas must not reopen terminal activity');
         }
     }
 
@@ -214,16 +207,89 @@ final class ActivityStateMachineTest extends TestCase
         $this->assertSame(RunActivityStateEnum::Running, $result);
     }
 
-    public function testCompletedIsStickyEvenForRunStarted(): void
+    public function testCompletedAllowsFollowUpContinuationViaUserMessageSubmitted(): void
     {
-        $event = new RuntimeEvent(type: RuntimeEventTypeEnum::RunStarted->value, runId: 'test', seq: 1);
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::UserMessageSubmitted->value,
+            runId: 'test',
+            seq: 120,
+            payload: ['text' => 'parallel bash again', 'idempotency_key' => 'k'],
+        );
         $result = ActivityStateMachine::transition(RunActivityStateEnum::Completed, $event);
-        $this->assertSame(RunActivityStateEnum::Completed, $result);
+        $this->assertSame(RunActivityStateEnum::Running, $result);
     }
 
-    public function testCancelledIsSticky(): void
+    public function testCompletedThenCancelSequenceEndsCancelled(): void
     {
-        $event = new RuntimeEvent(type: RuntimeEventTypeEnum::RunStarted->value, runId: 'test', seq: 1);
+        $activity = RunActivityStateEnum::Completed;
+        $activity = ActivityStateMachine::transition($activity, new RuntimeEvent(
+            type: RuntimeEventTypeEnum::UserMessageSubmitted->value,
+            runId: '4',
+            seq: 120,
+            payload: ['text' => 'follow up', 'idempotency_key' => 'k'],
+        ));
+        $this->assertSame(RunActivityStateEnum::Running, $activity);
+
+        $activity = ActivityStateMachine::transition($activity, new RuntimeEvent(
+            type: RuntimeEventTypeEnum::ToolExecutionStarted->value,
+            runId: '4',
+            seq: 124,
+            payload: ['tool_name' => 'bash'],
+        ));
+        $this->assertSame(RunActivityStateEnum::Running, $activity);
+
+        $activity = ActivityStateMachine::transition($activity, new RuntimeEvent(
+            type: RuntimeEventTypeEnum::CancellationRequested->value,
+            runId: '4',
+            seq: 126,
+            payload: ['kind' => 'cancel'],
+        ));
+        $this->assertSame(RunActivityStateEnum::Cancelling, $activity);
+
+        $activity = ActivityStateMachine::transition($activity, new RuntimeEvent(
+            type: RuntimeEventTypeEnum::ToolExecutionCancelled->value,
+            runId: '4',
+            seq: 129,
+            payload: ['tool_call_id' => 'call_0'],
+        ));
+        $this->assertSame(RunActivityStateEnum::Cancelled, $activity);
+
+        $activity = ActivityStateMachine::transition($activity, new RuntimeEvent(
+            type: RuntimeEventTypeEnum::RunCancelled->value,
+            runId: '4',
+            seq: 137,
+            payload: ['reason' => 'cancelled'],
+        ));
+        $this->assertSame(RunActivityStateEnum::Cancelled, $activity);
+    }
+
+    public function testCancelledAllowsNewTerminalOutcomeOnRunCancelled(): void
+    {
+        $event = new RuntimeEvent(type: RuntimeEventTypeEnum::RunCancelled->value, runId: 'test', seq: 137, payload: ['reason' => 'cancelled']);
+        $result = ActivityStateMachine::transition(RunActivityStateEnum::Cancelled, $event);
+        $this->assertSame(RunActivityStateEnum::Cancelled, $result);
+    }
+
+    public function testCancelledStaysCancelledOnStaleToolExecutionCancelled(): void
+    {
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::ToolExecutionCancelled->value,
+            runId: '4',
+            seq: 999,
+            payload: ['tool_call_id' => 'call_0'],
+        );
+        $result = ActivityStateMachine::transition(RunActivityStateEnum::Cancelled, $event);
+        $this->assertSame(RunActivityStateEnum::Cancelled, $result);
+    }
+
+    public function testCancelledStaysCancelledOnStaleCancellationRequested(): void
+    {
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::CancellationRequested->value,
+            runId: '4',
+            seq: 201,
+            payload: ['kind' => 'cancel'],
+        );
         $result = ActivityStateMachine::transition(RunActivityStateEnum::Cancelled, $event);
         $this->assertSame(RunActivityStateEnum::Cancelled, $result);
     }
@@ -242,7 +308,6 @@ final class ActivityStateMachineTest extends TestCase
             'TurnStarted' => RuntimeEventTypeEnum::TurnStarted->value,
             'TurnCompleted' => RuntimeEventTypeEnum::TurnCompleted->value,
             'AssistantTextCompleted' => RuntimeEventTypeEnum::AssistantTextCompleted->value,
-            'ToolExecutionCompleted' => RuntimeEventTypeEnum::ToolExecutionCompleted->value,
         ];
 
         foreach ($deltaTypes as $label => $type) {
@@ -316,7 +381,6 @@ final class ActivityStateMachineTest extends TestCase
         foreach ([
             RuntimeEventTypeEnum::CancellationRequested->value,
             RuntimeEventTypeEnum::OperationCancelled->value,
-            RuntimeEventTypeEnum::ToolExecutionCancelled->value,
         ] as $type) {
             $event = new RuntimeEvent(type: $type, runId: 'test', seq: 1);
             $result = ActivityStateMachine::transition(RunActivityStateEnum::Cancelling, $event);
@@ -332,6 +396,43 @@ final class ActivityStateMachineTest extends TestCase
         $event = new RuntimeEvent(type: 'some_random_internal_event', runId: 'test', seq: 1);
         $result = ActivityStateMachine::transition(RunActivityStateEnum::Cancelling, $event);
         $this->assertSame(RunActivityStateEnum::Cancelling, $result);
+    }
+
+
+    public function testCancellingToolExecutionFailedTransitionsToCancelled(): void
+    {
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::ToolExecutionFailed->value,
+            runId: 'test',
+            seq: 128,
+            payload: ['tool_call_id' => 'call_1', 'is_error' => true, 'result' => 'Tool execution cancelled by user.'],
+        );
+        $result = ActivityStateMachine::transition(RunActivityStateEnum::Cancelling, $event);
+        $this->assertSame(RunActivityStateEnum::Cancelled, $result);
+    }
+
+    public function testCancellingToolExecutionCompletedTransitionsToCancelledWhenRunAlreadyEnded(): void
+    {
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::ToolExecutionCompleted->value,
+            runId: 'test',
+            seq: 132,
+            payload: ['tool_call_id' => 'call_1'],
+        );
+        $result = ActivityStateMachine::transition(RunActivityStateEnum::Cancelling, $event);
+        $this->assertSame(RunActivityStateEnum::Cancelled, $result);
+    }
+
+    public function testCancellingToolExecutionCancelledTransitionsToCancelled(): void
+    {
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::ToolExecutionCancelled->value,
+            runId: 'test',
+            seq: 128,
+            payload: ['tool_call_id' => 'call_1', 'is_error' => true, 'result' => 'Tool execution cancelled by user.'],
+        );
+        $result = ActivityStateMachine::transition(RunActivityStateEnum::Cancelling, $event);
+        $this->assertSame(RunActivityStateEnum::Cancelled, $result);
     }
 
     // ── Compaction event transitions (session 13: Escape can't cancel) ──

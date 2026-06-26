@@ -113,7 +113,7 @@ final readonly class CommandMailboxPolicy
                 continue;
             }
 
-            if (\in_array($pendingCommand->kind, [CoreCommandKind::Steer, CoreCommandKind::FollowUp], true)) {
+            if (\in_array($pendingCommand->kind, [CoreCommandKind::Steer, CoreCommandKind::FollowUp, CoreCommandKind::AppendMessage], true)) {
                 $messagePayload = $pendingCommand->payload['message'] ?? null;
                 if (!\is_array($messagePayload)) {
                     $this->commandStore->markRejected($state->runId, $pendingCommand->idempotencyKey, 'Invalid command payload: missing message envelope.');

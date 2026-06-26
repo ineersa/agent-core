@@ -265,6 +265,8 @@ final class ToolExecutor implements ToolExecutorInterface
             return $result;
         }
 
+        $batchToolCallCount = max(1, (int) ($toolCall->context['assistant_batch_tool_call_count'] ?? 1));
+
         $context = new ToolContext(
             runId: $this->runId($toolCall) ?? '',
             turnNo: (int) ($toolCall->context['turn_no'] ?? 0),
@@ -273,6 +275,8 @@ final class ToolExecutor implements ToolExecutorInterface
             cancellationToken: $this->cancellationToken($toolCall),
             timeoutSeconds: $policy->timeoutSeconds,
             orderIndex: $toolCall->orderIndex,
+            executionMode: $policy->mode,
+            batchToolCallCount: $batchToolCallCount,
         );
 
         /** @var SymfonyToolResult $result */

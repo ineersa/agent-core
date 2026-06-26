@@ -1,0 +1,29 @@
+{
+    "$schema": "TUI follow-up after bash cancel — deterministic assistant text",
+    "model": "llama_cpp_test/test",
+    "provider_id": "llama_cpp_test",
+    "reasoning": "off",
+    "recorded_at": "2026-06-25T00:00:00+00:00",
+    "recording_source": "manual",
+    "input": {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Say exactly TUI_FOLLOWUP_AFTER_CANCEL_OK"
+            }
+        ]
+    },
+    "usage": {
+        "input_tokens": 8,
+        "output_tokens": 12,
+        "total_tokens": 20
+    },
+    "stop_reason": "stop",
+    "expected_text": "TUI_FOLLOWUP_AFTER_CANCEL_OK",
+    "deltas": [
+        {
+            "type": "text",
+            "content": "TUI_FOLLOWUP_AFTER_CANCEL_OK"
+        }
+    ]
+}

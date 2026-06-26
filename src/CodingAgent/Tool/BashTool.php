@@ -260,7 +260,7 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
                 'additionalProperties' => false,
             ],
             handler: $this,
-            executionMode: ToolExecutionMode::Sequential,
+            executionMode: ToolExecutionMode::Parallel,
             promptLine: 'bash command [timeout=N] — execute a shell command with foreground supervision and optional timeout',
             promptGuidelines: [
                 'Use bash for running shell commands, scripts, build tools, and git operations.',

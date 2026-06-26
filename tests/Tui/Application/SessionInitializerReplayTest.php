@@ -143,27 +143,27 @@ final class SessionInitializerReplayTest extends TestCase
         $blocks = $this->sessionInit->buildInitialTranscript($state);
 
         // Should have: UserMessage + AssistantMessage
-        self::assertGreaterThanOrEqual(2, \count($blocks), 'Expected at least 2 blocks');
+        $this->assertGreaterThanOrEqual(2, \count($blocks), 'Expected at least 2 blocks');
 
-        $userBlocks = array_filter($blocks, static fn($b) => $b->kind === TranscriptBlockKindEnum::UserMessage);
-        self::assertCount(1, $userBlocks, 'Expected 1 UserMessage block');
+        $userBlocks = array_filter($blocks, static fn ($b) => TranscriptBlockKindEnum::UserMessage === $b->kind);
+        $this->assertCount(1, $userBlocks, 'Expected 1 UserMessage block');
         $userBlock = array_values($userBlocks)[0];
-        self::assertStringContainsString('Hello!', $userBlock->text);
+        $this->assertStringContainsString('Hello!', $userBlock->text);
 
-        $assistantBlocks = array_filter($blocks, static fn($b) => $b->kind === TranscriptBlockKindEnum::AssistantMessage);
-        self::assertCount(1, $assistantBlocks, 'Expected 1 AssistantMessage block');
+        $assistantBlocks = array_filter($blocks, static fn ($b) => TranscriptBlockKindEnum::AssistantMessage === $b->kind);
+        $this->assertCount(1, $assistantBlocks, 'Expected 1 AssistantMessage block');
         $assistantBlock = array_values($assistantBlocks)[0];
-        self::assertStringContainsString('Hi there!', $assistantBlock->text);
+        $this->assertStringContainsString('Hi there!', $assistantBlock->text);
 
         // lastSeq = 2 (max persistent source seq)
-        self::assertSame(2, $state->lastSeq);
+        $this->assertSame(2, $state->lastSeq);
 
         // Activity: Running (run was in-progress at event seq=2)
-        self::assertSame(RunActivityStateEnum::Running, $state->activity);
+        $this->assertSame(RunActivityStateEnum::Running, $state->activity);
 
         // No replayed blocks should be left in streaming state
         foreach ($blocks as $block) {
-            self::assertFalse($block->streaming, sprintf(
+            $this->assertFalse($block->streaming, \sprintf(
                 'Block %s should not be streaming after replay',
                 $block->kind->value,
             ));
@@ -228,20 +228,20 @@ final class SessionInitializerReplayTest extends TestCase
         $blocks = $this->sessionInit->buildInitialTranscript($state);
 
         // Verify block kinds appear in order
-        $kinds = array_map(static fn($b) => $b->kind, $blocks);
+        $kinds = array_map(static fn ($b) => $b->kind, $blocks);
 
-        self::assertContains(TranscriptBlockKindEnum::UserMessage, $kinds);
-        self::assertContains(TranscriptBlockKindEnum::AssistantMessage, $kinds);
+        $this->assertContains(TranscriptBlockKindEnum::UserMessage, $kinds);
+        $this->assertContains(TranscriptBlockKindEnum::AssistantMessage, $kinds);
         // Tool execution events (tool_execution.start/completed) produce ToolResult blocks.
         // ToolCall blocks are transient-only (streaming seq=0, not in canonical events.jsonl).
-        self::assertContains(TranscriptBlockKindEnum::ToolResult, $kinds);
-        self::assertContains(TranscriptBlockKindEnum::Question, $kinds);
+        $this->assertContains(TranscriptBlockKindEnum::ToolResult, $kinds);
+        $this->assertContains(TranscriptBlockKindEnum::Question, $kinds);
 
         // lastSeq = 6
-        self::assertSame(6, $state->lastSeq);
+        $this->assertSame(6, $state->lastSeq);
 
         // Activity: Running (human_input.answered transitioned to Running)
-        self::assertSame(RunActivityStateEnum::Running, $state->activity);
+        $this->assertSame(RunActivityStateEnum::Running, $state->activity);
     }
 
     // ── Cancellation resume ────────────────────────────────────────────────
@@ -274,18 +274,82 @@ final class SessionInitializerReplayTest extends TestCase
         $state = new TuiSessionState($runId, true);
         $blocks = $this->sessionInit->buildInitialTranscript($state);
 
-        $kinds = array_map(static fn($b) => $b->kind, $blocks);
+        $kinds = array_map(static fn ($b) => $b->kind, $blocks);
 
-        self::assertContains(TranscriptBlockKindEnum::UserMessage, $kinds);
+        $this->assertContains(TranscriptBlockKindEnum::UserMessage, $kinds);
         // agent_command_applied(kind=cancel) → cancellation.requested (marker, no block)
         // agent_end(reason=cancelled) → run.cancelled → Cancelled block
-        self::assertContains(TranscriptBlockKindEnum::Cancelled, $kinds);
+        $this->assertContains(TranscriptBlockKindEnum::Cancelled, $kinds);
 
         // lastSeq = 3
-        self::assertSame(3, $state->lastSeq);
+        $this->assertSame(3, $state->lastSeq);
 
         // Activity: Cancelled (terminal state from run.cancelled)
-        self::assertSame(RunActivityStateEnum::Cancelled, $state->activity);
+        $this->assertSame(RunActivityStateEnum::Cancelled, $state->activity);
+    }
+
+    public function testReplayMultiTurnAfterCompletedThenCancelled(): void
+    {
+        $runId = 'run-multi-turn-'.bin2hex(random_bytes(4));
+        $this->ensureSessionDir($runId);
+
+        $this->append($runId, 1, 'run_started', [
+            'step_id' => 'step-1',
+            'payload' => [
+                'messages' => [
+                    ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'First turn']]],
+                ],
+            ],
+        ]);
+        $this->append($runId, 2, 'llm_step_completed', [
+            'step_id' => 'step-2',
+            'text' => 'Done turn one.',
+        ]);
+        $this->append($runId, 117, 'agent_end', ['reason' => 'completed']);
+
+        $this->append($runId, 120, 'agent_command_applied', [
+            'kind' => 'follow_up',
+            'idempotency_key' => 'follow-key',
+            'message' => [
+                'role' => 'user',
+                'content' => [['type' => 'text', 'text' => 'Run parallel bash']],
+            ],
+        ]);
+        $this->append($runId, 124, 'tool_execution_start', [
+            'tool_call_id' => 'call_00',
+            'tool_name' => 'bash',
+            'order_index' => 0,
+            'mode' => 'parallel',
+        ]);
+        $this->append($runId, 125, 'tool_execution_start', [
+            'tool_call_id' => 'call_01',
+            'tool_name' => 'bash',
+            'order_index' => 1,
+            'mode' => 'parallel',
+        ]);
+        $this->append($runId, 126, 'agent_command_applied', ['kind' => 'cancel']);
+        $this->append($runId, 129, 'tool_execution_end', [
+            'tool_call_id' => 'call_00',
+            'order_index' => 0,
+            'is_error' => true,
+            'result' => 'Tool execution cancelled by user.',
+        ]);
+        $this->append($runId, 133, 'tool_execution_end', [
+            'tool_call_id' => 'call_01',
+            'order_index' => 1,
+            'is_error' => true,
+            'result' => 'Tool execution cancelled by user.',
+        ]);
+        $this->append($runId, 137, 'agent_end', ['reason' => 'cancelled']);
+
+        $state = new TuiSessionState($runId, true);
+        $blocks = $this->sessionInit->buildInitialTranscript($state);
+
+        $this->assertSame(137, $state->lastSeq);
+        $this->assertSame(RunActivityStateEnum::Cancelled, $state->activity);
+
+        $kinds = array_map(static fn ($b) => $b->kind, $blocks);
+        $this->assertContains(TranscriptBlockKindEnum::Cancelled, $kinds);
     }
 
     // ── Error resume ───────────────────────────────────────────────────────
@@ -314,20 +378,20 @@ final class SessionInitializerReplayTest extends TestCase
         $state = new TuiSessionState($runId, true);
         $blocks = $this->sessionInit->buildInitialTranscript($state);
 
-        $kinds = array_map(static fn($b) => $b->kind, $blocks);
+        $kinds = array_map(static fn ($b) => $b->kind, $blocks);
 
         // Should have UserMessage and at least one error-related block
-        self::assertContains(TranscriptBlockKindEnum::UserMessage, $kinds);
+        $this->assertContains(TranscriptBlockKindEnum::UserMessage, $kinds);
 
         $hasError = \in_array(TranscriptBlockKindEnum::Error, $kinds, true)
             || \in_array(TranscriptBlockKindEnum::System, $kinds, true);
-        self::assertTrue($hasError, 'Expected error or system block for failed step');
+        $this->assertTrue($hasError, 'Expected error or system block for failed step');
 
         // lastSeq = 2
-        self::assertSame(2, $state->lastSeq);
+        $this->assertSame(2, $state->lastSeq);
 
         // Activity: Failed
-        self::assertSame(RunActivityStateEnum::Failed, $state->activity);
+        $this->assertSame(RunActivityStateEnum::Failed, $state->activity);
     }
 
     // ── Dedup: lastSeq prevents re-processing after resume ─────────────────
@@ -356,7 +420,7 @@ final class SessionInitializerReplayTest extends TestCase
         $state = new TuiSessionState($runId, true);
         $initialBlocks = $this->sessionInit->buildInitialTranscript($state);
 
-        self::assertSame(2, $state->lastSeq, 'lastSeq should be max source seq after replay');
+        $this->assertSame(2, $state->lastSeq, 'lastSeq should be max source seq after replay');
 
         // Now simulate the poller: append a new event at seq 3, and verify
         // that events at seq ≤ 2 are skipped (they would be by the poller's
@@ -397,10 +461,10 @@ final class SessionInitializerReplayTest extends TestCase
             }
         }
 
-        self::assertSame(1, $newBlocks, 'Expected exactly one new mapped event at seq 3.');
+        $this->assertSame(1, $newBlocks, 'Expected exactly one new mapped event at seq 3.');
 
         $blocksAfterNewEvent = $this->projector->blocks();
-        self::assertGreaterThan(
+        $this->assertGreaterThan(
             $blockCountAfterReplay,
             \count($blocksAfterNewEvent),
             'New event at seq > lastSeq should add blocks',
@@ -409,7 +473,7 @@ final class SessionInitializerReplayTest extends TestCase
         // lastSeq reflects the max persistent seq replayed (2). The poller
         // would see seq 3 as new and advance its own cursor, but state->lastSeq
         // is only set during SessionInitializer replay, not here.
-        self::assertSame(2, $state->lastSeq);
+        $this->assertSame(2, $state->lastSeq);
     }
 
     // ── Activity state from resume replay ──────────────────────────────────
@@ -439,7 +503,7 @@ final class SessionInitializerReplayTest extends TestCase
         $this->sessionInit->buildInitialTranscript($state);
 
         // Activity should be WaitingHuman after last event
-        self::assertSame(RunActivityStateEnum::WaitingHuman, $state->activity);
+        $this->assertSame(RunActivityStateEnum::WaitingHuman, $state->activity);
     }
 
     // ── Dropped/null-mapped events ─────────────────────────────────────────
@@ -473,14 +537,13 @@ final class SessionInitializerReplayTest extends TestCase
 
         // lastSeq must be 3 (max source seq), not 1 (max mapped seq).
         // This prevents the live poller from re-processing dropped events.
-        self::assertSame(3, $state->lastSeq, 'lastSeq must advance to max source seq even when events are dropped');
+        $this->assertSame(3, $state->lastSeq, 'lastSeq must advance to max source seq even when events are dropped');
 
         // The mapped events still produce at least the UserMessage block
-        $kinds = array_map(static fn($b) => $b->kind, $blocks);
-        self::assertContains(TranscriptBlockKindEnum::UserMessage, $kinds);
-        self::assertNotEmpty($blocks, 'Mapped events should produce at least some blocks');
+        $kinds = array_map(static fn ($b) => $b->kind, $blocks);
+        $this->assertContains(TranscriptBlockKindEnum::UserMessage, $kinds);
+        $this->assertNotEmpty($blocks, 'Mapped events should produce at least some blocks');
     }
-
 
     // ── Pending-queue widget on resume (issue #206) ─────────────────────────
 
@@ -507,8 +570,8 @@ final class SessionInitializerReplayTest extends TestCase
         $state = new TuiSessionState($runId, true);
         $this->sessionInit->buildInitialTranscript($state);
 
-        self::assertArrayHasKey('ik-pending', $state->queuedUserMessages);
-        self::assertSame('STEER_QUEUED_MARKER', $state->queuedUserMessages['ik-pending']);
+        $this->assertArrayHasKey('ik-pending', $state->queuedUserMessages);
+        $this->assertSame('STEER_QUEUED_MARKER', $state->queuedUserMessages['ik-pending']);
     }
 
     public function testReplayClearsQueuedSteerAfterApply(): void
@@ -543,14 +606,14 @@ final class SessionInitializerReplayTest extends TestCase
         $state = new TuiSessionState($runId, true);
         $blocks = $this->sessionInit->buildInitialTranscript($state);
 
-        self::assertArrayNotHasKey('ik-applied', $state->queuedUserMessages);
-        self::assertSame([], $state->queuedUserMessages);
+        $this->assertArrayNotHasKey('ik-applied', $state->queuedUserMessages);
+        $this->assertSame([], $state->queuedUserMessages);
 
-        $userBlocks = array_filter($blocks, static fn ($b) => $b->kind === TranscriptBlockKindEnum::UserMessage);
-        self::assertNotEmpty($userBlocks, 'Applied steer must project a UserMessage block');
+        $userBlocks = array_filter($blocks, static fn ($b) => TranscriptBlockKindEnum::UserMessage === $b->kind);
+        $this->assertNotEmpty($userBlocks, 'Applied steer must project a UserMessage block');
 
         $texts = array_map(static fn ($b) => $b->text, array_values($userBlocks));
-        self::assertContains('STEER_APPLIED_MARKER', $texts);
+        $this->assertContains('STEER_APPLIED_MARKER', $texts);
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────

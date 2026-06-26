@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Screen;
 
+use Ineersa\CodingAgent\Runtime\Contract\LoadedResourcesSummaryDTO;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Extension\SlotBasedTuiExtensionContext;
 use Ineersa\Tui\Extension\TuiExtensionContext;
@@ -13,6 +14,7 @@ use Ineersa\Tui\Footer\FooterSegment;
 use Ineersa\Tui\Footer\FooterSegmentProvider;
 use Ineersa\Tui\Header\HeaderWidget;
 use Ineersa\Tui\Layout\TuiSlotRegistry;
+use Ineersa\Tui\Startup\LoadedResourcesWidget;
 use Ineersa\Tui\Status\StatusPanelWidget;
 use Ineersa\Tui\Status\WorkingStatusWidget;
 use Ineersa\Tui\Theme\ThemeColorEnum;
@@ -62,6 +64,7 @@ final class ChatScreen
     private readonly LiveTextWidget $topMarginWidget;
     private readonly LiveTextWidget $headerWidget;
     private readonly LiveTextWidget $headerSepWidget;
+    private readonly LiveTextWidget $loadedResourcesWidget;
     private readonly LiveTextWidget $transcriptWidget;
     private readonly LiveTextWidget $pendingWidget;
     private readonly LiveTextWidget $workingWidget;
@@ -80,6 +83,7 @@ final class ChatScreen
     private readonly StatusPanelWidget $statusPanelRenderable;
     private readonly FooterDataProvider $footerDataProvider;
     private readonly FooterBarWidget $footerRenderable;
+    private readonly LoadedResourcesWidget $loadedResourcesRenderable;
 
     /* ── Slot system ── */
     private readonly TuiSlotRegistry $registry;
@@ -108,6 +112,7 @@ final class ChatScreen
         $this->extensionContext = new SlotBasedTuiExtensionContext($this->registry, $this->footerDataProvider);
         $this->footerDataProvider->setProvider('_default', $this->createDefaultFooterProvider());
         $this->footerRenderable = new FooterBarWidget($this->footerDataProvider);
+        $this->loadedResourcesRenderable = new LoadedResourcesWidget();
 
         // ── Top margin ──
         // Produces TOP_MARGIN_LINES blank lines.  Unlike TextWidget,
@@ -133,6 +138,15 @@ final class ChatScreen
                 $tuiCtx = $this->tuiContext($symfonyCtx);
 
                 return implode("\n", $src->render($tuiCtx));
+            },
+        );
+
+        // ── Loaded resources (startup block) ──
+        $this->loadedResourcesWidget = new LiveTextWidget(
+            function (RenderContext $symfonyCtx): string {
+                $tuiCtx = $this->tuiContext($symfonyCtx);
+
+                return implode("\n", $this->loadedResourcesRenderable->render($tuiCtx));
             },
         );
 
@@ -272,6 +286,7 @@ final class ChatScreen
         $tui->add($this->topMarginWidget);
         $tui->add($this->headerWidget);
         $tui->add($this->headerSepWidget);
+        $tui->add($this->loadedResourcesWidget);
         $tui->add($this->transcriptWidget);
         $tui->add($this->pendingWidget);
         $tui->add($this->workingWidget);
@@ -333,6 +348,23 @@ final class ChatScreen
     public function extract(): string
     {
         return $this->promptEditor->extract();
+    }
+
+    public function setLoadedResourcesSummary(?LoadedResourcesSummaryDTO $summary): void
+    {
+        $this->loadedResourcesRenderable->setSummary($summary);
+        $this->loadedResourcesWidget->invalidate();
+    }
+
+    public function hasLoadedResourcesBlock(): bool
+    {
+        return $this->loadedResourcesRenderable->hasContent();
+    }
+
+    public function toggleLoadedResourcesExpanded(): void
+    {
+        $this->loadedResourcesRenderable->toggleExpanded();
+        $this->loadedResourcesWidget->invalidate();
     }
 
     /** @param array<int, object> $blocks */

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool;
 
+use HelgeSverre\Toon\Toon;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
@@ -91,7 +92,7 @@ final class BgStatusTool implements HatfieldToolProviderInterface, ToolHandlerIn
                 'additionalProperties' => false,
             ],
             handler: $this,
-            executionMode: ToolExecutionMode::Sequential,
+            executionMode: ToolExecutionMode::Parallel,
             promptLine: 'bg_status action [pid] — inspect, log, or stop background processes; use after launching background jobs',
             promptGuidelines: [
                 'Use bg_status list to see all background processes with PID, status, and log path.',
@@ -106,7 +107,7 @@ final class BgStatusTool implements HatfieldToolProviderInterface, ToolHandlerIn
     // ─── Action handlers ────────────────────────────────────────────
 
     /**
-     * @return string JSON array of background processes with metadata
+     * @return string TOON-encoded list of background processes with metadata
      */
     private function handleList(): string
     {
@@ -114,10 +115,10 @@ final class BgStatusTool implements HatfieldToolProviderInterface, ToolHandlerIn
         $entities = $this->manager->list($sessionId);
 
         if ([] === $entities) {
-            return json_encode([
+            return Toon::encode([
                 'processes' => [],
                 'hint' => 'No background processes tracked. Use bg_status with action=log or action=stop and pid=<pid> when processes are running.',
-            ], \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES);
+            ]);
         }
 
         $processes = [];
@@ -141,10 +142,10 @@ final class BgStatusTool implements HatfieldToolProviderInterface, ToolHandlerIn
             ];
         }
 
-        return json_encode([
+        return Toon::encode([
             'processes' => $processes,
             'hint' => 'Use bg_status with action=log or action=stop and pid=<pid>.',
-        ], \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES);
+        ]);
     }
 
     /**
