@@ -372,7 +372,7 @@ final readonly class RunStateReplayService
         $kind = \is_string($payload['kind'] ?? null) ? $payload['kind'] : null;
 
         // steer / follow_up: append message to prompt context
-        if (\in_array($kind, ['steer', 'follow_up'], true)) {
+        if (\in_array($kind, ['steer', 'follow_up', 'append_message'], true)) {
             $messagePayload = \is_array($payload['message'] ?? null) ? $payload['message'] : null;
             if (null !== $messagePayload) {
                 $msg = AgentMessage::fromPayload($messagePayload);

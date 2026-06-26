@@ -351,7 +351,7 @@ final class TurnTreeProjector
         // agent_command_applied with steer/follow_up: user input
         if (RunEventTypeEnum::AgentCommandApplied->value === $event->type) {
             $kind = \is_string($payload['kind'] ?? null) ? $payload['kind'] : null;
-            if (\in_array($kind, ['steer', 'follow_up'], true)) {
+            if (\in_array($kind, ['steer', 'follow_up', 'append_message'], true)) {
                 $text = \is_string($payload['text'] ?? null) ? $payload['text'] : '';
                 if ('' === $text) {
                     $text = $this->extractTextFromMessagePayload($payload['message'] ?? null);

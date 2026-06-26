@@ -214,6 +214,13 @@ final class InProcessAgentSessionClient implements AgentSessionClient
                     content: [['type' => 'text', 'text' => $text]],
                 ),
             ),
+            'append_message' => $this->runner->appendMessage(
+                $runId,
+                new AgentMessage(
+                    role: 'user',
+                    content: [['type' => 'text', 'text' => $text]],
+                ),
+            ),
             'answer_human' => $this->runner->answerHuman(
                 $runId,
                 (string) ($command->payload['question_id'] ?? ''),

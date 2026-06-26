@@ -422,7 +422,7 @@ final class RuntimeEventTranslator
             );
         }
 
-        if (\in_array($kind, ['steer', 'follow_up'], true)) {
+        if (\in_array($kind, ['steer', 'follow_up', 'append_message'], true)) {
             // Extract message text from the serialized message payload
             // included by CommandMailboxPolicy.
             $messagePayload = $p['message'] ?? [];
@@ -452,7 +452,7 @@ final class RuntimeEventTranslator
         $p = $runEvent->payload;
         $kind = (string) ($p['kind'] ?? '');
 
-        if (!\in_array($kind, ['steer', 'follow_up'], true)) {
+        if (!\in_array($kind, ['steer', 'follow_up', 'append_message'], true)) {
             return null;
         }
 

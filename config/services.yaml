@@ -442,6 +442,15 @@ services:
     arguments:
       $defaultModel: '%app.default_model%'
 
+
+  Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler:
+    arguments:
+      $commandBus: '@agent.command.bus'
+
+  Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler:
+    arguments:
+      $commandBus: '@agent.command.bus'
+
   Ineersa\AgentCore\Application\Pipeline\LlmStepResultHandler:
     arguments:
       $agentRetryMaxAttempts: '@=null !== service("Ineersa\\CodingAgent\\Config\\AppConfig").ai ? service("Ineersa\\CodingAgent\\Config\\AppConfig").ai.agentRetry.resolveMaxAttempts() : 2'

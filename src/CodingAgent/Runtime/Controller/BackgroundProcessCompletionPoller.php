@@ -23,7 +23,7 @@ use Revolt\EventLoop;
  * 2. Reads the log tail (capped at 3000 chars, matching pi bg-process.ts)
  * 3. Builds a synthetic follow-up message with PID, exit code, command,
  *    and output tail
- * 4. Sends a follow_up UserCommand so the model sees the completion
+ * 4. Sends an append_message UserCommand so the model sees the completion
  *    as a user-level message (like pi's sendUserMessage with deliverAs: followUp)
  * 5. Marks completionNotifiedAt to prevent re-notification
  *
@@ -212,9 +212,9 @@ final class BackgroundProcessCompletionPoller
             ],
         ));
 
-        // Send follow_up command so the model sees the completion.
+        // Send append_message so the model sees the completion (same text as TUI transcript).
         $this->sessionClient->send($sessionId, new UserCommand(
-            type: 'follow_up',
+            type: 'append_message',
             text: $notification,
         ));
 

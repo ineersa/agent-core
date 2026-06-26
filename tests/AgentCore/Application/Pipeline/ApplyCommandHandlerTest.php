@@ -146,6 +146,57 @@ final class ApplyCommandHandlerTest extends TestCase
         $this->assertInstanceOf(AdvanceRun::class, $commandBus->messages[0]);
     }
 
+
+    public function testAppendMessageAllowedAfterCancelledRun(): void
+    {
+        $commandStore = new InMemoryCommandStore();
+        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandMailboxPolicy = new CommandMailboxPolicy(
+            commandStore: $commandStore,
+            commandRouter: $commandRouter,
+        );
+        $commandBus = new TestMessageBus();
+
+        $handler = new ApplyCommandHandler(
+            commandStore: $commandStore,
+            commandRouter: $commandRouter,
+            commandMailboxPolicy: $commandMailboxPolicy,
+            eventFactory: new EventFactory(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            maxPendingCommands: 10,
+            commandBus: $commandBus,
+        );
+
+        $state = new RunState(
+            runId: 'run-cancel-append',
+            status: RunStatus::Cancelled,
+            version: 3,
+            turnNo: 1,
+            lastSeq: 10,
+            messages: [],
+            retryableFailure: false,
+        );
+
+        $message = new ApplyCommand(
+            runId: 'run-cancel-append',
+            turnNo: 1,
+            stepId: 'append-step-1',
+            attempt: 1,
+            idempotencyKey: 'append-idempotency-1',
+            kind: CoreCommandKind::AppendMessage,
+            payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Runtime input']]]],
+        );
+
+        $result = $handler->handle($message, $state);
+
+        $this->assertSame(RunStatus::Cancelled, $result->nextState->status);
+        $this->assertSame('agent_command_queued', $result->events[0]->type);
+        $this->assertSame(CoreCommandKind::AppendMessage, $result->events[0]->payload['kind']);
+        $this->assertCount(1, $result->postCommit);
+        ($result->postCommit[0])();
+        $this->assertInstanceOf(AdvanceRun::class, $commandBus->messages[0]);
+    }
+
     public function testNonFollowUpCommandRejectedAfterCancelledRun(): void
     {
         $commandStore = new InMemoryCommandStore();
@@ -610,7 +661,7 @@ final class ApplyCommandHandlerTest extends TestCase
         );
     }
 
-    public function testCancelPreservesQueuedBgProcessDoneFollowUpInMessages(): void
+    public function testCancelPreservesQueuedAppendMessageInMessages(): void
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
@@ -618,6 +669,7 @@ final class ApplyCommandHandlerTest extends TestCase
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
+        $commandBus = new TestMessageBus();
 
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
@@ -626,19 +678,20 @@ final class ApplyCommandHandlerTest extends TestCase
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
+            commandBus: $commandBus,
         );
 
-        $bgText = "[BG_PROCESS_DONE] PID 354749 finished (exit 0)\nCommand: sleep 30\n\nOutput (last 3000 chars):\nDone\n";
+        $runtimeText = 'Runtime notification line one';
         $commandStore->enqueue(new \Ineersa\AgentCore\Domain\Command\PendingCommand(
-            runId: 'run-bg-cancel',
-            kind: CoreCommandKind::FollowUp,
-            idempotencyKey: 'bg-done-1',
-            payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => $bgText]]]],
+            runId: 'run-append-cancel',
+            kind: CoreCommandKind::AppendMessage,
+            idempotencyKey: 'append-1',
+            payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => $runtimeText]]]],
             options: new \Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions(safe: false),
         ));
 
         $state = new RunState(
-            runId: 'run-bg-cancel',
+            runId: 'run-append-cancel',
             status: RunStatus::Running,
             version: 2,
             turnNo: 1,
@@ -648,11 +701,11 @@ final class ApplyCommandHandlerTest extends TestCase
         );
 
         $cancelMessage = new ApplyCommand(
-            runId: 'run-bg-cancel',
+            runId: 'run-append-cancel',
             turnNo: 1,
-            stepId: 'cancel-bg',
+            stepId: 'cancel-append',
             attempt: 1,
-            idempotencyKey: 'cancel-bg-1',
+            idempotencyKey: 'cancel-append-1',
             kind: CoreCommandKind::Cancel,
             payload: [],
         );
@@ -661,21 +714,21 @@ final class ApplyCommandHandlerTest extends TestCase
 
         $this->assertSame(RunStatus::Cancelled, $result->nextState->status);
         $this->assertCount(1, $result->nextState->messages);
-        $this->assertStringContainsString('[BG_PROCESS_DONE]', $result->nextState->messages[0]->content[0]['text'] ?? '');
+        $this->assertSame($runtimeText, $result->nextState->messages[0]->content[0]['text'] ?? '');
 
-        $eventTypes = array_map(static fn ($e) => $e->type, $result->events);
-        $this->assertContains('agent_command_applied', $eventTypes);
-        $this->assertNotContains('agent_command_rejected', $eventTypes);
-
-        $appliedFollowUp = array_values(array_filter(
+        $appliedAppend = array_values(array_filter(
             $result->events,
-            static fn ($e) => 'agent_command_applied' === $e->type && 'follow_up' === ($e->payload['kind'] ?? null),
+            static fn ($e) => 'agent_command_applied' === $e->type && CoreCommandKind::AppendMessage === ($e->payload['kind'] ?? null),
         ));
-        $this->assertCount(1, $appliedFollowUp);
-        $this->assertStringContainsString('[BG_PROCESS_DONE]', $appliedFollowUp[0]->payload['text'] ?? '');
+        $this->assertCount(1, $appliedAppend);
+        $this->assertSame($runtimeText, $appliedAppend[0]->payload['text'] ?? '');
+        $this->assertCount(1, $result->postCommit);
+        ($result->postCommit[0])();
+        $this->assertCount(1, $commandBus->messages);
+        $this->assertInstanceOf(AdvanceRun::class, $commandBus->messages[0]);
     }
 
-    public function testBgProcessDoneFollowUpAppliedWhileCancelling(): void
+    public function testAppendMessageQueuedWhileCancelling(): void
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
@@ -693,10 +746,10 @@ final class ApplyCommandHandlerTest extends TestCase
             maxPendingCommands: 10,
         );
 
-        $bgText = "[BG_PROCESS_DONE] PID 393404 finished (exit 0)\nCommand: sleep 20\n\nOutput (last 3000 chars):\nDone\n";
+        $runtimeText = 'Queued while cancelling';
 
         $state = new RunState(
-            runId: 'run-bg-cancelling',
+            runId: 'run-append-cancelling',
             status: RunStatus::Cancelling,
             version: 4,
             turnNo: 1,
@@ -706,25 +759,21 @@ final class ApplyCommandHandlerTest extends TestCase
         );
 
         $message = new ApplyCommand(
-            runId: 'run-bg-cancelling',
+            runId: 'run-append-cancelling',
             turnNo: 1,
-            stepId: 'followup-bg-1',
+            stepId: 'append-while-cancel',
             attempt: 1,
-            idempotencyKey: 'bg-done-cancelling-1',
-            kind: CoreCommandKind::FollowUp,
-            payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => $bgText]]]],
+            idempotencyKey: 'append-cancelling-1',
+            kind: CoreCommandKind::AppendMessage,
+            payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => $runtimeText]]]],
         );
 
         $result = $handler->handle($message, $state);
 
         $this->assertSame(RunStatus::Cancelling, $result->nextState->status);
-        $this->assertCount(2, $result->nextState->messages);
-        $this->assertStringContainsString('[BG_PROCESS_DONE]', $result->nextState->messages[1]->content[0]['text'] ?? '');
-
-        $eventTypes = array_map(static fn ($e) => $e->type, $result->events);
-        $this->assertSame(['agent_command_applied'], $eventTypes);
-        $this->assertStringContainsString('PID 393404', $result->events[0]->payload['text'] ?? '');
-        $this->assertTrue($commandStore->has('run-bg-cancelling', 'bg-done-cancelling-1'));
+        $this->assertCount(1, $result->nextState->messages);
+        $this->assertSame(['agent_command_queued'], array_map(static fn ($e) => $e->type, $result->events));
+        $this->assertTrue($commandStore->has('run-append-cancelling', 'append-cancelling-1'));
     }
 
     public function testOrdinaryFollowUpRejectedWhileCancelling(): void

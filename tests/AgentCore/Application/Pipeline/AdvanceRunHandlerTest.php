@@ -22,6 +22,7 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Tests\Support\Builder\AdvanceRunMessageBuilder;
 use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
+use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use PHPUnit\Framework\TestCase;
 
 final class AdvanceRunHandlerTest extends TestCase
@@ -489,4 +490,52 @@ final class AdvanceRunHandlerTest extends TestCase
         // Should advance the turn
         $this->assertSame(2, $result->nextState->turnNo, 'Steer should advance the turn.');
     }
+
+    public function testCancellingWithPendingAppendMessageDispatchesFollowUpAdvance(): void
+    {
+        $commandStore = new InMemoryCommandStore();
+        $commandStore->enqueue(new PendingCommand(
+            runId: 'run-cancel-append-advance',
+            kind: CoreCommandKind::AppendMessage,
+            idempotencyKey: 'append-pending-1',
+            payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'After cancel']]]],
+            options: new CommandCancellationOptions(safe: false),
+        ));
+
+        $commandMailboxPolicy = new CommandMailboxPolicy(
+            commandStore: $commandStore,
+            commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+        );
+        $commandBus = new TestMessageBus();
+
+        $handler = new AdvanceRunHandler(
+            commandMailboxPolicy: $commandMailboxPolicy,
+            eventFactory: new EventFactory(),
+            commandBus: $commandBus,
+        );
+
+        $state = RunStateBuilder::create('run-cancel-append-advance')
+            ->withStatus(RunStatus::Cancelling)
+            ->withVersion(4)
+            ->withTurnNo(1)
+            ->withLastSeq(20)
+            ->build();
+
+        $message = AdvanceRunMessageBuilder::create('run-cancel-append-advance')
+            ->withTurnNo(1)
+            ->withStepId('cancel-terminalize')
+            ->withIdempotencyKey('advance-cancel-1')
+            ->build();
+
+        $result = $handler->handle($message, $state);
+
+        $this->assertSame(RunStatus::Cancelled, $result->nextState->status);
+        $this->assertCount(1, $result->nextState->messages);
+        $this->assertSame('After cancel', $result->nextState->messages[0]->content[0]['text'] ?? '');
+        $this->assertCount(1, $result->postCommit);
+        ($result->postCommit[0])();
+        $this->assertCount(1, $commandBus->messages);
+        $this->assertInstanceOf(AdvanceRun::class, $commandBus->messages[0]);
+    }
+
 }

@@ -266,6 +266,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         $type = match ($command->type) {
             'steer', 'message' => 'user_message',
             'follow_up' => 'follow_up',
+            'append_message' => 'append_message',
             'answer_human' => 'answer_human',
             'answer_tool_question' => 'answer_tool_question',
             'shell_command' => 'shell_command',

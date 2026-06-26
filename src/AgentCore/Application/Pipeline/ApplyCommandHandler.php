@@ -74,16 +74,16 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             );
         }
 
-        if (RunStatus::Cancelled === $state->status && CoreCommandKind::FollowUp !== $message->kind) {
+        if (RunStatus::Cancelled === $state->status
+            && !\in_array($message->kind, [CoreCommandKind::FollowUp, CoreCommandKind::AppendMessage], true)) {
             return $this->rejectCommand($state, $message, 'Run is already cancelled.');
         }
 
         if (RunStatus::Cancelling === $state->status
             && CoreCommandKind::Cancel !== $message->kind
             && !$this->commandMailboxPolicy->isCancelSafeExtensionCommand($message->kind, $routedCommand->options)) {
-            if (CoreCommandKind::FollowUp === $message->kind
-                && $this->isBackgroundProcessDoneFollowUpPayload($message->payload)) {
-                return $this->applyBackgroundProcessDoneFollowUpWhileCancelling($state, $message, $routedCommand->options);
+            if (CoreCommandKind::AppendMessage === $message->kind) {
+                return $this->enqueueModelVisibleMessageCommand($state, $message, $routedCommand->options);
             }
 
             return $this->rejectCommand(
@@ -186,7 +186,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         // Active runs (Running, Cancelling, or Compacting) queue the command
         // for the next safe boundary.  Non-active runs apply immediately.
         $isActive = \in_array($state->status, [RunStatus::Running, RunStatus::Cancelling, RunStatus::Compacting], true);
-        if (!$isActive) {
+        if (!$isActive && \in_array($message->kind, [CoreCommandKind::Steer, CoreCommandKind::FollowUp, CoreCommandKind::AppendMessage], true)) {
             $followUpAdvance = $this->followUpAdvanceCallback($runId, $message->kind);
             if (null !== $followUpAdvance) {
                 $postCommit[] = $followUpAdvance;
@@ -248,16 +248,15 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         $this->commandStore->markApplied($runId, $message->idempotencyKey());
 
         // Reject stale queued user-input commands after cancel (#152), except
-        // system-generated background-process completion follow-ups — those must
-        // land in run messages so the model sees output after the user cancels.
+        // append_message commands that must land in run messages for model-visible
+        // runtime notifications.
         $rejectedCommands = [];
-        $preservedBgDoneCommands = [];
+        $preservedAppendMessageCommands = [];
         $cancelRejectReason = 'Rejected because cancel command was accepted.';
 
         foreach ($this->commandStore->pending($runId) as $pendingCommand) {
-            if (CoreCommandKind::FollowUp === $pendingCommand->kind
-                && $this->isBackgroundProcessDoneFollowUp($pendingCommand)) {
-                $preservedBgDoneCommands[] = $pendingCommand;
+            if (CoreCommandKind::AppendMessage === $pendingCommand->kind) {
+                $preservedAppendMessageCommands[] = $pendingCommand;
 
                 continue;
             }
@@ -280,7 +279,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             ],
         ]];
 
-        foreach ($preservedBgDoneCommands as $preservedCommand) {
+        foreach ($preservedAppendMessageCommands as $preservedCommand) {
             $hydrated = $this->hydratePendingUserMessage($preservedCommand);
             if (null === $hydrated) {
                 $this->commandStore->markRejected(
@@ -425,9 +424,18 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 retryableFailure: false,
             );
 
+            $postCommit = [];
+            if ([] !== $preservedAppendMessageCommands) {
+                $followUpAdvance = $this->followUpAdvanceCallback($runId, CoreCommandKind::AppendMessage);
+                if (null !== $followUpAdvance) {
+                    $postCommit[] = $followUpAdvance;
+                }
+            }
+
             return new HandlerResult(
                 nextState: $nextState,
                 events: $events,
+                postCommit: $postCommit,
             );
         }
 
@@ -472,72 +480,29 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
     }
 
     /**
-     * @param array<string, mixed> $payload
-     */
-    private function isBackgroundProcessDoneFollowUpPayload(array $payload): bool
-    {
-        $messagePayload = $payload['message'] ?? null;
-        if (!\is_array($messagePayload)) {
-            return false;
-        }
-
-        $content = $messagePayload['content'] ?? null;
-        if (!\is_array($content)) {
-            return false;
-        }
-
-        foreach ($content as $block) {
-            if (!\is_array($block)) {
-                continue;
-            }
-
-            if ('text' !== ($block['type'] ?? null)) {
-                continue;
-            }
-
-            $text = $block['text'] ?? '';
-            if (\is_string($text) && str_starts_with($text, '[BG_PROCESS_DONE]')) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private function isBackgroundProcessDoneFollowUp(PendingCommand $pendingCommand): bool
-    {
-        return $this->isBackgroundProcessDoneFollowUpPayload($pendingCommand->payload);
-    }
-
-    /**
      * @param array<string, mixed> $options
      */
-    private function applyBackgroundProcessDoneFollowUpWhileCancelling(
-        RunState $state,
-        ApplyCommand $message,
-        array $options,
-    ): HandlerResult {
+    private function enqueueModelVisibleMessageCommand(RunState $state, ApplyCommand $message, array $options): HandlerResult
+    {
         $runId = $message->runId();
-        $messagePayload = $message->payload['message'] ?? null;
-        if (!\is_array($messagePayload)) {
-            return $this->rejectCommand($state, $message, 'Invalid command payload: missing message envelope.');
+
+        $pendingCommand = new PendingCommand(
+            runId: $runId,
+            kind: $message->kind,
+            idempotencyKey: $message->idempotencyKey(),
+            payload: $message->payload,
+            options: new CommandCancellationOptions(
+                safe: true === ($options['cancel_safe'] ?? false),
+            ),
+        );
+
+        if (!$this->commandStore->enqueue($pendingCommand)) {
+            return new HandlerResult();
         }
-
-        $hydrated = AgentMessage::fromPayload($messagePayload);
-        if (null === $hydrated) {
-            return $this->rejectCommand($state, $message, 'Invalid command payload: malformed message envelope.');
-        }
-
-        $this->commandStore->markApplied($runId, $message->idempotencyKey());
-
-        $messages = $state->messages;
-        $messages[] = $hydrated;
-
-        $messageArray = $hydrated->toArray();
 
         $nextState = new RunState(
             runId: $state->runId,
-            status: RunStatus::Cancelling,
+            status: $state->status,
             version: $state->version + 1,
             turnNo: $state->turnNo,
             lastSeq: $state->lastSeq + 1,
@@ -545,28 +510,27 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             streamingMessage: $state->streamingMessage,
             pendingToolCalls: $state->pendingToolCalls,
             errorMessage: $state->errorMessage,
-            messages: $messages,
+            messages: $state->messages,
             activeStepId: $state->activeStepId,
             retryableFailure: $state->retryableFailure,
         );
 
-        $event = $this->eventFactory->event(
+        $queuedEvent = $this->eventFactory->event(
             runId: $runId,
             seq: $nextState->lastSeq,
             turnNo: $nextState->turnNo,
-            type: RunEventTypeEnum::AgentCommandApplied->value,
+            type: RunEventTypeEnum::AgentCommandQueued->value,
             payload: [
                 'kind' => $message->kind,
                 'idempotency_key' => $message->idempotencyKey(),
-                'message' => $messageArray,
-                'text' => $this->extractMessageText($messageArray),
                 'options' => $options,
+                'message' => $message->payload['message'] ?? null,
             ],
         );
 
         return new HandlerResult(
             nextState: $nextState,
-            events: [$event],
+            events: [$queuedEvent],
         );
     }
 

@@ -836,6 +836,25 @@ final class RuntimeEventMapperTest extends TestCase
         self::assertSame(42, $result->seq);
     }
 
+    public function testAgentCommandAppliedAppendMessageMapsToUserMessageSubmitted(): void
+    {
+        $event = $this->runEvent('agent_command_applied', [
+            'kind' => 'append_message',
+            'idempotency_key' => 'append-key-1',
+            'message' => [
+                'role' => 'user',
+                'content' => [['type' => 'text', 'text' => 'runtime line']],
+            ],
+            'text' => 'runtime line',
+        ], 12);
+
+        $runtimeEvent = $this->mapper->toRuntimeEvent($event);
+
+        $this->assertNotNull($runtimeEvent);
+        $this->assertSame(RuntimeEventTypeEnum::UserMessageSubmitted->value, $runtimeEvent->type);
+        $this->assertSame('runtime line', $runtimeEvent->payload['text'] ?? '');
+    }
+
     // ── Test helpers ─────────────────────────────────────────────────────────
 
     /**

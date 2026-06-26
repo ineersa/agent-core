@@ -80,7 +80,7 @@ final class HeadlessController
          * Optional background process completion poller for sending
          * follow-up notifications when a backgrounded process finishes.
          * When provided, polls the DB for completed background processes
-         * and sends follow_up UserCommands to the agent session.
+         * and sends append_message UserCommands to the agent session.
          */
         private readonly ?BackgroundProcessCompletionPoller $bgProcessCompletionPoller = null,
     ) {
