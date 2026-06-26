@@ -40,12 +40,39 @@ final class LoadedResourcesWidgetTest extends TestCase
         $lines = $widget->render($this->context());
 
         $joined = implode("\n", $lines);
-        self::assertStringContainsString('[Skills]', strip_tags($joined));
-        self::assertStringContainsString('alpha', $joined);
-        self::assertStringContainsString('beta', $joined);
-        self::assertStringContainsString('won /win/SKILL.md', $joined);
-        self::assertStringContainsString('ignored /lose/SKILL.md', $joined);
-        self::assertStringContainsString('ctrl+r to expand', $joined);
+        $this->assertStringContainsString('[Skills]', $joined);
+        $this->assertStringContainsString('alpha', $joined);
+        $this->assertStringContainsString('beta', $joined);
+        $this->assertStringContainsString('won /win/SKILL.md', $joined);
+        $this->assertStringContainsString('ignored /lose/SKILL.md', $joined);
+        $this->assertStringContainsString('ctrl+r to expand', $joined);
+    }
+
+    #[Test]
+    public function testConflictRendersMessageWithWinnerAndLoserPaths(): void
+    {
+        $summary = new LoadedResourcesSummaryDTO([
+            new LoadedResourceSectionDTO(
+                key: 'prompts',
+                label: 'Prompts',
+                items: [],
+                conflicts: [
+                    new LoadedResourceConflictDTO(
+                        name: 'review',
+                        winnerPath: '/global/review.md',
+                        loserPath: '/project/review.md',
+                        message: 'name collision',
+                    ),
+                ],
+            ),
+        ]);
+
+        $widget = new LoadedResourcesWidget();
+        $widget->setSummary($summary);
+        $lines = $widget->render($this->context());
+        $joined = implode("\n", $lines);
+
+        $this->assertStringContainsString('review: name collision (won /global/review.md, ignored /project/review.md)', $joined);
     }
 
     #[Test]
@@ -65,8 +92,8 @@ final class LoadedResourcesWidgetTest extends TestCase
         $lines = $widget->render($this->context());
 
         $joined = implode("\n", $lines);
-        self::assertStringContainsString('fix-bug — /prompts/fix-bug.md', $joined);
-        self::assertStringContainsString('ctrl+r to collapse', $joined);
+        $this->assertStringContainsString('fix-bug — /prompts/fix-bug.md', $joined);
+        $this->assertStringContainsString('ctrl+r to collapse', $joined);
     }
 
     private function context(): TuiRenderContext
