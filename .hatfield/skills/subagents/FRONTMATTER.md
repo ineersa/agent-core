@@ -93,8 +93,3 @@ Explore read-only. Return dense bullets and file paths.
 
 See [docs/agents.md](../../../docs/agents.md) for storage layout, timeouts, and privacy rules.
 
-### Cancelled artifacts
-
-- Cancellation is still an error/cancelled tool result.
-- Parent cancellation output should list launched child **Artifact:** IDs and **cancelled** status.
-- Use `agent_retrieve` with `metadata`, `events`, or `history` after cancellation; `handoff` includes bounded partial context when written.

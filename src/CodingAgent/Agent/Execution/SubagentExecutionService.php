@@ -564,12 +564,15 @@ final class SubagentExecutionService
                         $reports[$agentRunId]['status'] = AgentArtifactStatusEnum::Failed;
                         $reports[$agentRunId]['message'] = $errorMsg;
                     })(),
-                    RunStatus::Cancelled, RunStatus::Cancelling => (function () use ($parentRunId, $report, &$reports, $agentRunId): void {
+                    RunStatus::Cancelled, RunStatus::Cancelling => (function () use ($parentRunId, $report, &$reports, $agentRunId, $state): void {
                         $this->finalize(
                             parentRunId: $parentRunId,
                             artifactId: $report['artifactId'],
                             status: AgentArtifactStatusEnum::Cancelled,
                             summary: 'Child run was cancelled.',
+                            agentName: $report['agentName'],
+                            agentRunId: $agentRunId,
+                            childState: $state,
                         );
                         $reports[$agentRunId]['terminal'] = true;
                         $reports[$agentRunId]['status'] = AgentArtifactStatusEnum::Cancelled;
@@ -1082,74 +1085,107 @@ final class SubagentExecutionService
         ?string $summary,
         ?RunState $childState,
     ): string {
-        $lines = [
-            '# Subagent handoff',
-            '',
-            'Status: cancelled',
+        $template = <<<'MD'
+# Subagent handoff
+
+Status: cancelled
+{artifact_line}{agent_line}{agent_run_line}
+## Cancellation
+
+{summary_text}
+{partial_context_block}{retrieval_hint}
+MD;
+
+        $summaryText = null !== $summary ? trim($summary) : '';
+        $replacements = [
+            '{artifact_line}' => (null !== $artifactId && '' !== $artifactId) ? 'Artifact: {artifact_id}'.'
+' : '',
+            '{agent_line}' => (null !== $agentName && '' !== $agentName) ? 'Agent: {agent_name}'.'
+' : '',
+            '{agent_run_line}' => (null !== $agentRunId && '' !== $agentRunId) ? 'Agent run: {agent_run_id}'.'
+' : '',
+            '{summary_text}' => '' !== $summaryText ? $summaryText : 'Child run was cancelled.',
+            '{partial_context_block}' => '',
+            '{retrieval_hint}' => '',
         ];
 
-        if (null !== $artifactId && '' !== $artifactId) {
-            $lines[] = 'Artifact: '.$artifactId;
-        }
-        if (null !== $agentName && '' !== $agentName) {
-            $lines[] = 'Agent: '.$agentName;
-        }
-        if (null !== $agentRunId && '' !== $agentRunId) {
-            $lines[] = 'Agent run: '.$agentRunId;
-        }
-
-        $lines[] = '';
-        $lines[] = '## Cancellation';
-        $lines[] = '';
-        $summaryText = null !== $summary ? trim($summary) : '';
-        $lines[] = '' !== $summaryText ? $summaryText : 'Child run was cancelled.';
-
         if (null !== $childState) {
-            $lines[] = '';
-            $lines[] = '## Partial context';
-            $lines[] = '';
-            $lines[] = '- turn_no: '.$childState->turnNo;
-            $lines[] = '- last_seq: '.$childState->lastSeq;
-            $lines[] = '- message_count: '.(string) \count($childState->messages);
-            $lines[] = '- pending_tool_calls: '.(string) \count($childState->pendingToolCalls);
             $lastActivity = $this->summarizeLastKnownActivity($childState);
-            if ('' !== $lastActivity) {
-                $lines[] = '- last_known_activity: '.$lastActivity;
-            }
             $excerpt = $this->extractLastMessage($childState);
-            if ('' !== trim($excerpt) && !str_starts_with($excerpt, $childState->status->name)) {
-                $lines[] = '';
-                $lines[] = '## Last assistant text (bounded)';
-                $lines[] = '';
-                $lines[] = $this->truncateHandoffText($excerpt, 800);
+            $includeExcerpt = '' !== trim($excerpt) && !str_starts_with($excerpt, $childState->status->name);
+            $partial = <<<'MD'
+
+## Partial context
+
+- turn_no: {turn_no}
+- last_seq: {last_seq}
+- message_count: {message_count}
+- pending_tool_calls: {pending_tool_calls}
+{last_activity_line}{assistant_excerpt_block}
+MD;
+            $partialReplacements = [
+                '{turn_no}' => (string) $childState->turnNo,
+                '{last_seq}' => (string) $childState->lastSeq,
+                '{message_count}' => (string) \count($childState->messages),
+                '{pending_tool_calls}' => (string) \count($childState->pendingToolCalls),
+                '{last_activity_line}' => '' !== $lastActivity ? '- last_known_activity: {last_activity}'.'
+' : '',
+                '{assistant_excerpt_block}' => $includeExcerpt ? '
+## Last assistant excerpt'.'
+
+{assistant_excerpt}'.'
+' : '',
+            ];
+            $partial = strtr($partial, $partialReplacements);
+            if ('' !== $lastActivity) {
+                $partial = strtr($partial, ['{last_activity}' => $lastActivity]);
             }
+            if ($includeExcerpt) {
+                $partial = strtr($partial, ['{assistant_excerpt}' => $this->truncateHandoffText($excerpt, 800)]);
+            }
+            $replacements['{partial_context_block}'] = $partial;
+            $replacements['{retrieval_hint}'] = '
+Use agent_retrieve (metadata/events/history) for more child details.'.'
+';
         }
 
-        $lines[] = '';
-        $lines[] = '## Retrieval';
-        $lines[] = '';
-        $lines[] = 'Use agent_retrieve with this artifact ID. Recommended modes: metadata, events, history. Handoff includes bounded partial context only.';
+        $markdown = strtr($template, $replacements);
+        $valueMap = [
+            '{artifact_id}' => $artifactId ?? '',
+            '{agent_name}' => $agentName ?? '',
+            '{agent_run_id}' => $agentRunId ?? '',
+        ];
 
-        return implode("\n", $lines)."\n";
+        return strtr($markdown, $valueMap);
     }
 
     private function formatParentCancelledSingleMessage(string $agentName, string $artifactId): string
     {
-        return implode("\n", [
-            \sprintf('Subagent %s cancelled by parent run.', $agentName),
-            'Artifact: '.$artifactId,
-            'Status: cancelled',
-            'Use agent_retrieve (metadata/events/history) for partial child details.',
+        $template = <<<'TXT'
+{headline}
+Artifact: {artifact_id}
+Status: cancelled
+Use agent_retrieve (metadata/events/history) for partial child details.
+TXT;
+
+        return strtr($template, [
+            '{headline}' => \sprintf('Subagent %s cancelled by parent run.', $agentName),
+            '{artifact_id}' => $artifactId,
         ]);
     }
 
     private function formatChildCancelledMessage(string $agentName, string $artifactId): string
     {
-        return implode("\n", [
-            \sprintf('Subagent %s was cancelled.', $agentName),
-            'Artifact: '.$artifactId,
-            'Status: cancelled',
-            'Use agent_retrieve (metadata/events/history) for partial child details.',
+        $template = <<<'TXT'
+{headline}
+Artifact: {artifact_id}
+Status: cancelled
+Use agent_retrieve (metadata/events/history) for partial child details.
+TXT;
+
+        return strtr($template, [
+            '{headline}' => \sprintf('Subagent %s was cancelled.', $agentName),
+            '{artifact_id}' => $artifactId,
         ]);
     }
 

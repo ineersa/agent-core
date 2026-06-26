@@ -6,10 +6,10 @@ namespace Ineersa\AgentCore\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
-use Ineersa\AgentCore\Contract\Pipeline\PendingSubagentCancellationMessageBuilderInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
+use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -26,7 +26,6 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
         private AgentMessageNormalizer $messageNormalizer,
         private ?RunMetrics $metrics = null,
         private ?MessageBusInterface $commandBus = null,
-        private ?PendingSubagentCancellationMessageBuilderInterface $pendingSubagentCancellationMessageBuilder = null,
     ) {
     }
 
@@ -67,8 +66,25 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
         }
 
         if (RunStatus::Cancelling === $state->status) {
-            $eventSpecs = [
-                [
+            $eventSpecs = [];
+            $messages = $state->messages;
+            $toolCallInfoMap = $this->buildToolCallInfoMap($state);
+            $pendingToolCalls = $state->pendingToolCalls;
+            $resolvedCount = 0;
+
+            $preserveIncoming = \array_key_exists($message->toolCallId, $pendingToolCalls)
+                && false === $pendingToolCalls[$message->toolCallId];
+
+            if ($preserveIncoming) {
+                $pendingToolCalls[$message->toolCallId] = true;
+                ++$resolvedCount;
+                $this->appendCommittedToolResultEvents(
+                    eventSpecs: $eventSpecs,
+                    messages: $messages,
+                    result: $message,
+                );
+            } else {
+                $eventSpecs[] = [
                     'type' => RunEventTypeEnum::StaleResultIgnored->value,
                     'payload' => [
                         'result' => 'tool_call_result',
@@ -77,56 +93,29 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
                         'turn_no' => $message->turnNo(),
                         'status' => $state->status->value,
                     ],
-                ],
-            ];
+                ];
+            }
 
-            $messages = $state->messages;
-            $pendingIds = array_keys($state->pendingToolCalls);
+            $unresolvedIds = array_keys(array_filter(
+                $pendingToolCalls,
+                static fn (mixed $completed): bool => false === $completed,
+            ));
 
-            if ([] !== $pendingIds) {
-                // Build tool_call_id → tool_info map from the most recent
-                // assistant message's metadata['tool_calls'], so synthetic
-                // cancellation messages carry the correct tool name and
-                // preserve the original order_index.
-                $toolCallInfoMap = [];
-                foreach (array_reverse($state->messages) as $replayMsg) {
-                    if ('assistant' === $replayMsg->role && \is_array($replayMsg->metadata['tool_calls'] ?? null)) {
-                        foreach ($replayMsg->metadata['tool_calls'] as $tc) {
-                            if (\is_string($tc['id'] ?? null)) {
-                                $toolCallInfoMap[$tc['id']] = $tc;
-                            }
-                        }
-                        break;
-                    }
-                }
-
-                $stepId = $state->activeStepId ?? \sprintf('synthetic-cancel-%d', hrtime(true));
-
-                // Sort pending IDs by their original order_index so
-                // synthetic tool messages appear in the same order as
-                // the assistant declared them.
-                usort($pendingIds, static function (string $a, string $b) use ($toolCallInfoMap): int {
+            if ([] !== $unresolvedIds) {
+                usort($unresolvedIds, static function (string $a, string $b) use ($toolCallInfoMap): int {
                     $orderA = isset($toolCallInfoMap[$a]['order_index']) && \is_int($toolCallInfoMap[$a]['order_index']) ? $toolCallInfoMap[$a]['order_index'] : 0;
                     $orderB = isset($toolCallInfoMap[$b]['order_index']) && \is_int($toolCallInfoMap[$b]['order_index']) ? $toolCallInfoMap[$b]['order_index'] : 0;
 
                     return $orderA <=> $orderB;
                 });
 
-                foreach ($pendingIds as $tcId) {
+                $stepId = $state->activeStepId ?? \sprintf('synthetic-cancel-%d', hrtime(true));
+
+                foreach ($unresolvedIds as $tcId) {
                     $info = $toolCallInfoMap[$tcId] ?? null;
                     $toolName = \is_string($info['name'] ?? null) ? $info['name'] : 'unknown';
                     $orderIndex = \is_int($info['order_index'] ?? null) ? $info['order_index'] : 0;
                     $cancelMessage = 'Tool execution cancelled by user.';
-                    if ('subagent' === $toolName && null !== $this->pendingSubagentCancellationMessageBuilder) {
-                        $richMessage = $this->pendingSubagentCancellationMessageBuilder->buildForPendingSubagent(
-                            parentRunId: $runId,
-                            toolCallId: $tcId,
-                            toolCallInfo: $info,
-                        );
-                        if (null !== $richMessage && '' !== trim($richMessage)) {
-                            $cancelMessage = $richMessage;
-                        }
-                    }
 
                     $syntheticResult = new ToolCallResult(
                         runId: $runId,
@@ -146,48 +135,20 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
                         ],
                     );
 
-                    $toolMsg = $this->messageNormalizer->toolMessage($syntheticResult);
-                    $messages[] = $toolMsg;
-                    $toolMsgArray = $toolMsg->toArray();
-
-                    $eventSpecs[] = [
-                        'type' => RunEventTypeEnum::ToolCallResultReceived->value,
-                        'payload' => [
-                            'tool_call_id' => $tcId,
-                            'order_index' => $orderIndex,
-                            'is_error' => true,
-                        ],
-                    ];
-                    $eventSpecs[] = [
-                        'type' => RunEventTypeEnum::ToolExecutionEnd->value,
-                        'payload' => [
-                            'tool_call_id' => $tcId,
-                            'order_index' => $orderIndex,
-                            'is_error' => true,
-                            'result' => $cancelMessage,
-                        ],
-                    ];
-                    $eventSpecs[] = [
-                        'type' => RunEventTypeEnum::MessageStart->value,
-                        'payload' => [
-                            'message_role' => 'tool',
-                            'tool_call_id' => $tcId,
-                        ],
-                    ];
-                    $eventSpecs[] = [
-                        'type' => RunEventTypeEnum::MessageEnd->value,
-                        'payload' => [
-                            'message_role' => 'tool',
-                            'tool_call_id' => $tcId,
-                            'message' => $toolMsgArray,
-                        ],
-                    ];
+                    $this->appendCommittedToolResultEvents(
+                        eventSpecs: $eventSpecs,
+                        messages: $messages,
+                        result: $syntheticResult,
+                    );
+                    ++$resolvedCount;
                 }
+            }
 
+            if ($resolvedCount > 0) {
                 $eventSpecs[] = [
                     'type' => RunEventTypeEnum::ToolBatchCommitted->value,
                     'payload' => [
-                        'count' => \count($pendingIds),
+                        'count' => $resolvedCount,
                     ],
                 ];
             }
@@ -215,10 +176,16 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
                 retryableFailure: false,
             );
 
+            $postCommit = $this->turnCompletedCallbacks($runId, $state->turnNo);
+            $postCancelAdvance = $this->postCancelAdvanceCallback($runId);
+            if (null !== $postCancelAdvance) {
+                $postCommit[] = $postCancelAdvance;
+            }
+
             return new HandlerResult(
                 nextState: $nextState,
                 events: $events,
-                postCommit: $this->turnCompletedCallbacks($runId, $state->turnNo),
+                postCommit: $postCommit,
             );
         }
 
@@ -362,6 +329,94 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
             postCommitEffects: $effects,
             postCommit: $postCommit,
         );
+    }
+
+    /**
+     * @return array<string, array<string, mixed>>
+     */
+    private function buildToolCallInfoMap(RunState $state): array
+    {
+        $toolCallInfoMap = [];
+        foreach (array_reverse($state->messages) as $replayMsg) {
+            if ('assistant' === $replayMsg->role && \is_array($replayMsg->metadata['tool_calls'] ?? null)) {
+                foreach ($replayMsg->metadata['tool_calls'] as $tc) {
+                    if (\is_string($tc['id'] ?? null)) {
+                        $toolCallInfoMap[$tc['id']] = $tc;
+                    }
+                }
+                break;
+            }
+        }
+
+        return $toolCallInfoMap;
+    }
+
+    /**
+     * @param list<array{type: string, payload: array<string, mixed>}> $eventSpecs
+     * @param list<AgentMessage>                                       $messages
+     */
+    private function appendCommittedToolResultEvents(array &$eventSpecs, array &$messages, ToolCallResult $result): void
+    {
+        $eventSpecs[] = [
+            'type' => RunEventTypeEnum::ToolCallResultReceived->value,
+            'payload' => [
+                'tool_call_id' => $result->toolCallId,
+                'order_index' => $result->orderIndex,
+                'is_error' => $result->isError,
+            ],
+        ];
+        $eventSpecs[] = [
+            'type' => RunEventTypeEnum::ToolExecutionEnd->value,
+            'payload' => [
+                'tool_call_id' => $result->toolCallId,
+                'order_index' => $result->orderIndex,
+                'is_error' => $result->isError,
+                'result' => $this->extractResultText($result->result),
+            ],
+        ];
+
+        $toolMsg = $this->messageNormalizer->toolMessage($result);
+        $messages[] = $toolMsg;
+        $toolMsgArray = $toolMsg->toArray();
+
+        $eventSpecs[] = [
+            'type' => RunEventTypeEnum::MessageStart->value,
+            'payload' => [
+                'message_role' => 'tool',
+                'tool_call_id' => $result->toolCallId,
+            ],
+        ];
+        $eventSpecs[] = [
+            'type' => RunEventTypeEnum::MessageEnd->value,
+            'payload' => [
+                'message_role' => 'tool',
+                'tool_call_id' => $result->toolCallId,
+                'message' => $toolMsgArray,
+            ],
+        ];
+    }
+
+    private function postCancelAdvanceCallback(string $runId): ?callable
+    {
+        if (null === $this->commandBus) {
+            return null;
+        }
+
+        return function () use ($runId): void {
+            $stepId = \sprintf('post-cancel-advance-%d', hrtime(true));
+
+            try {
+                $this->commandBus->dispatch(new AdvanceRun(
+                    runId: $runId,
+                    turnNo: 0,
+                    stepId: $stepId,
+                    attempt: 1,
+                    idempotencyKey: hash('sha256', \sprintf('%s|%s', $runId, $stepId)),
+                ));
+            } catch (ExceptionInterface $exception) {
+                throw new \RuntimeException('Failed to dispatch AdvanceRun after cancellation terminalized.', previous: $exception);
+            }
+        };
     }
 
     private function followUpAdvanceCallback(string $runId): ?callable
