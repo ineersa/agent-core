@@ -1415,6 +1415,134 @@ CHILD_SKILL_BODY_UNIQUE",
         }
     }
 
+
+    public function testParallelProgressSignatureIncludesChildToolActivityWithinSameTurn(): void
+    {
+        $parentRunId = 'parent-parallel-signature';
+        $childRunId = 'child-parallel-signature';
+        $artifactId = 'agent_'.bin2hex(random_bytes(4));
+
+        $projectDir = TestDirectoryIsolation::createOsTempDir('hatfield-parallel-signature');
+        TestDirectoryIsolation::createHatfieldTree($projectDir, withSessions: true);
+        try {
+            $hatfieldSessionStore = new \Ineersa\CodingAgent\Session\HatfieldSessionStore(
+                appConfig: new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig(), cwd: $projectDir),
+                entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+            );
+            $pathResolver = new \Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathResolver($hatfieldSessionStore);
+            $childEventStore = new \Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStore(
+                pathResolver: $pathResolver,
+                eventPayloadNormalizer: new \Ineersa\AgentCore\Schema\EventPayloadNormalizer(),
+                lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()),
+                logger: new \Psr\Log\NullLogger(),
+                parentRunId: $parentRunId,
+                agentRunId: $childRunId,
+                artifactId: $artifactId,
+            );
+            $childEventStore->append(new RunEvent($childRunId, 1, 0, RunEventTypeEnum::RunStarted->value, [
+                'step_id' => 's0',
+                'payload' => ['metadata' => ['model' => 'test/model']],
+            ]));
+            $childEventStore->append(new RunEvent($childRunId, 2, 1, RunEventTypeEnum::LlmStepCompleted->value, [
+                'step_id' => 's1',
+                'usage' => ['input_tokens' => 10, 'output_tokens' => 5, 'total_tokens' => 15],
+                'assistant_message' => [
+                    'role' => 'assistant',
+                    'content' => [['type' => 'text', 'text' => 'Starting.']],
+                    'tool_calls' => [[
+                        'id' => 'tc_read',
+                        'name' => 'read',
+                        'arguments' => ['path' => 'README.md'],
+                    ]],
+                ],
+            ]));
+
+            $readPendingState = new RunState(
+                runId: $childRunId,
+                status: RunStatus::Running,
+                version: 1,
+                turnNo: 1,
+                lastSeq: 2,
+                messages: [],
+            );
+
+            $bashPendingState = new RunState(
+                runId: $childRunId,
+                status: RunStatus::Running,
+                version: 2,
+                turnNo: 1,
+                lastSeq: 4,
+                messages: [],
+            );
+
+            $childFactory = new AgentChildRunEventStoreFactory(
+                $pathResolver,
+                new \Ineersa\AgentCore\Schema\EventPayloadNormalizer(),
+                new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()),
+                new \Psr\Log\NullLogger(),
+            );
+
+            $runStore = $this->createStub(RunStoreInterface::class);
+            $useBashState = false;
+            $runStore->method('get')->willReturnCallback(function (string $runId) use ($childRunId, $readPendingState, $bashPendingState, &$useBashState): ?RunState {
+                if ($childRunId !== $runId) {
+                    return null;
+                }
+
+                return $useBashState ? $bashPendingState : $readPendingState;
+            });
+
+            $reports = [
+                $childRunId => [
+                    'index' => 1,
+                    'agentName' => 'parallel-scout',
+                    'task' => 'Sleep then report',
+                    'artifactId' => $artifactId,
+                    'agentRunId' => $childRunId,
+                    'terminal' => false,
+                    'status' => null,
+                    'message' => '',
+                ],
+            ];
+            $activeTurns = [$childRunId => 1];
+
+            $service = $this->makeService([
+                'runStore' => $runStore,
+                'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder($childFactory),
+            ]);
+
+            $method = new \ReflectionMethod(SubagentExecutionService::class, 'parallelProgressSignature');
+            $signatureRead = $method->invoke($service, $parentRunId, $reports, $activeTurns);
+
+            $useBashState = true;
+            $childEventStore->append(new RunEvent($childRunId, 3, 1, RunEventTypeEnum::ToolExecutionEnd->value, [
+                'tool_call_id' => 'tc_read',
+                'tool_name' => 'read',
+            ]));
+            $childEventStore->append(new RunEvent($childRunId, 4, 1, RunEventTypeEnum::LlmStepCompleted->value, [
+                'step_id' => 's2',
+                'usage' => ['input_tokens' => 20, 'output_tokens' => 8, 'total_tokens' => 28],
+                'assistant_message' => [
+                    'role' => 'assistant',
+                    'content' => [['type' => 'text', 'text' => 'Running bash.']],
+                    'tool_calls' => [[
+                        'id' => 'tc_bash',
+                        'name' => 'bash',
+                        'arguments' => ['command' => 'sleep 120'],
+                    ]],
+                ],
+            ]));
+
+            $signatureBash = $method->invoke($service, $parentRunId, $reports, $activeTurns);
+
+            self::assertNotSame($signatureRead, $signatureBash);
+            self::assertStringContainsString('bash: command="sleep 120"', $signatureBash);
+            self::assertStringNotContainsString('bash: command="sleep 120"', $signatureRead);
+        } finally {
+            TestDirectoryIsolation::removeDirectory($projectDir);
+        }
+    }
+
     private function makeService(array $overrides): SubagentExecutionService
     {
         $defaults = [

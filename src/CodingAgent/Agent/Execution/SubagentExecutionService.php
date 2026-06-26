@@ -578,7 +578,7 @@ final class SubagentExecutionService
                 };
             }
 
-            $signature = $this->parallelProgressSignature($reports, $activeTurns);
+            $signature = $this->parallelProgressSignature($parentRunId, $reports, $activeTurns);
             if (null === $lastProgressSignature || $signature !== $lastProgressSignature) {
                 $this->emitParallelProgressUpdate($parentRunId, $reports, $activeTurns, $progressSeq, $parallelProgressStartedHr);
                 $this->advanceParentSequence($parentRunId, $progressSeq);
@@ -712,8 +712,9 @@ final class SubagentExecutionService
      * @param array<string, array{index:int,agentName:string,task:string,artifactId:string,agentRunId:string,terminal:bool,status:?AgentArtifactStatusEnum,message:string}> $reports
      * @param array<string, int>                                                                                                                                            $activeTurns
      */
-    private function parallelProgressSignature(array $reports, array $activeTurns): string
+    private function parallelProgressSignature(string $parentRunId, array $reports, array $activeTurns): string
     {
+        $enrichmentByRun = $this->buildParallelEnrichmentByRun($parentRunId, $reports);
         $parts = [];
         foreach ($reports as $agentRunId => $report) {
             if ($report['terminal']) {
@@ -722,12 +723,57 @@ final class SubagentExecutionService
                 continue;
             }
 
-            $parts[] = $agentRunId.':active:'.($activeTurns[$agentRunId] ?? 0);
+            $enrichment = $enrichmentByRun[$agentRunId] ?? null;
+            if (null === $enrichment) {
+                $parts[] = $agentRunId.':active:'.($activeTurns[$agentRunId] ?? 0);
+
+                continue;
+            }
+
+            $parts[] = implode(':', [
+                $agentRunId,
+                'active',
+                (string) ($activeTurns[$agentRunId] ?? 0),
+                (string) $enrichment->toolCount,
+                (string) $enrichment->totalTokens,
+                (string) $enrichment->inputTokens,
+                (string) $enrichment->outputTokens,
+                $enrichment->activeToolLine ?? '',
+                implode(',', $enrichment->recentTools),
+                $enrichment->assistantExcerpt ?? '',
+            ]);
         }
 
         sort($parts);
 
         return implode('|', $parts);
+    }
+
+    /**
+     * @param array<string, array{index:int,agentName:string,task:string,artifactId:string,agentRunId:string,terminal:bool,status:?AgentArtifactStatusEnum,message:string}> $reports
+     *
+     * @return array<string, SubagentChildProgressSummary>
+     */
+    private function buildParallelEnrichmentByRun(string $parentRunId, array $reports): array
+    {
+        $enrichmentByRun = [];
+        foreach ($reports as $agentRunId => $report) {
+            $state = $this->runStore->get($agentRunId);
+            if (null === $state) {
+                continue;
+            }
+
+            $model = \is_string($report['model'] ?? null) ? $report['model'] : null;
+            $enrichmentByRun[$agentRunId] = $this->childProgressSummaryBuilder->summarize(
+                $parentRunId,
+                $agentRunId,
+                $report['artifactId'],
+                $state,
+                $model,
+            );
+        }
+
+        return $enrichmentByRun;
     }
 
     /**
@@ -748,21 +794,7 @@ final class SubagentExecutionService
         }
 
         $elapsedMs = (int) ((hrtime(true) - $progressStartedHr) / 1_000_000);
-        $enrichmentByRun = [];
-        foreach ($reports as $agentRunId => $report) {
-            $state = $this->runStore->get($agentRunId);
-            if (null === $state) {
-                continue;
-            }
-            $model = \is_string($report['model'] ?? null) ? $report['model'] : null;
-            $enrichmentByRun[$agentRunId] = $this->childProgressSummaryBuilder->summarize(
-                $parentRunId,
-                $agentRunId,
-                $report['artifactId'],
-                $state,
-                $model,
-            );
-        }
+        $enrichmentByRun = $this->buildParallelEnrichmentByRun($parentRunId, $reports);
 
         $progress = $this->progressSnapshotBuilder->parallelSnapshot(
             $reports,

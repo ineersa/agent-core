@@ -79,6 +79,7 @@ final class SubagentProgressProjectionTest extends TestCase
                     'artifact_id' => 'agent_b', 'task_summary' => 'Inspect TUI', 'turn_no' => 2, 'elapsed_ms' => 15000,
                     'tool_count' => 12, 'total_tokens' => 49000,
                     'artifact_path' => 'artifacts/agents/agent_b',
+                    'active_tool' => 'bash: command="grep -n Subagent src/Tui"',
                     'recent_tools' => ['read: path="src/Tui/Transcript/SubagentResultRenderer.php"'],
                     'assistant_excerpt' => 'Tracing projection path.',
                 ],
@@ -97,6 +98,7 @@ final class SubagentProgressProjectionTest extends TestCase
         self::assertStringContainsString('Task: Inspect TUI', $text);
         self::assertStringContainsString('Artifacts: artifacts/agents/agent_b', $text);
         self::assertStringContainsString('SubagentResultRenderer', $text);
+        self::assertStringContainsString('> bash: command="grep -n Subagent src/Tui"', $text);
         self::assertStringContainsString('Tracing projection path.', $text);
         self::assertStringNotContainsString('completed Step 1: reviewer', $text);
         self::assertStringNotContainsString('running Step 2: scout', $text);
