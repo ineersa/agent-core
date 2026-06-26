@@ -6,6 +6,7 @@ namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 
 use Ineersa\AgentCore\Application\Handler\CommandHandlerRegistry;
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
+use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler;
 use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
@@ -661,7 +662,7 @@ final class ApplyCommandHandlerTest extends TestCase
         );
     }
 
-    public function testCancelPreservesQueuedAppendMessageInMessages(): void
+    public function testCancelPreservesQueuedAppendMessageForPostCancelMailboxDrain(): void
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
@@ -713,18 +714,94 @@ final class ApplyCommandHandlerTest extends TestCase
         $result = $handler->handle($cancelMessage, $state);
 
         $this->assertSame(RunStatus::Cancelled, $result->nextState->status);
-        $this->assertCount(1, $result->nextState->messages);
-        $this->assertSame($runtimeText, $result->nextState->messages[0]->content[0]['text'] ?? '');
+        $this->assertCount(0, $result->nextState->messages, 'AppendMessage must stay pending until post-cancel AdvanceRun drains mailbox');
 
         $appliedAppend = array_values(array_filter(
             $result->events,
             static fn ($e) => 'agent_command_applied' === $e->type && CoreCommandKind::AppendMessage === ($e->payload['kind'] ?? null),
         ));
-        $this->assertCount(1, $appliedAppend);
-        $this->assertSame($runtimeText, $appliedAppend[0]->payload['text'] ?? '');
+        $this->assertCount(0, $appliedAppend, 'Cancel must not apply AppendMessage inline');
+        $this->assertTrue($commandStore->has('run-append-cancel', 'append-1'));
         $this->assertCount(1, $result->postCommit);
         ($result->postCommit[0])();
         $this->assertCount(1, $commandBus->messages);
+        $this->assertInstanceOf(AdvanceRun::class, $commandBus->messages[0]);
+        $this->assertStringStartsWith('post-cancel-advance-', $commandBus->messages[0]->stepId());
+
+        $advanceHandler = new AdvanceRunHandler(
+            commandMailboxPolicy: $commandMailboxPolicy,
+            eventFactory: new EventFactory(),
+        );
+        $drainResult = $advanceHandler->handle($commandBus->messages[0], $result->nextState);
+        $this->assertSame(RunStatus::Running, $drainResult->nextState->status);
+        $this->assertCount(1, $drainResult->nextState->messages);
+        $this->assertSame($runtimeText, $drainResult->nextState->messages[0]->content[0]['text'] ?? '');
+    }
+
+    public function testSecondCancelWhileCancellingPreservesPendingAppendMessage(): void
+    {
+        $commandStore = new InMemoryCommandStore();
+        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandMailboxPolicy = new CommandMailboxPolicy(
+            commandStore: $commandStore,
+            commandRouter: $commandRouter,
+        );
+        $commandBus = new TestMessageBus();
+
+        $handler = new ApplyCommandHandler(
+            commandStore: $commandStore,
+            commandRouter: $commandRouter,
+            commandMailboxPolicy: $commandMailboxPolicy,
+            eventFactory: new EventFactory(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            maxPendingCommands: 10,
+            commandBus: $commandBus,
+        );
+
+        $runtimeText = 'Queued between cancels';
+        $commandStore->enqueue(new \Ineersa\AgentCore\Domain\Command\PendingCommand(
+            runId: 'run-second-cancel-append',
+            kind: CoreCommandKind::AppendMessage,
+            idempotencyKey: 'append-between-cancels',
+            payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => $runtimeText]]]],
+            options: new \Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions(safe: false),
+        ));
+
+        $state = new RunState(
+            runId: 'run-second-cancel-append',
+            status: RunStatus::Cancelling,
+            version: 8,
+            turnNo: 2,
+            lastSeq: 40,
+            isStreaming: false,
+            pendingToolCalls: [],
+            messages: [new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'prior']])],
+            activeStepId: null,
+            retryableFailure: false,
+        );
+
+        $cancelMessage = new ApplyCommand(
+            runId: 'run-second-cancel-append',
+            turnNo: 2,
+            stepId: 'cancel-repeat-2',
+            attempt: 1,
+            idempotencyKey: 'cancel-repeat-2',
+            kind: CoreCommandKind::Cancel,
+            payload: [],
+        );
+
+        $result = $handler->handle($cancelMessage, $state);
+
+        $this->assertSame(RunStatus::Cancelled, $result->nextState->status);
+        $this->assertCount(1, $result->nextState->messages, 'Only pre-existing messages; pending append must not be applied inline');
+        $appliedAppend = array_values(array_filter(
+            $result->events,
+            static fn ($e) => 'agent_command_applied' === $e->type && CoreCommandKind::AppendMessage === ($e->payload['kind'] ?? null),
+        ));
+        $this->assertCount(0, $appliedAppend);
+        $this->assertTrue($commandStore->has('run-second-cancel-append', 'append-between-cancels'));
+        $this->assertCount(1, $result->postCommit);
+        ($result->postCommit[0])();
         $this->assertInstanceOf(AdvanceRun::class, $commandBus->messages[0]);
     }
 

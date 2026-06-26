@@ -247,15 +247,15 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
 
         $this->commandStore->markApplied($runId, $message->idempotencyKey());
 
-        // Reject stale queued user-input commands after cancel (#152), except
-        // model-visible AppendMessage commands that must land in run messages.
+        // Reject stale queued user-input commands after cancel (#152).
+        // AppendMessage stays pending in the mailbox for post-cancel AdvanceRun drain.
         $rejectedCommands = [];
-        $preservedAppendMessageCommands = [];
+        $hasPendingAppendMessage = false;
         $cancelRejectReason = 'Rejected because cancel command was accepted.';
 
         foreach ($this->commandStore->pending($runId) as $pendingCommand) {
             if (CoreCommandKind::AppendMessage === $pendingCommand->kind) {
-                $preservedAppendMessageCommands[] = $pendingCommand;
+                $hasPendingAppendMessage = true;
 
                 continue;
             }
@@ -268,7 +268,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             $rejectedCommands[] = $pendingCommand;
         }
 
-        $messages = $state->messages;
         $eventSpecs = [[
             'type' => RunEventTypeEnum::AgentCommandApplied->value,
             'payload' => [
@@ -277,37 +276,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 'options' => [],
             ],
         ]];
-
-        foreach ($preservedAppendMessageCommands as $preservedCommand) {
-            $hydrated = $this->hydratePendingUserMessage($preservedCommand);
-            if (null === $hydrated) {
-                $this->commandStore->markRejected(
-                    $runId,
-                    $preservedCommand->idempotencyKey,
-                    'Invalid command payload: malformed message envelope.',
-                );
-                $rejectedCommands[] = $preservedCommand;
-
-                continue;
-            }
-
-            $messages[] = $hydrated;
-            $this->commandStore->markApplied($runId, $preservedCommand->idempotencyKey);
-
-            $messageArray = $hydrated->toArray();
-            $eventSpecs[] = [
-                'type' => RunEventTypeEnum::AgentCommandApplied->value,
-                'payload' => [
-                    'kind' => $preservedCommand->kind,
-                    'idempotency_key' => $preservedCommand->idempotencyKey,
-                    'message' => $messageArray,
-                    'text' => $this->extractMessageText($messageArray),
-                    'options' => [
-                        'cancel_safe' => $preservedCommand->options->safe,
-                    ],
-                ],
-            ];
-        }
 
         foreach ($rejectedCommands as $rejectedCommand) {
             $eventSpecs[] = [
@@ -340,6 +308,14 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 ]];
                 $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $terminalSpecs);
 
+                $postCommit = [];
+                if ($hasPendingAppendMessage) {
+                    $followUpAdvance = $this->followUpAdvanceCallback($runId, 'post-cancel-advance');
+                    if (null !== $followUpAdvance) {
+                        $postCommit[] = $followUpAdvance;
+                    }
+                }
+
                 return new HandlerResult(
                     nextState: new RunState(
                         runId: $state->runId,
@@ -356,6 +332,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                         retryableFailure: false,
                     ),
                     events: $events,
+                    postCommit: $postCommit,
                 );
             }
 
@@ -418,14 +395,14 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 streamingMessage: $state->streamingMessage,
                 pendingToolCalls: $state->pendingToolCalls,
                 errorMessage: $reason,
-                messages: $messages,
+                messages: $state->messages,
                 activeStepId: null,
                 retryableFailure: false,
             );
 
             $postCommit = [];
-            if ([] !== $preservedAppendMessageCommands) {
-                $followUpAdvance = $this->followUpAdvanceCallback($runId, CoreCommandKind::AppendMessage);
+            if ($hasPendingAppendMessage) {
+                $followUpAdvance = $this->followUpAdvanceCallback($runId, 'post-cancel-advance');
                 if (null !== $followUpAdvance) {
                     $postCommit[] = $followUpAdvance;
                 }
@@ -448,7 +425,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             streamingMessage: $state->streamingMessage,
             pendingToolCalls: $state->pendingToolCalls,
             errorMessage: $reason,
-            messages: $messages,
+            messages: $state->messages,
             activeStepId: $state->activeStepId,
             retryableFailure: false,
         );
@@ -531,36 +508,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             nextState: $nextState,
             events: [$queuedEvent],
         );
-    }
-
-    private function hydratePendingUserMessage(PendingCommand $pendingCommand): ?AgentMessage
-    {
-        $messagePayload = $pendingCommand->payload['message'] ?? null;
-        if (!\is_array($messagePayload)) {
-            return null;
-        }
-
-        return AgentMessage::fromPayload($messagePayload);
-    }
-
-    /**
-     * @param array<string, mixed> $messageArray
-     */
-    private function extractMessageText(array $messageArray): string
-    {
-        $content = $messageArray['content'] ?? [];
-        if (!\is_array($content)) {
-            return '';
-        }
-
-        $parts = [];
-        foreach ($content as $block) {
-            if (\is_array($block) && isset($block['text']) && ('text' === ($block['type'] ?? null))) {
-                $parts[] = (string) $block['text'];
-            }
-        }
-
-        return implode('', $parts);
     }
 
     /**
