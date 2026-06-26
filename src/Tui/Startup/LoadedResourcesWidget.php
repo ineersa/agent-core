@@ -57,7 +57,6 @@ final class LoadedResourcesWidget implements TuiWidget
             return [];
         }
 
-        $theme = $context->theme;
         $lines = [];
 
         foreach ($sections as $section) {
@@ -67,7 +66,7 @@ final class LoadedResourcesWidget implements TuiWidget
         $hint = $this->expanded
             ? 'Press ctrl+r to collapse source paths'
             : 'Press ctrl+r to expand source paths';
-        $lines[] = $theme->muted('  '.$hint);
+        $lines[] = $context->theme->muted('  '.$hint);
 
         return $lines;
     }
@@ -120,7 +119,7 @@ final class LoadedResourcesWidget implements TuiWidget
     private function formatExpandedItem(LoadedResourceItemDTO $item): string
     {
         $path = '' !== $item->sourcePath ? $item->sourcePath : '(no path)';
-        $suffix = $item->disabled ? ' [disabled]' : '';
+        $suffix = $item->disabled ? ' (disabled)' : '';
 
         return $item->name.$suffix.' — '.$path;
     }
@@ -130,6 +129,10 @@ final class LoadedResourcesWidget implements TuiWidget
         $name = '' !== $conflict->name ? $conflict->name : 'resource';
         $winner = '' !== $conflict->winnerPath ? $conflict->winnerPath : '(unknown)';
         $loser = '' !== $conflict->loserPath ? $conflict->loserPath : '(unknown)';
+
+        if ('' !== $conflict->message && '' === $conflict->winnerPath) {
+            return '⚠ '.$name.': '.$conflict->message;
+        }
 
         if ('' !== $conflict->message && ('' !== $conflict->winnerPath || '' !== $conflict->loserPath)) {
             return \sprintf('⚠ %s: %s (won %s, ignored %s)', $name, $conflict->message, $winner, $loser);

@@ -75,6 +75,36 @@ final class LoadedResourcesWidgetTest extends TestCase
         $this->assertStringContainsString('review: name collision (won /global/review.md, ignored /project/review.md)', $joined);
     }
 
+
+    #[Test]
+    public function testConflictWithEmptyWinnerAndMessageRendersMessageOnly(): void
+    {
+        $summary = new LoadedResourcesSummaryDTO([
+            new LoadedResourceSectionDTO(
+                key: 'extensions',
+                label: 'Extensions',
+                items: [],
+                conflicts: [
+                    new LoadedResourceConflictDTO(
+                        name: 'BadExt',
+                        winnerPath: '',
+                        loserPath: 'Ineersa\\Bad\\Extension',
+                        message: 'Failed to load extension',
+                    ),
+                ],
+            ),
+        ]);
+
+        $widget = new LoadedResourcesWidget();
+        $widget->setSummary($summary);
+        $lines = $widget->render($this->context());
+        $joined = implode("\n", $lines);
+
+        $this->assertStringContainsString('BadExt: Failed to load extension', $joined);
+        $this->assertStringNotContainsString('won (unknown)', $joined);
+        $this->assertStringNotContainsString('ignored', $joined);
+    }
+
     #[Test]
     public function testExpandedModeShowsSourcePaths(): void
     {
