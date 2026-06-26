@@ -180,7 +180,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         $this->assertCount(1, $this->sentCommands);
         [$runId, $command] = $this->sentCommands[0];
         $this->assertSame('test-poller-run', $runId);
-        $this->assertSame('follow_up', $command->type);
+        $this->assertSame('append_message', $command->type);
         $this->assertStringContainsString('[BG_PROCESS_DONE]', $command->text ?? '');
         $this->assertStringContainsString('PID 10001', $command->text ?? '');
         $this->assertStringContainsString('Hello world', $command->text ?? '');
@@ -357,11 +357,11 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         $ref = new \ReflectionMethod($poller, 'poll');
         $ref->invoke($poller);
 
-        // Assert follow_up was sent with [BG_PROCESS_DONE] prefix
+        // Assert append_message was sent with [BG_PROCESS_DONE] prefix
         $this->assertCount(1, $this->sentCommands);
         [$runId, $command] = $this->sentCommands[0];
         $this->assertSame('test-regression-run', $runId);
-        $this->assertSame('follow_up', $command->type);
+        $this->assertSame('append_message', $command->type);
         $this->assertStringContainsString('[BG_PROCESS_DONE]', $command->text ?? '');
         $this->assertStringContainsString('PID '.$pid, $command->text ?? '');
         $this->assertStringContainsString('regression output', $command->text ?? '');

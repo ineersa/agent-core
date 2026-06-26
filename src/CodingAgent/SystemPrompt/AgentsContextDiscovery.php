@@ -56,6 +56,41 @@ final readonly class AgentsContextDiscovery
      */
     public function discover(): array
     {
+        $results = [];
+        foreach ($this->collectDiscoveredPathEntries() as $entry) {
+            $content = $this->readFile($entry['filePath']);
+            if (null !== $content) {
+                $results[] = ['path' => $entry['path'], 'content' => $content];
+            }
+        }
+
+        return $results;
+    }
+
+    /**
+     * Discover AGENTS.md paths only (no file reads).
+     *
+     * For display-only provenance such as the TUI loaded-resources block.
+     *
+     * @return list<array{path: string}>
+     *
+     * @throws \RuntimeException When CWD is not configured
+     */
+    public function discoverPaths(): array
+    {
+        $entries = [];
+        foreach ($this->collectDiscoveredPathEntries() as $entry) {
+            $entries[] = ['path' => $entry['path']];
+        }
+
+        return $entries;
+    }
+
+    /**
+     * @return list<array{path: string, filePath: string}>
+     */
+    private function collectDiscoveredPathEntries(): array
+    {
         $cwd = $this->resolveCwd();
 
         $results = [];
@@ -67,24 +102,20 @@ final readonly class AgentsContextDiscovery
         if (null !== $globalFile) {
             $realPath = $this->realpath($globalFile);
             if (!isset($seenPaths[$realPath])) {
-                $content = $this->readFile($globalFile);
-                if (null !== $content) {
-                    $results[] = ['path' => $realPath, 'content' => $content];
-                    $seenPaths[$realPath] = true;
-                }
+                $results[] = ['path' => $realPath, 'filePath' => $globalFile];
+                $seenPaths[$realPath] = true;
             }
         }
 
         // Step 2: Walk upward from cwd to filesystem root, nearest first.
         $current = $cwd;
-        $ancestorFiles = [];
 
         while (true) {
             $found = $this->findInDirectory($current);
             if (null !== $found) {
                 $realPath = $this->realpath($found);
                 if (!isset($seenPaths[$realPath])) {
-                    $ancestorFiles[] = ['path' => $realPath, 'content' => null, 'filePath' => $found];
+                    $results[] = ['path' => $realPath, 'filePath' => $found];
                     $seenPaths[$realPath] = true;
                 }
             }
@@ -94,16 +125,6 @@ final readonly class AgentsContextDiscovery
                 break; // Reached filesystem root
             }
             $current = $parent;
-        }
-
-        // Read contents of ancestor files in a second pass.
-        // Content is read after collecting all paths to minimize I/O —
-        // only files that survive deduplication are read.
-        foreach ($ancestorFiles as $item) {
-            $content = $this->readFile($item['filePath']);
-            if (null !== $content) {
-                $results[] = ['path' => $item['path'], 'content' => $content];
-            }
         }
 
         return $results;

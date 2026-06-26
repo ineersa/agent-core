@@ -266,6 +266,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         $type = match ($command->type) {
             'steer', 'message' => 'user_message',
             'follow_up' => 'follow_up',
+            'append_message' => 'append_message',
             'answer_human' => 'answer_human',
             'answer_tool_question' => 'answer_tool_question',
             'shell_command' => 'shell_command',
@@ -276,6 +277,10 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             'answer_tool_question' => array_filter([
                 'request_id' => $command->payload['request_id'] ?? '',
                 'answer' => $command->payload['answer'] ?? null,
+            ], static fn (mixed $v): bool => null !== $v),
+            'shell_command' => array_filter([
+                'text' => $command->text,
+                'standalone' => true === ($command->payload['standalone'] ?? false) ? true : null,
             ], static fn (mixed $v): bool => null !== $v),
             default => array_filter([
                 'text' => $command->text,

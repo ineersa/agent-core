@@ -125,6 +125,22 @@ final class RuntimeEventMapperTest extends TestCase
         self::assertSame('completed', $result->payload['reason']);
     }
 
+
+    public function testNormalizesToolExecutionEndCancelledToToolExecutionCancelled(): void
+    {
+        $event = $this->runEvent('tool_execution_end', [
+            'tool_call_id' => 'call-cancel',
+            'order_index' => 0,
+            'is_error' => true,
+            'result' => 'Tool execution cancelled by user.',
+        ]);
+
+        $result = $this->mapper->toRuntimeEvent($event);
+
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::ToolExecutionCancelled->value, $result->type);
+    }
+
     public function testNormalizesAgentEndCancelledToRunCancelled(): void
     {
         $event = $this->runEvent('agent_end', ['reason' => 'cancelled']);
@@ -818,6 +834,25 @@ final class RuntimeEventMapperTest extends TestCase
         self::assertNotNull($result);
         self::assertSame($this->runId, $result->runId);
         self::assertSame(42, $result->seq);
+    }
+
+    public function testAgentCommandAppliedAppendMessageMapsToUserMessageSubmitted(): void
+    {
+        $event = $this->runEvent('agent_command_applied', [
+            'kind' => 'append_message',
+            'idempotency_key' => 'append-key-1',
+            'message' => [
+                'role' => 'user',
+                'content' => [['type' => 'text', 'text' => 'runtime line']],
+            ],
+            'text' => 'runtime line',
+        ], 12);
+
+        $runtimeEvent = $this->mapper->toRuntimeEvent($event);
+
+        $this->assertNotNull($runtimeEvent);
+        $this->assertSame(RuntimeEventTypeEnum::UserMessageSubmitted->value, $runtimeEvent->type);
+        $this->assertSame('runtime line', $runtimeEvent->payload['text'] ?? '');
     }
 
     // ── Test helpers ─────────────────────────────────────────────────────────

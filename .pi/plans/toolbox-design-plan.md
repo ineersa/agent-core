@@ -172,8 +172,8 @@ Implementation:
 
 Background behavior (user-controlled, NOT model-controlled):
   - Model schema has NO run_in_background parameter
-  - At the settings-backed background prompt threshold (default 30 seconds), TUI prompts user:
-    "Command still running after 30s. Move to background?"
+  - At the settings-backed background prompt threshold (default 15 seconds), TUI prompts user:
+    "Command still running after 15s. Move to background?"
   - If user says yes:
     - Process unrefs, continues running
     - Output streams to .hatfield/tmp/bg/<session>-<pid>.log
@@ -623,7 +623,7 @@ tools:
         session_prefix: null
     # Future concrete-tool sections should be added by the tasks that implement them.
     # bash:
-    #     background_prompt_threshold_seconds: 30
+    #     background_prompt_threshold_seconds: 15
     #     termination_grace_seconds: 5
     # image:
     #     max_bytes: 10485760

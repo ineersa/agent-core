@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Theme\ThemeRegistry;
@@ -25,18 +26,13 @@ final class ThemeRegistryTest extends TestCase
     {
         parent::setUp();
         $this->projectRoot = \Ineersa\CodingAgent\Tests\Support\ProjectDir::get();
-        $this->tempDir = sys_get_temp_dir().'/theme-registry-test-'.getmypid();
-        if (!is_dir($this->tempDir)) {
-            mkdir($this->tempDir, 0777, true);
-        }
+        $this->tempDir = TestDirectoryIsolation::createProjectTempDir('theme-registry-test');
     }
 
     protected function tearDown(): void
     {
         parent::tearDown();
-        if (is_dir($this->tempDir)) {
-            $this->rmDir($this->tempDir);
-        }
+        TestDirectoryIsolation::removeDirectory($this->tempDir);
     }
 
     public function testLoadBuiltinCyberpunkTheme(): void
@@ -132,6 +128,51 @@ final class ThemeRegistryTest extends TestCase
         $this->assertSame('tokyo-night', $theme->name);
     }
 
+
+
+    public function testBuiltinThemePathsOverlapProducesNoSelfCollisions(): void
+    {
+        $resources = new AppResourceLocator($this->projectRoot);
+        $builtin = $resources->getBuiltinThemesPath();
+        $appConfig = new AppConfig(tui: new TuiConfig('cyberpunk', [$builtin]), logging: new LoggingConfig());
+        $registry = new ThemeRegistry($appConfig, $resources, new NullLogger());
+
+        self::assertSame([], $registry->getThemeCollisions());
+        self::assertTrue($registry->has('nord'));
+    }
+
+    public function testSameSourcePathDuplicateRegistrationProducesNoCollision(): void
+    {
+        $registry = $this->createEmptyRegistry();
+        $themeFile = $this->tempDir.'/dup-theme.yaml';
+        file_put_contents($themeFile, "name: dup-test\naccent: '#111111'\n");
+
+        $palette = ThemePalette::fromArray(['name' => 'dup-test', 'accent' => '#111111']);
+        $registry->register($palette, $themeFile);
+        $registry->register($palette, $themeFile);
+
+        self::assertSame([], $registry->getThemeCollisions());
+        self::assertTrue($registry->has('dup-test'));
+    }
+
+    public function testDifferentSourcePathDuplicateNameRecordsCollision(): void
+    {
+        $registry = $this->createEmptyRegistry();
+        $winnerFile = $this->tempDir.'/winner.yaml';
+        $loserFile = $this->tempDir.'/loser.yaml';
+        file_put_contents($winnerFile, "name: clash\naccent: '#111111'\n");
+        file_put_contents($loserFile, "name: clash\naccent: '#222222'\n");
+
+        $registry->register(ThemePalette::fromArray(['name' => 'clash', 'accent' => '#111111']), $winnerFile);
+        $registry->register(ThemePalette::fromArray(['name' => 'clash', 'accent' => '#222222']), $loserFile);
+
+        $collisions = $registry->getThemeCollisions();
+        self::assertCount(1, $collisions);
+        self::assertSame('clash', $collisions[0]['name']);
+        self::assertSame($winnerFile, $collisions[0]['winnerPath']);
+        self::assertSame($loserFile, $collisions[0]['loserPath']);
+    }
+
     private function createRegistry(): ThemeRegistry
     {
         $resources = new AppResourceLocator($this->projectRoot);
@@ -151,22 +192,4 @@ final class ThemeRegistryTest extends TestCase
         return new ThemeRegistry($appConfig, $resources, new NullLogger());
     }
 
-    private function rmDir(string $dir): void
-    {
-        if (!is_dir($dir)) {
-            return;
-        }
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-        foreach ($iterator as $item) {
-            if ($item->isDir()) {
-                rmdir((string) $item);
-            } else {
-                unlink((string) $item);
-            }
-        }
-        rmdir($dir);
-    }
 }

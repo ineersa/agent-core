@@ -37,6 +37,8 @@ use Ineersa\CodingAgent\Mcp\Config\McpConfigDTO;
 use Ineersa\CodingAgent\Mcp\Config\McpConfigLoader;
 use Ineersa\CodingAgent\Tests\Support\Mcp\TestMcpConfigLoaderFactory;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
+use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
+use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder;
 use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Agent\Execution\SubagentTaskDTO;
@@ -171,6 +173,8 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             contextAccessor: self::getContainer()->get(\Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor::class),
             logger: self::getContainer()->get('logger'),
             agentsConfig: new AgentsConfig(),
+            progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
+            childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
         );
 
         $result = $service->execute('parent-1', 'test-agent', 'Inspect Foo.php');
@@ -244,6 +248,8 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             contextAccessor: self::getContainer()->get(\Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor::class),
             logger: self::getContainer()->get('logger'),
             agentsConfig: new AgentsConfig(),
+            progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
+            childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
         );
 
         $result = $service->execute('parent-2', 'fail-agent', 'Try to read nothing');
@@ -317,6 +323,8 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             contextAccessor: self::getContainer()->get(\Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor::class),
             logger: self::getContainer()->get('logger'),
             agentsConfig: new AgentsConfig(),
+            progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
+            childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
         );
 
         $result = $service->execute('parent-3', 'asker', 'Should I delete Foo.php?');
@@ -391,6 +399,8 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             contextAccessor: self::getContainer()->get(\Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor::class),
             logger: self::getContainer()->get('logger'),
             agentsConfig: new AgentsConfig(),
+            progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
+            childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
         );
 
         $this->expectException(ToolCallException::class);
@@ -422,6 +432,8 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             contextAccessor: self::getContainer()->get(\Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor::class),
             logger: self::getContainer()->get('logger'),
             agentsConfig: new AgentsConfig(),
+            progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
+            childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
         );
 
         $this->expectException(ToolCallException::class);
@@ -462,6 +474,8 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             contextAccessor: self::getContainer()->get(\Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor::class),
             logger: self::getContainer()->get('logger'),
             agentsConfig: new AgentsConfig(),
+            progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
+            childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
         );
 
         $this->expectException(ToolCallException::class);
@@ -582,6 +596,8 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             contextAccessor: $contextAccessor,
             logger: self::getContainer()->get('logger'),
             agentsConfig: new AgentsConfig(),
+            progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
+            childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
         );
 
         $result = $contextAccessor->with($toolContext, function () use ($service): string {
@@ -692,6 +708,8 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             contextAccessor: self::getContainer()->get(StackToolExecutionContextAccessor::class),
             logger: self::getContainer()->get('logger'),
             agentsConfig: new AgentsConfig(),
+            progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
+            childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
         );
 
         $result = $service->execute('parent-compact', 'compact-agent', 'Compact then finish');
@@ -1214,6 +1232,8 @@ CHILD_SKILL_BODY_UNIQUE",
             'contextAccessor' => self::getContainer()->get(StackToolExecutionContextAccessor::class),
             'logger' => self::getContainer()->get('logger'),
             'agentsConfig' => new AgentsConfig(maxAgents: 8),
+            'progressSnapshotBuilder' => new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
+            'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
         ];
 
         $args = array_merge($defaults, $overrides);
@@ -1234,6 +1254,8 @@ CHILD_SKILL_BODY_UNIQUE",
             contextAccessor: $args['contextAccessor'],
             logger: $args['logger'],
             agentsConfig: $args['agentsConfig'],
+            progressSnapshotBuilder: $args['progressSnapshotBuilder'],
+            childProgressSummaryBuilder: $args['childProgressSummaryBuilder'],
         );
     }
 

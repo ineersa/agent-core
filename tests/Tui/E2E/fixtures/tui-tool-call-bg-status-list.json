@@ -1,0 +1,30 @@
+{
+    "$schema": "Second LLM turn after bash background accept — bg_status list",
+    "model": "llama_cpp_test/test",
+    "provider_id": "llama_cpp_test",
+    "reasoning": "off",
+    "recorded_at": "2026-06-25T00:00:00+00:00",
+    "recording_source": "manual",
+    "input": {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Run bg_status list"
+            }
+        ]
+    },
+    "usage": {
+        "input_tokens": 10,
+        "output_tokens": 25,
+        "total_tokens": 35
+    },
+    "stop_reason": "tool_call",
+    "expected_text": "",
+    "deltas": [
+        {"type": "tool_call_start", "id": "call_bg_status_list_1", "name": "bg_status"},
+        {"type": "tool_input_delta", "id": "call_bg_status_list_1", "name": "bg_status", "partial_json": "{\"action\":\"list\"}"},
+        {"type": "tool_call_complete", "tool_calls": [
+            {"id": "call_bg_status_list_1", "name": "bg_status", "arguments": {"action": "list"}}
+        ]}
+    ]
+}
