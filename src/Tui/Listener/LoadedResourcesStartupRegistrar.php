@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
-use Ineersa\CodingAgent\Runtime\LoadedResources\LoadedResourcesSummaryBuilder;
+use Ineersa\CodingAgent\Runtime\Contract\LoadedResourcesSummaryProviderInterface;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Symfony\Component\Tui\Event\InputEvent;
 use Symfony\Component\Tui\Event\TickEvent;
@@ -16,7 +16,7 @@ use Symfony\Component\Tui\Event\TickEvent;
 final readonly class LoadedResourcesStartupRegistrar implements TuiListenerRegistrar
 {
     public function __construct(
-        private LoadedResourcesSummaryBuilder $loadedResourcesSummaryBuilder,
+        private LoadedResourcesSummaryProviderInterface $loadedResourcesSummaryProvider,
     ) {
     }
 
@@ -25,16 +25,16 @@ final readonly class LoadedResourcesStartupRegistrar implements TuiListenerRegis
         $screen = $context->screen;
         $tui = $context->tui;
         $state = $context->state;
-        $builder = $this->loadedResourcesSummaryBuilder;
+        $provider = $this->loadedResourcesSummaryProvider;
 
         $loaded = false;
-        $context->ticks->add(static function (TickEvent $event) use ($screen, $tui, $state, $builder, &$loaded): ?bool {
+        $context->ticks->add(static function (TickEvent $event) use ($screen, $tui, $state, $provider, &$loaded): ?bool {
             if ($loaded || $state->resuming) {
                 return null;
             }
 
             $loaded = true;
-            $screen->setLoadedResourcesSummary($builder->build());
+            $screen->setLoadedResourcesSummary($provider->build());
             $tui->requestRender();
 
             return null;

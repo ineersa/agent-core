@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Runtime\Contract\LoadedResourceConflictDTO;
 use Ineersa\CodingAgent\Runtime\Contract\LoadedResourceItemDTO;
 use Ineersa\CodingAgent\Runtime\Contract\LoadedResourceSectionDTO;
 use Ineersa\CodingAgent\Runtime\Contract\LoadedResourcesSummaryDTO;
+use Ineersa\CodingAgent\Runtime\Contract\LoadedResourcesSummaryProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\ThemeLoadedResourcesProviderInterface;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextDiscovery;
@@ -18,7 +19,7 @@ use Ineersa\CodingAgent\SystemPrompt\AgentsContextDiscovery;
 /**
  * Aggregates discovery/load results into a display-only startup summary DTO.
  */
-final readonly class LoadedResourcesSummaryBuilder
+final readonly class LoadedResourcesSummaryBuilder implements LoadedResourcesSummaryProviderInterface
 {
     public function __construct(
         private AgentsContextDiscovery $agentsContextDiscovery,

@@ -18,6 +18,8 @@ use Ineersa\CodingAgent\Extension\ExtensionManager;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateFrontmatterParser;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateLoader;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
+use Ineersa\CodingAgent\Runtime\Contract\LoadedResourcesSummaryDTO;
+use Ineersa\CodingAgent\Runtime\Contract\LoadedResourcesSummaryProviderInterface;
 use Ineersa\CodingAgent\Runtime\LoadedResources\LoadedResourcesSummaryBuilder;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
@@ -91,6 +93,42 @@ final class LoadedResourcesStartupRegistrarTest extends TestCase
         $context->ticks->dispatch(new TickEvent());
 
         self::assertFalse($harness->screen()->hasLoadedResourcesBlock());
+    }
+
+
+    #[Test]
+    public function buildIsNotInvokedBeforeFirstTick(): void
+    {
+        $calls = 0;
+        $provider = new class($calls) implements LoadedResourcesSummaryProviderInterface {
+            public function __construct(private int &$calls)
+            {
+            }
+
+            public function build(): LoadedResourcesSummaryDTO
+            {
+                ++$this->calls;
+
+                return new LoadedResourcesSummaryDTO([]);
+            }
+        };
+
+        $harness = new VirtualTuiHarness(sessionId: 'no-sync-build');
+        $state = new TuiSessionState('no-sync-build');
+        $state->resuming = false;
+        $context = $this->buildTuiContext()
+            ->withTui($harness->tui())
+            ->withState($state)
+            ->withScreen($harness->screen())
+            ->build();
+
+        (new LoadedResourcesStartupRegistrar($provider))->register($context);
+
+        self::assertSame(0, $calls, 'summary build must not run during register() / pre-loop startup');
+
+        $context->ticks->dispatch(new TickEvent());
+
+        self::assertSame(1, $calls);
     }
 
     private function createMinimalBuilder(): LoadedResourcesSummaryBuilder
