@@ -687,7 +687,7 @@ HTML;
         }
 
         $label = match ($kind) {
-            'steer', 'follow_up' => 'user',
+            'steer', 'follow_up', 'append_message' => 'user',
             'human_response' => 'human response',
             'cancel' => 'cancelled',
             default => 'command',

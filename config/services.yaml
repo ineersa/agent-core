@@ -442,12 +442,22 @@ services:
     arguments:
       $defaultModel: '%app.default_model%'
 
+
+  Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler:
+    arguments:
+      $commandBus: '@agent.command.bus'
+
+  Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler:
+    arguments:
+      $commandBus: '@agent.command.bus'
+
   Ineersa\AgentCore\Application\Pipeline\LlmStepResultHandler:
     arguments:
       $toolExecutionSettings: '@Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface'
       $agentRetryMaxAttempts: '@=null !== service("Ineersa\\CodingAgent\\Config\\AppConfig").ai ? service("Ineersa\\CodingAgent\\Config\\AppConfig").ai.agentRetry.resolveMaxAttempts() : 2'
       $agentRetryBaseDelayMs: '@=null !== service("Ineersa\\CodingAgent\\Config\\AppConfig").ai ? service("Ineersa\\CodingAgent\\Config\\AppConfig").ai.agentRetry.resolveBaseDelayMs() : 1000'
       $agentRetryMaxDelayMs: '@=null !== service("Ineersa\\CodingAgent\\Config\\AppConfig").ai ? service("Ineersa\\CodingAgent\\Config\\AppConfig").ai.agentRetry.resolveMaxDelayMs() : 60000'
+      $maxParallelism: '@=max(1, service("Ineersa\\CodingAgent\\Config\\AppConfig").tools.execution.maxParallelism)'
 
   # ─── System prompt builder ───
   Symfony\AI\Platform\Message\TemplateRenderer\StringTemplateRenderer: ~

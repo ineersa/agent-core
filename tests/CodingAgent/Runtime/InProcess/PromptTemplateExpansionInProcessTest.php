@@ -249,6 +249,8 @@ final class FakeCapturingAgentRunner implements AgentRunnerInterface
 
     /** @var list<AgentMessage> */
     public array $followUpMessages = [];
+    /** @var list<AgentMessage> */
+    public array $appendMessages = [];
 
     /** @var list<array{questionId: string, answer: mixed}> */
     public array $answerHumanCalls = [];
@@ -281,6 +283,11 @@ final class FakeCapturingAgentRunner implements AgentRunnerInterface
     public function followUp(string $runId, AgentMessage $message): void
     {
         $this->followUpMessages[] = $message;
+    }
+
+    public function appendMessage(string $runId, AgentMessage $message): void
+    {
+        $this->appendMessages[] = $message;
     }
 
     public function cancel(string $runId, ?string $reason = null): void

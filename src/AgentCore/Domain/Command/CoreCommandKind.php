@@ -8,6 +8,7 @@ final class CoreCommandKind
 {
     public const string Steer = 'steer';
     public const string FollowUp = 'follow_up';
+    public const string AppendMessage = 'append_message';
     public const string Cancel = 'cancel';
     public const string HumanResponse = 'human_response';
     public const string Continue = 'continue';
@@ -17,6 +18,7 @@ final class CoreCommandKind
     public const array ALL = [
         self::Steer,
         self::FollowUp,
+        self::AppendMessage,
         self::Cancel,
         self::HumanResponse,
         self::Continue,

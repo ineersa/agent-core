@@ -309,10 +309,11 @@ final class TickPollListener implements TuiListenerRegistrar
         }
 
         // Parse schema to determine the overlay type.
+        $kind = (string) ($p['kind'] ?? '');
         $rawSchema = $p['schema'] ?? null;
         $schema = \is_string($rawSchema)
-            ? (json_decode($rawSchema, true) ?? ['type' => 'string'])
-            : (\is_array($rawSchema) ? $rawSchema : ['type' => 'string']);
+            ? (json_decode($rawSchema, true) ?? [])
+            : (\is_array($rawSchema) ? $rawSchema : []);
 
         $hasEnum = isset($schema['enum']) && \is_array($schema['enum']) && [] !== $schema['enum'];
         $isBoolean = ($schema['type'] ?? '') === 'boolean';
@@ -323,21 +324,15 @@ final class TickPollListener implements TuiListenerRegistrar
             return;
         }
 
-        if ($isBoolean) {
+        if ($isBoolean || 'confirm' === $kind) {
             self::handleConfirmToolQuestion($p, $requestId, $runId, $requestIdFromPayload, $client, $questionCoordinator);
 
             return;
         }
 
-        // Fallback: if the schema is unexpected, still show a choice overlay
-        // so the user can type or see something. The extension's prompt and
-        // the server-side AnswerToolQuestionHandler (schema-driven) handle
-        // the actual answer content.
-        trigger_error(
-            \sprintf('ToolQuestionPoller emitted unexpected schema type for request_id=%s — falling back to choice overlay', $requestIdFromPayload),
-            \E_USER_WARNING,
-        );
-
+        // Degenerate fallback: unknown non-confirm schemas degrade to the generic choice
+        // overlay instead of throwing (which would drop later poll-batch events). Producers
+        // should supply enum or string schemas so choices are usable; this path is best-effort.
         self::handleChoiceToolQuestion($p, $schema, $requestId, $runId, $requestIdFromPayload, $client, $questionCoordinator);
     }
 
