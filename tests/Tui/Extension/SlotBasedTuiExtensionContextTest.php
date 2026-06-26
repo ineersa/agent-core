@@ -28,24 +28,24 @@ final class SlotBasedTuiExtensionContextTest extends TestCase
     {
         $widget = $this->createDummyWidget();
         $this->context->setHeader($widget);
-        self::assertSame($widget, $this->registry->getHeader());
+        $this->assertSame($widget, $this->registry->getHeader());
 
         $this->context->setHeader(null);
-        self::assertNull($this->registry->getHeader());
+        $this->assertNull($this->registry->getHeader());
     }
 
     public function testSetFooter(): void
     {
         $widget = $this->createDummyWidget();
         $this->context->setFooter($widget);
-        self::assertSame($widget, $this->registry->getFooter());
+        $this->assertSame($widget, $this->registry->getFooter());
     }
 
     public function testSetEditorComponent(): void
     {
         $widget = $this->createDummyWidget();
         $this->context->setEditorComponent($widget);
-        self::assertSame($widget, $this->registry->getEditorComponent());
+        $this->assertSame($widget, $this->registry->getEditorComponent());
     }
 
     public function testSetWidget(): void
@@ -54,49 +54,49 @@ final class SlotBasedTuiExtensionContextTest extends TestCase
         $this->context->setWidget('test', $widget, WidgetPlacementEnum::AboveEditor);
 
         $widgets = $this->registry->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor);
-        self::assertCount(1, $widgets);
-        self::assertSame($widget, $widgets[0]);
+        $this->assertCount(1, $widgets);
+        $this->assertSame($widget, $widgets[0]);
 
         // Remove by setting null
         $this->context->setWidget('test', null);
-        self::assertCount(0, $this->registry->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor));
+        $this->assertCount(0, $this->registry->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor));
     }
 
     public function testSetStatus(): void
     {
         $this->context->setStatus('key', 'value');
-        self::assertSame(['key' => 'value'], $this->registry->getStatusEntries());
+        $this->assertSame(['key' => 'value'], $this->registry->getStatusEntries());
 
         $this->context->setStatus('key', null);
-        self::assertSame([], $this->registry->getStatusEntries());
+        $this->assertSame([], $this->registry->getStatusEntries());
     }
 
     public function testSetWorkingMessage(): void
     {
         $this->context->setWorkingMessage('Busy');
-        self::assertSame('Busy', $this->registry->getWorkingMessage());
+        $this->assertSame('Busy', $this->registry->getWorkingMessage());
 
         $this->context->setWorkingMessage(null);
-        self::assertSame('', $this->registry->getWorkingMessage());
+        $this->assertSame('', $this->registry->getWorkingMessage());
     }
 
     public function testSetWorkingVisible(): void
     {
         $this->context->setWorkingVisible(false);
-        self::assertFalse($this->registry->isWorkingVisible());
+        $this->assertFalse($this->registry->isWorkingVisible());
 
         $this->context->setWorkingVisible(true);
-        self::assertTrue($this->registry->isWorkingVisible());
+        $this->assertTrue($this->registry->isWorkingVisible());
     }
 
     public function testOnTerminalInput(): void
     {
-        $handler = function (string $data): void {};
+        $handler = static function (string $data): void {};
         $this->context->onTerminalInput($handler);
 
         $handlers = $this->registry->getInputHandlers();
-        self::assertCount(1, $handlers);
-        self::assertSame($handler, $handlers[0]);
+        $this->assertCount(1, $handlers);
+        $this->assertSame($handler, $handlers[0]);
     }
 
     private function createDummyWidget(): TuiWidget

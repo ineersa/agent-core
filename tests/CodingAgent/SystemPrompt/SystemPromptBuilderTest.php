@@ -528,7 +528,6 @@ final class SystemPromptBuilderTest extends TestCase
         $this->assertStringNotContainsString('<tool_usage>', $result);
     }
 
-
     public function testBuildChildHarnessFragmentFiltersTools(): void
     {
         $registry = $this->createRegistryWithTools();

@@ -15,7 +15,7 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(RuntimeEvent::class)]
 final class JsonlCodecTest extends TestCase
 {
-    public function test_encode_and_decode_command(): void
+    public function testEncodeAndDecodeCommand(): void
     {
         $command = new RuntimeCommand(
             id: 'cmd_1',
@@ -24,15 +24,15 @@ final class JsonlCodecTest extends TestCase
         );
 
         $line = JsonlCodec::encodeCommand($command);
-        self::assertStringEndsWith("\n", $line);
+        $this->assertStringEndsWith("\n", $line);
 
         $decoded = JsonlCodec::decodeCommand($line);
-        self::assertSame('cmd_1', $decoded->id);
-        self::assertSame('start_run', $decoded->type);
-        self::assertSame('Hello', $decoded->payload['prompt']);
+        $this->assertSame('cmd_1', $decoded->id);
+        $this->assertSame('start_run', $decoded->type);
+        $this->assertSame('Hello', $decoded->payload['prompt']);
     }
 
-    public function test_encode_and_decode_event(): void
+    public function testEncodeAndDecodeEvent(): void
     {
         $event = new RuntimeEvent(
             type: 'message_delta',
@@ -42,16 +42,16 @@ final class JsonlCodecTest extends TestCase
         );
 
         $line = JsonlCodec::encodeEvent($event);
-        self::assertStringEndsWith("\n", $line);
+        $this->assertStringEndsWith("\n", $line);
 
         $decoded = JsonlCodec::decodeEvent($line);
-        self::assertSame('message_delta', $decoded->type);
-        self::assertSame('run_abc', $decoded->runId);
-        self::assertSame(12, $decoded->seq);
-        self::assertSame('Hello world', $decoded->payload['text']);
+        $this->assertSame('message_delta', $decoded->type);
+        $this->assertSame('run_abc', $decoded->runId);
+        $this->assertSame(12, $decoded->seq);
+        $this->assertSame('Hello world', $decoded->payload['text']);
     }
 
-    public function test_encode_roundtrip_preserves_all_fields(): void
+    public function testEncodeRoundtripPreservesAllFields(): void
     {
         $event = new RuntimeEvent(
             type: 'run_started',
@@ -63,55 +63,55 @@ final class JsonlCodecTest extends TestCase
         $line = JsonlCodec::encodeEvent($event);
         $decoded = JsonlCodec::decodeEvent(trim($line));
 
-        self::assertSame($event->v, $decoded->v);
-        self::assertSame($event->type, $decoded->type);
-        self::assertSame($event->runId, $decoded->runId);
-        self::assertSame($event->seq, $decoded->seq);
-        self::assertSame($event->payload, $decoded->payload);
+        $this->assertSame($event->v, $decoded->v);
+        $this->assertSame($event->type, $decoded->type);
+        $this->assertSame($event->runId, $decoded->runId);
+        $this->assertSame($event->seq, $decoded->seq);
+        $this->assertSame($event->payload, $decoded->payload);
     }
 
-    public function test_decode_command_with_runId(): void
+    public function testDecodeCommandWithRunId(): void
     {
         $line = "{\"v\":1,\"id\":\"cmd_2\",\"type\":\"user_message\",\"runId\":\"run_123\",\"payload\":{\"text\":\"Hi\"}}\n";
         $command = JsonlCodec::decodeCommand($line);
 
-        self::assertSame('cmd_2', $command->id);
-        self::assertSame('user_message', $command->type);
-        self::assertSame('run_123', $command->runId);
-        self::assertSame('Hi', $command->payload['text']);
+        $this->assertSame('cmd_2', $command->id);
+        $this->assertSame('user_message', $command->type);
+        $this->assertSame('run_123', $command->runId);
+        $this->assertSame('Hi', $command->payload['text']);
     }
 
-    public function test_decode_event_without_newline(): void
+    public function testDecodeEventWithoutNewline(): void
     {
         $line = '{"v":1,"type":"run_finished","runId":"run_123","seq":99,"payload":{}}';
         $event = JsonlCodec::decodeEvent($line);
 
-        self::assertSame('run_finished', $event->type);
-        self::assertSame('run_123', $event->runId);
-        self::assertSame(99, $event->seq);
+        $this->assertSame('run_finished', $event->type);
+        $this->assertSame('run_123', $event->runId);
+        $this->assertSame(99, $event->seq);
     }
 
-    public function test_decode_empty_line_throws(): void
+    public function testDecodeEmptyLineThrows(): void
     {
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Empty line');
         JsonlCodec::decodeEvent('');
     }
 
-    public function test_decode_whitespace_line_throws(): void
+    public function testDecodeWhitespaceLineThrows(): void
     {
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Empty line');
         JsonlCodec::decodeEvent("   \n");
     }
 
-    public function test_decode_invalid_json_throws(): void
+    public function testDecodeInvalidJsonThrows(): void
     {
         $this->expectException(\JsonException::class);
         JsonlCodec::decodeEvent("not json\n");
     }
 
-    public function test_command_with_null_runId(): void
+    public function testCommandWithNullRunId(): void
     {
         $command = new RuntimeCommand(
             id: 'cmd_3',
@@ -119,11 +119,11 @@ final class JsonlCodecTest extends TestCase
             payload: ['prompt' => 'test'],
         );
 
-        self::assertNull($command->runId);
+        $this->assertNull($command->runId);
 
         $line = JsonlCodec::encodeCommand($command);
         $decoded = JsonlCodec::decodeCommand($line);
 
-        self::assertNull($decoded->runId);
+        $this->assertNull($decoded->runId);
     }
 }

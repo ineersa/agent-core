@@ -23,6 +23,95 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(ResumeSessionCommandHandler::class)]
 final class ResumeSessionCommandHandlerTest extends TestCase
 {
+    #[Test]
+    public function testHandleWithNoArgsOpensPickerAndReturnsNoOp(): void
+    {
+        $switch = $this->createSwitchSpy();
+        $em = $this->createStub(EntityManagerInterface::class);
+        $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em);
+        $pickerController = new SessionPickerController($sessionStore, $switch);
+
+        $handler = new ResumeSessionCommandHandler($switch, $sessionStore, $pickerController);
+
+        $result = $handler->handle(new SlashCommand('resume', '', '/resume'));
+
+        $this->assertInstanceOf(NoOp::class, $result);
+        $this->assertNull($switch->resumedSessionId, 'Switch should NOT be called when no args given');
+        // Picker should be opened — picker state not directly verifiable without TUI
+        $this->assertFalse($pickerController->isOpen(), 'Picker requires TUI runtime refs so it stays closed');
+    }
+
+    #[Test]
+    public function testHandleWithValidSessionIdCallsSwitchAndReturnsNoOp(): void
+    {
+        $switch = $this->createSwitchSpy();
+        $em = $this->createEntityManagerWithSession(42, 'Test Session');
+        $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em);
+        $pickerController = new SessionPickerController($sessionStore, $switch);
+
+        $handler = new ResumeSessionCommandHandler($switch, $sessionStore, $pickerController);
+
+        $result = $handler->handle(new SlashCommand('resume', '42', '/resume 42'));
+
+        $this->assertInstanceOf(NoOp::class, $result);
+        $this->assertSame('42', $switch->resumedSessionId, 'Expected requestResume() with session ID');
+    }
+
+    #[Test]
+    public function testHandleWithInvalidSessionIdReturnsError(): void
+    {
+        $switch = $this->createSwitchSpy();
+        // EntityManager as stub — find() returns null for any ID
+        $em = $this->createStub(EntityManagerInterface::class);
+        $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em);
+        $pickerController = new SessionPickerController($sessionStore, $switch);
+
+        $handler = new ResumeSessionCommandHandler($switch, $sessionStore, $pickerController);
+
+        $result = $handler->handle(new SlashCommand('resume', '999', '/resume 999'));
+
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $this->assertStringContainsString('999', $result->text);
+        $this->assertSame('error', $result->role);
+        $this->assertNull($switch->resumedSessionId, 'Switch should NOT be called for invalid session');
+    }
+
+    #[Test]
+    public function testHandleWithMalformedSessionIdReturnsError(): void
+    {
+        $switch = $this->createSwitchSpy();
+        $em = $this->createStub(EntityManagerInterface::class);
+        $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em);
+        $pickerController = new SessionPickerController($sessionStore, $switch);
+
+        $handler = new ResumeSessionCommandHandler($switch, $sessionStore, $pickerController);
+
+        $result = $handler->handle(new SlashCommand('resume', '42 extra', '/resume 42 extra'));
+
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $this->assertStringContainsString('42 extra', $result->text);
+        $this->assertSame('error', $result->role);
+        $this->assertNull($switch->resumedSessionId, 'Switch should NOT be called for malformed ID');
+    }
+
+    #[Test]
+    public function testHandleWithSessionIdZeroReturnsError(): void
+    {
+        $switch = $this->createSwitchSpy();
+        $em = $this->createStub(EntityManagerInterface::class);
+        $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em);
+        $pickerController = new SessionPickerController($sessionStore, $switch);
+
+        $handler = new ResumeSessionCommandHandler($switch, $sessionStore, $pickerController);
+
+        $result = $handler->handle(new SlashCommand('resume', '0', '/resume 0'));
+
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $this->assertStringContainsString('0', $result->text);
+        $this->assertSame('error', $result->role);
+        $this->assertNull($switch->resumedSessionId, 'Switch should NOT be called for session 0');
+    }
+
     private function createAppConfig(): AppConfig
     {
         return new AppConfig(
@@ -42,7 +131,7 @@ final class ResumeSessionCommandHandlerTest extends TestCase
         $entity->updatedAt = new \DateTimeImmutable();
 
         $em = $this->createMock(EntityManagerInterface::class);
-        $em->expects(static::atLeastOnce())
+        $em->expects($this->atLeastOnce())
             ->method('find')
             ->with(HatfieldSession::class, $id)
             ->willReturn($entity);
@@ -77,94 +166,5 @@ final class ResumeSessionCommandHandlerTest extends TestCase
                 return false;
             }
         };
-    }
-
-    #[Test]
-    public function testHandleWithNoArgsOpensPickerAndReturnsNoOp(): void
-    {
-        $switch = $this->createSwitchSpy();
-        $em = $this->createStub(EntityManagerInterface::class);
-        $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em);
-        $pickerController = new SessionPickerController($sessionStore, $switch);
-
-        $handler = new ResumeSessionCommandHandler($switch, $sessionStore, $pickerController);
-
-        $result = $handler->handle(new SlashCommand('resume', '', '/resume'));
-
-        self::assertInstanceOf(NoOp::class, $result);
-        self::assertNull($switch->resumedSessionId, 'Switch should NOT be called when no args given');
-        // Picker should be opened — picker state not directly verifiable without TUI
-        self::assertFalse($pickerController->isOpen(), 'Picker requires TUI runtime refs so it stays closed');
-    }
-
-    #[Test]
-    public function testHandleWithValidSessionIdCallsSwitchAndReturnsNoOp(): void
-    {
-        $switch = $this->createSwitchSpy();
-        $em = $this->createEntityManagerWithSession(42, 'Test Session');
-        $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em);
-        $pickerController = new SessionPickerController($sessionStore, $switch);
-
-        $handler = new ResumeSessionCommandHandler($switch, $sessionStore, $pickerController);
-
-        $result = $handler->handle(new SlashCommand('resume', '42', '/resume 42'));
-
-        self::assertInstanceOf(NoOp::class, $result);
-        self::assertSame('42', $switch->resumedSessionId, 'Expected requestResume() with session ID');
-    }
-
-    #[Test]
-    public function testHandleWithInvalidSessionIdReturnsError(): void
-    {
-        $switch = $this->createSwitchSpy();
-        // EntityManager as stub — find() returns null for any ID
-        $em = $this->createStub(EntityManagerInterface::class);
-        $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em);
-        $pickerController = new SessionPickerController($sessionStore, $switch);
-
-        $handler = new ResumeSessionCommandHandler($switch, $sessionStore, $pickerController);
-
-        $result = $handler->handle(new SlashCommand('resume', '999', '/resume 999'));
-
-        self::assertInstanceOf(TranscriptMessage::class, $result);
-        self::assertStringContainsString('999', $result->text);
-        self::assertSame('error', $result->role);
-        self::assertNull($switch->resumedSessionId, 'Switch should NOT be called for invalid session');
-    }
-
-    #[Test]
-    public function testHandleWithMalformedSessionIdReturnsError(): void
-    {
-        $switch = $this->createSwitchSpy();
-        $em = $this->createStub(EntityManagerInterface::class);
-        $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em);
-        $pickerController = new SessionPickerController($sessionStore, $switch);
-
-        $handler = new ResumeSessionCommandHandler($switch, $sessionStore, $pickerController);
-
-        $result = $handler->handle(new SlashCommand('resume', '42 extra', '/resume 42 extra'));
-
-        self::assertInstanceOf(TranscriptMessage::class, $result);
-        self::assertStringContainsString('42 extra', $result->text);
-        self::assertSame('error', $result->role);
-        self::assertNull($switch->resumedSessionId, 'Switch should NOT be called for malformed ID');
-    }
-
-    #[Test]
-    public function testHandleWithSessionIdZeroReturnsError(): void
-    {
-        $switch = $this->createSwitchSpy();
-        $em = $this->createStub(EntityManagerInterface::class);
-        $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em);
-        $pickerController = new SessionPickerController($sessionStore, $switch);
-
-        $handler = new ResumeSessionCommandHandler($switch, $sessionStore, $pickerController);
-
-        $result = $handler->handle(new SlashCommand('resume', '0', '/resume 0'));
-
-        self::assertInstanceOf(TranscriptMessage::class, $result);
-        self::assertStringContainsString('0', $result->text);
-        self::assertSame('error', $result->role);
-        self::assertNull($switch->resumedSessionId, 'Switch should NOT be called for session 0');
     }
 }

@@ -118,19 +118,19 @@ final class SubagentChildProgressSummaryBuilderTest extends IsolatedKernelTestCa
         $builder = new SubagentChildProgressSummaryBuilder($factory);
         $summary = $builder->summarize($parentRunId, $childRunId, $artifactId, $childState, 'deepseek/deepseek-v4-flash');
 
-        self::assertSame(2, $summary->toolCount);
-        self::assertSame(35000, $summary->inputTokens);
-        self::assertSame(14000, $summary->outputTokens);
-        self::assertSame(584000, $summary->reasoningTokens);
-        self::assertSame(0.0104, $summary->cost);
-        self::assertStringContainsString('artifacts/agents/'.$artifactId, (string) $summary->artifactPath);
-        self::assertStringContainsString('Next step', (string) $summary->assistantExcerpt);
-        self::assertNotEmpty($summary->recentTools);
-        self::assertStringContainsString('read:', $summary->recentTools[0]);
-        self::assertStringContainsString('path="', $summary->recentTools[0]);
-        self::assertStringNotContainsString('tool end', implode(' ', $summary->recentTools));
-        self::assertStringContainsString('grep', implode(' ', $summary->recentTools));
-        self::assertNull($summary->activeToolLine);
+        $this->assertSame(2, $summary->toolCount);
+        $this->assertSame(35000, $summary->inputTokens);
+        $this->assertSame(14000, $summary->outputTokens);
+        $this->assertSame(584000, $summary->reasoningTokens);
+        $this->assertSame(0.0104, $summary->cost);
+        $this->assertStringContainsString('artifacts/agents/'.$artifactId, (string) $summary->artifactPath);
+        $this->assertStringContainsString('Next step', (string) $summary->assistantExcerpt);
+        $this->assertNotEmpty($summary->recentTools);
+        $this->assertStringContainsString('read:', $summary->recentTools[0]);
+        $this->assertStringContainsString('path="', $summary->recentTools[0]);
+        $this->assertStringNotContainsString('tool end', implode(' ', $summary->recentTools));
+        $this->assertStringContainsString('grep', implode(' ', $summary->recentTools));
+        $this->assertNull($summary->activeToolLine);
     }
 
     private function createChildEventStore(string $parentRunId, string $childRunId, string $artifactId): AgentChildRunEventStore

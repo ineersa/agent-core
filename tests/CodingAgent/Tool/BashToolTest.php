@@ -8,8 +8,8 @@ use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
-use Ineersa\CodingAgent\Config\BashToolConfig;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
+use Ineersa\CodingAgent\Config\BashToolConfig;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
@@ -183,7 +183,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         $cancellationToken = $this->createStub(CancellationTokenInterface::class);
         $cancellationToken
             ->method('isCancellationRequested')
-            ->willReturnCallback(function () use (&$callCount) {
+            ->willReturnCallback(static function () use (&$callCount) {
                 ++$callCount;
 
                 // First call is the pre-check in ToolRuntime::run() —
@@ -409,7 +409,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->assertStringContainsString('bg_status stop pid=', $result);
 
         // Extract PID from result
-        \preg_match('/PID: (\d+)/', $result, $matches);
+        preg_match('/PID: (\d+)/', $result, $matches);
         $this->assertNotEmpty($matches, 'PID should be present in result');
         $pid = (int) $matches[1];
 
@@ -425,8 +425,8 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->assertNotNull($entities[0]->backgroundedAt, 'Background process should have backgroundedAt set');
 
         // Verify the log contains our unique marker
-        \usleep(50_000); // Brief wait for log flush
-        $logContent = \file_get_contents($entities[0]->logPath);
+        usleep(50_000); // Brief wait for log flush
+        $logContent = file_get_contents($entities[0]->logPath);
         $this->assertStringContainsString('background-marker-12345', $logContent ?: '');
 
         // Clean up
@@ -450,8 +450,8 @@ final class BashToolTest extends IsolatedKernelTestCase
         $promptAdapter
             ->expects($this->once())
             ->method('shouldBackground')
-            ->willReturnCallback(function (): bool {
-                \usleep(200_000); // Block while the command finishes
+            ->willReturnCallback(static function (): bool {
+                usleep(200_000); // Block while the command finishes
 
                 return true;
             });

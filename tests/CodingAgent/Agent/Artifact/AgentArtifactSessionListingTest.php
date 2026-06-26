@@ -11,9 +11,9 @@ use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Serializer\Encoder\JsonEncoder;
+use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
 use Symfony\Component\Serializer\Normalizer\BackedEnumNormalizer;
 use Symfony\Component\Serializer\Normalizer\DateTimeNormalizer;
-use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 use Symfony\Component\Serializer\Serializer;
 use Symfony\Component\Validator\ValidatorBuilder;
@@ -73,14 +73,14 @@ final class AgentArtifactSessionListingTest extends IsolatedKernelTestCase
         $sessions = $this->hatfieldSessionStore->listSessions();
         $sessionIds = array_column($sessions, 'sessionId');
 
-        self::assertContains($parentSessionId, $sessionIds, 'Parent session must appear in listing');
+        $this->assertContains($parentSessionId, $sessionIds, 'Parent session must appear in listing');
 
         // Child agentRunId must NOT be in the session listing — it was
         // never created as a DB row.
-        self::assertNotContains($childAgentRunId, $sessionIds, 'Child agent run must not pollute session listing');
+        $this->assertNotContains($childAgentRunId, $sessionIds, 'Child agent run must not pollute session listing');
 
         // Also verify the child agentRunId does not report as existing
         // in the session store.
-        self::assertFalse($this->hatfieldSessionStore->exists($childAgentRunId));
+        $this->assertFalse($this->hatfieldSessionStore->exists($childAgentRunId));
     }
 }

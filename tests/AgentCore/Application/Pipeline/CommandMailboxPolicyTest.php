@@ -17,7 +17,6 @@ use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Application\Pipeline\LlmStepResultHandler;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
-
 use Ineersa\AgentCore\Application\Pipeline\RunOrchestrator;
 use Ineersa\AgentCore\Application\Pipeline\StartRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
@@ -404,6 +403,27 @@ final class CommandMailboxPolicyTest extends TestCase
         $this->assertCount(0, $advanceCommands);
     }
 
+    public function testCopyStatePreservesRetryAttempts(): void
+    {
+        $policy = new CommandMailboxPolicy(
+            commandStore: new InMemoryCommandStore(),
+            commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+        );
+
+        $state = new RunState(
+            runId: 'run-copy-retry',
+            status: RunStatus::Running,
+            retryAttempts: 2,
+        );
+
+        $reflection = new \ReflectionClass($policy);
+        $copyState = $reflection->getMethod('copyState');
+        /** @var RunState $copied */
+        $copied = $copyState->invoke($policy, $state, ['messages' => []]);
+
+        $this->assertSame(2, $copied->retryAttempts);
+    }
+
     private function createFixture(int $maxPendingCommands = 100, string $steerDrainMode = 'one_at_a_time'): CommandMailboxFixture
     {
         $runStore = new InMemoryRunStore();
@@ -523,27 +543,6 @@ final class CommandMailboxPolicyTest extends TestCase
         );
     }
 
-    public function testCopyStatePreservesRetryAttempts(): void
-    {
-        $policy = new CommandMailboxPolicy(
-            commandStore: new InMemoryCommandStore(),
-            commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
-        );
-
-        $state = new RunState(
-            runId: 'run-copy-retry',
-            status: RunStatus::Running,
-            retryAttempts: 2,
-        );
-
-        $reflection = new \ReflectionClass($policy);
-        $copyState = $reflection->getMethod('copyState');
-        /** @var RunState $copied */
-        $copied = $copyState->invoke($policy, $state, ['messages' => []]);
-
-        self::assertSame(2, $copied->retryAttempts);
-    }
-
     private function deleteDirectory(string $path): void
     {
         if (!is_dir($path)) {
@@ -580,4 +579,3 @@ final readonly class CommandMailboxFixture
     ) {
     }
 }
-

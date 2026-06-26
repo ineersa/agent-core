@@ -106,7 +106,6 @@ final class VirtualTuiHarness
         $this->tui->processRender();
     }
 
-
     /**
      * Palette with distinct ANSI thinking tokens for virtual border-colour assertions.
      */

@@ -8,9 +8,6 @@ use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\Tui\Listener\TickPollListener;
 use Ineersa\Tui\Question\QuestionCoordinator;
-use Ineersa\Tui\Question\QuestionOption;
-use Ineersa\Tui\Question\QuestionRequest;
-use Ineersa\Tui\Question\QuestionSource;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -43,7 +40,7 @@ final class TickPollListenerTest extends TestCase
             ->method('send')
             ->with(
                 $this->identicalTo('run-1'),
-                $this->callback(function (UserCommand $cmd) use (&$sentCommand): bool {
+                $this->callback(static function (UserCommand $cmd) use (&$sentCommand): bool {
                     $sentCommand = $cmd;
 
                     return true;

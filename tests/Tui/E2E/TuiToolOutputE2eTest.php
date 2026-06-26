@@ -33,25 +33,24 @@ use PHPUnit\Framework\TestCase;
 #[Group('tui-e2e-replay')]
 final class TuiToolOutputE2eTest extends TestCase
 {
+    /** Sentinel that the read tool should capture from ./test.txt. */
+    private const OUTPUT_SENTINEL = 'TOOL_OUTPUT_SENTINEL_131_READ';
     private TmuxHarness $tmux;
     private string $projectRoot;
     private string $testProjectDir;
     private string $snapshotDir;
 
-    /** Sentinel that the read tool should capture from ./test.txt. */
-    private const OUTPUT_SENTINEL = 'TOOL_OUTPUT_SENTINEL_131_READ';
-
     protected function setUp(): void
     {
         if (!TmuxHarness::isAvailable()) {
-            self::markTestSkipped('tmux is not installed. Skipping TUI e2e tests.');
+            $this->markTestSkipped('tmux is not installed. Skipping TUI e2e tests.');
         }
 
         $this->tmux = new TmuxHarness();
         $this->projectRoot = ProjectDir::get();
         $this->testProjectDir = $this->createIsolatedProjectDir();
         $this->snapshotDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
-        @\mkdir($this->snapshotDir, 0o777, true);
+        @mkdir($this->snapshotDir, 0o777, true);
     }
 
     protected function tearDown(): void
@@ -109,7 +108,7 @@ final class TuiToolOutputE2eTest extends TestCase
             );
 
             // The turn must complete with an assistant block (not error).
-            self::assertTrue(
+            $this->assertTrue(
                 str_contains($capture, '◇'),
                 'Transcript must display an assistant block (◇) after tool execution + done response',
             );
@@ -118,7 +117,7 @@ final class TuiToolOutputE2eTest extends TestCase
             $fullCapture = $this->tmux->capturePlainWithHistory($pane, 2000);
 
             // 1. The real tool output (file content) must appear in the transcript.
-            self::assertStringContainsString(
+            $this->assertStringContainsString(
                 self::OUTPUT_SENTINEL,
                 $fullCapture,
                 'Tool result must show actual file content, not just "read completed" fallback. '
@@ -128,7 +127,7 @@ final class TuiToolOutputE2eTest extends TestCase
             // 2. The "read completed" fallback must NOT appear (real output flows now).
             // Tool name "read" may appear in the tool CALL block, but "read completed"
             // is the specific fallback label we want to prove absent.
-            self::assertStringNotContainsString(
+            $this->assertStringNotContainsString(
                 'read completed',
                 $fullCapture,
                 'Tool result fallback "read completed" must NOT appear when real output flows. '
@@ -136,7 +135,7 @@ final class TuiToolOutputE2eTest extends TestCase
             );
 
             // 3. Verify session ID in footer.
-            self::assertStringContainsString(
+            $this->assertStringContainsString(
                 'session ',
                 $fullCapture,
                 'Session ID should appear in footer after prompt submission',
@@ -162,8 +161,8 @@ final class TuiToolOutputE2eTest extends TestCase
     private function agentCommand(): string
     {
         $fixturePath = __DIR__.'/fixtures/tui-tool-call-read.json';
-        $fixtureEnv = \is_file($fixturePath)
-            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.\escapeshellarg($fixturePath).' '
+        $fixtureEnv = is_file($fixturePath)
+            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.escapeshellarg($fixturePath).' '
             : '';
 
         $projectDir = ProjectDir::get();
@@ -176,22 +175,22 @@ final class TuiToolOutputE2eTest extends TestCase
             'APP_ENV=test HATFIELD_TEST_DATABASE_PATH=%s HOME=%s %s %s %s agent '
                 .'--model=llama_cpp_test/test '
                 .'--tools-excluded=bash 2>&1',
-            \escapeshellarg($dbPath),
-            \escapeshellarg($this->testProjectDir.'/home'),
+            escapeshellarg($dbPath),
+            escapeshellarg($this->testProjectDir.'/home'),
             $fixtureEnv,
-            \escapeshellarg($php),
-            \escapeshellarg($script),
+            escapeshellarg($php),
+            escapeshellarg($script),
         );
     }
 
     private function createIsolatedProjectDir(): string
     {
         $dir = TestDirectoryIsolation::createProjectTempDir('tui-e2e-tool-output');
-        @\mkdir($dir.'/.hatfield', 0o777, true);
+        @mkdir($dir.'/.hatfield', 0o777, true);
 
         // Create a test file the read tool will read.  The sentinel is
         // what we assert appears in the TUI transcript.
-        \file_put_contents($dir.'/test.txt', self::OUTPUT_SENTINEL."\n");
+        file_put_contents($dir.'/test.txt', self::OUTPUT_SENTINEL."\n");
 
         $settings = [
             'ai' => [
@@ -252,10 +251,10 @@ final class TuiToolOutputE2eTest extends TestCase
         ];
 
         $yaml = \Symfony\Component\Yaml\Yaml::dump($settings, 6, 4);
-        \file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
+        file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
 
-        @\mkdir($dir.'/home/.hatfield', 0o777, true);
-        \file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
+        @mkdir($dir.'/home/.hatfield', 0o777, true);
+        file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
 
         return $dir;
     }
@@ -265,6 +264,6 @@ final class TuiToolOutputE2eTest extends TestCase
         $ansi = $this->tmux->captureAnsi($pane);
         $ts = date('Ymd-His');
         $path = \sprintf('%s/%s-%s.ansi', $this->snapshotDir, $tag, $ts);
-        \file_put_contents($path, $ansi);
+        file_put_contents($path, $ansi);
     }
 }

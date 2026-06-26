@@ -28,7 +28,6 @@ declare(strict_types=1);
  *   HATFIELD_TEST_DATABASE_PATH — per-worker SQLite path
  *   HATFIELD_CACHE_DIR      — per-worker container cache
  */
-
 $token = getenv('TEST_TOKEN') ?: '0';
 
 $qaRunId = getenv('HATFIELD_QA_RUN_ID') ?: '';
@@ -60,7 +59,7 @@ $_ENV['HATFIELD_CACHE_DIR'] = $cacheDir;
 // worker with a missing schema will produce confusing errors.
 $phpBin = \PHP_BINARY;
 $root = dirname(__DIR__);
-@mkdir($root . '/var/test', 0755, true);
+@mkdir($root.'/var/test', 0755, true);
 $cmd = sprintf(
     'APP_ENV=test HATFIELD_TEST_DATABASE_PATH=%s HATFIELD_CACHE_DIR=%s %s %s/bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration 2>&1',
     escapeshellarg($dbPath),
@@ -70,17 +69,17 @@ $cmd = sprintf(
 );
 
 $lockPath = $root.'/var/test/.bootstrap-migrate-'.hash('sha256', $dbPath).'.lock';
-$lock = fopen($lockPath, 'c+');
+$lock = fopen($lockPath, 'c+b');
 if (false === $lock) {
     fwrite(\STDERR, "ParaTest bootstrap (token={$token}): unable to open migrate lock\n");
     exit(1);
 }
-flock($lock, LOCK_EX);
+flock($lock, \LOCK_EX);
 exec($cmd, $output, $exitCode);
-flock($lock, LOCK_UN);
+flock($lock, \LOCK_UN);
 fclose($lock);
 
-if ($exitCode !== 0) {
-    fwrite(\STDERR, "ParaTest bootstrap (token={$token}): migration FAILED\n" . implode("\n", $output) . "\n");
+if (0 !== $exitCode) {
+    fwrite(\STDERR, "ParaTest bootstrap (token={$token}): migration FAILED\n".implode("\n", $output)."\n");
     exit($exitCode);
 }

@@ -49,6 +49,225 @@ use PHPUnit\Framework\Attributes\Group;
 #[Group('controller-replay')]
 final class ControllerReplayAutoCompactionToolCycleTest extends ControllerReplayE2eTestCase
 {
+    // ── Lifecycle: write the target file before spawning ──────────
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // Write the target file for the read tool.  The controller
+        // subprocess runs with --cwd pointing to the temp dir, so
+        // ./notes.txt resolves correctly.
+        file_put_contents($this->tempDir.'/notes.txt', "Hello from the tool-cycle test.\n");
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    //  Single test method
+    // ─────────────────────────────────────────────────────────────────
+
+    public function testToolCycleDoesNotTriggerMidTurnAutoCompaction(): void
+    {
+        $this->spawnController();
+
+        // ── Wait for runtime.ready ──
+        $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
+
+        // ═════════════════════════════════════════════════════════════
+        //  Start run with a prompt — expect tool_call + tool batch +
+        //  final assistant turn + auto-compaction.
+        // ═════════════════════════════════════════════════════════════
+
+        $startCmdId = 'cmd_start_'.uniqid();
+        $this->writeCommand([
+            'v' => 1,
+            'id' => $startCmdId,
+            'type' => 'start_run',
+            'payload' => [
+                'prompt' => 'Read the file ./notes.txt and tell me what it contains.',
+            ],
+        ]);
+
+        // Collect events past run.completed so we catch the after-turn
+        // auto-compaction events (compaction.started/completed/failed).
+        $events = $this->collectEventsPastRunCompleted(30.0);
+        $byType = $this->indexByType($events);
+
+        $this->assertStartRunAcked($events, $startCmdId);
+
+        $this->assertArrayHasKey('run.started', $byType, 'Expected run.started');
+
+        $runStarted = $byType['run.started'][0];
+        $this->runId = (string) ($runStarted['runId'] ?? $runStarted['payload']['runId'] ?? '');
+        $this->assertNotEmpty($this->runId, 'run.started must have a runId');
+
+        // Turn must complete (run.completed).
+        $this->assertTrue(
+            isset($byType['run.completed']) || isset($byType['run.failed']),
+            'Run must reach terminal state (run.completed or run.failed).'
+            ."\n".$this->collectDiagnostics($events),
+        );
+
+        if (isset($byType['run.failed'])) {
+            $err = $byType['run.failed'][0]['payload']['error'] ?? '?';
+            $this->fail("Run failed unexpectedly: {$err}\n"
+                .$this->collectDiagnostics($events));
+        }
+
+        // ═════════════════════════════════════════════════════════════
+        //  Structural proof from canonical events.jsonl
+        // ═════════════════════════════════════════════════════════════
+
+        $sessionDir = $this->tempDir.'/.hatfield/sessions/'.$this->sessionId;
+        $eventsPath = $sessionDir.'/events.jsonl';
+
+        $this->assertFileExists($eventsPath, 'Session events.jsonl must exist');
+
+        $coreEvents = $this->loadCoreEvents($eventsPath);
+        $this->assertNotEmpty($coreEvents, 'events.jsonl must have events');
+
+        $timeline = $this->buildTimeline($coreEvents);
+
+        // ════════════════════════════════════════════════════════════
+        //  Assert: the full tool cycle completed without mid-cycle
+        //  auto-compaction interference.
+        // ════════════════════════════════════════════════════════════
+
+        // Find the first llm_step_completed with tool_calls_count>0.
+        // This is the assistant-trigger that starts the tool cycle.
+        $toolCallLlmSeq = null;
+        $toolCallCount = null;
+        foreach ($coreEvents as $evt) {
+            $tc = (int) ($evt['payload']['tool_calls_count'] ?? 0);
+            if ($tc > 0 && 'llm_step_completed' === ($evt['type'] ?? '')) {
+                $toolCallLlmSeq = (int) ($evt['seq'] ?? 0);
+                $toolCallCount = $tc;
+                break;
+            }
+        }
+
+        $this->assertNotNull(
+            $toolCallLlmSeq,
+            "events.jsonl must contain an llm_step_completed with tool_calls_count>0.\n"
+            ."Timeline:\n".$timeline,
+        );
+
+        // Find the next llm_step_completed after the tool-call LLM.
+        // This is the final assistant answer after all tool results
+        // and the postCommit AdvanceRun.
+        $finalLlmSeq = null;
+        foreach ($coreEvents as $evt) {
+            $seq = (int) ($evt['seq'] ?? 0);
+            if ($seq > $toolCallLlmSeq && 'llm_step_completed' === ($evt['type'] ?? '')) {
+                $finalLlmSeq = $seq;
+                break;
+            }
+        }
+
+        $this->assertNotNull(
+            $finalLlmSeq,
+            "Expected llm_step_completed (final assistant answer) after the tool-call LLM at seq={$toolCallLlmSeq}. "
+            ."If missing, mid-cycle compaction blocked the postCommit AdvanceRun.\n"
+            ."Timeline:\n".$timeline,
+        );
+
+        // REGRESSION PROOF: no auto compaction events of ANY kind
+        // (context_compaction_started/compacted/failed) between the
+        // tool-call llm_step_completed and the final assistant answer.
+        // This catches both:
+        //  - Partial-batch hook compaction (between tool_execution_end events)
+        //  - Pre-LLM guard compaction on post-tool AdvanceRun
+        $compactionLifecycleTypes = [
+            'context_compaction_started',
+            'context_compacted',
+            'context_compaction_failed',
+        ];
+        $midCycleCompactionEvent = null;
+        foreach ($coreEvents as $evt) {
+            $seq = (int) ($evt['seq'] ?? 0);
+            $type = $evt['type'] ?? '';
+            if ($seq > $toolCallLlmSeq && $seq < $finalLlmSeq
+                && \in_array($type, $compactionLifecycleTypes, true)
+            ) {
+                $trigger = $evt['payload']['trigger'] ?? '';
+                if ('auto' === $trigger) {
+                    $midCycleCompactionEvent = \sprintf(
+                        'auto %s at seq=%d (trigger=%s reason=%s)',
+                        $type,
+                        $seq,
+                        $trigger,
+                        $evt['payload']['reason'] ?? '?',
+                    );
+                    $timeline .= "\n  → BUG: {$midCycleCompactionEvent}";
+                    break;
+                }
+            }
+        }
+
+        $this->assertNull(
+            $midCycleCompactionEvent,
+            "Auto compaction must NOT fire between the tool-call llm_step_completed (seq={$toolCallLlmSeq}) "
+            ."and the final llm_step_completed (seq={$finalLlmSeq}). "
+            ."Found: {$midCycleCompactionEvent}. "
+            ."Both the partial-batch hook path and the pre-LLM guard path must be blocked.\n"
+            ."Timeline:\n".$timeline,
+        );
+
+        // ── Assert: auto context_compacted appears after the final
+        //    assistant turn (voluntary — proves full cycle)
+        $autoCompactedSeq = null;
+        $autoTerminalType = null;
+        foreach ($coreEvents as $evt) {
+            $type = $evt['type'] ?? '';
+            $seq = (int) ($evt['seq'] ?? 0);
+            if (\in_array($type, ['context_compacted', 'context_compaction_failed'], true)
+                && 'auto' === ($evt['payload']['trigger'] ?? '')
+                && $seq > $finalLlmSeq
+            ) {
+                $autoCompactedSeq = $seq;
+                $autoTerminalType = $type;
+                break;
+            }
+        }
+
+        $this->assertNotNull(
+            $autoCompactedSeq,
+            "Expected auto context_compacted (or context_compaction_failed) after llm_step_completed at seq={$finalLlmSeq}. "
+            ."Auto compaction should fire after the full assistant/tool cycle, not during it.\n"
+            ."Timeline:\n".$timeline,
+        );
+
+        if ('context_compaction_failed' === $autoTerminalType) {
+            $failPayload = [];
+            foreach ($coreEvents as $evt) {
+                if (($evt['seq'] ?? 0) === $autoCompactedSeq) {
+                    $failPayload = $evt['payload'] ?? [];
+                    break;
+                }
+            }
+            $failReason = $failPayload['reason'] ?? 'unknown';
+            // Auto compaction fired after the full cycle (correct placement)
+            // but failed to produce a summary.  This is a test-data sizing
+            // issue, not a regression.  The critical proof (no mid-cycle
+            // compaction) is satisfied by the earlier assertions.
+            $this->addToAssertionCount(1);
+
+            return;
+        }
+
+        $terminalPayload = [];
+        foreach ($coreEvents as $evt) {
+            if (($evt['seq'] ?? 0) === $autoCompactedSeq) {
+                $terminalPayload = $evt['payload'] ?? [];
+                break;
+            }
+        }
+        $this->assertGreaterThan(
+            0,
+            $terminalPayload['messages_compacted'] ?? 0,
+            'context_compacted must report messages_compacted > 0',
+        );
+    }
+
     protected function tempDirPrefix(): string
     {
         return 'test-replay-auto-compact-tool';
@@ -190,225 +409,6 @@ YAML;
         ];
     }
 
-    // ── Lifecycle: write the target file before spawning ──────────
-
-    protected function setUp(): void
-    {
-        parent::setUp();
-
-        // Write the target file for the read tool.  The controller
-        // subprocess runs with --cwd pointing to the temp dir, so
-        // ./notes.txt resolves correctly.
-        \file_put_contents($this->tempDir . '/notes.txt', "Hello from the tool-cycle test.\n");
-    }
-
-    // ─────────────────────────────────────────────────────────────────
-    //  Single test method
-    // ─────────────────────────────────────────────────────────────────
-
-    public function testToolCycleDoesNotTriggerMidTurnAutoCompaction(): void
-    {
-        $this->spawnController();
-
-        // ── Wait for runtime.ready ──
-        $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
-
-        // ═════════════════════════════════════════════════════════════
-        //  Start run with a prompt — expect tool_call + tool batch +
-        //  final assistant turn + auto-compaction.
-        // ═════════════════════════════════════════════════════════════
-
-        $startCmdId = 'cmd_start_' . \uniqid();
-        $this->writeCommand([
-            'v' => 1,
-            'id' => $startCmdId,
-            'type' => 'start_run',
-            'payload' => [
-                'prompt' => 'Read the file ./notes.txt and tell me what it contains.',
-            ],
-        ]);
-
-        // Collect events past run.completed so we catch the after-turn
-        // auto-compaction events (compaction.started/completed/failed).
-        $events = $this->collectEventsPastRunCompleted(30.0);
-        $byType = $this->indexByType($events);
-
-        $this->assertStartRunAcked($events, $startCmdId);
-
-        self::assertArrayHasKey('run.started', $byType, 'Expected run.started');
-
-        $runStarted = $byType['run.started'][0];
-        $this->runId = (string) ($runStarted['runId'] ?? $runStarted['payload']['runId'] ?? '');
-        self::assertNotEmpty($this->runId, 'run.started must have a runId');
-
-        // Turn must complete (run.completed).
-        self::assertTrue(
-            isset($byType['run.completed']) || isset($byType['run.failed']),
-            'Run must reach terminal state (run.completed or run.failed).'
-            . "\n" . $this->collectDiagnostics($events),
-        );
-
-        if (isset($byType['run.failed'])) {
-            $err = $byType['run.failed'][0]['payload']['error'] ?? '?';
-            self::fail("Run failed unexpectedly: {$err}\n"
-                . $this->collectDiagnostics($events));
-        }
-
-        // ═════════════════════════════════════════════════════════════
-        //  Structural proof from canonical events.jsonl
-        // ═════════════════════════════════════════════════════════════
-
-        $sessionDir = $this->tempDir . '/.hatfield/sessions/' . $this->sessionId;
-        $eventsPath = $sessionDir . '/events.jsonl';
-
-        self::assertFileExists($eventsPath, 'Session events.jsonl must exist');
-
-        $coreEvents = $this->loadCoreEvents($eventsPath);
-        self::assertNotEmpty($coreEvents, 'events.jsonl must have events');
-
-        $timeline = $this->buildTimeline($coreEvents);
-
-        // ════════════════════════════════════════════════════════════
-        //  Assert: the full tool cycle completed without mid-cycle
-        //  auto-compaction interference.
-        // ════════════════════════════════════════════════════════════
-
-        // Find the first llm_step_completed with tool_calls_count>0.
-        // This is the assistant-trigger that starts the tool cycle.
-        $toolCallLlmSeq = null;
-        $toolCallCount = null;
-        foreach ($coreEvents as $evt) {
-            $tc = (int) ($evt['payload']['tool_calls_count'] ?? 0);
-            if ($tc > 0 && 'llm_step_completed' === ($evt['type'] ?? '')) {
-                $toolCallLlmSeq = (int) ($evt['seq'] ?? 0);
-                $toolCallCount = $tc;
-                break;
-            }
-        }
-
-        self::assertNotNull(
-            $toolCallLlmSeq,
-            "events.jsonl must contain an llm_step_completed with tool_calls_count>0.\n"
-            . "Timeline:\n" . $timeline,
-        );
-
-        // Find the next llm_step_completed after the tool-call LLM.
-        // This is the final assistant answer after all tool results
-        // and the postCommit AdvanceRun.
-        $finalLlmSeq = null;
-        foreach ($coreEvents as $evt) {
-            $seq = (int) ($evt['seq'] ?? 0);
-            if ($seq > $toolCallLlmSeq && 'llm_step_completed' === ($evt['type'] ?? '')) {
-                $finalLlmSeq = $seq;
-                break;
-            }
-        }
-
-        self::assertNotNull(
-            $finalLlmSeq,
-            "Expected llm_step_completed (final assistant answer) after the tool-call LLM at seq={$toolCallLlmSeq}. "
-            . "If missing, mid-cycle compaction blocked the postCommit AdvanceRun.\n"
-            . "Timeline:\n" . $timeline,
-        );
-
-        // REGRESSION PROOF: no auto compaction events of ANY kind
-        // (context_compaction_started/compacted/failed) between the
-        // tool-call llm_step_completed and the final assistant answer.
-        // This catches both:
-        //  - Partial-batch hook compaction (between tool_execution_end events)
-        //  - Pre-LLM guard compaction on post-tool AdvanceRun
-        $compactionLifecycleTypes = [
-            'context_compaction_started',
-            'context_compacted',
-            'context_compaction_failed',
-        ];
-        $midCycleCompactionEvent = null;
-        foreach ($coreEvents as $evt) {
-            $seq = (int) ($evt['seq'] ?? 0);
-            $type = $evt['type'] ?? '';
-            if ($seq > $toolCallLlmSeq && $seq < $finalLlmSeq
-                && \in_array($type, $compactionLifecycleTypes, true)
-            ) {
-                $trigger = $evt['payload']['trigger'] ?? '';
-                if ('auto' === $trigger) {
-                    $midCycleCompactionEvent = \sprintf(
-                        'auto %s at seq=%d (trigger=%s reason=%s)',
-                        $type,
-                        $seq,
-                        $trigger,
-                        $evt['payload']['reason'] ?? '?',
-                    );
-                    $timeline .= "\n  → BUG: {$midCycleCompactionEvent}";
-                    break;
-                }
-            }
-        }
-
-        self::assertNull(
-            $midCycleCompactionEvent,
-            "Auto compaction must NOT fire between the tool-call llm_step_completed (seq={$toolCallLlmSeq}) "
-            . "and the final llm_step_completed (seq={$finalLlmSeq}). "
-            . "Found: {$midCycleCompactionEvent}. "
-            . "Both the partial-batch hook path and the pre-LLM guard path must be blocked.\n"
-            . "Timeline:\n" . $timeline,
-        );
-
-        // ── Assert: auto context_compacted appears after the final
-        //    assistant turn (voluntary — proves full cycle)
-        $autoCompactedSeq = null;
-        $autoTerminalType = null;
-        foreach ($coreEvents as $evt) {
-            $type = $evt['type'] ?? '';
-            $seq = (int) ($evt['seq'] ?? 0);
-            if (\in_array($type, ['context_compacted', 'context_compaction_failed'], true)
-                && 'auto' === ($evt['payload']['trigger'] ?? '')
-                && $seq > $finalLlmSeq
-            ) {
-                $autoCompactedSeq = $seq;
-                $autoTerminalType = $type;
-                break;
-            }
-        }
-
-        self::assertNotNull(
-            $autoCompactedSeq,
-            "Expected auto context_compacted (or context_compaction_failed) after llm_step_completed at seq={$finalLlmSeq}. "
-            . "Auto compaction should fire after the full assistant/tool cycle, not during it.\n"
-            . "Timeline:\n" . $timeline,
-        );
-
-        if ('context_compaction_failed' === $autoTerminalType) {
-            $failPayload = [];
-            foreach ($coreEvents as $evt) {
-                if (($evt['seq'] ?? 0) === $autoCompactedSeq) {
-                    $failPayload = $evt['payload'] ?? [];
-                    break;
-                }
-            }
-            $failReason = $failPayload['reason'] ?? 'unknown';
-            // Auto compaction fired after the full cycle (correct placement)
-            // but failed to produce a summary.  This is a test-data sizing
-            // issue, not a regression.  The critical proof (no mid-cycle
-            // compaction) is satisfied by the earlier assertions.
-            $this->addToAssertionCount(1);
-
-            return;
-        }
-
-        $terminalPayload = [];
-        foreach ($coreEvents as $evt) {
-            if (($evt['seq'] ?? 0) === $autoCompactedSeq) {
-                $terminalPayload = $evt['payload'] ?? [];
-                break;
-            }
-        }
-        self::assertGreaterThan(
-            0,
-            $terminalPayload['messages_compacted'] ?? 0,
-            'context_compacted must report messages_compacted > 0',
-        );
-    }
-
     // ─────────────────────────────────────────────────────────────────
     //  Local helpers
     // ─────────────────────────────────────────────────────────────────
@@ -422,14 +422,14 @@ YAML;
     private function collectEventsPastRunCompleted(float $timeoutSeconds): array
     {
         $events = [];
-        $deadline = \microtime(true) + $timeoutSeconds;
-        $lastEventAt = \microtime(true);
+        $deadline = microtime(true) + $timeoutSeconds;
+        $lastEventAt = microtime(true);
         $sawRunTerminal = false;
 
-        while (\microtime(true) < $deadline) {
+        while (microtime(true) < $deadline) {
             foreach ($this->readEvents() as $event) {
                 $events[] = $event;
-                $lastEventAt = \microtime(true);
+                $lastEventAt = microtime(true);
                 $type = $event['type'] ?? '';
 
                 if (\in_array($type, ['run.completed', 'run.failed'], true)) {
@@ -444,7 +444,7 @@ YAML;
             if (!$this->isRunning()) {
                 foreach ($this->readEvents() as $event) {
                     $events[] = $event;
-                    $lastEventAt = \microtime(true);
+                    $lastEventAt = microtime(true);
                     $type = $event['type'] ?? '';
                     if (\in_array($type, ['run.completed', 'run.failed'], true)) {
                         $sawRunTerminal = true;
@@ -456,25 +456,24 @@ YAML;
                 break;
             }
 
-            if ($sawRunTerminal && \microtime(true) - $lastEventAt > 0.8) {
+            if ($sawRunTerminal && microtime(true) - $lastEventAt > 0.8) {
                 break;
             }
 
-            \usleep(50_000);
+            usleep(50_000);
         }
 
         return $events;
     }
 
     /**
-     * @param list<array<string, mixed>> $coreEvents
      * @return list<array<string, mixed>>
      */
     private function loadCoreEvents(string $eventsPath): array
     {
         $core = [];
-        foreach (\file($eventsPath, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES) as $line) {
-            $evt = \json_decode($line, true, 512, \JSON_THROW_ON_ERROR);
+        foreach (file($eventsPath, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES) as $line) {
+            $evt = json_decode($line, true, 512, \JSON_THROW_ON_ERROR);
             if (\is_array($evt)) {
                 $core[] = $evt;
             }
@@ -510,6 +509,6 @@ YAML;
             $lines[] = \sprintf('  [%s] %s%s', $seq, $type, $extra);
         }
 
-        return \implode("\n", $lines);
+        return implode("\n", $lines);
     }
 }

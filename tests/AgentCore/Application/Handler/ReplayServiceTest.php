@@ -75,17 +75,17 @@ final class ReplayServiceTest extends TestCase
 
         $rebuiltState = $replayService->rebuildHotPromptState($runId);
 
-        self::assertSame('canonical_events', $rebuiltState->source);
-        self::assertSame(2, $rebuiltState->lastSeq);
-        self::assertCount(2, $rebuiltState->messages);
-        self::assertTrue($rebuiltState->isContiguous);
+        $this->assertSame('canonical_events', $rebuiltState->source);
+        $this->assertSame(2, $rebuiltState->lastSeq);
+        $this->assertCount(2, $rebuiltState->messages);
+        $this->assertTrue($rebuiltState->isContiguous);
 
         // Verify message contents.
         $messages = $rebuiltState->messages;
-        self::assertSame('user', $messages[0]['role']);
-        self::assertSame('Hello', $messages[0]['content'][0]['text']);
-        self::assertSame('assistant', $messages[1]['role']);
-        self::assertSame('Hi there!', $messages[1]['content'][0]['text']);
+        $this->assertSame('user', $messages[0]['role']);
+        $this->assertSame('Hello', $messages[0]['content'][0]['text']);
+        $this->assertSame('assistant', $messages[1]['role']);
+        $this->assertSame('Hi there!', $messages[1]['content'][0]['text']);
     }
 
     public function testCanonicalLlmStepCompletedWithToolCallsOnly(): void
@@ -137,14 +137,14 @@ final class ReplayServiceTest extends TestCase
 
         $rebuiltState = $replayService->rebuildHotPromptState($runId);
 
-        self::assertCount(2, $rebuiltState->messages);
+        $this->assertCount(2, $rebuiltState->messages);
         $assistant = $rebuiltState->messages[1];
-        self::assertSame('assistant', $assistant['role']);
-        self::assertSame([], $assistant['content'], 'null content becomes empty array');
-        self::assertArrayHasKey('metadata', $assistant);
-        self::assertArrayHasKey('tool_calls', $assistant['metadata']);
-        self::assertSame('call_1', $assistant['metadata']['tool_calls'][0]['id']);
-        self::assertSame('read', $assistant['metadata']['tool_calls'][0]['name']);
+        $this->assertSame('assistant', $assistant['role']);
+        $this->assertSame([], $assistant['content'], 'null content becomes empty array');
+        $this->assertArrayHasKey('metadata', $assistant);
+        $this->assertArrayHasKey('tool_calls', $assistant['metadata']);
+        $this->assertSame('call_1', $assistant['metadata']['tool_calls'][0]['id']);
+        $this->assertSame('read', $assistant['metadata']['tool_calls'][0]['name']);
     }
 
     public function testCanonicalLlmStepCompletedWithThinkingDetails(): void
@@ -194,12 +194,12 @@ final class ReplayServiceTest extends TestCase
 
         $rebuiltState = $replayService->rebuildHotPromptState($runId);
 
-        self::assertCount(2, $rebuiltState->messages);
+        $this->assertCount(2, $rebuiltState->messages);
         $assistant = $rebuiltState->messages[1];
-        self::assertSame('assistant', $assistant['role']);
-        self::assertArrayHasKey('details', $assistant);
-        self::assertSame('Let me think about this...', $assistant['details']['thinking']);
-        self::assertSame('sig123', $assistant['details']['thinking_signature']);
+        $this->assertSame('assistant', $assistant['role']);
+        $this->assertArrayHasKey('details', $assistant);
+        $this->assertSame('Let me think about this...', $assistant['details']['thinking']);
+        $this->assertSame('sig123', $assistant['details']['thinking_signature']);
     }
 
     // ── Message-list replacement semantics ─────────────────────────────────────
@@ -284,19 +284,19 @@ final class ReplayServiceTest extends TestCase
         $rebuiltState = $replayService->rebuildHotPromptState($runId);
 
         // After replacement, only 2 messages (the replacement set).
-        self::assertCount(2, $rebuiltState->messages);
+        $this->assertCount(2, $rebuiltState->messages);
 
         // First message is the compact summary — metadata must survive.
         $compactMsg = $rebuiltState->messages[0];
-        self::assertSame('user', $compactMsg['role']);
-        self::assertSame('Summary of prior conversation...', $compactMsg['content'][0]['text']);
-        self::assertArrayHasKey('metadata', $compactMsg);
-        self::assertArrayHasKey('compact_summary', $compactMsg['metadata']);
-        self::assertTrue($compactMsg['metadata']['compact_summary']);
+        $this->assertSame('user', $compactMsg['role']);
+        $this->assertSame('Summary of prior conversation...', $compactMsg['content'][0]['text']);
+        $this->assertArrayHasKey('metadata', $compactMsg);
+        $this->assertArrayHasKey('compact_summary', $compactMsg['metadata']);
+        $this->assertTrue($compactMsg['metadata']['compact_summary']);
 
         // Second message is the retained tail.
-        self::assertSame('assistant', $rebuiltState->messages[1]['role']);
-        self::assertSame('First response', $rebuiltState->messages[1]['content'][0]['text']);
+        $this->assertSame('assistant', $rebuiltState->messages[1]['role']);
+        $this->assertSame('First response', $rebuiltState->messages[1]['content'][0]['text']);
     }
 
     /**
@@ -372,16 +372,16 @@ final class ReplayServiceTest extends TestCase
         $rebuiltState = $replayService->rebuildHotPromptState($runId);
 
         // 2 from replacement + 1 new canonical = 3 messages.
-        self::assertCount(3, $rebuiltState->messages);
+        $this->assertCount(3, $rebuiltState->messages);
 
         // Replacement messages first.
-        self::assertSame('Compacted summary', $rebuiltState->messages[0]['content'][0]['text']);
-        self::assertTrue($rebuiltState->messages[0]['metadata']['compact_summary']);
-        self::assertSame('Old response', $rebuiltState->messages[1]['content'][0]['text']);
+        $this->assertSame('Compacted summary', $rebuiltState->messages[0]['content'][0]['text']);
+        $this->assertTrue($rebuiltState->messages[0]['metadata']['compact_summary']);
+        $this->assertSame('Old response', $rebuiltState->messages[1]['content'][0]['text']);
 
         // Newly appended canonical assistant message.
-        self::assertSame('assistant', $rebuiltState->messages[2]['role']);
-        self::assertSame('New response after compaction', $rebuiltState->messages[2]['content'][0]['text']);
+        $this->assertSame('assistant', $rebuiltState->messages[2]['role']);
+        $this->assertSame('New response after compaction', $rebuiltState->messages[2]['content'][0]['text']);
     }
 
     // ── Existing tests updated to canonical event shapes ───────────────────────
@@ -435,22 +435,22 @@ final class ReplayServiceTest extends TestCase
 
         $rebuiltState = $replayService->rebuildHotPromptState($runId);
 
-        self::assertSame('canonical_events', $rebuiltState->source);
-        self::assertSame(2, $rebuiltState->lastSeq);
-        self::assertCount(2, $rebuiltState->messages);
-        self::assertNotNull($hotPromptStore->get($runId));
+        $this->assertSame('canonical_events', $rebuiltState->source);
+        $this->assertSame(2, $rebuiltState->lastSeq);
+        $this->assertCount(2, $rebuiltState->messages);
+        $this->assertNotNull($hotPromptStore->get($runId));
 
         $hotPromptStore->delete($runId);
-        self::assertNull($hotPromptStore->get($runId));
+        $this->assertNull($hotPromptStore->get($runId));
 
         $rebuiltAfterDelete = $replayService->rebuildHotPromptState($runId);
 
-        self::assertSame($rebuiltState->messages, $rebuiltAfterDelete->messages);
-        self::assertNotNull($hotPromptStore->get($runId));
+        $this->assertSame($rebuiltState->messages, $rebuiltAfterDelete->messages);
+        $this->assertNotNull($hotPromptStore->get($runId));
 
         $integrity = $replayService->verifyIntegrity($runId);
-        self::assertTrue($integrity->isContiguous);
-        self::assertSame([], $integrity->missingSequences);
+        $this->assertTrue($integrity->isContiguous);
+        $this->assertSame([], $integrity->missingSequences);
     }
 
     public function testRebuildReturnsEmptyResultWhenNoEventsExist(): void
@@ -463,10 +463,10 @@ final class ReplayServiceTest extends TestCase
 
         $rebuiltState = $replayService->rebuildHotPromptState($runId);
 
-        self::assertSame('canonical_events', $rebuiltState->source);
-        self::assertSame(0, $rebuiltState->lastSeq);
-        self::assertCount(0, $rebuiltState->messages);
-        self::assertTrue($rebuiltState->isContiguous);
+        $this->assertSame('canonical_events', $rebuiltState->source);
+        $this->assertSame(0, $rebuiltState->lastSeq);
+        $this->assertCount(0, $rebuiltState->messages);
+        $this->assertTrue($rebuiltState->isContiguous);
     }
 
     // ── Branch-aware prompt replay ──────────────────────────────────────────
@@ -547,9 +547,9 @@ final class ReplayServiceTest extends TestCase
         $rebuiltState = $replayService->rebuildHotPromptState($runId);
 
         // Integrity must describe the full canonical stream.
-        self::assertSame(9, $rebuiltState->eventCount);
-        self::assertSame(9, $rebuiltState->lastSeq);
-        self::assertTrue($rebuiltState->isContiguous, 'Full canonical stream is contiguous');
+        $this->assertSame(9, $rebuiltState->eventCount);
+        $this->assertSame(9, $rebuiltState->lastSeq);
+        $this->assertTrue($rebuiltState->isContiguous, 'Full canonical stream is contiguous');
 
         // Messages must only contain active-branch messages.
         $messageTexts = [];
@@ -557,10 +557,10 @@ final class ReplayServiceTest extends TestCase
             $messageTexts[] = $msg['content'][0]['text'] ?? '';
         }
 
-        self::assertContains('Hello', $messageTexts);
-        self::assertContains('Hi!', $messageTexts);
-        self::assertContains('ACTIVE response', $messageTexts);
-        self::assertNotContains('ABANDONED response', $messageTexts, 'Abandoned branch messages must be excluded');
+        $this->assertContains('Hello', $messageTexts);
+        $this->assertContains('Hi!', $messageTexts);
+        $this->assertContains('ACTIVE response', $messageTexts);
+        $this->assertNotContains('ABANDONED response', $messageTexts, 'Abandoned branch messages must be excluded');
     }
 
     // ── Context compaction hot prompt replay ──────────────────────────────────
@@ -612,12 +612,12 @@ final class ReplayServiceTest extends TestCase
 
         $rebuiltState = $replayService->rebuildHotPromptState($runId);
 
-        self::assertCount(2, $rebuiltState->messages, 'Should have summary + new user message');
-        self::assertTrue(
+        $this->assertCount(2, $rebuiltState->messages, 'Should have summary + new user message');
+        $this->assertTrue(
             $rebuiltState->messages[0]['metadata']['compact_summary'] ?? false,
             'First message should be compact summary',
         );
-        self::assertSame(
+        $this->assertSame(
             'New message after compaction',
             $rebuiltState->messages[1]['content'][0]['text'],
         );

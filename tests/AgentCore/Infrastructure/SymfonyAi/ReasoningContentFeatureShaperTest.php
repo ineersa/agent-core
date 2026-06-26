@@ -19,50 +19,12 @@ use Symfony\AI\Platform\Result\ToolCall;
 
 final class ReasoningContentFeatureShaperTest extends TestCase
 {
-    private ReasoningContentFeatureShaper $shaper;
-
     private const DEEPSEEK_FEATURES = [ReasoningContentFeatureShaper::FEATURE];
+    private ReasoningContentFeatureShaper $shaper;
 
     protected function setUp(): void
     {
         $this->shaper = new ReasoningContentFeatureShaper();
-    }
-
-    // ── Helpers ───────────────────────────────────────────────────────────
-
-    private function userMessage(string $text): UserMessage
-    {
-        return Message::ofUser($text);
-    }
-
-    private function systemMessage(string $text): SystemMessage
-    {
-        return Message::forSystem($text);
-    }
-
-    private function assistantText(string $text): AssistantMessage
-    {
-        return new AssistantMessage(new Text($text));
-    }
-
-    private function assistantWithThinking(string $text, string $thinking): AssistantMessage
-    {
-        return new AssistantMessage(new Thinking($thinking), new Text($text));
-    }
-
-    private function assistantWithToolCall(string $toolCallId, string $toolName): AssistantMessage
-    {
-        return new AssistantMessage(
-            new ToolCall($toolCallId, $toolName, ['command' => 'ls']),
-        );
-    }
-
-    private function assistantTextWithToolCall(string $text, string $toolCallId, string $toolName): AssistantMessage
-    {
-        return new AssistantMessage(
-            new Text($text),
-            new ToolCall($toolCallId, $toolName, ['command' => 'ls']),
-        );
     }
 
     // ── supports() ────────────────────────────────────────────────────────
@@ -302,5 +264,42 @@ final class ReasoningContentFeatureShaperTest extends TestCase
         $toolCalls = $assistant->getToolCalls();
         $this->assertCount(1, $toolCalls);
         $this->assertSame('bash', $toolCalls[0]->getName());
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────
+
+    private function userMessage(string $text): UserMessage
+    {
+        return Message::ofUser($text);
+    }
+
+    private function systemMessage(string $text): SystemMessage
+    {
+        return Message::forSystem($text);
+    }
+
+    private function assistantText(string $text): AssistantMessage
+    {
+        return new AssistantMessage(new Text($text));
+    }
+
+    private function assistantWithThinking(string $text, string $thinking): AssistantMessage
+    {
+        return new AssistantMessage(new Thinking($thinking), new Text($text));
+    }
+
+    private function assistantWithToolCall(string $toolCallId, string $toolName): AssistantMessage
+    {
+        return new AssistantMessage(
+            new ToolCall($toolCallId, $toolName, ['command' => 'ls']),
+        );
+    }
+
+    private function assistantTextWithToolCall(string $text, string $toolCallId, string $toolName): AssistantMessage
+    {
+        return new AssistantMessage(
+            new Text($text),
+            new ToolCall($toolCallId, $toolName, ['command' => 'ls']),
+        );
     }
 }

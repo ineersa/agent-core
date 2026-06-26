@@ -36,14 +36,14 @@ final class TuiAutoCompactionE2eTest extends TestCase
     protected function setUp(): void
     {
         if (!TmuxHarness::isAvailable()) {
-            self::markTestSkipped('tmux is not installed. Skipping TUI e2e tests.');
+            $this->markTestSkipped('tmux is not installed. Skipping TUI e2e tests.');
         }
 
         $this->tmux = new TmuxHarness();
         $this->projectRoot = ProjectDir::get();
         $this->testProjectDir = $this->createIsolatedProjectDir();
         $this->snapshotDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
-        @\mkdir($this->snapshotDir, 0o777, true);
+        @mkdir($this->snapshotDir, 0o777, true);
     }
 
     protected function tearDown(): void
@@ -118,12 +118,12 @@ final class TuiAutoCompactionE2eTest extends TestCase
                 history: 2000,
             );
 
-            self::assertThat(
+            $this->assertThat(
                 $autoCompactCapture,
-                self::logicalOr(
-                    self::stringContains('Compacting conversation'),
-                    self::stringContains('Conversation compacted'),
-                    self::stringContains('Compaction failed'),
+                $this->logicalOr(
+                    $this->stringContains('Compacting conversation'),
+                    $this->stringContains('Conversation compacted'),
+                    $this->stringContains('Compaction failed'),
                 ),
                 'Auto-compaction must produce visible compaction-related text in TUI without manual /compact',
             );
@@ -170,12 +170,12 @@ final class TuiAutoCompactionE2eTest extends TestCase
             //
             // Assert the log AND the TUI capture are free of that error.
             $finalCapture = $this->tmux->captureAnsi($pane);
-            self::assertStringNotContainsString(
+            $this->assertStringNotContainsString(
                 'Run failed',
                 $finalCapture,
                 'TUI must not show "Run failed" after auto-compaction (hidden bus error)',
             );
-            self::assertStringNotContainsString(
+            $this->assertStringNotContainsString(
                 'No handler',
                 $finalCapture,
                 'TUI must not show "No handler" after auto-compaction',
@@ -215,17 +215,17 @@ final class TuiAutoCompactionE2eTest extends TestCase
     {
         $eventLog = $this->testProjectDir.'/.hatfield/sessions/1/events.jsonl';
 
-        if (!\is_file($eventLog)) {
-            self::fail('events.jsonl not found at '.$eventLog.' — TUI session did not produce expected event log.');
+        if (!is_file($eventLog)) {
+            $this->fail('events.jsonl not found at '.$eventLog.' — TUI session did not produce expected event log.');
         }
 
-        $lines = \file($eventLog, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES);
+        $lines = file($eventLog, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES);
 
         $terminalTypes = ['context_compacted', 'context_compaction_failed'];
         $pendingAutoStart = null;
 
         foreach ($lines as $line) {
-            $event = \json_decode($line, true);
+            $event = json_decode($line, true);
             if (!\is_array($event)) {
                 continue;
             }
@@ -237,7 +237,7 @@ final class TuiAutoCompactionE2eTest extends TestCase
 
             if ('context_compaction_started' === $type && 'auto' === $trigger) {
                 if (null !== $pendingAutoStart) {
-                    self::fail(\sprintf(
+                    $this->fail(\sprintf(
                         'Concurrent auto-compaction starts detected: seq %d started while seq %d had no terminal event. '
                         .'The RunStatus::Compacting fix should prevent this by blocking concurrent advance/compact dispatches.',
                         $seq,
@@ -253,7 +253,7 @@ final class TuiAutoCompactionE2eTest extends TestCase
         }
 
         // No assertion needed if we reach here — no concurrent starts found.
-        self::assertTrue(true); // PHPUnit requires at least one assertion.
+        $this->assertTrue(true); // PHPUnit requires at least one assertion.
     }
 
     /**
@@ -277,17 +277,17 @@ final class TuiAutoCompactionE2eTest extends TestCase
     {
         $eventLog = $this->testProjectDir.'/.hatfield/sessions/1/events.jsonl';
 
-        if (!\is_file($eventLog)) {
-            self::fail('events.jsonl not found at '.$eventLog.' — TUI session did not produce expected event log.');
+        if (!is_file($eventLog)) {
+            $this->fail('events.jsonl not found at '.$eventLog.' — TUI session did not produce expected event log.');
         }
 
-        $lines = \file($eventLog, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES);
+        $lines = file($eventLog, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES);
         $autoOutcomes = [];
 
         $terminalTypes = ['context_compacted', 'context_compaction_failed'];
 
         foreach ($lines as $line) {
-            $event = \json_decode($line, true);
+            $event = json_decode($line, true);
             if (!\is_array($event)) {
                 continue;
             }
@@ -310,13 +310,13 @@ final class TuiAutoCompactionE2eTest extends TestCase
         }
 
         $count = \count($autoOutcomes);
-        self::assertEquals(
+        $this->assertEquals(
             1,
             $count,
             \sprintf(
                 'Expected exactly 1 auto-compaction lifecycle outcome (stale measurement blocked by event-log eligibility), found %d: %s',
                 $count,
-                \json_encode($autoOutcomes),
+                json_encode($autoOutcomes),
             ),
         );
     }
@@ -343,10 +343,10 @@ final class TuiAutoCompactionE2eTest extends TestCase
             }
 
             foreach ($noHandlerPatterns as $pattern) {
-                self::assertStringNotContainsString(
+                $this->assertStringNotContainsString(
                     $pattern,
                     $content,
-                    sprintf(
+                    \sprintf(
                         'Log file %s must not contain "%s" (hidden bus error from auto-compaction)',
                         basename($logFile),
                         $pattern,
@@ -359,8 +359,8 @@ final class TuiAutoCompactionE2eTest extends TestCase
     private function agentCommand(): string
     {
         $fixturePath = $this->projectRoot.'/tests/Tui/E2E/fixtures/tui-startup-prompt-response.json';
-        $fixtureEnv = \is_file($fixturePath)
-            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.\escapeshellarg($fixturePath).' '
+        $fixtureEnv = is_file($fixturePath)
+            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.escapeshellarg($fixturePath).' '
             : '';
 
         $php = \PHP_BINARY;
@@ -371,11 +371,11 @@ final class TuiAutoCompactionE2eTest extends TestCase
             'APP_ENV=test HATFIELD_TEST_DATABASE_PATH=%s HOME=%s %s %s %s agent '
                 .'--model=llama_cpp_test/test '
                 .'--tools-excluded=bash 2>&1',
-            \escapeshellarg($dbPath),
-            \escapeshellarg($this->testProjectDir.'/home'),
+            escapeshellarg($dbPath),
+            escapeshellarg($this->testProjectDir.'/home'),
             $fixtureEnv,
-            \escapeshellarg($php),
-            \escapeshellarg($script),
+            escapeshellarg($php),
+            escapeshellarg($script),
         );
     }
 
@@ -400,15 +400,15 @@ final class TuiAutoCompactionE2eTest extends TestCase
     private function createIsolatedProjectDirWithSettings(array $extraSettings): string
     {
         $dir = TestDirectoryIsolation::createProjectTempDir('tui-e2e-auto-compact');
-        @\mkdir($dir.'/.hatfield', 0o777, true);
+        @mkdir($dir.'/.hatfield', 0o777, true);
 
         $settings = $this->buildBaseSettings($extraSettings);
 
         $yaml = \Symfony\Component\Yaml\Yaml::dump($settings, 6, 4);
-        \file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
+        file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
 
-        @\mkdir($dir.'/home/.hatfield', 0o777, true);
-        \file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
+        @mkdir($dir.'/home/.hatfield', 0o777, true);
+        file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
 
         return $dir;
     }
@@ -491,6 +491,6 @@ final class TuiAutoCompactionE2eTest extends TestCase
         $ansi = $this->tmux->captureAnsi($pane);
         $ts = date('Ymd-His');
         $path = \sprintf('%s/%s-%s.ansi', $this->snapshotDir, $tag, $ts);
-        \file_put_contents($path, $ansi);
+        file_put_contents($path, $ansi);
     }
 }

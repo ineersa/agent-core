@@ -37,7 +37,7 @@ class QuestionControllerTest extends TestCase
     #[Test]
     public function testIsOpenDefaultsToFalse(): void
     {
-        self::assertFalse($this->controller->isOpen());
+        $this->assertFalse($this->controller->isOpen());
     }
 
     #[Test]
@@ -45,7 +45,7 @@ class QuestionControllerTest extends TestCase
     {
         // Must not throw when called without an open session
         $this->controller->close();
-        self::assertFalse($this->controller->isOpen());
+        $this->assertFalse($this->controller->isOpen());
     }
 
     #[Test]
@@ -53,7 +53,7 @@ class QuestionControllerTest extends TestCase
     {
         $this->controller->close();
         $this->controller->close();
-        self::assertFalse($this->controller->isOpen());
+        $this->assertFalse($this->controller->isOpen());
     }
 
     // ── Build items ──
@@ -73,11 +73,11 @@ class QuestionControllerTest extends TestCase
 
         $items = $this->invokeBuildItems($request);
 
-        self::assertCount(3, $items); // Yes, No, Type your answer
-        self::assertSame('yes', $items[0]['value']);
-        self::assertSame('No', $items[1]['label']);
-        self::assertSame('__other__', $items[2]['value']);
-        self::assertSame('Type your answer', $items[2]['label']);
+        $this->assertCount(3, $items); // Yes, No, Type your answer
+        $this->assertSame('yes', $items[0]['value']);
+        $this->assertSame('No', $items[1]['label']);
+        $this->assertSame('__other__', $items[2]['value']);
+        $this->assertSame('Type your answer', $items[2]['label']);
     }
 
     #[Test]
@@ -93,9 +93,9 @@ class QuestionControllerTest extends TestCase
 
         $items = $this->invokeBuildItems($request);
 
-        self::assertCount(2, $items); // Yes, No only
-        self::assertSame('yes', $items[0]['value']);
-        self::assertSame('no', $items[1]['value']);
+        $this->assertCount(2, $items); // Yes, No only
+        $this->assertSame('yes', $items[0]['value']);
+        $this->assertSame('no', $items[1]['value']);
     }
 
     #[Test]
@@ -115,12 +115,12 @@ class QuestionControllerTest extends TestCase
         $items = $this->invokeBuildItems($request);
 
         // 2 options + "Type your answer"
-        self::assertCount(3, $items);
-        self::assertSame('Alpha', $items[0]['value']);
-        self::assertSame('First option', $items[0]['description']);
-        self::assertSame('Beta', $items[1]['value']);
-        self::assertSame('Second option', $items[1]['description']);
-        self::assertSame('__other__', $items[2]['value']);
+        $this->assertCount(3, $items);
+        $this->assertSame('Alpha', $items[0]['value']);
+        $this->assertSame('First option', $items[0]['description']);
+        $this->assertSame('Beta', $items[1]['value']);
+        $this->assertSame('Second option', $items[1]['description']);
+        $this->assertSame('__other__', $items[2]['value']);
     }
 
     #[Test]
@@ -139,8 +139,8 @@ class QuestionControllerTest extends TestCase
 
         $items = $this->invokeBuildItems($request);
 
-        self::assertCount(1, $items);
-        self::assertSame('Only', $items[0]['value']);
+        $this->assertCount(1, $items);
+        $this->assertSame('Only', $items[0]['value']);
     }
 
     #[Test]
@@ -159,9 +159,9 @@ class QuestionControllerTest extends TestCase
 
         $items = $this->invokeBuildItems($request);
 
-        self::assertCount(1, $items);
-        self::assertSame('NoDesc', $items[0]['value']);
-        self::assertSame('', $items[0]['description']);
+        $this->assertCount(1, $items);
+        $this->assertSame('NoDesc', $items[0]['value']);
+        $this->assertSame('', $items[0]['description']);
     }
 
     #[Test]
@@ -182,14 +182,14 @@ class QuestionControllerTest extends TestCase
         $items = $this->invokeBuildItems($request);
 
         // Choice items = choices + 'Type your answer' (allowOther defaults to true)
-        self::assertCount(4, $items);
-        self::assertSame('Option A', $items[0]['value']);
-        self::assertSame('Option A', $items[0]['label']);
-        self::assertSame('Option B', $items[1]['value']);
-        self::assertSame('Option B', $items[1]['label']);
-        self::assertSame('Option C', $items[2]['value']);
-        self::assertSame('Option C', $items[2]['label']);
-        self::assertSame('__other__', $items[3]['value']);
+        $this->assertCount(4, $items);
+        $this->assertSame('Option A', $items[0]['value']);
+        $this->assertSame('Option A', $items[0]['label']);
+        $this->assertSame('Option B', $items[1]['value']);
+        $this->assertSame('Option B', $items[1]['label']);
+        $this->assertSame('Option C', $items[2]['value']);
+        $this->assertSame('Option C', $items[2]['label']);
+        $this->assertSame('__other__', $items[3]['value']);
     }
 
     #[Test]
@@ -211,13 +211,13 @@ class QuestionControllerTest extends TestCase
         $items = $this->invokeBuildItems($request);
 
         // Choice without allowOther = choices only
-        self::assertCount(3, $items);
-        self::assertSame('Allow once', $items[0]['value']);
-        self::assertSame('Allow once', $items[0]['label']);
-        self::assertSame('Always allow', $items[1]['value']);
-        self::assertSame('Always allow', $items[1]['label']);
-        self::assertSame('Deny', $items[2]['value']);
-        self::assertSame('Deny', $items[2]['label']);
+        $this->assertCount(3, $items);
+        $this->assertSame('Allow once', $items[0]['value']);
+        $this->assertSame('Allow once', $items[0]['label']);
+        $this->assertSame('Always allow', $items[1]['value']);
+        $this->assertSame('Always allow', $items[1]['label']);
+        $this->assertSame('Deny', $items[2]['value']);
+        $this->assertSame('Deny', $items[2]['label']);
     }
 
     #[Test]
@@ -237,13 +237,13 @@ class QuestionControllerTest extends TestCase
 
         $items = $this->invokeBuildItems($request);
 
-        self::assertCount(2, $items);
-        self::assertSame('Allow once', $items[0]['value']);
-        self::assertSame('Allow once', $items[0]['label']);
-        self::assertSame('Approves one-time', $items[0]['description']);
-        self::assertSame('Allow always', $items[1]['value']);
-        self::assertSame('Allow always', $items[1]['label']);
-        self::assertSame('Persists to policy', $items[1]['description']);
+        $this->assertCount(2, $items);
+        $this->assertSame('Allow once', $items[0]['value']);
+        $this->assertSame('Allow once', $items[0]['label']);
+        $this->assertSame('Approves one-time', $items[0]['description']);
+        $this->assertSame('Allow always', $items[1]['value']);
+        $this->assertSame('Allow always', $items[1]['label']);
+        $this->assertSame('Persists to policy', $items[1]['description']);
     }
 
     #[Test]
@@ -262,7 +262,7 @@ class QuestionControllerTest extends TestCase
         $items = $this->invokeBuildItems($request);
 
         // No choices, no Type your answer (allowOther=false) → empty
-        self::assertCount(0, $items);
+        $this->assertCount(0, $items);
     }
 
     #[Test]
@@ -280,7 +280,7 @@ class QuestionControllerTest extends TestCase
         // returns empty for Text kind.
         $items = $this->invokeBuildItems($request);
 
-        self::assertCount(0, $items);
+        $this->assertCount(0, $items);
     }
 
     // ── Coordinator integration ──
@@ -296,14 +296,14 @@ class QuestionControllerTest extends TestCase
             prompt: 'Test:',
         );
 
-        $this->coordinator->enqueue($request, function (mixed $value) use (&$calledWith): void {
+        $this->coordinator->enqueue($request, static function (mixed $value) use (&$calledWith): void {
             $calledWith = $value;
         });
 
         $this->coordinator->answer('my answer');
 
-        self::assertSame('my answer', $calledWith);
-        self::assertFalse($this->coordinator->actionRequired());
+        $this->assertSame('my answer', $calledWith);
+        $this->assertFalse($this->coordinator->actionRequired());
     }
 
     #[Test]
@@ -317,18 +317,18 @@ class QuestionControllerTest extends TestCase
         );
 
         $this->coordinator->enqueue($request);
-        self::assertTrue($this->coordinator->actionRequired());
+        $this->assertTrue($this->coordinator->actionRequired());
 
         $this->coordinator->cancel();
 
-        self::assertFalse($this->coordinator->actionRequired());
-        self::assertNull($this->coordinator->activeStatus(), 'After cancel with empty queue, status should be null');
+        $this->assertFalse($this->coordinator->actionRequired());
+        $this->assertNull($this->coordinator->activeStatus(), 'After cancel with empty queue, status should be null');
     }
 
     #[Test]
     public function testActionRequiredFalseWhenNoQuestionQueued(): void
     {
-        self::assertFalse($this->coordinator->actionRequired());
+        $this->assertFalse($this->coordinator->actionRequired());
     }
 
     // ── Helpers ──

@@ -1532,11 +1532,13 @@ final class TranscriptProjectorTest extends TestCase
         if ('assistant.text_delta' === $type && 'oops' === ($payload['delta'] ?? '')) {
             $this->accept($type, $payload);
             $this->assertSame([], $this->projector->blocks());
+
             return;
         }
         if ('assistant.text_completed' === $type) {
             $this->accept($type, $payload);
             $this->assertSame([], $this->projector->blocks());
+
             return;
         }
 

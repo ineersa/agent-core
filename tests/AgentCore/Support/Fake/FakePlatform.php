@@ -12,11 +12,10 @@ use Symfony\AI\Platform\Message\Content\Text;
 
 final class FakePlatform implements PlatformInterface
 {
-    /** @var list<PlatformInvocationResult|\Throwable> */
-    private array $responses;
-
     /** @var list<ModelInvocationRequest> */
     public array $invocations = [];
+    /** @var list<PlatformInvocationResult|\Throwable> */
+    private array $responses;
 
     /**
      * @param list<PlatformInvocationResult|\Throwable> $responses

@@ -19,15 +19,15 @@ final class AgentDepthGuardTest extends TestCase
     public function testCheckLaunchAllowedWhenParentIsNotChild(): void
     {
         $guard = new AgentDepthGuard();
-        self::assertNull($guard->checkLaunchAllowed(parentIsAgentChild: false));
+        $this->assertNull($guard->checkLaunchAllowed(parentIsAgentChild: false));
     }
 
     public function testCheckLaunchBlockedWhenParentIsAgentChild(): void
     {
         $guard = new AgentDepthGuard();
         $result = $guard->checkLaunchAllowed(parentIsAgentChild: true);
-        self::assertNotNull($result);
-        self::assertStringContainsString('Nested subagent launches are not supported', $result);
+        $this->assertNotNull($result);
+        $this->assertStringContainsString('Nested subagent launches are not supported', $result);
     }
 
     public function testCheckLaunchBlockedWhenGloballyDisabled(): void
@@ -36,7 +36,7 @@ final class AgentDepthGuardTest extends TestCase
 
         $guard = new AgentDepthGuard();
         $result = $guard->checkLaunchAllowed(parentIsAgentChild: false);
-        self::assertNotNull($result);
-        self::assertStringContainsString('globally disabled', $result);
+        $this->assertNotNull($result);
+        $this->assertStringContainsString('globally disabled', $result);
     }
 }

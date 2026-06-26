@@ -6,10 +6,10 @@ namespace Ineersa\CodingAgent\Tests\Agent\Execution;
 
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
-use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Agent\Execution\SubagentToolSetResolver;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -23,7 +23,7 @@ final class SubagentToolSetResolverTest extends TestCase
     public function testPassThroughWhenNoRunId(): void
     {
         $inner = $this->createMock(ToolSetResolverInterface::class);
-        $inner->expects(self::once())
+        $inner->expects($this->once())
             ->method('resolve')
             ->with('ref', null, null)
             ->willReturn(new ActiveToolSet(toolNames: ['read', 'write']));
@@ -33,18 +33,18 @@ final class SubagentToolSetResolverTest extends TestCase
         $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore), new NullLogger());
         $result = $resolver->resolve('ref');
 
-        self::assertSame(['read', 'write'], $result->toolNames);
+        $this->assertSame(['read', 'write'], $result->toolNames);
     }
 
     public function testPassThroughWhenNotChildRun(): void
     {
         $inner = $this->createMock(ToolSetResolverInterface::class);
-        $inner->expects(self::once())
+        $inner->expects($this->once())
             ->method('resolve')
             ->willReturn(new ActiveToolSet(toolNames: ['read', 'write']));
 
         $eventStore = $this->createMock(EventStoreInterface::class);
-        $eventStore->expects(self::once())
+        $eventStore->expects($this->once())
             ->method('allFor')
             ->with('parent-run')
             ->willReturn([]); // No RunStarted event at all
@@ -52,7 +52,112 @@ final class SubagentToolSetResolverTest extends TestCase
         $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore), new NullLogger());
         $result = $resolver->resolve('ref', runId: 'parent-run');
 
-        self::assertSame(['read', 'write'], $result->toolNames);
+        $this->assertSame(['read', 'write'], $result->toolNames);
+    }
+
+    public function testFiltersChildToolsToAllowedList(): void
+    {
+        $inner = $this->createMock(ToolSetResolverInterface::class);
+        $inner->expects($this->once())
+            ->method('resolve')
+            ->willReturn(new ActiveToolSet(
+                toolNames: ['read', 'write', 'bash', 'edit'],
+                allowListNames: ['read', 'write', 'bash', 'edit'],
+                executionModes: [
+                    'read' => ToolExecutionMode::Sequential,
+                    'write' => ToolExecutionMode::Sequential,
+                    'bash' => ToolExecutionMode::Sequential,
+                    'edit' => ToolExecutionMode::Sequential,
+                ],
+            ));
+
+        $eventStore = $this->createMock(EventStoreInterface::class);
+        $eventStore->expects($this->once())
+            ->method('allFor')
+            ->with('child-run')
+            ->willReturn([
+                new RunEvent(
+                    runId: 'child-run',
+                    seq: 1,
+                    turnNo: 0,
+                    type: RunEventTypeEnum::RunStarted->value,
+                    payload: $this->childRunStartedPayload(['read', 'bash']),
+                ),
+            ]);
+
+        $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore), new NullLogger());
+        $result = $resolver->resolve('ref', runId: 'child-run');
+
+        $this->assertSame(['read', 'bash'], $result->toolNames);
+        $this->assertSame(['read', 'bash'], $result->allowListNames);
+        // Execution modes for removed tools should NOT appear.
+        $this->assertCount(2, $result->executionModes);
+        $this->assertArrayHasKey('read', $result->executionModes);
+        $this->assertArrayHasKey('bash', $result->executionModes);
+        $this->assertArrayNotHasKey('write', $result->executionModes);
+        $this->assertArrayNotHasKey('edit', $result->executionModes);
+    }
+
+    public function testFiltersOutAllToolsWhenNoOverlap(): void
+    {
+        $inner = $this->createMock(ToolSetResolverInterface::class);
+        $inner->expects($this->once())
+            ->method('resolve')
+            ->willReturn(new ActiveToolSet(
+                toolNames: ['read', 'write'],
+                allowListNames: ['read', 'write'],
+            ));
+
+        $eventStore = $this->createMock(EventStoreInterface::class);
+        $eventStore->expects($this->once())
+            ->method('allFor')
+            ->with('child-run')
+            ->willReturn([
+                new RunEvent(
+                    runId: 'child-run',
+                    seq: 1,
+                    turnNo: 0,
+                    type: RunEventTypeEnum::RunStarted->value,
+                    payload: $this->childRunStartedPayload(['bash_only']),
+                ),
+            ]);
+
+        $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore), new NullLogger());
+        $result = $resolver->resolve('ref', runId: 'child-run');
+
+        $this->assertSame([], $result->toolNames);
+        $this->assertSame([], $result->allowListNames);
+        $this->assertSame([], $result->executionModes);
+    }
+
+    public function testFiltersChildToolsExcludingSubagent(): void
+    {
+        $inner = $this->createMock(ToolSetResolverInterface::class);
+        $inner->expects($this->once())
+            ->method('resolve')
+            ->willReturn(new ActiveToolSet(
+                toolNames: ['read', 'write', 'subagent'],
+                allowListNames: ['read', 'write', 'subagent'],
+            ));
+
+        $eventStore = $this->createMock(EventStoreInterface::class);
+        $eventStore->expects($this->once())
+            ->method('allFor')
+            ->with('child-run')
+            ->willReturn([
+                new RunEvent(
+                    runId: 'child-run',
+                    seq: 1,
+                    turnNo: 0,
+                    type: RunEventTypeEnum::RunStarted->value,
+                    payload: $this->childRunStartedPayload(['read', 'write']),
+                ),
+            ]);
+
+        $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore), new NullLogger());
+        $result = $resolver->resolve('ref', runId: 'child-run');
+
+        $this->assertNotContains('subagent', $result->toolNames);
     }
 
     /**
@@ -90,110 +195,5 @@ final class SubagentToolSetResolverTest extends TestCase
                 ],
             ],
         ];
-    }
-
-    public function testFiltersChildToolsToAllowedList(): void
-    {
-        $inner = $this->createMock(ToolSetResolverInterface::class);
-        $inner->expects(self::once())
-            ->method('resolve')
-            ->willReturn(new ActiveToolSet(
-                toolNames: ['read', 'write', 'bash', 'edit'],
-                allowListNames: ['read', 'write', 'bash', 'edit'],
-                executionModes: [
-                    'read' => ToolExecutionMode::Sequential,
-                    'write' => ToolExecutionMode::Sequential,
-                    'bash' => ToolExecutionMode::Sequential,
-                    'edit' => ToolExecutionMode::Sequential,
-                ],
-            ));
-
-        $eventStore = $this->createMock(EventStoreInterface::class);
-        $eventStore->expects(self::once())
-            ->method('allFor')
-            ->with('child-run')
-            ->willReturn([
-                new RunEvent(
-                    runId: 'child-run',
-                    seq: 1,
-                    turnNo: 0,
-                    type: RunEventTypeEnum::RunStarted->value,
-                    payload: $this->childRunStartedPayload(['read', 'bash']),
-                ),
-            ]);
-
-        $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore), new NullLogger());
-        $result = $resolver->resolve('ref', runId: 'child-run');
-
-        self::assertSame(['read', 'bash'], $result->toolNames);
-        self::assertSame(['read', 'bash'], $result->allowListNames);
-        // Execution modes for removed tools should NOT appear.
-        self::assertCount(2, $result->executionModes);
-        self::assertArrayHasKey('read', $result->executionModes);
-        self::assertArrayHasKey('bash', $result->executionModes);
-        self::assertArrayNotHasKey('write', $result->executionModes);
-        self::assertArrayNotHasKey('edit', $result->executionModes);
-    }
-
-    public function testFiltersOutAllToolsWhenNoOverlap(): void
-    {
-        $inner = $this->createMock(ToolSetResolverInterface::class);
-        $inner->expects(self::once())
-            ->method('resolve')
-            ->willReturn(new ActiveToolSet(
-                toolNames: ['read', 'write'],
-                allowListNames: ['read', 'write'],
-            ));
-
-        $eventStore = $this->createMock(EventStoreInterface::class);
-        $eventStore->expects(self::once())
-            ->method('allFor')
-            ->with('child-run')
-            ->willReturn([
-                new RunEvent(
-                    runId: 'child-run',
-                    seq: 1,
-                    turnNo: 0,
-                    type: RunEventTypeEnum::RunStarted->value,
-                    payload: $this->childRunStartedPayload(['bash_only']),
-                ),
-            ]);
-
-        $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore), new NullLogger());
-        $result = $resolver->resolve('ref', runId: 'child-run');
-
-        self::assertSame([], $result->toolNames);
-        self::assertSame([], $result->allowListNames);
-        self::assertSame([], $result->executionModes);
-    }
-
-    public function testFiltersChildToolsExcludingSubagent(): void
-    {
-        $inner = $this->createMock(ToolSetResolverInterface::class);
-        $inner->expects(self::once())
-            ->method('resolve')
-            ->willReturn(new ActiveToolSet(
-                toolNames: ['read', 'write', 'subagent'],
-                allowListNames: ['read', 'write', 'subagent'],
-            ));
-
-        $eventStore = $this->createMock(EventStoreInterface::class);
-        $eventStore->expects(self::once())
-            ->method('allFor')
-            ->with('child-run')
-            ->willReturn([
-                new RunEvent(
-                    runId: 'child-run',
-                    seq: 1,
-                    turnNo: 0,
-                    type: RunEventTypeEnum::RunStarted->value,
-                    payload: $this->childRunStartedPayload(['read', 'write']),
-                ),
-            ]);
-
-        $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore), new NullLogger());
-        $result = $resolver->resolve('ref', runId: 'child-run');
-
-        self::assertNotContains('subagent', $result->toolNames);
     }
 }

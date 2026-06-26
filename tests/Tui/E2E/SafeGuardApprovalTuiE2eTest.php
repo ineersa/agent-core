@@ -42,19 +42,19 @@ final class SafeGuardApprovalTuiE2eTest extends TestCase
     protected function setUp(): void
     {
         if (!TmuxHarness::isAvailable()) {
-            self::markTestSkipped('tmux is not installed. Skipping TUI e2e tests.');
+            $this->markTestSkipped('tmux is not installed. Skipping TUI e2e tests.');
         }
 
         $this->tmux = new TmuxHarness();
         $this->testProjectDir = $this->createIsolatedProjectDir();
 
         $this->snapshotDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
-        @\mkdir($this->snapshotDir, 0o777, true);
+        @mkdir($this->snapshotDir, 0o777, true);
 
         // Compute the expected target file path (same as in the fixture deltas).
         $sessionId = pathinfo($this->testProjectDir, \PATHINFO_BASENAME);
         $this->targetOutsidePath = \dirname($this->testProjectDir).'/sg-'.$sessionId.'.txt';
-        @\unlink($this->targetOutsidePath);
+        @unlink($this->targetOutsidePath);
 
         // Write replay fixture files into the isolated project dir.
         $this->writeFixtures($sessionId);
@@ -69,6 +69,91 @@ final class SafeGuardApprovalTuiE2eTest extends TestCase
         // Clean up fixture files
         if (isset($this->testProjectDir) && '' !== $this->testProjectDir) {
             TestDirectoryIsolation::removeDirectory($this->testProjectDir);
+        }
+    }
+
+    // ── The test ──────────────────────────────────────────────────
+
+    /**
+     * Prove the interactive TUI approval overlay works end-to-end:
+     *   - SafeGuard blocks a write outside CWD
+     *   - The approval overlay renders with Allow once / Always allow / Deny
+     *   - Selecting "Allow once" via Enter executes the write tool
+     *   - The file is created on disk outside CWD
+     *   - No "blocked" messaging appears
+     */
+    public function testSafeGuardApprovalOverlayAllowsWriteOutsideCwd(): void
+    {
+        $pane = $this->tmux->startDetached(
+            command: $this->agentCommand(),
+            prefix: 'tui-sg-approval',
+            width: 120,
+            height: 60,
+            cwd: $this->testProjectDir,
+        );
+
+        try {
+            // Phase 1: Wait for the SafeGuard approval overlay to appear
+            // in the TUI. The overlay shows '✅ Allow once' as the first option
+            // (default-selected) from handleApprovalToolQuestion's schema.
+            $approvalCapture = $this->tmux->waitForCaptureContains(
+                $pane,
+                '✅ Allow once',
+                timeout: 25.0,
+            );
+
+            $this->saveAnsiSnapshot($pane, 'sg-approval-overlay');
+
+            // Verify the approval overlay shows the expected 3 options
+            $this->assertStringContainsString('✅ Allow once', $approvalCapture,
+                'Approval overlay must show Allow once option');
+            $this->assertStringContainsString('📌 Always allow', $approvalCapture,
+                'Approval overlay must show Always allow option');
+            $this->assertStringContainsString('❌ Block', $approvalCapture,
+                'Approval overlay must show Deny option');
+
+            // Verify NO human_input.requested (the old interrupt flow is gone)
+            $this->assertStringNotContainsString('human_input.requested', $approvalCapture,
+                'Blocking-poll must NOT produce human_input.requested event');
+
+            // Phase 2: Accept '✅ Allow once' by pressing Enter.
+            // The first item ('✅ Allow once') is default-selected by
+            // SelectListWidget, so Enter confirms it directly.
+            $this->tmux->sendKey($pane, 'Enter');
+
+            // Phase 3: Wait for the write tool to execute and the
+            // assistant response to appear. After the blocking poll
+            // returns "Allow once", the real write handler runs,
+            // the file is created, and the second fixture streams
+            // "The file has been written."
+            $resultCapture = $this->tmux->waitForCaptureContains(
+                $pane,
+                'The file has been written',
+                timeout: 25.0,
+            );
+
+            $this->saveAnsiSnapshot($pane, 'sg-approval-complete');
+
+            // Assert the write actually happened on disk (outside CWD)
+            $this->assertFileExists(
+                $this->targetOutsidePath,
+                'The write tool must create the file outside CWD after approval in the real TUI',
+            );
+
+            $written = trim((string) file_get_contents($this->targetOutsidePath));
+            $this->assertSame('hello', $written,
+                'File content must match what the LLM wrote');
+
+            // Assert NO "blocked" or "interrupt" messaging in the
+            // full history (the old soft-interrupt flow is eliminated).
+            $fullCapture = $this->tmux->capturePlainWithHistory($pane, 3000);
+            $this->assertStringNotContainsStringIgnoringCase('blocked', $fullCapture,
+                'Must not show blocked messaging after approval');
+            $this->assertStringNotContainsStringIgnoringCase('interrupt', $fullCapture,
+                'Must not show interrupt messaging after approval');
+        } catch (\Throwable $e) {
+            $this->saveAnsiSnapshot($pane, 'sg-approval-FAILURE');
+            throw $e;
         }
     }
 
@@ -113,100 +198,14 @@ final class SafeGuardApprovalTuiE2eTest extends TestCase
             'stop_reason' => 'stop',
         ];
 
-        \file_put_contents(
+        file_put_contents(
             $this->testProjectDir.'/fixture-write.json',
-            \json_encode($fixture1, \JSON_UNESCAPED_UNICODE | \JSON_UNESCAPED_SLASHES | \JSON_THROW_ON_ERROR),
+            json_encode($fixture1, \JSON_UNESCAPED_UNICODE | \JSON_UNESCAPED_SLASHES | \JSON_THROW_ON_ERROR),
         );
-        \file_put_contents(
+        file_put_contents(
             $this->testProjectDir.'/fixture-done.json',
-            \json_encode($fixture2, \JSON_UNESCAPED_UNICODE | \JSON_UNESCAPED_SLASHES | \JSON_THROW_ON_ERROR),
+            json_encode($fixture2, \JSON_UNESCAPED_UNICODE | \JSON_UNESCAPED_SLASHES | \JSON_THROW_ON_ERROR),
         );
-    }
-
-    // ── The test ──────────────────────────────────────────────────
-
-    /**
-     * Prove the interactive TUI approval overlay works end-to-end:
-     *   - SafeGuard blocks a write outside CWD
-     *   - The approval overlay renders with Allow once / Always allow / Deny
-     *   - Selecting "Allow once" via Enter executes the write tool
-     *   - The file is created on disk outside CWD
-     *   - No "blocked" messaging appears
-     */
-    public function testSafeGuardApprovalOverlayAllowsWriteOutsideCwd(): void
-    {
-        $pane = $this->tmux->startDetached(
-            command: $this->agentCommand(),
-            prefix: 'tui-sg-approval',
-            width: 120,
-            height: 60,
-            cwd: $this->testProjectDir,
-        );
-
-        try {
-            // Phase 1: Wait for the SafeGuard approval overlay to appear
-            // in the TUI. The overlay shows '✅ Allow once' as the first option
-            // (default-selected) from handleApprovalToolQuestion's schema.
-            $approvalCapture = $this->tmux->waitForCaptureContains(
-                $pane,
-                '✅ Allow once',
-                timeout: 25.0,
-            );
-
-            $this->saveAnsiSnapshot($pane, 'sg-approval-overlay');
-
-            // Verify the approval overlay shows the expected 3 options
-            self::assertStringContainsString('✅ Allow once', $approvalCapture,
-                'Approval overlay must show Allow once option');
-            self::assertStringContainsString('📌 Always allow', $approvalCapture,
-                'Approval overlay must show Always allow option');
-            self::assertStringContainsString('❌ Block', $approvalCapture,
-                'Approval overlay must show Deny option');
-
-            // Verify NO human_input.requested (the old interrupt flow is gone)
-            self::assertStringNotContainsString('human_input.requested', $approvalCapture,
-                'Blocking-poll must NOT produce human_input.requested event');
-
-            // Phase 2: Accept '✅ Allow once' by pressing Enter.
-            // The first item ('✅ Allow once') is default-selected by
-            // SelectListWidget, so Enter confirms it directly.
-            $this->tmux->sendKey($pane, 'Enter');
-
-            // Phase 3: Wait for the write tool to execute and the
-            // assistant response to appear. After the blocking poll
-            // returns "Allow once", the real write handler runs,
-            // the file is created, and the second fixture streams
-            // "The file has been written."
-            $resultCapture = $this->tmux->waitForCaptureContains(
-                $pane,
-                'The file has been written',
-                timeout: 25.0,
-            );
-
-            $this->saveAnsiSnapshot($pane, 'sg-approval-complete');
-
-            // Assert the write actually happened on disk (outside CWD)
-            self::assertFileExists(
-                $this->targetOutsidePath,
-                'The write tool must create the file outside CWD after approval in the real TUI',
-            );
-
-            $written = \trim((string) \file_get_contents($this->targetOutsidePath));
-            self::assertSame('hello', $written,
-                'File content must match what the LLM wrote');
-
-            // Assert NO "blocked" or "interrupt" messaging in the
-            // full history (the old soft-interrupt flow is eliminated).
-            $fullCapture = $this->tmux->capturePlainWithHistory($pane, 3000);
-            self::assertStringNotContainsStringIgnoringCase('blocked', $fullCapture,
-                'Must not show blocked messaging after approval');
-            self::assertStringNotContainsStringIgnoringCase('interrupt', $fullCapture,
-                'Must not show interrupt messaging after approval');
-
-        } catch (\Throwable $e) {
-            $this->saveAnsiSnapshot($pane, 'sg-approval-FAILURE');
-            throw $e;
-        }
     }
 
     // ── Command building ──────────────────────────────────────────
@@ -218,7 +217,7 @@ final class SafeGuardApprovalTuiE2eTest extends TestCase
         $script = $projectDir.'/bin/console';
         $dbPath = 'app_test-tui-sg-'.bin2hex(random_bytes(4)).'.sqlite';
 
-        $fixturePath = \implode(';', [
+        $fixturePath = implode(';', [
             $this->testProjectDir.'/fixture-write.json',
             $this->testProjectDir.'/fixture-done.json',
         ]);
@@ -234,13 +233,13 @@ final class SafeGuardApprovalTuiE2eTest extends TestCase
             .'--tools-excluded=bash '
             .'--prompt="Write a file to ../%s/sg-%s.txt with content hello" '
             .'2>&1',
-            \escapeshellarg($dbPath),
-            \escapeshellarg($this->testProjectDir.'/home'),
-            \escapeshellarg($fixturePath),
-            \escapeshellarg($php),
-            \escapeshellarg($script),
-            \basename($this->testProjectDir),
-            \basename($this->testProjectDir),
+            escapeshellarg($dbPath),
+            escapeshellarg($this->testProjectDir.'/home'),
+            escapeshellarg($fixturePath),
+            escapeshellarg($php),
+            escapeshellarg($script),
+            basename($this->testProjectDir),
+            basename($this->testProjectDir),
         );
     }
 
@@ -249,7 +248,7 @@ final class SafeGuardApprovalTuiE2eTest extends TestCase
     private function createIsolatedProjectDir(): string
     {
         $dir = TestDirectoryIsolation::createProjectTempDir('tui-sg-approval');
-        @\mkdir($dir.'/.hatfield', 0o777, true);
+        @mkdir($dir.'/.hatfield', 0o777, true);
 
         // Settings with SafeGuard enabled, write tool tracked,
         // NO allow_write_outside_cwd patterns (so SafeGuard blocks).
@@ -312,11 +311,11 @@ final class SafeGuardApprovalTuiE2eTest extends TestCase
         ];
 
         $yaml = \Symfony\Component\Yaml\Yaml::dump($settings, 6, 4);
-        \file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
+        file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
 
         // Also write HOME dir settings (used by controller subprocess).
-        @\mkdir($dir.'/home/.hatfield', 0o777, true);
-        \file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
+        @mkdir($dir.'/home/.hatfield', 0o777, true);
+        file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
 
         return $dir;
     }
@@ -326,8 +325,8 @@ final class SafeGuardApprovalTuiE2eTest extends TestCase
     private function saveAnsiSnapshot(TmuxPane $pane, string $tag): void
     {
         $ansi = $this->tmux->captureAnsi($pane);
-        $ts = \date('Ymd-His');
+        $ts = date('Ymd-His');
         $path = \sprintf('%s/%s-%s.ansi', $this->snapshotDir, $tag, $ts);
-        \file_put_contents($path, $ansi);
+        file_put_contents($path, $ansi);
     }
 }

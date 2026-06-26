@@ -360,5 +360,4 @@ final class RuntimeEventTypeTest extends TestCase
         $this->assertFalse(RuntimeEventTypeEnum::BackgroundProcessCompleted->isTool());
         $this->assertFalse(RuntimeEventTypeEnum::BackgroundProcessCompleted->isHitl());
     }
-
 }

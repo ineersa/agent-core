@@ -457,6 +457,7 @@ parameters:
       - SymfonyTui
 
     TuiTheme:
+      - AppRuntimeContract
       - AppConfig
       - SymfonyTui
       - SymfonyConsole
@@ -496,7 +497,6 @@ parameters:
       - AppPromptTemplate
       - AppAgent
       - AppExtension
-      - TuiTheme
       - AppConfig
 
     AppRuntimeContract:
@@ -536,8 +536,6 @@ parameters:
       - SymfonySerializer
 
     AppCli:
-      - AppSystemPrompt
-      - AppAgent
       - AppAuth
       - AppExtension
       - AppExtensionApi

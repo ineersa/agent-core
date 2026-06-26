@@ -7,14 +7,14 @@ namespace Ineersa\CodingAgent\Tests\Runtime\LoadedResources;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDiscovery;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\PromptsConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Extension\ExtensionManager;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateFrontmatterParser;
-use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
-use Ineersa\CodingAgent\Config\PromptsConfig;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateLoader;
+use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
 use Ineersa\CodingAgent\Runtime\LoadedResources\LoadedResourcesSummaryBuilder;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\Skills\SkillsConfig;
@@ -71,16 +71,16 @@ final class LoadedResourcesSummaryBuilderTest extends TestCase
             skillDiscovery: $skillDiscovery,
             promptTemplateLoader: $this->emptyPromptLoader(),
             agentDefinitionDiscovery: $this->disabledAgentDiscovery(),
-            themeRegistry: $this->emptyThemeRegistry(),
+            themeLoadedResourcesProvider: $this->emptyThemeRegistry(),
             extensionManager: $this->emptyExtensionManager(),
         );
 
         $summary = $builder->build();
         $skills = $this->sectionByKey($summary, 'skills');
 
-        self::assertCount(1, $skills->conflicts);
-        self::assertSame('myskill', $skills->conflicts[0]->name);
-        self::assertStringContainsString('/high/myskill', $skills->conflicts[0]->winnerPath);
+        $this->assertCount(1, $skills->conflicts);
+        $this->assertSame('myskill', $skills->conflicts[0]->name);
+        $this->assertStringContainsString('/high/myskill', $skills->conflicts[0]->winnerPath);
     }
 
     #[Test]
@@ -115,17 +115,17 @@ final class LoadedResourcesSummaryBuilderTest extends TestCase
             skillDiscovery: $this->emptySkillDiscovery($cwd),
             promptTemplateLoader: $promptLoader,
             agentDefinitionDiscovery: $this->disabledAgentDiscovery(),
-            themeRegistry: $this->emptyThemeRegistryForCwd($cwd),
+            themeLoadedResourcesProvider: $this->emptyThemeRegistryForCwd($cwd),
             extensionManager: $this->emptyExtensionManagerForCwd($cwd),
         );
 
         $summary = $builder->build();
         $prompts = $this->sectionByKey($summary, 'prompts');
 
-        self::assertCount(1, $prompts->conflicts);
-        self::assertSame('review', $prompts->conflicts[0]->name);
-        self::assertSame($globalFile, $prompts->conflicts[0]->winnerPath);
-        self::assertSame($projectFile, $prompts->conflicts[0]->loserPath);
+        $this->assertCount(1, $prompts->conflicts);
+        $this->assertSame('review', $prompts->conflicts[0]->name);
+        $this->assertSame($globalFile, $prompts->conflicts[0]->winnerPath);
+        $this->assertSame($projectFile, $prompts->conflicts[0]->loserPath);
     }
 
     #[Test]
@@ -158,17 +158,17 @@ final class LoadedResourcesSummaryBuilderTest extends TestCase
             skillDiscovery: $this->emptySkillDiscovery($cwd),
             promptTemplateLoader: $this->emptyPromptLoaderForCwd($cwd),
             agentDefinitionDiscovery: $agentDiscovery,
-            themeRegistry: $this->emptyThemeRegistryForCwd($cwd),
+            themeLoadedResourcesProvider: $this->emptyThemeRegistryForCwd($cwd),
             extensionManager: $this->emptyExtensionManagerForCwd($cwd),
         );
 
         $summary = $builder->build();
         $agents = $this->sectionByKey($summary, 'agents');
 
-        self::assertCount(1, $agents->conflicts);
-        self::assertSame('collide', $agents->conflicts[0]->name);
-        self::assertSame($higher, $agents->conflicts[0]->winnerPath);
-        self::assertSame($lower, $agents->conflicts[0]->loserPath);
+        $this->assertCount(1, $agents->conflicts);
+        $this->assertSame('collide', $agents->conflicts[0]->name);
+        $this->assertSame($higher, $agents->conflicts[0]->winnerPath);
+        $this->assertSame($lower, $agents->conflicts[0]->loserPath);
     }
 
     private function sectionByKey(\Ineersa\CodingAgent\Runtime\Contract\LoadedResourcesSummaryDTO $summary, string $key): \Ineersa\CodingAgent\Runtime\Contract\LoadedResourceSectionDTO
@@ -179,7 +179,7 @@ final class LoadedResourcesSummaryBuilderTest extends TestCase
             }
         }
 
-        self::fail('Missing section: '.$key);
+        $this->fail('Missing section: '.$key);
     }
 
     private function appConfig(string $cwd): AppConfig
@@ -195,7 +195,7 @@ final class LoadedResourcesSummaryBuilderTest extends TestCase
     {
         return new PromptTemplateLoader(
             promptsConfig: new PromptsConfig(),
-            runtimeConfig: (function (): PromptTemplatesRuntimeConfig {
+            runtimeConfig: (static function (): PromptTemplatesRuntimeConfig {
                 $c = new PromptTemplatesRuntimeConfig();
                 $c->noPromptTemplates = true;
 
@@ -265,7 +265,7 @@ final class LoadedResourcesSummaryBuilderTest extends TestCase
     {
         return new PromptTemplateLoader(
             promptsConfig: new PromptsConfig(),
-            runtimeConfig: (function (): PromptTemplatesRuntimeConfig {
+            runtimeConfig: (static function (): PromptTemplatesRuntimeConfig {
                 $c = new PromptTemplatesRuntimeConfig();
                 $c->noPromptTemplates = true;
 

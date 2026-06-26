@@ -425,6 +425,7 @@ final class ToolExecutorTest extends TestCase
         $this->assertFalse($result->isError);
         $this->assertNull($accessor->current());
     }
+
     public function testNoPostHocTimeoutWhenPolicyTimeoutIsNull(): void
     {
         $toolbox = new SlowToolbox();
@@ -447,7 +448,6 @@ final class ToolExecutorTest extends TestCase
         $this->assertSame('slow-ok', $result->content[0]['text']);
         $this->assertNull($result->details['timeout_seconds'] ?? null);
     }
-
 }
 
 final class ContextCheckingToolbox implements ToolboxInterface
@@ -533,7 +533,6 @@ final class SymfonySearchTool
         ];
     }
 }
-
 
 final class SlowToolbox implements ToolboxInterface
 {

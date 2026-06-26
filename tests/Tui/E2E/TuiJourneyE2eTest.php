@@ -44,14 +44,14 @@ final class TuiJourneyE2eTest extends TestCase
     protected function setUp(): void
     {
         if (!TmuxHarness::isAvailable()) {
-            self::markTestSkipped('tmux is not installed. Skipping TUI e2e tests.');
+            $this->markTestSkipped('tmux is not installed. Skipping TUI e2e tests.');
         }
 
         $this->tmux = new TmuxHarness();
         $this->projectRoot = ProjectDir::get();
         $this->testProjectDir = $this->createIsolatedProjectDir();
         $this->snapshotDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
-        @\mkdir($this->snapshotDir, 0o777, true);
+        @mkdir($this->snapshotDir, 0o777, true);
     }
 
     protected function tearDown(): void
@@ -72,6 +72,7 @@ final class TuiJourneyE2eTest extends TestCase
      *
      * Virtual-only (not in this journey): startup detail {@see TuiStartupVirtualRenderTest},
      * Shift+Tab reasoning status/border {@see TuiReasoningCycleTest},
+     *
      * @ file completion menu/accept {@see TuiFileCompletionRenderTest},
      * /export confirmation + HTML file {@see TuiExportCommandVirtualTest},
      * model replay assistant block + cache footer {@see TuiModelInteractionVirtualTest},
@@ -128,16 +129,15 @@ final class TuiJourneyE2eTest extends TestCase
 
         $capture = $this->tmux->waitForTuiReadyAfterLogo($pane);
 
-        self::assertStringContainsString('█', $capture, 'Hatfield logo missing');
-        self::assertTrue(
+        $this->assertStringContainsString('█', $capture, 'Hatfield logo missing');
+        $this->assertTrue(
             str_contains($capture, '● idle') || str_contains($capture, '◐ Work'),
             'Working/idle status widget missing',
         );
-        self::assertStringContainsString('◆', $capture, 'Footer widget missing');
+        $this->assertStringContainsString('◆', $capture, 'Footer widget missing');
         // Session ID in footer is covered by {@see TuiModelInteractionVirtualTest}.
         // At startup the footer shows model, token, timer, CWD, branch.
     }
-
 
     /**
      * Phase 4: !ls shell prefix (standalone, first-input) — creates a
@@ -162,7 +162,7 @@ final class TuiJourneyE2eTest extends TestCase
                 return str_contains($cap, $marker);
             },
             timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
-            message: sprintf('Marker file "%s" never appeared in captured output for !ls -1', $marker),
+            message: \sprintf('Marker file "%s" never appeared in captured output for !ls -1', $marker),
             history: 2000,
         );
 
@@ -223,7 +223,7 @@ final class TuiJourneyE2eTest extends TestCase
                 return str_contains($cap, $marker);
             },
             timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
-            message: sprintf('Inline-shell marker file "%s" never appeared in captured output', $marker),
+            message: \sprintf('Inline-shell marker file "%s" never appeared in captured output', $marker),
             history: 2000,
         );
 
@@ -262,13 +262,13 @@ final class TuiJourneyE2eTest extends TestCase
             history: 2000,
         );
 
-        self::assertStringNotContainsString(
+        $this->assertStringNotContainsString(
             '✕',
             $capture,
             'Follow-up after inline shell must NOT produce an error block',
         );
 
-        self::assertStringContainsString(
+        $this->assertStringContainsString(
             '◇',
             $capture,
             'Follow-up after inline shell must produce an assistant block',
@@ -291,7 +291,6 @@ final class TuiJourneyE2eTest extends TestCase
         $this->saveAnsiSnapshot($pane, 'journey-inline-shell');
     }
 
-
     // ── Helpers ───────────────────────────────────────────────────
 
     private function agentCommand(): string
@@ -301,7 +300,7 @@ final class TuiJourneyE2eTest extends TestCase
         // Follow-up fixture for Phase 9: replay assistant text for the normal
         // message after inline shell (not used to seed completed-run state).
         $followupFixture = __DIR__.'/fixtures/tui-followup-response.json';
-        if (\is_file($followupFixture)) {
+        if (is_file($followupFixture)) {
             $fixturePaths[] = $followupFixture;
         }
 
@@ -312,7 +311,7 @@ final class TuiJourneyE2eTest extends TestCase
         $script = $projectDir.'/bin/console';
 
         $fixtureEnv = '' !== $fixturePaths
-            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.\escapeshellarg(\implode(';', $fixturePaths)).' '
+            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.escapeshellarg(implode(';', $fixturePaths)).' '
             : '';
 
         // Use an isolated test DB so StartupDatabaseMigrator can auto-migrate
@@ -329,18 +328,18 @@ final class TuiJourneyE2eTest extends TestCase
             'APP_ENV=test HATFIELD_TEST_DATABASE_PATH=%s HOME=%s %s %s %s agent '
                 .'--model=llama_cpp_test/test '
                 .'--tools-excluded=bash 2>&1',
-            \escapeshellarg($dbPath),
-            \escapeshellarg($this->testProjectDir.'/home'),
+            escapeshellarg($dbPath),
+            escapeshellarg($this->testProjectDir.'/home'),
             $fixtureEnv,
-            \escapeshellarg($php),
-            \escapeshellarg($script),
+            escapeshellarg($php),
+            escapeshellarg($script),
         );
     }
 
     private function createIsolatedProjectDir(): string
     {
         $dir = TestDirectoryIsolation::createProjectTempDir('tui-e2e');
-        @\mkdir($dir.'/.hatfield', 0o777, true);
+        @mkdir($dir.'/.hatfield', 0o777, true);
 
         $settings = [
             'ai' => [
@@ -401,22 +400,21 @@ final class TuiJourneyE2eTest extends TestCase
         ];
 
         $yaml = \Symfony\Component\Yaml\Yaml::dump($settings, 6, 4);
-        \file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
+        file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
 
         // Also write for the HOME dir.
-        @\mkdir($dir.'/home/.hatfield', 0o777, true);
-        \file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
+        @mkdir($dir.'/home/.hatfield', 0o777, true);
+        file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
 
         return $dir;
     }
-
 
     private function saveAnsiSnapshot(TmuxPane $pane, string $tag): void
     {
         $ansi = $this->tmux->captureAnsi($pane);
         $ts = date('Ymd-His');
         $path = \sprintf('%s/%s-%s.ansi', $this->snapshotDir, $tag, $ts);
-        \file_put_contents($path, $ansi);
+        file_put_contents($path, $ansi);
     }
 
     /**
@@ -428,7 +426,7 @@ final class TuiJourneyE2eTest extends TestCase
      */
     private function assertShellEventsOrder(string $testProjectDir, string $label, string $expectedLastType = 'agent_end'): void
     {
-        $sessionDirs = glob($testProjectDir.'/.hatfield/sessions/*', GLOB_ONLYDIR);
+        $sessionDirs = glob($testProjectDir.'/.hatfield/sessions/*', \GLOB_ONLYDIR);
         if (false === $sessionDirs || [] === $sessionDirs) {
             return;
         }
@@ -436,7 +434,7 @@ final class TuiJourneyE2eTest extends TestCase
         rsort($sessionDirs);
         $eventsPath = $sessionDirs[0].'/events.jsonl';
 
-        if (!\is_file($eventsPath)) {
+        if (!is_file($eventsPath)) {
             return;
         }
 
@@ -448,7 +446,7 @@ final class TuiJourneyE2eTest extends TestCase
         $lastEvent = null;
         $lastLine = null;
         for ($i = \count($lines) - 1; $i >= 0; --$i) {
-            $decoded = \json_decode($lines[$i], true);
+            $decoded = json_decode($lines[$i], true);
             if (\is_array($decoded) && isset($decoded['type'])) {
                 $lastEvent = $decoded;
                 $lastLine = $i + 1;
@@ -460,7 +458,7 @@ final class TuiJourneyE2eTest extends TestCase
             return;
         }
 
-        self::assertSame(
+        $this->assertSame(
             $expectedLastType,
             $lastEvent['type'],
             \sprintf(

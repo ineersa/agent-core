@@ -422,7 +422,6 @@ final class LlmStepResultHandlerTest extends TestCase
         );
     }
 
-
     public function testRetryableErrorBelowCapSchedulesAutomaticContinue(): void
     {
         $executionBus = new TestMessageBus();
@@ -652,7 +651,7 @@ final class LlmStepResultHandlerTest extends TestCase
             $callback();
         }
         foreach ($commandBus->messages as $dispatched) {
-            if ($dispatched instanceof \Ineersa\AgentCore\Domain\Message\CompactRun) {
+            if ($dispatched instanceof CompactRun) {
                 $hasCompact = true;
             }
             $this->assertNotInstanceOf(\Ineersa\AgentCore\Domain\Message\ApplyCommand::class, $dispatched);
@@ -700,13 +699,12 @@ final class LlmStepResultHandlerTest extends TestCase
         );
 
         $result = $handler->handle($message, $state);
-        self::assertCount(1, $result->postCommit);
+        $this->assertCount(1, $result->postCommit);
         ($result->postCommit[0])();
 
-        self::assertCount(1, $executionBus->messages);
+        $this->assertCount(1, $executionBus->messages);
         $execute = $executionBus->messages[0];
-        self::assertInstanceOf(ExecuteToolCall::class, $execute);
-        self::assertNull($execute->timeoutSeconds);
+        $this->assertInstanceOf(ExecuteToolCall::class, $execute);
+        $this->assertNull($execute->timeoutSeconds);
     }
-
 }

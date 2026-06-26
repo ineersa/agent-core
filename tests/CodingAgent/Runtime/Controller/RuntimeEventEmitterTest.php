@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller;
 
+use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
-use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\EventDispatcher;
@@ -17,18 +17,6 @@ use Symfony\Component\EventDispatcher\EventDispatcher;
  */
 final class RuntimeEventEmitterTest extends TestCase
 {
-    private function createEmitter(): RuntimeEventEmitter
-    {
-        $boundary = new RuntimeExceptionBoundary(new EventDispatcher());
-        $logger = $this->createStub(LoggerInterface::class);
-
-        return new RuntimeEventEmitter(
-            eventClient: null,
-            boundary: $boundary,
-            logger: $logger,
-        );
-    }
-
     public function testOpenStdoutOpensWritableStream(): void
     {
         $emitter = $this->createEmitter();
@@ -80,5 +68,17 @@ final class RuntimeEventEmitterTest extends TestCase
         ));
 
         $this->assertFalse($emitter->isShuttingDown());
+    }
+
+    private function createEmitter(): RuntimeEventEmitter
+    {
+        $boundary = new RuntimeExceptionBoundary(new EventDispatcher());
+        $logger = $this->createStub(LoggerInterface::class);
+
+        return new RuntimeEventEmitter(
+            eventClient: null,
+            boundary: $boundary,
+            logger: $logger,
+        );
     }
 }
