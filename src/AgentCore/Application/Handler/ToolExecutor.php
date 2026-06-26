@@ -142,15 +142,19 @@ final class ToolExecutor implements ToolExecutorInterface
                 if (null !== $exception->hint()) {
                     $message .= "\nHint: ".$exception->hint();
                 }
+                $details = [
+                    'error_type' => ToolCallException::class,
+                    'retryable' => $exception->retryable(),
+                    'hint' => $exception->hint(),
+                ];
+                if ($this->cancellationToken($toolCall)->isCancellationRequested()) {
+                    $details['cancelled'] = true;
+                }
                 $result = $this->errorResult(
                     toolCallId: $toolCall->toolCallId,
                     toolName: $toolCall->toolName,
                     message: $message,
-                    details: [
-                        'error_type' => ToolCallException::class,
-                        'retryable' => $exception->retryable(),
-                        'hint' => $exception->hint(),
-                    ],
+                    details: $details,
                 );
             } else {
                 $result = $this->errorResult(
@@ -183,14 +187,25 @@ final class ToolExecutor implements ToolExecutorInterface
             $alreadyCancelled = true === $cancelled;
 
             if (!$alreadyCancelled) {
-                $result = $this->errorResult(
-                    toolCallId: $toolCall->toolCallId,
-                    toolName: $toolCall->toolName,
-                    message: \sprintf('Tool "%s" result marked stale due to run cancellation.', $toolCall->toolName),
-                    details: [
-                        'stale_due_to_cancel' => true,
-                    ],
-                );
+                $errorType = \is_array($details) ? ($details['error_type'] ?? null) : null;
+                if (ToolCallException::class === $errorType) {
+                    $details['cancelled'] = true;
+                    $result = $this->errorResult(
+                        toolCallId: $toolCall->toolCallId,
+                        toolName: $toolCall->toolName,
+                        message: (string) ($result->content[0]['text'] ?? ''),
+                        details: $details,
+                    );
+                } else {
+                    $result = $this->errorResult(
+                        toolCallId: $toolCall->toolCallId,
+                        toolName: $toolCall->toolName,
+                        message: \sprintf('Tool "%s" result marked stale due to run cancellation.', $toolCall->toolName),
+                        details: [
+                            'stale_due_to_cancel' => true,
+                        ],
+                    );
+                }
             }
         }
 

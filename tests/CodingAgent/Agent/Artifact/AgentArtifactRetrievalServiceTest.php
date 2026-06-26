@@ -305,6 +305,50 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
     }
 
 
+
+    public function testRetrievesCancelledHandoffWithPartialContext(): void
+    {
+        $parent = 'parent-cancel-retrieve';
+        $artifactId = 'agent_cancel_handoff';
+        $childRun = 'child-cancel-retrieve';
+        $this->registry->create($parent, $artifactId, $childRun, 'scout');
+        $this->registry->update($parent, $artifactId, status: AgentArtifactStatusEnum::Cancelled, summary: 'Cancelled by parent run.');
+        $this->registry->writeHandoff($parent, $artifactId, "# Subagent handoff\n\nStatus: cancelled\nArtifact: {$artifactId}\n\n## Partial context\n\n- turn_no: 2\n\n## Retrieval\n\nUse agent_retrieve");
+
+        $service = $this->makeService();
+        $out = $service->retrieve($parent, ['artifact_id' => $artifactId, 'mode' => 'handoff']);
+
+        self::assertStringContainsString('status: cancelled', $out);
+        self::assertStringContainsString('artifact_id: '.$artifactId, $out);
+        self::assertStringContainsString('Partial context', $out);
+    }
+
+    public function testRetrievesCancelledMetadata(): void
+    {
+        $parent = 'parent-cancel-meta';
+        $artifactId = 'agent_cancel_meta';
+        $childRun = 'child-cancel-meta';
+        $this->registry->create($parent, $artifactId, $childRun, 'scout');
+        $this->registry->update($parent, $artifactId, status: AgentArtifactStatusEnum::Cancelled, summary: 'Child run was cancelled.');
+
+        $runStore = $this->createStub(RunStoreInterface::class);
+        $runStore->method('get')->willReturn(new RunState(
+            runId: $childRun,
+            status: RunStatus::Cancelled,
+            version: 1,
+            turnNo: 4,
+            lastSeq: 18,
+            messages: [],
+        ));
+
+        $service = $this->makeService(runStore: $runStore);
+        $out = $service->retrieve($parent, ['artifact_id' => $artifactId, 'mode' => 'metadata']);
+
+        self::assertStringContainsString('status: cancelled', $out);
+        self::assertStringContainsString('turn_no: 4', $out);
+        self::assertStringContainsString('last_seq: 18', $out);
+    }
+
     private function makeService(
         ?RunStoreInterface $runStore = null,
         ?EventStoreInterface $eventStore = null,

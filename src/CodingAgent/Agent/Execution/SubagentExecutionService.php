@@ -182,14 +182,18 @@ final class SubagentExecutionService
             // Check parent cancellation.
             if (null !== $cancelToken && $cancelToken->isCancellationRequested()) {
                 $this->agentRunner->cancel($agentRunId, 'Parent run cancelled subagent tool.');
+                $cancelState = $this->runStore->get($agentRunId);
                 $this->finalize(
                     parentRunId: $parentRunId,
                     artifactId: $artifactId,
                     status: AgentArtifactStatusEnum::Cancelled,
                     summary: 'Cancelled by parent run.',
+                    agentName: $agentName,
+                    agentRunId: $agentRunId,
+                    childState: $cancelState,
                 );
 
-                throw new ToolCallException('Subagent tool cancelled by parent run.', retryable: false);
+                throw new ToolCallException($this->formatParentCancelledSingleMessage($agentName, $artifactId), retryable: false);
             }
 
             // Check timeout.
@@ -315,7 +319,7 @@ final class SubagentExecutionService
                     $parentRunId, $artifactId, $agentName, $state,
                 ),
                 RunStatus::Cancelled, RunStatus::Cancelling => $this->handleCancelled(
-                    $parentRunId, $artifactId, $agentName,
+                    $parentRunId, $artifactId, $agentName, $state,
                 ),
             };
         }
@@ -464,11 +468,15 @@ final class SubagentExecutionService
                         continue;
                     }
                     $this->agentRunner->cancel($agentRunId, 'Parent run cancelled parallel subagent tool.');
+                    $cancelChildState = $this->runStore->get($agentRunId);
                     $this->finalize(
                         parentRunId: $parentRunId,
                         artifactId: $report['artifactId'],
                         status: AgentArtifactStatusEnum::Cancelled,
                         summary: 'Cancelled by parent run.',
+                        agentName: $report['agentName'],
+                        agentRunId: $agentRunId,
+                        childState: $cancelChildState,
                     );
                     $reports[$agentRunId]['terminal'] = true;
                     $reports[$agentRunId]['status'] = AgentArtifactStatusEnum::Cancelled;
@@ -799,7 +807,12 @@ final class SubagentExecutionService
             $lines[] = '';
         }
 
-        return rtrim(implode("\n", $lines));
+        $body = rtrim(implode("\n", $lines));
+        if ('' === $body) {
+            return 'Use agent_retrieve (metadata/events/history) for partial child details.';
+        }
+
+        return $body."\n\nUse agent_retrieve (metadata/events/history) for partial child details.";
     }
 
     /**
@@ -845,6 +858,9 @@ final class SubagentExecutionService
         ?string $summary = null,
         ?string $failureReason = null,
         ?string $needsClarification = null,
+        ?string $agentName = null,
+        ?string $agentRunId = null,
+        ?RunState $childState = null,
     ): void {
         $completedAt = new \DateTimeImmutable();
 
@@ -864,6 +880,10 @@ final class SubagentExecutionService
             summary: $summary,
             failureReason: $failureReason,
             needsClarification: $needsClarification,
+            artifactId: $artifactId,
+            agentName: $agentName,
+            agentRunId: $agentRunId,
+            childState: $childState,
         );
 
         $this->artifactRegistry->writeHandoff($parentRunId, $artifactId, $handoff);
@@ -923,6 +943,7 @@ final class SubagentExecutionService
         string $parentRunId,
         string $artifactId,
         string $agentName,
+        RunState $state,
     ): string {
         $this->logger->info('subagent_execution.cancelled', [
             'component' => 'agent.execution',
@@ -936,10 +957,12 @@ final class SubagentExecutionService
             artifactId: $artifactId,
             status: AgentArtifactStatusEnum::Cancelled,
             summary: 'Child run was cancelled.',
+            agentName: $agentName,
+            agentRunId: $state->runId,
+            childState: $state,
         );
 
-        return \sprintf("Subagent %s was cancelled.\nArtifact: %s",
-            $agentName, $artifactId);
+        return $this->formatChildCancelledMessage($agentName, $artifactId);
     }
 
     /**
@@ -975,7 +998,21 @@ final class SubagentExecutionService
         ?string $summary,
         ?string $failureReason,
         ?string $needsClarification,
+        ?string $artifactId = null,
+        ?string $agentName = null,
+        ?string $agentRunId = null,
+        ?RunState $childState = null,
     ): string {
+        if (AgentArtifactStatusEnum::Cancelled === $status) {
+            return $this->buildCancelledHandoffMarkdown(
+                artifactId: $artifactId,
+                agentName: $agentName,
+                agentRunId: $agentRunId,
+                summary: $summary,
+                childState: $childState,
+            );
+        }
+
         $lines = [
             '# Subagent handoff',
             '',
@@ -1004,6 +1041,112 @@ final class SubagentExecutionService
         }
 
         return implode("\n", $lines)."\n";
+    }
+
+    private function buildCancelledHandoffMarkdown(
+        ?string $artifactId,
+        ?string $agentName,
+        ?string $agentRunId,
+        ?string $summary,
+        ?RunState $childState,
+    ): string {
+        $lines = [
+            '# Subagent handoff',
+            '',
+            'Status: cancelled',
+        ];
+
+        if (null !== $artifactId && '' !== $artifactId) {
+            $lines[] = 'Artifact: '.$artifactId;
+        }
+        if (null !== $agentName && '' !== $agentName) {
+            $lines[] = 'Agent: '.$agentName;
+        }
+        if (null !== $agentRunId && '' !== $agentRunId) {
+            $lines[] = 'Agent run: '.$agentRunId;
+        }
+
+        $lines[] = '';
+        $lines[] = '## Cancellation';
+        $lines[] = '';
+        $summaryText = null !== $summary ? trim($summary) : '';
+        $lines[] = '' !== $summaryText ? $summaryText : 'Child run was cancelled.';
+
+        if (null !== $childState) {
+            $lines[] = '';
+            $lines[] = '## Partial context';
+            $lines[] = '';
+            $lines[] = '- turn_no: '.$childState->turnNo;
+            $lines[] = '- last_seq: '.$childState->lastSeq;
+            $lines[] = '- message_count: '.(string) \count($childState->messages);
+            $lines[] = '- pending_tool_calls: '.(string) \count($childState->pendingToolCalls);
+            $lastActivity = $this->summarizeLastKnownActivity($childState);
+            if ('' !== $lastActivity) {
+                $lines[] = '- last_known_activity: '.$lastActivity;
+            }
+            $excerpt = $this->extractLastMessage($childState);
+            if ('' !== trim($excerpt) && !str_starts_with($excerpt, $childState->status->name)) {
+                $lines[] = '';
+                $lines[] = '## Last assistant text (bounded)';
+                $lines[] = '';
+                $lines[] = $this->truncateHandoffText($excerpt, 800);
+            }
+        }
+
+        $lines[] = '';
+        $lines[] = '## Retrieval';
+        $lines[] = '';
+        $lines[] = 'Use agent_retrieve with this artifact ID. Recommended modes: metadata, events, history. Handoff includes bounded partial context only.';
+
+        return implode("\n", $lines)."\n";
+    }
+
+    private function formatParentCancelledSingleMessage(string $agentName, string $artifactId): string
+    {
+        return implode("\n", [
+            \sprintf('Subagent %s cancelled by parent run.', $agentName),
+            'Artifact: '.$artifactId,
+            'Status: cancelled',
+            'Use agent_retrieve (metadata/events/history) for partial child details.',
+        ]);
+    }
+
+    private function formatChildCancelledMessage(string $agentName, string $artifactId): string
+    {
+        return implode("\n", [
+            \sprintf('Subagent %s was cancelled.', $agentName),
+            'Artifact: '.$artifactId,
+            'Status: cancelled',
+            'Use agent_retrieve (metadata/events/history) for partial child details.',
+        ]);
+    }
+
+    private function summarizeLastKnownActivity(RunState $state): string
+    {
+        if ([] !== $state->pendingToolCalls) {
+            $pendingIds = array_keys($state->pendingToolCalls);
+            $firstId = '' !== ($pendingIds[0] ?? '') ? (string) $pendingIds[0] : 'tool_call';
+
+            return 'pending tool_call: '.$this->truncateHandoffText($firstId, 120);
+        }
+
+        foreach (array_reverse($state->messages) as $message) {
+            if ('assistant' === $message->role) {
+                return 'assistant message at turn '.$state->turnNo;
+            }
+        }
+
+        return 'run status '.$state->status->value;
+    }
+
+    private function truncateHandoffText(string $text, int $maxLen): string
+    {
+        $trimmed = trim($text);
+        if (\strlen($trimmed) <= $maxLen) {
+            return $trimmed;
+        }
+
+        return substr($trimmed, 0, $maxLen - 3).'...';
     }
 
     private function emitTerminalProgressUpdate(
