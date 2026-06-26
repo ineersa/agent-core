@@ -138,10 +138,6 @@ final class LoadedResourcesWidget implements TuiWidget
             return \sprintf('⚠ %s: %s (won %s, ignored %s)', $name, $conflict->message, $winner, $loser);
         }
 
-        if ('' !== $conflict->message) {
-            return '⚠ '.$name.': '.$conflict->message;
-        }
-
         return \sprintf('⚠ %s: won %s, ignored %s', $name, $winner, $loser);
     }
 }

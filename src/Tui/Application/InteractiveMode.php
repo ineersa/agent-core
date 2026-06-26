@@ -158,9 +158,6 @@ final readonly class InteractiveMode
             $tui = new Tui();
             $screen = new ChatScreen($theme, $state->sessionId, $this->promptEditor);
             $screen->mount($tui);
-            if ($state->resuming) {
-                $screen->setLoadedResourcesSummary(null);
-            }
 
             // Apply Ctrl+J as portable newline, overriding the default new_line
             // key list.  Both ctrl+j and shift+enter are listed so the default

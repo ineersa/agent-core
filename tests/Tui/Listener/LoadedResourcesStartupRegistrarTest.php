@@ -95,7 +95,6 @@ final class LoadedResourcesStartupRegistrarTest extends TestCase
         self::assertFalse($harness->screen()->hasLoadedResourcesBlock());
     }
 
-
     #[Test]
     public function buildIsNotInvokedBeforeFirstTick(): void
     {
