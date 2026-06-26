@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Extension;
 
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Runtime\Contract\LoadedExtensionItemDTO;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
 use Psr\Log\LoggerInterface;
@@ -26,12 +27,15 @@ use Psr\Log\LoggerInterface;
  * This service is invoked once at the beginning of the agent command lifecycle,
  * before the interactive mode or controller loop starts.
  */
-final readonly class ExtensionManager
+final class ExtensionManager
 {
+    /** @var list<LoadedExtensionItemDTO> */
+    private array $loadOutcomes = [];
+
     public function __construct(
-        private AppConfig $config,
-        private ExtensionApiInterface $extensionApi,
-        private LoggerInterface $logger,
+        private readonly AppConfig $config,
+        private readonly ExtensionApiInterface $extensionApi,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
@@ -46,8 +50,19 @@ final readonly class ExtensionManager
      *
      * @return list<string> Human-readable diagnostic messages for failed extensions
      */
+    /**
+     * Structured outcomes from the most recent {@see loadExtensions()} call.
+     *
+     * @return list<LoadedExtensionItemDTO>
+     */
+    public function getLoadOutcomes(): array
+    {
+        return $this->loadOutcomes;
+    }
+
     public function loadExtensions(): array
     {
+        $this->loadOutcomes = [];
         $enabled = $this->getEnabledClasses();
 
         if ([] === $enabled) {
@@ -105,6 +120,8 @@ final readonly class ExtensionManager
             }
         }
 
+        // Outcomes are appended in loadSingle().
+
         return $diagnostics;
     }
 
@@ -126,6 +143,7 @@ final readonly class ExtensionManager
         if (!class_exists($className)) {
             $msg = \sprintf('Extension class "%s" not found — skipping.', $className);
             $this->logger->warning($msg, ['class' => $className]);
+            $this->loadOutcomes[] = new LoadedExtensionItemDTO($className, false, $msg);
 
             return $msg;
         }
@@ -135,6 +153,7 @@ final readonly class ExtensionManager
         if (!$instance instanceof HatfieldExtensionInterface) {
             $msg = \sprintf('Extension class "%s" does not implement HatfieldExtensionInterface — skipping.', $className);
             $this->logger->warning($msg, ['class' => $className]);
+            $this->loadOutcomes[] = new LoadedExtensionItemDTO($className, false, $msg);
 
             return $msg;
         }
@@ -147,9 +166,12 @@ final readonly class ExtensionManager
                 'class' => $className,
                 'exception' => $e,
             ]);
+            $this->loadOutcomes[] = new LoadedExtensionItemDTO($className, false, $msg);
 
             return $msg;
         }
+
+        $this->loadOutcomes[] = new LoadedExtensionItemDTO($className, true);
 
         return null;
     }

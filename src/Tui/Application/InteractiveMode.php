@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Application;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\LoadedResourcesSummaryDTO;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
+use Ineersa\CodingAgent\Runtime\LoadedResources\LoadedResourcesSummaryBuilder;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\TuiListenerRegistrar;
@@ -65,6 +67,7 @@ final readonly class InteractiveMode
         private TranscriptBlockFactory $blockFactory,
         private LoggerInterface $logger,
         private TuiSessionSwitchService $switchService,
+        private LoadedResourcesSummaryBuilder $loadedResourcesSummaryBuilder,
     ) {
     }
 
@@ -158,6 +161,7 @@ final readonly class InteractiveMode
             $tui = new Tui();
             $screen = new ChatScreen($theme, $state->sessionId, $this->promptEditor);
             $screen->mount($tui);
+            $screen->setLoadedResourcesSummary($this->resolveLoadedResourcesSummary($state));
 
             // Apply Ctrl+J as portable newline, overriding the default new_line
             // key list.  Both ctrl+j and shift+enter are listed so the default
@@ -423,6 +427,15 @@ final readonly class InteractiveMode
      *
      * The handler list is read at event time, so late registrations from extensions work.
      */
+    private function resolveLoadedResourcesSummary(TuiSessionState $state): ?LoadedResourcesSummaryDTO
+    {
+        if ($state->resuming) {
+            return null;
+        }
+
+        return $this->loadedResourcesSummaryBuilder->build();
+    }
+
     private function registerSlotInputHandlers(Tui $tui, ChatScreen $screen): void
     {
         $registry = $screen->registry();

@@ -24,6 +24,12 @@ final class ThemeRegistry
     /** @var array<string, ThemePalette> */
     private array $themes = [];
 
+    /** @var array<string, ThemeLoadedEntryDTO> */
+    private array $loadedByName = [];
+
+    /** @var list<array{name: string, winnerPath: string, loserPath: string}> */
+    private array $themeCollisions = [];
+
     public function __construct(
         AppConfig $appConfig,
         AppResourceLocator $resources,
@@ -34,20 +40,31 @@ final class ThemeRegistry
         // Load user-configured theme paths first (higher priority — they
         // override built-in themes with the same name).
         foreach ($tuiConfig->themePaths as $path) {
-            foreach ($this->loadDirectory($path) as $palette) {
-                if (!isset($this->themes[$palette->name])) {
-                    $this->themes[$palette->name] = $palette;
-                }
-            }
+            $this->ingestDirectory($path, userSource: true);
         }
 
         // Load built-in themes second (lower priority — only fills gaps).
         $builtinPath = $resources->getBuiltinThemesPath();
-        foreach ($this->loadDirectory($builtinPath) as $palette) {
-            if (!isset($this->themes[$palette->name])) {
-                $this->themes[$palette->name] = $palette;
-            }
-        }
+        $this->ingestDirectory($builtinPath, userSource: false);
+    }
+
+    /**
+     * @return list<ThemeLoadedEntryDTO>
+     */
+    public function getLoadedThemes(): array
+    {
+        $entries = array_values($this->loadedByName);
+        usort($entries, static fn (ThemeLoadedEntryDTO $a, ThemeLoadedEntryDTO $b): int => strcmp($a->name, $b->name));
+
+        return $entries;
+    }
+
+    /**
+     * @return list<array{name: string, winnerPath: string, loserPath: string}>
+     */
+    public function getThemeCollisions(): array
+    {
+        return $this->themeCollisions;
     }
 
     /**
@@ -58,9 +75,9 @@ final class ThemeRegistry
      * programmatic registration post-construction — e.g. when a test
      * or extension wants to add a palette without writing a YAML file.
      */
-    public function register(ThemePalette $palette): void
+    public function register(ThemePalette $palette, string $sourcePath = ''): void
     {
-        $this->themes[$palette->name] = $palette;
+        $this->registerPalette($palette, $sourcePath, userSource: true);
     }
 
     /**
@@ -115,6 +132,63 @@ final class ThemeRegistry
         return isset($this->themes[$name]);
     }
 
+    private function ingestDirectory(string $dir, bool $userSource): void
+    {
+        if (!is_dir($dir)) {
+            return;
+        }
+
+        $entries = scandir($dir);
+        if (false === $entries) {
+            return;
+        }
+
+        foreach ($entries as $entry) {
+            if ('.' === $entry || '..' === $entry) {
+                continue;
+            }
+            if (!str_ends_with($entry, '.yaml') && !str_ends_with($entry, '.yml')) {
+                continue;
+            }
+
+            $file = $dir.'/'.$entry;
+            if (!is_file($file)) {
+                continue;
+            }
+
+            try {
+                $palette = $this->loadFile($file);
+            } catch (\RuntimeException $e) {
+                $this->logger->warning('Skipping unparseable theme file', [
+                    'file' => $file,
+                    'exception' => $e,
+                ]);
+
+                continue;
+            }
+
+            $this->registerPalette($palette, $file, $userSource);
+        }
+    }
+
+    private function registerPalette(ThemePalette $palette, string $sourcePath, bool $userSource): void
+    {
+        $name = $palette->name;
+        if (isset($this->themes[$name])) {
+            $winner = $this->loadedByName[$name] ?? null;
+            $this->themeCollisions[] = [
+                'name' => $name,
+                'winnerPath' => $winner?->sourcePath ?? '',
+                'loserPath' => $sourcePath,
+            ];
+
+            return;
+        }
+
+        $this->themes[$name] = $palette;
+        $this->loadedByName[$name] = new ThemeLoadedEntryDTO($name, $sourcePath, $userSource);
+    }
+
     /**
      * Load a palette from a YAML file path.
      *
@@ -137,57 +211,5 @@ final class ThemeRegistry
         }
 
         return ThemePalette::fromArray($data);
-    }
-
-    /**
-     * Load all YAML theme files from a directory.
-     *
-     * Scans for *.yaml and *.yml files (non-recursive).
-     * Uses scandir() instead of glob() because glob() does not
-     * support phar:// stream wrappers (PHAR mode).
-     *
-     * @return list<ThemePalette>
-     */
-    private function loadDirectory(string $dir): array
-    {
-        if (!is_dir($dir)) {
-            return [];
-        }
-
-        $palettes = [];
-        $entries = scandir($dir);
-
-        if (false === $entries) {
-            return [];
-        }
-
-        foreach ($entries as $entry) {
-            if ('.' === $entry || '..' === $entry) {
-                continue;
-            }
-            if (!str_ends_with($entry, '.yaml') && !str_ends_with($entry, '.yml')) {
-                continue;
-            }
-
-            $file = $dir.'/'.$entry;
-            if (!is_file($file)) {
-                continue;
-            }
-
-            try {
-                $palettes[] = $this->loadFile($file);
-            } catch (\RuntimeException $e) {
-                // Broken theme files are skipped so that a single
-                // misconfigured theme does not break the entire TUI.
-                // The theme name embedded in the YAML may not match
-                // the filename, so surface the path for diagnostics.
-                $this->logger->warning('Skipping unparseable theme file', [
-                    'file' => $file,
-                    'exception' => $e,
-                ]);
-            }
-        }
-
-        return $palettes;
     }
 }

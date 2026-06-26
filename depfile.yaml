@@ -101,6 +101,11 @@ parameters:
         - type: directory
           value: src/Tui/Question/.*
 
+    - name: TuiStartup
+      collectors:
+        - type: directory
+          value: src/Tui/Startup/.*
+
     - name: TuiUtility
       collectors:
         - type: directory
@@ -110,6 +115,11 @@ parameters:
       collectors:
         - type: directory
           value: src/CodingAgent/Runtime/(Contract|Protocol)/.*
+
+    - name: AppLoadedResources
+      collectors:
+        - type: directory
+          value: src/CodingAgent/Runtime/LoadedResources/.*
 
     - name: AppExtensionApi
       collectors:
@@ -320,6 +330,7 @@ parameters:
           value: '#^Mcp\\\\#i'
   ruleset:
     TuiApplication:
+      - AppLoadedResources
       - AppRuntimeContract
       - AppRuntimeProjection
       - AppSession
@@ -368,6 +379,8 @@ parameters:
       - SymfonyTui
 
     TuiScreen:
+      - AppRuntimeContract
+      - TuiStartup
       - TuiLayout
       - TuiExtension
       - TuiHeader
@@ -434,6 +447,11 @@ parameters:
       - TuiWidget
       - TuiTheme
 
+    TuiStartup:
+      - AppRuntimeContract
+      - TuiTheme
+      - TuiWidget
+
     TuiWidget:
       - TuiTheme
       - SymfonyTui
@@ -470,6 +488,16 @@ parameters:
       - SymfonyMessenger
       - SymfonyAiPlatform
       - SymfonyEventDispatcher
+
+    AppLoadedResources:
+      - AppRuntimeContract
+      - AppSystemPrompt
+      - AppSkills
+      - AppPromptTemplate
+      - AppAgent
+      - AppExtension
+      - TuiTheme
+      - AppConfig
 
     AppRuntimeContract:
       - AppRuntimeProjection
@@ -508,6 +536,8 @@ parameters:
       - SymfonySerializer
 
     AppCli:
+      - AppSystemPrompt
+      - AppAgent
       - AppAuth
       - AppExtension
       - AppExtensionApi

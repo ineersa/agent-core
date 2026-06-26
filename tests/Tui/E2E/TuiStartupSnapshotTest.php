@@ -71,6 +71,7 @@ final class TuiStartupSnapshotTest extends TestCase
 
         $capture = $this->tmux->capturePlain($pane);
         self::assertStringContainsString('█', $capture, 'Hatfield logo missing in real tmux pane');
+        self::assertStringContainsString('ctrl+r to expand', $capture, 'Loaded-resources affordance missing in real tmux pane');
 
         $this->tmux->sendKey($pane, 'C-d');
     }
