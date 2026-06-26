@@ -22,6 +22,11 @@ use Symfony\Component\Tui\Ansi\TextWrapper;
  */
 final readonly class TranscriptBlockRenderer
 {
+    public function __construct(
+        private readonly SubagentResultRenderer $subagentResultRenderer = new SubagentResultRenderer(),
+    ) {
+    }
+
     /**
      * Render a single transcript block into styled, wrapped output lines.
      *
@@ -31,6 +36,10 @@ final readonly class TranscriptBlockRenderer
      */
     public function renderBlock(TranscriptBlock $block, TuiRenderContext $context): array
     {
+        if ($this->subagentResultRenderer->supports($block)) {
+            return $this->subagentResultRenderer->render($block, $context);
+        }
+
         $prefix = $this->prefixFor($block);
         $color = $this->colorFor($block);
         $displayText = $this->displayTextFor($block);
