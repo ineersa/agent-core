@@ -205,9 +205,9 @@ final class SpySessionClient implements AgentSessionClient
         throw new \RuntimeException('Unexpected start()');
     }
 
-    public function resume(string $runId): RunHandle
+    public function attach(string $runId): RunHandle
     {
-        throw new \RuntimeException('Unexpected resume()');
+        throw new \RuntimeException('Unexpected attach()');
     }
 
     public function send(string $runId, UserCommand $command): void

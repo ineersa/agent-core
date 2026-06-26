@@ -394,7 +394,7 @@ final readonly class InteractiveMode
             $existingRunId = $meta['run_id'] ?? null;
             if (\is_string($existingRunId) && '' !== $existingRunId) {
                 try {
-                    $state->handle = $client->resume($existingRunId);
+                    $state->handle = $client->attach($existingRunId);
                     $state->transcript[] = $this->blockFactory->system(
                         runId: $state->sessionId,
                         text: \sprintf('Resumed run %s', $existingRunId),

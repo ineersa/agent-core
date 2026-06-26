@@ -264,7 +264,7 @@ php bin/console agent --resume a1b2c3d4e5f6
 
 1. `AgentCommand` validates the session directory exists via `HatfieldSessionStore::exists()`.
 2. `SessionInitializer::initialize()` loads metadata, transcript, and runtime events from disk, populating a `TuiSessionState` (in `src/Tui/Runtime/`).
-3. If metadata contains a `run_id`, `InteractiveMode::startOrResumeRun()` calls `AgentSessionClient::resume($runId)`.
+3. If metadata contains a `run_id`, `InteractiveMode::startOrResumeRun()` calls `AgentSessionClient::attach($runId)`.
 4. The AgentCore `SessionRunStore::get($runId)` loads `state.json` and the pipeline
    continues from the persisted state.
 5. The TUI tick callback polls `AgentSessionClient::events($runId)`, which reads

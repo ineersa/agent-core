@@ -174,12 +174,12 @@ class McpInitializeSessionHandlerTest extends TestCase
         self::assertCount(0, $this->catalogStore->lastCatalog->servers);
     }
 
-    public function testInitializeHandlesResumeReasonProperly(): void
+    public function testInitializeHandlesAttachReasonProperly(): void
     {
         $command = new McpInitializeSessionCommand(
-            runId: 'test-run-resume',
-            reason: 'resume',
-            correlationId: 'corr-resume',
+            runId: 'test-run-attach',
+            reason: 'attach',
+            correlationId: 'corr-attach',
         );
 
         ($this->handler)($command);
@@ -193,7 +193,7 @@ class McpInitializeSessionHandlerTest extends TestCase
             static fn(array $r): bool => ($r['context']['mcp_event'] ?? '') === 'session.initialize',
         ));
         self::assertCount(1, $initLogs);
-        self::assertSame('resume', $initLogs[0]['context']['reason']);
+        self::assertSame('attach', $initLogs[0]['context']['reason']);
     }
 
     public function testRefreshCatalogFailureInvalidatesCatalog(): void

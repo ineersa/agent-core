@@ -195,7 +195,7 @@ final class FlakySeqDrainAgentSessionClient implements AgentSessionClient
         throw new \BadMethodCallException('not used');
     }
 
-    public function resume(string $runId): RunHandle
+    public function attach(string $runId): RunHandle
     {
         throw new \BadMethodCallException('not used');
     }

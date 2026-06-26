@@ -217,12 +217,12 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         throw new \RuntimeException('Agent process did not emit run_started event within '.$timeout.'s'."\n".$this->diagnosticOutput());
     }
 
-    public function resume(string $runId): RunHandle
+    public function attach(string $runId): RunHandle
     {
         // Reset stale flags from prior sessions / crash-recovery cycles.
         // ensureProcessRunning() may have set autoResumed for a different
         // session during events()/send()/cancel(); only an auto-resume
-        // triggered by THIS resume() call should suppress the write below.
+        // triggered by THIS attach() call should suppress the write below.
         // Mirrors start() which also resets these before a new run.
         $this->autoResumed = false;
 
@@ -255,7 +255,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
         $this->writeCommandWithRetry($cmd);
 
-        return new RunHandle(runId: $runId, status: 'running');
+        return new RunHandle(runId: $runId, status: 'attached');
     }
 
     public function send(string $runId, UserCommand $command): void
