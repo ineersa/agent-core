@@ -134,7 +134,7 @@ final class CommandMailboxPolicyTest extends TestCase
         $this->assertStringContainsString('mailbox cap', (string) $rejections[0]->payload['reason']);
     }
 
-    public function testContinueIsRejectedWhenCancellationAlreadyInProgress(): void
+    public function testContinueIsRejectedWhenCancelTerminalizesRunWithoutActiveWork(): void
     {
         $fixture = $this->createFixture();
         $runId = 'run-mailbox-cancel-vs-continue';
@@ -187,10 +187,22 @@ final class CommandMailboxPolicyTest extends TestCase
         ));
 
         $this->assertCount(1, $continueRejections);
+        $this->assertStringContainsString(
+            'cancelled',
+            (string) ($continueRejections[0]->payload['reason'] ?? ''),
+        );
 
         $state = $fixture->runStore->get($runId);
         $this->assertNotNull($state);
-        $this->assertSame(RunStatus::Cancelling, $state->status);
+        // Failed LLM retry with no streaming/tools: cancel terminalizes immediately (issue #205).
+        $this->assertSame(RunStatus::Cancelled, $state->status);
+
+        $agentEnds = array_values(array_filter(
+            $fixture->eventStore->allFor($runId),
+            static fn (\Ineersa\AgentCore\Domain\Event\RunEvent $event): bool => 'agent_end' === $event->type
+                && 'cancelled' === ($event->payload['reason'] ?? null),
+        ));
+        $this->assertCount(1, $agentEnds);
     }
 
     public function testContinueSchedulesAdvanceForRetryableFailureWithValidLastRole(): void

@@ -432,11 +432,20 @@ final class SubmitListener implements TuiListenerRegistrar
                 // Subsequent input — send shell command to existing run.
                 // The worker in the tool consumer process executes bash
                 // and writes tool_exec events to the canonical event store.
+                // Inline ! on a terminal run (Completed/Cancelled/Failed) has no
+                // in-flight LLM turn to attach tool_exec events to.  Request a
+                // standalone shell so ExecuteShellToolCallWorker emits agent_end
+                // and the poller clears Working/Running (issue #183 / journey phase 9).
+                $shellPayload = $state->activity->isTerminal()
+                    ? ['standalone' => true]
+                    : [];
+
                 $client->send(
                     $state->handle->runId,
                     new UserCommand(
                         type: 'shell_command',
                         text: $shellCommand->command,
+                        payload: $shellPayload,
                     ),
                 );
 

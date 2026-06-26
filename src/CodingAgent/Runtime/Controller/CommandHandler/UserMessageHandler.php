@@ -12,7 +12,7 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 
 /**
- * Handles user_message, follow_up, and steer commands via Symfony EventDispatcher.
+ * Handles user_message, follow_up, append_message, and steer commands via Symfony EventDispatcher.
  *
  * Dispatches the message to the run_control transport and immediately returns
  * to the event loop. Events from the consumer process are forwarded to TUI via
@@ -28,7 +28,7 @@ final readonly class UserMessageHandler
 
     public function __invoke(ControllerCommandEvent $event): void
     {
-        if (!\in_array($event->command->type, ['user_message', 'follow_up', 'steer'], true)) {
+        if (!\in_array($event->command->type, ['user_message', 'follow_up', 'append_message', 'steer'], true)) {
             return;
         }
 
@@ -54,6 +54,7 @@ final readonly class UserMessageHandler
         //   user_message -> message (generic message)
         $commandType = match ($command->type) {
             'follow_up' => 'follow_up',
+            'append_message' => 'append_message',
             'steer' => 'message',
             default => 'message',
         };

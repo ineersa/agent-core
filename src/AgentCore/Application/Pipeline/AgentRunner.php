@@ -85,6 +85,19 @@ final readonly class AgentRunner implements AgentRunnerInterface
         $this->applyCoreCommand($runId, CoreCommandKind::FollowUp, ['message' => $payload]);
     }
 
+    /**
+     * @throws \Symfony\Component\Serializer\Exception\ExceptionInterface
+     */
+    public function appendMessage(string $runId, AgentMessage $message): void
+    {
+        $payload = $this->normalizer->normalize(
+            $message,
+            context: [AbstractObjectNormalizer::SKIP_NULL_VALUES => true],
+        );
+
+        $this->applyCoreCommand($runId, CoreCommandKind::AppendMessage, ['message' => $payload]);
+    }
+
     public function cancel(string $runId, ?string $reason = null): void
     {
         $payload = null === $reason ? [] : ['reason' => $reason];

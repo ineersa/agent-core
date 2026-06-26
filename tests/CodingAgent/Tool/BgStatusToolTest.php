@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
+use HelgeSverre\Toon\Toon;
+
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
@@ -106,7 +109,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
 
         $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'list']));
 
-        $data = json_decode($result, true, 512, \JSON_THROW_ON_ERROR);
+        $data = Toon::decode($result);
         $this->assertIsArray($data);
         $this->assertArrayHasKey('processes', $data);
         $this->assertCount(1, $data['processes']);
@@ -120,7 +123,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
     {
         $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'list']));
 
-        $data = json_decode($result, true, 512, \JSON_THROW_ON_ERROR);
+        $data = Toon::decode($result);
         $this->assertIsArray($data);
         $this->assertArrayHasKey('processes', $data);
         $this->assertEmpty($data['processes']);
@@ -186,6 +189,12 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
         $this->assertSame('bg_status', $definition->name);
     }
 
+    public function testDefinitionUsesParallelExecutionMode(): void
+    {
+        $definition = $this->tool->definition();
+        self::assertSame(ToolExecutionMode::Parallel, $definition->executionMode);
+    }
+
     /* ── Invalid action ── */
 
     public function testInvalidActionThrowsException(): void
@@ -204,8 +213,8 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
         $resultA = $this->withContext('session-A', fn (): string => ($this->tool)(['action' => 'list']));
         $resultB = $this->withContext('session-B', fn (): string => ($this->tool)(['action' => 'list']));
 
-        $dataA = json_decode($resultA, true, 512, \JSON_THROW_ON_ERROR);
-        $dataB = json_decode($resultB, true, 512, \JSON_THROW_ON_ERROR);
+        $dataA = Toon::decode($resultA);
+        $dataB = Toon::decode($resultB);
 
         $commandsA = array_column($dataA['processes'], 'command');
         $commandsB = array_column($dataB['processes'], 'command');
@@ -286,5 +295,4 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
 
         return $this->contextAccessor->with($toolContext, $callback);
     }
-
 }

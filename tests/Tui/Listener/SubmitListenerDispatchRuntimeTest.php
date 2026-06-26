@@ -388,6 +388,52 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
         $this->dispatchSubmit('hello again');
     }
 
+
+    // ── Subsequent shell on terminal run ───────────────────────────
+
+    #[Test]
+    public function testSubsequentShellOnCompletedRunSendsStandaloneShellCommand(): void
+    {
+        $this->state->sessionId = 'test-session';
+        $this->state->handle = new RunHandle('run-completed');
+        $this->state->activity = RunActivityStateEnum::Completed;
+        $this->state->isShellRun = true;
+
+        $this->client->expects($this->once())
+            ->method('send')
+            ->with(
+                'run-completed',
+                $this->callback(function (UserCommand $cmd): bool {
+                    return 'shell_command' === $cmd->type
+                        && 'ls -1' === $cmd->text
+                        && true === ($cmd->payload['standalone'] ?? false);
+                }),
+            );
+
+        $this->dispatchSubmit('!ls -1');
+    }
+
+    #[Test]
+    public function testSubsequentShellWhileRunningOmitsStandaloneFlag(): void
+    {
+        $this->state->sessionId = 'test-session';
+        $this->state->handle = new RunHandle('run-active');
+        $this->state->activity = RunActivityStateEnum::Running;
+
+        $this->client->expects($this->once())
+            ->method('send')
+            ->with(
+                'run-active',
+                $this->callback(function (UserCommand $cmd): bool {
+                    return 'shell_command' === $cmd->type
+                        && 'pwd' === $cmd->text
+                        && [] === $cmd->payload;
+                }),
+            );
+
+        $this->dispatchSubmit('!pwd');
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────
 
     /**
