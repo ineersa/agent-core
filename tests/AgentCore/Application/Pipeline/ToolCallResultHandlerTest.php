@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
+use Ineersa\AgentCore\Contract\Pipeline\PendingSubagentCancellationMessageBuilderInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
@@ -895,5 +896,66 @@ final class ToolCallResultHandlerTest extends TestCase
 
         $this->assertCount(3, $messagesAfterCancel,
             'Cancellation + Continue produces valid assistant()->tool()->user() sequence');
+    }
+
+
+    public function testCancellingWithPendingSubagentSynthesizesRichCancellationMessage(): void
+    {
+        $richMessage = implode("\n", [
+            'Subagent scout cancelled by parent run.',
+            'Artifact: agent_41d4ca5566368a6b',
+            'Status: cancelled',
+            'Use agent_retrieve (metadata/events/history) for partial child details.',
+        ]);
+
+        $builder = $this->createMock(PendingSubagentCancellationMessageBuilderInterface::class);
+        $builder->expects(self::once())
+            ->method('buildForPendingSubagent')
+            ->with('run-cancel-subagent', 'tc-sub', self::anything())
+            ->willReturn($richMessage);
+
+        $handler = new ToolCallResultHandler(
+            toolBatchCollector: new ToolBatchCollector(),
+            eventFactory: new EventFactory(),
+            toolCallExtractor: new ToolCallExtractor(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            pendingSubagentCancellationMessageBuilder: $builder,
+        );
+
+        $assistantMsg = new AgentMessage(
+            role: 'assistant',
+            content: [['type' => 'text', 'text' => 'Delegating']],
+            metadata: [
+                'tool_calls' => [
+                    ['id' => 'tc-sub', 'name' => 'subagent', 'arguments' => ['agent' => 'scout', 'task' => 'sleep'], 'order_index' => 0],
+                ],
+            ],
+        );
+
+        $state = RunStateBuilder::running('run-cancel-subagent')
+            ->withStatus(RunStatus::Cancelling)
+            ->withVersion(3)
+            ->withTurnNo(1)
+            ->withLastSeq(4)
+            ->withPendingToolCalls(['tc-sub' => false])
+            ->withActiveStepId('turn-step-1')
+            ->withMessages([$assistantMsg])
+            ->build();
+
+        $message = ToolCallResultBuilder::success('run-cancel-subagent')
+            ->withTurnNo(1)
+            ->withStepId('turn-step-1')
+            ->withIdempotencyKey('tool-result-arriving')
+            ->withToolCallId('tc-sub')
+            ->withOrderIndex(0)
+            ->withResult(['tool_name' => 'subagent', 'content' => [['type' => 'text', 'text' => 'ignored']]])
+            ->build();
+
+        $result = $handler->handle($message, $state);
+
+        self::assertSame('tool_execution_end', $result->events[2]->type);
+        self::assertSame($richMessage, $result->events[2]->payload['result']);
+        self::assertSame('tool', $result->nextState->messages[1]->role);
+        self::assertStringContainsString('Artifact: agent_41d4ca5566368a6b', $result->nextState->messages[1]->content[0]['text'] ?? '');
     }
 }

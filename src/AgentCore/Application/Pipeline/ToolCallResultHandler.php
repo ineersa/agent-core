@@ -6,6 +6,7 @@ namespace Ineersa\AgentCore\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
+use Ineersa\AgentCore\Contract\Pipeline\PendingSubagentCancellationMessageBuilderInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
@@ -25,6 +26,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
         private AgentMessageNormalizer $messageNormalizer,
         private ?RunMetrics $metrics = null,
         private ?MessageBusInterface $commandBus = null,
+        private ?PendingSubagentCancellationMessageBuilderInterface $pendingSubagentCancellationMessageBuilder = null,
     ) {
     }
 
@@ -114,6 +116,17 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
                     $info = $toolCallInfoMap[$tcId] ?? null;
                     $toolName = \is_string($info['name'] ?? null) ? $info['name'] : 'unknown';
                     $orderIndex = \is_int($info['order_index'] ?? null) ? $info['order_index'] : 0;
+                    $cancelMessage = 'Tool execution cancelled by user.';
+                    if ('subagent' === $toolName && null !== $this->pendingSubagentCancellationMessageBuilder) {
+                        $richMessage = $this->pendingSubagentCancellationMessageBuilder->buildForPendingSubagent(
+                            parentRunId: $runId,
+                            toolCallId: $tcId,
+                            toolCallInfo: $info,
+                        );
+                        if (null !== $richMessage && '' !== trim($richMessage)) {
+                            $cancelMessage = $richMessage;
+                        }
+                    }
 
                     $syntheticResult = new ToolCallResult(
                         runId: $runId,
@@ -129,7 +142,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
                         isError: true,
                         error: [
                             'type' => 'cancelled',
-                            'message' => 'Tool execution cancelled by user.',
+                            'message' => $cancelMessage,
                         ],
                     );
 
@@ -151,7 +164,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
                             'tool_call_id' => $tcId,
                             'order_index' => $orderIndex,
                             'is_error' => true,
-                            'result' => 'Tool execution cancelled by user.',
+                            'result' => $cancelMessage,
                         ],
                     ];
                     $eventSpecs[] = [
