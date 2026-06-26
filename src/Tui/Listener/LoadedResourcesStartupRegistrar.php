@@ -16,7 +16,7 @@ final readonly class LoadedResourcesStartupRegistrar implements TuiListenerRegis
         $screen = $context->screen;
         $tui = $context->tui;
 
-        $screen->registry()->registerInputHandler(static function (string $data) use ($screen, $tui): void {
+        $screen->registry()->addInputHandler(static function (string $data) use ($screen, $tui): void {
             if ("\x12" !== $data) { // ctrl+r
                 return;
             }
