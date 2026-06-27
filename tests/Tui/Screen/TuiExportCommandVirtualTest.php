@@ -102,7 +102,9 @@ final class TuiExportCommandVirtualTest extends TestCase
 
         $screen = $harness->plainScreenText();
         self::assertStringContainsString('Session exported to:', $screen);
-        self::assertStringContainsString('hatfield-session-'.self::SESSION_ID.'.html', $screen);
+        // Terminal wrap can split the filename across lines; unwrapped command result is asserted above.
+        $normalizedScreen = str_replace(["\r", "\n"], '', $screen);
+        self::assertStringContainsString('hatfield-session-'.self::SESSION_ID.'.html', $normalizedScreen);
     }
 
     private function createSessionStoreForProject(): HatfieldSessionStore
