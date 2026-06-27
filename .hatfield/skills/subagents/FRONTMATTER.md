@@ -92,3 +92,4 @@ Explore read-only. Return dense bullets and file paths.
 - `history` skips system, user-context, and tool roles; bounded text only.
 
 See [docs/agents.md](../../../docs/agents.md) for storage layout, timeouts, and privacy rules.
+

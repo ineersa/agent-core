@@ -28,6 +28,8 @@ Hatfield exposes **`subagent`** (launch) and **`agent_retrieve`** (read artifact
 
 After a run, copy **`Artifact: agent_<hex>`** from the tool result and call **`agent_retrieve`** when you need the full handoff, metadata, or bounded events/history.
 
+If a subagent was **cancelled**, the tool error still includes **`Artifact:`** and **`Status: cancelled`** when available. Retrieve with **`agent_retrieve`** (`metadata` / `events` / `history`); cancelled handoffs include bounded partial context only (no raw tool output).
+
 ## Where agents live
 
 Discovery precedence (higher wins on name collision):

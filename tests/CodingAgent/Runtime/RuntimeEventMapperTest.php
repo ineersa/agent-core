@@ -141,6 +141,24 @@ final class RuntimeEventMapperTest extends TestCase
         self::assertSame(RuntimeEventTypeEnum::ToolExecutionCancelled->value, $result->type);
     }
 
+
+    public function testNormalizesToolExecutionEndStructuredCancellationMetadataToToolExecutionCancelled(): void
+    {
+        $event = $this->runEvent('tool_execution_end', [
+            'tool_call_id' => 'call-rich-cancel',
+            'order_index' => 0,
+            'is_error' => true,
+            'result' => 'Subagent scout cancelled by parent run.',
+            'cancelled' => true,
+            'cancellation_reason' => 'user',
+        ]);
+
+        $result = $this->mapper->toRuntimeEvent($event);
+
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::ToolExecutionCancelled->value, $result->type);
+    }
+
     public function testNormalizesAgentEndCancelledToRunCancelled(): void
     {
         $event = $this->runEvent('agent_end', ['reason' => 'cancelled']);
