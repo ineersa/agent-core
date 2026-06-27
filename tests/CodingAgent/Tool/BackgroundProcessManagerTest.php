@@ -229,6 +229,31 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->assertSame(0, $this->manager->shutdownCleanup());
     }
 
+    public function testShutdownCleanupDoesNotReapProcessesStartedByAnotherInstance(): void
+    {
+        $this->createManager(stopGraceSeconds: 0);
+        $result = $this->manager->start('sleep 30', self::TEST_SESSION);
+        $pid = $result->pid;
+
+        usleep(100_000);
+
+        $otherManager = $this->createOtherManager(stopGraceSeconds: 0);
+        $this->assertSame(0, $otherManager->shutdownCleanup());
+
+        $entities = $this->manager->list();
+        $entity = null;
+        foreach ($entities as $candidate) {
+            if ($candidate->pid === $pid) {
+                $entity = $candidate;
+                break;
+            }
+        }
+        $this->assertNotNull($entity);
+        $this->assertNull($entity->finishedAt);
+
+        $this->assertSame(1, $this->manager->shutdownCleanup());
+    }
+
     /* ── Session scoping ── */
 
     public function testListFiltersBySession(): void
@@ -280,6 +305,21 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $store = static::getContainer()->get(ProcessStore::class);
         $lifecycle = new ProcessLifecycle($config, new NullLogger());
         $this->manager = new BackgroundProcessManager($store, $lifecycle, $config, new NullLogger());
+    }
+
+    private function createOtherManager(int $stopGraceSeconds = 1): BackgroundProcessManager
+    {
+        $config = new BackgroundProcessConfig(
+            storageDir: $this->tmpDir,
+            retentionSeconds: 86400,
+            stopGraceSeconds: $stopGraceSeconds,
+            logTailChars: 5000,
+        );
+
+        $store = static::getContainer()->get(ProcessStore::class);
+        $lifecycle = new ProcessLifecycle($config, new NullLogger());
+
+        return new BackgroundProcessManager($store, $lifecycle, $config, new NullLogger());
     }
 
     private function cleanupProcesses(): void
