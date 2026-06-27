@@ -1214,6 +1214,335 @@ CHILD_SKILL_BODY_UNIQUE",
         rmdir($dir);
     }
 
+
+    public function testParentCancellationSingleSubagentThrowsRichMessageAndWritesCancelledHandoff(): void
+    {
+        $runningState = new RunState(
+            runId: 'child-cancel-1',
+            status: RunStatus::Running,
+            version: 1,
+            turnNo: 3,
+            lastSeq: 12,
+            messages: [
+                new AgentMessage(
+                    role: 'assistant',
+                    content: [['type' => 'text', 'text' => 'Partial scout findings before cancel.']],
+                ),
+            ],
+            pendingToolCalls: ['tc-read-1' => true],
+        );
+
+        $runStore = $this->createStub(RunStoreInterface::class);
+        $runStore->method('get')->willReturn($runningState);
+
+        $agentRunner = $this->createMock(AgentRunnerInterface::class);
+        $agentRunner->expects(self::once())
+            ->method('start')
+            ->willReturnCallback(static function (StartRunInput $input): string {
+                return $input->runId;
+            });
+        $agentRunner->expects(self::once())
+            ->method('cancel')
+            ->with(self::anything(), 'Parent run cancelled subagent tool.');
+
+        $def = new AgentDefinitionDTO(
+            name: 'scout',
+            description: 'Scout',
+            tools: ['read'],
+            mcp: new McpPolicyDTO(mode: McpAgentModeEnum::None),
+            instructions: 'Scout instructions.',
+        );
+
+        $registry = self::getContainer()->get(AgentArtifactRegistry::class);
+        $contextAccessor = new StackToolExecutionContextAccessor();
+        $cancelToken = new class implements \Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface {
+            public function isCancellationRequested(): bool
+            {
+                return true;
+            }
+        };
+        $toolContext = new ToolContext(
+            runId: 'parent-cancel-single',
+            turnNo: 1,
+            toolCallId: 'tc-cancel-single',
+            toolName: 'subagent',
+            cancellationToken: $cancelToken,
+            timeoutSeconds: 120,
+        );
+
+        $service = $this->makeService([
+            'catalog' => new AgentDefinitionCatalog([$def]),
+            'agentRunner' => $agentRunner,
+            'runStore' => $runStore,
+            'contextAccessor' => $contextAccessor,
+        ]);
+
+        try {
+            $contextAccessor->with($toolContext, fn (): string => $service->execute('parent-cancel-single', 'scout', 'Inspect docs'));
+            self::fail('Expected ToolCallException');
+        } catch (ToolCallException $e) {
+            self::assertStringContainsString('Subagent scout cancelled by parent run.', $e->getMessage());
+            self::assertStringContainsString('Artifact: agent_', $e->getMessage());
+            self::assertStringContainsString('Status: cancelled', $e->getMessage());
+            self::assertStringContainsString('agent_retrieve', $e->getMessage());
+        }
+
+        $entries = $registry->list('parent-cancel-single');
+        self::assertCount(1, $entries);
+        $entry = $entries[0];
+        self::assertSame(AgentArtifactStatusEnum::Cancelled, $entry->status);
+        $handoff = $registry->readHandoff('parent-cancel-single', $entry->artifactId);
+        self::assertStringContainsString('Status: cancelled', $handoff);
+        self::assertStringContainsString('## Partial context', $handoff);
+        self::assertStringContainsString('turn_no: 3', $handoff);
+        self::assertStringContainsString('Partial scout findings before cancel.', $handoff);
+        self::assertStringContainsString('agent_retrieve', $handoff);
+    }
+
+    public function testChildRunCancelledStatusIncludesPartialContextInHandoff(): void
+    {
+        $cancelledState = new RunState(
+            runId: 'child-cancelled-2',
+            status: RunStatus::Cancelled,
+            version: 2,
+            turnNo: 5,
+            lastSeq: 40,
+            messages: [
+                new AgentMessage(
+                    role: 'assistant',
+                    content: [['type' => 'text', 'text' => 'Last committed assistant line.']],
+                ),
+            ],
+        );
+
+        $runStore = $this->createStub(RunStoreInterface::class);
+        $runStore->method('get')->willReturn($cancelledState);
+
+        $agentRunner = $this->createMock(AgentRunnerInterface::class);
+        $agentRunner->expects(self::once())->method('start')->willReturn('child-cancelled-2');
+
+        $def = new AgentDefinitionDTO(
+            name: 'worker',
+            description: 'Worker',
+            tools: ['read'],
+            mcp: new McpPolicyDTO(mode: McpAgentModeEnum::None),
+            instructions: 'Worker.',
+        );
+
+        $registry = self::getContainer()->get(AgentArtifactRegistry::class);
+        $service = $this->makeService([
+            'catalog' => new AgentDefinitionCatalog([$def]),
+            'agentRunner' => $agentRunner,
+            'runStore' => $runStore,
+        ]);
+
+        $result = $service->execute('parent-child-cancel', 'worker', 'Do task');
+        self::assertStringContainsString('Subagent worker was cancelled.', $result);
+        self::assertStringContainsString('Status: cancelled', $result);
+
+        $entries = $registry->list('parent-child-cancel');
+        self::assertCount(1, $entries);
+        $handoff = $registry->readHandoff('parent-child-cancel', $entries[0]->artifactId);
+        self::assertStringContainsString('Last committed assistant line.', $handoff);
+        self::assertStringContainsString('message_count: 1', $handoff);
+    }
+
+    public function testParentCancellationParallelReportsLaunchedChildArtifacts(): void
+    {
+        $running = new RunState(runId: 'child-p1', status: RunStatus::Running, version: 1, turnNo: 1);
+        $runStore = $this->createStub(RunStoreInterface::class);
+        $runStore->method('get')->willReturn($running);
+
+        $started = [];
+        $agentRunner = $this->createMock(AgentRunnerInterface::class);
+        $agentRunner->method('start')->willReturnCallback(function (StartRunInput $input) use (&$started): string {
+            $started[] = $input->runId;
+
+            return $input->runId;
+        });
+        $agentRunner->expects(self::atLeastOnce())->method('cancel');
+
+        $def = fn (string $name): AgentDefinitionDTO => new AgentDefinitionDTO(
+            name: $name,
+            description: $name,
+            tools: ['read'],
+            mcp: new McpPolicyDTO(mode: McpAgentModeEnum::None),
+            instructions: 'x',
+            parallelAllowed: true,
+        );
+
+        $registry = self::getContainer()->get(AgentArtifactRegistry::class);
+        $contextAccessor = new StackToolExecutionContextAccessor();
+        $cancelToken = new class implements \Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface {
+            public function isCancellationRequested(): bool
+            {
+                return true;
+            }
+        };
+        $toolContext = new ToolContext(
+            runId: 'parent-cancel-parallel',
+            turnNo: 2,
+            toolCallId: 'tc-cancel-parallel',
+            toolName: 'subagent',
+            cancellationToken: $cancelToken,
+            timeoutSeconds: 120,
+        );
+
+        $service = $this->makeService([
+            'catalog' => new AgentDefinitionCatalog([$def('scout-a'), $def('scout-b')]),
+            'agentRunner' => $agentRunner,
+            'runStore' => $runStore,
+            'contextAccessor' => $contextAccessor,
+        ]);
+
+        try {
+            $contextAccessor->with($toolContext, fn (): string => $service->executeParallel('parent-cancel-parallel', [
+                new SubagentTaskDTO(agent: 'scout-a', task: 'A'),
+                new SubagentTaskDTO(agent: 'scout-b', task: 'B'),
+            ]));
+            self::fail('Expected ToolCallException');
+        } catch (ToolCallException $e) {
+            self::assertStringContainsString('Parallel subagent tool cancelled by parent run.', $e->getMessage());
+            self::assertStringContainsString('Artifact: agent_', $e->getMessage());
+            self::assertStringContainsString('cancelled', $e->getMessage());
+            self::assertStringContainsString('agent_retrieve', $e->getMessage());
+        }
+
+        $entries = $registry->list('parent-cancel-parallel');
+        self::assertCount(2, $entries);
+        foreach ($entries as $entry) {
+            self::assertSame(AgentArtifactStatusEnum::Cancelled, $entry->status);
+        }
+    }
+
+
+    public function testParallelProgressSignatureIncludesChildToolActivityWithinSameTurn(): void
+    {
+        $parentRunId = 'parent-parallel-signature';
+        $childRunId = 'child-parallel-signature';
+        $artifactId = 'agent_'.bin2hex(random_bytes(4));
+
+        $projectDir = TestDirectoryIsolation::createOsTempDir('hatfield-parallel-signature');
+        TestDirectoryIsolation::createHatfieldTree($projectDir, withSessions: true);
+        try {
+            $hatfieldSessionStore = new \Ineersa\CodingAgent\Session\HatfieldSessionStore(
+                appConfig: new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig(), cwd: $projectDir),
+                entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+            );
+            $pathResolver = new \Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathResolver($hatfieldSessionStore);
+            $childEventStore = new \Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStore(
+                pathResolver: $pathResolver,
+                eventPayloadNormalizer: new \Ineersa\AgentCore\Schema\EventPayloadNormalizer(),
+                lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()),
+                logger: new \Psr\Log\NullLogger(),
+                parentRunId: $parentRunId,
+                agentRunId: $childRunId,
+                artifactId: $artifactId,
+            );
+            $childEventStore->append(new RunEvent($childRunId, 1, 0, RunEventTypeEnum::RunStarted->value, [
+                'step_id' => 's0',
+                'payload' => ['metadata' => ['model' => 'test/model']],
+            ]));
+            $childEventStore->append(new RunEvent($childRunId, 2, 1, RunEventTypeEnum::LlmStepCompleted->value, [
+                'step_id' => 's1',
+                'usage' => ['input_tokens' => 10, 'output_tokens' => 5, 'total_tokens' => 15],
+                'assistant_message' => [
+                    'role' => 'assistant',
+                    'content' => [['type' => 'text', 'text' => 'Starting.']],
+                    'tool_calls' => [[
+                        'id' => 'tc_read',
+                        'name' => 'read',
+                        'arguments' => ['path' => 'README.md'],
+                    ]],
+                ],
+            ]));
+
+            $readPendingState = new RunState(
+                runId: $childRunId,
+                status: RunStatus::Running,
+                version: 1,
+                turnNo: 1,
+                lastSeq: 2,
+                messages: [],
+            );
+
+            $bashPendingState = new RunState(
+                runId: $childRunId,
+                status: RunStatus::Running,
+                version: 2,
+                turnNo: 1,
+                lastSeq: 4,
+                messages: [],
+            );
+
+            $childFactory = new AgentChildRunEventStoreFactory(
+                $pathResolver,
+                new \Ineersa\AgentCore\Schema\EventPayloadNormalizer(),
+                new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()),
+                new \Psr\Log\NullLogger(),
+            );
+
+            $runStore = $this->createStub(RunStoreInterface::class);
+            $useBashState = false;
+            $runStore->method('get')->willReturnCallback(function (string $runId) use ($childRunId, $readPendingState, $bashPendingState, &$useBashState): ?RunState {
+                if ($childRunId !== $runId) {
+                    return null;
+                }
+
+                return $useBashState ? $bashPendingState : $readPendingState;
+            });
+
+            $reports = [
+                $childRunId => [
+                    'index' => 1,
+                    'agentName' => 'parallel-scout',
+                    'task' => 'Sleep then report',
+                    'artifactId' => $artifactId,
+                    'agentRunId' => $childRunId,
+                    'terminal' => false,
+                    'status' => null,
+                    'message' => '',
+                ],
+            ];
+            $activeTurns = [$childRunId => 1];
+
+            $service = $this->makeService([
+                'runStore' => $runStore,
+                'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder($childFactory),
+            ]);
+
+            $method = new \ReflectionMethod(SubagentExecutionService::class, 'parallelProgressSignature');
+            $signatureRead = $method->invoke($service, $parentRunId, $reports, $activeTurns);
+
+            $useBashState = true;
+            $childEventStore->append(new RunEvent($childRunId, 3, 1, RunEventTypeEnum::ToolExecutionEnd->value, [
+                'tool_call_id' => 'tc_read',
+                'tool_name' => 'read',
+            ]));
+            $childEventStore->append(new RunEvent($childRunId, 4, 1, RunEventTypeEnum::LlmStepCompleted->value, [
+                'step_id' => 's2',
+                'usage' => ['input_tokens' => 20, 'output_tokens' => 8, 'total_tokens' => 28],
+                'assistant_message' => [
+                    'role' => 'assistant',
+                    'content' => [['type' => 'text', 'text' => 'Running bash.']],
+                    'tool_calls' => [[
+                        'id' => 'tc_bash',
+                        'name' => 'bash',
+                        'arguments' => ['command' => 'sleep 120'],
+                    ]],
+                ],
+            ]));
+
+            $signatureBash = $method->invoke($service, $parentRunId, $reports, $activeTurns);
+
+            self::assertNotSame($signatureRead, $signatureBash);
+            self::assertStringContainsString('bash: command="sleep 120"', $signatureBash);
+            self::assertStringNotContainsString('bash: command="sleep 120"', $signatureRead);
+        } finally {
+            TestDirectoryIsolation::removeDirectory($projectDir);
+        }
+    }
+
     private function makeService(array $overrides): SubagentExecutionService
     {
         $defaults = [

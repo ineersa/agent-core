@@ -23,6 +23,7 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\Tui\Application\SessionInitializer;
+use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
@@ -75,13 +76,6 @@ final class SessionInitializerReplayTest extends TestCase
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
         );
 
-        $this->eventStore = new SessionRunEventStore(
-            hatfieldSessionStore: $hatfieldSessionStore,
-            eventPayloadNormalizer: new EventPayloadNormalizer(),
-            lockFactory: new LockFactory(new FlockStore()),
-            logger: new NullLogger(),
-        );
-
         $mapper = new RuntimeEventMapper(
             new RuntimeEventTranslator(new EventDispatcher()),
         );
@@ -97,6 +91,13 @@ final class SessionInitializerReplayTest extends TestCase
         $dispatcher->addSubscriber(new RunLifecycleProjectionSubscriber());
         $this->projector = new TranscriptProjector($dispatcher, $state);
 
+        $this->eventStore = new SessionRunEventStore(
+            hatfieldSessionStore: $hatfieldSessionStore,
+            eventPayloadNormalizer: new EventPayloadNormalizer(),
+            lockFactory: new LockFactory(new FlockStore()),
+            logger: new NullLogger(),
+        );
+
         $this->sessionInit = new SessionInitializer(
             sessionStore: $hatfieldSessionStore,
             eventStore: $this->eventStore,
@@ -104,6 +105,7 @@ final class SessionInitializerReplayTest extends TestCase
             projector: $this->projector,
             blockFactory: new TranscriptBlockFactory(),
             logger: new NullLogger(),
+            eventApplier: new TuiRuntimeEventApplier($this->projector),
         );
     }
 
@@ -158,8 +160,8 @@ final class SessionInitializerReplayTest extends TestCase
         // lastSeq = 2 (max persistent source seq)
         $this->assertSame(2, $state->lastSeq);
 
-        // Activity: Running (run was in-progress at event seq=2)
-        $this->assertSame(RunActivityStateEnum::Running, $state->activity);
+        // Passive resume: in-progress history must not leave active activity.
+        $this->assertSame(RunActivityStateEnum::Idle, $state->activity);
 
         // No replayed blocks should be left in streaming state
         foreach ($blocks as $block) {
@@ -240,8 +242,8 @@ final class SessionInitializerReplayTest extends TestCase
         // lastSeq = 6
         $this->assertSame(6, $state->lastSeq);
 
-        // Activity: Running (human_input.answered transitioned to Running)
-        $this->assertSame(RunActivityStateEnum::Running, $state->activity);
+        // Passive resume: mid-sequence history does not leave active activity.
+        $this->assertSame(RunActivityStateEnum::Idle, $state->activity);
     }
 
     // ── Cancellation resume ────────────────────────────────────────────────
@@ -502,8 +504,8 @@ final class SessionInitializerReplayTest extends TestCase
         $state = new TuiSessionState($runId, true);
         $this->sessionInit->buildInitialTranscript($state);
 
-        // Activity should be WaitingHuman after last event
-        $this->assertSame(RunActivityStateEnum::WaitingHuman, $state->activity);
+        // Passive resume clears active HITL state until a new live turn starts.
+        $this->assertSame(RunActivityStateEnum::Idle, $state->activity);
     }
 
     // ── Dropped/null-mapped events ─────────────────────────────────────────
@@ -614,6 +616,83 @@ final class SessionInitializerReplayTest extends TestCase
 
         $texts = array_map(static fn ($b) => $b->text, array_values($userBlocks));
         $this->assertContains('STEER_APPLIED_MARKER', $texts);
+    }
+
+
+    public function testReplayShellOnlySessionRestoresIsShellRun(): void
+    {
+        $runId = 'run-shell-only-'.bin2hex(random_bytes(4));
+        $this->ensureSessionDir($runId);
+
+        $this->append($runId, 1, 'tool_execution_start', [
+            'tool_call_id' => 'sh_1',
+            'tool_name' => 'bash',
+            'order_index' => 0,
+        ]);
+        $this->append($runId, 2, 'tool_execution_end', [
+            'tool_call_id' => 'sh_1',
+            'is_error' => false,
+            'result' => 'ok',
+        ]);
+        $this->append($runId, 3, 'agent_end', ['reason' => 'completed']);
+
+        $state = new TuiSessionState($runId, true);
+        $this->sessionInit->buildInitialTranscript($state);
+
+        $this->assertTrue($state->isShellRun, 'Shell-only canonical history must restore isShellRun');
+        $this->assertSame(RunActivityStateEnum::Completed, $state->activity);
+    }
+
+    public function testReplayCompactionStartedNormalizesToIdleOnResume(): void
+    {
+        $runId = 'run-compacting-'.bin2hex(random_bytes(4));
+        $this->ensureSessionDir($runId);
+
+        $this->append($runId, 1, 'run_started', [
+            'step_id' => 'step-1',
+            'payload' => [
+                'messages' => [
+                    ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hi']]],
+                ],
+            ],
+        ]);
+        $this->append($runId, 2, 'llm_step_completed', [
+            'step_id' => 'step-1',
+            'message' => ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'Ok']]],
+        ]);
+        $this->append($runId, 3, 'agent_end', ['reason' => 'completed']);
+        $this->append($runId, 4, 'context_compaction_started', [
+            'step_id' => 'compact-1',
+            'estimated_tokens' => 12000,
+        ]);
+
+        $state = new TuiSessionState($runId, true);
+        $this->sessionInit->buildInitialTranscript($state);
+
+        $this->assertSame(RunActivityStateEnum::Idle, $state->activity);
+        $this->assertFalse($state->isCompacting);
+    }
+
+    public function testReplayMidTurnRunningNormalizesToIdleOnResume(): void
+    {
+        $runId = 'run-mid-turn-'.bin2hex(random_bytes(4));
+        $this->ensureSessionDir($runId);
+
+        $this->append($runId, 1, 'run_started', [
+            'step_id' => 'step-1',
+            'payload' => [
+                'messages' => [
+                    ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Go']]],
+                ],
+            ],
+        ]);
+        $this->append($runId, 2, 'turn_started', ['turn_no' => 1]);
+
+        $state = new TuiSessionState($runId, true);
+        $this->sessionInit->buildInitialTranscript($state);
+
+        $this->assertSame(RunActivityStateEnum::Idle, $state->activity);
+        $this->assertFalse($state->isCompacting);
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────

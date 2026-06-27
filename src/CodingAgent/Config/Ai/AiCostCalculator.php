@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Config\Ai;
 
 use Ineersa\AgentCore\Domain\Model\CostCalculatorInterface;
-use Psr\Log\LoggerInterface;
-use Psr\Log\NullLogger;
 
 /**
  * Computes LLM cost using Hatfield model catalog pricing.
@@ -33,7 +31,6 @@ final readonly class AiCostCalculator implements CostCalculatorInterface
 {
     public function __construct(
         private HatfieldModelCatalog $catalog,
-        private LoggerInterface $logger = new NullLogger(),
     ) {
     }
 
@@ -76,17 +73,6 @@ final readonly class AiCostCalculator implements CostCalculatorInterface
 
         // No cache-write attribution: standard API responses do not
         // differentiate cache writes from reads.
-
-        if ($total > 0.0) {
-            $this->logger->debug('Cost computed', [
-                'model' => $modelRef,
-                'input_tokens' => $inputTokens,
-                'output_tokens' => $outputTokens,
-                'thinking_tokens' => $thinkingTokens,
-                'cached_tokens' => $cachedTokens,
-                'cost_usd' => $total,
-            ]);
-        }
 
         return $total;
     }

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Runtime\Contract;
 
 /**
- * Lightweight handle returned when a run is started or resumed.
+ * Lightweight handle returned when a run is started or attached.
  */
 final readonly class RunHandle
 {

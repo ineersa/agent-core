@@ -11,7 +11,7 @@ use Symfony\Component\Messenger\MessageBusInterface;
 /**
  * Dispatches MCP lifecycle commands from the session client layer.
  *
- * Called after start_run and resume so the MCP consumer receives
+ * Called after start_run and attach so the MCP consumer receives
  * an initialize command.  Failure to dispatch is logged but never
  * propagated — MCP is optional infrastructure and must not block
  * normal session flow.
@@ -31,7 +31,7 @@ final readonly class McpSessionLifecycleDispatcher
      * Dispatch an MCP initialize command for the given session.
      *
      * @param string $runId  the run/session identifier
-     * @param string $reason why initialization was triggered: 'start_run' | 'resume'
+     * @param string $reason why initialization was triggered: 'start_run' | 'attach'
      */
     public function dispatchInitialize(string $runId, string $reason): void
     {

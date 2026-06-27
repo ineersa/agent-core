@@ -18,6 +18,7 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\Tui\Application\SessionInitializer;
+use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -56,6 +57,10 @@ final class SessionInitializerTest extends TestCase
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
         );
 
+        // Collect blocks accepted by the real projector pattern: the mock
+        // tracks accept() calls so we can assert projection behaviour.
+        $this->projector = $this->createMock(TranscriptProjectorInterface::class);
+
         $this->eventStore = new SessionRunEventStore(
             hatfieldSessionStore: $hatfieldSessionStore,
             eventPayloadNormalizer: new EventPayloadNormalizer(),
@@ -67,10 +72,6 @@ final class SessionInitializerTest extends TestCase
             new RuntimeEventTranslator(new EventDispatcher()),
         );
 
-        // Collect blocks accepted by the real projector pattern: the mock
-        // tracks accept() calls so we can assert projection behaviour.
-        $this->projector = $this->createMock(TranscriptProjectorInterface::class);
-
         $this->sessionInit = new SessionInitializer(
             sessionStore: $hatfieldSessionStore,
             eventStore: $this->eventStore,
@@ -78,6 +79,7 @@ final class SessionInitializerTest extends TestCase
             projector: $this->projector,
             blockFactory: new TranscriptBlockFactory(),
             logger: new NullLogger(),
+            eventApplier: new TuiRuntimeEventApplier($this->projector),
         );
     }
 
