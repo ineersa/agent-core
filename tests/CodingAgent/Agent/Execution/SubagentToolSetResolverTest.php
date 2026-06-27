@@ -14,7 +14,6 @@ use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Agent\Execution\SubagentToolSetResolver;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
-use Psr\Log\NullLogger;
 
 #[CoversClass(SubagentToolSetResolver::class)]
 #[CoversClass(SubagentRunMetadataReader::class)]
@@ -30,7 +29,7 @@ final class SubagentToolSetResolverTest extends TestCase
 
         $eventStore = $this->createStub(EventStoreInterface::class);
 
-        $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore), new NullLogger());
+        $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore));
         $result = $resolver->resolve('ref');
 
         self::assertSame(['read', 'write'], $result->toolNames);
@@ -49,7 +48,7 @@ final class SubagentToolSetResolverTest extends TestCase
             ->with('parent-run')
             ->willReturn([]); // No RunStarted event at all
 
-        $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore), new NullLogger());
+        $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore));
         $result = $resolver->resolve('ref', runId: 'parent-run');
 
         self::assertSame(['read', 'write'], $result->toolNames);
@@ -122,7 +121,7 @@ final class SubagentToolSetResolverTest extends TestCase
                 ),
             ]);
 
-        $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore), new NullLogger());
+        $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore));
         $result = $resolver->resolve('ref', runId: 'child-run');
 
         self::assertSame(['read', 'bash'], $result->toolNames);
@@ -159,7 +158,7 @@ final class SubagentToolSetResolverTest extends TestCase
                 ),
             ]);
 
-        $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore), new NullLogger());
+        $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore));
         $result = $resolver->resolve('ref', runId: 'child-run');
 
         self::assertSame([], $result->toolNames);
@@ -191,7 +190,7 @@ final class SubagentToolSetResolverTest extends TestCase
                 ),
             ]);
 
-        $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore), new NullLogger());
+        $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore));
         $result = $resolver->resolve('ref', runId: 'child-run');
 
         self::assertNotContains('subagent', $result->toolNames);

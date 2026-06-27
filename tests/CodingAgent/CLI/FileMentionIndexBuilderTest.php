@@ -9,7 +9,6 @@ use Ineersa\CodingAgent\CLI\FileMentionIndexLockHeldException;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
-use Psr\Log\LoggerInterface;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 
@@ -35,11 +34,6 @@ final class FileMentionIndexBuilderTest extends TestCase
         return new LockFactory(new FlockStore($this->tmpDir));
     }
 
-    private function createLogger(): LoggerInterface
-    {
-        return $this->createStub(LoggerInterface::class);
-    }
-
     #[Test]
     public function includesFilesAndDirectories(): void
     {
@@ -49,7 +43,7 @@ final class FileMentionIndexBuilderTest extends TestCase
         touch($this->tmpDir.'/src/nested/bar.php');
 
         $indexPath = $this->tmpDir.'/index.jsonl';
-        $builder = new FileMentionIndexBuilder($this->tmpDir, $indexPath, logger: $this->createLogger(), lockFactory: $this->createLockFactory());
+        $builder = new FileMentionIndexBuilder($this->tmpDir, $indexPath, lockFactory: $this->createLockFactory());
         $count = $builder->build();
 
         $this->assertGreaterThanOrEqual(3, $count);
@@ -89,7 +83,7 @@ final class FileMentionIndexBuilderTest extends TestCase
         touch($this->tmpDir.'/included.php');
 
         $indexPath = $this->tmpDir.'/index.jsonl';
-        $builder = new FileMentionIndexBuilder($this->tmpDir, $indexPath, logger: $this->createLogger(), lockFactory: $this->createLockFactory());
+        $builder = new FileMentionIndexBuilder($this->tmpDir, $indexPath, lockFactory: $this->createLockFactory());
         $count = $builder->build();
 
         $lines = file($indexPath, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES);
@@ -118,7 +112,7 @@ final class FileMentionIndexBuilderTest extends TestCase
         touch($this->tmpDir.'/existing.php');
 
         $indexPath = $this->tmpDir.'/index.jsonl';
-        $builder = new FileMentionIndexBuilder($this->tmpDir, $indexPath, logger: $this->createLogger(), lockFactory: $this->createLockFactory());
+        $builder = new FileMentionIndexBuilder($this->tmpDir, $indexPath, lockFactory: $this->createLockFactory());
         $builder->build();
 
         $this->assertFileExists($indexPath);
@@ -137,7 +131,7 @@ final class FileMentionIndexBuilderTest extends TestCase
         }
 
         $indexPath = $this->tmpDir.'/index.jsonl';
-        $builder = new FileMentionIndexBuilder($this->tmpDir, $indexPath, logger: $this->createLogger(), lockFactory: $this->createLockFactory());
+        $builder = new FileMentionIndexBuilder($this->tmpDir, $indexPath, lockFactory: $this->createLockFactory());
         $count = $builder->build();
 
         $this->assertLessThanOrEqual(50_000, $count);
@@ -157,7 +151,7 @@ final class FileMentionIndexBuilderTest extends TestCase
         $lock = $lockFactory->createLock('file_mention_index.'.hash('xxh32', $indexPath), ttl: 300.0);
         $this->assertTrue($lock->acquire(false), 'Should acquire lock when no one holds it.');
 
-        $builder = new FileMentionIndexBuilder($this->tmpDir, $indexPath, logger: $this->createLogger(), lockFactory: $lockFactory);
+        $builder = new FileMentionIndexBuilder($this->tmpDir, $indexPath, lockFactory: $lockFactory);
 
         // Builder should throw because lock is held.
         $this->expectException(FileMentionIndexLockHeldException::class);
@@ -172,12 +166,12 @@ final class FileMentionIndexBuilderTest extends TestCase
         $indexPath = $this->tmpDir.'/index.jsonl';
         $lockFactory = $this->createLockFactory();
 
-        $builder1 = new FileMentionIndexBuilder($this->tmpDir, $indexPath, logger: $this->createLogger(), lockFactory: $lockFactory);
+        $builder1 = new FileMentionIndexBuilder($this->tmpDir, $indexPath, lockFactory: $lockFactory);
         $count = $builder1->build();
         $this->assertGreaterThan(0, $count);
 
         // Lock should be released — second build with same lock factory succeeds.
-        $builder2 = new FileMentionIndexBuilder($this->tmpDir, $indexPath, logger: $this->createLogger(), lockFactory: $lockFactory);
+        $builder2 = new FileMentionIndexBuilder($this->tmpDir, $indexPath, lockFactory: $lockFactory);
         $count2 = $builder2->build();
         $this->assertGreaterThan(0, $count2);
     }
@@ -193,7 +187,6 @@ final class FileMentionIndexBuilderTest extends TestCase
         $builder = new FileMentionIndexBuilder(
             $this->tmpDir.'/nonexistent',
             $indexPath,
-            logger: $this->createLogger(),
             lockFactory: $this->createLockFactory(),
         );
 
@@ -229,7 +222,7 @@ final class FileMentionIndexBuilderTest extends TestCase
 
         // ── Builder writes index ──
         $indexPath = $this->tmpDir.'/index.jsonl';
-        $builder = new FileMentionIndexBuilder($this->tmpDir, $indexPath, logger: $this->createLogger(), lockFactory: $this->createLockFactory());
+        $builder = new FileMentionIndexBuilder($this->tmpDir, $indexPath, lockFactory: $this->createLockFactory());
         $count = $builder->build();
         $this->assertGreaterThan(0, $count);
 
@@ -358,7 +351,7 @@ final class FileMentionIndexBuilderTest extends TestCase
         }
 
         $indexPath = $cwd.'/index.jsonl';
-        $builder = new FileMentionIndexBuilder($cwd, $indexPath, logger: $this->createLogger(), lockFactory: $this->createLockFactory());
+        $builder = new FileMentionIndexBuilder($cwd, $indexPath, lockFactory: $this->createLockFactory());
         $count = $builder->build();
 
         $this->assertGreaterThan(0, $count, 'Index must contain entries even when CWD is VCS-ignored.');
