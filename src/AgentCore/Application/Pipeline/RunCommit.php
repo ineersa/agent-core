@@ -16,7 +16,6 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Psr\Log\LoggerInterface;
 
 final readonly class RunCommit
@@ -229,63 +228,7 @@ final readonly class RunCommit
             'component' => 'storage',
         ]);
 
-        foreach ($events as $event) {
-            RunLogContext::enter([
-                'event_type' => $event->type,
-                'seq' => $event->seq,
-                'turn_no' => $event->turnNo,
-            ]);
-
-            try {
-                $this->logger->info('event_store.appended', [
-                    'run_id' => $event->runId,
-                    'seq' => $event->seq,
-                    'turn_no' => $event->turnNo,
-                    'event_type' => $event->type,
-                    'step_id' => $this->eventStepId($event, $state),
-                    'worker_id' => $this->eventWorkerId($event),
-                    'attempt' => $this->eventAttempt($event),
-                ]);
-            } finally {
-                RunLogContext::leave();
-            }
-        }
-    }
-
-    private function eventStepId(RunEvent $event, RunState $state): ?string
-    {
-        if (\is_string($event->payload['step_id'] ?? null) && '' !== $event->payload['step_id']) {
-            return $event->payload['step_id'];
-        }
-
-        if (\is_string($event->payload['stepId'] ?? null) && '' !== $event->payload['stepId']) {
-            return $event->payload['stepId'];
-        }
-
-        return $state->activeStepId;
-    }
-
-    private function eventWorkerId(RunEvent $event): string
-    {
-        if (\is_string($event->payload['worker_id'] ?? null) && '' !== $event->payload['worker_id']) {
-            return $event->payload['worker_id'];
-        }
-
-        return 'orchestrator';
-    }
-
-    private function eventAttempt(RunEvent $event): ?int
-    {
-        $attempt = $event->payload['attempt'] ?? null;
-
-        if (\is_int($attempt)) {
-            return $attempt;
-        }
-
-        if (\is_string($attempt) && ctype_digit($attempt)) {
-            return (int) $attempt;
-        }
-
-        return null;
+        // Per-event append logs were removed: they duplicated persistence.events_committed
+        // at INFO and multiplied log volume (one line per canonical event per commit).
     }
 }

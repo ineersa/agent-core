@@ -199,7 +199,7 @@ final class FileMentionIndexBuilder
                 // failed — fall back to explicit excludes only.  The
                 // completed index may include more entries than desired,
                 // but completion remains functional.
-                $this->logger->debug(
+                $this->logger->info(
                     'File mention index: ignoreVCSIgnored unavailable, falling back to explicit excludes.',
                     [
                         'component' => 'file_mention_index',
@@ -209,7 +209,7 @@ final class FileMentionIndexBuilder
                 );
             }
         } else {
-            $this->logger->debug(
+            $this->logger->info(
                 'File mention index: CWD is itself VCS-ignored, skipping ignoreVCSIgnored to avoid excluding all files; explicit excludes handle noisy dirs.',
                 [
                     'component' => 'file_mention_index',
