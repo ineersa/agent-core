@@ -57,21 +57,20 @@ final class SessionInitializerTest extends TestCase
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
         );
 
+        // Collect blocks accepted by the real projector pattern: the mock
+        // tracks accept() calls so we can assert projection behaviour.
+        $this->projector = $this->createMock(TranscriptProjectorInterface::class);
+
         $this->eventStore = new SessionRunEventStore(
             hatfieldSessionStore: $hatfieldSessionStore,
             eventPayloadNormalizer: new EventPayloadNormalizer(),
             lockFactory: new LockFactory(new FlockStore()),
             logger: new NullLogger(),
-            eventApplier: new TuiRuntimeEventApplier($this->projector),
         );
 
         $mapper = new RuntimeEventMapper(
             new RuntimeEventTranslator(new EventDispatcher()),
         );
-
-        // Collect blocks accepted by the real projector pattern: the mock
-        // tracks accept() calls so we can assert projection behaviour.
-        $this->projector = $this->createMock(TranscriptProjectorInterface::class);
 
         $this->sessionInit = new SessionInitializer(
             sessionStore: $hatfieldSessionStore,
