@@ -6,7 +6,6 @@ namespace Ineersa\CodingAgent\Agent\Execution;
 
 use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
-use Psr\Log\LoggerInterface;
 
 /**
  * Decorates the normal ToolSetResolver chain with per-run tool policy
@@ -33,7 +32,6 @@ final readonly class SubagentToolSetResolver implements ToolSetResolverInterface
     public function __construct(
         private ToolSetResolverInterface $inner,
         private SubagentRunMetadataReader $metadataReader,
-        private LoggerInterface $logger,
     ) {
     }
 

@@ -85,7 +85,8 @@ final class TuiStartupSnapshotTest extends TestCase
             timeout: 5.0,
         );
         $expanded = $this->tmux->capturePlainWithHistory($pane, 800);
-        $this->assertStringContainsString('e2e-startup/SKILL.md', $expanded, 'Expanded loaded-resources block should show planted skill source path');
+        $normalizedExpanded = str_replace(["\r", "\n"], '', $expanded);
+        $this->assertStringContainsString('e2e-startup/SKILL.md', $normalizedExpanded, 'Expanded loaded-resources block should show planted skill source path');
 
         $this->tmux->sendKey($pane, 'C-d');
     }
