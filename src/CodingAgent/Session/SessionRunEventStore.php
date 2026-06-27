@@ -115,9 +115,11 @@ final class SessionRunEventStore implements EventStoreInterface
                 // Schema version is present but incompatible. This is an
                 // intentional schema-version compatibility policy: events from
                 // unsupported major versions are ignored with diagnostics.
-                $this->logger->debug('Skipping incompatible schema version in event JSONL', [
+                $this->logger->error('Skipping incompatible schema version in event JSONL', [
                     'run_id' => $runId,
-                    'schema_version' => $payload['schema_version'],
+                    'schema_version' => $payload['schema_version'] ?? null,
+                    'component' => 'session.event_store',
+                    'event_type' => 'session.incompatible_schema_skipped',
                 ]);
 
                 continue;

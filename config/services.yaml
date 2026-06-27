@@ -575,7 +575,6 @@ services:
     arguments:
       $inner: '@Ineersa\CodingAgent\Mcp\Tool\McpCatalogRegisteringToolSetResolver'
       $metadataReader: '@Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader'
-      $logger: '@logger'
 
   # Shared reader for child RunStarted metadata payloads.
   Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader:

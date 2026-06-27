@@ -47,7 +47,7 @@ final class CompletionFileIndexRefreshCommand extends Command
         try {
             $count = $this->builder->build();
 
-            $this->logger->debug(
+            $this->logger->info(
                 'File mention index refreshed: {entry_count} entries written.',
                 [
                     'component' => 'file_mention_index',
@@ -59,7 +59,7 @@ final class CompletionFileIndexRefreshCommand extends Command
             return Command::SUCCESS;
         } catch (FileMentionIndexLockHeldException $e) {
             // Lock held by another instance — no-op, not an error.
-            $this->logger->debug(
+            $this->logger->info(
                 'File mention index: refresh skipped, lock held by concurrent builder.',
                 [
                     'component' => 'file_mention_index',
