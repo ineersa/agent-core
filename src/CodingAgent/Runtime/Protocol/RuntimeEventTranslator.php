@@ -332,9 +332,10 @@ final class RuntimeEventTranslator
             $payload['duration_ms'] = $p['duration_ms'];
         }
 
-        // Heuristic until domain tool end carries a structured cancel reason; canonical
-        // user-cancel text is produced by ToolCallResultHandler on cancellation.
-        $isUserCancelled = $isError && str_contains(strtolower($resultText), 'cancelled by user');
+        $isStructuredCancel = (bool) ($p['cancelled'] ?? false);
+        // Structured metadata is preferred; text heuristic remains for legacy events.
+        $isUserCancelled = $isStructuredCancel
+            || ($isError && str_contains(strtolower($resultText), 'cancelled by user'));
 
         $type = match (true) {
             $isUserCancelled => RuntimeEventTypeEnum::ToolExecutionCancelled->value,
