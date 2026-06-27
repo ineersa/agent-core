@@ -450,7 +450,8 @@ final class ToolExecutorTest extends TestCase
 
 }
 
-final class ContextCheckingToolbox implements ToolboxInterface
+
+    final class ContextCheckingToolbox implements ToolboxInterface
 {
     public function __construct(
         private readonly StackToolExecutionContextAccessor $accessor,

@@ -199,7 +199,12 @@ Parallel mode (up to `agents.max_agents`, default **8** per tool call):
    cancels the child, finalizes the artifact as `Failed`, and
    returns an explanation to the parent LLM.
 5. **Cancellation.** If the parent run is cancelled while a child is running,
-   the child is cancelled and the artifact is finalized as `Cancelled`.
+   the child is cancelled and the artifact is finalized as `Cancelled`. The
+   parent-visible subagent tool error includes the artifact ID, status, and a
+   retrieval hint. Cancelled `handoff.md` includes safe partial context (turn
+   counts, last activity, bounded assistant text). Use `agent_retrieve` with
+   modes `metadata`, `events`, or `history` to recover more detail; cancellation
+   remains an error/cancelled tool result, not success.
 6. **Timeout.** Foreground `subagent` execution uses an internal poll timeout
    (`agents.subagent_tool_timeout_seconds`, default **1800** seconds; minimum
    **60**, invalid lower values fail config load). This is not the generic
