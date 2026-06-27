@@ -9,7 +9,7 @@ declare(strict_types=1);
  * run:agent-test is the explicit tmux manual test helper.
  *
  * When ~/bin/pi-bwrap exists (override: HATFIELD_PI_BWRAP), run:agent and
- * run:agent-capture re-exec Castor under Bubblewrap so php bin/console agent
+ * run:agent-capture re-exec Castor under Bubblewrap so the PHAR-launched agent
  * runs inside the sandbox unless HATFIELD_BWRAP=0 or HATFIELD_INSIDE_PI_BWRAP=1.
  */
 
@@ -20,6 +20,24 @@ use function CastorTasks\maybe_reexec_castor_task_under_pi_bwrap;
 require_once __DIR__.'/../vendor/autoload.php';
 require_once __DIR__.'/helpers.php';
 require_once __DIR__.'/shared.php';
+
+/**
+ * Build the agent invocation string for the freshly-ensured PHAR.
+ *
+ * run:agent* launch from the built PHAR (not bin/console) so smoke/dev
+ * sessions exercise the actual shipped artifact and surface packaging
+ * bugs (box.json exclusions, missing stubs, autoloader differences).
+ * CastorTasks\phar_ensure() rebuilds the PHAR when source is newer than the last build.
+ *
+ * @param string $extraArgs Extra args appended after `agent` (e.g. '--model=...').
+ */
+function agent_phar_invocation(string $extraArgs = ''): string
+{
+    $pharPath = \CastorTasks\phar_ensure();
+    $tail = '' === $extraArgs ? '' : ' '.$extraArgs;
+
+    return sprintf('%s %s agent%s', \PHP_BINARY, escapeshellarg($pharPath), $tail);
+}
 
 /**
  * Launch the agent TUI in the current terminal.
@@ -36,7 +54,10 @@ function run_agent(): void
     maybe_reexec_castor_task_under_pi_bwrap('run:agent');
 
     launch_agent_direct_terminal(
-        build_agent_console_inner_command(datadog_env_command(datadog_auto_enabled())),
+        build_agent_console_inner_command(
+            datadog_env_command(datadog_auto_enabled()),
+            agent_phar_invocation(),
+        ),
     );
 }
 
@@ -55,7 +76,7 @@ function run_agent_test(): void
         windowTitle: 'hatfield-agent-test',
         innerShellCommand: build_agent_console_inner_command(
             datadog_env_command(false),
-            'php bin/console agent --model=llama_cpp_test/test',
+            agent_phar_invocation('--model=llama_cpp_test/test'),
         ),
     );
 }
@@ -95,7 +116,10 @@ function run_agent_capture(): void
     $inner = sprintf(
         'export HATFIELD_LLM_RAW_STREAM_CAPTURE=1 && export HATFIELD_LLM_RAW_STREAM_CAPTURE_PATH=%s && %s',
         escapeshellarg($capturePath),
-        build_agent_console_inner_command(datadog_env_command(datadog_auto_enabled())),
+        build_agent_console_inner_command(
+            datadog_env_command(datadog_auto_enabled()),
+            agent_phar_invocation(),
+        ),
     );
 
     launch_agent_direct_terminal($inner);
