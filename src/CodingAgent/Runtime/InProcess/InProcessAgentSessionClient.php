@@ -191,15 +191,16 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         return new RunHandle(runId: $runId, status: 'running');
     }
 
-    public function resume(string $runId): RunHandle
+    public function attach(string $runId): RunHandle
     {
-        $this->runner->continue($runId);
+        // Passive attach only — do not call runner->continue(); opening a session
+        // must not reanimate or advance AgentCore state.
 
-        // Dispatch MCP session initialize on resume so resumed sessions
+        // Dispatch MCP session initialize on attach so reopened sessions
         // also benefit from MCP tools (Phase 3+).
-        $this->mcpDispatcher?->dispatchInitialize($runId, 'resume');
+        $this->mcpDispatcher?->dispatchInitialize($runId, 'attach');
 
-        return new RunHandle(runId: $runId, status: 'running');
+        return new RunHandle(runId: $runId, status: 'attached');
     }
 
     public function send(string $runId, UserCommand $command): void

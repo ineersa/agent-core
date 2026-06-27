@@ -72,7 +72,7 @@ final class RuntimeEventEmitter
      * Emit a runtime event to stdout with auto cursor register.
      *
      * Cursor lifecycle events:
-     * - Register on: RunStarted
+     * - Register on: RunStarted, RunResumed (passive attach — same drain registration)
      * - Cursors are NEVER released — a completed/failed/cancelled run may
      *   receive follow-up commands that produce new canonical events
      *   (issue #183). The drain loop continues polling at the recorded
@@ -81,7 +81,10 @@ final class RuntimeEventEmitter
     public function emit(RuntimeEvent $event): void
     {
         // Auto-register event drain cursors based on event type.
-        if (RuntimeEventTypeEnum::RunStarted->value === $event->type) {
+        if (
+            RuntimeEventTypeEnum::RunStarted->value === $event->type
+            || RuntimeEventTypeEnum::RunResumed->value === $event->type
+        ) {
             $this->runEventCursors[$event->runId] = $this->runEventCursors[$event->runId] ?? 0;
         }
 

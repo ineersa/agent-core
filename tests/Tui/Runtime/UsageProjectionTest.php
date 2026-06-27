@@ -57,6 +57,26 @@ final class UsageProjectionTest extends TestCase
         self::assertEqualsWithDelta(12.34, $this->usage->totalCost, 0.001);
     }
 
+
+    public function testResetTurnForReplayClearsThroughputTimingWithoutSessionTotals(): void
+    {
+        $this->usage->inputTokens = 200;
+        $this->usage->outputTokens = 80;
+        $this->usage->turnOutputTokens = 40;
+        $this->usage->turnStartTime = 100.0;
+        $this->usage->llmEndTime = 110.0;
+        $this->usage->latestInputTokens = 50;
+
+        $this->usage->resetTurnForReplay();
+
+        self::assertSame(0, $this->usage->turnOutputTokens);
+        self::assertSame(0.0, $this->usage->turnStartTime);
+        self::assertSame(0.0, $this->usage->llmEndTime);
+        self::assertSame(200, $this->usage->inputTokens);
+        self::assertSame(80, $this->usage->outputTokens);
+        self::assertSame(50, $this->usage->latestInputTokens);
+    }
+
     // ── Accumulate ──
 
     public function testAccumulateWithFullUsage(): void

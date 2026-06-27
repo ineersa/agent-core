@@ -4,14 +4,15 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Application;
 
+use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
-use Ineersa\Tui\Runtime\ActivityStateMachine;
+use Ineersa\Tui\Runtime\RunActivityStateEnum;
+use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use Psr\Log\LoggerInterface;
@@ -41,6 +42,7 @@ final readonly class SessionInitializer
         private TranscriptProjectorInterface $projector,
         private TranscriptBlockFactory $blockFactory,
         private LoggerInterface $logger,
+        private TuiRuntimeEventApplier $eventApplier,
     ) {
     }
 
@@ -192,32 +194,26 @@ final readonly class SessionInitializer
                 $maxMappedSeq = $runtimeEvent->seq;
             }
 
-            // Restore activity state alongside transcript projection
-            // so the TUI correctly reflects the run's last known activity
-            // (e.g. WaitingHuman, Cancelled, Failed) after resume.
-            $state->activity = ActivityStateMachine::transition($state->activity, $runtimeEvent);
-
-            // Restore usage projection alongside transcript and activity
-            // so the TUI footer correctly shows accumulated token counts
-            // after resume instead of starting at 0/0.
-            if (RuntimeEventTypeEnum::TurnStarted->value === $runtimeEvent->type) {
-                $state->usage->resetTurn();
-            }
-            if (RuntimeEventTypeEnum::AssistantMessageCompleted->value === $runtimeEvent->type) {
-                $state->usage->accumulate($runtimeEvent);
-            }
-
-            // Rebuild the pending-queue widget state so a steer queued while the
-            // run was active still shows ⏳ after resume (mirrors RuntimeEventPoller).
-            $state->applyQueuedUserMessageEvent($runtimeEvent);
-
-            $this->projector->accept($runtimeEvent->toArray());
+            $this->eventApplier->apply($state, $runtimeEvent, replayMode: true);
         }
 
         // Set lastSeq so the live poller does not re-process replayed events.
         // Use the max of mapped event seqs; fall back to max source event seq
         // when every source event was dropped/ignored by the mapper.
         $state->lastSeq = max($maxMappedSeq, $maxSourceSeq);
+
+        if ($state->isShellRun = $this->inferShellOnlySessionFromCanonicalEvents($runEvents)) {
+            // Restored for SubmitListener: next normal prompt must start() not follow_up.
+        }
+
+        // Passive resume: historical mid-turn activity must not imply a live run.
+        // Attach does not continue AgentCore; stale Running/Cancelling/Compacting
+        // would route new input as steer and show Working without a runtime process.
+        // Compacting is not isActive() but still sets isCompacting and activity.
+        if ($state->activity->isActive() || RunActivityStateEnum::Compacting === $state->activity) {
+            $state->activity = RunActivityStateEnum::Idle;
+            $state->isCompacting = false;
+        }
 
         $blocks = $this->projector->blocks();
 
@@ -230,5 +226,36 @@ final readonly class SessionInitializer
         }
 
         return $blocks;
+    }
+
+    /**
+     * Detect first-input shell-only sessions from canonical events (no run_started / LLM steps).
+     *
+     * @param list<RunEvent> $runEvents
+     */
+    private function inferShellOnlySessionFromCanonicalEvents(array $runEvents): bool
+    {
+        $hasBashTool = false;
+        $hasLlmConversation = false;
+        $terminalCompleted = false;
+
+        foreach ($runEvents as $runEvent) {
+            $type = $runEvent->type;
+            $payload = $runEvent->payload;
+
+            if ('run_started' === $type || 'llm_step_completed' === $type) {
+                $hasLlmConversation = true;
+            }
+
+            if ('tool_execution_start' === $type && 'bash' === (string) ($payload['tool_name'] ?? '')) {
+                $hasBashTool = true;
+            }
+
+            if ('agent_end' === $type && 'completed' === (string) ($payload['reason'] ?? '')) {
+                $terminalCompleted = true;
+            }
+        }
+
+        return $hasBashTool && !$hasLlmConversation && $terminalCompleted;
     }
 }
