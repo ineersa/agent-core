@@ -68,6 +68,12 @@ final class TuiStartupSnapshotTest extends TestCase
             timeout: 10.0,
         );
 
+        $this->tmux->waitForCaptureContains(
+            pane: $pane,
+            needle: 'ctrl+r to expand',
+            timeout: 10.0,
+        );
+
         $capture = $this->tmux->capturePlain($pane);
         $this->assertStringContainsString('█', $capture, 'Hatfield logo missing in real tmux pane');
         $this->assertStringContainsString('ctrl+r to expand', $capture, 'Loaded-resources affordance missing in real tmux pane');
