@@ -97,6 +97,13 @@ final readonly class WorkerFailedEventSubscriber implements EventSubscriberInter
                 || RunStatus::Completed === $current->status
                 || RunStatus::Cancelled === $current->status
             ) {
+                $this->logger->info('agent_loop.worker_failed_skipped_terminal', [
+                    'run_id' => $runId,
+                    'current_status' => $current->status->value,
+                    'component' => 'messenger.worker',
+                    'event_type' => 'worker_failed.skipped_terminal',
+                ]);
+
                 return;
             }
 

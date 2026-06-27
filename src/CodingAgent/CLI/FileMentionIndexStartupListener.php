@@ -44,6 +44,13 @@ final class FileMentionIndexStartupListener implements TuiListenerRegistrar
             $this->builder->build();
         } catch (FileMentionIndexLockHeldException) {
             // Another process is already building the index — fine.
+            $this->logger->info(
+                'File mention index: startup build skipped, lock held by concurrent builder.',
+                [
+                    'component' => 'file_mention_index',
+                    'event_type' => 'file_mention_index.startup_lock_held',
+                ],
+            );
         } catch (\RuntimeException $e) {
             // Build failure at startup — completion will show no
             // suggestions until the scheduler succeeds.

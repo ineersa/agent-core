@@ -47,6 +47,7 @@ final class CompletionFileIndexRefreshCommandTest extends TestCase
         $builder = new FileMentionIndexBuilder(
             $cwd,
             $indexPath,
+            logger: $this->createLogger(),
             lockFactory: $lockFactory ?? $this->createLockFactory(),
         );
 

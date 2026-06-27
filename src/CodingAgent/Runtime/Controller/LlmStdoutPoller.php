@@ -106,6 +106,14 @@ final class LlmStdoutPoller
             } catch (\Throwable $e) {
                 ++$this->consecutiveBadLlmLines;
 
+                $this->logger->warning('Skipping unparseable JSONL from LLM consumer stdout', [
+                    'line' => mb_substr($trimmed, 0, 200),
+                    'exception' => $e,
+                    'consecutive_bad' => $this->consecutiveBadLlmLines,
+                    'component' => 'runtime.llm_stdout_poller',
+                    'event_type' => 'llm_stdout.unparseable_line',
+                ]);
+
                 if ($this->consecutiveBadLlmLines >= $this->maxBadLines) {
                     // Persistent malformed LLM output: delegate capture=0
                     // rethrow to boundary. If we reach here, capture mode.

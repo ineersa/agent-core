@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\CLI;
 
 use Ineersa\Tui\Completion\FileMentionIndexEntryDTO;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\Finder\Finder;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\LockInterface;
@@ -48,12 +49,14 @@ final class FileMentionIndexBuilder
     /**
      * @param string            $cwd         Project root to scan
      * @param string            $indexPath   Target JSONL path
+     * @param LoggerInterface   $logger      Logger for diagnostic events (autowired by DI)
      * @param LockFactory       $lockFactory Lock factory for build exclusion (autowired by DI)
      * @param list<string>|null $excludeDirs Directories to exclude (replaces built-in defaults when provided)
      */
     public function __construct(
         private readonly string $cwd,
         private readonly string $indexPath,
+        private readonly LoggerInterface $logger,
         private readonly LockFactory $lockFactory,
         ?array $excludeDirs = null,
     ) {
@@ -196,7 +199,24 @@ final class FileMentionIndexBuilder
                 // failed — fall back to explicit excludes only.  The
                 // completed index may include more entries than desired,
                 // but completion remains functional.
+                $this->logger->info(
+                    'File mention index: ignoreVCSIgnored unavailable, falling back to explicit excludes.',
+                    [
+                        'component' => 'file_mention_index',
+                        'event_type' => 'file_mention_index.vcs_ignored_unavailable',
+                        'message' => $e->getMessage(),
+                    ],
+                );
             }
+        } else {
+            $this->logger->info(
+                'File mention index: CWD is itself VCS-ignored, skipping ignoreVCSIgnored to avoid excluding all files; explicit excludes handle noisy dirs.',
+                [
+                    'component' => 'file_mention_index',
+                    'event_type' => 'file_mention_index.cwd_vcs_ignored',
+                    'cwd' => $this->cwd,
+                ],
+            );
         }
 
         foreach ($finder as $splFileInfo) {

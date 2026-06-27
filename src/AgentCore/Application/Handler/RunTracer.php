@@ -49,7 +49,7 @@ final class RunTracer
         $this->spanStack[] = $spanId;
         $startedAt = hrtime(true);
 
-        $this->logger->debug('agent_loop.trace.start', [
+        $this->logger->info('agent_loop.trace.start', [
             'span_id' => $spanId,
             'parent_span_id' => $parentSpanId,
             'span_name' => $name,
@@ -72,7 +72,7 @@ final class RunTracer
 
             $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
 
-            $this->logger->debug('agent_loop.trace.finish', [
+            $this->logger->info('agent_loop.trace.finish', [
                 'span_id' => $spanId,
                 'parent_span_id' => $parentSpanId,
                 'span_name' => $name,

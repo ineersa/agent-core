@@ -635,7 +635,12 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         } catch (\Throwable $e) {
             // Connection cleanup failures following stream abort are
             // expected for already-closed or unestablished connections.
-            // Log at debug level since this is normal cleanup noise.
+            // Log at info level: cleanup exceptions are expected for already-closed/unestablished connections but are kept visible for diagnostics.
+            $this->logger->info('HTTP connection abort threw (expected for already-closed connections)', [
+                'exception' => $e,
+                'component' => 'llm_platform',
+                'event_type' => 'llm_platform.abort_connection_exception',
+            ]);
         }
     }
 
