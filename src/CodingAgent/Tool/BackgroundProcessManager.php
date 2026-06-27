@@ -48,8 +48,9 @@ use Symfony\Component\Clock\Clock;
  * Shutdown handling:
  * Call registerShutdownHandler() from production wiring (services.yaml)
  * to register a PHP shutdown function that calls shutdownCleanup() with
- * no session filter, killing ALL running background processes when this
- * PHP process exits. This covers graceful exit (Ctrl+C, quit command,
+ * no session argument. That path reaps only background processes this
+ * PHP instance started (owned PIDs), not every unfinished row in the
+ * shared database. This covers graceful exit (Ctrl+C, quit command,
  * normal script end) and fatal errors.
  *
  * In test environment (config/services_test.yaml), the shutdown handler
@@ -73,6 +74,9 @@ final class BackgroundProcessManager
 {
     private bool $shutdownRegistered = false;
 
+    /** @var int[] PIDs launched via start() by THIS instance, used for instance-scoped shutdown cleanup. */
+    private array $ownedPids = [];
+
     public function __construct(
         private readonly ProcessStore $store,
         private readonly ProcessLifecycle $lifecycle,
@@ -87,11 +91,13 @@ final class BackgroundProcessManager
     }
 
     /**
-     * Register a PHP shutdown function that terminates all running
-     * background processes when this PHP process exits.
+     * Register a PHP shutdown function that terminates background
+     * processes this PHP instance started when the process exits.
      *
      * On graceful shutdown (exit, Ctrl+C, fatal error), this calls
-     * shutdownCleanup() which TERM→grace→KILLs all tracked processes.
+     * shutdownCleanup() with no session id, which TERM→grace→KILLs only
+     * owned PIDs from start() on this manager instance — never foreign
+     * unfinished rows from the shared background-process database.
      * On hard crash (SIGKILL, OOM, segfault), the shutdown function
      * does not fire — BG processes survive for inspection or resume.
      *
@@ -174,6 +180,12 @@ final class BackgroundProcessManager
         $launchResult = $this->lifecycle->launchProcess($command, $pidFile, $logFile, $statusFile);
         $pid = $launchResult['pid'];
         $pgid = $launchResult['pgid'];
+
+        // Track for instance-scoped shutdown: only processes this PHP process
+        // started are reaped by the shutdown handler, never foreign rows from the
+        // shared background-process database (e.g. a short-lived PHAR `list`/`about`
+        // command sharing the project DB must not kill another process's work).
+        $this->ownedPids[] = $pid;
 
         // Persist entity with auto-increment DB id
         $dbId = $this->store->insertRecord([
@@ -513,7 +525,14 @@ final class BackgroundProcessManager
     }
 
     /**
-     * Terminate all currently tracked running processes.
+     * Terminate background processes during shutdown or controlled teardown.
+     *
+     * Two modes:
+     * - No session id (null): instance-owned processes only — PIDs recorded in
+     *   start() on this manager. Used by register_shutdown_function() and test
+     *   tearDown. Does not query the database for foreign rows.
+     * - Explicit session id: every unfinished process bound to that session from
+     *   the database (controller controlled-shutdown path).
      *
      * Called automatically via register_shutdown_function() on PHP process
      * exit (graceful or fatal). Also callable explicitly from test tearDown
@@ -522,13 +541,17 @@ final class BackgroundProcessManager
      *
      * @param string|null $sessionId optional session filter. When provided,
      *                               only processes for that session are
-     *                               stopped. Pass null to stop all running
-     *                               processes (default, unscoped).
+     *                               stopped from the database. Pass null to
+     *                               reap only this instance's owned PIDs.
      *
      * @return int Number of processes terminated
      */
     public function shutdownCleanup(?string $sessionId = null): int
     {
+        if (null === $sessionId) {
+            return $this->reapOwnedProcesses();
+        }
+
         try {
             $entities = $this->store->fetchAllUnfinished($sessionId);
         } catch (TableNotFoundException) {
@@ -590,6 +613,33 @@ final class BackgroundProcessManager
         }
 
         $this->store->flush();
+    }
+
+    /**
+     * Reap only PIDs started via start() on this manager instance.
+     *
+     * Used when shutdownCleanup() is called with no session id (PHP shutdown
+     * handler path). Never reads unfinished rows from the shared database.
+     */
+    private function reapOwnedProcesses(): int
+    {
+        $count = 0;
+        foreach ($this->ownedPids as $pid) {
+            try {
+                $this->stop($pid);
+                ++$count;
+            } catch (\RuntimeException $e) {
+                // Process may have exited between fetch and stop; log and continue
+                $this->logger->warning('background_process.shutdown_cleanup_error', [
+                    'component' => 'tool.background_process',
+                    'event_type' => 'background_process.shutdown_cleanup_error',
+                    'process_pid' => $pid,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return $count;
     }
 
     // ─── Private helpers ─────────────────────────────────────────────
