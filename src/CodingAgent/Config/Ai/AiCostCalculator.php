@@ -78,14 +78,6 @@ final readonly class AiCostCalculator implements CostCalculatorInterface
         // differentiate cache writes from reads.
 
         if ($total > 0.0) {
-            $this->logger->debug('Cost computed', [
-                'model' => $modelRef,
-                'input_tokens' => $inputTokens,
-                'output_tokens' => $outputTokens,
-                'thinking_tokens' => $thinkingTokens,
-                'cached_tokens' => $cachedTokens,
-                'cost_usd' => $total,
-            ]);
         }
 
         return $total;

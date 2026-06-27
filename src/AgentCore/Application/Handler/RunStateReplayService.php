@@ -53,11 +53,6 @@ final readonly class RunStateReplayService
         $events = $this->eventStore->allFor($runId);
 
         if ([] === $events) {
-            $this->logger->debug('run_state_replay.no_events', [
-                'run_id' => $runId,
-                'component' => 'replay',
-            ]);
-
             return RunStateReplayResult::noEvents();
         }
 

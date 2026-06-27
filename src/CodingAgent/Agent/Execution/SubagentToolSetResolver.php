@@ -48,11 +48,6 @@ final readonly class SubagentToolSetResolver implements ToolSetResolverInterface
         $allowedTools = $this->metadataReader->readAllowedTools($runId);
         if (null === $allowedTools) {
             // Not a child run or policy not available — pass through.
-            $this->logger->debug('subagent_resolver.passthrough', [
-                'component' => 'agent.resolver',
-                'event_type' => 'subagent_resolver.passthrough',
-                'run_id' => $runId,
-            ]);
 
             return $inner;
         }

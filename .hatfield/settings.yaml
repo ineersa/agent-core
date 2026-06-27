@@ -197,7 +197,7 @@ logging:
 #
 #     # Minimum log level. PSR-3 level names (lowercase):
 #     #   debug, info, notice, warning, error, critical, alert, emergency
-      level: debug
+      level: info
 #
 #     # Number of daily rotated log files to retain before deletion.
       max_files: 2

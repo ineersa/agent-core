@@ -95,12 +95,7 @@ final class LlmStdoutPoller
             $data = json_decode($trimmed, true);
 
             if (!\is_array($data) || !isset($data['v'], $data['type'])) {
-                // Not a valid RuntimeEvent — likely messenger:consume
-                // informational output. Skip at debug level since this
-                // is normal protocol noise.
-                $this->logger->debug('Skipped non-RuntimeEvent LLM consumer stdout line', [
-                    'preview' => mb_substr($trimmed, 0, 120),
-                ]);
+                // Not a valid RuntimeEvent — likely messenger:consume noise; skip silently.
                 continue;
             }
 
@@ -110,11 +105,6 @@ final class LlmStdoutPoller
                 $this->consecutiveBadLlmLines = 0;
             } catch (\Throwable $e) {
                 ++$this->consecutiveBadLlmLines;
-                $this->logger->debug('Skipping unparseable JSONL from LLM consumer stdout', [
-                    'line' => mb_substr($trimmed, 0, 200),
-                    'exception' => $e,
-                    'consecutive_bad' => $this->consecutiveBadLlmLines,
-                ]);
 
                 if ($this->consecutiveBadLlmLines >= $this->maxBadLines) {
                     // Persistent malformed LLM output: delegate capture=0
