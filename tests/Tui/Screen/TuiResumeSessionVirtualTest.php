@@ -49,7 +49,7 @@ final class TuiResumeSessionVirtualTest extends TestCase
         $this->assertStringContainsString('Here is the answer you requested.', $screen);
         $this->assertStringContainsString('read', $screen);
         $this->assertStringContainsString('/tmp/example.txt', $screen);
-        $this->assertStringContainsString('read completed', $screen);
+        $this->assertStringContainsString('FILE CONTENTS HERE', $screen);
         $this->assertStringContainsString('turn cancelled', $screen);
         $this->assertStringNotContainsString('● Running…', $screen);
         $this->assertStringNotContainsString('[2J', $screen);

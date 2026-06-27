@@ -20,7 +20,13 @@ interface AgentSessionClient
 {
     public function start(StartRunRequest $request): RunHandle;
 
-    public function resume(string $runId): RunHandle;
+    /**
+     * Passively attach to an existing session/run for event polling and commands.
+     *
+     * Loads no new AgentCore work: must not dispatch Continue or otherwise
+     * advance the run. TUI resume and session switch use this path.
+     */
+    public function attach(string $runId): RunHandle;
 
     public function send(string $runId, UserCommand $command): void;
 

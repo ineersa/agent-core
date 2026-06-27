@@ -310,13 +310,13 @@ final class AgentCommand
         }
 
         $client = $this->inProcessClient;
-        $handle = $client->resume($runId);
+        $handle = $client->attach($runId);
 
         $output->write(JsonlCodec::encodeEvent(new RuntimeEvent(
             type: 'run_resumed',
             runId: $handle->runId,
             seq: 1,
-            payload: ['status' => 'running'],
+            payload: ['status' => $handle->status],
         )));
 
         // Note: --headless mode does NOT forward subsequent events to stdout.

@@ -1059,6 +1059,52 @@ final class TranscriptProjectorTest extends TestCase
             'Explicit result must be preserved, not replaced by tool name');
     }
 
+    public function testToolExecutionProgressThenFinalResultShowsHandoff(): void
+    {
+        $this->accept('tool_execution.started', [
+            'tool_call_id' => 'tc_sub', 'tool_name' => 'subagent',
+        ]);
+        $this->accept('tool_execution.output_delta', [
+            'tool_call_id' => 'tc_sub',
+            'tool_name' => 'subagent',
+            'subagent_progress' => [
+                'mode' => 'single',
+                'status' => 'running',
+                'agent' => 'scout',
+                'task_preview' => 'Inspect resume path',
+            ],
+        ]);
+        $this->accept('tool_execution.completed', [
+            'tool_call_id' => 'tc_sub',
+            'result' => 'HANDOFF: resume uses shared applier',
+        ]);
+
+        $block = $this->projector->blocks()[0];
+        $this->assertStringContainsString('HANDOFF: resume uses shared applier', $block->text);
+        $this->assertFalse($block->streaming);
+        $this->assertTrue($block->meta['subagent_final'] ?? false);
+        $this->assertIsArray($block->meta['subagent_progress'] ?? null);
+    }
+
+    public function testToolExecutionEmptyResultPreservesProgressText(): void
+    {
+        $this->accept('tool_execution.started', [
+            'tool_call_id' => 'tc_legacy', 'tool_name' => 'agent_retrieve',
+        ]);
+        $this->accept('tool_execution.output_delta', [
+            'tool_call_id' => 'tc_legacy',
+            'delta' => 'partial output line',
+        ]);
+        $this->accept('tool_execution.completed', [
+            'tool_call_id' => 'tc_legacy',
+        ]);
+
+        $block = $this->projector->blocks()[0];
+        $this->assertSame('partial output line', $block->text);
+        $this->assertFalse($block->streaming);
+    }
+
+
     public function testToolExecutionFailedCreatesErrorResult(): void
     {
         $this->accept('tool_execution.started', [

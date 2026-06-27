@@ -4,23 +4,23 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Controller\CommandHandler;
 
+use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
-use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 
 /**
- * Handles resume commands via Symfony EventDispatcher.
+ * Handles JSONL resume commands via Symfony EventDispatcher.
  *
- * Dispatches a resume command to the run_control transport (ASYNC-05)
- * and immediately returns to the event loop.
+ * Passive attach only: scopes the controller client to the run and emits
+ * run.resumed. Does not dispatch AgentCore Continue.
  */
 #[AsEventListener(event: ControllerCommandEvent::class)]
 final readonly class ResumeHandler
 {
     public function __construct(
-        private readonly InProcessAgentSessionClient $client,
+        private readonly AgentSessionClient $client,
     ) {
     }
 
@@ -43,15 +43,13 @@ final readonly class ResumeHandler
             return;
         }
 
-        // Non-blocking: dispatches ApplyCommand (resume) to run_control
-        // transport and returns immediately.
-        $handle = $this->client->resume($runId);
+        $handle = $this->client->attach($runId);
 
         $event->emit(new RuntimeEvent(
             type: RuntimeEventTypeEnum::RunResumed->value,
             runId: $handle->runId,
             seq: 1,
-            payload: ['status' => 'running'],
+            payload: ['status' => $handle->status],
         ));
 
         // Events are NOT iterated here — they arrive through the controller's
