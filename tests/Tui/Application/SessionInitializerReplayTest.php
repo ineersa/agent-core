@@ -643,6 +643,36 @@ final class SessionInitializerReplayTest extends TestCase
         $this->assertSame(RunActivityStateEnum::Completed, $state->activity);
     }
 
+    public function testReplayCompactionStartedNormalizesToIdleOnResume(): void
+    {
+        $runId = 'run-compacting-'.bin2hex(random_bytes(4));
+        $this->ensureSessionDir($runId);
+
+        $this->append($runId, 1, 'run_started', [
+            'step_id' => 'step-1',
+            'payload' => [
+                'messages' => [
+                    ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hi']]],
+                ],
+            ],
+        ]);
+        $this->append($runId, 2, 'llm_step_completed', [
+            'step_id' => 'step-1',
+            'message' => ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'Ok']]],
+        ]);
+        $this->append($runId, 3, 'agent_end', ['reason' => 'completed']);
+        $this->append($runId, 4, 'context_compaction_started', [
+            'step_id' => 'compact-1',
+            'estimated_tokens' => 12000,
+        ]);
+
+        $state = new TuiSessionState($runId, true);
+        $this->sessionInit->buildInitialTranscript($state);
+
+        $this->assertSame(RunActivityStateEnum::Idle, $state->activity);
+        $this->assertFalse($state->isCompacting);
+    }
+
     public function testReplayMidTurnRunningNormalizesToIdleOnResume(): void
     {
         $runId = 'run-mid-turn-'.bin2hex(random_bytes(4));

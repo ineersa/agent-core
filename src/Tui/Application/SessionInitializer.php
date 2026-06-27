@@ -207,9 +207,10 @@ final readonly class SessionInitializer
         }
 
         // Passive resume: historical mid-turn activity must not imply a live run.
-        // Attach does not continue AgentCore; stale Running/Cancelling/etc. would
-        // route new input as steer and show Working without a runtime process.
-        if ($state->activity->isActive()) {
+        // Attach does not continue AgentCore; stale Running/Cancelling/Compacting
+        // would route new input as steer and show Working without a runtime process.
+        // Compacting is not isActive() but still sets isCompacting and activity.
+        if ($state->activity->isActive() || RunActivityStateEnum::Compacting === $state->activity) {
             $state->activity = RunActivityStateEnum::Idle;
             $state->isCompacting = false;
         }

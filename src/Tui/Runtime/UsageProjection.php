@@ -73,15 +73,6 @@ final class UsageProjection
     public bool $hasCacheTelemetry = false;
 
     /**
-     * Reset all per-turn metrics for a new turn.
-     *
-     * Called by the poller when a TurnStarted event arrives.
-     * Session-level fields (inputTokens, outputTokens, totalCost,
-     * cacheReadTokens, cacheCreationTokens) are NOT reset — they
-     * accumulate across the entire session.
-     */
-
-    /**
      * Reset per-turn metrics during canonical event replay.
      *
      * Wall-clock turn timing is not persisted in events.jsonl, so throughput
@@ -94,6 +85,14 @@ final class UsageProjection
         $this->llmEndTime = 0.0;
     }
 
+    /**
+     * Reset all per-turn metrics for a new turn.
+     *
+     * Called by the poller when a TurnStarted event arrives.
+     * Session-level fields (inputTokens, outputTokens, totalCost,
+     * cacheReadTokens, cacheCreationTokens) are NOT reset — they
+     * accumulate across the entire session.
+     */
     public function resetTurn(): void
     {
         $this->turnOutputTokens = 0;
