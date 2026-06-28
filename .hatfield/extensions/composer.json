@@ -5,12 +5,17 @@
     "license": "MIT",
     "require": {
         "php": ">=8.3",
-        "ineersa/hatfield-ext-task-workflow": "@dev"
+        "ineersa/hatfield-ext-task-workflow": "@dev",
+        "ineersa/hatfield-ext-castor-llm-mode": "@dev"
     },
     "repositories": [
         {
             "type": "path",
             "url": "task-workflow"
+        },
+        {
+            "type": "path",
+            "url": "castor-llm-mode"
         }
     ],
     "config": {

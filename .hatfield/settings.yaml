@@ -459,8 +459,11 @@ extensions:
     enabled:
         - Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension
         - Ineersa\HatfieldExt\TaskWorkflow\TaskWorkflowExtension
+        - Ineersa\HatfieldExt\CastorLlmMode\CastorLlmModeExtension
     settings:
         task_workflow:
             task_root: /home/ineersa/projects/agent-core-tasks
             castor_check_timeout_seconds: 480
+        castor_llm_mode:
+            enabled: true
 

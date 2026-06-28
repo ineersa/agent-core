@@ -155,7 +155,9 @@ function check_tmux(): void
 }
 
 /**
- * Shell command run inside tmux for `php bin/console agent` (cd project root, optional env prefix).
+ * Shell command run inside tmux for the agent launcher (cd project root, optional env prefix).
+ *
+ * Callers pass the second argument explicitly (typically agent_phar_invocation() from run.php).
  */
 function build_agent_console_inner_command(string $envPrefix, string $agentInvocation = 'php bin/console agent'): string
 {
@@ -173,7 +175,7 @@ function build_agent_console_inner_command(string $envPrefix, string $agentInvoc
 }
 
 /**
- * Run the agent TUI in the current terminal (bash -lc + exec php bin/console agent).
+ * Run the agent TUI in the current terminal (bash -lc + exec inner launcher command).
  *
  * Used by run:agent and run:agent-capture so the agent process inherits the caller TTY
  * and stays inside Bubblewrap when Castor re-execed under pi-bwrap.
