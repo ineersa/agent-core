@@ -63,7 +63,7 @@ final class AskHumanTool implements HatfieldToolProviderInterface, ToolHandlerIn
     {
         return new ToolDefinitionDTO(
             name: 'ask_human',
-            description: 'Ask the user for input, confirmation, a choice, or approval. The run is paused until the user responds.',
+            description: 'Ask the user for input, confirmation, a choice, or approval when you need their response before continuing.',
             parametersJsonSchema: [
                 'type' => 'object',
                 'properties' => [
@@ -116,13 +116,13 @@ final class AskHumanTool implements HatfieldToolProviderInterface, ToolHandlerIn
                 'additionalProperties' => false,
             ],
             handler: $this,
-            promptLine: 'ask_human question [kind] [choices] — ask the user for input or confirmation; the run pauses until the user responds',
+            promptLine: 'ask_human question [kind] [choices] — ask the user for input, confirmation, a choice, or approval',
             promptGuidelines: [
                 'Use ask_human when you need the user to provide information, confirm an action, or make a choice before proceeding.',
                 'Provide a clear question in the "question" field. Set "kind" to "confirm"/"approval" for yes-no, "choice" with "choices" for a selection, or "text" for free-form input.',
                 'For choices, provide "choices" as an array of simple strings. The system derives the answer schema from kind and choices.',
                 'Optionally provide a "default" value, "header" for UI display, and set "secret" to true for sensitive inputs.',
-                'The tool returns immediately and does not block — your run is paused until the user answers, then continues automatically.',
+                'Use ask_human only when you need the user\'s answer before you can continue.',
             ],
             executionMode: ToolExecutionMode::Interrupt,
         );
