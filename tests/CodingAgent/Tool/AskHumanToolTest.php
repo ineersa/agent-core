@@ -161,6 +161,19 @@ final class AskHumanToolTest extends TestCase
         $this->assertSame('Please approve this action.', $result['prompt']);
     }
 
+    public function testInvokeAcceptsPromptAsAlias(): void
+    {
+        $result = ($this->tool)([
+            'prompt' => 'Only prompt, no question.',
+        ]);
+
+        $this->assertIsArray($result);
+        $this->assertSame('interrupt', $result['kind']);
+        $this->assertSame('Only prompt, no question.', $result['prompt']);
+        $this->assertArrayHasKey('question_id', $result);
+        $this->assertStringStartsWith('ah_', $result['question_id']);
+    }
+
     public function testRejectsMissingQuestion(): void
     {
         $this->expectException(\Ineersa\AgentCore\Contract\Tool\ToolCallException::class);
@@ -411,5 +424,27 @@ final class AskHumanToolTest extends TestCase
         $this->expectExceptionMessage('question');
 
         ($this->tool)(['question' => '']);
+    }
+
+    public function testRejectsInvalidKind(): void
+    {
+        $this->expectException(\Ineersa\AgentCore\Contract\Tool\ToolCallException::class);
+        $this->expectExceptionMessage('Unsupported kind');
+
+        ($this->tool)([
+            'question' => 'Test?',
+            'kind' => 'invalid_kind',
+        ]);
+    }
+
+    public function testRejectsInvalidUiKind(): void
+    {
+        $this->expectException(\Ineersa\AgentCore\Contract\Tool\ToolCallException::class);
+        $this->expectExceptionMessage('Unsupported');
+
+        ($this->tool)([
+            'question' => 'Test?',
+            'ui_kind' => 'bogus',
+        ]);
     }
 }

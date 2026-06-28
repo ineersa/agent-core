@@ -116,11 +116,8 @@ final class AskHumanPayloadFactory
             return $dto->prompt;
         }
 
-        if ('' !== $dto->question) {
-            return $dto->question;
-        }
-
-        return 'Please provide input.';
+        // Validation guarantees question is non-empty when prompt is absent.
+        return $dto->question;
     }
 
     /**
