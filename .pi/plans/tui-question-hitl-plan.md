@@ -647,6 +647,7 @@ Scope:
 - Support prompt, header, kind, schema, choices, default, allow_other, secret, and optional question_id.
 - Normalize bare string choices to label/description objects.
 - Generate stable fallback `question_id` when absent.
+- Include defensive `ask_human` interrupt fallback in ToolExecutor alongside existing `ask_user`.
 
 Acceptance:
 
@@ -659,7 +660,7 @@ Acceptance:
 Slim scope (v1 decision 2026-06-28):
 
 - Ensure `ToolCallExtractor::interruptPayloadFromToolResult()` preserves header, ui_kind/kind, choices, default, allow_other, and secret where available.
-- ToolExecutor interrupt-compatibility is folded into QH-04 (the tool itself returns an interrupt payload; existing `ask_user` fallback also covers `ask_human`).
+- ToolExecutor interrupt-compatibility is folded into QH-04 (the tool itself returns an interrupt payload; QH-04 adds the defensive `ask_human` fallback in ToolExecutor alongside existing `ask_user`).
 
 Acceptance:
 
