@@ -251,12 +251,11 @@ final class BackgroundProcessManager
     }
 
     /**
-     * Check whether a row exists for the given PID using direct SQL,
-     * bypassing the ORM identity map.
+     * Check whether a row exists for the given PID.
      *
-     * Intended as a diagnostic tool for callers who received null from
-     * find() and need to distinguish "row does not exist" from "ORM/EM
-     * did not see the row".
+     * Uses an ORM COUNT query that always hits the database, bypassing
+     * the identity map. This allows callers to distinguish "row does not
+     * exist" from "row exists but ORM/identity map did not return it."
      */
     public function existsByPid(int $pid): bool
     {

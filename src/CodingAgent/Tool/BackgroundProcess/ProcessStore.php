@@ -145,7 +145,7 @@ final class ProcessStore
         $entity = $this->repository->findOneBy(['pid' => $pid]);
 
         if (null === $entity) {
-            $this->logDiagnosticIfRowExistsByPid($pid);
+            $this->logFetchByPidNull($pid);
         }
 
         /* @var ?BackgroundProcess */
@@ -164,7 +164,7 @@ final class ProcessStore
         $entity = $this->repository->find($id);
 
         if (null === $entity) {
-            $this->logDiagnosticIfRowExistsById($id);
+            $this->logFetchByRecordIdNull($id);
         }
 
         /* @var ?BackgroundProcess */
@@ -314,7 +314,7 @@ final class ProcessStore
      * "row absent" from "ORM inconsistency" should call existsByPid()
      * separately.
      */
-    private function logDiagnosticIfRowExistsByPid(int $pid): void
+    private function logFetchByPidNull(int $pid): void
     {
         $emOpen = $this->entityManager->isOpen();
 
@@ -329,7 +329,7 @@ final class ProcessStore
     /**
      * Log a notice when fetchByRecordId returns null.
      */
-    private function logDiagnosticIfRowExistsById(int $id): void
+    private function logFetchByRecordIdNull(int $id): void
     {
         $emOpen = $this->entityManager->isOpen();
 
