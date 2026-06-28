@@ -4,19 +4,26 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
-use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
-use Ineersa\AgentCore\Application\Handler\ToolExecutor;
-use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
-use Ineersa\AgentCore\Tests\Support\Builder\ToolCallBuilder;
+use Ineersa\CodingAgent\Tool\AskHuman\AskHumanArgumentsDTO;
+use Ineersa\CodingAgent\Tool\AskHuman\AskHumanPayloadFactory;
 use Ineersa\CodingAgent\Tool\AskHumanTool;
 use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
 use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor;
+use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
+use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
+use Symfony\Component\Serializer\NameConverter\MetadataAwareNameConverter;
+use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
+use Symfony\Component\Serializer\Serializer;
+use Symfony\Component\Validator\ValidatorBuilder;
 
 /**
  * @covers \Ineersa\CodingAgent\Tool\AskHumanTool
  * @covers \Ineersa\CodingAgent\Tool\ToolDefinitionDTO
+ * @covers \Ineersa\CodingAgent\Tool\AskHuman\AskHumanPayloadFactory
+ * @covers \Ineersa\CodingAgent\Tool\AskHuman\AskHumanArgumentsDTO
  */
 final class AskHumanToolTest extends TestCase
 {
@@ -24,7 +31,18 @@ final class AskHumanToolTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->tool = new AskHumanTool();
+        $classMetadataFactory = new ClassMetadataFactory(new AttributeLoader());
+        $serializer = new Serializer([
+            new ObjectNormalizer(
+                classMetadataFactory: $classMetadataFactory,
+                nameConverter: new MetadataAwareNameConverter($classMetadataFactory),
+                propertyTypeExtractor: new ReflectionExtractor(),
+            ),
+        ]);
+        $validator = (new ValidatorBuilder())->enableAttributeMapping()->getValidator();
+
+        $factory = new AskHumanPayloadFactory($serializer, $validator);
+        $this->tool = new AskHumanTool($factory);
     }
 
     /* ── definition() tests ── */
@@ -40,7 +58,7 @@ final class AskHumanToolTest extends TestCase
     {
         $definition = $this->tool->definition();
 
-        $this->assertSame(ToolExecutionMode::Interrupt, $definition->executionMode);
+        $this->assertSame(\Ineersa\AgentCore\Domain\Tool\ToolExecutionMode::Interrupt, $definition->executionMode);
     }
 
     public function testDefinitionHasRequiredQuestionProperty(): void
@@ -143,11 +161,12 @@ final class AskHumanToolTest extends TestCase
         $this->assertSame('Please approve this action.', $result['prompt']);
     }
 
-    public function testInvokeUsesFallbackPromptWhenMissing(): void
+    public function testRejectsMissingQuestion(): void
     {
-        $result = ($this->tool)([]);
+        $this->expectException(\Ineersa\AgentCore\Contract\Tool\ToolCallException::class);
+        $this->expectExceptionMessage('question');
 
-        $this->assertSame('Please provide input.', $result['prompt']);
+        ($this->tool)([]);
     }
 
     public function testInvokeGeneratesStableQuestionId(): void
@@ -384,81 +403,13 @@ final class AskHumanToolTest extends TestCase
         $this->assertSame('The first option', $result['choices'][0]['description']);
     }
 
-    /* ── Parity: ToolExecutor vs AskHumanTool ── */
+    /* ── Validation ── */
 
-    public function testParityAskHumanToolAndToolExecutorProduceIdenticalPayloads(): void
+    public function testRejectsEmptyQuestion(): void
     {
-        $executor = new ToolExecutor('sequential', 30, 2, new ToolExecutionResultStore());
+        $this->expectException(\Ineersa\AgentCore\Contract\Tool\ToolCallException::class);
+        $this->expectExceptionMessage('question');
 
-        // Representative arguments exercising all derivation paths
-        $args = [
-            'question' => 'Select one:',
-            'schema' => ['type' => 'string', 'enum' => ['simple', 'robust', 'fast']],
-            'kind' => 'choice',
-            'choices' => [
-                ['label' => 'simple', 'description' => 'Minimal change'],
-                'robust',
-                ['label' => 'fast', 'value' => 'quick'],
-            ],
-            'header' => 'Implementation Strategy',
-            'default' => 'simple',
-            'allow_other' => true,
-            'secret' => false,
-        ];
-
-        // Expected payload from AskHumanTool::buildInterruptPayload
-        $expected = AskHumanTool::buildInterruptPayload($args);
-
-        // Actual payload from ToolExecutor defensive fallback path
-        $result = $executor->execute(ToolCallBuilder::create('parity-test')
-            ->withToolName('ask_human')
-            ->withArguments($args)
-            ->withOrderIndex(0)
-            ->build());
-
-        $actual = $result->details;
-
-        // Verify every field from AskHumanTool is present and identical in ToolExecutor output.
-        // ToolExecutor details also include execution metadata (mode, timeout_seconds,
-        // max_parallelism) added by withExecutionMetadata() — those are not part
-        // of the interrupt payload proper and are not compared here.
-        foreach ($expected as $key => $value) {
-            $this->assertArrayHasKey($key, $actual, \sprintf('Payload missing key "%s" in ToolExecutor output', $key));
-            $this->assertSame($value, $actual[$key], \sprintf('Payload mismatch for key "%s"', $key));
-        }
-
-        // Verify JSON content is consistent with details
-        $decoded = json_decode($result->content[0]['text'], true);
-        $this->assertIsArray($decoded);
-        $this->assertSame($expected['kind'], $decoded['kind']);
-        $this->assertSame($expected['question_id'], $decoded['question_id']);
-        $this->assertSame($expected['prompt'], $decoded['prompt']);
-        $this->assertSame($expected['schema'], $decoded['schema']);
-        $this->assertSame($expected['ui_kind'], $decoded['ui_kind']);
-        $this->assertSame($expected['choices'], $decoded['choices']);
-    }
-
-    public function testParityWithMinimalArgsAlsoMatches(): void
-    {
-        $executor = new ToolExecutor('sequential', 30, 2, new ToolExecutionResultStore());
-
-        // Bare minimum: only question
-        $args = ['question' => 'Hello?'];
-
-        $expected = AskHumanTool::buildInterruptPayload($args);
-
-        $result = $executor->execute(ToolCallBuilder::create('parity-min')
-            ->withToolName('ask_human')
-            ->withArguments($args)
-            ->withOrderIndex(0)
-            ->build());
-
-        $actual = $result->details;
-
-        // Compare all expected fields (actual has extra execution metadata keys)
-        foreach ($expected as $key => $value) {
-            $this->assertArrayHasKey($key, $actual, \sprintf('Minimal payload missing key "%s"', $key));
-            $this->assertSame($value, $actual[$key], \sprintf('Minimal payload mismatch for key "%s"', $key));
-        }
+        ($this->tool)(['question' => '']);
     }
 }
