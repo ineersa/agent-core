@@ -19,8 +19,8 @@
         "reserveTokens": 16384
     },
     "pi-fork": {
-        "defaultModel": "grok-cli/grok-composer-2.5-fast",
-        "defaultThinking": "high"
+        "defaultModel": "deepseek/deepseek-v4-flash",
+        "defaultThinking": "xhigh"
     },
     "taskWorkflow": {
         "taskRoot": "/home/ineersa/projects/agent-core-tasks"
