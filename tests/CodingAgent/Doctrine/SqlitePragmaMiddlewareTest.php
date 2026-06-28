@@ -77,10 +77,11 @@ final class SqlitePragmaMiddlewareTest extends IsolatedKernelTestCase
         // A file-based path is required because WAL mode is not supported
         // on :memory: databases (WAL needs .sqlite-wal and .sqlite-shm).
         //
-        // synchronous=NORMAL is deliberately NOT tested here — it is already
-        // the default in WAL mode on modern SQLite, and SQLite rejects
-        // changing it inside a transaction (DAMA isolation).  It was
-        // removed from the middleware PRAGMA list to avoid confusion.
+        // synchronous=NORMAL is deliberately NOT tested here — it is not
+        // required for the #228 fix (WAL + busy_timeout are sufficient),
+        // and SQLite rejects changing it inside a transaction (DAMA
+        // isolation).  It was removed from the middleware PRAGMA list
+        // to keep the fix focused and testable.
         $tmpDir = TestDirectoryIsolation::createOsTempDir('mw-test');
 
         try {

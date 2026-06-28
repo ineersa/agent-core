@@ -45,11 +45,15 @@ use Psr\Log\NullLogger;
  * DI / SERVICE WIRING
  * ───────────────────
  * Autoconfigured as a Doctrine middleware (tag: doctrine.middleware) via
- * MiddlewareInterface detection.  The logger defaults to NullLogger to
- * avoid container compilation cycles (LoggerInterface injection into a
- * DBAL middleware can create an EntityManager → Connection → Middleware
- * → Logger → … → EntityManager cycle).  Call setLogger() from service
- * config when a real logger is available without cycles.
+ * MiddlewareInterface detection.  Logger injection uses a static setter
+ * called by {@see SqlitePragmaMiddlewareConfigurator} on ConsoleEvents::COMMAND
+ * to avoid container compilation cycles: injecting LoggerInterface as a
+ * constructor or setter dependency into a Doctrine middleware causes
+ * EntityManager → Middleware → Logger → Monolog → … → EntityManager
+ * circularity.  The subscriber fires AFTER compilation, breaking the cycle.
+ *
+ * The static fallback means middleware instances created outside the
+ * container (e.g., in direct unit tests) use NullLogger by default.
  */
 final class SqlitePragmaMiddleware implements Middleware
 {
@@ -60,11 +64,12 @@ final class SqlitePragmaMiddleware implements Middleware
      * throws a RuntimeException so the agent does not start without the
      * concurrency protection.
      *
-     * synchronous=NORMAL is deliberately omitted — it is already the
-     * default in WAL mode on modern SQLite, and SQLite rejects changing
-     * it inside a transaction (which occurs under DAMA/DoctrineTestBundle
-     * test isolation), making it unverifiable in the test suite and adding
-     * confusion without benefit.
+     * synchronous=NORMAL is deliberately omitted — it is not required
+     * for the #228 fix (WAL + busy_timeout are sufficient), and SQLite
+     * rejects changing it inside a transaction (which occurs under
+     * DAMA/DoctrineTestBundle test isolation), making it unverifiable
+     * in the test suite.  It was removed to keep the fix focused and
+     * testable.
      *
      * @var list<string>
      */
@@ -72,6 +77,9 @@ final class SqlitePragmaMiddleware implements Middleware
         'PRAGMA journal_mode=WAL',
         'PRAGMA busy_timeout=5000',
     ];
+
+    /** @var LoggerInterface|null Global logger set after kernel boot */
+    private static ?LoggerInterface $globalLogger = null;
 
     private LoggerInterface $logger;
 
@@ -81,15 +89,22 @@ final class SqlitePragmaMiddleware implements Middleware
     }
 
     /**
-     * Optionally replace the default NullLogger with a real PSR-3 logger.
+     * Set the global logger used by all middleware instances.
      *
-     * Call this from services.yaml when the DI container can resolve a
-     * logger without introducing EntityManager → Connection → Middleware
-     * → Logger → … → EntityManager compilation cycles:
+     * Called by {@see SqlitePragmaMiddlewareConfigurator} after container
+     * compilation is complete, avoiding EntityManager→Middleware→Logger
+     * circularity during DI resolution.
+     */
+    public static function setGlobalLogger(?LoggerInterface $logger): void
+    {
+        self::$globalLogger = $logger;
+    }
+
+    /**
+     * Replace the default NullLogger on this specific instance.
      *
-     *   Ineersa\CodingAgent\Doctrine\SqlitePragmaMiddleware:
-     *       calls:
-     *           - [setLogger, ['@logger']]
+     * Intended for direct unit-test use.  Container-controlled instances
+     * rely on the static global logger set by the configurator subscriber.
      */
     public function setLogger(LoggerInterface $logger): void
     {
@@ -98,7 +113,15 @@ final class SqlitePragmaMiddleware implements Middleware
 
     public function wrap(Driver $driver): Driver
     {
-        return new SqlitePragmaMiddlewareDriver($driver, self::PRAGMAS, $this->logger);
+        return new SqlitePragmaMiddlewareDriver($driver, self::PRAGMAS, $this->getEffectiveLogger());
+    }
+
+    /**
+     * Return the effective logger: static global first, instance fallback.
+     */
+    private function getEffectiveLogger(): LoggerInterface
+    {
+        return self::$globalLogger ?? $this->logger;
     }
 }
 

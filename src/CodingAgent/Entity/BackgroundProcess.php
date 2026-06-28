@@ -38,9 +38,6 @@ class BackgroundProcess
     #[ORM\Column(type: 'integer')]
     public int $id = 0;
 
-    #[ORM\Column(type: 'integer')]
-    public int $pid = 0;
-
     /**
      * OS process ID.  Non-unique over historical rows because:
      * - The OS reuses PIDs after a process exits.
@@ -54,6 +51,9 @@ class BackgroundProcess
      * @see ProcessStore::fetchByPid() for PID-based lookup semantics
      * @see BackgroundProcessManager::findByRecordId() for immutable lookup
      */
+    #[ORM\Column(type: 'integer')]
+    public int $pid = 0;
+
     #[ORM\Column(type: 'integer', nullable: true)]
     public ?int $pgid = null;
 
