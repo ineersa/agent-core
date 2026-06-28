@@ -135,21 +135,17 @@ final class ProcessStore
     /**
      * Fetch a single entity by PID.
      *
-     * When the ORM query returns null, logs a notice with EM-open
-     * context for diagnostic use. Callers that need to distinguish
-     * "row absent" from "ORM inconsistency" should call existsByPid()
-     * separately.
+     * Returns null when no matching row is found.  Callers that need to
+     * distinguish "row absent" from ORM/connection inconsistency should
+     * call existsByPid() separately.
+     *
+     * Note: OS PIDs can be reused while old records are retained, so this
+     * is a non-unique lookup.  Prefer fetchByRecordId() with the immutable
+     * auto-increment primary key when the DB id is available.
      */
     public function fetchByPid(int $pid): ?BackgroundProcess
     {
-        $entity = $this->repository->findOneBy(['pid' => $pid]);
-
-        if (null === $entity) {
-            $this->logFetchByPidNull($pid);
-        }
-
-        /* @var ?BackgroundProcess */
-        return $entity;
+        return $this->repository->findOneBy(['pid' => $pid]);
     }
 
     /**
@@ -161,14 +157,7 @@ final class ProcessStore
      */
     public function fetchByRecordId(int $id): ?BackgroundProcess
     {
-        $entity = $this->repository->find($id);
-
-        if (null === $entity) {
-            $this->logFetchByRecordIdNull($id);
-        }
-
-        /* @var ?BackgroundProcess */
-        return $entity;
+        return $this->repository->find($id);
     }
 
     /**
@@ -304,40 +293,5 @@ final class ProcessStore
     public function flush(): void
     {
         $this->entityManager->flush();
-    }
-
-    /**
-     * Log a notice when fetchByPid returns null.
-     *
-     * Logs EM-open context for diagnostic use. Does not perform a
-     * second existence check — callers that need to distinguish
-     * "row absent" from "ORM inconsistency" should call existsByPid()
-     * separately.
-     */
-    private function logFetchByPidNull(int $pid): void
-    {
-        $emOpen = $this->entityManager->isOpen();
-
-        $this->logger->notice('background_process.fetch_by_pid_null', [
-            'component' => 'tool.background_process',
-            'event_type' => 'background_process.fetch_by_pid_null',
-            'process_pid' => $pid,
-            'em_open' => $emOpen,
-        ]);
-    }
-
-    /**
-     * Log a notice when fetchByRecordId returns null.
-     */
-    private function logFetchByRecordIdNull(int $id): void
-    {
-        $emOpen = $this->entityManager->isOpen();
-
-        $this->logger->notice('background_process.fetch_by_record_id_null', [
-            'component' => 'tool.background_process',
-            'event_type' => 'background_process.fetch_by_record_id_null',
-            'record_id' => $id,
-            'em_open' => $emOpen,
-        ]);
     }
 }

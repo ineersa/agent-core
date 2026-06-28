@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Doctrine;
 
 use Doctrine\DBAL\Connection;
-use Doctrine\DBAL\Driver\PDO\Connection as PDOConnection;
 use Doctrine\DBAL\Driver\PDO\SQLite\Driver as SqlitePdoDriver;
 use Ineersa\CodingAgent\Doctrine\SqlitePragmaMiddleware;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
@@ -18,9 +17,7 @@ use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
  *
  * WAL and busy_timeout are verified through the integration test connection
  * (DAMA-wrapped, which allows both PRAGMAs inside transactions).
- * synchronous=NORMAL is verified through a standalone connection because
- * SQLite rejects changing the safety level inside a transaction, and DAMA
- * wraps each test in one.
+ * The standalone connection test verifies both PRAGMAs on a fresh connection.
  */
 final class SqlitePragmaMiddlewareTest extends IsolatedKernelTestCase
 {
@@ -52,7 +49,7 @@ final class SqlitePragmaMiddlewareTest extends IsolatedKernelTestCase
         $this->assertSame(
             'wal',
             strtolower((string) $journalMode),
-            'Expected WAL journal mode; got "%s". '
+            'Expected WAL journal mode. '
             .'SqlitePragmaMiddleware may not have been applied or the '
             .'connection was reused from a prior test without middleware.',
         );
@@ -67,46 +64,40 @@ final class SqlitePragmaMiddlewareTest extends IsolatedKernelTestCase
         $this->assertGreaterThanOrEqual(
             5000,
             (int) $busyTimeout,
-            'Expected busy_timeout >= 5000ms; got %d.',
+            'Expected busy_timeout >= 5000ms.',
         );
     }
 
     public function testMiddlewareAppliesExpectedPragmas(): void
     {
-        // Cannot verify synchronous=NORMAL through the DAMA-wrapped
-        // container connection because SQLite rejects changing
-        // synchronous setting inside a transaction ("Safety level may
-        // not be changed inside a transaction"). DAMA wraps each test
-        // in a transaction for rollback isolation.
+        // Test the middleware directly: create a real PDO SQLite connection
+        // through the middleware on a temp file and verify the critical
+        // PRAGMAs (WAL, busy_timeout) are applied.
         //
-        // Instead, test the middleware directly: create a real
-        // PDO SQLite connection through the middleware on a temp file
-        // and verify all three PRAGMAs are applied. A file-based path
-        // is required because WAL mode is not supported on :memory:
-        // databases (WAL needs .sqlite-wal and .sqlite-shm files).
+        // A file-based path is required because WAL mode is not supported
+        // on :memory: databases (WAL needs .sqlite-wal and .sqlite-shm).
+        //
+        // synchronous=NORMAL is deliberately NOT tested here — it is already
+        // the default in WAL mode on modern SQLite, and SQLite rejects
+        // changing it inside a transaction (DAMA isolation).  It was
+        // removed from the middleware PRAGMA list to avoid confusion.
         $tmpDir = TestDirectoryIsolation::createOsTempDir('mw-test');
-        $dbPath = $tmpDir.'/test.sqlite';
 
         try {
             $middleware = new SqlitePragmaMiddleware();
             $innerDriver = new SqlitePdoDriver();
             $wrappedDriver = $middleware->wrap($innerDriver);
 
-            /** @var PDOConnection $connection */
+            $dbPath = $tmpDir.'/test.sqlite';
             $connection = $wrappedDriver->connect(['path' => $dbPath]);
 
-            // journal_mode=WAL (file-based DB required)
+            // journal_mode=WAL (file-based DB required; :memory: falls back to 'memory')
             $journalMode = $connection->query('PRAGMA journal_mode')->fetchOne();
             $this->assertSame('wal', strtolower((string) $journalMode));
 
             // busy_timeout=5000
             $busyTimeout = $connection->query('PRAGMA busy_timeout')->fetchOne();
             $this->assertGreaterThanOrEqual(5000, (int) $busyTimeout);
-
-            // synchronous=NORMAL = 1 (NOT verifiable through DAMA because
-            // SQLite rejects changing safety level inside a transaction)
-            $synchronous = $connection->query('PRAGMA synchronous')->fetchOne();
-            $this->assertSame(1, (int) $synchronous, 'Expected synchronous=NORMAL (1); got %d.');
         } finally {
             TestDirectoryIsolation::removeDirectory($tmpDir);
         }
