@@ -27,10 +27,9 @@ final class Version20260628140000 extends AbstractMigration
 
     public function up(Schema $schema): void
     {
-        // Plain CREATE INDEX works here because Doctrine Migrations
-        // guarantees each migration runs exactly once. SQLite does not
-        // support IF NOT EXISTS for indexes, but the one-time application
-        // guarantee makes it unnecessary.
+        // Plain CREATE INDEX statements are consistent with the rest of the
+        // Doctrine migrations in this project. Doctrine Migrations applies
+        // each version once, so IF NOT EXISTS is unnecessary here.
         $this->addSql('CREATE INDEX idx_bg_process_pid ON background_process (pid)');
         $this->addSql('CREATE INDEX idx_bg_process_session_id ON background_process (session_id)');
         $this->addSql('CREATE INDEX idx_bg_process_finished_at ON background_process (finished_at)');
