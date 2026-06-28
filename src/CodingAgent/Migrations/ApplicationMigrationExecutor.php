@@ -154,8 +154,11 @@ final class ApplicationMigrationExecutor
             }
         }
 
-        // Verify busy_timeout >= 5000ms (configured via PDO::ATTR_TIMEOUT=5
-        // in doctrine.yaml).  This proves the configured timeout reached SQLite.
+        // Verify busy_timeout >= 5000ms (a safe minimum lock-wait for
+        // multi-process write contention).  The project default of exactly
+        // 5000ms is proven by SqliteConnectionConfigTest.  This guard allows
+        // environments to choose longer timeouts while ensuring the minimum
+        // is never below 5s — a value that has proven too low under load.
         $busyTimeout = (int) $this->connection->executeQuery('PRAGMA busy_timeout')->fetchOne();
 
         if ($busyTimeout < 5000) {

@@ -14,9 +14,12 @@ use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
  * WHAT THIS PROVES
  * ────────────────
  * - PDO::ATTR_TIMEOUT=5 (configured in config/packages/doctrine.yaml under
- *   options.2) actually reaches SQLite as PRAGMA busy_timeout >= 5000ms.
+ *   options.2) actually reaches SQLite as PRAGMA busy_timeout = 5000ms.
+ *   Uses assertSame(5000) so this fails if doctrine.yaml options.2 is
+ *   removed and PDO falls back to its 60000ms default.
  * - The startup migration executor (ApplicationMigrationExecutor) applies
- *   WAL journal_mode and verifies busy_timeout before any migration runs.
+ *   WAL journal_mode and verifies a safe minimum busy_timeout before any
+ *   migration runs.
  *
  * WITHOUT THESE SETTINGS
  * ──────────────────────
@@ -43,15 +46,16 @@ final class SqliteConnectionConfigTest extends IsolatedKernelTestCase
     {
         // PRAGMA busy_timeout returns the current busy handler timeout in
         // milliseconds.  PDO::ATTR_TIMEOUT=5 (doctrine.yaml options.2) maps
-        // to 5000ms.  The default SQLite busy_timeout is 0, but PHP PDO
-        // sets it to 60000ms.  This assertion proves the config is applied.
+        // to exactly 5000ms.  If doctrine.yaml options.2 is removed, PDO
+        // falls back to 60000ms, so assertSame(5000) catches removal.
         $busyTimeout = (int) $this->connection->executeQuery('PRAGMA busy_timeout')->fetchOne();
 
-        $this->assertGreaterThanOrEqual(
+        $this->assertSame(
             5000,
             $busyTimeout,
-            'Doctrine SQLite connection must have busy_timeout >= 5000ms. '
-            .'Check config/packages/doctrine.yaml: options.2 (PDO::ATTR_TIMEOUT) must be set to 5.',
+            'Doctrine SQLite connection must have busy_timeout = 5000ms. '
+            .'Check config/packages/doctrine.yaml: options.2 (PDO::ATTR_TIMEOUT) must be set to 5. '
+            .'PHP PDO default is 60000, so any value other than 5000 means options.2 is missing.',
         );
     }
 

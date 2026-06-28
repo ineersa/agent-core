@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Migrations;
 
+use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Ineersa\CodingAgent\Migrations\ApplicationMigrationExecutor;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
@@ -37,8 +38,7 @@ final class ApplicationMigrationExecutorTest extends TestCase
 
     public function testEmptySqliteDatabaseGetsMessengerMessagesAfterStartupExecutor(): void
     {
-        $dbPath = $this->isolatedDir.'/empty.sqlite';
-        $connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'path' => $dbPath]);
+        $connection = $this->createSqliteConnection($this->isolatedDir.'/empty.sqlite');
         $executor = new ApplicationMigrationExecutor($connection, new NullLogger());
 
         $executor();
@@ -94,6 +94,9 @@ final class ApplicationMigrationExecutorTest extends TestCase
             'SQLite journal_mode must be WAL after executor startup (#228)',
         );
 
+        // busy_timeout came from driverOptions (PDO::ATTR_TIMEOUT=5), so
+        // it should be exactly 5000.  We assert >=5000 as the runtime
+        // guard's minimum; the strict config proof is in SqliteConnectionConfigTest.
         $busyTimeout = (int) $connection->executeQuery('PRAGMA busy_timeout')->fetchOne();
         $this->assertGreaterThanOrEqual(
             5000,
@@ -104,8 +107,7 @@ final class ApplicationMigrationExecutorTest extends TestCase
 
     public function testStartupExecutorIsIdempotentPerProcess(): void
     {
-        $dbPath = $this->isolatedDir.'/idempotent.sqlite';
-        $connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'path' => $dbPath]);
+        $connection = $this->createSqliteConnection($this->isolatedDir.'/idempotent.sqlite');
         $executor = new ApplicationMigrationExecutor($connection, new NullLogger());
 
         $executor();
@@ -123,5 +125,39 @@ final class ApplicationMigrationExecutorTest extends TestCase
             ['Version20260628140000'],
         );
         $this->assertSame(1, $countNew);
+    }
+
+    public function testBusyTimeoutBelowMinimumThrowsRuntimeException(): void
+    {
+        // PDO::ATTR_TIMEOUT=1 maps to busy_timeout=1000ms, which is below
+        // the 5000ms minimum the executor requires.  This ensures the
+        // runtime check is not dead code.
+        $connection = $this->createSqliteConnection($this->isolatedDir.'/busy_low.sqlite', timeout: 1);
+        $executor = new ApplicationMigrationExecutor($connection, new NullLogger());
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('busy_timeout');
+        $this->expectExceptionMessage('5000');
+
+        $executor();
+    }
+
+    /**
+     * Create a SQLite connection for testing.
+     *
+     * Uses explicit driverOptions to set PDO::ATTR_TIMEOUT, avoiding
+     * silent reliance on PHP PDO's 60000ms default.  This makes the
+     * timeout assertion meaningful.
+     *
+     * @param int $timeout PDO::ATTR_TIMEOUT value in seconds (default 5).
+     *                     Busy timeout in ms = $timeout * 1000.
+     */
+    private function createSqliteConnection(string $dbPath, int $timeout = 5): Connection
+    {
+        return DriverManager::getConnection([
+            'driver' => 'pdo_sqlite',
+            'path' => $dbPath,
+            'driverOptions' => [\PDO::ATTR_TIMEOUT => $timeout],
+        ]);
     }
 }
