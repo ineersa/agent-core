@@ -25,6 +25,9 @@ use Doctrine\ORM\Mapping as ORM;
  */
 #[ORM\Entity(repositoryClass: BackgroundProcessRepository::class)]
 #[ORM\Table(name: 'background_process')]
+#[ORM\Index(name: 'idx_bg_process_pid', columns: ['pid'])]
+#[ORM\Index(name: 'idx_bg_process_session_id', columns: ['session_id'])]
+#[ORM\Index(name: 'idx_bg_process_finished_at', columns: ['finished_at'])]
 #[ORM\HasLifecycleCallbacks]
 class BackgroundProcess
 {

@@ -169,9 +169,9 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
                 $record = $this->manager->findByRecordId($dbId, $sessionId);
 
                 if (null === $record) {
-                    // One-shot diagnostic: check independent DBAL existence for
-                    // both the record id and the pid to distinguish genuine
-                    // absence from ORM/connection inconsistency.
+                    // One-shot diagnostic: check ORM existence for both the
+                    // record id and the pid to distinguish genuine absence
+                    // from ORM/connection inconsistency.
                     $rowExistsById = $this->manager->existsByRecordId($dbId);
                     $rowExistsByPid = $this->manager->existsByPid($pid);
 

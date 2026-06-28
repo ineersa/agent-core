@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool\BackgroundProcess;
 
-use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessRepository;
@@ -136,11 +135,10 @@ final class ProcessStore
     /**
      * Fetch a single entity by PID.
      *
-     * When the ORM query returns null, performs a one-shot direct SQL
-     * existence check and logs diagnostics if the row exists but is not
-     * visible through the ORM (identity map stale, closed EM, or SQLite
-     * contention). This provides diagnostic evidence for #228 without
-     * retry loops or masking genuine absence.
+     * When the ORM query returns null, logs a notice with EM-open
+     * context for diagnostic use. Callers that need to distinguish
+     * "row absent" from "ORM inconsistency" should call existsByPid()
+     * separately.
      */
     public function fetchByPid(int $pid): ?BackgroundProcess
     {
@@ -174,20 +172,17 @@ final class ProcessStore
     }
 
     /**
-     * Check whether a row exists for the given PID using direct SQL,
-     * bypassing the ORM identity map entirely.
+     * Check whether a row exists for the given PID.
      *
-     * Useful as a diagnostic tool: if fetchByPid() returns null but
-     * existsByPid() returns true, the ORM is not seeing a row that the
-     * database holds — indicating an EM/identity-map issue.
+     * Delegates to BackgroundProcessRepository::existsByPid() which uses an
+     * ORM COUNT query that always hits the database, bypassing the identity
+     * map.  This allows distinguishing "row does not exist" from "row exists
+     * but ORM/identity map did not return it."
      */
     public function existsByPid(int $pid): bool
     {
         try {
-            return (bool) $this->dbal()->fetchOne(
-                'SELECT COUNT(*) FROM background_process WHERE pid = ?',
-                [$pid],
-            );
+            return $this->repository->existsByPid($pid);
         } catch (\Throwable $e) {
             $this->logger->warning('background_process.exists_by_pid_failed', [
                 'component' => 'tool.background_process',
@@ -201,15 +196,15 @@ final class ProcessStore
     }
 
     /**
-     * Check whether a row exists for the given record ID using direct SQL.
+     * Check whether a row exists for the given record ID.
+     *
+     * Delegates to BackgroundProcessRepository::existsByRecordId() which
+     * uses an ORM COUNT query that always hits the database.
      */
     public function existsByRecordId(int $id): bool
     {
         try {
-            return (bool) $this->dbal()->fetchOne(
-                'SELECT COUNT(*) FROM background_process WHERE id = ?',
-                [$id],
-            );
+            return $this->repository->existsByRecordId($id);
         } catch (\Throwable $e) {
             $this->logger->warning('background_process.exists_by_record_id_failed', [
                 'component' => 'tool.background_process',
@@ -312,86 +307,37 @@ final class ProcessStore
     }
 
     /**
-     * The DBAL connection is accessed on demand from the EntityManager
-     * rather than injected directly, so ProcessStore is usable in all
-     * contexts (including tests) without wiring a separate connection.
-     */
-    private function dbal(): Connection
-    {
-        return $this->entityManager->getConnection();
-    }
-
-    /**
-     * Log structured diagnostics when fetchByPid ORM lookup returns null
-     * but the row exists at the SQL level.
+     * Log a notice when fetchByPid returns null.
+     *
+     * Logs EM-open context for diagnostic use. Does not perform a
+     * second existence check — callers that need to distinguish
+     * "row absent" from "ORM inconsistency" should call existsByPid()
+     * separately.
      */
     private function logDiagnosticIfRowExistsByPid(int $pid): void
     {
-        // Check if the EntityManager is still usable before the DBAL query
         $emOpen = $this->entityManager->isOpen();
 
-        try {
-            $rowExists = (bool) $this->dbal()->fetchOne(
-                'SELECT COUNT(*) FROM background_process WHERE pid = ?',
-                [$pid],
-            );
-        } catch (\Throwable $e) {
-            $this->logger->warning('background_process.fetch_by_pid_diagnostic_error', [
-                'component' => 'tool.background_process',
-                'event_type' => 'background_process.fetch_by_pid_diagnostic_error',
-                'process_pid' => $pid,
-                'em_open' => $emOpen,
-                'error' => $e->getMessage(),
-            ]);
-
-            return;
-        }
-
-        if ($rowExists) {
-            // Row exists in SQL but ORM missed it — this is the #228 signature
-            $this->logger->error('background_process.fetch_by_pid_orm_miss', [
-                'component' => 'tool.background_process',
-                'event_type' => 'background_process.fetch_by_pid_orm_miss',
-                'process_pid' => $pid,
-                'em_open' => $emOpen,
-                'diagnosis' => 'ORM fetchByPid returned null but direct SQL confirms row exists — identity map stale, EM closed, or SQLite contention',
-            ]);
-        }
+        $this->logger->notice('background_process.fetch_by_pid_null', [
+            'component' => 'tool.background_process',
+            'event_type' => 'background_process.fetch_by_pid_null',
+            'process_pid' => $pid,
+            'em_open' => $emOpen,
+        ]);
     }
 
     /**
-     * Log structured diagnostics when fetchByRecordId ORM lookup returns null
-     * but the row exists at the SQL level.
+     * Log a notice when fetchByRecordId returns null.
      */
     private function logDiagnosticIfRowExistsById(int $id): void
     {
         $emOpen = $this->entityManager->isOpen();
 
-        try {
-            $rowExists = (bool) $this->dbal()->fetchOne(
-                'SELECT COUNT(*) FROM background_process WHERE id = ?',
-                [$id],
-            );
-        } catch (\Throwable $e) {
-            $this->logger->warning('background_process.fetch_by_record_id_diagnostic_error', [
-                'component' => 'tool.background_process',
-                'event_type' => 'background_process.fetch_by_record_id_diagnostic_error',
-                'record_id' => $id,
-                'em_open' => $emOpen,
-                'error' => $e->getMessage(),
-            ]);
-
-            return;
-        }
-
-        if ($rowExists) {
-            $this->logger->error('background_process.fetch_by_record_id_orm_miss', [
-                'component' => 'tool.background_process',
-                'event_type' => 'background_process.fetch_by_record_id_orm_miss',
-                'record_id' => $id,
-                'em_open' => $emOpen,
-                'diagnosis' => 'ORM fetchByRecordId returned null but direct SQL confirms row exists — identity map stale, EM closed, or SQLite contention',
-            ]);
-        }
+        $this->logger->notice('background_process.fetch_by_record_id_null', [
+            'component' => 'tool.background_process',
+            'event_type' => 'background_process.fetch_by_record_id_null',
+            'record_id' => $id,
+            'em_open' => $emOpen,
+        ]);
     }
 }
