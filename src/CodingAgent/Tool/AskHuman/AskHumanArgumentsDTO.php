@@ -13,12 +13,15 @@ use Symfony\Component\Validator\Context\ExecutionContextInterface;
  *
  * LLM-provided snake_case argument keys are mapped to camelCase DTO
  * properties via the Serializer's SerializedName attribute.
+ *
+ * Note: The answer schema is NOT accepted as raw input — it is derived
+ * internally from kind and choices. This avoids LLM errors with
+ * embedded JSON Schema syntax.
  */
 final class AskHumanArgumentsDTO
 {
     /**
-     * @param array<string, mixed>|null               $schema  JSON Schema describing the expected answer format
-     * @param array<array<string, mixed>|string>|null $choices Raw choices before normalization
+     * @param list<string>|null $choices Answer choices as simple strings. Structured objects rejected.
      */
     public function __construct(
         public readonly string $question = '',
@@ -28,7 +31,9 @@ final class AskHumanArgumentsDTO
         public readonly ?string $uiKind = null,
         #[Assert\Choice(choices: ['text', 'confirm', 'choice', 'approval'], message: 'Unsupported kind "{{ value }}". Allowed: text, confirm, choice, approval.')]
         public readonly ?string $kind = null,
-        public readonly ?array $schema = null,
+        /**
+         * @var list<string>|null Answer choices as simple strings. Structured objects rejected.
+         */
         public readonly ?array $choices = null,
         public readonly mixed $default = null,
         #[SerializedName('question_id')]
@@ -49,6 +54,38 @@ final class AskHumanArgumentsDTO
         if (!$hasQuestion && !$hasPrompt) {
             $context->buildViolation('Either "question" or "prompt" must be provided and non-empty.')
                 ->addViolation();
+        }
+    }
+
+    #[Assert\Callback]
+    public function validateChoices(ExecutionContextInterface $context): void
+    {
+        $kind = $this->kind ?? $this->uiKind ?? null;
+
+        if (null === $this->choices) {
+            if ('choice' === $kind) {
+                $context->buildViolation('The "choices" parameter is required when kind is "choice".')
+                    ->addViolation();
+            }
+
+            return;
+        }
+
+        if ([] === $this->choices) {
+            if ('choice' === $kind) {
+                $context->buildViolation('At least one choice is required when kind is "choice".')
+                    ->addViolation();
+            }
+
+            return;
+        }
+
+        foreach ($this->choices as $i => $choice) {
+            if (!\is_string($choice) || '' === $choice) {
+                $context->buildViolation('Each choice must be a non-empty string.')
+                    ->atPath('choices['.$i.']')
+                    ->addViolation();
+            }
         }
     }
 }

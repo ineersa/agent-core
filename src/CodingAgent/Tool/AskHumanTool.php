@@ -24,7 +24,7 @@ use Ineersa\CodingAgent\Tool\AskHuman\AskHumanPayloadFactory;
  * - Returns `kind=interrupt` payload immediately; no oneshot/blocking path.
  * - Uses Symfony Serializer/Validator (via AskHumanPayloadFactory) for
  *   type-safe argument denormalization, validation, and payload building.
- * - Generates stable fallback `question_id` from prompt/schema/metadata hash.
+ * - Generates stable fallback `question_id` from prompt/kind/choices/metadata hash.
  * - Normalizes bare string choices to structured `{label, description}` objects.
  * - Preserves UI metadata: header, ui_kind/kind, choices, default, allow_other, secret.
  * - AgentCore does NOT have a defensive fallback for ask_human — it executes
@@ -78,12 +78,7 @@ final class AskHumanTool implements HatfieldToolProviderInterface, ToolHandlerIn
                     'ui_kind' => [
                         'type' => 'string',
                         'enum' => ['text', 'confirm', 'choice', 'approval'],
-                        'description' => 'Alias for kind. Overrides derivation from schema/choices if present.',
-                    ],
-                    'schema' => [
-                        'type' => 'object',
-                        'description' => 'JSON Schema describing the expected answer format. For yes/no use {"type": "boolean"}. For a dropdown from choices use {"type": "string", "enum": ["option1", "option2"]}. Defaults to {"type": "string"}.',
-                        'additionalProperties' => true,
+                        'description' => 'Alias for kind. Overrides derivation from kind/choices if present.',
                     ],
                     'kind' => [
                         'type' => 'string',
@@ -93,19 +88,9 @@ final class AskHumanTool implements HatfieldToolProviderInterface, ToolHandlerIn
                     'choices' => [
                         'type' => 'array',
                         'items' => [
-                            'anyOf' => [
-                                ['type' => 'string'],
-                                [
-                                    'type' => 'object',
-                                    'properties' => [
-                                        'label' => ['type' => 'string'],
-                                        'description' => ['type' => 'string'],
-                                    ],
-                                    'required' => ['label'],
-                                ],
-                            ],
+                            'type' => 'string',
                         ],
-                        'description' => 'Predefined answer choices. Bare strings are accepted and normalized to {label, description} objects. Required when kind is "choice".',
+                        'description' => 'List of answer choices as simple strings. Required when kind is "choice". The system derives the answer schema from kind and choices.',
                     ],
                     'default' => [
                         'description' => 'Default answer value if the user does not provide one.',
@@ -131,12 +116,11 @@ final class AskHumanTool implements HatfieldToolProviderInterface, ToolHandlerIn
                 'additionalProperties' => false,
             ],
             handler: $this,
-            promptLine: 'ask_human question [schema] [kind] [choices] — ask the user for input or confirmation; the run pauses until the user responds',
+            promptLine: 'ask_human question [kind] [choices] — ask the user for input or confirmation; the run pauses until the user responds',
             promptGuidelines: [
                 'Use ask_human when you need the user to provide information, confirm an action, or make a choice before proceeding.',
-                'Provide a clear question in the "question" field. Include a JSON Schema in "schema" for structured answers.',
-                'For yes/no questions, set schema to {"type": "boolean"} and kind to "confirm" or "approval".',
-                'For a predefined list of options, provide choices as an array of strings or {label, description} objects, with schema {"type": "string", "enum": [...]}.',
+                'Provide a clear question in the "question" field. Set "kind" to "confirm"/"approval" for yes-no, "choice" with "choices" for a selection, or "text" for free-form input.',
+                'For choices, provide "choices" as an array of simple strings. The system derives the answer schema from kind and choices.',
                 'Optionally provide a "default" value, "header" for UI display, and set "secret" to true for sensitive inputs.',
                 'The tool returns immediately and does not block — your run is paused until the user answers, then continues automatically.',
             ],

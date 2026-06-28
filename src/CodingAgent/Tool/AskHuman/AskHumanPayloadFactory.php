@@ -12,9 +12,10 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
  * Builds normalized ask_human interrupt payloads from raw tool call arguments.
  *
  * Uses Symfony Serializer for type-safe argument denormalization and Symfony
- * Validator for upfront validation. The output payload preserves all UI
- * metadata (header, choices, default, allow_other, secret) alongside the
- * core interrupt fields (kind, question_id, prompt, schema, ui_kind).
+ * Validator for upfront validation. The answer schema is always derived
+ * internally from kind and choices — no raw JSON Schema is accepted as input.
+ * The output payload preserves all UI metadata (header, choices, default,
+ * allow_other, secret) alongside the core interrupt fields.
  *
  * The factory is the single canonical source of payload normalization.
  * AgentCore's ToolExecutor does not fabricate ask_human payloads — it only
@@ -123,7 +124,7 @@ final class AskHumanPayloadFactory
     /**
      * Generate a stable question_id when one is not explicitly provided.
      *
-     * The hash includes prompt, schema, kind, choices, and header so that
+     * The hash includes prompt, kind, choices, and header so that
      * semantically identical questions (even across retries) resolve to the
      * same question_id. Explicit question_id always wins.
      *
@@ -136,11 +137,6 @@ final class AskHumanPayloadFactory
         }
 
         $hashInput = $prompt;
-
-        if (null !== $dto->schema) {
-            $encoded = json_encode($dto->schema, \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
-            $hashInput .= \is_string($encoded) ? $encoded : '';
-        }
 
         $kind = $dto->kind ?? $dto->uiKind ?? null;
         if (null !== $kind) {
@@ -161,16 +157,15 @@ final class AskHumanPayloadFactory
     }
 
     /**
-     * Resolve the answer schema from explicit schema, kind, or choices.
+     * Resolve the answer schema from kind and choices.
+     *
+     * The schema is always derived internally — no raw JSON Schema is
+     * accepted as input to avoid LLM errors with embedded schema syntax.
      *
      * @return array<string, mixed>
      */
     private function resolveSchema(AskHumanArgumentsDTO $dto): array
     {
-        if (null !== $dto->schema) {
-            return $dto->schema;
-        }
-
         $kind = $dto->kind ?? $dto->uiKind ?? null;
 
         if ('confirm' === $kind || 'approval' === $kind) {
@@ -179,44 +174,17 @@ final class AskHumanPayloadFactory
 
         $choices = $dto->choices ?? [];
         if ([] !== $choices) {
-            $enumValues = self::extractEnumValues($choices);
-
-            return [] !== $enumValues
-                ? ['type' => 'string', 'enum' => $enumValues]
-                : ['type' => 'string'];
+            return ['type' => 'string', 'enum' => $choices];
         }
 
         return ['type' => 'string'];
     }
 
     /**
-     * Extract enum string values from a choices array.
-     *
-     * @param array<mixed> $choices
-     *
-     * @return list<string>
-     */
-    private static function extractEnumValues(array $choices): array
-    {
-        $enum = [];
-        foreach ($choices as $choice) {
-            if (\is_string($choice)) {
-                $enum[] = $choice;
-            } elseif (\is_array($choice) && isset($choice['value']) && \is_string($choice['value'])) {
-                $enum[] = $choice['value'];
-            } elseif (\is_array($choice) && isset($choice['label']) && \is_string($choice['label'])) {
-                $enum[] = $choice['label'];
-            }
-        }
-
-        return $enum;
-    }
-
-    /**
      * Resolve the UI kind from explicit kind/ui_kind, schema, or choices.
      *
-     * @param array<string, mixed>                                             $schema
-     * @param list<array{label: string, description?: string, value?: string}> $choices
+     * @param array<string, mixed>                            $schema
+     * @param list<array{label: string, description: string}> $choices
      */
     private function resolveKind(AskHumanArgumentsDTO $dto, array $schema, array $choices): string
     {
@@ -237,11 +205,12 @@ final class AskHumanPayloadFactory
     }
 
     /**
-     * Normalize choices: bare strings become {label, description, ?value} objects.
+     * Normalize choices: bare strings become {label, description} objects.
      *
+     * Input is guaranteed by DTO validation to be list<non-empty-string>.
      * Every normalized entry includes description (empty string when absent).
      *
-     * @return list<array{label: string, description: string, value?: string}>
+     * @return list<array{label: string, description: string}>
      */
     private function normalizeChoices(AskHumanArgumentsDTO $dto): array
     {
@@ -252,30 +221,8 @@ final class AskHumanPayloadFactory
 
         $normalized = [];
         foreach ($raw as $item) {
-            if (\is_string($item)) {
-                $normalized[] = ['label' => $item, 'description' => ''];
-            } elseif (\is_array($item)) {
-                $entry = [];
-                if (isset($item['label']) && \is_string($item['label'])) {
-                    $entry['label'] = $item['label'];
-                } elseif (isset($item['value']) && \is_string($item['value'])) {
-                    $entry['label'] = $item['value'];
-                } else {
-                    continue;
-                }
-
-                // Always include description (empty string when absent)
-                $entry['description'] = '';
-                if (isset($item['description']) && \is_string($item['description']) && '' !== $item['description']) {
-                    $entry['description'] = $item['description'];
-                }
-
-                if (isset($item['value']) && \is_string($item['value'])) {
-                    $entry['value'] = $item['value'];
-                }
-
-                $normalized[] = $entry;
-            }
+            // Validation guarantees non-empty strings
+            $normalized[] = ['label' => $item, 'description' => ''];
         }
 
         return $normalized;

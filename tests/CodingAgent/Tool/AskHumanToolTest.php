@@ -73,12 +73,12 @@ final class AskHumanToolTest extends TestCase
         $this->assertFalse($schema['additionalProperties']);
     }
 
-    public function testDefinitionSchemaHasMetadataProperties(): void
+    public function testDefinitionSchemaHasNoSchemaProperty(): void
     {
         $definition = $this->tool->definition();
         $properties = $definition->parametersJsonSchema['properties'];
 
-        $this->assertArrayHasKey('schema', $properties);
+        $this->assertArrayNotHasKey('schema', $properties);
         $this->assertArrayHasKey('kind', $properties);
         $this->assertArrayHasKey('choices', $properties);
         $this->assertArrayHasKey('default', $properties);
@@ -86,6 +86,14 @@ final class AskHumanToolTest extends TestCase
         $this->assertArrayHasKey('header', $properties);
         $this->assertArrayHasKey('allow_other', $properties);
         $this->assertArrayHasKey('secret', $properties);
+    }
+
+    public function testDefinitionChoicesItemsIsStringOnly(): void
+    {
+        $definition = $this->tool->definition();
+        $items = $definition->parametersJsonSchema['properties']['choices']['items'];
+
+        $this->assertSame(['type' => 'string'], $items);
     }
 
     public function testDefinitionHandlerIsInvokable(): void
@@ -209,15 +217,7 @@ final class AskHumanToolTest extends TestCase
         $this->assertSame(['type' => 'string'], $result['schema']);
     }
 
-    public function testInvokeReturnsProvidedSchema(): void
-    {
-        $result = ($this->tool)([
-            'question' => 'Confirm?',
-            'schema' => ['type' => 'boolean'],
-        ]);
 
-        $this->assertSame(['type' => 'boolean'], $result['schema']);
-    }
 
     /* ── Text question ── */
 
@@ -232,27 +232,15 @@ final class AskHumanToolTest extends TestCase
 
     /* ── Confirm/boolean question ── */
 
-    public function testConfirmQuestionWithBooleanSchema(): void
+    public function testConfirmKindDerivesBooleanSchema(): void
     {
         $result = ($this->tool)([
             'question' => 'Are you sure?',
-            'schema' => ['type' => 'boolean'],
             'kind' => 'confirm',
         ]);
 
         $this->assertSame('confirm', $result['ui_kind']);
         $this->assertSame(['type' => 'boolean'], $result['schema']);
-    }
-
-    public function testConfirmQuestionDerivesKindFromSchema(): void
-    {
-        // When kind is absent but schema is boolean, kind should be 'confirm'
-        $result = ($this->tool)([
-            'question' => 'Proceed?',
-            'schema' => ['type' => 'boolean'],
-        ]);
-
-        $this->assertSame('confirm', $result['ui_kind']);
     }
 
     /* ── Choice question with bare string choices ── */
@@ -276,22 +264,7 @@ final class AskHumanToolTest extends TestCase
         $this->assertSame('fast', $result['choices'][2]['label']);
     }
 
-    public function testChoiceQuestionPreservesStructuredChoices(): void
-    {
-        $result = ($this->tool)([
-            'question' => 'Pick one:',
-            'choices' => [
-                ['label' => 'simple', 'description' => 'Fast, minimal change'],
-                ['label' => 'robust', 'description' => 'More complete implementation'],
-            ],
-        ]);
 
-        $this->assertCount(2, $result['choices']);
-        $this->assertSame('simple', $result['choices'][0]['label']);
-        $this->assertSame('Fast, minimal change', $result['choices'][0]['description']);
-        $this->assertSame('robust', $result['choices'][1]['label']);
-        $this->assertSame('More complete implementation', $result['choices'][1]['description']);
-    }
 
     public function testChoiceQuestionDerivedSchemaHasEnum(): void
     {
@@ -311,7 +284,6 @@ final class AskHumanToolTest extends TestCase
         $result = ($this->tool)([
             'question' => 'Approve deployment?',
             'kind' => 'approval',
-            'schema' => ['type' => 'boolean'],
             'default' => false,
         ]);
 
@@ -335,7 +307,7 @@ final class AskHumanToolTest extends TestCase
     {
         $result = ($this->tool)([
             'question' => 'Proceed?',
-            'schema' => ['type' => 'boolean'],
+            'kind' => 'confirm',
             'default' => true,
         ]);
 
@@ -401,20 +373,7 @@ final class AskHumanToolTest extends TestCase
         $this->assertStringStartsWith('ah_', $result['question_id']);
     }
 
-    public function testChoicesWithValueFieldWork(): void
-    {
-        $result = ($this->tool)([
-            'question' => 'Pick:',
-            'choices' => [
-                ['label' => 'First', 'value' => 'fst', 'description' => 'The first option'],
-            ],
-        ]);
 
-        $this->assertCount(1, $result['choices']);
-        $this->assertSame('First', $result['choices'][0]['label']);
-        $this->assertSame('fst', $result['choices'][0]['value']);
-        $this->assertSame('The first option', $result['choices'][0]['description']);
-    }
 
     /* ── Validation ── */
 
@@ -445,6 +404,53 @@ final class AskHumanToolTest extends TestCase
         ($this->tool)([
             'question' => 'Test?',
             'ui_kind' => 'bogus',
+        ]);
+    }
+
+    public function testRejectsNestedObjectChoices(): void
+    {
+        $this->expectException(\Ineersa\AgentCore\Contract\Tool\ToolCallException::class);
+        $this->expectExceptionMessage('non-empty string');
+
+        ($this->tool)([
+            'question' => 'Pick one:',
+            'choices' => [
+                ['label' => 'First', 'description' => 'The first option'],
+            ],
+        ]);
+    }
+
+    public function testRejectsKindChoiceWithoutChoices(): void
+    {
+        $this->expectException(\Ineersa\AgentCore\Contract\Tool\ToolCallException::class);
+        $this->expectExceptionMessage('required when kind');
+
+        ($this->tool)([
+            'question' => 'Pick one:',
+            'kind' => 'choice',
+        ]);
+    }
+
+    public function testRejectsKindChoiceWithEmptyChoices(): void
+    {
+        $this->expectException(\Ineersa\AgentCore\Contract\Tool\ToolCallException::class);
+        $this->expectExceptionMessage('At least one');
+
+        ($this->tool)([
+            'question' => 'Pick one:',
+            'kind' => 'choice',
+            'choices' => [],
+        ]);
+    }
+
+    public function testRejectsEmptyStringChoice(): void
+    {
+        $this->expectException(\Ineersa\AgentCore\Contract\Tool\ToolCallException::class);
+        $this->expectExceptionMessage('non-empty string');
+
+        ($this->tool)([
+            'question' => 'Pick one:',
+            'choices' => ['valid', ''],
         ]);
     }
 }
