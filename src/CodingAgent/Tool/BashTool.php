@@ -100,12 +100,14 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
             // This guarantees exactly one process execution per tool call.
             $startResult = $this->manager->start($command, $sessionId);
             $pid = $startResult->pid;
+            $dbId = $startResult->id;
             $logPath = $startResult->logPath;
 
             $this->logger->info('bash_tool.started', [
                 'component' => 'tool.bash',
                 'event_type' => 'bash_tool.started',
                 'process_pid' => $pid,
+                'record_id' => $dbId,
                 'log_path' => $logPath,
                 'session_id' => $sessionId ?? 'none',
             ]);
@@ -159,13 +161,31 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
                 }
 
                 // 3. Poll process status from BackgroundProcessManager
-                // Single entity fetch (O(1)) via find() — not a full list() scan
-                $record = $this->manager->find($pid, $sessionId);
+                // Uses findByRecordId() with the immutable DB primary key rather
+                // than find() with the OS PID, because PID-based lookups can
+                // miss rows under SQLite write contention or when the ORM identity
+                // map is stale (see #228). The DB record ID is unique, immutable,
+                // and returned by start() in StartResult::$id.
+                $record = $this->manager->findByRecordId($dbId, $sessionId);
 
                 if (null === $record) {
-                    // Process record vanished — should not happen under normal
-                    // operation, but guard against edge cases.
-                    throw new ToolCallException('Background process record vanished unexpectedly; the process may have been cleaned up.', retryable: false);
+                    // One-shot diagnostic: check independent DBAL existence for
+                    // both the record id and the pid to distinguish genuine
+                    // absence from ORM/connection inconsistency.
+                    $rowExistsById = $this->manager->existsByRecordId($dbId);
+                    $rowExistsByPid = $this->manager->existsByPid($pid);
+
+                    $this->logger->error('bash_tool.record_vanished', [
+                        'component' => 'tool.bash',
+                        'event_type' => 'bash_tool.record_vanished',
+                        'process_pid' => $pid,
+                        'record_id' => $dbId,
+                        'session_id' => $sessionId ?? '',
+                        'row_exists_by_id' => $rowExistsById,
+                        'row_exists_by_pid' => $rowExistsByPid,
+                    ]);
+
+                    throw new ToolCallException(\sprintf('Background process record vanished unexpectedly (PID %d, record %d). DB row exists: by_id=%s, by_pid=%s. The process may have been cleaned up or the store is inconsistent.', $pid, $dbId, $rowExistsById ? 'true' : 'false', $rowExistsByPid ? 'true' : 'false'), retryable: false);
                 }
 
                 if (BackgroundProcessStatusEnum::Running !== $record->status) {
@@ -187,7 +207,7 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
                             // backgrounding notice. This avoids a misleading
                             // "Command moved to background" message when the process
                             // already exited during the prompt wait.
-                            $recheck = $this->manager->find($pid, $sessionId);
+                            $recheck = $this->manager->findByRecordId($dbId, $sessionId);
                             if (null !== $recheck && BackgroundProcessStatusEnum::Running !== $recheck->status) {
                                 $this->logger->info('bash_tool.background_process_completed_during_prompt', [
                                     'component' => 'tool.bash',
