@@ -24,6 +24,11 @@ use Doctrine\DBAL\Driver\Middleware;
  *   "database is locked" errors under the multi-process topology.
  * - synchronous=NORMAL: safe with WAL; avoids the fsync-at-every-write
  *   overhead of FULL while preserving crash safety for runtime state.
+ *   Applied best-effort: if the connection already holds an active
+ *   transaction, SQLite rejects changing the safety level ("Safety level
+ *   may not be changed inside a transaction") and the middleware logs
+ *   the failure via error_log. The connection operates with the default
+ *   synchronous setting in that case.
  *
  * Registered as a Doctrine middleware (tag: doctrine.middleware) via
  * autoconfiguration so it applies to all connections automatically.
