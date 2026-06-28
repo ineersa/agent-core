@@ -11,6 +11,10 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 
 /**
+ * @psalm-suppress PropertyNotSetInConstructor
+ */
+
+/**
  * Regression: runtime startup uses ApplicationMigrationExecutor's explicit
  * KNOWN_MIGRATIONS list (not filesystem discovery). Omission of
  * Version20260617141000 leaves messenger_messages missing and consumers fail.
@@ -39,7 +43,7 @@ final class ApplicationMigrationExecutorTest extends TestCase
 
         $executor();
 
-        self::assertTrue(
+        $this->assertTrue(
             $connection->createSchemaManager()->tablesExist(['messenger_messages']),
             'messenger_messages must exist after runtime startup migrations (Version20260617141000)',
         );
@@ -48,9 +52,37 @@ final class ApplicationMigrationExecutorTest extends TestCase
             'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',
             ['Version20260617141000'],
         );
-        self::assertNotFalse(
+        $this->assertNotFalse(
             $recorded,
             'Version20260617141000 must be recorded in doctrine_migration_versions',
+        );
+
+        // Verify the new background_process index migration was also applied.
+        $recordedNew = $connection->fetchOne(
+            'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',
+            ['Version20260628140000'],
+        );
+        $this->assertNotFalse(
+            $recordedNew,
+            'Version20260628140000 (background_process indexes) must be recorded in doctrine_migration_versions',
+        );
+
+        // Verify at least one of the new indexes exists via schema manager.
+        $indexNames = array_keys($connection->createSchemaManager()->listTableIndexes('background_process'));
+        $this->assertContains(
+            'idx_bg_process_pid',
+            $indexNames,
+            'background_process must have the idx_bg_process_pid index after startup executor',
+        );
+        $this->assertContains(
+            'idx_bg_process_session_id',
+            $indexNames,
+            'background_process must have the idx_bg_process_session_id index after startup executor',
+        );
+        $this->assertContains(
+            'idx_bg_process_finished_at',
+            $indexNames,
+            'background_process must have the idx_bg_process_finished_at index after startup executor',
         );
     }
 
@@ -67,6 +99,13 @@ final class ApplicationMigrationExecutorTest extends TestCase
             'SELECT COUNT(*) FROM doctrine_migration_versions WHERE version = ?',
             ['Version20260617141000'],
         );
-        self::assertSame(1, $count);
+        $this->assertSame(1, $count);
+
+        // The new background_process index migration must also be idempotent.
+        $countNew = (int) $connection->fetchOne(
+            'SELECT COUNT(*) FROM doctrine_migration_versions WHERE version = ?',
+            ['Version20260628140000'],
+        );
+        $this->assertSame(1, $countNew);
     }
 }
