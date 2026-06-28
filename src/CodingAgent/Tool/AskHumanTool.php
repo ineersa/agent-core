@@ -337,7 +337,7 @@ final class AskHumanTool implements HatfieldToolProviderInterface, ToolHandlerIn
      *
      * - Bare strings become {label, description} objects.
      * - Already-structured {label, value, description} objects are preserved.
-     * - Every normalized choice always includes a &#039;description&#039; key (empty
+     * - Every normalized choice always includes a `description` key (empty
      *   string when absent in input).
      * - Empty array if no choices or non-array input.
      *

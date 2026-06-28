@@ -550,7 +550,7 @@ final class ToolExecutor implements ToolExecutorInterface
             $payload['secret'] = $secret;
         }
 
-        $content = json_encode($payload);
+        $content = json_encode($payload, \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
         if (false === $content) {
             $content = '{}';
         }
