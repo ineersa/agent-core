@@ -135,6 +135,20 @@ Important design difference for this project:
 - Rich transcript rendering beyond simple question/approval blocks.
 - Replacing AgentCore's existing `WaitingHuman` / `HumanResponse` flow.
 
+## Current v1 scope decision (2026-06-28)
+
+**V1 is a thin live-session `ask_human`.** The model-visible tool returns an interrupt
+payload; AgentCore's existing `WaitingHuman`/`HumanResponse` flow pauses the run; the TUI
+shows a question overlay; the answer resumes the run. Resume of a pending HITL question
+after session restart is **explicitly deferred / unsupported for v1**. If a session is
+resumed while a run is still `WaitingHuman`, the TUI will not restore the question overlay.
+The run remains paused; the user must cancel or rerun.
+
+Tasks reflecting this decision:
+- **QH-07** is already satisfied by existing `TickPollListener::handleHumanInputRequested()` — closed/superseded.
+- **QH-08** is deferred — not required for v1.
+- **QH-09** depends only on the thin v1 stack (QH-04, slim QH-05, slim QH-06), not on QH-07/QH-08.
+
 ## Concept model
 
 ### Shared in-memory question request
@@ -512,8 +526,11 @@ On resume:
 
 - load runtime events;
 - `TranscriptProjector` rebuilds HITL question/approval blocks;
-- if the latest run state is still `WaitingHuman`, show the active HITL `QuestionWidget` again;
 - local TUI questions are not restored.
+
+**V1 note:** Re-showing the active HITL question widget on resume is **deferred/not v1**.
+If a session is resumed while a run is still `WaitingHuman`, the TUI will not restore
+the question overlay. The run remains paused. The user must cancel or rerun.
 
 `transcript.jsonl` should persist HITL question/approval blocks as projection data, not rendered strings. Local TUI questions do not appear there.
 
@@ -528,12 +545,12 @@ The work is split into small tasks for smaller models. Keep each task narrow and
 | QH-01 | Question request DTOs and coordinator queue | none | QH-04 | TUI-only in-memory model; no runtime events or transcript writes. |
 | QH-02 | Basic QuestionWidget and ApprovalWidget rendering | QH-01 | QH-04, QH-05 | Static rendering and sample blocks only; no input routing. |
 | QH-03 | Local TUI question input routing and action-required status | QH-01, QH-02 | QH-04, QH-05 | Local callbacks only; local questions never write transcript/runtime projection. |
-| QH-04 | `ask_human` tool and interrupt payload normalization | none | QH-01, QH-02, QH-03 | CodingAgent tool; returns interrupt payload immediately; does not block. |
-| QH-05 | AgentCore interrupt compatibility for `ask_human` | QH-04 | QH-02, QH-03 | ToolExecutor fallback/config and ToolCallExtractor metadata support if needed. |
-| QH-06 | HITL runtime projection payload support | QH-05, RTVS-01, RTVS-02, RTVS-04, RTVS-05 | QH-03 if not done | Map `waiting_human`/answers to `human_input.*` and transcript question/approval blocks. |
-| QH-07 | Bind HITL runtime requests to TUI question coordinator | QH-03, QH-06, RTVS-07 | none after dependencies | Shows widget, disables/reroutes composer, sends `answer_human`. |
-| QH-08 | Resume pending HITL question from session replay | QH-07, RTVS-08 | QH-09 docs prep | Restore pending HITL widget when resumed run is still `WaitingHuman`. |
-| QH-09 | Prompt/docs, deterministic tests, and manual smoke | QH-07, QH-08 | none after dependencies | Teach `ask_human`; verify local questions are not transcript blocks. |
+| QH-04 | `ask_human` tool and interrupt payload normalization | none | QH-01, QH-02, QH-03 | Thin non-blocking tool; returns interrupt payload immediately. No resume. Main remaining implementation task. |
+| QH-05 | AgentCore interrupt compatibility for `ask_human` (slim) | QH-04 | QH-02, QH-03 | Slim scope: ToolCallExtractor payload preservation only. ToolExecutor interrupt-compatibility folded into QH-04. |
+| QH-06 | HITL runtime projection payload support (slim) | QH-05, RTVS-01, RTVS-02, RTVS-04, RTVS-05 | QH-03 if not done | Slim scope: richer payload passthrough and transcript assertions only. Existing RuntimeEventMapper already maps waiting_human→human_input.requested. |
+| QH-07 | Bind HITL runtime requests to TUI question coordinator | — | — | Already satisfied by existing `TickPollListener::handleHumanInputRequested()`. Superseded/closed. |
+| QH-08 | Resume pending HITL question from session replay (DEFERRED — not v1) | — | — | Deferred. Not required for v1. Only explicit unsupported-safe behavior if implemented. |
+| QH-09 | Prompt/docs, deterministic tests, and manual smoke (thin v1) | QH-04, QH-05, QH-06 | none | Thin v1 only: docs/prompt guidance for ask_human, minimal deterministic tests, manual smoke. No resume. |
 
 ### Dependency waves
 
@@ -550,13 +567,12 @@ The work is split into small tasks for smaller models. Keep each task narrow and
    - QH-06 waits for the relevant runtime transcript backbone tasks: RTVS-01, RTVS-02, RTVS-04, and RTVS-05.
    - QH-06 should not implement local TUI widgets; it only normalizes HITL runtime/projection payloads.
 
-4. **TUI HITL binding**
-   - QH-07 waits for local TUI input routing (QH-03), HITL projection (QH-06), and RuntimeEventPoller projection integration (RTVS-07).
-   - Keep this serialized because it touches active runtime polling/input routing.
+4. **TUI HITL binding (already satisfied)**
+   - QH-07 is already satisfied by existing `TickPollListener::handleHumanInputRequested()`. No implementation work needed.
 
-5. **Replay and final validation**
-   - QH-08 waits for QH-07 and RTVS-08.
-   - QH-09 waits for QH-07/QH-08 and owns docs, prompt guidance, deterministic tests, and smoke notes.
+5. **Final validation (thin v1)**
+   - QH-08 is **deferred** — not required for v1.
+   - QH-09 depends only on the thin v1 stack (QH-04, QH-05, QH-06) and owns docs, prompt guidance, minimal deterministic tests, and smoke notes. No resume tests.
 
 ### Parallelization guidance
 
@@ -564,7 +580,7 @@ The work is split into small tasks for smaller models. Keep each task narrow and
   - QH-01 and QH-04 can start immediately.
   - QH-02/QH-03 can progress while QH-04/QH-05 progress.
   - QH-06 can be prepared once RTVS contract tasks are ready, but final integration must use actual RTVS event/block names.
-- Avoid parallel edits to RuntimeEventPoller, input routing, and session replay code. Keep QH-07 and QH-08 serialized.
+- Avoid parallel edits to RuntimeEventPoller, input routing, and session replay code.
 - Keep local TUI questions and AgentCore HITL routing separate in code and tests:
   - local question answer -> local callback/action only;
   - HITL answer -> `AgentSessionClient::send(UserCommand(type: 'answer_human', ...))`.
@@ -622,6 +638,8 @@ Acceptance:
 
 #### QH-04 `ask_human` tool and interrupt payload normalization
 
+**V1 note:** Thin non-blocking tool — returns interrupt payload immediately; no oneshot/blocking path; no resume responsibility.
+
 Scope:
 
 - Add `src/CodingAgent/Tool/AskHumanTool.php` plus a Hatfield tool definition/provider for `ask_human` using the TOOLS-R02 convention.
@@ -636,79 +654,78 @@ Acceptance:
 - Tool result contains `kind=interrupt`, `question_id`, `prompt`, `schema`, normalized choices, and UI metadata.
 - Unit tests cover text, confirm, choice, approval, and fallback id behavior.
 
-#### QH-05 AgentCore interrupt compatibility for `ask_human`
+#### QH-05 AgentCore interrupt compatibility for `ask_human` (slim)
 
-Scope:
+Slim scope (v1 decision 2026-06-28):
 
-- Ensure `ToolExecutor` treats `ask_human` as interrupt-compatible, alongside any existing `ask_user` fallback.
 - Ensure `ToolCallExtractor::interruptPayloadFromToolResult()` preserves header, ui_kind/kind, choices, default, allow_other, and secret where available.
-- Add tests that committing an `ask_human` tool result causes the existing `WaitingHuman` path.
+- ToolExecutor interrupt-compatibility is folded into QH-04 (the tool itself returns an interrupt payload; existing `ask_user` fallback also covers `ask_human`).
 
 Acceptance:
 
-- `ask_human` tool result is detected as an interrupt.
-- AgentCore transitions to `WaitingHuman` through existing handlers.
+- Interrupt payload preserves UI metadata (header, ui_kind, choices, default, allow_other, secret) needed by runtime/TUI projection.
 - No new blocking/oneshot tool execution path is introduced.
+- castor deptrac passes.
 
-#### QH-06 HITL runtime projection payload support
+#### QH-06 HITL runtime projection payload support (slim)
 
-Scope:
+Slim scope (v1 decision 2026-06-28):
 
-- Map AgentCore `waiting_human` to `human_input.requested` with question payload fields.
-- Map accepted/rejected human responses to `human_input.answered|rejected` and approval equivalents where useful.
-- Ensure TranscriptProjector creates question/approval transcript blocks only for HITL, not local TUI prompts.
+- RuntimeEventMapper already maps `waiting_human` → `human_input.requested` — no change needed for basic mapping.
+- Richer payload passthrough: ensure `header`, `choices`, `default`, `allow_other`, `secret`, `tool_call_id`, and `tool_name` are passed through in the human_input.requested payload.
+- Verify TranscriptProjector creates question/approval transcript blocks only for HITL, not local TUI prompts (add/review assertions).
 
 Acceptance:
 
-- HITL question appears in runtime projection and transcript projection.
+- Runtime payload for `human_input.requested` includes the full set of question metadata fields.
 - Local TUI question code path cannot create transcript blocks.
 - Projector/replay tests cover requested and answered HITL question.
+- castor deptrac passes.
 
-#### QH-07 Bind HITL runtime requests to TUI question coordinator
+#### QH-07 Bind HITL runtime requests to TUI question coordinator (SUPERSEDED)
 
-Scope:
+**Status: Already implemented by existing code. No work needed.**
 
-- Runtime event poller/coordinator detects `human_input.requested`.
-- Create `QuestionRequest(source=agent_core, transcript=true)` and show QuestionWidget/ApprovalWidget.
-- Disable or reroute composer input while HITL is pending.
-- Submit answer through `AgentSessionClient::send(... answer_human ...)`.
-- Clear/update widget on answer, cancellation, or rejection.
+The following behavior is already in place:
 
-Acceptance:
+- `TickPollListener::handleHumanInputRequested()` receives `human_input.requested` from `RuntimeEventPoller::poll()`.
+- It builds a `QuestionRequest` with `QuestionSource::AgentCore` and `QuestionKind::Choice`, enqueues it in `QuestionCoordinator`.
+- Answer callback sends `UserCommand(type: 'answer_human', ...)` via `AgentSessionClient::send()`.
+- Cancel callback sends `answer_human` with `'answer' => 'cancel'`.
+- Duplicate guard via `$questionCoordinator->hasRequest($requestId)` prevents event-replay double-enqueue.
 
-- A model/tool call to `ask_human` pauses the run and shows a TUI question.
-- Composer cannot accidentally send a new user prompt while HITL is pending.
-- Answering HITL sends `answer_human` and resumes the run.
-- TUI does not import AgentCore internals.
+Everything listed in the original scope and acceptance criteria is satisfied.
+This task is closed/superseded.
 
-#### QH-08 Resume pending HITL question from session replay
+#### QH-08 Resume pending HITL question from session replay (DEFERRED — not v1)
 
-Scope:
+**Decision (2026-06-28): Deferred. Not required for v1.**
 
-- On resume, rebuild transcript blocks and active HITL question state from runtime events/session state.
-- If latest run is still waiting for human input, show the pending question widget again.
-- Do not restore local TUI questions.
+If a session is resumed while a run is still `WaitingHuman`, the TUI will not restore
+the question widget. The run remains paused. The user must cancel or rerun.
 
-Acceptance:
-
-- Resume while waiting shows the pending HITL question again.
+If this task is picked up later, it should ensure:
+- On resume, if the latest run is still `WaitingHuman`, the pending question widget is shown again.
 - Answer after resume still sends `answer_human` and continues the run.
-- Local questions are not restored.
+- Local TUI questions are never restored.
+- Transcript blocks are already rebuilt by `TranscriptProjector` — only the interactive overlay needs restoring.
 
-#### QH-09 Prompt/docs, deterministic tests, and manual smoke
+#### QH-09 Prompt/docs, deterministic tests, and manual smoke (thin v1)
 
-Scope:
+Slim scope (v1 decision 2026-06-28):
 
 - Update tool prompt/docs to teach `ask_human` usage and schema subset.
-- Add deterministic tests for local question flow and HITL flow.
+- Add deterministic tests for the thin v1 `ask_human` flow (tool interrupt, payload shape, TUI overlay rendering, answer_human routing).
+- Do **not** add tests for pending-HITL resume — that path is deferred.
 - Add manual smoke steps using `castor run:agent` with a model/tool call to `ask_human`.
-- Record known limitations, especially no full JSON Schema renderer in v1.
+- Record known limitations, especially no full JSON Schema renderer and no resume support in v1.
 
 Acceptance:
 
-- Docs/prompt guidance explain when to use `ask_human`.
-- Tests cover local question non-persistence and HITL transcript persistence.
-- Manual smoke verifies ask_human -> TUI question -> answer_human -> run continues.
+- Docs/prompt guidance explain when to use `ask_human` and note that resume support is deferred.
+- Tests cover thin v1 flow: ask_human → interrupt → human_input.requested → TUI overlay → answer_human → run continues.
+- Manual smoke verifies ask_human → TUI question → answer_human → run continues.
+- Known limitations documented (no full JSON Schema renderer, no resume).
 
 ## Validation
 
