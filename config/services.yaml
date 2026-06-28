@@ -846,15 +846,3 @@ services:
       $toolRegistry: '@Ineersa\CodingAgent\Tool\ToolRegistryInterface'
       $mcpToolsResolver: '@Ineersa\CodingAgent\Agent\Execution\AgentMcpToolsResolver'
 
-  # ─── Doctrine DBAL middleware: SQLite PRAGMAs (#228) ───────────────
-
-  # SqlitePragmaMiddleware is autoconfigured as a doctrine.middleware via
-  # MiddlewareInterface detection.  Logger is injected via a console event
-  # subscriber (SqlitePragmaMiddlewareConfigurator) to avoid container
-  # compilation cycles.
-
-  Ineersa\CodingAgent\Doctrine\SqlitePragmaMiddlewareConfigurator:
-    arguments:
-      $logger: '@logger'
-    tags:
-      - { name: kernel.event_subscriber }

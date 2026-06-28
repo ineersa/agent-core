@@ -84,6 +84,22 @@ final class ApplicationMigrationExecutorTest extends TestCase
             $indexNames,
             'background_process must have the idx_bg_process_finished_at index after startup executor',
         );
+
+        // SQLite concurrency hardening (#228): WAL journal mode and
+        // busy_timeout must be applied/verified by the executor.
+        $journalMode = $connection->executeQuery('PRAGMA journal_mode')->fetchOne();
+        $this->assertSame(
+            'wal',
+            strtolower((string) $journalMode),
+            'SQLite journal_mode must be WAL after executor startup (#228)',
+        );
+
+        $busyTimeout = (int) $connection->executeQuery('PRAGMA busy_timeout')->fetchOne();
+        $this->assertGreaterThanOrEqual(
+            5000,
+            $busyTimeout,
+            'SQLite busy_timeout must be >= 5000ms after executor startup (#228)',
+        );
     }
 
     public function testStartupExecutorIsIdempotentPerProcess(): void
