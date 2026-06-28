@@ -20,6 +20,7 @@
         </testsuite>
         <testsuite name="extensions">
             <directory>.hatfield/extensions/task-workflow/tests</directory>
+            <directory>.hatfield/extensions/castor-llm-mode/tests</directory>
         </testsuite>
     </testsuites>
     <extensions>

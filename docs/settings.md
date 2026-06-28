@@ -719,6 +719,24 @@ extensions:
             castor_check_timeout_seconds: 480
 ```
 
+
+### `extensions.settings.castor_llm_mode`
+
+Settings for the native Hatfield castor-llm-mode extension (`Ineersa\HatfieldExt\CastorLlmMode\CastorLlmModeExtension`). For bash tool calls that invoke Castor, prepends LLM-friendly environment exports (`LLM_MODE`, `CASTOR_DISABLE_VERSION_CHECK`, `NO_COLOR`, `CLICOLOR`) and normalizes `castor list` output. Read via `getSettings('castor_llm_mode')`.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `enabled` | bool | `true` | Set `false` to disable the rewrite hook without removing the extension. |
+
+Example:
+
+```yaml
+extensions:
+    settings:
+        castor_llm_mode:
+            enabled: true
+```
+
 ### `extensions.settings.safe_guard`
 
 SafeGuard policy configuration. All fields are optional — the defaults
