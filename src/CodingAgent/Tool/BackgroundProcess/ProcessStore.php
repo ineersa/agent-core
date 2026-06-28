@@ -134,12 +134,76 @@ final class ProcessStore
 
     /**
      * Fetch a single entity by PID.
+     *
+     * Returns null when no matching row is found.  Callers that need to
+     * distinguish "row absent" from ORM/connection inconsistency should
+     * call existsByPid() separately.
+     *
+     * Note: OS PIDs can be reused while old records are retained, so this
+     * is a non-unique lookup.  Prefer fetchByRecordId() with the immutable
+     * auto-increment primary key when the DB id is available.
      */
     public function fetchByPid(int $pid): ?BackgroundProcess
     {
-        /* @var ?BackgroundProcess */
-        return $this->repository
-            ->findOneBy(['pid' => $pid]);
+        return $this->repository->findOneBy(['pid' => $pid]);
+    }
+
+    /**
+     * Fetch a single entity by auto-increment record ID.
+     *
+     * Unlike fetchByPid() which queries by OS PID (which can be reused),
+     * this queries by the immutable auto-increment primary key.  Prefer
+     * this when the DB id is available (e.g. from StartResult::$id).
+     */
+    public function fetchByRecordId(int $id): ?BackgroundProcess
+    {
+        return $this->repository->find($id);
+    }
+
+    /**
+     * Check whether a row exists for the given PID.
+     *
+     * Delegates to BackgroundProcessRepository::existsByPid() which uses an
+     * ORM COUNT query that always hits the database, bypassing the identity
+     * map.  This allows distinguishing "row does not exist" from "row exists
+     * but ORM/identity map did not return it."
+     */
+    public function existsByPid(int $pid): bool
+    {
+        try {
+            return $this->repository->existsByPid($pid);
+        } catch (\Throwable $e) {
+            $this->logger->warning('background_process.exists_by_pid_failed', [
+                'component' => 'tool.background_process',
+                'event_type' => 'background_process.exists_by_pid_failed',
+                'process_pid' => $pid,
+                'error' => $e->getMessage(),
+            ]);
+
+            return false;
+        }
+    }
+
+    /**
+     * Check whether a row exists for the given record ID.
+     *
+     * Delegates to BackgroundProcessRepository::existsByRecordId() which
+     * uses an ORM COUNT query that always hits the database.
+     */
+    public function existsByRecordId(int $id): bool
+    {
+        try {
+            return $this->repository->existsByRecordId($id);
+        } catch (\Throwable $e) {
+            $this->logger->warning('background_process.exists_by_record_id_failed', [
+                'component' => 'tool.background_process',
+                'event_type' => 'background_process.exists_by_record_id_failed',
+                'record_id' => $id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return false;
+        }
     }
 
     /**

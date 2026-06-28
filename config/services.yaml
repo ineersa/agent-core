@@ -845,3 +845,4 @@ services:
     arguments:
       $toolRegistry: '@Ineersa\CodingAgent\Tool\ToolRegistryInterface'
       $mcpToolsResolver: '@Ineersa\CodingAgent\Agent\Execution\AgentMcpToolsResolver'
+

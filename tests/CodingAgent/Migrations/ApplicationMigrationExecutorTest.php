@@ -4,11 +4,16 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Migrations;
 
+use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Ineersa\CodingAgent\Migrations\ApplicationMigrationExecutor;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+
+/**
+ * @psalm-suppress PropertyNotSetInConstructor
+ */
 
 /**
  * Regression: runtime startup uses ApplicationMigrationExecutor's explicit
@@ -33,13 +38,12 @@ final class ApplicationMigrationExecutorTest extends TestCase
 
     public function testEmptySqliteDatabaseGetsMessengerMessagesAfterStartupExecutor(): void
     {
-        $dbPath = $this->isolatedDir.'/empty.sqlite';
-        $connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'path' => $dbPath]);
+        $connection = $this->createSqliteConnection($this->isolatedDir.'/empty.sqlite');
         $executor = new ApplicationMigrationExecutor($connection, new NullLogger());
 
         $executor();
 
-        self::assertTrue(
+        $this->assertTrue(
             $connection->createSchemaManager()->tablesExist(['messenger_messages']),
             'messenger_messages must exist after runtime startup migrations (Version20260617141000)',
         );
@@ -48,16 +52,62 @@ final class ApplicationMigrationExecutorTest extends TestCase
             'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',
             ['Version20260617141000'],
         );
-        self::assertNotFalse(
+        $this->assertNotFalse(
             $recorded,
             'Version20260617141000 must be recorded in doctrine_migration_versions',
+        );
+
+        // Verify the new background_process index migration was also applied.
+        $recordedNew = $connection->fetchOne(
+            'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',
+            ['Version20260628140000'],
+        );
+        $this->assertNotFalse(
+            $recordedNew,
+            'Version20260628140000 (background_process indexes) must be recorded in doctrine_migration_versions',
+        );
+
+        // Verify at least one of the new indexes exists via schema manager.
+        $indexNames = array_keys($connection->createSchemaManager()->listTableIndexes('background_process'));
+        $this->assertContains(
+            'idx_bg_process_pid',
+            $indexNames,
+            'background_process must have the idx_bg_process_pid index after startup executor',
+        );
+        $this->assertContains(
+            'idx_bg_process_session_id',
+            $indexNames,
+            'background_process must have the idx_bg_process_session_id index after startup executor',
+        );
+        $this->assertContains(
+            'idx_bg_process_finished_at',
+            $indexNames,
+            'background_process must have the idx_bg_process_finished_at index after startup executor',
+        );
+
+        // SQLite concurrency hardening (#228): WAL journal mode and
+        // busy_timeout must be applied/verified by the executor.
+        $journalMode = $connection->executeQuery('PRAGMA journal_mode')->fetchOne();
+        $this->assertSame(
+            'wal',
+            strtolower((string) $journalMode),
+            'SQLite journal_mode must be WAL after executor startup (#228)',
+        );
+
+        // busy_timeout came from driverOptions (PDO::ATTR_TIMEOUT=5), so
+        // it should be exactly 5000.  We assert >=5000 as the runtime
+        // guard's minimum; the strict config proof is in SqliteConnectionConfigTest.
+        $busyTimeout = (int) $connection->executeQuery('PRAGMA busy_timeout')->fetchOne();
+        $this->assertGreaterThanOrEqual(
+            5000,
+            $busyTimeout,
+            'SQLite busy_timeout must be >= 5000ms after executor startup (#228)',
         );
     }
 
     public function testStartupExecutorIsIdempotentPerProcess(): void
     {
-        $dbPath = $this->isolatedDir.'/idempotent.sqlite';
-        $connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'path' => $dbPath]);
+        $connection = $this->createSqliteConnection($this->isolatedDir.'/idempotent.sqlite');
         $executor = new ApplicationMigrationExecutor($connection, new NullLogger());
 
         $executor();
@@ -67,6 +117,47 @@ final class ApplicationMigrationExecutorTest extends TestCase
             'SELECT COUNT(*) FROM doctrine_migration_versions WHERE version = ?',
             ['Version20260617141000'],
         );
-        self::assertSame(1, $count);
+        $this->assertSame(1, $count);
+
+        // The new background_process index migration must also be idempotent.
+        $countNew = (int) $connection->fetchOne(
+            'SELECT COUNT(*) FROM doctrine_migration_versions WHERE version = ?',
+            ['Version20260628140000'],
+        );
+        $this->assertSame(1, $countNew);
+    }
+
+    public function testBusyTimeoutBelowMinimumThrowsRuntimeException(): void
+    {
+        // PDO::ATTR_TIMEOUT=1 maps to busy_timeout=1000ms, which is below
+        // the 5000ms minimum the executor requires.  This ensures the
+        // runtime check is not dead code.
+        $connection = $this->createSqliteConnection($this->isolatedDir.'/busy_low.sqlite', timeout: 1);
+        $executor = new ApplicationMigrationExecutor($connection, new NullLogger());
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('busy_timeout');
+        $this->expectExceptionMessage('5000');
+
+        $executor();
+    }
+
+    /**
+     * Create a SQLite connection for testing.
+     *
+     * Uses explicit driverOptions to set PDO::ATTR_TIMEOUT, avoiding
+     * silent reliance on PHP PDO's 60000ms default.  This makes the
+     * timeout assertion meaningful.
+     *
+     * @param int $timeout PDO::ATTR_TIMEOUT value in seconds (default 5).
+     *                     Busy timeout in ms = $timeout * 1000.
+     */
+    private function createSqliteConnection(string $dbPath, int $timeout = 5): Connection
+    {
+        return DriverManager::getConnection([
+            'driver' => 'pdo_sqlite',
+            'path' => $dbPath,
+            'driverOptions' => [\PDO::ATTR_TIMEOUT => $timeout],
+        ]);
     }
 }

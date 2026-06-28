@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Migrations;
 
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Platforms\SQLitePlatform;
 use Doctrine\DBAL\Schema\Schema;
 use Doctrine\Migrations\AbstractMigration;
 use Psr\Log\LoggerInterface;
@@ -71,6 +72,7 @@ final class ApplicationMigrationExecutor
         \DoctrineMigrations\Version20260617141000::class,
         \DoctrineMigrations\Version20260617141001::class,
         \DoctrineMigrations\Version20260617141002::class,
+        \DoctrineMigrations\Version20260628140000::class,
     ];
 
     private bool $ran = false;
@@ -96,6 +98,8 @@ final class ApplicationMigrationExecutor
 
         $this->ran = true;
 
+        $this->applySqliteHardening();
+
         $this->ensureVersionsTable();
 
         foreach (self::KNOWN_MIGRATIONS as $class) {
@@ -106,6 +110,59 @@ final class ApplicationMigrationExecutor
             }
 
             $this->executeMigration($class, $versionId);
+        }
+    }
+
+    // ─── SQLite hardening (#228) ───────────────────────────────────────
+
+    /**
+     * Apply and verify critical SQLite concurrency settings before any
+     * migration runs.
+     *
+     * For file-based SQLite databases, sets WAL journal mode and verifies
+     * that the configured busy_timeout is applied.  In-memory SQLite
+     * databases are skipped for WAL (WAL requires a file-system) but
+     * still verify busy_timeout.
+     *
+     * This runs outside any migration transaction, so PRAGMA journal_mode
+     * changes are accepted by SQLite.
+     *
+     * @throws \RuntimeException if a critical setting cannot be applied
+     *                           or verified.  Agent startup fails loudly
+     *                           because these protections are required for
+     *                           multi-process concurrency (#228).
+     */
+    private function applySqliteHardening(): void
+    {
+        if (!$this->connection->getDatabasePlatform() instanceof SQLitePlatform) {
+            return; // Not SQLite — nothing to harden.
+        }
+
+        $params = $this->connection->getParams();
+        $isMemory = true === ($params['memory'] ?? false);
+
+        if (!$isMemory) {
+            // WAL journal mode: enables concurrent readers + a single writer
+            // without blocking.  Readers never block readers; writers
+            // continue while readers see a consistent snapshot.
+            // This is the PRIMARY fix for #228.
+            $result = $this->connection->executeQuery('PRAGMA journal_mode=WAL')->fetchOne();
+            $resultMode = \is_string($result) ? strtolower($result) : '';
+
+            if ('wal' !== $resultMode) {
+                throw new \RuntimeException(\sprintf('Failed to set SQLite journal_mode to WAL. Expected "wal", got "%s". WAL mode is required for multi-process concurrency (#228).', $resultMode));
+            }
+        }
+
+        // Verify busy_timeout >= 5000ms (a safe minimum lock-wait for
+        // multi-process write contention).  The project default of exactly
+        // 5000ms is proven by SqliteConnectionConfigTest.  This guard allows
+        // environments to choose longer timeouts while ensuring the minimum
+        // is never below 5s — a value that has proven too low under load.
+        $busyTimeout = (int) $this->connection->executeQuery('PRAGMA busy_timeout')->fetchOne();
+
+        if ($busyTimeout < 5000) {
+            throw new \RuntimeException(\sprintf('SQLite busy_timeout is %dms, expected >= 5000ms. Check doctrine.yaml options.2 (PDO::ATTR_TIMEOUT) is set to 5. This is required for multi-process concurrency (#228).', $busyTimeout));
         }
     }
 
