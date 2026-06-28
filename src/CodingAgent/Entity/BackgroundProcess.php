@@ -25,6 +25,9 @@ use Doctrine\ORM\Mapping as ORM;
  */
 #[ORM\Entity(repositoryClass: BackgroundProcessRepository::class)]
 #[ORM\Table(name: 'background_process')]
+#[ORM\Index(name: 'idx_bg_process_pid', columns: ['pid'])]
+#[ORM\Index(name: 'idx_bg_process_session_id', columns: ['session_id'])]
+#[ORM\Index(name: 'idx_bg_process_finished_at', columns: ['finished_at'])]
 #[ORM\HasLifecycleCallbacks]
 class BackgroundProcess
 {
@@ -35,6 +38,19 @@ class BackgroundProcess
     #[ORM\Column(type: 'integer')]
     public int $id = 0;
 
+    /**
+     * OS process ID.  Non-unique over historical rows because:
+     * - The OS reuses PIDs after a process exits.
+     * - Old background_process records are retained for runtime polling
+     *   (24h retention policy; see BackgroundProcessCleanupTask).
+     * - Multiple retained rows can share the same PID.
+     *
+     * The @ORM\Index on 'pid' is intentionally non-unique.  Prefer the
+     * auto-increment $id for immutable record lookups.
+     *
+     * @see ProcessStore::fetchByPid() for PID-based lookup semantics
+     * @see BackgroundProcessManager::findByRecordId() for immutable lookup
+     */
     #[ORM\Column(type: 'integer')]
     public int $pid = 0;
 

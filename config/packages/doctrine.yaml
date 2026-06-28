@@ -18,6 +18,13 @@ doctrine:
                 # not the app install root. See Kernel::build() where app.cwd is set.
                 path: '%app.cwd%/.hatfield/messenger.sqlite'
 
+                # SQLite busy timeout: PDO::ATTR_TIMEOUT (int 2, seconds).
+                # SQLite interprets this as wait-for-writelock duration.
+                # 5s → PRAGMA busy_timeout = 5000ms. Prevents SQLITE_BUSY
+                # under multi-process write contention (#228).
+                options:
+                    2: 5
+
     orm:
         # Native lazy objects are the default in DoctrineBundle 3.x
         # (replaces proxy generation from earlier versions).

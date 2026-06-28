@@ -284,6 +284,92 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->manager->stop($resX->pid, 'session-Y');
     }
 
+    /* ── Store-level record ID and existence lookups ── */
+
+    public function testFindByRecordIdReturnsProcess(): void
+    {
+        $this->createManager();
+        $result = $this->manager->start('echo "record-id-test"', self::TEST_SESSION);
+
+        usleep(100_000);
+
+        $entity = $this->manager->findByRecordId($result->id);
+        $this->assertNotNull($entity);
+        $this->assertSame($result->pid, $entity->pid);
+        $this->assertSame($result->id, $entity->id);
+
+        $this->manager->shutdownCleanup();
+    }
+
+    public function testFindByRecordIdRespectsSessionScope(): void
+    {
+        $this->createManager();
+        $result = $this->manager->start('echo "session-scope"', 'session-A');
+
+        usleep(100_000);
+
+        // Same session → found
+        $entity = $this->manager->findByRecordId($result->id, 'session-A');
+        $this->assertNotNull($entity);
+        $this->assertSame($result->id, $entity->id);
+
+        // Different session → null
+        $otherSession = $this->manager->findByRecordId($result->id, 'session-B');
+        $this->assertNull($otherSession);
+
+        // Null session → found (unscoped)
+        $unscoped = $this->manager->findByRecordId($result->id);
+        $this->assertNotNull($unscoped);
+
+        $this->manager->shutdownCleanup();
+    }
+
+    public function testFindByRecordIdReturnsNullForNonexistentId(): void
+    {
+        $this->createManager();
+
+        $entity = $this->manager->findByRecordId(9999999);
+        $this->assertNull($entity);
+    }
+
+    public function testExistsByPidReturnsTrueForExistingProcess(): void
+    {
+        $this->createManager();
+        $result = $this->manager->start('echo "exists-test"', self::TEST_SESSION);
+
+        usleep(100_000);
+
+        $this->assertTrue($this->manager->existsByPid($result->pid));
+
+        $this->manager->shutdownCleanup();
+    }
+
+    public function testExistsByPidReturnsFalseForNonexistentPid(): void
+    {
+        $this->createManager();
+
+        $this->assertFalse($this->manager->existsByPid(9999999));
+    }
+
+    public function testExistsByRecordIdReturnsTrueForExistingProcess(): void
+    {
+        $this->createManager();
+        $result = $this->manager->start('echo "exists-record-id"', self::TEST_SESSION);
+
+        usleep(100_000);
+
+        $this->assertTrue($this->manager->existsByRecordId($result->id));
+
+        $this->manager->shutdownCleanup();
+    }
+
+    public function testExistsByRecordIdReturnsFalseForNonexistentId(): void
+    {
+        $this->createManager();
+
+        $this->assertFalse($this->manager->existsByRecordId(9999999));
+    }
+
     /* ── Helpers ── */
 
     /**

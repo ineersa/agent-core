@@ -251,12 +251,44 @@ final class BackgroundProcessManager
     }
 
     /**
+     * Check whether a row exists for the given PID.
+     *
+     * Uses an ORM COUNT query that always hits the database, bypassing
+     * the identity map. This allows callers to distinguish "row does not
+     * exist" from "row exists but ORM/identity map did not return it."
+     */
+    public function existsByPid(int $pid): bool
+    {
+        return $this->store->existsByPid($pid);
+    }
+
+    /**
+     * Check whether a row exists for the given record ID.
+     *
+     * Uses an ORM COUNT query that always hits the database, bypassing
+     * the identity map.
+     */
+    public function existsByRecordId(int $id): bool
+    {
+        return $this->store->existsByRecordId($id);
+    }
+
+    /**
      * Find a single background process by PID, with refreshed status.
      *
      * Resolves status from filesystem state and flushes before returning.
      * This is O(1) per call (single entity fetch), unlike list() which
      * refreshes all entities. Preferred for polling loops that only care
      * about one known PID.
+     *
+     * Returns null for two distinct cases:
+     *   1. The row does not exist (genuinely absent / cleaned up).
+     *   2. The row exists but belongs to a different session (session
+     *      mismatch — the entity is silently filtered out).
+     *
+     * Callers that need to distinguish these cases should use the DB
+     * record id via findByRecordId() or call existsByPid() after a null
+     * result from this method.
      *
      * @param int         $pid       Process PID to find (must be > 0)
      * @param string|null $sessionId optional session filter.
@@ -271,10 +303,27 @@ final class BackgroundProcessManager
         $entity = $this->store->fetchByPid($pid);
 
         if (null === $entity) {
+            $this->logger->notice('background_process.find_by_pid_null', [
+                'component' => 'tool.background_process',
+                'event_type' => 'background_process.find_by_pid_null',
+                'process_pid' => $pid,
+                'session_id' => $sessionId ?? '',
+                'reason' => 'fetch_by_pid_returned_null',
+            ]);
+
             return null;
         }
 
         if (null !== $sessionId && $entity->sessionId !== $sessionId) {
+            $this->logger->notice('background_process.find_by_pid_session_mismatch', [
+                'component' => 'tool.background_process',
+                'event_type' => 'background_process.find_by_pid_session_mismatch',
+                'process_pid' => $pid,
+                'session_id' => $sessionId,
+                'entity_session_id' => $entity->sessionId,
+                'reason' => 'find_by_pid_session_mismatch',
+            ]);
+
             return null;
         }
 
@@ -284,6 +333,65 @@ final class BackgroundProcessManager
         // process is still running and no persisted column changed.
         // This avoids unnecessary DB writes during polling loops that
         // call find() every ~100 ms.
+        $wasFinished = null !== $entity->finishedAt;
+        $this->resolveEntityStatus($entity);
+
+        if (!$wasFinished && null !== $entity->finishedAt) {
+            $this->store->flush();
+        }
+
+        return $entity;
+    }
+
+    /**
+     * Find a single background process by its auto-increment record ID,
+     * with refreshed status.
+     *
+     * Unlike find() which queries by OS PID (which can be reused after
+     * the process exits), this queries by the immutable auto-increment
+     * primary key. Prefer this when the DB id is available (e.g. from
+     * StartResult::$id returned by start()).
+     *
+     * Session scoping is preserved: if $sessionId is provided and the
+     * entity belongs to a different session, null is returned.
+     *
+     * @param int         $id        Auto-increment record ID (> 0)
+     * @param string|null $sessionId optional session filter.
+     *                               When provided, only a matching session
+     *                               process is returned.
+     *
+     * @return BackgroundProcess|null The entity with refreshed status, or
+     *                                null if not found or session mismatch
+     */
+    public function findByRecordId(int $id, ?string $sessionId = null): ?BackgroundProcess
+    {
+        $entity = $this->store->fetchByRecordId($id);
+
+        if (null === $entity) {
+            $this->logger->notice('background_process.find_by_record_id_null', [
+                'component' => 'tool.background_process',
+                'event_type' => 'background_process.find_by_record_id_null',
+                'record_id' => $id,
+                'session_id' => $sessionId ?? '',
+                'reason' => 'fetch_by_record_id_returned_null',
+            ]);
+
+            return null;
+        }
+
+        if (null !== $sessionId && $entity->sessionId !== $sessionId) {
+            $this->logger->notice('background_process.find_by_record_id_session_mismatch', [
+                'component' => 'tool.background_process',
+                'event_type' => 'background_process.find_by_record_id_session_mismatch',
+                'record_id' => $id,
+                'session_id' => $sessionId,
+                'entity_session_id' => $entity->sessionId,
+                'reason' => 'find_by_record_id_session_mismatch',
+            ]);
+
+            return null;
+        }
+
         $wasFinished = null !== $entity->finishedAt;
         $this->resolveEntityStatus($entity);
 
