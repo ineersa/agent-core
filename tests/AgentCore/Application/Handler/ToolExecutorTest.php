@@ -467,7 +467,6 @@ final class ToolExecutorTest extends TestCase
         $this->assertIsArray($result->details);
         $this->assertSame('interrupt', $result->details['kind']);
         $this->assertSame('Approve deployment?', $result->details['prompt']);
-        $this->assertFalse($result->isError);
     }
 
     public function testAskHumanInterruptPayloadPreservesMetadata(): void

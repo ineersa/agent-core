@@ -499,15 +499,21 @@ final class ToolExecutor implements ToolExecutorInterface
 
     private function interruptResult(ToolCall $toolCall): ToolResult
     {
-        $questionId = \is_string($toolCall->arguments['question_id'] ?? null)
-            ? $toolCall->arguments['question_id']
-            : hash('sha256', \sprintf('%s|%s', $toolCall->toolCallId, $toolCall->toolName));
-
-        $prompt = \is_string($toolCall->arguments['prompt'] ?? null)
+        // Resolve prompt — empty strings fall back (parity with AskHumanTool)
+        $prompt = \is_string($toolCall->arguments['prompt'] ?? null) && '' !== $toolCall->arguments['prompt']
             ? $toolCall->arguments['prompt']
-            : (\is_string($toolCall->arguments['question'] ?? null)
+            : (\is_string($toolCall->arguments['question'] ?? null) && '' !== $toolCall->arguments['question']
                 ? $toolCall->arguments['question']
                 : 'Please provide input.');
+
+        // question_id: explicit wins; ask_human gets content-stable hash
+        if (\is_string($toolCall->arguments['question_id'] ?? null) && '' !== $toolCall->arguments['question_id']) {
+            $questionId = $toolCall->arguments['question_id'];
+        } elseif ('ask_human' === $toolCall->toolName) {
+            $questionId = $this->buildAskHumanQuestionId($toolCall->arguments, $prompt);
+        } else {
+            $questionId = hash('sha256', \sprintf('%s|%s', $toolCall->toolCallId, $toolCall->toolName));
+        }
 
         $schema = $this->resolveInterruptSchema($toolCall->arguments);
         $choices = $this->normalizeInterruptChoices($toolCall->arguments);
@@ -618,7 +624,7 @@ final class ToolExecutor implements ToolExecutorInterface
     /**
      * @param array<string, mixed> $arguments
      *
-     * @return list<array{label: string, description?: string, value?: string}>
+     * @return list<array{label: string, description: string, value?: string}>
      */
     private function normalizeInterruptChoices(array $arguments): array
     {
@@ -641,6 +647,8 @@ final class ToolExecutor implements ToolExecutorInterface
                     continue;
                 }
 
+                // Always include description (empty string when absent)
+                $entry['description'] = '';
                 if (isset($item['description']) && \is_string($item['description']) && '' !== $item['description']) {
                     $entry['description'] = $item['description'];
                 }
@@ -675,6 +683,45 @@ final class ToolExecutor implements ToolExecutorInterface
         }
 
         return $enum;
+    }
+
+    /**
+     * Build a content-stable question_id for ask_human tool calls.
+     *
+     * Mirrors AskHumanTool::resolveQuestionId() algorithm so that
+     * the defensive fallback path in ToolExecutor produces the same
+     * stable question_id as the direct handler path. AgentCore must
+     * not depend on CodingAgent so this is implemented locally.
+     *
+     * @param array<string, mixed> $arguments
+     */
+    private function buildAskHumanQuestionId(array $arguments, string $prompt): string
+    {
+        $hashInput = $prompt;
+
+        $schema = $arguments['schema'] ?? null;
+        if (\is_array($schema)) {
+            $encoded = json_encode($schema, \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
+            $hashInput .= \is_string($encoded) ? $encoded : '';
+        }
+
+        $kind = $arguments['kind'] ?? $arguments['ui_kind'] ?? null;
+        if (\is_string($kind)) {
+            $hashInput .= '/kind:'.$kind;
+        }
+
+        $choices = $arguments['choices'] ?? null;
+        if (\is_array($choices) && [] !== $choices) {
+            $encoded = json_encode($choices, \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
+            $hashInput .= '/choices:'.(\is_string($encoded) ? $encoded : '');
+        }
+
+        $header = $arguments['header'] ?? null;
+        if (\is_string($header) && '' !== $header) {
+            $hashInput .= '/header:'.$header;
+        }
+
+        return 'ah_'.substr(hash('sha256', $hashInput), 0, 24);
     }
 
     /**

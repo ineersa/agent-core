@@ -142,6 +142,12 @@ final class AskHumanTool implements HatfieldToolProviderInterface, ToolHandlerIn
      * Note: ToolExecutor has its own parallel normalization logic in
      * interruptResult() because AgentCore must not depend on CodingAgent.
      *
+     * This handler is used when AskHumanTool is invoked through
+     * RegistryBackedToolbox directly; in normal runs the canonical
+     * interrupt path goes through ToolExecutor::interruptResult()
+     * which produces the same normalized payload shape but in-band
+     * without calling the handler.
+     *
      * @param array<string, mixed> $arguments
      *
      * @return array<string, mixed>
@@ -222,7 +228,8 @@ final class AskHumanTool implements HatfieldToolProviderInterface, ToolHandlerIn
 
         $schema = $arguments['schema'] ?? null;
         if (\is_array($schema)) {
-            $hashInput .= json_encode($schema, \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
+            $encoded = json_encode($schema, \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
+            $hashInput .= \is_string($encoded) ? $encoded : '';
         }
 
         $kind = $arguments['kind'] ?? $arguments['ui_kind'] ?? null;
@@ -232,7 +239,8 @@ final class AskHumanTool implements HatfieldToolProviderInterface, ToolHandlerIn
 
         $choices = $arguments['choices'] ?? null;
         if (\is_array($choices) && [] !== $choices) {
-            $hashInput .= '/choices:'.json_encode($choices, \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
+            $encoded = json_encode($choices, \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
+            $hashInput .= '/choices:'.(\is_string($encoded) ? $encoded : '');
         }
 
         $header = $arguments['header'] ?? null;
@@ -329,11 +337,13 @@ final class AskHumanTool implements HatfieldToolProviderInterface, ToolHandlerIn
      *
      * - Bare strings become {label, description} objects.
      * - Already-structured {label, value, description} objects are preserved.
+     * - Every normalized choice always includes a &#039;description&#039; key (empty
+     *   string when absent in input).
      * - Empty array if no choices or non-array input.
      *
      * @param array<string, mixed> $arguments
      *
-     * @return list<array{label: string, description?: string, value?: string}>
+     * @return list<array{label: string, description: string, value?: string}>
      */
     private static function normalizeChoices(array $arguments): array
     {
@@ -356,6 +366,8 @@ final class AskHumanTool implements HatfieldToolProviderInterface, ToolHandlerIn
                     continue;
                 }
 
+                // Always include description (empty string when absent)
+                $entry['description'] = '';
                 if (isset($item['description']) && \is_string($item['description']) && '' !== $item['description']) {
                     $entry['description'] = $item['description'];
                 }
