@@ -509,37 +509,24 @@ final class ToolExecutor implements ToolExecutorInterface
                 ? $toolCall->arguments['question']
                 : 'Please provide input.');
 
-        $schema = \is_array($toolCall->arguments['schema'] ?? null)
-            ? $toolCall->arguments['schema']
-            : ['type' => 'string'];
-
-        $kind = \is_string($toolCall->arguments['kind'] ?? null)
-            ? $toolCall->arguments['kind']
-            : (\is_string($toolCall->arguments['ui_kind'] ?? null)
-                ? $toolCall->arguments['ui_kind']
-                : null);
-
-        $choices = \is_array($toolCall->arguments['choices'] ?? null)
-            ? $toolCall->arguments['choices']
-            : null;
+        $schema = $this->resolveInterruptSchema($toolCall->arguments);
+        $choices = $this->normalizeInterruptChoices($toolCall->arguments);
+        $kind = $this->resolveInterruptKind($toolCall->arguments, $schema, $choices);
 
         $payload = [
             'kind' => 'interrupt',
             'question_id' => $questionId,
             'prompt' => $prompt,
             'schema' => $schema,
+            'ui_kind' => $kind,
         ];
-
-        if (null !== $kind) {
-            $payload['ui_kind'] = $kind;
-        }
 
         $header = $toolCall->arguments['header'] ?? null;
         if (\is_string($header) && '' !== $header) {
             $payload['header'] = $header;
         }
 
-        if (null !== $choices) {
+        if ([] !== $choices) {
             $payload['choices'] = $choices;
         }
 
@@ -572,6 +559,122 @@ final class ToolExecutor implements ToolExecutorInterface
             details: $payload,
             isError: false,
         );
+    }
+
+    /**
+     * @param array<string, mixed> $arguments
+     *
+     * @return array<string, mixed>
+     */
+    private function resolveInterruptSchema(array $arguments): array
+    {
+        if (isset($arguments['schema']) && \is_array($arguments['schema'])) {
+            return $arguments['schema'];
+        }
+
+        // Derive from kind
+        $kind = $arguments['kind'] ?? $arguments['ui_kind'] ?? null;
+
+        if ('confirm' === $kind || 'approval' === $kind) {
+            return ['type' => 'boolean'];
+        }
+
+        $choices = $arguments['choices'] ?? null;
+        if (\is_array($choices) && [] !== $choices) {
+            $enumValues = $this->extractInterruptEnumValues($choices);
+
+            return [] !== $enumValues
+                ? ['type' => 'string', 'enum' => $enumValues]
+                : ['type' => 'string'];
+        }
+
+        return ['type' => 'string'];
+    }
+
+    /**
+     * @param array<string, mixed>                                             $arguments
+     * @param array<string, mixed>                                             $schema
+     * @param list<array{label: string, description?: string, value?: string}> $choices
+     */
+    private function resolveInterruptKind(array $arguments, array $schema, array $choices): string
+    {
+        $explicit = $arguments['kind'] ?? $arguments['ui_kind'] ?? null;
+        if (\is_string($explicit) && '' !== $explicit) {
+            return $explicit;
+        }
+
+        // Derive from schema
+        if (isset($schema['type']) && 'boolean' === $schema['type']) {
+            return 'confirm';
+        }
+
+        if ([] !== $choices) {
+            return 'choice';
+        }
+
+        return 'text';
+    }
+
+    /**
+     * @param array<string, mixed> $arguments
+     *
+     * @return list<array{label: string, description?: string, value?: string}>
+     */
+    private function normalizeInterruptChoices(array $arguments): array
+    {
+        $raw = $arguments['choices'] ?? null;
+        if (!\is_array($raw) || [] === $raw) {
+            return [];
+        }
+
+        $normalized = [];
+        foreach ($raw as $item) {
+            if (\is_string($item)) {
+                $normalized[] = ['label' => $item, 'description' => ''];
+            } elseif (\is_array($item)) {
+                $entry = [];
+                if (isset($item['label']) && \is_string($item['label'])) {
+                    $entry['label'] = $item['label'];
+                } elseif (isset($item['value']) && \is_string($item['value'])) {
+                    $entry['label'] = $item['value'];
+                } else {
+                    continue;
+                }
+
+                if (isset($item['description']) && \is_string($item['description']) && '' !== $item['description']) {
+                    $entry['description'] = $item['description'];
+                }
+
+                if (isset($item['value']) && \is_string($item['value'])) {
+                    $entry['value'] = $item['value'];
+                }
+
+                $normalized[] = $entry;
+            }
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * @param array<mixed> $choices
+     *
+     * @return list<string>
+     */
+    private function extractInterruptEnumValues(array $choices): array
+    {
+        $enum = [];
+        foreach ($choices as $choice) {
+            if (\is_string($choice)) {
+                $enum[] = $choice;
+            } elseif (\is_array($choice) && isset($choice['value']) && \is_string($choice['value'])) {
+                $enum[] = $choice['value'];
+            } elseif (\is_array($choice) && isset($choice['label']) && \is_string($choice['label'])) {
+                $enum[] = $choice['label'];
+            }
+        }
+
+        return $enum;
     }
 
     /**

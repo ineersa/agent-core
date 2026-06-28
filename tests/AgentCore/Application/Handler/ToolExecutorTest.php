@@ -509,9 +509,17 @@ final class ToolExecutorTest extends TestCase
         $this->assertFalse($result->details['allow_other']);
         $this->assertFalse($result->details['secret']);
 
-        // Normalized choices from ToolExecutor (preserves raw array form)
+        // Normalized choices from ToolExecutor
         $this->assertArrayHasKey('choices', $result->details);
         $this->assertCount(2, $result->details['choices']);
+        // Structured entry preserved
+        $this->assertSame('Option A', $result->details['choices'][0]['label']);
+        $this->assertSame('First choice', $result->details['choices'][0]['description']);
+        $this->assertArrayNotHasKey('value', $result->details['choices'][0]);
+        // Bare string normalized to {label, description}
+        $this->assertSame('Option B', $result->details['choices'][1]['label']);
+        $this->assertSame('', $result->details['choices'][1]['description']);
+        $this->assertArrayNotHasKey('value', $result->details['choices'][1]);
 
         // Content is JSON-encoded payload
         $this->assertIsString($result->content[0]['text']);
@@ -520,6 +528,54 @@ final class ToolExecutorTest extends TestCase
         $this->assertSame('interrupt', $decoded['kind']);
         $this->assertSame('pick-one', $decoded['question_id']);
         $this->assertSame('choice', $decoded['ui_kind']);
+        // Bare string normalized in content JSON too
+        $this->assertSame('Option A', $decoded['choices'][0]['label']);
+        $this->assertSame('Option B', $decoded['choices'][1]['label']);
+        $this->assertSame('', $decoded['choices'][1]['description']);
+    }
+
+    public function testAskHumanDefensiveFallbackDerivesSchemaEnumFromBareStringChoices(): void
+    {
+        $executor = new ToolExecutor('sequential', 30, 2, new ToolExecutionResultStore());
+
+        $result = $executor->execute(ToolCallBuilder::create('call-ask-human-derive')
+            ->withToolName('ask_human')
+            ->withArguments([
+                'question' => 'Select one:',
+                'choices' => ['simple', 'robust', 'fast'],
+                // Note: no explicit schema or kind — ToolExecutor must derive both
+            ])
+            ->withOrderIndex(0)
+            ->build());
+
+        $this->assertFalse($result->isError);
+        $this->assertIsArray($result->details);
+
+        // Core interrupt fields
+        $this->assertSame('interrupt', $result->details['kind']);
+        $this->assertSame('Select one:', $result->details['prompt']);
+
+        // Schema derived from bare string choices: type=string, enum from values
+        $this->assertSame(['type' => 'string', 'enum' => ['simple', 'robust', 'fast']], $result->details['schema']);
+
+        // ui_kind derived from choices: 'choice'
+        $this->assertSame('choice', $result->details['ui_kind']);
+
+        // Choices normalized
+        $this->assertArrayHasKey('choices', $result->details);
+        $this->assertCount(3, $result->details['choices']);
+        $this->assertSame('simple', $result->details['choices'][0]['label']);
+        $this->assertSame('', $result->details['choices'][0]['description']);
+        $this->assertSame('robust', $result->details['choices'][1]['label']);
+        $this->assertSame('fast', $result->details['choices'][2]['label']);
+        $this->assertArrayNotHasKey('value', $result->details['choices'][2]);
+
+        // Content JSON is consistent
+        $decoded = json_decode($result->content[0]['text'], true);
+        $this->assertIsArray($decoded);
+        $this->assertSame('interrupt', $decoded['kind']);
+        $this->assertSame('choice', $decoded['ui_kind']);
+        $this->assertSame(['type' => 'string', 'enum' => ['simple', 'robust', 'fast']], $decoded['schema']);
     }
 
 }

@@ -61,7 +61,16 @@ final class AskHumanTool implements HatfieldToolProviderInterface, ToolHandlerIn
                 'properties' => [
                     'question' => [
                         'type' => 'string',
-                        'description' => 'The question or prompt to display to the user. Use a clear, concise question.',
+                        'description' => 'The question or prompt to display to the user. Use a clear, concise question. This field is preferred over \'prompt\'.',
+                    ],
+                    'prompt' => [
+                        'type' => 'string',
+                        'description' => 'Alias for question. Prefer the \'question\' field instead.',
+                    ],
+                    'ui_kind' => [
+                        'type' => 'string',
+                        'enum' => ['text', 'confirm', 'choice', 'approval'],
+                        'description' => 'Alias for kind. Overrides derivation from schema/choices if present.',
                     ],
                     'schema' => [
                         'type' => 'object',
@@ -130,8 +139,8 @@ final class AskHumanTool implements HatfieldToolProviderInterface, ToolHandlerIn
     /**
      * Build a normalized interrupt payload from tool call arguments.
      *
-     * Extracted as a static method so ToolExecutor can reuse the same
-     * normalization logic without depending on this class.
+     * Note: ToolExecutor has its own parallel normalization logic in
+     * interruptResult() because AgentCore must not depend on CodingAgent.
      *
      * @param array<string, mixed> $arguments
      *
