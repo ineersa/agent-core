@@ -264,7 +264,10 @@ final class BackgroundProcessManager
     }
 
     /**
-     * Check whether a row exists for the given record ID using direct SQL.
+     * Check whether a row exists for the given record ID.
+     *
+     * Uses an ORM COUNT query that always hits the database, bypassing
+     * the identity map.
      */
     public function existsByRecordId(int $id): bool
     {
