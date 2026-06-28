@@ -130,4 +130,3 @@ final class SqlitePragmaMiddlewareDriver extends AbstractDriverMiddleware
         }
     }
 }
-
