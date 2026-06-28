@@ -15,7 +15,6 @@ use Ineersa\AgentCore\Contract\Tool\ToolIdempotencyKeyResolverInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolResultProcessorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
-use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionPolicy;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Symfony\AI\Agent\Toolbox\FaultTolerantToolbox;
@@ -220,10 +219,6 @@ final class ToolExecutor implements ToolExecutorInterface
 
     private function executeToolCall(ToolCall $toolCall, ToolExecutionPolicy $policy): ToolResult
     {
-        if (ToolExecutionMode::Interrupt === $policy->mode || 'ask_user' === $toolCall->toolName) {
-            return $this->interruptResult($toolCall);
-        }
-
         if (null === $this->faultTolerantToolbox) {
             return $this->errorResult(
                 toolCallId: $toolCall->toolCallId,
@@ -495,46 +490,6 @@ final class ToolExecutor implements ToolExecutorInterface
         $token = $toolCall->context['cancel_token'] ?? null;
 
         return $token instanceof CancellationTokenInterface ? $token : new NullCancellationToken();
-    }
-
-    private function interruptResult(ToolCall $toolCall): ToolResult
-    {
-        $questionId = \is_string($toolCall->arguments['question_id'] ?? null)
-            ? $toolCall->arguments['question_id']
-            : hash('sha256', \sprintf('%s|%s', $toolCall->toolCallId, $toolCall->toolName));
-
-        $prompt = \is_string($toolCall->arguments['prompt'] ?? null)
-            ? $toolCall->arguments['prompt']
-            : (\is_string($toolCall->arguments['question'] ?? null)
-                ? $toolCall->arguments['question']
-                : 'Please provide input.');
-
-        $schema = \is_array($toolCall->arguments['schema'] ?? null)
-            ? $toolCall->arguments['schema']
-            : ['type' => 'string'];
-
-        $payload = [
-            'kind' => 'interrupt',
-            'question_id' => $questionId,
-            'prompt' => $prompt,
-            'schema' => $schema,
-        ];
-
-        $content = json_encode($payload);
-        if (false === $content) {
-            $content = '{}';
-        }
-
-        return new ToolResult(
-            toolCallId: $toolCall->toolCallId,
-            toolName: $toolCall->toolName,
-            content: [[
-                'type' => 'text',
-                'text' => $content,
-            ]],
-            details: $payload,
-            isError: false,
-        );
     }
 
     /**

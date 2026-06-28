@@ -11,7 +11,6 @@ use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
-use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\AgentCore\Tests\Support\Builder\ToolCallBuilder;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
@@ -24,26 +23,27 @@ use Symfony\Component\EventDispatcher\EventDispatcher;
 
 final class ToolExecutorTest extends TestCase
 {
-    public function testInterruptModeProducesInterruptPayload(): void
+    public function testToolboxInterruptResultIsPreservedInDetails(): void
     {
-        $executor = new ToolExecutor('interrupt', 30, 2, new ToolExecutionResultStore());
+        $toolbox = new Toolbox([new InterruptTool()]);
+        $executor = new ToolExecutor(
+            defaultMode: 'sequential',
+            defaultTimeoutSeconds: 30,
+            maxParallelism: 2,
+            toolbox: $toolbox,
+            resultStore: new ToolExecutionResultStore(),
+        );
 
         $result = $executor->execute(ToolCallBuilder::create('tool-call-1')
-            ->withToolName('ask_user')
-            ->withArguments([
-                'question_id' => 'q-1',
-                'prompt' => 'Approve deployment?',
-                'schema' => ['type' => 'boolean'],
-            ])
+            ->withToolName('human_gate')
+            ->withArguments([])
             ->withOrderIndex(0)
-            ->withRunId('run-stage-06')
-            ->withMode(ToolExecutionMode::Interrupt)
             ->build());
 
         $this->assertFalse($result->isError);
         $this->assertIsArray($result->details);
         $this->assertSame('interrupt', $result->details['kind']);
-        $this->assertSame('q-1', $result->details['question_id']);
+        $this->assertSame('test-q-1', $result->details['question_id']);
         $this->assertSame('Approve deployment?', $result->details['prompt']);
     }
 
@@ -449,6 +449,24 @@ final class ToolExecutorTest extends TestCase
     }
 
 }
+
+
+    #[AsTool(name: 'human_gate', description: 'Ask for human input.')]
+    final class InterruptTool
+    {
+        /**
+         * @return array{kind: string, question_id: string, prompt: string, schema: array{type: string}}
+         */
+        public function __invoke(): array
+        {
+            return [
+                'kind' => 'interrupt',
+                'question_id' => 'test-q-1',
+                'prompt' => 'Approve deployment?',
+                'schema' => ['type' => 'boolean'],
+            ];
+        }
+    }
 
 
     final class ContextCheckingToolbox implements ToolboxInterface
