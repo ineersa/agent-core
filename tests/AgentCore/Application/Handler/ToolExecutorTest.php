@@ -448,6 +448,80 @@ final class ToolExecutorTest extends TestCase
         $this->assertNull($result->details['timeout_seconds'] ?? null);
     }
 
+    /* ───────── ask_human defensive fallback ───────── */
+
+    public function testAskHumanDefensiveFallbackWithSequentialModeStillInterrupts(): void
+    {
+        $executor = new ToolExecutor('sequential', 30, 2, new ToolExecutionResultStore());
+
+        $result = $executor->execute(ToolCallBuilder::create('call-ask-human')
+            ->withToolName('ask_human')
+            ->withArguments([
+                'question' => 'Approve deployment?',
+                'schema' => ['type' => 'boolean'],
+            ])
+            ->withOrderIndex(0)
+            ->build());
+
+        $this->assertFalse($result->isError);
+        $this->assertIsArray($result->details);
+        $this->assertSame('interrupt', $result->details['kind']);
+        $this->assertSame('Approve deployment?', $result->details['prompt']);
+        $this->assertFalse($result->isError);
+    }
+
+    public function testAskHumanInterruptPayloadPreservesMetadata(): void
+    {
+        $executor = new ToolExecutor('sequential', 30, 2, new ToolExecutionResultStore());
+
+        $result = $executor->execute(ToolCallBuilder::create('call-ask-human-meta')
+            ->withToolName('ask_human')
+            ->withArguments([
+                'question' => 'Pick an option:',
+                'schema' => ['type' => 'string', 'enum' => ['a', 'b']],
+                'kind' => 'choice',
+                'choices' => [
+                    ['label' => 'Option A', 'description' => 'First choice'],
+                    'Option B',
+                ],
+                'header' => 'Important Decision',
+                'default' => 'a',
+                'allow_other' => false,
+                'secret' => false,
+                'question_id' => 'pick-one',
+            ])
+            ->withOrderIndex(0)
+            ->build());
+
+        $this->assertFalse($result->isError);
+        $this->assertIsArray($result->details);
+
+        // Core interrupt fields
+        $this->assertSame('interrupt', $result->details['kind']);
+        $this->assertSame('pick-one', $result->details['question_id']);
+        $this->assertSame('Pick an option:', $result->details['prompt']);
+        $this->assertSame(['type' => 'string', 'enum' => ['a', 'b']], $result->details['schema']);
+
+        // UI metadata
+        $this->assertSame('choice', $result->details['ui_kind']);
+        $this->assertSame('Important Decision', $result->details['header']);
+        $this->assertSame('a', $result->details['default']);
+        $this->assertFalse($result->details['allow_other']);
+        $this->assertFalse($result->details['secret']);
+
+        // Normalized choices from ToolExecutor (preserves raw array form)
+        $this->assertArrayHasKey('choices', $result->details);
+        $this->assertCount(2, $result->details['choices']);
+
+        // Content is JSON-encoded payload
+        $this->assertIsString($result->content[0]['text']);
+        $decoded = json_decode($result->content[0]['text'], true);
+        $this->assertIsArray($decoded);
+        $this->assertSame('interrupt', $decoded['kind']);
+        $this->assertSame('pick-one', $decoded['question_id']);
+        $this->assertSame('choice', $decoded['ui_kind']);
+    }
+
 }
 
 

@@ -220,7 +220,7 @@ final class ToolExecutor implements ToolExecutorInterface
 
     private function executeToolCall(ToolCall $toolCall, ToolExecutionPolicy $policy): ToolResult
     {
-        if (ToolExecutionMode::Interrupt === $policy->mode || 'ask_user' === $toolCall->toolName) {
+        if (ToolExecutionMode::Interrupt === $policy->mode || 'ask_user' === $toolCall->toolName || 'ask_human' === $toolCall->toolName) {
             return $this->interruptResult($toolCall);
         }
 
@@ -513,12 +513,49 @@ final class ToolExecutor implements ToolExecutorInterface
             ? $toolCall->arguments['schema']
             : ['type' => 'string'];
 
+        $kind = \is_string($toolCall->arguments['kind'] ?? null)
+            ? $toolCall->arguments['kind']
+            : (\is_string($toolCall->arguments['ui_kind'] ?? null)
+                ? $toolCall->arguments['ui_kind']
+                : null);
+
+        $choices = \is_array($toolCall->arguments['choices'] ?? null)
+            ? $toolCall->arguments['choices']
+            : null;
+
         $payload = [
             'kind' => 'interrupt',
             'question_id' => $questionId,
             'prompt' => $prompt,
             'schema' => $schema,
         ];
+
+        if (null !== $kind) {
+            $payload['ui_kind'] = $kind;
+        }
+
+        $header = $toolCall->arguments['header'] ?? null;
+        if (\is_string($header) && '' !== $header) {
+            $payload['header'] = $header;
+        }
+
+        if (null !== $choices) {
+            $payload['choices'] = $choices;
+        }
+
+        if (\array_key_exists('default', $toolCall->arguments)) {
+            $payload['default'] = $toolCall->arguments['default'];
+        }
+
+        $allowOther = $toolCall->arguments['allow_other'] ?? null;
+        if (\is_bool($allowOther)) {
+            $payload['allow_other'] = $allowOther;
+        }
+
+        $secret = $toolCall->arguments['secret'] ?? null;
+        if (\is_bool($secret)) {
+            $payload['secret'] = $secret;
+        }
 
         $content = json_encode($payload);
         if (false === $content) {
