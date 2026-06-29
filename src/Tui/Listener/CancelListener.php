@@ -7,6 +7,7 @@ namespace Ineersa\Tui\Listener;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
+use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Psr\Log\LoggerInterface;
@@ -32,6 +33,7 @@ final class CancelListener implements TuiListenerRegistrar
     public function __construct(
         private readonly LoggerInterface $logger,
         private readonly RuntimeExceptionBoundary $boundary,
+        private readonly QuestionController $questionController,
     ) {
     }
 
@@ -42,8 +44,18 @@ final class CancelListener implements TuiListenerRegistrar
         $screen = $context->screen;
         $logger = $this->logger;
         $boundary = $this->boundary;
+        $questionController = $this->questionController;
 
-        $context->tui->addListener(static function (CancelEvent $event) use ($client, $state, $screen, $logger, $boundary): void {
+        $context->tui->addListener(static function (CancelEvent $event) use ($client, $state, $screen, $logger, $boundary, $questionController): void {
+            // Free-form typing (__other__ escape hatch): ESC returns to the
+            // select list instead of cancelling the run. The user can then ESC
+            // again from the list to cancel the question (→ 'Cancelled by user').
+            if ($questionController->isAwaitingFreeForm()) {
+                $questionController->restoreFromFreeForm();
+
+                return;
+            }
+
             // Active run (Starting/Running/WaitingHuman/Cancelling) — send cancel.
             // Compacting: auto-compaction maintenance is in flight — also
             // send cancel so the user can abort a stuck compaction (session 13).

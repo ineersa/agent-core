@@ -189,6 +189,88 @@ final class AnswerHumanHandlerTest extends TestCase
         self::assertCount(1, $emittedEvents);
         self::assertSame(RuntimeEventTypeEnum::ProtocolError->value, $emittedEvents[0]->type);
     }
+
+    // ── QH-06 follow-up: boolean false must pass the gate (regression guard) ──
+
+    public function testDispatchesBooleanFalseAnswer(): void
+    {
+        $handler = new AnswerHumanHandler($this->spyClient);
+
+        $command = new RuntimeCommand(
+            id: 'cmd_bool_false',
+            type: 'answer_human',
+            runId: 'run-bool',
+            payload: [
+                'question_id' => 'q_confirm',
+                'answer' => false,
+            ],
+        );
+
+        $event = new ControllerCommandEvent($command, static function (): void {});
+        $handler($event);
+
+        // Boolean false must dispatch (confirm "No" answers). The gate at
+        // line ~61 accepts is_scalar(false) and is not a string, so it must
+        // NOT be rejected as ProtocolError. If a future refactor reverts the
+        // gate to '' === (string) $answer, this test fails.
+        self::assertNotNull($this->spyClient->lastCommand);
+        self::assertSame('answer_human', $this->spyClient->lastCommand->type);
+        self::assertSame('q_confirm', $this->spyClient->lastCommand->payload['question_id'] ?? null);
+        self::assertFalse($this->spyClient->lastCommand->payload['answer'] ?? null);
+    }
+
+    public function testDispatchesBooleanTrueAnswer(): void
+    {
+        $handler = new AnswerHumanHandler($this->spyClient);
+
+        $command = new RuntimeCommand(
+            id: 'cmd_bool_true',
+            type: 'answer_human',
+            runId: 'run-bool',
+            payload: [
+                'question_id' => 'q_confirm',
+                'answer' => true,
+            ],
+        );
+
+        $event = new ControllerCommandEvent($command, static function (): void {});
+        $handler($event);
+
+        // Boolean true must dispatch (confirm "Yes" answers).
+        self::assertNotNull($this->spyClient->lastCommand);
+        self::assertSame('answer_human', $this->spyClient->lastCommand->type);
+        self::assertSame('q_confirm', $this->spyClient->lastCommand->payload['question_id'] ?? null);
+        self::assertTrue($this->spyClient->lastCommand->payload['answer'] ?? null);
+    }
+
+    public function testEmitsProtocolErrorWhenAnswerIsExplicitNull(): void
+    {
+        $handler = new AnswerHumanHandler($this->spyClient);
+
+        $emittedEvents = [];
+        $emit = static function (RuntimeEvent $event) use (&$emittedEvents): void {
+            $emittedEvents[] = $event;
+        };
+
+        $command = new RuntimeCommand(
+            id: 'cmd_null',
+            type: 'answer_human',
+            runId: 'run-null',
+            payload: [
+                'question_id' => 'q_null',
+                'answer' => null,
+            ],
+        );
+
+        $event = new ControllerCommandEvent($command, $emit);
+        $handler($event);
+
+        // Explicit null is not scalar → must be rejected. Protects against
+        // a future gate relaxing is_scalar without guarding null.
+        self::assertNull($this->spyClient->lastCommand);
+        self::assertCount(1, $emittedEvents);
+        self::assertSame(RuntimeEventTypeEnum::ProtocolError->value, $emittedEvents[0]->type);
+    }
 }
 
 /**

@@ -38,7 +38,6 @@ final readonly class QuestionRequest
         public mixed $default = null,
         public ?string $header = null,
         public bool $allowOther = true,
-        public bool $secret = false,
         public ?string $runId = null,
         public ?string $questionId = null,
         public ?string $toolCallId = null,

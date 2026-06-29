@@ -474,18 +474,38 @@ final class RuntimeEventMapperTest extends TestCase
             'prompt' => 'Approve deployment?',
             'schema' => ['type' => 'boolean'],
             'tool_call_id' => 'call-ask',
-            'tool_name' => 'ask_user',
+            'tool_name' => 'ask_human',
+            'kind' => 'interrupt',
+            'ui_kind' => 'approval',
+            'header' => 'Confirm Action',
+            'choices' => [['label' => 'Yes'], ['label' => 'No']],
+            'default' => null,
+            'allow_other' => false,
+            'secret' => false,
         ]);
 
         $result = $this->mapper->toRuntimeEvent($event);
 
         self::assertNotNull($result);
         self::assertSame(RuntimeEventTypeEnum::HumanInputRequested->value, $result->type);
+        // Core fields
         self::assertSame('q-approve-1', $result->payload['question_id']);
         self::assertSame('Approve deployment?', $result->payload['prompt']);
         self::assertSame(['type' => 'boolean'], $result->payload['schema']);
         self::assertSame('call-ask', $result->payload['tool_call_id']);
-        self::assertSame('ask_user', $result->payload['tool_name']);
+        self::assertSame('ask_human', $result->payload['tool_name']);
+        // Both transport marker (kind) and UI semantics (ui_kind) survive
+        self::assertSame('interrupt', $result->payload['kind']);
+        self::assertSame('approval', $result->payload['ui_kind']);
+        // Rich UI fields survive via generic passthrough (no blanket array_filter)
+        self::assertSame('Confirm Action', $result->payload['header']);
+        self::assertSame([['label' => 'Yes'], ['label' => 'No']], $result->payload['choices']);
+        // Explicit key-presence assertion makes the no-array_filter contract
+        // version-independent (does not rely on PHPUnit's undefined-key handling).
+        self::assertArrayHasKey('default', $result->payload);
+        self::assertNull($result->payload['default']);
+        self::assertFalse($result->payload['allow_other']);
+        self::assertFalse($result->payload['secret']);
     }
 
     public function testNormalizesWaitingHumanMinimalPayload(): void
@@ -500,6 +520,7 @@ final class RuntimeEventMapperTest extends TestCase
         self::assertSame(RuntimeEventTypeEnum::HumanInputRequested->value, $result->type);
         self::assertSame('q-minimal-1', $result->payload['question_id']);
         self::assertSame('Human input required.', $result->payload['prompt']);
+        self::assertSame(['type' => 'string'], $result->payload['schema']);
     }
 
     // ── HITL answers ─────────────────────────────────────────────────────────

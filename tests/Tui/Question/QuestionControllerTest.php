@@ -6,12 +6,18 @@ namespace Ineersa\Tui\Tests\Question;
 
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
+use Ineersa\Tui\Theme\ThemeColorEnum;
+use Ineersa\Tui\Theme\DefaultTheme;
+use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Question\QuestionKind;
 use Ineersa\Tui\Question\QuestionOption;
 use Ineersa\Tui\Question\QuestionRequest;
 use Ineersa\Tui\Question\QuestionSource;
+use Ineersa\Tui\Editor\PromptEditor;
+use Ineersa\Tui\Screen\ChatScreen;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Tui\Widget\EditorWidget;
 
 /**
  * Tests for the QuestionController.
@@ -56,6 +62,54 @@ class QuestionControllerTest extends TestCase
         self::assertFalse($this->controller->isOpen());
     }
 
+    // ── Focus restoration (__other__ escape hatch) ──
+
+    #[Test]
+    public function testEditorWidgetIsAccessibleWhenScreenInjected(): void
+    {
+        // The __other__ escape hatch calls screen->setFocus(screen->editorWidget())
+        // after close(). This test verifies that editorWidget() is accessible
+        // through a ChatScreen with a PromptEditor injected.
+        //
+        // Full SelectListWidget event dispatch requires Symfony Tui
+        // infrastructure (tui->mount(), insertOverlayBeforeEditor) and is
+        // not unit-testable without it. This test at minimum proves the
+        // editorWidget() call path does not crash.
+        $chatRef = new \ReflectionClass(ChatScreen::class);
+        /** @var ChatScreen $screen */
+        $screen = $chatRef->newInstanceWithoutConstructor();
+
+        $promptEditor = new PromptEditor();
+        $promptEditorProp = $chatRef->getProperty('promptEditor');
+        $promptEditorProp->setValue($screen, $promptEditor);
+
+        // Inject a theme so styleConfirmItems can access it
+        $palette = new ThemePalette(
+            name: 'test',
+            colors: [
+                ThemeColorEnum::Success->value => 'green',
+                ThemeColorEnum::Error->value => 'red',
+            ],
+        );
+        $theme = new DefaultTheme($palette);
+        $themeProp = $chatRef->getProperty('theme');
+        $themeProp->setValue($screen, $theme);
+
+        // Inject the screen into the controller
+        $ctrlRef = new \ReflectionClass($this->controller);
+        $screenProp = $ctrlRef->getProperty('screen');
+        $screenProp->setValue($this->controller, $screen);
+
+        // Verify editorWidget() path (called by __other__ handler)
+        $editorWidget = $screen->editorWidget();
+        self::assertInstanceOf(EditorWidget::class, $editorWidget);
+
+        // Close lifecycle is tested by other tests (testCloseIsSafeWhenNotOpen);
+        // calling close() here requires a full set of ChatScreen dependencies
+        // (registry, tui, footerDataProvider, etc.) that are beyond the scope
+        // of this unit-level editorWidget() accessibility proof.
+    }
+
     // ── Build items ──
 
     /**
@@ -73,11 +127,12 @@ class QuestionControllerTest extends TestCase
 
         $items = $this->invokeBuildItems($request);
 
-        self::assertCount(3, $items); // Yes, No, Type your answer
+        // Confirm is binary (Yes/No) — the escape hatch only renders for
+        // Choice (free-form text would be silently coerced to boolean).
+        self::assertCount(2, $items);
         self::assertSame('yes', $items[0]['value']);
-        self::assertSame('No', $items[1]['label']);
-        self::assertSame('__other__', $items[2]['value']);
-        self::assertSame('Type your answer', $items[2]['label']);
+        self::assertSame("\u{2713} Yes", $items[0]['label']);
+        self::assertSame("\u{2717} No", $items[1]['label']);
     }
 
     #[Test]
@@ -283,7 +338,99 @@ class QuestionControllerTest extends TestCase
         self::assertCount(0, $items);
     }
 
+    // ── Confirm styling ──
+
+    #[Test]
+    public function testConfirmItemsIconsAndThemeColoring(): void
+    {
+        // Verify buildItems includes icon markers for confirm labels.
+        $request = new QuestionRequest(
+            requestId: 'confirm-icons',
+            source: QuestionSource::Tui,
+            kind: QuestionKind::Confirm,
+            prompt: 'Test?',
+            allowOther: false,
+        );
+
+        $items = $this->invokeBuildItems($request);
+        self::assertCount(2, $items);
+        self::assertStringContainsString("\u{2713}", $items[0]['label'], 'Confirm Yes must include checkmark icon');
+        self::assertStringContainsString("\u{2717}", $items[1]['label'], 'Confirm No must include cross icon');
+
+        // Create a real DefaultTheme with a test palette to verify the
+        // theme color integration works for confirm items.
+        $palette = new ThemePalette(
+            name: 'test',
+            colors: [
+                ThemeColorEnum::Success->value => 'green',
+                ThemeColorEnum::Error->value => 'red',
+            ],
+        );
+        $theme = new DefaultTheme($palette);
+
+        // Verify success wraps Yes with the marker and color
+        $styledYes = $theme->color(ThemeColorEnum::Success, "\u{2713} Yes");
+        self::assertStringContainsString("\u{2713}", $styledYes, 'Styled Yes must retain checkmark icon');
+        self::assertStringContainsString('Yes', $styledYes);
+        self::assertNotSame("\u{2713} Yes", $styledYes, 'Styled label must differ from plain label');
+
+        // Verify error wraps No with the marker and color
+        $styledNo = $theme->color(ThemeColorEnum::Error, "\u{2717} No");
+        self::assertStringContainsString("\u{2717}", $styledNo, 'Styled No must retain cross icon');
+        self::assertStringContainsString('No', $styledNo);
+        self::assertNotSame("\u{2717} No", $styledNo, 'Styled label must differ from plain label');
+    }
+
     // ── Coordinator integration ──
+
+    #[Test]
+    public function testStyleConfirmItemsOnlyAppliesToConfirmKind(): void
+    {
+        $palette = new ThemePalette(
+            name: 'test',
+            colors: [
+                ThemeColorEnum::Success->value => 'green',
+                ThemeColorEnum::Error->value => 'red',
+            ],
+        );
+        $theme = new DefaultTheme($palette);
+
+        // Create a ChatScreen without constructor and inject the test theme
+        $chatRef = new \ReflectionClass(ChatScreen::class);
+        /** @var ChatScreen $screen */
+        $screen = $chatRef->newInstanceWithoutConstructor();
+        $themeProp = $chatRef->getProperty('theme');
+        $themeProp->setValue($screen, $theme);
+
+        // Inject the screen into the controller
+        $ctrlRef = new \ReflectionClass($this->controller);
+        $screenProp = $ctrlRef->getProperty('screen');
+        $screenProp->setValue($this->controller, $screen);
+
+        $invokeStyle = new \ReflectionMethod($this->controller, 'styleConfirmItems');
+
+        // Thesis 1: Confirm kind items get styled
+        // Even with icon markers already in labels, actual styling via
+        // theme->color() wraps the label text with ANSI color codes.
+        $confirmItems = [
+            ['value' => 'yes', 'label' => "\u{2713} Yes"],
+            ['value' => 'no', 'label' => "\u{2717} No"],
+        ];
+        $styled = $invokeStyle->invoke($this->controller, $confirmItems, QuestionKind::Confirm);
+        self::assertNotSame("\u{2713} Yes", $styled[0]['label'], 'Confirm Yes must be styled with Success color');
+        self::assertNotSame("\u{2717} No", $styled[1]['label'], 'Confirm No must be styled with Error color');
+
+        // Thesis 2: Choice kind items with the same values are NOT styled
+        // This proves the kind guard prevents accidental coloring of
+        // Choice options whose labels happen to be 'yes' or 'no'.
+        $choiceItems = [
+            ['value' => 'yes', 'label' => 'yes'],
+            ['value' => 'no', 'label' => 'no'],
+            ['value' => 'other', 'label' => 'other'],
+        ];
+        $unstyled = $invokeStyle->invoke($this->controller, $choiceItems, QuestionKind::Choice);
+        self::assertSame($choiceItems, $unstyled, 'Choice items must be returned unchanged even when values are yes/no');
+    }
 
     #[Test]
     public function testAnswerInvokesCoordinatorCallback(): void
@@ -329,6 +476,119 @@ class QuestionControllerTest extends TestCase
     public function testActionRequiredFalseWhenNoQuestionQueued(): void
     {
         self::assertFalse($this->coordinator->actionRequired());
+    }
+
+    // ── AwaitingFreeForm lifecycle (__other__ escape hatch) ──
+
+    #[Test]
+    public function testAwaitingFreeFormLifecycleAfterDismiss(): void
+    {
+        // The awaitingFreeForm flag protects TickPollListener's per-tick
+        // re-open guard: after __other__ dismiss, actionRequired() is
+        // still true but isAwaitingFreeForm() is also true, so the guard
+        // does NOT re-open the overlay. After coordinator->answer() (which
+        // calls close()), the flag is reset to false.
+        //
+        // The dismissToEditor() path cannot call open() first because
+        // QuestionController::open() requires a fully mounted ChatScreen
+        // (Symfony Tui tree) to call insertOverlayBeforeEditor().
+        // Instead we set isOpen=true via reflection to prove the flag
+        // lifecycle contract.
+
+        $ctrlRef = new \ReflectionClass($this->controller);
+
+        // Thesis 1: Default state
+        self::assertFalse($this->controller->isAwaitingFreeForm());
+        self::assertFalse($this->controller->isOpen());
+
+        // Set isOpen=true to simulate an open overlay
+        $isOpenProp = $ctrlRef->getProperty('isOpen');
+        $isOpenProp->setValue($this->controller, true);
+        self::assertTrue($this->controller->isOpen());
+
+        // Invoke dismissToEditor via reflection (the __other__ escape hatch)
+        $dismiss = new \ReflectionMethod($this->controller, 'dismissToEditor');
+        $dismiss->invoke($this->controller);
+
+        // Thesis 2: After dismiss, isAwaitingFreeForm=true, isOpen=false
+        self::assertTrue($this->controller->isAwaitingFreeForm(), 'After __other__ dismiss, awaitingFreeForm must be true');
+        self::assertFalse($this->controller->isOpen(), 'After __other__ dismiss, overlay must be closed');
+
+        // Simulate what happens when SubmitListener answers: close() is called
+        $this->controller->close();
+
+        // Thesis 3: After close(), isAwaitingFreeForm=false (reset by close)
+        self::assertFalse($this->controller->isAwaitingFreeForm(), 'After close(), awaitingFreeForm must be reset to false');
+    }
+
+    #[Test]
+    public function testCloseResetsAwaitingFreeFormFlagIdempotently(): void
+    {
+        // Regression: close() resets awaitingFreeForm to false even when
+        // the overlay is already closed (no-op safety net). This validates
+        // that the reset is idempotent across repeated close() calls,
+        // so that close() from any code path (answer, reject, cancel,
+        // self-heal, reset) leaves the flag clean regardless of state.
+        //
+        // Both open() and close() defensively assign $this->awaitingFreeForm
+        // = false. This test proves close()'s reset contract (the assignment
+        // is shared code); open() cannot be called at this layer because it
+        // requires a mounted ChatScreen (Symfony Tui tree).
+
+        $ctrlRef = new \ReflectionClass($this->controller);
+
+        // Set awaitingFreeForm=true via reflection
+        $awaitProp = $ctrlRef->getProperty('awaitingFreeForm');
+        $awaitProp->setValue($this->controller, true);
+        self::assertTrue($this->controller->isAwaitingFreeForm());
+
+        // close() also resets awaitingFreeForm. Verify that too.
+        // Then manually set it back to test close() reset independently.
+        $this->controller->close();
+        self::assertFalse($this->controller->isAwaitingFreeForm(), 'close() must reset awaitingFreeForm');
+
+        // Set awaitingFreeForm=true again and verify reset via the isOpen
+        // property pathway — the same reset happens in close() and open().
+        $awaitProp->setValue($this->controller, true);
+        self::assertTrue($this->controller->isAwaitingFreeForm());
+
+        // Verify close() resets it again
+        $this->controller->close();
+        self::assertFalse($this->controller->isAwaitingFreeForm(), 'close() resets awaitingFreeForm on second call');
+    }
+
+    // ── Restore from free-form (Fix B: ESC returns to options) ──
+
+    #[Test]
+    public function testRestoreFromFreeFormResetsFlag(): void
+    {
+        // restoreFromFreeForm() must always reset awaitingFreeForm to false,
+        // even when it cannot re-open the overlay (no screen or no active
+        // request). CancelListener's ESC guard depends on this contract —
+        // it calls restoreFromFreeForm() when awaitingFreeForm is true.
+
+        $ctrlRef = new \ReflectionClass($this->controller);
+        $awaitProp = $ctrlRef->getProperty('awaitingFreeForm');
+        $awaitProp->setValue($this->controller, true);
+        self::assertTrue($this->controller->isAwaitingFreeForm());
+
+        $this->controller->restoreFromFreeForm();
+
+        self::assertFalse($this->controller->isAwaitingFreeForm(), 'restoreFromFreeForm must reset awaitingFreeForm flag');
+    }
+
+    #[Test]
+    public function testRestoreFromFreeFormNoopWhenNotAwaiting(): void
+    {
+        // restoreFromFreeForm() is a safe no-op when not awaiting free-form.
+        // The flag must remain false and no exception thrown.
+
+        self::assertFalse($this->controller->isAwaitingFreeForm());
+
+        // Should not throw
+        $this->controller->restoreFromFreeForm();
+
+        self::assertFalse($this->controller->isAwaitingFreeForm());
     }
 
     // ── Helpers ──

@@ -83,15 +83,30 @@ final class TickPollListener implements TuiListenerRegistrar
             $screen->syncQueuedUserMessages($state->queuedUserMessages);
 
             // Open the question overlay whenever the coordinator has an
-            // active request and the controller is not already showing it.
-            // This handles: (a) new questions becoming active after polling
-            // uncovers a human_input.requested event, and (b) queued
-            // questions advancing into the active slot on later ticks.
-            if ($questionCoordinator->actionRequired() && !$questionController->isOpen()) {
+            // active request and the controller is not already showing it
+            // AND is not awaiting free-form editor input (__other__ escape
+            // hatch). This handles: (a) new questions becoming active after
+            // polling uncovers a human_input.requested event, and (b) queued
+            // questions advancing into the active slot on later ticks. The
+            // isAwaitingFreeForm() check prevents rebuilding the select
+            // overlay while the user types a custom answer in the editor.
+            if ($questionCoordinator->actionRequired() && !$questionController->isOpen() && !$questionController->isAwaitingFreeForm()) {
                 $activeRequest = $questionCoordinator->activeRequest();
                 if (null !== $activeRequest) {
                     $questionController->open($activeRequest);
                 }
+            }
+
+            // Self-heal: if the run left the active states (cancelled/terminal via ESC
+            // or error) while a HITL question is still pending, the question is
+            // orphaned. reject() advances the queue WITHOUT invoking callbacks (safe
+            // for a dead run — sends nothing to the runtime) and close() clears
+            // awaitingFreeForm so a subsequently-queued HITL question can activate.
+            // Without this, ESC during __other__ free-form typing cancels the run but
+            // leaves awaitingFreeForm=true, silently suppressing the next question.
+            if (!$state->activity->isActive() && $questionCoordinator->actionRequired()) {
+                $questionCoordinator->reject();
+                $questionController->close();
             }
 
             // Update working status based on authoritative activity state.
@@ -126,13 +141,25 @@ final class TickPollListener implements TuiListenerRegistrar
     }
 
     /**
-     * Handle a human_input.requested runtime event by enqueuing an
-     * Approval question in the coordinator.
+     * Handle a human_input.requested runtime event by enqueuing a
+     * kind-driven question in the coordinator.
      *
      * This is invoked by RuntimeEventPoller::poll() each time a
      * human_input.requested event is polled from the runtime stream.
      * The event carries a question_id, schema, prompt, and metadata
-     * from the tool that requested approval.
+     * from the tool that requested input.
+     *
+     * The question kind is resolved from ui_kind (preferred) or schema:
+     *   - ui_kind=text/confirm/choice/approval -> direct kind mapping
+     *   - schema.type=boolean -> Confirm
+     *   - schema.enum non-empty -> Choice
+     *   - else -> Text
+     *
+     * Choices are built from the payload 'choices' field (structured
+     * QuestionOption-compatible array) or fall back to schema.enum.
+     *
+     * Confirm kind answers are normalized to boolean true/false to
+     * match the downstream boolean schema expectation.
      *
      * A guard against duplicate request IDs prevents enqueueing the
      * same question twice if the event stream replays (e.g. after a
@@ -158,24 +185,20 @@ final class TickPollListener implements TuiListenerRegistrar
             return;
         }
 
-        // Build choices from schema enum if available
         $schema = \is_array($p['schema'] ?? null) ? $p['schema'] : ['type' => 'string'];
-        $enum = $schema['enum'] ?? null;
-        $choices = \is_array($enum) && [] !== $enum
-            ? array_map(
-                static fn (string $label): QuestionOption => new QuestionOption($label),
-                array_values($enum),
-            )
-            : [];
+        $kind = self::resolveQuestionKind($p);
+        $choices = self::buildChoices($p, $schema);
 
         $request = new QuestionRequest(
             requestId: $requestId,
             source: QuestionSource::AgentCore,
-            kind: QuestionKind::Choice,
+            kind: $kind,
             prompt: (string) ($p['prompt'] ?? 'Approval required.'),
             schema: $schema,
             choices: $choices,
-            allowOther: false,
+            header: $p['header'] ?? null,
+            default: $p['default'] ?? null,
+            allowOther: true,
             runId: $runId,
             questionId: $questionId,
             toolCallId: (string) ($p['tool_call_id'] ?? ''),
@@ -184,19 +207,37 @@ final class TickPollListener implements TuiListenerRegistrar
         );
 
         // Enqueue the question with answer and cancel callbacks.
-        // Answer sends the user's selection. Cancel sends a generic
-        // 'cancel' sentinel — no extension-specific vocabulary leaks
-        // into this generic human_input path. The receiving extension
-        // owns fail-closed semantics via its resolveApprovalAnswer()
-        // contract, which must treat unrecognized answers as denied.
+        // Answer sends the user's selection, normalized to the
+        // expected type (boolean for confirm, string otherwise).
+        // Cancel sends a generic 'Cancelled by user' sentinel — no extension-
+        // specific vocabulary leaks into this generic human_input
+        // path. The receiving extension owns fail-closed semantics
+        // via its resolveApprovalAnswer() contract, which must treat
+        // unrecognized answers as denied.
         $questionCoordinator->enqueue(
             $request,
-            onAnswer: static function (mixed $answer) use ($client, $runId, $questionId): void {
+            onAnswer: static function (mixed $answer) use ($client, $runId, $questionId, $kind): void {
+                if (QuestionKind::Confirm === $kind) {
+                    $boolAnswer = \is_string($answer) && 'yes' === strtolower($answer);
+
+                    $client->send($runId, new UserCommand(
+                        type: 'answer_human',
+                        payload: [
+                            'question_id' => $questionId,
+                            'answer' => $boolAnswer,
+                        ],
+                    ));
+
+                    return;
+                }
+
+                $answerStr = \is_scalar($answer) ? (string) $answer : 'cancel';
+
                 $client->send($runId, new UserCommand(
                     type: 'answer_human',
                     payload: [
                         'question_id' => $questionId,
-                        'answer' => \is_scalar($answer) ? (string) $answer : 'cancel',
+                        'answer' => $answerStr,
                     ],
                 ));
             },
@@ -205,11 +246,96 @@ final class TickPollListener implements TuiListenerRegistrar
                     type: 'answer_human',
                     payload: [
                         'question_id' => $questionId,
-                        'answer' => 'cancel',
+                        'answer' => 'Cancelled by user',
                     ],
                 ));
             },
         );
+    }
+
+    /**
+     * Resolve the QuestionKind from the human_input payload.
+     *
+     * Priority order:
+     *   1. ui_kind from payload (text/confirm/choice/approval)
+     *   2. Fallback kind from payload (legacy pre-factory events)
+     *   3. Fallback to schema-driven derivation (pre-QH-04 payloads)
+     *
+     * @param array<string, mixed> $p
+     */
+    private static function resolveQuestionKind(array $p): QuestionKind
+    {
+        $kind = (string) ($p['ui_kind'] ?? $p['kind'] ?? '');
+
+        // 'interrupt' is a transport marker from AskHumanPayloadFactory, not a UI
+        // kind. If ui_kind was absent and only the transport kind leaked through,
+        // fall through to schema-driven derivation instead of rendering an empty
+        // Choice overlay that the user cannot answer.
+        if ('' !== $kind && 'interrupt' !== $kind) {
+            return match ($kind) {
+                'text' => QuestionKind::Text,
+                'confirm', 'approval' => QuestionKind::Confirm,
+                'choice' => QuestionKind::Choice,
+                default => QuestionKind::Choice,
+            };
+        }
+
+        // Fallback: derive from schema
+        $schema = \is_array($p['schema'] ?? null) ? $p['schema'] : ['type' => 'string'];
+
+        if (($schema['type'] ?? '') === 'boolean') {
+            return QuestionKind::Confirm;
+        }
+
+        if (isset($schema['enum']) && \is_array($schema['enum']) && [] !== $schema['enum']) {
+            return QuestionKind::Choice;
+        }
+
+        return QuestionKind::Text;
+    }
+
+    /**
+     * Build QuestionOption list from the payload choices field or schema enum.
+     *
+     * Payload choices (structured [{label, description?}]) take priority.
+     * Falls back to schema.enum bare string labels.
+     *
+     * @param array<string, mixed> $p
+     * @param array<string, mixed> $schema
+     *
+     * @return list<QuestionOption>
+     */
+    private static function buildChoices(array $p, array $schema): array
+    {
+        if (isset($p['choices']) && \is_array($p['choices']) && [] !== $p['choices']) {
+            return array_values(array_map(
+                static function (mixed $choice): QuestionOption {
+                    if (\is_array($choice)) {
+                        return new QuestionOption(
+                            label: (string) ($choice['label'] ?? ''),
+                            description: (string) ($choice['description'] ?? ''),
+                        );
+                    }
+
+                    // Bare-string choice (defensive: AskHumanPayloadFactory emits
+                    // structured entries, but bare strings are a plausible
+                    // hand-crafted shape that must not throw TypeError).
+                    return new QuestionOption(label: (string) $choice);
+                },
+                $p['choices'],
+            ));
+        }
+
+        $enum = $schema['enum'] ?? null;
+
+        if (\is_array($enum) && [] !== $enum) {
+            return array_map(
+                static fn (string $label): QuestionOption => new QuestionOption($label),
+                array_values($enum),
+            );
+        }
+
+        return [];
     }
 
     /**

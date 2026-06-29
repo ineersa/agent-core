@@ -36,7 +36,10 @@ final readonly class HitlProjectionSubscriber implements EventSubscriberInterfac
         $state = $event->state;
         $questionId = (string) ($p['question_id'] ?? '');
         $prompt = (string) ($p['prompt'] ?? '');
-        $kind = (string) ($p['kind'] ?? 'question');
+        // ui_kind carries the UI semantics (text/confirm/choice/approval);
+        // kind is a transport marker (interrupt) from the tool layer.
+        // Prefer ui_kind when available.
+        $kind = (string) ($p['ui_kind'] ?? $p['kind'] ?? 'question');
         $blockId = 'hitl_'.$questionId;
 
         $meta = [
