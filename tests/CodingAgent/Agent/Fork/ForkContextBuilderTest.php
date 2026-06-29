@@ -11,11 +11,20 @@ use Ineersa\CodingAgent\Agent\Fork\ForkContextBuilder;
 use Ineersa\CodingAgent\Agent\Fork\ForkSnapshotCompactor;
 use Ineersa\CodingAgent\Agent\Fork\ForkSnapshotSanitizer;
 use Ineersa\CodingAgent\Agent\Fork\ForkTaskPromptBuilder;
-use Ineersa\CodingAgent\Agent\Fork\DefaultForkSnapshotSummaryProvider;
 use Ineersa\CodingAgent\Compaction\CompactionBoundarySelector;
+use Ineersa\CodingAgent\Config\CompactionConfig;
+use Ineersa\CodingAgent\Compaction\CompactionPromptBuilder;
 use Ineersa\CodingAgent\Compaction\CompactionTokenEstimator;
+use Ineersa\CodingAgent\Compaction\SessionCompactor;
+use Ineersa\CodingAgent\Compaction\ToolResultDigestService;
+use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ForkLevelEnum;
 use Ineersa\CodingAgent\Config\ForksConfigDTO;
+use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\SettingsPathResolver;
+use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Symfony\AI\Platform\Message\TemplateRenderer\StringTemplateRenderer;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
@@ -33,26 +42,62 @@ final class ForkContextBuilderTest extends TestCase
 {
     private ForkContextBuilder $builder;
     private ForkSnapshotSanitizer $sanitizer;
-    private ForkSnapshotCompactor $compactor;
+    private string $projectDir;
 
     protected function setUp(): void
     {
+        $this->projectDir = TestDirectoryIsolation::createOsTempDir('fork-builder-test');
+
+        // Create minimal COMPACTION.md template (SessionCompactor needs it).
+        $configDir = $this->projectDir.'/config';
+        TestDirectoryIsolation::ensureDirectory($configDir);
+        \file_put_contents($configDir.'/COMPACTION.md', "Test compaction prompt.\n\n{date}\n{cwd}{custom_instructions_part}");
+
         $tokenEstimator = new CompactionTokenEstimator();
         $sequenceValidator = new AgentMessageToolCallSequenceValidator();
         $boundarySelector = new CompactionBoundarySelector($tokenEstimator, $sequenceValidator);
-        $summaryProvider = new DefaultForkSnapshotSummaryProvider();
+        $digestService = new ToolResultDigestService($tokenEstimator);
+
+        $appConfig = new AppConfig(
+            tui: new TuiConfig(theme: 'test'),
+            logging: new LoggingConfig(),
+            cwd: $this->projectDir,
+        );
+
+        $pathResolver = new SettingsPathResolver($this->projectDir, $this->projectDir);
+        $templateRenderer = new StringTemplateRenderer();
+        $promptBuilder = new CompactionPromptBuilder(
+            $pathResolver,
+            $templateRenderer,
+            $appConfig,
+            $this->projectDir,
+        );
+
+        $sessionCompactor = new SessionCompactor(
+            $tokenEstimator,
+            $digestService,
+            $boundarySelector,
+            $promptBuilder,
+        );
+        $forkCompactor = new ForkSnapshotCompactor($sessionCompactor);
+        $compactionConfig = new CompactionConfig(keepRecentTokens: 50);
 
         $this->sanitizer = new ForkSnapshotSanitizer();
-        $this->compactor = new ForkSnapshotCompactor($boundarySelector, $summaryProvider);
-        $promptBuilder = new ForkTaskPromptBuilder();
+        $forkPromptBuilder = new ForkTaskPromptBuilder();
         $configResolver = new ForkConfigResolver(ForksConfigDTO::defaultInstance());
 
         $this->builder = new ForkContextBuilder(
             sanitizer: $this->sanitizer,
-            compactor: $this->compactor,
-            promptBuilder: $promptBuilder,
+            compactor: $forkCompactor,
+            promptBuilder: $forkPromptBuilder,
             configResolver: $configResolver,
+            compactionConfig: $compactionConfig,
         );
+    }
+
+    protected function tearDown(): void
+    {
+        TestDirectoryIsolation::removeDirectory($this->projectDir);
     }
 
     private function userMessage(string $content): AgentMessage
@@ -74,6 +119,36 @@ final class ForkContextBuilderTest extends TestCase
             role: 'assistant',
             content: [['type' => 'text', 'text' => $content]],
             metadata: $metadata,
+        );
+    }
+
+    private function createSessionCompactor(): SessionCompactor
+    {
+        $tokenEstimator = new CompactionTokenEstimator();
+        $sequenceValidator = new AgentMessageToolCallSequenceValidator();
+        $boundarySelector = new CompactionBoundarySelector($tokenEstimator, $sequenceValidator);
+        $digestService = new ToolResultDigestService($tokenEstimator);
+
+        $appConfig = new AppConfig(
+            tui: new TuiConfig(theme: 'test'),
+            logging: new LoggingConfig(),
+            cwd: $this->projectDir,
+        );
+
+        $pathResolver = new SettingsPathResolver($this->projectDir, $this->projectDir);
+        $templateRenderer = new StringTemplateRenderer();
+        $promptBuilder = new CompactionPromptBuilder(
+            $pathResolver,
+            $templateRenderer,
+            $appConfig,
+            $this->projectDir,
+        );
+
+        return new SessionCompactor(
+            $tokenEstimator,
+            $digestService,
+            $boundarySelector,
+            $promptBuilder,
         );
     }
 
@@ -135,8 +210,8 @@ final class ForkContextBuilderTest extends TestCase
 
     public function testBuildWithLargeMessagesTriggersCompaction(): void
     {
-        // Include a prior compact_summary so the default summary provider
-        // has something to carry forward (NOOP provider only reuses existing summaries).
+        // Include a prior compact_summary so the NOOP summary provider
+        // has something to carry forward.
         $priorSummary = new AgentMessage(
             role: 'user',
             content: [['type' => 'text', 'text' => 'Prior session summary for context.']],
@@ -149,7 +224,7 @@ final class ForkContextBuilderTest extends TestCase
             $parentMessages[] = $this->assistantMessage("Long response {$i} with substantial text. " . \str_repeat('y', 80));
         }
 
-        $snapshot = $this->builder->build($parentMessages, 'Test task', keepRecentTokens: 200);
+        $snapshot = $this->builder->build($parentMessages, 'Test task');
 
         // After compaction, there should be fewer messages than the original 61.
         self::assertLessThan(\count($parentMessages), \count($snapshot->messages));
@@ -184,9 +259,10 @@ final class ForkContextBuilderTest extends TestCase
 
         $builder = new ForkContextBuilder(
             sanitizer: $this->sanitizer,
-            compactor: $this->compactor,
+            compactor: new ForkSnapshotCompactor($this->createSessionCompactor()),
             promptBuilder: new ForkTaskPromptBuilder(),
             configResolver: $configResolver,
+            compactionConfig: new CompactionConfig(keepRecentTokens: 50000),
         );
 
         $snapshot = $builder->build(

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Fork;
 
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\CodingAgent\Config\CompactionConfig;
 use Ineersa\CodingAgent\Config\ForkLevelEnum;
 
 /**
@@ -24,23 +25,24 @@ use Ineersa\CodingAgent\Config\ForkLevelEnum;
  */
 final readonly class ForkContextBuilder
 {
-    public const int DEFAULT_KEEP_RECENT_TOKENS = 20000;
-
     public function __construct(
         private ForkSnapshotSanitizer $sanitizer,
-        private ForkSnapshotCompactorInterface $compactor,
+        private ForkSnapshotCompactor $compactor,
         private ForkTaskPromptBuilder $promptBuilder,
         private ForkConfigResolver $configResolver,
+        private CompactionConfig $compactionConfig,
     ) {
     }
 
     /**
      * Build a fork session snapshot from parent messages.
      *
-     * @param list<AgentMessage> $parentMessages   The parent message list (NOT mutated)
-     * @param string             $task             Fork task description
-     * @param ForkLevelEnum|null $requestedLevel   Requested fork level (null = default)
-     * @param int                $keepRecentTokens Token budget for the retained tail
+     * Token budget for the retained tail is sourced from
+     * compaction.keep_recent_tokens (CompactionConfig).
+     *
+     * @param list<AgentMessage> $parentMessages The parent message list (NOT mutated)
+     * @param string             $task           Fork task description
+     * @param ForkLevelEnum|null $requestedLevel Requested fork level (null = default)
      *
      * @return ForkSessionSnapshotDTO The assembled fork snapshot
      */
@@ -48,13 +50,12 @@ final readonly class ForkContextBuilder
         array $parentMessages,
         string $task,
         ?ForkLevelEnum $requestedLevel = null,
-        int $keepRecentTokens = self::DEFAULT_KEEP_RECENT_TOKENS,
     ): ForkSessionSnapshotDTO {
         // Step 1: Sanitize.
         $sanitized = $this->sanitizer->sanitize($parentMessages);
 
-        // Step 2: Virtually compact.
-        $compacted = $this->compactor->compact($sanitized, $keepRecentTokens);
+        // Step 2: Virtually compact (budget from compaction.keep_recent_tokens).
+        $compacted = $this->compactor->compact($sanitized, $this->compactionConfig);
 
         // Step 3: Resolve level and model.
         $resolved = $this->configResolver->resolve($requestedLevel);

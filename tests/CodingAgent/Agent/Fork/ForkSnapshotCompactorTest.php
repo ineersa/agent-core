@@ -6,12 +6,22 @@ namespace Ineersa\CodingAgent\Tests\Agent\Fork;
 
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
-use Ineersa\CodingAgent\Agent\Fork\DefaultForkSnapshotSummaryProvider;
+use Ineersa\CodingAgent\Agent\Fork\ForkCompactionResult;
 use Ineersa\CodingAgent\Agent\Fork\ForkSnapshotCompactor;
 use Ineersa\CodingAgent\Compaction\CompactionBoundarySelector;
+use Ineersa\CodingAgent\Config\CompactionConfig;
+use Ineersa\CodingAgent\Compaction\CompactionPromptBuilder;
 use Ineersa\CodingAgent\Compaction\CompactionTokenEstimator;
+use Ineersa\CodingAgent\Compaction\SessionCompactor;
+use Ineersa\CodingAgent\Compaction\ToolResultDigestService;
+use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\SettingsPathResolver;
+use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
+use Symfony\AI\Platform\Message\TemplateRenderer\StringTemplateRenderer;
 
 /**
  * Tests for ForkSnapshotCompactor.
@@ -21,22 +31,65 @@ use PHPUnit\Framework\TestCase;
  *   - Compacts retained tail when over budget and carries forward a
  *     prior compact_summary summary.
  *   - Never mutates the input array.
+ *   - No-summary bail: without a prior compact_summary, messages pass
+ *     through unchanged (v1 behavior, no LLM available).
  *   - Respects safe boundary (no split tool-call/tool-result groups).
+ *   - Summary message is placed AFTER the immutable prologue
+ *     (system/user-context), never before it.
  */
 #[CoversClass(ForkSnapshotCompactor::class)]
-#[CoversClass(DefaultForkSnapshotSummaryProvider::class)]
+#[CoversClass(ForkCompactionResult::class)]
 final class ForkSnapshotCompactorTest extends TestCase
 {
     private ForkSnapshotCompactor $compactor;
+    private CompactionConfig $config;
+    private string $projectDir;
 
     protected function setUp(): void
     {
+        $this->projectDir = TestDirectoryIsolation::createOsTempDir('fork-compactor-test');
+
+        // Create minimal COMPACTION.md template (SessionCompactor needs it).
+        $configDir = $this->projectDir.'/config';
+        TestDirectoryIsolation::ensureDirectory($configDir);
+        \file_put_contents($configDir.'/COMPACTION.md', "Test compaction prompt.\n\n{date}\n{cwd}{custom_instructions_part}");
+
         $tokenEstimator = new CompactionTokenEstimator();
         $sequenceValidator = new AgentMessageToolCallSequenceValidator();
         $boundarySelector = new CompactionBoundarySelector($tokenEstimator, $sequenceValidator);
-        $summaryProvider = new DefaultForkSnapshotSummaryProvider();
+        $digestService = new ToolResultDigestService($tokenEstimator);
 
-        $this->compactor = new ForkSnapshotCompactor($boundarySelector, $summaryProvider);
+        $appConfig = new AppConfig(
+            tui: new TuiConfig(theme: 'test'),
+            logging: new LoggingConfig(),
+            cwd: $this->projectDir,
+        );
+
+        $pathResolver = new SettingsPathResolver($this->projectDir, $this->projectDir);
+        $templateRenderer = new StringTemplateRenderer();
+        $promptBuilder = new CompactionPromptBuilder(
+            $pathResolver,
+            $templateRenderer,
+            $appConfig,
+            $this->projectDir,
+        );
+
+        $sessionCompactor = new SessionCompactor(
+            $tokenEstimator,
+            $digestService,
+            $boundarySelector,
+            $promptBuilder,
+        );
+
+        $this->compactor = new ForkSnapshotCompactor($sessionCompactor);
+
+        // Small budget to force compaction in tests.
+        $this->config = new CompactionConfig(keepRecentTokens: 50);
+    }
+
+    protected function tearDown(): void
+    {
+        TestDirectoryIsolation::removeDirectory($this->projectDir);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────
@@ -45,6 +98,14 @@ final class ForkSnapshotCompactorTest extends TestCase
     {
         return new AgentMessage(
             role: 'user',
+            content: [['type' => 'text', 'text' => $content]],
+        );
+    }
+
+    private function systemMessage(string $content): AgentMessage
+    {
+        return new AgentMessage(
+            role: 'system',
             content: [['type' => 'text', 'text' => $content]],
         );
     }
@@ -81,55 +142,15 @@ final class ForkSnapshotCompactorTest extends TestCase
             $this->assistantMessage('Hi!'),
         ];
 
-        $result = $this->compactor->compact($messages, 50000);
+        // Large budget — messages fit without compaction.
+        $largeConfig = new CompactionConfig(keepRecentTokens: 50000);
+
+        $result = $this->compactor->compact($messages, $largeConfig);
 
         self::assertFalse($result->compacted);
         self::assertCount(2, $result->messages);
         self::assertNull($result->summaryText);
         self::assertSame(0, $result->summarizedCount);
-    }
-
-    public function testCompactionWhenOverBudget(): void
-    {
-        // Include a prior compact_summary so the default summary provider
-        // can carry it forward (NOOP provider only reuses existing summaries).
-        $priorSummary = new AgentMessage(
-            role: 'user',
-            content: [['type' => 'text', 'text' => 'Prior session summary for context.']],
-            metadata: ['compact_summary' => true],
-        );
-
-        // Create enough messages to exceed the budget.
-        $messages = [$priorSummary];
-        for ($i = 0; $i < 20; ++$i) {
-            $messages[] = $this->userMessage("This is a long user message number {$i} with plenty of text to consume token budget quickly. " . \str_repeat('x', 40));
-            $messages[] = $this->assistantMessage("This is assistant response number {$i} that also contains substantial text to take up token space. " . \str_repeat('y', 40));
-        }
-
-        $budget = 500; // Very small budget to force compaction.
-
-        $result = $this->compactor->compact($messages, $budget);
-
-        self::assertTrue($result->compacted);
-        self::assertGreaterThan(0, \count($result->messages));
-        self::assertIsString($result->summaryText);
-        self::assertGreaterThan(0, $result->summarizedCount);
-    }
-
-    public function testDoesNotMutateInput(): void
-    {
-        $messages = [
-            $this->userMessage('Message one'),
-            $this->assistantMessage('Response one'),
-            $this->userMessage('Message two'),
-            $this->assistantMessage('Response two'),
-        ];
-
-        $originalCount = \count($messages);
-
-        $this->compactor->compact($messages, 50);
-
-        self::assertCount($originalCount, $messages);
     }
 
     public function testCompactionWithPriorCompactSummary(): void
@@ -144,26 +165,62 @@ final class ForkSnapshotCompactorTest extends TestCase
 
         $allMessages = [
             $summaryMessage,
-            $this->userMessage('Old message with lots of padding ' . \str_repeat('x', 200)),
-            $this->assistantMessage('Old response with lots of padding ' . \str_repeat('y', 200)),
-            $this->userMessage('More old content ' . \str_repeat('z', 200)),
-            $this->assistantMessage('More old response ' . \str_repeat('w', 200)),
+            $this->userMessage('Old message with lots of padding '.\str_repeat('x', 200)),
+            $this->assistantMessage('Old response with lots of padding '.\str_repeat('y', 200)),
+            $this->userMessage('More old content '.\str_repeat('z', 200)),
+            $this->assistantMessage('More old response '.\str_repeat('w', 200)),
         ];
 
-        $result = $this->compactor->compact($allMessages, 100);
+        $result = $this->compactor->compact($allMessages, $this->config);
 
         // Should compact because budget is tight and messages are long.
         self::assertTrue($result->compacted, 'Expected compaction to occur with tight budget and long messages');
 
-        // First message should be the newly created compact_summary carrying forward
-        // the prior summary text.
+        // The first message in the retained tail should be the newly created
+        // compact_summary carrying forward the prior summary text.
         self::assertTrue($result->messages[0]->metadata['compact_summary'] ?? false);
         self::assertStringContainsString('Previous conversation summary', $result->messages[0]->content[0]['text']);
+
+        // Summary message has the expected <summary> wrapper structure.
+        self::assertStringContainsString('<summary>', $result->messages[0]->content[0]['text']);
+        self::assertStringContainsString('</summary>', $result->messages[0]->content[0]['text']);
+    }
+
+    public function testNoSummaryBailWithoutPriorCompactSummary(): void
+    {
+        // No prior compact_summary — v1 should return unchanged even if over budget.
+        $messages = [
+            $this->userMessage('Message one '.\str_repeat('x', 200)),
+            $this->assistantMessage('Response one '.\str_repeat('y', 200)),
+        ];
+
+        $result = $this->compactor->compact($messages, $this->config);
+
+        // Without a prior summary to carry forward, messages pass through unchanged.
+        self::assertFalse($result->compacted, 'No-summary bail: expected no compaction without prior summary');
+        self::assertNull($result->summaryText);
+        self::assertCount(2, $result->messages);
+    }
+
+    public function testDoesNotMutateInput(): void
+    {
+        $messages = [
+            $this->userMessage('Message one'),
+            $this->assistantMessage('Response one'),
+            $this->userMessage('Message two'),
+            $this->assistantMessage('Response two'),
+        ];
+
+        $originalCount = \count($messages);
+
+        $this->compactor->compact($messages, $this->config);
+
+        self::assertCount($originalCount, $messages);
     }
 
     public function testEmptyInput(): void
     {
-        $result = $this->compactor->compact([], 50000);
+        $result = $this->compactor->compact([], $this->config);
 
         self::assertFalse($result->compacted);
         self::assertCount(0, $result->messages);
@@ -173,7 +230,7 @@ final class ForkSnapshotCompactorTest extends TestCase
     {
         $messages = [$this->userMessage('Just one message')];
 
-        $result = $this->compactor->compact($messages, 50000);
+        $result = $this->compactor->compact($messages, new CompactionConfig(keepRecentTokens: 50000));
 
         self::assertFalse($result->compacted);
         self::assertCount(1, $result->messages);
@@ -182,9 +239,8 @@ final class ForkSnapshotCompactorTest extends TestCase
     public function testSafeBoundaryRespected(): void
     {
         // Build messages where a naive cut would split a tool-call group.
-        // We want the tool-call batch to be in the "retained" portion but
-        // complete (not split).  Create many old messages to force
-        // compaction, then a complete tool-call group near the end.
+        // Create many old messages to force compaction, then a complete
+        // tool-call group near the end.
         $priorSummary = new AgentMessage(
             role: 'user',
             content: [['type' => 'text', 'text' => 'Prior session summary.']],
@@ -193,8 +249,8 @@ final class ForkSnapshotCompactorTest extends TestCase
 
         $messages = [$priorSummary];
         for ($i = 0; $i < 15; ++$i) {
-            $messages[] = $this->userMessage("Old user turn {$i} with lots of text for token consumption " . \str_repeat('a', 60)); // very long
-            $messages[] = $this->assistantMessage("Old assistant turn {$i} " . \str_repeat('b', 60));
+            $messages[] = $this->userMessage("Old user turn {$i} with lots of text for token consumption ".\str_repeat('a', 60));
+            $messages[] = $this->assistantMessage("Old assistant turn {$i} ".\str_repeat('b', 60));
         }
 
         // Add a complete tool-call group (assistant with tool_calls → tool results).
@@ -207,68 +263,87 @@ final class ForkSnapshotCompactorTest extends TestCase
 
         // With a very tight budget, compaction should find a safe boundary
         // that does NOT split the tool-call group.
-        $result = $this->compactor->compact($messages, 100);
+        $result = $this->compactor->compact($messages, $this->config);
 
         self::assertTrue($result->compacted, 'Expected compaction to occur for the safe-boundary fixture');
 
-        // Verify no tool-call group is split.
-        if ($result->compacted) {
-            // The retained tail should not contain orphan tool messages.
-            $toolCallIds = [];
-            $foundOrphan = false;
+        // Verify no tool-call group is split — no orphan tool messages.
+        $toolCallIds = [];
+        $foundOrphan = false;
 
-            foreach ($result->messages as $msg) {
-                if ('assistant' === $msg->role) {
-                    $extracted = AgentMessageToolCallSequenceValidator::extractToolCallIds($msg);
-                    foreach ($extracted as $id) {
-                        $toolCallIds[$id] = true;
-                    }
-                }
-
-                if ('tool' === $msg->role) {
-                    $tid = $msg->toolCallId;
-                    if (null !== $tid && '' !== $tid && !isset($toolCallIds[$tid])) {
-                        $foundOrphan = true;
-                    }
-                }
-
-                // User/system message resets the batch.
-                if ('user' === $msg->role && [] !== $toolCallIds) {
-                    // Check if this user appears within an open batch
-                    // (this would be a split). For this test, we just
-                    // assert no orphan tool messages.
+        foreach ($result->messages as $msg) {
+            if ('assistant' === $msg->role) {
+                $extracted = AgentMessageToolCallSequenceValidator::extractToolCallIds($msg);
+                foreach ($extracted as $id) {
+                    $toolCallIds[$id] = true;
                 }
             }
 
-            self::assertFalse($foundOrphan, 'Found orphan tool message — safe boundary was violated');
+            if ('tool' === $msg->role) {
+                $tid = $msg->toolCallId;
+                if (null !== $tid && '' !== $tid && !isset($toolCallIds[$tid])) {
+                    $foundOrphan = true;
+                }
+            }
+
+            // A user message resets the batch; after user we expect
+            // only tool results belonging to a preceding assistant.
+            // For this test we focus on orphan detection.
         }
+
+        self::assertFalse($foundOrphan, 'Found orphan tool message — safe boundary was violated');
     }
 
-    public function testCompactSummaryMessageStructure(): void
+    public function testPrologueOrdering(): void
     {
-        // Include a prior compact_summary so the default summary provider
-        // can carry it forward.
+        // Regression: compacted messages must place the summary AFTER the
+        // immutable system/user-context prologue, never before it.
         $priorSummary = new AgentMessage(
             role: 'user',
-            content: [['type' => 'text', 'text' => 'Prior session summary for context.']],
+            content: [['type' => 'text', 'text' => 'Prior session summary here.']],
             metadata: ['compact_summary' => true],
         );
 
-        // Force compaction with many messages and a very small budget.
-        $messages = [$priorSummary];
-        for ($i = 0; $i < 20; ++$i) {
-            $messages[] = $this->userMessage("Long old message {$i} that takes up token budget aggressively. " . \str_repeat('x', 50));
-            $messages[] = $this->assistantMessage("Long old response {$i} that also chews through the token budget. " . \str_repeat('y', 50));
+        $messages = [
+            $this->systemMessage('You are a helpful assistant.'),
+            $this->systemMessage('Custom instructions.'),
+            $priorSummary,
+        ];
+
+        // Add enough body content to force compaction.
+        for ($i = 0; $i < 15; ++$i) {
+            $messages[] = $this->userMessage("Long message {$i} that consumes token budget aggressively. ".\str_repeat('x', 100));
+            $messages[] = $this->assistantMessage("Long response {$i} ".str_repeat('y', 100));
         }
 
-        $result = $this->compactor->compact($messages, 200);
+        $result = $this->compactor->compact($messages, $this->config);
 
-        if ($result->compacted) {
-            // The first message must be a user message with compact_summary metadata.
-            self::assertSame('user', $result->messages[0]->role);
-            self::assertTrue($result->messages[0]->metadata['compact_summary'] ?? false);
-            self::assertStringContainsString('<summary>', $result->messages[0]->content[0]['text']);
-            self::assertStringContainsString('</summary>', $result->messages[0]->content[0]['text']);
+        self::assertTrue($result->compacted, 'Expected compaction for prologue-ordering fixture');
+
+        // Find the summary message index.
+        $summaryIndex = null;
+        foreach ($result->messages as $idx => $msg) {
+            if (true === ($msg->metadata['compact_summary'] ?? false)) {
+                $summaryIndex = $idx;
+                break;
+            }
         }
+
+        self::assertNotNull($summaryIndex, 'Summary message must be present');
+
+        // Find the last prologue message index (system/user-context).
+        $lastPrologueIndex = -1;
+        foreach ($result->messages as $idx => $msg) {
+            if ('system' === $msg->role || 'user-context' === $msg->role) {
+                $lastPrologueIndex = $idx;
+            }
+        }
+
+        // The summary must appear AFTER the last prologue message.
+        self::assertGreaterThan(
+            $lastPrologueIndex,
+            $summaryIndex,
+            'Summary message must be placed after the immutable prologue (system/user-context), not before it.',
+        );
     }
 }
