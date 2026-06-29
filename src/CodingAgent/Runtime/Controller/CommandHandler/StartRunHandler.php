@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Runtime\Controller\CommandHandler;
 
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
+use Ineersa\CodingAgent\Runtime\InProcess\ForkRunTerminalWatcher;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
@@ -18,12 +19,19 @@ use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
  * returns to the event loop. Runtime events from the consumer process are
  * forwarded to TUI via the controller's periodic EventStore drain and LLM
  * consumer stdout streaming.
+ *
+ * When fork_mode is detected in options, starts a ForkRunTerminalWatcher that
+ * polls for terminal run state and performs handoff validation + artifact
+ * writing.  This is the controller-side finalization path for fork children;
+ * the TUI-side ForkAutoExitRegistrar only needs to see the terminal run event
+ * and stop the event loop.
  */
 #[AsEventListener(event: ControllerCommandEvent::class)]
 final readonly class StartRunHandler
 {
     public function __construct(
         private readonly InProcessAgentSessionClient $client,
+        private readonly ?ForkRunTerminalWatcher $forkTerminalWatcher = null,
     ) {
     }
 
@@ -41,6 +49,9 @@ final readonly class StartRunHandler
         $commandRunId = $command->runId ?? '';
         $sessionRunId = 'unknown' !== $event->sessionId ? $event->sessionId : '';
         $runId = '' !== $commandRunId ? $commandRunId : $sessionRunId;
+        $options = isset($command->payload['options']) && \is_array($command->payload['options'])
+            ? $command->payload['options']
+            : [];
 
         // Non-blocking: dispatches StartRun to run_control transport and returns
         // immediately. The run_control consumer picks up the message and processes
@@ -51,6 +62,7 @@ final readonly class StartRunHandler
             prompt: $prompt,
             runId: $runId,
             cwd: $cwd,
+            options: $options,
             model: '' !== $model ? $model : null,
             reasoning: '' !== $reasoning ? $reasoning : null,
         ));
@@ -61,6 +73,18 @@ final readonly class StartRunHandler
             seq: 0,
             payload: ['status' => 'running'],
         ));
+
+        // ── Fork finalization watcher (controller-side) ──
+        // When fork_mode is set, the terminal watcher polls RunStore for
+        // terminal state, validates the handoff, and writes result artifacts.
+        // The TUI-side ForkAutoExitRegistrar simply stops the event loop on
+        // terminal; all AppAgent-intensive work lives here in the controller.
+        if (true === ($options['fork_mode'] ?? false) && null !== $this->forkTerminalWatcher) {
+            $this->forkTerminalWatcher->startForForkRun(
+                runId: $handle->runId,
+                forkOptions: $options,
+            );
+        }
 
         // Events are NOT iterated here — they arrive through the controller's
         // periodic EventStore drain (canonical seq > 0) and LLM consumer

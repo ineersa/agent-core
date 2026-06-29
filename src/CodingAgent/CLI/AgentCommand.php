@@ -12,7 +12,6 @@ use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Controller\HeadlessController;
 use Ineersa\CodingAgent\Runtime\InProcess\ForkBootstrapService;
-use Ineersa\CodingAgent\Runtime\InProcess\ForkRunTerminalWatcher;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
@@ -58,7 +57,6 @@ final class AgentCommand
         private ?HeadlessController $controller = null,
         private readonly ?ToolRegistryInterface $toolRegistry = null,
         private readonly ?ForkBootstrapService $forkBootstrap = null,
-        private readonly ?ForkRunTerminalWatcher $forkTerminalWatcher = null,
     ) {
     }
 
@@ -179,6 +177,15 @@ final class AgentCommand
             // system prompt and toolbox reflect CLI-specified allowlist/denylist.
             $this->applyToolFilters($tools, $toolsExcluded);
 
+            // In-process transport: hide fork tool from model toolbox.
+            // Fork tool cannot cross the JSONL process boundary used by
+            // the default process transport, so it must not be model-visible
+            // when running in-process.  This is a no-op before FORK-05
+            // registers the fork tool (safe check via activeToolNames()).
+            if ('in-process' === $transport && null !== $this->toolRegistry) {
+                $this->excludeForkToolSafely();
+            }
+
             // Run pending database migrations once on agent startup.
             // StartupDatabaseMigrator is idempotent per process lifetime and
             // safe for concurrent controller+consumer processes.
@@ -198,6 +205,16 @@ final class AgentCommand
             // The child starts as a full TUI/normal Hatfield process with
             // CWD applied, tools excluded, and the fork snapshot loaded.
             if ($fork) {
+                // Fork mode requires process transport — in-process does not
+                // support fork child mode (the fork child is a real tmux process
+                // that communicates via the controller JSONL protocol).
+                if ('in-process' === $transport) {
+                    throw new \RuntimeException(
+                        'Fork mode is not supported with --transport=in-process. '
+                        .'Fork children must use the default process transport (--transport=process).'
+                    );
+                }
+
                 return $this->runForkTui(
                     snapshotPath: $snapshot,
                     resultDir: $resultDir,
@@ -297,16 +314,14 @@ final class AgentCommand
         $_ENV['HATFIELD_FORK'] = '1';
         putenv('HATFIELD_FORK=1');
 
-        // ── Force-exclude the fork tool ──
-        if (null !== $this->toolRegistry) {
-            $excluded = $this->toolRegistry->excludedToolNames();
-            if (!\in_array('fork', $excluded, true)) {
-                $excluded[] = 'fork';
-                $this->toolRegistry->setExcludedToolNames($excluded);
-            }
-        }
+        // ── Safe fork tool exclusion (nested fork guard) ──
+        // Exclude the fork tool if registered (FORK-05+), safely no-op
+        // before FORK-05 registers it.  Prevents nested fork calls.
+        $this->excludeForkToolSafely();
 
-        // ── Load snapshot ──
+        // ── Load snapshot (validate + extract resolved model) ──
+        // Snapshot is loaded here to validate it exists; the controller-side
+        // InProcessAgentSessionClient also loads it from the path option.
         if (null === $this->forkBootstrap) {
             throw new \RuntimeException('ForkBootstrapService is not available. Check service wiring.');
         }
@@ -322,41 +337,42 @@ final class AgentCommand
         // ── Resolve fork level ──
         $forkLevel = '' !== $level ? ForkLevelEnum::tryFrom($level) : ForkLevelEnum::Middle;
 
-        // ── Create terminal callback for auto-exit ──
-        $terminalCallback = null;
-        if (null !== $this->forkTerminalWatcher) {
-            $terminalCallback = $this->forkTerminalWatcher->createTerminalCallback(
-                parentRunId: $parentRunId,
-                artifactId: $forkRunId,
-                childRunId: $childRunId,
-                resultDir: $resultDir,
-                cwd: getcwd(),
-                task: '' !== $task ? $task : '',
-                level: ($forkLevel ?? ForkLevelEnum::Middle)->value,
-                resolvedModel: $snapshotDto->resolvedModel,
-            );
-        }
+        // ── Prepare scalar fork options (JSON-serializable for process transport) ──
+        // These are passed through StartRunRequest::options to the controller.
+        // The controller-side InProcessAgentSessionClient loads the snapshot
+        // from fork_snapshot_path and composes fork-seeded messages.
+        $forkOptions = [
+            'fork_mode' => true,
+            'fork_snapshot_path' => $snapshotPath,
+            'fork_result_dir' => $resultDir,
+            'fork_parent_run_id' => $parentRunId,
+            'fork_artifact_id' => $forkRunId,
+            'fork_child_run_id' => $childRunId,
+            'fork_task' => '' !== $task ? $task : '',
+            'fork_level' => ($forkLevel ?? ForkLevelEnum::Middle)->value,
+            'fork_cwd' => getcwd(),
+            'fork_resolved_model' => $snapshotDto->resolvedModel,
+        ];
 
-        // ── Start TUI with fork-seeded request ──
+        // ── Start TUI with fork-seeded request (process transport) ──
+        // The fork child MUST use process transport (JsonlProcessAgentSessionClient)
+        // so that the run is executed by the controller subprocess.  Fork finalization
+        // (handoff validation, artifact writing) is handled by ForkRunTerminalWatcher
+        // on the controller side, started by StartRunHandler.
         $startRequest = new StartRunRequest(
             prompt: '', // Empty prompt — fork seed messages come via options
             runId: $childRunId,
-            options: [
-                'fork_snapshot' => $snapshotDto,
-                'fork_child_run_id' => $childRunId,
-                'fork_parent_run_id' => $parentRunId,
-                'fork_artifact_id' => $forkRunId,
-                'fork_terminal_callback' => $terminalCallback,
-            ],
+            cwd: getcwd(),
+            options: $forkOptions,
             model: '' !== $model ? $model : null,
             reasoning: '' !== $reasoning ? $reasoning : null,
         );
 
-        // Route through the normal TUI path — InteractiveMode will start the
-        // run via InProcessAgentSessionClient which checks for fork_snapshot
-        // and composes fork-seed messages.
+        // Use process transport for fork mode.
+        $client = $this->resolveClient('process');
+
         $tuiExitCode = $this->interactiveMode->run(
-            client: $this->inProcessClient,
+            client: $client,
             request: $startRequest,
         );
 
@@ -594,6 +610,35 @@ final class AgentCommand
         ));
     }
 
+    /**
+     * Exclude the fork tool from the toolbox ONLY if it is already registered.
+     *
+     * ToolRegistry::setExcludedToolNames() throws for unknown names, so this
+     * helper checks activeToolNames() first.  Before FORK-05 registers the fork
+     * tool this is a no-op; after FORK-05 the fork tool is hidden for:
+     *   - Fork child processes (nested fork guard, called from runForkTui)
+     *   - In-process transport (fork cannot cross JSONL, called from __invoke)
+     */
+    private function excludeForkToolSafely(): void
+    {
+        if (null === $this->toolRegistry) {
+            return;
+        }
+
+        $activeTools = $this->toolRegistry->activeToolNames();
+        if (!\in_array('fork', $activeTools, true)) {
+            return; // Fork tool not registered yet (pre-FORK-05) — no-op
+        }
+
+        $excluded = $this->toolRegistry->excludedToolNames();
+        if (\in_array('fork', $excluded, true)) {
+            return; // Already excluded
+        }
+
+        $excluded[] = 'fork';
+        $this->toolRegistry->setExcludedToolNames($excluded);
+    }
+
     private function resolveClient(string $transport): AgentSessionClient
     {
         return match ($transport) {
@@ -602,3 +647,4 @@ final class AgentCommand
         };
     }
 }
+

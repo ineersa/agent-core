@@ -13,32 +13,37 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Fork\ForkHandoffValidationResultDTO;
 use Ineersa\CodingAgent\Agent\Fork\ForkHandoffValidator;
 use Psr\Log\LoggerInterface;
+use Revolt\EventLoop;
 
 /**
- * TUI-integrated fork terminal lifecycle watcher.
+ * Fork terminal lifecycle watcher.
  *
- * Provides a non-blocking callable that the TUI tick handler invokes
- * when the fork child's run reaches a terminal state.  The callable:
+ * Supports two invocation paths:
  *
- *   1. Reads the run state from RunStore.
- *   2. Extracts the candidate handoff from the final assistant message.
- *   3. Validates it via ForkHandoffValidator.
- *   4. If valid, writes handoff.md + metadata via AgentArtifactRegistry.
- *   5. If invalid and repair attempts remain, sends a followUp repair
- *      instruction via AgentRunnerInterface and returns 'repairing'.
- *   6. If invalid after max attempts, writes diagnostics and returns 'done'.
+ * 1. TUI tick callback (old path, for in-process use):
+ *    {@see createTerminalCallback()} returns a closure that the TUI
+ *    tick handler invokes when the run reaches terminal state.
  *
- * This service lives in AppRuntimeInternals so that AgentCommand (AppCli)
- * can create the terminal callback and pass it through StartRunRequest
- * options to the ForkAutoExitRegistrar (TuiApplication).
+ * 2. Controller-side EventLoop poller (new path, for process transport):
+ *    {@see startForForkRun()} registers a Revolt EventLoop repeat that
+ *    polls RunStore for terminal state and performs handoff validation,
+ *    repair, and artifact writing.  This is the preferred path when the
+ *    fork child uses process transport (JsonlProcessAgentSessionClient).
  *
- * The callback is stateful across multiple invocations via the
- * $repairAttempts mutable counter captured in the closure.
+ * In both paths, the same underlying logic handles:
+ *   - Completed runs: extract candidate handoff, validate, repair up to
+ *     MAX_REPAIR_ATTEMPTS, write artifacts.
+ *   - Failed runs: write diagnostics + metadata.
+ *   - Cancelled runs: write cancelled metadata with history paths.
+ *   - Lost runs (null state): write failed metadata.
  */
 final readonly class ForkRunTerminalWatcher
 {
     /** Maximum number of handoff validation+repair attempts before hard failure. */
     public const int MAX_REPAIR_ATTEMPTS = 2;
+
+    /** EventLoop poll interval in seconds. */
+    private const float POLL_INTERVAL = 0.5;
 
     public function __construct(
         private RunStoreInterface $runStore,
@@ -49,8 +54,90 @@ final readonly class ForkRunTerminalWatcher
     ) {
     }
 
+    // ── Controller-side (EventLoop) path ──
+
     /**
-     * Create a terminal callback for use in StartRunRequest options.
+     * Start polling for fork run terminal state via Revolt EventLoop.
+     *
+     * Registers a non-blocking EventLoop repeat that polls RunStore until
+     * the run reaches a terminal state (Completed, Failed, Cancelled).
+     * When terminal, performs handoff validation/repair and writes result
+     * artifacts.  The watcher cancels itself after handling terminal state.
+     *
+     * This runs in the controller process (StartRunHandler), which has
+     * access to AppAgent services (ForkHandoffValidator, AgentArtifactRegistry)
+     * and the event loop.  The TUI-side ForkAutoExitRegistrar simply stops
+     * the event loop on terminal — all AppAgent-intensive work is here.
+     *
+     * @param string $runId      The child agent run ID
+     * @param array<string, mixed> $forkOptions Scalar fork options from StartRunRequest (fork_mode,
+     *                            fork_snapshot_path, fork_result_dir, fork_parent_run_id,
+     *                            fork_artifact_id, fork_child_run_id, fork_task,
+     *                            fork_level, fork_cwd, fork_resolved_model)
+     */
+    public function startForForkRun(string $runId, array $forkOptions): void
+    {
+        $parentRunId = (string) ($forkOptions['fork_parent_run_id'] ?? '');
+        $artifactId = (string) ($forkOptions['fork_artifact_id'] ?? '');
+        $childRunId = (string) ($forkOptions['fork_child_run_id'] ?? '');
+        $resultDir = (string) ($forkOptions['fork_result_dir'] ?? '');
+        $cwd = (string) ($forkOptions['fork_cwd'] ?? '');
+        $task = (string) ($forkOptions['fork_task'] ?? '');
+        $level = (string) ($forkOptions['fork_level'] ?? '');
+        $resolvedModel = $forkOptions['fork_resolved_model'] ?? null;
+
+        $repairAttempts = 0;
+        $cancelled = false;
+
+        $callback = function () use (
+            $runId,
+            $parentRunId,
+            $artifactId,
+            $childRunId,
+            $resultDir,
+            $cwd,
+            $task,
+            $level,
+            $resolvedModel,
+            &$repairAttempts,
+            &$cancelled,
+        ): void {
+            if ($cancelled) {
+                return;
+            }
+
+            $result = $this->handleTerminalRun(
+                $runId,
+                $parentRunId,
+                $artifactId,
+                $childRunId,
+                $resultDir,
+                $cwd,
+                $task,
+                $level,
+                $resolvedModel,
+                $repairAttempts,
+            );
+
+            // Mark cancelled when we reach terminal state so subsequent
+            // ticks are no-ops.  The EventLoop will keep the repeat active
+            // but it's a lightweight null check per tick.
+            if ('done' === $result || 'exit' === $result) {
+                $cancelled = true;
+            }
+        };
+
+        EventLoop::repeat(self::POLL_INTERVAL, $callback);
+    }
+
+    // ── TUI tick callback path ──
+
+    /**
+     * Create a terminal callback for use in TUI tick handlers.
+     *
+     * Returns a closure that ForkAutoExitRegistrar (Tui layer) can invoke
+     * when the run reaches terminal state.  The closure is stateful:
+     * $repairAttempts is captured by reference across invocations.
      *
      * @param string      $parentRunId   Parent session run ID
      * @param string      $artifactId    Artifact ID within parent scope
@@ -101,14 +188,16 @@ final readonly class ForkRunTerminalWatcher
         };
     }
 
+    // ── Shared terminal handling logic ──
+
     /**
-     * Handle a terminal run from the TUI tick.
+     * Handle a terminal run — shared between TUI callback and EventLoop poller.
      *
-     * This is called from the TUI event loop — it must not block.
-     * It reads the current run state and makes a decision based on
-     * the terminal status.
+     * Reads the current run state and makes a decision based on the
+     * terminal status.  This is non-blocking for TUI tick usage but
+     * may do I/O (RunStore, artifact writes).
      *
-     * @return string|null 'done', 'repairing', or null
+     * @return string|null 'done', 'repairing', or null (not ready)
      */
     private function handleTerminalRun(
         string $runId,
@@ -198,7 +287,7 @@ final readonly class ForkRunTerminalWatcher
 
             $this->agentRunner->followUp($runId, $repairMessage);
 
-            return 'repairing'; // Keep TUI alive for the next response
+            return 'repairing'; // Keep polling for the next response
         }
 
         // Exhausted repair attempts — fail with diagnostics.
