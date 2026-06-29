@@ -335,6 +335,29 @@ final class AgentCommand
         // Throw on invalid --level value rather than silently falling back to Middle.
         $forkLevel = '' !== $level ? ForkLevelEnum::from($level) : ForkLevelEnum::Middle;
 
+        // ── Populate fork_resolved_model from snapshot JSON ──
+        // The watcher uses this for fork-metadata.json so it does not need
+        // to deserialize the snapshot itself.
+        // We read the file directly rather than importing ForkSessionSnapshotSerializer
+        // because AgentCommand lives in the AppCli layer which cannot depend on AppAgent.
+        $forkResolvedModel = null;
+        try {
+            $snapshotRaw = file_get_contents($snapshotPath);
+            if (false !== $snapshotRaw) {
+                $snapshotData = json_decode($snapshotRaw, true, 512, \JSON_THROW_ON_ERROR);
+                $forkResolvedModel = isset($snapshotData['resolvedModel']) && \is_string($snapshotData['resolvedModel']) && '' !== $snapshotData['resolvedModel']
+                    ? $snapshotData['resolvedModel']
+                    : null;
+            }
+        } catch (\Throwable $e) {
+            $this->logger->warning('fork.run_fork_tui.snapshot_load_failed', [
+                'component' => 'agent_command',
+                'event_type' => 'fork.run_fork_tui.snapshot_load_failed',
+                'snapshot_path' => $snapshotPath,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
         // ── Prepare scalar fork options (JSON-serializable for process transport) ──
         // These are passed through StartRunRequest::options to the controller.
         // The controller-side ForkControllerStartService loads the snapshot
@@ -348,8 +371,9 @@ final class AgentCommand
             'fork_artifact_id' => $forkRunId,
             'fork_child_run_id' => $childRunId,
             'fork_task' => $task,
-            'fork_level' => ($forkLevel ?? ForkLevelEnum::Middle)->value,
+            'fork_level' => $forkLevel->value,
             'fork_cwd' => getcwd(),
+            'fork_resolved_model' => $forkResolvedModel,
         ];
 
         // ── Start TUI with fork-seeded request (process transport) ──

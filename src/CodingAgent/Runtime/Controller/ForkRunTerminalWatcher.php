@@ -122,7 +122,7 @@ final readonly class ForkRunTerminalWatcher
                 $repairAttempts,
             );
 
-            if ('done' === $result || 'exit' === $result) {
+            if ('done' === $result) {
                 $finalized = true;
                 // Cancel the repeat to avoid wasting ticks.
                 if (null !== $callbackId) {
@@ -468,12 +468,38 @@ final readonly class ForkRunTerminalWatcher
         }
 
         $tmpPath = $path.'.'.bin2hex(random_bytes(4)).'.tmp';
-        $written = @file_put_contents($tmpPath, $content, \LOCK_EX);
-        if (false === $written) {
-            throw new \RuntimeException(\sprintf('Failed to write file: %s', $path));
+
+        try {
+            $written = file_put_contents($tmpPath, $content, \LOCK_EX);
+            if (false === $written) {
+                $this->cleanupTempFile($tmpPath);
+                throw new \RuntimeException(\sprintf('Failed to write temporary file for: %s (written=%s)', $path, var_export($written, true)));
+            }
+
+            chmod($tmpPath, 0o644);
+
+            if (!rename($tmpPath, $path)) {
+                $this->cleanupTempFile($tmpPath);
+                throw new \RuntimeException(\sprintf('Failed to atomically rename temporary file to: %s', $path));
+            }
+        } catch (\Throwable $e) {
+            $this->cleanupTempFile($tmpPath);
+            throw $e;
         }
-        @chmod($tmpPath, 0o644);
-        @rename($tmpPath, $path);
+    }
+
+    /**
+     * Best-effort cleanup of a temporary file. Silently ignores errors.
+     */
+    private function cleanupTempFile(string $path): void
+    {
+        try {
+            if (is_file($path)) {
+                @unlink($path);
+            }
+        } catch (\Throwable) {
+            // Best-effort only.
+        }
     }
 
     /**
