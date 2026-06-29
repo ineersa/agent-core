@@ -26,7 +26,7 @@ use Ineersa\CodingAgent\Tool\AskHuman\AskHumanPayloadFactory;
  *   type-safe argument denormalization, validation, and payload building.
  * - Generates stable fallback `question_id` from prompt/kind/choices/metadata hash.
  * - Normalizes bare string choices to structured `{label, description}` objects.
- * - Preserves UI metadata: header, ui_kind/kind, choices, default, allow_other, secret.
+ * - Preserves UI metadata: header, ui_kind/kind, choices, default, allow_other.
  * - AgentCore does NOT have a defensive fallback for ask_human — it executes
  *   through the normal toolbox path where the handler runs and returns its
  *   interrupt result. AgentCore only generically preserves `kind=interrupt`
@@ -107,10 +107,6 @@ final class AskHumanTool implements HatfieldToolProviderInterface, ToolHandlerIn
                         'type' => 'boolean',
                         'description' => 'Whether the user may enter a free-form answer instead of selecting from choices. Default true.',
                     ],
-                    'secret' => [
-                        'type' => 'boolean',
-                        'description' => 'Whether the answer is sensitive (e.g. password, API key) and should be masked. Default false.',
-                    ],
                 ],
                 'required' => ['question'],
                 'additionalProperties' => false,
@@ -121,7 +117,7 @@ final class AskHumanTool implements HatfieldToolProviderInterface, ToolHandlerIn
                 'Use ask_human when you need the user to provide information, confirm an action, or make a choice before proceeding.',
                 'Provide a clear question in the "question" field. Set "kind" to "confirm"/"approval" for yes-no, "choice" with "choices" for a selection, or "text" for free-form input.',
                 'For choices, provide "choices" as an array of simple strings. The system derives the answer schema from kind and choices.',
-                'Optionally provide a "default" value, "header" for UI display, and set "secret" to true for sensitive inputs.',
+                'Optionally provide a "default" value and "header" for UI display.',
                 'Use ask_human only when you need the user\'s answer before you can continue.',
             ],
             executionMode: ToolExecutionMode::Interrupt,

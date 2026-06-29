@@ -6,6 +6,9 @@ namespace Ineersa\Tui\Tests\Question;
 
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
+use Ineersa\Tui\Theme\ThemeColorEnum;
+use Ineersa\Tui\Theme\DefaultTheme;
+use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Question\QuestionKind;
 use Ineersa\Tui\Question\QuestionOption;
 use Ineersa\Tui\Question\QuestionRequest;
@@ -75,7 +78,8 @@ class QuestionControllerTest extends TestCase
 
         self::assertCount(3, $items); // Yes, No, Type your answer
         self::assertSame('yes', $items[0]['value']);
-        self::assertSame('No', $items[1]['label']);
+        self::assertSame("\u{2713} Yes", $items[0]['label']);
+        self::assertSame("\u{2717} No", $items[1]['label']);
         self::assertSame('__other__', $items[2]['value']);
         self::assertSame('Type your answer', $items[2]['label']);
     }
@@ -281,6 +285,49 @@ class QuestionControllerTest extends TestCase
         $items = $this->invokeBuildItems($request);
 
         self::assertCount(0, $items);
+    }
+
+    // ── Confirm styling ──
+
+    #[Test]
+    public function testConfirmItemsIconsAndThemeColoring(): void
+    {
+        // Verify buildItems includes icon markers for confirm labels.
+        $request = new QuestionRequest(
+            requestId: 'confirm-icons',
+            source: QuestionSource::Tui,
+            kind: QuestionKind::Confirm,
+            prompt: 'Test?',
+            allowOther: false,
+        );
+
+        $items = $this->invokeBuildItems($request);
+        self::assertCount(2, $items);
+        self::assertStringContainsString("\u{2713}", $items[0]['label'], 'Confirm Yes must include checkmark icon');
+        self::assertStringContainsString("\u{2717}", $items[1]['label'], 'Confirm No must include cross icon');
+
+        // Create a real DefaultTheme with a test palette to verify the
+        // theme color integration works for confirm items.
+        $palette = new ThemePalette(
+            name: 'test',
+            colors: [
+                ThemeColorEnum::Success->value => 'green',
+                ThemeColorEnum::Error->value => 'red',
+            ],
+        );
+        $theme = new DefaultTheme($palette);
+
+        // Verify success wraps Yes with the marker and color
+        $styledYes = $theme->color(ThemeColorEnum::Success, "\u{2713} Yes");
+        self::assertStringContainsString("\u{2713}", $styledYes, 'Styled Yes must retain checkmark icon');
+        self::assertStringContainsString('Yes', $styledYes);
+        self::assertNotSame("\u{2713} Yes", $styledYes, 'Styled label must differ from plain label');
+
+        // Verify error wraps No with the marker and color
+        $styledNo = $theme->color(ThemeColorEnum::Error, "\u{2717} No");
+        self::assertStringContainsString("\u{2717}", $styledNo, 'Styled No must retain cross icon');
+        self::assertStringContainsString('No', $styledNo);
+        self::assertNotSame("\u{2717} No", $styledNo, 'Styled label must differ from plain label');
     }
 
     // ── Coordinator integration ──

@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Question;
 
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Screen\ChatScreen;
+use Ineersa\Tui\Theme\ThemeColorEnum;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
 use Symfony\Component\Tui\Input\Key;
@@ -127,10 +128,7 @@ final class QuestionController
         $prompt = new TextWidget(text: $request->prompt, truncate: true);
         $this->container->add($prompt);
 
-        $hintText = $request->secret
-            ? '[answer will be hidden, type and press Enter]'
-            : '[type answer and press Enter]';
-        $hint = new TextWidget(text: $hintText, truncate: true);
+        $hint = new TextWidget(text: '[type answer and press Enter]', truncate: true);
         $this->container->add($hint);
     }
 
@@ -146,6 +144,7 @@ final class QuestionController
         $this->container->add($prompt);
 
         $items = $this->buildItems($request);
+        $items = $this->styleConfirmItems($items);
         $kb = new Keybindings([
             'select_up' => [Key::UP],
             'select_down' => [Key::DOWN],
@@ -165,12 +164,19 @@ final class QuestionController
             $item = $event->getItem();
             $value = $item['value'];
 
-            $answer = '__other__' === $value
-                ? $this->screen->editorText()
-                : $value;
+            if ('__other__' === $value) {
+                // Close the overlay without answering. SubmitListener will
+                // intercept the next editor submission and route the typed
+                // text through coordinator->answer() via its question
+                // interception path.
+                $this->close();
+                $this->screen?->setStatus('action', 'Type your answer and press Enter');
+
+                return;
+            }
 
             try {
-                $this->coordinator->answer($answer);
+                $this->coordinator->answer($value);
             } finally {
                 $this->close();
             }
@@ -185,6 +191,35 @@ final class QuestionController
         });
 
         $this->container->add($this->listWidget);
+    }
+
+    /**
+     * Apply theme colors to confirm Yes/No items.
+     *
+     * Uses success/green for Yes and error/red for No so the
+     * affirmative and negative choices are visually distinct.
+     *
+     * @param list<array{value: string, label: string, description?: string}> $items
+     *
+     * @return list<array{value: string, label: string, description?: string}>
+     */
+    private function styleConfirmItems(array $items): array
+    {
+        if (null === $this->screen) {
+            return $items;
+        }
+
+        $theme = $this->screen->theme();
+
+        foreach ($items as $k => $item) {
+            if ('yes' === $item['value']) {
+                $items[$k]['label'] = $theme->color(ThemeColorEnum::Success, $item['label']);
+            } elseif ('no' === $item['value']) {
+                $items[$k]['label'] = $theme->color(ThemeColorEnum::Error, $item['label']);
+            }
+        }
+
+        return $items;
     }
 
     /**
@@ -223,8 +258,8 @@ final class QuestionController
 
         $items = match ($request->kind) {
             QuestionKind::Confirm => [
-                ['value' => 'yes', 'label' => 'Yes'],
-                ['value' => 'no', 'label' => 'No'],
+                ['value' => 'yes', 'label' => "\u{2713} Yes"],
+                ['value' => 'no', 'label' => "\u{2717} No"],
             ],
             QuestionKind::Choice => array_map(
                 static fn (QuestionOption $opt): array => [

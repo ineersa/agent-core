@@ -85,7 +85,6 @@ final class AskHumanToolTest extends TestCase
         $this->assertArrayHasKey('question_id', $properties);
         $this->assertArrayHasKey('header', $properties);
         $this->assertArrayHasKey('allow_other', $properties);
-        $this->assertArrayHasKey('secret', $properties);
     }
 
     public function testDefinitionChoicesItemsIsStringOnly(): void
@@ -333,25 +332,6 @@ final class AskHumanToolTest extends TestCase
         ]);
 
         $this->assertArrayNotHasKey('allow_other', $result);
-    }
-
-    public function testPreservesSecret(): void
-    {
-        $result = ($this->tool)([
-            'question' => 'Enter password:',
-            'secret' => true,
-        ]);
-
-        $this->assertTrue($result['secret']);
-    }
-
-    public function testDoesNotIncludeSecretWhenNotProvided(): void
-    {
-        $result = ($this->tool)([
-            'question' => 'Enter name:',
-        ]);
-
-        $this->assertArrayNotHasKey('secret', $result);
     }
 
     /* ── Edge cases ── */

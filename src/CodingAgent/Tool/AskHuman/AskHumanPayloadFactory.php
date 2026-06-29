@@ -15,7 +15,7 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
  * Validator for upfront validation. The answer schema is always derived
  * internally from kind and choices — no raw JSON Schema is accepted as input.
  * The output payload preserves all UI metadata (header, choices, default,
- * allow_other, secret) alongside the core interrupt fields.
+ * allow_other) alongside the core interrupt fields.
  *
  * The factory is the single canonical source of payload normalization.
  * AgentCore's ToolExecutor does not fabricate ask_human payloads — it only
@@ -102,10 +102,6 @@ final class AskHumanPayloadFactory
 
         if (null !== $dto->allowOther) {
             $payload['allow_other'] = $dto->allowOther;
-        }
-
-        if (null !== $dto->secret) {
-            $payload['secret'] = $dto->secret;
         }
 
         return $payload;

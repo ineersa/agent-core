@@ -245,7 +245,7 @@ final class TickPollListenerTest extends TestCase
         self::assertSame([], $ref->invoke(null, [], ['type' => 'boolean']));
     }
 
-    public function testHandleHumanInputRequestedPassesHeaderDefaultAllowOtherSecret(): void
+    public function testHandleHumanInputRequestedPassesHeaderDefaultAllowOther(): void
     {
         $client = $this->createStub(AgentSessionClient::class);
         $coordinator = new QuestionCoordinator();
@@ -261,7 +261,6 @@ final class TickPollListenerTest extends TestCase
                 'header' => 'Custom Rich Header',
                 'default' => 'default text',
                 'allow_other' => true,
-                'secret' => true,
                 'prompt' => 'Enter your input:',
                 'schema' => ['type' => 'string'],
             ],
@@ -276,7 +275,6 @@ final class TickPollListenerTest extends TestCase
         self::assertSame('Custom Rich Header', $active->header);
         self::assertSame('default text', $active->default);
         self::assertTrue($active->allowOther);
-        self::assertTrue($active->secret);
         self::assertSame('hitl_q_rich', $active->requestId);
         self::assertSame('q_rich', $active->questionId);
         self::assertTrue($active->transcript);

@@ -32,7 +32,6 @@ final class QuestionRequestTest extends TestCase
         self::assertNull($request->default);
         self::assertNull($request->header);
         self::assertTrue($request->allowOther);
-        self::assertFalse($request->secret);
         self::assertNull($request->runId);
         self::assertNull($request->questionId);
         self::assertNull($request->toolCallId);
@@ -57,7 +56,6 @@ final class QuestionRequestTest extends TestCase
             default: 'simple',
             header: 'Choose Strategy',
             allowOther: false,
-            secret: false,
             runId: 'run-123',
             questionId: 'q-456',
             toolCallId: 'tc-789',
@@ -78,7 +76,6 @@ final class QuestionRequestTest extends TestCase
         self::assertSame('simple', $request->default);
         self::assertSame('Choose Strategy', $request->header);
         self::assertFalse($request->allowOther);
-        self::assertFalse($request->secret);
         self::assertSame('run-123', $request->runId);
         self::assertSame('q-456', $request->questionId);
         self::assertSame('tc-789', $request->toolCallId);
