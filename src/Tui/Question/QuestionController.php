@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Question;
 
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Screen\ChatScreen;
+use Ineersa\Tui\Theme\ThemeColorEnum;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
 use Symfony\Component\Tui\Input\Key;
@@ -33,6 +34,8 @@ final class QuestionController
     private ?SelectListWidget $listWidget = null;
     private ?ContainerWidget $container = null;
     private bool $isOpen = false;
+    private bool $awaitingFreeForm = false;
+    private ?QuestionRequest $activeRequest = null;
     private ?ChatScreen $screen = null;
 
     public function __construct(
@@ -68,6 +71,8 @@ final class QuestionController
             return;
         }
 
+        $this->awaitingFreeForm = false;
+        $this->activeRequest = $request;
         $this->container = new ContainerWidget();
         $this->addHeader($request);
 
@@ -91,6 +96,7 @@ final class QuestionController
         }
         $this->listWidget = null;
         $this->isOpen = false;
+        $this->awaitingFreeForm = false;
         $this->screen?->setStatus('action', null);
         $this->screen?->refresh();
     }
@@ -103,7 +109,66 @@ final class QuestionController
         return $this->isOpen;
     }
 
+    /**
+     * True when the overlay was dismissed for free-form input (__other__ escape
+     * hatch). TickPollListener's per-tick re-open guard checks this flag so it
+     * does not rebuild the select overlay while the user types.
+     */
+    public function isAwaitingFreeForm(): bool
+    {
+        return $this->awaitingFreeForm;
+    }
+
+    /**
+     * Restore the select overlay after a free-form dismiss (__other__ escape
+     * hatch). Called by CancelListener when ESC is pressed during free-form
+     * typing — instead of cancelling the run, ESC returns the user to the
+     * option list. A second ESC from the list then triggers the widget's
+     * onCancel → coordinator->cancel() → 'Cancelled by user' reaches the model.
+     *
+     * Safe no-op when not awaiting free-form or when no request is available.
+     */
+    public function restoreFromFreeForm(): void
+    {
+        if (!$this->awaitingFreeForm) {
+            return;
+        }
+
+        $this->awaitingFreeForm = false;
+
+        if (null !== $this->activeRequest && null !== $this->screen) {
+            $this->open($this->activeRequest);
+        }
+    }
+
     // ── Private helpers ──
+
+    /**
+     * Dismiss the select overlay for free-form editor input (the __other__
+     * escape hatch).
+     *
+     * Sets awaitingFreeForm=true so TickPollListener's per-tick re-open guard
+     * does NOT rebuild the select overlay on the next tick (the active request
+     * remains unanswered so actionRequired() is still true — without this flag
+     * the guard would see !isOpen() and re-open with a fresh SelectListWidget
+     * at selectedIndex=0, resetting the selection).
+     *
+     * Focus is moved to the editor BEFORE close() so the SelectListWidget is
+     * not the focused widget when it detaches (avoids FocusManager::remove()
+     * reassigning focus at detach time).
+     *
+     * SubmitListener intercepts the next editor submission (Enter) while
+     * actionRequired() is true and routes the typed text through
+     * coordinator->answer(), which dequeues the request and clears
+     * awaitingFreeForm via close().
+     */
+    private function dismissToEditor(): void
+    {
+        $this->screen?->setFocus($this->screen->editorWidget());
+        $this->close();
+        $this->awaitingFreeForm = true;
+        $this->screen?->setStatus('action', 'Type your answer and press Enter');
+    }
 
     /**
      * Add a kind-appropriate header to the container.
@@ -127,10 +192,7 @@ final class QuestionController
         $prompt = new TextWidget(text: $request->prompt, truncate: true);
         $this->container->add($prompt);
 
-        $hintText = $request->secret
-            ? '[answer will be hidden, type and press Enter]'
-            : '[type answer and press Enter]';
-        $hint = new TextWidget(text: $hintText, truncate: true);
+        $hint = new TextWidget(text: '[type answer and press Enter]', truncate: true);
         $this->container->add($hint);
     }
 
@@ -146,6 +208,7 @@ final class QuestionController
         $this->container->add($prompt);
 
         $items = $this->buildItems($request);
+        $items = $this->styleConfirmItems($items, $request->kind);
         $kb = new Keybindings([
             'select_up' => [Key::UP],
             'select_down' => [Key::DOWN],
@@ -165,12 +228,16 @@ final class QuestionController
             $item = $event->getItem();
             $value = $item['value'];
 
-            $answer = '__other__' === $value
-                ? $this->screen->editorText()
-                : $value;
+            if ('__other__' === $value) {
+                // Dismiss the select overlay for free-form editor input.
+                // Defers answering to the next editor Enter via SubmitListener.
+                $this->dismissToEditor();
+
+                return;
+            }
 
             try {
-                $this->coordinator->answer($answer);
+                $this->coordinator->answer($value);
             } finally {
                 $this->close();
             }
@@ -185,6 +252,44 @@ final class QuestionController
         });
 
         $this->container->add($this->listWidget);
+    }
+
+    /**
+     * Apply theme colors to confirm Yes/No items.
+     *
+     * Only applies styling when the question kind is Confirm, since the
+     * yes/no value guards would incorrectly color Choice items whose
+     * labels happen to be 'yes' or 'no'.
+     *
+     * Uses success/green for Yes and error/red for No so the
+     * affirmative and negative choices are visually distinct.
+     *
+     * @param list<array{value: string, label: string, description?: string}> $items
+     * @param QuestionKind                                                    $kind  The question kind — styling only applies to Confirm
+     *
+     * @return list<array{value: string, label: string, description?: string}>
+     */
+    private function styleConfirmItems(array $items, QuestionKind $kind): array
+    {
+        if (QuestionKind::Confirm !== $kind) {
+            return $items;
+        }
+
+        if (null === $this->screen) {
+            return $items;
+        }
+
+        $theme = $this->screen->theme();
+
+        foreach ($items as $k => $item) {
+            if ('yes' === $item['value']) {
+                $items[$k]['label'] = $theme->color(ThemeColorEnum::Success, $item['label']);
+            } elseif ('no' === $item['value']) {
+                $items[$k]['label'] = $theme->color(ThemeColorEnum::Error, $item['label']);
+            }
+        }
+
+        return $items;
     }
 
     /**
@@ -223,8 +328,8 @@ final class QuestionController
 
         $items = match ($request->kind) {
             QuestionKind::Confirm => [
-                ['value' => 'yes', 'label' => 'Yes'],
-                ['value' => 'no', 'label' => 'No'],
+                ['value' => 'yes', 'label' => "\u{2713} Yes"],
+                ['value' => 'no', 'label' => "\u{2717} No"],
             ],
             QuestionKind::Choice => array_map(
                 static fn (QuestionOption $opt): array => [
@@ -236,7 +341,10 @@ final class QuestionController
             ),
         };
 
-        if ($request->allowOther) {
+        // The escape hatch only renders for Choice — Confirm's Yes/No are
+        // exhaustive for a boolean schema (free-form text would be silently
+        // coerced to boolean, making the hatch a trap). Text kind uses a banner.
+        if ($request->allowOther && QuestionKind::Choice === $request->kind) {
             $items[] = ['value' => '__other__', 'label' => 'Type your answer'];
         }
 

@@ -15,6 +15,8 @@ use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\CancelListener;
+use Ineersa\Tui\Question\QuestionController;
+use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
@@ -280,6 +282,43 @@ class CancelListenerTest extends TestCase
         $this->dispatchCancelEvent(captureErrorEnv: '0');
     }
 
+    // ── Free-form typing (__other__): ESC must not cancel run ──
+
+    #[Test]
+    public function testEscDuringFreeFormDoesNotCancelRun(): void
+    {
+        // Regression guard for the user-reported bug: pressing ESC
+        // during free-form typing (awaitingFreeForm=true) must NOT
+        // call client->cancel(). The CancelListener guard returns
+        // early and calls restoreFromFreeForm() instead. A revert
+        // of the isAwaitingFreeForm() guard would fail this test.
+
+        $this->state->activity = RunActivityStateEnum::Running;
+        $this->state->handle = new RunHandle('run-freeform');
+
+        $this->client->expects($this->never())
+            ->method('cancel');
+
+        // Create a QuestionController with awaitingFreeForm=true
+        $qc = new QuestionController(new QuestionCoordinator());
+        $qcRef = new \ReflectionClass($qc);
+        $awaitProp = $qcRef->getProperty('awaitingFreeForm');
+        $awaitProp->setValue($qc, true);
+        self::assertTrue($qc->isAwaitingFreeForm());
+
+        // Pass the pre-configured controller to dispatchCancelEvent
+        $this->dispatchCancelEvent(captureErrorEnv: '1', questionController: $qc);
+
+        // After dispatch, restoreFromFreeForm() should have reset the flag
+        // (regardless of whether it could re-open — no screen in this path)
+        self::assertFalse($qc->isAwaitingFreeForm(), 'restoreFromFreeForm must reset awaitingFreeForm');
+
+        // THE KEY ASSERTION: client->cancel() was never called despite the
+        // run being active with a valid handle and awaitingFreeForm=true.
+        // If the isAwaitingFreeForm() guard were removed, the cancel would
+        // fire and this assertion (via expects(never)) would fail.
+    }
+
     private function removeDir(string $dir): void
     {
         if (!is_dir($dir)) {
@@ -300,7 +339,7 @@ class CancelListenerTest extends TestCase
      * then invoke it (without needing a real CancelEvent — the closure
      * doesn't use the $event parameter).
      */
-    private function dispatchCancelEvent(?string $captureErrorEnv = '1'): ChatScreen
+    private function dispatchCancelEvent(?string $captureErrorEnv = '1', ?QuestionController $questionController = null): ChatScreen
     {
         $tui = new Tui();
         $theme = new DefaultTheme(new ThemePalette('test'));
@@ -331,9 +370,12 @@ class CancelListenerTest extends TestCase
         ));
         $boundary = new RuntimeExceptionBoundary($eventDispatcher);
 
+        $questionController ??= new QuestionController(new QuestionCoordinator());
+
         $listener = new CancelListener(
             $this->logger,
             $boundary,
+            $questionController,
         );
         $listener->register($context);
 

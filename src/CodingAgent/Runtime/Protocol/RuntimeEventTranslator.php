@@ -369,24 +369,30 @@ final class RuntimeEventTranslator
 
     // ── HITL ───────────────────────────────────────────────────────────────
 
+    /**
+     * Generic passthrough from waiting_human to human_input.requested.
+     *
+     * Starts from the full upstream payload, preserving every key generically.
+     * Only the three core fields (question_id, prompt, schema) receive typed
+     * fallbacks; all other interrupt fields pass through unchanged. This mirrors
+     * the generic-passthrough pattern established in ToolCallExtractor (QH-05).
+     */
     private function onWaitingHuman(RunEvent $runEvent): RuntimeEvent
     {
         $p = $runEvent->payload;
 
-        $payload = [
-            'question_id' => (string) ($p['question_id'] ?? ''),
-            'prompt' => (string) ($p['prompt'] ?? 'Human input required.'),
-        ];
+        // Generic passthrough: carry whatever the upstream interrupt produced.
+        $payload = $p;
 
-        if (isset($p['schema'])) {
-            $payload['schema'] = $p['schema'];
-        }
-        if (isset($p['tool_call_id'])) {
-            $payload['tool_call_id'] = $p['tool_call_id'];
-        }
-        if (isset($p['tool_name'])) {
-            $payload['tool_name'] = $p['tool_name'];
-        }
+        $payload['question_id'] = \is_string($payload['question_id'] ?? null)
+            ? $payload['question_id']
+            : '';
+        $payload['prompt'] = \is_string($payload['prompt'] ?? null)
+            ? $payload['prompt']
+            : 'Human input required.';
+        $payload['schema'] = \is_array($payload['schema'] ?? null)
+            ? $payload['schema']
+            : ['type' => 'string'];
 
         return new RuntimeEvent(
             type: RuntimeEventTypeEnum::HumanInputRequested->value,
