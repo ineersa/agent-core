@@ -12,7 +12,6 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Fork\ForkHandoffValidationResultDTO;
 use Ineersa\CodingAgent\Agent\Fork\ForkHandoffValidator;
-use Ineersa\CodingAgent\Agent\Fork\ForkSessionSnapshotSerializer;
 use Psr\Log\LoggerInterface;
 use Revolt\EventLoop;
 
@@ -22,12 +21,15 @@ use Revolt\EventLoop;
  * Registers a non-blocking Revolt EventLoop repeat that polls RunStore for
  * terminal state (Completed, Failed, Cancelled).  When terminal, performs
  * handoff validation, repair (up to MAX_REPAIR_ATTEMPTS), and writes result
- * artifacts (handoff.md, metadata.json).
+ * artifacts (handoff.md, fork-metadata.json, diagnostics).
  *
  * Runs in the controller process (started by StartRunHandler) so it has
  * access to AppAgent services (ForkHandoffValidator, AgentArtifactRegistry).
- * The TUI-side ForkAutoExitRegistrar simply stops the TUI event loop on
- * terminal — all AppAgent-intensive work is here in the controller.
+ * The TUI-side ForkAutoExitRegistrar stops the TUI when terminal state is
+ * reached AND the finalization marker file (.fork-finalized) is present.
+ *
+ * After terminal state is handled, the EventLoop repeat callback is cancelled
+ * to avoid wasting ticks.
  */
 final readonly class ForkRunTerminalWatcher
 {
@@ -37,12 +39,17 @@ final readonly class ForkRunTerminalWatcher
     /** EventLoop poll interval in seconds. */
     private const float POLL_INTERVAL = 0.5;
 
+    /** Filename for fork runtime metadata (separate from AgentArtifactRegistry's metadata.json). */
+    private const string FORK_METADATA_FILENAME = 'fork-metadata.json';
+
+    /** Marker file written after all finalization artifacts are complete. */
+    private const string FINALIZED_MARKER_FILENAME = '.fork-finalized';
+
     public function __construct(
         private RunStoreInterface $runStore,
         private AgentRunnerInterface $agentRunner,
         private AgentArtifactRegistry $artifactRegistry,
         private ForkHandoffValidator $handoffValidator,
-        private ForkSessionSnapshotSerializer $snapshotSerializer,
         private LoggerInterface $logger,
     ) {
     }
@@ -53,17 +60,17 @@ final readonly class ForkRunTerminalWatcher
      * Registers a non-blocking EventLoop repeat that polls RunStore until
      * the run reaches a terminal state (Completed, Failed, Cancelled).
      * When terminal, performs handoff validation/repair and writes result
-     * artifacts.  After terminal state is reached, subsequent ticks no-op
-     * (lightweight null-check per tick until the controller process exits).
+     * artifacts.  After terminal state is handled, the repeat is cancelled.
      *
-     * Loads the fork snapshot from fork_snapshot_path once to extract
-     * resolvedModel and any other metadata needed for finalization.
+     * Loads resolvedModel from fork_resolved_model option if present
+     * (set by ForkControllerStartService).  Does NOT deserialize the
+     * snapshot — the controller start service already has this data.
      *
      * @param string               $runId       The child agent run ID
      * @param array<string, mixed> $forkOptions Scalar fork options (fork_mode,
      *                                          fork_snapshot_path, fork_result_dir, fork_parent_run_id,
      *                                          fork_artifact_id, fork_child_run_id, fork_task,
-     *                                          fork_level, fork_cwd)
+     *                                          fork_level, fork_cwd, fork_resolved_model)
      */
     public function startForForkRun(string $runId, array $forkOptions): void
     {
@@ -74,14 +81,17 @@ final readonly class ForkRunTerminalWatcher
         $cwd = (string) ($forkOptions['fork_cwd'] ?? '');
         $task = (string) ($forkOptions['fork_task'] ?? '');
         $level = (string) ($forkOptions['fork_level'] ?? '');
-
-        // Load resolvedModel from the snapshot (loaded once, not per tick).
-        $resolvedModel = $this->loadResolvedModel($forkOptions);
+        $resolvedModel = isset($forkOptions['fork_resolved_model'])
+            ? (string) $forkOptions['fork_resolved_model']
+            : null;
+        if ('' === $resolvedModel) {
+            $resolvedModel = null;
+        }
 
         $repairAttempts = 0;
-        $cancelled = false;
+        $finalized = false;
 
-        $callback = function () use (
+        $callbackId = EventLoop::repeat(self::POLL_INTERVAL, function () use (
             $runId,
             $parentRunId,
             $artifactId,
@@ -92,9 +102,10 @@ final readonly class ForkRunTerminalWatcher
             $level,
             $resolvedModel,
             &$repairAttempts,
-            &$cancelled,
+            &$finalized,
+            &$callbackId,
         ): void {
-            if ($cancelled) {
+            if ($finalized) {
                 return;
             }
 
@@ -111,53 +122,15 @@ final readonly class ForkRunTerminalWatcher
                 $repairAttempts,
             );
 
-            // Mark cancelled when we reach terminal state so subsequent
-            // ticks are no-ops.  The EventLoop will keep the repeat active
-            // but it's a lightweight null check per tick.
             if ('done' === $result || 'exit' === $result) {
-                $cancelled = true;
+                $finalized = true;
+                // Cancel the repeat to avoid wasting ticks.
+                if (null !== $callbackId) {
+                    EventLoop::cancel($callbackId);
+                    $callbackId = null;
+                }
             }
-        };
-
-        EventLoop::repeat(self::POLL_INTERVAL, $callback);
-    }
-
-    /**
-     * Extract resolvedModel from fork options or load from snapshot.
-     *
-     * Checks fork_resolved_model in options first (set by ForkControllerStartService
-     * or AgentCommand); falls back to loading the snapshot from fork_snapshot_path.
-     *
-     * @param array<string, mixed> $forkOptions
-     */
-    private function loadResolvedModel(array $forkOptions): ?string
-    {
-        // Prefer explicit option value.
-        if (isset($forkOptions['fork_resolved_model'])) {
-            $value = $forkOptions['fork_resolved_model'];
-            if (\is_string($value) && '' !== $value) {
-                return $value;
-            }
-        }
-
-        // Fall back to loading from snapshot.
-        $snapshotPath = (string) ($forkOptions['fork_snapshot_path'] ?? '');
-        if ('' !== $snapshotPath && is_file($snapshotPath)) {
-            try {
-                $snapshot = $this->snapshotSerializer->fromFile($snapshotPath);
-
-                return $snapshot->resolvedModel;
-            } catch (\Throwable $e) {
-                $this->logger->warning('fork.watcher.snapshot_load_failed', [
-                    'component' => 'fork.watcher',
-                    'event_type' => 'fork.watcher.snapshot_load_failed',
-                    'snapshot_path' => $snapshotPath,
-                    'error' => $e->getMessage(),
-                ]);
-            }
-        }
-
-        return null;
+        });
     }
 
     // ── Shared terminal handling logic ──
@@ -193,6 +166,7 @@ final readonly class ForkRunTerminalWatcher
             ]);
             $this->writeMetadata($resultDir, $parentRunId, $artifactId, $childRunId, $cwd, $task, $level, $resolvedModel, AgentArtifactStatusEnum::Failed, 'Run state not found — child run may have been lost.');
             $this->artifactRegistry->update($parentRunId, $artifactId, status: AgentArtifactStatusEnum::Failed, completedAt: new \DateTimeImmutable());
+            $this->writeFinalizedMarker($resultDir);
 
             return 'done';
         }
@@ -200,7 +174,8 @@ final readonly class ForkRunTerminalWatcher
         return match ($state->status) {
             RunStatus::Completed => $this->handleCompleted($state, $runId, $parentRunId, $artifactId, $childRunId, $resultDir, $cwd, $task, $level, $resolvedModel, $repairAttempts),
             RunStatus::Failed => $this->handleFailed($state, $runId, $parentRunId, $artifactId, $childRunId, $resultDir, $cwd, $task, $level, $resolvedModel),
-            RunStatus::Cancelled, RunStatus::Cancelling => $this->handleCancelled($runId, $parentRunId, $artifactId, $childRunId, $resultDir, $cwd, $task, $level, $resolvedModel),
+            RunStatus::Cancelled => $this->handleCancelled($runId, $parentRunId, $artifactId, $childRunId, $resultDir, $cwd, $task, $level, $resolvedModel),
+            // Cancelling is NOT terminal — keep polling for the eventual Cancelled.
             default => null, // Not terminal — keep polling
         };
     }
@@ -226,6 +201,7 @@ final readonly class ForkRunTerminalWatcher
         if ('' === trim($candidateHandoff)) {
             $this->writeMetadata($resultDir, $parentRunId, $artifactId, $childRunId, $cwd, $task, $level, $resolvedModel, AgentArtifactStatusEnum::Failed, 'Child run completed but produced no assistant response.');
             $this->artifactRegistry->update($parentRunId, $artifactId, status: AgentArtifactStatusEnum::Failed, completedAt: new \DateTimeImmutable());
+            $this->writeFinalizedMarker($resultDir);
 
             return 'done';
         }
@@ -293,11 +269,12 @@ final readonly class ForkRunTerminalWatcher
         $candidateHandoff = $this->extractLastAssistantText($state);
         if ('' !== trim($candidateHandoff)) {
             $candidatePath = $resultDir.'/candidate-handoff.md';
-            file_put_contents($candidatePath, $candidateHandoff);
+            $this->atomicFilePut($candidatePath, $candidateHandoff);
         }
 
         $this->writeMetadata($resultDir, $parentRunId, $artifactId, $childRunId, $cwd, $task, $level, $resolvedModel, AgentArtifactStatusEnum::Failed, $error);
         $this->artifactRegistry->update($parentRunId, $artifactId, status: AgentArtifactStatusEnum::Failed, completedAt: new \DateTimeImmutable());
+        $this->writeFinalizedMarker($resultDir);
 
         return 'done';
     }
@@ -325,6 +302,7 @@ final readonly class ForkRunTerminalWatcher
 
         $this->writeMetadata($resultDir, $parentRunId, $artifactId, $childRunId, $cwd, $task, $level, $resolvedModel, AgentArtifactStatusEnum::Cancelled, 'Fork child was cancelled before producing an accepted handoff.');
         $this->artifactRegistry->update($parentRunId, $artifactId, status: AgentArtifactStatusEnum::Cancelled, completedAt: new \DateTimeImmutable());
+        $this->writeFinalizedMarker($resultDir);
 
         return 'done';
     }
@@ -359,8 +337,9 @@ final readonly class ForkRunTerminalWatcher
             summary: \sprintf('Fork child completed after %d validation attempt(s).', $validationAttempts),
         );
 
-        // Write metadata.
+        // Write fork runtime metadata (separate file from artifact metadata.json).
         $this->writeMetadata($resultDir, $parentRunId, $artifactId, $childRunId, $cwd, $task, $level, $resolvedModel, AgentArtifactStatusEnum::Completed, null, $validationAttempts);
+        $this->writeFinalizedMarker($resultDir);
 
         $this->logger->info('fork.terminal.completed', [
             'component' => 'fork.watcher',
@@ -402,11 +381,11 @@ final readonly class ForkRunTerminalWatcher
 
         // Write candidate handoff for diagnostics.
         $candidatePath = $resultDir.'/candidate-handoff.md';
-        file_put_contents($candidatePath, $candidateHandoff);
+        $this->atomicFilePut($candidatePath, $candidateHandoff);
 
         // Write validation diagnostics.
         $diagnosticsPath = $resultDir.'/handoff-validation.json';
-        file_put_contents($diagnosticsPath, json_encode([
+        $this->atomicFilePut($diagnosticsPath, json_encode([
             'valid' => false,
             'reason' => $reason,
             'missing_sections' => $validationResult->missingSections,
@@ -417,12 +396,14 @@ final readonly class ForkRunTerminalWatcher
 
         $this->writeMetadata($resultDir, $parentRunId, $artifactId, $childRunId, $cwd, $task, $level, $resolvedModel, AgentArtifactStatusEnum::Failed, $error, $attempts);
         $this->artifactRegistry->update($parentRunId, $artifactId, status: AgentArtifactStatusEnum::Failed, completedAt: new \DateTimeImmutable());
+        $this->writeFinalizedMarker($resultDir);
 
         return 'done';
     }
 
     /**
-     * Write fork metadata JSON to the result directory.
+     * Write fork runtime metadata JSON to a fork-metadata.json file
+     * (NOT metadata.json — that file is owned by AgentArtifactRegistry).
      */
     private function writeMetadata(
         string $resultDir,
@@ -452,8 +433,47 @@ final readonly class ForkRunTerminalWatcher
             'error' => $error,
         ];
 
-        $metadataPath = $resultDir.'/metadata.json';
-        file_put_contents($metadataPath, json_encode($metadata, \JSON_PRETTY_PRINT | \JSON_THROW_ON_ERROR));
+        $metadataPath = $resultDir.'/'.self::FORK_METADATA_FILENAME;
+        $this->atomicFilePut($metadataPath, json_encode($metadata, \JSON_PRETTY_PRINT | \JSON_THROW_ON_ERROR));
+    }
+
+    /**
+     * Write the finalization-complete marker file.
+     *
+     * The TUI-side ForkAutoExitRegistrar checks for this file before
+     * stopping the TUI, preventing the race where TUI exits before
+     * all artifacts are written.
+     */
+    private function writeFinalizedMarker(string $resultDir): void
+    {
+        $markerPath = $resultDir.'/'.self::FINALIZED_MARKER_FILENAME;
+        $this->atomicFilePut($markerPath, json_encode([
+            'finalized_at' => (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM),
+        ], \JSON_THROW_ON_ERROR));
+    }
+
+    /**
+     * Write a file atomically using temp file + rename.
+     *
+     * Creates a temporary file in the same directory, writes content,
+     * sets permissions, then atomically renames over the target path.
+     */
+    private function atomicFilePut(string $path, string $content): void
+    {
+        $dir = \dirname($path);
+        if (!is_dir($dir)) {
+            if (!mkdir($dir, 0o755, true) && !is_dir($dir)) {
+                throw new \RuntimeException(\sprintf('Failed to create directory: %s', $dir));
+            }
+        }
+
+        $tmpPath = $path.'.'.bin2hex(random_bytes(4)).'.tmp';
+        $written = @file_put_contents($tmpPath, $content, \LOCK_EX);
+        if (false === $written) {
+            throw new \RuntimeException(\sprintf('Failed to write file: %s', $path));
+        }
+        @chmod($tmpPath, 0o644);
+        @rename($tmpPath, $path);
     }
 
     /**

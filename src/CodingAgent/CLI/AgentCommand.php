@@ -332,7 +332,8 @@ final class AgentCommand
         }
 
         // ── Resolve fork level ──
-        $forkLevel = '' !== $level ? ForkLevelEnum::tryFrom($level) : ForkLevelEnum::Middle;
+        // Throw on invalid --level value rather than silently falling back to Middle.
+        $forkLevel = '' !== $level ? ForkLevelEnum::from($level) : ForkLevelEnum::Middle;
 
         // ── Prepare scalar fork options (JSON-serializable for process transport) ──
         // These are passed through StartRunRequest::options to the controller.
@@ -346,7 +347,7 @@ final class AgentCommand
             'fork_parent_run_id' => $parentRunId,
             'fork_artifact_id' => $forkRunId,
             'fork_child_run_id' => $childRunId,
-            'fork_task' => '' !== $task ? $task : '',
+            'fork_task' => $task,
             'fork_level' => ($forkLevel ?? ForkLevelEnum::Middle)->value,
             'fork_cwd' => getcwd(),
         ];

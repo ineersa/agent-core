@@ -80,20 +80,17 @@ final readonly class ForkControllerStartService
 
         // ── 2. Build fresh system prompt for child CWD ──
         $systemPromptText = $this->systemPromptBuilder->build();
-        $messages = [];
-        if ('' !== $systemPromptText) {
-            $messages[] = new AgentMessage(
-                role: 'system',
-                content: [['type' => 'text', 'text' => $systemPromptText]],
-            );
-        }
 
         // ── 3. Build fresh user-context messages for child CWD ──
+        // Build only context messages (no system message — the composer
+        // adds the system message internally from freshSystemPrompt).
+        $contextMsgs = [];
+
         // AGENTS.md context (project-level instructions)
         $agentsContext = $this->agentsContextDiscovery->discover();
         if ([] !== $agentsContext) {
             $contextText = $this->agentsContextRenderer->render($agentsContext);
-            $messages[] = new AgentMessage(
+            $contextMsgs[] = new AgentMessage(
                 role: 'user-context',
                 content: [['type' => 'text', 'text' => $contextText]],
                 metadata: ['source' => 'agents_context', 'files' => array_column($agentsContext, 'path')],
@@ -103,7 +100,7 @@ final readonly class ForkControllerStartService
         // Skills context (available skill instructions)
         $skillsContext = $this->skillsContextBuilder->build();
         if ('' !== $skillsContext) {
-            $messages[] = new AgentMessage(
+            $contextMsgs[] = new AgentMessage(
                 role: 'user-context',
                 content: [['type' => 'text', 'text' => $skillsContext]],
                 metadata: ['source' => 'skills_context'],
@@ -113,7 +110,7 @@ final readonly class ForkControllerStartService
         // Available agent definitions
         $availableAgentsContext = $this->agentsContextBuilder->build();
         if ('' !== $availableAgentsContext) {
-            $messages[] = new AgentMessage(
+            $contextMsgs[] = new AgentMessage(
                 role: 'user-context',
                 content: [['type' => 'text', 'text' => $availableAgentsContext]],
                 metadata: ['source' => 'agents_definitions_context'],
@@ -121,13 +118,11 @@ final readonly class ForkControllerStartService
         }
 
         // ── 4. Compose full message set via ForkChildMessageComposer ──
-        // Pass fresh context messages (without the first system message — the
-        // composer handles system + combined system prompt internally).
         $input = $this->messageComposer->compose(
             snapshot: $snapshot,
             childRunId: $childRunId,
             freshSystemPrompt: $systemPromptText,
-            freshContextMsgs: \array_slice($messages, 1),
+            freshContextMsgs: $contextMsgs,
             parentRunId: $parentRunId,
             artifactId: $artifactId,
             resolvedModel: $snapshot->resolvedModel,

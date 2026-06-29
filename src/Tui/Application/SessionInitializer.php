@@ -76,6 +76,19 @@ final readonly class SessionInitializer
         string $sessionId = '',
         ?StartRunRequest $request = null,
     ): TuiSessionState {
+        // Fork mode: use childRunId as both session ID and run ID, skip DB
+        // session creation. The fork child auto-exits without session browsing
+        // so no DB row or session files are needed.
+        if (null !== $request
+            && true === ($request->options['fork_mode'] ?? false)
+            && '' !== $request->runId
+        ) {
+            $state = new TuiSessionState($request->runId, false);
+            $state->request = $request;
+
+            return $state;
+        }
+
         $resuming = '' !== $sessionId && $this->sessionStore->exists($sessionId);
 
         if (!$resuming) {

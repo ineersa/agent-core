@@ -370,7 +370,12 @@ final readonly class InteractiveMode
             return;
         }
 
-        if (null !== $state->request && '' !== $state->request->prompt) {
+        // Fork mode: dispatch start_run even with empty prompt (fork seed
+        // messages are loaded from snapshot by ForkControllerStartService).
+        $hasForkMode = null !== $state->request
+            && true === ($state->request->options['fork_mode'] ?? false);
+
+        if (null !== $state->request && ('' !== $state->request->prompt || $hasForkMode)) {
             try {
                 $state->handle = $client->start($state->request);
                 $this->sessionStore->updateMetadata($state->sessionId, [
