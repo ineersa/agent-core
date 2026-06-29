@@ -114,6 +114,9 @@ final class TreePickerController
         );
 
         // ── Arrows → rebuild items so newly selected row gets accent colour ──
+        // setSelectedIndex() does NOT re-dispatch SelectionChangeEvent
+        // (verified in SelectListWidget.php), so calling it after
+        // setItems() is safe and does not cause infinite recursion.
         $listWidget->onSelectionChange(
             static function (SelectionChangeEvent $event) use ($listWidget, $tree, $theme, $flattenedOrder): void {
                 $selectedValue = $event->getItem()['value'];
@@ -172,113 +175,65 @@ final class TreePickerController
      * Depth-first walk, producing indented labels with leaf markers.
      * Public and static for testability.
      *
-     * @return list<array{value: string, label: string, description: string}>
+     * @return list<array{value: string, label: string, description?: string}>
      */
     public static function buildItems(TurnTreeView $tree, TuiTheme $theme, int $selectedIndex = -1): array
     {
-        $items = [];
-        $visited = [];
-
-        foreach ($tree->rootTurnNos as $rootTurnNo) {
-            self::walkNode($rootTurnNo, $tree->nodesByTurnNo, 0, $items, $visited, $tree->currentLeafTurnNo, $theme, $selectedIndex, 0);
-        }
-
-        return $items;
+        return self::walk($tree, $theme, $selectedIndex)[0];
     }
 
     /**
      * Pre-compute the depth-first order of turn numbers (for selection-change indexing).
      *
+     * Delegates to the unified walk to guarantee index alignment with buildItems.
+     *
      * @return list<int>
      */
     public static function flattenTurnOrder(TurnTreeView $tree): array
     {
-        $order = [];
-        $visited = [];
-
-        foreach ($tree->rootTurnNos as $rootTurnNo) {
-            self::flattenOrderWalk($rootTurnNo, $tree->nodesByTurnNo, $order, $visited);
-        }
-
-        return $order;
+        return self::walk($tree)[1];
     }
 
     // ── Private helpers ─────────────────────────────────────────────
 
     /**
-     * @param array<int, TurnTreeNodeView>                              $nodesByTurnNo
-     * @param list<array{value:string,label:string,description:string}> $items
-     * @param array<int, true>                                          $visited
+     * Unified depth-first walk producing both items and turn order.
+     *
+     * When a TuiTheme is provided, items (full labels with indentation,
+     * leaf markers, truncation, accent) are built. The turn-order list
+     * is always produced, guaranteeing index alignment between
+     * buildItems() and flattenTurnOrder().
+     *
+     * @return array{0: list<array{value:string,label:string,description?:string}>, 1: list<int>}
+     */
+    private static function walk(TurnTreeView $tree, ?TuiTheme $theme = null, int $selectedIndex = -1): array
+    {
+        $items = [];
+        $order = [];
+        $visited = [];
+
+        foreach ($tree->rootTurnNos as $rootTurnNo) {
+            self::walkNode($rootTurnNo, $tree->nodesByTurnNo, 0, $items, $order, $visited, $theme, $selectedIndex);
+        }
+
+        return [$items, $order];
+    }
+
+    /**
+     * @param array<int, TurnTreeNodeView>                               $nodesByTurnNo
+     * @param list<array{value:string,label:string,description?:string}> $items
+     * @param list<int>                                                  $order
+     * @param array<int, true>                                           $visited
      */
     private static function walkNode(
         int $turnNo,
         array $nodesByTurnNo,
         int $depth,
         array &$items,
-        array &$visited,
-        ?int $currentLeafTurnNo,
-        TuiTheme $theme,
-        int $selectedIndex,
-        int $currentItemCount,
-    ): int {
-        if (isset($visited[$turnNo])) {
-            return $currentItemCount;
-        }
-        $visited[$turnNo] = true;
-
-        $node = $nodesByTurnNo[$turnNo] ?? null;
-        if (null === $node) {
-            return $currentItemCount;
-        }
-
-        $isCurrentLeaf = $node->turnNo === $currentLeafTurnNo;
-        $prefix = $isCurrentLeaf ? '◉ ' : '○ ';
-        $indent = '';
-        if ($depth > 0) {
-            $indent = str_repeat('  ', max(0, $depth - 1)).'└─ ';
-        }
-
-        $label = $indent.$prefix.\sprintf(
-            'Turn %d: %s',
-            $node->turnNo,
-            mb_strimwidth($node->title, 0, 60, '…'),
-        );
-
-        $description = '';
-        if (null !== $node->createdAt) {
-            $description = $node->createdAt->format('Y-m-d H:i');
-        }
-
-        $idx = \count($items);
-        if ($idx === $selectedIndex) {
-            $label = $theme->color(ThemeColorEnum::Accent, $label);
-        }
-
-        $items[] = [
-            'value' => (string) $node->turnNo,
-            'label' => $label,
-            'description' => $description,
-        ];
-
-        $currentItemCount = $idx + 1;
-
-        foreach ($node->childTurnNos as $childTurnNo) {
-            $currentItemCount = self::walkNode($childTurnNo, $nodesByTurnNo, $depth + 1, $items, $visited, $currentLeafTurnNo, $theme, $selectedIndex, $currentItemCount);
-        }
-
-        return $currentItemCount;
-    }
-
-    /**
-     * @param array<int, TurnTreeNodeView> $nodesByTurnNo
-     * @param list<int>                    $order
-     * @param array<int, true>             $visited
-     */
-    private static function flattenOrderWalk(
-        int $turnNo,
-        array $nodesByTurnNo,
         array &$order,
         array &$visited,
+        ?TuiTheme $theme,
+        int $selectedIndex,
     ): void {
         if (isset($visited[$turnNo])) {
             return;
@@ -290,10 +245,38 @@ final class TreePickerController
             return;
         }
 
+        if (null !== $theme) {
+            $prefix = $node->isCurrentLeaf ? '◉ ' : '○ ';
+            $indent = '';
+            if ($depth > 0) {
+                $indent = str_repeat('  ', max(0, $depth - 1)).'└─ ';
+            }
+
+            $label = $indent.$prefix.\sprintf(
+                'Turn %d: %s',
+                $node->turnNo,
+                mb_strimwidth($node->title, 0, 60, '…'),
+            );
+
+            $idx = \count($items);
+            if ($idx === $selectedIndex) {
+                $label = $theme->color(ThemeColorEnum::Accent, $label);
+            }
+
+            $item = [
+                'value' => (string) $node->turnNo,
+                'label' => $label,
+            ];
+            if (null !== $node->createdAt) {
+                $item['description'] = $node->createdAt->format('Y-m-d H:i');
+            }
+            $items[] = $item;
+        }
+
         $order[] = $node->turnNo;
 
         foreach ($node->childTurnNos as $childTurnNo) {
-            self::flattenOrderWalk($childTurnNo, $nodesByTurnNo, $order, $visited);
+            self::walkNode($childTurnNo, $nodesByTurnNo, $depth + 1, $items, $order, $visited, $theme, $selectedIndex);
         }
     }
 }
