@@ -119,7 +119,6 @@ final readonly class AssistantStreamProjectionSubscriber implements EventSubscri
             text: (string) ($p['text'] ?? ''),
             meta: $state->buildAssistantMeta($p),
             streaming: true,
-            collapsed: true,
         ));
     }
 
@@ -174,8 +173,10 @@ final readonly class AssistantStreamProjectionSubscriber implements EventSubscri
         // Streaming thinking deltas are not persisted in events.jsonl.
         // On replay the canonical llm_step_completed carries
         // details.thinking with the full thinking text.  Create a
-        // non-streaming, collapsed AssistantThinking block so resume
+        // non-streaming, not collapsed AssistantThinking block so resume
         // shows the same thinking content the user saw in the live TUI.
+        // (Display collapse is a local rendering policy, not a projection
+        // concern — see TranscriptDisplayConfig::thinkingVisible.)
         //
         // Thinking is created FIRST so it appears before assistant text
         // and tool-call blocks, matching live projection order.
@@ -192,7 +193,6 @@ final readonly class AssistantStreamProjectionSubscriber implements EventSubscri
                 text: $canonicalThinking,
                 meta: $event->state->buildAssistantMeta($p),
                 streaming: false,
-                collapsed: true,
             ));
         }
 

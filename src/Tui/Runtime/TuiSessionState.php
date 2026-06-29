@@ -9,6 +9,8 @@ use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
+use Ineersa\Tui\Transcript\TranscriptDisplayState;
 
 /**
  * Mutable state bag for the interactive TUI session.
@@ -117,6 +119,24 @@ final class TuiSessionState
     public string $cwd = '';
     public string $branch = '';
 
+    /**
+     * TUI-local immutable transcript display config for the current session.
+     *
+     * Set by InteractiveMode during TUI startup from Hatfield config via
+     * TranscriptDisplayConfigMapper. Defaults are safe for test factories
+     * and manual construction.
+     */
+    public TranscriptDisplayConfig $transcriptDisplayConfig;
+
+    /**
+     * Live/session-only mutable display state for the transcript.
+     *
+     * Initialized from transcriptDisplayConfig.previewsExpandedByDefault
+     * at TUI startup. Ctrl+O toggles previewableBlocksExpanded at runtime.
+     * Not persisted to settings or session metadata.
+     */
+    public TranscriptDisplayState $transcriptDisplayState;
+
     public function __construct(
         string $sessionId,
         bool $resuming = false,
@@ -124,6 +144,8 @@ final class TuiSessionState
         $this->sessionId = $sessionId;
         $this->resuming = $resuming;
         $this->usage = new UsageProjection();
+        $this->transcriptDisplayConfig = new TranscriptDisplayConfig();
+        $this->transcriptDisplayState = new TranscriptDisplayState();
     }
 
     /**

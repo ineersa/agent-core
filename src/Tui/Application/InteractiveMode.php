@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Application;
 
+use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
@@ -19,6 +20,7 @@ use Ineersa\Tui\Runtime\TuiTickDispatcher;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\TuiTheme;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
+use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Tui\Event\TickEvent;
@@ -65,6 +67,8 @@ final readonly class InteractiveMode
         private TranscriptBlockFactory $blockFactory,
         private LoggerInterface $logger,
         private TuiSessionSwitchService $switchService,
+        private AppConfig $appConfig,
+        private TranscriptDisplayConfigMapper $transcriptConfigMapper,
     ) {
     }
 
@@ -153,6 +157,16 @@ final readonly class InteractiveMode
                 $state = $this->sessionInit->initialize('', $targetRequest);
             }
             $state->transcript = $this->sessionInit->buildInitialTranscript($state);
+
+            // ── Initialize transcript display config/state ──
+            // Map from Hatfield config to TUI-local config so Tui\Transcript
+            // has no dependency on CodingAgent\Config.  Initialize live display
+            // state from config defaults.
+            $displayConfig = $this->transcriptConfigMapper->map($this->appConfig->tui->transcript);
+            $state->transcriptDisplayConfig = $displayConfig;
+            $state->transcriptDisplayState = new TranscriptDisplayState(
+                previewableBlocksExpanded: $displayConfig->previewsExpandedByDefault,
+            );
 
             // ── Build screen and mount widget tree ──
             $tui = new Tui();

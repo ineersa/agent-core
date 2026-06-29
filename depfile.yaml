@@ -416,6 +416,7 @@ parameters:
       - AppRuntimeProjection
       - TuiWidget
       - TuiTheme
+      - SymfonyTui
 
     TuiStatus:
       - TuiWidget

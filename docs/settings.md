@@ -96,6 +96,47 @@ tui:
         - '~/.hatfield/themes'
 ```
 
+### `tui.transcript.thinking.visible`
+
+Whether assistant thinking content is visible in the transcript. When true,
+thinking content is rendered (e.g. as Markdown with dim/italic styling). When
+false, each thinking block is rendered as a placeholder without revealing content.
+
+**Default:** `true`
+
+### `tui.transcript.thinking.style`
+
+Visual style for visible thinking blocks. Used to apply subdued styling
+through Symfony TUI `Style` primitives.
+
+**Default:** `dim_italic`
+
+### `tui.transcript.previews.expanded_by_default`
+
+Whether previewable blocks (tool results, diffs) start expanded in the
+transcript. When false (default), long tool outputs and diffs are shown
+as truncated previews. Preview expansion is TUI-session-only and is NOT
+persisted to settings or session metadata. The user toggles this at runtime
+with `Ctrl+O`.
+
+**Default:** `false`
+
+### `tui.transcript.previews.tool_result_lines`
+
+Maximum number of lines shown for normal tool result previews when
+the preview is collapsed. Applies to `ToolResult` blocks that are
+not classified as diffs.
+
+**Default:** `8`
+
+### `tui.transcript.previews.diff_lines`
+
+Maximum number of lines shown for diff-rendered tool result previews when
+the preview is collapsed. Applies to `ToolResult` blocks classified as
+diffs (e.g. edit/write tool outputs).
+
+**Default:** `20`
+
 ### `sessions.path`
 
 Directory where session/run data is stored. Each session equals
