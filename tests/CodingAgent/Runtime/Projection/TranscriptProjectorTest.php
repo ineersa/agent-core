@@ -1164,6 +1164,31 @@ final class TranscriptProjectorTest extends TestCase
             'tool_question.requested must not create transcript blocks');
     }
 
+    public function testHumanInputRequestedUsesUiKindForMetaKind(): void
+    {
+        // The real factory emits kind='interrupt' (transport marker) with UI
+        // semantics in ui_kind. The subscriber must prefer ui_kind when present
+        // so the transcript block's meta['kind'] carries the semantic kind, not
+        // the transport-level marker.
+        $this->accept('human_input.requested', [
+            'request_id' => 'req_01', 'question_id' => 'q_01',
+            'kind' => 'interrupt',
+            'ui_kind' => 'approval',
+            'prompt' => 'Approve deployment?',
+            'schema' => ['type' => 'boolean'],
+        ]);
+
+        $blocks = $this->projector->blocks();
+        $this->assertCount(1, $blocks);
+        $block = $blocks[0];
+        $this->assertSame('hitl_q_01', $block->id);
+        $this->assertSame(TranscriptBlockKindEnum::Question, $block->kind);
+        $this->assertSame('Approve deployment?', $block->text);
+        // meta['kind'] must be 'approval' (from ui_kind), NOT 'interrupt' (transport kind)
+        $this->assertSame('approval', $block->meta['kind'],
+            'meta kind must use ui_kind when both kind and ui_kind are present');
+    }
+
     public function testHumanInputRequestedCreatesQuestionBlock(): void
     {
         $this->accept('human_input.requested', [

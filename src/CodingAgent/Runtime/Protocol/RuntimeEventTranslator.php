@@ -372,13 +372,10 @@ final class RuntimeEventTranslator
     /**
      * Generic passthrough from waiting_human to human_input.requested.
      *
-     * Starts from the full upstream payload so all interrupt fields (header,
-     * choices, default, allow_other, secret, ui_kind, tool_call_id, tool_name,
-     * and any future fields) survive into the runtime event. Only the three
-     * core fields receive typed fallbacks.
-     *
-     * This mirrors the generic-passthrough pattern established in
-     * ToolCallExtractor (QH-05).
+     * Starts from the full upstream payload, preserving every key generically.
+     * Only the three core fields (question_id, prompt, schema) receive typed
+     * fallbacks; all other interrupt fields pass through unchanged. This mirrors
+     * the generic-passthrough pattern established in ToolCallExtractor (QH-05).
      */
     private function onWaitingHuman(RunEvent $runEvent): RuntimeEvent
     {
