@@ -260,7 +260,6 @@ final class TickPollListenerTest extends TestCase
                 'ui_kind' => 'text',
                 'header' => 'Custom Rich Header',
                 'default' => 'default text',
-                'allow_other' => true,
                 'prompt' => 'Enter your input:',
                 'schema' => ['type' => 'string'],
             ],
@@ -274,7 +273,7 @@ final class TickPollListenerTest extends TestCase
         self::assertSame(QuestionKind::Text, $active->kind);
         self::assertSame('Custom Rich Header', $active->header);
         self::assertSame('default text', $active->default);
-        self::assertTrue($active->allowOther);
+        self::assertTrue($active->allowOther, 'HITL questions must always allow free-form input');
         self::assertSame('hitl_q_rich', $active->requestId);
         self::assertSame('q_rich', $active->questionId);
         self::assertTrue($active->transcript);
@@ -396,6 +395,75 @@ final class TickPollListenerTest extends TestCase
 
         self::assertSame('Beta', $capturedAnswer, 'Choice answer must pass through as-is (string)');
         self::assertIsString($capturedAnswer);
+    }
+
+    public function testHandleHumanInputRequestedCancelSendsCancelledByUser(): void
+    {
+        $capturedPayload = null;
+
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->expects($this->once())
+            ->method('send')
+            ->with(
+                $this->identicalTo('run-cancel'),
+                $this->callback(function (UserCommand $cmd) use (&$capturedPayload): bool {
+                    $capturedPayload = $cmd->payload;
+
+                    return true;
+                }),
+            );
+
+        $coordinator = new QuestionCoordinator();
+        $ref = new \ReflectionMethod(TickPollListener::class, 'handleHumanInputRequested');
+
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::HumanInputRequested->value,
+            runId: 'run-cancel',
+            seq: 0,
+            payload: [
+                'question_id' => 'q_cancel',
+                'ui_kind' => 'confirm',
+                'prompt' => 'Cancel test?',
+                'schema' => ['type' => 'boolean'],
+            ],
+        );
+
+        $ref->invoke(null, $event, $client, $coordinator);
+
+        // Cancel the question — this fires the onCancel closure
+        $coordinator->cancel();
+
+        self::assertNotNull($capturedPayload, 'Must send UserCommand on cancel');
+        self::assertSame('q_cancel', $capturedPayload['question_id'] ?? null);
+        self::assertSame('Cancelled by user', $capturedPayload['answer'] ?? null);
+    }
+
+    public function testHandleHumanInputRequestedAllowOtherDefaultsTrue(): void
+    {
+        // When no allow_other field is present in the payload, the
+        // QuestionRequest must still have allowOther=true (ask_human
+        // always allows free-form input via the '__other__' escape hatch).
+        $client = $this->createStub(AgentSessionClient::class);
+        $coordinator = new QuestionCoordinator();
+        $ref = new \ReflectionMethod(TickPollListener::class, 'handleHumanInputRequested');
+
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::HumanInputRequested->value,
+            runId: 'run-aot',
+            seq: 0,
+            payload: [
+                'question_id' => 'q_aot',
+                'ui_kind' => 'choice',
+                'prompt' => 'Pick one:',
+                'schema' => ['type' => 'string', 'enum' => ['A', 'B']],
+            ],
+        );
+
+        $ref->invoke(null, $event, $client, $coordinator);
+
+        $active = $coordinator->activeRequest();
+        self::assertNotNull($active);
+        self::assertTrue($active->allowOther, 'HITL must always allow free-form input (allowOther=true)');
     }
 
     // ── QH-06 follow-up: interrupt transport marker and bare-string choices ──

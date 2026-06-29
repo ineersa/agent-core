@@ -183,7 +183,7 @@ final class TickPollListener implements TuiListenerRegistrar
             choices: $choices,
             header: $p['header'] ?? null,
             default: $p['default'] ?? null,
-            allowOther: (bool) ($p['allow_other'] ?? true),
+            allowOther: true,
             runId: $runId,
             questionId: $questionId,
             toolCallId: (string) ($p['tool_call_id'] ?? ''),
@@ -194,7 +194,7 @@ final class TickPollListener implements TuiListenerRegistrar
         // Enqueue the question with answer and cancel callbacks.
         // Answer sends the user's selection, normalized to the
         // expected type (boolean for confirm, string otherwise).
-        // Cancel sends a generic 'cancel' sentinel — no extension-
+        // Cancel sends a generic 'Cancelled by user' sentinel — no extension-
         // specific vocabulary leaks into this generic human_input
         // path. The receiving extension owns fail-closed semantics
         // via its resolveApprovalAnswer() contract, which must treat
@@ -231,7 +231,7 @@ final class TickPollListener implements TuiListenerRegistrar
                     type: 'answer_human',
                     payload: [
                         'question_id' => $questionId,
-                        'answer' => 'cancel',
+                        'answer' => 'Cancelled by user',
                     ],
                 ));
             },

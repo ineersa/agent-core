@@ -84,7 +84,7 @@ final class AskHumanToolTest extends TestCase
         $this->assertArrayHasKey('default', $properties);
         $this->assertArrayHasKey('question_id', $properties);
         $this->assertArrayHasKey('header', $properties);
-        $this->assertArrayHasKey('allow_other', $properties);
+        $this->assertArrayNotHasKey('allow_other', $properties);
     }
 
     public function testDefinitionChoicesItemsIsStringOnly(): void
@@ -311,27 +311,6 @@ final class AskHumanToolTest extends TestCase
         ]);
 
         $this->assertTrue($result['default']);
-    }
-
-    public function testPreservesAllowOther(): void
-    {
-        $result = ($this->tool)([
-            'question' => 'Choose:',
-            'choices' => ['a', 'b'],
-            'allow_other' => false,
-        ]);
-
-        $this->assertFalse($result['allow_other']);
-    }
-
-    public function testDoesNotIncludeAllowOtherWhenNotProvided(): void
-    {
-        $result = ($this->tool)([
-            'question' => 'Choose:',
-            'choices' => ['a', 'b'],
-        ]);
-
-        $this->assertArrayNotHasKey('allow_other', $result);
     }
 
     /* ── Edge cases ── */

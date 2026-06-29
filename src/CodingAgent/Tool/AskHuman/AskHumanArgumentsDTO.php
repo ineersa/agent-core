@@ -39,8 +39,6 @@ final class AskHumanArgumentsDTO
         #[SerializedName('question_id')]
         public readonly ?string $questionId = null,
         public readonly ?string $header = null,
-        #[SerializedName('allow_other')]
-        public readonly ?bool $allowOther = null,
     ) {
     }
 

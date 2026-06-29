@@ -168,9 +168,11 @@ final class QuestionController
                 // Close the overlay without answering. SubmitListener will
                 // intercept the next editor submission and route the typed
                 // text through coordinator->answer() via its question
-                // interception path.
+                // interception path. Focus must be restored to the editor
+                // so the user can type immediately.
                 $this->close();
                 $this->screen?->setStatus('action', 'Type your answer and press Enter');
+                $this->screen?->setFocus($this->screen->editorWidget());
 
                 return;
             }

@@ -13,9 +13,11 @@ use Ineersa\Tui\Question\QuestionKind;
 use Ineersa\Tui\Question\QuestionOption;
 use Ineersa\Tui\Question\QuestionRequest;
 use Ineersa\Tui\Question\QuestionSource;
+use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Screen\ChatScreen;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Tui\Widget\EditorWidget;
 
 /**
  * Tests for the QuestionController.
@@ -58,6 +60,54 @@ class QuestionControllerTest extends TestCase
         $this->controller->close();
         $this->controller->close();
         self::assertFalse($this->controller->isOpen());
+    }
+
+    // ── Focus restoration (__other__ escape hatch) ──
+
+    #[Test]
+    public function testEditorWidgetIsAccessibleWhenScreenInjected(): void
+    {
+        // The __other__ escape hatch calls screen->setFocus(screen->editorWidget())
+        // after close(). This test verifies that editorWidget() is accessible
+        // through a ChatScreen with a PromptEditor injected.
+        //
+        // Full SelectListWidget event dispatch requires Symfony Tui
+        // infrastructure (tui->mount(), insertOverlayBeforeEditor) and is
+        // not unit-testable without it. This test at minimum proves the
+        // editorWidget() call path does not crash.
+        $chatRef = new \ReflectionClass(ChatScreen::class);
+        /** @var ChatScreen $screen */
+        $screen = $chatRef->newInstanceWithoutConstructor();
+
+        $promptEditor = new PromptEditor();
+        $promptEditorProp = $chatRef->getProperty('promptEditor');
+        $promptEditorProp->setValue($screen, $promptEditor);
+
+        // Inject a theme so styleConfirmItems can access it
+        $palette = new ThemePalette(
+            name: 'test',
+            colors: [
+                ThemeColorEnum::Success->value => 'green',
+                ThemeColorEnum::Error->value => 'red',
+            ],
+        );
+        $theme = new DefaultTheme($palette);
+        $themeProp = $chatRef->getProperty('theme');
+        $themeProp->setValue($screen, $theme);
+
+        // Inject the screen into the controller
+        $ctrlRef = new \ReflectionClass($this->controller);
+        $screenProp = $ctrlRef->getProperty('screen');
+        $screenProp->setValue($this->controller, $screen);
+
+        // Verify editorWidget() path (called by __other__ handler)
+        $editorWidget = $screen->editorWidget();
+        self::assertInstanceOf(EditorWidget::class, $editorWidget);
+
+        // Close lifecycle is tested by other tests (testCloseIsSafeWhenNotOpen);
+        // calling close() here requires a full set of ChatScreen dependencies
+        // (registry, tui, footerDataProvider, etc.) that are beyond the scope
+        // of this unit-level editorWidget() accessibility proof.
     }
 
     // ── Build items ──
