@@ -10,8 +10,8 @@ use Symfony\Component\Validator\Constraints as Assert;
 /**
  * Immutable metadata for one parent-scoped agent artifact / child run.
  *
- * Holds the canonical artifact identity, lifecycle status, agent
- * provenance, timestamps, and relative filesystem paths.
+ * Holds the canonical artifact identity, kind discriminator, lifecycle
+ * status, agent provenance, timestamps, and relative filesystem paths.
  *
  * Built by {@see AgentArtifactRegistry} during create/update operations.
  *
@@ -35,6 +35,8 @@ final readonly class AgentArtifactEntryDTO
         #[SerializedName('agent_name')]
         #[Assert\NotBlank(normalizer: 'trim', message: 'agent_name must not be blank')]
         public string $agentName,
+        #[SerializedName('kind')]
+        public AgentArtifactKindEnum $kind,
         #[SerializedName('status')]
         public AgentArtifactStatusEnum $status,
         #[SerializedName('paths')]

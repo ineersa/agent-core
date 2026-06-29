@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Agent\Artifact;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathResolver;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Psr\Log\LoggerInterface;
@@ -85,7 +86,7 @@ final class AgentChildRunDirectoryTest extends IsolatedKernelTestCase
         $parentSessionId = $this->hatfieldSessionStore->createSession('Locator test parent');
 
         $childAgentRunId = 'directory-child-1-'.bin2hex(random_bytes(4));
-        $entry = $this->registry->create($parentSessionId, 'scout-001', $childAgentRunId, 'scout');
+        $entry = $this->registry->create($parentSessionId, 'scout-001', $childAgentRunId, 'scout', AgentArtifactKindEnum::Subagent);
 
         // Locate should find the entry (requires a session scan since we
         // did not call register()).
@@ -108,7 +109,7 @@ final class AgentChildRunDirectoryTest extends IsolatedKernelTestCase
 
         // Create and locate child-1 (warms the cache with child-1 entry).
         $child1RunId = 'directory-rescan-1-'.bin2hex(random_bytes(4));
-        $this->registry->create($parentSessionId, 'rescan-artifact-1', $child1RunId, 'scout');
+        $this->registry->create($parentSessionId, 'rescan-artifact-1', $child1RunId, 'scout', AgentArtifactKindEnum::Subagent);
 
         $found1 = $this->directory->locate($child1RunId);
         self::assertNotNull($found1, 'First child must be locatable');
@@ -118,7 +119,7 @@ final class AgentChildRunDirectoryTest extends IsolatedKernelTestCase
         // do NOT call register(). If the directory has a stale-scanned flag,
         // locate(child-2) would return null.
         $child2RunId = 'directory-rescan-2-'.bin2hex(random_bytes(4));
-        $this->registry->create($parentSessionId, 'rescan-artifact-2', $child2RunId, 'scout');
+        $this->registry->create($parentSessionId, 'rescan-artifact-2', $child2RunId, 'scout', AgentArtifactKindEnum::Subagent);
 
         $found2 = $this->directory->locate($child2RunId);
 
@@ -144,7 +145,7 @@ final class AgentChildRunDirectoryTest extends IsolatedKernelTestCase
         $parentSessionId = $this->hatfieldSessionStore->createSession('Locator register parent');
 
         $childAgentRunId = 'directory-reg-'.bin2hex(random_bytes(4));
-        $entry = $this->registry->create($parentSessionId, 'scout-003', $childAgentRunId, 'scout');
+        $entry = $this->registry->create($parentSessionId, 'scout-003', $childAgentRunId, 'scout', AgentArtifactKindEnum::Subagent);
 
         // Register directly — the directory should use the cached entry
         // without scanning.
@@ -179,7 +180,7 @@ final class AgentChildRunDirectoryTest extends IsolatedKernelTestCase
 
         // Create a child in the good parent.
         $childRunId = 'directory-good-'.bin2hex(random_bytes(4));
-        $entry = $this->registry->create($goodParentId, 'worker-001', $childRunId, 'worker');
+        $entry = $this->registry->create($goodParentId, 'worker-001', $childRunId, 'worker', AgentArtifactKindEnum::Subagent);
 
         // Corrupt the bad parent's registry.json by writing invalid JSON.
         // This makes AgentArtifactRegistry::list() throw, which the

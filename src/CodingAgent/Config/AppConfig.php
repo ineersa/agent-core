@@ -27,6 +27,7 @@ use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
  *  - prompts    PromptsConfig (custom system/user prompt overrides)
  *  - compaction CompactionConfig (auto_enabled, compact_after_tokens, keep_recent_tokens, model, thinking_level, provider_overrides, model_overrides)
  *  - agents     AgentsConfig (enabled, paths)
+ *  - forks      ForksConfigDTO (max_concurrent, default_level, levels)
  *
  * The raw array is kept for forward compatibility with config keys
  * that do not yet have a typed DTO. Production consumers must use
@@ -44,6 +45,7 @@ final class AppConfig
         public ?AiConfig $ai = null,
         public PromptsConfig $prompts = new PromptsConfig(),
         public CompactionConfig $compaction = new CompactionConfig(),
+        public ForksConfigDTO $forks = new ForksConfigDTO(),
         public AgentsConfig $agents = new AgentsConfig(),
         /** @var array<string, mixed> Raw merged data for forward compatibility */
         public array $raw = [],
@@ -107,6 +109,7 @@ final class AppConfig
                 (array) ($data['compaction'] ?? []),
                 CompactionConfig::class,
             ),
+            forks: self::denormalizeForksConfig($data, $denormalizer),
             agents: AgentsConfig::fromRaw($data['agents'] ?? []),
             raw: $data,
             catalog: $catalog,
@@ -153,5 +156,49 @@ final class AppConfig
 
             throw new \RuntimeException(\sprintf('Configured ai.default_model "%s" is not available. Available models: %s. Correct ai.default_model or remove it to use the first available model.', $defaultModel, implode(', ', $modelStrings)));
         }
+    }
+
+    /**
+     * Denormalize the forks config section, handling the levels sub-map.
+     *
+     * The Symfony ObjectNormalizer does not automatically denormalize nested
+     * arrays of typed objects for array<string, SomeDTO> constructor types.
+     * We denormalize the scalar properties first, then manually denormalize
+     * each level entry.
+     *
+     * @param array<string, mixed>  $data         The full merged config array
+     * @param DenormalizerInterface $denormalizer The serializer denormalizer
+     */
+    private static function denormalizeForksConfig(array $data, DenormalizerInterface $denormalizer): ForksConfigDTO
+    {
+        $rawForks = (array) ($data['forks'] ?? []);
+
+        // Denormalize scalar properties (max_concurrent, default_level).
+        $forks = $denormalizer->denormalize(
+            $rawForks,
+            ForksConfigDTO::class,
+        );
+
+        // Manually denormalize the levels sub-map.
+        if (isset($rawForks['levels']) && \is_array($rawForks['levels'])) {
+            $levels = [];
+            foreach ($rawForks['levels'] as $levelKey => $levelData) {
+                if (!\is_string($levelKey) || !\is_array($levelData)) {
+                    continue;
+                }
+                $levels[$levelKey] = $denormalizer->denormalize(
+                    $levelData,
+                    ForkLevelConfigDTO::class,
+                );
+            }
+
+            $forks = new ForksConfigDTO(
+                maxConcurrent: $forks->maxConcurrent,
+                defaultLevel: $forks->defaultLevel,
+                levels: $levels,
+            );
+        }
+
+        return $forks;
     }
 }
