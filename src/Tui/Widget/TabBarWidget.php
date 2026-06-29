@@ -13,6 +13,9 @@ use Ineersa\Tui\Theme\ThemeColorEnum;
  * Active tab is highlighted with the accent theme colour;
  * inactive tabs are muted.
  *
+ * Read-only tabs (subagent artifacts, fork child runs without
+ * interactive capability) show a lock indicator (⛝).
+ *
  * Does NOT depend on TuiRuntime\TabService to preserve the deptrac
  * boundary. Instead accepts a Closure returning TabBarData at render
  * time, so the widget stays in the TuiWidget layer.
@@ -57,7 +60,8 @@ final class TabBarWidget implements TuiWidget
             $isActive = $i === $activeIdx;
             $prefix = $isActive ? '[' : ' ';
             $suffix = $isActive ? ']' : ' ';
-            $labelLen = \strlen(\sprintf('%s%d%s%s', $prefix, $displayIdx, $suffix, $tab['label']));
+            $readonlyMark = 'readonly' === ($tab['mode'] ?? '') ? "\xe2\x9b\x9d" : ''; // ⛝
+            $labelLen = \strlen(\sprintf('%s%d%s%s%s', $prefix, $displayIdx, $suffix, $readonlyMark, $tab['label']));
             $plainLen += $labelLen;
             if ($i < $count - 1) {
                 $plainLen += 2;
@@ -74,7 +78,8 @@ final class TabBarWidget implements TuiWidget
 
             $prefix = $isActive ? '[' : ' ';
             $suffix = $isActive ? ']' : ' ';
-            $label = \sprintf('%s%d%s%s', $prefix, $displayIdx, $suffix, $tab['label']);
+            $readonlyMark = 'readonly' === ($tab['mode'] ?? '') ? "\xe2\x9b\x9d" : '';
+            $label = \sprintf('%s%d%s%s%s', $prefix, $displayIdx, $suffix, $readonlyMark, $tab['label']);
 
             if ($i < $count - 1) {
                 $label .= '  ';

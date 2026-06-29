@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\TuiListenerRegistrar;
 use Ineersa\Tui\Runtime\TabDefinition;
+use Ineersa\Tui\Runtime\TabInputModeEnum;
 use Ineersa\Tui\Runtime\TabService;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher;
@@ -167,7 +168,7 @@ final readonly class InteractiveMode
                 label: 'Parent',
                 runId: $state->sessionId,
                 state: $state,
-                isRun: true,
+                inputMode: TabInputModeEnum::Interactive,
             ));
 
             // ── Build tab bar widget (POC) ──
@@ -177,7 +178,11 @@ final readonly class InteractiveMode
             $tabBarWidget = new TabBarWidget(static function () use ($tabService): TabBarData {
                 $tabs = [];
                 foreach ($tabService->tabs() as $tab) {
-                    $tabs[] = ['id' => $tab->id, 'label' => $tab->label];
+                    $tabs[] = [
+                        'id' => $tab->id,
+                        'label' => $tab->label,
+                        'mode' => $tab->inputMode->value,
+                    ];
                 }
 
                 return new TabBarData(

@@ -10,6 +10,7 @@ use Ineersa\Tui\Command\SlashCommandHandler;
 use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Command\TabSwitchCommand;
 use Ineersa\Tui\Command\TranscriptMessage;
+use Ineersa\Tui\Runtime\TabInputModeEnum;
 use Ineersa\Tui\Runtime\TabService;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 
@@ -124,14 +125,31 @@ final class TabRoutingListener implements TuiListenerRegistrar
                 foreach ($this->tabService->tabs() as $i => $tab) {
                     $activeMarker = $i === $this->tabService->activeIndex() ? ' ← active' : '';
                     $runLabel = '' !== $tab->runId ? ' [run: '.$tab->runId.']' : '';
+
+                    // Status indicator
+                    $statusLabel = match (true) {
+                        $tab->state->activity->isActive() => ' ▶ running',
+                        $tab->state->activity->isTerminal() => ' ✓ '.$tab->state->activity->value,
+                        default => '',
+                    };
+
+                    // Input mode indicator
+                    $modeLabel = TabInputModeEnum::ReadOnly === $tab->inputMode ? ' ⛝' : '';
+
                     $lines[] = \sprintf(
-                        '  %d. %s%s%s',
+                        '  %d. %s%s%s%s%s',
                         $i + 1,
                         $tab->label,
+                        $modeLabel,
+                        $statusLabel,
                         $runLabel,
                         $activeMarker,
                     );
                 }
+
+                // Add hint for read-only tabs
+                $lines[] = '';
+                $lines[] = '⛝ = read-only (view only, no steer). Use /tab <N> to switch.';
 
                 return new TranscriptMessage(implode("\n", $lines), 'system');
             }

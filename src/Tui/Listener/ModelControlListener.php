@@ -11,6 +11,7 @@ use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Picker\FavoritePickerController;
 use Ineersa\Tui\Picker\ModelPickerController;
+use Ineersa\Tui\Runtime\TabInputModeEnum;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Tui\Event\InputEvent;
@@ -94,6 +95,18 @@ final class ModelControlListener implements TuiListenerRegistrar
             if ("\x10" !== $event->getData()) {
                 return;
             }
+
+            // POC: no-op on read-only tabs (subagent artifacts)
+            $tabService = $context->tabService;
+            if (null !== $tabService) {
+                $activeTab = $tabService->active();
+                if (null !== $activeTab && TabInputModeEnum::ReadOnly === $activeTab->inputMode) {
+                    $event->stopPropagation();
+
+                    return;
+                }
+            }
+
             $event->stopPropagation();
 
             $activeState = $context->activeState();
@@ -141,6 +154,18 @@ final class ModelControlListener implements TuiListenerRegistrar
             if ("\x1b[Z" !== $event->getData()) {
                 return;
             }
+
+            // POC: no-op on read-only tabs (subagent artifacts)
+            $tabService = $context->tabService;
+            if (null !== $tabService) {
+                $activeTab = $tabService->active();
+                if (null !== $activeTab && TabInputModeEnum::ReadOnly === $activeTab->inputMode) {
+                    $event->stopPropagation();
+
+                    return;
+                }
+            }
+
             $event->stopPropagation();
 
             $activeState = $context->activeState();

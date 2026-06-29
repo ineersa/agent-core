@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
+use Ineersa\Tui\Runtime\TabInputModeEnum;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Tui\Event\CancelEvent;
@@ -45,6 +46,18 @@ final class CancelListener implements TuiListenerRegistrar
         $context->tui->addListener(static function (CancelEvent $event) use ($client, $context, $screen, $logger, $boundary): void {
             // POC: use active tab's state for multi-tab support
             $state = $context->activeState();
+
+            // POC: on read-only tab (subagent artifact), just clear the editor
+            $tabService = $context->tabService;
+            if (null !== $tabService) {
+                $activeTab = $tabService->active();
+                if (null !== $activeTab && TabInputModeEnum::ReadOnly === $activeTab->inputMode) {
+                    $screen->clearEditor();
+
+                    return;
+                }
+            }
+
             // Active run (Starting/Running/WaitingHuman/Cancelling) — send cancel.
             // Compacting: auto-compaction maintenance is in flight — also
             // send cancel so the user can abort a stuck compaction (session 13).

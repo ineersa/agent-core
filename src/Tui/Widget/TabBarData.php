@@ -16,7 +16,10 @@ namespace Ineersa\Tui\Widget;
 final class TabBarData
 {
     /**
-     * @param list<array{id: string, label: string}> $tabs
+     * @param list<array{id: string, label: string, mode?: string}> $tabs
+     *                                                                    Each tab entry may include an optional 'mode' key:
+     *                                                                    - 'interactive' (default) — full submit/cancel/model support
+     *                                                                    - 'readonly' — view-only, no steering
      */
     public function __construct(
         public readonly array $tabs,

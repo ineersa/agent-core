@@ -7,6 +7,7 @@ namespace Ineersa\Tui\Listener;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Command\ClearTranscript;
 use Ineersa\Tui\Command\CommandResult;
@@ -21,6 +22,7 @@ use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
+use Ineersa\Tui\Runtime\TabInputModeEnum;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
@@ -84,6 +86,39 @@ final class SubmitListener implements TuiListenerRegistrar
             $text = $screen->extract();
             if ('' === $text) {
                 return;
+            }
+
+            // ── Read-only tab guard: block runtime dispatch on subagent artifact tabs ──
+            // Local-only slash commands (/tab, /t, /hotkeys, /help) are still allowed;
+            // normal prompts, shell commands, and runtime dispatch commands are blocked.
+            $tabService = $context->tabService;
+            if (null !== $tabService) {
+                $activeTab = $tabService->active();
+                if (null !== $activeTab && TabInputModeEnum::ReadOnly === $activeTab->inputMode) {
+                    // Allow only tab-switching and help commands
+                    $trimmed = trim($text);
+                    if (!str_starts_with($trimmed, '/tab')
+                        && !str_starts_with($trimmed, '/t ')
+                        && '/t' !== $trimmed
+                        && !str_starts_with($trimmed, '/hotkeys')
+                        && !str_starts_with($trimmed, '/help')
+                        && !str_starts_with($trimmed, '/tasks')
+                    ) {
+                        $block = new TranscriptBlock(
+                            id: 'readonly_block_'.$state->lastSeq + 1,
+                            kind: TranscriptBlockKindEnum::System,
+                            runId: $state->sessionId,
+                            seq: $state->lastSeq + 1,
+                            text: '⛝ Read-only tab — switch to tab 1 (Parent) to interact. Use /tab list to see tabs.',
+                            meta: ['warning' => true],
+                        );
+                        $state->transcript[] = $block;
+                        $screen->setTranscriptBlocks($state->transcript);
+                        $screen->clearEditor();
+
+                        return;
+                    }
+                }
             }
 
             // ── Question interception: route editor text to active question ──

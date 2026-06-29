@@ -13,6 +13,7 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\TabDefinition;
+use Ineersa\Tui\Runtime\TabInputModeEnum;
 use Ineersa\Tui\Runtime\TabService;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
@@ -36,18 +37,16 @@ use Symfony\Component\EventDispatcher\EventDispatcherInterface;
  *     and re-projects through the isolated pipeline
  *   - Detects terminal state from child run events (run.completed/failed/cancelled)
  *     and marks the tab as complete
+ *   - Auto-returns to parent when the active child tab completes
  *
  * COMPLETED subagents (subagent_final=true):
  *   - Detects blocks where `subagent_final` is true
  *   - Creates a read-only tab with projected child events
  *
- * Auto-switches to the new subagent tab when first created so the user
- * immediately sees the running subagent's output.
- *
- * Read-only because:
- *   - The subagent runs foreground (blocks parent LLM turn)
- *   - No child RunHandle is exposed for interactive input
- *   - Child events are parent-artifact scoped, not independently accessible
+ * Tab input mode: Subagent artifact tabs are ReadOnly — no submit/cancel/model
+ * controls. The user must switch to the parent tab (index 1) to interact with
+ * the runtime. The editor/footer shows a status indicator when a ReadOnly tab
+ * is active.
  *
  * @see TabRoutingListener for full blocker documentation
  */
@@ -73,6 +72,24 @@ final class SubagentTabAutoListener implements TuiListenerRegistrar
      */
     private array $terminalFromChildEvents = [];
 
+    /**
+     * Track artifact IDs where we auto-switched to the child tab on creation.
+     *
+     * Prevents auto-switching to the same tab again if it is re-detected.
+     *
+     * @var array<string, true>
+     */
+    private array $autoSwitchedTo = [];
+
+    /**
+     * Track artifact IDs where we auto-returned to the parent tab on completion.
+     *
+     * Prevents auto-returning multiple times for the same artifact.
+     *
+     * @var array<string, true>
+     */
+    private array $autoReturnedFrom = [];
+
     public function __construct(
         private readonly AgentSessionClient $client,
         private readonly EventDispatcherInterface $eventDispatcher,
@@ -84,11 +101,15 @@ final class SubagentTabAutoListener implements TuiListenerRegistrar
         $tabService = $context->tabService;
         $screen = $context->screen;
         $terminalFromChildEvents = &$this->terminalFromChildEvents;
+        $autoSwitchedTo = &$this->autoSwitchedTo;
+        $autoReturnedFrom = &$this->autoReturnedFrom;
 
         $context->ticks->add(function () use (
             $tabService,
             $screen,
             &$terminalFromChildEvents,
+            &$autoSwitchedTo,
+            &$autoReturnedFrom,
             $context,
         ): ?bool {
             $parentState = $context->state;
@@ -114,7 +135,7 @@ final class SubagentTabAutoListener implements TuiListenerRegistrar
                 $existingTab = self::findTabByArtifactId($tabService, $artifactId);
 
                 if (null === $existingTab) {
-                    // NEW artifact — create tab and auto-switch
+                    // NEW artifact — create tab
                     $newTabIndex = $tabService->count();
                     $this->openArtifactTab(
                         tabService: $tabService,
@@ -129,11 +150,14 @@ final class SubagentTabAutoListener implements TuiListenerRegistrar
                         status: $status,
                     );
 
-                    // Auto-switch so user sees the subagent tab immediately
-                    $tabService->switchTo($newTabIndex);
-                    $activeState = $tabService->activeState();
-                    if (null !== $activeState) {
-                        $screen->setTranscriptBlocks($activeState->transcript);
+                    // Auto-switch to the new tab (only once per artifact)
+                    if (!isset($autoSwitchedTo[$artifactId])) {
+                        $autoSwitchedTo[$artifactId] = true;
+                        $tabService->switchTo($newTabIndex);
+                        $activeState = $tabService->activeState();
+                        if (null !== $activeState) {
+                            $screen->setTranscriptBlocks($activeState->transcript);
+                        }
                     }
 
                     if ($isFinal) {
@@ -141,7 +165,8 @@ final class SubagentTabAutoListener implements TuiListenerRegistrar
                     }
                 } else {
                     // EXISTING tab — update if not yet terminal
-                    if (isset($terminalFromChildEvents[$artifactId])) {
+                    $wasTerminal = isset($terminalFromChildEvents[$artifactId]);
+                    if ($wasTerminal) {
                         continue;
                     }
 
@@ -151,6 +176,17 @@ final class SubagentTabAutoListener implements TuiListenerRegistrar
                     if ($isFinal) {
                         $existingState->activity = self::terminalActivity($status);
                         $terminalFromChildEvents[$artifactId] = true;
+
+                        // Update tab label to remove running indicator
+                        self::updateTabLabel($existingTab, $status);
+
+                        // Auto-return: if active tab is this completed child, switch to parent
+                        self::autoReturnIfActive(
+                            tabService: $tabService,
+                            screen: $screen,
+                            artifactId: $artifactId,
+                            autoReturnedFrom: $autoReturnedFrom,
+                        );
 
                         continue;
                     }
@@ -175,6 +211,17 @@ final class SubagentTabAutoListener implements TuiListenerRegistrar
                         $terminalStatus = self::terminalStatusFromEvents($freshEvents);
                         $existingState->activity = self::terminalActivity($terminalStatus);
                         $terminalFromChildEvents[$artifactId] = true;
+
+                        // Update tab label to remove running indicator
+                        self::updateTabLabel($existingTab, $terminalStatus);
+
+                        // Auto-return: if active tab is this completed child, switch to parent
+                        self::autoReturnIfActive(
+                            tabService: $tabService,
+                            screen: $screen,
+                            artifactId: $artifactId,
+                            autoReturnedFrom: $autoReturnedFrom,
+                        );
                     }
 
                     // If this tab is currently active, update the screen
@@ -454,6 +501,63 @@ final class SubagentTabAutoListener implements TuiListenerRegistrar
     }
 
     /**
+     * Auto-return to parent tab when the active tab completes.
+     *
+     * Only fires once per artifact to avoid repeated auto-return loops
+     * (e.g. when parent transcript re-detects the same terminal artifact).
+     *
+     * Appends a system block to the parent transcript so the user sees
+     * a clear "Subagent completed" message when they return.
+     *
+     * @param array<string, true> $autoReturnedFrom
+     */
+    private static function autoReturnIfActive(
+        TabService $tabService,
+        ChatScreen $screen,
+        string $artifactId,
+        array &$autoReturnedFrom,
+    ): void {
+        // Only auto-return if the completing tab is currently active
+        $activeTab = $tabService->active();
+        if (null === $activeTab || $activeTab->id !== 'artifact-'.$artifactId) {
+            return;
+        }
+
+        // Only auto-return once per artifact
+        if (isset($autoReturnedFrom[$artifactId])) {
+            return;
+        }
+        $autoReturnedFrom[$artifactId] = true;
+
+        // Determine terminal status from the completing tab's state
+        $terminalStatus = match ($activeTab->state->activity) {
+            RunActivityStateEnum::Failed => 'failed',
+            RunActivityStateEnum::Cancelled => 'cancelled',
+            default => 'completed',
+        };
+
+        // Switch to parent tab (index 0)
+        $tabService->switchTo(0);
+        $parentTab = $tabService->active();
+        if (null === $parentTab) {
+            return;
+        }
+
+        // Append a system status block to the parent transcript
+        $parentSeq = \count($parentTab->state->transcript) + 1;
+        $parentTab->state->transcript[] = new TranscriptBlock(
+            id: 'auto_return_'.$artifactId,
+            kind: TranscriptBlockKindEnum::System,
+            runId: $parentTab->runId,
+            seq: $parentSeq,
+            text: \sprintf('⟳ Subagent %s — final result returned above.', $terminalStatus),
+            meta: ['auto_return' => true],
+        );
+
+        $screen->setTranscriptBlocks($parentTab->state->transcript);
+    }
+
+    /**
      * Build an assistant transcript block from an llm_step_completed payload.
      *
      * @param array<string, mixed> $payload
@@ -527,11 +631,22 @@ final class SubagentTabAutoListener implements TuiListenerRegistrar
     }
 
     /**
+     * Update a tab's label to remove the running indicator on terminal.
+     */
+    private static function updateTabLabel(TabDefinition $tab, string $status): void
+    {
+        $shortId = substr($tab->runId, 0, 8);
+        $statusMark = match ($status) {
+            'completed' => ' ✓',
+            'failed' => ' ✗',
+            'cancelled' => ' ⊘',
+            default => ' ✓',
+        };
+        $tab->label = \sprintf('Sub %s%s', $shortId, $statusMark);
+    }
+
+    /**
      * Convert an iterable to an array for multiple consumption.
-     *
-     * AgentSessionClient::events() may return a single-pass Generator
-     * (yield/yield from), so we must materialize the iterable before
-     * passing it to multiple consumers.
      *
      * @template T
      *
@@ -640,6 +755,8 @@ final class SubagentTabAutoListener implements TuiListenerRegistrar
      * When the subagent is still running, populates the tab with projected
      * child events using an isolated real projection pipeline. Falls back
      * to a status placeholder only when no child events are available yet.
+     *
+     * Tab is created in ReadOnly mode — no submit/cancel/model controls.
      */
     private function openArtifactTab(
         TabService $tabService,
@@ -692,7 +809,7 @@ final class SubagentTabAutoListener implements TuiListenerRegistrar
             label: $tabLabel,
             runId: $agentRunId,
             state: $childState,
-            isRun: false, // read-only artifact tab, not a live run
+            inputMode: TabInputModeEnum::ReadOnly,
         ));
     }
 

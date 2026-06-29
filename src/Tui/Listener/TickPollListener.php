@@ -15,6 +15,7 @@ use Ineersa\Tui\Question\QuestionRequest;
 use Ineersa\Tui\Question\QuestionSource;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\RuntimeEventPoller;
+use Ineersa\Tui\Runtime\TabInputModeEnum;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 
 /**
@@ -52,7 +53,14 @@ final class TickPollListener implements TuiListenerRegistrar
         $questionController->setRuntimeRefs($context, $screen);
 
         $context->ticks->add(static function () use ($poller, $context, $client, $screen, $questionCoordinator, $questionController): ?bool {
-            // POC: use active tab's state from TabService when available
+            // POC: ALWAYS poll the PARENT state ($context->state) regardless of active tab.
+            // This ensures the parent runtime events are always consumed so:
+            //   - Parent transcript stays up to date (critical for subagent artifact detection)
+            //   - HITL/tool questions from parent run are forwarded correctly
+            //   - The parent run does not stall while a read-only child tab is active
+            //
+            // The active tab's transcript is then displayed on screen.
+            $parentState = $context->state;
             $activeState = $context->activeState();
 
             $onHitl = static function (RuntimeEvent $event) use ($client, $questionCoordinator): void {
@@ -67,17 +75,17 @@ final class TickPollListener implements TuiListenerRegistrar
                 self::handleToolTerminal($event, $questionCoordinator, $questionController);
             };
 
-            $changedBlocks = $poller->poll(
-                $activeState,
+            // Poll the parent state (always, even when child tab is active)
+            $poller->poll(
+                $parentState,
                 $client,
                 onHumanInputRequested: $onHitl,
                 onToolQuestionRequested: $onToolQuestion,
                 onToolTerminal: $onToolTerminal,
             );
 
-            if (null !== $changedBlocks) {
-                $screen->setTranscriptBlocks($activeState->transcript);
-            }
+            // Display the active tab's transcript
+            $screen->setTranscriptBlocks($activeState->transcript);
 
             // The pending-queue widget (slot 4, above the editor) reflects transient
             // queued steer/follow-up messages. Sync every tick regardless of transcript
@@ -105,6 +113,19 @@ final class TickPollListener implements TuiListenerRegistrar
             };
 
             $screen->setWorkingMessage($msg);
+
+            // POC: update status panel with active tab mode indicator
+            // Shows "⛝ Read-only" when a subagent artifact tab is active
+            $tabService = $context->tabService;
+            if (null !== $tabService) {
+                $activeTab = $tabService->active();
+                if (null !== $activeTab && TabInputModeEnum::ReadOnly === $activeTab->inputMode) {
+                    $screen->registry()->setStatus('tab-mode', '⛝ Read-only — no steer');
+                } else {
+                    // Clear tab mode status when on interactive tab
+                    $screen->registry()->setStatus('tab-mode', null);
+                }
+            }
 
             return null;
         });
