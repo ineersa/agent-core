@@ -28,11 +28,9 @@ use Symfony\Component\Tui\Widget\ContainerWidget;
  */
 final readonly class SymfonyTuiWidgetRenderer
 {
-    private Renderer $renderer;
-
-    public function __construct()
-    {
-        $this->renderer = new Renderer();
+    public function __construct(
+        private readonly Renderer $renderer = new Renderer(),
+    ) {
     }
 
     /**

@@ -7,7 +7,7 @@ namespace Ineersa\Tui\Tests\Screen;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
-use Ineersa\Tui\Transcript\TranscriptBlockWidgetFactory;
+use Ineersa\Tui\Transcript\TranscriptGlyphs;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
@@ -282,14 +282,14 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         // Strip ANSI codes for pure text matching
         $plain = preg_replace('/\x1b\[[0-9;]*m/', '', $text);
 
-        self::assertStringContainsString(TranscriptBlockWidgetFactory::GLYPH_USER_MESSAGE, $plain);
-        self::assertStringContainsString(TranscriptBlockWidgetFactory::GLYPH_ASSISTANT_MESSAGE, $plain);
-        self::assertStringContainsString(TranscriptBlockWidgetFactory::GLYPH_ASSISTANT_THINKING, $plain);
-        self::assertStringContainsString(TranscriptBlockWidgetFactory::GLYPH_TOOL, $plain);
-        self::assertStringContainsString(TranscriptBlockWidgetFactory::GLYPH_PROGRESS, $plain);
-        self::assertStringContainsString(TranscriptBlockWidgetFactory::GLYPH_APPROVAL, $plain);
-        self::assertStringContainsString(TranscriptBlockWidgetFactory::GLYPH_QUESTION, $plain);
-        self::assertStringContainsString(TranscriptBlockWidgetFactory::GLYPH_CANCELLED, $plain);
+        self::assertStringContainsString(TranscriptGlyphs::GLYPH_USER_MESSAGE, $plain);
+        self::assertStringContainsString(TranscriptGlyphs::GLYPH_ASSISTANT_MESSAGE, $plain);
+        self::assertStringContainsString(TranscriptGlyphs::GLYPH_ASSISTANT_THINKING, $plain);
+        self::assertStringContainsString(TranscriptGlyphs::GLYPH_TOOL, $plain);
+        self::assertStringContainsString(TranscriptGlyphs::GLYPH_PROGRESS, $plain);
+        self::assertStringContainsString(TranscriptGlyphs::GLYPH_APPROVAL, $plain);
+        self::assertStringContainsString(TranscriptGlyphs::GLYPH_QUESTION, $plain);
+        self::assertStringContainsString(TranscriptGlyphs::GLYPH_CANCELLED, $plain);
     }
 
     #[Test]

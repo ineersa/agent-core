@@ -51,8 +51,8 @@ final readonly class SubagentResultRenderer
     public function buildContent(TranscriptBlock $block, TuiTheme $theme): string
     {
         $text = $this->resolveText($block);
-        $prefix = TranscriptBlockWidgetFactory::GLYPH_TOOL;
-        $suffix = $block->streaming ? TranscriptBlockWidgetFactory::STREAMING_SUFFIX : '';
+        $prefix = TranscriptGlyphs::GLYPH_TOOL;
+        $suffix = $block->streaming ? TranscriptGlyphs::STREAMING_SUFFIX : '';
 
         $line = \sprintf('%s %s%s', $prefix, $text, $suffix);
 

@@ -31,37 +31,6 @@ use Symfony\Component\Tui\Widget\TextWidget;
  */
 final readonly class TranscriptBlockWidgetFactory
 {
-    // ── Glyph constants (centralised visual contract) ──
-
-    /** User message prefix glyph */
-    public const string GLYPH_USER_MESSAGE = '  ❯';
-    /** Assistant message prefix glyph */
-    public const string GLYPH_ASSISTANT_MESSAGE = '  ◇';
-    /** Assistant thinking prefix glyph */
-    public const string GLYPH_ASSISTANT_THINKING = '  ⋯';
-    /** Tool call/result prefix glyph */
-    public const string GLYPH_TOOL = '  ●';
-    /** Progress block prefix glyph */
-    public const string GLYPH_PROGRESS = '  ⏳';
-    /** Question block prefix glyph */
-    public const string GLYPH_QUESTION = '  ?';
-    /** Approval block prefix glyph */
-    public const string GLYPH_APPROVAL = '  🔐';
-    /** Cancelled block prefix glyph */
-    public const string GLYPH_CANCELLED = '  ✕';
-    /** Error block prefix glyph */
-    public const string GLYPH_ERROR = '  ✕';
-    /** System info severity prefix glyph */
-    public const string GLYPH_SYSTEM_INFO = '  ℹ';
-    /** System warning severity prefix glyph */
-    public const string GLYPH_SYSTEM_WARNING = '  ⚠';
-    /** System error severity prefix glyph */
-    public const string GLYPH_SYSTEM_ERROR = '  ✘';
-    /** System default severity prefix glyph */
-    public const string GLYPH_SYSTEM_DEFAULT = '  ·';
-    /** Streaming suffix appended to in-progress blocks */
-    public const string STREAMING_SUFFIX = '...';
-
     public function __construct(
         private readonly SubagentResultRenderer $subagentRenderer = new SubagentResultRenderer(),
     ) {
@@ -94,7 +63,7 @@ final readonly class TranscriptBlockWidgetFactory
         $prefix = $this->prefixFor($block);
         $color = $this->colorFor($block);
         $displayText = $this->displayTextFor($block);
-        $suffix = $block->streaming ? self::STREAMING_SUFFIX : '';
+        $suffix = $block->streaming ? TranscriptGlyphs::STREAMING_SUFFIX : '';
 
         $line = \sprintf('%s %s%s', $prefix, $displayText, $suffix);
 
@@ -103,22 +72,22 @@ final readonly class TranscriptBlockWidgetFactory
 
     /* ───────── Glyph prefixes ─────────
      *
-     * These methods are private — the glyph constants above are the public API
+     * These methods are private — {@see TranscriptGlyphs} constants are the public API
      * for tests and rendering assertions. */
 
     private function prefixFor(TranscriptBlock $block): string
     {
         return match ($block->kind) {
-            TranscriptBlockKindEnum::UserMessage => self::GLYPH_USER_MESSAGE,
-            TranscriptBlockKindEnum::AssistantMessage => self::GLYPH_ASSISTANT_MESSAGE,
-            TranscriptBlockKindEnum::AssistantThinking => self::GLYPH_ASSISTANT_THINKING,
+            TranscriptBlockKindEnum::UserMessage => TranscriptGlyphs::GLYPH_USER_MESSAGE,
+            TranscriptBlockKindEnum::AssistantMessage => TranscriptGlyphs::GLYPH_ASSISTANT_MESSAGE,
+            TranscriptBlockKindEnum::AssistantThinking => TranscriptGlyphs::GLYPH_ASSISTANT_THINKING,
             TranscriptBlockKindEnum::ToolCall,
-            TranscriptBlockKindEnum::ToolResult => self::GLYPH_TOOL,
-            TranscriptBlockKindEnum::Progress => self::GLYPH_PROGRESS,
-            TranscriptBlockKindEnum::Question => self::GLYPH_QUESTION,
-            TranscriptBlockKindEnum::Approval => self::GLYPH_APPROVAL,
-            TranscriptBlockKindEnum::Cancelled => self::GLYPH_CANCELLED,
-            TranscriptBlockKindEnum::Error => self::GLYPH_ERROR,
+            TranscriptBlockKindEnum::ToolResult => TranscriptGlyphs::GLYPH_TOOL,
+            TranscriptBlockKindEnum::Progress => TranscriptGlyphs::GLYPH_PROGRESS,
+            TranscriptBlockKindEnum::Question => TranscriptGlyphs::GLYPH_QUESTION,
+            TranscriptBlockKindEnum::Approval => TranscriptGlyphs::GLYPH_APPROVAL,
+            TranscriptBlockKindEnum::Cancelled => TranscriptGlyphs::GLYPH_CANCELLED,
+            TranscriptBlockKindEnum::Error => TranscriptGlyphs::GLYPH_ERROR,
             TranscriptBlockKindEnum::System => $this->severityPrefix($block),
         };
     }
@@ -173,10 +142,10 @@ final readonly class TranscriptBlockWidgetFactory
             : null;
 
         return match ($severity) {
-            'info' => self::GLYPH_SYSTEM_INFO,
-            'warning' => self::GLYPH_SYSTEM_WARNING,
-            'error' => self::GLYPH_SYSTEM_ERROR,
-            default => self::GLYPH_SYSTEM_DEFAULT,
+            'info' => TranscriptGlyphs::GLYPH_SYSTEM_INFO,
+            'warning' => TranscriptGlyphs::GLYPH_SYSTEM_WARNING,
+            'error' => TranscriptGlyphs::GLYPH_SYSTEM_ERROR,
+            default => TranscriptGlyphs::GLYPH_SYSTEM_DEFAULT,
         };
     }
 
