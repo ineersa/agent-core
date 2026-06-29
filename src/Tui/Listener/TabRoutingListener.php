@@ -34,6 +34,31 @@ use Ineersa\Tui\Transcript\TranscriptBlockFactory;
  * ChatScreen transcript to show the selected tab's blocks.
  *
  * This is POC/prototype code proving multi-tab TUI feasibility.
+ *
+ * ## Blocker: true interactive subagent child-run tabs
+ *
+ * The current POC creates a *sibling* run (same AgentSessionClient, separate
+ * session) as a child tab, not a true subagent child run. True subagent-child
+ * interactive tabs (where a subagent fork runs as a child TUI tab with its
+ * own editor, event polling, model controls) are blocked by:
+ *
+ * 1. **No exposed child RunHandle/client lifecycle** — SubagentExecutionService
+ *    runs the child synchronously within the parent LLM loop and does not
+ *    expose a RunHandle, AgentSessionClient, or event stream for the child.
+ *    There is no way to poll child events from the parent TUI.
+ * 2. **Child events are parent-artifact scoped** — The child run's events are
+ *    stored under the parent run's artifact directory, not as an independent
+ *    session with its own event stream.
+ * 3. **SubagentExecutionService cancels WaitingHuman** — When the subagent
+ *    encounters a WaitingHuman response, the execution service cancels it,
+ *    so the child cannot do interactive HITL.
+ * 4. **Foreground block** — The current subagent tool blocks the parent LLM
+ *    turn until the child completes. There is no non-blocking fork/background
+ *    mode that would allow the TUI to show live child progress.
+ *
+ * These blockers will be resolved by the future async fork/subagent queue
+ * (dedicated Messenger worker) which will expose child RunHandle lifecycle,
+ * independent event streaming, and background execution.
  */
 final class TabRoutingListener implements TuiListenerRegistrar
 {
@@ -120,11 +145,16 @@ final class TabRoutingListener implements TuiListenerRegistrar
             }
 
             /**
-             * Create a new child run backed by a real agent session.
+             * Create a child run backed by a real agent session.
              *
              * This is the core POC demonstration: a second agent session
              * managed as a separate TUI tab with its own event polling,
              * submit/cancel routing, and transcript state.
+             *
+             * NOTE: This creates a <sibling> run, not a true subagent child.
+             * The subagent foreground-execution architecture makes true
+             * interactive child tabs impossible (see class docblock).
+             * The async fork queue will resolve this.
              *
              * Flow:
              * 1. Create a session via HatfieldSessionStore

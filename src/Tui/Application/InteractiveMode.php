@@ -21,6 +21,8 @@ use Ineersa\Tui\Runtime\TuiTickDispatcher;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\TuiTheme;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
+use Ineersa\Tui\Widget\TabBarData;
+use Ineersa\Tui\Widget\TabBarWidget;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Tui\Event\TickEvent;
@@ -168,9 +170,25 @@ final readonly class InteractiveMode
                 isRun: true,
             ));
 
+            // ── Build tab bar widget (POC) ──
+            // The TabBarWidget receives a closure that reads from TabService
+            // at render time, keeping the TuiRuntime dependency out of the
+            // widget layer.
+            $tabBarWidget = new TabBarWidget(static function () use ($tabService): TabBarData {
+                $tabs = [];
+                foreach ($tabService->tabs() as $tab) {
+                    $tabs[] = ['id' => $tab->id, 'label' => $tab->label];
+                }
+
+                return new TabBarData(
+                    tabs: $tabs,
+                    activeIndex: $tabService->activeIndex(),
+                );
+            });
+
             // ── Build screen and mount widget tree ──
             $tui = new Tui();
-            $screen = new ChatScreen($theme, $state->sessionId, $this->promptEditor, $tabService);
+            $screen = new ChatScreen($theme, $state->sessionId, $this->promptEditor, $tabBarWidget);
             $screen->mount($tui);
 
             // Apply Ctrl+J as portable newline, overriding the default new_line

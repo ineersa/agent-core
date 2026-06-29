@@ -9,6 +9,8 @@ use Ineersa\Tui\Runtime\TabDefinition;
 use Ineersa\Tui\Runtime\TabService;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
+use Ineersa\Tui\Widget\TabBarData;
+use Ineersa\Tui\Widget\TabBarWidget;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
@@ -48,11 +50,24 @@ final class VirtualTuiHarness
         // Build optional TabService with a parent tab
         $this->tabService = $tabService ?? self::createParentTabService($sessionId);
 
+        // Wrap TabService in a TabBarWidget with a closure at render time
+        $tabBarWidget = new TabBarWidget(function (): TabBarData {
+            $tabs = [];
+            foreach ($this->tabService->tabs() as $tab) {
+                $tabs[] = ['id' => $tab->id, 'label' => $tab->label];
+            }
+
+            return new TabBarData(
+                tabs: $tabs,
+                activeIndex: $this->tabService->activeIndex(),
+            );
+        });
+
         $this->screen = new ChatScreen(
             theme: $theme,
             sessionId: $sessionId,
             promptEditor: new PromptEditor(),
-            tabService: $this->tabService,
+            tabBarWidget: $tabBarWidget,
         );
         $this->tui = new Tui(terminal: $this->terminal);
         $this->screen->mount($this->tui);

@@ -14,7 +14,6 @@ use Ineersa\Tui\Footer\FooterSegment;
 use Ineersa\Tui\Footer\FooterSegmentProvider;
 use Ineersa\Tui\Header\HeaderWidget;
 use Ineersa\Tui\Layout\TuiSlotRegistry;
-use Ineersa\Tui\Runtime\TabService;
 use Ineersa\Tui\Startup\LoadedResourcesWidget;
 use Ineersa\Tui\Status\StatusPanelWidget;
 use Ineersa\Tui\Status\WorkingStatusWidget;
@@ -79,7 +78,8 @@ final class ChatScreen
     private readonly LiveTextWidget $footerWidget;
 
     /* ── TUI renderables (theme-agnostic, read by producer closures) ── */
-    private readonly TabBarWidget $tabBarRenderable;
+    /** @var ?TabBarWidget null when no tab bar is needed (single-tab mode) */
+    private readonly ?TabBarWidget $tabBarRenderable;
     private readonly HeaderWidget $headerRenderable;
     private readonly TranscriptBlockWidget $transcriptRenderable;
     private readonly PendingMessagesWidget $pendingRenderable;
@@ -99,12 +99,17 @@ final class ChatScreen
     /* ── Mount flag ── */
     private bool $mounted = false;
 
-    /** @param TabService|null $tabService POC: multi-tab support. When null, no tab bar is rendered. */
+    /**
+     * @param TabBarWidget|null $tabBarWidget POC: multi-tab support.
+     *                                        When null, no tab bar is rendered.
+     *                                        Not promoted to avoid clashing with
+     *                                        the LiveTextWidget $tabBarWidget property.
+     */
     public function __construct(
         private readonly TuiTheme $theme,
         private string $sessionId,
         private readonly PromptEditor $promptEditor,
-        private readonly ?TabService $tabService = null,
+        ?TabBarWidget $tabBarWidget = null,
     ) {
         $this->registry = new TuiSlotRegistry();
 
@@ -128,15 +133,25 @@ final class ChatScreen
         );
 
         // ── Tab bar (POC) ──
-        // Renders above the header when TabService is available.
-        $this->tabBarRenderable = new TabBarWidget($tabService ?? new TabService());
-        $this->tabBarWidget = new LiveTextWidget(
-            function (RenderContext $symfonyCtx): string {
-                $tuiCtx = $this->tuiContext($symfonyCtx);
+        // Renders above the header when a TabBarWidget is provided.
+        // The TabBarWidget captures necessary tab display data via its
+        // closure, keeping TuiRuntime dependencies out of the widget layer.
+        $this->tabBarRenderable = $tabBarWidget;
+        if (null !== $tabBarWidget) {
+            $this->tabBarWidget = new LiveTextWidget(
+                function (RenderContext $symfonyCtx): string {
+                    $tuiCtx = $this->tuiContext($symfonyCtx);
 
-                return implode("\n", $this->tabBarRenderable->render($tuiCtx));
-            },
-        );
+                    return implode("\n", $this->tabBarRenderable->render($tuiCtx));
+                },
+            );
+        } else {
+            // Null renderable — create a no-op LiveTextWidget that renders
+            // nothing so the rest of the layout continues to work.
+            $this->tabBarWidget = new LiveTextWidget(
+                static fn (RenderContext $ctx): string => '',
+            );
+        }
 
         // ═══════════════════════════════════════════════════
         //  Producer closures for responsive widgets
@@ -611,16 +626,6 @@ final class ChatScreen
     public function extensionContext(): TuiExtensionContext
     {
         return $this->extensionContext;
-    }
-
-    /**
-     * Get the TabService if available.
-     *
-     * POC: provides access to multi-tab state for listener routing.
-     */
-    public function tabService(): ?TabService
-    {
-        return $this->tabService;
     }
 
     /**
