@@ -13,3 +13,5 @@ cache/
 logs/
 messenger.sqlite
 messenger.sqlite-journal
+messenger.sqlite-shm
+messenger.sqlite-wal
