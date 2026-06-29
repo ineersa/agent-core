@@ -53,7 +53,8 @@ final readonly class ForkRunTerminalWatcher
      * Registers a non-blocking EventLoop repeat that polls RunStore until
      * the run reaches a terminal state (Completed, Failed, Cancelled).
      * When terminal, performs handoff validation/repair and writes result
-     * artifacts.  The watcher cancels itself after handling terminal state.
+     * artifacts.  After terminal state is reached, subsequent ticks no-op
+     * (lightweight null-check per tick until the controller process exits).
      *
      * Loads the fork snapshot from fork_snapshot_path once to extract
      * resolvedModel and any other metadata needed for finalization.

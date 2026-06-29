@@ -12,7 +12,8 @@ use Ineersa\AgentCore\Domain\Run\StartRunInput;
  * Composes the message list for a fork child run.
  *
  * Takes a loaded ForkSessionSnapshotDTO (from the parent) and fresh
- * system + context messages built by InProcessAgentSessionClient, then:
+ * system + context messages built by normal Hatfield startup (the fork
+ * controller bootstrap), then:
  *
  *   1. Appends forkSystemPromptAppend to the fresh system prompt.
  *   2. Keeps fresh user-context messages (AGENTS.md, skills, agents definitions).

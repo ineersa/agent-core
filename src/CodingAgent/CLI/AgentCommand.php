@@ -336,8 +336,9 @@ final class AgentCommand
 
         // ── Prepare scalar fork options (JSON-serializable for process transport) ──
         // These are passed through StartRunRequest::options to the controller.
-        // The controller-side InProcessAgentSessionClient loads the snapshot
-        // from fork_snapshot_path and composes fork-seeded messages.
+        // The controller-side ForkControllerStartService loads the snapshot
+        // from fork_snapshot_path and composes fork-seeded messages via
+        // ForkChildMessageComposer.
         $forkOptions = [
             'fork_mode' => true,
             'fork_snapshot_path' => $snapshotPath,
@@ -613,7 +614,9 @@ final class AgentCommand
      * helper checks activeToolNames() first.  Before FORK-05 registers the fork
      * tool this is a no-op; after FORK-05 the fork tool is hidden for:
      *   - Fork child processes (nested fork guard, called from runForkTui)
-     *   - In-process transport (fork cannot cross JSONL, called from __invoke)
+     *   - In-process transport (fork tool requires a real tmux/process launcher
+     *     and is unsupported in product --transport=in-process mode, called from
+     *     __invoke)
      */
     private function excludeForkToolSafely(): void
     {
