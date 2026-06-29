@@ -522,18 +522,18 @@ class QuestionControllerTest extends TestCase
     }
 
     #[Test]
-    public function testOpenResetsAwaitingFreeFormFlag(): void
+    public function testCloseResetsAwaitingFreeFormFlagIdempotently(): void
     {
-        // Regression: open() resets awaitingFreeForm to false before
-        // checking $this->screen, so a new question overlay is shown
-        // correctly after a prior __other__ dismiss. We cannot call
-        // open() at this layer (requires mounted ChatScreen), so we
-        // prove the reset contract by verifying the production code
-        // injection order: the field assignment '$this->awaitingFreeForm
-        // = false' in open() comes before the screen guard.
+        // Regression: close() resets awaitingFreeForm to false even when
+        // the overlay is already closed (no-op safety net). This validates
+        // that the reset is idempotent across repeated close() calls,
+        // so that close() from any code path (answer, reject, cancel,
+        // self-heal, reset) leaves the flag clean regardless of state.
         //
-        // If open() is refactored to remove the reset, this test
-        // ensures it is not silently dropped.
+        // Both open() and close() defensively assign $this->awaitingFreeForm
+        // = false. This test proves close()'s reset contract (the assignment
+        // is shared code); open() cannot be called at this layer because it
+        // requires a mounted ChatScreen (Symfony Tui tree).
 
         $ctrlRef = new \ReflectionClass($this->controller);
 

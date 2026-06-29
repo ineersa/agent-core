@@ -14,7 +14,21 @@ use Ineersa\Tui\Question\QuestionKind;
 use Ineersa\Tui\Question\QuestionOption;
 use Ineersa\Tui\Question\QuestionRequest;
 use Ineersa\Tui\Question\QuestionSource;
+use Ineersa\Tui\Editor\PromptEditor;
+use Ineersa\Tui\Question\QuestionController;
+use Ineersa\Tui\Runtime\RunActivityStateEnum;
+use Ineersa\Tui\Runtime\RuntimeEventPoller;
+use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
+use Ineersa\Tui\Runtime\TuiSessionState;
+use Ineersa\Tui\Runtime\TuiTickDispatcher;
+use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
+use Psr\Log\LoggerInterface;
+use Ineersa\Tui\Screen\ChatScreen;
+use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
+use Ineersa\Tui\Theme\DefaultTheme;
+use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Tui\Tui;
 
 /**
  * Regression tests for TickPollListener cancellation behavior.
@@ -28,6 +42,7 @@ use PHPUnit\Framework\TestCase;
  */
 final class TickPollListenerTest extends TestCase
 {
+    use TuiRuntimeContextBuilderTrait;
     /**
      * Test thesis: when the Choice overlay onCancel fires, the TUI sends
      * answer_tool_question with 'answer' => 'cancel' (non-empty), so
@@ -542,6 +557,156 @@ final class TickPollListenerTest extends TestCase
         self::assertSame('Has description', $choices[0]->description);
         self::assertSame('BareString', $choices[1]->label);
         self::assertSame('', $choices[1]->description, 'Bare string in mixed list must default to empty description');
+    }
+
+    // ── QH-06 per-tick re-open guard + orphan self-heal ──
+
+    public function testAwaitingFreeFormGuardPreventsReOpen(): void
+    {
+        // Thesis: when awaitingFreeForm=true, the per-tick guard
+        // (!isAwaitingFreeForm()) prevents open() from being called
+        // despite actionRequired() and !isOpen(). Without the third
+        // condition in 5f2cef13e, this test would fail (open() would
+        // be invoked, rebuilding the select overlay).
+
+        $eventApplier = (new \ReflectionClass(TuiRuntimeEventApplier::class))->newInstanceWithoutConstructor();
+        $logger = $this->createStub(LoggerInterface::class);
+        $boundary = (new \ReflectionClass(RuntimeExceptionBoundary::class))->newInstanceWithoutConstructor();
+        $poller = new RuntimeEventPoller($eventApplier, $logger, $boundary);
+
+        $coordinator = new QuestionCoordinator();
+        $coordinator->enqueue(
+            new QuestionRequest(
+                requestId: 'hitl_guard_test',
+                source: QuestionSource::AgentCore,
+                kind: QuestionKind::Choice,
+                prompt: 'Test prompt',
+                schema: ['type' => 'string', 'enum' => ['A', 'B']],
+                runId: 'run-guard',
+                questionId: 'q_guard',
+                allowOther: true,
+            ),
+        );
+        self::assertTrue($coordinator->actionRequired());
+
+        $ctrlRef = new \ReflectionClass(QuestionController::class);
+        $controller = $ctrlRef->newInstanceWithoutConstructor();
+        $awaitProp = $ctrlRef->getProperty('awaitingFreeForm');
+        $awaitProp->setValue($controller, true);
+        self::assertTrue($controller->isAwaitingFreeForm(), 'Precondition: awaitingFreeForm must be true');
+
+        // Inject dependencies into TickPollListener via reflection
+        $listenerRef = new \ReflectionClass(TickPollListener::class);
+        $listener = $listenerRef->newInstanceWithoutConstructor();
+        $listenerRef->getProperty('poller')->setValue($listener, $poller);
+        $listenerRef->getProperty('questionCoordinator')->setValue($listener, $coordinator);
+        $listenerRef->getProperty('questionController')->setValue($listener, $controller);
+
+        // Build TuiRuntimeContext with a real ChatScreen and Running activity
+        $state = new TuiSessionState('run-guard');
+        $state->activity = RunActivityStateEnum::Running;
+
+        $tui = new Tui();
+        $theme = new DefaultTheme(new ThemePalette('test'));
+        $promptEditor = new PromptEditor();
+        $screen = new ChatScreen($theme, 'run-guard', $promptEditor);
+
+        $context = $this->buildTuiContext()
+            ->withTui($tui)
+            ->withState($state)
+            ->withScreen($screen)
+            ->build();
+
+        $listener->register($context);
+
+        // Retrieve the tick handler from TuiTickDispatcher
+        $handlerRef = new \ReflectionProperty(TuiTickDispatcher::class, 'handlers');
+        $handlers = $handlerRef->getValue($context->ticks);
+        self::assertCount(1, $handlers);
+
+        // Drive one tick
+        ($handlers[0])();
+
+        // Assertions: guard blocked open() — overlay is still closed,
+        // awaitingFreeForm is still true, and coordinator still has the request.
+        self::assertFalse($controller->isOpen(), 'Guard must prevent open() when awaitingFreeForm=true');
+        self::assertTrue($controller->isAwaitingFreeForm(), 'awaitingFreeForm must remain true after guard block');
+        self::assertTrue($coordinator->actionRequired(), 'Coordinator must still have the active request');
+    }
+
+    public function testOrphanedQuestionHealedWhenRunTerminal(): void
+    {
+        // Thesis: when the run is terminal (isActive()=false) and a
+        // HITL question is still pending, the tick self-heal calls
+        // coordinator->reject() and controller->close() to prevent
+        // awaitingFreeForm from getting stuck, silently suppressing
+        // the next HITL question.
+
+        $eventApplier = (new \ReflectionClass(TuiRuntimeEventApplier::class))->newInstanceWithoutConstructor();
+        $logger = $this->createStub(LoggerInterface::class);
+        $boundary = (new \ReflectionClass(RuntimeExceptionBoundary::class))->newInstanceWithoutConstructor();
+        $poller = new RuntimeEventPoller($eventApplier, $logger, $boundary);
+
+        $coordinator = new QuestionCoordinator();
+        $coordinator->enqueue(
+            new QuestionRequest(
+                requestId: 'hitl_orphan_test',
+                source: QuestionSource::AgentCore,
+                kind: QuestionKind::Choice,
+                prompt: 'Orphan test',
+                schema: ['type' => 'string', 'enum' => ['A', 'B']],
+                runId: 'run-orphan',
+                questionId: 'q_orphan',
+                allowOther: true,
+            ),
+        );
+        self::assertTrue($coordinator->actionRequired());
+
+        // Block the guard (so open() does not throw on the skeleton) by
+        // setting awaitingFreeForm=true. The self-heal is independent of
+        // the guard and triggers on !isActive() && actionRequired().
+        $ctrlRef = new \ReflectionClass(QuestionController::class);
+        $controller = $ctrlRef->newInstanceWithoutConstructor();
+        $awaitProp = $ctrlRef->getProperty('awaitingFreeForm');
+        $awaitProp->setValue($controller, true);
+
+        // Inject dependencies into TickPollListener via reflection
+        $listenerRef = new \ReflectionClass(TickPollListener::class);
+        $listener = $listenerRef->newInstanceWithoutConstructor();
+        $listenerRef->getProperty('poller')->setValue($listener, $poller);
+        $listenerRef->getProperty('questionCoordinator')->setValue($listener, $coordinator);
+        $listenerRef->getProperty('questionController')->setValue($listener, $controller);
+
+        // Use default Idle activity (isActive()=false) — the self-heal condition
+        // !isActive() will be true.
+        $state = new TuiSessionState('run-orphan');
+
+        $tui = new Tui();
+        $theme = new DefaultTheme(new ThemePalette('test'));
+        $promptEditor = new PromptEditor();
+        $screen = new ChatScreen($theme, 'run-orphan', $promptEditor);
+
+        $context = $this->buildTuiContext()
+            ->withTui($tui)
+            ->withState($state)
+            ->withScreen($screen)
+            ->build();
+
+        $listener->register($context);
+
+        // Retrieve the tick handler from TuiTickDispatcher
+        $handlerRef = new \ReflectionProperty(TuiTickDispatcher::class, 'handlers');
+        $handlers = $handlerRef->getValue($context->ticks);
+        self::assertCount(1, $handlers);
+
+        // Drive one tick — the self-heal must reject the orphaned question
+        ($handlers[0])();
+
+        // Assertions: reject() advanced the queue (actionRequired=false)
+        // and close() reset isOpen/awaitingFreeForm.
+        self::assertFalse($coordinator->actionRequired(), 'Orphaned question must be rejected');
+        self::assertFalse($controller->isOpen(), 'close() must be called after self-heal');
+        self::assertFalse($controller->isAwaitingFreeForm(), 'close() must reset awaitingFreeForm after self-heal');
     }
 
 }

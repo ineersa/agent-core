@@ -97,6 +97,18 @@ final class TickPollListener implements TuiListenerRegistrar
                 }
             }
 
+            // Self-heal: if the run left the active states (cancelled/terminal via ESC
+            // or error) while a HITL question is still pending, the question is
+            // orphaned. reject() advances the queue WITHOUT invoking callbacks (safe
+            // for a dead run — sends nothing to the runtime) and close() clears
+            // awaitingFreeForm so a subsequently-queued HITL question can activate.
+            // Without this, ESC during __other__ free-form typing cancels the run but
+            // leaves awaitingFreeForm=true, silently suppressing the next question.
+            if (!$state->activity->isActive() && $questionCoordinator->actionRequired()) {
+                $questionCoordinator->reject();
+                $questionController->close();
+            }
+
             // Update working status based on authoritative activity state.
             // SubmitListener sets 'Working...' optimistically on send;
             // this keeps it visible while active and clears it when idle/terminal.
