@@ -7,7 +7,6 @@ namespace Ineersa\Tui\Tests\Screen;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
-use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use Ineersa\Tui\Transcript\TranscriptBlockWidgetFactory;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -263,6 +262,18 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
                 id: 'pr1', kind: TranscriptBlockKindEnum::Progress,
                 runId: self::SESSION_ID, seq: 5, text: 'doing',
             ),
+            new TranscriptBlock(
+                id: 'ap1', kind: TranscriptBlockKindEnum::Approval,
+                runId: self::SESSION_ID, seq: 6, text: 'approved',
+            ),
+            new TranscriptBlock(
+                id: 'q1', kind: TranscriptBlockKindEnum::Question,
+                runId: self::SESSION_ID, seq: 7, text: 'ask?',
+            ),
+            new TranscriptBlock(
+                id: 'c1', kind: TranscriptBlockKindEnum::Cancelled,
+                runId: self::SESSION_ID, seq: 8, text: 'cancelled',
+            ),
         ]);
         $harness->screen()->setWorkingVisible(false);
 
@@ -276,5 +287,93 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         self::assertStringContainsString(TranscriptBlockWidgetFactory::GLYPH_ASSISTANT_THINKING, $plain);
         self::assertStringContainsString(TranscriptBlockWidgetFactory::GLYPH_TOOL, $plain);
         self::assertStringContainsString(TranscriptBlockWidgetFactory::GLYPH_PROGRESS, $plain);
+        self::assertStringContainsString(TranscriptBlockWidgetFactory::GLYPH_APPROVAL, $plain);
+        self::assertStringContainsString(TranscriptBlockWidgetFactory::GLYPH_QUESTION, $plain);
+        self::assertStringContainsString(TranscriptBlockWidgetFactory::GLYPH_CANCELLED, $plain);
+    }
+
+    #[Test]
+    public function testStreamingBlockShowsSuffix(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
+        $harness->screen()->setTranscriptBlocks([
+            new TranscriptBlock(
+                id: 'str',
+                kind: TranscriptBlockKindEnum::AssistantMessage,
+                runId: self::SESSION_ID,
+                seq: 1,
+                text: 'partial',
+                streaming: true,
+            ),
+        ]);
+        $harness->screen()->setWorkingVisible(false);
+
+        $text = $harness->plainScreenText();
+
+        self::assertStringContainsString('partial', $text, 'Streaming block text missing');
+        self::assertStringContainsString('...', $text, 'Streaming suffix missing');
+    }
+
+    #[Test]
+    public function testApprovalBlockShowsGlyph(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
+        $harness->screen()->setTranscriptBlocks([
+            new TranscriptBlock(
+                id: 'ap',
+                kind: TranscriptBlockKindEnum::Approval,
+                runId: self::SESSION_ID,
+                seq: 1,
+                text: 'Approve?',
+            ),
+        ]);
+        $harness->screen()->setWorkingVisible(false);
+
+        $text = $harness->plainScreenText();
+
+        self::assertStringContainsString('🔐', $text, 'Approval glyph missing');
+        self::assertStringContainsString('Approve?', $text, 'Approval text missing');
+    }
+
+    #[Test]
+    public function testQuestionBlockShowsGlyph(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
+        $harness->screen()->setTranscriptBlocks([
+            new TranscriptBlock(
+                id: 'q',
+                kind: TranscriptBlockKindEnum::Question,
+                runId: self::SESSION_ID,
+                seq: 1,
+                text: 'What?',
+            ),
+        ]);
+        $harness->screen()->setWorkingVisible(false);
+
+        $text = $harness->plainScreenText();
+
+        self::assertStringContainsString('?', $text, 'Question glyph missing');
+        self::assertStringContainsString('What?', $text, 'Question text missing');
+    }
+
+    #[Test]
+    public function testCancelledBlockShowsGlyph(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
+        $harness->screen()->setTranscriptBlocks([
+            new TranscriptBlock(
+                id: 'cn',
+                kind: TranscriptBlockKindEnum::Cancelled,
+                runId: self::SESSION_ID,
+                seq: 1,
+                text: 'aborted',
+            ),
+        ]);
+        $harness->screen()->setWorkingVisible(false);
+
+        $text = $harness->plainScreenText();
+
+        self::assertStringContainsString('✕', $text, 'Cancelled glyph missing');
+        self::assertStringContainsString('aborted', $text, 'Cancelled text missing');
     }
 }

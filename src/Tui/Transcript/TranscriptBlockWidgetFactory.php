@@ -101,9 +101,12 @@ final readonly class TranscriptBlockWidgetFactory
         return new TextWidget($theme->color($color, $line));
     }
 
-    /* ───────── Glyph prefixes ───────── */
+    /* ───────── Glyph prefixes ─────────
+     *
+     * These methods are private — the glyph constants above are the public API
+     * for tests and rendering assertions. */
 
-    public function prefixFor(TranscriptBlock $block): string
+    private function prefixFor(TranscriptBlock $block): string
     {
         return match ($block->kind) {
             TranscriptBlockKindEnum::UserMessage => self::GLYPH_USER_MESSAGE,
@@ -122,7 +125,7 @@ final readonly class TranscriptBlockWidgetFactory
 
     /* ───────── Theme colors ───────── */
 
-    public function colorFor(TranscriptBlock $block): ThemeColorEnum
+    private function colorFor(TranscriptBlock $block): ThemeColorEnum
     {
         return match ($block->kind) {
             TranscriptBlockKindEnum::UserMessage => ThemeColorEnum::UserMessage,
@@ -141,7 +144,7 @@ final readonly class TranscriptBlockWidgetFactory
 
     /* ───────── Display text (fallback for empty text) ───────── */
 
-    public function displayTextFor(TranscriptBlock $block): string
+    private function displayTextFor(TranscriptBlock $block): string
     {
         if ('' !== $block->text) {
             return $block->text;

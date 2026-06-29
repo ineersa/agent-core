@@ -404,14 +404,11 @@ final class TranscriptBlockRendererTest extends TestCase
             text: 'fail',
         );
 
+        $widget->addBlock($block);
         $lines = $widget->render($this->context);
 
-        // Verify widget renders with injected renderer (block is added)
-        $widget->addBlock($block);
-        $linesAfter = $widget->render($this->context);
-
-        $this->assertCount(1, $linesAfter);
-        $this->assertStringContainsString('✕', $linesAfter[0]);
+        $this->assertCount(1, $lines);
+        $this->assertStringContainsString('✕', $lines[0]);
     }
 
     // ── Theme applies color ─────────────────────────────────

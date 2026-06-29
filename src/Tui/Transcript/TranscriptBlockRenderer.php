@@ -24,8 +24,8 @@ use Symfony\Component\Tui\Widget\ContainerWidget;
 final readonly class TranscriptBlockRenderer
 {
     public function __construct(
-        private readonly SubagentResultRenderer $subagentResultRenderer = new SubagentResultRenderer(),
         private readonly SymfonyTuiWidgetRenderer $widgetRenderer = new SymfonyTuiWidgetRenderer(),
+        private readonly TranscriptBlockWidgetFactory $factory = new TranscriptBlockWidgetFactory(),
     ) {
     }
 
@@ -38,18 +38,9 @@ final readonly class TranscriptBlockRenderer
      */
     public function renderBlock(TranscriptBlock $block, TuiRenderContext $context): array
     {
-        $factory = new TranscriptBlockWidgetFactory($this->subagentResultRenderer);
-
         $root = new ContainerWidget();
-        $root->add($factory->buildWidget($block, $context->theme));
+        $root->add($this->factory->buildWidget($block, $context->theme));
 
         return $this->widgetRenderer->render($root, $context);
-    }
-
-    /* ───────── Public helpers (preserved for tests / external callers) ───────── */
-
-    public function getSubagentRenderer(): SubagentResultRenderer
-    {
-        return $this->subagentResultRenderer;
     }
 }
