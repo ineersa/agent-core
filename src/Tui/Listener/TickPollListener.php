@@ -41,6 +41,7 @@ final class TickPollListener implements TuiListenerRegistrar
         private readonly RuntimeEventPoller $poller,
         private readonly QuestionCoordinator $questionCoordinator,
         private readonly QuestionController $questionController,
+        private readonly ?AgentSessionClient $inProcessClient = null,
     ) {
     }
 
@@ -55,7 +56,14 @@ final class TickPollListener implements TuiListenerRegistrar
         // Wire the question controller with TUI runtime references
         $questionController->setRuntimeRefs($context, $screen);
 
-        $context->ticks->add(static function () use ($poller, $context, $client, $screen, $questionCoordinator, $questionController): ?bool {
+        // Use InProcessAgentSessionClient for child tab event polling.
+        // Child runs are started via InProcess client (ForkPocRoutingListener) which
+        // writes to the file-based event store, NOT through the controller subprocess.
+        // JsonlProcessAgentSessionClient reads from the controller which doesn't know
+        // about in-process child runs, so child events would be invisible.
+        $childEventClient = $this->inProcessClient ?? $client;
+
+        $context->ticks->add(static function () use ($poller, $context, $client, $childEventClient, $screen, $questionCoordinator, $questionController): ?bool {
             // POC: ALWAYS poll the PARENT state ($context->state) regardless of active tab.
             // This ensures the parent runtime events are always consumed so:
             //   - Parent transcript stays up to date (critical for subagent artifact detection)
@@ -108,7 +116,9 @@ final class TickPollListener implements TuiListenerRegistrar
                     $childRunId = $childState->handle->runId;
 
                     try {
-                        $childEvents = iterator_to_array($client->events($childRunId), false);
+                        // Use the separate child event client (InProcessAgentSessionClient)
+                        // so child run events written to the file store are accessible.
+                        $childEvents = iterator_to_array($childEventClient->events($childRunId), false);
 
                         if ([] !== $childEvents) {
                             $freshBlocks = SubagentTabAutoListener::projectChildEvents(

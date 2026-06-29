@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\Tui\Command\CommandMetadata;
+use Ineersa\Tui\Command\NoOp;
 use Ineersa\Tui\Command\SlashCommandHandler;
 use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Command\TranscriptMessage;
@@ -152,10 +153,10 @@ final class ForkPocRoutingListener implements TuiListenerRegistrar
                     ),
                 );
 
-                return new TranscriptMessage(
-                    \sprintf('ForkPOC: child run %s started. Switched to fork tab (tab %d).', $childRunId, $newIndex + 1),
-                    'system',
-                );
+                // Return NoOp so SubmitListener does NOT overwrite screen with parent transcript.
+                // The handler already appended a system block directly to the parent transcript
+                // above and switched the active tab.
+                return new NoOp();
             }
         };
 
