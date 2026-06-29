@@ -428,6 +428,7 @@ parameters:
 
     TuiPicker:
       - AppConfig
+      - AppRuntimeContract
       - AppSession
       - TuiRuntime
       - TuiScreen
@@ -529,6 +530,7 @@ parameters:
     AppSession:
       - AgentCore
       - AppConfig
+      - AppRuntimeContract
       - SymfonyConsole
       - SymfonyLock
       - SymfonyYaml
