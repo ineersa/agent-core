@@ -132,7 +132,10 @@ final class TuiSessionState
      * Live/session-only mutable display state for the transcript.
      *
      * Initialized from transcriptDisplayConfig.previewsExpandedByDefault
-     * at TUI startup. Ctrl+O toggles previewableBlocksExpanded at runtime.
+     * at TUI startup. A planned future Ctrl+O keybinding (RENDER-06) will
+     * toggle previewableBlocksExpanded at runtime; until then the display
+     * state always reflects the initial config default plus programmatic
+     * changes.
      * Not persisted to settings or session metadata.
      */
     public TranscriptDisplayState $transcriptDisplayState;

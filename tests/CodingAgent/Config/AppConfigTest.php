@@ -235,6 +235,10 @@ class AppConfigTest extends TestCase
     {
         $config = $this->buildConfig();
 
+        // theme_paths uses #[SerializedName('theme_paths')]; this assertion
+        // proves the test serializer correctly reads SerializedName attributes.
+        self::assertSame(['/app/config/themes'], $config->tui->themePaths);
+
         $transcript = $config->tui->transcript;
         self::assertTrue($transcript->thinking->visible);
         self::assertSame('dim_italic', $transcript->thinking->style);

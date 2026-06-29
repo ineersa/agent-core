@@ -116,8 +116,9 @@ through Symfony TUI `Style` primitives.
 Whether previewable blocks (tool results, diffs) start expanded in the
 transcript. When false (default), long tool outputs and diffs are shown
 as truncated previews. Preview expansion is TUI-session-only and is NOT
-persisted to settings or session metadata. The user toggles this at runtime
-with `Ctrl+O`.
+persisted to settings or session metadata. Runtime toggling via `Ctrl+O`
+(a planned future keybinding) will flip this flag per-session; until then the
+display state always reflects this config default plus programmatic changes.
 
 **Default:** `false`
 

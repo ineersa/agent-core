@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\Tui\Tests\Transcript;
+namespace Ineersa\Tui\Tests\Application;
 
 use Ineersa\CodingAgent\Config\TuiTranscriptConfig;
 use Ineersa\CodingAgent\Config\TuiTranscriptThinkingConfig;

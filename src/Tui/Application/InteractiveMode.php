@@ -145,6 +145,12 @@ final readonly class InteractiveMode
         // shutdown.
         $needsTerminalClear = false;
 
+        // Map the immutable TranscriptDisplayConfig once before the session
+        // loop; it is derived from Hatfield config which does not change
+        // within a TUI lifetime. Each new session still gets a fresh mutable
+        // TranscriptDisplayState initialized from the immutable config.
+        $displayConfig = $this->transcriptConfigMapper->map($this->appConfig->tui->transcript);
+
         while (true) {
             // ── Initialize session state ──
             if ($isDraft) {
@@ -158,11 +164,10 @@ final readonly class InteractiveMode
             }
             $state->transcript = $this->sessionInit->buildInitialTranscript($state);
 
-            // ── Initialize transcript display config/state ──
-            // Map from Hatfield config to TUI-local config so Tui\Transcript
-            // has no dependency on CodingAgent\Config.  Initialize live display
-            // state from config defaults.
-            $displayConfig = $this->transcriptConfigMapper->map($this->appConfig->tui->transcript);
+            // ── Initialize per-session transcript display state ──
+            // The immutable config is mapped once above.  Each session
+            // (draft/resume/fresh) gets its own mutable display state
+            // initialized from the config's previewsExpandedByDefault.
             $state->transcriptDisplayConfig = $displayConfig;
             $state->transcriptDisplayState = new TranscriptDisplayState(
                 previewableBlocksExpanded: $displayConfig->previewsExpandedByDefault,
