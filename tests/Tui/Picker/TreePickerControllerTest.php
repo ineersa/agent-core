@@ -63,16 +63,23 @@ final class TreePickerControllerTest extends TestCase
 
         self::assertCount(2, $items, 'Linear tree should produce 2 items');
 
-        // Item 0: root turn (no indent, leaf marker ○, title preview)
+        // Item 0: root turn (flat, leaf marker ○, title preview)
         self::assertStringContainsString('○ Turn 1:', $items[0]['label']);
         self::assertStringContainsString('Hello', $items[0]['label']);
         self::assertSame('1', $items[0]['value']);
         self::assertStringContainsString('2026-01-01', $items[0]['description']);
 
-        // Item 1: child (indented, leaf marker ◉ — turn 2 is current leaf)
-        self::assertStringContainsString('└─ ◉ Turn 2:', $items[1]['label']);
+        // Item 1: child (flat — linear only-child chain has no connectors)
+        self::assertStringContainsString('◉ Turn 2:', $items[1]['label']);
         self::assertStringContainsString('Follow-up', $items[1]['label']);
         self::assertSame('2', $items[1]['value']);
+
+        // Proof: linear tree must have zero connector glyphs in every label
+        foreach ($items as $item) {
+            self::assertStringNotContainsString('└─', $item['label'], 'Linear label should not contain └─');
+            self::assertStringNotContainsString('├─', $item['label'], 'Linear label should not contain ├─');
+            self::assertStringNotContainsString('│', $item['label'], 'Linear label should not contain │');
+        }
     }
 
     #[Test]
@@ -131,6 +138,13 @@ final class TreePickerControllerTest extends TestCase
         self::assertStringContainsString('○ Turn 2:', $items[1]['label']);
         // Third turn: leaf marker ◉ (current leaf)
         self::assertStringContainsString('◉ Turn 3:', $items[2]['label']);
+
+        // Proof: linear 3-turn tree has no connector glyphs in any label
+        foreach ($items as $item) {
+            self::assertStringNotContainsString('└─', $item['label'], 'Linear label should not contain └─');
+            self::assertStringNotContainsString('├─', $item['label'], 'Linear label should not contain ├─');
+            self::assertStringNotContainsString('│', $item['label'], 'Linear label should not contain │');
+        }
     }
 
     // ── buildItems: branched tree ───────────────────────────────────────────
@@ -185,17 +199,100 @@ final class TreePickerControllerTest extends TestCase
 
         self::assertCount(3, $items);
 
-        // Root (no indent, ○)
+        // Root (flat, ○ — no connector)
         self::assertStringContainsString('○ Turn 1:', $items[0]['label']);
         self::assertSame('1', $items[0]['value']);
+        self::assertStringNotContainsString('├─', $items[0]['label']);
+        self::assertStringNotContainsString('└─', $items[0]['label']);
 
-        // Abandoned child (indented, ○)
-        self::assertStringContainsString('└─ ○ Turn 2:', $items[1]['label']);
+        // First sibling (├─ ○, not last child)
+        self::assertStringContainsString('├─ ○ Turn 2:', $items[1]['label']);
         self::assertSame('2', $items[1]['value']);
 
-        // Current leaf (indented, ◉)
+        // Last sibling (└─ ◉, current leaf)
         self::assertStringContainsString('└─ ◉ Turn 3:', $items[2]['label']);
         self::assertSame('3', $items[2]['value']);
+    }
+
+    // ── buildItems: branch connectors ────────────────────────────────────────
+
+    #[Test]
+    public function testBuildItemsBranchedTreeWithConnectors(): void
+    {
+        // Deep branching: T1 has two children [T2, T3]; T2 has one child T4 (current leaf).
+        // This proves all three connector types: ├─, │  └─, └─.
+        $nodes = [
+            1 => new TurnTreeNodeView(
+                turnNo: 1,
+                parentTurnNo: null,
+                childTurnNos: [2, 3],
+                anchorSeq: 2,
+                title: 'Root turn',
+                promptPreview: 'Root',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            2 => new TurnTreeNodeView(
+                turnNo: 2,
+                parentTurnNo: 1,
+                childTurnNos: [4],
+                anchorSeq: 5,
+                title: 'Branch A',
+                promptPreview: 'A',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            3 => new TurnTreeNodeView(
+                turnNo: 3,
+                parentTurnNo: 1,
+                childTurnNos: [],
+                anchorSeq: 8,
+                title: 'Branch B',
+                promptPreview: 'B',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            4 => new TurnTreeNodeView(
+                turnNo: 4,
+                parentTurnNo: 2,
+                childTurnNos: [],
+                anchorSeq: 11,
+                title: 'Deep child',
+                promptPreview: 'Deep',
+                createdAt: null,
+                isCurrentLeaf: true,
+            ),
+        ];
+
+        $tree = new TurnTreeView(
+            runId: 'run',
+            nodesByTurnNo: $nodes,
+            rootTurnNos: [1],
+            currentLeafTurnNo: 4,
+            activePathTurnNos: [1, 2, 4],
+        );
+
+        $theme = new DefaultTheme(new ThemePalette('test'));
+        $items = TreePickerController::buildItems($tree, $theme);
+
+        self::assertCount(4, $items);
+
+        // T1 (root, []): flat — no branching at root level
+        self::assertStringContainsString('○ Turn 1:', $items[0]['label']);
+        self::assertStringNotContainsString('├─', $items[0]['label']);
+        self::assertStringNotContainsString('└─', $items[0]['label']);
+
+        // T2 (first child of T1, [false]): ├─
+        self::assertStringContainsString('├─ ○ Turn 2:', $items[1]['label']);
+        self::assertSame('2', $items[1]['value']);
+
+        // T4 (only child of T2, [false, true]): │  └─
+        self::assertStringContainsString('│  └─ ◉ Turn 4:', $items[2]['label']);
+        self::assertSame('4', $items[2]['value']);
+
+        // T3 (last child of T1, [true]): └─
+        self::assertStringContainsString('└─ ○ Turn 3:', $items[3]['label']);
+        self::assertSame('3', $items[3]['value']);
     }
 
     // ── buildItems: empty tree ──────────────────────────────────────────────

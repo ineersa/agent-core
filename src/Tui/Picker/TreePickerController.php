@@ -24,8 +24,8 @@ use Symfony\Component\Tui\Widget\TextWidget;
  * Manages the turn tree picker overlay lifecycle.
  *
  * Opens a read-only SelectListWidget showing the current session's
- * turn tree with indentation, branch structure, and a current-leaf
- * marker. Entering a turn closes the picker without mutating state.
+ * turn tree with tree connectors at branch points only (└─/├─/│),
+ * and a current-leaf marker. Entering a turn closes the picker without mutating state.
  *
  * Tree data is rebuilt from canonical events.jsonl on each open
  * (no caching), so the picker always reflects the latest session state.
@@ -199,8 +199,9 @@ final class TreePickerController
     /**
      * Unified depth-first walk producing both items and turn order.
      *
-     * When a TuiTheme is provided, items (full labels with indentation,
-     * leaf markers, truncation, accent) are built. The turn-order list
+     * When a TuiTheme is provided, items (full labels with branch-stack
+     * connectors at branch points only, leaf markers, truncation, accent)
+     * are built. The turn-order list
      * is always produced, guaranteeing index alignment between
      * buildItems() and flattenTurnOrder().
      *
@@ -213,7 +214,7 @@ final class TreePickerController
         $visited = [];
 
         foreach ($tree->rootTurnNos as $rootTurnNo) {
-            self::walkNode($rootTurnNo, $tree->nodesByTurnNo, 0, $items, $order, $visited, $theme, $selectedIndex);
+            self::walkNode($rootTurnNo, $tree->nodesByTurnNo, [], $items, $order, $visited, $theme, $selectedIndex);
         }
 
         return [$items, $order];
@@ -221,6 +222,7 @@ final class TreePickerController
 
     /**
      * @param array<int, TurnTreeNodeView>                               $nodesByTurnNo
+     * @param list<bool>                                                 $branchStack   Each entry is true if that ancestor is the last child of its parent (└─ for last, ├─ for non-last)
      * @param list<array{value:string,label:string,description?:string}> $items
      * @param list<int>                                                  $order
      * @param array<int, true>                                           $visited
@@ -228,7 +230,7 @@ final class TreePickerController
     private static function walkNode(
         int $turnNo,
         array $nodesByTurnNo,
-        int $depth,
+        array $branchStack,
         array &$items,
         array &$order,
         array &$visited,
@@ -246,13 +248,18 @@ final class TreePickerController
         }
 
         if (null !== $theme) {
-            $prefix = $node->isCurrentLeaf ? '◉ ' : '○ ';
-            $indent = '';
-            if ($depth > 0) {
-                $indent = str_repeat('  ', max(0, $depth - 1)).'└─ ';
+            // Build prefix from branch-stack: ancestor connectors + own connector
+            $nodePrefix = '';
+            $numLevels = \count($branchStack);
+            for ($k = 0; $k < $numLevels - 1; ++$k) {
+                $nodePrefix .= $branchStack[$k] ? '   ' : '│  ';
+            }
+            if ($numLevels >= 1) {
+                $nodePrefix .= $branchStack[$numLevels - 1] ? '└─ ' : '├─ ';
             }
 
-            $label = $indent.$prefix.\sprintf(
+            $leafMarker = $node->isCurrentLeaf ? '◉ ' : '○ ';
+            $label = $nodePrefix.$leafMarker.\sprintf(
                 'Turn %d: %s',
                 $node->turnNo,
                 mb_strimwidth($node->title, 0, 60, '…'),
@@ -275,8 +282,19 @@ final class TreePickerController
 
         $order[] = $node->turnNo;
 
-        foreach ($node->childTurnNos as $childTurnNo) {
-            self::walkNode($childTurnNo, $nodesByTurnNo, $depth + 1, $items, $order, $visited, $theme, $selectedIndex);
+        // Compute child branch-stack: push a new connector level when already inside
+        // a branch or when the current node has multiple children (branching starts here).
+        $childCount = \count($node->childTurnNos);
+        $insideBranch = [] !== $branchStack;
+        $nodeHasMultipleChildren = $childCount >= 2;
+        $childPushesLevel = $insideBranch || $nodeHasMultipleChildren;
+
+        foreach ($node->childTurnNos as $ci => $childTurnNo) {
+            $childStack = $childPushesLevel
+                ? [...$branchStack, $ci === $childCount - 1]
+                : $branchStack;
+
+            self::walkNode($childTurnNo, $nodesByTurnNo, $childStack, $items, $order, $visited, $theme, $selectedIndex);
         }
     }
 }
