@@ -10,15 +10,16 @@ use Ineersa\Tui\Widget\TuiWidget;
 
 /**
  * Transcript widget that renders {@see TranscriptBlock} DTOs using
- * the project-native renderer.
+ * the Symfony TUI widget-tree renderer.
  *
- * This is the TUI-facing entry point for RTVS-06. When blocks are present
- * they are rendered with role prefixes, semantic theme colors, and
- * ANSI-safe word wrapping. When no blocks are set, a welcome message
- * is shown (mirroring the existing {@see TranscriptWidget} behavior).
+ * Internally builds one root {@see ContainerWidget} tree per render call
+ * via {@see TranscriptBlockWidgetFactory} and renders it through
+ * {@see SymfonyTuiWidgetRenderer}. This replaces the previous flat
+ * loop-over-blocks approach — the old flat path is not retained.
  *
- * For RTVS-07, the runtime poller/projector pipeline feeds blocks into
- * this widget via {@see setBlocks()} without layout changes.
+ * The public API ({@see setBlocks()}, {@see addBlock()}, {@see render()})
+ * is unchanged so {@see ChatScreen} / {@see LiveTextWidget} integration
+ * is unaffected.
  */
 final class TranscriptBlockWidget implements TuiWidget
 {
@@ -26,7 +27,8 @@ final class TranscriptBlockWidget implements TuiWidget
     private array $blocks = [];
 
     public function __construct(
-        private readonly TranscriptBlockRenderer $renderer = new TranscriptBlockRenderer(),
+        private readonly SymfonyTuiWidgetRenderer $widgetRenderer = new SymfonyTuiWidgetRenderer(),
+        private readonly TranscriptBlockWidgetFactory $factory = new TranscriptBlockWidgetFactory(),
     ) {
     }
 
@@ -54,11 +56,8 @@ final class TranscriptBlockWidget implements TuiWidget
             return [$context->theme->muted('  Welcome to Agent Core. Type a message below to start.')];
         }
 
-        $lines = [];
-        foreach ($this->blocks as $block) {
-            array_push($lines, ...$this->renderer->renderBlock($block, $context));
-        }
+        $root = $this->factory->buildRoot($this->blocks, $context->theme);
 
-        return $lines;
+        return $this->widgetRenderer->render($root, $context);
     }
 }
