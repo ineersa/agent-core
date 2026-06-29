@@ -9,9 +9,12 @@ use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
+use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
@@ -630,6 +633,89 @@ final class AdvanceRunHandlerTest extends TestCase
         $this->assertSame([], $result->events);
         $this->assertSame([], $result->postCommit);
         $this->assertSame([], $commandBus->messages);
+    }
+
+    // ── Branch-aware turn allocation (Phase A5) ─────────────────────────────
+
+    public function testTurnAllocationAfterRewindReturnsBranchAwareTurnNo(): void
+    {
+        // Thesis: after rewind to turn N where turns N+1, N+2 exist in the
+        // canonical event stream (abandoned branch), the next AdvanceRun
+        // allocates max(globalMaxTurnNo, state.turnNo) + 1 = N+3, NOT N+1
+        // (which would collide with the already-existing abandoned turn).
+        // This test would FAIL with the old state.turnNo+1 allocation.
+
+        $runId = 'run-branch-alloc-test';
+
+        // Create events for turns 1, 2, 3 (linear, pre-rewind).
+        $events = [
+            new RunEvent($runId, seq: 1, turnNo: 0, type: 'run_started', payload: ['payload' => ['messages' => []]]),
+            new RunEvent($runId, seq: 2, turnNo: 1, type: RunEventTypeEnum::TurnAdvanced->value, payload: ['turn_no' => 1]),
+            new RunEvent($runId, seq: 3, turnNo: 1, type: RunEventTypeEnum::LeafSet->value, payload: ['turn_no' => 1, 'reason' => 'continue']),
+            new RunEvent($runId, seq: 4, turnNo: 2, type: RunEventTypeEnum::TurnAdvanced->value, payload: ['turn_no' => 2, 'parent_turn_no' => 1]),
+            new RunEvent($runId, seq: 5, turnNo: 2, type: RunEventTypeEnum::LeafSet->value, payload: ['turn_no' => 2, 'reason' => 'continue']),
+            new RunEvent($runId, seq: 6, turnNo: 3, type: RunEventTypeEnum::TurnAdvanced->value, payload: ['turn_no' => 3, 'parent_turn_no' => 2]),
+            new RunEvent($runId, seq: 7, turnNo: 3, type: RunEventTypeEnum::LeafSet->value, payload: ['turn_no' => 3, 'reason' => 'continue']),
+        ];
+
+        $eventStore = $this->createStub(EventStoreInterface::class);
+        $eventStore->method('allFor')->willReturn($events);
+
+        $commandStore = new InMemoryCommandStore();
+        $commandMailboxPolicy = new CommandMailboxPolicy(
+            commandStore: $commandStore,
+            commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+        );
+
+        $handler = new AdvanceRunHandler(
+            commandMailboxPolicy: $commandMailboxPolicy,
+            eventFactory: new EventFactory(),
+            eventStore: $eventStore,
+        );
+
+        // State after rewind: turnNo=1 (back to turn 1), but canonical events
+        // have turnNo up to 3 (the abandoned branch).
+        $state = RunStateBuilder::create($runId)
+            ->withStatus(RunStatus::Running)
+            ->withVersion(8)
+            ->withTurnNo(1)
+            ->withLastSeq(10)
+            ->withActiveStepId('rewound-step')
+            ->build();
+
+        $message = AdvanceRunMessageBuilder::create($runId)
+            ->withTurnNo(1)
+            ->withStepId('continue-after-rewind')
+            ->withIdempotencyKey('advance-after-rewind-1')
+            ->build();
+
+        $result = $handler->handle($message, $state);
+
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(RunStatus::Running, $result->nextState->status);
+
+        // Critical assertion: next turn must NOT be 2 (would collide with
+        // abandoned turn 2). Must be max(3, 1) + 1 = 4.
+        $this->assertSame(4, $result->nextState->turnNo,
+            'After rewind to turn 1 with abandoned turns 2,3, next turn must be 4 (not 2).'
+        );
+
+        $this->assertCount(2, $result->events);
+        $this->assertSame('turn_advanced', $result->events[0]->type);
+        $this->assertSame(4, $result->events[0]->payload['turn_no'],
+            'turn_advanced payload must carry branch-aware turn_no=4.'
+        );
+        $this->assertSame('leaf_set', $result->events[1]->type);
+        $this->assertSame(4, $result->events[1]->payload['turn_no'],
+            'leaf_set payload must carry branch-aware turn_no=4.'
+        );
+        $this->assertSame('continue', $result->events[1]->payload['reason']);
+
+        $this->assertCount(1, $result->effects);
+        $this->assertInstanceOf(ExecuteLlmStep::class, $result->effects[0]);
+        $this->assertSame(4, $result->effects[0]->turnNo(),
+            'ExecuteLlmStep effect must carry branch-aware turnNo=4.'
+        );
     }
 
 }

@@ -38,15 +38,12 @@ final readonly class TuiRuntimeEventApplier
         }
 
         if (RuntimeEventTypeEnum::RunLeafChanged->value === $event->type) {
-            // Reset transcript and projector to reflect the new active leaf.
-            // The previous transcript (showing abandoned branch) is no longer valid.
-            // The active-path events will NOT be re-fed through the projector
-            // automatically (the poller's dedup cursor advances past them).
-            // Instead, the projector is cleared and a status message is injected.
-            // Full transcript rebuild after rewind is a future enhancement.
+            // Reset projector so replayTranscriptOnly (called by RuntimeEventPoller
+            // after apply()) starts from a clean slate. The poller handles the actual
+            // transcript rebuild by fetching active-path events and replaying them
+            // through the projector only (no state mutation).
             $this->projector->reset();
 
-            $turnNo = $event->payload['turn_no'] ?? 0;
             $state->activity = RunActivityStateEnum::Idle;
             $state->queuedFollowUp = null;
 
@@ -65,6 +62,23 @@ final readonly class TuiRuntimeEventApplier
         $state->activity = ActivityStateMachine::transition($state->activity, $event);
         $state->applyQueuedUserMessageEvent($event);
         $this->projector->accept($event->toArray());
+    }
+
+    /**
+     * Feed events through the projector for transcript rebuilding without touching state.
+     *
+     * The projector must already be reset (typically by the RunLeafChanged handler).
+     * Used by RuntimeEventPoller to rebuild transcript blocks after a leaf change,
+     * replaying only active-path events into the projector, then wholesale-replacing
+     * $state->transcript with the result.
+     *
+     * @param list<RuntimeEvent> $runtimeEvents
+     */
+    public function replayTranscriptOnly(array $runtimeEvents): void
+    {
+        foreach ($runtimeEvents as $event) {
+            $this->projector->accept($event->toArray());
+        }
     }
 
     /** @return list<\Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock> */

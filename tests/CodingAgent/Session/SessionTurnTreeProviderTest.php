@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Session;
 
+use Ineersa\AgentCore\Application\Replay\TurnTreeReplayFilter;
+use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Run\TurnTreeProjector;
-use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\CodingAgent\Session\SessionTurnTreeProvider;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
@@ -119,7 +123,15 @@ final class SessionTurnTreeProviderTest extends TestCase
         $store = $this->createStub(EventStoreInterface::class);
         $store->method('allFor')->willReturn($events);
 
-        return new SessionTurnTreeProvider($store, new TurnTreeProjector());
+        // Use real instances for TurnTreeReplayFilter (final, cannot be doubled)
+        // and RuntimeEventMapper to satisfy the constructor requirements.
+        $projector = new TurnTreeProjector();
+        $replayFilter = new TurnTreeReplayFilter($projector);
+        $eventDispatcher = $this->createStub(EventDispatcherInterface::class);
+        $translator = new RuntimeEventTranslator($eventDispatcher);
+        $eventMapper = new RuntimeEventMapper($translator);
+
+        return new SessionTurnTreeProvider($store, $projector, $replayFilter, $eventMapper);
     }
 
     /**
