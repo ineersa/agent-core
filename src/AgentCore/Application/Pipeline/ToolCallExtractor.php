@@ -35,6 +35,14 @@ final readonly class ToolCallExtractor
     }
 
     /**
+     * Extract the interrupt payload from a tool call result using generic passthrough.
+     *
+     * AgentCore does not enumerate tool-specific fields. It starts from the full
+     * interrupt array, preserving every key generically. Only the five core fields
+     * (tool_call_id, tool_name, question_id, prompt, schema) receive typed fallbacks;
+     * all other fields pass through unchanged. This keeps AgentCore tool-agnostic
+     * while richer payloads survive to the waiting_human event.
+     *
      * @return array<string, mixed>|null
      */
     public function interruptPayloadFromToolResult(ToolCallResult $result): ?array
@@ -49,10 +57,12 @@ final readonly class ToolCallExtractor
 
         $interrupt = null;
 
+        // Check details first (interrupt payloads nest kind=interrupt under details)
         if ('interrupt' === ($details['kind'] ?? null)) {
             $interrupt = $details;
         }
 
+        // Fallback: check result.kind (older interrupt path)
         if (null === $interrupt && 'interrupt' === ($result->result['kind'] ?? null)) {
             $interrupt = $result->result;
         }
@@ -61,18 +71,39 @@ final readonly class ToolCallExtractor
             return null;
         }
 
-        $questionId = \is_string($interrupt['question_id'] ?? null)
-            ? $interrupt['question_id']
+        // Generic passthrough: start with all keys from the interrupt array.
+        // AgentCore does not enumerate the carried fields — whatever the tool
+        // produced (structural markers, UI metadata, future fields) survives.
+        $payload = $interrupt;
+
+        // ── Core typed fallbacks (applied ON TOP of passthrough values) ──
+
+        // tool_call_id always comes from the message, not the interrupt array
+        $payload['tool_call_id'] = $result->toolCallId;
+
+        // tool_name from outer result (authoritative execution record)
+        if (\is_string($result->result['tool_name'] ?? null)) {
+            $payload['tool_name'] = $result->result['tool_name'];
+        }
+
+        // question_id: prefer interrupt value, fall back to toolCallId
+        $payload['question_id'] = \is_string($payload['question_id'] ?? null)
+            ? $payload['question_id']
             : $result->toolCallId;
 
-        $payload = [
-            'tool_call_id' => $result->toolCallId,
-            'tool_name' => \is_string($result->result['tool_name'] ?? null) ? $result->result['tool_name'] : null,
-            'question_id' => $questionId,
-            'prompt' => \is_string($interrupt['prompt'] ?? null) ? $interrupt['prompt'] : 'Human input required.',
-            'schema' => \is_array($interrupt['schema'] ?? null) ? $interrupt['schema'] : ['type' => 'string'],
-        ];
+        // prompt: prefer interrupt value, fall back to generic default
+        $payload['prompt'] = \is_string($payload['prompt'] ?? null)
+            ? $payload['prompt']
+            : 'Human input required.';
 
-        return array_filter($payload, static fn (mixed $value): bool => null !== $value);
+        // schema: prefer interrupt value, fall back to string type
+        $payload['schema'] = \is_array($payload['schema'] ?? null)
+            ? $payload['schema']
+            : ['type' => 'string'];
+
+        // No blanket array_filter — preserve all interrupt values as-is.
+        // A blanket null-strip would break payloads with explicit null defaults
+        // (e.g. default => null) that must survive to the waiting_human event.
+        return $payload;
     }
 }
