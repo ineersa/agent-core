@@ -7,6 +7,8 @@ namespace Ineersa\Tui\Listener;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
@@ -16,6 +18,7 @@ use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
 /**
  * POC: Auto-detects subagent artifacts while running and opens live tabs.
@@ -26,14 +29,17 @@ use Ineersa\Tui\Transcript\TranscriptBlockFactory;
  * LIVING RUNNING subagents:
  *   - Detects blocks where `subagent_progress.status` is 'running'
  *   - Creates a tab immediately and populates it from available child events
+ *   - Uses an ISOLATED real projection pipeline (fresh TranscriptProjector +
+ *     fresh TranscriptProjectionState) so the shared parent projector state
+ *     is never corrupted.
  *   - On subsequent ticks, re-reads child events via AgentSessionClient::events()
- *     and updates the tab transcript with new blocks
+ *     and re-projects through the isolated pipeline
  *   - Detects terminal state from child run events (run.completed/failed/cancelled)
  *     and marks the tab as complete
  *
- * COMPLETED subagents:
+ * COMPLETED subagents (subagent_final=true):
  *   - Detects blocks where `subagent_final` is true
- *   - Creates a read-only tab with all available child events
+ *   - Creates a read-only tab with projected child events
  *
  * Auto-switches to the new subagent tab when first created so the user
  * immediately sees the running subagent's output.
@@ -42,10 +48,6 @@ use Ineersa\Tui\Transcript\TranscriptBlockFactory;
  *   - The subagent runs foreground (blocks parent LLM turn)
  *   - No child RunHandle is exposed for interactive input
  *   - Child events are parent-artifact scoped, not independently accessible
- *
- * Blocks are built from child RuntimeEvents manually (not through the shared
- * TranscriptProjector singleton) to avoid corrupting the parent's projected
- * block state.
  *
  * @see TabRoutingListener for full blocker documentation
  */
@@ -73,7 +75,7 @@ final class SubagentTabAutoListener implements TuiListenerRegistrar
 
     public function __construct(
         private readonly AgentSessionClient $client,
-        private readonly TranscriptBlockFactory $blockFactory,
+        private readonly EventDispatcherInterface $eventDispatcher,
     ) {
     }
 
@@ -81,17 +83,11 @@ final class SubagentTabAutoListener implements TuiListenerRegistrar
     {
         $tabService = $context->tabService;
         $screen = $context->screen;
-        $client = $this->client;
-        $blockFactory = $this->blockFactory;
-        $openedArtifacts = &$this->openedArtifacts;
         $terminalFromChildEvents = &$this->terminalFromChildEvents;
 
-        $context->ticks->add(static function () use (
+        $context->ticks->add(function () use (
             $tabService,
             $screen,
-            $client,
-            $blockFactory,
-            &$openedArtifacts,
             &$terminalFromChildEvents,
             $context,
         ): ?bool {
@@ -103,7 +99,7 @@ final class SubagentTabAutoListener implements TuiListenerRegistrar
             }
 
             foreach ($parentState->transcript as $block) {
-                $artifact = self::detectSubagentArtifact($block, $openedArtifacts);
+                $artifact = self::detectSubagentArtifact($block, $this->openedArtifacts);
                 if (null === $artifact) {
                     continue;
                 }
@@ -120,11 +116,11 @@ final class SubagentTabAutoListener implements TuiListenerRegistrar
                 if (null === $existingTab) {
                     // NEW artifact — create tab and auto-switch
                     $newTabIndex = $tabService->count();
-                    self::openArtifactTab(
+                    $this->openArtifactTab(
                         tabService: $tabService,
                         screen: $screen,
-                        client: $client,
-                        blockFactory: $blockFactory,
+                        client: $this->client,
+                        eventDispatcher: $this->eventDispatcher,
                         parentRunId: $parentRunId,
                         artifactId: $artifactId,
                         agentRunId: $agentRunId,
@@ -159,10 +155,10 @@ final class SubagentTabAutoListener implements TuiListenerRegistrar
                         continue;
                     }
 
-                    // Re-read child events to see if we have new data
+                    // Re-read child events and project through isolated pipeline
                     // Materialize once: AgentSessionClient::events() may return a single-pass Generator
-                    $freshEvents = self::iterableToArray($client->events($agentRunId));
-                    $freshBlocks = self::buildBlocksFromEvents($freshEvents, $blockFactory, $agentRunId);
+                    $freshEvents = self::iterableToArray($this->client->events($agentRunId));
+                    $freshBlocks = self::projectChildEvents($freshEvents, $agentRunId, $this->eventDispatcher);
 
                     if ([] !== $freshBlocks) {
                         $existingState->transcript = $freshBlocks;
@@ -187,7 +183,7 @@ final class SubagentTabAutoListener implements TuiListenerRegistrar
                     }
                 }
 
-                $openedArtifacts[$artifactId] = $status;
+                $this->openedArtifacts[$artifactId] = $status;
             }
 
             return null;
@@ -257,9 +253,9 @@ final class SubagentTabAutoListener implements TuiListenerRegistrar
     /**
      * Build transcript blocks from child RuntimeEvents.
      *
-     * Converts child agent events into display blocks without using the
-     * shared TranscriptProjector (which would corrupt the parent's projected
-     * block state).
+     * Kept for backward compatibility with existing tests.
+     * Production code uses projectChildEvents() which runs the real
+     * projection pipeline with DI-registered subscribers.
      *
      * @param iterable<RuntimeEvent> $events
      *
@@ -422,6 +418,39 @@ final class SubagentTabAutoListener implements TuiListenerRegistrar
         }
 
         return $blocks;
+    }
+
+    /**
+     * Project child RuntimeEvents into transcript blocks using an isolated
+     * real projection pipeline.
+     *
+     * Creates a fresh TranscriptProjectionState and TranscriptProjector so
+     * the shared parent projector state is never touched. This gives child
+     * tabs the same rich rendering as the main transcript (assistant messages,
+     * tool calls/results, cancellations, etc.) instead of the crude manual
+     * block mapping from earlier POC iterations.
+     *
+     * @param list<RuntimeEvent> $childEvents
+     *
+     * @return list<TranscriptBlock>
+     */
+    public static function projectChildEvents(
+        array $childEvents,
+        string $runId,
+        EventDispatcherInterface $eventDispatcher,
+    ): array {
+        $state = new TranscriptProjectionState();
+        $projector = new TranscriptProjector($eventDispatcher, $state);
+
+        foreach ($childEvents as $event) {
+            if (!$event instanceof RuntimeEvent) {
+                continue;
+            }
+
+            $projector->accept($event->toArray());
+        }
+
+        return $projector->blocks();
     }
 
     /**
@@ -608,15 +637,15 @@ final class SubagentTabAutoListener implements TuiListenerRegistrar
     /**
      * Open a tab for a subagent artifact.
      *
-     * When the subagent is still running, populates the tab with whatever
-     * child events have been written so far, adding a status placeholder
-     * if no events are available yet.
+     * When the subagent is still running, populates the tab with projected
+     * child events using an isolated real projection pipeline. Falls back
+     * to a status placeholder only when no child events are available yet.
      */
-    private static function openArtifactTab(
+    private function openArtifactTab(
         TabService $tabService,
         ChatScreen $screen,
         AgentSessionClient $client,
-        TranscriptBlockFactory $blockFactory,
+        EventDispatcherInterface $eventDispatcher,
         string $parentRunId,
         string $artifactId,
         string $agentRunId,
@@ -630,7 +659,7 @@ final class SubagentTabAutoListener implements TuiListenerRegistrar
         // Convert to array: events() may return a single-pass Generator
         $childEventsRaw = $client->events($agentRunId);
         $childEvents = self::iterableToArray($childEventsRaw);
-        $blocks = self::buildBlocksFromEvents($childEvents, $blockFactory, $agentRunId);
+        $blocks = self::projectChildEvents($childEvents, $agentRunId, $eventDispatcher);
 
         if ([] !== $blocks) {
             $childState->transcript = $blocks;

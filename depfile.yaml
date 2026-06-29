@@ -353,6 +353,7 @@ parameters:
     TuiListener:
       - AppRuntimeContract
       - AppRuntimeProjection
+      - AppRuntimeProjectionPipeline
       - AppSession
       - AppConfig
       - TuiRuntime
@@ -367,6 +368,7 @@ parameters:
       - TuiTheme
       - TuiUtility
       - SymfonyTui
+      - SymfonyEventDispatcher
 
     TuiRuntime:
       - AppRuntimeContract
