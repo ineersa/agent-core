@@ -122,6 +122,9 @@ final class SubmitListener implements TuiListenerRegistrar
             }
 
             // ── Interactive child tab routing: steer/cancel goes to child run ──
+            // Slash commands (/tab, /help, /exit) and shell commands (!ls) are
+            // handled locally by the router below — only normal text is routed
+            // to the child run as steer/follow-up.
             if (null !== $tabService) {
                 $activeTab = $tabService->active();
                 if (null !== $activeTab
@@ -129,31 +132,38 @@ final class SubmitListener implements TuiListenerRegistrar
                     && 'parent' !== $activeTab->id
                     && null !== $activeTab->state->handle
                 ) {
-                    // Route the submitted text as steer/follow-up to the child run
-                    $childState = $activeTab->state;
-                    $childRunId = $childState->handle->runId;
+                    $trimmed = trim($text);
 
-                    if ($childState->activity->isActive()) {
-                        $client->send($childRunId, new UserCommand(type: 'steer', text: $text));
-                    } else {
-                        $client->send($childRunId, new UserCommand(type: 'follow_up', text: $text));
+                    // Only normal (non-slash, non-shell) text goes to the child.
+                    // Slash and shell commands fall through to the router below.
+                    if ('' !== $trimmed && !str_starts_with($trimmed, '/') && !str_starts_with($trimmed, '!')) {
+                        // Route the submitted text as steer/follow-up to the child run
+                        $childState = $activeTab->state;
+                        $childRunId = $childState->handle->runId;
+
+                        if ($childState->activity->isActive()) {
+                            $client->send($childRunId, new UserCommand(type: 'steer', text: $text));
+                        } else {
+                            $client->send($childRunId, new UserCommand(type: 'follow_up', text: $text));
+                        }
+
+                        // Show the submitted text as a user message block in child transcript
+                        $childState->transcript[] = new TranscriptBlock(
+                            id: 'fork_steer_'.$childState->lastSeq + 1,
+                            kind: TranscriptBlockKindEnum::UserMessage,
+                            runId: $childRunId,
+                            seq: $childState->lastSeq + 1,
+                            text: $text,
+                        );
+                        ++$childState->lastSeq;
+                        $childState->activity = RunActivityStateEnum::Starting;
+
+                        $screen->setTranscriptBlocks($childState->transcript);
+                        $screen->clearEditor();
+
+                        return;
                     }
-
-                    // Show the submitted text as a user message block in child transcript
-                    $childState->transcript[] = new TranscriptBlock(
-                        id: 'fork_steer_'.$childState->lastSeq + 1,
-                        kind: TranscriptBlockKindEnum::UserMessage,
-                        runId: $childRunId,
-                        seq: $childState->lastSeq + 1,
-                        text: $text,
-                    );
-                    ++$childState->lastSeq;
-                    $childState->activity = RunActivityStateEnum::Starting;
-
-                    $screen->setTranscriptBlocks($childState->transcript);
-                    $screen->clearEditor();
-
-                    return;
+                    // Slash or shell command — fall through to router below
                 }
             }
 

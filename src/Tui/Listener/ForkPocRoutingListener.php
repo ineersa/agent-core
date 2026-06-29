@@ -113,7 +113,7 @@ final class ForkPocRoutingListener implements TuiListenerRegistrar
                 $screen->setTranscriptBlocks($parentState->transcript);
 
                 // ─── Step 2: Create placeholder tab ───
-                $placeholderId = 'fork-poc-starting-'.\md5($task.microtime());
+                $placeholderId = 'fork-poc-starting-'.md5($task.microtime());
 
                 $childState = new TuiSessionState(
                     sessionId: $placeholderId,
