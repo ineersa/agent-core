@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Artifact;
 
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathResolver;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
@@ -90,7 +91,7 @@ final class AgentArtifactRegistryTest extends TestCase
         $artifactId = 'agent_01HX';
         $agentRunId = 'child-'.bin2hex(random_bytes(4));
 
-        $entry = $this->registry->create($parentRunId, $artifactId, $agentRunId, 'scout');
+        $entry = $this->registry->create($parentRunId, $artifactId, $agentRunId, 'scout', AgentArtifactKindEnum::Subagent);
 
         self::assertSame($artifactId, $entry->artifactId);
         self::assertSame($parentRunId, $entry->parentRunId);
@@ -114,8 +115,8 @@ final class AgentArtifactRegistryTest extends TestCase
     {
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
 
-        $entry1 = $this->registry->create($parentRunId, 'scout-001', 'child-a', 'scout');
-        $entry2 = $this->registry->create($parentRunId, 'scout-002', 'child-b', 'scout');
+        $entry1 = $this->registry->create($parentRunId, 'scout-001', 'child-a', 'scout', AgentArtifactKindEnum::Subagent);
+        $entry2 = $this->registry->create($parentRunId, 'scout-002', 'child-b', 'scout', AgentArtifactKindEnum::Subagent);
 
         self::assertSame('scout-001', $entry1->artifactId);
         self::assertSame('scout-002', $entry2->artifactId);
@@ -128,12 +129,12 @@ final class AgentArtifactRegistryTest extends TestCase
     {
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
 
-        $this->registry->create($parentRunId, 'agent_01HX', 'child-a', 'scout');
+        $this->registry->create($parentRunId, 'agent_01HX', 'child-a', 'scout', AgentArtifactKindEnum::Subagent);
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('already exists');
 
-        $this->registry->create($parentRunId, 'agent_01HX', 'child-b', 'reviewer');
+        $this->registry->create($parentRunId, 'agent_01HX', 'child-b', 'reviewer', AgentArtifactKindEnum::Subagent);
     }
 
     public function testCreateRejectsEmptyParentRunId(): void
@@ -141,7 +142,7 @@ final class AgentArtifactRegistryTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('must not be empty');
 
-        $this->registry->create('', 'agent_01HX', 'child-a', 'scout');
+        $this->registry->create('', 'agent_01HX', 'child-a', 'scout', AgentArtifactKindEnum::Subagent);
     }
 
     public function testCreateRejectsPathSeparatorsInIds(): void
@@ -149,7 +150,7 @@ final class AgentArtifactRegistryTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('path separators');
 
-        $this->registry->create('parent', 'a/b', 'child-a', 'scout');
+        $this->registry->create('parent', 'a/b', 'child-a', 'scout', AgentArtifactKindEnum::Subagent);
     }
 
     public function testCreateRejectsDotInArtifactId(): void
@@ -157,7 +158,7 @@ final class AgentArtifactRegistryTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('must not be "."');
 
-        $this->registry->create('parent', '.', 'child-a', 'scout');
+        $this->registry->create('parent', '.', 'child-a', 'scout', AgentArtifactKindEnum::Subagent);
     }
 
     public function testCreateRejectsDotDotInArtifactId(): void
@@ -165,7 +166,7 @@ final class AgentArtifactRegistryTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('must not be ".."');
 
-        $this->registry->create('parent', '..', 'child-a', 'scout');
+        $this->registry->create('parent', '..', 'child-a', 'scout', AgentArtifactKindEnum::Subagent);
     }
 
     public function testCreateRejectsBackslashInArtifactId(): void
@@ -173,7 +174,7 @@ final class AgentArtifactRegistryTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('path separators');
 
-        $this->registry->create('parent', 'a\\b', 'child-a', 'scout');
+        $this->registry->create('parent', 'a\\b', 'child-a', 'scout', AgentArtifactKindEnum::Subagent);
     }
 
     public function testCreateRejectsNulByteInArtifactId(): void
@@ -181,13 +182,13 @@ final class AgentArtifactRegistryTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('NUL bytes');
 
-        $this->registry->create('parent', "bad\0id", 'child-a', 'scout');
+        $this->registry->create('parent', "bad\0id", 'child-a', 'scout', AgentArtifactKindEnum::Subagent);
     }
 
     public function testRegistryJsonIsValid(): void
     {
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
-        $this->registry->create($parentRunId, 'agent_01HX', 'child-a', 'scout');
+        $this->registry->create($parentRunId, 'agent_01HX', 'child-a', 'scout', AgentArtifactKindEnum::Subagent);
 
         $path = $this->projectDir.'/.hatfield/sessions/'.$parentRunId.'/artifacts/agents/registry.json';
         $data = json_decode(file_get_contents($path), true, 512, \JSON_THROW_ON_ERROR);
@@ -208,7 +209,7 @@ final class AgentArtifactRegistryTest extends TestCase
     public function testGetReturnsExistingEntry(): void
     {
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
-        $this->registry->create($parentRunId, 'scout-001', 'child-a', 'scout');
+        $this->registry->create($parentRunId, 'scout-001', 'child-a', 'scout', AgentArtifactKindEnum::Subagent);
 
         $entry = $this->registry->get($parentRunId, 'scout-001');
 
@@ -228,7 +229,7 @@ final class AgentArtifactRegistryTest extends TestCase
     {
         $parentA = 'parent-a-'.bin2hex(random_bytes(4));
         $parentB = 'parent-b-'.bin2hex(random_bytes(4));
-        $this->registry->create($parentA, 'agent_01HX', 'child-a', 'scout');
+        $this->registry->create($parentA, 'agent_01HX', 'child-a', 'scout', AgentArtifactKindEnum::Subagent);
 
         self::assertNull($this->registry->get($parentB, 'agent_01HX'));
     }
@@ -260,8 +261,8 @@ final class AgentArtifactRegistryTest extends TestCase
     public function testFindByAgentRunId(): void
     {
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
-        $this->registry->create($parentRunId, 'agent_01HX', 'child-run-abc', 'scout');
-        $this->registry->create($parentRunId, 'agent_02HX', 'child-run-xyz', 'reviewer');
+        $this->registry->create($parentRunId, 'agent_01HX', 'child-run-abc', 'scout', AgentArtifactKindEnum::Subagent);
+        $this->registry->create($parentRunId, 'agent_02HX', 'child-run-xyz', 'reviewer', AgentArtifactKindEnum::Subagent);
 
         // Find by agentRunId
         $entry = $this->registry->findByAgentRunId($parentRunId, 'child-run-abc');
@@ -278,7 +279,7 @@ final class AgentArtifactRegistryTest extends TestCase
     public function testUpdateTransitionsStatusToRunning(): void
     {
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
-        $this->registry->create($parentRunId, 'agent_01HX', 'child-a', 'scout');
+        $this->registry->create($parentRunId, 'agent_01HX', 'child-a', 'scout', AgentArtifactKindEnum::Subagent);
 
         $updated = $this->registry->update(
             parentRunId: $parentRunId,
@@ -300,7 +301,7 @@ final class AgentArtifactRegistryTest extends TestCase
     public function testUpdateTransitionsToCompleted(): void
     {
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
-        $this->registry->create($parentRunId, 'agent_01HX', 'child-a', 'scout');
+        $this->registry->create($parentRunId, 'agent_01HX', 'child-a', 'scout', AgentArtifactKindEnum::Subagent);
 
         $updated = $this->registry->update(
             parentRunId: $parentRunId,
@@ -324,7 +325,7 @@ final class AgentArtifactRegistryTest extends TestCase
     public function testUpdateTransitionsToFailed(): void
     {
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
-        $this->registry->create($parentRunId, 'agent_01HX', 'child-a', 'scout');
+        $this->registry->create($parentRunId, 'agent_01HX', 'child-a', 'scout', AgentArtifactKindEnum::Subagent);
 
         $updated = $this->registry->update(
             parentRunId: $parentRunId,
@@ -342,7 +343,7 @@ final class AgentArtifactRegistryTest extends TestCase
     public function testUpdateTransitionsToNeedsClarification(): void
     {
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
-        $this->registry->create($parentRunId, 'agent_01HX', 'child-a', 'scout');
+        $this->registry->create($parentRunId, 'agent_01HX', 'child-a', 'scout', AgentArtifactKindEnum::Subagent);
 
         $updated = $this->registry->update(
             parentRunId: $parentRunId,
@@ -360,7 +361,7 @@ final class AgentArtifactRegistryTest extends TestCase
     public function testUpdatePreservesIdentityFields(): void
     {
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
-        $this->registry->create($parentRunId, 'agent_01HX', 'child-a', 'scout');
+        $this->registry->create($parentRunId, 'agent_01HX', 'child-a', 'scout', AgentArtifactKindEnum::Subagent);
 
         $updated = $this->registry->update(
             parentRunId: $parentRunId,
@@ -417,8 +418,8 @@ final class AgentArtifactRegistryTest extends TestCase
     public function testListReturnsAllEntriesForParent(): void
     {
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
-        $this->registry->create($parentRunId, 'scout-001', 'child-a', 'scout');
-        $this->registry->create($parentRunId, 'reviewer-001', 'child-b', 'reviewer');
+        $this->registry->create($parentRunId, 'scout-001', 'child-a', 'scout', AgentArtifactKindEnum::Subagent);
+        $this->registry->create($parentRunId, 'reviewer-001', 'child-b', 'reviewer', AgentArtifactKindEnum::Subagent);
 
         $entries = $this->registry->list($parentRunId);
         self::assertCount(2, $entries);
@@ -483,7 +484,7 @@ final class AgentArtifactRegistryTest extends TestCase
     public function testSequentialUpdatesDoNotCorruptRegistry(): void
     {
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
-        $this->registry->create($parentRunId, 'agent_01HX', 'child-a', 'scout');
+        $this->registry->create($parentRunId, 'agent_01HX', 'child-a', 'scout', AgentArtifactKindEnum::Subagent);
 
         // Simulate multiple sequential updates (pending → running → completed)
         $this->registry->update(
@@ -515,8 +516,8 @@ final class AgentArtifactRegistryTest extends TestCase
         $parentA = 'parent-a-'.bin2hex(random_bytes(4));
         $parentB = 'parent-b-'.bin2hex(random_bytes(4));
 
-        $this->registry->create($parentA, 'agent_a', 'child-a', 'scout');
-        $this->registry->create($parentB, 'agent_b', 'child-b', 'reviewer');
+        $this->registry->create($parentA, 'agent_a', 'child-a', 'scout', AgentArtifactKindEnum::Subagent);
+        $this->registry->create($parentB, 'agent_b', 'child-b', 'reviewer', AgentArtifactKindEnum::Subagent);
 
         // Update only parent A
         $this->registry->update($parentA, 'agent_a', status: AgentArtifactStatusEnum::Completed);
@@ -532,7 +533,7 @@ final class AgentArtifactRegistryTest extends TestCase
     public function testMetadataJsonContainsRequiredFields(): void
     {
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
-        $this->registry->create($parentRunId, 'agent_01HX', 'child-a', 'scout');
+        $this->registry->create($parentRunId, 'agent_01HX', 'child-a', 'scout', AgentArtifactKindEnum::Subagent);
 
         $metadataPath = $this->projectDir.'/.hatfield/sessions/'.$parentRunId.'/artifacts/agents/agent_01HX/metadata.json';
         self::assertFileExists($metadataPath);
@@ -551,7 +552,7 @@ final class AgentArtifactRegistryTest extends TestCase
     public function testHandoffMdIsCreatedEmpty(): void
     {
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
-        $this->registry->create($parentRunId, 'agent_01HX', 'child-a', 'scout');
+        $this->registry->create($parentRunId, 'agent_01HX', 'child-a', 'scout', AgentArtifactKindEnum::Subagent);
 
         $handoffPath = $this->projectDir.'/.hatfield/sessions/'.$parentRunId.'/artifacts/agents/agent_01HX/handoff.md';
         self::assertFileExists($handoffPath);
@@ -572,7 +573,7 @@ final class AgentArtifactRegistryTest extends TestCase
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Corrupt registry.json');
 
-        $this->registry->create($parentRunId, 'agent_01HX', 'child-a', 'scout');
+        $this->registry->create($parentRunId, 'agent_01HX', 'child-a', 'scout', AgentArtifactKindEnum::Subagent);
     }
 
     public function testCorruptRegistryJsonThrowsOnGet(): void
@@ -635,6 +636,7 @@ final class AgentArtifactRegistryTest extends TestCase
                 'parent_run_id' => $parentRunId,
                 'agent_run_id' => 'child-a',
                 'agent_name' => 'scout',
+                'kind' => 'subagent',
                 'status' => 'nonexistent_status',
                 'created_at' => '2026-06-22T12:00:00+00:00',
                 'paths' => [
@@ -716,6 +718,7 @@ final class AgentArtifactRegistryTest extends TestCase
                 'parent_run_id' => $parentRunId,
                 'agent_run_id' => 'child-a',
                 'agent_name' => 'scout',
+                'kind' => 'subagent',
                 'status' => 'pending',
                 'created_at' => '2026-06-22T12:00:00+00:00',
                 'paths' => [
@@ -749,6 +752,7 @@ final class AgentArtifactRegistryTest extends TestCase
                 'parent_run_id' => $parentRunId,
                 'agent_run_id' => 'child-a',
                 'agent_name' => 'scout',
+                'kind' => 'subagent',
                 'status' => 'pending',
                 'created_at' => '2026-06-22T12:00:00+00:00',
                 'paths' => [
@@ -773,7 +777,7 @@ final class AgentArtifactRegistryTest extends TestCase
         $artifactId = 'agent_read_01';
         $agentRunId = 'child-'.bin2hex(random_bytes(4));
 
-        $this->registry->create($parentRunId, $artifactId, $agentRunId, 'scout');
+        $this->registry->create($parentRunId, $artifactId, $agentRunId, 'scout', AgentArtifactKindEnum::Subagent);
         $this->registry->writeHandoff($parentRunId, $artifactId, "# Handoff
 
 Done.");

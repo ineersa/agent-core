@@ -15,6 +15,7 @@ use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
@@ -113,6 +114,7 @@ final class SubagentExecutionService
             artifactId: $artifactId,
             agentRunId: $agentRunId,
             agentName: $agentName,
+            kind: AgentArtifactKindEnum::Subagent,
         );
 
         // Pre-populate the locator so routers find the child store immediately.
@@ -400,6 +402,7 @@ final class SubagentExecutionService
                     artifactId: $launch['artifactId'],
                     agentRunId: $launch['agentRunId'],
                     agentName: $launch['agentName'],
+                    kind: AgentArtifactKindEnum::Subagent,
                 );
                 $this->childRunDirectory->register($entry);
 

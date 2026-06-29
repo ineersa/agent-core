@@ -17,6 +17,7 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRetrievalService;
 use Ineersa\CodingAgent\Agent\Artifact\AgentRetrieveArgumentsFactory;
 use Ineersa\CodingAgent\Config\AgentArtifactRetrievalLimitsConfig;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
@@ -77,7 +78,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $parent = 'parent-a';
         $artifactId = 'agent_done';
         $childRun = 'child-run-1';
-        $this->registry->create($parent, $artifactId, $childRun, 'scout');
+        $this->registry->create($parent, $artifactId, $childRun, 'scout', AgentArtifactKindEnum::Subagent);
         $this->registry->update($parent, $artifactId, status: AgentArtifactStatusEnum::Completed, summary: 'ok');
         $this->registry->writeHandoff($parent, $artifactId, "## Result\n\nFound routing config.");
 
@@ -94,7 +95,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $parent = 'parent-b';
         $artifactId = 'agent_fail';
         $childRun = 'child-run-2';
-        $this->registry->create($parent, $artifactId, $childRun, 'reviewer');
+        $this->registry->create($parent, $artifactId, $childRun, 'reviewer', AgentArtifactKindEnum::Subagent);
         $this->registry->update(
             $parent,
             $artifactId,
@@ -114,7 +115,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $parent = 'parent-c';
         $artifactId = 'agent_nc';
         $childRun = 'child-run-3';
-        $this->registry->create($parent, $artifactId, $childRun, 'scout');
+        $this->registry->create($parent, $artifactId, $childRun, 'scout', AgentArtifactKindEnum::Subagent);
         $this->registry->update(
             $parent,
             $artifactId,
@@ -134,7 +135,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $parent = 'parent-d';
         $artifactId = 'agent_by_run';
         $childRun = 'uuid-child-99';
-        $this->registry->create($parent, $artifactId, $childRun, 'worker');
+        $this->registry->create($parent, $artifactId, $childRun, 'worker', AgentArtifactKindEnum::Subagent);
         $this->registry->writeHandoff($parent, $artifactId, 'handoff-by-run');
 
         $service = $this->makeService();
@@ -173,7 +174,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $otherParent = 'parent-other';
         $artifactId = 'agent_foreign';
         $childRun = 'foreign-child';
-        $this->registry->create($otherParent, $artifactId, $childRun, 'scout');
+        $this->registry->create($otherParent, $artifactId, $childRun, 'scout', AgentArtifactKindEnum::Subagent);
         $this->directory->register($this->registry->get($otherParent, $artifactId));
 
         $service = $this->makeService();
@@ -201,8 +202,8 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
     public function testRejectsMismatchedArtifactIdAndAgentRunId(): void
     {
         $parent = 'parent-e';
-        $this->registry->create($parent, 'artifact-one', 'run-one', 'scout');
-        $this->registry->create($parent, 'artifact-two', 'run-two', 'scout');
+        $this->registry->create($parent, 'artifact-one', 'run-one', 'scout', AgentArtifactKindEnum::Subagent);
+        $this->registry->create($parent, 'artifact-two', 'run-two', 'scout', AgentArtifactKindEnum::Subagent);
 
         $service = $this->makeService();
 
@@ -219,7 +220,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $parent = 'parent-f';
         $artifactId = 'agent_events';
         $childRun = 'child-events';
-        $this->registry->create($parent, $artifactId, $childRun, 'scout');
+        $this->registry->create($parent, $artifactId, $childRun, 'scout', AgentArtifactKindEnum::Subagent);
 
         $secret = 'RAW_TOOL_OUTPUT_SECRET_12345';
         $events = [];
@@ -251,7 +252,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $parent = 'parent-g';
         $artifactId = 'agent_hist';
         $childRun = 'child-hist';
-        $this->registry->create($parent, $artifactId, $childRun, 'scout');
+        $this->registry->create($parent, $artifactId, $childRun, 'scout', AgentArtifactKindEnum::Subagent);
 
         $secret = 'FULL_PROMPT_SECRET_XYZ';
         $toolSecret = 'RAW_TOOL_OUTPUT_HISTORY_SECRET_999';
@@ -285,7 +286,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $parent = 'parent-debug';
         $artifactId = 'agent_debug_paths';
         $childRun = 'child-debug-run';
-        $this->registry->create($parent, $artifactId, $childRun, 'scout');
+        $this->registry->create($parent, $artifactId, $childRun, 'scout', AgentArtifactKindEnum::Subagent);
 
         $isolatedRoot = (string) getcwd();
         self::assertNotSame('', $isolatedRoot);
@@ -311,7 +312,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $parent = 'parent-cancel-retrieve';
         $artifactId = 'agent_cancel_handoff';
         $childRun = 'child-cancel-retrieve';
-        $this->registry->create($parent, $artifactId, $childRun, 'scout');
+        $this->registry->create($parent, $artifactId, $childRun, 'scout', AgentArtifactKindEnum::Subagent);
         $this->registry->update($parent, $artifactId, status: AgentArtifactStatusEnum::Cancelled, summary: 'Cancelled by parent run.');
         $this->registry->writeHandoff($parent, $artifactId, "# Subagent handoff\n\nStatus: cancelled\nArtifact: {$artifactId}\n\n## Partial context\n\n- turn_no: 2\n\n## Retrieval\n\nUse agent_retrieve");
 
@@ -328,7 +329,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $parent = 'parent-cancel-meta';
         $artifactId = 'agent_cancel_meta';
         $childRun = 'child-cancel-meta';
-        $this->registry->create($parent, $artifactId, $childRun, 'scout');
+        $this->registry->create($parent, $artifactId, $childRun, 'scout', AgentArtifactKindEnum::Subagent);
         $this->registry->update($parent, $artifactId, status: AgentArtifactStatusEnum::Cancelled, summary: 'Child run was cancelled.');
 
         $runStore = $this->createStub(RunStoreInterface::class);
