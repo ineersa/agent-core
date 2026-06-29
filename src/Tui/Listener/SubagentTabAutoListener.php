@@ -160,7 +160,8 @@ final class SubagentTabAutoListener implements TuiListenerRegistrar
                     }
 
                     // Re-read child events to see if we have new data
-                    $freshEvents = $client->events($agentRunId);
+                    // Materialize once: AgentSessionClient::events() may return a single-pass Generator
+                    $freshEvents = self::iterableToArray($client->events($agentRunId));
                     $freshBlocks = self::buildBlocksFromEvents($freshEvents, $blockFactory, $agentRunId);
 
                     if ([] !== $freshBlocks) {
@@ -577,12 +578,16 @@ final class SubagentTabAutoListener implements TuiListenerRegistrar
                 continue;
             }
 
-            return match ($event->type) {
+            $status = match ($event->type) {
                 RuntimeEventTypeEnum::RunCompleted->value => 'completed',
                 RuntimeEventTypeEnum::RunFailed->value => 'failed',
                 RuntimeEventTypeEnum::RunCancelled->value => 'cancelled',
-                default => 'completed',
+                default => null,
             };
+
+            if (null !== $status) {
+                return $status;
+            }
         }
 
         return 'completed';
