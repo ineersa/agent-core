@@ -83,8 +83,11 @@ final class ControllerReplaySmokeTest extends ControllerReplayE2eTestCase
 
         // Collect until the tool completes (or terminal run state).
         // The replay fixture returns a tool_call stop_reason after a
-        // single read invocation.
-        $events = $this->collectEventsUntilToolCompleted('read', 5.0);
+        // single read invocation.  The 12s budget from liveLlmToolWaitTimeout()
+        // matches liveControllerReadyTimeout() — under parallel castor check
+        // load the controller subprocess + Messenger consumers may be
+        // CPU-starved and the old 5s wall-clock budget was too tight.
+        $events = $this->collectEventsUntilToolCompleted('read', $this->liveLlmToolWaitTimeout());
         $byType = $this->indexByType($events);
 
         // ── Mandatory: controller acknowledged the start_run command ──
