@@ -291,6 +291,118 @@ final readonly class RunStateReplayService
         };
     }
 
+    /**
+     * Rebuild RunState by filtering events to only the active branch path to a target leaf.
+     *
+     * Fetches the full event stream from the store, uses the target leaf turn number
+     * to filter events to only those on the root→target path, and replays them.
+     * After replay, lastSeq is overwritten to the full canonical max so the state
+     * is current with respect to the append-only event log.
+     *
+     * This method always rebuilds unconditionally (no stale/current check).
+     * All canonical stream integrity checks (duplicates, contiguity) are performed
+     * on the full unfiltered stream before filtering.
+     *
+     * @throws RunStateReplayException when the event history has non-contiguous
+     *                                 sequences on the full canonical stream
+     */
+    public function rebuildForLeaf(RunState $state, string $runId, int $targetLeafTurnNo): RunStateReplayResult
+    {
+        $events = $this->eventStore->allFor($runId);
+
+        if ([] === $events) {
+            return RunStateReplayResult::noEvents();
+        }
+
+        $sortedEvents = $this->sortBySequence($events);
+        $maxEventSeq = $this->maxSequence($sortedEvents);
+
+        RunLogContext::enter(['run_id' => $runId, 'component' => 'replay']);
+
+        try {
+            // Full-stream integrity checks (duplicates + contiguity) on the
+            // canonical stream before branch filtering.
+            $duplicateSeqs = $this->duplicateSequences($sortedEvents);
+            if ([] !== $duplicateSeqs) {
+                $this->logger->error('run_state_replay.duplicate_sequences', [
+                    'run_id' => $runId,
+                    'event_count' => \count($sortedEvents),
+                    'duplicate_sequences' => $duplicateSeqs,
+                    'duplicate_count' => \count($duplicateSeqs),
+                ]);
+
+                throw new RunStateReplayException(\sprintf('Cannot replay run %s for leaf %d: event history contains %d duplicate sequence number(s): %s.', $runId, $targetLeafTurnNo, \count($duplicateSeqs), implode(', ', array_map('strval', \array_slice($duplicateSeqs, 0, 10)))));
+            }
+
+            $missingSequences = $this->missingSequences($sortedEvents);
+            $isContiguous = [] === $missingSequences;
+
+            if (!$isContiguous) {
+                $this->logger->error('run_state_replay.non_contiguous_for_leaf', [
+                    'run_id' => $runId,
+                    'target_leaf_turn_no' => $targetLeafTurnNo,
+                    'event_count' => \count($sortedEvents),
+                    'missing_sequences' => $missingSequences,
+                ]);
+
+                throw new RunStateReplayException(\sprintf('Cannot replay run %s for leaf %d: event history has %d missing sequences. Expected contiguous range 1..%d, found gaps at: %s.', $runId, $targetLeafTurnNo, \count($missingSequences), $maxEventSeq, implode(', ', array_map('strval', \array_slice($missingSequences, 0, 10)))));
+            }
+
+            // Filter to the target leaf's branch path.
+            $filteredEvents = $sortedEvents;
+            if (null !== $this->turnTreeReplayFilter) {
+                $branchReplay = $this->turnTreeReplayFilter->filterForLeaf($runId, $sortedEvents, $targetLeafTurnNo);
+                $filteredEvents = $branchReplay->events;
+
+                $this->logger->info('run_state_replay.rebuild_for_leaf_filtered', [
+                    'run_id' => $runId,
+                    'target_leaf_turn_no' => $targetLeafTurnNo,
+                    'canonical_event_count' => $branchReplay->canonicalEventCount,
+                    'filtered_event_count' => \count($filteredEvents),
+                    'active_branch_turns' => $branchReplay->activePathTurnNos,
+                ]);
+            }
+
+            $rebuiltState = $this->replay($state, $filteredEvents);
+
+            // Overwrite lastSeq to the full canonical stream max so the state
+            // is current with respect to the append-only event log.
+            $rebuiltState = new RunState(
+                runId: $rebuiltState->runId,
+                status: $rebuiltState->status,
+                version: $rebuiltState->version,
+                turnNo: $rebuiltState->turnNo,
+                lastSeq: $maxEventSeq,
+                isStreaming: $rebuiltState->isStreaming,
+                streamingMessage: $rebuiltState->streamingMessage,
+                pendingToolCalls: $rebuiltState->pendingToolCalls,
+                errorMessage: $rebuiltState->errorMessage,
+                messages: $rebuiltState->messages,
+                activeStepId: $rebuiltState->activeStepId,
+                retryableFailure: $rebuiltState->retryableFailure,
+                retryAttempts: $rebuiltState->retryAttempts,
+            );
+
+            $this->logger->info('run_state_replay.rebuilt_for_leaf', [
+                'run_id' => $runId,
+                'target_leaf_turn_no' => $targetLeafTurnNo,
+                'rebuilt_message_count' => \count($rebuiltState->messages),
+                'rebuilt_status' => $rebuiltState->status->value,
+                'rebuilt_turn_no' => $rebuiltState->turnNo,
+            ]);
+
+            return RunStateReplayResult::rebuilt(
+                $rebuiltState,
+                $maxEventSeq,
+                \count($sortedEvents),
+                $isContiguous,
+                $missingSequences,
+            );
+        } finally {
+            RunLogContext::leave();
+        }
+    }
+
     // ── Event reducers ──────────────────────────────────────────────────────
 
     /**

@@ -29,7 +29,10 @@ final class TurnTreeReplayFilter
     }
 
     /**
-     * Filter an unsorted event list to only active-branch events.
+     * Filter an unsorted event list to only active-branch events
+     * (uses the project's current leaf from the event stream).
+     *
+     * Delegates to {@see filterForLeaf()} with the current leaf.
      *
      * @param list<RunEvent> $events Unsorted canonical events
      *
@@ -38,7 +41,37 @@ final class TurnTreeReplayFilter
     public function filter(string $runId, array $events): TurnBranchReplayDTO
     {
         $tree = $this->projector->build($runId, $events);
-        $activePathTurnNos = $tree->activePathTurnNos;
+        $targetLeaf = $tree->currentLeafTurnNo;
+
+        return $this->filterForLeaf($runId, $events, $targetLeaf);
+    }
+
+    /**
+     * Filter an unsorted event list to only events on a specific branch path.
+     *
+     * Uses {@see TurnTreeProjector::activePathTo()} to compute the root-to-target
+     * turn path, then includes:
+     *  - Run-level events (turnNo === 0, e.g. run_started)
+     *  - Events whose turnNo is in the active branch path
+     *  - Tree metadata events (leaf_set, turn_branched)
+     *
+     * @param list<RunEvent> $events Unsorted canonical events
+     * @param int|null       $targetLeafTurnNo Target leaf turn number (null = use current leaf)
+     *
+     * @return TurnBranchReplayDTO Filtered result with full-stream diagnostics
+     */
+    public function filterForLeaf(string $runId, array $events, ?int $targetLeafTurnNo = null): TurnBranchReplayDTO
+    {
+        $tree = $this->projector->build($runId, $events);
+
+        if (null === $targetLeafTurnNo) {
+            $targetLeafTurnNo = $tree->currentLeafTurnNo;
+        }
+
+        // Use activePathTo for the target leaf (not the current leaf's path).
+        $activePathTurnNos = null !== $targetLeafTurnNo && [] !== $tree->nodesByTurnNo
+            ? TurnTreeProjector::activePathTo($targetLeafTurnNo, $tree->nodesByTurnNo)
+            : [];
 
         $canonicalEventCount = \count($events);
         $canonicalLastSeq = $this->maxSeq($events);
@@ -51,7 +84,7 @@ final class TurnTreeReplayFilter
                 continue;
             }
 
-            // Include events on the active branch path.
+            // Include events on the target leaf's path.
             if (\in_array($event->turnNo, $activePathTurnNos, true)) {
                 $filtered[] = $event;
                 continue;
@@ -75,7 +108,7 @@ final class TurnTreeReplayFilter
             canonicalEventCount: $canonicalEventCount,
             canonicalLastSeq: $canonicalLastSeq,
             activePathTurnNos: $activePathTurnNos,
-            currentLeafTurnNo: $tree->currentLeafTurnNo,
+            currentLeafTurnNo: $targetLeafTurnNo,
         );
     }
 

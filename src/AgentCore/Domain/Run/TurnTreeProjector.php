@@ -22,6 +22,8 @@ use function Symfony\Component\String\u;
  *    full tree and identifies the active branch path.
  *
  * This is a pure domain service with no side effects and no DB/IO dependency.
+ *
+ * @phpstan-type TurnInfo array<int, array{parentTurnNo: int|null, anchorSeq: int, anchorIndex: int, createdAt: \DateTimeImmutable, reason: string|null}>
  */
 final class TurnTreeProjector
 {
@@ -237,6 +239,45 @@ final class TurnTreeProjector
         }
 
         // Reverse to get root-to-leaf order.
+        return array_reverse($path);
+    }
+
+    /**
+     * Compute the path from root to an arbitrary leaf turn in the tree.
+     *
+     * Walks the parentTurnNo chain upward from the target turn to the root,
+     * then returns the list in root-to-leaf order.
+     *
+     * @param array<int, TurnTreeNodeDTO> $nodesByTurnNo
+     *
+     * @return list<int>
+     */
+    public static function activePathTo(int $targetTurnNo, array $nodesByTurnNo): array
+    {
+        if (!isset($nodesByTurnNo[$targetTurnNo])) {
+            return [];
+        }
+
+        $path = [];
+        $visited = [];
+        $cursor = $targetTurnNo;
+
+        while (null !== $cursor) {
+            if (\in_array($cursor, $visited, true)) {
+                throw new \RuntimeException(\sprintf('Cycle detected in turn tree at turn %d.', $cursor));
+            }
+
+            $visited[] = $cursor;
+            $path[] = $cursor;
+
+            $node = $nodesByTurnNo[$cursor] ?? null;
+            if (null === $node) {
+                break;
+            }
+
+            $cursor = $node->parentTurnNo;
+        }
+
         return array_reverse($path);
     }
 
