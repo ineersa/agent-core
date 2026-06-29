@@ -67,7 +67,7 @@ final readonly class AnswerHumanHandler
         // Reject missing or non-scalar answers so that safety-critical
         // approvals are never silently passed through with a null/missing
         // answer value that could be misinterpreted downstream.
-        if (!\is_scalar($answer) || '' === (string) $answer) {
+        if (!\is_scalar($answer) || (\is_string($answer) && '' === $answer)) {
             $event->emit(new RuntimeEvent(
                 type: RuntimeEventTypeEnum::ProtocolError->value,
                 runId: $runId,
