@@ -1148,6 +1148,22 @@ final class TranscriptProjectorTest extends TestCase
 
     // ── HITL ─────────────────────────────────────────────────────────────────
 
+    public function testToolQuestionRequestedDoesNotCreateTranscriptBlock(): void
+    {
+        // Local TUI questions (e.g. BashTool background prompts) flow as
+        // tool_question.requested. The projector must never turn them into
+        // transcript blocks — only human_input.* / approval.* (HITL) create blocks.
+        $this->accept('tool_question.requested', [
+            'question_id' => 'tq_01',
+            'kind' => 'confirm',
+            'prompt' => 'Keep waiting?',
+            'schema' => ['type' => 'boolean'],
+        ]);
+
+        self::assertCount(0, $this->projector->blocks(),
+            'tool_question.requested must not create transcript blocks');
+    }
+
     public function testHumanInputRequestedCreatesQuestionBlock(): void
     {
         $this->accept('human_input.requested', [
