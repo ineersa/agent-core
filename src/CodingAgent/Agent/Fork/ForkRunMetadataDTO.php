@@ -23,21 +23,24 @@ use Symfony\Component\Serializer\Attribute\SerializedName;
 final readonly class ForkRunMetadataDTO
 {
     public const int DEFAULT_VALIDATION_ATTEMPTS = 0;
+    public const string CANDIDATE_HANDOFF_FILENAME = 'candidate-handoff.md';
 
     /**
-     * @param string                  $runId              Fork artifact run ID
-     * @param string                  $parentRunId        Parent session run ID
-     * @param string|null             $childRunId         Child session run ID (set when child starts)
-     * @param ForkLevelEnum           $level              Resolved fork level
-     * @param string|null             $resolvedModel      Resolved model (null = session model)
-     * @param string                  $cwd                Working directory for the fork
-     * @param string                  $task               Fork task description
-     * @param AgentArtifactStatusEnum $status             Lifecycle status
-     * @param \DateTimeImmutable|null $startedAt          When the fork started
-     * @param \DateTimeImmutable|null $completedAt        When the fork completed
-     * @param int|null                $pid                OS process ID of the fork
-     * @param string|null             $error              Error message on failure
-     * @param int                     $validationAttempts Number of handoff validation attempts
+     * @param string                  $runId                Fork artifact run ID
+     * @param string                  $parentRunId          Parent session run ID
+     * @param string|null             $childRunId           Child session run ID (set when child starts)
+     * @param ForkLevelEnum           $level                Resolved fork level
+     * @param string|null             $resolvedModel        Resolved model (null = session model)
+     * @param string                  $cwd                  Working directory for the fork
+     * @param string                  $task                 Fork task description
+     * @param AgentArtifactStatusEnum $status               Lifecycle status
+     * @param \DateTimeImmutable|null $startedAt            When the fork started
+     * @param \DateTimeImmutable|null $completedAt          When the fork completed
+     * @param int|null                $pid                  OS process ID of the fork
+     * @param string|null             $error                Error message on failure
+     * @param int                     $validationAttempts   Number of handoff validation attempts
+     * @param string|null             $candidateHandoffPath Path to the invalid candidate handoff file (for diagnostics)
+     * @param string|null             $validationError      Validator error message on handoff failure
      */
     public function __construct(
         #[SerializedName('run_id')]
@@ -78,6 +81,12 @@ final readonly class ForkRunMetadataDTO
 
         #[SerializedName('validation_attempts')]
         public int $validationAttempts = self::DEFAULT_VALIDATION_ATTEMPTS,
+
+        #[SerializedName('candidate_handoff_path')]
+        public ?string $candidateHandoffPath = null,
+
+        #[SerializedName('validation_error')]
+        public ?string $validationError = null,
     ) {
     }
 }
