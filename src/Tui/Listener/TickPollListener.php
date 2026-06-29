@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Listener;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
@@ -16,6 +17,7 @@ use Ineersa\Tui\Question\QuestionKind;
 use Ineersa\Tui\Question\QuestionOption;
 use Ineersa\Tui\Question\QuestionRequest;
 use Ineersa\Tui\Question\QuestionSource;
+use Ineersa\Tui\Runtime\ForkPocPendingStore;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\RuntimeEventPoller;
 use Ineersa\Tui\Runtime\TabInputModeEnum;
@@ -42,6 +44,7 @@ final class TickPollListener implements TuiListenerRegistrar
         private readonly QuestionCoordinator $questionCoordinator,
         private readonly QuestionController $questionController,
         private readonly ?AgentSessionClient $inProcessClient = null,
+        private readonly ?ForkPocPendingStore $pendingStore = null,
     ) {
     }
 
@@ -63,7 +66,9 @@ final class TickPollListener implements TuiListenerRegistrar
         // about in-process child runs, so child events would be invisible.
         $childEventClient = $this->inProcessClient ?? $client;
 
-        $context->ticks->add(static function () use ($poller, $context, $client, $childEventClient, $screen, $questionCoordinator, $questionController): ?bool {
+        $pendingStore = $this->pendingStore;
+
+        $context->ticks->add(static function () use ($poller, $context, $client, $childEventClient, $screen, $questionCoordinator, $questionController, $pendingStore): ?bool {
             // POC: ALWAYS poll the PARENT state ($context->state) regardless of active tab.
             // This ensures the parent runtime events are always consumed so:
             //   - Parent transcript stays up to date (critical for subagent artifact detection)
@@ -94,6 +99,28 @@ final class TickPollListener implements TuiListenerRegistrar
                 onToolQuestionRequested: $onToolQuestion,
                 onToolTerminal: $onToolTerminal,
             );
+
+            // ── POC: process deferred fork-poc starts ──
+            // ForkPocRoutingListener creates a placeholder tab and enqueues the
+            // pending start. We process it here on a later tick, AFTER the tick
+            // event loop has called processRender() which shows the placeholder
+            // to the user. The blocking $client->start() call happens after at
+            // least one render of the placeholder.
+            if (null !== $pendingStore) {
+                $tabService = $context->tabService;
+                $readyItems = $pendingStore->tick();
+                foreach ($readyItems as $ready) {
+                    self::processPendingStart(
+                        pending: $ready,
+                        client: $childEventClient,
+                        tabService: $tabService,
+                        screen: $screen,
+                        parentState: $parentState,
+                        context: $context,
+                        pendingStore: $pendingStore,
+                    );
+                }
+            }
 
             // POC: poll interactive child tabs (fork POC runs with real handles)
             $tabService = $context->tabService;
@@ -578,5 +605,138 @@ final class TickPollListener implements TuiListenerRegistrar
                 ));
             },
         );
+    }
+
+    /**
+     * Process a deferred fork-poc pending start.
+     *
+     * Called from the tick handler after the placeholder tab has been
+     * rendered. This is where the blocking $client->start() call happens.
+     *
+     * @param array{placeholderRunId: string, placeholderId: string, task: string, cwd: string} $pending
+     */
+    private static function processPendingStart(
+        array $pending,
+        AgentSessionClient $client,
+        ?\Ineersa\Tui\Runtime\TabService $tabService,
+        \Ineersa\Tui\Screen\ChatScreen $screen,
+        \Ineersa\Tui\Runtime\TuiSessionState $parentState,
+        TuiRuntimeContext $context,
+        ForkPocPendingStore $pendingStore,
+    ): void {
+        $placeholderRunId = $pending['placeholderRunId'];
+        $placeholderId = $pending['placeholderId'];
+        $task = $pending['task'];
+
+        if (null === $tabService) {
+            return;
+        }
+
+        // Find the placeholder tab
+        $tab = $tabService->findTabById($placeholderRunId);
+        if (null === $tab) {
+            return;
+        }
+
+        $childState = $tab->state;
+
+        // Update placeholder message now that we're about to actually start
+        $childState->transcript[] = new TranscriptBlock(
+            id: 'fork_poc_starting_'.$placeholderId,
+            kind: TranscriptBlockKindEnum::System,
+            runId: $placeholderId,
+            seq: 1,
+            text: "\u{25d0} Starting fork child run... (sync transport, may take a moment)",
+        );
+
+        // Update screen to show starting status
+        if ($tabService->active()?->id === $placeholderRunId) {
+            $screen->setTranscriptBlocks($childState->transcript);
+            $screen->setWorkingMessage('Starting fork...');
+        }
+
+        // ── Call the blocking start() ──
+        // This blocks with sync:// transports. The placeholder has already
+        // been rendered to terminal by processRender() before this tick
+        // callback runs.
+        $request = new StartRunRequest(
+            prompt: $task,
+            cwd: $pending['cwd'],
+        );
+
+        try {
+            $handle = $client->start($request);
+        } catch (\Throwable $e) {
+            // Update the tab to show error state
+            $childState->activity = RunActivityStateEnum::Failed;
+            $childState->transcript[] = new TranscriptBlock(
+                id: 'fork_poc_error_'.$placeholderId,
+                kind: TranscriptBlockKindEnum::System,
+                runId: $placeholderId,
+                seq: 2,
+                text: "\u{2717} ForkPOC failed: ".$e->getMessage(),
+            );
+
+            $tab->label = preg_replace('/ ▶$/', '', $tab->label)." \u{2717}";
+
+            if ($tabService->active()?->id === $placeholderRunId) {
+                $screen->setTranscriptBlocks($childState->transcript);
+                $screen->setWorkingMessage('Fork failed');
+            }
+
+            $parentState->transcript[] = new TranscriptBlock(
+                id: 'fork_poc_failed_parent_'.$placeholderId,
+                kind: TranscriptBlockKindEnum::System,
+                runId: $parentState->sessionId,
+                seq: $parentState->lastSeq + 1,
+                text: "\u{2717} ForkPOC failed: ".$e->getMessage(),
+            );
+            ++$parentState->lastSeq;
+
+            return;
+        }
+
+        // ── Update tab with real run data ──
+        $childRunId = $handle->runId;
+        $shortId = substr($childRunId, 0, 8);
+
+        $tab->runId = $childRunId;
+        $tab->label = 'Fork '.$shortId." \u{25b6}";
+
+        $childState->sessionId = $childRunId;
+        $childState->handle = $handle;
+        $childState->activity = RunActivityStateEnum::Running;
+        $childState->transcript = [];
+        $childState->transcript[] = new TranscriptBlock(
+            id: 'fork_poc_running_'.$childRunId,
+            kind: TranscriptBlockKindEnum::System,
+            runId: $childRunId,
+            seq: 0,
+            text: \sprintf(
+                "\u{25d0} ForkPOC [%s] running%s \u2014 steer/cancel in this tab.",
+                $shortId,
+                \in_array($handle->status, ['completed', 'failed', 'cancelled'], true)
+                    ? ', status: '.$handle->status
+                    : '',
+            ),
+        );
+
+        // Update parent transcript with running confirmation
+        $parentState->transcript[] = new TranscriptBlock(
+            id: 'fork_poc_running_parent_'.$childRunId,
+            kind: TranscriptBlockKindEnum::System,
+            runId: $parentState->sessionId,
+            seq: $parentState->lastSeq + 1,
+            text: \sprintf(
+                "\u{25d0} ForkPOC started [run: %s] \u2014 tab active.",
+                $shortId,
+            ),
+        );
+        ++$parentState->lastSeq;
+
+        if ($tabService->active()?->id === $placeholderRunId) {
+            $screen->setTranscriptBlocks($childState->transcript);
+            $screen->setWorkingMessage(null);
+        }
     }
 }
