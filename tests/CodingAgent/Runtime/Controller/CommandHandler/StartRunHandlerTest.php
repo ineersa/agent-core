@@ -96,9 +96,9 @@ final class StartRunHandlerTest extends IsolatedKernelTestCase
         $handler($this->createEvent($command, $emittedEvents));
 
         // Must emit RunStarted (proves routing went to InProcessAgentSessionClient).
-        self::assertCount(1, $emittedEvents);
-        self::assertSame(RuntimeEventTypeEnum::RunStarted->value, $emittedEvents[0]->type);
-        self::assertSame('running', $emittedEvents[0]->payload['status'] ?? null);
+        $this->assertCount(1, $emittedEvents);
+        $this->assertSame(RuntimeEventTypeEnum::RunStarted->value, $emittedEvents[0]->type);
+        $this->assertSame('running', $emittedEvents[0]->payload['status'] ?? null);
     }
 
     // ── Non-start_run commands are no-ops ──
@@ -112,7 +112,7 @@ final class StartRunHandlerTest extends IsolatedKernelTestCase
         $emittedEvents = [];
         $handler($this->createEvent($command, $emittedEvents));
 
-        self::assertCount(0, $emittedEvents);
+        $this->assertCount(0, $emittedEvents);
     }
 
     // ── Helpers ──
@@ -120,7 +120,7 @@ final class StartRunHandlerTest extends IsolatedKernelTestCase
     private function createStartRunCommand(string $runId, array $options, string $prompt = ''): RuntimeCommand
     {
         return new RuntimeCommand(
-            id: 'cmd-' . $runId,
+            id: 'cmd-'.$runId,
             type: 'start_run',
             runId: $runId,
             payload: [
