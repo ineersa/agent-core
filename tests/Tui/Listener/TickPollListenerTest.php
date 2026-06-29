@@ -456,8 +456,9 @@ final class TickPollListenerTest extends TestCase
     public function testHandleHumanInputRequestedAllowOtherDefaultsTrue(): void
     {
         // When no allow_other field is present in the payload, the
-        // QuestionRequest must still have allowOther=true (ask_human
-        // always allows free-form input via the '__other__' escape hatch).
+        // QuestionRequest must still have allowOther=true (the allowOther
+        // capability flag — actual __other__ escape hatch rendering is gated
+        // on QuestionKind::Choice in QuestionController::buildItems()).
         $client = $this->createStub(AgentSessionClient::class);
         $coordinator = new QuestionCoordinator();
         $ref = new \ReflectionMethod(TickPollListener::class, 'handleHumanInputRequested');

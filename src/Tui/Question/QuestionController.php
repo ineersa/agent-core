@@ -35,6 +35,7 @@ final class QuestionController
     private ?ContainerWidget $container = null;
     private bool $isOpen = false;
     private bool $awaitingFreeForm = false;
+    private ?QuestionRequest $activeRequest = null;
     private ?ChatScreen $screen = null;
 
     public function __construct(
@@ -71,6 +72,7 @@ final class QuestionController
         }
 
         $this->awaitingFreeForm = false;
+        $this->activeRequest = $request;
         $this->container = new ContainerWidget();
         $this->addHeader($request);
 
@@ -115,6 +117,28 @@ final class QuestionController
     public function isAwaitingFreeForm(): bool
     {
         return $this->awaitingFreeForm;
+    }
+
+    /**
+     * Restore the select overlay after a free-form dismiss (__other__ escape
+     * hatch). Called by CancelListener when ESC is pressed during free-form
+     * typing — instead of cancelling the run, ESC returns the user to the
+     * option list. A second ESC from the list then triggers the widget's
+     * onCancel → coordinator->cancel() → 'Cancelled by user' reaches the model.
+     *
+     * Safe no-op when not awaiting free-form or when no request is available.
+     */
+    public function restoreFromFreeForm(): void
+    {
+        if (!$this->awaitingFreeForm) {
+            return;
+        }
+
+        $this->awaitingFreeForm = false;
+
+        if (null !== $this->activeRequest && null !== $this->screen) {
+            $this->open($this->activeRequest);
+        }
     }
 
     // ── Private helpers ──
@@ -317,7 +341,10 @@ final class QuestionController
             ),
         };
 
-        if ($request->allowOther) {
+        // The escape hatch only renders for Choice — Confirm's Yes/No are
+        // exhaustive for a boolean schema (free-form text would be silently
+        // coerced to boolean, making the hatch a trap). Text kind uses a banner.
+        if ($request->allowOther && QuestionKind::Choice === $request->kind) {
             $items[] = ['value' => '__other__', 'label' => 'Type your answer'];
         }
 

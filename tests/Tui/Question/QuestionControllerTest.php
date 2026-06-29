@@ -127,12 +127,12 @@ class QuestionControllerTest extends TestCase
 
         $items = $this->invokeBuildItems($request);
 
-        self::assertCount(3, $items); // Yes, No, Type your answer
+        // Confirm is binary (Yes/No) — the escape hatch only renders for
+        // Choice (free-form text would be silently coerced to boolean).
+        self::assertCount(2, $items);
         self::assertSame('yes', $items[0]['value']);
         self::assertSame("\u{2713} Yes", $items[0]['label']);
         self::assertSame("\u{2717} No", $items[1]['label']);
-        self::assertSame('__other__', $items[2]['value']);
-        self::assertSame('Type your answer', $items[2]['label']);
     }
 
     #[Test]
@@ -555,6 +555,40 @@ class QuestionControllerTest extends TestCase
         // Verify close() resets it again
         $this->controller->close();
         self::assertFalse($this->controller->isAwaitingFreeForm(), 'close() resets awaitingFreeForm on second call');
+    }
+
+    // ── Restore from free-form (Fix B: ESC returns to options) ──
+
+    #[Test]
+    public function testRestoreFromFreeFormResetsFlag(): void
+    {
+        // restoreFromFreeForm() must always reset awaitingFreeForm to false,
+        // even when it cannot re-open the overlay (no screen or no active
+        // request). CancelListener's ESC guard depends on this contract —
+        // it calls restoreFromFreeForm() when awaitingFreeForm is true.
+
+        $ctrlRef = new \ReflectionClass($this->controller);
+        $awaitProp = $ctrlRef->getProperty('awaitingFreeForm');
+        $awaitProp->setValue($this->controller, true);
+        self::assertTrue($this->controller->isAwaitingFreeForm());
+
+        $this->controller->restoreFromFreeForm();
+
+        self::assertFalse($this->controller->isAwaitingFreeForm(), 'restoreFromFreeForm must reset awaitingFreeForm flag');
+    }
+
+    #[Test]
+    public function testRestoreFromFreeFormNoopWhenNotAwaiting(): void
+    {
+        // restoreFromFreeForm() is a safe no-op when not awaiting free-form.
+        // The flag must remain false and no exception thrown.
+
+        self::assertFalse($this->controller->isAwaitingFreeForm());
+
+        // Should not throw
+        $this->controller->restoreFromFreeForm();
+
+        self::assertFalse($this->controller->isAwaitingFreeForm());
     }
 
     // ── Helpers ──
