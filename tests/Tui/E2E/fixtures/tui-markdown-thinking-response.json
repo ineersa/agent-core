@@ -1,0 +1,33 @@
+{
+    "$schema": "Replay fixture for RENDER-03: thinking + markdown text response",
+    "model": "llama_cpp_test/alpha",
+    "provider_id": "llama_cpp_test",
+    "reasoning": "low",
+    "recorded_at": "2026-06-29T00:00:00+00:00",
+    "recording_source": "Manual",
+    "input": {
+        "messages": [
+            {
+                "role": "user",
+                "content": "hello"
+            }
+        ]
+    },
+    "usage": {
+        "input_tokens": 5,
+        "output_tokens": 30,
+        "total_tokens": 35
+    },
+    "stop_reason": "stop",
+    "expected_text": null,
+    "deltas": [
+        {
+            "type": "thinking",
+            "content": "I need to respond with a friendly markdown message."
+        },
+        {
+            "type": "text",
+            "content": "Hello! Use **bold** for emphasis and `code` for inline."
+        }
+    ]
+}

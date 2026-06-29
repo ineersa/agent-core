@@ -21,6 +21,7 @@ use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
 use Ineersa\Tui\Transcript\PendingMessagesWidget;
 use Ineersa\Tui\Transcript\TranscriptBlockWidget;
+use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Widget\LiveTextWidget;
 use Ineersa\Tui\Widget\TuiRenderContext;
 use Ineersa\Tui\Widget\WidgetPlacementEnum;
@@ -99,12 +100,15 @@ final class ChatScreen
         private readonly TuiTheme $theme,
         private string $sessionId,
         private readonly PromptEditor $promptEditor,
+        private readonly ?TranscriptDisplayConfig $displayConfig = null,
     ) {
         $this->registry = new TuiSlotRegistry();
 
         // ── Instantiate default renderables ──
         $this->headerRenderable = new HeaderWidget();
-        $this->transcriptRenderable = new TranscriptBlockWidget();
+        $this->transcriptRenderable = null !== $displayConfig
+            ? new TranscriptBlockWidget(displayConfig: $displayConfig)
+            : new TranscriptBlockWidget();
         $this->pendingRenderable = new PendingMessagesWidget();
         $this->workingRenderable = new WorkingStatusWidget();
         $this->statusPanelRenderable = new StatusPanelWidget();

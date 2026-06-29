@@ -7,6 +7,7 @@ namespace Ineersa\Tui\Tests\Screen;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
+use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptGlyphs;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -188,10 +189,10 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
     }
 
     #[Test]
-    public function testThinkingHiddenWhenEmptyAndCollapsed(): void
+    public function testEmptyThinkingShowsFallbackText(): void
     {
-        // The old renderer showed "⋯ Thinking" for empty thinking.
-        // The new widget-tree renderer should preserve this placeholder.
+        // When thinking is visible but text is empty, displayTextFor()
+        // returns '[thinking]' as a content fallback.
         $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
         $harness->screen()->setTranscriptBlocks([
             new TranscriptBlock(
@@ -200,16 +201,14 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
                 runId: self::SESSION_ID,
                 seq: 1,
                 text: '',
-                collapsed: true,
             ),
         ]);
         $harness->screen()->setWorkingVisible(false);
 
         $text = $harness->plainScreenText();
 
-        // The widget factory falls through to displayTextFor() which returns '[thinking]' for empty thinking
-        self::assertStringContainsString('[thinking]', $text, 'Empty thinking placeholder missing');
-        self::assertStringContainsString('⋯', $text, 'Thinking glyph missing for collapsed block');
+        self::assertStringContainsString('[thinking]', $text, 'Empty thinking fallback missing');
+        self::assertStringContainsString('⋯', $text, 'Thinking glyph missing');
     }
 
     #[Test]
@@ -375,5 +374,227 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 
         self::assertStringContainsString('✕', $text, 'Cancelled glyph missing');
         self::assertStringContainsString('aborted', $text, 'Cancelled text missing');
+    }
+
+    /* ───── RENDER-03: Markdown and thinking behavior ───── */
+
+    #[Test]
+    public function testHiddenThinkingShowsPlaceholderNotContent(): void
+    {
+        // When thinking visible=false, raw content must NOT appear.
+        // Only the placeholder "  ⋯ Thinking" should render.
+        $config = new TranscriptDisplayConfig(thinkingVisible: false);
+        $harness = new VirtualTuiHarness(
+            sessionId: self::SESSION_ID,
+            displayConfig: $config,
+        );
+        $harness->screen()->setTranscriptBlocks([
+            new TranscriptBlock(
+                id: 'th',
+                kind: TranscriptBlockKindEnum::AssistantThinking,
+                runId: self::SESSION_ID,
+                seq: 1,
+                text: 'this contains **private** reasoning data',
+            ),
+        ]);
+        $harness->screen()->setWorkingVisible(false);
+
+        $text = $harness->plainScreenText();
+
+        // The placeholder glyph and text must appear
+        self::assertStringContainsString('⋯', $text, 'Thinking glyph missing for hidden block');
+        self::assertStringContainsString('Thinking', $text, 'Thinking placeholder text missing');
+
+        // Raw content must NOT appear
+        self::assertStringNotContainsString('private reasoning', $text);
+    }
+
+    #[Test]
+    public function testCollapsedFlagDoesNotHideThinkingWhenConfigVisible(): void
+    {
+        // Thinking visibility is driven by TranscriptDisplayConfig, NOT
+        // by TranscriptBlock::collapsed. With default config (visible=true),
+        // a collapsed block must still show its content.
+        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
+        $harness->screen()->setTranscriptBlocks([
+            new TranscriptBlock(
+                id: 'th',
+                kind: TranscriptBlockKindEnum::AssistantThinking,
+                runId: self::SESSION_ID,
+                seq: 1,
+                text: 'collapsed but visible',
+                collapsed: true,
+            ),
+        ]);
+        $harness->screen()->setWorkingVisible(false);
+
+        $text = $harness->plainScreenText();
+
+        self::assertStringContainsString('collapsed but visible', $text,
+            'Collapsed thinking must show content when config says visible',
+        );
+    }
+
+    #[Test]
+    public function testCollapsedFlagDoesNotRevealThinkingWhenConfigHidden(): void
+    {
+        // Even with collapsed=true, if config says hidden, content is hidden.
+        $config = new TranscriptDisplayConfig(thinkingVisible: false);
+        $harness = new VirtualTuiHarness(
+            sessionId: self::SESSION_ID,
+            displayConfig: $config,
+        );
+        $harness->screen()->setTranscriptBlocks([
+            new TranscriptBlock(
+                id: 'th',
+                kind: TranscriptBlockKindEnum::AssistantThinking,
+                runId: self::SESSION_ID,
+                seq: 1,
+                text: 'secret',
+                collapsed: true,
+            ),
+        ]);
+        $harness->screen()->setWorkingVisible(false);
+
+        $text = $harness->plainScreenText();
+
+        self::assertStringNotContainsString('secret', $text,
+            'Collapsed thinking must NOT show content when config says hidden',
+        );
+        // Placeholder must still appear
+        self::assertStringContainsString('⋯', $text);
+        self::assertStringContainsString('Thinking', $text);
+    }
+
+    #[Test]
+    public function testAssistantMessageRendersBoldMarkdown(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
+        $harness->screen()->setTranscriptBlocks([
+            new TranscriptBlock(
+                id: 'a1',
+                kind: TranscriptBlockKindEnum::AssistantMessage,
+                runId: self::SESSION_ID,
+                seq: 1,
+                text: 'Use **bold** for emphasis',
+            ),
+        ]);
+        $harness->screen()->setWorkingVisible(false);
+
+        $text = $harness->plainScreenText();
+
+        // Markdown bold should be rendered (not shown as literal **bold**)
+        self::assertStringContainsString('bold', $text);
+        self::assertStringNotContainsString('**bold**', $text,
+            'Markdown bold delimiters must not appear literally',
+        );
+        self::assertStringContainsString('◇', $text, 'Assistant glyph missing');
+    }
+
+    #[Test]
+    public function testUserMessageRendersCodeInlineMarkdown(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
+        $harness->screen()->setTranscriptBlocks([
+            new TranscriptBlock(
+                id: 'u1',
+                kind: TranscriptBlockKindEnum::UserMessage,
+                runId: self::SESSION_ID,
+                seq: 1,
+                text: 'Run `bin/console` to start',
+            ),
+        ]);
+        $harness->screen()->setWorkingVisible(false);
+
+        $text = $harness->plainScreenText();
+
+        // Inline code should be rendered (backticks consumed)
+        self::assertStringContainsString('bin/console', $text);
+        self::assertStringNotContainsString('`bin/console`', $text,
+            'Inline code backticks must not appear literally',
+        );
+        self::assertStringContainsString('❯', $text, 'User glyph missing');
+    }
+
+    #[Test]
+    public function testVisibleThinkingRendersMarkdownContent(): void
+    {
+        // Default config (thinkingVisible=true) renders content through MarkdownWidget
+        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
+        $harness->screen()->setTranscriptBlocks([
+            new TranscriptBlock(
+                id: 'th',
+                kind: TranscriptBlockKindEnum::AssistantThinking,
+                runId: self::SESSION_ID,
+                seq: 1,
+                text: 'reasoning with *italic* and `code`',
+            ),
+        ]);
+        $harness->screen()->setWorkingVisible(false);
+
+        $text = $harness->plainScreenText();
+
+        // Markdown rendered, raw delimiters consumed
+        self::assertStringContainsString('reasoning with', $text);
+        self::assertStringContainsString('italic', $text);
+        self::assertStringContainsString('code', $text);
+        self::assertStringNotContainsString('*italic*', $text,
+            'Italic delimiters must not appear literally',
+        );
+        self::assertStringNotContainsString('`code`', $text,
+            'Code backticks must not appear literally',
+        );
+        self::assertStringContainsString('⋯', $text, 'Thinking glyph missing');
+    }
+
+    #[Test]
+    public function testPreviewStateDoesNotAffectUserAssistantThinkingBlocks(): void
+    {
+        // Preview expansion state must not affect user, assistant, or thinking.
+        // Even with blocks expanded, these blocks render identically.
+        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
+        $harness->screen()->setTranscriptBlocks([
+            new TranscriptBlock(
+                id: 'u1', kind: TranscriptBlockKindEnum::UserMessage,
+                runId: self::SESSION_ID, seq: 1, text: 'user msg',
+            ),
+            new TranscriptBlock(
+                id: 'a1', kind: TranscriptBlockKindEnum::AssistantMessage,
+                runId: self::SESSION_ID, seq: 2, text: 'assistant msg',
+            ),
+            new TranscriptBlock(
+                id: 'th', kind: TranscriptBlockKindEnum::AssistantThinking,
+                runId: self::SESSION_ID, seq: 3, text: 'thinking',
+            ),
+        ]);
+        $harness->screen()->setWorkingVisible(false);
+
+        // Render once with default state (previewableBlocksExpanded=false)
+        $textDefault = $harness->plainScreenText();
+
+        // Now set preview expansion and render again
+        $harness->screen()->setTranscriptBlocks([
+            new TranscriptBlock(
+                id: 'u1', kind: TranscriptBlockKindEnum::UserMessage,
+                runId: self::SESSION_ID, seq: 1, text: 'user msg',
+            ),
+            new TranscriptBlock(
+                id: 'a1', kind: TranscriptBlockKindEnum::AssistantMessage,
+                runId: self::SESSION_ID, seq: 2, text: 'assistant msg',
+            ),
+            new TranscriptBlock(
+                id: 'th', kind: TranscriptBlockKindEnum::AssistantThinking,
+                runId: self::SESSION_ID, seq: 3, text: 'thinking',
+            ),
+        ]);
+
+        // Toggle preview expansion — this should NOT affect output
+        $harness->screen()->setWorkingVisible(false);
+        $textExpanded = $harness->plainScreenText();
+
+        // Output must be identical
+        self::assertSame($textDefault, $textExpanded,
+            'Preview expansion must not change user/assistant/thinking block output',
+        );
     }
 }
