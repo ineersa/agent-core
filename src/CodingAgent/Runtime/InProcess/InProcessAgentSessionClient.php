@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\InProcess;
 
+use Ineersa\AgentCore\Application\Handler\RunRewindService;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
@@ -48,6 +49,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         private readonly AgentRunnerInterface $runner,
         private readonly EventStoreInterface $eventStore,
         private readonly RuntimeEventMapper $mapper,
+        private readonly RunRewindService $runRewindService,
         private readonly SystemPromptBuilder $systemPromptBuilder,
         private readonly AgentsContextDiscovery $agentsContextDiscovery,
         private readonly AgentsContextRenderer $agentsContextRenderer,
@@ -243,6 +245,10 @@ final class InProcessAgentSessionClient implements AgentSessionClient
             ),
             'answer_tool_question' => $this->handleAnswerToolQuestion($runId, $command),
             'shell_command' => $this->handleShellCommandSend($runId, $command),
+            'rewind_to_turn' => $this->runRewindService->rewind(
+                $runId,
+                (int) ($command->payload['turn_no'] ?? 0),
+            ),
             default => throw new \InvalidArgumentException(\sprintf('Unknown UserCommand type: "%s"', $command->type)),
         };
     }
