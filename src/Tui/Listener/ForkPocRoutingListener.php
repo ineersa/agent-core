@@ -89,7 +89,60 @@ final class ForkPocRoutingListener implements TuiListenerRegistrar
 
                 $parentRunId = $parentTab->runId;
 
-                // Create the child run via $client->start()
+                // ── Step 1: Create the tab BEFORE blocking start() ──
+                // Give immediate visual feedback: create the tab with a
+                // "Starting..." block before the blocking LLM start call.
+                // All Messenger transports are sync:// in dev mode, meaning
+                // $client->start() blocks for the entire first LLM turn.
+                // Showing a tab with status first prevents silent hang.
+                $placeholderId = 'fork-poc-starting-'.md5($task.microtime());
+
+                $childState = new TuiSessionState(
+                    sessionId: $placeholderId,
+                );
+                $childState->activity = RunActivityStateEnum::Starting;
+                $childState->cwd = $this->context->state->cwd;
+
+                // Add an immediate system block in the child tab
+                $childState->transcript[] = new TranscriptBlock(
+                    id: 'fork_poc_phase_starting',
+                    kind: TranscriptBlockKindEnum::System,
+                    runId: $placeholderId,
+                    seq: 0,
+                    text: '◐ Starting fork child run... (may take a moment on first LLM turn)',
+                );
+
+                $placeholderRunId = 'fork-poc-'.$placeholderId;
+
+                $tabService->addTab(new TabDefinition(
+                    id: $placeholderRunId,
+                    label: 'Fork ▶',
+                    runId: $placeholderId,
+                    state: $childState,
+                    inputMode: TabInputModeEnum::Interactive,
+                ));
+
+                $newIndex = $tabService->count() - 1;
+                $tabService->switchTo($newIndex);
+                $screen->setTranscriptBlocks($childState->transcript);
+                $screen->setWorkingMessage('Starting fork...');
+
+                // Append confirmation to parent transcript before blocking call
+                $parentState = $this->context->state;
+                $parentState->transcript[] = new TranscriptBlock(
+                    id: 'fork_poc_queued_'.$placeholderId,
+                    kind: TranscriptBlockKindEnum::System,
+                    runId: $parentRunId,
+                    seq: $parentState->lastSeq + 1,
+                    text: \sprintf(
+                        '◐ ForkPOC starting [task: %s] — see tab %d.',
+                        mb_substr($task, 0, 60),
+                        $newIndex + 1,
+                    ),
+                );
+                ++$parentState->lastSeq;
+
+                // ── Step 2: Start the child run (blocks with sync://) ──
                 $request = new StartRunRequest(
                     prompt: $task,
                     cwd: $this->context->state->cwd,
@@ -99,63 +152,98 @@ final class ForkPocRoutingListener implements TuiListenerRegistrar
                 try {
                     $handle = $this->client->start($request);
                 } catch (\Throwable $e) {
+                    // Update the tab to show error state instead of returning
+                    // a TranscriptMessage (which would overwrite the screen
+                    // and hide the tab we just created).
+                    $childState->activity = RunActivityStateEnum::Failed;
+                    $childState->transcript[] = new TranscriptBlock(
+                        id: 'fork_poc_error',
+                        kind: TranscriptBlockKindEnum::System,
+                        runId: $placeholderId,
+                        seq: 1,
+                        text: '✗ ForkPOC failed: '.$e->getMessage()
+                            .' Try running with --transport=in-process for fork POC support.',
+                    );
+                    $screen->setTranscriptBlocks($childState->transcript);
+                    $screen->setWorkingMessage('Fork failed');
+
+                    // Update tab label to show failure
+                    foreach ($tabService->tabs() as $tab) {
+                        if ($tab->id === $placeholderRunId) {
+                            $tab->label = 'Fork ✗';
+                            break;
+                        }
+                    }
+
+                    // Update parent transcript with failure notice
+                    $parentState->transcript[] = new TranscriptBlock(
+                        id: 'fork_poc_failed_'.$placeholderId,
+                        kind: TranscriptBlockKindEnum::System,
+                        runId: $parentRunId,
+                        seq: $parentState->lastSeq + 1,
+                        text: '✗ ForkPOC failed: '.$e->getMessage(),
+                    );
+                    ++$parentState->lastSeq;
+
                     $this->logger->error('ForkPOC: failed to start child run', [
                         'exception' => $e,
                         'task' => $task,
                     ]);
 
-                    return new TranscriptMessage(
-                        'ForkPOC: Failed to start child run: '.$e->getMessage()
-                        .' Try running with --transport=in-process for fork POC support.',
-                        'system',
-                        'error',
-                    );
+                    return new NoOp();
                 }
 
+                // ── Step 3: Update tab with real run data ──
                 $childRunId = $handle->runId;
+                $shortId = substr($childRunId, 0, 8);
 
-                // Create a TuiSessionState for the child
-                $childState = new TuiSessionState(
-                    sessionId: $childRunId,
-                );
+                // Update the placeholder tab's properties with real data
+                foreach ($tabService->tabs() as $tab) {
+                    if ($tab->id === $placeholderRunId) {
+                        $tab->runId = $childRunId;
+                        $tab->label = 'Fork '.$shortId.' ▶';
+                        break;
+                    }
+                }
+
+                $childState->sessionId = $childRunId;
                 $childState->handle = $handle;
                 $childState->activity = RunActivityStateEnum::Running;
-                $childState->cwd = $this->context->state->cwd;
 
-                // Create the interactive tab
-                $shortId = substr($childRunId, 0, 8);
-                $tabId = 'fork-poc-'.$childRunId;
-
-                $tabService->addTab(new TabDefinition(
-                    id: $tabId,
-                    label: 'Fork '.$shortId.' ▶',
+                // Rebuild child transcript — replace "starting" block with running status
+                // The TickPollListener will pick up real child events on the next tick.
+                $childState->transcript = [];
+                $childState->transcript[] = new TranscriptBlock(
+                    id: 'fork_poc_running_'.$childRunId,
+                    kind: TranscriptBlockKindEnum::System,
                     runId: $childRunId,
-                    state: $childState,
-                    inputMode: TabInputModeEnum::Interactive,
-                ));
+                    seq: 0,
+                    text: \sprintf(
+                        '◐ ForkPOC [%s] running%s — steer/cancel in this tab.',
+                        $shortId,
+                        \in_array($handle->status, ['completed', 'failed', 'cancelled'], true)
+                            ? ', status: '.$handle->status
+                            : '',
+                    ),
+                );
 
-                // Auto-switch to the fork tab
-                $newIndex = $tabService->count() - 1;
-                $tabService->switchTo($newIndex);
-                $screen->setTranscriptBlocks($childState->transcript);
-
-                // Append a system block to the parent confirming fork start
-                $parentState = $this->context->state;
+                // Update parent transcript with running confirmation
                 $parentState->transcript[] = new TranscriptBlock(
-                    id: 'fork_poc_start_'.$childRunId,
+                    id: 'fork_poc_running_'.$childRunId,
                     kind: TranscriptBlockKindEnum::System,
                     runId: $parentRunId,
                     seq: $parentState->lastSeq + 1,
                     text: \sprintf(
-                        '◐ ForkPOC started [run: %s]. Tab %d active — steer/cancel in fork tab, switch /tab 1 for parent.',
-                        $childRunId,
+                        '◐ ForkPOC started [run: %s] — tab %d active. Switch /tab 1 for parent.',
+                        $shortId,
                         $newIndex + 1,
                     ),
                 );
+                ++$parentState->lastSeq;
 
-                // Return NoOp so SubmitListener does NOT overwrite screen with parent transcript.
-                // The handler already appended a system block directly to the parent transcript
-                // above and switched the active tab.
+                $screen->setTranscriptBlocks($childState->transcript);
+                $screen->setWorkingMessage(null);
+
                 return new NoOp();
             }
         };
