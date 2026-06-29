@@ -37,6 +37,22 @@ final readonly class TuiRuntimeEventApplier
             $state->usage->accumulate($event);
         }
 
+        if (RuntimeEventTypeEnum::RunLeafChanged->value === $event->type) {
+            // Reset transcript and projector to reflect the new active leaf.
+            // The previous transcript (showing abandoned branch) is no longer valid.
+            // The active-path events will NOT be re-fed through the projector
+            // automatically (the poller's dedup cursor advances past them).
+            // Instead, the projector is cleared and a status message is injected.
+            // Full transcript rebuild after rewind is a future enhancement.
+            $this->projector->reset();
+
+            $turnNo = $event->payload['turn_no'] ?? 0;
+            $state->activity = RunActivityStateEnum::Idle;
+            $state->queuedFollowUp = null;
+
+            return;
+        }
+
         if (RuntimeEventTypeEnum::CompactionStarted->value === $event->type) {
             $state->isCompacting = true;
         } elseif (

@@ -41,6 +41,20 @@ interface TuiSessionSwitchServiceInterface
     public function requestNewDraft(?StartRunRequest $request = null): void;
 
     /**
+     * Rewind the current session to a target turn (in-session rewind).
+     *
+     * Cancels the current run, then dispatches a rewind_to_turn command
+     * via AgentSessionClient::send(). The controller subprocess appends
+     * a LeafSet event, rebuilds RunState, and emits RunLeafChanged.
+     *
+     * Unlike requestResume/requestNewDraft, this does NOT stop the event
+     * loop — the rewind is observed reactively via RuntimeEventPoller.
+     *
+     * @throws \RuntimeException if there is no active session or run handle
+     */
+    public function rewindToTurn(int $targetTurnNo): void;
+
+    /**
      * True when a pending switch has been requested but not yet consumed.
      */
     public function hasPendingSwitch(): bool;

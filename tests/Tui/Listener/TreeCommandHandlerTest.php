@@ -7,6 +7,7 @@ namespace Ineersa\Tui\Tests\Listener;
 use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
 use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeNodeView;
 use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeView;
+use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Command\NoOp;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Editor\PromptEditor;
@@ -49,7 +50,8 @@ final class TreeCommandHandlerTest extends TestCase
         $provider = $this->createStub(TurnTreeProviderInterface::class);
         $provider->method('forSession')->willReturn($tree);
 
-        $picker = new TreePickerController($provider);
+        $switcher = $this->createStub(TuiSessionSwitchServiceInterface::class);
+        $picker = new TreePickerController($provider, $switcher);
 
         $tui = new Tui();
         $screen = new ChatScreen(
@@ -94,7 +96,8 @@ final class TreeCommandHandlerTest extends TestCase
         $provider = $this->createStub(TurnTreeProviderInterface::class);
         $provider->method('forSession')->willReturn($tree);
 
-        $picker = new TreePickerController($provider);
+        $switcher = $this->createStub(TuiSessionSwitchServiceInterface::class);
+        $picker = new TreePickerController($provider, $switcher);
 
         $tui = new Tui();
         $screen = new ChatScreen(

@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeNodeView;
 use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeView;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Picker\TreePickerController;
+use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\DefaultTheme;
@@ -46,7 +47,8 @@ final class TreePickerControllerTest extends TestCase
     public function testIsOpenIsFalseInitially(): void
     {
         $provider = $this->createStub(TurnTreeProviderInterface::class);
-        $controller = new TreePickerController($provider);
+        $switcher = $this->createStub(TuiSessionSwitchServiceInterface::class);
+        $controller = new TreePickerController($provider, $switcher);
 
         self::assertFalse($controller->isOpen());
     }
@@ -402,7 +404,8 @@ final class TreePickerControllerTest extends TestCase
         $provider = $this->createStub(TurnTreeProviderInterface::class);
         $provider->method('forSession')->willReturn($tree);
 
-        $controller = new TreePickerController($provider);
+        $switcher = $this->createStub(TuiSessionSwitchServiceInterface::class);
+        $controller = new TreePickerController($provider, $switcher);
         $controller->setRuntimeRefs($this->tui, $this->screen, $this->state);
 
         self::assertFalse($controller->isOpen());
@@ -425,7 +428,8 @@ final class TreePickerControllerTest extends TestCase
         $provider = $this->createStub(TurnTreeProviderInterface::class);
         $provider->method('forSession')->willReturn($tree);
 
-        $controller = new TreePickerController($provider);
+        $switcher = $this->createStub(TuiSessionSwitchServiceInterface::class);
+        $controller = new TreePickerController($provider, $switcher);
         $controller->setRuntimeRefs($this->tui, $this->screen, $this->state);
 
         $controller->open();
@@ -440,7 +444,8 @@ final class TreePickerControllerTest extends TestCase
         $provider = $this->createStub(TurnTreeProviderInterface::class);
         $provider->method('forSession')->willReturn($tree);
 
-        $controller = new TreePickerController($provider);
+        $switcher = $this->createStub(TuiSessionSwitchServiceInterface::class);
+        $controller = new TreePickerController($provider, $switcher);
         $controller->setRuntimeRefs($this->tui, $this->screen, $this->state);
 
         $controller->open();
@@ -457,7 +462,8 @@ final class TreePickerControllerTest extends TestCase
         $provider = $this->createStub(TurnTreeProviderInterface::class);
         $provider->method('forSession')->willReturn($tree);
 
-        $controller = new TreePickerController($provider);
+        $switcher = $this->createStub(TuiSessionSwitchServiceInterface::class);
+        $controller = new TreePickerController($provider, $switcher);
         $controller->setRuntimeRefs($this->tui, $this->screen, $this->state);
 
         $controller->open();

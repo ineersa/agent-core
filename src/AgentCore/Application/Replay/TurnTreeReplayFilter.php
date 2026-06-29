@@ -55,7 +55,7 @@ final class TurnTreeReplayFilter
      *  - Events whose turnNo is in the active branch path
      *  - Tree metadata events (leaf_set, turn_branched)
      *
-     * @param list<RunEvent> $events Unsorted canonical events
+     * @param list<RunEvent> $events           Unsorted canonical events
      * @param int|null       $targetLeafTurnNo Target leaf turn number (null = use current leaf)
      *
      * @return TurnBranchReplayDTO Filtered result with full-stream diagnostics

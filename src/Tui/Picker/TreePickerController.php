@@ -7,6 +7,7 @@ namespace Ineersa\Tui\Picker;
 use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
 use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeNodeView;
 use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeView;
+use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\ThemeColorEnum;
@@ -23,9 +24,11 @@ use Symfony\Component\Tui\Widget\TextWidget;
 /**
  * Manages the turn tree picker overlay lifecycle.
  *
- * Opens a read-only SelectListWidget showing the current session's
- * turn tree with tree connectors at branch points only (└─/├─/│),
- * and a current-leaf marker. Entering a turn closes the picker without mutating state.
+ * Opens a SelectListWidget showing the current session's turn tree with
+ * tree connectors at branch points only (└─/├─/│), and a current-leaf
+ * marker (◉). Entering a turn rewinds the session to that turn (actionable);
+ * selecting the current leaf is a no-op (just closes).
+ * Escape/Ctrl+C cancels.
  *
  * Tree data is rebuilt from canonical events.jsonl on each open
  * (no caching), so the picker always reflects the latest session state.
@@ -40,6 +43,7 @@ final class TreePickerController
 
     public function __construct(
         private readonly TurnTreeProviderInterface $treeProvider,
+        private readonly TuiSessionSwitchServiceInterface $switcher,
     ) {
     }
 
@@ -54,13 +58,13 @@ final class TreePickerController
     }
 
     /**
-     * Open the turn tree picker as a read-only overlay.
+     * Open the turn tree picker as an actionable overlay.
      *
      * Fetches the tree from the provider, builds flat items, and
      * mounts a SelectListWidget via PickerOverlay.  If the session
      * has no events, a status message is shown instead.
      *
-     * Enter closes the picker (read-only); Escape/Ctrl+C cancels.
+     * Enter rewinds to the selected turn; Escape/Ctrl+C cancels.
      */
     public function open(): void
     {
@@ -87,7 +91,7 @@ final class TreePickerController
 
         // ── Header ──
         $header = new TextWidget(
-            text: $screen->theme()->muted('Session turn tree — read-only (Esc to close)'),
+            text: $screen->theme()->muted('Session turn tree — Enter to rewind (Esc to close)'),
             truncate: true,
         );
 
@@ -136,10 +140,21 @@ final class TreePickerController
             },
         );
 
-        // ── Enter → close only (read-only) ──
+        // ── Enter → rewind (or no-op if current leaf) ──
         $picker = $this;
-        $listWidget->onSelect(static function (SelectEvent $event) use ($picker): void {
+        $switcher = $this->switcher;
+        $currentLeafTurnNo = $tree->currentLeafTurnNo;
+
+        $listWidget->onSelect(static function (SelectEvent $event) use ($picker, $switcher, $currentLeafTurnNo): void {
+            $turnNo = (int) $event->getItem()['value'];
             $picker->closePicker();
+
+            // Selecting the current leaf is a no-op (just close).
+            if ($turnNo === $currentLeafTurnNo) {
+                return;
+            }
+
+            $switcher->rewindToTurn($turnNo);
         });
 
         // ── Escape / Ctrl+C → close without change ──

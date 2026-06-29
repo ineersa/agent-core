@@ -247,51 +247,6 @@ final readonly class RunStateReplayService
     }
 
     /**
-     * @param list<AgentMessage>  $messages
-     * @param array<string, bool> $pendingToolCalls
-     */
-    private function applyEvent(
-        RunState $state,
-        RunEvent $event,
-        array &$messages,
-        array &$pendingToolCalls,
-    ): RunState {
-        $payload = $event->payload;
-
-        return match ($event->type) {
-            RunEventTypeEnum::RunStarted->value => $this->applyRunStarted($event, $state, $messages),
-            RunEventTypeEnum::TurnAdvanced->value => $this->applyTurnAdvanced($payload, $state),
-            RunEventTypeEnum::AgentCommandApplied->value => $this->applyAgentCommandApplied($payload, $state, $messages),
-            RunEventTypeEnum::AgentCommandRejected->value => $this->applyCommandRejected($payload, $state),
-            RunEventTypeEnum::LlmStepCompleted->value => $this->applyLlmStepCompleted($payload, $state, $messages, $pendingToolCalls),
-            RunEventTypeEnum::LlmStepFailed->value => $this->applyLlmStepFailed($payload, $state),
-            RunEventTypeEnum::LlmStepAborted->value => $this->applyNoMutation($event, $state),
-            RunEventTypeEnum::ToolExecutionStart->value => $this->applyToolExecutionStart($payload, $pendingToolCalls, $state),
-            RunEventTypeEnum::ToolExecutionEnd->value => $this->applyToolExecutionEnd($payload, $pendingToolCalls, $state),
-            RunEventTypeEnum::ToolCallResultReceived->value => $this->applyNoMutation($event, $state),
-            RunEventTypeEnum::MessageStart->value => $this->applyNoMutation($event, $state),
-            RunEventTypeEnum::MessageEnd->value => $this->applyMessageEnd($payload, $state, $messages),
-            RunEventTypeEnum::ToolBatchCommitted->value => $this->applyToolBatchCommitted($state, $pendingToolCalls),
-            RunEventTypeEnum::WaitingHuman->value => $this->applyWaitingHuman($state),
-            RunEventTypeEnum::AgentEnd->value => $this->applyAgentEnd($payload, $state),
-            RunEventTypeEnum::AgentStart->value,
-            RunEventTypeEnum::TurnStart->value,
-            RunEventTypeEnum::MessageUpdate->value,
-            RunEventTypeEnum::ToolExecutionUpdate->value,
-            RunEventTypeEnum::TurnEnd->value,
-            RunEventTypeEnum::AgentCommandQueued->value,
-            RunEventTypeEnum::AgentCommandSuperseded->value,
-            RunEventTypeEnum::StaleResultIgnored->value => $this->applyNoMutation($event, $state),
-            RunEventTypeEnum::ContextCompactionStarted->value => $this->applyContextCompactionStarted($payload, $state),
-            RunEventTypeEnum::ContextCompacted->value => $this->applyContextCompacted($payload, $state, $messages),
-            RunEventTypeEnum::ContextCompactionFailed->value => $this->applyContextCompactionFailed($payload, $state),
-            RunEventTypeEnum::TurnBranched->value,
-            RunEventTypeEnum::LeafSet->value => $this->applyNoMutation($event, $state),
-            default => $this->applyNoMutation($event, $state),
-        };
-    }
-
-    /**
      * Rebuild RunState by filtering events to only the active branch path to a target leaf.
      *
      * Fetches the full event stream from the store, uses the target leaf turn number
@@ -401,6 +356,51 @@ final readonly class RunStateReplayService
         } finally {
             RunLogContext::leave();
         }
+    }
+
+    /**
+     * @param list<AgentMessage>  $messages
+     * @param array<string, bool> $pendingToolCalls
+     */
+    private function applyEvent(
+        RunState $state,
+        RunEvent $event,
+        array &$messages,
+        array &$pendingToolCalls,
+    ): RunState {
+        $payload = $event->payload;
+
+        return match ($event->type) {
+            RunEventTypeEnum::RunStarted->value => $this->applyRunStarted($event, $state, $messages),
+            RunEventTypeEnum::TurnAdvanced->value => $this->applyTurnAdvanced($payload, $state),
+            RunEventTypeEnum::AgentCommandApplied->value => $this->applyAgentCommandApplied($payload, $state, $messages),
+            RunEventTypeEnum::AgentCommandRejected->value => $this->applyCommandRejected($payload, $state),
+            RunEventTypeEnum::LlmStepCompleted->value => $this->applyLlmStepCompleted($payload, $state, $messages, $pendingToolCalls),
+            RunEventTypeEnum::LlmStepFailed->value => $this->applyLlmStepFailed($payload, $state),
+            RunEventTypeEnum::LlmStepAborted->value => $this->applyNoMutation($event, $state),
+            RunEventTypeEnum::ToolExecutionStart->value => $this->applyToolExecutionStart($payload, $pendingToolCalls, $state),
+            RunEventTypeEnum::ToolExecutionEnd->value => $this->applyToolExecutionEnd($payload, $pendingToolCalls, $state),
+            RunEventTypeEnum::ToolCallResultReceived->value => $this->applyNoMutation($event, $state),
+            RunEventTypeEnum::MessageStart->value => $this->applyNoMutation($event, $state),
+            RunEventTypeEnum::MessageEnd->value => $this->applyMessageEnd($payload, $state, $messages),
+            RunEventTypeEnum::ToolBatchCommitted->value => $this->applyToolBatchCommitted($state, $pendingToolCalls),
+            RunEventTypeEnum::WaitingHuman->value => $this->applyWaitingHuman($state),
+            RunEventTypeEnum::AgentEnd->value => $this->applyAgentEnd($payload, $state),
+            RunEventTypeEnum::AgentStart->value,
+            RunEventTypeEnum::TurnStart->value,
+            RunEventTypeEnum::MessageUpdate->value,
+            RunEventTypeEnum::ToolExecutionUpdate->value,
+            RunEventTypeEnum::TurnEnd->value,
+            RunEventTypeEnum::AgentCommandQueued->value,
+            RunEventTypeEnum::AgentCommandSuperseded->value,
+            RunEventTypeEnum::StaleResultIgnored->value => $this->applyNoMutation($event, $state),
+            RunEventTypeEnum::ContextCompactionStarted->value => $this->applyContextCompactionStarted($payload, $state),
+            RunEventTypeEnum::ContextCompacted->value => $this->applyContextCompacted($payload, $state, $messages),
+            RunEventTypeEnum::ContextCompactionFailed->value => $this->applyContextCompactionFailed($payload, $state),
+            RunEventTypeEnum::TurnBranched->value,
+            RunEventTypeEnum::LeafSet->value => $this->applyNoMutation($event, $state),
+            default => $this->applyNoMutation($event, $state),
+        };
     }
 
     // ── Event reducers ──────────────────────────────────────────────────────
