@@ -13,6 +13,7 @@ use Ineersa\Tui\Question\QuestionKind;
 use Ineersa\Tui\Question\QuestionOption;
 use Ineersa\Tui\Question\QuestionRequest;
 use Ineersa\Tui\Question\QuestionSource;
+use Ineersa\Tui\Screen\ChatScreen;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
@@ -331,6 +332,55 @@ class QuestionControllerTest extends TestCase
     }
 
     // ── Coordinator integration ──
+
+    #[Test]
+    public function testStyleConfirmItemsOnlyAppliesToConfirmKind(): void
+    {
+        $palette = new ThemePalette(
+            name: 'test',
+            colors: [
+                ThemeColorEnum::Success->value => 'green',
+                ThemeColorEnum::Error->value => 'red',
+            ],
+        );
+        $theme = new DefaultTheme($palette);
+
+        // Create a ChatScreen without constructor and inject the test theme
+        $chatRef = new \ReflectionClass(ChatScreen::class);
+        /** @var ChatScreen $screen */
+        $screen = $chatRef->newInstanceWithoutConstructor();
+        $themeProp = $chatRef->getProperty('theme');
+        $themeProp->setValue($screen, $theme);
+
+        // Inject the screen into the controller
+        $ctrlRef = new \ReflectionClass($this->controller);
+        $screenProp = $ctrlRef->getProperty('screen');
+        $screenProp->setValue($this->controller, $screen);
+
+        $invokeStyle = new \ReflectionMethod($this->controller, 'styleConfirmItems');
+
+        // Thesis 1: Confirm kind items get styled
+        // Even with icon markers already in labels, actual styling via
+        // theme->color() wraps the label text with ANSI color codes.
+        $confirmItems = [
+            ['value' => 'yes', 'label' => "\u{2713} Yes"],
+            ['value' => 'no', 'label' => "\u{2717} No"],
+        ];
+        $styled = $invokeStyle->invoke($this->controller, $confirmItems, QuestionKind::Confirm);
+        self::assertNotSame("\u{2713} Yes", $styled[0]['label'], 'Confirm Yes must be styled with Success color');
+        self::assertNotSame("\u{2717} No", $styled[1]['label'], 'Confirm No must be styled with Error color');
+
+        // Thesis 2: Choice kind items with the same values are NOT styled
+        // This proves the kind guard prevents accidental coloring of
+        // Choice options whose labels happen to be 'yes' or 'no'.
+        $choiceItems = [
+            ['value' => 'yes', 'label' => 'yes'],
+            ['value' => 'no', 'label' => 'no'],
+            ['value' => 'other', 'label' => 'other'],
+        ];
+        $unstyled = $invokeStyle->invoke($this->controller, $choiceItems, QuestionKind::Choice);
+        self::assertSame($choiceItems, $unstyled, 'Choice items must be returned unchanged even when values are yes/no');
+    }
 
     #[Test]
     public function testAnswerInvokesCoordinatorCallback(): void

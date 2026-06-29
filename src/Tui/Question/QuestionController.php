@@ -144,7 +144,7 @@ final class QuestionController
         $this->container->add($prompt);
 
         $items = $this->buildItems($request);
-        $items = $this->styleConfirmItems($items);
+        $items = $this->styleConfirmItems($items, $request->kind);
         $kb = new Keybindings([
             'select_up' => [Key::UP],
             'select_down' => [Key::DOWN],
@@ -196,15 +196,24 @@ final class QuestionController
     /**
      * Apply theme colors to confirm Yes/No items.
      *
+     * Only applies styling when the question kind is Confirm, since the
+     * yes/no value guards would incorrectly color Choice items whose
+     * labels happen to be 'yes' or 'no'.
+     *
      * Uses success/green for Yes and error/red for No so the
      * affirmative and negative choices are visually distinct.
      *
      * @param list<array{value: string, label: string, description?: string}> $items
+     * @param QuestionKind                                                    $kind  The question kind — styling only applies to Confirm
      *
      * @return list<array{value: string, label: string, description?: string}>
      */
-    private function styleConfirmItems(array $items): array
+    private function styleConfirmItems(array $items, QuestionKind $kind): array
     {
+        if (QuestionKind::Confirm !== $kind) {
+            return $items;
+        }
+
         if (null === $this->screen) {
             return $items;
         }
