@@ -115,7 +115,8 @@ final class SubagentResultRendererTest extends TestCase
             ],
             streaming: false,
         );
-        $joined = implode("\n", (new SubagentResultRenderer())->render($block, new TuiRenderContext(terminalWidth: 120)));
+        $lines = (new TranscriptBlockRenderer())->renderBlock($block, new TuiRenderContext(terminalWidth: 120));
+        $joined = implode("\n", $lines);
         self::assertStringContainsString('completed scout', $joined);
         self::assertStringContainsString('Unique handoff body', $joined);
     }

@@ -9,11 +9,17 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
-use Ineersa\Tui\Widget\TuiRenderContext;
-use Symfony\Component\Tui\Ansi\TextWrapper;
 
 /**
- * Renders structured subagent tool-result blocks inline in the chat transcript.
+ * Builds structured subagent tool-result content for the widget-tree renderer.
+ *
+ * This class provides content strings (not flat-rendered lines) for the
+ * Symfony TUI widget-tree pipeline in {@see TranscriptBlockWidgetFactory}.
+ * The old flat {@see render()} path has been removed — all rendering now
+ * flows through {@see buildContent()} → TextWidget wrapping.
+ *
+ * Only subagent-related blocks ({@see supports()}) are handled here;
+ * normal tool-call/result blocks go through {@see TranscriptBlockWidgetFactory::buildWidget()}.
  */
 final readonly class SubagentResultRenderer
 {
@@ -45,32 +51,12 @@ final readonly class SubagentResultRenderer
     public function buildContent(TranscriptBlock $block, TuiTheme $theme): string
     {
         $text = $this->resolveText($block);
-        $prefix = '  ●';
-        $suffix = $block->streaming ? '...' : '';
+        $prefix = TranscriptBlockWidgetFactory::GLYPH_TOOL;
+        $suffix = $block->streaming ? TranscriptBlockWidgetFactory::STREAMING_SUFFIX : '';
 
         $line = \sprintf('%s %s%s', $prefix, $text, $suffix);
 
         return $theme->color(ThemeColorEnum::ToolOutput, $line);
-    }
-
-    /**
-     * @return list<string>
-     */
-    public function render(TranscriptBlock $block, TuiRenderContext $context): array
-    {
-        $text = $this->resolveText($block);
-        $prefix = '  ●';
-        $color = ThemeColorEnum::ToolOutput;
-        $suffix = $block->streaming ? '...' : '';
-
-        $line = \sprintf('%s %s%s', $prefix, $text, $suffix);
-        $width = max($context->terminalWidth, 1);
-        $lines = TextWrapper::wrapTextWithAnsi($line, $width);
-
-        return array_map(
-            static fn (string $wrapped): string => $context->theme->color($color, $wrapped),
-            $lines,
-        );
     }
 
     private function resolveText(TranscriptBlock $block): string
