@@ -26,8 +26,8 @@ use PHPUnit\Framework\Attributes\CoversClass;
  * ForkControllerStartService and ForkRunTerminalWatcher are also final
  * readonly classes, so the success routing path is tested structurally
  * via the throw-guard tests below.  The implementation is straightforward
- * delegation: fork_mode → forkStartService.start(); watcher start is
- * immediate after the start call.
+ * delegation: fork_mode → preflight both services, then forkStartService
+ * and forkTerminalWatcher in sequence.
  */
 #[CoversClass(StartRunHandler::class)]
 final class StartRunHandlerTest extends IsolatedKernelTestCase
@@ -56,10 +56,11 @@ final class StartRunHandlerTest extends IsolatedKernelTestCase
 
     public function testForkModeWithMissingTerminalWatcherThrows(): void
     {
-        // This test cannot mock ForkControllerStartService (final readonly class),
-        // so we fetch a real one from the container.  Calling start() will try to
-        // parse the snapshot and likely fail.  The key assertion is that the handler
-        // throws SOMETHING — proving it does not silently fall through to client.
+        // ForkControllerStartService is final readonly, so we fetch a real one
+        // from the container.  Since the watcher null check now fires before any
+        // method call on forkStartService (preflight ordering fix), the instance
+        // is never used — the test never reaches start().
+        // This ensures no fork run can be started without the terminal watcher.
         $client = self::getContainer()->get(InProcessAgentSessionClient::class);
         $forkStartService = self::getContainer()->get(\Ineersa\CodingAgent\Runtime\Controller\ForkControllerStartService::class);
 
@@ -74,16 +75,10 @@ final class StartRunHandlerTest extends IsolatedKernelTestCase
             'fork_snapshot_path' => __FILE__,
         ]);
 
-        try {
-            $handler($this->createEvent($command));
-            self::fail('Expected RuntimeException for fork_mode with missing ForkRunTerminalWatcher — handler should not silently fall through');
-        } catch (\RuntimeException $e) {
-            // Accept any RuntimeException: either from trying to load the bad
-            // snapshot (ForkControllerStartService) or from the terminal watcher
-            // check.  Both prove the bug is fixed (handler does NOT silently call
-            // client->start with a bogus empty run).
-            self::assertStringContainsString('fork', $e->getMessage());
-        }
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Fork mode requires ForkRunTerminalWatcher');
+
+        $handler($this->createEvent($command));
     }
 
     // ── Normal start routing ──

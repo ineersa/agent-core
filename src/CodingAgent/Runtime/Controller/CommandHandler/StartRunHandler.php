@@ -67,16 +67,26 @@ final readonly class StartRunHandler
         //   1. EventStore (committed by consumer) → controller event drain → TUI
         //   2. LLM consumer stdout (streaming deltas) → controller poll → TUI
         //
-        // CRITICAL: If fork_mode is set but ForkControllerStartService is null,
-        // fail immediately with a clear message rather than silently falling
-        // through to InProcessAgentSessionClient (which would start a bogus
-        // empty run with no fork seed messages).
+        // CRITICAL: Preflight BOTH fork services before any start side effects.
+        // If fork_mode is set but ForkControllerStartService is null, fail
+        // immediately rather than silently falling through to
+        // InProcessAgentSessionClient (which would start a bogus empty run with
+        // no fork seed messages).  If ForkRunTerminalWatcher is null, fail
+        // immediately rather than starting a fork child that will never be
+        // finalized (orphaned run).
         if (true === ($options['fork_mode'] ?? false)) {
             if (null === $this->forkStartService) {
                 throw new \RuntimeException('Fork mode requires ForkControllerStartService but it is not wired. Check DI container configuration for fork support.');
             }
+            if (null === $this->forkTerminalWatcher) {
+                throw new \RuntimeException('Fork mode requires ForkRunTerminalWatcher but it is not wired. Check DI container configuration for fork finalization support.');
+            }
 
             $handle = $this->forkStartService->start($options);
+            $this->forkTerminalWatcher->startForForkRun(
+                runId: $handle->runId,
+                forkOptions: $options,
+            );
         } else {
             $handle = $this->client->start(new StartRunRequest(
                 prompt: $prompt,
@@ -94,25 +104,6 @@ final readonly class StartRunHandler
             seq: 0,
             payload: ['status' => 'running'],
         ));
-
-        // ── Fork finalization watcher (controller-side) ──
-        // When fork_mode is set, the terminal watcher polls RunStore for
-        // terminal state, validates the handoff, and writes result artifacts.
-        // The TUI-side ForkAutoExitRegistrar simply stops the event loop on
-        // terminal; all AppAgent-intensive work lives here in the controller.
-        //
-        // CRITICAL: If fork_mode is set but ForkRunTerminalWatcher is null,
-        // fail immediately rather than silently skipping result finalization.
-        if (true === ($options['fork_mode'] ?? false)) {
-            if (null === $this->forkTerminalWatcher) {
-                throw new \RuntimeException('Fork mode requires ForkRunTerminalWatcher but it is not wired. Check DI container configuration for fork finalization support.');
-            }
-
-            $this->forkTerminalWatcher->startForForkRun(
-                runId: $handle->runId,
-                forkOptions: $options,
-            );
-        }
 
         // Events are NOT iterated here — they arrive through the controller's
         // periodic EventStore drain (canonical seq > 0) and LLM consumer
