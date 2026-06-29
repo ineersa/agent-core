@@ -18,8 +18,8 @@ use PHPUnit\Framework\TestCase;
  *   child, dispatch the empty-prompt fork start to controller, finalize
  *   after a replayed valid handoff, wait for .fork-finalized, auto-exit,
  *   print ---FORK-RESULT-START---, and leave deterministic artifacts
- *   (handoff.md, fork-metadata.json, .fork-finalized) under the fork
- *   result dir.
+ *   (fork-metadata.json, .fork-finalized) under the fork result dir
+ *   and handoff.md under the canonical session artifact path.
  *
  * This exercises the full fork child lifecycle:
  *   AgentCommand::runForkTui() → InteractiveMode → process transport
@@ -352,7 +352,7 @@ final class TuiForkChildE2eTest extends TestCase
         @\mkdir($dir.'/home/.hatfield', 0o777, true);
         \file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
 
-        // Plant AGENTS.md and a minimal skill to satisfy context builders.
+        // Plant a minimal skill under .agents/ to satisfy context builders.
         @\mkdir($dir.'/.agents', 0o777, true);
         @\mkdir($dir.'/.agents/skills/e2e-fork', 0o777, true);
         \file_put_contents(

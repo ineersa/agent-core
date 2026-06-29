@@ -497,8 +497,14 @@ final readonly class ForkRunTerminalWatcher
             if (is_file($path)) {
                 @unlink($path);
             }
-        } catch (\Throwable) {
-            // Best-effort only.
+        } catch (\Throwable $e) {
+            $this->logger->debug('fork.terminal.temp_cleanup_failed', [
+                'component' => 'fork.watcher',
+                'event_type' => 'fork.terminal.temp_cleanup_failed',
+                'temp_file' => basename($path),
+                'exception' => $e::class,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 
