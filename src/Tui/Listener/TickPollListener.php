@@ -43,7 +43,6 @@ final class TickPollListener implements TuiListenerRegistrar
     public function register(TuiRuntimeContext $context): void
     {
         $poller = $this->poller;
-        $state = $context->state;
         $client = $context->client;
         $screen = $context->screen;
         $questionCoordinator = $this->questionCoordinator;
@@ -52,7 +51,10 @@ final class TickPollListener implements TuiListenerRegistrar
         // Wire the question controller with TUI runtime references
         $questionController->setRuntimeRefs($context, $screen);
 
-        $context->ticks->add(static function () use ($poller, $state, $client, $screen, $questionCoordinator, $questionController): ?bool {
+        $context->ticks->add(static function () use ($poller, $context, $client, $screen, $questionCoordinator, $questionController): ?bool {
+            // POC: use active tab's state from TabService when available
+            $activeState = $context->activeState();
+
             $onHitl = static function (RuntimeEvent $event) use ($client, $questionCoordinator): void {
                 self::handleHumanInputRequested($event, $client, $questionCoordinator);
             };
@@ -66,7 +68,7 @@ final class TickPollListener implements TuiListenerRegistrar
             };
 
             $changedBlocks = $poller->poll(
-                $state,
+                $activeState,
                 $client,
                 onHumanInputRequested: $onHitl,
                 onToolQuestionRequested: $onToolQuestion,
@@ -74,13 +76,13 @@ final class TickPollListener implements TuiListenerRegistrar
             );
 
             if (null !== $changedBlocks) {
-                $screen->setTranscriptBlocks($state->transcript);
+                $screen->setTranscriptBlocks($activeState->transcript);
             }
 
             // The pending-queue widget (slot 4, above the editor) reflects transient
             // queued steer/follow-up messages. Sync every tick regardless of transcript
             // changes, since a user.message_queued event mutates state without a block.
-            $screen->syncQueuedUserMessages($state->queuedUserMessages);
+            $screen->syncQueuedUserMessages($activeState->queuedUserMessages);
 
             // Open the question overlay whenever the coordinator has an
             // active request and the controller is not already showing it.
@@ -95,27 +97,10 @@ final class TickPollListener implements TuiListenerRegistrar
             }
 
             // Update working status based on authoritative activity state.
-            // SubmitListener sets 'Working...' optimistically on send;
-            // this keeps it visible while active and clears it when idle/terminal.
-            //
-            // Cancelling gets its own message ('Cancelling...') because
-            // CancelListener sets it once on Escape, and this tick renderer
-            // would otherwise overwrite it back to 'Working...' on the very
-            // next tick. Rendering the correct message from the activity state
-            // rather than a binary idle/active toggle keeps the footer truthful
-            // even when the activity state is sticky Cancelling through late deltas.
-            //
-            // Always call setWorkingMessage — don't use a static last-value
-            // cache. SubmitListener (and future features like shell commands)
-            // may call setWorkingMessage directly between tick cycles, and a
-            // stale static cache would skip the authoritative tick update,
-            // permanently leaving a stuck working message.
             $msg = match (true) {
-                RunActivityStateEnum::Cancelling === $state->activity => 'Cancelling...',
-                RunActivityStateEnum::Idle === $state->activity || $state->activity->isTerminal() => null,
-                // Resumed sessions replay activity but have no live handle until
-                // start_run/follow_up attaches the controller — do not show Working.
-                null === $state->handle && $state->activity->isActive() => null,
+                RunActivityStateEnum::Cancelling === $activeState->activity => 'Cancelling...',
+                RunActivityStateEnum::Idle === $activeState->activity || $activeState->activity->isTerminal() => null,
+                null === $activeState->handle && $activeState->activity->isActive() => null,
                 default => 'Working...',
             };
 

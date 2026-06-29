@@ -59,9 +59,11 @@ final class SubmitListener implements TuiListenerRegistrar
         $router = $this->submissionRouter;
         $blockFactory = $this->blockFactory;
         $client = $context->client;
-        $state = $context->state;
         $screen = $context->screen;
         $tui = $context->tui;
+
+        // POC: resolve active state from TabService when available
+        $state = $context->activeState();
 
         $questionCoordinator = $this->coordinator;
         $questionController = $this->questionController;
@@ -72,9 +74,13 @@ final class SubmitListener implements TuiListenerRegistrar
         $questionController->setRuntimeRefs($context, $screen);
 
         $context->tui->addListener(static function (SubmitEvent $event) use (
-            $client, $sessionStore, $state, $screen, $tui, $router, $blockFactory,
+            $client, $sessionStore, $context, $screen, $tui, $router, $blockFactory,
             $questionCoordinator, $questionController, $logger,
         ) {
+            // POC: re-resolve active state on each submission so tab switches
+            // are respected (the state captured at register() time is the
+            // parent; using $context->activeState() gets the actual active tab).
+            $state = $context->activeState();
             $text = $screen->extract();
             if ('' === $text) {
                 return;

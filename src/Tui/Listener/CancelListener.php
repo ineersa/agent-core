@@ -38,12 +38,13 @@ final class CancelListener implements TuiListenerRegistrar
     public function register(TuiRuntimeContext $context): void
     {
         $client = $context->client;
-        $state = $context->state;
         $screen = $context->screen;
         $logger = $this->logger;
         $boundary = $this->boundary;
 
-        $context->tui->addListener(static function (CancelEvent $event) use ($client, $state, $screen, $logger, $boundary): void {
+        $context->tui->addListener(static function (CancelEvent $event) use ($client, $context, $screen, $logger, $boundary): void {
+            // POC: use active tab's state for multi-tab support
+            $state = $context->activeState();
             // Active run (Starting/Running/WaitingHuman/Cancelling) — send cancel.
             // Compacting: auto-compaction maintenance is in flight — also
             // send cancel so the user can abort a stuck compaction (session 13).

@@ -23,6 +23,10 @@ use Symfony\Component\Tui\Tui;
  * iteration so subscriptions never leak across sessions.  Future
  * slash-command handlers and extensions subscribe to lifecycle
  * events (session start, resume, draft, end) through this dispatcher.
+ *
+ * @param TabService|null $tabService POC: multi-tab support. When null,
+ *                                    listeners fall back to single-tab
+ *                                    behavior for backward compatibility.
  */
 final readonly class TuiRuntimeContext
 {
@@ -35,6 +39,26 @@ final readonly class TuiRuntimeContext
         public TuiTickDispatcher $ticks,
         public TuiSessionSwitchServiceInterface $switch,
         public TuiSessionLifecycleDispatcher $lifecycle,
+        public ?TabService $tabService = null,
     ) {
+    }
+
+    /**
+     * Get the active state from TabService, falling back to the legacy single state.
+     *
+     * POC: listeners that used $context->state directly should use this
+     * helper instead. When TabService is available, returns the active
+     * tab's state; otherwise returns the legacy single state.
+     */
+    public function activeState(): TuiSessionState
+    {
+        if (null !== $this->tabService) {
+            $active = $this->tabService->activeState();
+            if (null !== $active) {
+                return $active;
+            }
+        }
+
+        return $this->state;
     }
 }

@@ -7,6 +7,8 @@ namespace Ineersa\Tui\Screen;
 use Ineersa\CodingAgent\Runtime\Contract\LoadedResourcesSummaryDTO;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Extension\SlotBasedTuiExtensionContext;
+use Ineersa\Tui\Runtime\TabService;
+use Ineersa\Tui\Widget\TabBarWidget;
 use Ineersa\Tui\Extension\TuiExtensionContext;
 use Ineersa\Tui\Footer\FooterBarWidget;
 use Ineersa\Tui\Footer\FooterDataProvider;
@@ -62,6 +64,7 @@ final class ChatScreen
 
     /* ── Symfony widget refs (internal) ── */
     private readonly LiveTextWidget $topMarginWidget;
+    private readonly LiveTextWidget $tabBarWidget;
     private readonly LiveTextWidget $headerWidget;
     private readonly LiveTextWidget $headerSepWidget;
     private readonly LiveTextWidget $loadedResourcesWidget;
@@ -76,6 +79,7 @@ final class ChatScreen
     private readonly LiveTextWidget $footerWidget;
 
     /* ── TUI renderables (theme-agnostic, read by producer closures) ── */
+    private readonly TabBarWidget $tabBarRenderable;
     private readonly HeaderWidget $headerRenderable;
     private readonly TranscriptBlockWidget $transcriptRenderable;
     private readonly PendingMessagesWidget $pendingRenderable;
@@ -95,10 +99,12 @@ final class ChatScreen
     /* ── Mount flag ── */
     private bool $mounted = false;
 
+    /** @param TabService|null $tabService POC: multi-tab support. When null, no tab bar is rendered. */
     public function __construct(
         private readonly TuiTheme $theme,
         private string $sessionId,
         private readonly PromptEditor $promptEditor,
+        private readonly ?TabService $tabService = null,
     ) {
         $this->registry = new TuiSlotRegistry();
 
@@ -119,6 +125,17 @@ final class ChatScreen
         // LiveTextWidget preserves empty lines so the margin renders.
         $this->topMarginWidget = new LiveTextWidget(
             static fn (RenderContext $ctx) => str_repeat("\n", self::TOP_MARGIN_LINES - 1),
+        );
+
+        // ── Tab bar (POC) ──
+        // Renders above the header when TabService is available.
+        $this->tabBarRenderable = new TabBarWidget($tabService ?? new TabService());
+        $this->tabBarWidget = new LiveTextWidget(
+            function (RenderContext $symfonyCtx): string {
+                $tuiCtx = $this->tuiContext($symfonyCtx);
+
+                return implode("\n", $this->tabBarRenderable->render($tuiCtx));
+            },
         );
 
         // ═══════════════════════════════════════════════════
@@ -284,6 +301,7 @@ final class ChatScreen
         // LiveTextWidget producers already read live RenderContext columns,
         // so no cached terminalWidth is needed.
         $tui->add($this->topMarginWidget);
+        $tui->add($this->tabBarWidget);
         $tui->add($this->headerWidget);
         $tui->add($this->headerSepWidget);
         $tui->add($this->loadedResourcesWidget);
@@ -593,6 +611,16 @@ final class ChatScreen
     public function extensionContext(): TuiExtensionContext
     {
         return $this->extensionContext;
+    }
+
+    /**
+     * Get the TabService if available.
+     *
+     * POC: provides access to multi-tab state for listener routing.
+     */
+    public function tabService(): ?TabService
+    {
+        return $this->tabService;
     }
 
     /**
