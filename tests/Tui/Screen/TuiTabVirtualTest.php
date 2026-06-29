@@ -234,7 +234,7 @@ final class TuiTabVirtualTest extends TestCase
     }
 
     #[Test]
-    public function testDetectSubagentArtifactReturnsNullWithoutFinalFlag(): void
+    public function testDetectSubagentArtifactReturnsDataForRunning(): void
     {
         $block = new TranscriptBlock(
             id: 'test',
@@ -255,12 +255,22 @@ final class TuiTabVirtualTest extends TestCase
         );
 
         $opened = [];
-        self::assertNull(SubagentTabAutoListener::detectSubagentArtifact($block, $opened));
+        $result = SubagentTabAutoListener::detectSubagentArtifact($block, $opened);
+
+        self::assertNotNull($result, 'Running subagent block should be detected');
+        self::assertSame('agent_abc123', $result['artifact_id']);
+        self::assertSame('child-run-id', $result['agent_run_id']);
+        self::assertSame('scout', $result['agent_name']);
+        self::assertSame('running', $result['status']);
+        self::assertFalse($result['is_final'], 'Running block should not be is_final');
     }
 
     #[Test]
-    public function testDetectSubagentArtifactReturnsNullForAlreadyOpened(): void
+    public function testDetectSubagentArtifactReturnsDataForAlreadyOpened(): void
     {
+        // Caller-level dedup: detectSubagentArtifact returns data for ALL
+        // valid subagent blocks regardless of openedArtifacts.
+        // The caller (tick handler) decides whether to create or update.
         $block = new TranscriptBlock(
             id: 'test',
             kind: TranscriptBlockKindEnum::ToolResult,
@@ -280,8 +290,13 @@ final class TuiTabVirtualTest extends TestCase
             ],
         );
 
-        $opened = ['agent_abc123' => true];
-        self::assertNull(SubagentTabAutoListener::detectSubagentArtifact($block, $opened));
+        $opened = ['agent_abc123' => 'completed'];
+        $result = SubagentTabAutoListener::detectSubagentArtifact($block, $opened);
+
+        self::assertNotNull($result, 'Already-opened artifact should still be detected (caller dedups)');
+        self::assertSame('agent_abc123', $result['artifact_id']);
+        self::assertSame('child-run-id', $result['agent_run_id']);
+        self::assertTrue($result['is_final']);
     }
 
     #[Test]

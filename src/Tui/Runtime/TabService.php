@@ -76,4 +76,18 @@ final class TabService
     {
         return $this->tabs[$index] ?? null;
     }
+
+    /**
+     * Find a tab by its identifier.
+     */
+    public function findTabById(string $id): ?TabDefinition
+    {
+        foreach ($this->tabs as $tab) {
+            if ($tab->id === $id) {
+                return $tab;
+            }
+        }
+
+        return null;
+    }
 }

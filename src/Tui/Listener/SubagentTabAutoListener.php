@@ -14,21 +14,31 @@ use Ineersa\Tui\Runtime\TabDefinition;
 use Ineersa\Tui\Runtime\TabService;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
+use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 
 /**
- * POC: Auto-detects completed subagent artifacts and opens read-only tabs.
+ * POC: Auto-detects subagent artifacts while running and opens live tabs.
  *
  * On each TUI tick, scans the parent state transcript for subagent tool
- * result blocks with `subagent_final` metadata. When a new one is found,
- * it creates a read-only tab that:
+ * result blocks with `subagent_progress` metadata.
  *
- *   1. Reads the child run events via AgentSessionClient::events(agentRunId)
- *      (routes through ChildAwareEventStore to the artifact's events.jsonl)
- *   2. Converts them into transcript blocks for display
- *   3. Registers the resulting tab in TabService
+ * LIVING RUNNING subagents:
+ *   - Detects blocks where `subagent_progress.status` is 'running'
+ *   - Creates a tab immediately and populates it from available child events
+ *   - On subsequent ticks, re-reads child events via AgentSessionClient::events()
+ *     and updates the tab transcript with new blocks
+ *   - Detects terminal state from child run events (run.completed/failed/cancelled)
+ *     and marks the tab as complete
  *
- * The tab is read-only because:
+ * COMPLETED subagents:
+ *   - Detects blocks where `subagent_final` is true
+ *   - Creates a read-only tab with all available child events
+ *
+ * Auto-switches to the new subagent tab when first created so the user
+ * immediately sees the running subagent's output.
+ *
+ * Read-only because:
  *   - The subagent runs foreground (blocks parent LLM turn)
  *   - No child RunHandle is exposed for interactive input
  *   - Child events are parent-artifact scoped, not independently accessible
@@ -41,8 +51,25 @@ use Ineersa\Tui\Transcript\TranscriptBlockFactory;
  */
 final class SubagentTabAutoListener implements TuiListenerRegistrar
 {
-    /** @var array<string, true> artifact IDs already opened as tabs */
+    /**
+     * Track opened artifacts and their latest status.
+     *
+     * The key is artifact_id. The value is the progress status string
+     * ('running', 'completed', 'failed', 'cancelled') so we can detect
+     * lifecycle transitions from parent transcript blocks.
+     *
+     * @var array<string, string>
+     */
     private array $openedArtifacts = [];
+
+    /**
+     * Track artifact IDs that have reached terminal state in child events.
+     *
+     * Key is artifact_id, value is true once terminal.
+     *
+     * @var array<string, true>
+     */
+    private array $terminalFromChildEvents = [];
 
     public function __construct(
         private readonly AgentSessionClient $client,
@@ -57,6 +84,7 @@ final class SubagentTabAutoListener implements TuiListenerRegistrar
         $client = $this->client;
         $blockFactory = $this->blockFactory;
         $openedArtifacts = &$this->openedArtifacts;
+        $terminalFromChildEvents = &$this->terminalFromChildEvents;
 
         $context->ticks->add(static function () use (
             $tabService,
@@ -64,9 +92,9 @@ final class SubagentTabAutoListener implements TuiListenerRegistrar
             $client,
             $blockFactory,
             &$openedArtifacts,
+            &$terminalFromChildEvents,
             $context,
         ): ?bool {
-            // Only scan the parent state's transcript (not active tab)
             $parentState = $context->state;
             $parentRunId = $parentState->sessionId;
 
@@ -80,19 +108,85 @@ final class SubagentTabAutoListener implements TuiListenerRegistrar
                     continue;
                 }
 
-                // Found a new subagent artifact — create a read-only tab
-                self::openArtifactTab(
-                    tabService: $tabService,
-                    screen: $screen,
-                    client: $client,
-                    blockFactory: $blockFactory,
-                    parentRunId: $parentRunId,
-                    artifactId: $artifact['artifact_id'],
-                    agentRunId: $artifact['agent_run_id'],
-                    agentName: $artifact['agent_name'],
-                );
+                $artifactId = $artifact['artifact_id'];
+                $agentRunId = $artifact['agent_run_id'];
+                $agentName = $artifact['agent_name'];
+                $status = $artifact['status'];
+                $isFinal = $artifact['is_final'];
 
-                $openedArtifacts[$artifact['artifact_id']] = true;
+                // Check if this artifact already has a tab
+                $existingTab = self::findTabByArtifactId($tabService, $artifactId);
+
+                if (null === $existingTab) {
+                    // NEW artifact — create tab and auto-switch
+                    $newTabIndex = $tabService->count();
+                    self::openArtifactTab(
+                        tabService: $tabService,
+                        screen: $screen,
+                        client: $client,
+                        blockFactory: $blockFactory,
+                        parentRunId: $parentRunId,
+                        artifactId: $artifactId,
+                        agentRunId: $agentRunId,
+                        agentName: $agentName,
+                        isTerminal: $isFinal,
+                        status: $status,
+                    );
+
+                    // Auto-switch so user sees the subagent tab immediately
+                    $tabService->switchTo($newTabIndex);
+                    $activeState = $tabService->activeState();
+                    if (null !== $activeState) {
+                        $screen->setTranscriptBlocks($activeState->transcript);
+                    }
+
+                    if ($isFinal) {
+                        $terminalFromChildEvents[$artifactId] = true;
+                    }
+                } else {
+                    // EXISTING tab — update if not yet terminal
+                    if (isset($terminalFromChildEvents[$artifactId])) {
+                        continue;
+                    }
+
+                    $existingState = $existingTab->state;
+
+                    // If the parent block says it's now final, mark as terminal
+                    if ($isFinal) {
+                        $existingState->activity = self::terminalActivity($status);
+                        $terminalFromChildEvents[$artifactId] = true;
+
+                        continue;
+                    }
+
+                    // Re-read child events to see if we have new data
+                    $freshEvents = $client->events($agentRunId);
+                    $freshBlocks = self::buildBlocksFromEvents($freshEvents, $blockFactory, $agentRunId);
+
+                    if ([] !== $freshBlocks) {
+                        $existingState->transcript = $freshBlocks;
+                    } else {
+                        // No child events yet — show status placeholder
+                        $existingState->transcript = [
+                            self::buildStatusBlock($agentRunId, $agentName, $status),
+                        ];
+                    }
+
+                    // Check child events for terminal state
+                    $isChildTerminal = self::eventsContainTerminal($freshEvents);
+                    if ($isChildTerminal) {
+                        $terminalStatus = self::terminalStatusFromEvents($freshEvents);
+                        $existingState->activity = self::terminalActivity($terminalStatus);
+                        $terminalFromChildEvents[$artifactId] = true;
+                    }
+
+                    // If this tab is currently active, update the screen
+                    if ($tabService->active()?->id === $existingTab->id) {
+                        $screen->setTranscriptBlocks($existingState->transcript);
+                    }
+                }
+
+                $openedArtifacts[$artifactId] = $status;
             }
 
             return null;
@@ -102,32 +196,32 @@ final class SubagentTabAutoListener implements TuiListenerRegistrar
     /**
      * Scan a transcript block for subagent artifact data.
      *
-     * Returns ['artifact_id', 'agent_run_id', 'agent_name'] when the
-     * block is a completed subagent tool result not yet opened as a tab.
+     * Returns artifact data when the block is a ToolResult with
+     * `subagent_progress` metadata containing valid `artifact_id`
+     * and `agent_run_id`, regardless of whether the subagent is
+     * still running or has completed.
+     *
+     * For already-opened artifacts, the method returns data anyway
+     * so the caller can update the existing tab (status may have
+     * changed from 'running' to terminal).
      *
      * Made public static for testability.
      *
-     * @param array<string, true> $openedArtifacts
+     * @param array<string, string> $openedArtifacts
      *
-     * @return array{artifact_id: string, agent_run_id: string, agent_name: string}|null
+     * @return array{artifact_id: string, agent_run_id: string, agent_name: string, status: string, is_final: bool}|null
      */
     public static function detectSubagentArtifact(
         TranscriptBlock $block,
         array &$openedArtifacts,
     ): ?array {
-        // Only ToolResult blocks with subagent_final flag
+        // Only ToolResult blocks
         if (TranscriptBlockKindEnum::ToolResult !== $block->kind) {
             return null;
         }
 
         $progress = $block->meta['subagent_progress'] ?? null;
         if (!\is_array($progress)) {
-            return null;
-        }
-
-        // Must be terminal (completed, failed, or cancelled)
-        $isFinal = (bool) ($block->meta['subagent_final'] ?? false);
-        if (!$isFinal) {
             return null;
         }
 
@@ -141,15 +235,21 @@ final class SubagentTabAutoListener implements TuiListenerRegistrar
             return null;
         }
 
-        // Already opened
-        if (isset($openedArtifacts[$artifactId])) {
-            return null;
+        // Get the status from progress payload (running, completed, etc.)
+        $status = $progress['status'] ?? 'running';
+        if (!\is_string($status)) {
+            $status = 'running';
         }
+
+        // Check whether the block signals final completion
+        $isFinal = (bool) ($block->meta['subagent_final'] ?? false);
 
         return [
             'artifact_id' => $artifactId,
             'agent_run_id' => $agentRunId,
             'agent_name' => \is_string($agentName) ? $agentName : 'subagent',
+            'status' => $status,
+            'is_final' => $isFinal,
         ];
     }
 
@@ -158,15 +258,7 @@ final class SubagentTabAutoListener implements TuiListenerRegistrar
      *
      * Converts child agent events into display blocks without using the
      * shared TranscriptProjector (which would corrupt the parent's projected
-     * block state). Each RuntimeEvent type maps to a TranscriptBlock:
-     *
-     *   run.started              → system ("Run started")
-     *   llm_step_completed       → assistant (text summary)
-     *   tool_execution.started   → tool call (tool name)
-     *   tool_execution.completed → tool result (result text)
-     *   tool_execution.failed    → tool result (error)
-     *   tool_execution.cancelled → cancelled
-     *   agent_end                → system (reason)
+     * block state).
      *
      * @param iterable<RuntimeEvent> $events
      *
@@ -209,6 +301,29 @@ final class SubagentTabAutoListener implements TuiListenerRegistrar
                         runId: $runId,
                         seq: $seq,
                         text: \sprintf('Run completed: %s', $reason),
+                        meta: [],
+                    );
+                    break;
+
+                case RuntimeEventTypeEnum::RunFailed->value:
+                    $reason = (string) ($payload['reason'] ?? 'failed');
+                    $blocks[] = new TranscriptBlock(
+                        id: $runId.'_run_failed',
+                        kind: TranscriptBlockKindEnum::System,
+                        runId: $runId,
+                        seq: $seq,
+                        text: \sprintf('Run failed: %s', $reason),
+                        meta: ['is_error' => true],
+                    );
+                    break;
+
+                case RuntimeEventTypeEnum::RunCancelled->value:
+                    $blocks[] = new TranscriptBlock(
+                        id: $runId.'_run_cancelled',
+                        kind: TranscriptBlockKindEnum::Cancelled,
+                        runId: $runId,
+                        seq: $seq,
+                        text: 'Run cancelled',
                         meta: [],
                     );
                     break;
@@ -310,13 +425,11 @@ final class SubagentTabAutoListener implements TuiListenerRegistrar
 
     /**
      * Build an assistant transcript block from an llm_step_completed payload.
-     */
-    /**
+     *
      * @param array<string, mixed> $payload
      */
     private static function buildAssistantBlock(array $payload, string $runId, int $seq): TranscriptBlock
     {
-        // Extract inner payload if nested
         $inner = $payload['payload'] ?? $payload;
         if (!\is_array($inner)) {
             $inner = $payload;
@@ -338,7 +451,6 @@ final class SubagentTabAutoListener implements TuiListenerRegistrar
         }
 
         // Extract text content
-        // Priority: explicit 'text' key (from RuntimeEventTranslator) > nested 'content' > 'content' array walk
         $textContent = (string) ($payload['text'] ?? '');
         if ('' === $textContent) {
             $content = $inner['content'] ?? '';
@@ -371,6 +483,9 @@ final class SubagentTabAutoListener implements TuiListenerRegistrar
         );
     }
 
+    /**
+     * Truncate tool result text to prevent massive blocks.
+     */
     private static function truncateToolResult(string $text): string
     {
         $maxLength = 500;
@@ -382,54 +497,162 @@ final class SubagentTabAutoListener implements TuiListenerRegistrar
     }
 
     /**
-     * Open a read-only tab for a subagent artifact.
+     * Convert an iterable to an array for multiple consumption.
      *
-     * Reads child run events via AgentSessionClient::events() (routes
-     * through ChildAwareEventStore to the artifact's events.jsonl),
-     * converts them to transcript blocks manually, and registers the
-     * tab.
+     * AgentSessionClient::events() may return a single-pass Generator
+     * (yield/yield from), so we must materialize the iterable before
+     * passing it to multiple consumers.
+     *
+     * @template T
+     *
+     * @param iterable<T> $iterable
+     *
+     * @return list<T>
+     */
+    private static function iterableToArray(iterable $iterable): array
+    {
+        if ($iterable instanceof \Traversable) {
+            return iterator_to_array($iterable, false);
+        }
+
+        return $iterable;
+    }
+
+    /**
+     * Build a status placeholder block for when no child events are available yet.
+     */
+    private static function buildStatusBlock(string $runId, string $agentName, string $status): TranscriptBlock
+    {
+        $displayStatus = match ($status) {
+            'running' => 'Running…',
+            'completed' => 'Completed',
+            'failed' => 'Failed',
+            'cancelled' => 'Cancelled',
+            default => $status,
+        };
+
+        return new TranscriptBlock(
+            id: $runId.'_status',
+            kind: TranscriptBlockKindEnum::System,
+            runId: $runId,
+            seq: 1,
+            text: \sprintf('Subagent "%s": %s', $agentName, $displayStatus),
+            meta: [],
+        );
+    }
+
+    /**
+     * Check if a collection of child events contains a terminal run event.
+     *
+     * @param iterable<RuntimeEvent> $events
+     */
+    private static function eventsContainTerminal(iterable $events): bool
+    {
+        foreach ($events as $event) {
+            if (!$event instanceof RuntimeEvent) {
+                continue;
+            }
+
+            $type = $event->type;
+            if (RuntimeEventTypeEnum::RunCompleted->value === $type
+                || RuntimeEventTypeEnum::RunFailed->value === $type
+                || RuntimeEventTypeEnum::RunCancelled->value === $type
+            ) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Extract terminal status string from child events.
+     *
+     * @param iterable<RuntimeEvent> $events
+     */
+    private static function terminalStatusFromEvents(iterable $events): string
+    {
+        foreach ($events as $event) {
+            if (!$event instanceof RuntimeEvent) {
+                continue;
+            }
+
+            return match ($event->type) {
+                RuntimeEventTypeEnum::RunCompleted->value => 'completed',
+                RuntimeEventTypeEnum::RunFailed->value => 'failed',
+                RuntimeEventTypeEnum::RunCancelled->value => 'cancelled',
+                default => 'completed',
+            };
+        }
+
+        return 'completed';
+    }
+
+    /**
+     * Map a status string to a RunActivityStateEnum.
+     */
+    private static function terminalActivity(string $status): RunActivityStateEnum
+    {
+        return match ($status) {
+            'failed' => RunActivityStateEnum::Failed,
+            'cancelled' => RunActivityStateEnum::Cancelled,
+            default => RunActivityStateEnum::Completed,
+        };
+    }
+
+    /**
+     * Open a tab for a subagent artifact.
+     *
+     * When the subagent is still running, populates the tab with whatever
+     * child events have been written so far, adding a status placeholder
+     * if no events are available yet.
      */
     private static function openArtifactTab(
         TabService $tabService,
-        \Ineersa\Tui\Screen\ChatScreen $screen,
+        ChatScreen $screen,
         AgentSessionClient $client,
         TranscriptBlockFactory $blockFactory,
         string $parentRunId,
         string $artifactId,
         string $agentRunId,
         string $agentName,
+        bool $isTerminal,
+        string $status,
     ): void {
-        // 1. Create child state
         $childState = new TuiSessionState($agentRunId, false);
 
-        // 2. Read child events
-        $childEvents = $client->events($agentRunId);
-
-        // 3. Build blocks manually (avoid shared projector)
+        // Read child events that have been written so far
+        // Convert to array: events() may return a single-pass Generator
+        $childEventsRaw = $client->events($agentRunId);
+        $childEvents = self::iterableToArray($childEventsRaw);
         $blocks = self::buildBlocksFromEvents($childEvents, $blockFactory, $agentRunId);
 
         if ([] !== $blocks) {
             $childState->transcript = $blocks;
         } else {
+            // No child events yet — show a status placeholder
             $childState->transcript = [
-                $blockFactory->system(
-                    runId: $agentRunId,
-                    text: \sprintf(
-                        'Subagent "%s" (artifact: %s) completed — no child events found.',
-                        $agentName,
-                        $artifactId,
-                    ),
-                    seq: 1,
-                ),
+                self::buildStatusBlock($agentRunId, $agentName, $status),
             ];
         }
 
-        // 4. No interactive handle — read-only tab
-        $childState->activity = RunActivityStateEnum::Completed;
+        // Determine activity state (reuses $childEvents array)
+        if ($isTerminal || self::eventsContainTerminal($childEvents)) {
+            $terminalStatus = self::terminalStatusFromEvents($childEvents);
+            $childState->activity = self::terminalActivity('' !== $terminalStatus ? $terminalStatus : $status);
+        } elseif ('running' === $status) {
+            $childState->activity = RunActivityStateEnum::Running;
+        } else {
+            $childState->activity = RunActivityStateEnum::Completed;
+        }
+
+        // No interactive handle — read-only tab
         $childState->handle = null;
 
-        // 5. Create tab definition
-        $tabLabel = \sprintf('Sub %s', substr($agentRunId, 0, 8));
+        // Tab label shows status
+        $statusIndicator = 'running' === $status || $childState->activity->isActive() ? ' ▶' : '';
+        $tabLabel = \sprintf('Sub %s%s', substr($agentRunId, 0, 8), $statusIndicator);
+
         $tabService->addTab(new TabDefinition(
             id: 'artifact-'.$artifactId,
             label: $tabLabel,
@@ -437,7 +660,15 @@ final class SubagentTabAutoListener implements TuiListenerRegistrar
             state: $childState,
             isRun: false, // read-only artifact tab, not a live run
         ));
+    }
 
-        // 6. Don't auto-switch — parent stays active. User can /tab N to view.
+    /**
+     * Find an existing tab by artifact ID prefix.
+     */
+    private static function findTabByArtifactId(TabService $tabService, string $artifactId): ?TabDefinition
+    {
+        $tabId = 'artifact-'.$artifactId;
+
+        return $tabService->findTabById($tabId);
     }
 }
