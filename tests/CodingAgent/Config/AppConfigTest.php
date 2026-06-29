@@ -4,16 +4,14 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Config;
 
-use Ineersa\CodingAgent\Config\Ai\AiConfig;
-use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppConfigLoader;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
-use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
-use Ineersa\CodingAgent\Config\SessionsConfig;
-use Ineersa\CodingAgent\Config\TuiConfig;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
+use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
+use Symfony\Component\Serializer\NameConverter\MetadataAwareNameConverter;
 use Symfony\Component\Serializer\SerializerInterface;
 
 /**
@@ -230,6 +228,77 @@ class AppConfigTest extends TestCase
     }
 
     // ──────────────────────────────────────────────
+    //  tui.transcript config hydration
+    // ──────────────────────────────────────────────
+
+    public function testTranscriptConfigDefaults(): void
+    {
+        $config = $this->buildConfig();
+
+        // theme_paths uses #[SerializedName('theme_paths')]; this assertion
+        // proves the test serializer correctly reads SerializedName attributes.
+        self::assertSame(['/app/config/themes'], $config->tui->themePaths);
+
+        $transcript = $config->tui->transcript;
+        self::assertTrue($transcript->thinking->visible);
+        self::assertSame('dim_italic', $transcript->thinking->style);
+        self::assertFalse($transcript->previews->expandedByDefault);
+        self::assertSame(8, $transcript->previews->toolResultLines);
+        self::assertSame(20, $transcript->previews->diffLines);
+    }
+
+    public function testTranscriptConfigHydratesFromYaml(): void
+    {
+        $this->writeDefaults([
+            'tui' => [
+                'theme' => 'cyberpunk',
+                'theme_paths' => ['/app/config/themes'],
+                'transcript' => [
+                    'thinking' => [
+                        'visible' => false,
+                        'style' => 'dim',
+                    ],
+                    'previews' => [
+                        'expanded_by_default' => true,
+                        'tool_result_lines' => 12,
+                        'diff_lines' => 30,
+                    ],
+                ],
+            ],
+            'sessions' => ['path' => '.hatfield/sessions'],
+            'logging' => ['path' => '.hatfield/logs', 'level' => 'info', 'max_files' => 14],
+            'ai' => [
+                'default_model' => 'deepseek/deepseek-v4-pro',
+                'providers' => [
+                    'deepseek' => [
+                        'type' => 'generic',
+                        'enabled' => true,
+                        'base_url' => 'https://api.deepseek.com',
+                        'models' => [
+                            'deepseek-v4-pro' => [
+                                'name' => 'DeepSeek V4 Pro',
+                                'context_window' => 131072,
+                                'max_tokens' => 131072,
+                                'input' => ['text'],
+                                'reasoning' => true,
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+
+        $config = $this->buildConfig();
+
+        $transcript = $config->tui->transcript;
+        self::assertFalse($transcript->thinking->visible);
+        self::assertSame('dim', $transcript->thinking->style);
+        self::assertTrue($transcript->previews->expandedByDefault);
+        self::assertSame(12, $transcript->previews->toolResultLines);
+        self::assertSame(30, $transcript->previews->diffLines);
+    }
+
+    // ──────────────────────────────────────────────
     //  Helpers
     // ──────────────────────────────────────────────
 
@@ -257,13 +326,14 @@ class AppConfigTest extends TestCase
     private function createSerializer(): SerializerInterface
     {
         $reflectionExtractor = new \Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor();
+        $classMetadataFactory = new ClassMetadataFactory(new AttributeLoader());
 
         $denormalizers = [
-            // ObjectNormalizer with ReflectionExtractor for reading typed public
-            // properties of config DTOs (TuiConfig, LoggingConfig, etc.).
+            // ObjectNormalizer with ClassMetadataFactory + MetadataAwareNameConverter
+            // reads #[SerializedName] attributes from config DTOs.
             new \Symfony\Component\Serializer\Normalizer\ObjectNormalizer(
-                classMetadataFactory: null,
-                nameConverter: null,
+                classMetadataFactory: $classMetadataFactory,
+                nameConverter: new MetadataAwareNameConverter($classMetadataFactory),
                 propertyAccessor: \Symfony\Component\PropertyAccess\PropertyAccess::createPropertyAccessor(),
                 propertyTypeExtractor: $reflectionExtractor,
             ),

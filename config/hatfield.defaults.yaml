@@ -25,6 +25,22 @@ tui:
         - '.hatfield/themes'
         - '~/.hatfield/themes'
 
+    # Transcript display settings.
+    # Preview expansion is TUI-session-only and not persisted.
+    transcript:
+        thinking:
+            # Whether assistant thinking content is visible in the transcript.
+            visible: true
+            # Visual style for visible thinking (e.g. 'dim_italic').
+            style: dim_italic
+        previews:
+            # Whether previewable blocks (tool results, diffs) start expanded.
+            expanded_by_default: false
+            # Max lines shown for normal tool result previews.
+            tool_result_lines: 8
+            # Max lines shown for diff-rendered tool result previews.
+            diff_lines: 20
+
 sessions:
     path: '.hatfield/sessions'
 
