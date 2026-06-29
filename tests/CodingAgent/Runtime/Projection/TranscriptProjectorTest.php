@@ -229,7 +229,7 @@ final class TranscriptProjectorTest extends TestCase
         $this->assertSame(TranscriptBlockKindEnum::AssistantThinking, $blocks[0]->kind);
         $this->assertSame('Let me think... done.', $blocks[0]->text);
         $this->assertTrue($blocks[0]->streaming);
-        $this->assertTrue($blocks[0]->collapsed);
+        $this->assertFalse($blocks[0]->collapsed);
         $this->assertSame(1, $blocks[0]->meta['content_index']);
     }
 
@@ -249,13 +249,16 @@ final class TranscriptProjectorTest extends TestCase
         $this->assertSame('Hmm, interesting.', $blocks[0]->text);
     }
 
-    public function testThinkingBlockIsCollapsedByDefault(): void
+    public function testThinkingBlockDoesNotEncodeDisplayCollapseByDefault(): void
     {
+        // Projection should not encode display collapse policy.  Display collapse
+        // is a local rendering concern owned by TranscriptDisplayConfig, not the
+        // canonical projection DTO.
         $this->accept('assistant.thinking_started', [
             'message_id' => 'a1', 'block_id' => 'th1',
         ]);
 
-        $this->assertTrue($this->projector->blocks()[0]->collapsed);
+        $this->assertFalse($this->projector->blocks()[0]->collapsed);
     }
 
     public function testTextBlockIsNotCollapsed(): void
@@ -400,7 +403,7 @@ final class TranscriptProjectorTest extends TestCase
         $this->assertSame(TranscriptBlockKindEnum::AssistantThinking, $thinkBlock->kind);
         $this->assertSame('Let me think about this carefully.', $thinkBlock->text);
         $this->assertFalse($thinkBlock->streaming, 'Reconstructed thinking must be non-streaming');
-        $this->assertTrue($thinkBlock->collapsed, 'Reconstructed thinking must be collapsed');
+        $this->assertFalse($thinkBlock->collapsed, 'Reconstructed thinking must NOT encode display collapse');
         $this->assertSame('step_1', $thinkBlock->meta['message_id']);
 
         $msgBlock = $blocks[1];

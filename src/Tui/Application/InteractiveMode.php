@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Application;
 
+use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
@@ -19,6 +20,7 @@ use Ineersa\Tui\Runtime\TuiTickDispatcher;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\TuiTheme;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
+use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Tui\Event\TickEvent;
@@ -65,6 +67,8 @@ final readonly class InteractiveMode
         private TranscriptBlockFactory $blockFactory,
         private LoggerInterface $logger,
         private TuiSessionSwitchService $switchService,
+        private AppConfig $appConfig,
+        private TranscriptDisplayConfigMapper $transcriptConfigMapper,
     ) {
     }
 
@@ -141,6 +145,12 @@ final readonly class InteractiveMode
         // shutdown.
         $needsTerminalClear = false;
 
+        // Map the immutable TranscriptDisplayConfig once before the session
+        // loop; it is derived from Hatfield config which does not change
+        // within a TUI lifetime. Each new session still gets a fresh mutable
+        // TranscriptDisplayState initialized from the immutable config.
+        $displayConfig = $this->transcriptConfigMapper->map($this->appConfig->tui->transcript);
+
         while (true) {
             // ── Initialize session state ──
             if ($isDraft) {
@@ -153,6 +163,15 @@ final readonly class InteractiveMode
                 $state = $this->sessionInit->initialize('', $targetRequest);
             }
             $state->transcript = $this->sessionInit->buildInitialTranscript($state);
+
+            // ── Initialize per-session transcript display state ──
+            // The immutable config is mapped once above.  Each session
+            // (draft/resume/fresh) gets its own mutable display state
+            // initialized from the config's previewsExpandedByDefault.
+            $state->transcriptDisplayConfig = $displayConfig;
+            $state->transcriptDisplayState = new TranscriptDisplayState(
+                previewableBlocksExpanded: $displayConfig->previewsExpandedByDefault,
+            );
 
             // ── Build screen and mount widget tree ──
             $tui = new Tui();

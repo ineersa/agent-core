@@ -4,14 +4,14 @@ Date: 2026-05-22
 
 ## Purpose
 
-Replace the current flat transcript line renderer with Symfony TUI-native transcript blocks/cards that use existing vendor widgets and styling primitives wherever possible.
+Refine the current charismatic flat transcript into richer Symfony TUI-native transcript blocks/cards using existing vendor widgets and styling primitives wherever possible.
 
-The goal is a nicer history/transcript window with:
+The goal is a clearer history/transcript window without losing the terminal-native visual language:
 
 - Markdown-rendered user, assistant, and visible thinking content.
 - Thinking controlled by global config only in v1.
 - Hidden thinking represented by a small placeholder: `⋯ Thinking`.
-- Styled block/card shells for tools, results, errors, and approvals.
+- Compact/subtle block/card shells for tools, results, errors, and approvals.
 - Small previews for large tool outputs/diffs, with a live-only global expand/collapse keybind first.
 - Data/state shape that can support per-block expansion later without requiring that UX now.
 
@@ -22,6 +22,8 @@ Non-goals for the first implementation:
 - Persisting the `Ctrl+O` expand/collapse state.
 - Reimplementing Markdown, borders, layout, or syntax highlighting outside Symfony TUI/vendor packages.
 - Refactoring `ChatScreen` to a Symfony `ContainerWidget` layout.
+- Changing the existing glyph language for unchanged block kinds, status, or footer chrome.
+- Broad snapshot rewrites caused only by renderer internals.
 
 ## Confirmed design decisions
 
@@ -33,26 +35,27 @@ Non-goals for the first implementation:
    - `UserMessage`
    - `AssistantMessage`
    - visible `AssistantThinking`
-6. SYSTEM-03 preloaded `<skill name="..." location="...">` context blocks should render as compact SKILL/context blocks, not as read-tool output and not as ordinary user Markdown.
-7. Do not use `MarkdownWidget` for tool results, tool calls, system/progress/error/question/approval/cancelled blocks in v1.
-8. Thinking visibility is config-only in v1; no mutable thinking visibility in `TranscriptDisplayState`.
-9. Visible thinking is full Markdown, styled dim/italic using thinking-specific styling.
-10. Hidden thinking renders one small placeholder per thinking block: `⋯ Thinking`.
-11. `Ctrl+O` toggles previewable blocks only and is live/session-only.
-12. `Ctrl+O` must not affect user, assistant, thinking, system, error, progress, question, approval, cancelled, or tool-call blocks.
-13. V1 previewable scope is limited to:
+6. Do not use `MarkdownWidget` for tool results, tool calls, system/progress/error/question/approval/cancelled blocks in v1.
+7. Thinking visibility is config-only in v1; no mutable thinking visibility in `TranscriptDisplayState`.
+8. Visible thinking is full Markdown, styled dim/italic using thinking-specific styling.
+9. Hidden thinking renders one small placeholder per thinking block: `⋯ Thinking`.
+10. `Ctrl+O` toggles previewable blocks only and is live/session-only.
+11. `Ctrl+O` must not affect user, assistant, thinking, system, error, progress, question, approval, cancelled, or tool-call blocks.
+12. V1 previewable scope is limited to:
     - normal `ToolResult` previews
     - diff-rendered `ToolResult` previews
-14. Diffs are a rendering classification of existing `ToolResult` blocks, not a new `TranscriptBlockKindEnum::Diff` in v1.
-15. Diff rendering should be used for edit/write tool outputs only.
-16. Hatfield config and TUI rendering config stay separated:
+13. Diffs are a rendering classification of existing `ToolResult` blocks, not a new `TranscriptBlockKindEnum::Diff` in v1.
+14. Diff rendering should be used for edit/write tool outputs only.
+15. Hatfield config and TUI rendering config stay separated:
     - `Ineersa\CodingAgent\Config\TuiTranscriptConfig`
     - `Ineersa\Tui\Transcript\TranscriptDisplayConfig`
     - mapper/adapter between them at the TUI application boundary.
-17. Update `depfile.yaml` to allow Symfony TUI dependency in the `TuiTranscript` layer.
-18. `Ctrl+O` handling is listener-owned, matching existing TUI listener registrar style.
-19. Tool call arguments should be rendered visibly; do not omit them. Use fenced YAML in the tool-call card for v1.
-20. Card density is intentionally adjustable after real usage; start compact/subtle rather than over-designing borders now.
+16. Update `depfile.yaml` to allow Symfony TUI dependency in the `TuiTranscript` layer.
+17. `Ctrl+O` handling is listener-owned, matching existing TUI listener registrar style.
+18. Tool call arguments should be rendered visibly; do not omit them. Use fenced YAML in the tool-call card for v1.
+19. Card density is intentionally adjustable after real usage; start compact/subtle rather than over-designing borders now.
+20. Existing glyphs and prefix spacing are part of the v1 visual contract. Preserve them for unchanged block kinds and chrome unless the user explicitly approves a visual language change.
+21. Tests should not spread more raw glyph literals. Introduce named glyph/assertion helpers where practical and keep snapshot updates focused on intentional new rich transcript behavior.
 
 ## Scouting notes
 
@@ -245,6 +248,35 @@ tui:
 - Use existing semantic colors from `ThemeColorEnum`, such as diff added/removed/context tokens, or add missing tokens as needed.
 - First version can render unified diff lines with colors.
 - Later version can add side-by-side view or inline word-level highlights.
+
+## Glyph and test stability contract
+
+The current glyph language is intentionally part of the product feel. RENDER work should improve clarity without turning the transcript into a different UI.
+
+Stable transcript block prefixes for unchanged block kinds:
+
+| Block/status | Glyph/prefix |
+| --- | --- |
+| User message | `❯` |
+| Assistant message | `◇` |
+| Assistant thinking | `⋯` |
+| Tool call/result | `●` |
+| Progress / pending | `⏳` |
+| Approval | `🔐` |
+| Error / cancelled | `✕` |
+| Warning/system warning | `⚠` |
+| Idle status | `● idle` |
+| Working status | `◐` |
+| Footer model/cache/cwd/branch/time | `◆`, `↻`, `⌂`, `⎇`, `⏱` |
+
+Testing policy for the render series:
+
+- Preserve glyphs and prefix spacing for existing block kinds unless the user explicitly approves a visual-language change.
+- Centralize glyph/prefix definitions in production renderer code or a narrow renderer-adjacent helper so tests can refer to semantics instead of scattering raw Unicode.
+- Add shared test assertion helpers where practical, e.g. assistant block visible, error block visible, idle status visible, preview expanded.
+- Keep at least one explicit default-glyph contract test so accidental visual drift is caught.
+- Do not rewrite snapshots because internals moved from flat strings to Symfony widgets. Update snapshots only for intentional new behavior: Markdown, YAML args, previews, diffs, and `Ctrl+O` expansion.
+- Tmux E2E assertions should stay high-signal; avoid adding more direct `str_contains($cap, '◇')` style checks outside shared helpers.
 
 ## Target architecture
 
@@ -457,7 +489,7 @@ RENDER-01 Transcript display config/state foundation
 4. `RENDER-04`: Tool cards with fenced YAML args and normal output previews.
 5. `RENDER-05`: Edit/write `ToolResult` diff classification and rendering.
 6. `RENDER-06`: `Ctrl+O` preview expansion listener.
-7. `RENDER-07`: Docs, snapshots, real LLM agent rendering test, and product-level rich transcript validation.
+7. `RENDER-07`: Docs, snapshots, and rich transcript validation.
 
 ## Implementation phases
 
@@ -529,34 +561,36 @@ Do not build custom mouse hit-testing until the Symfony TUI public API is confir
 
 ## Validation plan
 
-Because this touches TUI runtime/transcript rendering, unit tests are not enough.
+Because this touches TUI transcript rendering, validation must prove the real screen/widget path at the lowest correct layer.
 
 Required validation after implementation:
 
 - `castor test --filter=<focused transcript/config tests>` during development.
 - `castor phpstan src/Tui src/CodingAgent/Config src/CodingAgent/Runtime/ProjectionPipeline` for focused static checks.
+- `castor deptrac` for boundary changes.
+- `castor cs-check` before handoff.
 - Product-level TUI validation before calling done:
-  - `castor run:agent-test`, or
-  - `castor test:tui`
-- Create or update a real agent/real LLM validation test for rich transcript rendering, at minimum covering assistant message blocks and thinking blocks.
+  - virtual/widget tests via `castor test` for rendering and local input behavior;
+  - `castor test:tui` only when terminal/tmux integration is actually touched.
+- Live model validation is required only if implementation changes provider behavior, prompts, tool schemas, or other LLM-visible flow.
 
-The product-level run must exercise:
+The deterministic validation must exercise:
 
-1. Start TUI.
-2. Submit a prompt that produces assistant Markdown.
-3. Produce or simulate thinking content.
-4. In the real agent/real LLM validation path, verify at minimum assistant message block rendering and thinking block rendering.
-5. Verify visible thinking renders as Markdown with dim/italic styling.
-6. Verify `thinking.visible: false` renders one `⋯ Thinking` placeholder per hidden thinking block.
-7. Produce tool call/result output with enough lines to preview.
-8. Verify tool call arguments are visible as fenced YAML.
-9. Produce or simulate edit/write output that is classified as a diff-rendered `ToolResult`.
-10. Toggle `Ctrl+O` and verify only previewable tool result/diff blocks expand/collapse.
-11. Verify user, assistant, thinking, system, error, and tool-call blocks are unaffected by `Ctrl+O`.
-12. Capture/report snapshot and session artifacts on failure:
+1. Start/render the TUI path through `ChatScreen -> TranscriptBlockWidget`.
+2. Render assistant Markdown.
+3. Render visible thinking as Markdown with dim/italic styling.
+4. Render `thinking.visible: false` as one `⋯ Thinking` placeholder per hidden thinking block.
+5. Render tool call/result output with enough lines to preview.
+6. Verify tool call arguments are visible as fenced YAML.
+7. Render edit/write output classified as a diff-rendered `ToolResult`.
+8. Toggle `Ctrl+O` and verify only previewable tool result/diff blocks expand/collapse.
+9. Verify user, assistant, thinking, system, error, and tool-call blocks are unaffected by `Ctrl+O`.
+10. Verify existing glyphs/prefixes remain stable for unchanged block kinds and status/footer chrome.
+11. Capture/report snapshot and session artifacts on failure where available:
+    - ANSI snapshots
     - `.hatfield/sessions/<id>/events.jsonl`
-    - `.hatfield/sessions/<id>/runtime-events.jsonl`
-    - `.hatfield/sessions/<id>/transcript.jsonl`
+    - runtime event logs
+    - transcript fixtures
 
 ## Remaining open questions
 

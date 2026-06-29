@@ -124,6 +124,18 @@ tui:
     #     - '~/.hatfield/themes'
     #     - .hatfield/themes/custom
 
+    # Transcript display settings.
+    # Uncomment to override defaults. Preview expansion is TUI-session-only
+    # and is not persisted across sessions.
+    # transcript:
+    #     thinking:
+    #         visible: true
+    #         style: dim_italic
+    #     previews:
+    #         expanded_by_default: false
+    #         tool_result_lines: 8
+    #         diff_lines: 20
+
 # Session storage directory for agent runs.
 # Defaults to .hatfield/sessions/ (ignored by git via .hatfield/.gitignore).
 # sessions:
