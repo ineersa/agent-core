@@ -1,0 +1,33 @@
+{
+    "$schema": "Replay fixture for fork child agent TUI E2E: valid handoff text response",
+    "model": "llama_cpp_test/test",
+    "provider_id": "llama_cpp_test",
+    "reasoning": "off",
+    "recorded_at": "2026-06-29T00:00:00+00:00",
+    "recording_source": "manual",
+    "input": {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Produce exactly a valid fork handoff report"
+            }
+        ]
+    },
+    "usage": {
+        "input_tokens": 1000,
+        "output_tokens": 400,
+        "total_tokens": 1400
+    },
+    "stop_reason": "stop",
+    "expected_text": null,
+    "deltas": [
+        {
+            "type": "text",
+            "content": "## 1. Result / status\n\nNo filesystem changes made. The fork child completed the test task successfully.\n\n## 2. Scope and authority\n\nThis is a test handoff for TUI E2E proof of the fork child lifecycle. Only the fork child startup, LLM handoff, finalization, and auto-exit path is exercised.\n\n## 3. Navigation / tool trail\n\nNo tools were used. The response was generated from the replay fixture.\n\n## 4. Evidence and context discovered\n\nNo evidence was discovered beyond the test fixture data.\n\n## 5. Changes made\n\nNo filesystem changes made. No files were created, modified, or deleted.\n\n## 6. Data/control flow\n\nFork child boot -> TUI start -> process transport -> controller fork start -> LLM replay -> handoff generation -> terminal run -> ForkRunTerminalWatcher finalization -> ForkAutoExitRegistrar -> TUI stop -> exit marker.\n\n## 7. Validation performed\n\nThis handoff is validated by ForkHandoffValidator to ensure all mandatory sections are present and section 1 contains a filesystem-changes statement.\n\n## 8. Risks, gaps, and gotchas\n\nNone for this test handoff.\n\n## 9. Reusable learnings\n\nNone.\n\n## 10. Continuation context\n\nNone.\n\n## 11. Final handoff\n\nThis concludes the test fork child handoff. All mandatory sections (## 1 Result/status, ## 5 Changes made, ## 11 Final handoff) are present and the filesystem-changes statement in section 1 is valid. The fork child lifecycle successfully completed end-to-end."
+        },
+        {
+            "type": "finished",
+            "content": "stop"
+        }
+    ]
+}
