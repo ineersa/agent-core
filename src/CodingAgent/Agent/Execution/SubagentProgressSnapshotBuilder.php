@@ -17,6 +17,7 @@ final class SubagentProgressSnapshotBuilder
      */
     public function singleRunning(
         string $agentName,
+        string $agentRunId,
         string $artifactId,
         string $taskSummary,
         RunState $childState,
@@ -27,6 +28,7 @@ final class SubagentProgressSnapshotBuilder
             'mode' => 'single',
             'status' => 'running',
             'agent_name' => $agentName,
+            'agent_run_id' => $agentRunId,
             'artifact_id' => $artifactId,
             'task_summary' => $taskSummary,
             'turn_no' => $childState->turnNo,
@@ -44,6 +46,7 @@ final class SubagentProgressSnapshotBuilder
     public function singleTerminal(
         string $status,
         string $agentName,
+        string $agentRunId,
         string $artifactId,
         string $taskSummary,
         RunState $childState,
@@ -54,6 +57,7 @@ final class SubagentProgressSnapshotBuilder
             'mode' => 'single',
             'status' => $status,
             'agent_name' => $agentName,
+            'agent_run_id' => $agentRunId,
             'artifact_id' => $artifactId,
             'task_summary' => $taskSummary,
             'turn_no' => $childState->turnNo,

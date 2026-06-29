@@ -4,43 +4,34 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
-use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
-use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
-use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandHandler;
 use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Command\TabSwitchCommand;
 use Ineersa\Tui\Command\TranscriptMessage;
-use Ineersa\Tui\Runtime\RunActivityStateEnum;
-use Ineersa\Tui\Runtime\TabDefinition;
 use Ineersa\Tui\Runtime\TabService;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
-use Ineersa\Tui\Runtime\TuiSessionState;
-use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 
 /**
- * POC: Registers the /tab slash command and applies tab switching.
+ * Registers the /tab slash command for tab switching and listing.
  *
- * The /tab command lets the user switch between available tabs
- * and create new child-run tabs backed by real agent sessions:
+ * The /tab command lets the user switch between available tabs:
  *
- *   /tab 2              — switch to tab 2 (1-indexed)
- *   /tab list           — show available tabs
- *   /tab start "prompt" — create a new child run in a new tab
+ *   /tab list        — show available tabs
+ *   /tab <N>         — switch to tab N (1-indexed)
  *
- * Tab switching updates the TabService active index and syncs the
- * ChatScreen transcript to show the selected tab's blocks.
+ * Tabs are created automatically by {@see SubagentTabAutoListener}
+ * when a completed subagent artifact is detected in the parent transcript.
  *
  * This is POC/prototype code proving multi-tab TUI feasibility.
  *
  * ## Blocker: true interactive subagent child-run tabs
  *
- * The current POC creates a *sibling* run (same AgentSessionClient, separate
- * session) as a child tab, not a true subagent child run. True subagent-child
- * interactive tabs (where a subagent fork runs as a child TUI tab with its
- * own editor, event polling, model controls) are blocked by:
+ * The current POC opens read-only tabs backed by child run events, not
+ * interactive subagent tabs. True subagent-child interactive tabs (where a
+ * subagent fork runs as a child TUI tab with its own editor, event polling,
+ * model controls) are blocked by:
  *
  * 1. **No exposed child RunHandle/client lifecycle** — SubagentExecutionService
  *    runs the child synchronously within the parent LLM loop and does not
@@ -64,8 +55,6 @@ final class TabRoutingListener implements TuiListenerRegistrar
 {
     public function __construct(
         private readonly SlashCommandRegistry $commandRegistry,
-        private readonly AgentSessionClient $client,
-        private readonly TranscriptBlockFactory $blockFactory,
     ) {
     }
 
@@ -73,17 +62,11 @@ final class TabRoutingListener implements TuiListenerRegistrar
     {
         $tabService = $context->tabService;
         $screen = $context->screen;
-        $client = $this->client;
-        $blockFactory = $this->blockFactory;
-        $sessionStore = $context->sessionStore;
 
-        $handler = new class($tabService, $screen, $client, $blockFactory, $sessionStore) implements SlashCommandHandler {
+        $handler = new class($tabService, $screen) implements SlashCommandHandler {
             public function __construct(
                 private readonly TabService $tabService,
                 private readonly \Ineersa\Tui\Screen\ChatScreen $screen,
-                private readonly AgentSessionClient $client,
-                private readonly TranscriptBlockFactory $blockFactory,
-                private readonly HatfieldSessionStore $sessionStore,
             ) {
             }
 
@@ -96,22 +79,13 @@ final class TabRoutingListener implements TuiListenerRegistrar
                     return $this->listTabs();
                 }
 
-                $parts = explode(' ', $args, 2);
-                $first = $parts[0] ?? '';
-
-                if ('start' === $first) {
-                    $prompt = $parts[1] ?? '';
-
-                    return $this->startChildRun($prompt);
-                }
-
                 // ── Numeric tab index switching ──
                 $index = (int) $args;
 
                 if ((string) $index !== $args) {
                     return new TranscriptMessage(
                         \sprintf(
-                            'Unknown tab command: "%s". Use "/tab list", "/tab <index>", or "/tab start \"<prompt>\""',
+                            'Unknown tab command: "%s". Use "/tab list" or "/tab <index>"',
                             $args,
                         ),
                         'system',
@@ -144,108 +118,6 @@ final class TabRoutingListener implements TuiListenerRegistrar
                 return new TabSwitchCommand($zeroBased);
             }
 
-            /**
-             * Create a child run backed by a real agent session.
-             *
-             * This is the core POC demonstration: a second agent session
-             * managed as a separate TUI tab with its own event polling,
-             * submit/cancel routing, and transcript state.
-             *
-             * NOTE: This creates a <sibling> run, not a true subagent child.
-             * The subagent foreground-execution architecture makes true
-             * interactive child tabs impossible (see class docblock).
-             * The async fork queue will resolve this.
-             *
-             * Flow:
-             * 1. Create a session via HatfieldSessionStore
-             * 2. Create TuiSessionState for the new run
-             * 3. Call $client->start() to launch the run
-             * 4. Register the new run as a tab definition
-             * 5. Switch to the new tab
-             */
-            private function startChildRun(string $prompt): \Ineersa\Tui\Command\CommandResult
-            {
-                $prompt = trim($prompt);
-
-                // Strip surrounding quotes if present
-                if (\strlen($prompt) >= 2) {
-                    $first = $prompt[0];
-                    $last = $prompt[-1];
-                    if (('"' === $first && '"' === $last) || ("'" === $first && "'" === $last)) {
-                        $prompt = substr($prompt, 1, -1);
-                    }
-                }
-
-                if ('' === $prompt) {
-                    return new TranscriptMessage(
-                        'Usage: /tab start "<prompt>" - Start a new child run in a new tab.',
-                        'system',
-                        'warning',
-                    );
-                }
-
-                try {
-                    // 1. Create a fresh session for the child run
-                    $childSessionId = $this->sessionStore->createSession($prompt);
-
-                    // 2. Create TuiSessionState for the new run
-                    $childState = new TuiSessionState($childSessionId, false);
-                    $childState->transcript = [
-                        $this->blockFactory->system(
-                            runId: $childSessionId,
-                            text: \sprintf(
-                                'Child run created. Prompt: "%s"',
-                                $prompt,
-                            ),
-                            seq: 1,
-                        ),
-                    ];
-
-                    // 3. Start the run — get a real handle for event polling
-                    $request = new StartRunRequest(
-                        prompt: $prompt,
-                        runId: $childSessionId,
-                    );
-                    $handle = $this->client->start($request);
-                    $childState->handle = $handle;
-                    $childState->activity = RunActivityStateEnum::Starting;
-
-                    // 4. Register as a new tab
-                    $tabLabel = \sprintf('Child %s', substr($childSessionId, 0, 8));
-                    $this->tabService->addTab(new TabDefinition(
-                        id: 'child-'.$childSessionId,
-                        label: $tabLabel,
-                        runId: $childSessionId,
-                        state: $childState,
-                        isRun: true,
-                    ));
-
-                    // 5. Switch to the new tab
-                    $newIndex = $this->tabService->count() - 1;
-                    $this->tabService->switchTo($newIndex);
-                    $this->screen->setTranscriptBlocks($childState->transcript);
-
-                    return new TranscriptMessage(
-                        \sprintf(
-                            'Started child run %s in tab %d. Prompt: "%s"',
-                            $childSessionId,
-                            $newIndex + 1,
-                            $prompt,
-                        ),
-                        'system',
-                    );
-                } catch (\Throwable $e) {
-                    return new TranscriptMessage(
-                        \sprintf(
-                            'Failed to start child run: %s',
-                            $e->getMessage(),
-                        ),
-                        'system',
-                        'error',
-                    );
-                }
-            }
-
             private function listTabs(): \Ineersa\Tui\Command\CommandResult
             {
                 $lines = ['Available tabs:'];
@@ -261,9 +133,6 @@ final class TabRoutingListener implements TuiListenerRegistrar
                     );
                 }
 
-                $lines[] = '';
-                $lines[] = 'Create a new child run tab: /tab start "<prompt>"';
-
                 return new TranscriptMessage(implode("\n", $lines), 'system');
             }
         };
@@ -276,8 +145,8 @@ final class TabRoutingListener implements TuiListenerRegistrar
                 new CommandMetadata(
                     name: 'tab',
                     aliases: ['t'],
-                    description: 'Switch to a tab by index, list tabs, or start a child run',
-                    usage: '/tab [list|<index>|start "<prompt>"]',
+                    description: 'Switch to a tab by index or list available tabs',
+                    usage: '/tab [list|<index>]',
                     acceptsArguments: true,
                 ),
                 $handler,

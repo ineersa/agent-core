@@ -6,7 +6,12 @@ namespace Ineersa\Tui\Tests\Screen;
 
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\Tui\Listener\SubagentTabAutoListener;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\TabDefinition;
 use Ineersa\Tui\Runtime\TabService;
@@ -192,5 +197,281 @@ final class TuiTabVirtualTest extends TestCase
         // Active index should fall back to last valid index (0 = parent)
         self::assertSame(0, $this->tabService->activeIndex());
         self::assertSame('parent', $this->tabService->active()?->id);
+    }
+
+    // ── SubagentTabAutoListener detection tests ───────────────────────────
+
+    #[Test]
+    public function testDetectSubagentArtifactReturnsNullForNonToolResult(): void
+    {
+        $block = new TranscriptBlock(
+            id: 'test',
+            kind: TranscriptBlockKindEnum::System,
+            runId: 'test',
+            seq: 1,
+            text: 'system message',
+            meta: [],
+        );
+
+        $opened = [];
+        self::assertNull(SubagentTabAutoListener::detectSubagentArtifact($block, $opened));
+    }
+
+    #[Test]
+    public function testDetectSubagentArtifactReturnsNullWithoutProgressMeta(): void
+    {
+        $block = new TranscriptBlock(
+            id: 'test',
+            kind: TranscriptBlockKindEnum::ToolResult,
+            runId: 'test',
+            seq: 1,
+            text: 'test',
+            meta: ['tool_name' => 'subagent'],
+        );
+
+        $opened = [];
+        self::assertNull(SubagentTabAutoListener::detectSubagentArtifact($block, $opened));
+    }
+
+    #[Test]
+    public function testDetectSubagentArtifactReturnsNullWithoutFinalFlag(): void
+    {
+        $block = new TranscriptBlock(
+            id: 'test',
+            kind: TranscriptBlockKindEnum::ToolResult,
+            runId: 'test',
+            seq: 1,
+            text: 'test',
+            meta: [
+                'tool_name' => 'subagent',
+                'subagent_progress' => [
+                    'mode' => 'single',
+                    'status' => 'running',
+                    'agent_name' => 'scout',
+                    'artifact_id' => 'agent_abc123',
+                    'agent_run_id' => 'child-run-id',
+                ],
+            ],
+        );
+
+        $opened = [];
+        self::assertNull(SubagentTabAutoListener::detectSubagentArtifact($block, $opened));
+    }
+
+    #[Test]
+    public function testDetectSubagentArtifactReturnsNullForAlreadyOpened(): void
+    {
+        $block = new TranscriptBlock(
+            id: 'test',
+            kind: TranscriptBlockKindEnum::ToolResult,
+            runId: 'test',
+            seq: 1,
+            text: 'test',
+            meta: [
+                'tool_name' => 'subagent',
+                'subagent_final' => true,
+                'subagent_progress' => [
+                    'mode' => 'single',
+                    'status' => 'completed',
+                    'agent_name' => 'scout',
+                    'artifact_id' => 'agent_abc123',
+                    'agent_run_id' => 'child-run-id',
+                ],
+            ],
+        );
+
+        $opened = ['agent_abc123' => true];
+        self::assertNull(SubagentTabAutoListener::detectSubagentArtifact($block, $opened));
+    }
+
+    #[Test]
+    public function testDetectSubagentArtifactReturnsDataForCompleted(): void
+    {
+        $block = new TranscriptBlock(
+            id: 'test',
+            kind: TranscriptBlockKindEnum::ToolResult,
+            runId: 'test',
+            seq: 1,
+            text: 'test',
+            meta: [
+                'tool_name' => 'subagent',
+                'subagent_final' => true,
+                'subagent_progress' => [
+                    'mode' => 'single',
+                    'status' => 'completed',
+                    'agent_name' => 'scout',
+                    'artifact_id' => 'agent_abc123',
+                    'agent_run_id' => 'child-run-id',
+                ],
+            ],
+        );
+
+        $opened = [];
+        $result = SubagentTabAutoListener::detectSubagentArtifact($block, $opened);
+
+        self::assertNotNull($result);
+        self::assertSame('agent_abc123', $result['artifact_id']);
+        self::assertSame('child-run-id', $result['agent_run_id']);
+        self::assertSame('scout', $result['agent_name']);
+    }
+
+    #[Test]
+    public function testDetectSubagentArtifactReturnsNullWithoutAgentRunId(): void
+    {
+        $block = new TranscriptBlock(
+            id: 'test',
+            kind: TranscriptBlockKindEnum::ToolResult,
+            runId: 'test',
+            seq: 1,
+            text: 'test',
+            meta: [
+                'tool_name' => 'subagent',
+                'subagent_final' => true,
+                'subagent_progress' => [
+                    'mode' => 'single',
+                    'status' => 'completed',
+                    'agent_name' => 'scout',
+                    'artifact_id' => 'agent_abc123',
+                    // No agent_run_id
+                ],
+            ],
+        );
+
+        $opened = [];
+        self::assertNull(SubagentTabAutoListener::detectSubagentArtifact($block, $opened));
+    }
+
+    // ── SubagentTabAutoListener block builder tests ────────────────────────
+
+    #[Test]
+    public function testBuildBlocksFromEventsHandlesRunStarted(): void
+    {
+        $events = [
+            new RuntimeEvent(
+                type: RuntimeEventTypeEnum::RunStarted->value,
+                runId: 'child-run',
+                seq: 1,
+                payload: [],
+            ),
+        ];
+
+        $blocks = SubagentTabAutoListener::buildBlocksFromEvents(
+            $events,
+            new TranscriptBlockFactory(),
+            'child-run',
+        );
+
+        self::assertCount(1, $blocks);
+        self::assertSame(TranscriptBlockKindEnum::System, $blocks[0]->kind);
+        self::assertStringContainsString('Run started', $blocks[0]->text);
+    }
+
+    #[Test]
+    public function testBuildBlocksFromEventsHandlesAssistantMessage(): void
+    {
+        $events = [
+            new RuntimeEvent(
+                type: RuntimeEventTypeEnum::AssistantMessageCompleted->value,
+                runId: 'child-run',
+                seq: 1,
+                payload: ['text' => 'Hello from child agent'],
+            ),
+        ];
+
+        $blocks = SubagentTabAutoListener::buildBlocksFromEvents(
+            $events,
+            new TranscriptBlockFactory(),
+            'child-run',
+        );
+
+        self::assertCount(1, $blocks);
+        self::assertSame(TranscriptBlockKindEnum::AssistantMessage, $blocks[0]->kind);
+        self::assertStringContainsString('Hello from child', $blocks[0]->text);
+    }
+
+    #[Test]
+    public function testBuildBlocksFromEventsHandlesToolExecution(): void
+    {
+        $events = [
+            new RuntimeEvent(
+                type: RuntimeEventTypeEnum::ToolExecutionStarted->value,
+                runId: 'child-run',
+                seq: 1,
+                payload: [
+                    'tool_call_id' => 'call_1',
+                    'tool_name' => 'read',
+                ],
+            ),
+            new RuntimeEvent(
+                type: RuntimeEventTypeEnum::ToolExecutionCompleted->value,
+                runId: 'child-run',
+                seq: 2,
+                payload: [
+                    'tool_call_id' => 'call_1',
+                    'tool_name' => 'read',
+                    'result' => 'file content',
+                ],
+            ),
+        ];
+
+        $blocks = SubagentTabAutoListener::buildBlocksFromEvents(
+            $events,
+            new TranscriptBlockFactory(),
+            'child-run',
+        );
+
+        self::assertCount(2, $blocks);
+        self::assertSame(TranscriptBlockKindEnum::ToolCall, $blocks[0]->kind);
+        self::assertSame(TranscriptBlockKindEnum::ToolResult, $blocks[1]->kind);
+        self::assertStringContainsString('file content', $blocks[1]->text);
+    }
+
+    #[Test]
+    public function testBuildBlocksFromEventsSkipsUnmappedTypes(): void
+    {
+        $events = [
+            new RuntimeEvent(
+                type: RuntimeEventTypeEnum::StatusUpdated->value,
+                runId: 'child-run',
+                seq: 1,
+                payload: ['status' => 'running'],
+            ),
+        ];
+
+        $blocks = SubagentTabAutoListener::buildBlocksFromEvents(
+            $events,
+            new TranscriptBlockFactory(),
+            'child-run',
+        );
+
+        // StatusUpdated should be skipped (no matching case)
+        self::assertCount(0, $blocks);
+    }
+
+    #[Test]
+    public function testBuildBlocksFromEventsHandlesToolFailed(): void
+    {
+        $events = [
+            new RuntimeEvent(
+                type: RuntimeEventTypeEnum::ToolExecutionFailed->value,
+                runId: 'child-run',
+                seq: 1,
+                payload: [
+                    'tool_call_id' => 'call_1',
+                    'tool_name' => 'bash',
+                    'result' => 'Command failed: exit 1',
+                ],
+            ),
+        ];
+
+        $blocks = SubagentTabAutoListener::buildBlocksFromEvents(
+            $events,
+            new TranscriptBlockFactory(),
+            'child-run',
+        );
+
+        self::assertCount(1, $blocks);
+        self::assertSame(TranscriptBlockKindEnum::ToolResult, $blocks[0]->kind);
+        self::assertTrue($blocks[0]->meta['is_error']);
     }
 }
