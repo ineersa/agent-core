@@ -17,6 +17,7 @@ use Ineersa\Tui\Runtime\TabDefinition;
 use Ineersa\Tui\Runtime\TabInputModeEnum;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
+use Psr\Log\LoggerInterface;
 
 /**
  * POC: Registers the /fork-poc slash command for interactive fork-like tabs.
@@ -35,6 +36,7 @@ final class ForkPocRoutingListener implements TuiListenerRegistrar
     public function __construct(
         private readonly SlashCommandRegistry $commandRegistry,
         private readonly ForkPocPendingStore $pendingStore,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
@@ -42,10 +44,13 @@ final class ForkPocRoutingListener implements TuiListenerRegistrar
     {
         $pendingStore = $this->pendingStore;
 
-        $handler = new class($pendingStore, $context) implements SlashCommandHandler {
+        $logger = $this->logger;
+
+        $handler = new class($pendingStore, $context, $logger) implements SlashCommandHandler {
             public function __construct(
                 private readonly ForkPocPendingStore $pendingStore,
                 private readonly TuiRuntimeContext $context,
+                private readonly LoggerInterface $logger,
             ) {
             }
 
@@ -61,12 +66,18 @@ final class ForkPocRoutingListener implements TuiListenerRegistrar
                     );
                 }
 
+                $this->logger->info('ForkPOC handler invoked', [
+                    'task' => mb_substr($task, 0, 120),
+                ]);
+
                 $tabService = $this->context->tabService;
                 $screen = $this->context->screen;
 
                 if (null === $tabService) {
+                    $this->logger->warning('ForkPOC: tabService is null');
+
                     return new TranscriptMessage(
-                        'Tab service not available. Cannot create fork tab.',
+                        'ForkPOC ERROR: Tab service not available. Cannot create fork tab.',
                         'system',
                         'error',
                     );
@@ -74,8 +85,10 @@ final class ForkPocRoutingListener implements TuiListenerRegistrar
 
                 $parentTab = $tabService->tabAt(0);
                 if (null === $parentTab) {
+                    $this->logger->warning('ForkPOC: parent tab not found');
+
                     return new TranscriptMessage(
-                        'Parent tab not found. Cannot create fork child.',
+                        'ForkPOC ERROR: Parent tab not found. Cannot create fork child.',
                         'system',
                         'error',
                     );
@@ -83,10 +96,24 @@ final class ForkPocRoutingListener implements TuiListenerRegistrar
 
                 $parentRunId = $parentTab->runId;
 
-                // Create placeholder tab immediately. The actual blocking
-                // start() call happens on a later tick, after this tab has
-                // been rendered to the terminal at least once.
-                $placeholderId = 'fork-poc-starting-'.md5($task.microtime());
+                // ─── Step 1: Add visible confirmation to PARENT transcript ───
+                // This proves the handler was reached, EVEN if tab creation fails.
+                $parentState = $this->context->state;
+                ++$parentState->lastSeq;
+                $parentState->transcript[] = new TranscriptBlock(
+                    id: 'fork_poc_received_'.$parentState->lastSeq,
+                    kind: TranscriptBlockKindEnum::System,
+                    runId: $parentRunId,
+                    seq: $parentState->lastSeq,
+                    text: \sprintf(
+                        "\u{25d0} ForkPOC received [task: %s]",
+                        mb_substr($task, 0, 60),
+                    ),
+                );
+                $screen->setTranscriptBlocks($parentState->transcript);
+
+                // ─── Step 2: Create placeholder tab ───
+                $placeholderId = 'fork-poc-starting-'.\md5($task.microtime());
 
                 $childState = new TuiSessionState(
                     sessionId: $placeholderId,
@@ -119,19 +146,18 @@ final class ForkPocRoutingListener implements TuiListenerRegistrar
                 $screen->setWorkingMessage('Queuing fork...');
 
                 // Append confirmation to parent transcript
-                $parentState = $this->context->state;
+                ++$parentState->lastSeq;
                 $parentState->transcript[] = new TranscriptBlock(
                     id: 'fork_poc_queued_parent_'.$placeholderId,
                     kind: TranscriptBlockKindEnum::System,
                     runId: $parentRunId,
-                    seq: $parentState->lastSeq + 1,
+                    seq: $parentState->lastSeq,
                     text: \sprintf(
                         "\u{25d0} ForkPOC queued [task: %s] \u2014 see /tab %d.",
                         mb_substr($task, 0, 60),
                         $newIndex + 1,
                     ),
                 );
-                ++$parentState->lastSeq;
 
                 // Enqueue pending start (deferred to later tick)
                 $this->pendingStore->enqueue(
@@ -140,6 +166,12 @@ final class ForkPocRoutingListener implements TuiListenerRegistrar
                     task: $task,
                     cwd: $this->context->state->cwd,
                 );
+
+                $this->logger->info('ForkPOC tab created and enqueued', [
+                    'placeholderRunId' => $placeholderRunId,
+                    'tabIndex' => $newIndex,
+                    'totalTabs' => $tabService->count(),
+                ]);
 
                 return new NoOp();
             }
