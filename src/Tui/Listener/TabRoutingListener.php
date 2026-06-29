@@ -124,32 +124,47 @@ final class TabRoutingListener implements TuiListenerRegistrar
                 $lines = ['Available tabs:'];
                 foreach ($this->tabService->tabs() as $i => $tab) {
                     $activeMarker = $i === $this->tabService->activeIndex() ? ' ← active' : '';
-                    $runLabel = '' !== $tab->runId ? ' [run: '.$tab->runId.']' : '';
+
+                    // Determine tab kind label
+                    $kindLabel = '';
+                    if ('parent' === $tab->id) {
+                        $kindLabel = 'Parent';
+                    } elseif (TabInputModeEnum::Interactive === $tab->inputMode) {
+                        $kindLabel = 'ForkPOC';
+                    } elseif (TabInputModeEnum::ReadOnly === $tab->inputMode) {
+                        $kindLabel = 'Subagent';
+                    }
 
                     // Status indicator
                     $statusLabel = match (true) {
                         $tab->state->activity->isActive() => ' ▶ running',
-                        $tab->state->activity->isTerminal() => ' ✓ '.$tab->state->activity->value,
+                        $tab->state->activity->isTerminal() => ' ✓ '.($tab->state->activity->value ?? 'done'),
                         default => '',
                     };
 
-                    // Input mode indicator
-                    $modeLabel = TabInputModeEnum::ReadOnly === $tab->inputMode ? ' ⛝' : '';
+                    // Mode indicator
+                    $modeSymbol = '';
+                    if (TabInputModeEnum::ReadOnly === $tab->inputMode) {
+                        $modeSymbol = ' ⛝';
+                    } elseif (TabInputModeEnum::Interactive === $tab->inputMode) {
+                        $modeSymbol = ' ⌨';
+                    }
 
                     $lines[] = \sprintf(
-                        '  %d. %s%s%s%s%s',
+                        '  %d. [%s] %s%s%s%s',
                         $i + 1,
+                        $kindLabel,
                         $tab->label,
-                        $modeLabel,
+                        $modeSymbol,
                         $statusLabel,
-                        $runLabel,
                         $activeMarker,
                     );
                 }
 
-                // Add hint for read-only tabs
+                // Add hints
                 $lines[] = '';
-                $lines[] = '⛝ = read-only (view only, no steer). Use /tab <N> to switch.';
+                $lines[] = '⛝ = read-only subagent view · ⌨ = interactive fork child (steer/cancel)';
+                $lines[] = 'Use /tab <N> to switch, /fork-poc <task> to start an interactive fork child.';
 
                 return new TranscriptMessage(implode("\n", $lines), 'system');
             }

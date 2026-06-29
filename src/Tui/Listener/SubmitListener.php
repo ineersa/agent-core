@@ -121,6 +121,42 @@ final class SubmitListener implements TuiListenerRegistrar
                 }
             }
 
+            // ── Interactive child tab routing: steer/cancel goes to child run ──
+            if (null !== $tabService) {
+                $activeTab = $tabService->active();
+                if (null !== $activeTab
+                    && TabInputModeEnum::Interactive === $activeTab->inputMode
+                    && 'parent' !== $activeTab->id
+                    && null !== $activeTab->state->handle
+                ) {
+                    // Route the submitted text as steer/follow-up to the child run
+                    $childState = $activeTab->state;
+                    $childRunId = $childState->handle->runId;
+
+                    if ($childState->activity->isActive()) {
+                        $client->send($childRunId, new UserCommand(type: 'steer', text: $text));
+                    } else {
+                        $client->send($childRunId, new UserCommand(type: 'follow_up', text: $text));
+                    }
+
+                    // Show the submitted text as a user message block in child transcript
+                    $childState->transcript[] = new TranscriptBlock(
+                        id: 'fork_steer_'.$childState->lastSeq + 1,
+                        kind: TranscriptBlockKindEnum::UserMessage,
+                        runId: $childRunId,
+                        seq: $childState->lastSeq + 1,
+                        text: $text,
+                    );
+                    ++$childState->lastSeq;
+                    $childState->activity = RunActivityStateEnum::Starting;
+
+                    $screen->setTranscriptBlocks($childState->transcript);
+                    $screen->clearEditor();
+
+                    return;
+                }
+            }
+
             // ── Question interception: route editor text to active question ──
             if ($questionCoordinator->actionRequired()) {
                 $questionCoordinator->answer($text);

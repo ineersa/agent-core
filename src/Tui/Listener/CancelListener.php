@@ -56,6 +56,42 @@ final class CancelListener implements TuiListenerRegistrar
 
                     return;
                 }
+
+                // POC: on interactive child tab, cancel the child run
+                if (null !== $activeTab
+                    && TabInputModeEnum::Interactive === $activeTab->inputMode
+                    && 'parent' !== $activeTab->id
+                    && null !== $activeTab->state->handle
+                ) {
+                    $childState = $activeTab->state;
+                    $childRunId = $childState->handle->runId;
+
+                    $logger->info('ESC cancel requested for fork child', [
+                        'run_id' => $childRunId,
+                        'activity' => $childState->activity->value,
+                    ]);
+
+                    try {
+                        $client->cancel($childRunId);
+                    } catch (\Throwable $e) {
+                        $boundary->catch($e, 'cancel_listener.fork_child_cancel_failed', [
+                            'run_id' => $childRunId,
+                        ]);
+                        $logger->error('Cancel fork child failed', [
+                            'run_id' => $childRunId,
+                            'exception' => $e,
+                        ]);
+                        $childState->activity = RunActivityStateEnum::Failed;
+                        $screen->clearEditor();
+
+                        return;
+                    }
+
+                    $childState->activity = RunActivityStateEnum::Cancelling;
+                    $screen->setWorkingMessage('Cancelling fork child...');
+
+                    return;
+                }
             }
 
             // Active run (Starting/Running/WaitingHuman/Cancelling) — send cancel.

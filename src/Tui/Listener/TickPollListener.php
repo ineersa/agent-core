@@ -6,7 +6,10 @@ namespace Ineersa\Tui\Listener;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Question\QuestionKind;
@@ -84,7 +87,100 @@ final class TickPollListener implements TuiListenerRegistrar
                 onToolTerminal: $onToolTerminal,
             );
 
+            // POC: poll interactive child tabs (fork POC runs with real handles)
+            $tabService = $context->tabService;
+            if (null !== $tabService) {
+                foreach ($tabService->tabs() as $tabIdx => $tabDef) {
+                    if (0 === $tabIdx) {
+                        continue; // skip parent
+                    }
+                    if (TabInputModeEnum::Interactive !== $tabDef->inputMode) {
+                        continue;
+                    }
+                    if (null === $tabDef->state->handle) {
+                        continue;
+                    }
+                    if ($tabDef->state->activity->isTerminal()) {
+                        continue;
+                    }
+
+                    $childState = $tabDef->state;
+                    $childRunId = $childState->handle->runId;
+
+                    try {
+                        $childEvents = iterator_to_array($client->events($childRunId), false);
+
+                        if ([] !== $childEvents) {
+                            $freshBlocks = SubagentTabAutoListener::projectChildEvents(
+                                $childEvents,
+                                $childRunId,
+                                new \Symfony\Component\EventDispatcher\EventDispatcher(),
+                            );
+
+                            if ([] !== $freshBlocks) {
+                                $childState->transcript = $freshBlocks;
+                            }
+
+                            // Check for terminal state
+                            $isTerminal = false;
+                            $terminalStatus = 'completed';
+                            foreach ($childEvents as $ev) {
+                                if (RuntimeEventTypeEnum::RunCompleted->value === $ev->type) {
+                                    $isTerminal = true;
+                                    break;
+                                }
+                                if (RuntimeEventTypeEnum::RunFailed->value === $ev->type) {
+                                    $isTerminal = true;
+                                    $terminalStatus = 'failed';
+                                    break;
+                                }
+                                if (RuntimeEventTypeEnum::RunCancelled->value === $ev->type) {
+                                    $isTerminal = true;
+                                    $terminalStatus = 'cancelled';
+                                    break;
+                                }
+                            }
+
+                            if ($isTerminal) {
+                                // Update activity based on terminal status
+                                $childState->activity = 'failed' === $terminalStatus
+                                    ? RunActivityStateEnum::Failed
+                                    : ('cancelled' === $terminalStatus
+                                        ? RunActivityStateEnum::Cancelled
+                                        : RunActivityStateEnum::Completed);
+
+                                // Update tab label: remove ▶, add status
+                                $labelSuffix = 'failed' === $terminalStatus ? ' ✗' : ('cancelled' === $terminalStatus ? ' ⊘' : ' ✓');
+                                $tabDef->label = preg_replace('/ ▶$/', '', $tabDef->label).$labelSuffix;
+
+                                // Auto-return to parent if this tab is active
+                                if ($tabService->active()?->id === $tabDef->id) {
+                                    $parentState->transcript[] = new TranscriptBlock(
+                                        id: 'fork_poc_done_'.$childRunId,
+                                        kind: TranscriptBlockKindEnum::System,
+                                        runId: $parentState->sessionId,
+                                        seq: $parentState->lastSeq + 1,
+                                        text: \sprintf(
+                                            '\u27f3 ForkPOC [%s] %s \u2014 see /tab %d for details.',
+                                            substr($childRunId, 0, 8),
+                                            $terminalStatus,
+                                            $tabIdx + 1,
+                                        ),
+                                    );
+
+                                    $tabService->switchTo(0);
+                                    $screen->setTranscriptBlocks($parentState->transcript);
+                                }
+                            }
+                        }
+                    } catch (\Throwable $e) {
+                        // Silently ignore child polling errors during POC
+                    }
+                }
+            }
+
             // Display the active tab's transcript
+            $activeState = $context->activeState();
             $screen->setTranscriptBlocks($activeState->transcript);
 
             // The pending-queue widget (slot 4, above the editor) reflects transient
@@ -115,14 +211,18 @@ final class TickPollListener implements TuiListenerRegistrar
             $screen->setWorkingMessage($msg);
 
             // POC: update status panel with active tab mode indicator
-            // Shows "⛝ Read-only" when a subagent artifact tab is active
             $tabService = $context->tabService;
             if (null !== $tabService) {
                 $activeTab = $tabService->active();
                 if (null !== $activeTab && TabInputModeEnum::ReadOnly === $activeTab->inputMode) {
                     $screen->registry()->setStatus('tab-mode', '⛝ Read-only — no steer');
+                } elseif (null !== $activeTab
+                    && TabInputModeEnum::Interactive === $activeTab->inputMode
+                    && 'parent' !== $activeTab->id
+                ) {
+                    $screen->registry()->setStatus('tab-mode', '⌨ Interactive fork — steer/cancel active');
                 } else {
-                    // Clear tab mode status when on interactive tab
+                    // Clear tab mode status when on parent interactive tab
                     $screen->registry()->setStatus('tab-mode', null);
                 }
             }

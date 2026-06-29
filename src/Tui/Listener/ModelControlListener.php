@@ -96,11 +96,22 @@ final class ModelControlListener implements TuiListenerRegistrar
                 return;
             }
 
-            // POC: no-op on read-only tabs (subagent artifacts)
+            // POC: no-op on read-only tabs (subagent artifacts) or non-parent
+            // interactive tabs (fork POC children — model routing not supported).
             $tabService = $context->tabService;
             if (null !== $tabService) {
                 $activeTab = $tabService->active();
                 if (null !== $activeTab && TabInputModeEnum::ReadOnly === $activeTab->inputMode) {
+                    $event->stopPropagation();
+
+                    return;
+                }
+                if (null !== $activeTab
+                    && TabInputModeEnum::Interactive === $activeTab->inputMode
+                    && 'parent' !== $activeTab->id
+                ) {
+                    // Model cycling on non-parent interactive tabs is not
+                    // supported yet — silently ignore.
                     $event->stopPropagation();
 
                     return;
@@ -155,11 +166,21 @@ final class ModelControlListener implements TuiListenerRegistrar
                 return;
             }
 
-            // POC: no-op on read-only tabs (subagent artifacts)
+            // POC: no-op on read-only tabs (subagent artifacts) or non-parent
+            // interactive tabs (fork POC children — reasoning routing not supported).
             $tabService = $context->tabService;
             if (null !== $tabService) {
                 $activeTab = $tabService->active();
                 if (null !== $activeTab && TabInputModeEnum::ReadOnly === $activeTab->inputMode) {
+                    $event->stopPropagation();
+
+                    return;
+                }
+                if (null !== $activeTab
+                    && TabInputModeEnum::Interactive === $activeTab->inputMode
+                    && 'parent' !== $activeTab->id
+                ) {
+                    // Reasoning cycling on non-parent tabs is not supported
                     $event->stopPropagation();
 
                     return;

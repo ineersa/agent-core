@@ -42,6 +42,7 @@
 # not round-trip correctly through the default Symfony Serializer.
 
 parameters:
+    env(HATFIELD_RUN_CONTROL_TRANSPORT_DSN): 'sync://'
     env(HATFIELD_AGENT_TRANSPORT_DSN): 'sync://'
     env(HATFIELD_MCP_TRANSPORT_DSN): 'in-memory://'
 # llm and tool transports use the default Symfony Serializer since
