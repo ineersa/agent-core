@@ -9,35 +9,34 @@ use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 
 /**
- * Composes the initial message list for a fork child run.
+ * Composes the message list for a fork child run.
  *
- * Takes a loaded ForkSessionSnapshotDTO (from the parent) and a fresh
- * system prompt (built externally via SystemPromptBuilder for the child
- * CWD) and composes messages suitable for StartRunInput:
+ * Takes a loaded ForkSessionSnapshotDTO (from the parent) and fresh
+ * system + context messages built by InProcessAgentSessionClient, then:
  *
- *   1. Fresh system prompt with forkSystemPromptAppend appended.
- *   2. Strip parent prologue messages from the snapshot history (system,
- *      user-context messages that were only relevant in the parent's context).
- *   3. Keep the remaining historical user/assistant/tool messages.
- *   4. Append forkTaskUserMessage as the final user message.
- *
- * The system prompt is passed as a parameter rather than depending on
- * SystemPromptBuilder directly, because SystemPromptBuilder is a final
- * class with many injected dependencies (ToolRegistry, SettingsPathResolver,
- * AppConfig, template renderer, etc.) and the caller (AgentCommand fork mode)
- * already has access to it via the service container.
+ *   1. Appends forkSystemPromptAppend to the fresh system prompt.
+ *   2. Keeps fresh user-context messages (AGENTS.md, skills, agents definitions).
+ *   3. Strips parent prologue messages from the snapshot history.
+ *   4. Appends remaining historical user/assistant/tool messages.
+ *   5. Appends forkTaskUserMessage as the final user message.
+ *   6. Sets RunMetadata with fork provenance (parent_run_id, artifact_id).
  *
  * Does NOT mutate the snapshot — always produces new message arrays.
  */
 final readonly class ForkChildMessageComposer
 {
     /**
-     * Compose the StartRunInput for a fork child run.
+     * Compose messages from fresh context + fork snapshot.
      *
      * @param ForkSessionSnapshotDTO $snapshot          The loaded parent snapshot
      * @param string                 $childRunId        The child's agent run ID
      * @param string                 $freshSystemPrompt Fresh system prompt built for the child CWD
      *                                                  (without fork append; we add it here)
+     * @param list<AgentMessage>     $freshContextMsgs  Fresh user-context messages built for child CWD
+     *                                                  (AGENTS.md, skills, agents definitions)
+     * @param string                 $parentRunId       Parent session run ID for fork provenance
+     * @param string                 $artifactId        Artifact ID within parent scope
+     * @param string|null            $resolvedModel     Resolved model identifier
      *
      * @return StartRunInput Configured run input ready for AgentRunner::start()
      */
@@ -45,48 +44,62 @@ final readonly class ForkChildMessageComposer
         ForkSessionSnapshotDTO $snapshot,
         string $childRunId,
         string $freshSystemPrompt,
+        array $freshContextMsgs = [],
+        string $parentRunId = '',
+        string $artifactId = '',
+        ?string $resolvedModel = null,
     ): StartRunInput {
         // 1. Append fork system prompt to the fresh system prompt.
         $combinedSystemPrompt = $freshSystemPrompt."\n\n".$snapshot->forkSystemPromptAppend;
 
-        // 2. Strip parent prologue from snapshot history.
-        $historicalMessages = $this->stripPrologue($snapshot->messages);
-
-        // 3. Filter system messages from the snapshot history that made it
-        //    through stripPrologue (defensive — the prologue strip should
-        //    have removed them, but we also add the fresh system message in
-        //    the system prompt, so snapshot-originated system messages would
-        //    be confusing).
-        $historicalMessages = $this->filterSystemMessages($historicalMessages);
-
-        // 4. Build the seed message list:
-        //    - System message with combined system prompt
-        //    - Historical messages from snapshot
-        //    - Fork task user message as final message
+        // 2. Build the seed message list:
+        //    a. Fresh system message with combined system prompt
+        //    b. Fresh user-context messages (AGENTS.md, skills, agents)
+        //    c. Historical messages from snapshot (prologue stripped)
+        //    d. Fork task user message as final message
         $messages = [];
+
+        // System message.
         $messages[] = new AgentMessage(
             role: 'system',
             content: [['type' => 'text', 'text' => $combinedSystemPrompt]],
         );
 
-        foreach ($historicalMessages as $msg) {
-            $messages[] = $msg;
+        // Fresh context messages (user-context role).
+        foreach ($freshContextMsgs as $ctxMsg) {
+            $messages[] = $ctxMsg;
         }
 
+        // Strip parent prologue from snapshot and append remaining history.
+        $historicalMessages = $this->stripPrologue($snapshot->messages);
+
+        // Filter out any remaining system messages from snapshot history
+        // (the child has its own fresh system prompt).
+        foreach ($historicalMessages as $histMsg) {
+            if ('system' !== $histMsg->role) {
+                $messages[] = $histMsg;
+            }
+        }
+
+        // Append fork task as final user message.
         $messages[] = new AgentMessage(
             role: 'user',
             content: [['type' => 'text', 'text' => $snapshot->forkTaskUserMessage]],
         );
 
-        // 5. Build child RunMetadata for fork provenance (session metadata
-        //    filled by caller via StartRunInput's metadata).
+        // 3. Build child RunMetadata with fork provenance.
+        $sessionMeta = [];
+        if ('' !== $parentRunId) {
+            $sessionMeta['parent_run_id'] = $parentRunId;
+        }
+        if ('' !== $artifactId) {
+            $sessionMeta['artifact_id'] = $artifactId;
+        }
+        $sessionMeta['kind'] = 'fork_child';
+
         $childMetadata = new RunMetadata(
-            session: [
-                'kind' => 'fork_child',
-                'parent_run_id' => '',
-                'artifact_id' => '',
-            ],
-            model: $snapshot->resolvedModel,
+            session: $sessionMeta,
+            model: $resolvedModel ?? $snapshot->resolvedModel,
         );
 
         return new StartRunInput(
@@ -121,27 +134,5 @@ final readonly class ForkChildMessageComposer
         }
 
         return \array_slice($messages, $firstNonPrologue);
-    }
-
-    /**
-     * Remove any remaining system messages from the historical list.
-     *
-     * After prologue stripping, any system messages that appear later in
-     * the history are potentially confusing if the child has its own fresh
-     * system prompt. Compact summary messages (user role with
-     * compact_summary=true metadata) are preserved.
-     *
-     * @param list<AgentMessage> $messages
-     *
-     * @return list<AgentMessage>
-     */
-    private function filterSystemMessages(array $messages): array
-    {
-        return array_values(
-            array_filter(
-                $messages,
-                static fn (AgentMessage $msg): bool => 'system' !== $msg->role,
-            ),
-        );
     }
 }

@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\CLI;
 
+use Ineersa\CodingAgent\Config\ForkLevelEnum;
 use Ineersa\CodingAgent\Migrations\StartupDatabaseMigrator;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Controller\HeadlessController;
+use Ineersa\CodingAgent\Runtime\InProcess\ForkBootstrapService;
+use Ineersa\CodingAgent\Runtime\InProcess\ForkRunTerminalWatcher;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
@@ -54,6 +57,8 @@ final class AgentCommand
         private readonly ?StartupDatabaseMigrator $startupDatabaseMigrator = null,
         private ?HeadlessController $controller = null,
         private readonly ?ToolRegistryInterface $toolRegistry = null,
+        private readonly ?ForkBootstrapService $forkBootstrap = null,
+        private readonly ?ForkRunTerminalWatcher $forkTerminalWatcher = null,
     ) {
     }
 
@@ -105,6 +110,33 @@ final class AgentCommand
 
         #[Option(description: 'Disable prompt template auto-discovery and settings-loaded templates; --prompt-template paths still load')]
         bool $noPromptTemplates = false,
+
+        // ── Fork mode options ──
+        #[Option(description: 'Run in fork child mode (requires HATFIELD_FORK=1 env var)')]
+        bool $fork = false,
+
+        #[Option(description: 'Path to fork snapshot JSON file (requires --fork)')]
+        string $snapshot = '',
+
+        #[Option(description: 'Result artifact directory path (requires --fork)')]
+        string $resultDir = '',
+
+        #[Option(description: 'Parent session run ID (requires --fork)')]
+        string $parentRunId = '',
+
+        #[Option(description: 'Fork artifact ID (requires --fork)')]
+        string $forkRunId = '',
+
+        #[Option(description: 'Child agent run ID (requires --fork)')]
+        string $childRunId = '',
+
+        #[Option(description: 'Fork task description')]
+        string $task = '',
+
+        #[Option(description: 'Fork level: junior, middle, senior')]
+        string $level = '',
+
+        // ── End fork options ──
 
         ?OutputInterface $output = null,
     ): int {
@@ -161,6 +193,24 @@ final class AgentCommand
             // (fires on ConsoleEvents::COMMAND) which loads extensions in
             // every process including messenger:consume workers.
 
+            // ── Fork mode ──
+            // Routes through the normal TUI path with fork-seeded messages.
+            // The child starts as a full TUI/normal Hatfield process with
+            // CWD applied, tools excluded, and the fork snapshot loaded.
+            if ($fork) {
+                return $this->runForkTui(
+                    snapshotPath: $snapshot,
+                    resultDir: $resultDir,
+                    parentRunId: $parentRunId,
+                    forkRunId: $forkRunId,
+                    childRunId: $childRunId,
+                    level: $level,
+                    task: $task,
+                    model: $model,
+                    reasoning: $reasoning,
+                );
+            }
+
             if ($controller) {
                 return $this->runController();
             }
@@ -199,6 +249,134 @@ final class AgentCommand
             ) : null,
             sessionId: $sessionId,
         );
+    }
+
+    /**
+     * Run the agent in fork child mode through the normal TUI path.
+     *
+     * Validates the fork guard, loads the snapshot, composes fork-seeded
+     * messages, and enters InteractiveMode.  After the TUI exits (auto-exit
+     * on run completion via ForkAutoExitRegistrar), writes the exit marker
+     * to stdout so the completion watcher (FORK-05) can detect it.
+     */
+    private function runForkTui(
+        string $snapshotPath,
+        string $resultDir,
+        string $parentRunId,
+        string $forkRunId,
+        string $childRunId,
+        string $level = '',
+        string $task = '',
+        string $model = '',
+        string $reasoning = '',
+    ): int {
+        // ── Validate HATFIELD_FORK guard ──
+        $forkGuard = $_SERVER['HATFIELD_FORK'] ?? getenv('HATFIELD_FORK');
+        if ('1' !== $forkGuard) {
+            throw new \RuntimeException('Fork mode requires HATFIELD_FORK=1 environment variable for defense-in-depth.');
+        }
+
+        // ── Validate required options ──
+        if ('' === $snapshotPath) {
+            throw new \RuntimeException('--snapshot is required in fork mode.');
+        }
+        if ('' === $resultDir) {
+            throw new \RuntimeException('--result-dir is required in fork mode.');
+        }
+        if ('' === $parentRunId) {
+            throw new \RuntimeException('--parent-run-id is required in fork mode.');
+        }
+        if ('' === $forkRunId) {
+            throw new \RuntimeException('--fork-run-id is required in fork mode.');
+        }
+        if ('' === $childRunId) {
+            throw new \RuntimeException('--child-run-id is required in fork mode.');
+        }
+
+        // ── Set HATFIELD_FORK env var for runtime visibility ──
+        $_ENV['HATFIELD_FORK'] = '1';
+        putenv('HATFIELD_FORK=1');
+
+        // ── Force-exclude the fork tool ──
+        if (null !== $this->toolRegistry) {
+            $excluded = $this->toolRegistry->excludedToolNames();
+            if (!\in_array('fork', $excluded, true)) {
+                $excluded[] = 'fork';
+                $this->toolRegistry->setExcludedToolNames($excluded);
+            }
+        }
+
+        // ── Load snapshot ──
+        if (null === $this->forkBootstrap) {
+            throw new \RuntimeException('ForkBootstrapService is not available. Check service wiring.');
+        }
+        $snapshotDto = $this->forkBootstrap->loadSnapshot($snapshotPath);
+
+        // ── Ensure result directory exists ──
+        if (!is_dir($resultDir)) {
+            if (!mkdir($resultDir, 0o755, true) && !is_dir($resultDir)) {
+                throw new \RuntimeException(\sprintf('Failed to create result directory: %s', $resultDir));
+            }
+        }
+
+        // ── Resolve fork level ──
+        $forkLevel = '' !== $level ? ForkLevelEnum::tryFrom($level) : ForkLevelEnum::Middle;
+
+        // ── Create terminal callback for auto-exit ──
+        $terminalCallback = null;
+        if (null !== $this->forkTerminalWatcher) {
+            $terminalCallback = $this->forkTerminalWatcher->createTerminalCallback(
+                parentRunId: $parentRunId,
+                artifactId: $forkRunId,
+                childRunId: $childRunId,
+                resultDir: $resultDir,
+                cwd: getcwd(),
+                task: '' !== $task ? $task : '',
+                level: ($forkLevel ?? ForkLevelEnum::Middle)->value,
+                resolvedModel: $snapshotDto->resolvedModel,
+            );
+        }
+
+        // ── Start TUI with fork-seeded request ──
+        $startRequest = new StartRunRequest(
+            prompt: '', // Empty prompt — fork seed messages come via options
+            runId: $childRunId,
+            options: [
+                'fork_snapshot' => $snapshotDto,
+                'fork_child_run_id' => $childRunId,
+                'fork_parent_run_id' => $parentRunId,
+                'fork_artifact_id' => $forkRunId,
+                'fork_terminal_callback' => $terminalCallback,
+            ],
+            model: '' !== $model ? $model : null,
+            reasoning: '' !== $reasoning ? $reasoning : null,
+        );
+
+        // Route through the normal TUI path — InteractiveMode will start the
+        // run via InProcessAgentSessionClient which checks for fork_snapshot
+        // and composes fork-seed messages.
+        $tuiExitCode = $this->interactiveMode->run(
+            client: $this->inProcessClient,
+            request: $startRequest,
+        );
+
+        // ── Write exit marker for completion watcher (FORK-05) ──
+        // The exit marker is written to stdout after the TUI closes.
+        // FORK-05's completion watcher polls for this marker to detect
+        // when the child process has finished.
+        $exitPayload = json_encode([
+            'status' => 'exited',
+            'artifact_id' => $forkRunId,
+            'child_run_id' => $childRunId,
+            'exit_code' => $tuiExitCode,
+        ], \JSON_THROW_ON_ERROR);
+
+        fwrite(\STDOUT, "\n---FORK-RESULT-START---\n");
+        fwrite(\STDOUT, $exitPayload."\n");
+        fwrite(\STDOUT, "---FORK-RESULT-END---\n");
+        fflush(\STDOUT);
+
+        return $tuiExitCode;
     }
 
     private function runController(): int
