@@ -50,6 +50,7 @@ final class ToolCallExtractorTest extends TestCase
         $payload = $this->extractor->interruptPayloadFromToolResult($result);
 
         self::assertNotNull($payload);
+        self::assertSame('interrupt', $payload['kind'], 'kind must survive from interrupt array');
         self::assertSame('tc-1', $payload['tool_call_id'], 'tool_call_id must come from message');
         self::assertSame('ask_human', $payload['tool_name'], 'tool_name from outer result');
         self::assertSame('ah_abc123', $payload['question_id']);
@@ -105,6 +106,7 @@ final class ToolCallExtractorTest extends TestCase
         self::assertSame('q-old-path', $payload['question_id']);
         self::assertSame('Go?', $payload['prompt']);
         self::assertSame(['type' => 'boolean'], $payload['schema']);
+        self::assertArrayNotHasKey('tool_name', $payload, 'tool_name must not be synthesized when absent from both paths');
     }
 
     public function testMissingQuestionIdFallsBackToToolCallId(): void
@@ -216,6 +218,29 @@ final class ToolCallExtractorTest extends TestCase
         self::assertArrayNotHasKey('default', $payload, 'default must not be synthesized when absent');
         self::assertArrayNotHasKey('allow_other', $payload, 'allow_other must not be synthesized when absent');
         self::assertArrayNotHasKey('secret', $payload, 'secret must not be synthesized when absent');
+    }
+
+    public function testToolNamePassthroughWhenOuterResultLacksIt(): void
+    {
+        // Interrupt array carries tool_name; outer result has NO tool_name key.
+        // The guard reads the outer result — when absent, the interrupt passthrough value stands.
+        $result = ToolCallResultBuilder::create('run-tn')
+            ->withToolCallId('tc-1')
+            ->withResult([
+                'details' => [
+                    'kind' => 'interrupt',
+                    'question_id' => 'ah_xyz',
+                    'prompt' => 'Choose?',
+                    'tool_name' => 'ask_human',
+                ],
+                // NOTE: deliberately NO outer 'tool_name' key
+            ])
+            ->build();
+
+        $payload = $this->extractor->interruptPayloadFromToolResult($result);
+
+        self::assertNotNull($payload);
+        self::assertSame('ask_human', $payload['tool_name'], 'tool_name from interrupt array survives when outer result lacks it');
     }
 
     public function testNonArrayResultReturnsNull(): void

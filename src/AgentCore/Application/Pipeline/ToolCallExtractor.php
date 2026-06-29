@@ -37,11 +37,11 @@ final readonly class ToolCallExtractor
     /**
      * Extract the interrupt payload from a tool call result using generic passthrough.
      *
-     * AgentCore does NOT enumerate tool-specific UI fields (header, ui_kind, choices,
-     * default, allow_other, secret, etc.). Instead it starts from the full interrupt
-     * array, preserving every key generically. Only the five core fields receive typed
-     * fallbacks; all other fields pass through unchanged. This keeps AgentCore
-     * tool-agnostic while richer payloads survive to the waiting_human event.
+     * AgentCore does not enumerate tool-specific fields. It starts from the full
+     * interrupt array, preserving every key generically. Only the five core fields
+     * (tool_call_id, tool_name, question_id, prompt, schema) receive typed fallbacks;
+     * all other fields pass through unchanged. This keeps AgentCore tool-agnostic
+     * while richer payloads survive to the waiting_human event.
      *
      * @return array<string, mixed>|null
      */
@@ -57,7 +57,7 @@ final readonly class ToolCallExtractor
 
         $interrupt = null;
 
-        // Check details first (AskHumanPayloadFactory puts kind=interrupt in details)
+        // Check details first (interrupt payloads nest kind=interrupt under details)
         if ('interrupt' === ($details['kind'] ?? null)) {
             $interrupt = $details;
         }
@@ -72,8 +72,8 @@ final readonly class ToolCallExtractor
         }
 
         // Generic passthrough: start with all keys from the interrupt array.
-        // This carries kind, ui_kind, header, choices, default, allow_other,
-        // secret, and any future UI fields — AgentCore does not enumerate them.
+        // AgentCore does not enumerate the carried fields — whatever the tool
+        // produced (structural markers, UI metadata, future fields) survives.
         $payload = $interrupt;
 
         // ── Core typed fallbacks (applied ON TOP of passthrough values) ──
