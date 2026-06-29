@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\Tui\Theme\ThemeColorEnum;
+use Ineersa\Tui\Theme\TuiTheme;
 use Ineersa\Tui\Widget\TuiRenderContext;
 use Symfony\Component\Tui\Ansi\TextWrapper;
 
@@ -32,6 +33,24 @@ final readonly class SubagentResultRenderer
         return 'subagent' === $toolName
             || isset($block->meta['subagent_progress'])
             || isset($block->meta['subagent_final']);
+    }
+
+    /**
+     * Build ANSI-coloured content string for the widget-tree renderer.
+     *
+     * Returns a single string with the glyph prefix, resolved text,
+     * optional streaming suffix, and theme colour applied — no wrapping.
+     * The caller (TextWidget) handles wrapping.
+     */
+    public function buildContent(TranscriptBlock $block, TuiTheme $theme): string
+    {
+        $text = $this->resolveText($block);
+        $prefix = '  ●';
+        $suffix = $block->streaming ? '...' : '';
+
+        $line = \sprintf('%s %s%s', $prefix, $text, $suffix);
+
+        return $theme->color(ThemeColorEnum::ToolOutput, $line);
     }
 
     /**
