@@ -86,8 +86,9 @@ final class ModelControlListener implements TuiListenerRegistrar
         }
 
         // ── Register Ctrl+P — cycle favorite models ──
+        // POC: re-resolve active state from context for multi-tab support.
         $tui->addListener(static function (InputEvent $event) use (
-            $modelService, $state, $appConfig, $screen,
+            $modelService, $context, $appConfig, $screen,
         ): void {
             // Ctrl+P is \x10
             if ("\x10" !== $event->getData()) {
@@ -95,7 +96,9 @@ final class ModelControlListener implements TuiListenerRegistrar
             }
             $event->stopPropagation();
 
-            $nextRef = $modelService->cycleFavoriteModel($state->sessionId);
+            $activeState = $context->activeState();
+
+            $nextRef = $modelService->cycleFavoriteModel($activeState->sessionId);
             if (null === $nextRef) {
                 return;
             }
@@ -103,35 +106,36 @@ final class ModelControlListener implements TuiListenerRegistrar
             // Update footer state for immediate refresh.
             // getDisplayReasoning returns 'off' for non-thinking models so
             // the diamond/model colour resets correctly.
-            $state->footerModel = FooterStateInitializer::shortModelName($nextRef->toString());
-            $state->footerReasoning = $modelService->getDisplayReasoning($state->sessionId);
-            $state->contextWindow = FooterStateInitializer::resolveContextWindowForRef($appConfig, $nextRef);
+            $activeState->footerModel = FooterStateInitializer::shortModelName($nextRef->toString());
+            $activeState->footerReasoning = $modelService->getDisplayReasoning($activeState->sessionId);
+            $activeState->contextWindow = FooterStateInitializer::resolveContextWindowForRef($appConfig, $nextRef);
 
             // Apply editor border colour matching the new reasoning level.
-            $screen->applyEditorBorderColor($state->footerReasoning);
+            $screen->applyEditorBorderColor($activeState->footerReasoning);
 
             // For draft sessions, carry the model into the request so it is
             // used when the draft is promoted on first submit.  Without this,
             // SubmitListener reads $state->request?->model (null) and the
             // StartRunRequest carries no model, leaving the runtime to resolve
             // from stale AppConfig.
-            if ('' === $state->sessionId) {
+            if ('' === $activeState->sessionId) {
                 // When $state->request is null (plain /new with no prior
                 // --model), the empty-string prompt is just a carrier —
                 // SubmitListener merges the real prompt from editor text
                 // during draft promotion.
-                $carrier = $state->request ?? new StartRunRequest(
+                $carrier = $activeState->request ?? new StartRunRequest(
                     prompt: '',
                     runId: '',
                     cwd: '',
                 );
-                $state->request = $carrier->withModel($nextRef->toString());
+                $activeState->request = $carrier->withModel($nextRef->toString());
             }
         }, priority: 95);
 
         // ── Register Shift+Tab — cycle reasoning levels ──
+        // POC: re-resolve active state from context for multi-tab support.
         $tui->addListener(static function (InputEvent $event) use (
-            $modelService, $state, $screen,
+            $modelService, $context, $screen,
         ): void {
             // Shift+Tab sends \x1b[Z
             if ("\x1b[Z" !== $event->getData()) {
@@ -139,11 +143,13 @@ final class ModelControlListener implements TuiListenerRegistrar
             }
             $event->stopPropagation();
 
+            $activeState = $context->activeState();
+
             // Only cycle when the current model supports thinking levels.
             // When the model does not support thinking, the handler returns
             // null and we do nothing — no status entry, no footer colour
             // change, no misleading visual feedback.
-            $nextLevel = $modelService->cycleReasoningForCurrentModel($state->sessionId);
+            $nextLevel = $modelService->cycleReasoningForCurrentModel($activeState->sessionId);
             if (null === $nextLevel) {
                 return;
             }
@@ -151,7 +157,7 @@ final class ModelControlListener implements TuiListenerRegistrar
             // Update footer colour through the state field.
             // The FooterStateSegmentProvider reads this to colour the ◆
             // diamond and model name with the appropriate Thinking* token.
-            $state->footerReasoning = $nextLevel;
+            $activeState->footerReasoning = $nextLevel;
 
             // Show the new level in the status panel ONLY (not the footer bar).
             // We set the registry directly so the reasoning key does NOT leak

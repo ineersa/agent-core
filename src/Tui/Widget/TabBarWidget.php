@@ -69,7 +69,7 @@ final class TabBarWidget implements TuiWidget
 
         // Pad to full width
         // Count visible width, pad with spaces
-        $visibleLen = \mb_strlen($segment ?? '');
+        $visibleLen = mb_strlen($segment ?? '');
         $segment = $line;
         // Actually let me recalculate
         $plainLen = 0;
@@ -101,7 +101,7 @@ final class TabBarWidget implements TuiWidget
                 $label .= '  ';
             } elseif ($i === $count - 1) {
                 // Add right padding after the last tab
-                $label .= \str_repeat(' ', $padding);
+                $label .= str_repeat(' ', $padding);
             }
 
             if ($isActive) {
@@ -111,6 +111,6 @@ final class TabBarWidget implements TuiWidget
             }
         }
 
-        return [\implode('', $resultSegments)];
+        return [implode('', $resultSegments)];
     }
 }

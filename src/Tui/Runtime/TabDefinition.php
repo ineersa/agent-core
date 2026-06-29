@@ -18,10 +18,10 @@ namespace Ineersa\Tui\Runtime;
 final readonly class TabDefinition
 {
     /**
-     * @param string          $id     Unique tab identifier (e.g. 'parent', 'fork-<runId>')
-     * @param string          $label  Human-readable tab label shown in the tab bar
-     * @param string          $runId  The run ID this tab is tracking
-     * @param TuiSessionState $state  Mutable state bag for transcript/activity/polling
+     * @param string          $id    Unique tab identifier (e.g. 'parent', 'fork-<runId>')
+     * @param string          $label Human-readable tab label shown in the tab bar
+     * @param string          $runId The run ID this tab is tracking
+     * @param TuiSessionState $state Mutable state bag for transcript/activity/polling
      * @param bool            $isRun Whether this tab represents an active/runnable session (vs. static info)
      */
     public function __construct(

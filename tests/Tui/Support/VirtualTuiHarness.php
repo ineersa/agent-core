@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Support;
 
 use Ineersa\Tui\Editor\PromptEditor;
+use Ineersa\Tui\Runtime\TabDefinition;
+use Ineersa\Tui\Runtime\TabService;
+use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemeColorEnum;
@@ -19,12 +22,15 @@ use Symfony\Component\Tui\Tui;
  * Mounts {@see ChatScreen} on Symfony {@see VirtualTerminal} and exposes plain
  * screen text via {@see ScreenBuffer}. Optional {@see startInputLoop()} wires
  * the same terminal input callback as {@see Tui::run()} without blocking Revolt.
+ *
+ * POC: supports {@see TabService} for multi-tab rendering tests.
  */
 final class VirtualTuiHarness
 {
     private readonly VirtualTerminal $terminal;
     private readonly Tui $tui;
     private readonly ChatScreen $screen;
+    private readonly TabService $tabService;
 
     private bool $inputLoopStarted = false;
 
@@ -33,17 +39,45 @@ final class VirtualTuiHarness
         int $rows = 40,
         string $sessionId = 'virtual-startup-session',
         ?ThemePalette $palette = null,
+        ?TabService $tabService = null,
     ) {
         $this->terminal = new VirtualTerminal(columns: $columns, rows: $rows);
         $palette ??= self::defaultVirtualPalette();
         $theme = new DefaultTheme($palette);
+
+        // Build optional TabService with a parent tab
+        $this->tabService = $tabService ?? self::createParentTabService($sessionId);
+
         $this->screen = new ChatScreen(
             theme: $theme,
             sessionId: $sessionId,
             promptEditor: new PromptEditor(),
+            tabService: $this->tabService,
         );
         $this->tui = new Tui(terminal: $this->terminal);
         $this->screen->mount($this->tui);
+    }
+
+    /**
+     * Create a TabService with a single parent tab.
+     */
+    public static function createParentTabService(string $sessionId): TabService
+    {
+        $tabService = new TabService();
+        $tabService->addTab(new TabDefinition(
+            id: 'parent',
+            label: 'Parent',
+            runId: $sessionId,
+            state: new TuiSessionState($sessionId, false),
+            isRun: true,
+        ));
+
+        return $tabService;
+    }
+
+    public function tabService(): TabService
+    {
+        return $this->tabService;
     }
 
     public function screen(): ChatScreen

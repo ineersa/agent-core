@@ -157,40 +157,14 @@ final readonly class InteractiveMode
             $state->transcript = $this->sessionInit->buildInitialTranscript($state);
 
             // ── Build tab service (POC) ──
+            // Start with just the parent tab. Additional tabs (child runs) are
+            // created dynamically via /tab start "<prompt>" in TabRoutingListener.
             $tabService = new TabService();
             $tabService->addTab(new TabDefinition(
                 id: 'parent',
                 label: 'Parent',
                 runId: $state->sessionId,
                 state: $state,
-                isRun: true,
-            ));
-
-            // Create a child tab with a second state (simulating a subagent/fork run)
-            $childState = new TuiSessionState('', false);
-            $childState->transcript = [
-                $this->blockFactory->system(
-                    runId: 'poc-child',
-                    text: 'Welcome to the child tab. This is a POC demonstrating multi-tab capability.',
-                    seq: 1,
-                ),
-                $this->blockFactory->system(
-                    runId: 'poc-child',
-                    text: 'In a production fork, this tab would show the child/subagent run transcript, events, and activity status.',
-                    seq: 2,
-                ),
-                $this->blockFactory->system(
-                    runId: 'poc-child',
-                    text: 'Type /tab 1 to return to the parent, /tab 2 for this tab, or /tab list to see all tabs.',
-                    seq: 3,
-                    style: 'muted',
-                ),
-            ];
-            $tabService->addTab(new TabDefinition(
-                id: 'child',
-                label: 'Fork POC',
-                runId: 'poc-child',
-                state: $childState,
                 isRun: true,
             ));
 
