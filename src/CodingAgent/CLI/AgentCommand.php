@@ -11,7 +11,6 @@ use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Controller\HeadlessController;
-use Ineersa\CodingAgent\Runtime\InProcess\ForkBootstrapService;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
@@ -56,7 +55,6 @@ final class AgentCommand
         private readonly ?StartupDatabaseMigrator $startupDatabaseMigrator = null,
         private ?HeadlessController $controller = null,
         private readonly ?ToolRegistryInterface $toolRegistry = null,
-        private readonly ?ForkBootstrapService $forkBootstrap = null,
     ) {
     }
 
@@ -209,10 +207,7 @@ final class AgentCommand
                 // support fork child mode (the fork child is a real tmux process
                 // that communicates via the controller JSONL protocol).
                 if ('in-process' === $transport) {
-                    throw new \RuntimeException(
-                        'Fork mode is not supported with --transport=in-process. '
-                        .'Fork children must use the default process transport (--transport=process).'
-                    );
+                    throw new \RuntimeException('Fork mode is not supported with --transport=in-process. Fork children must use the default process transport (--transport=process).');
                 }
 
                 return $this->runForkTui(
@@ -319,13 +314,15 @@ final class AgentCommand
         // before FORK-05 registers it.  Prevents nested fork calls.
         $this->excludeForkToolSafely();
 
-        // ── Load snapshot (validate + extract resolved model) ──
-        // Snapshot is loaded here to validate it exists; the controller-side
-        // InProcessAgentSessionClient also loads it from the path option.
-        if (null === $this->forkBootstrap) {
-            throw new \RuntimeException('ForkBootstrapService is not available. Check service wiring.');
+        // ── Validate snapshot path ──
+        // The snapshot is loaded and deserialized by ForkControllerStartService
+        // in the controller process.  Here we only validate the file exists.
+        if (!is_file($snapshotPath)) {
+            throw new \RuntimeException(\sprintf('Fork snapshot file not found: %s', $snapshotPath));
         }
-        $snapshotDto = $this->forkBootstrap->loadSnapshot($snapshotPath);
+        if (!is_readable($snapshotPath)) {
+            throw new \RuntimeException(\sprintf('Fork snapshot file not readable: %s', $snapshotPath));
+        }
 
         // ── Ensure result directory exists ──
         if (!is_dir($resultDir)) {
@@ -351,14 +348,13 @@ final class AgentCommand
             'fork_task' => '' !== $task ? $task : '',
             'fork_level' => ($forkLevel ?? ForkLevelEnum::Middle)->value,
             'fork_cwd' => getcwd(),
-            'fork_resolved_model' => $snapshotDto->resolvedModel,
         ];
 
         // ── Start TUI with fork-seeded request (process transport) ──
         // The fork child MUST use process transport (JsonlProcessAgentSessionClient)
         // so that the run is executed by the controller subprocess.  Fork finalization
         // (handoff validation, artifact writing) is handled by ForkRunTerminalWatcher
-        // on the controller side, started by StartRunHandler.
+        // in the controller process, started by StartRunHandler.
         $startRequest = new StartRunRequest(
             prompt: '', // Empty prompt — fork seed messages come via options
             runId: $childRunId,
@@ -647,4 +643,3 @@ final class AgentCommand
         };
     }
 }
-

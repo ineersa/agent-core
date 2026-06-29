@@ -14,9 +14,6 @@ use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
-use Ineersa\CodingAgent\Agent\Fork\ForkChildMessageComposer;
-use Ineersa\CodingAgent\Agent\Fork\ForkSessionSnapshotDTO;
-use Ineersa\CodingAgent\Agent\Fork\ForkSessionSnapshotSerializer;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Config\SessionMetadataStore;
@@ -64,8 +61,6 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         private readonly ToolQuestionAnswerResolver $answerResolver = new ToolQuestionAnswerResolver(),
         private readonly ?ToolExecutorInterface $toolExecutor = null,
         private readonly ?McpSessionLifecycleDispatcher $mcpDispatcher = null,
-        private readonly ?ForkChildMessageComposer $forkMessageComposer = null,
-        private readonly ?ForkSessionSnapshotSerializer $forkSnapshotSerializer = null,
     ) {
     }
 
@@ -128,51 +123,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
             );
         }
 
-        // ── Fork seed path ──
-        // When fork_mode is detected in request options (process transport, scalar options)
-        // or fork_snapshot (in-process transport, DTO), compose messages from the fork
-        // snapshot + fresh context instead of using the normal user prompt.
-        // This is how fork children receive seeded conversation history while keeping
-        // fresh CWD-specific system/user-context.
-        //
-        // Two invocation paths merge here:
-        //   In-process transport: options carry ForkSessionSnapshotDTO via 'fork_snapshot'.
-        //   Process transport:    options carry scalar 'fork_snapshot_path' loaded by
-        //                         ForkSessionSnapshotSerializer in the controller process.
-        if (null !== $this->forkMessageComposer) {
-            $forkSnapshot = $this->resolveForkSnapshot($request);
-
-            if (null !== $forkSnapshot) {
-                $forkChildRunId = (string) ($request->options['fork_child_run_id'] ?? '');
-                $forkParentRunId = (string) ($request->options['fork_parent_run_id'] ?? '');
-                $forkArtifactId = (string) ($request->options['fork_artifact_id'] ?? '');
-
-                // Compose full message list: fresh system + context + snapshot historical + task.
-                // We pass the currently-built $messages (system + all user-context) and the
-                // composer handles appending history + task.
-                $input = $this->forkMessageComposer->compose(
-                    snapshot: $forkSnapshot,
-                    childRunId: $forkChildRunId,
-                    freshSystemPrompt: $systemPromptText,
-                    freshContextMsgs: \array_slice($messages, 1), // skip the system message, pass context only
-                    parentRunId: $forkParentRunId,
-                    artifactId: $forkArtifactId,
-                    resolvedModel: $forkSnapshot->resolvedModel,
-                );
-
-                // Override $messages with the composed set and skip the normal prompt path.
-                $messages = $input->messages;
-
-                // Fork uses composer's StartRunInput directly; skip normal StartRunInput construction.
-                $forkRunId = $this->runner->start($input);
-
-                $this->mcpDispatcher?->dispatchInitialize($forkRunId, 'start_run');
-
-                return new RunHandle(runId: $forkRunId, status: 'running');
-            }
-        }
-
-        // ── Normal user prompt path (non-fork) ──
+        // ── Normal user prompt path ──
         // Expand prompt templates in the user input before passing to the model.
         // Single-pass expansion: if a template body starts with "/other", it
         // is NOT expanded again — the model receives the literal text.
@@ -494,43 +445,4 @@ final class InProcessAgentSessionClient implements AgentSessionClient
             ],
         ));
     }
-
-    /**
-     * Resolve a ForkSessionSnapshotDTO from request options.
-     *
-     * Supports two option formats:
-     *   1. 'fork_snapshot' => ForkSessionSnapshotDTO (in-process transport, passed directly)
-     *   2. 'fork_mode' => true + 'fork_snapshot_path' => string (process transport, loaded from file)
-     *
-     * Returns null when fork mode is not detected or the snapshot cannot be loaded.
-     */
-    private function resolveForkSnapshot(StartRunRequest $request): ?ForkSessionSnapshotDTO
-    {
-        // In-process transport: DTO passed directly via options.
-        $snapshot = $request->options['fork_snapshot'] ?? null;
-        if ($snapshot instanceof ForkSessionSnapshotDTO) {
-            return $snapshot;
-        }
-
-        // Process transport: scalar fork_mode + fork_snapshot_path.
-        // Load the snapshot from disk in the controller process.
-        if (true === ($request->options['fork_mode'] ?? false)) {
-            $snapshotPath = isset($request->options['fork_snapshot_path'])
-                ? (string) $request->options['fork_snapshot_path']
-                : '';
-
-            if ('' === $snapshotPath) {
-                throw new \RuntimeException('Fork mode requires fork_snapshot_path in options.');
-            }
-
-            if (null === $this->forkSnapshotSerializer) {
-                throw new \RuntimeException('ForkSnapshotSerializer not available. Check DI wiring for fork support.');
-            }
-
-            return $this->forkSnapshotSerializer->fromFile($snapshotPath);
-        }
-
-        return null;
-    }
 }
-

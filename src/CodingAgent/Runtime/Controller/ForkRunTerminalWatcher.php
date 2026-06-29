@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Runtime\InProcess;
+namespace Ineersa\CodingAgent\Runtime\Controller;
 
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
@@ -12,30 +12,22 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Fork\ForkHandoffValidationResultDTO;
 use Ineersa\CodingAgent\Agent\Fork\ForkHandoffValidator;
+use Ineersa\CodingAgent\Agent\Fork\ForkSessionSnapshotSerializer;
 use Psr\Log\LoggerInterface;
 use Revolt\EventLoop;
 
 /**
- * Fork terminal lifecycle watcher.
+ * Controller-side fork terminal lifecycle watcher.
  *
- * Supports two invocation paths:
+ * Registers a non-blocking Revolt EventLoop repeat that polls RunStore for
+ * terminal state (Completed, Failed, Cancelled).  When terminal, performs
+ * handoff validation, repair (up to MAX_REPAIR_ATTEMPTS), and writes result
+ * artifacts (handoff.md, metadata.json).
  *
- * 1. TUI tick callback (old path, for in-process use):
- *    {@see createTerminalCallback()} returns a closure that the TUI
- *    tick handler invokes when the run reaches terminal state.
- *
- * 2. Controller-side EventLoop poller (new path, for process transport):
- *    {@see startForForkRun()} registers a Revolt EventLoop repeat that
- *    polls RunStore for terminal state and performs handoff validation,
- *    repair, and artifact writing.  This is the preferred path when the
- *    fork child uses process transport (JsonlProcessAgentSessionClient).
- *
- * In both paths, the same underlying logic handles:
- *   - Completed runs: extract candidate handoff, validate, repair up to
- *     MAX_REPAIR_ATTEMPTS, write artifacts.
- *   - Failed runs: write diagnostics + metadata.
- *   - Cancelled runs: write cancelled metadata with history paths.
- *   - Lost runs (null state): write failed metadata.
+ * Runs in the controller process (started by StartRunHandler) so it has
+ * access to AppAgent services (ForkHandoffValidator, AgentArtifactRegistry).
+ * The TUI-side ForkAutoExitRegistrar simply stops the TUI event loop on
+ * terminal — all AppAgent-intensive work is here in the controller.
  */
 final readonly class ForkRunTerminalWatcher
 {
@@ -50,11 +42,10 @@ final readonly class ForkRunTerminalWatcher
         private AgentRunnerInterface $agentRunner,
         private AgentArtifactRegistry $artifactRegistry,
         private ForkHandoffValidator $handoffValidator,
+        private ForkSessionSnapshotSerializer $snapshotSerializer,
         private LoggerInterface $logger,
     ) {
     }
-
-    // ── Controller-side (EventLoop) path ──
 
     /**
      * Start polling for fork run terminal state via Revolt EventLoop.
@@ -64,16 +55,14 @@ final readonly class ForkRunTerminalWatcher
      * When terminal, performs handoff validation/repair and writes result
      * artifacts.  The watcher cancels itself after handling terminal state.
      *
-     * This runs in the controller process (StartRunHandler), which has
-     * access to AppAgent services (ForkHandoffValidator, AgentArtifactRegistry)
-     * and the event loop.  The TUI-side ForkAutoExitRegistrar simply stops
-     * the event loop on terminal — all AppAgent-intensive work is here.
+     * Loads the fork snapshot from fork_snapshot_path once to extract
+     * resolvedModel and any other metadata needed for finalization.
      *
-     * @param string $runId      The child agent run ID
-     * @param array<string, mixed> $forkOptions Scalar fork options from StartRunRequest (fork_mode,
-     *                            fork_snapshot_path, fork_result_dir, fork_parent_run_id,
-     *                            fork_artifact_id, fork_child_run_id, fork_task,
-     *                            fork_level, fork_cwd, fork_resolved_model)
+     * @param string               $runId       The child agent run ID
+     * @param array<string, mixed> $forkOptions Scalar fork options (fork_mode,
+     *                                          fork_snapshot_path, fork_result_dir, fork_parent_run_id,
+     *                                          fork_artifact_id, fork_child_run_id, fork_task,
+     *                                          fork_level, fork_cwd)
      */
     public function startForForkRun(string $runId, array $forkOptions): void
     {
@@ -84,7 +73,9 @@ final readonly class ForkRunTerminalWatcher
         $cwd = (string) ($forkOptions['fork_cwd'] ?? '');
         $task = (string) ($forkOptions['fork_task'] ?? '');
         $level = (string) ($forkOptions['fork_level'] ?? '');
-        $resolvedModel = $forkOptions['fork_resolved_model'] ?? null;
+
+        // Load resolvedModel from the snapshot (loaded once, not per tick).
+        $resolvedModel = $this->loadResolvedModel($forkOptions);
 
         $repairAttempts = 0;
         $cancelled = false;
@@ -130,72 +121,51 @@ final readonly class ForkRunTerminalWatcher
         EventLoop::repeat(self::POLL_INTERVAL, $callback);
     }
 
-    // ── TUI tick callback path ──
-
     /**
-     * Create a terminal callback for use in TUI tick handlers.
+     * Extract resolvedModel from fork options or load from snapshot.
      *
-     * Returns a closure that ForkAutoExitRegistrar (Tui layer) can invoke
-     * when the run reaches terminal state.  The closure is stateful:
-     * $repairAttempts is captured by reference across invocations.
+     * Checks fork_resolved_model in options first (set by ForkControllerStartService
+     * or AgentCommand); falls back to loading the snapshot from fork_snapshot_path.
      *
-     * @param string      $parentRunId   Parent session run ID
-     * @param string      $artifactId    Artifact ID within parent scope
-     * @param string      $childRunId    Child agent run ID
-     * @param string      $resultDir     Absolute path to result artifact directory
-     * @param string      $cwd           Child working directory (for metadata)
-     * @param string      $task          Task description (for metadata)
-     * @param string      $level         Resolved fork level string
-     * @param string|null $resolvedModel Resolved model identifier
-     *
-     * @return callable(string $runId): ?string Returns 'done', 'exit', 'repairing', or null
+     * @param array<string, mixed> $forkOptions
      */
-    public function createTerminalCallback(
-        string $parentRunId,
-        string $artifactId,
-        string $childRunId,
-        string $resultDir,
-        string $cwd,
-        string $task,
-        string $level,
-        ?string $resolvedModel = null,
-    ): callable {
-        $repairAttempts = 0;
+    private function loadResolvedModel(array $forkOptions): ?string
+    {
+        // Prefer explicit option value.
+        if (isset($forkOptions['fork_resolved_model'])) {
+            $value = $forkOptions['fork_resolved_model'];
+            if (\is_string($value) && '' !== $value) {
+                return $value;
+            }
+        }
 
-        return function (string $runId) use (
-            $parentRunId,
-            $artifactId,
-            $childRunId,
-            $resultDir,
-            $cwd,
-            $task,
-            $level,
-            $resolvedModel,
-            &$repairAttempts,
-        ): ?string {
-            return $this->handleTerminalRun(
-                $runId,
-                $parentRunId,
-                $artifactId,
-                $childRunId,
-                $resultDir,
-                $cwd,
-                $task,
-                $level,
-                $resolvedModel,
-                $repairAttempts,
-            );
-        };
+        // Fall back to loading from snapshot.
+        $snapshotPath = (string) ($forkOptions['fork_snapshot_path'] ?? '');
+        if ('' !== $snapshotPath && is_file($snapshotPath)) {
+            try {
+                $snapshot = $this->snapshotSerializer->fromFile($snapshotPath);
+
+                return $snapshot->resolvedModel;
+            } catch (\Throwable $e) {
+                $this->logger->warning('fork.watcher.snapshot_load_failed', [
+                    'component' => 'fork.watcher',
+                    'event_type' => 'fork.watcher.snapshot_load_failed',
+                    'snapshot_path' => $snapshotPath,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return null;
     }
 
     // ── Shared terminal handling logic ──
 
     /**
-     * Handle a terminal run — shared between TUI callback and EventLoop poller.
+     * Handle a terminal run — called from the EventLoop repeat callback.
      *
      * Reads the current run state and makes a decision based on the
-     * terminal status.  This is non-blocking for TUI tick usage but
-     * may do I/O (RunStore, artifact writes).
+     * terminal status.  May do I/O (RunStore, artifact writes).
      *
      * @return string|null 'done', 'repairing', or null (not ready)
      */

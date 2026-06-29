@@ -6,7 +6,8 @@ namespace Ineersa\CodingAgent\Runtime\Controller\CommandHandler;
 
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
-use Ineersa\CodingAgent\Runtime\InProcess\ForkRunTerminalWatcher;
+use Ineersa\CodingAgent\Runtime\Controller\ForkControllerStartService;
+use Ineersa\CodingAgent\Runtime\Controller\ForkRunTerminalWatcher;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
@@ -20,17 +21,21 @@ use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
  * forwarded to TUI via the controller's periodic EventStore drain and LLM
  * consumer stdout streaming.
  *
- * When fork_mode is detected in options, starts a ForkRunTerminalWatcher that
- * polls for terminal run state and performs handoff validation + artifact
- * writing.  This is the controller-side finalization path for fork children;
- * the TUI-side ForkAutoExitRegistrar only needs to see the terminal run event
- * and stop the event loop.
+ * Normal (non-fork) starts use InProcessAgentSessionClient directly.
+ * Fork mode starts use ForkControllerStartService which loads the fork snapshot,
+ * builds fresh child-cwd messages, and composes them with the fork task prompt.
+ *
+ * When fork_mode is detected in options, also starts a ForkRunTerminalWatcher
+ * that polls for terminal run state and performs handoff validation + artifact
+ * writing in the controller process.  The TUI-side ForkAutoExitRegistrar only
+ * needs to see the terminal run event and stop the event loop.
  */
 #[AsEventListener(event: ControllerCommandEvent::class)]
 final readonly class StartRunHandler
 {
     public function __construct(
         private readonly InProcessAgentSessionClient $client,
+        private readonly ?ForkControllerStartService $forkStartService = null,
         private readonly ?ForkRunTerminalWatcher $forkTerminalWatcher = null,
     ) {
     }
@@ -53,19 +58,26 @@ final readonly class StartRunHandler
             ? $command->payload['options']
             : [];
 
-        // Non-blocking: dispatches StartRun to run_control transport and returns
-        // immediately. The run_control consumer picks up the message and processes
-        // the run asynchronously. Events flow back through:
+        // ── Fork mode start (controller-side bootstrap) ──
+        // When fork_mode is detected, ForkControllerStartService loads the
+        // snapshot, builds fresh child-cwd messages, and starts the run.
+        // Normal (non-fork) start uses InProcessAgentSessionClient as before.
+        // Both paths are non-blocking: they dispatch to run_control transport
+        // and return immediately. Events flow back through:
         //   1. EventStore (committed by consumer) → controller event drain → TUI
         //   2. LLM consumer stdout (streaming deltas) → controller poll → TUI
-        $handle = $this->client->start(new StartRunRequest(
-            prompt: $prompt,
-            runId: $runId,
-            cwd: $cwd,
-            options: $options,
-            model: '' !== $model ? $model : null,
-            reasoning: '' !== $reasoning ? $reasoning : null,
-        ));
+        if (true === ($options['fork_mode'] ?? false) && null !== $this->forkStartService) {
+            $handle = $this->forkStartService->start($options);
+        } else {
+            $handle = $this->client->start(new StartRunRequest(
+                prompt: $prompt,
+                runId: $runId,
+                cwd: $cwd,
+                options: $options,
+                model: '' !== $model ? $model : null,
+                reasoning: '' !== $reasoning ? $reasoning : null,
+            ));
+        }
 
         $event->emit(new RuntimeEvent(
             type: RuntimeEventTypeEnum::RunStarted->value,
