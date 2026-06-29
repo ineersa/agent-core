@@ -83,11 +83,14 @@ final class TickPollListener implements TuiListenerRegistrar
             $screen->syncQueuedUserMessages($state->queuedUserMessages);
 
             // Open the question overlay whenever the coordinator has an
-            // active request and the controller is not already showing it.
-            // This handles: (a) new questions becoming active after polling
-            // uncovers a human_input.requested event, and (b) queued
-            // questions advancing into the active slot on later ticks.
-            if ($questionCoordinator->actionRequired() && !$questionController->isOpen()) {
+            // active request and the controller is not already showing it
+            // AND is not awaiting free-form editor input (__other__ escape
+            // hatch). This handles: (a) new questions becoming active after
+            // polling uncovers a human_input.requested event, and (b) queued
+            // questions advancing into the active slot on later ticks. The
+            // isAwaitingFreeForm() check prevents rebuilding the select
+            // overlay while the user types a custom answer in the editor.
+            if ($questionCoordinator->actionRequired() && !$questionController->isOpen() && !$questionController->isAwaitingFreeForm()) {
                 $activeRequest = $questionCoordinator->activeRequest();
                 if (null !== $activeRequest) {
                     $questionController->open($activeRequest);

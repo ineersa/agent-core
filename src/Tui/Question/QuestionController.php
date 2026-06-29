@@ -34,6 +34,7 @@ final class QuestionController
     private ?SelectListWidget $listWidget = null;
     private ?ContainerWidget $container = null;
     private bool $isOpen = false;
+    private bool $awaitingFreeForm = false;
     private ?ChatScreen $screen = null;
 
     public function __construct(
@@ -69,6 +70,7 @@ final class QuestionController
             return;
         }
 
+        $this->awaitingFreeForm = false;
         $this->container = new ContainerWidget();
         $this->addHeader($request);
 
@@ -92,6 +94,7 @@ final class QuestionController
         }
         $this->listWidget = null;
         $this->isOpen = false;
+        $this->awaitingFreeForm = false;
         $this->screen?->setStatus('action', null);
         $this->screen?->refresh();
     }
@@ -104,7 +107,44 @@ final class QuestionController
         return $this->isOpen;
     }
 
+    /**
+     * True when the overlay was dismissed for free-form input (__other__ escape
+     * hatch). TickPollListener's per-tick re-open guard checks this flag so it
+     * does not rebuild the select overlay while the user types.
+     */
+    public function isAwaitingFreeForm(): bool
+    {
+        return $this->awaitingFreeForm;
+    }
+
     // ── Private helpers ──
+
+    /**
+     * Dismiss the select overlay for free-form editor input (the __other__
+     * escape hatch).
+     *
+     * Sets awaitingFreeForm=true so TickPollListener's per-tick re-open guard
+     * does NOT rebuild the select overlay on the next tick (the active request
+     * remains unanswered so actionRequired() is still true — without this flag
+     * the guard would see !isOpen() and re-open with a fresh SelectListWidget
+     * at selectedIndex=0, resetting the selection).
+     *
+     * Focus is moved to the editor BEFORE close() so the SelectListWidget is
+     * not the focused widget when it detaches (avoids FocusManager::remove()
+     * reassigning focus at detach time).
+     *
+     * SubmitListener intercepts the next editor submission (Enter) while
+     * actionRequired() is true and routes the typed text through
+     * coordinator->answer(), which dequeues the request and clears
+     * awaitingFreeForm via close().
+     */
+    private function dismissToEditor(): void
+    {
+        $this->screen?->setFocus($this->screen->editorWidget());
+        $this->close();
+        $this->awaitingFreeForm = true;
+        $this->screen?->setStatus('action', 'Type your answer and press Enter');
+    }
 
     /**
      * Add a kind-appropriate header to the container.
@@ -165,19 +205,9 @@ final class QuestionController
             $value = $item['value'];
 
             if ('__other__' === $value) {
-                // Move focus to the editor before removing the overlay.
-                // The SelectListWidget detaches during close() (via
-                // AbstractWidget::detach() -> FocusManager::remove()).
-                // If the listWidget is still focused at detach time,
-                // FocusManager reassigns focus to focusables[0], racing
-                // away from the editor. Focusing the editor first makes
-                // focused !== listWidget at detach, so no reassignment
-                // occurs and focus stays on the editor. SubmitListener
-                // will intercept the next editor submission and route
-                // the typed text through coordinator->answer().
-                $this->screen?->setFocus($this->screen->editorWidget());
-                $this->close();
-                $this->screen?->setStatus('action', 'Type your answer and press Enter');
+                // Dismiss the select overlay for free-form editor input.
+                // Defers answering to the next editor Enter via SubmitListener.
+                $this->dismissToEditor();
 
                 return;
             }
