@@ -54,12 +54,13 @@ final class AgentArtifactRegistry
      * status; caller should transition to Running when the child run
      * actually begins.
      *
-     * @param string $parentRunId parent session run ID
-     * @param string $artifactId  Unique artifact identifier within the
-     *                            parent session.  Must be a simple
-     *                            filename-safe string.
-     * @param string $agentRunId  agentCore run ID assigned to the child run
-     * @param string $agentName   Agent definition name (e.g. "scout").
+     * @param string                $parentRunId parent session run ID
+     * @param string                $artifactId  Unique artifact identifier within the
+     *                                           parent session.  Must be a simple
+     *                                           filename-safe string.
+     * @param string                $agentRunId  agentCore run ID assigned to the child run
+     * @param string                $agentName   Agent definition name (e.g. "scout").
+     * @param AgentArtifactKindEnum $kind        Kind discriminator (e.g. Subagent, Fork)
      *
      * @return AgentArtifactEntryDTO the newly created entry
      *
@@ -72,6 +73,7 @@ final class AgentArtifactRegistry
         string $artifactId,
         string $agentRunId,
         string $agentName,
+        AgentArtifactKindEnum $kind,
     ): AgentArtifactEntryDTO {
         $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
         $this->pathResolver->validatePathComponent($artifactId, 'artifactId');
@@ -98,6 +100,7 @@ final class AgentArtifactRegistry
                 parentRunId: $parentRunId,
                 agentRunId: $agentRunId,
                 agentName: $agentName,
+                kind: $kind,
                 status: AgentArtifactStatusEnum::Pending,
                 paths: $paths,
                 createdAt: $now,
@@ -169,6 +172,7 @@ final class AgentArtifactRegistry
                     parentRunId: $entry->parentRunId,
                     agentRunId: $entry->agentRunId,
                     agentName: $entry->agentName,
+                    kind: $entry->kind,
                     status: $status ?? $entry->status,
                     paths: $entry->paths,
                     createdAt: $entry->createdAt,
