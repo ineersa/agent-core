@@ -400,4 +400,82 @@ final class TickPollListenerTest extends TestCase
         self::assertIsString($capturedAnswer);
     }
 
+    // ── QH-06 follow-up: interrupt transport marker and bare-string choices ──
+
+    public function testResolveQuestionKindIgnoresInterruptTransportMarkerWithStringSchema(): void
+    {
+        $ref = new \ReflectionMethod(TickPollListener::class, 'resolveQuestionKind');
+
+        // kind='interrupt' with no ui_kind and a string schema should
+        // fall through to schema-driven derivation (QuestionKind::Text),
+        // NOT match default => Choice which would render an empty overlay.
+        $result = $ref->invoke(null, [
+            'kind' => 'interrupt',
+            'schema' => ['type' => 'string'],
+        ]);
+
+        self::assertSame(QuestionKind::Text, $result);
+    }
+
+    public function testResolveQuestionKindIgnoresInterruptTransportMarkerWithBooleanSchema(): void
+    {
+        $ref = new \ReflectionMethod(TickPollListener::class, 'resolveQuestionKind');
+
+        // kind='interrupt' with no ui_kind and a boolean schema should
+        // derive Confirm, not fall to default => Choice.
+        $result = $ref->invoke(null, [
+            'kind' => 'interrupt',
+            'schema' => ['type' => 'boolean'],
+        ]);
+
+        self::assertSame(QuestionKind::Confirm, $result);
+    }
+
+    public function testResolveQuestionKindStillMatchesUiKindWhenInterruptKindPresent(): void
+    {
+        $ref = new \ReflectionMethod(TickPollListener::class, 'resolveQuestionKind');
+
+        // When ui_kind IS present alongside kind='interrupt', ui_kind wins.
+        $result = $ref->invoke(null, [
+            'kind' => 'interrupt',
+            'ui_kind' => 'choice',
+        ]);
+
+        self::assertSame(QuestionKind::Choice, $result);
+    }
+
+    public function testBuildChoicesHandlesBareStringEntries(): void
+    {
+        $ref = new \ReflectionMethod(TickPollListener::class, 'buildChoices');
+
+        $choices = $ref->invoke(null, [
+            'choices' => ['Yes', 'No'],
+        ], ['type' => 'string']);
+
+        self::assertCount(2, $choices);
+        self::assertContainsOnlyInstancesOf(QuestionOption::class, $choices);
+        self::assertSame('Yes', $choices[0]->label);
+        self::assertSame('', $choices[0]->description, 'Bare string choice must default to empty description');
+        self::assertSame('No', $choices[1]->label);
+        self::assertSame('', $choices[1]->description);
+    }
+
+    public function testBuildChoicesHandlesMixedArrayAndStringEntries(): void
+    {
+        $ref = new \ReflectionMethod(TickPollListener::class, 'buildChoices');
+
+        $choices = $ref->invoke(null, [
+            'choices' => [
+                ['label' => 'Structured', 'description' => 'Has description'],
+                'BareString',
+            ],
+        ], ['type' => 'string']);
+
+        self::assertCount(2, $choices);
+        self::assertSame('Structured', $choices[0]->label);
+        self::assertSame('Has description', $choices[0]->description);
+        self::assertSame('BareString', $choices[1]->label);
+        self::assertSame('', $choices[1]->description, 'Bare string in mixed list must default to empty description');
+    }
+
 }

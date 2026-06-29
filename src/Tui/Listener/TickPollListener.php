@@ -253,7 +253,11 @@ final class TickPollListener implements TuiListenerRegistrar
     {
         $kind = (string) ($p['ui_kind'] ?? $p['kind'] ?? '');
 
-        if ('' !== $kind) {
+        // 'interrupt' is a transport marker from AskHumanPayloadFactory, not a UI
+        // kind. If ui_kind was absent and only the transport kind leaked through,
+        // fall through to schema-driven derivation instead of rendering an empty
+        // Choice overlay that the user cannot answer.
+        if ('' !== $kind && 'interrupt' !== $kind) {
             return match ($kind) {
                 'text' => QuestionKind::Text,
                 'confirm', 'approval' => QuestionKind::Confirm,
@@ -290,13 +294,22 @@ final class TickPollListener implements TuiListenerRegistrar
     private static function buildChoices(array $p, array $schema): array
     {
         if (isset($p['choices']) && \is_array($p['choices']) && [] !== $p['choices']) {
-            return array_map(
-                static fn (array $choice): QuestionOption => new QuestionOption(
-                    label: (string) ($choice['label'] ?? ''),
-                    description: (string) ($choice['description'] ?? ''),
-                ),
-                array_values($p['choices']),
-            );
+            return array_values(array_map(
+                static function (mixed $choice): QuestionOption {
+                    if (\is_array($choice)) {
+                        return new QuestionOption(
+                            label: (string) ($choice['label'] ?? ''),
+                            description: (string) ($choice['description'] ?? ''),
+                        );
+                    }
+
+                    // Bare-string choice (defensive: AskHumanPayloadFactory emits
+                    // structured entries, but bare strings are a plausible
+                    // hand-crafted shape that must not throw TypeError).
+                    return new QuestionOption(label: (string) $choice);
+                },
+                $p['choices'],
+            ));
         }
 
         $enum = $schema['enum'] ?? null;
