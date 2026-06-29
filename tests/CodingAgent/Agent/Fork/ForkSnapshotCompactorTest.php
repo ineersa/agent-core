@@ -209,7 +209,9 @@ final class ForkSnapshotCompactorTest extends TestCase
         // that does NOT split the tool-call group.
         $result = $this->compactor->compact($messages, 100);
 
-        // If compaction happened, verify no tool-call group is split.
+        self::assertTrue($result->compacted, 'Expected compaction to occur for the safe-boundary fixture');
+
+        // Verify no tool-call group is split.
         if ($result->compacted) {
             // The retained tail should not contain orphan tool messages.
             $toolCallIds = [];
@@ -265,7 +267,8 @@ final class ForkSnapshotCompactorTest extends TestCase
             // The first message must be a user message with compact_summary metadata.
             self::assertSame('user', $result->messages[0]->role);
             self::assertTrue($result->messages[0]->metadata['compact_summary'] ?? false);
-            self::assertStringContainsString('compacted for context', $result->messages[0]->content[0]['text']);
+            self::assertStringContainsString('<summary>', $result->messages[0]->content[0]['text']);
+            self::assertStringContainsString('</summary>', $result->messages[0]->content[0]['text']);
         }
     }
 }

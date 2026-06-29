@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Fork;
 
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\CodingAgent\Config\ForkLevelEnum;
 
 /**
  * Result of building a fork session snapshot.
@@ -27,12 +28,14 @@ final readonly class ForkSessionSnapshotDTO
      * @param list<AgentMessage> $messages               Sanitized + virtually-compacted seed messages
      * @param string             $forkSystemPromptAppend System-prompt append text for FORK_CHILD mode
      * @param string             $forkTaskUserMessage    Generated Pi-style fork task user message text
+     * @param ForkLevelEnum      $level                  Resolved fork level
      * @param string|null        $resolvedModel          Resolved model override (null = session model)
      */
     public function __construct(
         public array $messages,
         public string $forkSystemPromptAppend,
         public string $forkTaskUserMessage,
+        public ForkLevelEnum $level,
         public ?string $resolvedModel = null,
     ) {
     }

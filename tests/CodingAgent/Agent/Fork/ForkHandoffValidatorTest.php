@@ -90,55 +90,27 @@ HANDOFF;
 
     // ── Missing mandatory sections ───────────────────────────────────────
 
-    public function testMissingSectionFails(): void
-    {
-        $handoff = <<<'HANDOFF'
-## 1. Result / status
-
-Task complete. 3 files changed.
-
-## 5. Changes made
-
-Created files.
-
-## 7. Validation performed
-
-All pass.
-
-## 11. Final handoff
-
-Done.
-HANDOFF;
-
-        $result = $this->validator->validate($handoff);
-
-        // Should still pass because all mandatory sections (1, 5, 11) are present.
-        self::assertTrue($result->valid);
-    }
-
-    public function testMissingMandatorySection11Fails(): void
+    public function testMissingSection11Fails(): void
     {
         $handoff = <<<'HANDOFF'
 ## 1. Result / status
 
 Task complete. No filesystem changes made.
 
-## 5. Changes made
-
-No filesystem changes made.
-
 ## 2. Scope and authority
 
 In scope.
 
-## 11. Final handoff
+## 5. Changes made
 
-Done.
+No filesystem changes made.
 HANDOFF;
 
         $result = $this->validator->validate($handoff);
 
-        self::assertTrue($result->valid);
+        self::assertFalse($result->valid);
+        self::assertContains('## 11. Final handoff', $result->missingSections);
+        self::assertNotEmpty($result->repairInstruction);
     }
 
     public function testMissingSection1Fails(): void

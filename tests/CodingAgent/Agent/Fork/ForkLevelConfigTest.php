@@ -215,7 +215,7 @@ final class ForkLevelConfigTest extends TestCase
         self::assertNull($resolved->resolvedModel);
     }
 
-    public function testResolverInvalidLevelFallsBackToDefault(): void
+    public function testResolverUnconfiguredLevelFallsBackToDefaults(): void
     {
         // No 'junior' level configured.
         $config = new ForksConfigDTO(

@@ -11,6 +11,9 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Serializer\Encoder\JsonEncoder;
+use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
+use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
+use Symfony\Component\Serializer\NameConverter\MetadataAwareNameConverter;
 use Symfony\Component\Serializer\Normalizer\BackedEnumNormalizer;
 use Symfony\Component\Serializer\Normalizer\DateTimeNormalizer;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
@@ -23,6 +26,7 @@ use Symfony\Component\Serializer\Serializer;
  *   - AgentArtifactKindEnum has the expected cases and string values.
  *   - AgentArtifactEntryDTO serializes and deserializes the kind field correctly.
  *   - Existing entry serialization defaults produce the 'subagent' kind.
+ *   - The serializer honors #[SerializedName] annotations (snake_case keys).
  */
 #[CoversClass(AgentArtifactKindEnum::class)]
 #[CoversClass(AgentArtifactEntryDTO::class)]
@@ -32,8 +36,14 @@ final class AgentArtifactKindEnumTest extends TestCase
 
     protected function setUp(): void
     {
+        $classMetadataFactory = new ClassMetadataFactory(new AttributeLoader());
+        $nameConverter = new MetadataAwareNameConverter($classMetadataFactory);
+
         $this->serializer = new Serializer(
-            [new DateTimeNormalizer(), new BackedEnumNormalizer(), new ObjectNormalizer()],
+            [new DateTimeNormalizer(), new BackedEnumNormalizer(), new ObjectNormalizer(
+                classMetadataFactory: $classMetadataFactory,
+                nameConverter: $nameConverter,
+            )],
             [new JsonEncoder()],
         );
     }
@@ -65,6 +75,12 @@ final class AgentArtifactKindEnumTest extends TestCase
 
         self::assertArrayHasKey('kind', $data);
         self::assertSame('subagent', $data['kind']);
+        self::assertArrayHasKey('artifact_id', $data);
+        self::assertArrayHasKey('parent_run_id', $data);
+        self::assertArrayHasKey('agent_run_id', $data);
+        self::assertArrayHasKey('agent_name', $data);
+        self::assertArrayHasKey('created_at', $data);
+        self::assertSame('test_001', $data['artifact_id']);
 
         $restored = $this->serializer->deserialize($json, AgentArtifactEntryDTO::class, 'json');
         self::assertSame(AgentArtifactKindEnum::Subagent, $restored->kind);
@@ -91,6 +107,8 @@ final class AgentArtifactKindEnumTest extends TestCase
 
         self::assertArrayHasKey('kind', $data);
         self::assertSame('fork', $data['kind']);
+        self::assertArrayHasKey('artifact_id', $data);
+        self::assertSame('fork_001', $data['artifact_id']);
 
         $restored = $this->serializer->deserialize($json, AgentArtifactEntryDTO::class, 'json');
         self::assertSame(AgentArtifactKindEnum::Fork, $restored->kind);

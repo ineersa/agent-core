@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Agent\Artifact;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathResolver;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
@@ -67,7 +68,7 @@ final class AgentArtifactSessionListingTest extends IsolatedKernelTestCase
 
         // Create a child artifact/run under the parent.
         $childAgentRunId = 'child-run-'.bin2hex(random_bytes(4));
-        $this->registry->create($parentSessionId, 'scout-001', $childAgentRunId, 'scout');
+        $this->registry->create($parentSessionId, 'scout-001', $childAgentRunId, 'scout', AgentArtifactKindEnum::Subagent);
 
         // Verify the session listing includes the parent.
         $sessions = $this->hatfieldSessionStore->listSessions();

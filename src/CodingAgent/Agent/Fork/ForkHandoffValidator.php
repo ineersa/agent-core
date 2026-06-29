@@ -160,11 +160,11 @@ final readonly class ForkHandoffValidator
     /**
      * Check whether section 1 contains a filesystem-changes statement.
      *
-     * Looks for either "files changed" (implying specific files were
-     * modified) or "No filesystem changes made" (implying the child
-     * did not modify any files).
+     * Accepts:
+     *   - Singular/plural count + verb: e.g. "1 file changed", "3 files modified"
+     *   - The explicit clause "No filesystem changes made"
      *
-     * This check is pragmatic — it looks for the words in section 1
+     * This check is pragmatic — it looks for the patterns in section 1
      * context without strict parsing.
      */
     private function section1HasFilesystemStatement(string $handoff): bool
@@ -178,10 +178,12 @@ final readonly class ForkHandoffValidator
 
         $section1Content = $matches[1];
 
-        // Check for filesystem-changes statement.
-        $hasFilesChanged = str_contains(strtolower($section1Content), 'files changed');
+        // Check for singular/plural count + verb: e.g. "1 file changed", "3 files modified"
+        $hasCountVerb = (bool) preg_match('/\b\d+\s+files?\s+(changed|modified|updated|edited|created|deleted|added|removed)\b/i', $section1Content);
+
+        // Check for explicit "No filesystem changes made"
         $hasNoFilesystemChanges = str_contains(strtolower($section1Content), 'no filesystem changes made');
 
-        return $hasFilesChanged || $hasNoFilesystemChanges;
+        return $hasCountVerb || $hasNoFilesystemChanges;
     }
 }

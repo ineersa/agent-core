@@ -49,19 +49,8 @@ final readonly class ForkSnapshotCompactor implements ForkSnapshotCompactorInter
         // Check whether messages exceed the budget.
         $tentativeBoundary = $this->boundarySelector->findBoundary($sanitized, $keepRecentTokens);
 
-        // No compaction needed — all messages fit.
+        // Messages fit within budget — no compaction needed.
         if (null === $tentativeBoundary) {
-            // No compaction needed. Still optionally check for prior summary to carry.
-            $priorSummary = $this->findPriorCompactSummary($sanitized, -1);
-
-            if (null !== $priorSummary) {
-                // Already has a summary embedded — return as-is.
-                return new ForkCompactionResult(
-                    messages: \array_slice($sanitized, 0),
-                    compacted: false,
-                );
-            }
-
             return new ForkCompactionResult(
                 messages: \array_slice($sanitized, 0),
                 compacted: false,
@@ -90,6 +79,9 @@ final readonly class ForkSnapshotCompactor implements ForkSnapshotCompactorInter
         $summaryText = $this->summaryProvider->summarizeForSnapshot($discarded, $priorSummary);
 
         // If no summary text could be produced, return the retained messages as-is.
+        // v1: without a prior summary to carry forward (and no LLM provider yet),
+        // we cannot reduce the snapshot. An LLM-backed ForkSnapshotSummaryProvider
+        // arrives in FORK-05.
         if (null === $summaryText || '' === trim($summaryText)) {
             return new ForkCompactionResult(
                 messages: \array_slice($sanitized, 0),
@@ -98,8 +90,10 @@ final readonly class ForkSnapshotCompactor implements ForkSnapshotCompactorInter
         }
 
         // Build a summary message with compact_summary metadata (same pattern as SessionCompactor).
-        $summaryPrefix = 'The following is a summary of the earlier conversation that has been compacted for context:\n\n';
-        $summarySuffix = '\n\n---\n\n';
+        // The wrapper format mirrors SessionCompactor's private SUMMARY_PREFIX/SUMMARY_SUFFIX
+        // constants (src/CodingAgent/Compaction/SessionCompactor.php) — keep in sync.
+        $summaryPrefix = "The conversation history before this point was compacted into the following handoff summary. Use it as prior context, not as a new user request.\n\n<summary>\n";
+        $summarySuffix = "\n</summary>";
         $summaryMessage = new AgentMessage(
             role: 'user',
             content: [['type' => 'text', 'text' => $summaryPrefix.$summaryText.$summarySuffix]],
@@ -122,20 +116,18 @@ final readonly class ForkSnapshotCompactor implements ForkSnapshotCompactorInter
     /**
      * Find the most recent prior compact_summary message text.
      *
-     * Scans up to (but not including) $upToIndex; if $upToIndex < 0, scans
-     * all messages.
+     * Scans backward from (but not including) $upToIndex for the most recent
+     * user message whose metadata['compact_summary'] is true.  Returns the
+     * concatenated text content of that message, or null if none is found.
      *
-     * @param list<AgentMessage> $messages
-     * @param int                $upToIndex Exclusive upper bound index
+     * @param list<AgentMessage> $messages  The message list to scan
+     * @param int                $upToIndex Exclusive upper bound index (must be >= 1)
      *
      * @return string|null The most recent compact_summary text, or null
      */
     private function findPriorCompactSummary(array $messages, int $upToIndex): ?string
     {
-        $count = \count($messages);
-        $effectiveEnd = $upToIndex < 0 ? $count : $upToIndex;
-
-        for ($i = $effectiveEnd - 1; $i >= 0; --$i) {
+        for ($i = $upToIndex - 1; $i >= 0; --$i) {
             if (true === ($messages[$i]->metadata['compact_summary'] ?? null)) {
                 // Extract text content from the summary message.
                 $text = '';

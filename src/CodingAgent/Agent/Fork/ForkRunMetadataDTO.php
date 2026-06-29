@@ -14,6 +14,10 @@ use Symfony\Component\Serializer\Attribute\SerializedName;
  * Contains run identity, level, model resolution, task, and lifecycle
  * tracking for a fork child process.
  *
+ * The artifact kind discriminator (subagent/fork) lives on
+ * {@see AgentArtifactEntryDTO::$kind} and is intentionally NOT
+ * duplicated in this metadata payload.
+ *
  * Immutable value object.  Round-trips through Symfony Serializer.
  */
 final readonly class ForkRunMetadataDTO

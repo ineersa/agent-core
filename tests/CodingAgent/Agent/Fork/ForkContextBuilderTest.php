@@ -206,5 +206,6 @@ final class ForkContextBuilderTest extends TestCase
         self::assertStringContainsString('Empty test', $snapshot->forkTaskUserMessage);
         self::assertStringContainsString('FORK MODE IS ENABLED', $snapshot->forkSystemPromptAppend);
         self::assertNull($snapshot->resolvedModel);
+        self::assertSame(ForkLevelEnum::Middle, $snapshot->level);
     }
 }

@@ -68,6 +68,7 @@ final readonly class ForkContextBuilder
             messages: $compacted->messages,
             forkSystemPromptAppend: $systemAppend,
             forkTaskUserMessage: $taskUserMessage,
+            level: $resolved->level,
             resolvedModel: $resolved->resolvedModel,
         );
     }
