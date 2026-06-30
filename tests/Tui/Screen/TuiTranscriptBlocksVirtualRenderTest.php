@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
+use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use Ineersa\Tui\Transcript\TranscriptGlyphs;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -545,6 +546,160 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
             'Code backticks must not appear literally',
         );
         self::assertStringContainsString('⋯', $text, 'Thinking glyph missing');
+    }
+
+
+    #[Test]
+    public function testVirtualToolCallShowsYamlArgsWithoutFences(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
+        $harness->screen()->setTranscriptBlocks([
+            new TranscriptBlock(
+                id: 'tc',
+                kind: TranscriptBlockKindEnum::ToolCall,
+                runId: self::SESSION_ID,
+                seq: 1,
+                text: 'read',
+                meta: [
+                    'tool_name' => 'read',
+                    'arguments' => ['path' => './virtual.txt', 'max_bytes' => 512],
+                ],
+            ),
+        ]);
+        $harness->screen()->setWorkingVisible(false);
+
+        $text = $harness->plainScreenText();
+
+        self::assertStringContainsString('read', $text);
+        self::assertStringNotContainsString('```', $text);
+        self::assertStringContainsString('path:', $text);
+        self::assertStringContainsString('./virtual.txt', $text);
+    }
+
+    #[Test]
+    public function testVirtualLongToolResultPreviewsByDefault(): void
+    {
+        $body = implode("\n", ['v0', 'v1', 'v2', 'v3']);
+        $harness = new VirtualTuiHarness(
+            sessionId: self::SESSION_ID,
+            displayConfig: new TranscriptDisplayConfig(toolResultPreviewLines: 2),
+        );
+        $harness->screen()->setTranscriptBlocks([
+            new TranscriptBlock(
+                id: 'tr',
+                kind: TranscriptBlockKindEnum::ToolResult,
+                runId: self::SESSION_ID,
+                seq: 2,
+                text: $body,
+                meta: ['tool_name' => 'read', 'result' => $body, 'is_error' => false],
+            ),
+        ]);
+        $harness->screen()->setWorkingVisible(false);
+
+        $text = $harness->plainScreenText();
+
+        self::assertStringContainsString('v0', $text);
+        self::assertStringContainsString('v1', $text);
+        self::assertStringNotContainsString('v3', $text);
+        self::assertStringContainsString('more line', $text);
+    }
+
+    #[Test]
+    public function testVirtualLongToolResultRendersFullWhenPreviewExpanded(): void
+    {
+        $body = implode("\n", ['full0', 'full1', 'full2']);
+        $harness = new VirtualTuiHarness(
+            sessionId: self::SESSION_ID,
+            displayConfig: new TranscriptDisplayConfig(toolResultPreviewLines: 1),
+            displayState: new TranscriptDisplayState(previewableBlocksExpanded: true),
+        );
+        $harness->screen()->setTranscriptBlocks([
+            new TranscriptBlock(
+                id: 'tr-full',
+                kind: TranscriptBlockKindEnum::ToolResult,
+                runId: self::SESSION_ID,
+                seq: 2,
+                text: $body,
+                meta: ['tool_name' => 'read', 'result' => $body, 'is_error' => false],
+            ),
+        ]);
+        $harness->screen()->setWorkingVisible(false);
+
+        $text = $harness->plainScreenText();
+
+        self::assertStringContainsString('full2', $text);
+        self::assertStringNotContainsString('more line', $text);
+    }
+
+    #[Test]
+    public function testVirtualLongToolCallArgumentsPreviewByDefault(): void
+    {
+        $patchLines = [];
+        for ($i = 0; $i < 8; ++$i) {
+            $patchLines[] = '+line'.$i;
+        }
+        $patch = implode("
+", array_merge(['---', '+++', '@@'], $patchLines));
+        $harness = new VirtualTuiHarness(
+            sessionId: self::SESSION_ID,
+            displayConfig: new TranscriptDisplayConfig(toolResultPreviewLines: 3),
+            displayState: new TranscriptDisplayState(previewableBlocksExpanded: false),
+        );
+        $harness->screen()->setTranscriptBlocks([
+            new TranscriptBlock(
+                id: 'tc-long',
+                kind: TranscriptBlockKindEnum::ToolCall,
+                runId: self::SESSION_ID,
+                seq: 1,
+                text: 'edit',
+                meta: [
+                    'tool_name' => 'edit',
+                    'arguments' => ['path' => '/tmp/test.md', 'patch' => $patch],
+                ],
+            ),
+        ]);
+        $harness->screen()->setWorkingVisible(false);
+
+        $text = $harness->plainScreenText();
+
+        self::assertStringContainsString('patch: |', $text);
+        self::assertStringNotContainsString('+line7', $text);
+        self::assertStringContainsString('more line', $text);
+    }
+
+    #[Test]
+    public function testVirtualLongToolCallArgumentsRenderFullWhenPreviewExpanded(): void
+    {
+        $patchLines = [];
+        for ($i = 0; $i < 5; ++$i) {
+            $patchLines[] = '+line'.$i;
+        }
+        $patch = implode("
+", array_merge(['---', '+++', '@@'], $patchLines));
+        $harness = new VirtualTuiHarness(
+            sessionId: self::SESSION_ID,
+            displayConfig: new TranscriptDisplayConfig(toolResultPreviewLines: 2),
+            displayState: new TranscriptDisplayState(previewableBlocksExpanded: true),
+        );
+        $harness->screen()->setTranscriptBlocks([
+            new TranscriptBlock(
+                id: 'tc-expanded',
+                kind: TranscriptBlockKindEnum::ToolCall,
+                runId: self::SESSION_ID,
+                seq: 1,
+                text: 'edit',
+                meta: [
+                    'tool_name' => 'edit',
+                    'arguments' => ['path' => '/tmp/test.md', 'patch' => $patch],
+                ],
+            ),
+        ]);
+        $harness->screen()->setWorkingVisible(false);
+
+        $text = $harness->plainScreenText();
+
+        self::assertStringContainsString('+line4', $text);
+        self::assertStringNotContainsString('more line', $text);
     }
 
 }

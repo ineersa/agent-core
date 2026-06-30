@@ -9,17 +9,18 @@ use Ineersa\Tui\Widget\TuiRenderContext;
 use Ineersa\Tui\Widget\TuiWidget;
 
 /**
- * Transcript widget that renders {@see TranscriptBlock} DTOs using
- * the Symfony TUI widget-tree renderer.
+ * Renders {@see TranscriptBlock} DTOs through the Symfony TUI widget-tree pipeline.
  *
- * Internally builds one root {@see ContainerWidget} tree per render call
- * via {@see TranscriptBlockWidgetFactory} and renders it through
- * {@see SymfonyTuiWidgetRenderer}. This replaces the previous flat
- * loop-over-blocks approach — the old flat path is not retained.
+ * Each {@see render()} builds one root {@see \Symfony\Component\Tui\Widget\ContainerWidget}
+ * via {@see TranscriptBlockWidgetFactory} and {@see SymfonyTuiWidgetRenderer}. This replaced
+ * the old flat loop-over-blocks renderer; no alternate flat path is retained.
  *
- * The public API ({@see setBlocks()}, {@see addBlock()}, {@see render()})
- * is unchanged so {@see ChatScreen} / {@see LiveTextWidget} integration
- * is unaffected.
+ * {@see setBlocks()}, {@see addBlock()}, and {@see render()} stay stable for ChatScreen /
+ * LiveTextWidget integration.
+ *
+ * Receives {@see TranscriptDisplayConfig} and mutable {@see TranscriptDisplayState} so renderers
+ * can apply local display policy (e.g. preview expansion) without encoding collapse in projection
+ * blocks or {@see TranscriptBlock::$collapsed}.
  */
 final class TranscriptBlockWidget implements TuiWidget
 {
@@ -31,8 +32,12 @@ final class TranscriptBlockWidget implements TuiWidget
     public function __construct(
         private readonly SymfonyTuiWidgetRenderer $widgetRenderer = new SymfonyTuiWidgetRenderer(),
         TranscriptDisplayConfig $displayConfig = new TranscriptDisplayConfig(),
+        TranscriptDisplayState $displayState = new TranscriptDisplayState(),
     ) {
-        $this->factory = new TranscriptBlockWidgetFactory(displayConfig: $displayConfig);
+        $this->factory = new TranscriptBlockWidgetFactory(
+            displayConfig: $displayConfig,
+            displayState: $displayState,
+        );
     }
 
     /** @return list<TranscriptBlock> */
