@@ -26,7 +26,7 @@ use Symfony\Component\Yaml\Yaml;
  * Hidden thinking → compact placeholder from {@see TranscriptDisplayConfig} only,
  * not {@see TranscriptBlock::$collapsed}.
  * {@see TranscriptBlockKindEnum::ToolCall} and normal {@see TranscriptBlockKindEnum::ToolResult}
- * → compact multi-line cards (YAML-like args with preview, preview-truncated result body).
+ * → compact multi-line cards (YAML-like args with preview; edit/write payload previews; preview-truncated result body).
  * Structured subagent tool results are delegated to {@see SubagentResultRenderer} before generic
  * ToolResult cards. All other kinds → {@see TextWidget} flat line.
  */
@@ -37,6 +37,9 @@ final readonly class TranscriptBlockWidgetFactory
         private readonly TranscriptDisplayConfig $displayConfig = new TranscriptDisplayConfig(),
         private readonly TranscriptDisplayState $displayState = new TranscriptDisplayState(),
         private readonly ToolArgumentsFormatter $toolArgumentsFormatter = new ToolArgumentsFormatter(),
+        private readonly EditToolCallDiffRenderer $editDiffRenderer = new EditToolCallDiffRenderer(),
+        private readonly WriteToolCallContentRenderer $writeContentRenderer = new WriteToolCallContentRenderer(),
+        private readonly TranscriptLinePreviewService $linePreviewService = new TranscriptLinePreviewService(),
     ) {
     }
 
@@ -97,16 +100,28 @@ final readonly class TranscriptBlockWidgetFactory
         return new TextWidget($theme->color($color, $line));
     }
 
-    private function buildToolCallWidget(TranscriptBlock $block, TuiTheme $theme): TextWidget
+    private function buildToolCallWidget(TranscriptBlock $block, TuiTheme $theme): AbstractWidget
     {
         $header = $this->toolCallHeaderLabel($block);
         $suffix = $block->streaming ? TranscriptGlyphs::STREAMING_SUFFIX : '';
-        $lines = [\sprintf('%s %s%s', TranscriptGlyphs::GLYPH_TOOL, $header, $suffix)];
-
+        $headerLine = \sprintf('%s %s%s', TranscriptGlyphs::GLYPH_TOOL, $header, $suffix);
         $arguments = $block->meta['arguments'] ?? null;
-        if (\is_array($arguments) && [] !== $arguments) {
+        if (!\is_array($arguments)) {
+            $arguments = [];
+        }
+
+        if ($this->isEditToolCall($block, $arguments)) {
+            return $this->buildEditToolCallWidget($block, $theme, $headerLine, $arguments);
+        }
+
+        if ($this->isWriteToolCall($block, $arguments)) {
+            return $this->buildWriteToolCallWidget($block, $theme, $headerLine, $arguments);
+        }
+
+        $lines = [$headerLine];
+        if ([] !== $arguments) {
             $argLines = $this->toolArgumentsFormatter->formatLines($arguments);
-            $preview = $this->applyLinePreview($argLines, fullRender: false);
+            $preview = $this->applyLinePreview($argLines, fullRender: false, lineLimit: $this->displayConfig->toolResultPreviewLines);
             foreach ($preview['lines'] as $argLine) {
                 $lines[] = '    '.$argLine;
             }
@@ -115,9 +130,86 @@ final readonly class TranscriptBlockWidgetFactory
             }
         }
 
-        $text = implode("\n", $lines);
+        return new TextWidget($theme->color(ThemeColorEnum::ToolTitle, implode("\n", $lines)));
+    }
 
-        return new TextWidget($theme->color(ThemeColorEnum::ToolTitle, $text));
+    /**
+     * @param array<string, mixed> $arguments
+     */
+    private function buildEditToolCallWidget(TranscriptBlock $block, TuiTheme $theme, string $headerLine, array $arguments): ContainerWidget
+    {
+        $container = new ContainerWidget();
+        $container->add(new TextWidget($theme->color(ThemeColorEnum::ToolTitle, $headerLine)));
+
+        $path = $arguments['path'] ?? null;
+        if (\is_string($path) && '' !== $path) {
+            $container->add(new TextWidget($theme->color(ThemeColorEnum::ToolTitle, '    path: '.$path)));
+        }
+
+        $patch = $arguments['patch'] ?? '';
+        if (\is_string($patch) && '' !== $patch) {
+            foreach ($this->editDiffRenderer->buildPatchBodyWidgets($patch, $theme, $this->displayConfig, $this->displayState) as $widget) {
+                $container->add($widget);
+            }
+        }
+
+        return $container;
+    }
+
+    /**
+     * @param array<string, mixed> $arguments
+     */
+    private function buildWriteToolCallWidget(TranscriptBlock $block, TuiTheme $theme, string $headerLine, array $arguments): ContainerWidget
+    {
+        $container = new ContainerWidget();
+        $container->add(new TextWidget($theme->color(ThemeColorEnum::ToolTitle, $headerLine)));
+
+        $path = $arguments['path'] ?? '';
+        if (!\is_string($path)) {
+            $path = '';
+        }
+        if ('' !== $path) {
+            $container->add(new TextWidget($theme->color(ThemeColorEnum::ToolTitle, '    path: '.$path)));
+        }
+
+        $content = $arguments['content'] ?? '';
+        if (!\is_string($content)) {
+            $content = '';
+        }
+
+        foreach ($this->writeContentRenderer->buildContentBodyWidgets($content, $path, $theme, $this->displayConfig, $this->displayState) as $widget) {
+            $container->add($widget);
+        }
+
+        return $container;
+    }
+
+    /**
+     * @param array<string, mixed> $arguments
+     */
+    private function isEditToolCall(TranscriptBlock $block, array $arguments): bool
+    {
+        $toolName = $block->meta['tool_name'] ?? null;
+        if ('edit' !== $toolName) {
+            return false;
+        }
+
+        $patch = $arguments['patch'] ?? null;
+
+        return \is_string($patch) && '' !== $patch;
+    }
+
+    /**
+     * @param array<string, mixed> $arguments
+     */
+    private function isWriteToolCall(TranscriptBlock $block, array $arguments): bool
+    {
+        $toolName = $block->meta['tool_name'] ?? null;
+        if ('write' !== $toolName) {
+            return false;
+        }
+
+        return \array_key_exists('content', $arguments) && \is_string($arguments['content']);
     }
 
     private function buildToolResultWidget(TranscriptBlock $block, TuiTheme $theme): TextWidget
@@ -160,38 +252,43 @@ final readonly class TranscriptBlockWidgetFactory
     }
 
     /**
-     * Shared line-budget preview for ToolCall argument lines and ToolResult body lines.
-     *
-     * When {@see TranscriptDisplayConfig::$toolResultPreviewLines} is <= 0, preview is disabled
-     * (all lines returned). When {@see TranscriptDisplayState::$previewableBlocksExpanded} is true,
-     * all lines are returned regardless of limit.
-     *
      * @param list<string> $lines
      *
      * @return array{lines: list<string>, ellipsis: ?string}
      */
-    private function applyLinePreview(array $lines, bool $fullRender): array
+    private function applyLinePreview(array $lines, bool $fullRender, ?int $lineLimit = null): array
     {
-        if ($fullRender) {
-            return ['lines' => $lines, 'ellipsis' => null];
+        $limit = $lineLimit ?? $this->displayConfig->toolResultPreviewLines;
+
+        return $this->linePreviewService->apply($lines, $limit, $fullRender, $this->displayState);
+    }
+
+    private function compactSuccessfulEditWriteResultBody(TranscriptBlock $block, string $result): string
+    {
+        if ($this->toolResultIsFullRender($block)) {
+            return $result;
         }
 
-        $limit = $this->displayConfig->toolResultPreviewLines;
-        if ($limit <= 0 || \count($lines) <= $limit) {
-            return ['lines' => $lines, 'ellipsis' => null];
+        $toolName = $block->meta['tool_name'] ?? null;
+        if (!\is_string($toolName)) {
+            return $result;
         }
 
-        if ($this->displayState->previewableBlocksExpanded) {
-            return ['lines' => $lines, 'ellipsis' => null];
+        if ('edit' === $toolName) {
+            $marker = 'Updated file context:';
+            $pos = strpos($result, $marker);
+            if (false !== $pos) {
+                return rtrim(substr($result, 0, $pos));
+            }
+
+            return $result;
         }
 
-        $remaining = \count($lines) - $limit;
-        $ellipsis = \sprintf('… %d more line%s', $remaining, 1 === $remaining ? '' : 's');
+        if ('write' === $toolName) {
+            return $result;
+        }
 
-        return [
-            'lines' => \array_slice($lines, 0, $limit),
-            'ellipsis' => $ellipsis,
-        ];
+        return $result;
     }
 
     /**
@@ -248,7 +345,7 @@ final readonly class TranscriptBlockWidgetFactory
     {
         $result = $block->meta['result'] ?? null;
         if (\is_string($result) && '' !== $result) {
-            return $result;
+            return $this->compactSuccessfulEditWriteResultBody($block, $result);
         }
         if (\is_scalar($result) && '' !== (string) $result) {
             return (string) $result;

@@ -510,9 +510,9 @@ final class TranscriptBlockRendererTest extends TestCase
         $this->assertStringContainsString('read...', $output);
     }
 
-    public function testToolCallWithMultilinePatchUsesLiteralBlockStyle(): void
+    public function testEditToolCallRendersPatchAsDiffNotYaml(): void
     {
-        $patch = "--- a/tmp/test.md\n+++ b/tmp/test.md\n@@\n+Auto-compaction monitors";
+        $patch = "--- a/tmp/test.md\n+++ b/tmp/test.md\n@@\n-old\n+new";
         $block = new TranscriptBlock(
             id: 'tc-edit',
             kind: TranscriptBlockKindEnum::ToolCall,
@@ -527,10 +527,12 @@ final class TranscriptBlockRendererTest extends TestCase
 
         $output = $this->renderJoined($block);
 
-        $this->assertStringContainsString('patch: |', $output);
+        $this->assertStringContainsString('edit', $output);
+        $this->assertStringContainsString('path: /tmp/test.md', $output);
+        $this->assertStringNotContainsString('patch: |', $output);
         $this->assertStringContainsString('--- a/tmp/test.md', $output);
-        $this->assertStringContainsString('+Auto-compaction monitors', $output);
-        $this->assertStringContainsString('+++ b/tmp/test.md', $output);
+        $this->assertStringContainsString('+new', $output);
+        $this->assertStringContainsString('-old', $output);
     }
 
     public function testLongToolCallArgumentsPreviewByDefault(): void
@@ -555,11 +557,12 @@ final class TranscriptBlockRendererTest extends TestCase
 
         $output = $this->renderJoined(
             $block,
-            new TranscriptDisplayConfig(toolResultPreviewLines: 4),
+            new TranscriptDisplayConfig(diffPreviewLines: 4),
             new TranscriptDisplayState(previewableBlocksExpanded: false),
         );
 
-        $this->assertStringContainsString('patch: |', $output);
+        $this->assertStringContainsString('path: /tmp/test.md', $output);
+        $this->assertStringNotContainsString('patch: |', $output);
         $this->assertStringNotContainsString('+line9', $output);
         $this->assertStringContainsString('more line', $output);
     }
@@ -586,7 +589,7 @@ final class TranscriptBlockRendererTest extends TestCase
 
         $output = $this->renderJoined(
             $block,
-            new TranscriptDisplayConfig(toolResultPreviewLines: 2),
+            new TranscriptDisplayConfig(diffPreviewLines: 2),
             new TranscriptDisplayState(previewableBlocksExpanded: true),
         );
 
@@ -739,5 +742,150 @@ final class TranscriptBlockRendererTest extends TestCase
         $this->assertStringContainsString('d', $output);
         $this->assertStringNotContainsString('more line', $output);
     }
+
+
+    public function testEditDiffLinesUseThemeDiffColors(): void
+    {
+        $palette = new ThemePalette('diff-test', [
+            'diff_added' => 'green',
+            'diff_removed' => 'red',
+            'diff_context' => 'gray',
+            'tool_title' => 'white',
+        ]);
+        $context = $this->context->withTheme(new DefaultTheme($palette));
+        $patch = "+added\n-removed\n context";
+        $block = new TranscriptBlock(
+            id: 'tc-diff-colors',
+            kind: TranscriptBlockKindEnum::ToolCall,
+            runId: 'r',
+            seq: 2,
+            text: 'edit',
+            meta: [
+                'tool_name' => 'edit',
+                'arguments' => ['path' => 'x.txt', 'patch' => $patch],
+            ],
+        );
+        $renderer = new TranscriptBlockRenderer(
+            factory: new TranscriptBlockWidgetFactory(),
+        );
+        $output = implode("\n", $renderer->renderBlock($block, $context));
+
+        $this->assertStringContainsString("\x1b[", $output);
+        $this->assertStringContainsString('+added', $output);
+        $this->assertStringContainsString('-removed', $output);
+    }
+
+    public function testWriteToolCallRendersContentPreviewNotDiff(): void
+    {
+        $block = new TranscriptBlock(
+            id: 'tc-write',
+            kind: TranscriptBlockKindEnum::ToolCall,
+            runId: 'r',
+            seq: 2,
+            text: 'write',
+            meta: [
+                'tool_name' => 'write',
+                'arguments' => ['path' => 'notes.txt', 'content' => "line0\nline1"],
+            ],
+        );
+
+        $output = $this->renderJoined($block);
+
+        $this->assertStringContainsString('write', $output);
+        $this->assertStringContainsString('path: notes.txt', $output);
+        $this->assertStringContainsString('line0', $output);
+        $this->assertStringNotContainsString('content: |', $output);
+        $this->assertStringNotContainsString('+line0', $output);
+    }
+
+    public function testWriteMarkdownTargetProcessesMarkdown(): void
+    {
+        $block = new TranscriptBlock(
+            id: 'tc-write-md',
+            kind: TranscriptBlockKindEnum::ToolCall,
+            runId: 'r',
+            seq: 2,
+            text: 'write',
+            meta: [
+                'tool_name' => 'write',
+                'arguments' => ['path' => 'README.md', 'content' => '**bold** text'],
+            ],
+        );
+
+        $output = $this->renderJoined($block);
+
+        $this->assertStringContainsString('README.md', $output);
+        $this->assertStringContainsString('bold', $output);
+        $this->assertStringNotContainsString('**bold**', $output);
+    }
+
+    public function testWriteContentPreviewLimitedByDiffLines(): void
+    {
+        $lines = [];
+        for ($i = 0; $i < 8; ++$i) {
+            $lines[] = 'body'.$i;
+        }
+        $content = implode("\n", $lines);
+        $block = new TranscriptBlock(
+            id: 'tc-write-long',
+            kind: TranscriptBlockKindEnum::ToolCall,
+            runId: 'r',
+            seq: 2,
+            text: 'write',
+            meta: [
+                'tool_name' => 'write',
+                'arguments' => ['path' => 'x.txt', 'content' => $content],
+            ],
+        );
+
+        $output = $this->renderJoined(
+            $block,
+            new TranscriptDisplayConfig(diffPreviewLines: 3),
+            new TranscriptDisplayState(previewableBlocksExpanded: false),
+        );
+
+        $this->assertStringContainsString('path: x.txt', $output);
+        $this->assertStringContainsString('body0', $output);
+        $this->assertStringNotContainsString('body7', $output);
+        $this->assertStringContainsString('more line', $output);
+    }
+
+    public function testSuccessfulEditToolResultStripsUpdatedFileContext(): void
+    {
+        $result = "Stats: 1 file\n\nUpdated file context:\n→ 10: changed";
+        $block = new TranscriptBlock(
+            id: 'tr-edit-ok',
+            kind: TranscriptBlockKindEnum::ToolResult,
+            runId: 'r',
+            seq: 3,
+            text: $result,
+            meta: ['tool_name' => 'edit', 'result' => $result, 'is_error' => false],
+        );
+
+        $output = $this->renderJoined($block);
+
+        $this->assertStringContainsString('Stats: 1 file', $output);
+        $this->assertStringNotContainsString('Updated file context', $output);
+        $this->assertStringNotContainsString('→ 10:', $output);
+    }
+
+    public function testErrorEditToolResultKeepsFullDiagnostic(): void
+    {
+        $result = "fail\n\nUpdated file context:\n→ 1: x";
+        $block = new TranscriptBlock(
+            id: 'tr-edit-err',
+            kind: TranscriptBlockKindEnum::ToolResult,
+            runId: 'r',
+            seq: 3,
+            text: $result,
+            meta: ['tool_name' => 'edit', 'result' => $result, 'is_error' => true],
+        );
+
+        $output = $this->renderJoined($block, new TranscriptDisplayConfig(toolResultPreviewLines: 1));
+
+        $this->assertStringContainsString('Updated file context', $output);
+        $this->assertStringContainsString('→ 1: x', $output);
+    }
+
 
 }

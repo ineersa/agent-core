@@ -642,7 +642,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 ", array_merge(['---', '+++', '@@'], $patchLines));
         $harness = new VirtualTuiHarness(
             sessionId: self::SESSION_ID,
-            displayConfig: new TranscriptDisplayConfig(toolResultPreviewLines: 3),
+            displayConfig: new TranscriptDisplayConfig(diffPreviewLines: 3),
             displayState: new TranscriptDisplayState(previewableBlocksExpanded: false),
         );
         $harness->screen()->setTranscriptBlocks([
@@ -662,7 +662,8 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 
         $text = $harness->plainScreenText();
 
-        self::assertStringContainsString('patch: |', $text);
+        self::assertStringContainsString('path: /tmp/test.md', $text);
+        self::assertStringNotContainsString('patch: |', $text);
         self::assertStringNotContainsString('+line7', $text);
         self::assertStringContainsString('more line', $text);
     }
@@ -678,7 +679,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 ", array_merge(['---', '+++', '@@'], $patchLines));
         $harness = new VirtualTuiHarness(
             sessionId: self::SESSION_ID,
-            displayConfig: new TranscriptDisplayConfig(toolResultPreviewLines: 2),
+            displayConfig: new TranscriptDisplayConfig(diffPreviewLines: 2),
             displayState: new TranscriptDisplayState(previewableBlocksExpanded: true),
         );
         $harness->screen()->setTranscriptBlocks([
@@ -701,5 +702,62 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         self::assertStringContainsString('+line4', $text);
         self::assertStringNotContainsString('more line', $text);
     }
+
+
+    #[Test]
+    public function testVirtualEditToolCallRendersDiffInCardBody(): void
+    {
+        $patch = "--- a/x\n+++ b/x\n@@\n-old\n+new";
+        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
+        $harness->screen()->setTranscriptBlocks([
+            new TranscriptBlock(
+                id: 'tc-edit-virtual',
+                kind: TranscriptBlockKindEnum::ToolCall,
+                runId: self::SESSION_ID,
+                seq: 1,
+                text: 'edit',
+                meta: [
+                    'tool_name' => 'edit',
+                    'arguments' => ['path' => 'src/Foo.php', 'patch' => $patch],
+                ],
+            ),
+        ]);
+        $harness->screen()->setWorkingVisible(false);
+
+        $text = $harness->plainScreenText();
+
+        self::assertStringContainsString('edit', $text);
+        self::assertStringContainsString('path: src/Foo.php', $text);
+        self::assertStringContainsString('+new', $text);
+        self::assertStringNotContainsString('patch: |', $text);
+    }
+
+    #[Test]
+    public function testVirtualWriteToolCallRendersContentPreview(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
+        $harness->screen()->setTranscriptBlocks([
+            new TranscriptBlock(
+                id: 'tc-write-virtual',
+                kind: TranscriptBlockKindEnum::ToolCall,
+                runId: self::SESSION_ID,
+                seq: 1,
+                text: 'write',
+                meta: [
+                    'tool_name' => 'write',
+                    'arguments' => ['path' => 'out.txt', 'content' => "alpha\nbeta"],
+                ],
+            ),
+        ]);
+        $harness->screen()->setWorkingVisible(false);
+
+        $text = $harness->plainScreenText();
+
+        self::assertStringContainsString('write', $text);
+        self::assertStringContainsString('path: out.txt', $text);
+        self::assertStringContainsString('alpha', $text);
+        self::assertStringNotContainsString('content: |', $text);
+    }
+
 
 }
