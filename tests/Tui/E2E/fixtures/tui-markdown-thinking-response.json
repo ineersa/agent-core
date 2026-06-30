@@ -2,7 +2,7 @@
     "$schema": "Replay fixture for RENDER-03: thinking + markdown text response",
     "model": "llama_cpp_test/alpha",
     "provider_id": "llama_cpp_test",
-    "reasoning": "low",
+    "reasoning": "off",
     "recorded_at": "2026-06-29T00:00:00+00:00",
     "recording_source": "Manual",
     "input": {

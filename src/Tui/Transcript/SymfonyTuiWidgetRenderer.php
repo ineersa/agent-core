@@ -37,7 +37,9 @@ final readonly class SymfonyTuiWidgetRenderer
      * Render a widget tree and return the output lines.
      *
      * @param ContainerWidget  $root    Root widget tree (typically a ContainerWidget
-     *                                  containing one TextWidget per transcript block)
+     *                                  containing one widget per transcript block —
+     *                                  TextWidget for flat blocks, MarkdownWidget for
+     *                                  user/assistant/thinking blocks)
      * @param TuiRenderContext $context Project-native render context with terminal dimensions
      *
      * @return list<string> ANSI-styled output lines

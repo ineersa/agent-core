@@ -67,7 +67,7 @@ final readonly class TranscriptBlockWidgetFactory
 
         // Hidden thinking: always render compact placeholder, never raw content.
         // This uses TranscriptDisplayConfig only, NOT TranscriptBlock::collapsed.
-        if (TranscriptBlockKindEnum::AssistantThinking === $block->kind && !$this->displayConfig->thinkingVisible) {
+        if ($this->isThinkingBlock($block) && !$this->displayConfig->thinkingVisible) {
             $prefix = TranscriptGlyphs::GLYPH_ASSISTANT_THINKING;
             $line = \sprintf('%s Thinking', $prefix);
 
@@ -75,11 +75,7 @@ final readonly class TranscriptBlockWidgetFactory
         }
 
         // UserMessage, AssistantMessage, visible thinking → MarkdownWidget
-        if (\in_array($block->kind, [
-            TranscriptBlockKindEnum::UserMessage,
-            TranscriptBlockKindEnum::AssistantMessage,
-            TranscriptBlockKindEnum::AssistantThinking,
-        ], true)) {
+        if ($this->isMarkdownBlock($block)) {
             return $this->buildMarkdownWidget($block, $theme);
         }
 
@@ -218,7 +214,7 @@ final readonly class TranscriptBlockWidgetFactory
             : new Style(padding: Padding::from([0, 0, 0, 2]));
 
         // Apply thinking visual style (dim, italic) when configured
-        if (TranscriptBlockKindEnum::AssistantThinking === $block->kind) {
+        if ($this->isThinkingBlock($block)) {
             $style = $this->applyThinkingStyle($style);
         }
 
@@ -241,6 +237,20 @@ final readonly class TranscriptBlockWidgetFactory
             'italic' => $style->withItalic(true),
             default => $style,
         };
+    }
+
+    private function isThinkingBlock(TranscriptBlock $block): bool
+    {
+        return TranscriptBlockKindEnum::AssistantThinking === $block->kind;
+    }
+
+    private function isMarkdownBlock(TranscriptBlock $block): bool
+    {
+        return \in_array($block->kind, [
+            TranscriptBlockKindEnum::UserMessage,
+            TranscriptBlockKindEnum::AssistantMessage,
+            TranscriptBlockKindEnum::AssistantThinking,
+        ], true);
     }
 
     private function labelOr(TranscriptBlock $block, string $metaKey, string $default): string

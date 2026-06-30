@@ -100,15 +100,13 @@ final class ChatScreen
         private readonly TuiTheme $theme,
         private string $sessionId,
         private readonly PromptEditor $promptEditor,
-        private readonly ?TranscriptDisplayConfig $displayConfig = null,
+        TranscriptDisplayConfig $displayConfig = new TranscriptDisplayConfig(),
     ) {
         $this->registry = new TuiSlotRegistry();
 
         // ── Instantiate default renderables ──
         $this->headerRenderable = new HeaderWidget();
-        $this->transcriptRenderable = null !== $displayConfig
-            ? new TranscriptBlockWidget(displayConfig: $displayConfig)
-            : new TranscriptBlockWidget();
+        $this->transcriptRenderable = new TranscriptBlockWidget(displayConfig: $displayConfig);
         $this->pendingRenderable = new PendingMessagesWidget();
         $this->workingRenderable = new WorkingStatusWidget();
         $this->statusPanelRenderable = new StatusPanelWidget();

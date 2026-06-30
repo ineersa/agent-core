@@ -26,13 +26,13 @@ final class TranscriptBlockWidget implements TuiWidget
     /** @var list<TranscriptBlock> */
     private array $blocks = [];
 
-    /** Lazy-initialised factory wired with transcript display config. */
-    private ?TranscriptBlockWidgetFactory $factory = null;
+    private readonly TranscriptBlockWidgetFactory $factory;
 
     public function __construct(
         private readonly SymfonyTuiWidgetRenderer $widgetRenderer = new SymfonyTuiWidgetRenderer(),
-        private readonly TranscriptDisplayConfig $displayConfig = new TranscriptDisplayConfig(),
+        TranscriptDisplayConfig $displayConfig = new TranscriptDisplayConfig(),
     ) {
+        $this->factory = new TranscriptBlockWidgetFactory(displayConfig: $displayConfig);
     }
 
     /** @return list<TranscriptBlock> */
@@ -59,15 +59,8 @@ final class TranscriptBlockWidget implements TuiWidget
             return [$context->theme->muted('  Welcome to Agent Core. Type a message below to start.')];
         }
 
-        $root = $this->getFactory()->buildRoot($this->blocks, $context->theme);
+        $root = $this->factory->buildRoot($this->blocks, $context->theme);
 
         return $this->widgetRenderer->render($root, $context);
-    }
-
-    private function getFactory(): TranscriptBlockWidgetFactory
-    {
-        return $this->factory ??= new TranscriptBlockWidgetFactory(
-            displayConfig: $this->displayConfig,
-        );
     }
 }

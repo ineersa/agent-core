@@ -43,7 +43,7 @@ final class VirtualTuiHarness
             theme: $theme,
             sessionId: $sessionId,
             promptEditor: new PromptEditor(),
-            displayConfig: $displayConfig,
+            displayConfig: $displayConfig ?? new TranscriptDisplayConfig(),
         );
         $this->tui = new Tui(terminal: $this->terminal);
         $this->screen->mount($this->tui);

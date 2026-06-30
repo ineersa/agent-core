@@ -109,6 +109,10 @@ false, each thinking block is rendered as a placeholder without revealing conten
 Visual style for visible thinking blocks. Used to apply subdued styling
 through Symfony TUI `Style` primitives.
 
+**Accepted values:** `dim_italic` (dim + italic), `dim` (dim only),
+`italic` (italic only). Unknown values render without extra dim/italic
+styling.
+
 **Default:** `dim_italic`
 
 ### `tui.transcript.previews.expanded_by_default`
