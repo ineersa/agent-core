@@ -222,7 +222,7 @@ final class TreePickerControllerTest extends TestCase
     public function testBuildItemsBranchedTreeWithConnectors(): void
     {
         // Deep branching: T1 has two children [T2, T3]; T2 has one child T4 (current leaf).
-        // This proves all three connector types: ├─, │  └─, └─.
+        // T4 is a single-child continuation under an open branch → guide column only (│  ), not └─.
         $nodes = [
             1 => new TurnTreeNodeView(
                 turnNo: 1,
@@ -288,13 +288,193 @@ final class TreePickerControllerTest extends TestCase
         self::assertStringContainsString('├─ ○ Turn 2:', $items[1]['label']);
         self::assertSame('2', $items[1]['value']);
 
-        // T4 (only child of T2, [false, true]): │  └─
-        self::assertStringContainsString('│  └─ ◉ Turn 4:', $items[2]['label']);
+        // T4 (only child of T2): continuation under open branch → │  guide, flat
+        self::assertStringContainsString('│  ◉ Turn 4:', $items[2]['label']);
+        self::assertStringNotContainsString('└─ ◉ Turn 4:', $items[2]['label']);
         self::assertSame('4', $items[2]['value']);
 
         // T3 (last child of T1, [true]): └─
         self::assertStringContainsString('└─ ○ Turn 3:', $items[3]['label']);
         self::assertSame('3', $items[3]['value']);
+    }
+
+
+    // ── buildItems: linear continuation inside branch (regression) ─────────
+
+    #[Test]
+    public function testBuildItemsLinearContinuationInsideBranchDoesNotStaircase(): void
+    {
+        // Thesis: single-child continuations inside a branch must share the same indent
+        // prefix (guide column only), not deepen with └─/├─ at every hop — the user-reported
+        // staircase where 2→5→6→7 rendered one level deeper per turn.
+        $nodes = [
+            1 => new TurnTreeNodeView(
+                turnNo: 1,
+                parentTurnNo: null,
+                childTurnNos: [2, 3],
+                anchorSeq: 2,
+                title: 'Turn 1',
+                promptPreview: 'Turn 1',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            2 => new TurnTreeNodeView(
+                turnNo: 2,
+                parentTurnNo: 1,
+                childTurnNos: [5],
+                anchorSeq: 5,
+                title: 'Turn 2',
+                promptPreview: 'Turn 2',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            3 => new TurnTreeNodeView(
+                turnNo: 3,
+                parentTurnNo: 1,
+                childTurnNos: [4],
+                anchorSeq: 8,
+                title: 'Turn 3',
+                promptPreview: 'Turn 3',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            4 => new TurnTreeNodeView(
+                turnNo: 4,
+                parentTurnNo: 3,
+                childTurnNos: [],
+                anchorSeq: 11,
+                title: 'Turn 4',
+                promptPreview: 'Turn 4',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            5 => new TurnTreeNodeView(
+                turnNo: 5,
+                parentTurnNo: 2,
+                childTurnNos: [6],
+                anchorSeq: 14,
+                title: 'Turn 5',
+                promptPreview: 'Turn 5',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            6 => new TurnTreeNodeView(
+                turnNo: 6,
+                parentTurnNo: 5,
+                childTurnNos: [7],
+                anchorSeq: 17,
+                title: 'Turn 6',
+                promptPreview: 'Turn 6',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            7 => new TurnTreeNodeView(
+                turnNo: 7,
+                parentTurnNo: 6,
+                childTurnNos: [],
+                anchorSeq: 20,
+                title: 'Turn 7',
+                promptPreview: 'Turn 7',
+                createdAt: null,
+                isCurrentLeaf: true,
+            ),
+        ];
+
+        $tree = new TurnTreeView(
+            runId: 'run',
+            nodesByTurnNo: $nodes,
+            rootTurnNos: [1],
+            currentLeafTurnNo: 7,
+            activePathTurnNos: [1, 2, 5, 6, 7],
+        );
+
+        $theme = new DefaultTheme(new ThemePalette('test'));
+        $items = TreePickerController::buildItems($tree, $theme);
+
+        self::assertCount(7, $items);
+        self::assertStringContainsString('○ Turn 1:', $items[0]['label']);
+        self::assertStringContainsString('├─ ○ Turn 2:', $items[1]['label']);
+        self::assertStringContainsString('│  ○ Turn 5:', $items[2]['label']);
+        self::assertStringContainsString('│  ○ Turn 6:', $items[3]['label']);
+        self::assertStringContainsString('│  ◉ Turn 7:', $items[4]['label']);
+        self::assertStringContainsString('└─ ○ Turn 3:', $items[5]['label']);
+        self::assertStringContainsString('   ○ Turn 4:', $items[6]['label']);
+
+        // Turns 5–7 must share the same prefix depth (no staircase └─ between them).
+        self::assertStringNotContainsString('└─', $items[2]['label']);
+        self::assertStringNotContainsString('└─', $items[3]['label']);
+        self::assertStringNotContainsString('└─', $items[4]['label']);
+        self::assertStringNotContainsString('├─', $items[2]['label']);
+        self::assertStringNotContainsString('├─', $items[3]['label']);
+        self::assertStringNotContainsString('├─', $items[4]['label']);
+    }
+
+    #[Test]
+    public function testBuildItemsLinearThenForkRendersContinuationFlat(): void
+    {
+        // Thesis: only-child chain before a fork stays flat; fork children get ├─/└─ one level down.
+        $nodes = [
+            1 => new TurnTreeNodeView(
+                turnNo: 1,
+                parentTurnNo: null,
+                childTurnNos: [2],
+                anchorSeq: 2,
+                title: 'Turn 1',
+                promptPreview: 'Turn 1',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            2 => new TurnTreeNodeView(
+                turnNo: 2,
+                parentTurnNo: 1,
+                childTurnNos: [3, 4],
+                anchorSeq: 5,
+                title: 'Turn 2',
+                promptPreview: 'Turn 2',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            3 => new TurnTreeNodeView(
+                turnNo: 3,
+                parentTurnNo: 2,
+                childTurnNos: [],
+                anchorSeq: 8,
+                title: 'Turn 3',
+                promptPreview: 'Turn 3',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            4 => new TurnTreeNodeView(
+                turnNo: 4,
+                parentTurnNo: 2,
+                childTurnNos: [],
+                anchorSeq: 11,
+                title: 'Turn 4',
+                promptPreview: 'Turn 4',
+                createdAt: null,
+                isCurrentLeaf: true,
+            ),
+        ];
+
+        $tree = new TurnTreeView(
+            runId: 'run',
+            nodesByTurnNo: $nodes,
+            rootTurnNos: [1],
+            currentLeafTurnNo: 4,
+            activePathTurnNos: [1, 2, 4],
+        );
+
+        $theme = new DefaultTheme(new ThemePalette('test'));
+        $items = TreePickerController::buildItems($tree, $theme);
+
+        self::assertCount(4, $items);
+        self::assertStringContainsString('○ Turn 1:', $items[0]['label']);
+        self::assertStringNotContainsString('├─', $items[0]['label']);
+        self::assertStringContainsString('○ Turn 2:', $items[1]['label']);
+        self::assertStringNotContainsString('├─', $items[1]['label']);
+        self::assertStringNotContainsString('└─', $items[1]['label']);
+        self::assertStringContainsString('├─ ○ Turn 3:', $items[2]['label']);
+        self::assertStringContainsString('└─ ◉ Turn 4:', $items[3]['label']);
     }
 
     // ── buildItems: empty tree ──────────────────────────────────────────────

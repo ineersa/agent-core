@@ -248,7 +248,8 @@ final class TreePickerController
 
     /**
      * @param array<int, TurnTreeNodeView>           $nodesByTurnNo
-     * @param list<bool>                             $branchStack   Each entry is true if that ancestor is the last child of its parent (└─ for last, ├─ for non-last)
+     * @param list<bool>                             $branchStack    Each entry is true if that ancestor is the last child of its parent (guide column uses space vs │)
+     * @param bool                                   $isContinuation When true, this node is a single-child continuation: render guide only, no fork glyph
      * @param list<array{value:string,label:string}> $items
      * @param list<int>                              $order
      * @param array<int, true>                       $visited
@@ -262,6 +263,7 @@ final class TreePickerController
         array &$visited,
         ?TuiTheme $theme,
         int $selectedIndex,
+        bool $isContinuation = false,
     ): void {
         if (isset($visited[$turnNo])) {
             return;
@@ -281,7 +283,13 @@ final class TreePickerController
                 $nodePrefix .= $branchStack[$k] ? '   ' : '│  ';
             }
             if ($numLevels >= 1) {
-                $nodePrefix .= $branchStack[$numLevels - 1] ? '└─ ' : '├─ ';
+                $last = $numLevels - 1;
+                if ($isContinuation) {
+                    // Single-child continuation: guide column only (no fork glyph).
+                    $nodePrefix .= $branchStack[$last] ? '   ' : '│  ';
+                } else {
+                    $nodePrefix .= $branchStack[$last] ? '└─ ' : '├─ ';
+                }
             }
 
             $leafMarker = $node->isCurrentLeaf ? '◉ ' : '○ ';
@@ -304,19 +312,30 @@ final class TreePickerController
 
         $order[] = $node->turnNo;
 
-        // Compute child branch-stack: push a new connector level when already inside
-        // a branch or when the current node has multiple children (branching starts here).
+        // Indent only at real forks (2+ children). Single-child continuations stay flat
+        // and inherit the parent's branchStack; they render with a guide column (│ / space)
+        // instead of deepening the staircase with └─/├─ at every only-child hop.
         $childCount = \count($node->childTurnNos);
-        $insideBranch = [] !== $branchStack;
         $nodeHasMultipleChildren = $childCount >= 2;
-        $childPushesLevel = $insideBranch || $nodeHasMultipleChildren;
+        $childPushesLevel = $nodeHasMultipleChildren;
+        $childIsContinuation = 1 === $childCount;
 
         foreach ($node->childTurnNos as $ci => $childTurnNo) {
             $childStack = $childPushesLevel
                 ? [...$branchStack, $ci === $childCount - 1]
                 : $branchStack;
 
-            self::walkNode($childTurnNo, $nodesByTurnNo, $childStack, $items, $order, $visited, $theme, $selectedIndex);
+            self::walkNode(
+                $childTurnNo,
+                $nodesByTurnNo,
+                $childStack,
+                $items,
+                $order,
+                $visited,
+                $theme,
+                $selectedIndex,
+                $childIsContinuation,
+            );
         }
     }
 }
