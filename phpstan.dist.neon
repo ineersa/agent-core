@@ -16,6 +16,7 @@ parameters:
         - .castor/helpers.php
     tmpDir: var/phpstan
     excludePaths:
+        - .castor/vendor/*
         - var/*
         - vendor/*
         - .hatfield/extensions/vendor/*
