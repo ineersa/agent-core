@@ -316,6 +316,24 @@ final readonly class RunStateReplayService
                     'filtered_event_count' => \count($filteredEvents),
                     'active_branch_turns' => $branchReplay->activePathTurnNos,
                 ]);
+
+                // Rewind replay must not resurrect post-completion follow_up commands
+                // that were queued on the target turn to launch an abandoned child
+                // branch (e.g. pineapple at seq 6–7 after turn-1 agent_end). Those
+                // leave status=Running and suppress ApplyCommandHandler's immediate
+                // AdvanceRun for the next follow_up on the new branch.
+                $filteredEvents = $this->filterAbandonedChildLaunchCommandsOnTargetLeaf(
+                    $sortedEvents,
+                    $targetLeafTurnNo,
+                    $filteredEvents,
+                );
+
+                $filteredEvents = $this->filterPostRewindSiblingLaunchesOnPath(
+                    $sortedEvents,
+                    $targetLeafTurnNo,
+                    $branchReplay->activePathTurnNos,
+                    $filteredEvents,
+                );
             }
 
             $rebuiltState = $this->replay($state, $filteredEvents);
@@ -1133,6 +1151,150 @@ final readonly class RunStateReplayService
     /**
      * @param list<RunEvent> $events
      */
+
+    /**
+     * When rebuilding for a rewind target leaf, strip agent_command_* events on
+     * that turn that were recorded after the turn's last completion boundary but
+     * before the new branch exists. Those commands launched abandoned siblings
+     * and must not be replayed into hot state (they force Running and block
+     * immediate follow_up AdvanceRun).
+     *
+     * @param list<RunEvent> $sortedEvents   Full canonical stream (sorted by seq)
+     * @param list<RunEvent> $filteredEvents Branch-filtered replay candidates
+     *
+     * @return list<RunEvent>
+     */
+    private function filterAbandonedChildLaunchCommandsOnTargetLeaf(
+        array $sortedEvents,
+        int $targetLeafTurnNo,
+        array $filteredEvents,
+    ): array {
+        // Only relevant when rebuilding immediately after a rewind leaf_set
+        // (RunRewindService::rewind → rebuildForLeaf). Strip follow_up commands
+        // that were queued on the target turn after its last completion but
+        // before the rewind leaf_set — those launched an abandoned child branch.
+        $rewindLeafSetSeq = 0;
+        foreach ($sortedEvents as $event) {
+            if (RunEventTypeEnum::LeafSet->value !== $event->type) {
+                continue;
+            }
+
+            $payload = $event->payload;
+            $leafTurnNo = (int) ($payload['turn_no'] ?? 0);
+            $reason = \is_string($payload['reason'] ?? null) ? $payload['reason'] : '';
+
+            if ($leafTurnNo !== $targetLeafTurnNo || 'rewind' !== $reason) {
+                continue;
+            }
+
+            $rewindLeafSetSeq = max($rewindLeafSetSeq, $event->seq);
+        }
+
+        if (0 === $rewindLeafSetSeq) {
+            return $filteredEvents;
+        }
+
+        $turnCompletionSeq = 0;
+        foreach ($sortedEvents as $event) {
+            if ($event->turnNo !== $targetLeafTurnNo || $event->seq >= $rewindLeafSetSeq) {
+                continue;
+            }
+
+            if (\in_array($event->type, [
+                RunEventTypeEnum::AgentEnd->value,
+                RunEventTypeEnum::LlmStepCompleted->value,
+            ], true)) {
+                $turnCompletionSeq = max($turnCompletionSeq, $event->seq);
+            }
+        }
+
+        if (0 === $turnCompletionSeq) {
+            return $filteredEvents;
+        }
+
+        return array_values(array_filter(
+            $filteredEvents,
+            static function (RunEvent $event) use ($targetLeafTurnNo, $turnCompletionSeq, $rewindLeafSetSeq): bool {
+                if ($event->turnNo !== $targetLeafTurnNo) {
+                    return true;
+                }
+
+                if (!\in_array($event->type, [
+                    RunEventTypeEnum::AgentCommandQueued->value,
+                    RunEventTypeEnum::AgentCommandApplied->value,
+                ], true)) {
+                    return true;
+                }
+
+                if ($event->seq <= $turnCompletionSeq) {
+                    return true;
+                }
+
+                return $event->seq >= $rewindLeafSetSeq;
+            },
+        ));
+    }
+
+
+    /**
+     * @param list<RunEvent> $sortedEvents
+     * @param list<int>      $activePathTurnNos
+     * @param list<RunEvent> $filteredEvents
+     *
+     * @return list<RunEvent>
+     */
+    private function filterPostRewindSiblingLaunchesOnPath(
+        array $sortedEvents,
+        int $targetLeafTurnNo,
+        array $activePathTurnNos,
+        array $filteredEvents,
+    ): array {
+        $ancestorTurns = array_values(array_filter(
+            $activePathTurnNos,
+            static fn (int $turnNo): bool => $turnNo < $targetLeafTurnNo,
+        ));
+
+        if ([] === $ancestorTurns) {
+            return $filteredEvents;
+        }
+
+        $rewindCutoffByTurn = [];
+        foreach ($sortedEvents as $event) {
+            if (RunEventTypeEnum::LeafSet->value !== $event->type) {
+                continue;
+            }
+
+            $payload = $event->payload;
+            $leafTurnNo = (int) ($payload['turn_no'] ?? 0);
+            $reason = \is_string($payload['reason'] ?? null) ? $payload['reason'] : '';
+
+            if ('rewind' !== $reason || !\in_array($leafTurnNo, $ancestorTurns, true)) {
+                continue;
+            }
+
+            $rewindCutoffByTurn[$leafTurnNo] = max($rewindCutoffByTurn[$leafTurnNo] ?? 0, $event->seq);
+        }
+
+        if ([] === $rewindCutoffByTurn) {
+            return $filteredEvents;
+        }
+
+        return array_values(array_filter(
+            $filteredEvents,
+            static function (RunEvent $event) use ($rewindCutoffByTurn): bool {
+                $cutoff = $rewindCutoffByTurn[$event->turnNo] ?? null;
+                if (null === $cutoff || $event->seq <= $cutoff) {
+                    return true;
+                }
+
+                return !\in_array($event->type, [
+                    RunEventTypeEnum::AgentCommandQueued->value,
+                    RunEventTypeEnum::AgentCommandApplied->value,
+                ], true);
+            },
+        ));
+    }
+
     private function maxSequence(array $events): int
     {
         if ([] === $events) {
