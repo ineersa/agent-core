@@ -59,27 +59,9 @@ final readonly class RunStateReplayService
         $sortedEvents = $this->sortBySequence($events);
         $maxEventSeq = $this->maxSequence($sortedEvents);
 
-        // Stored state is current with respect to seq — but after a rewind the
-        // hot checkpoint can still carry a stale turnNo / message context from the
-        // abandoned leaf while lastSeq already reflects the rewind leaf_set append.
-        // Force a branch-filtered replay when the canonical current leaf disagrees.
-        $currentLeafTurnNo = $this->resolveCurrentLeafTurnNo($sortedEvents);
-        $leafPointerDrift = null !== $currentLeafTurnNo
-            && $state->turnNo > 0
-            && $state->turnNo !== $currentLeafTurnNo;
-
-        if ($state->lastSeq >= $maxEventSeq && !$leafPointerDrift) {
+        // Stored state is current — no rebuild needed.
+        if ($state->lastSeq >= $maxEventSeq) {
             return RunStateReplayResult::current($maxEventSeq, \count($sortedEvents));
-        }
-
-        if ($leafPointerDrift) {
-            $this->logger->info('run_state_replay.leaf_pointer_drift', [
-                'run_id' => $runId,
-                'state_turn_no' => $state->turnNo,
-                'current_leaf_turn_no' => $currentLeafTurnNo,
-                'state_last_seq' => $state->lastSeq,
-                'event_last_seq' => $maxEventSeq,
-            ]);
         }
 
         RunLogContext::enter(['run_id' => $runId, 'component' => 'replay']);
@@ -1040,49 +1022,9 @@ final readonly class RunStateReplayService
     /**
      * Identifies duplicate event sequence numbers.
      *
+     * @param list<RunEvent> $events sorted ascending by seq
+     *
      * @return list<int> duplicate sequence numbers
-     */
-    /**
-     * Resolve the current leaf turn from the canonical event stream (last leaf_set wins).
-     *
-     * @param list<RunEvent> $sortedEvents Events sorted ascending by seq
-     */
-    private function resolveCurrentLeafTurnNo(array $sortedEvents): ?int
-    {
-        $leaf = null;
-        foreach ($sortedEvents as $event) {
-            if (RunEventTypeEnum::LeafSet->value !== $event->type) {
-                continue;
-            }
-            $turnNo = $event->payload['turn_no'] ?? null;
-            if (\is_int($turnNo) && $turnNo > 0) {
-                $leaf = $turnNo;
-            }
-        }
-
-        if (null !== $leaf) {
-            return $leaf;
-        }
-
-        // No leaf_set: derive max turn_advanced turn_no (old linear streams).
-        $maxTurn = 0;
-        foreach ($sortedEvents as $event) {
-            if (RunEventTypeEnum::TurnAdvanced->value !== $event->type) {
-                continue;
-            }
-            $turnNo = $event->payload['turn_no'] ?? $event->turnNo;
-            if (\is_int($turnNo) && $turnNo > $maxTurn) {
-                $maxTurn = $turnNo;
-            }
-        }
-
-        return $maxTurn > 0 ? $maxTurn : null;
-    }
-
-    /**
-     * @param list<RunEvent> $events
-     *
-     * @return list<int>
      */
     private function duplicateSequences(array $events): array
     {
