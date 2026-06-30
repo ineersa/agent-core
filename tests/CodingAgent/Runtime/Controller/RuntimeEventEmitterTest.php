@@ -176,6 +176,144 @@ final class RuntimeEventEmitterTest extends TestCase
         $this->assertContains(RuntimeEventTypeEnum::ToolExecutionCompleted->value, $types);
     }
 
+    public function testCallbackFiresForRegisteredRunAndMatchingEventType(): void
+    {
+        $runId = 'callback-test-1';
+        $client = new FlakySeqDrainAgentSessionClient(
+            throwOnCall: 0,
+            eventsByCall: [
+                1 => [
+                    new RuntimeEvent(RuntimeEventTypeEnum::ToolExecutionCompleted->value, $runId, 5, ['tool_name' => 'bash']),
+                ],
+            ],
+        );
+
+        $emitter = new RuntimeEventEmitter($client, new RuntimeExceptionBoundary(new EventDispatcher()), $this->createStub(LoggerInterface::class));
+        $emitter->openStdout();
+        $this->replaceStdoutWithMemory($emitter);
+
+        // Register cursor via RunStarted emission.
+        $emitter->emit(new RuntimeEvent(
+            type: RuntimeEventTypeEnum::RunStarted->value,
+            runId: $runId,
+            seq: 1,
+            payload: [],
+        ));
+
+        $callbackCalled = false;
+        $receivedEvent = null;
+        $emitter->onRunEvent($runId, [RuntimeEventTypeEnum::ToolExecutionCompleted->value], function (RuntimeEvent $event) use (&$callbackCalled, &$receivedEvent): void {
+            $callbackCalled = true;
+            $receivedEvent = $event;
+        });
+
+        $emitter->drainRegisteredRunsOnce();
+
+        $this->assertTrue($callbackCalled, 'Callback should have been fired for matching event type.');
+        $this->assertNotNull($receivedEvent);
+        $this->assertSame(RuntimeEventTypeEnum::ToolExecutionCompleted->value, $receivedEvent->type);
+        $this->assertSame(5, $receivedEvent->seq);
+    }
+
+    public function testCallbackDoesNotFireForNonMatchingEventType(): void
+    {
+        $runId = 'callback-test-2';
+        $client = new FlakySeqDrainAgentSessionClient(
+            throwOnCall: 0,
+            eventsByCall: [
+                1 => [
+                    new RuntimeEvent(RuntimeEventTypeEnum::ToolExecutionCompleted->value, $runId, 5, ['tool_name' => 'bash']),
+                ],
+            ],
+        );
+
+        $emitter = new RuntimeEventEmitter($client, new RuntimeExceptionBoundary(new EventDispatcher()), $this->createStub(LoggerInterface::class));
+        $emitter->openStdout();
+        $this->replaceStdoutWithMemory($emitter);
+
+        $emitter->emit(new RuntimeEvent(
+            type: RuntimeEventTypeEnum::RunStarted->value,
+            runId: $runId,
+            seq: 1,
+            payload: [],
+        ));
+
+        $callbackCalled = false;
+        // Register for a DIFFERENT event type than what's yielded by the client.
+        $emitter->onRunEvent($runId, [RuntimeEventTypeEnum::UserMessageSubmitted->value], function (RuntimeEvent $event) use (&$callbackCalled): void {
+            $callbackCalled = true;
+        });
+
+        $emitter->drainRegisteredRunsOnce();
+
+        $this->assertFalse($callbackCalled, 'Callback should NOT fire for non-matching event type.');
+    }
+
+    public function testCallbackExceptionIsIsolatedFromDrainPipeline(): void
+    {
+        $runId = 'callback-test-3';
+        $client = new FlakySeqDrainAgentSessionClient(
+            throwOnCall: 0,
+            eventsByCall: [
+                1 => [
+                    new RuntimeEvent(RuntimeEventTypeEnum::ToolExecutionCompleted->value, $runId, 5, ['tool_name' => 'bash']),
+                ],
+            ],
+        );
+
+        $logger = new \Ineersa\AgentCore\Tests\Support\TestLogger();
+        $emitter = new RuntimeEventEmitter($client, new RuntimeExceptionBoundary(new EventDispatcher()), $logger);
+        $emitter->openStdout();
+        $this->replaceStdoutWithMemory($emitter);
+
+        $emitter->emit(new RuntimeEvent(
+            type: RuntimeEventTypeEnum::RunStarted->value,
+            runId: $runId,
+            seq: 1,
+            payload: [],
+        ));
+
+        // Register callback that throws.
+        $emitter->onRunEvent($runId, [RuntimeEventTypeEnum::ToolExecutionCompleted->value], function (RuntimeEvent $event): void {
+            throw new \RuntimeException('callback intentional failure for test');
+        });
+
+        // Drain once: callback throws, but cursor should advance.
+        $emitter->drainRegisteredRunsOnce();
+
+        // Assert canonical event was still emitted to stdout.
+        $stdout = $this->stdoutHandle($emitter);
+        rewind($stdout);
+        $raw = stream_get_contents($stdout) ?: '';
+        $lines = array_values(array_filter(array_map('trim', explode("\n", $raw))));
+        $decoded = array_map(static fn (string $line): RuntimeEvent => JsonlCodec::decodeEvent($line), $lines);
+        $emittedTypes = array_map(static fn (RuntimeEvent $e): string => $e->type, $decoded);
+        $this->assertContains(RuntimeEventTypeEnum::ToolExecutionCompleted->value, $emittedTypes,
+            'Canonical event must be emitted despite callback exception.');
+
+        // Assert the callback exception was logged with correct context.
+        $errorRecords = array_filter($logger->records, static fn (array $r): bool => $r['message'] === 'runtime_event_callback_failed');
+        $this->assertCount(1, $errorRecords, 'Callback exception must be logged once.');
+        $this->assertSame($runId, $errorRecords[0]['context']['run_id'] ?? null);
+        $this->assertSame(RuntimeEventTypeEnum::ToolExecutionCompleted->value, $errorRecords[0]['context']['runtime_event_type'] ?? null);
+        $this->assertSame(\RuntimeException::class, $errorRecords[0]['context']['exception_class'] ?? null);
+
+        // Assert NO ProtocolError was emitted (callback failure != drain failure).
+        $this->assertNotContains(RuntimeEventTypeEnum::ProtocolError->value, $emittedTypes,
+            'Callback exception must NOT emit ProtocolError.');
+
+        // Assert cursor advanced: second drain does NOT re-emit the same event.
+        $emitter->drainRegisteredRunsOnce();
+        $stdout = $this->stdoutHandle($emitter);
+        rewind($stdout);
+        $raw = stream_get_contents($stdout) ?: '';
+        $lines = array_values(array_filter(array_map('trim', explode("\n", $raw))));
+        $decoded = array_map(static fn (string $line): RuntimeEvent => JsonlCodec::decodeEvent($line), $lines);
+        $toolCompletedEvents = array_filter($decoded, static fn (RuntimeEvent $e): bool => $e->type === RuntimeEventTypeEnum::ToolExecutionCompleted->value);
+        $this->assertCount(1, $toolCompletedEvents,
+            'Cursor must advance after callback exception so the same event is not re-emitted on subsequent drains.');
+    }
+
     private function createEmitter(): RuntimeEventEmitter
     {
         $boundary = new RuntimeExceptionBoundary(new EventDispatcher());

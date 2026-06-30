@@ -108,12 +108,11 @@ final readonly class StartRunHandler
             // runtime event (run.completed/failed/cancelled) for this run.
             // ForkRunFinalizer is idempotent after full finalization.
             $finalizer = $this->forkRunFinalizer;
-            $forkOptions = $options;
             $this->emitter->onRunEvent(
                 runId: $handle->runId,
                 eventTypes: self::FORK_TERMINAL_EVENT_TYPES,
-                callback: static function (RuntimeEvent $runtimeEvent) use ($finalizer, $handle, $forkOptions): void {
-                    $finalizer->finalize($handle->runId, $forkOptions);
+                callback: static function (RuntimeEvent $runtimeEvent) use ($finalizer, $handle, $options): void {
+                    $finalizer->finalize($handle->runId, $options);
                 },
             );
         } else {

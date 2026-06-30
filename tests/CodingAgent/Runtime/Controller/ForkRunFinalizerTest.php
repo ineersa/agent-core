@@ -62,7 +62,7 @@ final class ForkRunFinalizerTest extends TestCase
     private string $artifactId;
     private string $childRunId;
     private string $resultDir;
-    private ForkRunFinalizer $watcher;
+    private ForkRunFinalizer $finalizer;
 
     protected function setUp(): void
     {
@@ -115,7 +115,7 @@ final class ForkRunFinalizerTest extends TestCase
             kind: AgentArtifactKindEnum::Fork,
         );
 
-        $this->watcher = new ForkRunFinalizer(
+        $this->finalizer = new ForkRunFinalizer(
             runStore: $this->runStore,
             agentRunner: $this->agentRunner,
             artifactRegistry: $this->artifactRegistry,
@@ -192,7 +192,7 @@ final class ForkRunFinalizerTest extends TestCase
             ->with($this->childRunId)
             ->willReturn($this->makeRunState(RunStatus::Completed, $this->makeValidHandoff()));
 
-        $this->watcher->finalize($this->childRunId, $this->defaultForkOptions());
+        $this->finalizer->finalize($this->childRunId, $this->defaultForkOptions());
 
         $handoff = $this->artifactRegistry->readHandoff($this->parentRunId, $this->artifactId);
         $this->assertStringContainsString('## 1. Result / status', $handoff);
@@ -223,7 +223,7 @@ final class ForkRunFinalizerTest extends TestCase
 
         // Call finalize N+1 times (each repair attempt + final failure).
         for ($i = 0; $i <= ForkRunFinalizer::MAX_REPAIR_ATTEMPTS; $i++) {
-            $this->watcher->finalize($this->childRunId, $this->defaultForkOptions());
+            $this->finalizer->finalize($this->childRunId, $this->defaultForkOptions());
         }
 
         $this->assertFileExists($this->resultDir.'/candidate-handoff.md');
@@ -243,7 +243,7 @@ final class ForkRunFinalizerTest extends TestCase
             ->with($this->childRunId)
             ->willReturn($this->makeRunState(RunStatus::Cancelled));
 
-        $this->watcher->finalize($this->childRunId, $this->defaultForkOptions());
+        $this->finalizer->finalize($this->childRunId, $this->defaultForkOptions());
 
         $this->assertFileExists($this->resultDir.'/fork-metadata.json');
         $meta = json_decode(file_get_contents($this->resultDir.'/fork-metadata.json'), true);
@@ -265,7 +265,7 @@ final class ForkRunFinalizerTest extends TestCase
 
         // The finalizer should not treat Cancelling as terminal.
         // No artifact registry calls should be made.
-        $this->watcher->finalize($this->childRunId, $this->defaultForkOptions());
+        $this->finalizer->finalize($this->childRunId, $this->defaultForkOptions());
 
         $this->assertFileDoesNotExist($this->resultDir.'/fork-metadata.json');
         $this->assertFileDoesNotExist($this->resultDir.'/.fork-finalized');
@@ -280,7 +280,7 @@ final class ForkRunFinalizerTest extends TestCase
             ->with($this->childRunId)
             ->willReturn($state);
 
-        $this->watcher->finalize($this->childRunId, $this->defaultForkOptions());
+        $this->finalizer->finalize($this->childRunId, $this->defaultForkOptions());
 
         $this->assertFileExists($this->resultDir.'/fork-metadata.json');
         $meta = json_decode(file_get_contents($this->resultDir.'/fork-metadata.json'), true);
@@ -297,7 +297,7 @@ final class ForkRunFinalizerTest extends TestCase
             ->with($this->childRunId)
             ->willReturn(null);
 
-        $this->watcher->finalize($this->childRunId, $this->defaultForkOptions());
+        $this->finalizer->finalize($this->childRunId, $this->defaultForkOptions());
 
         $this->assertFileExists($this->resultDir.'/fork-metadata.json');
         $meta = json_decode(file_get_contents($this->resultDir.'/fork-metadata.json'), true);
@@ -313,7 +313,7 @@ final class ForkRunFinalizerTest extends TestCase
             ->with($this->childRunId)
             ->willReturn($this->makeRunState(RunStatus::Running));
 
-        $this->watcher->finalize($this->childRunId, $this->defaultForkOptions());
+        $this->finalizer->finalize($this->childRunId, $this->defaultForkOptions());
 
         $this->assertFileDoesNotExist($this->resultDir.'/fork-metadata.json');
         $this->assertFileDoesNotExist($this->resultDir.'/.fork-finalized');
@@ -329,8 +329,8 @@ final class ForkRunFinalizerTest extends TestCase
             ->with($this->childRunId)
             ->willReturn($state);
 
-        $this->watcher->finalize($this->childRunId, $this->defaultForkOptions());
-        $this->watcher->finalize($this->childRunId, $this->defaultForkOptions());
+        $this->finalizer->finalize($this->childRunId, $this->defaultForkOptions());
+        $this->finalizer->finalize($this->childRunId, $this->defaultForkOptions());
 
         $this->assertFileExists($this->resultDir.'/fork-metadata.json');
         $meta = json_decode(file_get_contents($this->resultDir.'/fork-metadata.json'), true);
@@ -344,7 +344,7 @@ final class ForkRunFinalizerTest extends TestCase
             ->with($this->childRunId)
             ->willReturn($this->makeRunState(RunStatus::Completed, $this->makeValidHandoff()));
 
-        $this->watcher->finalize($this->childRunId, $this->defaultForkOptions());
+        $this->finalizer->finalize($this->childRunId, $this->defaultForkOptions());
 
         $this->assertFileExists($this->resultDir.'/fork-metadata.json');
 
@@ -361,7 +361,7 @@ final class ForkRunFinalizerTest extends TestCase
             ->with($this->childRunId)
             ->willReturn($this->makeRunState(RunStatus::Completed, $this->makeValidHandoff()));
 
-        $this->watcher->finalize($this->childRunId, $this->defaultForkOptions());
+        $this->finalizer->finalize($this->childRunId, $this->defaultForkOptions());
 
         $this->assertFileExists($this->resultDir.'/fork-metadata.json');
         $meta = json_decode(file_get_contents($this->resultDir.'/fork-metadata.json'), true);

@@ -181,18 +181,33 @@ final class RuntimeEventEmitter
                     $this->emitInternal($event);
 
                     // Fire registered run event callbacks for this run.
+                    // Callback failures are isolated from the drain pipeline:
+                    // they are logged but MUST NOT prevent cursor advancement,
+                    // emit ProtocolError, or trigger drain-level retry.
                     if (isset($this->runEventCallbacks[$runId])) {
                         foreach ($this->runEventCallbacks[$runId] as $registration) {
                             if (\in_array($event->type, $registration['types'], true)) {
-                                $registration['callback']($event);
+                                try {
+                                    $registration['callback']($event);
+                                } catch (\Throwable $callbackException) {
+                                    $this->logger->error('runtime_event_callback_failed', [
+                                        'component' => 'RuntimeEventEmitter',
+                                        'event_type' => 'runtime_event_callback_failed',
+                                        'run_id' => $runId,
+                                        'runtime_event_type' => $event->type,
+                                        'runtime_event_seq' => $event->seq,
+                                        'exception_class' => $callbackException::class,
+                                        'exception_message' => $callbackException->getMessage(),
+                                    ]);
+                                }
                             }
                         }
                     }
 
-                    if ($event->seq > 0) {
-                        $this->runEventCursors[$runId] = max($cursor, $event->seq);
-                        $cursor = $this->runEventCursors[$runId];
-                    }
+                    // Cursor advancement must happen even if a callback throws.
+                    // Skipping it would re-emit the same event on every drain tick.
+                    $this->runEventCursors[$runId] = max($cursor, $event->seq);
+                    $cursor = $this->runEventCursors[$runId];
                 }
 
                 unset($this->runDrainFailureCounts[$runId]);

@@ -336,7 +336,7 @@ final class AgentCommand
         $forkLevel = '' !== $level ? ForkLevelEnum::from($level) : ForkLevelEnum::Middle;
 
         // ── Populate fork_resolved_model from snapshot JSON ──
-        // The watcher uses this for fork-metadata.json so it does not need
+        // The ForkRunFinalizer uses this for fork-metadata.json so it does not need
         // to deserialize the snapshot itself.
         // We read the file directly rather than importing ForkSessionSnapshotSerializer
         // because AgentCommand lives in the AppCli layer which cannot depend on AppAgent.

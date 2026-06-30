@@ -30,8 +30,8 @@ use Psr\Log\LoggerInterface;
  * via ForkRunFinalizer, triggered by RuntimeEventEmitter terminal event callback.
  *
  * The normal agent start (non-fork) continues to use InProcessAgentSessionClient
- * directly.  Fork-specific logic is isolated to this service and related
- * controller-side watchers.
+ * directly.  Fork-specific logic is isolated to this service and the
+ * ForkRunFinalizer (triggered via RuntimeEventEmitter terminal event callback).
  */
 final readonly class ForkControllerStartService
 {
