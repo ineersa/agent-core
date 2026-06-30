@@ -24,7 +24,7 @@ use PHPUnit\Framework\TestCase;
  * This exercises the full fork child lifecycle:
  *   AgentCommand::runForkTui() → InteractiveMode → process transport
  *   → controller ForkControllerStartService → AgentRunner → LLM replay
- *   → ForkRunTerminalWatcher handoff validation/artifact writing
+ *   → ForkRunFinalizer handoff validation/artifact writing
  *   → ForkAutoExitRegistrar marker barrier → TUI stop → exit sentinel.
  *
  * @group tui-e2e-replay
@@ -72,7 +72,7 @@ final class TuiForkChildE2eTest extends TestCase
         $childRunId = 'child-'.bin2hex(random_bytes(4));
         $resultDir = $this->testProjectDir.'/fork-result';
 
-        // Canonical artifact path where ForkRunTerminalWatcher writes handoff
+        // Canonical artifact path where ForkRunFinalizer writes handoff
         // via AgentArtifactRegistry::writeHandoff().
         // <sessionsBase>/<parentRunId>/artifacts/agents/<artifactId>/handoff.md
         $handoffPath = $this->testProjectDir
@@ -151,7 +151,7 @@ final class TuiForkChildE2eTest extends TestCase
         $this->assertFileExists($handoffPath, 'handoff.md must exist in artifact registry path');
 
         // Verify handoff.md is NOT in the result dir (it lives in sessions).
-        // This confirms the separation of concerns: ForkRunTerminalWatcher uses
+        // This confirms the separation of concerns: ForkRunFinalizer uses
         // AgentArtifactRegistry for the canonical handoff and writes runtime
         // metadata separately to the result dir.
         self::assertFileDoesNotExist($resultDir.'/handoff.md');

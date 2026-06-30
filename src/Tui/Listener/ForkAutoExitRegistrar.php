@@ -15,7 +15,7 @@ use Ineersa\Tui\Runtime\TuiRuntimeContext;
  *
  *   1. Waits until the run's activity state is terminal
  *      (Completed, Failed, or Cancelled).
- *   2. Waits for the controller-side ForkRunTerminalWatcher to
+ *   2. Waits for the controller-side ForkRunFinalizer to
  *      write the .fork-finalized marker file, proving artifacts
  *      are fully written (handoff.md, fork-metadata.json, etc.).
  *   3. Stops the TUI event loop so the process can write the
@@ -40,13 +40,13 @@ use Ineersa\Tui\Runtime\TuiRuntimeContext;
  */
 final readonly class ForkAutoExitRegistrar implements TuiListenerRegistrar
 {
-    /** Marker filename written by ForkRunTerminalWatcher after finalization. */
+    /** Marker filename written by ForkRunFinalizer after finalization. */
     private const string FINALIZED_MARKER = '.fork-finalized';
 
     /**
      * Maximum seconds to wait for the .fork-finalized marker before
      * stopping the TUI regardless.  Prevents deadlock when the
-     * controller-side ForkRunTerminalWatcher fails silently.
+     * controller-side ForkRunFinalizer fails silently.
      *
      * Short in tests (TUI tick rate ~50ms), production-safe at 30s
      * because the fork run and finalization should complete well

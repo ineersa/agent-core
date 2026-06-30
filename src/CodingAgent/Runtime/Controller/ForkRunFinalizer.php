@@ -13,37 +13,44 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Fork\ForkHandoffValidationResultDTO;
 use Ineersa\CodingAgent\Agent\Fork\ForkHandoffValidator;
 use Psr\Log\LoggerInterface;
-use Revolt\EventLoop;
 
 /**
- * Controller-side fork terminal lifecycle watcher.
+ * Fork-mode finalization service.
  *
- * Registers a non-blocking Revolt EventLoop repeat that polls RunStore for
- * terminal state (Completed, Failed, Cancelled).  When terminal, performs
- * handoff validation, repair (up to MAX_REPAIR_ATTEMPTS), and writes result
- * artifacts (handoff.md, fork-metadata.json, diagnostics).
+ * Called from a RuntimeEventEmitter terminal-event callback when a fork child
+ * run reaches terminal state (Completed, Failed, Cancelled).  Performs handoff
+ * extraction, validation, optional repair steering (up to MAX_REPAIR_ATTEMPTS),
+ * artifact writing (handoff.md, fork-metadata.json), and finalisation marker
+ * (.fork-finalized).
  *
- * Runs in the controller process (started by StartRunHandler) so it has
- * access to AppAgent services (ForkHandoffValidator, AgentArtifactRegistry).
- * The TUI-side ForkAutoExitRegistrar stops the TUI when terminal state is
- * reached AND the finalization marker file (.fork-finalized) is present.
+ * This is NOT a polling watcher — it is invoked by the emitter's event drain
+ * when a terminal runtime event for a tracked fork run is seen.  Repair cycles
+ * use the normal command dispatch (followUp) and rely on subsequent terminal
+ * events to trigger re-evaluation.
  *
- * After terminal state is handled, the EventLoop repeat callback is cancelled
- * to avoid wasting ticks.
+ * Lives in the controller process where all AppAgent services are available.
+ * The TUI-side ForkAutoExitRegistrar stops the TUI only after finalization is
+ * confirmed by the .fork-finalized marker file.
+ *
+ * @see ForkRunFinalizationSubscriber  Registered by StartRunHandler on the
+ *                                     RuntimeEventEmitter for terminal events.
  */
-final readonly class ForkRunTerminalWatcher
+final class ForkRunFinalizer
 {
     /** Maximum number of handoff validation+repair attempts before hard failure. */
     public const int MAX_REPAIR_ATTEMPTS = 2;
-
-    /** EventLoop poll interval in seconds. */
-    private const float POLL_INTERVAL = 0.5;
 
     /** Filename for fork runtime metadata (separate from AgentArtifactRegistry's metadata.json). */
     private const string FORK_METADATA_FILENAME = 'fork-metadata.json';
 
     /** Marker file written after all finalization artifacts are complete. */
     private const string FINALIZED_MARKER_FILENAME = '.fork-finalized';
+
+    /** @var array<string, true> Run IDs that have been fully finalized. */
+    private array $finalizedRuns = [];
+
+    /** @var array<string, int> Run ID => current repair attempt for runs being repaired. */
+    private array $repairAttempts = [];
 
     public function __construct(
         private RunStoreInterface $runStore,
@@ -55,25 +62,26 @@ final readonly class ForkRunTerminalWatcher
     }
 
     /**
-     * Start polling for fork run terminal state via Revolt EventLoop.
+     * Called on a terminal runtime event (run.completed/failed/cancelled) for
+     * a fork child run.  Checks current RunStore state and finalizes accordingly.
      *
-     * Registers a non-blocking EventLoop repeat that polls RunStore until
-     * the run reaches a terminal state (Completed, Failed, Cancelled).
-     * When terminal, performs handoff validation/repair and writes result
-     * artifacts.  After terminal state is handled, the repeat is cancelled.
+     * Idempotent after the first successful finalization for a given runId.
+     * Repair cycles (followUp) will cause subsequent terminal events to call this
+     * again until handoff is accepted or max repair attempts are exhausted.
      *
-     * Loads resolvedModel from fork_resolved_model option if present
-     * (set by ForkControllerStartService).  Does NOT deserialize the
-     * snapshot — the controller start service already has this data.
-     *
-     * @param string               $runId       The child agent run ID
      * @param array<string, mixed> $forkOptions Scalar fork options (fork_mode,
      *                                          fork_snapshot_path, fork_result_dir, fork_parent_run_id,
      *                                          fork_artifact_id, fork_child_run_id, fork_task,
      *                                          fork_level, fork_cwd, fork_resolved_model)
      */
-    public function startForForkRun(string $runId, array $forkOptions): void
+    public function finalize(string $runId, array $forkOptions): void
     {
+        // ── Guard: already finalized ──
+        if (isset($this->finalizedRuns[$runId])) {
+            return;
+        }
+
+        // ── Extract fork options ──
         $parentRunId = (string) ($forkOptions['fork_parent_run_id'] ?? '');
         $artifactId = (string) ($forkOptions['fork_artifact_id'] ?? '');
         $childRunId = (string) ($forkOptions['fork_child_run_id'] ?? '');
@@ -88,97 +96,40 @@ final readonly class ForkRunTerminalWatcher
             $resolvedModel = null;
         }
 
-        $repairAttempts = 0;
-        $finalized = false;
-
-        $callbackId = EventLoop::repeat(self::POLL_INTERVAL, function () use (
-            $runId,
-            $parentRunId,
-            $artifactId,
-            $childRunId,
-            $resultDir,
-            $cwd,
-            $task,
-            $level,
-            $resolvedModel,
-            &$repairAttempts,
-            &$finalized,
-            &$callbackId,
-        ): void {
-            if ($finalized) {
-                return;
-            }
-
-            $result = $this->handleTerminalRun(
-                $runId,
-                $parentRunId,
-                $artifactId,
-                $childRunId,
-                $resultDir,
-                $cwd,
-                $task,
-                $level,
-                $resolvedModel,
-                $repairAttempts,
-            );
-
-            if ('done' === $result) {
-                $finalized = true;
-                // Cancel the repeat to avoid wasting ticks.
-                if (null !== $callbackId) {
-                    EventLoop::cancel($callbackId);
-                    $callbackId = null;
-                }
-            }
-        });
-    }
-
-    // ── Shared terminal handling logic ──
-
-    /**
-     * Handle a terminal run — called from the EventLoop repeat callback.
-     *
-     * Reads the current run state and makes a decision based on the
-     * terminal status.  May do I/O (RunStore, artifact writes).
-     *
-     * @return string|null 'done', 'repairing', or null (not ready)
-     */
-    private function handleTerminalRun(
-        string $runId,
-        string $parentRunId,
-        string $artifactId,
-        string $childRunId,
-        string $resultDir,
-        string $cwd,
-        string $task,
-        string $level,
-        ?string $resolvedModel,
-        int &$repairAttempts,
-    ): ?string {
+        // ── Read current run state ──
         $state = $this->runStore->get($runId);
 
         if (null === $state) {
-            $this->logger->error('fork.terminal.run_lost', [
-                'component' => 'fork.watcher',
-                'event_type' => 'fork.terminal.run_lost',
+            $this->logger->error('fork.finalizer.run_lost', [
+                'component' => 'fork.finalizer',
+                'event_type' => 'fork.finalizer.run_lost',
                 'run_id' => $runId,
                 'artifact_id' => $artifactId,
             ]);
             $this->writeMetadata($resultDir, $parentRunId, $artifactId, $childRunId, $cwd, $task, $level, $resolvedModel, AgentArtifactStatusEnum::Failed, 'Run state not found — child run may have been lost.');
             $this->artifactRegistry->update($parentRunId, $artifactId, status: AgentArtifactStatusEnum::Failed, completedAt: new \DateTimeImmutable());
             $this->writeFinalizedMarker($resultDir);
+            $this->finalizedRuns[$runId] = true;
 
-            return 'done';
+            return;
         }
 
-        return match ($state->status) {
-            RunStatus::Completed => $this->handleCompleted($state, $runId, $parentRunId, $artifactId, $childRunId, $resultDir, $cwd, $task, $level, $resolvedModel, $repairAttempts),
+        $result = match ($state->status) {
+            RunStatus::Completed => $this->handleCompleted($state, $runId, $parentRunId, $artifactId, $childRunId, $resultDir, $cwd, $task, $level, $resolvedModel),
             RunStatus::Failed => $this->handleFailed($state, $runId, $parentRunId, $artifactId, $childRunId, $resultDir, $cwd, $task, $level, $resolvedModel),
             RunStatus::Cancelled => $this->handleCancelled($runId, $parentRunId, $artifactId, $childRunId, $resultDir, $cwd, $task, $level, $resolvedModel),
-            // Cancelling is NOT terminal — keep polling for the eventual Cancelled.
-            default => null, // Not terminal — keep polling
+            // Cancelling/Failed are NOT terminal — keep polling for the eventual Cancelled/terminal state.
+            default => null,
         };
+
+        if ('done' === $result) {
+            $this->finalizedRuns[$runId] = true;
+        }
+        // 'repairing' → callback will fire again on next terminal event → re-evaluate.
+        // null → not terminal → callback will fire again on next terminal event.
     }
+
+    // ── Terminal handlers ──
 
     /**
      * Handle a Completed run — extract handoff, validate, repair if needed.
@@ -194,8 +145,8 @@ final readonly class ForkRunTerminalWatcher
         string $task,
         string $level,
         ?string $resolvedModel,
-        int &$repairAttempts,
     ): string {
+        $attempts = $this->repairAttempts[$runId] ?? 0;
         $candidateHandoff = $this->extractLastAssistantText($state);
 
         if ('' === trim($candidateHandoff)) {
@@ -211,18 +162,18 @@ final readonly class ForkRunTerminalWatcher
 
         if ($validationResult->valid) {
             // Valid handoff — write artifacts and signal done.
-            return $this->writeCompletedHandoff($runId, $parentRunId, $artifactId, $childRunId, $resultDir, $cwd, $task, $level, $resolvedModel, $candidateHandoff, $repairAttempts);
+            return $this->writeCompletedHandoff($runId, $parentRunId, $artifactId, $childRunId, $resultDir, $cwd, $task, $level, $resolvedModel, $candidateHandoff, $attempts);
         }
 
         // Invalid handoff — attempt repair if within limit.
-        if ($repairAttempts < self::MAX_REPAIR_ATTEMPTS) {
-            ++$repairAttempts;
+        if ($attempts < self::MAX_REPAIR_ATTEMPTS) {
+            $this->repairAttempts[$runId] = $attempts + 1;
 
-            $this->logger->info('fork.terminal.repair', [
-                'component' => 'fork.watcher',
-                'event_type' => 'fork.terminal.repair',
+            $this->logger->info('fork.finalizer.repair', [
+                'component' => 'fork.finalizer',
+                'event_type' => 'fork.finalizer.repair',
                 'artifact_id' => $artifactId,
-                'attempt' => $repairAttempts,
+                'attempt' => $attempts + 1,
                 'max_attempts' => self::MAX_REPAIR_ATTEMPTS,
             ]);
 
@@ -238,7 +189,7 @@ final readonly class ForkRunTerminalWatcher
         }
 
         // Exhausted repair attempts — fail with diagnostics.
-        return $this->writeInvalidHandoff($runId, $parentRunId, $artifactId, $childRunId, $resultDir, $cwd, $task, $level, $resolvedModel, $candidateHandoff, $validationResult, $repairAttempts);
+        return $this->writeInvalidHandoff($runId, $parentRunId, $artifactId, $childRunId, $resultDir, $cwd, $task, $level, $resolvedModel, $candidateHandoff, $validationResult, $attempts);
     }
 
     /**
@@ -258,9 +209,9 @@ final readonly class ForkRunTerminalWatcher
     ): string {
         $error = $state->errorMessage ?? 'Child run failed without specific error.';
 
-        $this->logger->error('fork.terminal.failed', [
-            'component' => 'fork.watcher',
-            'event_type' => 'fork.terminal.failed',
+        $this->logger->error('fork.finalizer.failed', [
+            'component' => 'fork.finalizer',
+            'event_type' => 'fork.finalizer.failed',
             'artifact_id' => $artifactId,
             'error' => $error,
         ]);
@@ -293,9 +244,9 @@ final readonly class ForkRunTerminalWatcher
         string $level,
         ?string $resolvedModel,
     ): string {
-        $this->logger->info('fork.terminal.cancelled', [
-            'component' => 'fork.watcher',
-            'event_type' => 'fork.terminal.cancelled',
+        $this->logger->info('fork.finalizer.cancelled', [
+            'component' => 'fork.finalizer',
+            'event_type' => 'fork.finalizer.cancelled',
             'artifact_id' => $artifactId,
             'run_id' => $runId,
         ]);
@@ -306,6 +257,8 @@ final readonly class ForkRunTerminalWatcher
 
         return 'done';
     }
+
+    // ── Artifact writers ──
 
     /**
      * Write a valid handoff and update artifact status to Completed.
@@ -341,9 +294,9 @@ final readonly class ForkRunTerminalWatcher
         $this->writeMetadata($resultDir, $parentRunId, $artifactId, $childRunId, $cwd, $task, $level, $resolvedModel, AgentArtifactStatusEnum::Completed, null, $validationAttempts);
         $this->writeFinalizedMarker($resultDir);
 
-        $this->logger->info('fork.terminal.completed', [
-            'component' => 'fork.watcher',
-            'event_type' => 'fork.terminal.completed',
+        $this->logger->info('fork.finalizer.completed', [
+            'component' => 'fork.finalizer',
+            'event_type' => 'fork.finalizer.completed',
             'artifact_id' => $artifactId,
             'validation_attempts' => $validationAttempts,
         ]);
@@ -371,9 +324,9 @@ final readonly class ForkRunTerminalWatcher
         $reason = $this->formatValidationReason($validationResult);
         $error = \sprintf('Handoff validation failed after %d attempt(s): %s', $attempts, $reason);
 
-        $this->logger->error('fork.terminal.invalid_handoff', [
-            'component' => 'fork.watcher',
-            'event_type' => 'fork.terminal.invalid_handoff',
+        $this->logger->error('fork.finalizer.invalid_handoff', [
+            'component' => 'fork.finalizer',
+            'event_type' => 'fork.finalizer.invalid_handoff',
             'artifact_id' => $artifactId,
             'attempts' => $attempts,
             'reason' => $reason,
@@ -498,9 +451,9 @@ final readonly class ForkRunTerminalWatcher
                 @unlink($path);
             }
         } catch (\Throwable $e) {
-            $this->logger->debug('fork.terminal.temp_cleanup_failed', [
-                'component' => 'fork.watcher',
-                'event_type' => 'fork.terminal.temp_cleanup_failed',
+            $this->logger->debug('fork.finalizer.temp_cleanup_failed', [
+                'component' => 'fork.finalizer',
+                'event_type' => 'fork.finalizer.temp_cleanup_failed',
                 'temp_file' => basename($path),
                 'exception' => $e::class,
                 'error' => $e->getMessage(),

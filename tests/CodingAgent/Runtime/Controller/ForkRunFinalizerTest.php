@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Controller;
 
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
+use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
@@ -16,7 +17,7 @@ use Ineersa\CodingAgent\Agent\Fork\ForkHandoffValidator;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
-use Ineersa\CodingAgent\Runtime\Controller\ForkRunTerminalWatcher;
+use Ineersa\CodingAgent\Runtime\Controller\ForkRunFinalizer;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
@@ -34,7 +35,7 @@ use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 use Symfony\Component\Serializer\Serializer;
 
 /**
- * Tests for ForkRunTerminalWatcher (production watcher in controller process).
+ * Tests for ForkRunFinalizer (event-driven fork-mode finalization service).
  *
  * Test theses:
  *   - Completed run with valid handoff writes handoff.md, fork-metadata.json,
@@ -42,15 +43,16 @@ use Symfony\Component\Serializer\Serializer;
  *   - Invalid handoff after max repair attempts writes candidate-handoff.md
  *     + diagnostics and marks Failed.
  *   - Cancelled run marks Cancelled; Cancelling status is NOT treated as
- *     terminal (keep polling).
+ *     terminal (finalize returns immediately without marking done).
  *   - Failed run marks Failed with error.
  *   - Run state not found (run_lost) marks Failed.
  *   - Metadata is written to fork-metadata.json (NOT metadata.json).
  *   - .fork-finalized marker is written after all artifact paths.
+ *   - Already-finalized run is idempotent (no-op on subsequent calls).
  */
 #[AllowMockObjectsWithoutExpectations]
-#[CoversClass(ForkRunTerminalWatcher::class)]
-final class ForkRunTerminalWatcherTest extends TestCase
+#[CoversClass(ForkRunFinalizer::class)]
+final class ForkRunFinalizerTest extends TestCase
 {
     private AgentRunnerInterface&MockObject $agentRunner;
     private RunStoreInterface&MockObject $runStore;
@@ -60,11 +62,11 @@ final class ForkRunTerminalWatcherTest extends TestCase
     private string $artifactId;
     private string $childRunId;
     private string $resultDir;
-    private ForkRunTerminalWatcher $watcher;
+    private ForkRunFinalizer $watcher;
 
     protected function setUp(): void
     {
-        $this->tmpDir = TestDirectoryIsolation::createOsTempDir('fork-watcher-test');
+        $this->tmpDir = TestDirectoryIsolation::createOsTempDir('fork-finalizer-test');
         TestDirectoryIsolation::createHatfieldTree($this->tmpDir, withSessions: true);
 
         $this->parentRunId = 'parent-'.bin2hex(random_bytes(8));
@@ -113,7 +115,7 @@ final class ForkRunTerminalWatcherTest extends TestCase
             kind: AgentArtifactKindEnum::Fork,
         );
 
-        $this->watcher = new ForkRunTerminalWatcher(
+        $this->watcher = new ForkRunFinalizer(
             runStore: $this->runStore,
             agentRunner: $this->agentRunner,
             artifactRegistry: $this->artifactRegistry,
@@ -149,7 +151,7 @@ final class ForkRunTerminalWatcherTest extends TestCase
     {
         $messages = [];
         if ('' !== $assistantText) {
-            $messages[] = new \Ineersa\AgentCore\Domain\Message\AgentMessage(
+            $messages[] = new AgentMessage(
                 role: 'assistant',
                 content: [['type' => 'text', 'text' => $assistantText]],
             );
@@ -164,45 +166,21 @@ final class ForkRunTerminalWatcherTest extends TestCase
     }
 
     /**
-     * Call handleTerminalRun via Closure::bind for by-reference parameter support.
+     * Create standard fork options array for tests.
      *
-     * handleTerminalRun fetches RunState from $this->runStore->get() internally,
-     * so the store mock MUST return the desired state before calling this helper.
+     * @return array<string, mixed>
      */
-    private function callHandleTerminal(int &$repairAttempts = 0): ?string
+    private function defaultForkOptions(): array
     {
-        $watcher = $this->watcher;
-        $childRunId = $this->childRunId;
-        $parentRunId = $this->parentRunId;
-        $artifactId = $this->artifactId;
-        $resultDir = $this->resultDir;
-        $tmpDir = $this->tmpDir;
-
-        $bound = \Closure::bind(function () use (
-            &$repairAttempts,
-            $childRunId,
-            $parentRunId,
-            $artifactId,
-            $resultDir,
-            $tmpDir,
-        ): ?string {
-            return $this->handleTerminalRun(
-                $childRunId,
-                $parentRunId,
-                $artifactId,
-                $childRunId,
-                $resultDir,
-                $tmpDir,
-                'test-task',
-                'middle',
-                null,
-                $repairAttempts,
-            );
-        }, $watcher, ForkRunTerminalWatcher::class);
-
-        \assert(null !== $bound, 'Closure::bind should not return null');
-
-        return $bound();
+        return [
+            'fork_parent_run_id' => $this->parentRunId,
+            'fork_artifact_id' => $this->artifactId,
+            'fork_child_run_id' => $this->childRunId,
+            'fork_result_dir' => $this->resultDir,
+            'fork_cwd' => $this->tmpDir,
+            'fork_task' => 'test-task',
+            'fork_level' => 'middle',
+        ];
     }
 
     // ── Tests ──
@@ -214,10 +192,7 @@ final class ForkRunTerminalWatcherTest extends TestCase
             ->with($this->childRunId)
             ->willReturn($this->makeRunState(RunStatus::Completed, $this->makeValidHandoff()));
 
-        $attempts = 0;
-        $result = $this->callHandleTerminal($attempts);
-
-        $this->assertSame('done', $result);
+        $this->watcher->finalize($this->childRunId, $this->defaultForkOptions());
 
         $handoff = $this->artifactRegistry->readHandoff($this->parentRunId, $this->artifactId);
         $this->assertStringContainsString('## 1. Result / status', $handoff);
@@ -239,23 +214,17 @@ final class ForkRunTerminalWatcherTest extends TestCase
         $shortHandoff = 'Short';
         $state = $this->makeRunState(RunStatus::Completed, $shortHandoff);
 
+        // RunStore returns the same state for each call (no actual follow-up advancement).
         $this->runStore->method('get')->willReturn($state);
 
-        $this->agentRunner->expects($this->exactly(ForkRunTerminalWatcher::MAX_REPAIR_ATTEMPTS))
+        $this->agentRunner->expects($this->exactly(ForkRunFinalizer::MAX_REPAIR_ATTEMPTS))
             ->method('followUp')
-            ->with($this->childRunId, $this->isInstanceOf(\Ineersa\AgentCore\Domain\Message\AgentMessage::class));
+            ->with($this->childRunId, $this->isInstanceOf(AgentMessage::class));
 
-        $attempts = 0;
-
-        // Repair attempts return 'repairing'.
-        for ($i = 0; $i < ForkRunTerminalWatcher::MAX_REPAIR_ATTEMPTS; $i++) {
-            $result = $this->callHandleTerminal($attempts);
-            $this->assertSame('repairing', $result);
+        // Call finalize N+1 times (each repair attempt + final failure).
+        for ($i = 0; $i <= ForkRunFinalizer::MAX_REPAIR_ATTEMPTS; $i++) {
+            $this->watcher->finalize($this->childRunId, $this->defaultForkOptions());
         }
-
-        // After max attempts, returns 'done' (failure).
-        $result = $this->callHandleTerminal($attempts);
-        $this->assertSame('done', $result);
 
         $this->assertFileExists($this->resultDir.'/candidate-handoff.md');
         $this->assertFileExists($this->resultDir.'/handoff-validation.json');
@@ -274,10 +243,7 @@ final class ForkRunTerminalWatcherTest extends TestCase
             ->with($this->childRunId)
             ->willReturn($this->makeRunState(RunStatus::Cancelled));
 
-        $attempts = 0;
-        $result = $this->callHandleTerminal($attempts);
-
-        $this->assertSame('done', $result);
+        $this->watcher->finalize($this->childRunId, $this->defaultForkOptions());
 
         $this->assertFileExists($this->resultDir.'/fork-metadata.json');
         $meta = json_decode(file_get_contents($this->resultDir.'/fork-metadata.json'), true);
@@ -297,10 +263,12 @@ final class ForkRunTerminalWatcherTest extends TestCase
             ->with($this->childRunId)
             ->willReturn($this->makeRunState(RunStatus::Cancelling));
 
-        $attempts = 0;
-        $result = $this->callHandleTerminal($attempts);
+        // The finalizer should not treat Cancelling as terminal.
+        // No artifact registry calls should be made.
+        $this->watcher->finalize($this->childRunId, $this->defaultForkOptions());
 
-        $this->assertNull($result);
+        $this->assertFileDoesNotExist($this->resultDir.'/fork-metadata.json');
+        $this->assertFileDoesNotExist($this->resultDir.'/.fork-finalized');
     }
 
     public function testFailedRun(): void
@@ -312,10 +280,7 @@ final class ForkRunTerminalWatcherTest extends TestCase
             ->with($this->childRunId)
             ->willReturn($state);
 
-        $attempts = 0;
-        $result = $this->callHandleTerminal($attempts);
-
-        $this->assertSame('done', $result);
+        $this->watcher->finalize($this->childRunId, $this->defaultForkOptions());
 
         $this->assertFileExists($this->resultDir.'/fork-metadata.json');
         $meta = json_decode(file_get_contents($this->resultDir.'/fork-metadata.json'), true);
@@ -332,40 +297,7 @@ final class ForkRunTerminalWatcherTest extends TestCase
             ->with($this->childRunId)
             ->willReturn(null);
 
-        $watcher = $this->watcher;
-        $childRunId = $this->childRunId;
-        $parentRunId = $this->parentRunId;
-        $artifactId = $this->artifactId;
-        $resultDir = $this->resultDir;
-        $tmpDir = $this->tmpDir;
-        $attempts = 0;
-
-        $bound = \Closure::bind(function () use (
-            &$attempts,
-            $childRunId,
-            $parentRunId,
-            $artifactId,
-            $resultDir,
-            $tmpDir,
-        ): ?string {
-            return $this->handleTerminalRun(
-                $childRunId,
-                $parentRunId,
-                $artifactId,
-                $childRunId,
-                $resultDir,
-                $tmpDir,
-                'test-task',
-                'middle',
-                null,
-                $attempts,
-            );
-        }, $watcher, ForkRunTerminalWatcher::class);
-
-        \assert(null !== $bound, 'Closure::bind should not return null');
-        $result = $bound();
-
-        $this->assertSame('done', $result);
+        $this->watcher->finalize($this->childRunId, $this->defaultForkOptions());
 
         $this->assertFileExists($this->resultDir.'/fork-metadata.json');
         $meta = json_decode(file_get_contents($this->resultDir.'/fork-metadata.json'), true);
@@ -381,10 +313,28 @@ final class ForkRunTerminalWatcherTest extends TestCase
             ->with($this->childRunId)
             ->willReturn($this->makeRunState(RunStatus::Running));
 
-        $attempts = 0;
-        $result = $this->callHandleTerminal($attempts);
+        $this->watcher->finalize($this->childRunId, $this->defaultForkOptions());
 
-        $this->assertNull($result);
+        $this->assertFileDoesNotExist($this->resultDir.'/fork-metadata.json');
+        $this->assertFileDoesNotExist($this->resultDir.'/.fork-finalized');
+    }
+
+    public function testAlreadyFinalizedIsIdempotent(): void
+    {
+        $state = $this->makeRunState(RunStatus::Completed, $this->makeValidHandoff());
+
+        // RunStore is called once (first finalize), second call should be no-op.
+        $this->runStore->expects($this->once())
+            ->method('get')
+            ->with($this->childRunId)
+            ->willReturn($state);
+
+        $this->watcher->finalize($this->childRunId, $this->defaultForkOptions());
+        $this->watcher->finalize($this->childRunId, $this->defaultForkOptions());
+
+        $this->assertFileExists($this->resultDir.'/fork-metadata.json');
+        $meta = json_decode(file_get_contents($this->resultDir.'/fork-metadata.json'), true);
+        $this->assertSame(AgentArtifactStatusEnum::Completed->value, $meta['status'] ?? null);
     }
 
     public function testMetadataInForkMetadataJson(): void
@@ -394,8 +344,7 @@ final class ForkRunTerminalWatcherTest extends TestCase
             ->with($this->childRunId)
             ->willReturn($this->makeRunState(RunStatus::Completed, $this->makeValidHandoff()));
 
-        $attempts = 0;
-        $this->callHandleTerminal($attempts);
+        $this->watcher->finalize($this->childRunId, $this->defaultForkOptions());
 
         $this->assertFileExists($this->resultDir.'/fork-metadata.json');
 
@@ -412,8 +361,7 @@ final class ForkRunTerminalWatcherTest extends TestCase
             ->with($this->childRunId)
             ->willReturn($this->makeRunState(RunStatus::Completed, $this->makeValidHandoff()));
 
-        $attempts = 0;
-        $this->callHandleTerminal($attempts);
+        $this->watcher->finalize($this->childRunId, $this->defaultForkOptions());
 
         $this->assertFileExists($this->resultDir.'/fork-metadata.json');
         $meta = json_decode(file_get_contents($this->resultDir.'/fork-metadata.json'), true);

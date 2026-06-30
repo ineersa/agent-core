@@ -7,7 +7,8 @@ namespace Ineersa\CodingAgent\Runtime\Controller\CommandHandler;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\Controller\ForkControllerStartService;
-use Ineersa\CodingAgent\Runtime\Controller\ForkRunTerminalWatcher;
+use Ineersa\CodingAgent\Runtime\Controller\ForkRunFinalizer;
+use Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
@@ -25,18 +26,35 @@ use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
  * Fork mode starts use ForkControllerStartService which loads the fork snapshot,
  * builds fresh child-cwd messages, and composes them with the fork task prompt.
  *
- * When fork_mode is detected in options, also starts a ForkRunTerminalWatcher
- * that polls for terminal run state and performs handoff validation + artifact
- * writing in the controller process.  The TUI-side ForkAutoExitRegistrar only
- * needs to see the terminal run event and stop the event loop.
+ * When fork_mode is detected in options, registers a terminal-event callback on
+ * RuntimeEventEmitter that triggers ForkRunFinalizer.  Finalization (handoff
+ * validation, repair, artifact writing, .fork-finalized marker) runs inside the
+ * fork-mode controller process when the canonical event drain forwards a
+ * terminal runtime event (run.completed, run.failed, run.cancelled).  The
+ * TUI-side ForkAutoExitRegistrar waits for .fork-finalized before exiting.
+ *
+ * No separate EventLoop polling watcher is used — finalization is event-driven
+ * through the existing event drain pipeline.
  */
 #[AsEventListener(event: ControllerCommandEvent::class)]
 final readonly class StartRunHandler
 {
+    /**
+     * Terminal runtime event types that trigger fork finalization.
+     *
+     * @var list<string>
+     */
+    private const array FORK_TERMINAL_EVENT_TYPES = [
+        RuntimeEventTypeEnum::RunCompleted->value,
+        RuntimeEventTypeEnum::RunFailed->value,
+        RuntimeEventTypeEnum::RunCancelled->value,
+    ];
+
     public function __construct(
         private readonly InProcessAgentSessionClient $client,
+        private readonly RuntimeEventEmitter $emitter,
         private readonly ?ForkControllerStartService $forkStartService = null,
-        private readonly ?ForkRunTerminalWatcher $forkTerminalWatcher = null,
+        private readonly ?ForkRunFinalizer $forkRunFinalizer = null,
     ) {
     }
 
@@ -71,21 +89,32 @@ final readonly class StartRunHandler
         // If fork_mode is set but ForkControllerStartService is null, fail
         // immediately rather than silently falling through to
         // InProcessAgentSessionClient (which would start a bogus empty run with
-        // no fork seed messages).  If ForkRunTerminalWatcher is null, fail
-        // immediately rather than starting a fork child that will never be
-        // finalized (orphaned run).
+        // no fork seed messages).  If ForkRunFinalizer is null, fail immediately
+        // rather than starting a fork child that will never be finalized
+        // (orphaned run).
         if (true === ($options['fork_mode'] ?? false)) {
             if (null === $this->forkStartService) {
                 throw new \RuntimeException('Fork mode requires ForkControllerStartService but it is not wired. Check DI container configuration for fork support.');
             }
-            if (null === $this->forkTerminalWatcher) {
-                throw new \RuntimeException('Fork mode requires ForkRunTerminalWatcher but it is not wired. Check DI container configuration for fork finalization support.');
+            if (null === $this->forkRunFinalizer) {
+                throw new \RuntimeException('Fork mode requires ForkRunFinalizer but it is not wired. Check DI container configuration for fork finalization support.');
             }
 
             $handle = $this->forkStartService->start($options);
-            $this->forkTerminalWatcher->startForForkRun(
+
+            // Register terminal-event callback on the emitter instead of
+            // starting a separate polling watcher.  The emitter's canonical
+            // event drain fires this callback when it forwards a terminal
+            // runtime event (run.completed/failed/cancelled) for this run.
+            // ForkRunFinalizer is idempotent after full finalization.
+            $finalizer = $this->forkRunFinalizer;
+            $forkOptions = $options;
+            $this->emitter->onRunEvent(
                 runId: $handle->runId,
-                forkOptions: $options,
+                eventTypes: self::FORK_TERMINAL_EVENT_TYPES,
+                callback: static function (RuntimeEvent $runtimeEvent) use ($finalizer, $handle, $forkOptions): void {
+                    $finalizer->finalize($handle->runId, $forkOptions);
+                },
             );
         } else {
             $handle = $this->client->start(new StartRunRequest(

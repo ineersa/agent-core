@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Controller\CommandHandler;
 
 use Ineersa\CodingAgent\Runtime\Controller\CommandHandler\StartRunHandler;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
+use Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
@@ -20,14 +21,15 @@ use PHPUnit\Framework\Attributes\CoversClass;
  * commands.
  *
  * Uses IsolatedKernelTestCase because StartRunHandler takes concrete
- * InProcessAgentSessionClient (final, 16-param constructor) — only the
- * container can provide a properly-wired instance without mocking.
+ * InProcessAgentSessionClient (final, 16-param constructor) and
+ * RuntimeEventEmitter — only the container can provide properly-wired
+ * instances without mocking.
  *
- * ForkControllerStartService and ForkRunTerminalWatcher are also final
- * readonly classes, so the success routing path is tested structurally
- * via the throw-guard tests below.  The implementation is straightforward
- * delegation: fork_mode → preflight both services, then forkStartService
- * and forkTerminalWatcher in sequence.
+ * ForkControllerStartService and ForkRunFinalizer are also final classes,
+ * so the success routing path is tested structurally via the throw-guard
+ * tests below.  The implementation is straightforward delegation:
+ * fork_mode → preflight both services, then forkStartService and register
+ * terminal-event callback on the emitter.
  */
 #[CoversClass(StartRunHandler::class)]
 final class StartRunHandlerTest extends IsolatedKernelTestCase
@@ -37,10 +39,12 @@ final class StartRunHandlerTest extends IsolatedKernelTestCase
     public function testForkModeWithoutForkStartServiceThrows(): void
     {
         $client = self::getContainer()->get(InProcessAgentSessionClient::class);
+        $emitter = self::getContainer()->get(RuntimeEventEmitter::class);
         $handler = new StartRunHandler(
             client: $client,
+            emitter: $emitter,
             forkStartService: null,
-            forkTerminalWatcher: null,
+            forkRunFinalizer: null,
         );
 
         $command = $this->createStartRunCommand('fork-run-1', [
@@ -54,20 +58,22 @@ final class StartRunHandlerTest extends IsolatedKernelTestCase
         $handler($this->createEvent($command));
     }
 
-    public function testForkModeWithMissingTerminalWatcherThrows(): void
+    public function testForkModeWithMissingFinalizerThrows(): void
     {
         // ForkControllerStartService is final readonly, so we fetch a real one
-        // from the container.  Since the watcher null check now fires before any
+        // from the container.  Since the finalizer null check now fires before any
         // method call on forkStartService (preflight ordering fix), the instance
         // is never used — the test never reaches start().
-        // This ensures no fork run can be started without the terminal watcher.
+        // This ensures no fork run can be started without the finalizer.
         $client = self::getContainer()->get(InProcessAgentSessionClient::class);
+        $emitter = self::getContainer()->get(RuntimeEventEmitter::class);
         $forkStartService = self::getContainer()->get(\Ineersa\CodingAgent\Runtime\Controller\ForkControllerStartService::class);
 
         $handler = new StartRunHandler(
             client: $client,
+            emitter: $emitter,
             forkStartService: $forkStartService,
-            forkTerminalWatcher: null,
+            forkRunFinalizer: null,
         );
 
         $command = $this->createStartRunCommand('fork-run-2', [
@@ -76,7 +82,7 @@ final class StartRunHandlerTest extends IsolatedKernelTestCase
         ]);
 
         $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('Fork mode requires ForkRunTerminalWatcher');
+        $this->expectExceptionMessage('Fork mode requires ForkRunFinalizer');
 
         $handler($this->createEvent($command));
     }
@@ -86,7 +92,8 @@ final class StartRunHandlerTest extends IsolatedKernelTestCase
     public function testNormalStartRoutesToClientAndEmitsRunStarted(): void
     {
         $client = self::getContainer()->get(InProcessAgentSessionClient::class);
-        $handler = new StartRunHandler(client: $client);
+        $emitter = self::getContainer()->get(RuntimeEventEmitter::class);
+        $handler = new StartRunHandler(client: $client, emitter: $emitter);
 
         $command = $this->createStartRunCommand('normal-run-1', [
             'prompt' => 'Hello from test',
@@ -106,7 +113,8 @@ final class StartRunHandlerTest extends IsolatedKernelTestCase
     public function testNonStartRunCommandIsIgnored(): void
     {
         $client = self::getContainer()->get(InProcessAgentSessionClient::class);
-        $handler = new StartRunHandler(client: $client);
+        $emitter = self::getContainer()->get(RuntimeEventEmitter::class);
+        $handler = new StartRunHandler(client: $client, emitter: $emitter);
 
         $command = new RuntimeCommand(id: 'cmd-1', type: 'user_message', payload: ['text' => 'hello']);
         $emittedEvents = [];

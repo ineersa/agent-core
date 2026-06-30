@@ -379,8 +379,9 @@ final class AgentCommand
         // ── Start TUI with fork-seeded request (process transport) ──
         // The fork child MUST use process transport (JsonlProcessAgentSessionClient)
         // so that the run is executed by the controller subprocess.  Fork finalization
-        // (handoff validation, artifact writing) is handled by ForkRunTerminalWatcher
-        // in the controller process, started by StartRunHandler.
+        // (handoff validation, artifact writing) is handled by ForkRunFinalizer
+        // in the controller process via RuntimeEventEmitter terminal event callback,
+        // registered by StartRunHandler.
         $startRequest = new StartRunRequest(
             prompt: '', // Empty prompt — fork seed messages come via options
             runId: $childRunId,

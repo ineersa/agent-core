@@ -34,6 +34,21 @@ final class RuntimeEventEmitter
     /** @var array<string, int> runId => consecutive drain failures without a successful poll */
     private array $runDrainFailureCounts = [];
 
+    /**
+     * Registered run event callbacks keyed by runId.
+     *
+     * Each entry is a list of {types: list<string>, callback: \Closure(RuntimeEvent): void}
+     * registrations.  Callbacks are invoked from the canonical drain loop when a
+     * matching event type is forwarded for that run.
+     *
+     * This is a generic extension point — not fork-specific logic.  Fork finalization
+     * uses it to detect terminal events (run.completed/failed/cancelled) without
+     * polling RunStore in a separate EventLoop watcher.
+     *
+     * @var array<string, list<array{types: list<string>, callback: \Closure}>>
+     */
+    private array $runEventCallbacks = [];
+
     /** @var (\Closure(): void)|null Callback invoked on fatal stdout write failure before event loop stop. */
     private ?\Closure $onFatalShutdown = null;
 
@@ -165,6 +180,15 @@ final class RuntimeEventEmitter
 
                     $this->emitInternal($event);
 
+                    // Fire registered run event callbacks for this run.
+                    if (isset($this->runEventCallbacks[$runId])) {
+                        foreach ($this->runEventCallbacks[$runId] as $registration) {
+                            if (\in_array($event->type, $registration['types'], true)) {
+                                $registration['callback']($event);
+                            }
+                        }
+                    }
+
                     if ($event->seq > 0) {
                         $this->runEventCursors[$runId] = max($cursor, $event->seq);
                         $cursor = $this->runEventCursors[$runId];
@@ -211,6 +235,25 @@ final class RuntimeEventEmitter
                 // left the TUI stuck in Cancelling while backend events continued (issue #205).
             }
         }
+    }
+
+    /**
+     * Register a callback for specific event types on a run.
+     *
+     * The callback receives the RuntimeEvent when a matching event type is
+     * forwarded from the canonical event drain for this runId.  It stays
+     * registered for the lifetime of the run — the callback itself is
+     * responsible for tracking idempotency (e.g. finalization completion).
+     *
+     * This is a generic extension point usable by any controller-side
+     * component that needs event-driven notification without polling.
+     *
+     * @param list<string>                 $eventTypes RuntimeEventTypeEnum values to match
+     * @param \Closure(RuntimeEvent): void $callback   Invoked with the matched event
+     */
+    public function onRunEvent(string $runId, array $eventTypes, \Closure $callback): void
+    {
+        $this->runEventCallbacks[$runId][] = ['types' => $eventTypes, 'callback' => $callback];
     }
 
     // ── Internal ────────────────────────────────────────────────────────

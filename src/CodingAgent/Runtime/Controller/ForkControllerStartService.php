@@ -27,7 +27,7 @@ use Psr\Log\LoggerInterface;
  * Lives in the controller process where all AppAgent services are available.
  * This is NOT a general-purpose session client — only for fork child bootstrap.
  * Fork finalization (handoff validation, repair, artifact writing) is handled
- * by ForkRunTerminalWatcher, also in the controller process.
+ * via ForkRunFinalizer, triggered by RuntimeEventEmitter terminal event callback.
  *
  * The normal agent start (non-fork) continues to use InProcessAgentSessionClient
  * directly.  Fork-specific logic is isolated to this service and related
