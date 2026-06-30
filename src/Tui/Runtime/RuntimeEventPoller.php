@@ -80,11 +80,17 @@ final class RuntimeEventPoller
 
             foreach ($events as $runtimeEvent) {
                 $seq = $runtimeEvent->seq;
+                $isRunLeafChanged = RuntimeEventTypeEnum::RunLeafChanged->value === $runtimeEvent->type;
 
                 // Seq 0 marks transient streaming events that do not
                 // participate in persistent deduplication. Only stored
                 // canonical events (seq > 0) advance the dedup cursor.
-                if (0 !== $seq && $seq <= $state->lastSeq) {
+                //
+                // RunLeafChanged is exempt: it is emitted with seq = leaf_set_seq
+                // (canonical stream position), while $state->lastSeq may already
+                // reflect higher runtime projection seqs from the live turn. Skipping
+                // it would leave the transcript showing abandoned-branch turns after rewind.
+                if (0 !== $seq && $seq <= $state->lastSeq && !$isRunLeafChanged) {
                     continue;
                 }
 

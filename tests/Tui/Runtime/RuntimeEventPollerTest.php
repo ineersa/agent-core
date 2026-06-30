@@ -1006,4 +1006,103 @@ final class RuntimeEventPollerTest extends TestCase
         // lastSeq advanced to the highest seq in the batch (35, not 20)
         self::assertSame(35, $this->state->lastSeq);
     }
+
+    /**
+     * User-reported regression: after rewinding to turn 1 via /tree, transcript still
+     * showed turn 2 ("pineapple") because RunLeafChanged used leaf_set_seq (e.g. 8)
+     * while lastSeq was already 11 from live run.completed — dedup skipped the rebuild.
+     */
+    public function testPollRebuildsTranscriptWhenRunLeafChangedSeqNotGreaterThanLastSeq(): void
+    {
+        // Thesis: RunLeafChanged must trigger wholesale transcript rebuild even when
+        // its seq is <= state->lastSeq (leaf_set_seq vs higher runtime projection seqs).
+
+        $this->state->transcript = [
+            new TranscriptBlock(
+                id: 'turn1-assistant',
+                kind: TranscriptBlockKindEnum::AssistantMessage,
+                runId: 'test-run',
+                seq: 4,
+                text: 'Hello response',
+            ),
+            new TranscriptBlock(
+                id: 'turn2-user',
+                kind: TranscriptBlockKindEnum::UserMessage,
+                runId: 'test-run',
+                seq: 5,
+                text: 'Secret word is pineapple',
+            ),
+            new TranscriptBlock(
+                id: 'turn2-assistant',
+                kind: TranscriptBlockKindEnum::AssistantMessage,
+                runId: 'test-run',
+                seq: 7,
+                text: 'Noted pineapple',
+            ),
+        ];
+        $this->state->lastSeq = 11;
+
+        $turnTreeProvider = $this->createMock(TurnTreeProviderInterface::class);
+        $turnTreeProvider->expects(self::once())
+            ->method('activePathRuntimeEvents')
+            ->with('test-run', 1)
+            ->willReturn([
+                new RuntimeEvent(
+                    type: RuntimeEventTypeEnum::AssistantMessageCompleted->value,
+                    runId: 'test-run',
+                    seq: 4,
+                    payload: ['text' => 'Hello response only'],
+                ),
+            ]);
+
+        $projector = new class implements TranscriptProjectorInterface {
+            public function accept(array $event): void {}
+            public function blocks(): array
+            {
+                return [
+                    new TranscriptBlock(
+                        id: 'turn1-only',
+                        kind: TranscriptBlockKindEnum::AssistantMessage,
+                        runId: 'test-run',
+                        seq: 4,
+                        text: 'Hello response only',
+                    ),
+                ];
+            }
+            public function reset(): void {}
+        };
+
+        $eventApplier = new TuiRuntimeEventApplier($projector);
+        $poller = new RuntimeEventPoller(
+            $eventApplier,
+            $this->logger,
+            new RuntimeExceptionBoundary(
+                $this->createStub(EventDispatcherInterface::class),
+            ),
+            $turnTreeProvider,
+        );
+
+        $this->client->expects(self::once())
+            ->method('events')
+            ->with('test-run')
+            ->willReturn([
+                new RuntimeEvent(
+                    type: RuntimeEventTypeEnum::RunLeafChanged->value,
+                    runId: 'test-run',
+                    seq: 8,
+                    payload: ['turn_no' => 1, 'leaf_set_seq' => 8],
+                ),
+            ]);
+
+        $result = $poller->poll($this->state, $this->client);
+
+        self::assertNotNull($result);
+        self::assertCount(1, $this->state->transcript);
+        self::assertSame('Hello response only', $this->state->transcript[0]->text);
+        self::assertStringNotContainsString('pineapple', implode(' ', array_map(
+            static fn (TranscriptBlock $b): string => $b->text ?? '',
+            $this->state->transcript,
+        )));
+        self::assertSame(8, $this->state->lastSeq);
+    }
 }
