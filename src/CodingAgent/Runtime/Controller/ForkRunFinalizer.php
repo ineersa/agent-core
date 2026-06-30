@@ -32,8 +32,10 @@ use Psr\Log\LoggerInterface;
  * The TUI-side ForkAutoExitRegistrar stops the TUI only after finalization is
  * confirmed by the .fork-finalized marker file.
  *
- * @see ForkRunFinalizationSubscriber  Registered by StartRunHandler on the
- *                                     RuntimeEventEmitter for terminal events.
+ * Registered by StartRunHandler on the RuntimeEventEmitter for terminal events.
+ *
+ * @see StartRunHandler
+ * @see RuntimeEventEmitter::onRunEvent()
  */
 final class ForkRunFinalizer
 {
@@ -118,7 +120,8 @@ final class ForkRunFinalizer
             RunStatus::Completed => $this->handleCompleted($state, $runId, $parentRunId, $artifactId, $childRunId, $resultDir, $cwd, $task, $level, $resolvedModel),
             RunStatus::Failed => $this->handleFailed($state, $runId, $parentRunId, $artifactId, $childRunId, $resultDir, $cwd, $task, $level, $resolvedModel),
             RunStatus::Cancelled => $this->handleCancelled($runId, $parentRunId, $artifactId, $childRunId, $resultDir, $cwd, $task, $level, $resolvedModel),
-            // Cancelling/Failed are NOT terminal — keep polling for the eventual Cancelled/terminal state.
+            // Non-terminal statuses (Running, Queued, Compacting) are ignored.
+            // The emitter callback will fire again when a terminal event arrives.
             default => null,
         };
 
@@ -185,7 +188,7 @@ final class ForkRunFinalizer
 
             $this->agentRunner->followUp($runId, $repairMessage);
 
-            return 'repairing'; // Keep polling for the next response
+            return 'repairing'; // Await subsequent terminal event callback after followUp
         }
 
         // Exhausted repair attempts — fail with diagnostics.
