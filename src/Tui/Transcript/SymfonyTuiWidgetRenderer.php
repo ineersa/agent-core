@@ -36,6 +36,11 @@ final readonly class SymfonyTuiWidgetRenderer
     /**
      * Render a widget tree and return the output lines.
      *
+     * On first invocation, installs the active theme's markdown element
+     * colours into the {@see MarkdownWidget} sub-element stylesheet so
+     * heading, link, code, quote, list-bullet, HR, and code-block-border
+     * tokens use Hatfield theme colours instead of Symfony TUI defaults.
+     *
      * @param ContainerWidget  $root    Root widget tree (typically a ContainerWidget
      *                                  containing one widget per transcript block —
      *                                  TextWidget for flat blocks, MarkdownWidget for
@@ -46,6 +51,8 @@ final readonly class SymfonyTuiWidgetRenderer
      */
     public function render(ContainerWidget $root, TuiRenderContext $context): array
     {
+        MarkdownThemeStyleSheet::apply($context->theme);
+
         $columns = max($context->terminalWidth, 1);
         $rows = max($context->terminalHeight, 1);
 
