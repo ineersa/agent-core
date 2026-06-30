@@ -1295,6 +1295,9 @@ final readonly class RunStateReplayService
         ));
     }
 
+    /**
+     * @param list<RunEvent> $events
+     */
     private function maxSequence(array $events): int
     {
         if ([] === $events) {
