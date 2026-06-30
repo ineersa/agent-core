@@ -59,30 +59,6 @@ final readonly class TranscriptBlockWidgetFactory
     }
 
     /**
-     * Build a root ContainerWidget containing one widget per block.
-     *
-     * @param list<TranscriptBlock> $blocks
-     */
-    public function buildRoot(array $blocks, TuiTheme $theme): ContainerWidget
-    {
-        $root = new ContainerWidget();
-        $count = \count($blocks);
-        for ($index = 0; $index < $count; ++$index) {
-            $block = $blocks[$index];
-            $nextBlock = $blocks[$index + 1] ?? null;
-            if ($this->shouldSuppressTranscriptWidget($block)) {
-                continue;
-            }
-            if ($this->shouldSuppressEmptyAssistantPlaceholder($block, $nextBlock)) {
-                continue;
-            }
-            $root->add($this->buildWidget($block, $theme));
-        }
-
-        return $root;
-    }
-
-    /**
      * Build a single widget for one transcript block.
      */
     public function buildWidget(TranscriptBlock $block, TuiTheme $theme): AbstractWidget
@@ -152,6 +128,9 @@ final readonly class TranscriptBlockWidgetFactory
 
     /**
      * ask_human HITL: Question block is the authoritative transcript record; hide duplicate tool cards.
+     *
+     * Projection typically emits ToolCall/ToolResult before the Question block in the same poll batch;
+     * a one-tick gap with only suppressed cards is acceptable and preferable to flashing raw payloads.
      */
     private function shouldSuppressTranscriptWidget(TranscriptBlock $block): bool
     {
@@ -421,22 +400,15 @@ final readonly class TranscriptBlockWidgetFactory
         }
 
         $toolName = $block->meta['tool_name'] ?? null;
-        if (!\is_string($toolName)) {
+        if (!\is_string($toolName) || 'edit' !== $toolName) {
+            // write (and other) successful tool results are already compact status lines.
             return $result;
         }
 
-        if ('edit' === $toolName) {
-            $marker = 'Updated file context:';
-            $pos = strpos($result, $marker);
-            if (false !== $pos) {
-                return rtrim(substr($result, 0, $pos));
-            }
-
-            return $result;
-        }
-
-        if ('write' === $toolName) {
-            return $result;
+        $marker = 'Updated file context:';
+        $pos = strpos($result, $marker);
+        if (false !== $pos) {
+            return rtrim(substr($result, 0, $pos));
         }
 
         return $result;

@@ -1245,7 +1245,7 @@ final class TranscriptProjectorTest extends TestCase
     {
         $this->accept('human_input.requested', [
             'request_id' => 'req_confirm', 'question_id' => 'q_confirm',
-            'kind' => 'confirm', 'prompt' => 'Proceed?',
+            'ui_kind' => 'confirm', 'kind' => 'interrupt', 'prompt' => 'Proceed?',
             'schema' => ['type' => 'boolean'],
         ]);
         $this->accept('human_input.answered', [

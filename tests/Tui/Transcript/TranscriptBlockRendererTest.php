@@ -888,9 +888,6 @@ final class TranscriptBlockRendererTest extends TestCase
         $this->assertStringContainsString('→ 1: x', $output);
     }
 
-
-
-
     public function testAskHumanToolCallSuppressed(): void
     {
         $block = new TranscriptBlock(
