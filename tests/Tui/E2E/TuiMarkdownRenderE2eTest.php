@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Yaml\Yaml;
 
 /**
  * Minimal TmuxHarness proof for RENDER-03: markdown rendering and
@@ -147,6 +148,8 @@ final class TuiMarkdownRenderE2eTest extends TestCase
             try {
                 $this->tmux->sendKey($pane, 'C-d');
             } catch (\Throwable) {
+                // Best-effort cleanup during failure path — explicitly intentional per AGENTS.md caught-exception policy.
+                // This catch prevents a secondary exception from masking the original test failure.
             }
             throw $e;
         }
@@ -219,7 +222,7 @@ final class TuiMarkdownRenderE2eTest extends TestCase
             ],
         ];
 
-        $yaml = \Symfony\Component\Yaml\Yaml::dump($settings, 6, 4);
+        $yaml = Yaml::dump($settings, 6, 4);
         \file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
         \file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
 

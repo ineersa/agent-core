@@ -548,4 +548,3 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
     }
 
 }
-

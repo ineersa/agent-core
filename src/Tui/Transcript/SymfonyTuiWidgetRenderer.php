@@ -6,7 +6,9 @@ namespace Ineersa\Tui\Transcript;
 
 use Ineersa\Tui\Widget\TuiRenderContext;
 use Symfony\Component\Tui\Render\Renderer;
+use Symfony\Component\Tui\Widget\AbstractWidget;
 use Symfony\Component\Tui\Widget\ContainerWidget;
+use Symfony\Component\Tui\Widget\MarkdownWidget;
 
 /**
  * Adapter that renders a Symfony TUI {@see ContainerWidget} root tree through
