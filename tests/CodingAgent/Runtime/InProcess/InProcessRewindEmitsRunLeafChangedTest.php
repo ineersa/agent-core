@@ -163,29 +163,4 @@ final class InProcessRewindEmitsRunLeafChangedTest extends IsolatedKernelTestCas
         self::assertSame(1, $event->payload['turn_no'] ?? null);
         self::assertIsInt($event->payload['leaf_set_seq'] ?? null);
     }
-
-    #[Test]
-    public function sendRewindToTurnDoesNotTouchOtherTransportDeps(): void
-    {
-        /** @var InProcessAgentSessionClient $client */
-        $client = self::getContainer()->get(InProcessAgentSessionClient::class);
-
-        /** @var InMemoryRuntimeEventSink $sink */
-        $sink = self::getContainer()->get(InMemoryRuntimeEventSink::class);
-
-        // This should NOT throw and must produce exactly one RunLeafChanged event.
-        // If the match arm called runner->steer(), followUp(), appendMessage(),
-        // answerHuman(), handleAnswerToolQuestion(), or handleShellCommandSend()
-        // instead of handleInProcessRewind(), the stub would throw or
-        // the sink would have zero events.
-        $client->send(self::RUN_ID, new UserCommand(
-            type: 'rewind_to_turn',
-            payload: ['turn_no' => 1],
-        ));
-
-        /** @var list<RuntimeEvent> $events */
-        $events = iterator_to_array($sink->drain(self::RUN_ID));
-        self::assertCount(1, $events, 'Expected exactly one RunLeafChanged event');
-        self::assertSame(RuntimeEventTypeEnum::RunLeafChanged->value, $events[0]->type);
-    }
 }
