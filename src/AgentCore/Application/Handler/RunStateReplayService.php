@@ -1149,10 +1149,6 @@ final readonly class RunStateReplayService
     }
 
     /**
-     * @param list<RunEvent> $events
-     */
-
-    /**
      * When rebuilding for a rewind target leaf, strip agent_command_* events on
      * that turn that were recorded after the turn's last completion boundary but
      * before the new branch exists. Those commands launched abandoned siblings
@@ -1234,7 +1230,6 @@ final readonly class RunStateReplayService
             },
         ));
     }
-
 
     /**
      * @param list<RunEvent> $sortedEvents
