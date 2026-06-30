@@ -222,7 +222,7 @@ final class TreePickerControllerTest extends TestCase
     public function testBuildItemsBranchedTreeWithConnectors(): void
     {
         // Deep branching: T1 has two children [T2, T3]; T2 has one child T4 (current leaf).
-        // T4 is a single-child continuation under an open branch → guide column only (│  ), not └─.
+        // T4 is non-consecutive (4 ≠ 2+1) → rewind branch must fork with └─ under the open branch.
         $nodes = [
             1 => new TurnTreeNodeView(
                 turnNo: 1,
@@ -288,9 +288,8 @@ final class TreePickerControllerTest extends TestCase
         self::assertStringContainsString('├─ ○ Turn 2:', $items[1]['label']);
         self::assertSame('2', $items[1]['value']);
 
-        // T4 (only child of T2): continuation under open branch → │  guide, flat
-        self::assertStringContainsString('│  ◉ Turn 4:', $items[2]['label']);
-        self::assertStringNotContainsString('└─ ◉ Turn 4:', $items[2]['label']);
+        // T4 (only child of T2, non-consecutive): └─ under │
+        self::assertStringContainsString('│  └─ ◉ Turn 4:', $items[2]['label']);
         self::assertSame('4', $items[2]['value']);
 
         // T3 (last child of T1, [true]): └─
@@ -394,19 +393,185 @@ final class TreePickerControllerTest extends TestCase
         self::assertCount(7, $items);
         self::assertStringContainsString('○ Turn 1:', $items[0]['label']);
         self::assertStringContainsString('├─ ○ Turn 2:', $items[1]['label']);
-        self::assertStringContainsString('│  ○ Turn 5:', $items[2]['label']);
-        self::assertStringContainsString('│  ○ Turn 6:', $items[3]['label']);
-        self::assertStringContainsString('│  ◉ Turn 7:', $items[4]['label']);
+        // Turn 5 is a rewind branch (5 ≠ 2+1) → fork glyph; 6–7 are consecutive follow-ups → flat
+        self::assertStringContainsString('│  └─ ○ Turn 5:', $items[2]['label']);
+        self::assertStringContainsString('│     ○ Turn 6:', $items[3]['label']);
+        self::assertStringContainsString('│     ◉ Turn 7:', $items[4]['label']);
         self::assertStringContainsString('└─ ○ Turn 3:', $items[5]['label']);
         self::assertStringContainsString('   ○ Turn 4:', $items[6]['label']);
 
-        // Turns 5–7 must share the same prefix depth (no staircase └─ between them).
-        self::assertStringNotContainsString('└─', $items[2]['label']);
+        // Turns 6–7 are consecutive follow-ups: flat under Turn 5 (no extra fork glyphs).
         self::assertStringNotContainsString('└─', $items[3]['label']);
         self::assertStringNotContainsString('└─', $items[4]['label']);
-        self::assertStringNotContainsString('├─', $items[2]['label']);
         self::assertStringNotContainsString('├─', $items[3]['label']);
         self::assertStringNotContainsString('├─', $items[4]['label']);
+    }
+
+    #[Test]
+    public function testBuildItemsRewindBranchTreeAUserOracle(): void
+    {
+        // Rewind branch (non-consecutive only-child) must indent with ├─/└─ so it reads as a child,
+        // not a sibling; consecutive only-child follow-ups stay flat. Regression for user-reported
+        // picker rendering where Turn 4 looked like Turn 2's sibling.
+        $nodes = [
+            1 => new TurnTreeNodeView(
+                turnNo: 1,
+                parentTurnNo: null,
+                childTurnNos: [2, 3],
+                anchorSeq: 2,
+                title: 'Hello!',
+                promptPreview: 'Hello!',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            2 => new TurnTreeNodeView(
+                turnNo: 2,
+                parentTurnNo: 1,
+                childTurnNos: [4],
+                anchorSeq: 5,
+                title: 'Secret word is pineapple',
+                promptPreview: 'Secret word is pineapple',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            3 => new TurnTreeNodeView(
+                turnNo: 3,
+                parentTurnNo: 1,
+                childTurnNos: [],
+                anchorSeq: 8,
+                title: 'secret word is apple',
+                promptPreview: 'secret word is apple',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            4 => new TurnTreeNodeView(
+                turnNo: 4,
+                parentTurnNo: 2,
+                childTurnNos: [5],
+                anchorSeq: 11,
+                title: 'What is secret word',
+                promptPreview: 'What is secret word',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            5 => new TurnTreeNodeView(
+                turnNo: 5,
+                parentTurnNo: 4,
+                childTurnNos: [],
+                anchorSeq: 14,
+                title: 'secret word straw',
+                promptPreview: 'secret word straw',
+                createdAt: null,
+                isCurrentLeaf: true,
+            ),
+        ];
+
+        $tree = new TurnTreeView(
+            runId: 'run',
+            nodesByTurnNo: $nodes,
+            rootTurnNos: [1],
+            currentLeafTurnNo: 5,
+            activePathTurnNos: [1, 2, 4, 5],
+        );
+
+        $theme = new DefaultTheme(new ThemePalette('test'));
+        $items = TreePickerController::buildItems($tree, $theme);
+
+        self::assertCount(5, $items);
+        self::assertSame('○ Turn 1: Hello!', $items[0]['label']);
+        self::assertSame('├─ ○ Turn 2: Secret word is pineapple', $items[1]['label']);
+        self::assertSame('│  └─ ○ Turn 4: What is secret word', $items[2]['label']);
+        self::assertSame('│     ◉ Turn 5: secret word straw', $items[3]['label']);
+        self::assertSame('└─ ○ Turn 3: secret word is apple', $items[4]['label']);
+    }
+
+    #[Test]
+    public function testBuildItemsRewindBranchTreeBUserOracleWithForkAtTurn2(): void
+    {
+        // Rewind branch (non-consecutive only-child) must indent with ├─/└─ so it reads as a child,
+        // not a sibling; consecutive only-child follow-ups stay flat. Regression for user-reported
+        // picker rendering where Turn 4 looked like Turn 2's sibling.
+        $nodes = [
+            1 => new TurnTreeNodeView(
+                turnNo: 1,
+                parentTurnNo: null,
+                childTurnNos: [2, 3],
+                anchorSeq: 2,
+                title: 'Hello!',
+                promptPreview: 'Hello!',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            2 => new TurnTreeNodeView(
+                turnNo: 2,
+                parentTurnNo: 1,
+                childTurnNos: [4, 6],
+                anchorSeq: 5,
+                title: 'Secret word is pineapple',
+                promptPreview: 'Secret word is pineapple',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            3 => new TurnTreeNodeView(
+                turnNo: 3,
+                parentTurnNo: 1,
+                childTurnNos: [],
+                anchorSeq: 8,
+                title: 'secret word is apple',
+                promptPreview: 'secret word is apple',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            4 => new TurnTreeNodeView(
+                turnNo: 4,
+                parentTurnNo: 2,
+                childTurnNos: [5],
+                anchorSeq: 11,
+                title: 'What is secret word',
+                promptPreview: 'What is secret word',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            5 => new TurnTreeNodeView(
+                turnNo: 5,
+                parentTurnNo: 4,
+                childTurnNos: [],
+                anchorSeq: 14,
+                title: 'secret word straw',
+                promptPreview: 'secret word straw',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            6 => new TurnTreeNodeView(
+                turnNo: 6,
+                parentTurnNo: 2,
+                childTurnNos: [],
+                anchorSeq: 17,
+                title: 'secret word kale',
+                promptPreview: 'secret word kale',
+                createdAt: null,
+                isCurrentLeaf: true,
+            ),
+        ];
+
+        $tree = new TurnTreeView(
+            runId: 'run',
+            nodesByTurnNo: $nodes,
+            rootTurnNos: [1],
+            currentLeafTurnNo: 6,
+            activePathTurnNos: [1, 2, 6],
+        );
+
+        $theme = new DefaultTheme(new ThemePalette('test'));
+        $items = TreePickerController::buildItems($tree, $theme);
+
+        self::assertCount(6, $items);
+        self::assertSame('○ Turn 1: Hello!', $items[0]['label']);
+        self::assertSame('├─ ○ Turn 2: Secret word is pineapple', $items[1]['label']);
+        self::assertSame('│  ├─ ○ Turn 4: What is secret word', $items[2]['label']);
+        self::assertSame('│  │  ○ Turn 5: secret word straw', $items[3]['label']);
+        self::assertSame('│  └─ ◉ Turn 6: secret word kale', $items[4]['label']);
+        self::assertSame('└─ ○ Turn 3: secret word is apple', $items[5]['label']);
     }
 
     #[Test]

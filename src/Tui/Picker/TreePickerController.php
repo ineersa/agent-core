@@ -312,15 +312,17 @@ final class TreePickerController
 
         $order[] = $node->turnNo;
 
-        // Indent only at real forks (2+ children). Single-child continuations stay flat
-        // and inherit the parent's branchStack; they render with a guide column (│ / space)
-        // instead of deepening the staircase with └─/├─ at every only-child hop.
         $childCount = \count($node->childTurnNos);
-        $nodeHasMultipleChildren = $childCount >= 2;
-        $childPushesLevel = $nodeHasMultipleChildren;
-        $childIsContinuation = 1 === $childCount;
 
         foreach ($node->childTurnNos as $ci => $childTurnNo) {
+            // Flat continuation: the ONLY child AND a consecutive follow-up (turn_no = parent + 1).
+            // A rewind branch is non-consecutive (turn_no != parent + 1) and must fork — indent
+            // with ├─/└─ even when it is an only-child, so a lone branch is shown as a child,
+            // not a sibling. A fork point (2+ children) always indents every child.
+            $isConsecutiveFollowUp = $childTurnNo === $turnNo + 1;
+            $childIsContinuation = 1 === $childCount && $isConsecutiveFollowUp;
+            $childPushesLevel = !$childIsContinuation;
+
             $childStack = $childPushesLevel
                 ? [...$branchStack, $ci === $childCount - 1]
                 : $branchStack;
