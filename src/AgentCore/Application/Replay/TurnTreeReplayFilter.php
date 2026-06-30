@@ -76,6 +76,8 @@ final class TurnTreeReplayFilter
         $canonicalEventCount = \count($events);
         $canonicalLastSeq = $this->maxSeq($events);
 
+        $commandSeqToCreatedTurn = $this->buildCommandSeqToCreatedTurnMap($events);
+
         $filtered = [];
         foreach ($events as $event) {
             // Include run-level events (turn 0, e.g. run_started).
@@ -86,6 +88,10 @@ final class TurnTreeReplayFilter
 
             // Include events on the target leaf's path.
             if (\in_array($event->turnNo, $activePathTurnNos, true)) {
+                if ($this->shouldExcludeTurnSeedingCommand($event, $commandSeqToCreatedTurn, $activePathTurnNos)) {
+                    continue;
+                }
+
                 $filtered[] = $event;
                 continue;
             }
@@ -110,6 +116,79 @@ final class TurnTreeReplayFilter
             activePathTurnNos: $activePathTurnNos,
             currentLeafTurnNo: $targetLeafTurnNo,
         );
+    }
+
+    /**
+     * Maps turn-seeding agent_command_* seq to the turn_advanced turn they create.
+     *
+     * Follow-up commands are stamped with the originating turn's turnNo while the
+     * run is still on that turn; the subsequent turn_advanced creates the new turn.
+     *
+     * @param list<RunEvent> $events
+     *
+     * @return array<int, int> command event seq => created turn number
+     */
+    private function buildCommandSeqToCreatedTurnMap(array $events): array
+    {
+        $sorted = $events;
+        usort($sorted, static fn (RunEvent $left, RunEvent $right): int => $left->seq <=> $right->seq);
+
+        $pendingCommandSeqs = [];
+        $commandSeqToCreatedTurn = [];
+
+        foreach ($sorted as $event) {
+            if ($this->isTurnSeedingCommandEvent($event)) {
+                $pendingCommandSeqs[] = $event->seq;
+                continue;
+            }
+
+            if (RunEventTypeEnum::TurnAdvanced->value !== $event->type) {
+                continue;
+            }
+
+            $createdTurnNo = (int) ($event->payload['turn_no'] ?? $event->turnNo);
+            if ($createdTurnNo <= 0) {
+                continue;
+            }
+
+            foreach ($pendingCommandSeqs as $commandSeq) {
+                $commandSeqToCreatedTurn[$commandSeq] = $createdTurnNo;
+            }
+
+            $pendingCommandSeqs = [];
+        }
+
+        return $commandSeqToCreatedTurn;
+    }
+
+    private function isTurnSeedingCommandEvent(RunEvent $event): bool
+    {
+        return \in_array($event->type, [
+            RunEventTypeEnum::AgentCommandQueued->value,
+            RunEventTypeEnum::AgentCommandApplied->value,
+        ], true);
+    }
+
+    /**
+     * @param array<int, int> $commandSeqToCreatedTurn
+     * @param list<int>       $activePathTurnNos
+     */
+    private function shouldExcludeTurnSeedingCommand(
+        RunEvent $event,
+        array $commandSeqToCreatedTurn,
+        array $activePathTurnNos,
+    ): bool {
+        if (!$this->isTurnSeedingCommandEvent($event)) {
+            return false;
+        }
+
+        $createdTurnNo = $commandSeqToCreatedTurn[$event->seq] ?? null;
+        if (null === $createdTurnNo) {
+            // Command has not yet created a new turn (e.g. active leaf input).
+            return false;
+        }
+
+        return !\in_array($createdTurnNo, $activePathTurnNos, true);
     }
 
     private function isTreeMetadataEvent(RunEvent $event): bool
