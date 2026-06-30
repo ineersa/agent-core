@@ -69,7 +69,7 @@ final class TreePickerControllerTest extends TestCase
         self::assertStringContainsString('○ Turn 1:', $items[0]['label']);
         self::assertStringContainsString('Hello', $items[0]['label']);
         self::assertSame('1', $items[0]['value']);
-        self::assertStringContainsString('2026-01-01', $items[0]['description']);
+        self::assertArrayNotHasKey('description', $items[0]);
 
         // Item 1: child (flat — linear only-child chain has no connectors)
         self::assertStringContainsString('◉ Turn 2:', $items[1]['label']);

@@ -201,7 +201,7 @@ final class TreePickerController
      * Depth-first walk, producing indented labels with leaf markers.
      * Public and static for testability.
      *
-     * @return list<array{value: string, label: string, description?: string}>
+     * @return list<array{value: string, label: string}>
      */
     public static function buildItems(TurnTreeView $tree, TuiTheme $theme, int $selectedIndex = -1): array
     {
@@ -231,7 +231,7 @@ final class TreePickerController
      * is always produced, guaranteeing index alignment between
      * buildItems() and flattenTurnOrder().
      *
-     * @return array{0: list<array{value:string,label:string,description?:string}>, 1: list<int>}
+     * @return array{0: list<array{value:string,label:string}>, 1: list<int>}
      */
     private static function walk(TurnTreeView $tree, ?TuiTheme $theme = null, int $selectedIndex = -1): array
     {
@@ -247,11 +247,11 @@ final class TreePickerController
     }
 
     /**
-     * @param array<int, TurnTreeNodeView>                               $nodesByTurnNo
-     * @param list<bool>                                                 $branchStack   Each entry is true if that ancestor is the last child of its parent (└─ for last, ├─ for non-last)
-     * @param list<array{value:string,label:string,description?:string}> $items
-     * @param list<int>                                                  $order
-     * @param array<int, true>                                           $visited
+     * @param array<int, TurnTreeNodeView>           $nodesByTurnNo
+     * @param list<bool>                             $branchStack   Each entry is true if that ancestor is the last child of its parent (└─ for last, ├─ for non-last)
+     * @param list<array{value:string,label:string}> $items
+     * @param list<int>                              $order
+     * @param array<int, true>                       $visited
      */
     private static function walkNode(
         int $turnNo,
@@ -296,14 +296,10 @@ final class TreePickerController
                 $label = $theme->color(ThemeColorEnum::Accent, $label);
             }
 
-            $item = [
+            $items[] = [
                 'value' => (string) $node->turnNo,
                 'label' => $label,
             ];
-            if (null !== $node->createdAt) {
-                $item['description'] = $node->createdAt->format('Y-m-d H:i');
-            }
-            $items[] = $item;
         }
 
         $order[] = $node->turnNo;
