@@ -1145,4 +1145,106 @@ line2"];
         $this->assertStringNotContainsString('ask_human', $plain);
     }
 
+    public function testAnsweredQuestionRendersPromptAndAnswerAsSeparateSections(): void
+    {
+        $block = new TranscriptBlock(
+            id: 'q-answered-sections',
+            kind: TranscriptBlockKindEnum::Question,
+            runId: 'r',
+            seq: 4,
+            text: 'What model? → gpt-test',
+            meta: [
+                'prompt' => 'What model?',
+                'status' => 'answered',
+                'answer' => 'gpt-test',
+            ],
+        );
+
+        $plain = preg_replace('/\x1b\[[0-9;]*m/', '', implode("\n", $this->renderWidgetLines([$block])));
+
+        $this->assertStringContainsString('Human input answered', $plain);
+        $this->assertStringContainsString('What model?', $plain);
+        $this->assertStringContainsString('→ gpt-test', $plain);
+        $this->assertStringNotContainsString('What model? → gpt-test', $plain);
+    }
+
+    public function testPendingQuestionShowsAwaitingAnswerAffordance(): void
+    {
+        $block = new TranscriptBlock(
+            id: 'q-pending',
+            kind: TranscriptBlockKindEnum::Question,
+            runId: 'r',
+            seq: 2,
+            text: 'Pick **one**',
+            meta: ['prompt' => 'Pick **one**', 'status' => 'pending'],
+        );
+
+        $plain = preg_replace('/\x1b\[[0-9;]*m/', '', implode("\n", $this->renderWidgetLines([$block])));
+
+        $this->assertStringContainsString('Human input required', $plain);
+        $this->assertStringContainsString('awaiting answer', $plain);
+        $this->assertStringContainsString('one', $plain);
+    }
+
+    public function testEmptyAssistantBeforeQuestionIsSuppressed(): void
+    {
+        $blocks = [
+            new TranscriptBlock(
+                id: 'as-empty',
+                kind: TranscriptBlockKindEnum::AssistantMessage,
+                runId: 'r',
+                seq: 1,
+                text: '',
+            ),
+            new TranscriptBlock(
+                id: 'q-after',
+                kind: TranscriptBlockKindEnum::Question,
+                runId: 'r',
+                seq: 2,
+                text: 'Why?',
+                meta: ['prompt' => 'Why?', 'status' => 'pending'],
+            ),
+        ];
+
+        $plain = preg_replace('/\x1b\[[0-9;]*m/', '', implode("\n", $this->renderWidgetLines($blocks)));
+
+        $this->assertStringNotContainsString('[assistant]', $plain);
+        $this->assertStringContainsString('Why?', $plain);
+    }
+
+    public function testNonEmptyAssistantBeforeQuestionStillRenders(): void
+    {
+        $blocks = [
+            new TranscriptBlock(
+                id: 'as-real',
+                kind: TranscriptBlockKindEnum::AssistantMessage,
+                runId: 'r',
+                seq: 1,
+                text: 'Here is context.',
+            ),
+            new TranscriptBlock(
+                id: 'q-after',
+                kind: TranscriptBlockKindEnum::Question,
+                runId: 'r',
+                seq: 2,
+                text: 'Continue?',
+                meta: ['prompt' => 'Continue?', 'status' => 'pending'],
+            ),
+        ];
+
+        $plain = preg_replace('/\x1b\[[0-9;]*m/', '', implode("\n", $this->renderWidgetLines($blocks)));
+
+        $this->assertStringContainsString('Here is context.', $plain);
+        $this->assertStringContainsString('Continue?', $plain);
+    }
+
+    private function renderWidgetLines(array $blocks): array
+    {
+        $widget = new TranscriptBlockWidget();
+        $widget->setBlocks($blocks);
+
+        return $widget->render($this->context);
+    }
+
+
 }

@@ -66,8 +66,14 @@ final readonly class TranscriptBlockWidgetFactory
     public function buildRoot(array $blocks, TuiTheme $theme): ContainerWidget
     {
         $root = new ContainerWidget();
-        foreach ($blocks as $block) {
+        $count = \count($blocks);
+        for ($index = 0; $index < $count; ++$index) {
+            $block = $blocks[$index];
+            $nextBlock = $blocks[$index + 1] ?? null;
             if ($this->shouldSuppressTranscriptWidget($block)) {
+                continue;
+            }
+            if ($this->shouldSuppressEmptyAssistantPlaceholder($block, $nextBlock)) {
                 continue;
             }
             $root->add($this->buildWidget($block, $theme));
@@ -129,6 +135,22 @@ final readonly class TranscriptBlockWidgetFactory
     }
 
     /**
+     * ask_human often leaves an empty assistant markdown placeholder immediately before the Question block.
+     */
+    public function shouldSuppressEmptyAssistantPlaceholder(TranscriptBlock $block, ?TranscriptBlock $nextBlock): bool
+    {
+        if (TranscriptBlockKindEnum::AssistantMessage !== $block->kind) {
+            return false;
+        }
+
+        if ('' !== $block->text) {
+            return false;
+        }
+
+        return null !== $nextBlock && TranscriptBlockKindEnum::Question === $nextBlock->kind;
+    }
+
+    /**
      * ask_human HITL: Question block is the authoritative transcript record; hide duplicate tool cards.
      */
     private function shouldSuppressTranscriptWidget(TranscriptBlock $block): bool
@@ -152,11 +174,80 @@ final readonly class TranscriptBlockWidgetFactory
     }
 
     /**
-     * Question prompt (and answered suffix from projection) via MarkdownWidget; glyph preserved in markdown source.
+     * Question transcript: compact glyph header, markdown prompt body, optional answer/status sections.
+     *
+     * Uses meta['prompt'] and meta['answer'] when present so answered blocks do not treat
+     * the projection's appended " → answer" suffix as prompt markdown.
      */
-    private function buildQuestionWidget(TranscriptBlock $block, TuiTheme $theme): MarkdownWidget
+    private function buildQuestionWidget(TranscriptBlock $block, TuiTheme $theme): AbstractWidget
     {
-        return $this->buildMarkdownWidget($block, $theme);
+        $status = \is_string($block->meta['status'] ?? null) ? $block->meta['status'] : 'pending';
+        $prompt = \is_string($block->meta['prompt'] ?? null) && '' !== $block->meta['prompt']
+            ? $block->meta['prompt']
+            : $this->questionPromptTextFromBlock($block);
+        $answer = \is_string($block->meta['answer'] ?? null) ? $block->meta['answer'] : '';
+
+        $container = new ContainerWidget();
+        $header = $this->questionHeaderLine($status);
+        $container->add(new TextWidget($theme->color(ThemeColorEnum::Accent, $header)));
+
+        if ('' !== $prompt) {
+            $container->add($this->buildQuestionMarkdownWidget($prompt, $theme, ThemeColorEnum::Accent));
+        }
+
+        if ('answered' === $status && '' !== $answer) {
+            $answerLine = '  → '.$answer;
+            $container->add(new TextWidget($theme->color(ThemeColorEnum::UserMessage, $answerLine)));
+        } elseif ('rejected' === $status) {
+            $container->add(new TextWidget($theme->color(ThemeColorEnum::Error, '  (rejected)')));
+        } elseif ('pending' === $status) {
+            $container->add(new TextWidget($theme->muted('  … awaiting answer')));
+        }
+
+        return $container;
+    }
+
+    private function questionHeaderLine(string $status): string
+    {
+        return match ($status) {
+            'answered' => \sprintf('%s Human input answered', TranscriptGlyphs::GLYPH_QUESTION),
+            'rejected' => \sprintf('%s Human input rejected', TranscriptGlyphs::GLYPH_QUESTION),
+            default => \sprintf('%s Human input required', TranscriptGlyphs::GLYPH_QUESTION),
+        };
+    }
+
+    /**
+     * Prompt body without duplicating the glyph prefix inside markdown (CommonMark + glyph contract).
+     */
+    private function buildQuestionMarkdownWidget(string $prompt, TuiTheme $theme, ThemeColorEnum $color): MarkdownWidget
+    {
+        $mdWidget = new MarkdownWidget($prompt);
+        $colorSpec = $theme->getPalette()->get($color);
+        $style = '' !== $colorSpec
+            ? new Style(color: $colorSpec, padding: Padding::from([0, 0, 0, 2]))
+            : new Style(padding: Padding::from([0, 0, 0, 2]));
+        $mdWidget->setStyle($style);
+
+        return $mdWidget;
+    }
+
+    private function questionPromptTextFromBlock(TranscriptBlock $block): string
+    {
+        $text = $block->text;
+        if ('' === $text) {
+            return '';
+        }
+
+        // Answered projection appends " → {answer}" to block text; strip for prompt-only markdown.
+        if (1 === preg_match('/^(.*) → /u', $text, $matches)) {
+            return rtrim($matches[1]);
+        }
+
+        if (str_ends_with($text, ' (rejected)')) {
+            return substr($text, 0, -\strlen(' (rejected)'));
+        }
+
+        return $text;
     }
 
     private function buildToolCallWidget(TranscriptBlock $block, TuiTheme $theme): AbstractWidget

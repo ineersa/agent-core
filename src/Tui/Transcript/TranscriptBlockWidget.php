@@ -73,8 +73,14 @@ final class TranscriptBlockWidget implements TuiWidget
         $environmentFingerprint = $this->renderEnvironmentFingerprint();
 
         $allLines = [];
-        foreach ($this->blocks as $block) {
+        $blockCount = \count($this->blocks);
+        for ($index = 0; $index < $blockCount; ++$index) {
+            $block = $this->blocks[$index];
+            $nextBlock = $this->blocks[$index + 1] ?? null;
             if ($this->factory->isTranscriptWidgetSuppressed($block)) {
+                continue;
+            }
+            if ($this->factory->shouldSuppressEmptyAssistantPlaceholder($block, $nextBlock)) {
                 continue;
             }
 

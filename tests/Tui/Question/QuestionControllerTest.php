@@ -4,20 +4,22 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Question;
 
+use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
-use Ineersa\Tui\Theme\ThemeColorEnum;
-use Ineersa\Tui\Theme\DefaultTheme;
-use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Question\QuestionKind;
 use Ineersa\Tui\Question\QuestionOption;
 use Ineersa\Tui\Question\QuestionRequest;
 use Ineersa\Tui\Question\QuestionSource;
-use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Screen\ChatScreen;
+use Ineersa\Tui\Theme\DefaultTheme;
+use Ineersa\Tui\Theme\ThemeColorEnum;
+use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Tui\Widget\ContainerWidget;
 use Symfony\Component\Tui\Widget\EditorWidget;
+use Symfony\Component\Tui\Widget\TextWidget;
 
 /**
  * Tests for the QuestionController.
@@ -43,7 +45,7 @@ class QuestionControllerTest extends TestCase
     #[Test]
     public function testIsOpenDefaultsToFalse(): void
     {
-        self::assertFalse($this->controller->isOpen());
+        $this->assertFalse($this->controller->isOpen());
     }
 
     #[Test]
@@ -51,7 +53,7 @@ class QuestionControllerTest extends TestCase
     {
         // Must not throw when called without an open session
         $this->controller->close();
-        self::assertFalse($this->controller->isOpen());
+        $this->assertFalse($this->controller->isOpen());
     }
 
     #[Test]
@@ -59,7 +61,7 @@ class QuestionControllerTest extends TestCase
     {
         $this->controller->close();
         $this->controller->close();
-        self::assertFalse($this->controller->isOpen());
+        $this->assertFalse($this->controller->isOpen());
     }
 
     // ── Focus restoration (__other__ escape hatch) ──
@@ -102,7 +104,7 @@ class QuestionControllerTest extends TestCase
 
         // Verify editorWidget() path (called by __other__ handler)
         $editorWidget = $screen->editorWidget();
-        self::assertInstanceOf(EditorWidget::class, $editorWidget);
+        $this->assertInstanceOf(EditorWidget::class, $editorWidget);
 
         // Close lifecycle is tested by other tests (testCloseIsSafeWhenNotOpen);
         // calling close() here requires a full set of ChatScreen dependencies
@@ -111,6 +113,45 @@ class QuestionControllerTest extends TestCase
     }
 
     // ── Build items ──
+
+    #[Test]
+    public function testTextKindOverlayDoesNotDuplicatePromptInBanner(): void
+    {
+        $longPrompt = str_repeat('Describe your workflow. ', 20);
+        $request = new QuestionRequest(
+            requestId: 'text-banner',
+            source: QuestionSource::AgentCore,
+            kind: QuestionKind::Text,
+            prompt: $longPrompt,
+        );
+
+        $container = new ContainerWidget();
+        $ctrlRef = new \ReflectionClass($this->controller);
+        $containerProp = $ctrlRef->getProperty('container');
+        $containerProp->setValue($this->controller, $container);
+
+        $addHeader = new \ReflectionMethod($this->controller, 'addHeader');
+        $addHeader->invoke($this->controller, $request);
+
+        $addBanner = new \ReflectionMethod($this->controller, 'addTextBanner');
+        $addBanner->invoke($this->controller, $request);
+
+        $childrenProp = new \ReflectionProperty(ContainerWidget::class, 'children');
+        $children = $childrenProp->getValue($container);
+
+        $this->assertCount(2, $children, 'Text overlay should be header + hint only');
+        $this->assertInstanceOf(TextWidget::class, $children[0]);
+        $this->assertInstanceOf(TextWidget::class, $children[1]);
+
+        $headerLines = $children[0]->render(new \Symfony\Component\Tui\Render\RenderContext(80, 24));
+        $hintLines = $children[1]->render(new \Symfony\Component\Tui\Render\RenderContext(80, 24));
+        $header = implode('', $headerLines);
+        $hint = implode('', $hintLines);
+
+        $this->assertStringContainsString('Human input required', $header);
+        $this->assertSame('[type answer and press Enter]', trim($hint));
+        $this->assertStringNotContainsString('Describe your workflow.', $header.$hint);
+    }
 
     /**
      * Build items for a Confirm question.
@@ -129,10 +170,10 @@ class QuestionControllerTest extends TestCase
 
         // Confirm is binary (Yes/No) — the escape hatch only renders for
         // Choice (free-form text would be silently coerced to boolean).
-        self::assertCount(2, $items);
-        self::assertSame('yes', $items[0]['value']);
-        self::assertSame("\u{2713} Yes", $items[0]['label']);
-        self::assertSame("\u{2717} No", $items[1]['label']);
+        $this->assertCount(2, $items);
+        $this->assertSame('yes', $items[0]['value']);
+        $this->assertSame("\u{2713} Yes", $items[0]['label']);
+        $this->assertSame("\u{2717} No", $items[1]['label']);
     }
 
     #[Test]
@@ -148,9 +189,9 @@ class QuestionControllerTest extends TestCase
 
         $items = $this->invokeBuildItems($request);
 
-        self::assertCount(2, $items); // Yes, No only
-        self::assertSame('yes', $items[0]['value']);
-        self::assertSame('no', $items[1]['value']);
+        $this->assertCount(2, $items); // Yes, No only
+        $this->assertSame('yes', $items[0]['value']);
+        $this->assertSame('no', $items[1]['value']);
     }
 
     #[Test]
@@ -170,12 +211,12 @@ class QuestionControllerTest extends TestCase
         $items = $this->invokeBuildItems($request);
 
         // 2 options + "Type your answer"
-        self::assertCount(3, $items);
-        self::assertSame('Alpha', $items[0]['value']);
-        self::assertSame('First option', $items[0]['description']);
-        self::assertSame('Beta', $items[1]['value']);
-        self::assertSame('Second option', $items[1]['description']);
-        self::assertSame('__other__', $items[2]['value']);
+        $this->assertCount(3, $items);
+        $this->assertSame('Alpha', $items[0]['value']);
+        $this->assertSame('First option', $items[0]['description']);
+        $this->assertSame('Beta', $items[1]['value']);
+        $this->assertSame('Second option', $items[1]['description']);
+        $this->assertSame('__other__', $items[2]['value']);
     }
 
     #[Test]
@@ -194,8 +235,8 @@ class QuestionControllerTest extends TestCase
 
         $items = $this->invokeBuildItems($request);
 
-        self::assertCount(1, $items);
-        self::assertSame('Only', $items[0]['value']);
+        $this->assertCount(1, $items);
+        $this->assertSame('Only', $items[0]['value']);
     }
 
     #[Test]
@@ -214,9 +255,9 @@ class QuestionControllerTest extends TestCase
 
         $items = $this->invokeBuildItems($request);
 
-        self::assertCount(1, $items);
-        self::assertSame('NoDesc', $items[0]['value']);
-        self::assertSame('', $items[0]['description']);
+        $this->assertCount(1, $items);
+        $this->assertSame('NoDesc', $items[0]['value']);
+        $this->assertSame('', $items[0]['description']);
     }
 
     #[Test]
@@ -237,14 +278,14 @@ class QuestionControllerTest extends TestCase
         $items = $this->invokeBuildItems($request);
 
         // Choice items = choices + 'Type your answer' (allowOther defaults to true)
-        self::assertCount(4, $items);
-        self::assertSame('Option A', $items[0]['value']);
-        self::assertSame('Option A', $items[0]['label']);
-        self::assertSame('Option B', $items[1]['value']);
-        self::assertSame('Option B', $items[1]['label']);
-        self::assertSame('Option C', $items[2]['value']);
-        self::assertSame('Option C', $items[2]['label']);
-        self::assertSame('__other__', $items[3]['value']);
+        $this->assertCount(4, $items);
+        $this->assertSame('Option A', $items[0]['value']);
+        $this->assertSame('Option A', $items[0]['label']);
+        $this->assertSame('Option B', $items[1]['value']);
+        $this->assertSame('Option B', $items[1]['label']);
+        $this->assertSame('Option C', $items[2]['value']);
+        $this->assertSame('Option C', $items[2]['label']);
+        $this->assertSame('__other__', $items[3]['value']);
     }
 
     #[Test]
@@ -266,13 +307,13 @@ class QuestionControllerTest extends TestCase
         $items = $this->invokeBuildItems($request);
 
         // Choice without allowOther = choices only
-        self::assertCount(3, $items);
-        self::assertSame('Allow once', $items[0]['value']);
-        self::assertSame('Allow once', $items[0]['label']);
-        self::assertSame('Always allow', $items[1]['value']);
-        self::assertSame('Always allow', $items[1]['label']);
-        self::assertSame('Deny', $items[2]['value']);
-        self::assertSame('Deny', $items[2]['label']);
+        $this->assertCount(3, $items);
+        $this->assertSame('Allow once', $items[0]['value']);
+        $this->assertSame('Allow once', $items[0]['label']);
+        $this->assertSame('Always allow', $items[1]['value']);
+        $this->assertSame('Always allow', $items[1]['label']);
+        $this->assertSame('Deny', $items[2]['value']);
+        $this->assertSame('Deny', $items[2]['label']);
     }
 
     #[Test]
@@ -292,13 +333,13 @@ class QuestionControllerTest extends TestCase
 
         $items = $this->invokeBuildItems($request);
 
-        self::assertCount(2, $items);
-        self::assertSame('Allow once', $items[0]['value']);
-        self::assertSame('Allow once', $items[0]['label']);
-        self::assertSame('Approves one-time', $items[0]['description']);
-        self::assertSame('Allow always', $items[1]['value']);
-        self::assertSame('Allow always', $items[1]['label']);
-        self::assertSame('Persists to policy', $items[1]['description']);
+        $this->assertCount(2, $items);
+        $this->assertSame('Allow once', $items[0]['value']);
+        $this->assertSame('Allow once', $items[0]['label']);
+        $this->assertSame('Approves one-time', $items[0]['description']);
+        $this->assertSame('Allow always', $items[1]['value']);
+        $this->assertSame('Allow always', $items[1]['label']);
+        $this->assertSame('Persists to policy', $items[1]['description']);
     }
 
     #[Test]
@@ -317,7 +358,7 @@ class QuestionControllerTest extends TestCase
         $items = $this->invokeBuildItems($request);
 
         // No choices, no Type your answer (allowOther=false) → empty
-        self::assertCount(0, $items);
+        $this->assertCount(0, $items);
     }
 
     #[Test]
@@ -335,7 +376,7 @@ class QuestionControllerTest extends TestCase
         // returns empty for Text kind.
         $items = $this->invokeBuildItems($request);
 
-        self::assertCount(0, $items);
+        $this->assertCount(0, $items);
     }
 
     // ── Confirm styling ──
@@ -353,9 +394,9 @@ class QuestionControllerTest extends TestCase
         );
 
         $items = $this->invokeBuildItems($request);
-        self::assertCount(2, $items);
-        self::assertStringContainsString("\u{2713}", $items[0]['label'], 'Confirm Yes must include checkmark icon');
-        self::assertStringContainsString("\u{2717}", $items[1]['label'], 'Confirm No must include cross icon');
+        $this->assertCount(2, $items);
+        $this->assertStringContainsString("\u{2713}", $items[0]['label'], 'Confirm Yes must include checkmark icon');
+        $this->assertStringContainsString("\u{2717}", $items[1]['label'], 'Confirm No must include cross icon');
 
         // Create a real DefaultTheme with a test palette to verify the
         // theme color integration works for confirm items.
@@ -370,15 +411,15 @@ class QuestionControllerTest extends TestCase
 
         // Verify success wraps Yes with the marker and color
         $styledYes = $theme->color(ThemeColorEnum::Success, "\u{2713} Yes");
-        self::assertStringContainsString("\u{2713}", $styledYes, 'Styled Yes must retain checkmark icon');
-        self::assertStringContainsString('Yes', $styledYes);
-        self::assertNotSame("\u{2713} Yes", $styledYes, 'Styled label must differ from plain label');
+        $this->assertStringContainsString("\u{2713}", $styledYes, 'Styled Yes must retain checkmark icon');
+        $this->assertStringContainsString('Yes', $styledYes);
+        $this->assertNotSame("\u{2713} Yes", $styledYes, 'Styled label must differ from plain label');
 
         // Verify error wraps No with the marker and color
         $styledNo = $theme->color(ThemeColorEnum::Error, "\u{2717} No");
-        self::assertStringContainsString("\u{2717}", $styledNo, 'Styled No must retain cross icon');
-        self::assertStringContainsString('No', $styledNo);
-        self::assertNotSame("\u{2717} No", $styledNo, 'Styled label must differ from plain label');
+        $this->assertStringContainsString("\u{2717}", $styledNo, 'Styled No must retain cross icon');
+        $this->assertStringContainsString('No', $styledNo);
+        $this->assertNotSame("\u{2717} No", $styledNo, 'Styled label must differ from plain label');
     }
 
     // ── Coordinator integration ──
@@ -417,8 +458,8 @@ class QuestionControllerTest extends TestCase
             ['value' => 'no', 'label' => "\u{2717} No"],
         ];
         $styled = $invokeStyle->invoke($this->controller, $confirmItems, QuestionKind::Confirm);
-        self::assertNotSame("\u{2713} Yes", $styled[0]['label'], 'Confirm Yes must be styled with Success color');
-        self::assertNotSame("\u{2717} No", $styled[1]['label'], 'Confirm No must be styled with Error color');
+        $this->assertNotSame("\u{2713} Yes", $styled[0]['label'], 'Confirm Yes must be styled with Success color');
+        $this->assertNotSame("\u{2717} No", $styled[1]['label'], 'Confirm No must be styled with Error color');
 
         // Thesis 2: Choice kind items with the same values are NOT styled
         // This proves the kind guard prevents accidental coloring of
@@ -429,7 +470,7 @@ class QuestionControllerTest extends TestCase
             ['value' => 'other', 'label' => 'other'],
         ];
         $unstyled = $invokeStyle->invoke($this->controller, $choiceItems, QuestionKind::Choice);
-        self::assertSame($choiceItems, $unstyled, 'Choice items must be returned unchanged even when values are yes/no');
+        $this->assertSame($choiceItems, $unstyled, 'Choice items must be returned unchanged even when values are yes/no');
     }
 
     #[Test]
@@ -443,14 +484,14 @@ class QuestionControllerTest extends TestCase
             prompt: 'Test:',
         );
 
-        $this->coordinator->enqueue($request, function (mixed $value) use (&$calledWith): void {
+        $this->coordinator->enqueue($request, static function (mixed $value) use (&$calledWith): void {
             $calledWith = $value;
         });
 
         $this->coordinator->answer('my answer');
 
-        self::assertSame('my answer', $calledWith);
-        self::assertFalse($this->coordinator->actionRequired());
+        $this->assertSame('my answer', $calledWith);
+        $this->assertFalse($this->coordinator->actionRequired());
     }
 
     #[Test]
@@ -464,18 +505,18 @@ class QuestionControllerTest extends TestCase
         );
 
         $this->coordinator->enqueue($request);
-        self::assertTrue($this->coordinator->actionRequired());
+        $this->assertTrue($this->coordinator->actionRequired());
 
         $this->coordinator->cancel();
 
-        self::assertFalse($this->coordinator->actionRequired());
-        self::assertNull($this->coordinator->activeStatus(), 'After cancel with empty queue, status should be null');
+        $this->assertFalse($this->coordinator->actionRequired());
+        $this->assertNull($this->coordinator->activeStatus(), 'After cancel with empty queue, status should be null');
     }
 
     #[Test]
     public function testActionRequiredFalseWhenNoQuestionQueued(): void
     {
-        self::assertFalse($this->coordinator->actionRequired());
+        $this->assertFalse($this->coordinator->actionRequired());
     }
 
     // ── AwaitingFreeForm lifecycle (__other__ escape hatch) ──
@@ -498,27 +539,27 @@ class QuestionControllerTest extends TestCase
         $ctrlRef = new \ReflectionClass($this->controller);
 
         // Thesis 1: Default state
-        self::assertFalse($this->controller->isAwaitingFreeForm());
-        self::assertFalse($this->controller->isOpen());
+        $this->assertFalse($this->controller->isAwaitingFreeForm());
+        $this->assertFalse($this->controller->isOpen());
 
         // Set isOpen=true to simulate an open overlay
         $isOpenProp = $ctrlRef->getProperty('isOpen');
         $isOpenProp->setValue($this->controller, true);
-        self::assertTrue($this->controller->isOpen());
+        $this->assertTrue($this->controller->isOpen());
 
         // Invoke dismissToEditor via reflection (the __other__ escape hatch)
         $dismiss = new \ReflectionMethod($this->controller, 'dismissToEditor');
         $dismiss->invoke($this->controller);
 
         // Thesis 2: After dismiss, isAwaitingFreeForm=true, isOpen=false
-        self::assertTrue($this->controller->isAwaitingFreeForm(), 'After __other__ dismiss, awaitingFreeForm must be true');
-        self::assertFalse($this->controller->isOpen(), 'After __other__ dismiss, overlay must be closed');
+        $this->assertTrue($this->controller->isAwaitingFreeForm(), 'After __other__ dismiss, awaitingFreeForm must be true');
+        $this->assertFalse($this->controller->isOpen(), 'After __other__ dismiss, overlay must be closed');
 
         // Simulate what happens when SubmitListener answers: close() is called
         $this->controller->close();
 
         // Thesis 3: After close(), isAwaitingFreeForm=false (reset by close)
-        self::assertFalse($this->controller->isAwaitingFreeForm(), 'After close(), awaitingFreeForm must be reset to false');
+        $this->assertFalse($this->controller->isAwaitingFreeForm(), 'After close(), awaitingFreeForm must be reset to false');
     }
 
     #[Test]
@@ -540,21 +581,21 @@ class QuestionControllerTest extends TestCase
         // Set awaitingFreeForm=true via reflection
         $awaitProp = $ctrlRef->getProperty('awaitingFreeForm');
         $awaitProp->setValue($this->controller, true);
-        self::assertTrue($this->controller->isAwaitingFreeForm());
+        $this->assertTrue($this->controller->isAwaitingFreeForm());
 
         // close() also resets awaitingFreeForm. Verify that too.
         // Then manually set it back to test close() reset independently.
         $this->controller->close();
-        self::assertFalse($this->controller->isAwaitingFreeForm(), 'close() must reset awaitingFreeForm');
+        $this->assertFalse($this->controller->isAwaitingFreeForm(), 'close() must reset awaitingFreeForm');
 
         // Set awaitingFreeForm=true again and verify reset via the isOpen
         // property pathway — the same reset happens in close() and open().
         $awaitProp->setValue($this->controller, true);
-        self::assertTrue($this->controller->isAwaitingFreeForm());
+        $this->assertTrue($this->controller->isAwaitingFreeForm());
 
         // Verify close() resets it again
         $this->controller->close();
-        self::assertFalse($this->controller->isAwaitingFreeForm(), 'close() resets awaitingFreeForm on second call');
+        $this->assertFalse($this->controller->isAwaitingFreeForm(), 'close() resets awaitingFreeForm on second call');
     }
 
     // ── Restore from free-form (Fix B: ESC returns to options) ──
@@ -570,11 +611,11 @@ class QuestionControllerTest extends TestCase
         $ctrlRef = new \ReflectionClass($this->controller);
         $awaitProp = $ctrlRef->getProperty('awaitingFreeForm');
         $awaitProp->setValue($this->controller, true);
-        self::assertTrue($this->controller->isAwaitingFreeForm());
+        $this->assertTrue($this->controller->isAwaitingFreeForm());
 
         $this->controller->restoreFromFreeForm();
 
-        self::assertFalse($this->controller->isAwaitingFreeForm(), 'restoreFromFreeForm must reset awaitingFreeForm flag');
+        $this->assertFalse($this->controller->isAwaitingFreeForm(), 'restoreFromFreeForm must reset awaitingFreeForm flag');
     }
 
     #[Test]
@@ -583,12 +624,12 @@ class QuestionControllerTest extends TestCase
         // restoreFromFreeForm() is a safe no-op when not awaiting free-form.
         // The flag must remain false and no exception thrown.
 
-        self::assertFalse($this->controller->isAwaitingFreeForm());
+        $this->assertFalse($this->controller->isAwaitingFreeForm());
 
         // Should not throw
         $this->controller->restoreFromFreeForm();
 
-        self::assertFalse($this->controller->isAwaitingFreeForm());
+        $this->assertFalse($this->controller->isAwaitingFreeForm());
     }
 
     // ── Helpers ──

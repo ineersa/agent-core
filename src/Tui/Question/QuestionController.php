@@ -180,7 +180,7 @@ final class QuestionController
             QuestionKind::Confirm => "\u{2753} Confirmation required",
             QuestionKind::Choice => "\u{1F4CB} Choose an option",
         };
-        $header = new TextWidget(text: $headerText, truncate: true);
+        $header = new TextWidget(text: $headerText, truncate: false);
         $this->container->add($header);
     }
 
@@ -189,10 +189,9 @@ final class QuestionController
      */
     private function addTextBanner(QuestionRequest $request): void
     {
-        $prompt = new TextWidget(text: $request->prompt, truncate: true);
-        $this->container->add($prompt);
-
-        $hint = new TextWidget(text: '[type answer and press Enter]', truncate: true);
+        // Full prompt lives in the Question transcript block; overlay stays compact
+        // so we do not truncate-duplicate the same long text above the editor.
+        $hint = new TextWidget(text: '[type answer and press Enter]', truncate: false);
         $this->container->add($hint);
     }
 
@@ -204,7 +203,8 @@ final class QuestionController
      */
     private function addSelectList(QuestionRequest $request): void
     {
-        $prompt = new TextWidget(text: $request->prompt, truncate: true);
+        // Interactive kinds: transcript may not carry the same prompt; keep a short prompt line without truncation.
+        $prompt = new TextWidget(text: $request->prompt, truncate: false);
         $this->container->add($prompt);
 
         $items = $this->buildItems($request);
