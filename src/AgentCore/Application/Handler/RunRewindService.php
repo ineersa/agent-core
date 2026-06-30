@@ -87,7 +87,7 @@ final readonly class RunRewindService
                 'turn_no' => $targetTurnNo,
                 'previous_turn_no' => $currentLeafTurnNo,
                 'parent_turn_no' => $targetParentTurnNo,
-                'reason' => 'user_navigation',
+                'reason' => 'rewind',
             ];
 
             // Append LeafSet event.

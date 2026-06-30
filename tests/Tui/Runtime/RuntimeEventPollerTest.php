@@ -857,4 +857,153 @@ final class RuntimeEventPollerTest extends TestCase
         self::assertSame(20, $this->state->lastSeq);
     }
 
+    /**
+     * C1: Malformed RunLeafChanged (missing/zero turn_no) must clear the transcript
+     * and log a structured warning, not silently leave stale abandoned-branch blocks.
+     */
+    public function testPollHandlesMalformedRunLeafChanged(): void
+    {
+        // Thesis: a RunLeafChanged with missing/0 turn_no is malformed; the poller
+        // must clear the transcript, log a structured warning, and continue without
+        // crashing rather than leaving stale abandoned-branch blocks.
+
+        // Pre-populate transcript with stale blocks that MUST be cleared
+        $this->state->transcript = [
+            new TranscriptBlock(
+                id: 'stale-block',
+                kind: TranscriptBlockKindEnum::AssistantMessage,
+                runId: 'test-run',
+                seq: 10,
+                text: 'Stale abandoned branch block',
+            ),
+        ];
+
+        $this->client->expects(self::once())
+            ->method('events')
+            ->with('test-run')
+            ->willReturn([
+                new RuntimeEvent(
+                    type: RuntimeEventTypeEnum::RunLeafChanged->value,
+                    runId: 'test-run',
+                    seq: 20,
+                    payload: [], // no turn_no — malformed
+                ),
+            ]);
+
+        $this->logger->expects(self::once())
+            ->method('warning')
+            ->with('runtime_event_poller.leaf_changed_malformed', self::anything());
+
+        $this->projector->method('accept');
+        $this->projector->method('blocks')->willReturn([]);
+
+        $result = $this->poller->poll($this->state, $this->client);
+
+        // Stale blocks must be removed
+        self::assertSame([], $this->state->transcript, 'Transcript must be empty after malformed RunLeafChanged');
+        self::assertSame([], $result);
+
+        // lastSeq still advanced
+        self::assertSame(20, $this->state->lastSeq);
+    }
+
+    /**
+     * C2: RunLeafChanged followed by a normal event in the same poll batch must
+     * include the post-leaf block in the returned result (not silently dropped).
+     */
+    public function testPollSyncsPostLeafEventsAfterRunLeafChanged(): void
+    {
+        // Thesis: after a RunLeafChanged triggers a wholesale transcript rebuild,
+        // any normal event processed later in the same batch must be synchronised
+        // into $state->transcript via synchronizeProjectedBlocks, not lost.
+
+        // Real projector that tracks accepted events and returns blocks
+        $projector = new class implements TranscriptProjectorInterface {
+            /** @var list<array{type: string, seq: int, payload?: array}> */
+            public array $accepted = [];
+            public bool $wasReset = false;
+
+            public function accept(array $event): void
+            {
+                $this->accepted[] = $event;
+            }
+
+            public function blocks(): array
+            {
+                $blocks = [];
+                foreach ($this->accepted as $e) {
+                    $blocks[] = new TranscriptBlock(
+                        id: 'block-seq-'.$e['seq'],
+                        kind: TranscriptBlockKindEnum::AssistantMessage,
+                        runId: 'test-run',
+                        seq: $e['seq'],
+                        text: (string) ($e['payload']['text'] ?? ''),
+                    );
+                }
+
+                return $blocks;
+            }
+
+            public function reset(): void
+            {
+                $this->accepted = [];
+                $this->wasReset = true;
+            }
+        };
+
+        $turnTreeProvider = $this->createMock(TurnTreeProviderInterface::class);
+        $turnTreeProvider->expects(self::once())
+            ->method('activePathRuntimeEvents')
+            ->with('test-run', 2)
+            ->willReturn([
+                new RuntimeEvent(
+                    type: RuntimeEventTypeEnum::AssistantMessageCompleted->value,
+                    runId: 'test-run',
+                    seq: 30,
+                    payload: ['text' => 'Rebuilt active path block'],
+                ),
+            ]);
+
+        $eventApplier = new TuiRuntimeEventApplier($projector);
+        $poller = new RuntimeEventPoller(
+            $eventApplier,
+            $this->logger,
+            new RuntimeExceptionBoundary(
+                $this->createStub(EventDispatcherInterface::class),
+            ),
+            $turnTreeProvider,
+        );
+
+        $this->client->expects(self::once())
+            ->method('events')
+            ->with('test-run')
+            ->willReturn([
+                new RuntimeEvent(
+                    type: RuntimeEventTypeEnum::RunLeafChanged->value,
+                    runId: 'test-run',
+                    seq: 20,
+                    payload: ['turn_no' => 2],
+                ),
+                // Normal event arriving in the same batch after RunLeafChanged
+                new RuntimeEvent(
+                    type: RuntimeEventTypeEnum::AssistantMessageCompleted->value,
+                    runId: 'test-run',
+                    seq: 35,
+                    payload: ['text' => 'Post-leaf event'],
+                ),
+            ]);
+
+        $result = $poller->poll($this->state, $this->client);
+
+        // Both the rebuilt active-path block AND the post-leaf block must appear
+        self::assertNotNull($result, 'Result must not be null when events were processed');
+        self::assertCount(2, $result, 'Both rebuilt and post-leaf blocks must be present');
+        self::assertSame('block-seq-30', $result[0]->id);
+        self::assertSame('Rebuilt active path block', $result[0]->text);
+        self::assertSame('block-seq-35', $result[1]->id);
+        self::assertSame('Post-leaf event', $result[1]->text);
+
+        // lastSeq advanced to the highest seq in the batch (35, not 20)
+        self::assertSame(35, $this->state->lastSeq);
+    }
 }

@@ -203,6 +203,9 @@ final class TurnTreeProjector
      * @param array<int, TurnTreeNodeDTO> $nodesByTurnNo
      *
      * @return list<int>
+     *
+     * @see walkActivePath() for the same algorithm operating on the build-time
+     *      turnInfo array shape instead of DTO objects. Keep both in sync.
      */
     public static function activePathTo(int $targetTurnNo, array $nodesByTurnNo): array
     {
@@ -243,6 +246,9 @@ final class TurnTreeProjector
      * @return list<int> Turn numbers in order from root to leaf
      *
      * @throws \RuntimeException if a cycle is detected or a parent turn is missing
+     *
+     * @see activePathTo() for the same algorithm operating on DTO objects instead
+     *      of the build-time turnInfo array. Keep both in sync.
      */
     private function walkActivePath(?int $currentLeafTurnNo, array $turnInfo, array $knownTurnNos = []): array
     {

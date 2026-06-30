@@ -517,6 +517,65 @@ final class TreePickerControllerTest extends TestCase
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
+    // ── onSelect behavior ───────────────────────────────────────────
+
+    #[Test]
+    public function testOnSelectNonCurrentLeafCallsRewind(): void
+    {
+        // Thesis: selecting a non-current turn in the picker calls
+        // switcher->rewindToTurn with the selected turn number and
+        // closes the picker.
+        $tree = $this->createLinearTree(); // T1 → T2, currentLeaf=2
+        $provider = $this->createStub(TurnTreeProviderInterface::class);
+        $provider->method('forSession')->willReturn($tree);
+
+        $switcher = $this->createMock(TuiSessionSwitchServiceInterface::class);
+        $switcher->expects(self::once())
+            ->method('rewindToTurn')
+            ->with(1);
+
+        $controller = new TreePickerController($provider, $switcher);
+        $controller->setRuntimeRefs($this->tui, $this->screen, $this->state);
+
+        $controller->open();
+        self::assertTrue($controller->isOpen());
+
+        // The picker opens with turn 1 (non-current leaf) at index 0.
+        // Press Enter to confirm selection (handleInput with \r = ENTER key).
+        $controller->overlay()->listWidget()->handleInput("\r");
+
+        self::assertFalse($controller->isOpen(), 'Picker must close after selection');
+    }
+
+    #[Test]
+    public function testOnSelectCurrentLeafIsNoOp(): void
+    {
+        // Thesis: selecting the current leaf closes the picker but
+        // does NOT call rewindToTurn.
+        $tree = $this->createLinearTree(); // T1 → T2, currentLeaf=2
+        $provider = $this->createStub(TurnTreeProviderInterface::class);
+        $provider->method('forSession')->willReturn($tree);
+
+        $switcher = $this->createMock(TuiSessionSwitchServiceInterface::class);
+        $switcher->expects(self::never())
+            ->method('rewindToTurn');
+
+        $controller = new TreePickerController($provider, $switcher);
+        $controller->setRuntimeRefs($this->tui, $this->screen, $this->state);
+
+        $controller->open();
+        self::assertTrue($controller->isOpen());
+
+        // Move selection to turn 2 (current leaf) at index 1, then confirm.
+        $widget = $controller->overlay()->listWidget();
+        $widget->setSelectedIndex(1);
+        $widget->handleInput("\r");
+
+        self::assertFalse($controller->isOpen(), 'Picker must close after selection');
+    }
+
+    // ── Helpers ────────────────────────────────────────────────────────
+
     private function createLinearTree(): TurnTreeView
     {
         $nodes = [

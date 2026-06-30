@@ -7,6 +7,7 @@ namespace Ineersa\Tui\Application;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
+use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
@@ -43,6 +44,7 @@ final readonly class SessionInitializer
         private TranscriptBlockFactory $blockFactory,
         private LoggerInterface $logger,
         private TuiRuntimeEventApplier $eventApplier,
+        private TurnTreeProviderInterface $turnTreeProvider,
     ) {
     }
 
@@ -177,29 +179,71 @@ final readonly class SessionInitializer
         $maxSourceSeq = 0;
         $maxMappedSeq = 0;
 
+        // Compute the full-stream maximum seq first (for lastSeq correctness).
         foreach ($runEvents as $runEvent) {
-            // Track the highest source seq so lastSeq is never stale even
-            // when every event maps to null (e.g. only internal bookkeeping).
             if ($runEvent->seq > $maxSourceSeq) {
                 $maxSourceSeq = $runEvent->seq;
             }
+        }
 
-            $runtimeEvent = $this->eventMapper->toRuntimeEvent($runEvent);
+        // Branch-aware resume: if the session has a known current leaf (rewound),
+        // replay only active-path events so abandoned-branch blocks do not appear
+        // in the transcript after resume. This matches the live poller's wholesale-
+        // replace behavior on RunLeafChanged.
+        $replayed = false;
 
-            if (null === $runtimeEvent) {
-                continue; // Dropped/ignored event types
+        try {
+            $tree = $this->turnTreeProvider->forSession($runId);
+
+            if (null !== $tree->currentLeafTurnNo) {
+                $activeEvents = $this->turnTreeProvider->activePathRuntimeEvents(
+                    $runId,
+                    $tree->currentLeafTurnNo,
+                );
+
+                foreach ($activeEvents as $runtimeEvent) {
+                    if ($runtimeEvent->seq > $maxMappedSeq) {
+                        $maxMappedSeq = $runtimeEvent->seq;
+                    }
+
+                    $this->eventApplier->apply($state, $runtimeEvent, replayMode: true);
+                }
+
+                $replayed = true;
             }
+        } catch (\Throwable $e) {
+            // Non-fatal: tree/providers may be unavailable (e.g. unreadable
+            // events.jsonl). Fall through to full replay below.
+            $this->logger->warning('Session transcript replay: turn tree unavailable for branch-aware filtering', [
+                'component' => 'SessionInitializer',
+                'event_type' => 'replay_turn_tree_unavailable',
+                'session_id' => $runId,
+                'exception_class' => $e::class,
+                'exception_message' => $e->getMessage(),
+            ]);
+        }
 
-            if ($runtimeEvent->seq > $maxMappedSeq) {
-                $maxMappedSeq = $runtimeEvent->seq;
+        if (!$replayed) {
+            // Full replay (original path): linearly replay all events through the
+            // mapper and projector. Used for linear (non-branched) sessions and
+            // as fallback when the turn tree provider fails.
+            foreach ($runEvents as $runEvent) {
+                $runtimeEvent = $this->eventMapper->toRuntimeEvent($runEvent);
+
+                if (null === $runtimeEvent) {
+                    continue; // Dropped/ignored event types
+                }
+
+                if ($runtimeEvent->seq > $maxMappedSeq) {
+                    $maxMappedSeq = $runtimeEvent->seq;
+                }
+
+                $this->eventApplier->apply($state, $runtimeEvent, replayMode: true);
             }
-
-            $this->eventApplier->apply($state, $runtimeEvent, replayMode: true);
         }
 
         // Set lastSeq so the live poller does not re-process replayed events.
-        // Use the max of mapped event seqs; fall back to max source event seq
-        // when every source event was dropped/ignored by the mapper.
+        // Always derived from the full canonical stream max, never regressed.
         $state->lastSeq = max($maxMappedSeq, $maxSourceSeq);
 
         if ($state->isShellRun = $this->inferShellOnlySessionFromCanonicalEvents($runEvents)) {

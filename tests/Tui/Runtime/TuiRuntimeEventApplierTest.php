@@ -20,6 +20,8 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscrib
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
+use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeView;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\Tui\Application\SessionInitializer;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
@@ -131,6 +133,15 @@ final class TuiRuntimeEventApplierTest extends TestCase
         $appConfig = new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig(), cwd: $this->projectDir);
         $sessionStore = new HatfieldSessionStore($appConfig, $this->createStub(\Doctrine\ORM\EntityManagerInterface::class));
 
+        $turnTreeProvider = $this->createStub(TurnTreeProviderInterface::class);
+        $turnTreeProvider->method('forSession')->willReturn(new TurnTreeView(
+            runId: 'test',
+            nodesByTurnNo: [],
+            rootTurnNos: [],
+            currentLeafTurnNo: null,
+            activePathTurnNos: [],
+        ));
+
         return new SessionInitializer(
             sessionStore: $sessionStore,
             eventStore: $this->buildEventStore(),
@@ -139,6 +150,7 @@ final class TuiRuntimeEventApplierTest extends TestCase
             blockFactory: new TranscriptBlockFactory(),
             logger: new NullLogger(),
             eventApplier: new TuiRuntimeEventApplier($projector),
+            turnTreeProvider: $turnTreeProvider,
         );
     }
 

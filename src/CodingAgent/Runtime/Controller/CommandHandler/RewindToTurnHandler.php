@@ -73,6 +73,10 @@ final readonly class RewindToTurnHandler
             // Emit RunLeafChanged RuntimeEvent so the TUI observes the leaf change.
             // The TUI can fetch the full tree via TurnTreeProviderInterface for richer info
             // when rebuilding transcript blocks after the leaf change.
+            //
+            // NOTE: InProcessAgentSessionClient::handleInProcessRewind() mirrors this
+            // emission; both must emit an equivalent RunLeafChanged event so the TUI
+            // rebuilds its transcript regardless of transport. Keep them in sync.
             $event->emit(new RuntimeEvent(
                 type: RuntimeEventTypeEnum::RunLeafChanged->value,
                 runId: $runId,

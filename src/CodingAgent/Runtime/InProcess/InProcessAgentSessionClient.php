@@ -25,7 +25,9 @@ use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextDiscovery;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextRenderer;
@@ -347,6 +349,29 @@ final class InProcessAgentSessionClient implements AgentSessionClient
 
         $answer = $this->answerResolver->resolve($command->payload['answer'] ?? null);
         $this->toolQuestionStore->answer($requestId, $answer);
+    }
+
+    /** @phpstan-ignore-next-line method.unused (called from send() match arm; phpstan call-graph misses match-based dispatch) */
+    private function handleInProcessRewind(string $runId, UserCommand $command): void
+    {
+        $targetTurnNo = (int) ($command->payload['turn_no'] ?? 0);
+
+        $result = $this->runRewindService->rewind($runId, $targetTurnNo);
+
+        // Emit RunLeafChanged RuntimeEvent so the TUI observes the leaf change
+        // and rebuilds the transcript.  This mirrors the RewindToTurnHandler
+        // emission in process-mode; both must stay in sync.
+        if ($this->transientSink instanceof InMemoryRuntimeEventSink) {
+            $this->transientSink->emit(new RuntimeEvent(
+                type: RuntimeEventTypeEnum::RunLeafChanged->value,
+                runId: $runId,
+                seq: $result['leafSetSeq'],
+                payload: [
+                    'turn_no' => $targetTurnNo,
+                    'leaf_set_seq' => $result['leafSetSeq'],
+                ],
+            ));
+        }
     }
 
     /**

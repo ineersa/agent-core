@@ -101,11 +101,11 @@ final class RuntimeEventPoller
                 // removal). We now fetch active-path RuntimeEvents from the provider
                 // and replay them through the projector to rebuild the transcript.
                 if (RuntimeEventTypeEnum::RunLeafChanged->value === $runtimeEvent->type) {
-                    $hasRunLeafChanged = true;
-
                     $leafTurnNo = (int) ($runtimeEvent->payload['turn_no'] ?? 0);
 
                     if ($leafTurnNo > 0 && null !== $state->handle) {
+                        $hasRunLeafChanged = true;
+
                         try {
                             $activeEvents = $this->turnTreeProvider->activePathRuntimeEvents(
                                 $state->handle->runId,
@@ -123,6 +123,15 @@ final class RuntimeEventPoller
                             // rather than stale abandoned-branch content.
                             $state->transcript = [];
                         }
+                    } else {
+                        // Malformed RunLeafChanged: missing or zero turn_no, or no handle.
+                        // Clear the transcript so stale abandoned-branch content is not shown.
+                        // The projector has already been reset by the applier.
+                        $this->logger->warning('runtime_event_poller.leaf_changed_malformed', [
+                            'run_id' => null !== $state->handle ? $state->handle->runId : 'unknown',
+                            'leaf_turn_no' => $leafTurnNo,
+                        ]);
+                        $state->transcript = [];
                     }
 
                     // Skip queued follow-up dispatch, callback handlers, and processing
@@ -218,6 +227,10 @@ final class RuntimeEventPoller
             if ($hasRunLeafChanged) {
                 // Wholesale transcript replace: return all blocks (not just changed)
                 // so the renderer rebuilds the entire transcript display.
+                // Sync any events that arrived after RunLeafChanged in the same
+                // batch (fed to projector via apply()) into the transcript.
+                self::synchronizeProjectedBlocks($state, $this->eventApplier->projectedBlocks());
+
                 return $state->transcript;
             }
 

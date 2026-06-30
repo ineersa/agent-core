@@ -185,6 +185,17 @@ final class TreePickerController
     }
 
     /**
+     * The currently mounted PickerOverlay, or null if not mounted.
+     *
+     * Provides access to the underlying SelectListWidget for
+     * programmatic inspection or testing.
+     */
+    public function overlay(): ?PickerOverlay
+    {
+        return $this->overlay;
+    }
+
+    /**
      * Build flat picker items from a turn tree.
      *
      * Depth-first walk, producing indented labels with leaf markers.
