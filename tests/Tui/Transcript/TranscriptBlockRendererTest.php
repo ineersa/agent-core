@@ -888,4 +888,151 @@ final class TranscriptBlockRendererTest extends TestCase
     }
 
 
+
+
+    public function testAskHumanToolCallSuppressed(): void
+    {
+        $block = new TranscriptBlock(
+            id: 'tc-ask',
+            kind: TranscriptBlockKindEnum::ToolCall,
+            runId: 'r',
+            seq: 1,
+            text: 'ask_human',
+            meta: [
+                'tool_name' => 'ask_human',
+                'arguments' => [
+                    'kind' => 'interrupt',
+                    'question_id' => 'ah_test',
+                    'prompt' => 'What model?',
+                    'schema' => ['type' => 'string'],
+                ],
+            ],
+        );
+
+        $output = $this->renderJoined($block);
+
+        $this->assertSame('', $output);
+    }
+
+    public function testAskHumanSuccessfulToolResultSuppressed(): void
+    {
+        $json = '{"kind":"interrupt","question_id":"ah_test","prompt":"What model?","schema":{"type":"string"}}';
+        $block = new TranscriptBlock(
+            id: 'tr-ask',
+            kind: TranscriptBlockKindEnum::ToolResult,
+            runId: 'r',
+            seq: 2,
+            text: $json,
+            meta: ['tool_name' => 'ask_human', 'result' => $json, 'is_error' => false],
+        );
+
+        $output = $this->renderJoined($block);
+
+        $this->assertSame('', $output);
+    }
+
+    public function testAskHumanErrorToolResultRemainsVisible(): void
+    {
+        $body = 'Invalid question schema';
+        $block = new TranscriptBlock(
+            id: 'tr-ask-err',
+            kind: TranscriptBlockKindEnum::ToolResult,
+            runId: 'r',
+            seq: 2,
+            text: $body,
+            meta: ['tool_name' => 'ask_human', 'result' => $body, 'is_error' => true],
+        );
+
+        $output = $this->renderJoined($block);
+
+        $this->assertStringContainsString('ask_human', $output);
+        $this->assertStringContainsString('Invalid question schema', $output);
+    }
+
+    public function testQuestionBlockRendersMarkdownBold(): void
+    {
+        $block = new TranscriptBlock(
+            id: 'q-md',
+            kind: TranscriptBlockKindEnum::Question,
+            runId: 'r',
+            seq: 3,
+            text: 'Pick **one** option',
+            meta: ['prompt' => 'Pick **one** option', 'status' => 'pending'],
+        );
+
+        $output = $this->renderJoined($block);
+
+        $this->assertStringContainsString('?', $output);
+        $this->assertStringContainsString('one', $output);
+        $this->assertStringNotContainsString('**one**', $output);
+    }
+
+    public function testAnsweredQuestionHistoryShowsPromptAndAnswer(): void
+    {
+        $block = new TranscriptBlock(
+            id: 'q-answered',
+            kind: TranscriptBlockKindEnum::Question,
+            runId: 'r',
+            seq: 4,
+            text: 'What model? → gpt-test',
+            meta: [
+                'prompt' => 'What model?',
+                'status' => 'answered',
+                'answer' => 'gpt-test',
+            ],
+        );
+
+        $output = $this->renderJoined($block);
+
+        $this->assertStringContainsString('What model?', $output);
+        $this->assertStringContainsString('gpt-test', $output);
+        $this->assertStringContainsString('→', $output);
+    }
+
+    public function testAskHumanSequenceShowsOnlyQuestionNotToolPayload(): void
+    {
+        $prompt = 'Confirm **yes**?';
+        $json = '{"kind":"interrupt","question_id":"ah_seq","prompt":"Confirm yes?"}';
+        $blocks = [
+            new TranscriptBlock(
+                id: 'tc-ask-seq',
+                kind: TranscriptBlockKindEnum::ToolCall,
+                runId: 'r',
+                seq: 1,
+                text: 'ask_human',
+                meta: [
+                    'tool_name' => 'ask_human',
+                    'arguments' => ['prompt' => $prompt, 'schema' => ['type' => 'string']],
+                ],
+            ),
+            new TranscriptBlock(
+                id: 'tr-ask-seq',
+                kind: TranscriptBlockKindEnum::ToolResult,
+                runId: 'r',
+                seq: 2,
+                text: $json,
+                meta: ['tool_name' => 'ask_human', 'result' => $json, 'is_error' => false],
+            ),
+            new TranscriptBlock(
+                id: 'q-seq',
+                kind: TranscriptBlockKindEnum::Question,
+                runId: 'r',
+                seq: 3,
+                text: $prompt,
+                meta: ['prompt' => $prompt, 'status' => 'pending'],
+            ),
+        ];
+
+        $widget = new TranscriptBlockWidget();
+        $widget->setBlocks($blocks);
+        $plain = preg_replace('/\x1b\[[0-9;]*m/', '', implode("\n", $widget->render($this->context)));
+
+        $this->assertStringContainsString('Confirm', $plain);
+        $this->assertStringNotContainsString('**yes**', $plain);
+        $this->assertStringNotContainsString('kind":"interrupt', $plain);
+        $this->assertStringNotContainsString('question_id', $plain);
+        $this->assertStringNotContainsString('schema', $plain);
+        $this->assertStringNotContainsString('ask_human', $plain);
+    }
+
 }

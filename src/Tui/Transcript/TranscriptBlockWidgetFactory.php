@@ -52,6 +52,9 @@ final readonly class TranscriptBlockWidgetFactory
     {
         $root = new ContainerWidget();
         foreach ($blocks as $block) {
+            if ($this->shouldSuppressTranscriptWidget($block)) {
+                continue;
+            }
             $root->add($this->buildWidget($block, $theme));
         }
 
@@ -68,6 +71,11 @@ final readonly class TranscriptBlockWidgetFactory
             return new TextWidget($this->subagentRenderer->buildContent($block, $theme));
         }
 
+        // ask_human HITL: Question block is authoritative; suppress duplicate tool cards (single-block render path).
+        if ($this->shouldSuppressTranscriptWidget($block)) {
+            return new TextWidget('');
+        }
+
         // Hidden thinking: compact placeholder; uses TranscriptDisplayConfig only, NOT TranscriptBlock::collapsed.
         if ($this->isThinkingBlock($block) && !$this->displayConfig->thinkingVisible) {
             $line = \sprintf('%s Thinking', TranscriptGlyphs::GLYPH_ASSISTANT_THINKING);
@@ -78,6 +86,11 @@ final readonly class TranscriptBlockWidgetFactory
         // UserMessage, AssistantMessage, visible thinking → MarkdownWidget.
         if ($this->isMarkdownBlock($block)) {
             return $this->buildMarkdownWidget($block, $theme);
+        }
+
+        // Question blocks: markdown prompt/answer transcript record (HITL), not generic TextWidget.
+        if (TranscriptBlockKindEnum::Question === $block->kind) {
+            return $this->buildQuestionWidget($block, $theme);
         }
 
         // RENDER-04: ToolCall → compact card (glyph header, YAML-like args, arg preview).
@@ -98,6 +111,37 @@ final readonly class TranscriptBlockWidgetFactory
         $line = \sprintf('%s %s%s', $prefix, $displayText, $suffix);
 
         return new TextWidget($theme->color($color, $line));
+    }
+
+    /**
+     * ask_human HITL: Question block is the authoritative transcript record; hide duplicate tool cards.
+     */
+    private function shouldSuppressTranscriptWidget(TranscriptBlock $block): bool
+    {
+        if (TranscriptBlockKindEnum::ToolCall === $block->kind && $this->isAskHumanToolName($block->meta['tool_name'] ?? null)) {
+            return true;
+        }
+
+        if (TranscriptBlockKindEnum::ToolResult === $block->kind
+            && $this->isAskHumanToolName($block->meta['tool_name'] ?? null)
+            && !$this->toolResultIsFullRender($block)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private function isAskHumanToolName(mixed $toolName): bool
+    {
+        return \is_string($toolName) && 'ask_human' === $toolName;
+    }
+
+    /**
+     * Question prompt (and answered suffix from projection) via MarkdownWidget; glyph preserved in markdown source.
+     */
+    private function buildQuestionWidget(TranscriptBlock $block, TuiTheme $theme): MarkdownWidget
+    {
+        return $this->buildMarkdownWidget($block, $theme);
     }
 
     private function buildToolCallWidget(TranscriptBlock $block, TuiTheme $theme): AbstractWidget
