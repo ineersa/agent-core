@@ -38,6 +38,11 @@ final class NewSessionCommandHandlerTest extends TestCase
                 $this->draftRequested = true;
             }
 
+            public function rewindToTurn(int $targetTurnNo): void
+            {
+                // No-op: this test does not exercise rewind.
+            }
+
             public function hasPendingSwitch(): bool
             {
                 return false;
