@@ -20,7 +20,7 @@ use Symfony\Component\Yaml\Yaml;
  * Builds Symfony TUI widget trees from {@see TranscriptBlock} DTOs.
  *
  * Tool calls and normal tool results render as compact multi-line cards
- * (glyph header, optional fenced YAML args, preview-truncated output).
+ * (glyph header, YAML-like args with preview, preview-truncated tool output).
  */
 final readonly class TranscriptBlockWidgetFactory
 {
@@ -28,6 +28,7 @@ final readonly class TranscriptBlockWidgetFactory
         private readonly SubagentResultRenderer $subagentRenderer = new SubagentResultRenderer(),
         private readonly TranscriptDisplayConfig $displayConfig = new TranscriptDisplayConfig(),
         private readonly TranscriptDisplayState $displayState = new TranscriptDisplayState(),
+        private readonly ToolArgumentsFormatter $toolArgumentsFormatter = new ToolArgumentsFormatter(),
     ) {
     }
 
@@ -85,12 +86,14 @@ final readonly class TranscriptBlockWidgetFactory
 
         $arguments = $block->meta['arguments'] ?? null;
         if (\is_array($arguments) && [] !== $arguments) {
-            $yaml = trim(Yaml::dump($arguments, 4, 2));
-            $lines[] = '    ```yaml';
-            foreach (explode("\n", $yaml) as $yamlLine) {
-                $lines[] = '    '.$yamlLine;
+            $argLines = $this->toolArgumentsFormatter->formatLines($arguments);
+            $preview = $this->applyLinePreview($argLines, fullRender: false);
+            foreach ($preview['lines'] as $argLine) {
+                $lines[] = '    '.$argLine;
             }
-            $lines[] = '    ```';
+            if (null !== $preview['ellipsis']) {
+                $lines[] = '    '.$preview['ellipsis'];
+            }
         }
 
         $text = implode("\n", $lines);
@@ -134,24 +137,34 @@ final readonly class TranscriptBlockWidgetFactory
      */
     private function applyToolResultPreview(array $bodyLines, TranscriptBlock $block): array
     {
-        if ($this->toolResultIsFullRender($block)) {
-            return ['lines' => $bodyLines, 'ellipsis' => null];
+        return $this->applyLinePreview($bodyLines, $this->toolResultIsFullRender($block));
+    }
+
+    /**
+     * @param list<string> $lines
+     *
+     * @return array{lines: list<string>, ellipsis: ?string}
+     */
+    private function applyLinePreview(array $lines, bool $fullRender): array
+    {
+        if ($fullRender) {
+            return ['lines' => $lines, 'ellipsis' => null];
         }
 
         $limit = $this->displayConfig->toolResultPreviewLines;
-        if ($limit <= 0 || \count($bodyLines) <= $limit) {
-            return ['lines' => $bodyLines, 'ellipsis' => null];
+        if ($limit <= 0 || \count($lines) <= $limit) {
+            return ['lines' => $lines, 'ellipsis' => null];
         }
 
         if ($this->displayState->previewableBlocksExpanded) {
-            return ['lines' => $bodyLines, 'ellipsis' => null];
+            return ['lines' => $lines, 'ellipsis' => null];
         }
 
-        $remaining = \count($bodyLines) - $limit;
+        $remaining = \count($lines) - $limit;
         $ellipsis = \sprintf('… %d more line%s', $remaining, 1 === $remaining ? '' : 's');
 
         return [
-            'lines' => \array_slice($bodyLines, 0, $limit),
+            'lines' => \array_slice($lines, 0, $limit),
             'ellipsis' => $ellipsis,
         ];
     }
@@ -211,7 +224,7 @@ final readonly class TranscriptBlockWidgetFactory
             return (string) $result;
         }
         if (\is_array($result) || \is_object($result)) {
-            return trim(Yaml::dump($result, 4, 2));
+            return trim(Yaml::dump($result, 4, 2, Yaml::DUMP_MULTI_LINE_LITERAL_BLOCK));
         }
 
         $text = $block->text;

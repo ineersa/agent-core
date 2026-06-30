@@ -122,17 +122,17 @@ final class TuiToolOutputE2eTest extends TestCase
             self::assertStringContainsString(
                 'path:',
                 $fullCapture,
-                'Tool call card must render fenced YAML arguments (path key)',
+                'Tool call card must render YAML arguments (path key)',
             );
             self::assertStringContainsString(
                 './test.txt',
                 $fullCapture,
                 'Tool call card must render YAML argument value from read tool call',
             );
-            self::assertStringContainsString(
+            self::assertStringNotContainsString(
                 '```yaml',
                 $fullCapture,
-                'Tool call card must include fenced YAML marker',
+                'Tool call card must not include fenced YAML markers',
             );
 
             // 1. The real tool output (file content) must appear in the transcript.

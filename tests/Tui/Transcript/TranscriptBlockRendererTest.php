@@ -453,7 +453,7 @@ final class TranscriptBlockRendererTest extends TestCase
         return implode("\n", $renderer->renderBlock($block, $this->context));
     }
 
-    public function testToolCallWithArgumentsRendersFencedYaml(): void
+    public function testToolCallWithArgumentsRendersYamlWithoutFences(): void
     {
         $block = new TranscriptBlock(
             id: 'tc-yaml',
@@ -470,7 +470,6 @@ final class TranscriptBlockRendererTest extends TestCase
         $output = $this->renderJoined($block);
 
         $this->assertStringContainsString('read', $output);
-        $this->assertStringContainsString('```yaml', $output);
         $this->assertStringContainsString('path:', $output);
         $this->assertStringContainsString('./test.txt', $output);
         $this->assertStringContainsString('max_bytes:', $output);
@@ -491,7 +490,7 @@ final class TranscriptBlockRendererTest extends TestCase
         $output = $this->renderJoined($block);
 
         $this->assertStringContainsString('bash', $output);
-        $this->assertStringNotContainsString('```yaml', $output);
+        $this->assertStringNotContainsString('```', $output);
     }
 
     public function testStreamingToolCallPreservesStreamingSuffix(): void
@@ -509,6 +508,91 @@ final class TranscriptBlockRendererTest extends TestCase
         $output = $this->renderJoined($block);
 
         $this->assertStringContainsString('read...', $output);
+    }
+
+    public function testToolCallWithMultilinePatchUsesLiteralBlockStyle(): void
+    {
+        $patch = "--- a/tmp/test.md\n+++ b/tmp/test.md\n@@\n+Auto-compaction monitors";
+        $block = new TranscriptBlock(
+            id: 'tc-edit',
+            kind: TranscriptBlockKindEnum::ToolCall,
+            runId: 'r',
+            seq: 2,
+            text: 'edit',
+            meta: [
+                'tool_name' => 'edit',
+                'arguments' => ['path' => '/tmp/test.md', 'patch' => $patch],
+            ],
+        );
+
+        $output = $this->renderJoined($block);
+
+        $this->assertStringContainsString('patch: |', $output);
+        $this->assertStringContainsString('--- a/tmp/test.md', $output);
+        $this->assertStringContainsString('+Auto-compaction monitors', $output);
+        $this->assertStringNotContainsString('\n+++', $output);
+    }
+
+    public function testLongToolCallArgumentsPreviewByDefault(): void
+    {
+        $patchLines = [];
+        for ($i = 0; $i < 10; ++$i) {
+            $patchLines[] = '+line'.$i;
+        }
+        $patch = implode("
+", array_merge(['---', '+++', '@@'], $patchLines));
+        $block = new TranscriptBlock(
+            id: 'tc-long-args',
+            kind: TranscriptBlockKindEnum::ToolCall,
+            runId: 'r',
+            seq: 2,
+            text: 'edit',
+            meta: [
+                'tool_name' => 'edit',
+                'arguments' => ['path' => '/tmp/test.md', 'patch' => $patch],
+            ],
+        );
+
+        $output = $this->renderJoined(
+            $block,
+            new TranscriptDisplayConfig(toolResultPreviewLines: 4),
+            new TranscriptDisplayState(previewableBlocksExpanded: false),
+        );
+
+        $this->assertStringContainsString('patch: |', $output);
+        $this->assertStringContainsString('patch: |', $output);
+        $this->assertStringNotContainsString('+line9', $output);
+        $this->assertStringContainsString('more line', $output);
+    }
+
+    public function testLongToolCallArgumentsRenderFullWhenPreviewExpanded(): void
+    {
+        $patchLines = [];
+        for ($i = 0; $i < 6; ++$i) {
+            $patchLines[] = '+line'.$i;
+        }
+        $patch = implode("
+", array_merge(['---', '+++', '@@'], $patchLines));
+        $block = new TranscriptBlock(
+            id: 'tc-expanded-args',
+            kind: TranscriptBlockKindEnum::ToolCall,
+            runId: 'r',
+            seq: 2,
+            text: 'edit',
+            meta: [
+                'tool_name' => 'edit',
+                'arguments' => ['path' => '/tmp/test.md', 'patch' => $patch],
+            ],
+        );
+
+        $output = $this->renderJoined(
+            $block,
+            new TranscriptDisplayConfig(toolResultPreviewLines: 2),
+            new TranscriptDisplayState(previewableBlocksExpanded: true),
+        );
+
+        $this->assertStringContainsString('+line5', $output);
+        $this->assertStringNotContainsString('more line', $output);
     }
 
     public function testShortToolResultRendersFullWithoutEllipsis(): void

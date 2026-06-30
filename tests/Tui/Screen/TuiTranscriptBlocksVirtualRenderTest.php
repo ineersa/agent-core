@@ -550,7 +550,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 
 
     #[Test]
-    public function testVirtualToolCallShowsFencedYamlArgs(): void
+    public function testVirtualToolCallShowsYamlArgsWithoutFences(): void
     {
         $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
         $harness->screen()->setTranscriptBlocks([
@@ -571,7 +571,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         $text = $harness->plainScreenText();
 
         self::assertStringContainsString('read', $text);
-        self::assertStringContainsString('```yaml', $text);
+        self::assertStringNotContainsString('```', $text);
         self::assertStringContainsString('path:', $text);
         self::assertStringContainsString('./virtual.txt', $text);
     }
@@ -632,12 +632,17 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
     }
 
     #[Test]
-    public function testVirtualToolCallIsNotTruncatedByPreviewState(): void
+    public function testVirtualLongToolCallArgumentsPreviewByDefault(): void
     {
-        $yamlArgs = ['path' => './long/path.txt', 'max_bytes' => 99999];
+        $patchLines = [];
+        for ($i = 0; $i < 8; ++$i) {
+            $patchLines[] = '+line'.$i;
+        }
+        $patch = implode("
+", array_merge(['---', '+++', '@@'], $patchLines));
         $harness = new VirtualTuiHarness(
             sessionId: self::SESSION_ID,
-            displayConfig: new TranscriptDisplayConfig(toolResultPreviewLines: 1),
+            displayConfig: new TranscriptDisplayConfig(toolResultPreviewLines: 3),
             displayState: new TranscriptDisplayState(previewableBlocksExpanded: false),
         );
         $harness->screen()->setTranscriptBlocks([
@@ -646,16 +651,55 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
                 kind: TranscriptBlockKindEnum::ToolCall,
                 runId: self::SESSION_ID,
                 seq: 1,
-                text: 'read',
-                meta: ['tool_name' => 'read', 'arguments' => $yamlArgs],
+                text: 'edit',
+                meta: [
+                    'tool_name' => 'edit',
+                    'arguments' => ['path' => '/tmp/test.md', 'patch' => $patch],
+                ],
             ),
         ]);
         $harness->screen()->setWorkingVisible(false);
 
         $text = $harness->plainScreenText();
 
-        self::assertStringContainsString('max_bytes:', $text);
-        self::assertStringContainsString('99999', $text);
+        self::assertStringContainsString('patch: |', $text);
+        self::assertStringContainsString('patch: |', $text);
+        self::assertStringNotContainsString('+line7', $text);
+        self::assertStringContainsString('more line', $text);
+    }
+
+    #[Test]
+    public function testVirtualLongToolCallArgumentsRenderFullWhenPreviewExpanded(): void
+    {
+        $patchLines = [];
+        for ($i = 0; $i < 5; ++$i) {
+            $patchLines[] = '+line'.$i;
+        }
+        $patch = implode("
+", array_merge(['---', '+++', '@@'], $patchLines));
+        $harness = new VirtualTuiHarness(
+            sessionId: self::SESSION_ID,
+            displayConfig: new TranscriptDisplayConfig(toolResultPreviewLines: 2),
+            displayState: new TranscriptDisplayState(previewableBlocksExpanded: true),
+        );
+        $harness->screen()->setTranscriptBlocks([
+            new TranscriptBlock(
+                id: 'tc-expanded',
+                kind: TranscriptBlockKindEnum::ToolCall,
+                runId: self::SESSION_ID,
+                seq: 1,
+                text: 'edit',
+                meta: [
+                    'tool_name' => 'edit',
+                    'arguments' => ['path' => '/tmp/test.md', 'patch' => $patch],
+                ],
+            ),
+        ]);
+        $harness->screen()->setWorkingVisible(false);
+
+        $text = $harness->plainScreenText();
+
+        self::assertStringContainsString('+line4', $text);
         self::assertStringNotContainsString('more line', $text);
     }
 
