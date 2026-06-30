@@ -985,6 +985,95 @@ final class RunStateReplayServiceTest extends TestCase
         }
     }
 
+    public function testRebuildIfStaleForcesReplayWhenLeafPointerDriftsDespiteCurrentLastSeq(): void
+    {
+        // Thesis: after rewind to turn 2, state.json can have lastSeq == canonical max while
+        // turnNo still points at abandoned leaf 4. rebuildIfStale must NOT return current()
+        // — it must branch-filter replay so message context matches the rewound leaf.
+
+        $this->appendEventWithTurn('run_started', 1, 0, [
+            'step_id' => 's0',
+            'payload' => ['messages' => [
+                ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hello']], 'is_error' => false],
+            ]],
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::TurnAdvanced->value, 2, 1, [
+            'turn_no' => 1, 'parent_turn_no' => null, 'step_id' => 's1',
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::LeafSet->value, 3, 1, [
+            'turn_no' => 1, 'reason' => 'continue',
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::AgentCommandApplied->value, 4, 2, [
+            'kind' => 'follow_up',
+            'message' => [
+                'role' => 'user',
+                'content' => [['type' => 'text', 'text' => 'secret word pineapple']],
+                'is_error' => false,
+            ],
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::TurnAdvanced->value, 5, 2, [
+            'turn_no' => 2, 'parent_turn_no' => 1, 'step_id' => 's2',
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::LeafSet->value, 6, 2, [
+            'turn_no' => 2, 'reason' => 'continue',
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::AgentEnd->value, 7, 2, [
+            'reason' => 'completed',
+        ]);
+        // Branch: turn 3 from turn 1
+        $this->appendEventWithTurn(RunEventTypeEnum::TurnAdvanced->value, 8, 3, [
+            'turn_no' => 3, 'parent_turn_no' => 1, 'step_id' => 's3',
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::LeafSet->value, 9, 3, [
+            'turn_no' => 3, 'reason' => 'continue',
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::AgentCommandApplied->value, 10, 3, [
+            'kind' => 'follow_up',
+            'message' => [
+                'role' => 'user',
+                'content' => [['type' => 'text', 'text' => 'secret word apple']],
+                'is_error' => false,
+            ],
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::TurnAdvanced->value, 11, 4, [
+            'turn_no' => 4, 'parent_turn_no' => 3, 'step_id' => 's4',
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::LeafSet->value, 12, 4, [
+            'turn_no' => 4, 'reason' => 'continue',
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::AgentEnd->value, 13, 4, [
+            'reason' => 'completed',
+        ]);
+        // Rewind to turn 2
+        $this->appendEventWithTurn(RunEventTypeEnum::LeafSet->value, 14, 2, [
+            'turn_no' => 2,
+            'previous_turn_no' => 4,
+            'parent_turn_no' => 1,
+            'reason' => 'rewind',
+        ]);
+
+        $state = new RunState(
+            runId: $this->runId,
+            status: RunStatus::Completed,
+            version: 10,
+            turnNo: 4,
+            lastSeq: 14,
+        );
+
+        $result = $this->service->rebuildIfStale($state, $this->runId);
+
+        $this->assertTrue($result->rebuilt, 'Leaf pointer drift must force replay even when lastSeq is current');
+        $this->assertNotNull($result->rebuiltState);
+        $this->assertSame(2, $result->rebuiltState->turnNo, 'Rebuilt state must match rewound leaf turn 2');
+        $this->assertSame(14, $result->rebuiltState->lastSeq);
+
+        foreach ($result->rebuiltState->messages as $msg) {
+            $text = $msg->content[0]['text'] ?? '';
+            $this->assertStringNotContainsString('secret word apple', $text,
+                'Sibling branch (turn 3) must not leak into rewound turn-2 message context');
+        }
+    }
+
     // ── Leaf_set and turn_branched are no-op reducers ───────────────────────
 
     public function testLeafSetIsNoOpDuringReplay(): void

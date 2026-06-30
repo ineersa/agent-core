@@ -718,4 +718,76 @@ final class AdvanceRunHandlerTest extends TestCase
         );
     }
 
+    public function testParentTurnNoAfterRewindToTurnTwoUsesRewoundLeafNotAbandonedChain(): void
+    {
+        // Thesis: after rewind to turn 2, the next turn_advanced must use parent_turn_no=2
+        // (sibling under turn 2), not parent_turn_no=4 from the abandoned leaf chain.
+
+        $runId = 'run-parent-after-rewind';
+
+        $events = [
+            new RunEvent($runId, seq: 1, turnNo: 0, type: 'run_started', payload: ['payload' => ['messages' => []]]),
+            new RunEvent($runId, seq: 2, turnNo: 1, type: RunEventTypeEnum::TurnAdvanced->value, payload: ['turn_no' => 1]),
+            new RunEvent($runId, seq: 3, turnNo: 1, type: RunEventTypeEnum::LeafSet->value, payload: ['turn_no' => 1, 'reason' => 'continue']),
+            new RunEvent($runId, seq: 4, turnNo: 2, type: RunEventTypeEnum::TurnAdvanced->value, payload: ['turn_no' => 2, 'parent_turn_no' => 1]),
+            new RunEvent($runId, seq: 5, turnNo: 2, type: RunEventTypeEnum::LeafSet->value, payload: ['turn_no' => 2, 'reason' => 'continue']),
+            new RunEvent($runId, seq: 6, turnNo: 3, type: RunEventTypeEnum::TurnAdvanced->value, payload: ['turn_no' => 3, 'parent_turn_no' => 1]),
+            new RunEvent($runId, seq: 7, turnNo: 3, type: RunEventTypeEnum::LeafSet->value, payload: ['turn_no' => 3, 'reason' => 'continue']),
+            new RunEvent($runId, seq: 8, turnNo: 4, type: RunEventTypeEnum::TurnAdvanced->value, payload: ['turn_no' => 4, 'parent_turn_no' => 3]),
+            new RunEvent($runId, seq: 9, turnNo: 4, type: RunEventTypeEnum::LeafSet->value, payload: ['turn_no' => 4, 'reason' => 'continue']),
+            new RunEvent($runId, seq: 10, turnNo: 2, type: RunEventTypeEnum::LeafSet->value, payload: ['turn_no' => 2, 'previous_turn_no' => 4, 'parent_turn_no' => 1, 'reason' => 'rewind']),
+        ];
+
+        $commandStore = new InMemoryCommandStore();
+        $commandStore->enqueue(new PendingCommand(
+            runId: $runId,
+            kind: CoreCommandKind::FollowUp,
+            idempotencyKey: 'follow-up-after-rewind-2',
+            payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'another word banana']]]],
+            options: new CommandCancellationOptions(safe: false),
+        ));
+
+        $eventStore = $this->createStub(EventStoreInterface::class);
+        $eventStore->method('allFor')->willReturn($events);
+
+        $handler = new AdvanceRunHandler(
+            commandMailboxPolicy: new CommandMailboxPolicy(
+                commandStore: $commandStore,
+                commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+            ),
+            eventFactory: new EventFactory(),
+            eventStore: $eventStore,
+        );
+
+        $state = RunStateBuilder::create($runId)
+            ->withStatus(RunStatus::Completed)
+            ->withVersion(11)
+            ->withTurnNo(2)
+            ->withLastSeq(10)
+            ->withActiveStepId('rewound-at-2')
+            ->build();
+
+        $message = AdvanceRunMessageBuilder::create($runId)
+            ->withTurnNo(2)
+            ->withStepId('continue-from-2')
+            ->withIdempotencyKey('advance-parent-rewind-2')
+            ->build();
+
+        $result = $handler->handle($message, $state);
+
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(5, $result->nextState->turnNo, 'Next turn must be max(4,2)+1 = 5');
+        $turnAdvanced = null;
+        foreach ($result->events as $event) {
+            if (RunEventTypeEnum::TurnAdvanced->value === $event->type) {
+                $turnAdvanced = $event;
+                break;
+            }
+        }
+        $this->assertNotNull($turnAdvanced, 'Expected turn_advanced in committed events');
+        $this->assertSame(2, $turnAdvanced->payload['parent_turn_no'],
+            'parent_turn_no must be rewound leaf 2, not abandoned leaf 4'
+        );
+    }
+
 }
