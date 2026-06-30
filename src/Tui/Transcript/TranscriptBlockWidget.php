@@ -26,10 +26,13 @@ final class TranscriptBlockWidget implements TuiWidget
     /** @var list<TranscriptBlock> */
     private array $blocks = [];
 
+    private readonly TranscriptBlockWidgetFactory $factory;
+
     public function __construct(
         private readonly SymfonyTuiWidgetRenderer $widgetRenderer = new SymfonyTuiWidgetRenderer(),
-        private readonly TranscriptBlockWidgetFactory $factory = new TranscriptBlockWidgetFactory(),
+        TranscriptDisplayConfig $displayConfig = new TranscriptDisplayConfig(),
     ) {
+        $this->factory = new TranscriptBlockWidgetFactory(displayConfig: $displayConfig);
     }
 
     /** @return list<TranscriptBlock> */

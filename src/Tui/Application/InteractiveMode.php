@@ -175,7 +175,7 @@ final readonly class InteractiveMode
 
             // ── Build screen and mount widget tree ──
             $tui = new Tui();
-            $screen = new ChatScreen($theme, $state->sessionId, $this->promptEditor);
+            $screen = new ChatScreen($theme, $state->sessionId, $this->promptEditor, $displayConfig);
             $screen->mount($tui);
 
             // Apply Ctrl+J as portable newline, overriding the default new_line
