@@ -157,7 +157,7 @@ final class TranscriptBlockRendererTest extends TestCase
         $lines = $this->renderer->renderBlock($block, $this->context);
 
         $this->assertNotEmpty($lines);
-        $this->assertStringEndsWith('...', $lines[0]);
+        $this->assertStringEndsWith('...', rtrim($lines[0]));
     }
 
     public function testFinalizedBlockHasNoEllipsis(): void

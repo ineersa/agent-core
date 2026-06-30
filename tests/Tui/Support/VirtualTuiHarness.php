@@ -9,6 +9,7 @@ use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
+use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Symfony\Component\Tui\Terminal\ScreenBuffer;
 use Symfony\Component\Tui\Terminal\VirtualTerminal;
 use Symfony\Component\Tui\Tui;
@@ -33,6 +34,7 @@ final class VirtualTuiHarness
         int $rows = 40,
         string $sessionId = 'virtual-startup-session',
         ?ThemePalette $palette = null,
+        ?TranscriptDisplayConfig $displayConfig = null,
     ) {
         $this->terminal = new VirtualTerminal(columns: $columns, rows: $rows);
         $palette ??= self::defaultVirtualPalette();
@@ -41,6 +43,7 @@ final class VirtualTuiHarness
             theme: $theme,
             sessionId: $sessionId,
             promptEditor: new PromptEditor(),
+            displayConfig: $displayConfig ?? new TranscriptDisplayConfig(),
         );
         $this->tui = new Tui(terminal: $this->terminal);
         $this->screen->mount($this->tui);
