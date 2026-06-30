@@ -1238,6 +1238,29 @@ line2"];
         $this->assertStringContainsString('Continue?', $plain);
     }
 
+    public function testAnsweredConfirmQuestionShowsYesNoInTranscript(): void
+    {
+        $block = new TranscriptBlock(
+            id: 'q-confirm-yes',
+            kind: TranscriptBlockKindEnum::Question,
+            runId: 'r',
+            seq: 5,
+            text: 'Proceed? → yes',
+            meta: [
+                'prompt' => 'Proceed?',
+                'status' => 'answered',
+                'answer' => 'yes',
+                'kind' => 'confirm',
+            ],
+        );
+
+        $plain = preg_replace('/\x1b\[[0-9;]*m/', '', implode("\n", $this->renderWidgetLines([$block])));
+
+        $this->assertStringContainsString('Human input answered', $plain);
+        $this->assertStringContainsString('Proceed?', $plain);
+        $this->assertStringContainsString('→ yes', $plain);
+    }
+
     private function renderWidgetLines(array $blocks): array
     {
         $widget = new TranscriptBlockWidget();

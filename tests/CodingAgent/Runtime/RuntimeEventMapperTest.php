@@ -543,6 +543,21 @@ final class RuntimeEventMapperTest extends TestCase
 
     // ── Cancel normalization ─────────────────────────────────────────────────
 
+    public function testNormalizesAgentCommandAppliedHumanResponseBooleanAnswer(): void
+    {
+        $event = $this->runEvent('agent_command_applied', [
+            'kind' => 'human_response',
+            'question_id' => 'q-confirm-bool',
+            'answer' => false,
+        ]);
+
+        $result = $this->mapper->toRuntimeEvent($event);
+
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::HumanInputAnswered->value, $result->type);
+        self::assertFalse($result->payload['answer']);
+    }
+
     public function testNormalizesAgentCommandAppliedCancel(): void
     {
         $event = $this->runEvent('agent_command_applied', [

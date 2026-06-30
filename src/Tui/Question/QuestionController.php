@@ -189,8 +189,12 @@ final class QuestionController
      */
     private function addTextBanner(QuestionRequest $request): void
     {
-        // Full prompt lives in the Question transcript block; overlay stays compact
-        // so we do not truncate-duplicate the same long text above the editor.
+        // Repeat the active prompt in the overlay so the user does not have to look
+        // back at the transcript while typing. Wrap to multiple lines (truncate: false)
+        // instead of the old single-line ellipsis truncation.
+        $prompt = new TextWidget(text: $request->prompt, truncate: false);
+        $this->container->add($prompt);
+
         $hint = new TextWidget(text: '[type answer and press Enter]', truncate: false);
         $this->container->add($hint);
     }

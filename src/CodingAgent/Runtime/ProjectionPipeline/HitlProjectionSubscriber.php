@@ -77,13 +77,15 @@ final readonly class HitlProjectionSubscriber implements EventSubscriberInterfac
         $p = $event->payload();
         $state = $event->state;
         $questionId = (string) ($p['question_id'] ?? '');
-        $answer = (string) ($p['answer'] ?? '');
         $blockId = 'hitl_'.$questionId;
         $block = $state->getBlock($blockId);
 
         if (null === $block) {
             return;
         }
+
+        $kind = \is_string($block->meta['kind'] ?? null) ? $block->meta['kind'] : '';
+        $answer = $this->formatHumanInputAnswerForTranscript($p['answer'] ?? null, $kind);
 
         $meta = $block->meta;
         $meta['status'] = 'answered';
@@ -189,5 +191,35 @@ final readonly class HitlProjectionSubscriber implements EventSubscriberInterfac
             text: $block->text.' ✗',
             meta: $meta,
         ));
+    }
+
+    /**
+     * Normalize human answers for transcript meta/text (confirm booleans → yes/no).
+     */
+    private function formatHumanInputAnswerForTranscript(mixed $answer, string $kind): string
+    {
+        if ('confirm' === $kind || 'approval' === $kind) {
+            if (\is_bool($answer)) {
+                return $answer ? 'yes' : 'no';
+            }
+            if (\is_string($answer)) {
+                $lower = strtolower($answer);
+                if ('yes' === $lower || 'true' === $lower || '1' === $lower) {
+                    return 'yes';
+                }
+                if ('no' === $lower || 'false' === $lower || '0' === $lower) {
+                    return 'no';
+                }
+            }
+        }
+
+        if (\is_bool($answer)) {
+            return $answer ? 'true' : 'false';
+        }
+        if (\is_scalar($answer)) {
+            return (string) $answer;
+        }
+
+        return '';
     }
 }

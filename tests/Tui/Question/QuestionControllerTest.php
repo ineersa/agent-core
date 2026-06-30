@@ -115,7 +115,7 @@ class QuestionControllerTest extends TestCase
     // ── Build items ──
 
     #[Test]
-    public function testTextKindOverlayDoesNotDuplicatePromptInBanner(): void
+    public function testTextKindOverlayIncludesWrappedPromptWithoutEllipsisTruncation(): void
     {
         $longPrompt = str_repeat('Describe your workflow. ', 20);
         $request = new QuestionRequest(
@@ -139,18 +139,22 @@ class QuestionControllerTest extends TestCase
         $childrenProp = new \ReflectionProperty(ContainerWidget::class, 'children');
         $children = $childrenProp->getValue($container);
 
-        $this->assertCount(2, $children, 'Text overlay should be header + hint only');
+        $this->assertCount(3, $children, 'Text overlay should be header + prompt + hint');
         $this->assertInstanceOf(TextWidget::class, $children[0]);
         $this->assertInstanceOf(TextWidget::class, $children[1]);
+        $this->assertInstanceOf(TextWidget::class, $children[2]);
 
         $headerLines = $children[0]->render(new \Symfony\Component\Tui\Render\RenderContext(80, 24));
-        $hintLines = $children[1]->render(new \Symfony\Component\Tui\Render\RenderContext(80, 24));
+        $promptLines = $children[1]->render(new \Symfony\Component\Tui\Render\RenderContext(80, 24));
+        $hintLines = $children[2]->render(new \Symfony\Component\Tui\Render\RenderContext(80, 24));
         $header = implode('', $headerLines);
+        $prompt = implode("\n", $promptLines);
         $hint = implode('', $hintLines);
 
         $this->assertStringContainsString('Human input required', $header);
+        $this->assertStringContainsString('Describe your workflow.', $prompt);
+        $this->assertStringNotContainsString('…', $prompt, 'Prompt should wrap, not ellipsis-truncate');
         $this->assertSame('[type answer and press Enter]', trim($hint));
-        $this->assertStringNotContainsString('Describe your workflow.', $header.$hint);
     }
 
     /**
