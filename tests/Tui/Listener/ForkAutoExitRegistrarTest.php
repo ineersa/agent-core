@@ -29,7 +29,7 @@ use Symfony\Component\Tui\Tui;
  *   3. Once terminal, waits for the .fork-finalized marker file.
  *   4. Stops the TUI when marker appears (or after timeout if missing).
  *
- * If the marker-wait has no timeout, a deadlocked controller/watcher
+ * If the marker-wait has no timeout, a deadlocked controller/ForkRunFinalizer
  * would leave the fork child TUI spinning forever, preventing the parent
  * FORK-05 completion watcher from retrieving diagnostics.
  */
@@ -212,7 +212,7 @@ final class ForkAutoExitRegistrarTest extends TestCase
             // First tick: enters marker-wait phase, no marker yet.
             $context->ticks->dispatch(new TickEvent());
 
-            // Create marker between ticks (simulates watcher completing finalization).
+            // Create marker between ticks (simulates ForkRunFinalizer completing finalization).
             file_put_contents($markerPath, '{}');
 
             // Second tick: marker found, should stop TUI.

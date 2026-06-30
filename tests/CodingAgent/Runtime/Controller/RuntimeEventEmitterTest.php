@@ -258,6 +258,10 @@ final class RuntimeEventEmitterTest extends TestCase
                 1 => [
                     new RuntimeEvent(RuntimeEventTypeEnum::ToolExecutionCompleted->value, $runId, 5, ['tool_name' => 'bash']),
                 ],
+                2 => [
+                    // Same event again — proves cursor advancement filters it out
+                    new RuntimeEvent(RuntimeEventTypeEnum::ToolExecutionCompleted->value, $runId, 5, ['tool_name' => 'bash']),
+                ],
             ],
         );
 

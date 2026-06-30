@@ -23,12 +23,12 @@ use Ineersa\Tui\Runtime\TuiRuntimeContext;
  *
  * The .fork-finalized marker prevents a race between the TUI
  * receiving the terminal runtime event and the controller-side
- * watcher finishing artifact writes.  Without this barrier, the TUI
+ * ForkRunFinalizer finishing artifact writes.  Without this barrier, the TUI
  * could exit before artifacts are complete, losing result data.
  *
  * If the marker does not appear within MARKER_WAIT_TIMEOUT seconds,
  * the TUI stops anyway with a diagnostic log.  This prevents a
- * deadlock in case the watcher/controller fails silently.
+ * deadlock in case the ForkRunFinalizer/controller fails silently.
  * FORK-05's completion watcher can then retrieve the partial
  * artifacts (fork-metadata.json with Failed/Cancelled status).
  *
