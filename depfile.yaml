@@ -417,6 +417,7 @@ parameters:
       - TuiWidget
       - TuiTheme
       - SymfonyTui
+      - SymfonyYaml
 
     TuiStatus:
       - TuiWidget

@@ -22,6 +22,7 @@ use Ineersa\Tui\Theme\TuiTheme;
 use Ineersa\Tui\Transcript\PendingMessagesWidget;
 use Ineersa\Tui\Transcript\TranscriptBlockWidget;
 use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
+use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use Ineersa\Tui\Widget\LiveTextWidget;
 use Ineersa\Tui\Widget\TuiRenderContext;
 use Ineersa\Tui\Widget\WidgetPlacementEnum;
@@ -101,12 +102,13 @@ final class ChatScreen
         private string $sessionId,
         private readonly PromptEditor $promptEditor,
         TranscriptDisplayConfig $displayConfig = new TranscriptDisplayConfig(),
+        TranscriptDisplayState $displayState = new TranscriptDisplayState(),
     ) {
         $this->registry = new TuiSlotRegistry();
 
         // ── Instantiate default renderables ──
         $this->headerRenderable = new HeaderWidget();
-        $this->transcriptRenderable = new TranscriptBlockWidget(displayConfig: $displayConfig);
+        $this->transcriptRenderable = new TranscriptBlockWidget(displayConfig: $displayConfig, displayState: $displayState);
         $this->pendingRenderable = new PendingMessagesWidget();
         $this->workingRenderable = new WorkingStatusWidget();
         $this->statusPanelRenderable = new StatusPanelWidget();

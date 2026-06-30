@@ -10,6 +10,7 @@ use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
+use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use Symfony\Component\Tui\Terminal\ScreenBuffer;
 use Symfony\Component\Tui\Terminal\VirtualTerminal;
 use Symfony\Component\Tui\Tui;
@@ -35,6 +36,7 @@ final class VirtualTuiHarness
         string $sessionId = 'virtual-startup-session',
         ?ThemePalette $palette = null,
         ?TranscriptDisplayConfig $displayConfig = null,
+        ?TranscriptDisplayState $displayState = null,
     ) {
         $this->terminal = new VirtualTerminal(columns: $columns, rows: $rows);
         $palette ??= self::defaultVirtualPalette();
@@ -44,6 +46,7 @@ final class VirtualTuiHarness
             sessionId: $sessionId,
             promptEditor: new PromptEditor(),
             displayConfig: $displayConfig ?? new TranscriptDisplayConfig(),
+            displayState: $displayState ?? new TranscriptDisplayState(),
         );
         $this->tui = new Tui(terminal: $this->terminal);
         $this->screen->mount($this->tui);

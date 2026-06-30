@@ -8,19 +8,6 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\Tui\Widget\TuiRenderContext;
 use Ineersa\Tui\Widget\TuiWidget;
 
-/**
- * Transcript widget that renders {@see TranscriptBlock} DTOs using
- * the Symfony TUI widget-tree renderer.
- *
- * Internally builds one root {@see ContainerWidget} tree per render call
- * via {@see TranscriptBlockWidgetFactory} and renders it through
- * {@see SymfonyTuiWidgetRenderer}. This replaces the previous flat
- * loop-over-blocks approach — the old flat path is not retained.
- *
- * The public API ({@see setBlocks()}, {@see addBlock()}, {@see render()})
- * is unchanged so {@see ChatScreen} / {@see LiveTextWidget} integration
- * is unaffected.
- */
 final class TranscriptBlockWidget implements TuiWidget
 {
     /** @var list<TranscriptBlock> */
@@ -31,8 +18,12 @@ final class TranscriptBlockWidget implements TuiWidget
     public function __construct(
         private readonly SymfonyTuiWidgetRenderer $widgetRenderer = new SymfonyTuiWidgetRenderer(),
         TranscriptDisplayConfig $displayConfig = new TranscriptDisplayConfig(),
+        TranscriptDisplayState $displayState = new TranscriptDisplayState(),
     ) {
-        $this->factory = new TranscriptBlockWidgetFactory(displayConfig: $displayConfig);
+        $this->factory = new TranscriptBlockWidgetFactory(
+            displayConfig: $displayConfig,
+            displayState: $displayState,
+        );
     }
 
     /** @return list<TranscriptBlock> */

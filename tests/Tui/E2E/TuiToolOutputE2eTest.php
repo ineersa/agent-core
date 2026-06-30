@@ -117,6 +117,24 @@ final class TuiToolOutputE2eTest extends TestCase
             // Capture full transcript history for assertions.
             $fullCapture = $this->tmux->capturePlainWithHistory($pane, 2000);
 
+
+            // Tool call card should show YAML arguments from replay fixture.
+            self::assertStringContainsString(
+                'path:',
+                $fullCapture,
+                'Tool call card must render fenced YAML arguments (path key)',
+            );
+            self::assertStringContainsString(
+                './test.txt',
+                $fullCapture,
+                'Tool call card must render YAML argument value from read tool call',
+            );
+            self::assertStringContainsString(
+                '```yaml',
+                $fullCapture,
+                'Tool call card must include fenced YAML marker',
+            );
+
             // 1. The real tool output (file content) must appear in the transcript.
             self::assertStringContainsString(
                 self::OUTPUT_SENTINEL,
