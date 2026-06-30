@@ -985,6 +985,142 @@ final class RunStateReplayServiceTest extends TestCase
         }
     }
 
+    public function testRebuildForLeafMultiLevelRewindPreservesBranchSeedingCommandOnActivePath(): void
+    {
+        // Regression for silent transcript corruption in multi-level rewind: a branch-seeding
+        // follow_up command stamped with an ancestor's turnNo (the established queuing pattern)
+        // must survive rebuildForLeaf when that branch is the rewind target. The obsolete
+        // filterPostRewindSiblingLaunchesOnPath stripped it because seq > rewind-cutoff, dropping
+        // the user message while keeping the assistant response. TurnTreeReplayFilter already
+        // includes the command (createdTurn is on the active path); the post-filter must not
+        // re-strip it.
+        $this->appendEventWithTurn('run_started', 1, 0, [
+            'step_id' => 's0',
+            'payload' => ['messages' => [
+                ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Remember secrets']], 'is_error' => false],
+            ]],
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::TurnAdvanced->value, 2, 1, [
+            'turn_no' => 1, 'parent_turn_no' => null, 'step_id' => 'step-1',
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::LeafSet->value, 3, 1, [
+            'turn_no' => 1, 'reason' => 'continue',
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::LlmStepCompleted->value, 4, 1, [
+            'assistant_message' => [
+                'role' => 'assistant',
+                'content' => [['type' => 'text', 'text' => 'OK']],
+                'is_error' => false,
+            ],
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::AgentEnd->value, 5, 1, [
+            'reason' => 'completed',
+        ]);
+        // Off-path turn 2 (abandoned) — keeps canonical seq contiguous 1..18
+        $this->appendEventWithTurn(RunEventTypeEnum::AgentCommandQueued->value, 6, 1, [
+            'kind' => 'follow_up',
+            'idempotency_key' => 'fu-pineapple',
+            'message' => [
+                'role' => 'user',
+                'content' => [['type' => 'text', 'text' => 'pineapple']],
+                'is_error' => false,
+            ],
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::AgentCommandApplied->value, 7, 1, [
+            'kind' => 'follow_up',
+            'idempotency_key' => 'fu-pineapple',
+            'message' => [
+                'role' => 'user',
+                'content' => [['type' => 'text', 'text' => 'pineapple']],
+                'is_error' => false,
+            ],
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::TurnAdvanced->value, 8, 2, [
+            'turn_no' => 2, 'parent_turn_no' => 1, 'step_id' => 'step-2',
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::LeafSet->value, 9, 2, [
+            'turn_no' => 2, 'reason' => 'continue',
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::LlmStepCompleted->value, 10, 2, [
+            'assistant_message' => [
+                'role' => 'assistant',
+                'content' => [['type' => 'text', 'text' => 'pineapple noted']],
+                'is_error' => false,
+            ],
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::AgentEnd->value, 11, 2, [
+            'reason' => 'completed',
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::LeafSet->value, 12, 1, [
+            'turn_no' => 1,
+            'previous_turn_no' => 2,
+            'parent_turn_no' => null,
+            'reason' => 'rewind',
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::AgentCommandQueued->value, 13, 1, [
+            'kind' => 'follow_up',
+            'idempotency_key' => 'fu-apple',
+            'message' => [
+                'role' => 'user',
+                'content' => [['type' => 'text', 'text' => 'apple']],
+                'is_error' => false,
+            ],
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::AgentCommandApplied->value, 14, 1, [
+            'kind' => 'follow_up',
+            'idempotency_key' => 'fu-apple',
+            'message' => [
+                'role' => 'user',
+                'content' => [['type' => 'text', 'text' => 'apple']],
+                'is_error' => false,
+            ],
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::TurnAdvanced->value, 15, 3, [
+            'turn_no' => 3, 'parent_turn_no' => 1, 'step_id' => 'step-3',
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::LeafSet->value, 16, 3, [
+            'turn_no' => 3, 'reason' => 'continue',
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::LlmStepCompleted->value, 17, 3, [
+            'assistant_message' => [
+                'role' => 'assistant',
+                'content' => [['type' => 'text', 'text' => 'apple noted']],
+                'is_error' => false,
+            ],
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::AgentEnd->value, 18, 3, [
+            'reason' => 'completed',
+        ]);
+
+        $state = new RunState(
+            runId: $this->runId,
+            status: RunStatus::Completed,
+            version: 10,
+            turnNo: 3,
+            lastSeq: 18,
+        );
+
+        $result = $this->service->rebuildForLeaf($state, $this->runId, 3);
+
+        $this->assertTrue($result->rebuilt);
+        $this->assertNotNull($result->rebuiltState);
+        $this->assertSame(RunStatus::Completed, $result->rebuiltState->status);
+        $this->assertSame(3, $result->rebuiltState->turnNo);
+        $this->assertSame(18, $result->rebuiltState->lastSeq);
+
+        $userTexts = [];
+        foreach ($result->rebuiltState->messages as $msg) {
+            if ('user' === $msg->role) {
+                $userTexts[] = $msg->content[0]['text'] ?? '';
+            }
+        }
+
+        $this->assertContains('apple', $userTexts,
+            'Branch-seeding follow_up stamped on ancestor turnNo must survive rebuildForLeaf for active-path leaf 3');
+        $this->assertStringContainsString('apple noted', $result->rebuiltState->messages[\count($result->rebuiltState->messages) - 1]->content[0]['text'] ?? '',
+            'Assistant response for turn 3 must remain when user message is preserved');
+    }
+
     // ── Leaf_set and turn_branched are no-op reducers ───────────────────────
 
     public function testLeafSetIsNoOpDuringReplay(): void

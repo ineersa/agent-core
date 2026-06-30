@@ -327,13 +327,6 @@ final readonly class RunStateReplayService
                     $targetLeafTurnNo,
                     $filteredEvents,
                 );
-
-                $filteredEvents = $this->filterPostRewindSiblingLaunchesOnPath(
-                    $sortedEvents,
-                    $targetLeafTurnNo,
-                    $branchReplay->activePathTurnNos,
-                    $filteredEvents,
-                );
             }
 
             $rebuiltState = $this->replay($state, $filteredEvents);
@@ -1227,65 +1220,6 @@ final readonly class RunStateReplayService
                 }
 
                 return $event->seq >= $rewindLeafSetSeq;
-            },
-        ));
-    }
-
-    /**
-     * @param list<RunEvent> $sortedEvents
-     * @param list<int>      $activePathTurnNos
-     * @param list<RunEvent> $filteredEvents
-     *
-     * @return list<RunEvent>
-     */
-    private function filterPostRewindSiblingLaunchesOnPath(
-        array $sortedEvents,
-        int $targetLeafTurnNo,
-        array $activePathTurnNos,
-        array $filteredEvents,
-    ): array {
-        $ancestorTurns = array_values(array_filter(
-            $activePathTurnNos,
-            static fn (int $turnNo): bool => $turnNo < $targetLeafTurnNo,
-        ));
-
-        if ([] === $ancestorTurns) {
-            return $filteredEvents;
-        }
-
-        $rewindCutoffByTurn = [];
-        foreach ($sortedEvents as $event) {
-            if (RunEventTypeEnum::LeafSet->value !== $event->type) {
-                continue;
-            }
-
-            $payload = $event->payload;
-            $leafTurnNo = (int) ($payload['turn_no'] ?? 0);
-            $reason = \is_string($payload['reason'] ?? null) ? $payload['reason'] : '';
-
-            if ('rewind' !== $reason || !\in_array($leafTurnNo, $ancestorTurns, true)) {
-                continue;
-            }
-
-            $rewindCutoffByTurn[$leafTurnNo] = max($rewindCutoffByTurn[$leafTurnNo] ?? 0, $event->seq);
-        }
-
-        if ([] === $rewindCutoffByTurn) {
-            return $filteredEvents;
-        }
-
-        return array_values(array_filter(
-            $filteredEvents,
-            static function (RunEvent $event) use ($rewindCutoffByTurn): bool {
-                $cutoff = $rewindCutoffByTurn[$event->turnNo] ?? null;
-                if (null === $cutoff || $event->seq <= $cutoff) {
-                    return true;
-                }
-
-                return !\in_array($event->type, [
-                    RunEventTypeEnum::AgentCommandQueued->value,
-                    RunEventTypeEnum::AgentCommandApplied->value,
-                ], true);
             },
         ));
     }
