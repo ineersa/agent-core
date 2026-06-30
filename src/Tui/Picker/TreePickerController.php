@@ -107,15 +107,17 @@ final class TreePickerController
 
         // ── Build items ──
         $theme = $screen->theme();
-        $items = self::buildItems($tree, $theme, selectedIndex: 0);
         // Pre-compute the depth-first order of turn numbers for selection-change indexing
         $flattenedOrder = self::flattenTurnOrder($tree);
+        $initialSelectedIndex = self::initialSelectedIndex($tree);
+        $items = self::buildItems($tree, $theme, selectedIndex: $initialSelectedIndex);
 
         $listWidget = new SelectListWidget(
             items: $items,
             maxVisible: 10,
             keybindings: $kb,
         );
+        $listWidget->setSelectedIndex(max(0, $initialSelectedIndex));
 
         // ── Arrows → rebuild items so newly selected row gets accent colour ──
         // setSelectedIndex() does NOT re-dispatch SelectionChangeEvent
@@ -218,6 +220,19 @@ final class TreePickerController
     public static function flattenTurnOrder(TurnTreeView $tree): array
     {
         return self::walk($tree)[1];
+    }
+
+    /**
+     * Index of the current leaf turn in the depth-first picker order,
+     * for initial cursor placement when the tree picker opens.
+     *
+     * @return int<0, max> clamped to >= 0; 0 when the current leaf is not in the order
+     */
+    public static function initialSelectedIndex(TurnTreeView $tree): int
+    {
+        $idx = array_search($tree->currentLeafTurnNo, self::flattenTurnOrder($tree), true);
+
+        return false === $idx ? 0 : max(0, $idx);
     }
 
     // ── Private helpers ─────────────────────────────────────────────

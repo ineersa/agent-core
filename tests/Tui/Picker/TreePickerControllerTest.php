@@ -642,6 +642,130 @@ final class TreePickerControllerTest extends TestCase
         self::assertStringContainsString('└─ ◉ Turn 4:', $items[3]['label']);
     }
 
+    // ── initialSelectedIndex: open on current leaf (regression) ───────────
+
+    #[Test]
+    public function testInitialSelectedIndexCurrentLeafNotFirstReturnsDepthFirstIndex(): void
+    {
+        // Thesis: Tree picker must open with the cursor on the CURRENT leaf turn, not the first
+        // turn, so the user's position in the conversation is preserved when navigating the tree.
+        // Regression for user-reported UX bug where opening /tree always highlighted the root turn.
+        // Tree 1 → {2, 3 → 4}; current leaf = turn 4 (DFS order: 1, 2, 3, 4 → index 3).
+        $nodes = [
+            1 => new TurnTreeNodeView(
+                turnNo: 1,
+                parentTurnNo: null,
+                childTurnNos: [2, 3],
+                anchorSeq: 2,
+                title: 'Root',
+                promptPreview: 'Root',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            2 => new TurnTreeNodeView(
+                turnNo: 2,
+                parentTurnNo: 1,
+                childTurnNos: [],
+                anchorSeq: 5,
+                title: 'Branch A',
+                promptPreview: 'A',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            3 => new TurnTreeNodeView(
+                turnNo: 3,
+                parentTurnNo: 1,
+                childTurnNos: [4],
+                anchorSeq: 8,
+                title: 'Branch B',
+                promptPreview: 'B',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            4 => new TurnTreeNodeView(
+                turnNo: 4,
+                parentTurnNo: 3,
+                childTurnNos: [],
+                anchorSeq: 11,
+                title: 'Deep leaf',
+                promptPreview: 'Deep',
+                createdAt: null,
+                isCurrentLeaf: true,
+            ),
+        ];
+
+        $tree = new TurnTreeView(
+            runId: 'run',
+            nodesByTurnNo: $nodes,
+            rootTurnNos: [1],
+            currentLeafTurnNo: 4,
+            activePathTurnNos: [1, 3, 4],
+        );
+
+        self::assertSame([1, 2, 3, 4], TreePickerController::flattenTurnOrder($tree));
+        self::assertSame(3, TreePickerController::initialSelectedIndex($tree));
+    }
+
+    #[Test]
+    public function testInitialSelectedIndexCurrentLeafIsRootReturnsZero(): void
+    {
+        $tree = new TurnTreeView(
+            runId: 'run',
+            nodesByTurnNo: [
+                1 => new TurnTreeNodeView(
+                    turnNo: 1,
+                    parentTurnNo: null,
+                    childTurnNos: [],
+                    anchorSeq: 2,
+                    title: 'Only turn',
+                    promptPreview: 'Only',
+                    createdAt: null,
+                    isCurrentLeaf: true,
+                ),
+            ],
+            rootTurnNos: [1],
+            currentLeafTurnNo: 1,
+            activePathTurnNos: [1],
+        );
+
+        self::assertSame(0, TreePickerController::initialSelectedIndex($tree));
+    }
+
+    #[Test]
+    public function testInitialSelectedIndexMissingLeafInOrderReturnsZero(): void
+    {
+        $tree = new TurnTreeView(
+            runId: 'run',
+            nodesByTurnNo: [
+                1 => new TurnTreeNodeView(
+                    turnNo: 1,
+                    parentTurnNo: null,
+                    childTurnNos: [2],
+                    anchorSeq: 2,
+                    title: 'T1',
+                    promptPreview: 'T1',
+                    createdAt: null,
+                    isCurrentLeaf: false,
+                ),
+                2 => new TurnTreeNodeView(
+                    turnNo: 2,
+                    parentTurnNo: 1,
+                    childTurnNos: [],
+                    anchorSeq: 5,
+                    title: 'T2',
+                    promptPreview: 'T2',
+                    createdAt: null,
+                    isCurrentLeaf: true,
+                ),
+            ],
+            rootTurnNos: [1],
+            currentLeafTurnNo: 99,
+            activePathTurnNos: [1, 2],
+        );
+
+        self::assertSame(0, TreePickerController::initialSelectedIndex($tree));
+    }
+
     // ── buildItems: empty tree ──────────────────────────────────────────────
 
     #[Test]
@@ -885,9 +1009,10 @@ final class TreePickerControllerTest extends TestCase
         $controller->open();
         self::assertTrue($controller->isOpen());
 
-        // The picker opens with turn 1 (non-current leaf) at index 0.
-        // Press Enter to confirm selection (handleInput with \r = ENTER key).
-        $controller->overlay()->listWidget()->handleInput("\r");
+        // Picker opens on current leaf (turn 2 at index 1); move to turn 1, then confirm.
+        $widget = $controller->overlay()->listWidget();
+        $widget->setSelectedIndex(0);
+        $widget->handleInput("\r");
 
         self::assertFalse($controller->isOpen(), 'Picker must close after selection');
     }
