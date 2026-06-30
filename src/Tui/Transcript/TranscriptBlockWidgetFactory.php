@@ -43,6 +43,21 @@ final readonly class TranscriptBlockWidgetFactory
     ) {
     }
 
+    public function displayConfig(): TranscriptDisplayConfig
+    {
+        return $this->displayConfig;
+    }
+
+    public function displayState(): TranscriptDisplayState
+    {
+        return $this->displayState;
+    }
+
+    public function isTranscriptWidgetSuppressed(TranscriptBlock $block): bool
+    {
+        return $this->shouldSuppressTranscriptWidget($block);
+    }
+
     /**
      * Build a root ContainerWidget containing one widget per block.
      *
@@ -192,8 +207,9 @@ final readonly class TranscriptBlockWidgetFactory
 
         $patch = $arguments['patch'] ?? '';
         if (\is_string($patch) && '' !== $patch) {
-            foreach ($this->editDiffRenderer->buildPatchBodyWidgets($patch, $theme, $this->displayConfig, $this->displayState) as $widget) {
-                $container->add($widget);
+            $patchBody = $this->editDiffRenderer->buildPatchBodyWidget($patch, $theme, $this->displayConfig, $this->displayState);
+            if (null !== $patchBody) {
+                $container->add($patchBody);
             }
         }
 

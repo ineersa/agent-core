@@ -11,6 +11,9 @@ use Symfony\Component\Yaml\Yaml;
  */
 final class ToolArgumentsFormatter
 {
+    /** @var array<string, list<string>> */
+    private array $formatLinesCache = [];
+
     /**
      * @param array<string, mixed> $arguments
      *
@@ -22,6 +25,11 @@ final class ToolArgumentsFormatter
             return [];
         }
 
+        $cacheKey = hash('xxh128', serialize($arguments));
+        if (isset($this->formatLinesCache[$cacheKey])) {
+            return $this->formatLinesCache[$cacheKey];
+        }
+
         $yaml = trim(Yaml::dump(
             $arguments,
             4,
@@ -30,9 +38,14 @@ final class ToolArgumentsFormatter
         ));
 
         if ('' === $yaml) {
+            $this->formatLinesCache[$cacheKey] = [];
+
             return [];
         }
 
-        return explode("\n", $yaml);
+        $lines = explode("\n", $yaml);
+        $this->formatLinesCache[$cacheKey] = $lines;
+
+        return $lines;
     }
 }

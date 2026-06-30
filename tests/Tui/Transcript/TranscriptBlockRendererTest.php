@@ -13,6 +13,7 @@ use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use Ineersa\Tui\Transcript\TranscriptBlockRenderer;
 use Ineersa\Tui\Transcript\TranscriptBlockWidget;
+use Ineersa\Tui\Transcript\ToolArgumentsFormatter;
 use Ineersa\Tui\Widget\TuiRenderContext;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -987,6 +988,115 @@ final class TranscriptBlockRendererTest extends TestCase
         $this->assertStringContainsString('What model?', $output);
         $this->assertStringContainsString('gpt-test', $output);
         $this->assertStringContainsString('→', $output);
+    }
+
+    public function testTranscriptBlockRenderCacheReusesUnchangedBlocks(): void
+    {
+        $block = new TranscriptBlock(
+            id: 'cache-user',
+            kind: TranscriptBlockKindEnum::UserMessage,
+            runId: 'r',
+            seq: 1,
+            text: 'Cached hello',
+        );
+        $widget = new TranscriptBlockWidget();
+        $widget->setBlocks([$block]);
+
+        $first = $widget->render($this->context);
+        $second = $widget->render($this->context);
+
+        $this->assertSame($first, $second);
+        $this->assertStringContainsString('Cached hello', implode("
+", $second));
+    }
+
+    public function testTranscriptBlockRenderCacheInvalidatesOnTextChange(): void
+    {
+        $block = new TranscriptBlock(
+            id: 'cache-stream',
+            kind: TranscriptBlockKindEnum::AssistantMessage,
+            runId: 'r',
+            seq: 2,
+            text: 'Part one',
+            streaming: true,
+        );
+        $widget = new TranscriptBlockWidget();
+        $widget->setBlocks([$block]);
+
+        $first = $widget->render($this->context);
+
+        $widget->setBlocks([
+            new TranscriptBlock(
+                id: 'cache-stream',
+                kind: TranscriptBlockKindEnum::AssistantMessage,
+                runId: 'r',
+                seq: 2,
+                text: 'Part one and more',
+                streaming: true,
+            ),
+        ]);
+        $second = $widget->render($this->context);
+
+        $this->assertNotSame($first, $second);
+        $this->assertStringContainsString('Part one and more', implode("
+", $second));
+    }
+
+    public function testTranscriptBlockRenderCacheInvalidatesOnPreviewExpandedState(): void
+    {
+        $patchLines = [];
+        for ($i = 0; $i < 6; ++$i) {
+            $patchLines[] = '+line'.$i;
+        }
+        $patch = implode("
+", array_merge(['---', '+++', '@@'], $patchLines));
+        $block = new TranscriptBlock(
+            id: 'cache-edit',
+            kind: TranscriptBlockKindEnum::ToolCall,
+            runId: 'r',
+            seq: 3,
+            text: 'edit',
+            meta: [
+                'tool_name' => 'edit',
+                'arguments' => ['path' => '/tmp/test.md', 'patch' => $patch],
+            ],
+        );
+
+        $collapsedWidget = new TranscriptBlockWidget(
+            displayConfig: new TranscriptDisplayConfig(diffPreviewLines: 2),
+            displayState: new TranscriptDisplayState(previewableBlocksExpanded: false),
+        );
+        $collapsedWidget->setBlocks([$block]);
+        $collapsed = $collapsedWidget->render($this->context);
+
+        $expandedWidget = new TranscriptBlockWidget(
+            displayConfig: new TranscriptDisplayConfig(diffPreviewLines: 2),
+            displayState: new TranscriptDisplayState(previewableBlocksExpanded: true),
+        );
+        $expandedWidget->setBlocks([$block]);
+        $expanded = $expandedWidget->render($this->context);
+
+        $collapsedPlain = preg_replace('/\[[0-9;]*m/', '', implode("
+", $collapsed));
+        $expandedPlain = preg_replace('/\[[0-9;]*m/', '', implode("
+", $expanded));
+
+        $this->assertStringNotContainsString('+line5', $collapsedPlain);
+        $this->assertStringContainsString('+line5', $expandedPlain);
+    }
+
+    public function testToolArgumentsFormatterMemoizesYamlDump(): void
+    {
+        $formatter = new ToolArgumentsFormatter();
+        $arguments = ['path' => '/tmp/a.txt', 'content' => "line1
+line2"];
+
+        $first = $formatter->formatLines($arguments);
+        $second = $formatter->formatLines($arguments);
+
+        $this->assertSame($first, $second);
+        $this->assertStringContainsString('path:', implode("
+", $first));
     }
 
     public function testAskHumanSequenceShowsOnlyQuestionNotToolPayload(): void

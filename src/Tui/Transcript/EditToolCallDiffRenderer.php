@@ -6,7 +6,6 @@ namespace Ineersa\Tui\Transcript;
 
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
-use Symfony\Component\Tui\Widget\AbstractWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
 
 /**
@@ -19,15 +18,12 @@ final readonly class EditToolCallDiffRenderer
     ) {
     }
 
-    /**
-     * @return list<AbstractWidget>
-     */
-    public function buildPatchBodyWidgets(
+    public function buildPatchBodyWidget(
         string $patch,
         TuiTheme $theme,
         TranscriptDisplayConfig $displayConfig,
         TranscriptDisplayState $displayState,
-    ): array {
+    ): ?TextWidget {
         $rawLines = explode("\n", str_replace(["\r\n", "\r"], "\n", $patch));
         $preview = $this->linePreview->apply(
             $rawLines,
@@ -36,16 +32,20 @@ final readonly class EditToolCallDiffRenderer
             displayState: $displayState,
         );
 
-        $widgets = [];
+        $coloredLines = [];
         foreach ($preview['lines'] as $line) {
-            $widgets[] = new TextWidget($theme->color($this->colorForPatchLine($line), '    '.$line));
+            $coloredLines[] = $theme->color($this->colorForPatchLine($line), '    '.$line);
         }
 
         if (null !== $preview['ellipsis']) {
-            $widgets[] = new TextWidget($theme->color(ThemeColorEnum::DiffContext, '    '.$preview['ellipsis']));
+            $coloredLines[] = $theme->color(ThemeColorEnum::DiffContext, '    '.$preview['ellipsis']);
         }
 
-        return $widgets;
+        if ([] === $coloredLines) {
+            return null;
+        }
+
+        return new TextWidget(implode("\n", $coloredLines));
     }
 
     private function colorForPatchLine(string $line): ThemeColorEnum

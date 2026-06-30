@@ -5,22 +5,21 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Transcript;
 
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
+use Ineersa\Tui\Theme\TuiTheme;
 use Ineersa\Tui\Widget\TuiRenderContext;
 use Ineersa\Tui\Widget\TuiWidget;
+use Symfony\Component\Tui\Widget\ContainerWidget;
 
 /**
  * Renders {@see TranscriptBlock} DTOs through the Symfony TUI widget-tree pipeline.
  *
- * Each {@see render()} builds one root {@see \Symfony\Component\Tui\Widget\ContainerWidget}
- * via {@see TranscriptBlockWidgetFactory} and {@see SymfonyTuiWidgetRenderer}. This replaced
- * the old flat loop-over-blocks renderer; no alternate flat path is retained.
+ * Each visible block is rendered through {@see TranscriptBlockWidgetFactory} and
+ * {@see SymfonyTuiWidgetRenderer}. Unchanged finalized blocks reuse a local
+ * per-block line cache so long transcripts do not rebuild every widget tree on
+ * every render tick.
  *
  * {@see setBlocks()}, {@see addBlock()}, and {@see render()} stay stable for ChatScreen /
  * LiveTextWidget integration.
- *
- * Receives {@see TranscriptDisplayConfig} and mutable {@see TranscriptDisplayState} so renderers
- * can apply local display policy (e.g. preview expansion) without encoding collapse in projection
- * blocks or {@see TranscriptBlock::$collapsed}.
  */
 final class TranscriptBlockWidget implements TuiWidget
 {
@@ -28,6 +27,11 @@ final class TranscriptBlockWidget implements TuiWidget
     private array $blocks = [];
 
     private readonly TranscriptBlockWidgetFactory $factory;
+
+    /**
+     * @var array<string, array{key: string, lines: list<string>}>
+     */
+    private array $blockRenderCache = [];
 
     public function __construct(
         private readonly SymfonyTuiWidgetRenderer $widgetRenderer = new SymfonyTuiWidgetRenderer(),
@@ -50,6 +54,7 @@ final class TranscriptBlockWidget implements TuiWidget
     public function setBlocks(array $blocks): void
     {
         $this->blocks = $blocks;
+        $this->pruneBlockRenderCache();
     }
 
     public function addBlock(TranscriptBlock $block): void
@@ -64,8 +69,105 @@ final class TranscriptBlockWidget implements TuiWidget
             return [$context->theme->muted('  Welcome to Agent Core. Type a message below to start.')];
         }
 
-        $root = $this->factory->buildRoot($this->blocks, $context->theme);
+        $themeFingerprint = $this->themeFingerprint($context->theme);
+        $environmentFingerprint = $this->renderEnvironmentFingerprint();
+
+        $allLines = [];
+        foreach ($this->blocks as $block) {
+            if ($this->factory->isTranscriptWidgetSuppressed($block)) {
+                continue;
+            }
+
+            $cacheKey = $this->blockCacheKey(
+                $block,
+                $context,
+                $themeFingerprint,
+                $environmentFingerprint,
+            );
+
+            $cached = $this->blockRenderCache[$block->id] ?? null;
+            if (null !== $cached && $cached['key'] === $cacheKey) {
+                array_push($allLines, ...$cached['lines']);
+
+                continue;
+            }
+
+            $lines = $this->renderSingleBlock($block, $context);
+            $this->blockRenderCache[$block->id] = [
+                'key' => $cacheKey,
+                'lines' => $lines,
+            ];
+            array_push($allLines, ...$lines);
+        }
+
+        return $allLines;
+    }
+
+    /** @return list<string> */
+    private function renderSingleBlock(TranscriptBlock $block, TuiRenderContext $context): array
+    {
+        $root = new ContainerWidget();
+        $root->add($this->factory->buildWidget($block, $context->theme));
 
         return $this->widgetRenderer->render($root, $context);
+    }
+
+    private function blockCacheKey(
+        TranscriptBlock $block,
+        TuiRenderContext $context,
+        string $themeFingerprint,
+        string $environmentFingerprint,
+    ): string {
+        $meta = $block->meta;
+        ksort($meta);
+
+        return hash('xxh128', implode("\x1e", [
+            $block->id,
+            $block->kind->value,
+            (string) $block->seq,
+            $block->text,
+            serialize($meta),
+            $block->streaming ? '1' : '0',
+            (string) max($context->terminalWidth, 1),
+            (string) max($context->terminalHeight, 1),
+            $themeFingerprint,
+            $environmentFingerprint,
+        ]));
+    }
+
+    private function themeFingerprint(TuiTheme $theme): string
+    {
+        $palette = $theme->getPalette();
+
+        return hash('xxh128', $palette->name.serialize($palette->colors));
+    }
+
+    private function renderEnvironmentFingerprint(): string
+    {
+        $config = $this->factory->displayConfig();
+        $state = $this->factory->displayState();
+
+        return hash('xxh128', serialize([
+            $config->thinkingVisible,
+            $config->thinkingStyle,
+            $config->previewsExpandedByDefault,
+            $config->toolResultPreviewLines,
+            $config->diffPreviewLines,
+            $state->previewableBlocksExpanded,
+        ]));
+    }
+
+    private function pruneBlockRenderCache(): void
+    {
+        $liveIds = [];
+        foreach ($this->blocks as $block) {
+            $liveIds[$block->id] = true;
+        }
+
+        foreach (array_keys($this->blockRenderCache) as $blockId) {
+            if (!isset($liveIds[$blockId])) {
+                unset($this->blockRenderCache[$blockId]);
+            }
+        }
     }
 }

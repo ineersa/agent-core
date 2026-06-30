@@ -54,10 +54,8 @@ final readonly class WriteToolCallContentRenderer
         if ($this->isMarkdownTargetPath($path)) {
             $widgets = [$this->buildMarkdownPreviewWidget($previewText, $theme)];
         } else {
-            $widgets = [];
-            foreach ($preview['lines'] as $line) {
-                $widgets[] = new TextWidget($theme->color(ThemeColorEnum::ToolOutput, '    '.$line));
-            }
+            $body = $this->buildPlaintextBodyWidget($preview['lines'], $theme);
+            $widgets = null !== $body ? [$body] : [];
         }
 
         if (null !== $preview['ellipsis']) {
@@ -65,6 +63,23 @@ final readonly class WriteToolCallContentRenderer
         }
 
         return $widgets;
+    }
+
+    /**
+     * @param list<string> $lines
+     */
+    private function buildPlaintextBodyWidget(array $lines, TuiTheme $theme): ?TextWidget
+    {
+        if ([] === $lines) {
+            return null;
+        }
+
+        $coloredLines = [];
+        foreach ($lines as $line) {
+            $coloredLines[] = $theme->color(ThemeColorEnum::ToolOutput, '    '.$line);
+        }
+
+        return new TextWidget(implode("\n", $coloredLines));
     }
 
     private function buildMarkdownPreviewWidget(string $previewText, TuiTheme $theme): MarkdownWidget
