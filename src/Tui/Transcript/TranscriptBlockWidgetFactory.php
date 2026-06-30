@@ -17,10 +17,18 @@ use Symfony\Component\Tui\Widget\TextWidget;
 use Symfony\Component\Yaml\Yaml;
 
 /**
- * Builds Symfony TUI widget trees from {@see TranscriptBlock} DTOs.
+ * Centralizes block-kind-specific rendering for the transcript widget tree.
  *
- * Tool calls and normal tool results render as compact multi-line cards
- * (glyph header, YAML-like args with preview, preview-truncated tool output).
+ * Responsibilities include glyphs, theme colors, fallback display text, system severity,
+ * markdown/thinking paths, and compact tool cards.
+ *
+ * User / assistant / visible thinking → {@see MarkdownWidget}.
+ * Hidden thinking → compact placeholder from {@see TranscriptDisplayConfig} only,
+ * not {@see TranscriptBlock::$collapsed}.
+ * {@see TranscriptBlockKindEnum::ToolCall} and normal {@see TranscriptBlockKindEnum::ToolResult}
+ * → compact multi-line cards (YAML-like args with preview, preview-truncated result body).
+ * Structured subagent tool results are delegated to {@see SubagentResultRenderer} before generic
+ * ToolResult cards. All other kinds → {@see TextWidget} flat line.
  */
 final readonly class TranscriptBlockWidgetFactory
 {
@@ -33,6 +41,8 @@ final readonly class TranscriptBlockWidgetFactory
     }
 
     /**
+     * Build a root ContainerWidget containing one widget per block.
+     *
      * @param list<TranscriptBlock> $blocks
      */
     public function buildRoot(array $blocks, TuiTheme $theme): ContainerWidget
@@ -45,30 +55,39 @@ final readonly class TranscriptBlockWidgetFactory
         return $root;
     }
 
+    /**
+     * Build a single widget for one transcript block.
+     */
     public function buildWidget(TranscriptBlock $block, TuiTheme $theme): AbstractWidget
     {
+        // Structured subagent result blocks stay on the dedicated renderer before generic ToolResult cards.
         if ($this->subagentRenderer->supports($block)) {
             return new TextWidget($this->subagentRenderer->buildContent($block, $theme));
         }
 
+        // Hidden thinking: compact placeholder; uses TranscriptDisplayConfig only, NOT TranscriptBlock::collapsed.
         if ($this->isThinkingBlock($block) && !$this->displayConfig->thinkingVisible) {
             $line = \sprintf('%s Thinking', TranscriptGlyphs::GLYPH_ASSISTANT_THINKING);
 
             return new TextWidget($theme->color(ThemeColorEnum::ThinkingText, $line));
         }
 
+        // UserMessage, AssistantMessage, visible thinking → MarkdownWidget.
         if ($this->isMarkdownBlock($block)) {
             return $this->buildMarkdownWidget($block, $theme);
         }
 
+        // RENDER-04: ToolCall → compact card (glyph header, YAML-like args, arg preview).
         if (TranscriptBlockKindEnum::ToolCall === $block->kind) {
             return $this->buildToolCallWidget($block, $theme);
         }
 
+        // RENDER-04: normal ToolResult → compact card (header, body preview unless error/cancel/timeout).
         if (TranscriptBlockKindEnum::ToolResult === $block->kind) {
             return $this->buildToolResultWidget($block, $theme);
         }
 
+        // All remaining kinds → existing TextWidget path.
         $prefix = $this->prefixFor($block);
         $color = $this->colorFor($block);
         $displayText = $this->displayTextFor($block);
@@ -141,6 +160,12 @@ final readonly class TranscriptBlockWidgetFactory
     }
 
     /**
+     * Shared line-budget preview for ToolCall argument lines and ToolResult body lines.
+     *
+     * When {@see TranscriptDisplayConfig::$toolResultPreviewLines} is <= 0, preview is disabled
+     * (all lines returned). When {@see TranscriptDisplayState::$previewableBlocksExpanded} is true,
+     * all lines are returned regardless of limit.
+     *
      * @param list<string> $lines
      *
      * @return array{lines: list<string>, ellipsis: ?string}
@@ -169,6 +194,11 @@ final readonly class TranscriptBlockWidgetFactory
         ];
     }
 
+    /**
+     * Error, cancelled, and timed_out tool results bypass preview so diagnostics are not hidden.
+     *
+     * Projection currently sets is_error for cancelled/timed_out as well; color still keys off is_error when full.
+     */
     private function toolResultIsFullRender(TranscriptBlock $block): bool
     {
         return $this->metaIsTruthy($block->meta['is_error'] ?? false)
@@ -239,6 +269,7 @@ final readonly class TranscriptBlockWidgetFactory
         return $text;
     }
 
+    // Glyph prefixes — TranscriptGlyphs constants are the public glyph contract for tests/assertions.
     private function prefixFor(TranscriptBlock $block): string
     {
         return match ($block->kind) {
@@ -256,6 +287,7 @@ final readonly class TranscriptBlockWidgetFactory
         };
     }
 
+    // Theme colors per block kind (flat TextWidget path and markdown base color).
     private function colorFor(TranscriptBlock $block): ThemeColorEnum
     {
         return match ($block->kind) {
@@ -273,6 +305,7 @@ final readonly class TranscriptBlockWidgetFactory
         };
     }
 
+    // Display text when block->text is empty (meta fallbacks and kind placeholders).
     private function displayTextFor(TranscriptBlock $block): string
     {
         if ('' !== $block->text) {
@@ -293,6 +326,7 @@ final readonly class TranscriptBlockWidgetFactory
         };
     }
 
+    // System block severity → glyph prefix.
     private function severityPrefix(TranscriptBlock $block): string
     {
         $severity = \is_string($block->meta['severity'] ?? null)
@@ -307,6 +341,7 @@ final readonly class TranscriptBlockWidgetFactory
         };
     }
 
+    // System block severity → theme color.
     private function severityColor(TranscriptBlock $block): ThemeColorEnum
     {
         $severity = \is_string($block->meta['severity'] ?? null)
@@ -320,6 +355,12 @@ final readonly class TranscriptBlockWidgetFactory
         };
     }
 
+    /**
+     * Markdown block: glyph prepended into markdown source, streaming suffix preserved.
+     *
+     * Left padding on the widget replaces the flat renderer's two leading spaces because
+     * CommonMark strips leading whitespace from paragraph text.
+     */
     private function buildMarkdownWidget(TranscriptBlock $block, TuiTheme $theme): MarkdownWidget
     {
         $prefix = trim($this->prefixFor($block));
@@ -342,6 +383,9 @@ final readonly class TranscriptBlockWidgetFactory
         return $mdWidget;
     }
 
+    /**
+     * Maps thinking.style config: dim_italic, dim, italic. Invalid values leave base style unchanged.
+     */
     private function applyThinkingStyle(Style $style): Style
     {
         return match ($this->displayConfig->thinkingStyle) {

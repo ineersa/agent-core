@@ -663,7 +663,6 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         $text = $harness->plainScreenText();
 
         self::assertStringContainsString('patch: |', $text);
-        self::assertStringContainsString('patch: |', $text);
         self::assertStringNotContainsString('+line7', $text);
         self::assertStringContainsString('more line', $text);
     }

@@ -530,7 +530,7 @@ final class TranscriptBlockRendererTest extends TestCase
         $this->assertStringContainsString('patch: |', $output);
         $this->assertStringContainsString('--- a/tmp/test.md', $output);
         $this->assertStringContainsString('+Auto-compaction monitors', $output);
-        $this->assertStringNotContainsString('\n+++', $output);
+        $this->assertStringContainsString('+++ b/tmp/test.md', $output);
     }
 
     public function testLongToolCallArgumentsPreviewByDefault(): void
@@ -559,7 +559,6 @@ final class TranscriptBlockRendererTest extends TestCase
             new TranscriptDisplayState(previewableBlocksExpanded: false),
         );
 
-        $this->assertStringContainsString('patch: |', $output);
         $this->assertStringContainsString('patch: |', $output);
         $this->assertStringNotContainsString('+line9', $output);
         $this->assertStringContainsString('more line', $output);

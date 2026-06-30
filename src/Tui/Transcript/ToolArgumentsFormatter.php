@@ -33,7 +33,6 @@ final class ToolArgumentsFormatter
             return [];
         }
 
-        /* @var list<string> */
         return explode("\n", $yaml);
     }
 }

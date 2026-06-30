@@ -8,6 +8,20 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\Tui\Widget\TuiRenderContext;
 use Ineersa\Tui\Widget\TuiWidget;
 
+/**
+ * Renders {@see TranscriptBlock} DTOs through the Symfony TUI widget-tree pipeline.
+ *
+ * Each {@see render()} builds one root {@see \Symfony\Component\Tui\Widget\ContainerWidget}
+ * via {@see TranscriptBlockWidgetFactory} and {@see SymfonyTuiWidgetRenderer}. This replaced
+ * the old flat loop-over-blocks renderer; no alternate flat path is retained.
+ *
+ * {@see setBlocks()}, {@see addBlock()}, and {@see render()} stay stable for ChatScreen /
+ * LiveTextWidget integration.
+ *
+ * Receives {@see TranscriptDisplayConfig} and mutable {@see TranscriptDisplayState} so renderers
+ * can apply local display policy (e.g. preview expansion) without encoding collapse in projection
+ * blocks or {@see TranscriptBlock::$collapsed}.
+ */
 final class TranscriptBlockWidget implements TuiWidget
 {
     /** @var list<TranscriptBlock> */
