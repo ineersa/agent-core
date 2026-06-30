@@ -54,7 +54,7 @@ final class RewindBranchLiveE2eTest extends ControllerE2eTestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->marker = '[llm-real:rewind-branch-'.bin2hex(random_bytes(6)).']';
+        $this->marker = '[llm-real:rewind-branch-v1]';
     }
 
     protected function tearDown(): void
