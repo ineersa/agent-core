@@ -123,18 +123,6 @@ final class VirtualTuiHarness
             ThemeColorEnum::ThinkingHigh->value => 'magenta',
             ThemeColorEnum::ThinkingXhigh->value => 'red',
             ThemeColorEnum::ThinkingText->value => 'bright_white',
-
-            // Markdown element colours — distinct per element so virtual
-            // tests can prove theme colours are wired into MarkdownWidget.
-            ThemeColorEnum::MarkdownHeading->value => 'bright_cyan',
-            ThemeColorEnum::MarkdownLink->value => 'bright_blue',
-            ThemeColorEnum::MarkdownLinkUrl->value => 'bright_black',
-            ThemeColorEnum::MarkdownCode->value => 'bright_green',
-            ThemeColorEnum::MarkdownCodeBlockBorder->value => 'bright_magenta',
-            ThemeColorEnum::MarkdownQuote->value => 'bright_yellow',
-            ThemeColorEnum::MarkdownQuoteBorder->value => 'bright_red',
-            ThemeColorEnum::MarkdownHr->value => 'bright_cyan',
-            ThemeColorEnum::MarkdownListBullet->value => 'bright_blue',
         ]);
     }
 
