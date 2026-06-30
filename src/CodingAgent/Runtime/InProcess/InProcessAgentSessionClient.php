@@ -247,10 +247,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
             ),
             'answer_tool_question' => $this->handleAnswerToolQuestion($runId, $command),
             'shell_command' => $this->handleShellCommandSend($runId, $command),
-            'rewind_to_turn' => $this->runRewindService->rewind(
-                $runId,
-                (int) ($command->payload['turn_no'] ?? 0),
-            ),
+            'rewind_to_turn' => $this->handleInProcessRewind($runId, $command),
             default => throw new \InvalidArgumentException(\sprintf('Unknown UserCommand type: "%s"', $command->type)),
         };
     }
@@ -351,7 +348,6 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         $this->toolQuestionStore->answer($requestId, $answer);
     }
 
-    /** @phpstan-ignore-next-line method.unused (called from send() match arm; phpstan call-graph misses match-based dispatch) */
     private function handleInProcessRewind(string $runId, UserCommand $command): void
     {
         $targetTurnNo = (int) ($command->payload['turn_no'] ?? 0);

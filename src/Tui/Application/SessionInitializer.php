@@ -224,6 +224,11 @@ final readonly class SessionInitializer
         }
 
         if (!$replayed) {
+            // Reset projector to clear any stale state from a partially-failed
+            // branch-aware attempt (the try block may have applied some events
+            // before throwing). The full replay below re-feeds ALL events.
+            $this->projector->reset();
+
             // Full replay (original path): linearly replay all events through the
             // mapper and projector. Used for linear (non-branched) sessions and
             // as fallback when the turn tree provider fails.

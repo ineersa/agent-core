@@ -181,7 +181,7 @@ final class SessionInitializerTest extends TestCase
             text: 'Hello from replayed steer',
         );
 
-        $this->projector->expects(self::once())->method('reset');
+        $this->projector->expects(self::exactly(2))->method('reset');
         $this->projector->expects(self::exactly(1))
             ->method('accept')
             ->willReturnCallback(static function (array $event) use (&$acceptedEvents): void {
@@ -224,7 +224,7 @@ final class SessionInitializerTest extends TestCase
         );
         $this->eventStore->append($droppedEvent);
 
-        $this->projector->expects(self::once())->method('reset');
+        $this->projector->expects(self::exactly(2))->method('reset');
         $this->projector->expects(self::never())->method('accept');
         $this->projector->expects(self::once())
             ->method('blocks')
