@@ -36,6 +36,8 @@ colors:
     tool_pending_bg: "#2e3440"
     tool_success_bg: "#2e3a2e"
     tool_error_bg: "#3a2e2e"
+    tool_argument_key: "muted"
+    tool_argument_value: "text"
     tool_title: "nord8"
     tool_output: ""
     tool: "nord8"

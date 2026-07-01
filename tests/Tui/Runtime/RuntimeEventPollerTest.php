@@ -690,6 +690,8 @@ final class RuntimeEventPollerTest extends TestCase
         // and wholesale-replaces $state->transcript. Old abandoned-branch blocks
         // must be gone, activity = Idle, queuedFollowUp = null, lastSeq = LeafSet seq.
 
+        $this->state->queuedUserMessages = ['ik-abandoned' => 'Want to test bash in parallel'];
+
         // Pre-populate transcript with old abandoned-branch blocks
         $this->state->transcript = [
             new TranscriptBlock(
@@ -785,6 +787,7 @@ final class RuntimeEventPollerTest extends TestCase
 
         // queuedFollowUp cleared
         self::assertNull($this->state->queuedFollowUp);
+        self::assertSame([], $this->state->queuedUserMessages, 'Abandoned-branch queued commands must not linger as ⏳');
 
         // lastSeq advanced to RunLeafChanged seq (not moved backward by rebuild)
         self::assertSame(20, $this->state->lastSeq);

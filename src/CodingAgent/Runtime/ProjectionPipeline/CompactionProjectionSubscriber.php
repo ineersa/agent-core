@@ -35,8 +35,12 @@ final readonly class CompactionProjectionSubscriber implements EventSubscriberIn
             kind: TranscriptBlockKindEnum::System,
             runId: $runId,
             seq: $state->nextSeq(),
-            text: '◐ Compacting conversation…',
-            meta: ['subtext' => 'Compacting conversation...'],
+            text: 'Compacting conversation',
+            meta: [
+                'category' => 'lifecycle',
+                'lifecycle' => 'compaction_started',
+                'severity' => 'info',
+            ],
             streaming: true,
         ));
     }
@@ -53,7 +57,7 @@ final readonly class CompactionProjectionSubscriber implements EventSubscriberIn
 
         $before = $p['estimated_tokens_before'] ?? null;
         $after = $p['estimated_tokens_after'] ?? null;
-        $text = '⧉ Conversation compacted.';
+        $text = 'Conversation compacted.';
 
         $state->addBlock(new TranscriptBlock(
             id: 'compaction_completed_'.$state->nextSeq(),
@@ -62,6 +66,9 @@ final readonly class CompactionProjectionSubscriber implements EventSubscriberIn
             seq: $state->nextSeq(),
             text: $text,
             meta: [
+                'category' => 'lifecycle',
+                'lifecycle' => 'compaction_completed',
+                'severity' => 'info',
                 'estimated_tokens_before' => $before,
                 'estimated_tokens_after' => $after,
                 'messages_before' => $p['messages_before'] ?? null,

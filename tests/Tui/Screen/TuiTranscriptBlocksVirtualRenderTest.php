@@ -70,6 +70,41 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
     }
 
     #[Test]
+    public function testTurnSeparatorAppearsBeforeLaterUserMessage(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
+        $harness->screen()->setTranscriptBlocks([
+            new TranscriptBlock(
+                id: 'u1',
+                kind: TranscriptBlockKindEnum::UserMessage,
+                runId: self::SESSION_ID,
+                seq: 1,
+                text: 'first prompt',
+            ),
+            new TranscriptBlock(
+                id: 'a1',
+                kind: TranscriptBlockKindEnum::AssistantMessage,
+                runId: self::SESSION_ID,
+                seq: 2,
+                text: 'first response',
+            ),
+            new TranscriptBlock(
+                id: 'u2',
+                kind: TranscriptBlockKindEnum::UserMessage,
+                runId: self::SESSION_ID,
+                seq: 3,
+                text: 'second prompt',
+            ),
+        ]);
+        $harness->screen()->setWorkingVisible(false);
+
+        $text = $harness->plainScreenText();
+        $separator = str_repeat(TranscriptGlyphs::TURN_SEPARATOR_CHAR, 80);
+
+        self::assertStringContainsString($separator, $text, 'User-turn separator missing before later user message');
+        self::assertLessThan(strpos($text, 'second prompt'), strpos($text, $separator), 'Separator should appear before the later user message');
+    }
+
     public function testMultipleBlocksRenderInOrder(): void
     {
         $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
@@ -809,4 +844,96 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         self::assertStringNotContainsString('schema', $plain);
         self::assertStringNotContainsString('ask_human', $plain);
     }
+
+    #[Test]
+    public function testDuplicateToolResultsForSameCallIdCollapseInChatScreen(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
+        $harness->screen()->setTranscriptBlocks([
+            new TranscriptBlock(
+                id: 'tc-1',
+                kind: TranscriptBlockKindEnum::ToolCall,
+                runId: self::SESSION_ID,
+                seq: 1,
+                text: 'bash',
+                meta: [
+                    'tool_call_id' => 'call-a',
+                    'tool_name' => 'bash',
+                    'arguments' => ['command' => 'composer install'],
+                ],
+            ),
+            new TranscriptBlock(
+                id: 'tr-empty',
+                kind: TranscriptBlockKindEnum::ToolResult,
+                runId: self::SESSION_ID,
+                seq: 2,
+                text: 'bash',
+                meta: [
+                    'tool_call_id' => 'call-a',
+                    'tool_name' => 'bash',
+                    'result' => '',
+                    'is_error' => false,
+                ],
+            ),
+            new TranscriptBlock(
+                id: 'tr-full',
+                kind: TranscriptBlockKindEnum::ToolResult,
+                runId: self::SESSION_ID,
+                seq: 3,
+                text: 'bash',
+                meta: [
+                    'tool_call_id' => 'call-a',
+                    'tool_name' => 'bash',
+                    'result' => "Installing dependencies...\n",
+                    'is_error' => false,
+                ],
+            ),
+        ]);
+        $harness->screen()->setWorkingVisible(false);
+
+        $text = $harness->plainScreenText();
+        self::assertSame(1, substr_count($text, 'bash'), 'Expected one collapsed bash card: '.$text);
+        self::assertStringContainsString('composer install', $text);
+        self::assertStringContainsString('Installing dependencies', $text);
+    }
+
+    #[Test]
+    public function testParallelBashToolExchangesCollapseInChatScreen(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
+        $harness->screen()->setTranscriptBlocks([
+            new TranscriptBlock(
+                id: 'tc-1',
+                kind: TranscriptBlockKindEnum::ToolCall,
+                runId: self::SESSION_ID,
+                seq: 1,
+                text: 'bash',
+                meta: [
+                    'tool_call_id' => 'call-a',
+                    'tool_name' => 'bash',
+                    'arguments' => ['command' => 'find bin'],
+                ],
+            ),
+            new TranscriptBlock(
+                id: 'tr-1',
+                kind: TranscriptBlockKindEnum::ToolResult,
+                runId: self::SESSION_ID,
+                seq: 2,
+                text: 'bash',
+                meta: [
+                    'tool_call_id' => 'call-a',
+                    'tool_name' => 'bash',
+                    'result' => '/path/bin/console',
+                    'is_error' => false,
+                ],
+            ),
+        ]);
+        $harness->screen()->setWorkingVisible(false);
+
+        $text = $harness->plainScreenText();
+        self::assertSame(1, substr_count($text, 'bash'), 'Collapsed exchange should show one bash header: '.$text);
+        self::assertStringContainsString('find bin', $text);
+        self::assertStringContainsString('/path/bin/console', $text);
+    }
+
 }

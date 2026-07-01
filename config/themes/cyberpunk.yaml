@@ -29,6 +29,8 @@ colors:
     tool_pending_bg: "#0f0f1a"
     tool_success_bg: "#0a1a0a"
     tool_error_bg: "#1a0a0a"
+    tool_argument_key: "muted"
+    tool_argument_value: "text"
     tool_title: "electric"
     tool_output: ""
     tool: "electric"
