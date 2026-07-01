@@ -29,9 +29,42 @@ final class CompactionProjectionSubscriberTest extends TestCase
      * that differ from the provider input_tokens used for auto-trigger
      * thresholds.  Displaying both estimates side-by-side is confusing.
      *
-     * As of COMP-06 UX polish, the user-facing success text is always
-     * exactly '⧉ Conversation compacted.' — no Token estimate: banner.
+     * Projection text is glyph-free ('Conversation compacted.'); the TUI renderer
+     * owns the ⧉ lifecycle prefix via meta.lifecycle — no Token estimate: banner.
      */
+
+    public function testCompactionStartedTextIsGlyphFree(): void
+    {
+        $event = new TranscriptProjectionEvent(
+            rawEvent: [
+                'type' => 'compaction.started',
+                'runId' => 'run-1',
+                'seq' => $this->state->nextSeq(),
+                'payload' => [],
+            ],
+            state: $this->state,
+        );
+
+        $this->subscriber->onCompactionStarted($event);
+
+        $blocks = $this->state->blocks();
+        self::assertCount(1, $blocks);
+        self::assertSame('Compacting conversation', $blocks[0]->text);
+        self::assertStringNotContainsString('◐', $blocks[0]->text);
+        self::assertSame('compaction_started', $blocks[0]->meta['lifecycle'] ?? null);
+    }
+
+    public function testCompactionCompletedTextIsGlyphFree(): void
+    {
+        $event = $this->makeCompactionCompletedEvent(100, 50);
+
+        $this->subscriber->onCompactionCompleted($event);
+
+        $block = $this->state->blocks()[0];
+        self::assertSame('Conversation compacted.', $block->text);
+        self::assertStringNotContainsString('⧉', $block->text);
+    }
+
     public function testCompactedTextNeverShowsTokenEstimate(): void
     {
         $event = $this->makeCompactionCompletedEvent(

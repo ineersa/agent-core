@@ -46,6 +46,9 @@ final readonly class TuiRuntimeEventApplier
 
             $state->activity = RunActivityStateEnum::Idle;
             $state->queuedFollowUp = null;
+            // Abandoned-branch queued steer/follow-up commands must not keep
+            // rendering as ⏳ above the editor after rewind/resume.
+            $state->queuedUserMessages = [];
 
             return;
         }
@@ -60,6 +63,18 @@ final readonly class TuiRuntimeEventApplier
         }
 
         $state->activity = ActivityStateMachine::transition($state->activity, $event);
+
+        if (\in_array($event->type, [
+            RuntimeEventTypeEnum::RunCancelled->value,
+            RuntimeEventTypeEnum::TurnCancelled->value,
+            RuntimeEventTypeEnum::RunFailed->value,
+            RuntimeEventTypeEnum::TurnFailed->value,
+        ], true)) {
+            // Cancel/fail terminals drop any still-pending queued commands from the
+            // ending turn; they will not be applied on the abandoned path.
+            $state->queuedUserMessages = [];
+        }
+
         $state->applyQueuedUserMessageEvent($event);
         $this->projector->accept($event->toArray());
     }

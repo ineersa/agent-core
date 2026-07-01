@@ -1,0 +1,20 @@
+{
+  "model": "llama_cpp_test/test",
+  "provider_id": "llama_cpp_test",
+  "reasoning": "off",
+  "stop_reason": "tool_call",
+  "deltas": [
+    {"type": "tool_call_start", "id": "call_ask_human_overlay", "name": "ask_human"},
+    {"type": "tool_input_delta", "id": "call_ask_human_overlay", "name": "ask_human", "partial_json": "{\"question\":\"**Overlay proof** with `inline` code\",\"ui_kind\":\"text\"}"},
+    {"type": "tool_call_complete", "tool_calls": [
+      {
+        "id": "call_ask_human_overlay",
+        "name": "ask_human",
+        "arguments": {
+          "question": "**Overlay proof** with `inline` code",
+          "ui_kind": "text"
+        }
+      }
+    ]}
+  ]
+}

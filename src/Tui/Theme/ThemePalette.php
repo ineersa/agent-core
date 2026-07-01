@@ -77,17 +77,39 @@ final readonly class ThemePalette
         $vars = $data['vars'] ?? [];
         $rawColors = $data['colors'] ?? [];
 
-        // Resolve var references: if a color value matches a var key, use the var value
         $resolved = [];
         foreach ($rawColors as $key => $value) {
-            if ('' === $value) {
-                $resolved[$key] = '';
-                continue;
-            }
-            // If the value references a variable, resolve it
-            $resolved[$key] = $vars[$value] ?? $value;
+            $resolved[$key] = self::resolveColorSpec($value, $vars, $rawColors);
         }
 
         return new self(name: $name, colors: $resolved);
+    }
+
+    /**
+     * Resolve a palette entry: empty string, vars section, or another color token key.
+     *
+     * @param array<string, string> $vars
+     * @param array<string, string> $rawColors
+     */
+    private static function resolveColorSpec(string $value, array $vars, array $rawColors): string
+    {
+        if ('' === $value) {
+            return '';
+        }
+
+        if (isset($vars[$value])) {
+            return $vars[$value];
+        }
+
+        if (isset($rawColors[$value])) {
+            $target = $rawColors[$value];
+            if ($target === $value) {
+                return $value;
+            }
+
+            return self::resolveColorSpec($target, $vars, $rawColors);
+        }
+
+        return $value;
     }
 }

@@ -19,6 +19,7 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Tui\Widget\ContainerWidget;
 use Symfony\Component\Tui\Widget\EditorWidget;
+use Symfony\Component\Tui\Widget\MarkdownWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
 
 /**
@@ -127,6 +128,22 @@ class QuestionControllerTest extends TestCase
 
         $container = new ContainerWidget();
         $ctrlRef = new \ReflectionClass($this->controller);
+
+        $chatRef = new \ReflectionClass(ChatScreen::class);
+        /** @var ChatScreen $screen */
+        $screen = $chatRef->newInstanceWithoutConstructor();
+        $palette = new ThemePalette(
+            name: 'test',
+            colors: [
+                ThemeColorEnum::Accent->value => 'cyan',
+                ThemeColorEnum::Muted->value => 'gray',
+            ],
+        );
+        $themeProp = $chatRef->getProperty('theme');
+        $themeProp->setValue($screen, new DefaultTheme($palette));
+        $screenProp = $ctrlRef->getProperty('screen');
+        $screenProp->setValue($this->controller, $screen);
+
         $containerProp = $ctrlRef->getProperty('container');
         $containerProp->setValue($this->controller, $container);
 
@@ -141,7 +158,7 @@ class QuestionControllerTest extends TestCase
 
         $this->assertCount(3, $children, 'Text overlay should be header + prompt + hint');
         $this->assertInstanceOf(TextWidget::class, $children[0]);
-        $this->assertInstanceOf(TextWidget::class, $children[1]);
+        $this->assertInstanceOf(MarkdownWidget::class, $children[1]);
         $this->assertInstanceOf(TextWidget::class, $children[2]);
 
         $headerLines = $children[0]->render(new \Symfony\Component\Tui\Render\RenderContext(80, 24));
@@ -154,7 +171,7 @@ class QuestionControllerTest extends TestCase
         $this->assertStringContainsString('Human input required', $header);
         $this->assertStringContainsString('Describe your workflow.', $prompt);
         $this->assertStringNotContainsString('…', $prompt, 'Prompt should wrap, not ellipsis-truncate');
-        $this->assertSame('[type answer and press Enter]', trim($hint));
+        $this->assertStringContainsString('[type answer and press Enter]', preg_replace('/\x1b\[[0-9;]*m/', '', $hint));
     }
 
     /**

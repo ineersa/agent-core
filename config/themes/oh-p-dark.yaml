@@ -32,6 +32,8 @@ colors:
     tool_pending_bg: "#1e2127"
     tool_success_bg: "#1e2a1e"
     tool_error_bg: "#2a1e1e"
+    tool_argument_key: "muted"
+    tool_argument_value: "text"
     tool_title: "cyan"
     tool_output: ""
     tool: "cyan"

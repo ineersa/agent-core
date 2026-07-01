@@ -677,8 +677,10 @@ final class RuntimeEventMapperTest extends TestCase
         self::assertArrayNotHasKey('message_id', $result->payload);
     }
 
-    public function testNormalizesAgentCommandQueuedFollowUpToUserMessageQueued(): void
+    public function testSkipsAgentCommandQueuedFollowUpToAvoidIdlePendingFlicker(): void
     {
+        // Thesis: idle follow_up applies immediately and projects as ❯; mapping to
+        // user.message_queued only causes a brief ⏳ flicker with no user value.
         $event = $this->runEvent('agent_command_queued', [
             'kind' => 'follow_up',
             'idempotency_key' => 'ik-fu-2',
@@ -687,11 +689,7 @@ final class RuntimeEventMapperTest extends TestCase
 
         $result = $this->mapper->toRuntimeEvent($event);
 
-        self::assertNotNull($result);
-        self::assertSame(RuntimeEventTypeEnum::UserMessageQueued->value, $result->type);
-        self::assertSame('Direct text', $result->payload['text']);
-        self::assertSame('ik-fu-2', $result->payload['idempotency_key']);
-        self::assertArrayNotHasKey('message_id', $result->payload);
+        self::assertNull($result);
     }
 
     public function testSkipsAgentCommandQueuedForCompact(): void

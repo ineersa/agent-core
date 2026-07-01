@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber;
@@ -47,6 +48,63 @@ final class TuiRuntimeEventApplierTest extends TestCase
             $this->rmDir($this->projectDir);
         }
         parent::tearDown();
+    }
+
+
+    public function testRunLeafChangedClearsStaleQueuedUserMessages(): void
+    {
+        // Thesis: without clearing queuedUserMessages on RunLeafChanged, rewind/resume
+        // leaves abandoned-branch ⏳ pending lines visible above the editor.
+        $applier = $this->buildApplier();
+        $state = new TuiSessionState('run-leaf', true);
+        $state->queuedUserMessages = ['ik-abandoned' => 'Want to test bash in parallel'];
+
+        $applier->apply($state, new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
+            type: \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::RunLeafChanged->value,
+            runId: 'run-leaf',
+            seq: 10,
+            payload: ['turn_no' => 2],
+        ), replayMode: true);
+
+        self::assertSame([], $state->queuedUserMessages);
+        self::assertSame(RunActivityStateEnum::Idle, $state->activity);
+    }
+
+    public function testRunCancelledClearsPendingQueuedUserMessages(): void
+    {
+        // Thesis: cancel terminalizes the turn; still-queued commands must not linger as ⏳.
+        $applier = $this->buildApplier();
+        $state = new TuiSessionState('run-cancel', true);
+        $state->queuedUserMessages = ['ik-pending' => 'queued during active run'];
+
+        $applier->apply($state, new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
+            type: \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::RunCancelled->value,
+            runId: 'run-cancel',
+            seq: 5,
+            payload: [],
+        ), replayMode: true);
+
+        self::assertSame([], $state->queuedUserMessages);
+        self::assertSame(RunActivityStateEnum::Cancelled, $state->activity);
+    }
+
+    public function testIdleFollowUpQueuedEventDoesNotPopulatePendingQueue(): void
+    {
+        // Thesis: idle follow_up should not emit user.message_queued (no ⏳ flicker).
+        $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher()));
+        $runEvent = new \Ineersa\AgentCore\Domain\Event\RunEvent(
+            runId: 'run-fu',
+            seq: 2,
+            turnNo: 1,
+            type: 'agent_command_queued',
+            payload: [
+                'kind' => 'follow_up',
+                'idempotency_key' => 'ik-follow',
+                'text' => 'Next prompt',
+            ],
+        );
+
+        self::assertNull($mapper->toRuntimeEvent($runEvent));
     }
 
     public function testApplierAndSessionInitializerReplayProduceMatchingState(): void
