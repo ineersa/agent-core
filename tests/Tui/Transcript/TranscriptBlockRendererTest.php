@@ -1382,7 +1382,7 @@ final class TranscriptBlockRendererTest extends TestCase
         $this->assertStringNotContainsString(TranscriptGlyphs::GLYPH_COMPACTION_COMPLETED.' '.TranscriptGlyphs::GLYPH_COMPACTION_COMPLETED, $plain);
     }
 
-    public function testToolCallArgumentKeyValueAnsiDiffers(): void
+    public function testToolCallArgumentKeyValueUsesMutedKeyAndDefaultTextValue(): void
     {
         $block = new TranscriptBlock(
             id: 'tool-args',
@@ -1396,16 +1396,22 @@ final class TranscriptBlockRendererTest extends TestCase
             ],
         );
 
-        $context = $this->context->withTheme(new DefaultTheme(new ThemePalette('arg-test', [
+        $theme = new DefaultTheme(new ThemePalette('arg-test', [
             ThemeColorEnum::ToolTitle->value => 'green',
-            ThemeColorEnum::ToolArgumentKey->value => 'cyan',
-            ThemeColorEnum::ToolArgumentValue->value => 'yellow',
-        ])));
+            ThemeColorEnum::Muted->value => 'cyan',
+            ThemeColorEnum::Text->value => '',
+        ]));
+        $context = $this->context->withTheme($theme);
         $renderer = new TranscriptBlockRenderer(factory: new TranscriptBlockWidgetFactory());
         $raw = implode("\n", $renderer->renderBlock($block, $context));
-        $plain = preg_replace('/\x1b\[[0-9;]*m/', '', $raw);
-        $this->assertStringContainsString('path:', $plain);
-        $this->assertMatchesRegularExpression('/\x1b\[[0-9;]*m/', $raw);
+
+        $this->assertStringContainsString('path:', preg_replace('/\x1b\[[0-9;]*m/', '', $raw));
+
+        $keyStyled = $theme->muted('path');
+        $valueStyled = $theme->text(' /tmp/x.txt');
+        $this->assertStringContainsString($keyStyled, $raw);
+        $this->assertStringContainsString($valueStyled, $raw);
+        $this->assertNotSame($keyStyled, $valueStyled);
     }
 
     public function testViewImageToolCallAndResultCompactMetadata(): void
