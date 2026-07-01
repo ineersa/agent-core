@@ -11,24 +11,31 @@ use Symfony\Component\Lock\Store\InMemoryStore;
 
 final class RunLockManagerTest extends TestCase
 {
+    private const string CWD_A = '/tmp/hatfield-lock-test/project-a';
+    private const string CWD_B = '/tmp/hatfield-lock-test/project-b';
+
     public function testSynchronizedExecutesCriticalSectionAndReturnsValue(): void
     {
-        $manager = new RunLockManager(new LockFactory(new InMemoryStore()));
+        $manager = new RunLockManager(new LockFactory(new InMemoryStore()), self::CWD_A);
 
         $result = $manager->synchronized('run-lock-1', static fn (): string => 'ok');
 
         self::assertSame('ok', $result);
     }
 
-    public function testSynchronizedFailsFastWhenAnotherWorkerOwnsLock(): void
+    public function testSynchronizedFailsFastWhenAnotherWorkerOwnsLockInSameCwdNamespace(): void
     {
         $store = new InMemoryStore();
         $factory = new LockFactory($store);
 
-        $stranded = $factory->createLock('agent_loop.run.run-lock-2', 30.0, autoRelease: false);
+        $stranded = $factory->createLock(
+            RunLockManager::lockResourceKey(self::CWD_A, 'run-lock-2'),
+            30.0,
+            autoRelease: false,
+        );
         self::assertTrue($stranded->acquire());
 
-        $manager = new RunLockManager($factory, ttlSeconds: 30.0, acquireTimeoutSeconds: 0.05);
+        $manager = new RunLockManager($factory, self::CWD_A, ttlSeconds: 30.0, acquireTimeoutSeconds: 0.05);
 
         $startedAt = microtime(true);
 
@@ -47,18 +54,33 @@ final class RunLockManagerTest extends TestCase
         self::assertLessThan(1.0, $elapsedSeconds);
     }
 
+    public function testSameRunIdDifferentCwdNamespacesDoNotConflict(): void
+    {
+        $store = new InMemoryStore();
+        $factory = new LockFactory($store);
+
+        $managerA = new RunLockManager($factory, self::CWD_A);
+        $managerB = new RunLockManager($factory, self::CWD_B);
+
+        $resultA = null;
+        $resultB = null;
+
+        $managerA->synchronized('shared-run-id', function () use ($managerB, &$resultA, &$resultB): void {
+            $resultA = 'a';
+            $resultB = $managerB->synchronized('shared-run-id', static fn (): string => 'b');
+        });
+
+        self::assertSame('a', $resultA);
+        self::assertSame('b', $resultB);
+    }
+
     /**
      * Re-entrant guard: nested synchronized() calls for the same
      * runId must NOT deadlock.
-     *
-     * Without the guard, StartRunHandler dispatches an initial
-     * AdvanceRun via post-commit callback inside the synchronized()
-     * block, causing the second process() call to attempt re-acquiring
-     * the same lock → deadlock with FlockStore.
      */
     public function testReentrantSynchronizedSameRunIdDoesNotDeadlock(): void
     {
-        $manager = new RunLockManager(new LockFactory(new InMemoryStore()));
+        $manager = new RunLockManager(new LockFactory(new InMemoryStore()), self::CWD_A);
 
         $outerRan = false;
         $innerRan = false;
@@ -66,7 +88,6 @@ final class RunLockManagerTest extends TestCase
         $manager->synchronized('reentrant-run', function () use ($manager, &$outerRan, &$innerRan): void {
             $outerRan = true;
 
-            // Nested call for the SAME runId — must not deadlock.
             $manager->synchronized('reentrant-run', function () use (&$innerRan): void {
                 $innerRan = true;
             });
@@ -85,16 +106,19 @@ final class RunLockManagerTest extends TestCase
         $store = new InMemoryStore();
         $manager = new RunLockManager(
             new LockFactory($store),
+            self::CWD_A,
             ttlSeconds: 30.0,
             acquireTimeoutSeconds: 0.05,
         );
 
-        // Pre-acquire one lock externally to simulate contention.
-        $extLock = (new LockFactory($store))->createLock('agent_loop.run.run-a', 30.0, autoRelease: false);
+        $extLock = (new LockFactory($store))->createLock(
+            RunLockManager::lockResourceKey(self::CWD_A, 'run-a'),
+            30.0,
+            autoRelease: false,
+        );
         self::assertTrue($extLock->acquire());
 
         try {
-            // run-a should fail (externally held) ...
             $this->expectException(\RuntimeException::class);
             $this->expectExceptionMessage('Failed to acquire run lock for "run-a"');
             $manager->synchronized('run-a', static fn (): string => 'nope');

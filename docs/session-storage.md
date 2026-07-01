@@ -354,6 +354,7 @@ All writes to session files are protected by Symfony Lock with `FlockStore`:
 | `SessionRunEventStore::append()` | `hatfield-run-<id>` | Single event append |
 | `HatfieldSessionStore::createSession()` | `hatfield-session-<id>` | Directory creation + metadata write |
 | `HatfieldSessionStore::updateMetadata()` | `hatfield-session-<id>` | Metadata read-merge-write |
+| `RunLockManager::synchronized()` | `agent_loop.cwd.<sha256(cwd)>.run.<id>` | Agent loop / rewind critical sections per Hatfield project CWD |
 
 Locks use the same in-process key space across session and run operations
 (`hatfield-run-<id>` for agent-core stores, `hatfield-session-<id>` for
