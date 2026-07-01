@@ -29,7 +29,6 @@ final class FileRewindLedgerProjector
     public function checkpointsByTurn(array $events, int $maxRetainedTurns): array
     {
         $records = [];
-        $latestUndo = null;
 
         foreach ($events as $event) {
             if (RunEventTypeEnum::FileRewindCheckpointRecorded->value === $event->type) {
@@ -37,6 +36,13 @@ final class FileRewindLedgerProjector
                 $kind = FileRewindCheckpointKindEnum::tryFrom((string) ($p['kind'] ?? ''));
                 $commit = (string) ($p['snapshot_commit_sha'] ?? '');
                 if (null === $kind || '' === $commit) {
+                    continue;
+                }
+                if (FileRewindCheckpointKindEnum::RestoreUndo === $kind) {
+                    // Undo availability is derived from file_rewind.restored metadata, not turn retention.
+                    continue;
+                }
+                if (!\in_array($kind->value, self::RETAINED_KINDS, true)) {
                     continue;
                 }
                 $entry = new FileRewindLedgerEntry(
@@ -48,13 +54,7 @@ final class FileRewindLedgerProjector
                     pruned: false,
                     unavailableReason: null,
                 );
-                if (FileRewindCheckpointKindEnum::RestoreUndo === $kind) {
-                    $latestUndo = $entry;
-                    continue;
-                }
-                if (\in_array($kind->value, self::RETAINED_KINDS, true)) {
-                    $records[$entry->turnNo] = $entry;
-                }
+                $records[$entry->turnNo] = $entry;
             }
         }
 

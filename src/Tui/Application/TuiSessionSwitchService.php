@@ -163,6 +163,7 @@ class TuiSessionSwitchService implements TuiSessionSwitchServiceInterface
             return;
         }
 
+        // Synchronous in-process restore before rewind_to_turn keeps ordering in process and in-process TUI modes.
         if ('restore_files' === $fileChoice) {
             $runId = (null !== $this->state && null !== $this->state->handle) ? $this->state->handle->runId : '';
             if ('' === $runId) {

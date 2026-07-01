@@ -54,4 +54,39 @@ final class FileRewindLedgerProjectorTest extends TestCase
         self::assertNotNull($undo);
         self::assertSame('undo-sha', $undo->snapshotCommitSha);
     }
+    public function testUndoCheckpointIndependentOfTurnRetention(): void
+    {
+        $events = [];
+        for ($turn = 1; $turn <= 5; ++$turn) {
+            $events[] = new RunEvent(
+                runId: 'r1',
+                seq: $turn,
+                turnNo: $turn,
+                type: RunEventTypeEnum::FileRewindCheckpointRecorded->value,
+                payload: [
+                    'turn_no' => $turn,
+                    'kind' => FileRewindCheckpointKindEnum::AssistantBoundary->value,
+                    'snapshot_commit_sha' => 'sha'.$turn,
+                    'project_hash' => 'ph',
+                ],
+                createdAt: new \DateTimeImmutable(),
+            );
+        }
+        $events[] = new RunEvent('r1', 6, 1, RunEventTypeEnum::FileRewindRestored->value, [
+            'turn_no' => 1,
+            'undo_snapshot_commit_sha' => 'undo-old-turn',
+            'project_hash' => 'ph',
+        ], new \DateTimeImmutable());
+
+        $projector = new FileRewindLedgerProjector();
+        $map = $projector->checkpointsByTurn($events, 2);
+
+        self::assertTrue($map[1]->pruned);
+        self::assertFalse($map[5]->pruned);
+        $undo = $projector->findUndoCheckpoint($events);
+        self::assertNotNull($undo);
+        self::assertSame('undo-old-turn', $undo->snapshotCommitSha);
+        self::assertFalse($undo->pruned);
+    }
+
 }
