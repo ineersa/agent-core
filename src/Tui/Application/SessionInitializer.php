@@ -268,7 +268,8 @@ final readonly class SessionInitializer
         // replayed activity with the terminal outcome even if the active-path
         // replay stopped before the final agent_end (branch rewind / leaf filter).
         $terminalActivity = $this->inferTerminalActivityFromCanonicalEvents($runEvents);
-        if (null !== $terminalActivity) {
+        if (null !== $terminalActivity
+            && !$this->shouldSuppressTerminalActivityForInProgressCompaction($runEvents)) {
             $state->activity = $terminalActivity;
             $state->isCompacting = false;
         }
@@ -316,6 +317,50 @@ final readonly class SessionInitializer
         }
 
         return null;
+    }
+
+    /**
+     * Passive resume after a turn's agent_end may still have an in-flight compaction
+     * (context_compaction_started without compacted/failed). Inferring terminal
+     * activity from the earlier agent_end would show Completed while attach does not
+     * continue compaction — the passive Compacting→Idle normalization must win.
+     *
+     * @param list<RunEvent> $runEvents
+     */
+    private function shouldSuppressTerminalActivityForInProgressCompaction(array $runEvents): bool
+    {
+        $lastCompactionStartedSeq = null;
+        $lastCompactionTerminalSeq = null;
+        $lastAgentEndSeq = null;
+
+        foreach ($runEvents as $runEvent) {
+            $seq = $runEvent->seq;
+
+            if ('context_compaction_started' === $runEvent->type) {
+                $lastCompactionStartedSeq = $seq;
+            }
+
+            if (\in_array($runEvent->type, ['context_compacted', 'context_compaction_failed'], true)) {
+                $lastCompactionTerminalSeq = null === $lastCompactionTerminalSeq
+                    ? $seq
+                    : max($lastCompactionTerminalSeq, $seq);
+            }
+
+            if ('agent_end' === $runEvent->type) {
+                $lastAgentEndSeq = $seq;
+            }
+        }
+
+        if (null === $lastCompactionStartedSeq) {
+            return false;
+        }
+
+        if (null !== $lastCompactionTerminalSeq
+            && $lastCompactionTerminalSeq >= $lastCompactionStartedSeq) {
+            return false;
+        }
+
+        return $lastCompactionStartedSeq >= ($lastAgentEndSeq ?? 0);
     }
 
     /**

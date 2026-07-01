@@ -750,10 +750,6 @@ final readonly class TranscriptBlockWidgetFactory
     /**
      * @param array<string, mixed> $arguments
      */
-
-    /**
-     * @param array<string, mixed> $arguments
-     */
     private function buildGenericToolExchangeWidget(
         TranscriptBlock $callBlock,
         TranscriptBlock $resultBlock,
