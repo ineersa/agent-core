@@ -581,7 +581,7 @@ final readonly class TranscriptBlockWidgetFactory
         if ([] === $bodyLines && \is_string($result) && '' !== $result) {
             if ($this->toolResultIsFullRender($block)) {
                 $bodyLines = [$result];
-            } elseif (!$this->toolResultIsFullRender($block)) {
+            } else {
                 $bodyLines = ['(image metadata)'];
             }
         }

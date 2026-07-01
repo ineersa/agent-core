@@ -1378,8 +1378,6 @@ final class TranscriptBlockRendererTest extends TestCase
         $this->assertStringNotContainsString('attachment_refs', $plain);
     }
 
-
-
     public function testViewImageFailedResultShowsRawErrorText(): void
     {
         $block = new TranscriptBlock(
@@ -1399,7 +1397,6 @@ final class TranscriptBlockRendererTest extends TestCase
         $this->assertStringContainsString('Image path does not exist: /missing.png', $plain);
         $this->assertStringNotContainsString('(image metadata)', $plain);
     }
-
 
     public function testViewImageStreamingToolCallSuffixAppliedOnce(): void
     {

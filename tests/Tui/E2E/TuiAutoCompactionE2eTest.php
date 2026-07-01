@@ -98,7 +98,8 @@ final class TuiAutoCompactionE2eTest extends TestCase
             // fires and dispatches CompactRun(trigger: 'auto').  The
             // CompactionProjectionSubscriber renders a visible block —
             // either "Compacting conversation..." (transient progress),
-            // "⧉ Conversation compacted" (success), or "Compaction failed"
+            // "Conversation compacted" (success; projection text is glyph-free,
+            // the TUI renderer adds ⧉), or "Compaction failed"
             // (structural failure).  ANY of these proves the auto trigger
             // path is functional end-to-end (hook → dispatch → handler →
             // runtime events → projection → visible TUI) without typing

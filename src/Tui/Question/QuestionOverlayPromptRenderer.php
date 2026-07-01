@@ -12,7 +12,7 @@ use Symfony\Component\Tui\Widget\MarkdownWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
 
 /**
- * Shared compact markdown prompt rendering for HITL overlays and transcript Question blocks.
+ * Compact markdown prompt rendering for active HITL overlays (QuestionController).
  */
 final class QuestionOverlayPromptRenderer
 {
