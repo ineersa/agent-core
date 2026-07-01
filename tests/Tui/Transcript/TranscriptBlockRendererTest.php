@@ -1275,6 +1275,23 @@ line2"];
         $this->assertStringNotContainsString('...', $plain);
     }
 
+    public function testCompactionStartedLifecycleHasSingleGlyph(): void
+    {
+        $block = new TranscriptBlock(
+            id: 'compact-glyph',
+            kind: TranscriptBlockKindEnum::System,
+            runId: 'r',
+            seq: 2,
+            text: 'Compacting conversation',
+            meta: ['lifecycle' => 'compaction_started', 'category' => 'lifecycle', 'severity' => 'info'],
+            streaming: true,
+        );
+
+        $plain = preg_replace('/\x1b\[[0-9;]*m/', '', implode("\n", $this->renderWidgetLines([$block])));
+        $this->assertSame(1, substr_count($plain, '◐'), 'Compaction started row must render exactly one ◐ glyph');
+        $this->assertStringNotContainsString('◐ ◐', $plain);
+    }
+
     public function testCompactionStartedStreamingSuffixNotDuplicatedInSourceText(): void
     {
         $block = new TranscriptBlock(
@@ -1282,7 +1299,7 @@ line2"];
             kind: TranscriptBlockKindEnum::System,
             runId: 'r',
             seq: 2,
-            text: '◐ Compacting conversation',
+            text: 'Compacting conversation',
             meta: ['lifecycle' => 'compaction_started', 'category' => 'lifecycle', 'severity' => 'info'],
             streaming: true,
         );
@@ -1294,6 +1311,22 @@ line2"];
         $this->assertStringNotContainsString('…...', $plain);
     }
 
+    public function testCompactionCompletedLifecycleHasSingleGlyph(): void
+    {
+        $block = new TranscriptBlock(
+            id: 'compact-done-glyph',
+            kind: TranscriptBlockKindEnum::System,
+            runId: 'r',
+            seq: 3,
+            text: 'Conversation compacted.',
+            meta: ['lifecycle' => 'compaction_completed', 'category' => 'lifecycle', 'severity' => 'info'],
+        );
+
+        $plain = preg_replace('/\x1b\[[0-9;]*m/', '', implode("\n", $this->renderWidgetLines([$block])));
+        $this->assertSame(1, substr_count($plain, '⧉'), 'Compaction completed row must render exactly one ⧉ glyph');
+        $this->assertStringNotContainsString('⧉ ⧉', $plain);
+    }
+
     public function testCompactionCompletedLifecycleGlyph(): void
     {
         $block = new TranscriptBlock(
@@ -1301,7 +1334,7 @@ line2"];
             kind: TranscriptBlockKindEnum::System,
             runId: 'r',
             seq: 3,
-            text: '⧉ Conversation compacted.',
+            text: 'Conversation compacted.',
             meta: ['lifecycle' => 'compaction_completed', 'category' => 'lifecycle', 'severity' => 'info'],
         );
 
@@ -1372,6 +1405,24 @@ line2"];
         $this->assertStringContainsString('size: 100x50', $plain);
         $this->assertStringContainsString('bytes: 1234', $plain);
         $this->assertStringNotContainsString('attachment_refs', $plain);
+    }
+
+
+    public function testViewImageStreamingToolCallSuffixAppliedOnce(): void
+    {
+        $block = new TranscriptBlock(
+            id: 'vi-stream',
+            kind: TranscriptBlockKindEnum::ToolCall,
+            runId: 'r',
+            seq: 7,
+            text: 'view_image',
+            meta: ['tool_name' => 'view_image', 'arguments' => ['path' => 'img.png']],
+            streaming: true,
+        );
+
+        $plain = preg_replace('/\x1b\[[0-9;]*m/', '', implode("\n", $this->renderWidgetLines([$block])));
+        $this->assertStringContainsString('view_image...', $plain);
+        $this->assertStringNotContainsString('......', $plain);
     }
 
     private function renderWidgetLines(array $blocks): array

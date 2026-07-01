@@ -563,8 +563,8 @@ final readonly class TranscriptBlockWidgetFactory
      */
     private function buildViewImageToolCallWidget(TranscriptBlock $block, TuiTheme $theme, string $headerLine, array $arguments): TextWidget
     {
-        $suffix = $block->streaming ? TranscriptGlyphs::STREAMING_SUFFIX : '';
-        $lines = [$headerLine.$suffix];
+        // $headerLine already includes the streaming suffix from buildToolCallWidget().
+        $lines = [$headerLine];
         foreach ($this->viewImageFormatter->formatToolCallLines($arguments) as $bodyLine) {
             $lines[] = '    '.$bodyLine;
         }

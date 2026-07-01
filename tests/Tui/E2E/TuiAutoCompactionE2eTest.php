@@ -383,6 +383,16 @@ final class TuiAutoCompactionE2eTest extends TestCase
                 history: 2000,
             );
             $this->assertStringNotContainsString('…...', $cap, 'Compaction progress must not show duplicate ellipsis');
+            $this->assertStringNotContainsString('◐ ◐', $cap, 'Lifecycle row must not duplicate ◐ glyph');
+            $this->assertStringNotContainsString('⧉ ⧉', $cap, 'Lifecycle row must not duplicate ⧉ glyph');
+            foreach (explode("\n", $cap) as $line) {
+                if (str_contains($line, 'Compacting conversation')) {
+                    $this->assertSame(1, substr_count($line, '◐'), 'Compaction started lifecycle line must have exactly one ◐');
+                }
+                if (str_contains($line, 'Conversation compacted')) {
+                    $this->assertSame(1, substr_count($line, '⧉'), 'Compaction completed lifecycle line must have exactly one ⧉');
+                }
+            }
         } finally {
             $this->tmux->killSession($pane);
         }
