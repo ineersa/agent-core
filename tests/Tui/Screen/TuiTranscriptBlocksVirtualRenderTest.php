@@ -844,4 +844,44 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         self::assertStringNotContainsString('schema', $plain);
         self::assertStringNotContainsString('ask_human', $plain);
     }
+
+    #[Test]
+    public function testParallelBashToolExchangesCollapseInChatScreen(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
+        $harness->screen()->setTranscriptBlocks([
+            new TranscriptBlock(
+                id: 'tc-1',
+                kind: TranscriptBlockKindEnum::ToolCall,
+                runId: self::SESSION_ID,
+                seq: 1,
+                text: 'bash',
+                meta: [
+                    'tool_call_id' => 'call-a',
+                    'tool_name' => 'bash',
+                    'arguments' => ['command' => 'find bin'],
+                ],
+            ),
+            new TranscriptBlock(
+                id: 'tr-1',
+                kind: TranscriptBlockKindEnum::ToolResult,
+                runId: self::SESSION_ID,
+                seq: 2,
+                text: 'bash',
+                meta: [
+                    'tool_call_id' => 'call-a',
+                    'tool_name' => 'bash',
+                    'result' => '/path/bin/console',
+                    'is_error' => false,
+                ],
+            ),
+        ]);
+        $harness->screen()->setWorkingVisible(false);
+
+        $text = $harness->plainScreenText();
+        self::assertSame(1, substr_count($text, 'bash'), 'Collapsed exchange should show one bash header: '.$text);
+        self::assertStringContainsString('find bin', $text);
+        self::assertStringContainsString('/path/bin/console', $text);
+    }
+
 }

@@ -1422,7 +1422,11 @@ final class TranscriptBlockRendererTest extends TestCase
             runId: 'r',
             seq: 5,
             text: 'view_image',
-            meta: ['tool_name' => 'view_image', 'arguments' => ['path' => 'img.png']],
+            meta: [
+                'tool_call_id' => 'vi-call-id',
+                'tool_name' => 'view_image',
+                'arguments' => ['path' => 'img.png'],
+            ],
         );
         $result = new TranscriptBlock(
             id: 'vi-res',
@@ -1431,6 +1435,7 @@ final class TranscriptBlockRendererTest extends TestCase
             seq: 6,
             text: 'view_image',
             meta: [
+                'tool_call_id' => 'vi-call-id',
                 'tool_name' => 'view_image',
                 'result' => json_encode([
                     'type' => 'view_image',
@@ -1445,6 +1450,7 @@ final class TranscriptBlockRendererTest extends TestCase
         );
 
         $plain = preg_replace('/\x1b\[[0-9;]*m/', '', implode("\n", $this->renderWidgetLines([$call, $result])));
+        $this->assertSame(1, substr_count($plain, '● view_image'), $plain);
         $this->assertStringContainsString('path: img.png', $plain);
         $this->assertStringContainsString('media: image/png', $plain);
         $this->assertStringContainsString('size: 100x50', $plain);
@@ -1487,6 +1493,130 @@ final class TranscriptBlockRendererTest extends TestCase
         $plain = preg_replace('/\x1b\[[0-9;]*m/', '', implode("\n", $this->renderWidgetLines([$block])));
         $this->assertStringContainsString('view_image...', $plain);
         $this->assertStringNotContainsString('......', $plain);
+    }
+
+
+    public function testParallelBashToolExchangesCollapseIntoSingleCards(): void
+    {
+        $blocks = [
+            new TranscriptBlock(
+                id: 'tc-1',
+                kind: TranscriptBlockKindEnum::ToolCall,
+                runId: 'r',
+                seq: 1,
+                text: 'bash',
+                meta: [
+                    'tool_call_id' => 'call-a',
+                    'tool_name' => 'bash',
+                    'arguments' => ['command' => 'find bin'],
+                ],
+            ),
+            new TranscriptBlock(
+                id: 'tc-2',
+                kind: TranscriptBlockKindEnum::ToolCall,
+                runId: 'r',
+                seq: 2,
+                text: 'bash',
+                meta: [
+                    'tool_call_id' => 'call-b',
+                    'tool_name' => 'bash',
+                    'arguments' => ['command' => 'find root'],
+                ],
+            ),
+            new TranscriptBlock(
+                id: 'tr-2',
+                kind: TranscriptBlockKindEnum::ToolResult,
+                runId: 'r',
+                seq: 3,
+                text: 'bash',
+                meta: [
+                    'tool_call_id' => 'call-b',
+                    'tool_name' => 'bash',
+                    'result' => "/path/castor.php\n/path/console",
+                    'is_error' => false,
+                ],
+            ),
+            new TranscriptBlock(
+                id: 'tr-1',
+                kind: TranscriptBlockKindEnum::ToolResult,
+                runId: 'r',
+                seq: 4,
+                text: 'bash',
+                meta: [
+                    'tool_call_id' => 'call-a',
+                    'tool_name' => 'bash',
+                    'result' => '/path/bin/console',
+                    'is_error' => false,
+                ],
+            ),
+        ];
+
+        $plain = preg_replace('/\x1b\[[0-9;]*m/', '', implode("\n", $this->renderWidgetLines($blocks)));
+        $bashHeaderCount = substr_count($plain, '● bash');
+        $this->assertSame(2, $bashHeaderCount, 'Expected two collapsed bash cards, got: '.$plain);
+        $this->assertStringContainsString('find bin', $plain);
+        $this->assertStringContainsString('find root', $plain);
+        $this->assertStringContainsString('/path/bin/console', $plain);
+        $this->assertStringContainsString('/path/castor.php', $plain);
+        $this->assertStringNotContainsString("● bash\n    command: find bin\n● bash\n    /path/bin/console", $plain);
+    }
+
+    public function testToolCallWithoutMatchingResultRendersCallOnly(): void
+    {
+        $block = new TranscriptBlock(
+            id: 'tc-pending',
+            kind: TranscriptBlockKindEnum::ToolCall,
+            runId: 'r',
+            seq: 1,
+            text: 'bash',
+            meta: [
+                'tool_call_id' => 'call-pending',
+                'tool_name' => 'bash',
+                'arguments' => ['command' => 'echo hi'],
+            ],
+            streaming: true,
+        );
+
+        $plain = preg_replace('/\x1b\[[0-9;]*m/', '', implode("\n", $this->renderWidgetLines([$block])));
+        $this->assertStringContainsString('bash...', $plain);
+        $this->assertStringContainsString('echo hi', $plain);
+        $this->assertSame(1, substr_count($plain, '● bash'));
+    }
+
+    public function testErrorToolResultCombinedIntoExchangeCard(): void
+    {
+        $blocks = [
+            new TranscriptBlock(
+                id: 'tc-err',
+                kind: TranscriptBlockKindEnum::ToolCall,
+                runId: 'r',
+                seq: 1,
+                text: 'bash',
+                meta: [
+                    'tool_call_id' => 'call-err',
+                    'tool_name' => 'bash',
+                    'arguments' => ['command' => 'false'],
+                ],
+            ),
+            new TranscriptBlock(
+                id: 'tr-err',
+                kind: TranscriptBlockKindEnum::ToolResult,
+                runId: 'r',
+                seq: 2,
+                text: 'bash',
+                meta: [
+                    'tool_call_id' => 'call-err',
+                    'tool_name' => 'bash',
+                    'result' => 'exit code 1',
+                    'is_error' => true,
+                ],
+            ),
+        ];
+
+        $plain = preg_replace('/\x1b\[[0-9;]*m/', '', implode("\n", $this->renderWidgetLines($blocks)));
+        $this->assertSame(1, substr_count($plain, '● bash'));
+        $this->assertStringContainsString('false', $plain);
+        $this->assertStringContainsString('exit code 1', $plain);
     }
 
     private function renderWidgetLines(array $blocks): array

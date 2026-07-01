@@ -73,6 +73,9 @@ final class TranscriptBlockWidget implements TuiWidget
         $themeFingerprint = $this->themeFingerprint($context->theme);
         $environmentFingerprint = $this->renderEnvironmentFingerprint();
 
+        $toolResultsByCallId = $this->indexToolResultsByCallId($this->blocks);
+        $consumedToolResultIds = [];
+
         $allLines = [];
         $blockCount = \count($this->blocks);
         $hasRenderedVisibleBlock = false;
@@ -86,8 +89,18 @@ final class TranscriptBlockWidget implements TuiWidget
                 continue;
             }
 
+            if (TranscriptBlockKindEnum::ToolResult === $block->kind
+                && $this->factory->shouldSkipStandaloneToolResultInList($block, $toolResultsByCallId, $consumedToolResultIds)) {
+                continue;
+            }
+
             if ($this->shouldInsertTurnSeparatorBefore($block, $hasRenderedVisibleBlock)) {
                 $allLines[] = $this->renderTurnSeparatorLine($context);
+            }
+
+            $matchedToolResult = null;
+            if (TranscriptBlockKindEnum::ToolCall === $block->kind) {
+                $matchedToolResult = $this->factory->findCombinableToolResultForCall($block, $toolResultsByCallId, $consumedToolResultIds);
             }
 
             $cacheKey = $this->blockCacheKey(
@@ -95,6 +108,7 @@ final class TranscriptBlockWidget implements TuiWidget
                 $context,
                 $themeFingerprint,
                 $environmentFingerprint,
+                $matchedToolResult,
             );
 
             $cached = $this->blockRenderCache[$block->id] ?? null;
@@ -105,11 +119,14 @@ final class TranscriptBlockWidget implements TuiWidget
                 continue;
             }
 
-            $lines = $this->renderSingleBlock($block, $context);
+            $lines = $this->renderSingleBlock($block, $context, $matchedToolResult);
             $this->blockRenderCache[$block->id] = [
                 'key' => $cacheKey,
                 'lines' => $lines,
             ];
+            if (null !== $matchedToolResult) {
+                $consumedToolResultIds[$matchedToolResult->id] = true;
+            }
             array_push($allLines, ...$lines);
             $hasRenderedVisibleBlock = true;
         }
@@ -118,10 +135,14 @@ final class TranscriptBlockWidget implements TuiWidget
     }
 
     /** @return list<string> */
-    private function renderSingleBlock(TranscriptBlock $block, TuiRenderContext $context): array
+    private function renderSingleBlock(TranscriptBlock $block, TuiRenderContext $context, ?TranscriptBlock $matchedToolResult = null): array
     {
         $root = new ContainerWidget();
-        $root->add($this->factory->buildWidget($block, $context->theme));
+        if (null !== $matchedToolResult) {
+            $root->add($this->factory->buildToolExchangeWidget($block, $matchedToolResult, $context->theme));
+        } else {
+            $root->add($this->factory->buildWidget($block, $context->theme));
+        }
 
         return $this->widgetRenderer->render($root, $context);
     }
@@ -131,11 +152,12 @@ final class TranscriptBlockWidget implements TuiWidget
         TuiRenderContext $context,
         string $themeFingerprint,
         string $environmentFingerprint,
+        ?TranscriptBlock $matchedToolResult = null,
     ): string {
         $meta = $block->meta;
         ksort($meta);
 
-        return hash('xxh128', implode("\x1e", [
+        $parts = [
             $block->id,
             $block->kind->value,
             (string) $block->seq,
@@ -146,7 +168,19 @@ final class TranscriptBlockWidget implements TuiWidget
             (string) max($context->terminalHeight, 1),
             $themeFingerprint,
             $environmentFingerprint,
-        ]));
+        ];
+
+        if (null !== $matchedToolResult) {
+            $resultMeta = $matchedToolResult->meta;
+            ksort($resultMeta);
+            $parts[] = 'exchange:'.$matchedToolResult->id;
+            $parts[] = (string) $matchedToolResult->seq;
+            $parts[] = $matchedToolResult->text;
+            $parts[] = serialize($resultMeta);
+            $parts[] = $matchedToolResult->streaming ? '1' : '0';
+        }
+
+        return hash('xxh128', implode("\x1e", $parts));
     }
 
     private function themeFingerprint(TuiTheme $theme): string
@@ -183,6 +217,29 @@ final class TranscriptBlockWidget implements TuiWidget
                 unset($this->blockRenderCache[$blockId]);
             }
         }
+    }
+
+
+    /**
+     * @param list<TranscriptBlock> $blocks
+     *
+     * @return array<string, TranscriptBlock>
+     */
+    private function indexToolResultsByCallId(array $blocks): array
+    {
+        $index = [];
+        foreach ($blocks as $block) {
+            if (TranscriptBlockKindEnum::ToolResult !== $block->kind) {
+                continue;
+            }
+            $callId = $block->meta['tool_call_id'] ?? null;
+            if (!\is_string($callId) || '' === $callId || isset($index[$callId])) {
+                continue;
+            }
+            $index[$callId] = $block;
+        }
+
+        return $index;
     }
 
     private function shouldInsertTurnSeparatorBefore(TranscriptBlock $block, bool $hasRenderedVisibleBlock): bool
