@@ -423,7 +423,7 @@ final class RuntimeEventTranslator
                 seq: $runEvent->seq,
                 payload: [
                     'question_id' => (string) ($p['question_id'] ?? ''),
-                    'answer' => (string) ($p['answer'] ?? ''),
+                    'answer' => $p['answer'] ?? null,
                 ],
             );
         }
