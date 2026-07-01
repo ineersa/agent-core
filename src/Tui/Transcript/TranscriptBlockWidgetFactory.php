@@ -148,13 +148,15 @@ final readonly class TranscriptBlockWidgetFactory
     }
 
     /**
-     * @param array<string, TranscriptBlock> $toolResultsByCallId
-     * @param array<string, true>            $consumedToolResultIds
+     * @param array<string, list<TranscriptBlock>> $toolResultsByCallId
+     * @param array<string, true>                  $consumedToolResultIds
+     * @param array<string, true>                  $consumedToolCallIds
      */
     public function findCombinableToolResultForCall(
         TranscriptBlock $callBlock,
         array $toolResultsByCallId,
         array $consumedToolResultIds,
+        array $consumedToolCallIds,
     ): ?TranscriptBlock {
         if (TranscriptBlockKindEnum::ToolCall !== $callBlock->kind) {
             return null;
@@ -165,12 +167,17 @@ final readonly class TranscriptBlockWidgetFactory
         }
 
         $callId = $callBlock->meta['tool_call_id'] ?? null;
-        if (!\is_string($callId) || '' === $callId) {
+        if (!\is_string($callId) || '' === $callId || isset($consumedToolCallIds[$callId])) {
             return null;
         }
 
-        $result = $toolResultsByCallId[$callId] ?? null;
-        if (null === $result || isset($consumedToolResultIds[$result->id])) {
+        $candidates = $toolResultsByCallId[$callId] ?? [];
+        if ([] === $candidates) {
+            return null;
+        }
+
+        $result = $this->selectBestToolResultForExchange($callBlock, $candidates, $consumedToolResultIds);
+        if (null === $result) {
             return null;
         }
 
@@ -190,13 +197,11 @@ final readonly class TranscriptBlockWidgetFactory
     }
 
     /**
-     * @param array<string, TranscriptBlock> $toolResultsByCallId
-     * @param array<string, true>            $consumedToolResultIds
+     * @param array<string, true> $consumedToolCallIds
      */
     public function shouldSkipStandaloneToolResultInList(
         TranscriptBlock $block,
-        array $toolResultsByCallId,
-        array $consumedToolResultIds,
+        array $consumedToolCallIds,
     ): bool {
         if (TranscriptBlockKindEnum::ToolResult !== $block->kind) {
             return false;
@@ -215,12 +220,24 @@ final readonly class TranscriptBlockWidgetFactory
             return false;
         }
 
-        $indexed = $toolResultsByCallId[$callId] ?? null;
-        if (null === $indexed || $indexed->id !== $block->id) {
-            return false;
-        }
+        return isset($consumedToolCallIds[$callId]);
+    }
 
-        return isset($consumedToolResultIds[$block->id]);
+    /**
+     * @param array<string, true> $consumedToolResultIds
+     * @param array<string, true> $consumedToolCallIds
+     */
+    public function markToolResultConsumedForExchange(
+        TranscriptBlock $resultBlock,
+        array &$consumedToolResultIds,
+        array &$consumedToolCallIds,
+    ): void {
+        $consumedToolResultIds[$resultBlock->id] = true;
+
+        $callId = $resultBlock->meta['tool_call_id'] ?? null;
+        if (\is_string($callId) && '' !== $callId) {
+            $consumedToolCallIds[$callId] = true;
+        }
     }
 
     /**
@@ -237,6 +254,59 @@ final readonly class TranscriptBlockWidgetFactory
         }
 
         return null !== $nextBlock && TranscriptBlockKindEnum::Question === $nextBlock->kind;
+    }
+
+    /**
+     * @param list<TranscriptBlock> $candidates
+     * @param array<string, true>   $consumedToolResultIds
+     */
+    private function selectBestToolResultForExchange(
+        TranscriptBlock $callBlock,
+        array $candidates,
+        array $consumedToolResultIds,
+    ): ?TranscriptBlock {
+        $best = null;
+        $bestScore = \PHP_INT_MIN;
+
+        foreach ($candidates as $candidate) {
+            if (isset($consumedToolResultIds[$candidate->id])) {
+                continue;
+            }
+
+            if (!$this->toolNamesCompatibleForExchange($callBlock, $candidate)) {
+                continue;
+            }
+
+            $score = $this->toolResultExchangeCandidateScore($candidate);
+            if ($score > $bestScore) {
+                $best = $candidate;
+                $bestScore = $score;
+            }
+        }
+
+        return $best;
+    }
+
+    private function toolResultExchangeCandidateScore(TranscriptBlock $resultBlock): int
+    {
+        $score = 0;
+
+        if ($this->toolResultIsFullRender($resultBlock)) {
+            $score += 1000;
+        }
+
+        $body = $this->toolResultBodyText($resultBlock);
+        if ('' !== trim($body)) {
+            $score += 500 + min(\strlen($body), 200);
+        }
+
+        if ($resultBlock->streaming) {
+            $score -= 50;
+        }
+
+        $score += $resultBlock->seq;
+
+        return $score;
     }
 
     private function toolNamesCompatibleForExchange(TranscriptBlock $callBlock, TranscriptBlock $resultBlock): bool

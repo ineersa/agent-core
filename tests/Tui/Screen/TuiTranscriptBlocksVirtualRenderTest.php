@@ -846,6 +846,58 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
     }
 
     #[Test]
+    public function testDuplicateToolResultsForSameCallIdCollapseInChatScreen(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
+        $harness->screen()->setTranscriptBlocks([
+            new TranscriptBlock(
+                id: 'tc-1',
+                kind: TranscriptBlockKindEnum::ToolCall,
+                runId: self::SESSION_ID,
+                seq: 1,
+                text: 'bash',
+                meta: [
+                    'tool_call_id' => 'call-a',
+                    'tool_name' => 'bash',
+                    'arguments' => ['command' => 'composer install'],
+                ],
+            ),
+            new TranscriptBlock(
+                id: 'tr-empty',
+                kind: TranscriptBlockKindEnum::ToolResult,
+                runId: self::SESSION_ID,
+                seq: 2,
+                text: 'bash',
+                meta: [
+                    'tool_call_id' => 'call-a',
+                    'tool_name' => 'bash',
+                    'result' => '',
+                    'is_error' => false,
+                ],
+            ),
+            new TranscriptBlock(
+                id: 'tr-full',
+                kind: TranscriptBlockKindEnum::ToolResult,
+                runId: self::SESSION_ID,
+                seq: 3,
+                text: 'bash',
+                meta: [
+                    'tool_call_id' => 'call-a',
+                    'tool_name' => 'bash',
+                    'result' => "Installing dependencies...\n",
+                    'is_error' => false,
+                ],
+            ),
+        ]);
+        $harness->screen()->setWorkingVisible(false);
+
+        $text = $harness->plainScreenText();
+        self::assertSame(1, substr_count($text, 'bash'), 'Expected one collapsed bash card: '.$text);
+        self::assertStringContainsString('composer install', $text);
+        self::assertStringContainsString('Installing dependencies', $text);
+    }
+
+    #[Test]
     public function testParallelBashToolExchangesCollapseInChatScreen(): void
     {
         $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);

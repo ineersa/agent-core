@@ -75,6 +75,7 @@ final class TranscriptBlockWidget implements TuiWidget
 
         $toolResultsByCallId = $this->indexToolResultsByCallId($this->blocks);
         $consumedToolResultIds = [];
+        $consumedToolCallIds = [];
 
         $allLines = [];
         $blockCount = \count($this->blocks);
@@ -90,7 +91,7 @@ final class TranscriptBlockWidget implements TuiWidget
             }
 
             if (TranscriptBlockKindEnum::ToolResult === $block->kind
-                && $this->factory->shouldSkipStandaloneToolResultInList($block, $toolResultsByCallId, $consumedToolResultIds)) {
+                && $this->factory->shouldSkipStandaloneToolResultInList($block, $consumedToolCallIds)) {
                 continue;
             }
 
@@ -100,7 +101,7 @@ final class TranscriptBlockWidget implements TuiWidget
 
             $matchedToolResult = null;
             if (TranscriptBlockKindEnum::ToolCall === $block->kind) {
-                $matchedToolResult = $this->factory->findCombinableToolResultForCall($block, $toolResultsByCallId, $consumedToolResultIds);
+                $matchedToolResult = $this->factory->findCombinableToolResultForCall($block, $toolResultsByCallId, $consumedToolResultIds, $consumedToolCallIds);
             }
 
             $cacheKey = $this->blockCacheKey(
@@ -113,6 +114,9 @@ final class TranscriptBlockWidget implements TuiWidget
 
             $cached = $this->blockRenderCache[$block->id] ?? null;
             if (null !== $cached && $cached['key'] === $cacheKey) {
+                if (null !== $matchedToolResult) {
+                    $this->factory->markToolResultConsumedForExchange($matchedToolResult, $consumedToolResultIds, $consumedToolCallIds);
+                }
                 array_push($allLines, ...$cached['lines']);
                 $hasRenderedVisibleBlock = true;
 
@@ -125,7 +129,7 @@ final class TranscriptBlockWidget implements TuiWidget
                 'lines' => $lines,
             ];
             if (null !== $matchedToolResult) {
-                $consumedToolResultIds[$matchedToolResult->id] = true;
+                $this->factory->markToolResultConsumedForExchange($matchedToolResult, $consumedToolResultIds, $consumedToolCallIds);
             }
             array_push($allLines, ...$lines);
             $hasRenderedVisibleBlock = true;
@@ -222,7 +226,7 @@ final class TranscriptBlockWidget implements TuiWidget
     /**
      * @param list<TranscriptBlock> $blocks
      *
-     * @return array<string, TranscriptBlock>
+     * @return array<string, list<TranscriptBlock>>
      */
     private function indexToolResultsByCallId(array $blocks): array
     {
@@ -232,10 +236,10 @@ final class TranscriptBlockWidget implements TuiWidget
                 continue;
             }
             $callId = $block->meta['tool_call_id'] ?? null;
-            if (!\is_string($callId) || '' === $callId || isset($index[$callId])) {
+            if (!\is_string($callId) || '' === $callId) {
                 continue;
             }
-            $index[$callId] = $block;
+            $index[$callId][] = $block;
         }
 
         return $index;

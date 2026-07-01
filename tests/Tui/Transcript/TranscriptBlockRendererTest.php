@@ -9,12 +9,12 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
-use Ineersa\Tui\Transcript\TranscriptGlyphs;
+use Ineersa\Tui\Transcript\TranscriptBlockRenderer;
+use Ineersa\Tui\Transcript\TranscriptBlockWidget;
 use Ineersa\Tui\Transcript\TranscriptBlockWidgetFactory;
 use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
-use Ineersa\Tui\Transcript\TranscriptBlockRenderer;
-use Ineersa\Tui\Transcript\TranscriptBlockWidget;
+use Ineersa\Tui\Transcript\TranscriptGlyphs;
 use Ineersa\Tui\Widget\TuiRenderContext;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -102,10 +102,10 @@ final class TranscriptBlockRendererTest extends TestCase
 
         $this->assertCount(1, $separatorLines, 'Expected exactly one user-turn separator');
         $this->assertSame($expectedSeparator, $separatorLines[0], 'Separator should span terminal width');
-        $this->assertStringContainsString('first turn', implode("
-", $plainLines));
-        $this->assertStringContainsString('second turn', implode("
-", $plainLines));
+        $this->assertStringContainsString('first turn', implode('
+', $plainLines));
+        $this->assertStringContainsString('second turn', implode('
+', $plainLines));
     }
 
     public function testFirstUserMessageHasNoLeadingSeparator(): void
@@ -509,20 +509,6 @@ final class TranscriptBlockRendererTest extends TestCase
         $this->assertStringContainsString("\x1b[", $lines[0], 'ANSI escape codes expected');
     }
 
-    // ── Tool cards (RENDER-04) ─────────────────────────────
-
-    private function renderJoined(TranscriptBlock $block, ?TranscriptDisplayConfig $config = null, ?TranscriptDisplayState $state = null): string
-    {
-        $renderer = new TranscriptBlockRenderer(
-            factory: new TranscriptBlockWidgetFactory(
-                displayConfig: $config ?? new TranscriptDisplayConfig(),
-                displayState: $state ?? new TranscriptDisplayState(),
-            ),
-        );
-
-        return implode("\n", $renderer->renderBlock($block, $this->context));
-    }
-
     public function testToolCallWithArgumentsRendersYamlWithoutFences(): void
     {
         $block = new TranscriptBlock(
@@ -611,8 +597,8 @@ final class TranscriptBlockRendererTest extends TestCase
         for ($i = 0; $i < 10; ++$i) {
             $patchLines[] = '+line'.$i;
         }
-        $patch = implode("
-", array_merge(['---', '+++', '@@'], $patchLines));
+        $patch = implode('
+', array_merge(['---', '+++', '@@'], $patchLines));
         $block = new TranscriptBlock(
             id: 'tc-long-args',
             kind: TranscriptBlockKindEnum::ToolCall,
@@ -643,8 +629,8 @@ final class TranscriptBlockRendererTest extends TestCase
         for ($i = 0; $i < 6; ++$i) {
             $patchLines[] = '+line'.$i;
         }
-        $patch = implode("
-", array_merge(['---', '+++', '@@'], $patchLines));
+        $patch = implode('
+', array_merge(['---', '+++', '@@'], $patchLines));
         $block = new TranscriptBlock(
             id: 'tc-expanded-args',
             kind: TranscriptBlockKindEnum::ToolCall,
@@ -812,7 +798,6 @@ final class TranscriptBlockRendererTest extends TestCase
         $this->assertStringContainsString('d', $output);
         $this->assertStringNotContainsString('more line', $output);
     }
-
 
     public function testEditDiffLinesUseThemeDiffColors(): void
     {
@@ -1070,8 +1055,8 @@ final class TranscriptBlockRendererTest extends TestCase
         $second = $widget->render($this->context);
 
         $this->assertSame($first, $second);
-        $this->assertStringContainsString('Cached hello', implode("
-", $second));
+        $this->assertStringContainsString('Cached hello', implode('
+', $second));
     }
 
     public function testTranscriptBlockRenderCacheInvalidatesOnTextChange(): void
@@ -1102,8 +1087,8 @@ final class TranscriptBlockRendererTest extends TestCase
         $second = $widget->render($this->context);
 
         $this->assertNotSame($first, $second);
-        $this->assertStringContainsString('Part one and more', implode("
-", $second));
+        $this->assertStringContainsString('Part one and more', implode('
+', $second));
     }
 
     public function testTranscriptBlockRenderCacheInvalidatesOnPreviewExpandedState(): void
@@ -1112,8 +1097,8 @@ final class TranscriptBlockRendererTest extends TestCase
         for ($i = 0; $i < 6; ++$i) {
             $patchLines[] = '+line'.$i;
         }
-        $patch = implode("
-", array_merge(['---', '+++', '@@'], $patchLines));
+        $patch = implode('
+', array_merge(['---', '+++', '@@'], $patchLines));
         $block = new TranscriptBlock(
             id: 'cache-edit',
             kind: TranscriptBlockKindEnum::ToolCall,
@@ -1140,15 +1125,14 @@ final class TranscriptBlockRendererTest extends TestCase
         $expandedWidget->setBlocks([$block]);
         $expanded = $expandedWidget->render($this->context);
 
-        $collapsedPlain = preg_replace('/\[[0-9;]*m/', '', implode("
-", $collapsed));
-        $expandedPlain = preg_replace('/\[[0-9;]*m/', '', implode("
-", $expanded));
+        $collapsedPlain = preg_replace('/\[[0-9;]*m/', '', implode('
+', $collapsed));
+        $expandedPlain = preg_replace('/\[[0-9;]*m/', '', implode('
+', $expanded));
 
         $this->assertStringNotContainsString('+line5', $collapsedPlain);
         $this->assertStringContainsString('+line5', $expandedPlain);
     }
-
 
     public function testAskHumanSequenceShowsOnlyQuestionNotToolPayload(): void
     {
@@ -1312,7 +1296,6 @@ final class TranscriptBlockRendererTest extends TestCase
         $this->assertStringContainsString('→ yes', $plain);
     }
 
-
     public function testResumeSystemRowUsesMutedStyling(): void
     {
         $block = new TranscriptBlock(
@@ -1444,7 +1427,7 @@ final class TranscriptBlockRendererTest extends TestCase
                     'width' => 100,
                     'height' => 50,
                     'bytes' => 1234,
-                ], JSON_THROW_ON_ERROR),
+                ], \JSON_THROW_ON_ERROR),
                 'is_error' => false,
             ],
         );
@@ -1494,7 +1477,6 @@ final class TranscriptBlockRendererTest extends TestCase
         $this->assertStringContainsString('view_image...', $plain);
         $this->assertStringNotContainsString('......', $plain);
     }
-
 
     public function testParallelBashToolExchangesCollapseIntoSingleCards(): void
     {
@@ -1561,6 +1543,56 @@ final class TranscriptBlockRendererTest extends TestCase
         $this->assertStringNotContainsString("● bash\n    command: find bin\n● bash\n    /path/bin/console", $plain);
     }
 
+    public function testDuplicateToolResultsForSameCallIdCollapseWithoutStandaloneHeaders(): void
+    {
+        $blocks = [
+            new TranscriptBlock(
+                id: 'tc-1',
+                kind: TranscriptBlockKindEnum::ToolCall,
+                runId: 'r',
+                seq: 1,
+                text: 'bash',
+                meta: [
+                    'tool_call_id' => 'call-a',
+                    'tool_name' => 'bash',
+                    'arguments' => ['command' => 'composer install'],
+                ],
+            ),
+            new TranscriptBlock(
+                id: 'tr-empty',
+                kind: TranscriptBlockKindEnum::ToolResult,
+                runId: 'r',
+                seq: 2,
+                text: 'bash',
+                meta: [
+                    'tool_call_id' => 'call-a',
+                    'tool_name' => 'bash',
+                    'result' => '',
+                    'is_error' => false,
+                ],
+            ),
+            new TranscriptBlock(
+                id: 'tr-full',
+                kind: TranscriptBlockKindEnum::ToolResult,
+                runId: 'r',
+                seq: 3,
+                text: 'bash',
+                meta: [
+                    'tool_call_id' => 'call-a',
+                    'tool_name' => 'bash',
+                    'result' => 'Installing dependencies...
+',
+                    'is_error' => false,
+                ],
+            ),
+        ];
+
+        $plain = preg_replace('/\x1b\[[0-9;]*m/', '', implode("\n", $this->renderWidgetLines($blocks)));
+        $this->assertSame(1, substr_count($plain, '● bash'), 'Expected one collapsed bash card, got: '.$plain);
+        $this->assertStringContainsString('composer install', $plain);
+        $this->assertStringContainsString('Installing dependencies', $plain);
+    }
+
     public function testToolCallWithoutMatchingResultRendersCallOnly(): void
     {
         $block = new TranscriptBlock(
@@ -1619,6 +1651,20 @@ final class TranscriptBlockRendererTest extends TestCase
         $this->assertStringContainsString('exit code 1', $plain);
     }
 
+    // ── Tool cards (RENDER-04) ─────────────────────────────
+
+    private function renderJoined(TranscriptBlock $block, ?TranscriptDisplayConfig $config = null, ?TranscriptDisplayState $state = null): string
+    {
+        $renderer = new TranscriptBlockRenderer(
+            factory: new TranscriptBlockWidgetFactory(
+                displayConfig: $config ?? new TranscriptDisplayConfig(),
+                displayState: $state ?? new TranscriptDisplayState(),
+            ),
+        );
+
+        return implode("\n", $renderer->renderBlock($block, $this->context));
+    }
+
     private function renderWidgetLines(array $blocks): array
     {
         $widget = new TranscriptBlockWidget();
@@ -1626,6 +1672,4 @@ final class TranscriptBlockRendererTest extends TestCase
 
         return $widget->render($this->context);
     }
-
-
 }
