@@ -13,6 +13,7 @@ use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use Ineersa\Tui\Transcript\TranscriptBlockRenderer;
 use Ineersa\Tui\Transcript\TranscriptBlockWidget;
+use Ineersa\Tui\Transcript\ToolArgumentsFormatter;
 use Ineersa\Tui\Widget\TuiRenderContext;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -510,9 +511,9 @@ final class TranscriptBlockRendererTest extends TestCase
         $this->assertStringContainsString('read...', $output);
     }
 
-    public function testToolCallWithMultilinePatchUsesLiteralBlockStyle(): void
+    public function testEditToolCallRendersPatchAsDiffNotYaml(): void
     {
-        $patch = "--- a/tmp/test.md\n+++ b/tmp/test.md\n@@\n+Auto-compaction monitors";
+        $patch = "--- a/tmp/test.md\n+++ b/tmp/test.md\n@@\n-old\n+new";
         $block = new TranscriptBlock(
             id: 'tc-edit',
             kind: TranscriptBlockKindEnum::ToolCall,
@@ -527,10 +528,12 @@ final class TranscriptBlockRendererTest extends TestCase
 
         $output = $this->renderJoined($block);
 
-        $this->assertStringContainsString('patch: |', $output);
+        $this->assertStringContainsString('edit', $output);
+        $this->assertStringContainsString('path: /tmp/test.md', $output);
+        $this->assertStringNotContainsString('patch: |', $output);
         $this->assertStringContainsString('--- a/tmp/test.md', $output);
-        $this->assertStringContainsString('+Auto-compaction monitors', $output);
-        $this->assertStringContainsString('+++ b/tmp/test.md', $output);
+        $this->assertStringContainsString('+new', $output);
+        $this->assertStringContainsString('-old', $output);
     }
 
     public function testLongToolCallArgumentsPreviewByDefault(): void
@@ -555,11 +558,12 @@ final class TranscriptBlockRendererTest extends TestCase
 
         $output = $this->renderJoined(
             $block,
-            new TranscriptDisplayConfig(toolResultPreviewLines: 4),
+            new TranscriptDisplayConfig(diffPreviewLines: 4),
             new TranscriptDisplayState(previewableBlocksExpanded: false),
         );
 
-        $this->assertStringContainsString('patch: |', $output);
+        $this->assertStringContainsString('path: /tmp/test.md', $output);
+        $this->assertStringNotContainsString('patch: |', $output);
         $this->assertStringNotContainsString('+line9', $output);
         $this->assertStringContainsString('more line', $output);
     }
@@ -586,7 +590,7 @@ final class TranscriptBlockRendererTest extends TestCase
 
         $output = $this->renderJoined(
             $block,
-            new TranscriptDisplayConfig(toolResultPreviewLines: 2),
+            new TranscriptDisplayConfig(diffPreviewLines: 2),
             new TranscriptDisplayState(previewableBlocksExpanded: true),
         );
 
@@ -739,5 +743,528 @@ final class TranscriptBlockRendererTest extends TestCase
         $this->assertStringContainsString('d', $output);
         $this->assertStringNotContainsString('more line', $output);
     }
+
+
+    public function testEditDiffLinesUseThemeDiffColors(): void
+    {
+        $palette = new ThemePalette('diff-test', [
+            'diff_added' => 'green',
+            'diff_removed' => 'red',
+            'diff_context' => 'gray',
+            'tool_title' => 'white',
+        ]);
+        $context = $this->context->withTheme(new DefaultTheme($palette));
+        $patch = "+added\n-removed\n context";
+        $block = new TranscriptBlock(
+            id: 'tc-diff-colors',
+            kind: TranscriptBlockKindEnum::ToolCall,
+            runId: 'r',
+            seq: 2,
+            text: 'edit',
+            meta: [
+                'tool_name' => 'edit',
+                'arguments' => ['path' => 'x.txt', 'patch' => $patch],
+            ],
+        );
+        $renderer = new TranscriptBlockRenderer(
+            factory: new TranscriptBlockWidgetFactory(),
+        );
+        $output = implode("\n", $renderer->renderBlock($block, $context));
+
+        $this->assertStringContainsString("\x1b[", $output);
+        $this->assertStringContainsString('+added', $output);
+        $this->assertStringContainsString('-removed', $output);
+    }
+
+    public function testWriteToolCallRendersContentPreviewNotDiff(): void
+    {
+        $block = new TranscriptBlock(
+            id: 'tc-write',
+            kind: TranscriptBlockKindEnum::ToolCall,
+            runId: 'r',
+            seq: 2,
+            text: 'write',
+            meta: [
+                'tool_name' => 'write',
+                'arguments' => ['path' => 'notes.txt', 'content' => "line0\nline1"],
+            ],
+        );
+
+        $output = $this->renderJoined($block);
+
+        $this->assertStringContainsString('write', $output);
+        $this->assertStringContainsString('path: notes.txt', $output);
+        $this->assertStringContainsString('line0', $output);
+        $this->assertStringNotContainsString('content: |', $output);
+        $this->assertStringNotContainsString('+line0', $output);
+    }
+
+    public function testWriteMarkdownTargetProcessesMarkdown(): void
+    {
+        $block = new TranscriptBlock(
+            id: 'tc-write-md',
+            kind: TranscriptBlockKindEnum::ToolCall,
+            runId: 'r',
+            seq: 2,
+            text: 'write',
+            meta: [
+                'tool_name' => 'write',
+                'arguments' => ['path' => 'README.md', 'content' => '**bold** text'],
+            ],
+        );
+
+        $output = $this->renderJoined($block);
+
+        $this->assertStringContainsString('README.md', $output);
+        $this->assertStringContainsString('bold', $output);
+        $this->assertStringNotContainsString('**bold**', $output);
+    }
+
+    public function testWriteContentPreviewLimitedByDiffLines(): void
+    {
+        $lines = [];
+        for ($i = 0; $i < 8; ++$i) {
+            $lines[] = 'body'.$i;
+        }
+        $content = implode("\n", $lines);
+        $block = new TranscriptBlock(
+            id: 'tc-write-long',
+            kind: TranscriptBlockKindEnum::ToolCall,
+            runId: 'r',
+            seq: 2,
+            text: 'write',
+            meta: [
+                'tool_name' => 'write',
+                'arguments' => ['path' => 'x.txt', 'content' => $content],
+            ],
+        );
+
+        $output = $this->renderJoined(
+            $block,
+            new TranscriptDisplayConfig(diffPreviewLines: 3),
+            new TranscriptDisplayState(previewableBlocksExpanded: false),
+        );
+
+        $this->assertStringContainsString('path: x.txt', $output);
+        $this->assertStringContainsString('body0', $output);
+        $this->assertStringNotContainsString('body7', $output);
+        $this->assertStringContainsString('more line', $output);
+    }
+
+    public function testSuccessfulEditToolResultStripsUpdatedFileContext(): void
+    {
+        $result = "Stats: 1 file\n\nUpdated file context:\n→ 10: changed";
+        $block = new TranscriptBlock(
+            id: 'tr-edit-ok',
+            kind: TranscriptBlockKindEnum::ToolResult,
+            runId: 'r',
+            seq: 3,
+            text: $result,
+            meta: ['tool_name' => 'edit', 'result' => $result, 'is_error' => false],
+        );
+
+        $output = $this->renderJoined($block);
+
+        $this->assertStringContainsString('Stats: 1 file', $output);
+        $this->assertStringNotContainsString('Updated file context', $output);
+        $this->assertStringNotContainsString('→ 10:', $output);
+    }
+
+    public function testErrorEditToolResultKeepsFullDiagnostic(): void
+    {
+        $result = "fail\n\nUpdated file context:\n→ 1: x";
+        $block = new TranscriptBlock(
+            id: 'tr-edit-err',
+            kind: TranscriptBlockKindEnum::ToolResult,
+            runId: 'r',
+            seq: 3,
+            text: $result,
+            meta: ['tool_name' => 'edit', 'result' => $result, 'is_error' => true],
+        );
+
+        $output = $this->renderJoined($block, new TranscriptDisplayConfig(toolResultPreviewLines: 1));
+
+        $this->assertStringContainsString('Updated file context', $output);
+        $this->assertStringContainsString('→ 1: x', $output);
+    }
+
+    public function testAskHumanToolCallSuppressed(): void
+    {
+        $block = new TranscriptBlock(
+            id: 'tc-ask',
+            kind: TranscriptBlockKindEnum::ToolCall,
+            runId: 'r',
+            seq: 1,
+            text: 'ask_human',
+            meta: [
+                'tool_name' => 'ask_human',
+                'arguments' => [
+                    'kind' => 'interrupt',
+                    'question_id' => 'ah_test',
+                    'prompt' => 'What model?',
+                    'schema' => ['type' => 'string'],
+                ],
+            ],
+        );
+
+        $output = $this->renderJoined($block);
+
+        $this->assertSame('', $output);
+    }
+
+    public function testAskHumanSuccessfulToolResultSuppressed(): void
+    {
+        $json = '{"kind":"interrupt","question_id":"ah_test","prompt":"What model?","schema":{"type":"string"}}';
+        $block = new TranscriptBlock(
+            id: 'tr-ask',
+            kind: TranscriptBlockKindEnum::ToolResult,
+            runId: 'r',
+            seq: 2,
+            text: $json,
+            meta: ['tool_name' => 'ask_human', 'result' => $json, 'is_error' => false],
+        );
+
+        $output = $this->renderJoined($block);
+
+        $this->assertSame('', $output);
+    }
+
+    public function testAskHumanErrorToolResultRemainsVisible(): void
+    {
+        $body = 'Invalid question schema';
+        $block = new TranscriptBlock(
+            id: 'tr-ask-err',
+            kind: TranscriptBlockKindEnum::ToolResult,
+            runId: 'r',
+            seq: 2,
+            text: $body,
+            meta: ['tool_name' => 'ask_human', 'result' => $body, 'is_error' => true],
+        );
+
+        $output = $this->renderJoined($block);
+
+        $this->assertStringContainsString('ask_human', $output);
+        $this->assertStringContainsString('Invalid question schema', $output);
+    }
+
+    public function testQuestionBlockRendersMarkdownBold(): void
+    {
+        $block = new TranscriptBlock(
+            id: 'q-md',
+            kind: TranscriptBlockKindEnum::Question,
+            runId: 'r',
+            seq: 3,
+            text: 'Pick **one** option',
+            meta: ['prompt' => 'Pick **one** option', 'status' => 'pending'],
+        );
+
+        $output = $this->renderJoined($block);
+
+        $this->assertStringContainsString('?', $output);
+        $this->assertStringContainsString('one', $output);
+        $this->assertStringNotContainsString('**one**', $output);
+    }
+
+    public function testAnsweredQuestionHistoryShowsPromptAndAnswer(): void
+    {
+        $block = new TranscriptBlock(
+            id: 'q-answered',
+            kind: TranscriptBlockKindEnum::Question,
+            runId: 'r',
+            seq: 4,
+            text: 'What model? → gpt-test',
+            meta: [
+                'prompt' => 'What model?',
+                'status' => 'answered',
+                'answer' => 'gpt-test',
+            ],
+        );
+
+        $output = $this->renderJoined($block);
+
+        $this->assertStringContainsString('What model?', $output);
+        $this->assertStringContainsString('gpt-test', $output);
+        $this->assertStringContainsString('→', $output);
+    }
+
+    public function testTranscriptBlockRenderCacheReusesUnchangedBlocks(): void
+    {
+        $block = new TranscriptBlock(
+            id: 'cache-user',
+            kind: TranscriptBlockKindEnum::UserMessage,
+            runId: 'r',
+            seq: 1,
+            text: 'Cached hello',
+        );
+        $widget = new TranscriptBlockWidget();
+        $widget->setBlocks([$block]);
+
+        $first = $widget->render($this->context);
+        $second = $widget->render($this->context);
+
+        $this->assertSame($first, $second);
+        $this->assertStringContainsString('Cached hello', implode("
+", $second));
+    }
+
+    public function testTranscriptBlockRenderCacheInvalidatesOnTextChange(): void
+    {
+        $block = new TranscriptBlock(
+            id: 'cache-stream',
+            kind: TranscriptBlockKindEnum::AssistantMessage,
+            runId: 'r',
+            seq: 2,
+            text: 'Part one',
+            streaming: true,
+        );
+        $widget = new TranscriptBlockWidget();
+        $widget->setBlocks([$block]);
+
+        $first = $widget->render($this->context);
+
+        $widget->setBlocks([
+            new TranscriptBlock(
+                id: 'cache-stream',
+                kind: TranscriptBlockKindEnum::AssistantMessage,
+                runId: 'r',
+                seq: 2,
+                text: 'Part one and more',
+                streaming: true,
+            ),
+        ]);
+        $second = $widget->render($this->context);
+
+        $this->assertNotSame($first, $second);
+        $this->assertStringContainsString('Part one and more', implode("
+", $second));
+    }
+
+    public function testTranscriptBlockRenderCacheInvalidatesOnPreviewExpandedState(): void
+    {
+        $patchLines = [];
+        for ($i = 0; $i < 6; ++$i) {
+            $patchLines[] = '+line'.$i;
+        }
+        $patch = implode("
+", array_merge(['---', '+++', '@@'], $patchLines));
+        $block = new TranscriptBlock(
+            id: 'cache-edit',
+            kind: TranscriptBlockKindEnum::ToolCall,
+            runId: 'r',
+            seq: 3,
+            text: 'edit',
+            meta: [
+                'tool_name' => 'edit',
+                'arguments' => ['path' => '/tmp/test.md', 'patch' => $patch],
+            ],
+        );
+
+        $collapsedWidget = new TranscriptBlockWidget(
+            displayConfig: new TranscriptDisplayConfig(diffPreviewLines: 2),
+            displayState: new TranscriptDisplayState(previewableBlocksExpanded: false),
+        );
+        $collapsedWidget->setBlocks([$block]);
+        $collapsed = $collapsedWidget->render($this->context);
+
+        $expandedWidget = new TranscriptBlockWidget(
+            displayConfig: new TranscriptDisplayConfig(diffPreviewLines: 2),
+            displayState: new TranscriptDisplayState(previewableBlocksExpanded: true),
+        );
+        $expandedWidget->setBlocks([$block]);
+        $expanded = $expandedWidget->render($this->context);
+
+        $collapsedPlain = preg_replace('/\[[0-9;]*m/', '', implode("
+", $collapsed));
+        $expandedPlain = preg_replace('/\[[0-9;]*m/', '', implode("
+", $expanded));
+
+        $this->assertStringNotContainsString('+line5', $collapsedPlain);
+        $this->assertStringContainsString('+line5', $expandedPlain);
+    }
+
+    public function testToolArgumentsFormatterMemoizesYamlDump(): void
+    {
+        $formatter = new ToolArgumentsFormatter();
+        $arguments = ['path' => '/tmp/a.txt', 'content' => "line1
+line2"];
+
+        $first = $formatter->formatLines($arguments);
+        $second = $formatter->formatLines($arguments);
+
+        $this->assertSame($first, $second);
+        $this->assertStringContainsString('path:', implode("
+", $first));
+    }
+
+    public function testAskHumanSequenceShowsOnlyQuestionNotToolPayload(): void
+    {
+        $prompt = 'Confirm **yes**?';
+        $json = '{"kind":"interrupt","question_id":"ah_seq","prompt":"Confirm yes?"}';
+        $blocks = [
+            new TranscriptBlock(
+                id: 'tc-ask-seq',
+                kind: TranscriptBlockKindEnum::ToolCall,
+                runId: 'r',
+                seq: 1,
+                text: 'ask_human',
+                meta: [
+                    'tool_name' => 'ask_human',
+                    'arguments' => ['prompt' => $prompt, 'schema' => ['type' => 'string']],
+                ],
+            ),
+            new TranscriptBlock(
+                id: 'tr-ask-seq',
+                kind: TranscriptBlockKindEnum::ToolResult,
+                runId: 'r',
+                seq: 2,
+                text: $json,
+                meta: ['tool_name' => 'ask_human', 'result' => $json, 'is_error' => false],
+            ),
+            new TranscriptBlock(
+                id: 'q-seq',
+                kind: TranscriptBlockKindEnum::Question,
+                runId: 'r',
+                seq: 3,
+                text: $prompt,
+                meta: ['prompt' => $prompt, 'status' => 'pending'],
+            ),
+        ];
+
+        $widget = new TranscriptBlockWidget();
+        $widget->setBlocks($blocks);
+        $plain = preg_replace('/\x1b\[[0-9;]*m/', '', implode("\n", $widget->render($this->context)));
+
+        $this->assertStringContainsString('Confirm', $plain);
+        $this->assertStringNotContainsString('**yes**', $plain);
+        $this->assertStringNotContainsString('kind":"interrupt', $plain);
+        $this->assertStringNotContainsString('question_id', $plain);
+        $this->assertStringNotContainsString('schema', $plain);
+        $this->assertStringNotContainsString('ask_human', $plain);
+    }
+
+    public function testAnsweredQuestionRendersPromptAndAnswerAsSeparateSections(): void
+    {
+        $block = new TranscriptBlock(
+            id: 'q-answered-sections',
+            kind: TranscriptBlockKindEnum::Question,
+            runId: 'r',
+            seq: 4,
+            text: 'What model? → gpt-test',
+            meta: [
+                'prompt' => 'What model?',
+                'status' => 'answered',
+                'answer' => 'gpt-test',
+            ],
+        );
+
+        $plain = preg_replace('/\x1b\[[0-9;]*m/', '', implode("\n", $this->renderWidgetLines([$block])));
+
+        $this->assertStringContainsString('Human input answered', $plain);
+        $this->assertStringContainsString('What model?', $plain);
+        $this->assertStringContainsString('→ gpt-test', $plain);
+        $this->assertStringNotContainsString('What model? → gpt-test', $plain);
+    }
+
+    public function testPendingQuestionShowsAwaitingAnswerAffordance(): void
+    {
+        $block = new TranscriptBlock(
+            id: 'q-pending',
+            kind: TranscriptBlockKindEnum::Question,
+            runId: 'r',
+            seq: 2,
+            text: 'Pick **one**',
+            meta: ['prompt' => 'Pick **one**', 'status' => 'pending'],
+        );
+
+        $plain = preg_replace('/\x1b\[[0-9;]*m/', '', implode("\n", $this->renderWidgetLines([$block])));
+
+        $this->assertStringContainsString('Human input required', $plain);
+        $this->assertStringContainsString('awaiting answer', $plain);
+        $this->assertStringContainsString('one', $plain);
+    }
+
+    public function testEmptyAssistantBeforeQuestionIsSuppressed(): void
+    {
+        $blocks = [
+            new TranscriptBlock(
+                id: 'as-empty',
+                kind: TranscriptBlockKindEnum::AssistantMessage,
+                runId: 'r',
+                seq: 1,
+                text: '',
+            ),
+            new TranscriptBlock(
+                id: 'q-after',
+                kind: TranscriptBlockKindEnum::Question,
+                runId: 'r',
+                seq: 2,
+                text: 'Why?',
+                meta: ['prompt' => 'Why?', 'status' => 'pending'],
+            ),
+        ];
+
+        $plain = preg_replace('/\x1b\[[0-9;]*m/', '', implode("\n", $this->renderWidgetLines($blocks)));
+
+        $this->assertStringNotContainsString('[assistant]', $plain);
+        $this->assertStringContainsString('Why?', $plain);
+    }
+
+    public function testNonEmptyAssistantBeforeQuestionStillRenders(): void
+    {
+        $blocks = [
+            new TranscriptBlock(
+                id: 'as-real',
+                kind: TranscriptBlockKindEnum::AssistantMessage,
+                runId: 'r',
+                seq: 1,
+                text: 'Here is context.',
+            ),
+            new TranscriptBlock(
+                id: 'q-after',
+                kind: TranscriptBlockKindEnum::Question,
+                runId: 'r',
+                seq: 2,
+                text: 'Continue?',
+                meta: ['prompt' => 'Continue?', 'status' => 'pending'],
+            ),
+        ];
+
+        $plain = preg_replace('/\x1b\[[0-9;]*m/', '', implode("\n", $this->renderWidgetLines($blocks)));
+
+        $this->assertStringContainsString('Here is context.', $plain);
+        $this->assertStringContainsString('Continue?', $plain);
+    }
+
+    public function testAnsweredConfirmQuestionShowsYesNoInTranscript(): void
+    {
+        $block = new TranscriptBlock(
+            id: 'q-confirm-yes',
+            kind: TranscriptBlockKindEnum::Question,
+            runId: 'r',
+            seq: 5,
+            text: 'Proceed? → yes',
+            meta: [
+                'prompt' => 'Proceed?',
+                'status' => 'answered',
+                'answer' => 'yes',
+                'kind' => 'confirm',
+            ],
+        );
+
+        $plain = preg_replace('/\x1b\[[0-9;]*m/', '', implode("\n", $this->renderWidgetLines([$block])));
+
+        $this->assertStringContainsString('Human input answered', $plain);
+        $this->assertStringContainsString('Proceed?', $plain);
+        $this->assertStringContainsString('→ yes', $plain);
+    }
+
+    private function renderWidgetLines(array $blocks): array
+    {
+        $widget = new TranscriptBlockWidget();
+        $widget->setBlocks($blocks);
+
+        return $widget->render($this->context);
+    }
+
 
 }

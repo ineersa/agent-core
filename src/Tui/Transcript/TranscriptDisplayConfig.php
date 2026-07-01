@@ -21,7 +21,7 @@ final readonly class TranscriptDisplayConfig
      * @param string $thinkingStyle             Visual style for visible thinking (e.g. 'dim_italic')
      * @param bool   $previewsExpandedByDefault Whether previewable blocks start expanded
      * @param int    $toolResultPreviewLines    Max lines for normal tool result previews
-     * @param int    $diffPreviewLines          Max lines for diff-rendered tool result previews
+     * @param int    $diffPreviewLines          Max lines for edit-diff/write-content ToolCall payload previews
      */
     public function __construct(
         public bool $thinkingVisible = true,

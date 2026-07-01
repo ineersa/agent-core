@@ -26,7 +26,7 @@ use Symfony\Component\Yaml\Yaml;
  * Hidden thinking → compact placeholder from {@see TranscriptDisplayConfig} only,
  * not {@see TranscriptBlock::$collapsed}.
  * {@see TranscriptBlockKindEnum::ToolCall} and normal {@see TranscriptBlockKindEnum::ToolResult}
- * → compact multi-line cards (YAML-like args with preview, preview-truncated result body).
+ * → compact multi-line cards (YAML-like args with preview; edit/write payload previews; preview-truncated result body).
  * Structured subagent tool results are delegated to {@see SubagentResultRenderer} before generic
  * ToolResult cards. All other kinds → {@see TextWidget} flat line.
  */
@@ -37,22 +37,25 @@ final readonly class TranscriptBlockWidgetFactory
         private readonly TranscriptDisplayConfig $displayConfig = new TranscriptDisplayConfig(),
         private readonly TranscriptDisplayState $displayState = new TranscriptDisplayState(),
         private readonly ToolArgumentsFormatter $toolArgumentsFormatter = new ToolArgumentsFormatter(),
+        private readonly EditToolCallDiffRenderer $editDiffRenderer = new EditToolCallDiffRenderer(),
+        private readonly WriteToolCallContentRenderer $writeContentRenderer = new WriteToolCallContentRenderer(),
+        private readonly TranscriptLinePreviewService $linePreviewService = new TranscriptLinePreviewService(),
     ) {
     }
 
-    /**
-     * Build a root ContainerWidget containing one widget per block.
-     *
-     * @param list<TranscriptBlock> $blocks
-     */
-    public function buildRoot(array $blocks, TuiTheme $theme): ContainerWidget
+    public function displayConfig(): TranscriptDisplayConfig
     {
-        $root = new ContainerWidget();
-        foreach ($blocks as $block) {
-            $root->add($this->buildWidget($block, $theme));
-        }
+        return $this->displayConfig;
+    }
 
-        return $root;
+    public function displayState(): TranscriptDisplayState
+    {
+        return $this->displayState;
+    }
+
+    public function isTranscriptWidgetSuppressed(TranscriptBlock $block): bool
+    {
+        return $this->shouldSuppressTranscriptWidget($block);
     }
 
     /**
@@ -65,6 +68,11 @@ final readonly class TranscriptBlockWidgetFactory
             return new TextWidget($this->subagentRenderer->buildContent($block, $theme));
         }
 
+        // ask_human HITL: Question block is authoritative; suppress duplicate tool cards (single-block render path).
+        if ($this->shouldSuppressTranscriptWidget($block)) {
+            return new TextWidget('');
+        }
+
         // Hidden thinking: compact placeholder; uses TranscriptDisplayConfig only, NOT TranscriptBlock::collapsed.
         if ($this->isThinkingBlock($block) && !$this->displayConfig->thinkingVisible) {
             $line = \sprintf('%s Thinking', TranscriptGlyphs::GLYPH_ASSISTANT_THINKING);
@@ -75,6 +83,11 @@ final readonly class TranscriptBlockWidgetFactory
         // UserMessage, AssistantMessage, visible thinking → MarkdownWidget.
         if ($this->isMarkdownBlock($block)) {
             return $this->buildMarkdownWidget($block, $theme);
+        }
+
+        // Question blocks: markdown prompt/answer transcript record (HITL), not generic TextWidget.
+        if (TranscriptBlockKindEnum::Question === $block->kind) {
+            return $this->buildQuestionWidget($block, $theme);
         }
 
         // RENDER-04: ToolCall → compact card (glyph header, YAML-like args, arg preview).
@@ -97,16 +110,147 @@ final readonly class TranscriptBlockWidgetFactory
         return new TextWidget($theme->color($color, $line));
     }
 
-    private function buildToolCallWidget(TranscriptBlock $block, TuiTheme $theme): TextWidget
+    /**
+     * ask_human often leaves an empty assistant markdown placeholder immediately before the Question block.
+     */
+    public function shouldSuppressEmptyAssistantPlaceholder(TranscriptBlock $block, ?TranscriptBlock $nextBlock): bool
+    {
+        if (TranscriptBlockKindEnum::AssistantMessage !== $block->kind) {
+            return false;
+        }
+
+        if ('' !== $block->text) {
+            return false;
+        }
+
+        return null !== $nextBlock && TranscriptBlockKindEnum::Question === $nextBlock->kind;
+    }
+
+    /**
+     * ask_human HITL: Question block is the authoritative transcript record; hide duplicate tool cards.
+     *
+     * Projection typically emits ToolCall/ToolResult before the Question block in the same poll batch;
+     * a one-tick gap with only suppressed cards is acceptable and preferable to flashing raw payloads.
+     */
+    private function shouldSuppressTranscriptWidget(TranscriptBlock $block): bool
+    {
+        if (TranscriptBlockKindEnum::ToolCall === $block->kind && $this->isAskHumanToolName($block->meta['tool_name'] ?? null)) {
+            return true;
+        }
+
+        if (TranscriptBlockKindEnum::ToolResult === $block->kind
+            && $this->isAskHumanToolName($block->meta['tool_name'] ?? null)
+            && !$this->toolResultIsFullRender($block)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private function isAskHumanToolName(mixed $toolName): bool
+    {
+        return \is_string($toolName) && 'ask_human' === $toolName;
+    }
+
+    /**
+     * Question transcript: compact glyph header, markdown prompt body, optional answer/status sections.
+     *
+     * Uses meta['prompt'] and meta['answer'] when present so answered blocks do not treat
+     * the projection's appended " → answer" suffix as prompt markdown.
+     */
+    private function buildQuestionWidget(TranscriptBlock $block, TuiTheme $theme): AbstractWidget
+    {
+        $status = \is_string($block->meta['status'] ?? null) ? $block->meta['status'] : 'pending';
+        $prompt = \is_string($block->meta['prompt'] ?? null) && '' !== $block->meta['prompt']
+            ? $block->meta['prompt']
+            : $this->questionPromptTextFromBlock($block);
+        $answer = \is_string($block->meta['answer'] ?? null) ? $block->meta['answer'] : '';
+
+        $container = new ContainerWidget();
+        $header = $this->questionHeaderLine($status);
+        $container->add(new TextWidget($theme->color(ThemeColorEnum::Accent, $header)));
+
+        if ('' !== $prompt) {
+            $container->add($this->buildQuestionMarkdownWidget($prompt, $theme, ThemeColorEnum::Accent));
+        }
+
+        if ('answered' === $status && '' !== $answer) {
+            $answerLine = '  → '.$answer;
+            $container->add(new TextWidget($theme->color(ThemeColorEnum::UserMessage, $answerLine)));
+        } elseif ('rejected' === $status) {
+            $container->add(new TextWidget($theme->color(ThemeColorEnum::Error, '  (rejected)')));
+        } elseif ('pending' === $status) {
+            $container->add(new TextWidget($theme->muted('  … awaiting answer')));
+        }
+
+        return $container;
+    }
+
+    private function questionHeaderLine(string $status): string
+    {
+        return match ($status) {
+            'answered' => \sprintf('%s Human input answered', TranscriptGlyphs::GLYPH_QUESTION),
+            'rejected' => \sprintf('%s Human input rejected', TranscriptGlyphs::GLYPH_QUESTION),
+            default => \sprintf('%s Human input required', TranscriptGlyphs::GLYPH_QUESTION),
+        };
+    }
+
+    /**
+     * Prompt body without duplicating the glyph prefix inside markdown (CommonMark + glyph contract).
+     */
+    private function buildQuestionMarkdownWidget(string $prompt, TuiTheme $theme, ThemeColorEnum $color): MarkdownWidget
+    {
+        $mdWidget = new MarkdownWidget($prompt);
+        $colorSpec = $theme->getPalette()->get($color);
+        $style = '' !== $colorSpec
+            ? new Style(color: $colorSpec, padding: Padding::from([0, 0, 0, 2]))
+            : new Style(padding: Padding::from([0, 0, 0, 2]));
+        $mdWidget->setStyle($style);
+
+        return $mdWidget;
+    }
+
+    private function questionPromptTextFromBlock(TranscriptBlock $block): string
+    {
+        $text = $block->text;
+        if ('' === $text) {
+            return '';
+        }
+
+        // Answered projection appends " → {answer}" to block text; strip for prompt-only markdown.
+        if (1 === preg_match('/^(.*) → /u', $text, $matches)) {
+            return rtrim($matches[1]);
+        }
+
+        if (str_ends_with($text, ' (rejected)')) {
+            return substr($text, 0, -\strlen(' (rejected)'));
+        }
+
+        return $text;
+    }
+
+    private function buildToolCallWidget(TranscriptBlock $block, TuiTheme $theme): AbstractWidget
     {
         $header = $this->toolCallHeaderLabel($block);
         $suffix = $block->streaming ? TranscriptGlyphs::STREAMING_SUFFIX : '';
-        $lines = [\sprintf('%s %s%s', TranscriptGlyphs::GLYPH_TOOL, $header, $suffix)];
-
+        $headerLine = \sprintf('%s %s%s', TranscriptGlyphs::GLYPH_TOOL, $header, $suffix);
         $arguments = $block->meta['arguments'] ?? null;
-        if (\is_array($arguments) && [] !== $arguments) {
+        if (!\is_array($arguments)) {
+            $arguments = [];
+        }
+
+        if ($this->isEditToolCall($block, $arguments)) {
+            return $this->buildEditToolCallWidget($block, $theme, $headerLine, $arguments);
+        }
+
+        if ($this->isWriteToolCall($block, $arguments)) {
+            return $this->buildWriteToolCallWidget($block, $theme, $headerLine, $arguments);
+        }
+
+        $lines = [$headerLine];
+        if ([] !== $arguments) {
             $argLines = $this->toolArgumentsFormatter->formatLines($arguments);
-            $preview = $this->applyLinePreview($argLines, fullRender: false);
+            $preview = $this->applyLinePreview($argLines, fullRender: false, lineLimit: $this->displayConfig->toolResultPreviewLines);
             foreach ($preview['lines'] as $argLine) {
                 $lines[] = '    '.$argLine;
             }
@@ -115,9 +259,87 @@ final readonly class TranscriptBlockWidgetFactory
             }
         }
 
-        $text = implode("\n", $lines);
+        return new TextWidget($theme->color(ThemeColorEnum::ToolTitle, implode("\n", $lines)));
+    }
 
-        return new TextWidget($theme->color(ThemeColorEnum::ToolTitle, $text));
+    /**
+     * @param array<string, mixed> $arguments
+     */
+    private function buildEditToolCallWidget(TranscriptBlock $block, TuiTheme $theme, string $headerLine, array $arguments): ContainerWidget
+    {
+        $container = new ContainerWidget();
+        $container->add(new TextWidget($theme->color(ThemeColorEnum::ToolTitle, $headerLine)));
+
+        $path = $arguments['path'] ?? null;
+        if (\is_string($path) && '' !== $path) {
+            $container->add(new TextWidget($theme->color(ThemeColorEnum::ToolTitle, '    path: '.$path)));
+        }
+
+        $patch = $arguments['patch'] ?? '';
+        if (\is_string($patch) && '' !== $patch) {
+            $patchBody = $this->editDiffRenderer->buildPatchBodyWidget($patch, $theme, $this->displayConfig, $this->displayState);
+            if (null !== $patchBody) {
+                $container->add($patchBody);
+            }
+        }
+
+        return $container;
+    }
+
+    /**
+     * @param array<string, mixed> $arguments
+     */
+    private function buildWriteToolCallWidget(TranscriptBlock $block, TuiTheme $theme, string $headerLine, array $arguments): ContainerWidget
+    {
+        $container = new ContainerWidget();
+        $container->add(new TextWidget($theme->color(ThemeColorEnum::ToolTitle, $headerLine)));
+
+        $path = $arguments['path'] ?? '';
+        if (!\is_string($path)) {
+            $path = '';
+        }
+        if ('' !== $path) {
+            $container->add(new TextWidget($theme->color(ThemeColorEnum::ToolTitle, '    path: '.$path)));
+        }
+
+        $content = $arguments['content'] ?? '';
+        if (!\is_string($content)) {
+            $content = '';
+        }
+
+        foreach ($this->writeContentRenderer->buildContentBodyWidgets($content, $path, $theme, $this->displayConfig, $this->displayState) as $widget) {
+            $container->add($widget);
+        }
+
+        return $container;
+    }
+
+    /**
+     * @param array<string, mixed> $arguments
+     */
+    private function isEditToolCall(TranscriptBlock $block, array $arguments): bool
+    {
+        $toolName = $block->meta['tool_name'] ?? null;
+        if ('edit' !== $toolName) {
+            return false;
+        }
+
+        $patch = $arguments['patch'] ?? null;
+
+        return \is_string($patch) && '' !== $patch;
+    }
+
+    /**
+     * @param array<string, mixed> $arguments
+     */
+    private function isWriteToolCall(TranscriptBlock $block, array $arguments): bool
+    {
+        $toolName = $block->meta['tool_name'] ?? null;
+        if ('write' !== $toolName) {
+            return false;
+        }
+
+        return \array_key_exists('content', $arguments) && \is_string($arguments['content']);
     }
 
     private function buildToolResultWidget(TranscriptBlock $block, TuiTheme $theme): TextWidget
@@ -160,38 +382,36 @@ final readonly class TranscriptBlockWidgetFactory
     }
 
     /**
-     * Shared line-budget preview for ToolCall argument lines and ToolResult body lines.
-     *
-     * When {@see TranscriptDisplayConfig::$toolResultPreviewLines} is <= 0, preview is disabled
-     * (all lines returned). When {@see TranscriptDisplayState::$previewableBlocksExpanded} is true,
-     * all lines are returned regardless of limit.
-     *
      * @param list<string> $lines
      *
      * @return array{lines: list<string>, ellipsis: ?string}
      */
-    private function applyLinePreview(array $lines, bool $fullRender): array
+    private function applyLinePreview(array $lines, bool $fullRender, ?int $lineLimit = null): array
     {
-        if ($fullRender) {
-            return ['lines' => $lines, 'ellipsis' => null];
+        $limit = $lineLimit ?? $this->displayConfig->toolResultPreviewLines;
+
+        return $this->linePreviewService->apply($lines, $limit, $fullRender, $this->displayState);
+    }
+
+    private function compactSuccessfulEditWriteResultBody(TranscriptBlock $block, string $result): string
+    {
+        if ($this->toolResultIsFullRender($block)) {
+            return $result;
         }
 
-        $limit = $this->displayConfig->toolResultPreviewLines;
-        if ($limit <= 0 || \count($lines) <= $limit) {
-            return ['lines' => $lines, 'ellipsis' => null];
+        $toolName = $block->meta['tool_name'] ?? null;
+        if (!\is_string($toolName) || 'edit' !== $toolName) {
+            // write (and other) successful tool results are already compact status lines.
+            return $result;
         }
 
-        if ($this->displayState->previewableBlocksExpanded) {
-            return ['lines' => $lines, 'ellipsis' => null];
+        $marker = 'Updated file context:';
+        $pos = strpos($result, $marker);
+        if (false !== $pos) {
+            return rtrim(substr($result, 0, $pos));
         }
 
-        $remaining = \count($lines) - $limit;
-        $ellipsis = \sprintf('… %d more line%s', $remaining, 1 === $remaining ? '' : 's');
-
-        return [
-            'lines' => \array_slice($lines, 0, $limit),
-            'ellipsis' => $ellipsis,
-        ];
+        return $result;
     }
 
     /**
@@ -248,7 +468,7 @@ final readonly class TranscriptBlockWidgetFactory
     {
         $result = $block->meta['result'] ?? null;
         if (\is_string($result) && '' !== $result) {
-            return $result;
+            return $this->compactSuccessfulEditWriteResultBody($block, $result);
         }
         if (\is_scalar($result) && '' !== (string) $result) {
             return (string) $result;

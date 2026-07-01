@@ -1241,6 +1241,23 @@ final class TranscriptProjectorTest extends TestCase
         $this->assertStringContainsString('→ Alice', $block->text);
     }
 
+    public function testHumanInputAnsweredConfirmBooleanStoresYesNo(): void
+    {
+        $this->accept('human_input.requested', [
+            'request_id' => 'req_confirm', 'question_id' => 'q_confirm',
+            'ui_kind' => 'confirm', 'kind' => 'interrupt', 'prompt' => 'Proceed?',
+            'schema' => ['type' => 'boolean'],
+        ]);
+        $this->accept('human_input.answered', [
+            'question_id' => 'q_confirm', 'answer' => true,
+        ]);
+
+        $block = $this->projector->blocks()[0];
+        $this->assertSame('answered', $block->meta['status']);
+        $this->assertSame('yes', $block->meta['answer']);
+        $this->assertStringContainsString('→ yes', $block->text);
+    }
+
     public function testHumanInputAnsweredIgnoresUnknownQuestion(): void
     {
         $this->accept('human_input.answered', [
