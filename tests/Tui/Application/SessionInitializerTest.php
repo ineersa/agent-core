@@ -21,6 +21,7 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\Tui\Application\SessionInitializer;
+use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
@@ -486,6 +487,91 @@ final class SessionInitializerTest extends TestCase
         // lastSeq must be the max from the FULL canonical stream (seq 15 = T3)
         self::assertSame(15, $state->lastSeq, 'lastSeq must reflect full stream max, not just filtered events');
     }
+
+    public function testResumeInfersCancelledActivityFromLatestAgentEnd(): void
+    {
+        $runId = 'run-terminal-'.bin2hex(random_bytes(4));
+        $sessionDir = $this->projectDir.'/.hatfield/sessions/'.$runId;
+        mkdir($sessionDir, 0777, true);
+        file_put_contents($sessionDir.'/events.jsonl', '');
+
+        $this->eventStore->append(new RunEvent(
+            runId: $runId,
+            seq: 1,
+            turnNo: 1,
+            type: 'agent_command_applied',
+            payload: [
+                'kind' => 'follow_up',
+                'idempotency_key' => 'ik_follow',
+                'message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hello']]],
+            ],
+        ));
+        $this->eventStore->append(new RunEvent(
+            runId: $runId,
+            seq: 2,
+            turnNo: 1,
+            type: 'agent_end',
+            payload: ['reason' => 'cancelled'],
+        ));
+
+        $turnTreeProvider = $this->createMock(TurnTreeProviderInterface::class);
+        $turnTreeProvider->expects(self::once())
+            ->method('forSession')
+            ->with($runId)
+            ->willReturn(new TurnTreeView(
+                runId: $runId,
+                nodesByTurnNo: [],
+                rootTurnNos: [1],
+                currentLeafTurnNo: 1,
+                activePathTurnNos: [1],
+            ));
+        $turnTreeProvider->expects(self::once())
+            ->method('activePathRuntimeEvents')
+            ->with($runId, 1)
+            ->willReturn([
+                new RuntimeEvent(
+                    type: 'user.message_submitted',
+                    runId: $runId,
+                    seq: 1,
+                    payload: ['text' => 'Hello', 'message_id' => 'msg_1'],
+                ),
+            ]);
+
+        $this->projector->expects(self::exactly(1))->method('reset');
+        $this->projector->expects(self::once())->method('accept');
+        $this->projector->expects(self::once())->method('blocks')->willReturn([]);
+
+        $appConfig = new AppConfig(
+            tui: new TuiConfig(theme: 'default'),
+            logging: new LoggingConfig(),
+            cwd: $this->projectDir,
+        );
+        $hatfieldSessionStore = new HatfieldSessionStore(
+            appConfig: $appConfig,
+            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+        );
+        $mapper = new RuntimeEventMapper(
+            new RuntimeEventTranslator(new EventDispatcher()),
+        );
+
+        $sessionInit = new SessionInitializer(
+            sessionStore: $hatfieldSessionStore,
+            eventStore: $this->eventStore,
+            eventMapper: $mapper,
+            projector: $this->projector,
+            blockFactory: new TranscriptBlockFactory(),
+            logger: new NullLogger(),
+            eventApplier: new TuiRuntimeEventApplier($this->projector),
+            turnTreeProvider: $turnTreeProvider,
+        );
+
+        $state = new TuiSessionState($runId, true);
+        $sessionInit->buildInitialTranscript($state);
+
+        self::assertSame(RunActivityStateEnum::Cancelled, $state->activity);
+        self::assertSame(2, $state->lastSeq);
+    }
+
 
     /**
      * Build a real TranscriptProjector for integration testing.

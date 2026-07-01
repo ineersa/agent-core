@@ -203,6 +203,13 @@ final readonly class InteractiveMode
             // ── Start or resume the run ──
             $this->startOrResumeRun($client, $state, $screen);
 
+            // Passive resume does not poll runtime events immediately; clear any
+            // optimistic Working... left from a prior in-session submit so terminal
+            // cancelled/completed/failed sessions do not show ◐ Working... until tick.
+            if ($state->resuming && !$state->activity->isActive()) {
+                $screen->setWorkingMessage('');
+            }
+
             // ── Register listeners (DI-driven, stateless registrars) ──
             $ticks = new TuiTickDispatcher();
             $lifecycle = new TuiSessionLifecycleDispatcher();

@@ -805,7 +805,7 @@ final readonly class RunStateReplayService
             pendingToolCalls: [],
             errorMessage: $state->errorMessage,
             messages: $state->messages,
-            activeStepId: $state->activeStepId,
+            activeStepId: null,
             retryableFailure: false,
         );
     }

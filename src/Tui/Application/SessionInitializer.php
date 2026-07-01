@@ -264,6 +264,15 @@ final readonly class SessionInitializer
             $state->isCompacting = false;
         }
 
+        // When the canonical stream already ended (agent_end) or failed, align
+        // replayed activity with the terminal outcome even if the active-path
+        // replay stopped before the final agent_end (branch rewind / leaf filter).
+        $terminalActivity = $this->inferTerminalActivityFromCanonicalEvents($runEvents);
+        if (null !== $terminalActivity) {
+            $state->activity = $terminalActivity;
+            $state->isCompacting = false;
+        }
+
         $blocks = $this->projector->blocks();
 
         if ([] === $blocks) {
@@ -275,6 +284,38 @@ final readonly class SessionInitializer
         }
 
         return $blocks;
+    }
+
+    /**
+     * Infer terminal TUI activity from the latest canonical agent_end on the full stream.
+     *
+     * Branch-aware replay may omit the terminal agent_end from the active path while
+     * the hot RunState (and user expectation) is already cancelled/completed/failed.
+     * Without this, passive resume can leave activity=Idle while SubmitListener later
+     * sets Starting on follow_up, producing a stuck ◐ Working... with no live work.
+     *
+     * @param list<RunEvent> $runEvents
+     */
+    private function inferTerminalActivityFromCanonicalEvents(array $runEvents): ?RunActivityStateEnum
+    {
+        for ($index = \count($runEvents) - 1; $index >= 0; --$index) {
+            $runEvent = $runEvents[$index];
+            if ('agent_end' !== $runEvent->type) {
+                continue;
+            }
+
+            $reason = \is_string($runEvent->payload['reason'] ?? null)
+                ? $runEvent->payload['reason']
+                : 'completed';
+
+            return match ($reason) {
+                'cancelled' => RunActivityStateEnum::Cancelled,
+                'failed' => RunActivityStateEnum::Failed,
+                default => RunActivityStateEnum::Completed,
+            };
+        }
+
+        return null;
     }
 
     /**

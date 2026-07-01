@@ -428,6 +428,7 @@ final class RunStateReplayServiceTest extends TestCase
 
         $this->assertTrue($result->rebuilt);
         $this->assertSame(RunStatus::Cancelled, $result->rebuiltState->status);
+        $this->assertNull($result->rebuiltState->activeStepId);
     }
 
     // ── Error / llm_step_failed replay ──────────────────────────────────────
