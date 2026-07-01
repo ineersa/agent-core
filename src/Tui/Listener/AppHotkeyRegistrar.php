@@ -13,7 +13,7 @@ use Ineersa\Tui\Runtime\TuiRuntimeContext;
  * completion keys, prompt history navigation, model controls).
  *
  * These hotkeys are enforced by the TUI listener pipeline
- * ({@see CtrlCInputInterceptor}, {@see CompletionListener},
+ * ({@see CtrlCInputInterceptor}, {@see PreviewExpansionInputListener}, {@see CompletionListener},
  * {@see PromptHistoryListener}, {@see ModelControlListener})
  * rather than by the EditorWidget keybinding engine, so their
  * descriptions are maintained here rather than derived from
@@ -45,6 +45,15 @@ final readonly class AppHotkeyRegistrar implements TuiListenerRegistrar
             description: 'Exit the application cleanly when the editor is empty',
             source: 'core',
             priority: 20,
+        ));
+
+        $this->hotkeyRegistry->add(new HotkeyBindingDTO(
+            context: 'Global',
+            keys: ['ctrl+o'],
+            action: 'Toggle transcript previews',
+            description: 'Expand or collapse previewable tool result and diff previews for this session only (not saved to settings)',
+            source: 'core',
+            priority: 25,
         ));
 
         // ── Prompt history ────────────────────────────────────────

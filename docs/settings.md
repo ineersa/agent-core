@@ -120,17 +120,17 @@ styling.
 Whether previewable blocks (tool results, diffs) start expanded in the
 transcript. When false (default), long tool outputs and diffs are shown
 as truncated previews. Preview expansion is TUI-session-only and is NOT
-persisted to settings or session metadata. Runtime toggling via `Ctrl+O`
-(a planned future keybinding) will flip this flag per-session; until then the
-display state always reflects this config default plus programmatic changes.
+persisted to settings or session metadata. Press **Ctrl+O** in the TUI to
+toggle expanded previews for the current session (tool result bodies, edit/write
+diff and content previews). The toggle does not change this setting file.
 
 **Default:** `false`
 
 ### `tui.transcript.previews.tool_result_lines`
 
 Maximum number of lines shown for normal tool result previews when
-the preview is collapsed. Applies to `ToolResult` blocks that are
-not classified as diffs.
+the preview is collapsed. Also bounds compact generic tool exchange bodies
+and large tool-call argument previews that are not classified as diffs.
 
 **Default:** `8`
 
@@ -141,6 +141,14 @@ the preview is collapsed. Applies to `ToolResult` blocks classified as
 diffs (e.g. edit/write tool outputs).
 
 **Default:** `20`
+
+### Tool call argument rendering (transcript)
+
+Tool call cards render arguments in a compact YAML-like form: no fenced
+`` ```yaml `` markers, multiline string values as YAML literal blocks where
+applicable, and theme-muted keys with default text values. Edit and write tool
+calls show patch or content previews subject to the preview line budgets above
+and the session-local Ctrl+O expansion toggle.
 
 ### `sessions.path`
 

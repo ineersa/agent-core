@@ -72,6 +72,7 @@ root to see the fatal error.
 | Tab | Accept/trigger completion |
 | Up on empty editor | Recall previous prompt |
 | Ctrl+P | Cycle model |
+| Ctrl+O | Toggle transcript preview expansion (session-only) |
 | Shift+Tab | Cycle reasoning level |
 
 Type `/hotkeys` while the TUI is running to see the live hotkey catalog.
