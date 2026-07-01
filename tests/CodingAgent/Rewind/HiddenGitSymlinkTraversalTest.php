@@ -28,6 +28,12 @@ final class HiddenGitSymlinkTraversalTest extends TestCase
 
     protected function tearDown(): void
     {
+        foreach (['outside-link', 'link-dir'] as $name) {
+            $path = $this->projectDir.'/'.$name;
+            if (is_link($path)) {
+                @unlink($path);
+            }
+        }
         TestDirectoryIsolation::removeDirectory($this->projectDir);
     }
 
@@ -56,4 +62,29 @@ final class HiddenGitSymlinkTraversalTest extends TestCase
 
         TestDirectoryIsolation::removeDirectory($outside);
     }
+    public function testSymlinkedDirectoryInsideProjectIsNotTraversed(): void
+    {
+        $realDir = $this->projectDir.'/real-dir';
+        mkdir($realDir, 0700, true);
+        file_put_contents($realDir.'/nested-secret.txt', 'nested-secret');
+
+        symlink($realDir, $this->projectDir.'/link-dir');
+        file_put_contents($this->projectDir.'/visible.txt', 'visible');
+
+        $hiddenGit = $this->projectDir.'/.hatfield/rewind/snapshots/sym2/git';
+        $backend = new HiddenGitSnapshotBackend($this->runner, new NullLogger(), 2_097_152);
+        $scope = new RewindPathScope($this->projectDir);
+        $idx = $this->projectDir.'/.hatfield/tmp/cap2.index';
+        @mkdir(dirname($idx), 0700, true);
+
+        $tree = $backend->captureTreeSha($hiddenGit, $this->projectDir, $idx, $scope);
+        $paths = $backend->listTreePaths($hiddenGit, $this->projectDir, $tree);
+
+        self::assertContains('visible.txt', $paths);
+        self::assertFalse(
+            (bool) array_filter($paths, static fn (string $p): bool => str_starts_with($p, 'link-dir/')),
+            'symlink dir must not be traversed; paths: '.implode(', ', $paths),
+        );
+    }
+
 }

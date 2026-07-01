@@ -19,7 +19,9 @@ class FileRewindCheckpointService
     private const string BACKEND_VERSION = 'hidden-git-v1';
 
     /** @var array<string, string> runId => last tree sha */
-    private array $lastTreeShaByRun = [];
+    private array $lastTreeShaByRunProject = [];
+
+    private ?bool $gitOperationalCache = null;
 
     public function __construct(
         private readonly EventStoreInterface $eventStore,
@@ -36,7 +38,15 @@ class FileRewindCheckpointService
 
     public function isOperational(): bool
     {
-        return $this->config->enabled && $this->gitRunner->isGitAvailable();
+        if (!$this->config->enabled) {
+            return false;
+        }
+
+        if (null === $this->gitOperationalCache) {
+            $this->gitOperationalCache = $this->gitRunner->isGitAvailable();
+        }
+
+        return $this->gitOperationalCache;
     }
 
     public function recordCheckpoint(
@@ -56,44 +66,46 @@ class FileRewindCheckpointService
                 $gitDir = $this->paths->hiddenGitDir($identity);
                 $tmpIndex = $this->paths->tmpDir($identity).'/capture-'.bin2hex(random_bytes(4)).'.index';
 
-                $treeSha = $this->backend->captureTreeSha($gitDir, $this->projectCwd, $tmpIndex, $scope);
-                $cacheKey = $runId.'|'.$identity->projectHash;
-                if ($treeSha === ($this->lastTreeShaByRun[$cacheKey] ?? null) && FileRewindCheckpointKindEnum::RestoreUndo !== $kind) {
-                    @unlink($tmpIndex);
+                try {
+                    $treeSha = $this->backend->captureTreeSha($gitDir, $this->projectCwd, $tmpIndex, $scope);
+                    $cacheKey = $runId.'|'.$identity->projectHash;
+                    if ($treeSha === ($this->lastTreeShaByRunProject[$cacheKey] ?? null) && FileRewindCheckpointKindEnum::RestoreUndo !== $kind) {
+                        return;
+                    }
+                    $this->lastTreeShaByRunProject[$cacheKey] = $treeSha;
+                    $commitSha = $this->backend->treeShaToCommitSha($gitDir, $this->projectCwd, $treeSha, 'hatfield file rewind');
 
-                    return;
+                    $events = $this->eventStore->allFor($runId);
+                    $maxSeq = 0;
+                    foreach ($events as $e) {
+                        $maxSeq = max($maxSeq, $e->seq);
+                    }
+
+                    $payload = [
+                        'turn_no' => $turnNo,
+                        'anchor_seq' => $anchorSeq,
+                        'kind' => $kind->value,
+                        'project_hash' => $identity->projectHash,
+                        'backend_version' => self::BACKEND_VERSION,
+                        'snapshot_commit_sha' => $commitSha,
+                        'tree_sha' => $treeSha,
+                    ];
+
+                    $this->eventStore->append(new RunEvent(
+                        runId: $runId,
+                        seq: $maxSeq + 1,
+                        turnNo: $turnNo,
+                        type: RunEventTypeEnum::FileRewindCheckpointRecorded->value,
+                        payload: $payload,
+                        createdAt: new \DateTimeImmutable(),
+                    ));
+
+                    $this->pruneRetainedRefs($this->eventStore->allFor($runId));
+                } finally {
+                    if (is_file($tmpIndex)) {
+                        @unlink($tmpIndex);
+                    }
                 }
-                $this->lastTreeShaByRun[$cacheKey] = $treeSha;
-                $commitSha = $this->backend->treeShaToCommitSha($gitDir, $this->projectCwd, $treeSha, 'hatfield file rewind');
-
-                $events = $this->eventStore->allFor($runId);
-                $maxSeq = 0;
-                foreach ($events as $e) {
-                    $maxSeq = max($maxSeq, $e->seq);
-                }
-
-                $payload = [
-                    'turn_no' => $turnNo,
-                    'anchor_seq' => $anchorSeq,
-                    'kind' => $kind->value,
-                    'project_hash' => $identity->projectHash,
-                    'backend_version' => self::BACKEND_VERSION,
-                    'snapshot_commit_sha' => $commitSha,
-                    'tree_sha' => $treeSha,
-                ];
-
-                $this->eventStore->append(new RunEvent(
-                    runId: $runId,
-                    seq: $maxSeq + 1,
-                    turnNo: $turnNo,
-                    type: RunEventTypeEnum::FileRewindCheckpointRecorded->value,
-                    payload: $payload,
-                    createdAt: new \DateTimeImmutable(),
-                ));
-
-                $this->pruneRetainedRefs($this->eventStore->allFor($runId));
-
-                @unlink($tmpIndex);
             });
         } catch (\Throwable $e) {
             $this->logger->warning('file_rewind.checkpoint_failed', [
@@ -130,33 +142,39 @@ class FileRewindCheckpointService
             $scope = new RewindPathScope($this->projectCwd);
             $gitDir = $this->paths->hiddenGitDir($identity);
             $tmpIndex = $this->paths->tmpDir($identity).'/undo-'.bin2hex(random_bytes(4)).'.index';
-            $undoTree = $this->backend->captureTreeSha($gitDir, $this->projectCwd, $tmpIndex, $scope);
-            $undoCommit = $this->backend->treeShaToCommitSha($gitDir, $this->projectCwd, $undoTree, 'hatfield file rewind undo');
-            @unlink($tmpIndex);
-
-            $maxSeq = 0;
-            foreach ($events as $e) {
-                $maxSeq = max($maxSeq, $e->seq);
-            }
 
             try {
-                $this->backend->restoreCommitToWorktree($gitDir, $this->projectCwd, $entry->snapshotCommitSha, $scope);
-            } catch (\Throwable $e) {
-                $this->appendRestoreEvent($runId, $targetTurnNo, $maxSeq + 1, $entry->snapshotCommitSha, $undoCommit, $identity->projectHash, 'failed', $e->getMessage());
-                $this->pruneRetainedRefs($this->eventStore->allFor($runId));
-                $this->logger->warning('file_rewind.restore_failed_partial', [
-                    'run_id' => $runId,
-                    'turn_no' => $targetTurnNo,
-                    'component' => 'file_rewind',
-                    'error' => $e->getMessage(),
-                ]);
-                unset($this->lastTreeShaByRun[$runId.'|'.$identity->projectHash]);
-                throw $e;
-            }
+                $undoTree = $this->backend->captureTreeSha($gitDir, $this->projectCwd, $tmpIndex, $scope);
+                $undoCommit = $this->backend->treeShaToCommitSha($gitDir, $this->projectCwd, $undoTree, 'hatfield file rewind undo');
 
-            $this->appendRestoreEvent($runId, $targetTurnNo, $maxSeq + 1, $entry->snapshotCommitSha, $undoCommit, $identity->projectHash, 'succeeded', null);
-            $this->pruneRetainedRefs($this->eventStore->allFor($runId));
-            unset($this->lastTreeShaByRun[$runId.'|'.$identity->projectHash]);
+                $maxSeq = 0;
+                foreach ($events as $e) {
+                    $maxSeq = max($maxSeq, $e->seq);
+                }
+
+                try {
+                    $this->backend->restoreCommitToWorktree($gitDir, $this->projectCwd, $entry->snapshotCommitSha, $scope);
+                } catch (\Throwable $e) {
+                    $this->appendRestoreEvent($runId, $targetTurnNo, $maxSeq + 1, $entry->snapshotCommitSha, $undoCommit, $identity->projectHash, 'failed', $e->getMessage());
+                    $this->pruneRetainedRefs($this->eventStore->allFor($runId));
+                    $this->logger->warning('file_rewind.restore_failed_partial', [
+                        'run_id' => $runId,
+                        'turn_no' => $targetTurnNo,
+                        'component' => 'file_rewind',
+                        'error' => $e->getMessage(),
+                    ]);
+                    unset($this->lastTreeShaByRunProject[$runId.'|'.$identity->projectHash]);
+                    throw $e;
+                }
+
+                $this->appendRestoreEvent($runId, $targetTurnNo, $maxSeq + 1, $entry->snapshotCommitSha, $undoCommit, $identity->projectHash, 'succeeded', null);
+                $this->pruneRetainedRefs($this->eventStore->allFor($runId));
+                unset($this->lastTreeShaByRunProject[$runId.'|'.$identity->projectHash]);
+            } finally {
+                if (is_file($tmpIndex)) {
+                    @unlink($tmpIndex);
+                }
+            }
         });
     }
 
@@ -173,7 +191,7 @@ class FileRewindCheckpointService
             $scope = new RewindPathScope($this->projectCwd);
             $gitDir = $this->paths->hiddenGitDir($identity);
             $this->backend->restoreCommitToWorktree($gitDir, $this->projectCwd, $undo->snapshotCommitSha, $scope);
-            unset($this->lastTreeShaByRun[$runId.'|'.$identity->projectHash]);
+            unset($this->lastTreeShaByRunProject[$runId.'|'.$identity->projectHash]);
         });
     }
 

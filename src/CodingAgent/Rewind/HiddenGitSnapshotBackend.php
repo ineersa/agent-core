@@ -188,6 +188,7 @@ final class HiddenGitSnapshotBackend
             return;
         }
 
+        $deletedAny = false;
         foreach (array_filter(array_map('trim', explode("\n", $r->stdout)), static fn (string $line): bool => '' !== $line) as $ref) {
             if ('' === $ref || !str_starts_with($ref, self::COMMIT_REF_PREFIX)) {
                 continue;
@@ -196,11 +197,16 @@ final class HiddenGitSnapshotBackend
             if (isset($keep[strtolower($sha)])) {
                 continue;
             }
-            $this->git->run(['update-ref', '-d', $ref], $env);
+            $del = $this->git->run(['update-ref', '-d', $ref], $env);
+            if (0 === $del->exitCode) {
+                $deletedAny = true;
+            }
         }
 
-        // Best-effort object cleanup inside hidden GIT_DIR only (never project .git).
-        $this->git->run(['gc', '--prune=now'], $env);
+        if ($deletedAny) {
+            // Best-effort object cleanup inside hidden GIT_DIR only (never project .git).
+            $this->git->run(['gc', '--prune=now'], $env);
+        }
     }
 
     /**
@@ -278,7 +284,7 @@ final class HiddenGitSnapshotBackend
         $iterator = new \RecursiveIteratorIterator(
             new \RecursiveDirectoryIterator(
                 $workTree,
-                \FilesystemIterator::SKIP_DOTS | \FilesystemIterator::FOLLOW_SYMLINKS,
+                \FilesystemIterator::SKIP_DOTS,
             ),
             \RecursiveIteratorIterator::SELF_FIRST,
         );

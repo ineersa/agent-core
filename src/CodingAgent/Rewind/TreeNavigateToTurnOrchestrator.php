@@ -22,13 +22,13 @@ final class TreeNavigateToTurnOrchestrator
     {
         return match ($choice) {
             TreeFileRestoreChoiceEnum::Cancel => null,
-            TreeFileRestoreChoiceEnum::UndoFileRewind => $this->executeUndoAndReturnNull($runId),
+            TreeFileRestoreChoiceEnum::UndoFileRewind => $this->executeUndo($runId),
             TreeFileRestoreChoiceEnum::RestoreFiles => $this->executeRestoreThenRewind($runId, $targetTurnNo),
             TreeFileRestoreChoiceEnum::KeepFiles => $this->executeRewindOnly($runId, $targetTurnNo),
         };
     }
 
-    private function executeUndoAndReturnNull(string $runId): null
+    private function executeUndo(string $runId): null
     {
         $this->checkpointService->undoLastRestore($runId);
 

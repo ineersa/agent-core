@@ -46,3 +46,9 @@ Hidden snapshots may contain **full contents** of project files captured at chec
 - Retention pruning deletes hidden refs for commits no longer in the retained turn window (and drops latest undo ref only when undo metadata is gone). A best-effort `git gc` runs **only** inside the hidden repository, never in the project `.git`.
 - Orphan objects may remain briefly after ref deletion until GC; pruned turn checkpoints are unavailable in `/tree` even if blobs still exist on disk.
 
+## File modes and project settings
+
+Restore writes file contents via `git checkout-index` and preserves the executable bit when present. Full Unix permission bits (for example setuid or exact `chmod` modes) are not guaranteed to round-trip.
+
+Project-local Hatfield settings (`.hatfield/settings.yaml`) are normal project files unless excluded by path rules; restoring an older turn can revert them along with other tracked project files.
+
