@@ -35,6 +35,8 @@ colors:
     tool_pending_bg: "#1a1b26"
     tool_success_bg: "#1a2620"
     tool_error_bg: "#261a1a"
+    tool_argument_key: "muted"
+    tool_argument_value: "text"
     tool_title: "blue"
     tool_output: ""
     tool: "blue"

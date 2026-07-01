@@ -98,7 +98,8 @@ final class TuiAutoCompactionE2eTest extends TestCase
             // fires and dispatches CompactRun(trigger: 'auto').  The
             // CompactionProjectionSubscriber renders a visible block —
             // either "Compacting conversation..." (transient progress),
-            // "⧉ Conversation compacted" (success), or "Compaction failed"
+            // "Conversation compacted" (success; projection text is glyph-free,
+            // the TUI renderer adds ⧉), or "Compaction failed"
             // (structural failure).  ANY of these proves the auto trigger
             // path is functional end-to-end (hook → dispatch → handler →
             // runtime events → projection → visible TUI) without typing
@@ -354,6 +355,117 @@ final class TuiAutoCompactionE2eTest extends TestCase
                 );
             }
         }
+    }
+
+
+    /**
+     * Tmux proof that compaction lifecycle rows do not duplicate glyphs or streaming ellipsis.
+     *
+     * Auto-compaction on the tiny replay session is non-deterministic: the handler may emit
+     * ineffective_compaction ("Compaction failed: the compacted context was not smaller…")
+     * without a visible started/completed System lifecycle row, which caused flaky timeouts.
+     * Auto trigger coverage stays in {@see testAutoCompactionTriggeredAndVisibleInTui};
+     * glyph/ellipsis rendering contract is also covered in unit/projection tests.
+     *
+     * This test uses manual /compact (auto_enabled=false) so "Compacting conversation" always
+     * appears in the real terminal, matching {@see TuiCompactCommandE2eTest} progress path.
+     */
+    public function testManualCompactionLifecycleRowHasNoDuplicateEllipsis(): void
+    {
+        $lifecycleDir = $this->createIsolatedProjectDirWithSettings([
+            'compaction' => [
+                'auto_enabled' => false,
+            ],
+        ]);
+
+        $pane = $this->tmux->startDetached(
+            command: $this->agentCommandForLifecycleProof($lifecycleDir),
+            prefix: 'tui-compact-lifecycle-glyphs',
+            width: 120,
+            height: 60,
+            cwd: $lifecycleDir,
+        );
+
+        try {
+            $this->tmux->waitForCaptureContains($pane, '█', 10.0);
+            $this->tmux->waitForTuiReadyAfterLogo($pane);
+
+            $this->tmux->sendLiteral($pane, 'Respond with exactly: OK.');
+            $this->tmux->sendKey($pane, 'Enter');
+
+            $this->tmux->waitForCallback(
+                $pane,
+                static fn (string $cap): bool => str_contains($cap, '◇') || str_contains($cap, '✕'),
+                timeout: 15.0,
+                message: 'Assistant response block did not appear before /compact',
+                history: 2000,
+            );
+
+            $this->tmux->sendKey($pane, 'C-u');
+            usleep(50_000);
+            $this->tmux->sendLiteral($pane, '/compact');
+            $this->tmux->sendKey($pane, 'Enter');
+
+            $cap = $this->tmux->waitForCallback(
+                $pane,
+                static fn (string $cap): bool => str_contains($cap, 'Compacting conversation')
+                    && str_contains($cap, '◐'),
+                timeout: 15.0,
+                message: 'Compaction lifecycle row (◐ + Compacting conversation) not visible after /compact',
+                history: 2000,
+            );
+
+            $this->assertLifecycleCaptureHasNoDuplicateGlyphsOrEllipsis($cap);
+        } finally {
+            $this->tmux->killSession($pane);
+        }
+    }
+
+    /**
+     * Footer/status chrome may also contain ◐; assertions are scoped to lifecycle transcript lines.
+     */
+    private function assertLifecycleCaptureHasNoDuplicateGlyphsOrEllipsis(string $cap): void
+    {
+        $this->assertStringNotContainsString('…...', $cap, 'Compaction progress must not show duplicate ellipsis');
+        $this->assertStringNotContainsString('◐ ◐', $cap, 'Lifecycle row must not duplicate ◐ glyph');
+        $this->assertStringNotContainsString('⧉ ⧉', $cap, 'Lifecycle row must not duplicate ⧉ glyph');
+
+        foreach (explode("\n", $cap) as $line) {
+            if (str_contains($line, 'Compacting conversation') && str_contains($line, '◐')) {
+                $this->assertSame(1, substr_count($line, '◐'), 'Compaction started lifecycle line must have exactly one ◐');
+            }
+            if (str_contains($line, 'Conversation compacted') && str_contains($line, '⧉')) {
+                $this->assertSame(1, substr_count($line, '⧉'), 'Compaction completed lifecycle line must have exactly one ⧉');
+            }
+        }
+    }
+
+    private function agentCommandForLifecycleProof(string $projectDir): string
+    {
+        $startupFixture = $this->projectRoot.'/tests/Tui/E2E/fixtures/tui-startup-prompt-response.json';
+        $summaryFixture = $this->projectRoot.'/tests/Tui/E2E/fixtures/tui-compaction-summary-response.json';
+        $paths = array_values(array_filter(
+            [$startupFixture, $summaryFixture],
+            static fn (string $path): bool => \is_file($path),
+        ));
+        $fixtureEnv = [] !== $paths
+            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.\escapeshellarg(\implode(';', $paths)).' '
+            : '';
+
+        $php = \PHP_BINARY;
+        $script = $this->projectRoot.'/bin/console';
+        $dbPath = 'app_test-tui-compact-lifecycle-'.bin2hex(random_bytes(4)).'.sqlite';
+
+        return \sprintf(
+            'APP_ENV=test HATFIELD_TEST_DATABASE_PATH=%s HOME=%s %s %s %s agent '
+                .'--model=llama_cpp_test/test '
+                .'--tools-excluded=bash 2>&1',
+            \escapeshellarg($dbPath),
+            \escapeshellarg($projectDir.'/home'),
+            $fixtureEnv,
+            \escapeshellarg($php),
+            \escapeshellarg($script),
+        );
     }
 
     private function agentCommand(): string

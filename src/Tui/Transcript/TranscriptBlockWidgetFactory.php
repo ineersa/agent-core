@@ -36,10 +36,11 @@ final readonly class TranscriptBlockWidgetFactory
         private readonly SubagentResultRenderer $subagentRenderer = new SubagentResultRenderer(),
         private readonly TranscriptDisplayConfig $displayConfig = new TranscriptDisplayConfig(),
         private readonly TranscriptDisplayState $displayState = new TranscriptDisplayState(),
-        private readonly ToolArgumentsFormatter $toolArgumentsFormatter = new ToolArgumentsFormatter(),
         private readonly EditToolCallDiffRenderer $editDiffRenderer = new EditToolCallDiffRenderer(),
         private readonly WriteToolCallContentRenderer $writeContentRenderer = new WriteToolCallContentRenderer(),
         private readonly TranscriptLinePreviewService $linePreviewService = new TranscriptLinePreviewService(),
+        private readonly ToolArgumentColoredFormatter $toolArgumentColoredFormatter = new ToolArgumentColoredFormatter(),
+        private readonly ViewImageTranscriptFormatter $viewImageFormatter = new ViewImageTranscriptFormatter(),
     ) {
     }
 
@@ -100,6 +101,10 @@ final readonly class TranscriptBlockWidgetFactory
             return $this->buildToolResultWidget($block, $theme);
         }
 
+        if (TranscriptBlockKindEnum::System === $block->kind) {
+            return $this->buildSystemWidget($block, $theme);
+        }
+
         // All remaining kinds → existing TextWidget path.
         $prefix = $this->prefixFor($block);
         $color = $this->colorFor($block);
@@ -108,6 +113,131 @@ final readonly class TranscriptBlockWidgetFactory
         $line = \sprintf('%s %s%s', $prefix, $displayText, $suffix);
 
         return new TextWidget($theme->color($color, $line));
+    }
+
+    /**
+     * Visual transcript collapse: render ToolCall + matching ToolResult as one compact card.
+     *
+     * Canonical projection still stores separate blocks; list assembly in {@see TranscriptBlockWidget}
+     * pairs by tool_call_id and skips the standalone ToolResult row when consumed here.
+     */
+    public function buildToolExchangeWidget(TranscriptBlock $callBlock, TranscriptBlock $resultBlock, TuiTheme $theme): AbstractWidget
+    {
+        if ($this->subagentRenderer->supports($resultBlock)) {
+            return $this->buildWidget($callBlock, $theme);
+        }
+
+        if ($this->isViewImageToolName($callBlock->meta['tool_name'] ?? null)) {
+            return $this->buildViewImageToolExchangeWidget($callBlock, $resultBlock, $theme);
+        }
+
+        $arguments = $callBlock->meta['arguments'] ?? null;
+        if (!\is_array($arguments)) {
+            $arguments = [];
+        }
+
+        if ($this->isEditToolCall($callBlock, $arguments)) {
+            return $this->buildEditToolExchangeWidget($callBlock, $resultBlock, $theme, $arguments);
+        }
+
+        if ($this->isWriteToolCall($callBlock, $arguments)) {
+            return $this->buildWriteToolExchangeWidget($callBlock, $resultBlock, $theme, $arguments);
+        }
+
+        return $this->buildGenericToolExchangeWidget($callBlock, $resultBlock, $theme, $arguments);
+    }
+
+    /**
+     * @param array<string, list<TranscriptBlock>> $toolResultsByCallId
+     * @param array<string, true>                  $consumedToolResultIds
+     * @param array<string, true>                  $consumedToolCallIds
+     */
+    public function findCombinableToolResultForCall(
+        TranscriptBlock $callBlock,
+        array $toolResultsByCallId,
+        array $consumedToolResultIds,
+        array $consumedToolCallIds,
+    ): ?TranscriptBlock {
+        if (TranscriptBlockKindEnum::ToolCall !== $callBlock->kind) {
+            return null;
+        }
+
+        if ($this->shouldSuppressTranscriptWidget($callBlock)) {
+            return null;
+        }
+
+        $callId = $callBlock->meta['tool_call_id'] ?? null;
+        if (!\is_string($callId) || '' === $callId || isset($consumedToolCallIds[$callId])) {
+            return null;
+        }
+
+        $candidates = $toolResultsByCallId[$callId] ?? [];
+        if ([] === $candidates) {
+            return null;
+        }
+
+        $result = $this->selectBestToolResultForExchange($callBlock, $candidates, $consumedToolResultIds);
+        if (null === $result) {
+            return null;
+        }
+
+        if ($this->shouldSuppressTranscriptWidget($result)) {
+            return null;
+        }
+
+        if ($this->subagentRenderer->supports($result)) {
+            return null;
+        }
+
+        if (!$this->toolNamesCompatibleForExchange($callBlock, $result)) {
+            return null;
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param array<string, true> $consumedToolCallIds
+     */
+    public function shouldSkipStandaloneToolResultInList(
+        TranscriptBlock $block,
+        array $consumedToolCallIds,
+    ): bool {
+        if (TranscriptBlockKindEnum::ToolResult !== $block->kind) {
+            return false;
+        }
+
+        if ($this->shouldSuppressTranscriptWidget($block)) {
+            return false;
+        }
+
+        if ($this->subagentRenderer->supports($block)) {
+            return false;
+        }
+
+        $callId = $block->meta['tool_call_id'] ?? null;
+        if (!\is_string($callId) || '' === $callId) {
+            return false;
+        }
+
+        return isset($consumedToolCallIds[$callId]);
+    }
+
+    /**
+     * @param array<string, true> $consumedToolResultIds
+     * @param array<string, true> $consumedToolCallIds
+     */
+    public function markToolResultConsumedForExchange(
+        TranscriptBlock $resultBlock,
+        array &$consumedToolResultIds,
+        array &$consumedToolCallIds,
+    ): void {
+        $consumedToolResultIds[$resultBlock->id] = true;
+
+        $callId = $resultBlock->meta['tool_call_id'] ?? null;
+        if (\is_string($callId) && '' !== $callId) {
+            $consumedToolCallIds[$callId] = true;
+        }
     }
 
     /**
@@ -124,6 +254,70 @@ final readonly class TranscriptBlockWidgetFactory
         }
 
         return null !== $nextBlock && TranscriptBlockKindEnum::Question === $nextBlock->kind;
+    }
+
+    /**
+     * @param list<TranscriptBlock> $candidates
+     * @param array<string, true>   $consumedToolResultIds
+     */
+    private function selectBestToolResultForExchange(
+        TranscriptBlock $callBlock,
+        array $candidates,
+        array $consumedToolResultIds,
+    ): ?TranscriptBlock {
+        $best = null;
+        $bestScore = \PHP_INT_MIN;
+
+        foreach ($candidates as $candidate) {
+            if (isset($consumedToolResultIds[$candidate->id])) {
+                continue;
+            }
+
+            if (!$this->toolNamesCompatibleForExchange($callBlock, $candidate)) {
+                continue;
+            }
+
+            $score = $this->toolResultExchangeCandidateScore($candidate);
+            if ($score > $bestScore) {
+                $best = $candidate;
+                $bestScore = $score;
+            }
+        }
+
+        return $best;
+    }
+
+    private function toolResultExchangeCandidateScore(TranscriptBlock $resultBlock): int
+    {
+        $score = 0;
+
+        if ($this->toolResultIsFullRender($resultBlock)) {
+            $score += 1000;
+        }
+
+        $body = $this->toolResultBodyText($resultBlock);
+        if ('' !== trim($body)) {
+            $score += 500 + min(\strlen($body), 200);
+        }
+
+        if ($resultBlock->streaming) {
+            $score -= 50;
+        }
+
+        $score += $resultBlock->seq;
+
+        return $score;
+    }
+
+    private function toolNamesCompatibleForExchange(TranscriptBlock $callBlock, TranscriptBlock $resultBlock): bool
+    {
+        $callName = $callBlock->meta['tool_name'] ?? null;
+        $resultName = $resultBlock->meta['tool_name'] ?? null;
+        if (!\is_string($callName) || '' === $callName || !\is_string($resultName) || '' === $resultName) {
+            return true;
+        }
+
+        return $callName === $resultName;
     }
 
     /**
@@ -247,9 +441,13 @@ final readonly class TranscriptBlockWidgetFactory
             return $this->buildWriteToolCallWidget($block, $theme, $headerLine, $arguments);
         }
 
+        if ($this->isViewImageToolCall($block)) {
+            return $this->buildViewImageToolCallWidget($block, $theme, $headerLine, $arguments);
+        }
+
         $lines = [$headerLine];
         if ([] !== $arguments) {
-            $argLines = $this->toolArgumentsFormatter->formatLines($arguments);
+            $argLines = $this->toolArgumentColoredFormatter->formatColoredLines($arguments, $theme);
             $preview = $this->applyLinePreview($argLines, fullRender: false, lineLimit: $this->displayConfig->toolResultPreviewLines);
             foreach ($preview['lines'] as $argLine) {
                 $lines[] = '    '.$argLine;
@@ -259,7 +457,10 @@ final readonly class TranscriptBlockWidgetFactory
             }
         }
 
-        return new TextWidget($theme->color(ThemeColorEnum::ToolTitle, implode("\n", $lines)));
+        $coloredHeader = $theme->color(ThemeColorEnum::ToolTitle, $lines[0]);
+        $body = \array_slice($lines, 1);
+
+        return new TextWidget(implode("\n", array_merge([$coloredHeader], $body)));
     }
 
     /**
@@ -344,6 +545,10 @@ final readonly class TranscriptBlockWidgetFactory
 
     private function buildToolResultWidget(TranscriptBlock $block, TuiTheme $theme): TextWidget
     {
+        if ($this->isViewImageToolName($block->meta['tool_name'] ?? null)) {
+            return $this->buildViewImageToolResultWidget($block, $theme);
+        }
+
         $header = $this->toolResultHeaderLabel($block);
         $lines = [\sprintf('%s %s', TranscriptGlyphs::GLYPH_TOOL, $header)];
 
@@ -489,6 +694,280 @@ final readonly class TranscriptBlockWidgetFactory
         return $text;
     }
 
+    private function buildSystemWidget(TranscriptBlock $block, TuiTheme $theme): TextWidget
+    {
+        $prefix = $this->systemPrefixFor($block);
+        $displayText = $this->displayTextFor($block);
+        $suffix = $this->systemStreamingSuffix($block);
+        $line = \sprintf('%s %s%s', $prefix, $displayText, $suffix);
+        $color = $this->systemColorFor($block);
+
+        return new TextWidget($theme->color($color, $line));
+    }
+
+    private function systemStreamingSuffix(TranscriptBlock $block): string
+    {
+        return $block->streaming ? TranscriptGlyphs::STREAMING_SUFFIX : '';
+    }
+
+    private function systemPrefixFor(TranscriptBlock $block): string
+    {
+        $lifecycle = $block->meta['lifecycle'] ?? null;
+        if ('compaction_started' === $lifecycle) {
+            return TranscriptGlyphs::GLYPH_COMPACTION_STARTED;
+        }
+        if ('compaction_completed' === $lifecycle) {
+            return TranscriptGlyphs::GLYPH_COMPACTION_COMPLETED;
+        }
+
+        return $this->severityPrefix($block);
+    }
+
+    private function systemColorFor(TranscriptBlock $block): ThemeColorEnum
+    {
+        if ('muted' === ($block->meta['style'] ?? null) || 'muted' === ($block->meta['severity'] ?? null)) {
+            return ThemeColorEnum::Muted;
+        }
+
+        $lifecycle = $block->meta['lifecycle'] ?? null;
+        if (\in_array($lifecycle, ['compaction_started', 'compaction_completed'], true)) {
+            return ThemeColorEnum::Working;
+        }
+
+        return $this->severityColor($block);
+    }
+
+    private function isViewImageToolCall(TranscriptBlock $block): bool
+    {
+        return $this->isViewImageToolName($block->meta['tool_name'] ?? null);
+    }
+
+    private function isViewImageToolName(mixed $toolName): bool
+    {
+        return \is_string($toolName) && 'view_image' === $toolName;
+    }
+
+    /**
+     * @param array<string, mixed> $arguments
+     */
+    private function buildGenericToolExchangeWidget(
+        TranscriptBlock $callBlock,
+        TranscriptBlock $resultBlock,
+        TuiTheme $theme,
+        array $arguments,
+    ): TextWidget {
+        $header = $this->toolCallHeaderLabel($callBlock);
+        $suffix = $callBlock->streaming ? TranscriptGlyphs::STREAMING_SUFFIX : '';
+        $headerLine = \sprintf('%s %s%s', TranscriptGlyphs::GLYPH_TOOL, $header, $suffix);
+        $lines = [$headerLine];
+
+        if ([] !== $arguments) {
+            $argLines = $this->toolArgumentColoredFormatter->formatColoredLines($arguments, $theme);
+            $preview = $this->applyLinePreview($argLines, fullRender: false, lineLimit: $this->displayConfig->toolResultPreviewLines);
+            foreach ($preview['lines'] as $argLine) {
+                $lines[] = '    '.$argLine;
+            }
+            if (null !== $preview['ellipsis']) {
+                $lines[] = '    '.$preview['ellipsis'];
+            }
+        }
+
+        foreach ($this->toolExchangeResultBodyLines($resultBlock) as $bodyLine) {
+            $lines[] = '    '.$bodyLine;
+        }
+
+        $coloredHeader = $theme->color(ThemeColorEnum::ToolTitle, $lines[0]);
+        $body = \array_slice($lines, 1);
+        $color = $this->toolExchangeBodyColor($resultBlock);
+
+        return new TextWidget($theme->color($color, implode("\n", array_merge([$coloredHeader], $body))));
+    }
+
+    /**
+     * @param array<string, mixed> $arguments
+     */
+    private function buildEditToolExchangeWidget(
+        TranscriptBlock $callBlock,
+        TranscriptBlock $resultBlock,
+        TuiTheme $theme,
+        array $arguments,
+    ): ContainerWidget {
+        $header = $this->toolCallHeaderLabel($callBlock);
+        $suffix = $callBlock->streaming ? TranscriptGlyphs::STREAMING_SUFFIX : '';
+        $headerLine = \sprintf('%s %s%s', TranscriptGlyphs::GLYPH_TOOL, $header, $suffix);
+
+        $container = new ContainerWidget();
+        $container->add(new TextWidget($theme->color(ThemeColorEnum::ToolTitle, $headerLine)));
+
+        $path = $arguments['path'] ?? null;
+        if (\is_string($path) && '' !== $path) {
+            $container->add(new TextWidget($theme->color(ThemeColorEnum::ToolTitle, '    path: '.$path)));
+        }
+
+        $patch = $arguments['patch'] ?? '';
+        if (\is_string($patch) && '' !== $patch) {
+            $patchBody = $this->editDiffRenderer->buildPatchBodyWidget($patch, $theme, $this->displayConfig, $this->displayState);
+            if (null !== $patchBody) {
+                $container->add($patchBody);
+            }
+        }
+
+        foreach ($this->toolExchangeResultBodyLines($resultBlock) as $bodyLine) {
+            $container->add(new TextWidget($theme->color($this->toolExchangeBodyColor($resultBlock), '    '.$bodyLine)));
+        }
+
+        return $container;
+    }
+
+    /**
+     * @param array<string, mixed> $arguments
+     */
+    private function buildWriteToolExchangeWidget(
+        TranscriptBlock $callBlock,
+        TranscriptBlock $resultBlock,
+        TuiTheme $theme,
+        array $arguments,
+    ): ContainerWidget {
+        $header = $this->toolCallHeaderLabel($callBlock);
+        $suffix = $callBlock->streaming ? TranscriptGlyphs::STREAMING_SUFFIX : '';
+        $headerLine = \sprintf('%s %s%s', TranscriptGlyphs::GLYPH_TOOL, $header, $suffix);
+
+        $container = new ContainerWidget();
+        $container->add(new TextWidget($theme->color(ThemeColorEnum::ToolTitle, $headerLine)));
+
+        $path = $arguments['path'] ?? '';
+        if (!\is_string($path)) {
+            $path = '';
+        }
+        if ('' !== $path) {
+            $container->add(new TextWidget($theme->color(ThemeColorEnum::ToolTitle, '    path: '.$path)));
+        }
+
+        $content = $arguments['content'] ?? '';
+        if (!\is_string($content)) {
+            $content = '';
+        }
+
+        foreach ($this->writeContentRenderer->buildContentBodyWidgets($content, $path, $theme, $this->displayConfig, $this->displayState) as $widget) {
+            $container->add($widget);
+        }
+
+        foreach ($this->toolExchangeResultBodyLines($resultBlock) as $bodyLine) {
+            $container->add(new TextWidget($theme->color($this->toolExchangeBodyColor($resultBlock), '    '.$bodyLine)));
+        }
+
+        return $container;
+    }
+
+    private function buildViewImageToolExchangeWidget(
+        TranscriptBlock $callBlock,
+        TranscriptBlock $resultBlock,
+        TuiTheme $theme,
+    ): TextWidget {
+        $header = $this->toolCallHeaderLabel($callBlock);
+        $suffix = $callBlock->streaming ? TranscriptGlyphs::STREAMING_SUFFIX : '';
+        $headerLine = \sprintf('%s %s%s', TranscriptGlyphs::GLYPH_TOOL, $header, $suffix);
+        $lines = [$headerLine];
+
+        $arguments = $callBlock->meta['arguments'] ?? null;
+        if (!\is_array($arguments)) {
+            $arguments = [];
+        }
+        foreach ($this->viewImageFormatter->formatToolCallLines($arguments) as $bodyLine) {
+            $lines[] = '    '.$bodyLine;
+        }
+
+        foreach ($this->toolExchangeResultBodyLines($resultBlock) as $bodyLine) {
+            $lines[] = '    '.$bodyLine;
+        }
+
+        $color = $this->toolExchangeBodyColor($resultBlock);
+
+        return new TextWidget($theme->color($color, implode("\n", $lines)));
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function toolExchangeResultBodyLines(TranscriptBlock $resultBlock): array
+    {
+        if ($this->isViewImageToolName($resultBlock->meta['tool_name'] ?? null)) {
+            $result = $resultBlock->meta['result'] ?? null;
+            $bodyLines = $this->viewImageFormatter->formatToolResultLines($result);
+            if ([] === $bodyLines && \is_string($result) && '' !== $result) {
+                if ($this->toolResultIsFullRender($resultBlock)) {
+                    return [$result];
+                }
+
+                return ['(image metadata)'];
+            }
+
+            return $bodyLines;
+        }
+
+        $body = $this->toolResultBodyText($resultBlock);
+        if ('' === $body) {
+            return [];
+        }
+
+        $bodyLines = explode("\n", $body);
+        $preview = $this->applyToolResultPreview($bodyLines, $resultBlock);
+
+        $lines = $preview['lines'];
+        if (null !== $preview['ellipsis']) {
+            $lines[] = $preview['ellipsis'];
+        }
+
+        return $lines;
+    }
+
+    private function toolExchangeBodyColor(TranscriptBlock $resultBlock): ThemeColorEnum
+    {
+        if ($this->toolResultIsFullRender($resultBlock) && $this->metaIsTruthy($resultBlock->meta['is_error'] ?? false)) {
+            return ThemeColorEnum::Error;
+        }
+
+        return ThemeColorEnum::ToolOutput;
+    }
+
+    /**
+     * @param array<string, mixed> $arguments
+     */
+    private function buildViewImageToolCallWidget(TranscriptBlock $block, TuiTheme $theme, string $headerLine, array $arguments): TextWidget
+    {
+        // $headerLine already includes the streaming suffix from buildToolCallWidget().
+        $lines = [$headerLine];
+        foreach ($this->viewImageFormatter->formatToolCallLines($arguments) as $bodyLine) {
+            $lines[] = '    '.$bodyLine;
+        }
+
+        return new TextWidget($theme->color(ThemeColorEnum::ToolTitle, implode("\n", $lines)));
+    }
+
+    private function buildViewImageToolResultWidget(TranscriptBlock $block, TuiTheme $theme): TextWidget
+    {
+        $header = \sprintf('%s %s', TranscriptGlyphs::GLYPH_TOOL, $this->toolResultHeaderLabel($block));
+        $lines = [$header];
+        $result = $block->meta['result'] ?? null;
+        $bodyLines = $this->viewImageFormatter->formatToolResultLines($result);
+        if ([] === $bodyLines && \is_string($result) && '' !== $result) {
+            if ($this->toolResultIsFullRender($block)) {
+                $bodyLines = [$result];
+            } else {
+                $bodyLines = ['(image metadata)'];
+            }
+        }
+        foreach ($bodyLines as $bodyLine) {
+            $lines[] = '    '.$bodyLine;
+        }
+
+        $color = $this->toolResultIsFullRender($block) && $this->metaIsTruthy($block->meta['is_error'] ?? false)
+            ? ThemeColorEnum::Error
+            : ThemeColorEnum::ToolOutput;
+
+        return new TextWidget($theme->color($color, implode("\n", $lines)));
+    }
+
     // Glyph prefixes — TranscriptGlyphs constants are the public glyph contract for tests/assertions.
     private function prefixFor(TranscriptBlock $block): string
     {
@@ -503,7 +982,7 @@ final readonly class TranscriptBlockWidgetFactory
             TranscriptBlockKindEnum::Approval => TranscriptGlyphs::GLYPH_APPROVAL,
             TranscriptBlockKindEnum::Cancelled => TranscriptGlyphs::GLYPH_CANCELLED,
             TranscriptBlockKindEnum::Error => TranscriptGlyphs::GLYPH_ERROR,
-            TranscriptBlockKindEnum::System => $this->severityPrefix($block),
+            default => throw new \LogicException(\sprintf('Flat prefix path does not handle kind %s', $block->kind->value)),
         };
     }
 
@@ -521,7 +1000,7 @@ final readonly class TranscriptBlockWidgetFactory
             TranscriptBlockKindEnum::Question => ThemeColorEnum::Accent,
             TranscriptBlockKindEnum::Approval => ThemeColorEnum::Warning,
             TranscriptBlockKindEnum::Error => ThemeColorEnum::Error,
-            TranscriptBlockKindEnum::System => $this->severityColor($block),
+            default => throw new \LogicException(\sprintf('Flat color path does not handle kind %s', $block->kind->value)),
         };
     }
 
@@ -568,9 +1047,14 @@ final readonly class TranscriptBlockWidgetFactory
             ? $block->meta['severity']
             : null;
 
+        if ('muted' === ($block->meta['style'] ?? null)) {
+            return ThemeColorEnum::Muted;
+        }
+
         return match ($severity) {
             'warning' => ThemeColorEnum::Warning,
             'error' => ThemeColorEnum::Error,
+            'muted' => ThemeColorEnum::Muted,
             default => ThemeColorEnum::SystemMessage,
         };
     }

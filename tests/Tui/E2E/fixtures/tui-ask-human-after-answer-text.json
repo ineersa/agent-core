@@ -1,0 +1,9 @@
+{
+  "model": "llama_cpp_test/test",
+  "provider_id": "llama_cpp_test",
+  "reasoning": "off",
+  "stop_reason": "stop",
+  "deltas": [
+    {"type": "text", "content": "Thanks for the answer."}
+  ]
+}

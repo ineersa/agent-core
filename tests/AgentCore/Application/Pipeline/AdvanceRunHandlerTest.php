@@ -146,6 +146,59 @@ final class AdvanceRunHandlerTest extends TestCase
         $this->assertInstanceOf(ExecuteLlmStep::class, $result->effects[0]);
     }
 
+    public function testWaitingHumanRunWithFollowUpTransitionsToRunning(): void
+    {
+        $commandStore = new InMemoryCommandStore();
+
+        // Pre-queue a FollowUp command so applyPendingTurnStartCommands produces boundary events
+        $commandStore->enqueue(new PendingCommand(
+            runId: 'run-waiting-human-advance',
+            kind: CoreCommandKind::FollowUp,
+            idempotencyKey: 'followup-waiting-human-ik-1',
+            payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'yes']]]],
+            options: new CommandCancellationOptions(safe: false),
+        ));
+
+        $commandMailboxPolicy = new CommandMailboxPolicy(
+            commandStore: $commandStore,
+            commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+        );
+
+        $handler = new AdvanceRunHandler(
+            commandMailboxPolicy: $commandMailboxPolicy,
+            eventFactory: new EventFactory(),
+        );
+
+        $state = RunStateBuilder::create('run-waiting-human-advance')
+            ->withStatus(RunStatus::WaitingHuman)
+            ->withVersion(5)
+            ->withTurnNo(22)
+            ->withLastSeq(278)
+            ->withMessages([new AgentMessage(role: 'assistant', content: [['type' => 'text', 'text' => 'Please confirm']])])
+            ->build();
+
+        $message = AdvanceRunMessageBuilder::create('run-waiting-human-advance')
+            ->withTurnNo(22)
+            ->withStepId('turn-23-step')
+            ->withIdempotencyKey('advance-waiting-human-1')
+            ->build();
+
+        $result = $handler->handle($message, $state);
+
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(RunStatus::Running, $result->nextState->status, 'WaitingHuman run with pending FollowUp should transition to Running');
+        $this->assertSame(23, $result->nextState->turnNo, 'Turn should advance from 22 to 23');
+        $this->assertNull($result->nextState->errorMessage, 'errorMessage should be cleared when transitioning WaitingHuman → Running');
+
+        $eventTypes = array_map(static fn ($e) => $e->type, $result->events);
+        $this->assertContains('agent_command_applied', $eventTypes, 'Expected agent_command_applied event');
+        $this->assertContains('turn_advanced', $eventTypes, 'Expected turn_advanced event');
+        $this->assertContains('leaf_set', $eventTypes, 'Expected leaf_set event');
+
+        $this->assertCount(1, $result->effects);
+        $this->assertInstanceOf(ExecuteLlmStep::class, $result->effects[0]);
+    }
+
     public function testHandleFirstTurnHasNullParentTurnNo(): void
     {
         $commandStore = new InMemoryCommandStore();

@@ -40,6 +40,7 @@ final class QuestionController
 
     public function __construct(
         private readonly QuestionCoordinator $coordinator,
+        private readonly QuestionOverlayPromptRenderer $promptRenderer = new QuestionOverlayPromptRenderer(),
     ) {
     }
 
@@ -98,6 +99,7 @@ final class QuestionController
         $this->isOpen = false;
         $this->awaitingFreeForm = false;
         $this->screen?->setStatus('action', null);
+        // Targeted overlay removal; full refresh() still redraws the screen — deeper compositor follow-up if flicker persists.
         $this->screen?->refresh();
     }
 
@@ -180,8 +182,12 @@ final class QuestionController
             QuestionKind::Confirm => "\u{2753} Confirmation required",
             QuestionKind::Choice => "\u{1F4CB} Choose an option",
         };
-        $header = new TextWidget(text: $headerText, truncate: false);
-        $this->container->add($header);
+        $theme = $this->screen?->theme();
+        if (null !== $theme) {
+            $this->container->add($this->promptRenderer->buildIndentedHeader($headerText, $theme));
+        } else {
+            $this->container->add(new TextWidget(text: '  '.$headerText, truncate: false));
+        }
     }
 
     /**
@@ -192,11 +198,16 @@ final class QuestionController
         // Repeat the active prompt in the overlay so the user does not have to look
         // back at the transcript while typing. Wrap to multiple lines (truncate: false)
         // instead of the old single-line ellipsis truncation.
-        $prompt = new TextWidget(text: $request->prompt, truncate: false);
-        $this->container->add($prompt);
+        $theme = $this->screen?->theme();
+        if (null === $theme) {
+            $this->container->add(new TextWidget(text: $request->prompt, truncate: false));
+            $this->container->add(new TextWidget(text: '[type answer and press Enter]', truncate: false));
 
-        $hint = new TextWidget(text: '[type answer and press Enter]', truncate: false);
-        $this->container->add($hint);
+            return;
+        }
+
+        $this->container->add($this->promptRenderer->buildPromptWidget($request->prompt, $theme));
+        $this->container->add($this->promptRenderer->buildIndentedHint('[type answer and press Enter]', $theme));
     }
 
     /**
@@ -208,8 +219,12 @@ final class QuestionController
     private function addSelectList(QuestionRequest $request): void
     {
         // Interactive kinds: transcript may not carry the same prompt; keep a short prompt line without truncation.
-        $prompt = new TextWidget(text: $request->prompt, truncate: false);
-        $this->container->add($prompt);
+        $theme = $this->screen?->theme();
+        if (null !== $theme) {
+            $this->container->add($this->promptRenderer->buildPromptWidget($request->prompt, $theme));
+        } else {
+            $this->container->add(new TextWidget(text: $request->prompt, truncate: false));
+        }
 
         $items = $this->buildItems($request);
         $items = $this->styleConfirmItems($items, $request->kind);
@@ -311,7 +326,8 @@ final class QuestionController
             $this->screen->setFocus($this->listWidget);
         }
 
-        $this->screen->requestRender(true);
+        // Non-forced render: forced full repaint on mount contributed to visible flicker/scroll churn.
+        $this->screen->requestRender(false);
         $this->isOpen = true;
     }
 

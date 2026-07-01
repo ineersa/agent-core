@@ -471,6 +471,15 @@ final class RuntimeEventTranslator
             return null;
         }
 
+        // Idle follow_up commands apply immediately (AdvanceRun on queue drain) and
+        // project as a canonical ❯ user message moments later. Emitting
+        // user.message_queued for follow_up only causes a brief ⏳ flicker with no
+        // user value. Steer/append_message while the run is active still need the
+        // pending-queue affordance until agent_command_applied arrives.
+        if ('follow_up' === $kind) {
+            return null;
+        }
+
         $text = \is_string($p['text'] ?? null) ? $p['text'] : '';
         if ('' === $text) {
             $text = $this->extractTextFromContent($p['message']['content'] ?? []);

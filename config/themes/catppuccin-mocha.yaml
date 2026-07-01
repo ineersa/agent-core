@@ -43,6 +43,8 @@ colors:
     tool_pending_bg: "#1e1e2e"
     tool_success_bg: "#1e2e1e"
     tool_error_bg: "#2e1e1e"
+    tool_argument_key: "muted"
+    tool_argument_value: "text"
     tool_title: "mauve"
     tool_output: ""
     tool: "mauve"

@@ -99,6 +99,30 @@ final class ThemePaletteTest extends TestCase
         self::assertSame('#abc', $palette->get(\Ineersa\Tui\Theme\ThemeColorEnum::Accent));
     }
 
+
+    public function testFromArrayResolvesColorTokenAliases(): void
+    {
+        $data = [
+            'name' => 'alias-test',
+            'vars' => [
+                'nord3' => '#4c566a',
+            ],
+            'colors' => [
+                'muted' => 'nord3',
+                'text' => '',
+                'tool_argument_key' => 'muted',
+                'tool_argument_value' => 'text',
+            ],
+        ];
+
+        $palette = ThemePalette::fromArray($data);
+
+        self::assertSame('#4c566a', $palette->get(\Ineersa\Tui\Theme\ThemeColorEnum::Muted));
+        self::assertSame('', $palette->get(\Ineersa\Tui\Theme\ThemeColorEnum::Text));
+        self::assertSame('#4c566a', $palette->get(\Ineersa\Tui\Theme\ThemeColorEnum::ToolArgumentKey));
+        self::assertSame('', $palette->get(\Ineersa\Tui\Theme\ThemeColorEnum::ToolArgumentValue));
+    }
+
     public function testFromArrayDefaultName(): void
     {
         $palette = ThemePalette::fromArray(['colors' => []]);

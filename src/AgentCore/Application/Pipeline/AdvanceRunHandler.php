@@ -132,8 +132,8 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
         $mailboxEffects = $mailboxResult->effects;
 
         // When pending commands (steer/follow-up/append_message) added new messages while
-        // the run was Completed or Failed, transition to Running and proceed
-        // to the next turn — don't bail out early.
+        // the run was Completed, Failed, Cancelled, or WaitingHuman, transition to Running
+        // and proceed to the next turn — don't bail out early.
         //
         // Compact commands are excluded from this transition: compaction
         // replaces messages in-place and should not advance the run turn.
@@ -150,7 +150,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                 }
             }
 
-            if ($hasNonCompactBoundaryEvent && [] !== $boundaryEventSpecs && \in_array($preparedState->status, [RunStatus::Completed, RunStatus::Failed, RunStatus::Cancelled], true)) {
+            if ($hasNonCompactBoundaryEvent && [] !== $boundaryEventSpecs && \in_array($preparedState->status, [RunStatus::Completed, RunStatus::Failed, RunStatus::Cancelled, RunStatus::WaitingHuman], true)) {
                 $preparedState = new RunState(
                     runId: $preparedState->runId,
                     status: RunStatus::Running,
