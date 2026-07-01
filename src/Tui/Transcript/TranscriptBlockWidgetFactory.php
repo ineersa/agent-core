@@ -223,22 +223,10 @@ final readonly class TranscriptBlockWidgetFactory
         return isset($consumedToolResultIds[$block->id]);
     }
 
-    private function toolNamesCompatibleForExchange(TranscriptBlock $callBlock, TranscriptBlock $resultBlock): bool
-    {
-        $callName = $callBlock->meta['tool_name'] ?? null;
-        $resultName = $resultBlock->meta['tool_name'] ?? null;
-        if (!\is_string($callName) || '' === $callName || !\is_string($resultName) || '' === $resultName) {
-            return true;
-        }
-
-        return $callName === $resultName;
-    }
-
     /**
      * ask_human often leaves an empty assistant markdown placeholder immediately before the Question block.
      */
-    public function shouldSuppressEmptyAssistantPlaceholder
-(TranscriptBlock $block, ?TranscriptBlock $nextBlock): bool
+    public function shouldSuppressEmptyAssistantPlaceholder(TranscriptBlock $block, ?TranscriptBlock $nextBlock): bool
     {
         if (TranscriptBlockKindEnum::AssistantMessage !== $block->kind) {
             return false;
@@ -249,6 +237,17 @@ final readonly class TranscriptBlockWidgetFactory
         }
 
         return null !== $nextBlock && TranscriptBlockKindEnum::Question === $nextBlock->kind;
+    }
+
+    private function toolNamesCompatibleForExchange(TranscriptBlock $callBlock, TranscriptBlock $resultBlock): bool
+    {
+        $callName = $callBlock->meta['tool_name'] ?? null;
+        $resultName = $resultBlock->meta['tool_name'] ?? null;
+        if (!\is_string($callName) || '' === $callName || !\is_string($resultName) || '' === $resultName) {
+            return true;
+        }
+
+        return $callName === $resultName;
     }
 
     /**
@@ -863,7 +862,12 @@ final readonly class TranscriptBlockWidgetFactory
         }
 
         return ThemeColorEnum::ToolOutput;
-    }    private function buildViewImageToolCallWidget(TranscriptBlock $block, TuiTheme $theme, string $headerLine, array $arguments): TextWidget
+    }
+
+    /**
+     * @param array<string, mixed> $arguments
+     */
+    private function buildViewImageToolCallWidget(TranscriptBlock $block, TuiTheme $theme, string $headerLine, array $arguments): TextWidget
     {
         // $headerLine already includes the streaming suffix from buildToolCallWidget().
         $lines = [$headerLine];

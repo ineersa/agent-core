@@ -219,7 +219,6 @@ final class TranscriptBlockWidget implements TuiWidget
         }
     }
 
-
     /**
      * @param list<TranscriptBlock> $blocks
      *
