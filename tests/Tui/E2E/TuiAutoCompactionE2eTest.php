@@ -369,7 +369,7 @@ final class TuiAutoCompactionE2eTest extends TestCase
      * This test uses manual /compact (auto_enabled=false) so "Compacting conversation" always
      * appears in the real terminal, matching {@see TuiCompactCommandE2eTest} progress path.
      */
-    public function testAutoCompactionLifecycleRowHasNoDuplicateEllipsis(): void
+    public function testManualCompactionLifecycleRowHasNoDuplicateEllipsis(): void
     {
         $lifecycleDir = $this->createIsolatedProjectDirWithSettings([
             'compaction' => [

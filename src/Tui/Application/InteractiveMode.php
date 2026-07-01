@@ -419,6 +419,7 @@ final readonly class InteractiveMode
                         text: \sprintf('Resumed run %s', $existingRunId),
                         seq: \count($state->transcript) + 1,
                         style: 'muted',
+                        category: 'lifecycle',
                     );
                 } catch (\Throwable $e) {
                     $this->logger->warning('Failed to resume run', [

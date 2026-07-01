@@ -525,10 +525,10 @@ final readonly class TranscriptBlockWidgetFactory
     {
         $lifecycle = $block->meta['lifecycle'] ?? null;
         if ('compaction_started' === $lifecycle) {
-            return '  ◐';
+            return TranscriptGlyphs::GLYPH_COMPACTION_STARTED;
         }
         if ('compaction_completed' === $lifecycle) {
-            return '  ⧉';
+            return TranscriptGlyphs::GLYPH_COMPACTION_COMPLETED;
         }
 
         return $this->severityPrefix($block);
@@ -578,8 +578,12 @@ final readonly class TranscriptBlockWidgetFactory
         $lines = [$header];
         $result = $block->meta['result'] ?? null;
         $bodyLines = $this->viewImageFormatter->formatToolResultLines($result);
-        if ([] === $bodyLines && \is_string($result) && '' !== $result && !$this->toolResultIsFullRender($block)) {
-            $bodyLines = ['(image metadata)'];
+        if ([] === $bodyLines && \is_string($result) && '' !== $result) {
+            if ($this->toolResultIsFullRender($block)) {
+                $bodyLines = [$result];
+            } elseif (!$this->toolResultIsFullRender($block)) {
+                $bodyLines = ['(image metadata)'];
+            }
         }
         foreach ($bodyLines as $bodyLine) {
             $lines[] = '    '.$bodyLine;
@@ -606,7 +610,7 @@ final readonly class TranscriptBlockWidgetFactory
             TranscriptBlockKindEnum::Approval => TranscriptGlyphs::GLYPH_APPROVAL,
             TranscriptBlockKindEnum::Cancelled => TranscriptGlyphs::GLYPH_CANCELLED,
             TranscriptBlockKindEnum::Error => TranscriptGlyphs::GLYPH_ERROR,
-            TranscriptBlockKindEnum::System => $this->severityPrefix($block),
+            default => throw new \LogicException(\sprintf('Flat prefix path does not handle kind %s', $block->kind->value)),
         };
     }
 
@@ -624,7 +628,7 @@ final readonly class TranscriptBlockWidgetFactory
             TranscriptBlockKindEnum::Question => ThemeColorEnum::Accent,
             TranscriptBlockKindEnum::Approval => ThemeColorEnum::Warning,
             TranscriptBlockKindEnum::Error => ThemeColorEnum::Error,
-            TranscriptBlockKindEnum::System => $this->severityColor($block),
+            default => throw new \LogicException(\sprintf('Flat color path does not handle kind %s', $block->kind->value)),
         };
     }
 

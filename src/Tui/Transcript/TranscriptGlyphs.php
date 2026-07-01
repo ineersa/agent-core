@@ -43,6 +43,10 @@ final class TranscriptGlyphs
     public const string GLYPH_SYSTEM_ERROR = '  ✘';
     /** System default severity prefix glyph */
     public const string GLYPH_SYSTEM_DEFAULT = '  ·';
+    /** Compaction started lifecycle prefix glyph (renderer-owned; projection text is glyph-free) */
+    public const string GLYPH_COMPACTION_STARTED = '  ◐';
+    /** Compaction completed lifecycle prefix glyph (renderer-owned; projection text is glyph-free) */
+    public const string GLYPH_COMPACTION_COMPLETED = '  ⧉';
     /** Streaming suffix appended to in-progress blocks */
     public const string STREAMING_SUFFIX = '...';
 

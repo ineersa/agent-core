@@ -27,19 +27,22 @@ final readonly class TranscriptBlockFactory
         );
     }
 
-    public function system(string $runId, string $text, int $seq, string $style = ''): TranscriptBlock
+    public function system(string $runId, string $text, int $seq, string $style = '', ?string $category = null): TranscriptBlock
     {
         $meta = [];
         if ('' !== $style) {
             $meta['style'] = $style;
             if ('muted' === $style) {
                 $meta['severity'] = 'muted';
-                $meta['category'] = 'lifecycle';
             } elseif ('warning' === $style) {
                 $meta['severity'] = 'warning';
             } elseif ('error' === $style) {
                 $meta['severity'] = 'error';
             }
+        }
+
+        if (null !== $category && '' !== $category) {
+            $meta['category'] = $category;
         }
 
         return $this->block(

@@ -13,9 +13,6 @@ use Symfony\Component\Yaml\Yaml;
  */
 final class ToolArgumentColoredFormatter
 {
-    /** @var array<string, list<string>> */
-    private array $coloredLinesCache = [];
-
     /**
      * @param array<string, mixed> $arguments
      *
@@ -27,11 +24,6 @@ final class ToolArgumentColoredFormatter
             return [];
         }
 
-        $cacheKey = hash('xxh128', serialize($arguments).$theme->getPalette()->name);
-        if (isset($this->coloredLinesCache[$cacheKey])) {
-            return $this->coloredLinesCache[$cacheKey];
-        }
-
         $yaml = trim(Yaml::dump(
             $arguments,
             4,
@@ -40,8 +32,6 @@ final class ToolArgumentColoredFormatter
         ));
 
         if ('' === $yaml) {
-            $this->coloredLinesCache[$cacheKey] = [];
-
             return [];
         }
 
@@ -49,8 +39,6 @@ final class ToolArgumentColoredFormatter
         foreach (explode("\n", $yaml) as $line) {
             $lines[] = $this->colorYamlLine($line, $theme);
         }
-
-        $this->coloredLinesCache[$cacheKey] = $lines;
 
         return $lines;
     }

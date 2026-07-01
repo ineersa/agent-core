@@ -27,4 +27,18 @@ final class ViewImageTranscriptFormatterTest extends TestCase
         $this->assertStringNotContainsString('attachment_refs', $joined);
         $this->assertStringNotContainsString('image_ref', $joined);
     }
+
+    public function testFormatsStructuredErrorField(): void
+    {
+        $formatter = new ViewImageTranscriptFormatter();
+        $lines = $formatter->formatToolResultLines([
+            'type' => 'view_image',
+            'path' => '/a/b.png',
+            'error' => 'file not found',
+        ]);
+
+        $joined = implode("\n", $lines);
+        $this->assertStringContainsString('error: file not found', $joined);
+        $this->assertStringContainsString('path: /a/b.png', $joined);
+    }
 }

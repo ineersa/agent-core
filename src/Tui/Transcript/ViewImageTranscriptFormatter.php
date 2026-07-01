@@ -87,6 +87,11 @@ final class ViewImageTranscriptFormatter
             $lines[] = 'warning: '.$warning;
         }
 
+        $error = $data['error'] ?? null;
+        if (\is_string($error) && '' !== $error) {
+            $lines[] = 'error: '.$error;
+        }
+
         return $lines;
     }
 

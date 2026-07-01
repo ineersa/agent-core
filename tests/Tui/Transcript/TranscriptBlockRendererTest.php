@@ -9,12 +9,12 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
+use Ineersa\Tui\Transcript\TranscriptGlyphs;
 use Ineersa\Tui\Transcript\TranscriptBlockWidgetFactory;
 use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use Ineersa\Tui\Transcript\TranscriptBlockRenderer;
 use Ineersa\Tui\Transcript\TranscriptBlockWidget;
-use Ineersa\Tui\Transcript\ToolArgumentsFormatter;
 use Ineersa\Tui\Widget\TuiRenderContext;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -1081,19 +1081,6 @@ final class TranscriptBlockRendererTest extends TestCase
         $this->assertStringContainsString('+line5', $expandedPlain);
     }
 
-    public function testToolArgumentsFormatterMemoizesYamlDump(): void
-    {
-        $formatter = new ToolArgumentsFormatter();
-        $arguments = ['path' => '/tmp/a.txt', 'content' => "line1
-line2"];
-
-        $first = $formatter->formatLines($arguments);
-        $second = $formatter->formatLines($arguments);
-
-        $this->assertSame($first, $second);
-        $this->assertStringContainsString('path:', implode("
-", $first));
-    }
 
     public function testAskHumanSequenceShowsOnlyQuestionNotToolPayload(): void
     {
@@ -1288,8 +1275,8 @@ line2"];
         );
 
         $plain = preg_replace('/\x1b\[[0-9;]*m/', '', implode("\n", $this->renderWidgetLines([$block])));
-        $this->assertSame(1, substr_count($plain, '◐'), 'Compaction started row must render exactly one ◐ glyph');
-        $this->assertStringNotContainsString('◐ ◐', $plain);
+        $this->assertSame(1, substr_count($plain, TranscriptGlyphs::GLYPH_COMPACTION_STARTED), 'Compaction started row must render exactly one ◐ glyph');
+        $this->assertStringNotContainsString(TranscriptGlyphs::GLYPH_COMPACTION_STARTED.' '.TranscriptGlyphs::GLYPH_COMPACTION_STARTED, $plain);
     }
 
     public function testCompactionStartedStreamingSuffixNotDuplicatedInSourceText(): void
@@ -1305,7 +1292,7 @@ line2"];
         );
 
         $plain = preg_replace('/\x1b\[[0-9;]*m/', '', implode("\n", $this->renderWidgetLines([$block])));
-        $this->assertStringContainsString('◐', $plain);
+        $this->assertStringContainsString(TranscriptGlyphs::GLYPH_COMPACTION_STARTED, $plain);
         $this->assertStringContainsString('Compacting conversation', $plain);
         $this->assertStringContainsString('...', $plain);
         $this->assertStringNotContainsString('…...', $plain);
@@ -1323,24 +1310,8 @@ line2"];
         );
 
         $plain = preg_replace('/\x1b\[[0-9;]*m/', '', implode("\n", $this->renderWidgetLines([$block])));
-        $this->assertSame(1, substr_count($plain, '⧉'), 'Compaction completed row must render exactly one ⧉ glyph');
-        $this->assertStringNotContainsString('⧉ ⧉', $plain);
-    }
-
-    public function testCompactionCompletedLifecycleGlyph(): void
-    {
-        $block = new TranscriptBlock(
-            id: 'compact-done',
-            kind: TranscriptBlockKindEnum::System,
-            runId: 'r',
-            seq: 3,
-            text: 'Conversation compacted.',
-            meta: ['lifecycle' => 'compaction_completed', 'category' => 'lifecycle', 'severity' => 'info'],
-        );
-
-        $plain = preg_replace('/\x1b\[[0-9;]*m/', '', implode("\n", $this->renderWidgetLines([$block])));
-        $this->assertStringContainsString('⧉', $plain);
-        $this->assertStringContainsString('Conversation compacted.', $plain);
+        $this->assertSame(1, substr_count($plain, TranscriptGlyphs::GLYPH_COMPACTION_COMPLETED), 'Compaction completed row must render exactly one ⧉ glyph');
+        $this->assertStringNotContainsString(TranscriptGlyphs::GLYPH_COMPACTION_COMPLETED.' '.TranscriptGlyphs::GLYPH_COMPACTION_COMPLETED, $plain);
     }
 
     public function testToolCallArgumentKeyValueAnsiDiffers(): void
@@ -1405,6 +1376,28 @@ line2"];
         $this->assertStringContainsString('size: 100x50', $plain);
         $this->assertStringContainsString('bytes: 1234', $plain);
         $this->assertStringNotContainsString('attachment_refs', $plain);
+    }
+
+
+
+    public function testViewImageFailedResultShowsRawErrorText(): void
+    {
+        $block = new TranscriptBlock(
+            id: 'vi-err',
+            kind: TranscriptBlockKindEnum::ToolResult,
+            runId: 'r',
+            seq: 8,
+            text: 'view_image',
+            meta: [
+                'tool_name' => 'view_image',
+                'result' => 'Image path does not exist: /missing.png',
+                'is_error' => true,
+            ],
+        );
+
+        $plain = preg_replace('/\x1b\[[0-9;]*m/', '', implode("\n", $this->renderWidgetLines([$block])));
+        $this->assertStringContainsString('Image path does not exist: /missing.png', $plain);
+        $this->assertStringNotContainsString('(image metadata)', $plain);
     }
 
 

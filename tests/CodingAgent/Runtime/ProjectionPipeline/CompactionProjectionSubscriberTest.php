@@ -29,8 +29,8 @@ final class CompactionProjectionSubscriberTest extends TestCase
      * that differ from the provider input_tokens used for auto-trigger
      * thresholds.  Displaying both estimates side-by-side is confusing.
      *
-     * As of COMP-06 UX polish, the user-facing success text is always
-     * exactly '⧉ Conversation compacted.' — no Token estimate: banner.
+     * Projection text is glyph-free ('Conversation compacted.'); the TUI renderer
+     * owns the ⧉ lifecycle prefix via meta.lifecycle — no Token estimate: banner.
      */
 
     public function testCompactionStartedTextIsGlyphFree(): void
