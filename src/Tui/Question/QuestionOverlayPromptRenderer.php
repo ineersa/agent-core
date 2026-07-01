@@ -19,11 +19,8 @@ final class QuestionOverlayPromptRenderer
     public function buildPromptWidget(string $prompt, TuiTheme $theme): MarkdownWidget
     {
         $mdWidget = new MarkdownWidget($prompt);
-        $colorSpec = $theme->getPalette()->get(ThemeColorEnum::Accent);
-        $style = '' !== $colorSpec
-            ? new Style(color: $colorSpec, padding: Padding::from([0, 0, 0, 2]))
-            : new Style(padding: Padding::from([0, 0, 0, 2]));
-        $mdWidget->setStyle($style);
+        // Default/inherited foreground for prompt body; accent is reserved for the compact header line.
+        $mdWidget->setStyle(new Style(padding: Padding::from([0, 0, 0, 2])));
 
         return $mdWidget;
     }
