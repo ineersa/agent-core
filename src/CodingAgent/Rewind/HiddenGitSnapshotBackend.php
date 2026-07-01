@@ -30,7 +30,12 @@ final class HiddenGitSnapshotBackend
         if (!is_dir($hiddenGitDir)) {
             mkdir($hiddenGitDir, self::DIR_MODE, true);
         } else {
-            @chmod($hiddenGitDir, self::DIR_MODE);
+            if (!@chmod($hiddenGitDir, self::DIR_MODE)) {
+                $this->logger->debug('file_rewind.hidden_git_chmod_failed', [
+                    'component' => 'hidden_git_snapshot',
+                    'path' => $hiddenGitDir,
+                ]);
+            }
         }
 
         $env = $this->env($hiddenGitDir, $workTree);
@@ -90,11 +95,20 @@ final class HiddenGitSnapshotBackend
         string $workTree,
         string $commitSha,
         RewindPathScope $scope,
+        ?string $tmpDir = null,
     ): void {
         $env = $this->env($hiddenGitDir, $workTree);
         $targetTree = $this->commitTreeSha($hiddenGitDir, $workTree, $commitSha);
-        $tmpIndex = $workTree.'/.hatfield/tmp/rewind-restore-'.bin2hex(random_bytes(4)).'.index';
-        @mkdir(\dirname($tmpIndex), self::DIR_MODE, true);
+        $indexDir = $tmpDir ?? $workTree.'/.hatfield/tmp';
+        if (!is_dir($indexDir)) {
+            if (!@mkdir($indexDir, self::DIR_MODE, true) && !is_dir($indexDir)) {
+                $this->logger->debug('file_rewind.tmp_dir_create_failed', [
+                    'component' => 'hidden_git_snapshot',
+                    'path' => $indexDir,
+                ]);
+            }
+        }
+        $tmpIndex = rtrim(str_replace('\\', '/', $indexDir), '/').'/rewind-restore-'.bin2hex(random_bytes(4)).'.index';
 
         try {
             $currentIndexTree = $this->captureTreeSha($hiddenGitDir, $workTree, $tmpIndex, $scope);
@@ -111,7 +125,7 @@ final class HiddenGitSnapshotBackend
                 }
             }
 
-            $this->checkoutCommitToWorktree($hiddenGitDir, $workTree, $commitSha, $scope, $env);
+            $this->checkoutCommitToWorktree($hiddenGitDir, $workTree, $commitSha, $scope, $env, $indexDir);
         } finally {
             if (is_file($tmpIndex)) {
                 unlink($tmpIndex);
@@ -218,9 +232,18 @@ final class HiddenGitSnapshotBackend
         string $commitSha,
         RewindPathScope $scope,
         array $env,
+        ?string $tmpDir = null,
     ): void {
-        $tmpIndex = $workTree.'/.hatfield/tmp/rewind-checkout-'.bin2hex(random_bytes(4)).'.index';
-        @mkdir(\dirname($tmpIndex), self::DIR_MODE, true);
+        $indexDir = $tmpDir ?? $workTree.'/.hatfield/tmp';
+        if (!is_dir($indexDir)) {
+            if (!@mkdir($indexDir, self::DIR_MODE, true) && !is_dir($indexDir)) {
+                $this->logger->debug('file_rewind.tmp_dir_create_failed', [
+                    'component' => 'hidden_git_snapshot',
+                    'path' => $indexDir,
+                ]);
+            }
+        }
+        $tmpIndex = rtrim(str_replace('\\', '/', $indexDir), '/').'/rewind-checkout-'.bin2hex(random_bytes(4)).'.index';
         $checkoutEnv = $env + ['GIT_INDEX_FILE' => $tmpIndex];
         try {
             $r = $this->git->run(['read-tree', $commitSha], $checkoutEnv);
@@ -289,6 +312,12 @@ final class HiddenGitSnapshotBackend
             \RecursiveIteratorIterator::SELF_FIRST,
         );
 
+        $workReal = realpath($workTree);
+        if (false === $workReal) {
+            return;
+        }
+        $workReal = str_replace('\\', '/', $workReal);
+
         $added = [];
         foreach ($iterator as $file) {
             if ($file->isLink()) {
@@ -300,8 +329,7 @@ final class HiddenGitSnapshotBackend
             }
             $full = str_replace('\\', '/', $file->getPathname());
             $real = realpath($full);
-            $workReal = realpath($workTree);
-            if (false === $real || false === $workReal || !str_starts_with($real.'/', $workReal.'/')) {
+            if (false === $real || !str_starts_with(str_replace('\\', '/', $real).'/', $workReal.'/')) {
                 continue;
             }
             $rel = ltrim(str_replace($workTree.'/', '', $full), '/');
@@ -345,9 +373,9 @@ final class HiddenGitSnapshotBackend
         return '' !== $trimmed ? $trimmed : null;
     }
 
-    private function removeEmptyDirTree(string $dir, string $projectRoot): void
+    private function removeEmptyDirTree(string $dir, string $workTree): void
     {
-        if (!is_dir($dir) || !str_starts_with(str_replace('\\', '/', $dir).'/', str_replace('\\', '/', $projectRoot).'/')) {
+        if (!is_dir($dir) || !str_starts_with(str_replace('\\', '/', $dir).'/', str_replace('\\', '/', $workTree).'/')) {
             return;
         }
         $items = scandir($dir);
@@ -360,7 +388,7 @@ final class HiddenGitSnapshotBackend
             }
             $path = $dir.'/'.$item;
             if (is_dir($path)) {
-                $this->removeEmptyDirTree($path, $projectRoot);
+                $this->removeEmptyDirTree($path, $workTree);
             }
         }
         @rmdir($dir);

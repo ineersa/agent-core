@@ -484,7 +484,6 @@ parameters:
       - AgentCore
       - AppConfig
       - AppRuntimeContract
-      - AppSession
 
     AppRuntimeInternals:
       - AppRuntimeContract

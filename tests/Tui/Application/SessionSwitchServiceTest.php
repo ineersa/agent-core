@@ -407,6 +407,27 @@ final class SessionSwitchServiceTest extends TestCase
         $service->navigateTreeToTurn(1, 'restore_files');
     }
 
+    public function testNavigateTreeKeepFilesSendsTreeNavigateCommand(): void
+    {
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->expects(self::once())->method('cancel')->with('test-run-id');
+        $client->expects(self::once())->method('send')->with(
+            'test-run-id',
+            self::callback(static fn (UserCommand $cmd): bool =>
+                'tree_navigate_to_turn' === $cmd->type
+                && 2 === ($cmd->payload['turn_no'] ?? null)
+                && 'keep_files' === ($cmd->payload['file_choice'] ?? null)
+            ),
+        );
+
+        $state = new TuiSessionState('test', false);
+        $state->handle = new RunHandle('test-run-id', 'running');
+        $tui = new Tui();
+        $service = $this->createService();
+        $service->bindForIteration($tui, $client, $state);
+        $service->navigateTreeToTurn(2, 'keep_files');
+    }
+
     public function testNavigateTreeCancelDoesNotSend(): void
     {
         $client = $this->createMock(AgentSessionClient::class);

@@ -69,6 +69,7 @@ class FileRewindCheckpointService
                 try {
                     $treeSha = $this->backend->captureTreeSha($gitDir, $this->projectCwd, $tmpIndex, $scope);
                     $cacheKey = $runId.'|'.$identity->projectHash;
+                    // RestoreUndo may repeat the same tree SHA as the pre-restore snapshot; still record for undo discovery.
                     if ($treeSha === ($this->lastTreeShaByRunProject[$cacheKey] ?? null) && FileRewindCheckpointKindEnum::RestoreUndo !== $kind) {
                         return;
                     }
@@ -153,7 +154,7 @@ class FileRewindCheckpointService
                 }
 
                 try {
-                    $this->backend->restoreCommitToWorktree($gitDir, $this->projectCwd, $entry->snapshotCommitSha, $scope);
+                    $this->backend->restoreCommitToWorktree($gitDir, $this->projectCwd, $entry->snapshotCommitSha, $scope, $this->paths->tmpDir($identity));
                 } catch (\Throwable $e) {
                     $this->appendRestoreEvent($runId, $targetTurnNo, $maxSeq + 1, $entry->snapshotCommitSha, $undoCommit, $identity->projectHash, 'failed', $e->getMessage());
                     $this->pruneRetainedRefs($this->eventStore->allFor($runId));
@@ -190,7 +191,7 @@ class FileRewindCheckpointService
             $identity = RewindProjectIdentity::fromProjectRoot($this->projectCwd);
             $scope = new RewindPathScope($this->projectCwd);
             $gitDir = $this->paths->hiddenGitDir($identity);
-            $this->backend->restoreCommitToWorktree($gitDir, $this->projectCwd, $undo->snapshotCommitSha, $scope);
+            $this->backend->restoreCommitToWorktree($gitDir, $this->projectCwd, $undo->snapshotCommitSha, $scope, $this->paths->tmpDir($identity));
             unset($this->lastTreeShaByRunProject[$runId.'|'.$identity->projectHash]);
         });
     }

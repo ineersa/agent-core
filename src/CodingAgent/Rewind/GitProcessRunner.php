@@ -26,7 +26,7 @@ final class GitProcessRunner
         $safeKeys = ['PATH', 'HOME', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TMPDIR', 'USER', 'LOGNAME', 'SHELL'];
         $procEnv = [];
         foreach ($safeKeys as $key) {
-            $v = $baseEnv[$key] ?? getenv($key);
+            $v = $baseEnv[$key] ?? null;
             if (\is_string($v) && '' !== $v) {
                 $procEnv[$key] = $v;
             }
