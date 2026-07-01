@@ -182,8 +182,11 @@ MD;
             'type' => 'follow_up',
             'runId' => $this->runId,
             'payload' => [
-                'text' => '[llm-real:subagent-retrieve-chain-v1-step2] Call tool agent_retrieve exactly once with JSON arguments '
-                    .$retrieveArgs.'. Do not call subagent or any other tool.',
+                'text' => '[llm-real:subagent-retrieve-chain-v1-step2] Retrieval verification step. The subagent already returned '
+                    .self::HANDOFF_TOKEN.' inline, but this task is not complete until you call agent_retrieve exactly once. '
+                    .'Even though guidelines say agent_retrieve is optional after a successful single-mode subagent, for this '
+                    .'verification you must call tool agent_retrieve with JSON arguments '.$retrieveArgs.'. '
+                    .'Do not answer with assistant text. Do not call subagent or any other tool.',
             ],
         ]);
 
@@ -194,7 +197,7 @@ MD;
             'follow_up: expected command.ack. '.$this->collectDiagnostics($retrieveEvents));
 
         self::assertArrayHasKey('tool_execution.started', $retrieveByType,
-            'agent_retrieve must start. '.$this->collectDiagnostics($retrieveEvents));
+            $this->formatMissingAgentRetrieveStartFailure($retrieveByType, $retrieveEvents));
 
         $retrieveStarted = null;
         foreach ($retrieveByType['tool_execution.started'] as $started) {
@@ -226,6 +229,27 @@ MD;
 
         $sessionDir = $this->tempDir.'/.hatfield/sessions/'.$this->runId;
         $this->assertSessionArtifactsExist($sessionDir, array_merge($subagentEvents, $retrieveEvents));
+    }
+
+    /**
+     * @param array<string, list<array<string, mixed>>> $retrieveByType
+     * @param list<array<string, mixed>> $retrieveEvents
+     */
+    private function formatMissingAgentRetrieveStartFailure(array $retrieveByType, array $retrieveEvents): string
+    {
+        $parts = ['agent_retrieve must start.'];
+
+        if ($this->hasAssistantResponseEvidence($retrieveByType)) {
+            $parts[] = 'Parent model replied with assistant text instead of starting agent_retrieve.';
+        }
+
+        if (isset($retrieveByType['run.completed'])) {
+            $parts[] = 'Run reached run.completed before agent_retrieve tool_execution.started.';
+        }
+
+        $parts[] = $this->collectDiagnostics($retrieveEvents);
+
+        return implode("\n", $parts);
     }
 
     /**
