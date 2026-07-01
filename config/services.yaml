@@ -127,9 +127,7 @@ services:
   Ineersa\CodingAgent\Runtime\Contract\TreeFileRestoreProviderInterface:
     alias: Ineersa\CodingAgent\Rewind\SessionTreeFileRestoreProvider
 
-  Ineersa\CodingAgent\Rewind\HiddenGitSnapshotBackend:
-    arguments:
-      $maxFileBytes: '@=service("Ineersa\\CodingAgent\\Config\\FileRewindConfig").maxFileBytes'
+  Ineersa\CodingAgent\Rewind\HiddenGitSnapshotBackend: ~
 
   Ineersa\CodingAgent\Rewind\ConversationRewindInterface:
     alias: Ineersa\CodingAgent\Rewind\RunRewindServiceAdapter

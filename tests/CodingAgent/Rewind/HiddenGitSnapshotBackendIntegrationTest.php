@@ -39,7 +39,7 @@ final class HiddenGitSnapshotBackendIntegrationTest extends TestCase
     public function testExactRestoreAndProjectGitUntouched(): void
     {
         $logger = new NullLogger();
-        $backend = new HiddenGitSnapshotBackend(new GitProcessRunner(), $logger, 2_097_152);
+        $backend = new HiddenGitSnapshotBackend(new GitProcessRunner(), $logger);
         $scope = new RewindPathScope($this->projectDir);
         $idx = $this->projectDir.'/.hatfield/tmp/cap.index';
         @mkdir(dirname($idx), 0700, true);

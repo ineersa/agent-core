@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Tests\Infrastructure\Messenger;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Message\StartRunPayload;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -257,6 +258,59 @@ class WorkerFailedEventSubscriberTest extends TestCase
         // Should not throw
         $subscriber->onWorkerMessageFailed($event);
         $this->assertTrue(true);
+    }
+
+    #[Test]
+    public function appendsAgentEndForApplyCommandOnCompletedRun(): void
+    {
+        $currentState = new RunState(
+            runId: self::RUN_ID,
+            status: RunStatus::Completed,
+            version: 5,
+            turnNo: 2,
+            lastSeq: 10,
+        );
+
+        $runStore = $this->createMock(RunStoreInterface::class);
+        $runStore->method('get')->willReturn($currentState);
+        // Must not CAS-update the terminal state.
+        $runStore->expects($this->never())->method('compareAndSwap');
+
+        $capturedEvent = null;
+        $eventStore = $this->createMock(EventStoreInterface::class);
+        $eventStore->expects($this->once())
+            ->method('append')
+            ->with($this->callback(static function (RunEvent $event) use (&$capturedEvent): bool {
+                $capturedEvent = $event;
+
+                return self::RUN_ID === $event->runId
+                    && 'agent_end' === $event->type
+                    && 'completed' === ($event->payload['reason'] ?? '')
+                    && str_contains($event->payload['error'] ?? '', 'Follow-up rejected')
+                    && ApplyCommand::class === ($event->payload['message_type'] ?? '')
+                    && 11 === $event->seq;
+            }));
+
+        $logger = new NullLogger();
+
+        $subscriber = new WorkerFailedEventSubscriber($runStore, $eventStore, $logger);
+
+        $message = new ApplyCommand(
+            runId: self::RUN_ID,
+            turnNo: 3,
+            stepId: 'step-follow',
+            attempt: 1,
+            idempotencyKey: 'ik-follow-001',
+            kind: 'follow_up',
+            payload: ['text' => 'Hello again'],
+        );
+        $envelope = new Envelope($message);
+        $exception = new \RuntimeException('Failed to acquire run lock');
+        $event = $this->createFinalFailedEvent($envelope, $exception);
+
+        $subscriber->onWorkerMessageFailed($event);
+
+        $this->assertNotNull($capturedEvent);
     }
 
     #[Test]

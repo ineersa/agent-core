@@ -46,7 +46,7 @@ final class HiddenGitSymlinkTraversalTest extends TestCase
         file_put_contents($this->projectDir.'/in-project.txt', 'inside');
 
         $hiddenGit = $this->projectDir.'/.hatfield/rewind/snapshots/sym/git';
-        $backend = new HiddenGitSnapshotBackend($this->runner, new NullLogger(), 2_097_152);
+        $backend = new HiddenGitSnapshotBackend($this->runner, new NullLogger());
         $scope = new RewindPathScope($this->projectDir);
         $idx = $this->projectDir.'/.hatfield/tmp/cap.index';
         @mkdir(dirname($idx), 0700, true);
@@ -72,7 +72,7 @@ final class HiddenGitSymlinkTraversalTest extends TestCase
         file_put_contents($this->projectDir.'/visible.txt', 'visible');
 
         $hiddenGit = $this->projectDir.'/.hatfield/rewind/snapshots/sym2/git';
-        $backend = new HiddenGitSnapshotBackend($this->runner, new NullLogger(), 2_097_152);
+        $backend = new HiddenGitSnapshotBackend($this->runner, new NullLogger());
         $scope = new RewindPathScope($this->projectDir);
         $idx = $this->projectDir.'/.hatfield/tmp/cap2.index';
         @mkdir(dirname($idx), 0700, true);

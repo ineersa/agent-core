@@ -28,7 +28,7 @@ final class HiddenGitPerCommitRefRetentionTest extends TestCase
         $this->projectDir = TestDirectoryIsolation::createProjectTempDir('rewind-refs');
         file_put_contents($this->projectDir.'/a.txt', 'v1');
         $this->hiddenGit = $this->projectDir.'/.hatfield/rewind/snapshots/test/git';
-        $this->backend = new HiddenGitSnapshotBackend($this->runner, new NullLogger(), 2_097_152);
+        $this->backend = new HiddenGitSnapshotBackend($this->runner, new NullLogger());
     }
 
     protected function tearDown(): void

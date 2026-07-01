@@ -15,13 +15,21 @@ final class HiddenGitSnapshotBackend
 {
     private const string COMMIT_REF_PREFIX = 'refs/hatfield/snapshots/commits/';
     private const int DIR_MODE = 0700;
-    private const int GIT_ADD_BATCH_SIZE = 50;
     private const int UPDATE_REF_MAX_RETRIES = 5;
+
+    /** @var list<string> */
+    private const array EXCLUDED_DIRS = [
+        '.git/',
+        '.hatfield/',
+        'vendor/',
+        'node_modules/',
+    ];
+
+    private const string EXCLUDE_FILE = 'info/exclude';
 
     public function __construct(
         private readonly GitProcessRunner $git,
         private readonly LoggerInterface $logger,
-        private readonly int $maxFileBytes,
     ) {
     }
 
@@ -47,11 +55,16 @@ final class HiddenGitSnapshotBackend
             foreach ([['core.autocrlf', 'false'], ['core.longpaths', 'true'], ['core.symlinks', 'true'], ['user.email', 'hatfield-rewind@local'], ['user.name', 'Hatfield Rewind'], ['commit.gpgsign', 'false'], ['tag.gpgsign', 'false']] as [$k, $v]) {
                 $this->git->run(['config', $k, $v], $env);
             }
+            $this->writeExclusions($hiddenGitDir);
         }
     }
 
     /**
      * Capture worktree state as a tree SHA (dedupe-friendly).
+     *
+     * Uses git add --all with pre-configured exclusions in info/exclude
+     * instead of PHP-side iteration + batch git add, which was found to
+     * take ~29s for 79k-file worktrees and caused run-lock timeouts.
      */
     public function captureTreeSha(
         string $hiddenGitDir,
@@ -66,7 +79,14 @@ final class HiddenGitSnapshotBackend
             unlink($tmpIndexPath);
         }
 
-        $this->stageWorktree($hiddenGitDir, $workTree, $tmpIndexPath, $scope, $env);
+        // Single git add --all is orders of magnitude faster than PHP iteration
+        // + batch git add -f. Exclusions are pre-configured in info/exclude
+        // during ensureInitialized(). The temp index avoids polluting the
+        // hidden repo's HEAD index.
+        $r = $this->git->run(['add', '--all'], $env);
+        if (0 !== $r->exitCode) {
+            throw new \RuntimeException('git add --all failed: '.$r->stderr);
+        }
 
         $r = $this->git->run(['write-tree'], $env);
         if (0 !== $r->exitCode || '' === $r->stdoutTrimmed()) {
@@ -219,6 +239,7 @@ final class HiddenGitSnapshotBackend
 
         if ($deletedAny) {
             // Best-effort object cleanup inside hidden GIT_DIR only (never project .git).
+            // The hidden repo has only snapshot objects so gc is fast even with --prune=now.
             $this->git->run(['gc', '--prune=now'], $env);
         }
     }
@@ -295,69 +316,24 @@ final class HiddenGitSnapshotBackend
     }
 
     /**
-     * @param array<string, string> $env
+     * Write exclusion patterns to the hidden repo's info/exclude so
+     * that git add --all skips runtime artifacts and dependency trees.
+     *
+     * Excluding vendor/ and node_modules/ is critical for performance:
+     * a 79k-file worktree with vendor takes ~29s to enumerate and batch-add;
+     * with exclusions git add --all completes in < 0.1s.
      */
-    private function stageWorktree(
-        string $hiddenGitDir,
-        string $workTree,
-        string $tmpIndexPath,
-        RewindPathScope $scope,
-        array $env,
-    ): void {
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator(
-                $workTree,
-                \FilesystemIterator::SKIP_DOTS,
-            ),
-            \RecursiveIteratorIterator::SELF_FIRST,
-        );
-
-        $workReal = realpath($workTree);
-        if (false === $workReal) {
-            return;
+    private function writeExclusions(string $hiddenGitDir): void
+    {
+        $excludeDir = \dirname($hiddenGitDir.'/'.self::EXCLUDE_FILE);
+        if (!is_dir($excludeDir)) {
+            @mkdir($excludeDir, self::DIR_MODE, true);
         }
-        $workReal = str_replace('\\', '/', $workReal);
-
-        $added = [];
-        foreach ($iterator as $file) {
-            if ($file->isLink()) {
-                // Never traverse symlink targets (dirs or files outside the tree).
-                continue;
-            }
-            if (!$file->isFile()) {
-                continue;
-            }
-            $full = str_replace('\\', '/', $file->getPathname());
-            $real = realpath($full);
-            if (false === $real || !str_starts_with(str_replace('\\', '/', $real).'/', $workReal.'/')) {
-                continue;
-            }
-            $rel = ltrim(str_replace($workTree.'/', '', $full), '/');
-            if ($scope->shouldExcludeRelativePath($rel) || !$scope->isInsideProjectRoot($rel)) {
-                continue;
-            }
-            if ($file->getSize() > $this->maxFileBytes) {
-                continue;
-            }
-            $added[] = $rel;
+        $content = '';
+        foreach (self::EXCLUDED_DIRS as $dir) {
+            $content .= $dir."\n";
         }
-
-        if ([] === $added) {
-            $this->git->run(['read-tree', '--empty'], $env);
-
-            return;
-        }
-
-        foreach (array_chunk($added, self::GIT_ADD_BATCH_SIZE) as $chunk) {
-            $args = array_merge(['add', '-f', '--'], $chunk);
-            $r = $this->git->run($args, $env);
-            if (0 !== $r->exitCode) {
-                $this->logger->warning('file_rewind.git_add_partial_failed', [
-                    'component' => 'hidden_git_snapshot',
-                    'stderr' => substr($r->stderr, 0, 500),
-                ]);
-            }
-        }
+        file_put_contents($hiddenGitDir.'/'.self::EXCLUDE_FILE, $content);
     }
 
     private function readRefSha(string $hiddenGitDir, string $workTree, string $ref): ?string

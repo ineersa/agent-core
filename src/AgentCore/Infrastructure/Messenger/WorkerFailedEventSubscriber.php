@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
+use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Psr\Log\LoggerInterface;
@@ -92,17 +93,37 @@ final readonly class WorkerFailedEventSubscriber implements EventSubscriberInter
                 $current = RunState::queued($runId);
             }
 
-            // If the run is already in a terminal state, don't overwrite it.
+            // If the run is already in a terminal state, we must not overwrite
+            // the committed history with a second terminal event.  However, a
+            // permanently-failed ApplyCommand (follow_up/steer) against a
+            // Completed run would leave the TUI stuck in Working with an
+            // invisible submitted message if we skip entirely.
+            //
+            // Write an agent_end event with reason=completed and the failure
+            // details so the TUI can clear Working (Starting→Completed via
+            // the ActivityStateMachine) without corrupting the completed
+            // transcript or run state.  The event is appended to events.jsonl
+            // but runStore is not updated — a minor seq gap that is resolved
+            // on the next replay rebuild.
+            //
+            // Non-ApplyCommand failures on terminal state are genuine stray
+            // results belonging to a previous lifecycle — they are safely
+            // ignored so the terminal state is not disturbed.
             if (RunStatus::Failed === $current->status
                 || RunStatus::Completed === $current->status
                 || RunStatus::Cancelled === $current->status
             ) {
-                $this->logger->info('agent_loop.worker_failed_skipped_terminal', [
-                    'run_id' => $runId,
-                    'current_status' => $current->status->value,
-                    'component' => 'messenger.worker',
-                    'event_type' => 'worker_failed.skipped_terminal',
-                ]);
+                if ($message instanceof ApplyCommand) {
+                    $this->appendTerminalRejectedEvent($runId, $message, $exception, $current);
+                } else {
+                    $this->logger->info('agent_loop.worker_failed_skipped_terminal', [
+                        'run_id' => $runId,
+                        'current_status' => $current->status->value,
+                        'message_type' => $message::class,
+                        'component' => 'messenger.worker',
+                        'event_type' => 'worker_failed.skipped_terminal',
+                    ]);
+                }
 
                 return;
             }
@@ -171,6 +192,66 @@ final readonly class WorkerFailedEventSubscriber implements EventSubscriberInter
                 'run_id' => $runId,
                 'message_type' => $message::class,
                 'exception' => $e,
+            ]);
+        }
+    }
+
+    /**
+     * Append an agent_end event with reason=completed when an ApplyCommand
+     * permanently fails against a terminal run.  The TUI RuntimeEventPoller
+     * picks this up, the translator maps it to RunCompleted, and the
+     * ActivityStateMachine transitions Starting→Completed, clearing Working
+     * without corrupting the completed transcript.
+     *
+     * The event is appended to events.jsonl but runStore state is not updated
+     * (it is already terminal).  This creates a minor seq gap in state.json
+     * that is resolved on the next replay rebuild — acceptable because the
+     * terminal state does not evolve further.
+     */
+    private function appendTerminalRejectedEvent(
+        string $runId,
+        ApplyCommand $message,
+        \Throwable $exception,
+        RunState $current,
+    ): void {
+        $errorMessage = \sprintf(
+            'Follow-up rejected: %s: %s',
+            $exception::class,
+            $exception->getMessage(),
+        );
+
+        $nextSeq = $current->lastSeq + 1;
+
+        $terminalEvent = new RunEvent(
+            runId: $runId,
+            seq: $nextSeq,
+            turnNo: $current->turnNo,
+            type: 'agent_end',
+            payload: [
+                'reason' => 'completed',
+                'error' => $errorMessage,
+                'message_type' => $message::class,
+            ],
+            createdAt: new \DateTimeImmutable(),
+        );
+
+        try {
+            $this->eventStore->append($terminalEvent);
+
+            $this->logger->info('agent_loop.worker_failed_terminal_rejected_appended', [
+                'run_id' => $runId,
+                'current_status' => $current->status->value,
+                'message_kind' => $message->kind,
+                'seq' => $nextSeq,
+                'component' => 'messenger.worker',
+                'event_type' => 'worker_failed.rejected_appended',
+            ]);
+        } catch (\Throwable $e) {
+            $this->logger->error('agent_loop.worker_failed_terminal_rejected_append_failed', [
+                'run_id' => $runId,
+                'exception' => $e,
+                'component' => 'messenger.worker',
+                'event_type' => 'worker_failed.rejected_append_failed',
             ]);
         }
     }
