@@ -56,6 +56,7 @@ final class HiddenGitRewindNotTrackedByProjectGitTest extends TestCase
         $this->runner->run(['init', '-b', 'main'], $env);
         $this->runner->run(['config', 'user.email', 'test@example.com'], $env);
         $this->runner->run(['config', 'user.name', 'Test'], $env);
+        $this->runner->run(['config', 'commit.gpgsign', 'false'], $env);
         file_put_contents($dir.'/tracked.txt', "tracked-v1\n");
         $this->runner->run(['add', 'tracked.txt'], $env);
         $this->runner->run(['commit', '-m', 'initial'], $env);

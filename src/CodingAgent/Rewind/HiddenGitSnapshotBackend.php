@@ -44,7 +44,7 @@ final class HiddenGitSnapshotBackend
             if (0 !== $r->exitCode) {
                 throw new \RuntimeException('Hidden git init failed: '.$r->stderr);
             }
-            foreach ([['core.autocrlf', 'false'], ['core.longpaths', 'true'], ['core.symlinks', 'true'], ['user.email', 'hatfield-rewind@local'], ['user.name', 'Hatfield Rewind']] as [$k, $v]) {
+            foreach ([['core.autocrlf', 'false'], ['core.longpaths', 'true'], ['core.symlinks', 'true'], ['user.email', 'hatfield-rewind@local'], ['user.name', 'Hatfield Rewind'], ['commit.gpgsign', 'false'], ['tag.gpgsign', 'false']] as [$k, $v]) {
                 $this->git->run(['config', $k, $v], $env);
             }
         }

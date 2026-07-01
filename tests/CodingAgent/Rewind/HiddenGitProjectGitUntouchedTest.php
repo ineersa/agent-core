@@ -67,6 +67,7 @@ final class HiddenGitProjectGitUntouchedTest extends TestCase
         $this->runner->run(['init', '-b', 'main'], ['GIT_DIR' => $dir.'/.git', 'GIT_WORK_TREE' => $dir]);
         $this->runner->run(['config', 'user.email', 'test@example.com'], ['GIT_DIR' => $dir.'/.git', 'GIT_WORK_TREE' => $dir]);
         $this->runner->run(['config', 'user.name', 'Test'], ['GIT_DIR' => $dir.'/.git', 'GIT_WORK_TREE' => $dir]);
+        $this->runner->run(['config', 'commit.gpgsign', 'false'], ['GIT_DIR' => $dir.'/.git', 'GIT_WORK_TREE' => $dir]);
         file_put_contents($dir.'/tracked.txt', "tracked-v1\n");
         $this->runner->run(['add', 'tracked.txt'], ['GIT_DIR' => $dir.'/.git', 'GIT_WORK_TREE' => $dir]);
         $this->runner->run(['commit', '-m', 'initial'], ['GIT_DIR' => $dir.'/.git', 'GIT_WORK_TREE' => $dir]);

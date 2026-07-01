@@ -77,6 +77,12 @@ final class ResumeSessionCommandHandlerTest extends TestCase
                 // No-op: this test does not exercise rewind.
             }
 
+
+            public function navigateTreeToTurn(int $targetTurnNo, string $fileChoice = 'keep_files'): void
+            {
+                // No-op: this test does not exercise tree navigation.
+            }
+
             public function hasPendingSwitch(): bool
             {
                 return false;
