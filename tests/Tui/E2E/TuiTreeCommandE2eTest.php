@@ -10,11 +10,11 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Minimal tmux proof for the /tree read-only turn tree picker.
+ * Minimal tmux proof for the /tree rewindable turn tree picker.
  *
  * Tests that typing /tree in a session with at least one turn opens
- * the picker overlay showing the turn tree, and that Escape closes
- * the picker without mutating session state.
+ * the picker overlay showing the turn tree with a rewindable entry,
+ * and that Escape closes the picker without mutating session state.
  *
  * @group tui-e2e-replay
  */
@@ -46,7 +46,7 @@ final class TuiTreeCommandE2eTest extends TestCase
         }
     }
 
-    public function testTreeCommandShowsTurnOverlayReadOnly(): void
+    public function testTreeCommandShowsTurnOverlayAndEscapeCloses(): void
     {
         $pane = $this->tmux->startDetached(
             command: $this->agentCommand(),
@@ -80,12 +80,12 @@ final class TuiTreeCommandE2eTest extends TestCase
             $this->tmux->sendLiteral($pane, '/tree');
             $this->tmux->sendKey($pane, 'Enter');
 
-            // Wait for the tree overlay to appear — look for turn entry and read-only header
+            // Wait for the tree overlay to appear — look for turn entry and rewind header
             $treeCapture = $this->tmux->waitForCallback(
                 $pane,
-                static fn (string $cap): bool => str_contains($cap, 'Turn 1:') && str_contains($cap, 'read-only'),
+                static fn (string $cap): bool => str_contains($cap, 'Turn 1:') && str_contains($cap, 'rewind'),
                 timeout: 10.0,
-                message: 'Tree picker overlay did not appear with turn entry and read-only header',
+                message: 'Tree picker overlay did not appear with turn entry and rewind header',
                 history: 2000,
             );
 
@@ -93,13 +93,13 @@ final class TuiTreeCommandE2eTest extends TestCase
                 'Tree picker should show a turn entry (e.g. "Turn 1:") in the capture.'
             );
 
-            self::assertStringContainsString('read-only', $treeCapture,
-                'Tree picker header should indicate read-only mode.'
+            self::assertStringContainsString('rewind', $treeCapture,
+                'Tree picker header should indicate rewind mode.'
             );
 
             $this->saveAnsiSnapshot($pane, 'tree-picker-open');
 
-            // ── 4. Send Escape to close the picker (read-only) ──
+            // ── 4. Send Escape to close the picker ──
             $this->tmux->sendKey($pane, 'Escape');
             usleep(200_000);
 

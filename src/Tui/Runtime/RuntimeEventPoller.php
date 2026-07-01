@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Runtime;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
+use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
@@ -30,6 +31,7 @@ final class RuntimeEventPoller
         private readonly TuiRuntimeEventApplier $eventApplier,
         private readonly LoggerInterface $logger,
         private readonly RuntimeExceptionBoundary $boundary,
+        private readonly TurnTreeProviderInterface $turnTreeProvider,
     ) {
     }
 
@@ -74,6 +76,7 @@ final class RuntimeEventPoller
 
             $hasNew = false;
             $processingRemoved = false;
+            $hasRunLeafChanged = false;
 
             foreach ($events as $runtimeEvent) {
                 $seq = $runtimeEvent->seq;
@@ -91,6 +94,51 @@ final class RuntimeEventPoller
                 $hasNew = true;
 
                 $this->eventApplier->apply($state, $runtimeEvent);
+
+                // ── Leaf change: rebuild transcript wholesale ──
+                // The applier has reset the projector and returned early (no queued
+                // follow-up dispatch, no callback handlers, no processing placeholder
+                // removal). We now fetch active-path RuntimeEvents from the provider
+                // and replay them through the projector to rebuild the transcript.
+                if (RuntimeEventTypeEnum::RunLeafChanged->value === $runtimeEvent->type) {
+                    $leafTurnNo = (int) ($runtimeEvent->payload['turn_no'] ?? 0);
+
+                    if ($leafTurnNo > 0 && null !== $state->handle) {
+                        $hasRunLeafChanged = true;
+
+                        try {
+                            $activeEvents = $this->turnTreeProvider->activePathRuntimeEvents(
+                                $state->handle->runId,
+                                $leafTurnNo,
+                            );
+                            $this->eventApplier->replayTranscriptOnly($activeEvents);
+                            $state->transcript = $this->eventApplier->projectedBlocks();
+                        } catch (\Throwable $e) {
+                            $this->logger->warning('runtime_event_poller.leaf_changed_rebuild_failed', [
+                                'run_id' => $state->handle->runId,
+                                'leaf_turn_no' => $leafTurnNo,
+                                'exception' => $e->getMessage(),
+                            ]);
+                            // Degrade gracefully: clear transcript so user sees blank
+                            // rather than stale abandoned-branch content.
+                            $state->transcript = [];
+                        }
+                    } else {
+                        // Malformed RunLeafChanged: missing or zero turn_no, or no handle.
+                        // Clear the transcript so stale abandoned-branch content is not shown.
+                        // The projector has already been reset by the applier.
+                        $this->logger->warning('runtime_event_poller.leaf_changed_malformed', [
+                            'run_id' => null !== $state->handle ? $state->handle->runId : 'unknown',
+                            'leaf_turn_no' => $leafTurnNo,
+                        ]);
+                        $state->transcript = [];
+                    }
+
+                    // Skip queued follow-up dispatch, callback handlers, and processing
+                    // placeholder removal — all already handled by the applier's early
+                    // return. The transcript has been wholesale-replaced above.
+                    continue;
+                }
 
                 // Auto-dispatch a queued follow-up when cancellation completes.
                 // The user may have typed a message during the Cancelling grace
@@ -174,6 +222,16 @@ final class RuntimeEventPoller
                     self::removeProcessingPlaceholder($state);
                     $processingRemoved = true;
                 }
+            }
+
+            if ($hasRunLeafChanged) {
+                // Wholesale transcript replace: return all blocks (not just changed)
+                // so the renderer rebuilds the entire transcript display.
+                // Sync any events that arrived after RunLeafChanged in the same
+                // batch (fed to projector via apply()) into the transcript.
+                self::synchronizeProjectedBlocks($state, $this->eventApplier->projectedBlocks());
+
+                return $state->transcript;
             }
 
             if (!$hasNew) {

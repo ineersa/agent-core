@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\InProcess;
 
+use Ineersa\AgentCore\Application\Handler\RunRewindService;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
@@ -24,7 +25,9 @@ use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextDiscovery;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextRenderer;
@@ -48,6 +51,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         private readonly AgentRunnerInterface $runner,
         private readonly EventStoreInterface $eventStore,
         private readonly RuntimeEventMapper $mapper,
+        private readonly RunRewindService $runRewindService,
         private readonly SystemPromptBuilder $systemPromptBuilder,
         private readonly AgentsContextDiscovery $agentsContextDiscovery,
         private readonly AgentsContextRenderer $agentsContextRenderer,
@@ -243,6 +247,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
             ),
             'answer_tool_question' => $this->handleAnswerToolQuestion($runId, $command),
             'shell_command' => $this->handleShellCommandSend($runId, $command),
+            'rewind_to_turn' => $this->handleInProcessRewind($runId, $command),
             default => throw new \InvalidArgumentException(\sprintf('Unknown UserCommand type: "%s"', $command->type)),
         };
     }
@@ -341,6 +346,28 @@ final class InProcessAgentSessionClient implements AgentSessionClient
 
         $answer = $this->answerResolver->resolve($command->payload['answer'] ?? null);
         $this->toolQuestionStore->answer($requestId, $answer);
+    }
+
+    private function handleInProcessRewind(string $runId, UserCommand $command): void
+    {
+        $targetTurnNo = (int) ($command->payload['turn_no'] ?? 0);
+
+        $result = $this->runRewindService->rewind($runId, $targetTurnNo);
+
+        // Emit RunLeafChanged RuntimeEvent so the TUI observes the leaf change
+        // and rebuilds the transcript.  This mirrors the RewindToTurnHandler
+        // emission in process-mode; both must stay in sync.
+        if ($this->transientSink instanceof InMemoryRuntimeEventSink) {
+            $this->transientSink->emit(new RuntimeEvent(
+                type: RuntimeEventTypeEnum::RunLeafChanged->value,
+                runId: $runId,
+                seq: $result['leafSetSeq'],
+                payload: [
+                    'turn_no' => $targetTurnNo,
+                    'leaf_set_seq' => $result['leafSetSeq'],
+                ],
+            ));
+        }
     }
 
     /**

@@ -110,6 +110,7 @@ final class RuntimeEventTypeTest extends TestCase
             RuntimeEventTypeEnum::RuntimeReady,
             RuntimeEventTypeEnum::ProtocolError,
             RuntimeEventTypeEnum::RunResumed,
+            RuntimeEventTypeEnum::RunLeafChanged,
 
             // Tool-local questions
             RuntimeEventTypeEnum::ToolQuestionRequested,
@@ -212,6 +213,7 @@ final class RuntimeEventTypeTest extends TestCase
             RuntimeEventTypeEnum::RunFailed,
             RuntimeEventTypeEnum::RunCancelled,
             RuntimeEventTypeEnum::RunResumed,
+            RuntimeEventTypeEnum::RunLeafChanged,
         ];
 
         foreach ($lifecycle as $case) {

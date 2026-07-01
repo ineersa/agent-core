@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Contract;
 
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeView;
 
 /**
@@ -21,4 +22,17 @@ interface TurnTreeProviderInterface
      *                      with no nodes.
      */
     public function forSession(string $runId): TurnTreeView;
+
+    /**
+     * Return runtime events for the active path leading to a given leaf turn.
+     *
+     * Uses TurnTreeReplayFilter to filter canonical events to only those on the
+     * root-to-target-leaf path, then maps RunEvents to Protocol RuntimeEvents.
+     *
+     * Returns an empty list when events.jsonl is empty or the target turn
+     * does not exist in the turn tree. Never throws for missing data.
+     *
+     * @return list<RuntimeEvent>
+     */
+    public function activePathRuntimeEvents(string $runId, int $leafTurnNo): array;
 }

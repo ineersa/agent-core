@@ -22,6 +22,8 @@ use function Symfony\Component\String\u;
  *    full tree and identifies the active branch path.
  *
  * This is a pure domain service with no side effects and no DB/IO dependency.
+ *
+ * @phpstan-type TurnInfo array<int, array{parentTurnNo: int|null, anchorSeq: int, anchorIndex: int, createdAt: \DateTimeImmutable, reason: string|null}>
  */
 final class TurnTreeProjector
 {
@@ -193,6 +195,48 @@ final class TurnTreeProjector
     }
 
     /**
+     * Compute the path from root to an arbitrary leaf turn in the tree.
+     *
+     * Walks the parentTurnNo chain upward from the target turn to the root,
+     * then returns the list in root-to-leaf order.
+     *
+     * @param array<int, TurnTreeNodeDTO> $nodesByTurnNo
+     *
+     * @return list<int>
+     *
+     * @see walkActivePath() for the same algorithm operating on the build-time
+     *      turnInfo array shape instead of DTO objects. Keep both in sync.
+     */
+    public static function activePathTo(int $targetTurnNo, array $nodesByTurnNo): array
+    {
+        if (!isset($nodesByTurnNo[$targetTurnNo])) {
+            return [];
+        }
+
+        $path = [];
+        $visited = [];
+        $cursor = $targetTurnNo;
+
+        while (null !== $cursor) {
+            if (\in_array($cursor, $visited, true)) {
+                throw new \RuntimeException(\sprintf('Cycle detected in turn tree at turn %d.', $cursor));
+            }
+
+            $visited[] = $cursor;
+            $path[] = $cursor;
+
+            $node = $nodesByTurnNo[$cursor] ?? null;
+            if (null === $node) {
+                break;
+            }
+
+            $cursor = $node->parentTurnNo;
+        }
+
+        return array_reverse($path);
+    }
+
+    /**
      * Walk from the current leaf turn number up to the root, collecting turn numbers.
      *
      * @param array<int, array{parentTurnNo: int|null, ...}> $turnInfo
@@ -202,6 +246,9 @@ final class TurnTreeProjector
      * @return list<int> Turn numbers in order from root to leaf
      *
      * @throws \RuntimeException if a cycle is detected or a parent turn is missing
+     *
+     * @see activePathTo() for the same algorithm operating on DTO objects instead
+     *      of the build-time turnInfo array. Keep both in sync.
      */
     private function walkActivePath(?int $currentLeafTurnNo, array $turnInfo, array $knownTurnNos = []): array
     {

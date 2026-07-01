@@ -72,6 +72,11 @@ final class ResumeSessionCommandHandlerTest extends TestCase
             ): void {
             }
 
+            public function rewindToTurn(int $targetTurnNo): void
+            {
+                // No-op: this test does not exercise rewind.
+            }
+
             public function hasPendingSwitch(): bool
             {
                 return false;

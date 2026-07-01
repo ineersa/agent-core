@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeNodeView;
 use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeView;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Picker\TreePickerController;
+use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\DefaultTheme;
@@ -46,7 +47,8 @@ final class TreePickerControllerTest extends TestCase
     public function testIsOpenIsFalseInitially(): void
     {
         $provider = $this->createStub(TurnTreeProviderInterface::class);
-        $controller = new TreePickerController($provider);
+        $switcher = $this->createStub(TuiSessionSwitchServiceInterface::class);
+        $controller = new TreePickerController($provider, $switcher);
 
         self::assertFalse($controller->isOpen());
     }
@@ -67,7 +69,7 @@ final class TreePickerControllerTest extends TestCase
         self::assertStringContainsString('○ Turn 1:', $items[0]['label']);
         self::assertStringContainsString('Hello', $items[0]['label']);
         self::assertSame('1', $items[0]['value']);
-        self::assertStringContainsString('2026-01-01', $items[0]['description']);
+        self::assertArrayNotHasKey('description', $items[0]);
 
         // Item 1: child (flat — linear only-child chain has no connectors)
         self::assertStringContainsString('◉ Turn 2:', $items[1]['label']);
@@ -220,7 +222,7 @@ final class TreePickerControllerTest extends TestCase
     public function testBuildItemsBranchedTreeWithConnectors(): void
     {
         // Deep branching: T1 has two children [T2, T3]; T2 has one child T4 (current leaf).
-        // This proves all three connector types: ├─, │  └─, └─.
+        // T4 is non-consecutive (4 ≠ 2+1) → rewind branch must fork with └─ under the open branch.
         $nodes = [
             1 => new TurnTreeNodeView(
                 turnNo: 1,
@@ -286,13 +288,482 @@ final class TreePickerControllerTest extends TestCase
         self::assertStringContainsString('├─ ○ Turn 2:', $items[1]['label']);
         self::assertSame('2', $items[1]['value']);
 
-        // T4 (only child of T2, [false, true]): │  └─
+        // T4 (only child of T2, non-consecutive): └─ under │
         self::assertStringContainsString('│  └─ ◉ Turn 4:', $items[2]['label']);
         self::assertSame('4', $items[2]['value']);
 
         // T3 (last child of T1, [true]): └─
         self::assertStringContainsString('└─ ○ Turn 3:', $items[3]['label']);
         self::assertSame('3', $items[3]['value']);
+    }
+
+
+    // ── buildItems: linear continuation inside branch (regression) ─────────
+
+    #[Test]
+    public function testBuildItemsLinearContinuationInsideBranchDoesNotStaircase(): void
+    {
+        // Thesis: single-child continuations inside a branch must share the same indent
+        // prefix (guide column only), not deepen with └─/├─ at every hop — the user-reported
+        // staircase where 2→5→6→7 rendered one level deeper per turn.
+        $nodes = [
+            1 => new TurnTreeNodeView(
+                turnNo: 1,
+                parentTurnNo: null,
+                childTurnNos: [2, 3],
+                anchorSeq: 2,
+                title: 'Turn 1',
+                promptPreview: 'Turn 1',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            2 => new TurnTreeNodeView(
+                turnNo: 2,
+                parentTurnNo: 1,
+                childTurnNos: [5],
+                anchorSeq: 5,
+                title: 'Turn 2',
+                promptPreview: 'Turn 2',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            3 => new TurnTreeNodeView(
+                turnNo: 3,
+                parentTurnNo: 1,
+                childTurnNos: [4],
+                anchorSeq: 8,
+                title: 'Turn 3',
+                promptPreview: 'Turn 3',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            4 => new TurnTreeNodeView(
+                turnNo: 4,
+                parentTurnNo: 3,
+                childTurnNos: [],
+                anchorSeq: 11,
+                title: 'Turn 4',
+                promptPreview: 'Turn 4',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            5 => new TurnTreeNodeView(
+                turnNo: 5,
+                parentTurnNo: 2,
+                childTurnNos: [6],
+                anchorSeq: 14,
+                title: 'Turn 5',
+                promptPreview: 'Turn 5',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            6 => new TurnTreeNodeView(
+                turnNo: 6,
+                parentTurnNo: 5,
+                childTurnNos: [7],
+                anchorSeq: 17,
+                title: 'Turn 6',
+                promptPreview: 'Turn 6',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            7 => new TurnTreeNodeView(
+                turnNo: 7,
+                parentTurnNo: 6,
+                childTurnNos: [],
+                anchorSeq: 20,
+                title: 'Turn 7',
+                promptPreview: 'Turn 7',
+                createdAt: null,
+                isCurrentLeaf: true,
+            ),
+        ];
+
+        $tree = new TurnTreeView(
+            runId: 'run',
+            nodesByTurnNo: $nodes,
+            rootTurnNos: [1],
+            currentLeafTurnNo: 7,
+            activePathTurnNos: [1, 2, 5, 6, 7],
+        );
+
+        $theme = new DefaultTheme(new ThemePalette('test'));
+        $items = TreePickerController::buildItems($tree, $theme);
+
+        self::assertCount(7, $items);
+        self::assertStringContainsString('○ Turn 1:', $items[0]['label']);
+        self::assertStringContainsString('├─ ○ Turn 2:', $items[1]['label']);
+        // Turn 5 is a rewind branch (5 ≠ 2+1) → fork glyph; 6–7 are consecutive follow-ups → flat
+        self::assertStringContainsString('│  └─ ○ Turn 5:', $items[2]['label']);
+        self::assertStringContainsString('│     ○ Turn 6:', $items[3]['label']);
+        self::assertStringContainsString('│     ◉ Turn 7:', $items[4]['label']);
+        self::assertStringContainsString('└─ ○ Turn 3:', $items[5]['label']);
+        self::assertStringContainsString('   ○ Turn 4:', $items[6]['label']);
+
+        // Turns 6–7 are consecutive follow-ups: flat under Turn 5 (no extra fork glyphs).
+        self::assertStringNotContainsString('└─', $items[3]['label']);
+        self::assertStringNotContainsString('└─', $items[4]['label']);
+        self::assertStringNotContainsString('├─', $items[3]['label']);
+        self::assertStringNotContainsString('├─', $items[4]['label']);
+    }
+
+    #[Test]
+    public function testBuildItemsRewindBranchTreeAUserOracle(): void
+    {
+        // Rewind branch (non-consecutive only-child) must indent with ├─/└─ so it reads as a child,
+        // not a sibling; consecutive only-child follow-ups stay flat. Regression for user-reported
+        // picker rendering where Turn 4 looked like Turn 2's sibling.
+        $nodes = [
+            1 => new TurnTreeNodeView(
+                turnNo: 1,
+                parentTurnNo: null,
+                childTurnNos: [2, 3],
+                anchorSeq: 2,
+                title: 'Hello!',
+                promptPreview: 'Hello!',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            2 => new TurnTreeNodeView(
+                turnNo: 2,
+                parentTurnNo: 1,
+                childTurnNos: [4],
+                anchorSeq: 5,
+                title: 'Secret word is pineapple',
+                promptPreview: 'Secret word is pineapple',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            3 => new TurnTreeNodeView(
+                turnNo: 3,
+                parentTurnNo: 1,
+                childTurnNos: [],
+                anchorSeq: 8,
+                title: 'secret word is apple',
+                promptPreview: 'secret word is apple',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            4 => new TurnTreeNodeView(
+                turnNo: 4,
+                parentTurnNo: 2,
+                childTurnNos: [5],
+                anchorSeq: 11,
+                title: 'What is secret word',
+                promptPreview: 'What is secret word',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            5 => new TurnTreeNodeView(
+                turnNo: 5,
+                parentTurnNo: 4,
+                childTurnNos: [],
+                anchorSeq: 14,
+                title: 'secret word straw',
+                promptPreview: 'secret word straw',
+                createdAt: null,
+                isCurrentLeaf: true,
+            ),
+        ];
+
+        $tree = new TurnTreeView(
+            runId: 'run',
+            nodesByTurnNo: $nodes,
+            rootTurnNos: [1],
+            currentLeafTurnNo: 5,
+            activePathTurnNos: [1, 2, 4, 5],
+        );
+
+        $theme = new DefaultTheme(new ThemePalette('test'));
+        $items = TreePickerController::buildItems($tree, $theme);
+
+        self::assertCount(5, $items);
+        self::assertSame('○ Turn 1: Hello!', $items[0]['label']);
+        self::assertSame('├─ ○ Turn 2: Secret word is pineapple', $items[1]['label']);
+        self::assertSame('│  └─ ○ Turn 4: What is secret word', $items[2]['label']);
+        self::assertSame('│     ◉ Turn 5: secret word straw', $items[3]['label']);
+        self::assertSame('└─ ○ Turn 3: secret word is apple', $items[4]['label']);
+    }
+
+    #[Test]
+    public function testBuildItemsRewindBranchTreeBUserOracleWithForkAtTurn2(): void
+    {
+        // Rewind branch (non-consecutive only-child) must indent with ├─/└─ so it reads as a child,
+        // not a sibling; consecutive only-child follow-ups stay flat. Regression for user-reported
+        // picker rendering where Turn 4 looked like Turn 2's sibling.
+        $nodes = [
+            1 => new TurnTreeNodeView(
+                turnNo: 1,
+                parentTurnNo: null,
+                childTurnNos: [2, 3],
+                anchorSeq: 2,
+                title: 'Hello!',
+                promptPreview: 'Hello!',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            2 => new TurnTreeNodeView(
+                turnNo: 2,
+                parentTurnNo: 1,
+                childTurnNos: [4, 6],
+                anchorSeq: 5,
+                title: 'Secret word is pineapple',
+                promptPreview: 'Secret word is pineapple',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            3 => new TurnTreeNodeView(
+                turnNo: 3,
+                parentTurnNo: 1,
+                childTurnNos: [],
+                anchorSeq: 8,
+                title: 'secret word is apple',
+                promptPreview: 'secret word is apple',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            4 => new TurnTreeNodeView(
+                turnNo: 4,
+                parentTurnNo: 2,
+                childTurnNos: [5],
+                anchorSeq: 11,
+                title: 'What is secret word',
+                promptPreview: 'What is secret word',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            5 => new TurnTreeNodeView(
+                turnNo: 5,
+                parentTurnNo: 4,
+                childTurnNos: [],
+                anchorSeq: 14,
+                title: 'secret word straw',
+                promptPreview: 'secret word straw',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            6 => new TurnTreeNodeView(
+                turnNo: 6,
+                parentTurnNo: 2,
+                childTurnNos: [],
+                anchorSeq: 17,
+                title: 'secret word kale',
+                promptPreview: 'secret word kale',
+                createdAt: null,
+                isCurrentLeaf: true,
+            ),
+        ];
+
+        $tree = new TurnTreeView(
+            runId: 'run',
+            nodesByTurnNo: $nodes,
+            rootTurnNos: [1],
+            currentLeafTurnNo: 6,
+            activePathTurnNos: [1, 2, 6],
+        );
+
+        $theme = new DefaultTheme(new ThemePalette('test'));
+        $items = TreePickerController::buildItems($tree, $theme);
+
+        self::assertCount(6, $items);
+        self::assertSame('○ Turn 1: Hello!', $items[0]['label']);
+        self::assertSame('├─ ○ Turn 2: Secret word is pineapple', $items[1]['label']);
+        self::assertSame('│  ├─ ○ Turn 4: What is secret word', $items[2]['label']);
+        self::assertSame('│  │  ○ Turn 5: secret word straw', $items[3]['label']);
+        self::assertSame('│  └─ ◉ Turn 6: secret word kale', $items[4]['label']);
+        self::assertSame('└─ ○ Turn 3: secret word is apple', $items[5]['label']);
+    }
+
+    #[Test]
+    public function testBuildItemsLinearThenForkRendersContinuationFlat(): void
+    {
+        // Thesis: only-child chain before a fork stays flat; fork children get ├─/└─ one level down.
+        $nodes = [
+            1 => new TurnTreeNodeView(
+                turnNo: 1,
+                parentTurnNo: null,
+                childTurnNos: [2],
+                anchorSeq: 2,
+                title: 'Turn 1',
+                promptPreview: 'Turn 1',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            2 => new TurnTreeNodeView(
+                turnNo: 2,
+                parentTurnNo: 1,
+                childTurnNos: [3, 4],
+                anchorSeq: 5,
+                title: 'Turn 2',
+                promptPreview: 'Turn 2',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            3 => new TurnTreeNodeView(
+                turnNo: 3,
+                parentTurnNo: 2,
+                childTurnNos: [],
+                anchorSeq: 8,
+                title: 'Turn 3',
+                promptPreview: 'Turn 3',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            4 => new TurnTreeNodeView(
+                turnNo: 4,
+                parentTurnNo: 2,
+                childTurnNos: [],
+                anchorSeq: 11,
+                title: 'Turn 4',
+                promptPreview: 'Turn 4',
+                createdAt: null,
+                isCurrentLeaf: true,
+            ),
+        ];
+
+        $tree = new TurnTreeView(
+            runId: 'run',
+            nodesByTurnNo: $nodes,
+            rootTurnNos: [1],
+            currentLeafTurnNo: 4,
+            activePathTurnNos: [1, 2, 4],
+        );
+
+        $theme = new DefaultTheme(new ThemePalette('test'));
+        $items = TreePickerController::buildItems($tree, $theme);
+
+        self::assertCount(4, $items);
+        self::assertStringContainsString('○ Turn 1:', $items[0]['label']);
+        self::assertStringNotContainsString('├─', $items[0]['label']);
+        self::assertStringContainsString('○ Turn 2:', $items[1]['label']);
+        self::assertStringNotContainsString('├─', $items[1]['label']);
+        self::assertStringNotContainsString('└─', $items[1]['label']);
+        self::assertStringContainsString('├─ ○ Turn 3:', $items[2]['label']);
+        self::assertStringContainsString('└─ ◉ Turn 4:', $items[3]['label']);
+    }
+
+    // ── initialSelectedIndex: open on current leaf (regression) ───────────
+
+    #[Test]
+    public function testInitialSelectedIndexCurrentLeafNotFirstReturnsDepthFirstIndex(): void
+    {
+        // Thesis: Tree picker must open with the cursor on the CURRENT leaf turn, not the first
+        // turn, so the user's position in the conversation is preserved when navigating the tree.
+        // Regression for user-reported UX bug where opening /tree always highlighted the root turn.
+        // Tree 1 → {2, 3 → 4}; current leaf = turn 4 (DFS order: 1, 2, 3, 4 → index 3).
+        $nodes = [
+            1 => new TurnTreeNodeView(
+                turnNo: 1,
+                parentTurnNo: null,
+                childTurnNos: [2, 3],
+                anchorSeq: 2,
+                title: 'Root',
+                promptPreview: 'Root',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            2 => new TurnTreeNodeView(
+                turnNo: 2,
+                parentTurnNo: 1,
+                childTurnNos: [],
+                anchorSeq: 5,
+                title: 'Branch A',
+                promptPreview: 'A',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            3 => new TurnTreeNodeView(
+                turnNo: 3,
+                parentTurnNo: 1,
+                childTurnNos: [4],
+                anchorSeq: 8,
+                title: 'Branch B',
+                promptPreview: 'B',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            4 => new TurnTreeNodeView(
+                turnNo: 4,
+                parentTurnNo: 3,
+                childTurnNos: [],
+                anchorSeq: 11,
+                title: 'Deep leaf',
+                promptPreview: 'Deep',
+                createdAt: null,
+                isCurrentLeaf: true,
+            ),
+        ];
+
+        $tree = new TurnTreeView(
+            runId: 'run',
+            nodesByTurnNo: $nodes,
+            rootTurnNos: [1],
+            currentLeafTurnNo: 4,
+            activePathTurnNos: [1, 3, 4],
+        );
+
+        self::assertSame([1, 2, 3, 4], TreePickerController::flattenTurnOrder($tree));
+        self::assertSame(3, TreePickerController::initialSelectedIndex($tree));
+    }
+
+    #[Test]
+    public function testInitialSelectedIndexCurrentLeafIsRootReturnsZero(): void
+    {
+        $tree = new TurnTreeView(
+            runId: 'run',
+            nodesByTurnNo: [
+                1 => new TurnTreeNodeView(
+                    turnNo: 1,
+                    parentTurnNo: null,
+                    childTurnNos: [],
+                    anchorSeq: 2,
+                    title: 'Only turn',
+                    promptPreview: 'Only',
+                    createdAt: null,
+                    isCurrentLeaf: true,
+                ),
+            ],
+            rootTurnNos: [1],
+            currentLeafTurnNo: 1,
+            activePathTurnNos: [1],
+        );
+
+        self::assertSame(0, TreePickerController::initialSelectedIndex($tree));
+    }
+
+    #[Test]
+    public function testInitialSelectedIndexMissingLeafInOrderReturnsZero(): void
+    {
+        $tree = new TurnTreeView(
+            runId: 'run',
+            nodesByTurnNo: [
+                1 => new TurnTreeNodeView(
+                    turnNo: 1,
+                    parentTurnNo: null,
+                    childTurnNos: [2],
+                    anchorSeq: 2,
+                    title: 'T1',
+                    promptPreview: 'T1',
+                    createdAt: null,
+                    isCurrentLeaf: false,
+                ),
+                2 => new TurnTreeNodeView(
+                    turnNo: 2,
+                    parentTurnNo: 1,
+                    childTurnNos: [],
+                    anchorSeq: 5,
+                    title: 'T2',
+                    promptPreview: 'T2',
+                    createdAt: null,
+                    isCurrentLeaf: true,
+                ),
+            ],
+            rootTurnNos: [1],
+            currentLeafTurnNo: 99,
+            activePathTurnNos: [1, 2],
+        );
+
+        self::assertSame(0, TreePickerController::initialSelectedIndex($tree));
     }
 
     // ── buildItems: empty tree ──────────────────────────────────────────────
@@ -402,7 +873,8 @@ final class TreePickerControllerTest extends TestCase
         $provider = $this->createStub(TurnTreeProviderInterface::class);
         $provider->method('forSession')->willReturn($tree);
 
-        $controller = new TreePickerController($provider);
+        $switcher = $this->createStub(TuiSessionSwitchServiceInterface::class);
+        $controller = new TreePickerController($provider, $switcher);
         $controller->setRuntimeRefs($this->tui, $this->screen, $this->state);
 
         self::assertFalse($controller->isOpen());
@@ -425,7 +897,8 @@ final class TreePickerControllerTest extends TestCase
         $provider = $this->createStub(TurnTreeProviderInterface::class);
         $provider->method('forSession')->willReturn($tree);
 
-        $controller = new TreePickerController($provider);
+        $switcher = $this->createStub(TuiSessionSwitchServiceInterface::class);
+        $controller = new TreePickerController($provider, $switcher);
         $controller->setRuntimeRefs($this->tui, $this->screen, $this->state);
 
         $controller->open();
@@ -440,7 +913,8 @@ final class TreePickerControllerTest extends TestCase
         $provider = $this->createStub(TurnTreeProviderInterface::class);
         $provider->method('forSession')->willReturn($tree);
 
-        $controller = new TreePickerController($provider);
+        $switcher = $this->createStub(TuiSessionSwitchServiceInterface::class);
+        $controller = new TreePickerController($provider, $switcher);
         $controller->setRuntimeRefs($this->tui, $this->screen, $this->state);
 
         $controller->open();
@@ -457,7 +931,8 @@ final class TreePickerControllerTest extends TestCase
         $provider = $this->createStub(TurnTreeProviderInterface::class);
         $provider->method('forSession')->willReturn($tree);
 
-        $controller = new TreePickerController($provider);
+        $switcher = $this->createStub(TuiSessionSwitchServiceInterface::class);
+        $controller = new TreePickerController($provider, $switcher);
         $controller->setRuntimeRefs($this->tui, $this->screen, $this->state);
 
         $controller->open();
@@ -510,6 +985,66 @@ final class TreePickerControllerTest extends TestCase
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
+
+    // ── onSelect behavior ───────────────────────────────────────────
+
+    #[Test]
+    public function testOnSelectNonCurrentLeafCallsRewind(): void
+    {
+        // Thesis: selecting a non-current turn in the picker calls
+        // switcher->rewindToTurn with the selected turn number and
+        // closes the picker.
+        $tree = $this->createLinearTree(); // T1 → T2, currentLeaf=2
+        $provider = $this->createStub(TurnTreeProviderInterface::class);
+        $provider->method('forSession')->willReturn($tree);
+
+        $switcher = $this->createMock(TuiSessionSwitchServiceInterface::class);
+        $switcher->expects(self::once())
+            ->method('rewindToTurn')
+            ->with(1);
+
+        $controller = new TreePickerController($provider, $switcher);
+        $controller->setRuntimeRefs($this->tui, $this->screen, $this->state);
+
+        $controller->open();
+        self::assertTrue($controller->isOpen());
+
+        // Picker opens on current leaf (turn 2 at index 1); move to turn 1, then confirm.
+        $widget = $controller->overlay()->listWidget();
+        $widget->setSelectedIndex(0);
+        $widget->handleInput("\r");
+
+        self::assertFalse($controller->isOpen(), 'Picker must close after selection');
+    }
+
+    #[Test]
+    public function testOnSelectCurrentLeafIsNoOp(): void
+    {
+        // Thesis: selecting the current leaf closes the picker but
+        // does NOT call rewindToTurn.
+        $tree = $this->createLinearTree(); // T1 → T2, currentLeaf=2
+        $provider = $this->createStub(TurnTreeProviderInterface::class);
+        $provider->method('forSession')->willReturn($tree);
+
+        $switcher = $this->createMock(TuiSessionSwitchServiceInterface::class);
+        $switcher->expects(self::never())
+            ->method('rewindToTurn');
+
+        $controller = new TreePickerController($provider, $switcher);
+        $controller->setRuntimeRefs($this->tui, $this->screen, $this->state);
+
+        $controller->open();
+        self::assertTrue($controller->isOpen());
+
+        // Move selection to turn 2 (current leaf) at index 1, then confirm.
+        $widget = $controller->overlay()->listWidget();
+        $widget->setSelectedIndex(1);
+        $widget->handleInput("\r");
+
+        self::assertFalse($controller->isOpen(), 'Picker must close after selection');
+    }
+
+    // ── Helpers ────────────────────────────────────────────────────────
 
     private function createLinearTree(): TurnTreeView
     {

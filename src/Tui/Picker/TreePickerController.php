@@ -7,6 +7,7 @@ namespace Ineersa\Tui\Picker;
 use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
 use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeNodeView;
 use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeView;
+use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\ThemeColorEnum;
@@ -23,9 +24,11 @@ use Symfony\Component\Tui\Widget\TextWidget;
 /**
  * Manages the turn tree picker overlay lifecycle.
  *
- * Opens a read-only SelectListWidget showing the current session's
- * turn tree with tree connectors at branch points only (└─/├─/│),
- * and a current-leaf marker. Entering a turn closes the picker without mutating state.
+ * Opens a SelectListWidget showing the current session's turn tree with
+ * tree connectors at branch points only (└─/├─/│), and a current-leaf
+ * marker (◉). Entering a turn rewinds the session to that turn (actionable);
+ * selecting the current leaf is a no-op (just closes).
+ * Escape/Ctrl+C cancels.
  *
  * Tree data is rebuilt from canonical events.jsonl on each open
  * (no caching), so the picker always reflects the latest session state.
@@ -40,6 +43,7 @@ final class TreePickerController
 
     public function __construct(
         private readonly TurnTreeProviderInterface $treeProvider,
+        private readonly TuiSessionSwitchServiceInterface $switcher,
     ) {
     }
 
@@ -54,13 +58,13 @@ final class TreePickerController
     }
 
     /**
-     * Open the turn tree picker as a read-only overlay.
+     * Open the turn tree picker as an actionable overlay.
      *
      * Fetches the tree from the provider, builds flat items, and
      * mounts a SelectListWidget via PickerOverlay.  If the session
      * has no events, a status message is shown instead.
      *
-     * Enter closes the picker (read-only); Escape/Ctrl+C cancels.
+     * Enter rewinds to the selected turn; Escape/Ctrl+C cancels.
      */
     public function open(): void
     {
@@ -87,7 +91,7 @@ final class TreePickerController
 
         // ── Header ──
         $header = new TextWidget(
-            text: $screen->theme()->muted('Session turn tree — read-only (Esc to close)'),
+            text: $screen->theme()->muted('Session turn tree — Enter to rewind (Esc to close)'),
             truncate: true,
         );
 
@@ -103,15 +107,17 @@ final class TreePickerController
 
         // ── Build items ──
         $theme = $screen->theme();
-        $items = self::buildItems($tree, $theme, selectedIndex: 0);
         // Pre-compute the depth-first order of turn numbers for selection-change indexing
         $flattenedOrder = self::flattenTurnOrder($tree);
+        $initialSelectedIndex = self::initialSelectedIndex($tree);
+        $items = self::buildItems($tree, $theme, selectedIndex: $initialSelectedIndex);
 
         $listWidget = new SelectListWidget(
             items: $items,
             maxVisible: 10,
             keybindings: $kb,
         );
+        $listWidget->setSelectedIndex(max(0, $initialSelectedIndex));
 
         // ── Arrows → rebuild items so newly selected row gets accent colour ──
         // setSelectedIndex() does NOT re-dispatch SelectionChangeEvent
@@ -136,10 +142,21 @@ final class TreePickerController
             },
         );
 
-        // ── Enter → close only (read-only) ──
+        // ── Enter → rewind (or no-op if current leaf) ──
         $picker = $this;
-        $listWidget->onSelect(static function (SelectEvent $event) use ($picker): void {
+        $switcher = $this->switcher;
+        $currentLeafTurnNo = $tree->currentLeafTurnNo;
+
+        $listWidget->onSelect(static function (SelectEvent $event) use ($picker, $switcher, $currentLeafTurnNo): void {
+            $turnNo = (int) $event->getItem()['value'];
             $picker->closePicker();
+
+            // Selecting the current leaf is a no-op (just close).
+            if ($turnNo === $currentLeafTurnNo) {
+                return;
+            }
+
+            $switcher->rewindToTurn($turnNo);
         });
 
         // ── Escape / Ctrl+C → close without change ──
@@ -170,12 +187,23 @@ final class TreePickerController
     }
 
     /**
+     * The currently mounted PickerOverlay, or null if not mounted.
+     *
+     * Provides access to the underlying SelectListWidget for
+     * programmatic inspection or testing.
+     */
+    public function overlay(): ?PickerOverlay
+    {
+        return $this->overlay;
+    }
+
+    /**
      * Build flat picker items from a turn tree.
      *
      * Depth-first walk, producing indented labels with leaf markers.
      * Public and static for testability.
      *
-     * @return list<array{value: string, label: string, description?: string}>
+     * @return list<array{value: string, label: string}>
      */
     public static function buildItems(TurnTreeView $tree, TuiTheme $theme, int $selectedIndex = -1): array
     {
@@ -194,6 +222,19 @@ final class TreePickerController
         return self::walk($tree)[1];
     }
 
+    /**
+     * Index of the current leaf turn in the depth-first picker order,
+     * for initial cursor placement when the tree picker opens.
+     *
+     * @return int<0, max> clamped to >= 0; 0 when the current leaf is not in the order
+     */
+    public static function initialSelectedIndex(TurnTreeView $tree): int
+    {
+        $idx = array_search($tree->currentLeafTurnNo, self::flattenTurnOrder($tree), true);
+
+        return false === $idx ? 0 : max(0, $idx);
+    }
+
     // ── Private helpers ─────────────────────────────────────────────
 
     /**
@@ -205,7 +246,7 @@ final class TreePickerController
      * is always produced, guaranteeing index alignment between
      * buildItems() and flattenTurnOrder().
      *
-     * @return array{0: list<array{value:string,label:string,description?:string}>, 1: list<int>}
+     * @return array{0: list<array{value:string,label:string}>, 1: list<int>}
      */
     private static function walk(TurnTreeView $tree, ?TuiTheme $theme = null, int $selectedIndex = -1): array
     {
@@ -221,11 +262,12 @@ final class TreePickerController
     }
 
     /**
-     * @param array<int, TurnTreeNodeView>                               $nodesByTurnNo
-     * @param list<bool>                                                 $branchStack   Each entry is true if that ancestor is the last child of its parent (└─ for last, ├─ for non-last)
-     * @param list<array{value:string,label:string,description?:string}> $items
-     * @param list<int>                                                  $order
-     * @param array<int, true>                                           $visited
+     * @param array<int, TurnTreeNodeView>           $nodesByTurnNo
+     * @param list<bool>                             $branchStack    Each entry is true if that ancestor is the last child of its parent (guide column uses space vs │)
+     * @param bool                                   $isContinuation When true, this node is a single-child continuation: render guide only, no fork glyph
+     * @param list<array{value:string,label:string}> $items
+     * @param list<int>                              $order
+     * @param array<int, true>                       $visited
      */
     private static function walkNode(
         int $turnNo,
@@ -236,6 +278,7 @@ final class TreePickerController
         array &$visited,
         ?TuiTheme $theme,
         int $selectedIndex,
+        bool $isContinuation = false,
     ): void {
         if (isset($visited[$turnNo])) {
             return;
@@ -255,7 +298,13 @@ final class TreePickerController
                 $nodePrefix .= $branchStack[$k] ? '   ' : '│  ';
             }
             if ($numLevels >= 1) {
-                $nodePrefix .= $branchStack[$numLevels - 1] ? '└─ ' : '├─ ';
+                $last = $numLevels - 1;
+                if ($isContinuation) {
+                    // Single-child continuation: guide column only (no fork glyph).
+                    $nodePrefix .= $branchStack[$last] ? '   ' : '│  ';
+                } else {
+                    $nodePrefix .= $branchStack[$last] ? '└─ ' : '├─ ';
+                }
             }
 
             $leafMarker = $node->isCurrentLeaf ? '◉ ' : '○ ';
@@ -270,31 +319,40 @@ final class TreePickerController
                 $label = $theme->color(ThemeColorEnum::Accent, $label);
             }
 
-            $item = [
+            $items[] = [
                 'value' => (string) $node->turnNo,
                 'label' => $label,
             ];
-            if (null !== $node->createdAt) {
-                $item['description'] = $node->createdAt->format('Y-m-d H:i');
-            }
-            $items[] = $item;
         }
 
         $order[] = $node->turnNo;
 
-        // Compute child branch-stack: push a new connector level when already inside
-        // a branch or when the current node has multiple children (branching starts here).
         $childCount = \count($node->childTurnNos);
-        $insideBranch = [] !== $branchStack;
-        $nodeHasMultipleChildren = $childCount >= 2;
-        $childPushesLevel = $insideBranch || $nodeHasMultipleChildren;
 
         foreach ($node->childTurnNos as $ci => $childTurnNo) {
+            // Flat continuation: the ONLY child AND a consecutive follow-up (turn_no = parent + 1).
+            // A rewind branch is non-consecutive (turn_no != parent + 1) and must fork — indent
+            // with ├─/└─ even when it is an only-child, so a lone branch is shown as a child,
+            // not a sibling. A fork point (2+ children) always indents every child.
+            $isConsecutiveFollowUp = $childTurnNo === $turnNo + 1;
+            $childIsContinuation = 1 === $childCount && $isConsecutiveFollowUp;
+            $childPushesLevel = !$childIsContinuation;
+
             $childStack = $childPushesLevel
                 ? [...$branchStack, $ci === $childCount - 1]
                 : $branchStack;
 
-            self::walkNode($childTurnNo, $nodesByTurnNo, $childStack, $items, $order, $visited, $theme, $selectedIndex);
+            self::walkNode(
+                $childTurnNo,
+                $nodesByTurnNo,
+                $childStack,
+                $items,
+                $order,
+                $visited,
+                $theme,
+                $selectedIndex,
+                $childIsContinuation,
+            );
         }
     }
 }

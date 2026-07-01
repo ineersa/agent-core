@@ -18,8 +18,10 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\RunLifecycleProjectionSubscri
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber;
+use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
+use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeView;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\Tui\Application\SessionInitializer;
@@ -98,6 +100,15 @@ final class SessionInitializerReplayTest extends TestCase
             logger: new NullLogger(),
         );
 
+        $turnTreeProvider = $this->createStub(TurnTreeProviderInterface::class);
+        $turnTreeProvider->method('forSession')->willReturn(new TurnTreeView(
+            runId: 'test',
+            nodesByTurnNo: [],
+            rootTurnNos: [],
+            currentLeafTurnNo: null,
+            activePathTurnNos: [],
+        ));
+
         $this->sessionInit = new SessionInitializer(
             sessionStore: $hatfieldSessionStore,
             eventStore: $this->eventStore,
@@ -106,6 +117,7 @@ final class SessionInitializerReplayTest extends TestCase
             blockFactory: new TranscriptBlockFactory(),
             logger: new NullLogger(),
             eventApplier: new TuiRuntimeEventApplier($this->projector),
+            turnTreeProvider: $turnTreeProvider,
         );
     }
 

@@ -11,7 +11,10 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
+use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeView;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
@@ -21,6 +24,7 @@ use Ineersa\Tui\Application\SessionInitializer;
 use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
+use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -72,6 +76,15 @@ final class SessionInitializerTest extends TestCase
             new RuntimeEventTranslator(new EventDispatcher()),
         );
 
+        $turnTreeProvider = $this->createStub(TurnTreeProviderInterface::class);
+        $turnTreeProvider->method('forSession')->willReturn(new TurnTreeView(
+            runId: 'test',
+            nodesByTurnNo: [],
+            rootTurnNos: [],
+            currentLeafTurnNo: null,
+            activePathTurnNos: [],
+        ));
+
         $this->sessionInit = new SessionInitializer(
             sessionStore: $hatfieldSessionStore,
             eventStore: $this->eventStore,
@@ -80,6 +93,7 @@ final class SessionInitializerTest extends TestCase
             blockFactory: new TranscriptBlockFactory(),
             logger: new NullLogger(),
             eventApplier: new TuiRuntimeEventApplier($this->projector),
+            turnTreeProvider: $turnTreeProvider,
         );
     }
 
@@ -167,7 +181,7 @@ final class SessionInitializerTest extends TestCase
             text: 'Hello from replayed steer',
         );
 
-        $this->projector->expects(self::once())->method('reset');
+        $this->projector->expects(self::exactly(2))->method('reset');
         $this->projector->expects(self::exactly(1))
             ->method('accept')
             ->willReturnCallback(static function (array $event) use (&$acceptedEvents): void {
@@ -210,7 +224,7 @@ final class SessionInitializerTest extends TestCase
         );
         $this->eventStore->append($droppedEvent);
 
-        $this->projector->expects(self::once())->method('reset');
+        $this->projector->expects(self::exactly(2))->method('reset');
         $this->projector->expects(self::never())->method('accept');
         $this->projector->expects(self::once())
             ->method('blocks')
@@ -339,6 +353,154 @@ final class SessionInitializerTest extends TestCase
         self::assertSame(['foo' => 'bar'], $request->options);
         self::assertSame('gpt-4', $request->model);
         self::assertSame('high', $request->reasoning);
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testBranchAwareResumeFiltersOutAbandonedBranchBlocks(): void
+    {
+        // Thesis: when the session has a known currentLeafTurnNo (has been
+        // rewound), replayFromEvents filters to the active path, excluding
+        // abandoned-branch blocks from the transcript.  lastSeq is set from
+        // the FULL canonical stream, not regressed.
+
+        $runId = 'run-branch-'.bin2hex(random_bytes(4));
+        $sessionDir = $this->projectDir.'/.hatfield/sessions/'.$runId;
+        mkdir($sessionDir, 0777, true);
+        file_put_contents($sessionDir.'/events.jsonl', '');
+
+        // ── Events: linear (T1, T2) → LeafSet(rewind to T1) → T3 (new branch) ──
+        // Turn 1 (active, seq 5)
+        $this->eventStore->append(new RunEvent(
+            runId: $runId,
+            seq: 5,
+            turnNo: 1,
+            type: 'agent_command_applied',
+            payload: [
+                'kind' => 'steer',
+                'idempotency_key' => 'ik_t1',
+                'message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Turn 1']]],
+            ],
+        ));
+        // Turn 2 (abandoned branch, seq 8)
+        $this->eventStore->append(new RunEvent(
+            runId: $runId,
+            seq: 8,
+            turnNo: 2,
+            type: 'agent_command_applied',
+            payload: [
+                'kind' => 'steer',
+                'idempotency_key' => 'ik_t2',
+                'message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Turn 2 — abandoned']]],
+            ],
+        ));
+        // LeafSet (rewind to T1, seq 12)
+        $this->eventStore->append(new RunEvent(
+            runId: $runId,
+            seq: 12,
+            turnNo: 1,
+            type: 'leaf_set',
+            payload: ['turn_no' => 1, 'previous_turn_no' => 2],
+        ));
+        // Turn 3 (active new branch, seq 15)
+        $this->eventStore->append(new RunEvent(
+            runId: $runId,
+            seq: 15,
+            turnNo: 3,
+            type: 'agent_command_applied',
+            payload: [
+                'kind' => 'steer',
+                'idempotency_key' => 'ik_t3',
+                'message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Turn 3 — new branch']]],
+            ],
+        ));
+
+        // ── TurnTreeProvider providing the branch-aware filtering ──
+        $turnTreeProvider = $this->createMock(TurnTreeProviderInterface::class);
+
+        // forSession returns tree with currentLeafTurnNo = 1 (rewound from T2 back to T1)
+        $turnTreeProvider->expects(self::once())
+            ->method('forSession')
+            ->with($runId)
+            ->willReturn(new TurnTreeView(
+                runId: $runId,
+                nodesByTurnNo: [],
+                rootTurnNos: [1],
+                currentLeafTurnNo: 1,
+                activePathTurnNos: [1, 3],
+            ));
+
+        // activePathRuntimeEvents returns filtered events (only T1 + T3)
+        $turnTreeProvider->expects(self::once())
+            ->method('activePathRuntimeEvents')
+            ->with($runId, 1)
+            ->willReturn([
+                new RuntimeEvent(
+                    type: 'user.message_submitted',
+                    runId: $runId,
+                    seq: 5,
+                    payload: ['text' => 'Turn 1', 'message_id' => 'msg_t1'],
+                ),
+                new RuntimeEvent(
+                    type: 'user.message_submitted',
+                    runId: $runId,
+                    seq: 15,
+                    payload: ['text' => 'Turn 3 — new branch', 'message_id' => 'msg_t3'],
+                ),
+            ]);
+
+        // ── Build a fresh initializer with real projector + custom provider ──
+        $projector = $this->buildRealTranscriptProjector();
+
+        $appConfig = new AppConfig(
+            tui: new TuiConfig(theme: 'default'),
+            logging: new LoggingConfig(),
+            cwd: $this->projectDir,
+        );
+        $hatfieldSessionStore = new HatfieldSessionStore(
+            appConfig: $appConfig,
+            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+        );
+        $mapper = new RuntimeEventMapper(
+            new RuntimeEventTranslator(new EventDispatcher()),
+        );
+
+        $sessionInit = new SessionInitializer(
+            sessionStore: $hatfieldSessionStore,
+            eventStore: $this->eventStore,
+            eventMapper: $mapper,
+            projector: $projector,
+            blockFactory: new TranscriptBlockFactory(),
+            logger: new NullLogger(),
+            eventApplier: new TuiRuntimeEventApplier($projector),
+            turnTreeProvider: $turnTreeProvider,
+        );
+
+        $state = new TuiSessionState($runId, true);
+        $blocks = $sessionInit->buildInitialTranscript($state);
+
+        // Active-path events only: T1 + T3 = 2 blocks
+        self::assertCount(2, $blocks, 'Only active-path blocks should appear');
+        self::assertStringContainsString('Turn 1', $blocks[0]->text);
+        self::assertStringContainsString('Turn 3', $blocks[1]->text);
+
+        // lastSeq must be the max from the FULL canonical stream (seq 15 = T3)
+        self::assertSame(15, $state->lastSeq, 'lastSeq must reflect full stream max, not just filtered events');
+    }
+
+    /**
+     * Build a real TranscriptProjector for integration testing.
+     *
+     * @return TranscriptProjectorInterface
+     */
+    private function buildRealTranscriptProjector(): TranscriptProjectorInterface
+    {
+        $dispatcher = new EventDispatcher();
+        $projectionState = new \Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState();
+        $dispatcher->addSubscriber(new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber());
+        $dispatcher->addSubscriber(new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber());
+        $dispatcher->addSubscriber(new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber());
+
+        return new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector($dispatcher, $projectionState);
     }
 
     /**

@@ -7,6 +7,7 @@ namespace Ineersa\Tui\Application;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
@@ -142,6 +143,29 @@ class TuiSessionSwitchService implements TuiSessionSwitchServiceInterface
     public function hasPendingSwitch(): bool
     {
         return $this->isPendingDraft || null !== $this->pendingResumeSessionId;
+    }
+
+    public function rewindToTurn(int $targetTurnNo): void
+    {
+        if (null === $this->state?->handle || null === $this->client) {
+            throw new \RuntimeException('Cannot rewind: no active session or run handle.');
+        }
+
+        $runId = $this->state->handle->runId;
+
+        // Cancel the current run, if active.
+        $this->cancelCurrentRun();
+
+        // Dispatch the rewind command.
+        $this->client->send($runId, new UserCommand(
+            type: 'rewind_to_turn',
+            payload: ['turn_no' => $targetTurnNo],
+        ));
+
+        // Do NOT reset local state here — that happens reactively when the
+        // RunLeafChanged RuntimeEvent arrives via RuntimeEventPoller, so we
+        // rebuild from the authoritative server-side replay, not speculatively.
+        // The poller will clear transcript, reset lastSeq, and update activity.
     }
 
     // ── Private helpers ──

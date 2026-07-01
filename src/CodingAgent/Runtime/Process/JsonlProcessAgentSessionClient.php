@@ -270,6 +270,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             'answer_human' => 'answer_human',
             'answer_tool_question' => 'answer_tool_question',
             'shell_command' => 'shell_command',
+            'rewind_to_turn' => 'rewind_to_turn',
             default => throw new \InvalidArgumentException(\sprintf('Unknown command type: "%s"', $command->type)),
         };
 
@@ -281,6 +282,9 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             'shell_command' => array_filter([
                 'text' => $command->text,
                 'standalone' => true === ($command->payload['standalone'] ?? false) ? true : null,
+            ], static fn (mixed $v): bool => null !== $v),
+            'rewind_to_turn' => array_filter([
+                'turn_no' => $command->payload['turn_no'] ?? null,
             ], static fn (mixed $v): bool => null !== $v),
             default => array_filter([
                 'text' => $command->text,

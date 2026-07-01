@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\Tui\Application\TuiSessionSwitchService;
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
@@ -338,5 +339,49 @@ final class SessionSwitchServiceTest extends TestCase
         $target = $service->consumePendingSwitch();
         self::assertNotNull($target);
         self::assertSame('42', $target->sessionId);
+    }
+
+    // ── rewindToTurn ────────────────────────────────────────────────────
+
+    public function testRewindToTurnSendsCommand(): void
+    {
+        // Thesis: rewindToTurn cancels the current run and sends
+        // a rewind_to_turn UserCommand with the correct turn_no.
+        $coordinator = $this->createCoordinator();
+        $controller = $this->createController($coordinator);
+        $projector = $this->createStub(TranscriptProjectorInterface::class);
+        $tui = new Tui();
+
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->expects(self::once())
+            ->method('cancel')
+            ->with('test-run-id');
+        $client->expects(self::once())
+            ->method('send')
+            ->with(
+                'test-run-id',
+                self::callback(static fn (UserCommand $cmd): bool =>
+                    'rewind_to_turn' === $cmd->type
+                    && ['turn_no' => 3] === $cmd->payload
+                ),
+            );
+
+        $state = new TuiSessionState('test', false);
+        $state->handle = new RunHandle('test-run-id', 'running');
+
+        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, $this->createStub(LoggerInterface::class));
+        $service->bindForIteration($tui, $client, $state);
+
+        $service->rewindToTurn(3);
+    }
+
+    public function testRewindToTurnWithoutHandleThrows(): void
+    {
+        // Thesis: calling rewindToTurn without a bound handle raises
+        // RuntimeException — not a silent no-op.
+        $service = $this->createService();
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Cannot rewind');
+        $service->rewindToTurn(1);
     }
 }

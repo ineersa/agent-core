@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Session;
 
+use Ineersa\AgentCore\Application\Replay\TurnTreeReplayFilter;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Run\TurnTreeProjector;
 use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeNodeView;
 use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeView;
 
@@ -23,6 +25,8 @@ final readonly class SessionTurnTreeProvider implements TurnTreeProviderInterfac
     public function __construct(
         private EventStoreInterface $eventStore,
         private TurnTreeProjector $projector,
+        private TurnTreeReplayFilter $replayFilter,
+        private RuntimeEventMapper $eventMapper,
     ) {
     }
 
@@ -52,5 +56,26 @@ final readonly class SessionTurnTreeProvider implements TurnTreeProviderInterfac
             currentLeafTurnNo: $dto->currentLeafTurnNo,
             activePathTurnNos: $dto->activePathTurnNos,
         );
+    }
+
+    public function activePathRuntimeEvents(string $runId, int $leafTurnNo): array
+    {
+        $events = $this->eventStore->allFor($runId);
+
+        if ([] === $events) {
+            return [];
+        }
+
+        $replayDto = $this->replayFilter->filterForLeaf($runId, $events, $leafTurnNo);
+
+        $runtimeEvents = [];
+        foreach ($replayDto->events as $runEvent) {
+            $runtimeEvent = $this->eventMapper->toRuntimeEvent($runEvent);
+            if (null !== $runtimeEvent) {
+                $runtimeEvents[] = $runtimeEvent;
+            }
+        }
+
+        return $runtimeEvents;
     }
 }

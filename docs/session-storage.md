@@ -539,6 +539,42 @@ events remain in `events.jsonl`.
 - `leaf_set` and `turn_branched` are no-op reducers during RunState replay;
   they do not change status, messages, or turn counters.
 
+### Rewind-and-continue semantics
+
+The `/tree` UI provides an actionable turn tree picker. When the user selects a
+non-current leaf and presses Enter, the system performs a **rewind** — resetting
+the conversation context to the selected turn and allowing the user to continue
+in a new direction from that point.
+
+**Leaf-pointer model:** The rewind is implemented as a `leaf_set` event appended
+to the canonical stream. No events are truncated, deleted, or modified. The new
+`leaf_set` changes the current leaf pointer, and all subsequent events are
+appended normally. This is directly analogous to pi-mono's leaf-pointer rewind:
+the leaf ID moves; the history is untouched.
+
+**Turn allocation after rewind:** After a rewind (state.turnNo < globalMaxTurnNo),
+the next `turn_no` allocated is `max(globalMaxTurnNo, state.turnNo) + 1`, NOT the
+old `state.turnNo + 1`. This prevents turn-number collisions with the abandoned
+branch's turns, which would corrupt `nodesByTurnNo`'s int-keyed map in
+`TurnTreeDTO`. For linear sessions with no abandoned branches,
+globalMaxTurnNo === state.turnNo and behavior is unchanged.
+
+**Transcript rebuild:** When a `RunLeafChanged` runtime event arrives at the TUI
+poller, the poller calls `TurnTreeProviderInterface::activePathRuntimeEvents()`
+to fetch only the active-path RuntimeEvents (root → new leaf), resets the
+projector, replays those events through it, and wholesale-replaces
+`$state->transcript`. Old abandoned-branch transcript blocks are removed.
+
+**No file/workspace rollback:** The rewind affects the message context only.
+It does not roll back file edits, tool side-effects, or any filesystem changes.
+SESSION-08 (exact file rewind checkpoints) will address selective file restore.
+
+**No branch_summary:** Abandoned branches do not receive an LLM-generated
+summary. The abandoned turn subtree remains browsable in `/tree` and is
+preserved in `events.jsonl` for future reference, but is not injected into
+the model's context on the new branch. A future enhancement may add
+`branch_summary` entries as first-class tree nodes.
+
 ### Old / no-tree streams
 
 Sessions without `leaf_set`/`parent_turn_no` are treated as a linear single-branch

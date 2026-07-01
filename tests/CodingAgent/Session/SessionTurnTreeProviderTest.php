@@ -4,11 +4,16 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Session;
 
+use Ineersa\AgentCore\Application\Replay\TurnTreeReplayFilter;
+use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Run\TurnTreeProjector;
-use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\CodingAgent\Session\SessionTurnTreeProvider;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
@@ -107,6 +112,58 @@ final class SessionTurnTreeProviderTest extends TestCase
         self::assertTrue($turn3->isCurrentLeaf);
     }
 
+    public function testActivePathRuntimeEventsFiltersToTargetLeaf(): void
+    {
+        // Thesis: activePathRuntimeEvents(runId, leafTurnNo) returns ONLY RuntimeEvents
+        // on the root→target-leaf path (abandoned sibling branch events excluded).
+        // Uses the same branched fixture as testForSessionMapsBranchedStreamCorrectly.
+
+        $events = [
+            $this->runEvent('run_started', 1, 0, ['payload' => ['messages' => []]]),
+            $this->turnAdvanced(2, 1, null),
+            $this->leafSetEvent(3, 1, null, null, 'continue'),
+            $this->runEvent('llm_step_completed', 4, 1, ['text' => 'Answer A']),
+            // Turn 2: branch from turn 1 (abandoned)
+            $this->turnAdvanced(5, 2, 1),
+            $this->leafSetEvent(6, 2, 1, 1, 'continue'),
+            $this->runEvent('llm_step_completed', 7, 2, ['text' => 'Answer B']),
+            // Rewind to turn 1
+            $this->leafSetEvent(8, 1, 2, null, 'rewind'),
+            // Turn 3: new branch from turn 1
+            $this->turnAdvanced(9, 3, 1),
+            $this->leafSetEvent(10, 3, 1, 1, 'continue'),
+            $this->runEvent('llm_step_completed', 11, 3, ['text' => 'Answer C']),
+        ];
+
+        $provider = $this->createProvider($events);
+        $runtimeEvents = $provider->activePathRuntimeEvents($this->runId, 3);
+
+        // Active path to turn 3 = [1, 3]. After filterForLeaf(runId, events, 3)
+        // and toRuntimeEvent (which drops LeafSet events → null), expected seqs:
+        //   1 (run_started → run.started)
+        //   2 (turnAdvanced turn 1 → turn.started)
+        //   4 (llm_step_completed turn 1 → assistant.message_completed)
+        //   9 (turnAdvanced turn 3 → turn.started)
+        //  11 (llm_step_completed turn 3 → assistant.message_completed)
+        // Abandoned turn 2 events (seqs 5, 7) must be excluded.
+        $seqs = array_map(static fn (RuntimeEvent $e): int => $e->seq, $runtimeEvents);
+        $types = array_map(static fn (RuntimeEvent $e): string => $e->type, $runtimeEvents);
+
+        self::assertCount(5, $runtimeEvents, 'Expected only active-path events minus dropped LeafSet');
+
+        self::assertContains(1, $seqs, 'run.started must be included');
+        self::assertContains(2, $seqs, 'turn.started for turn 1 must be included');
+        self::assertContains(4, $seqs, 'assistant.message_completed for turn 1 must be included');
+        self::assertContains(9, $seqs, 'turn.started for turn 3 must be included');
+        self::assertContains(11, $seqs, 'assistant.message_completed for turn 3 must be included');
+
+        self::assertNotContains(5, $seqs, 'turn.started for abandoned turn 2 must be excluded');
+        self::assertNotContains(7, $seqs, 'assistant.message_completed for abandoned turn 2 must be excluded');
+
+        // Order must be by seq (filterForLeaf sorts filtered events by seq)
+        self::assertSame([1, 2, 4, 9, 11], array_values($seqs), 'Active-path events must be in seq order');
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     /**
@@ -119,7 +176,15 @@ final class SessionTurnTreeProviderTest extends TestCase
         $store = $this->createStub(EventStoreInterface::class);
         $store->method('allFor')->willReturn($events);
 
-        return new SessionTurnTreeProvider($store, new TurnTreeProjector());
+        // Use real instances for TurnTreeReplayFilter (final, cannot be doubled)
+        // and RuntimeEventMapper to satisfy the constructor requirements.
+        $projector = new TurnTreeProjector();
+        $replayFilter = new TurnTreeReplayFilter($projector);
+        $eventDispatcher = $this->createStub(EventDispatcherInterface::class);
+        $translator = new RuntimeEventTranslator($eventDispatcher);
+        $eventMapper = new RuntimeEventMapper($translator);
+
+        return new SessionTurnTreeProvider($store, $projector, $replayFilter, $eventMapper);
     }
 
     /**

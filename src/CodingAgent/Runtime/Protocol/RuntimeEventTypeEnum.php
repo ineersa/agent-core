@@ -108,6 +108,7 @@ enum RuntimeEventTypeEnum: string
     case RuntimeReady = 'runtime.ready';
     case ProtocolError = 'protocol.error';
     case RunResumed = 'run.resumed';
+    case RunLeafChanged = 'run.leaf_changed';
 
     // ── Compaction ────────────────────────────────────────────────────
 
@@ -131,7 +132,8 @@ enum RuntimeEventTypeEnum: string
         return match ($this) {
             self::RunStarted, self::TurnStarted, self::TurnCompleted,
             self::TurnFailed, self::TurnCancelled, self::RunCompleted,
-            self::RunFailed, self::RunCancelled, self::RunResumed => 'lifecycle',
+            self::RunFailed, self::RunCancelled, self::RunResumed,
+            self::RunLeafChanged => 'lifecycle',
 
             self::UserMessageSubmitted,
             self::UserMessageQueued => 'user_input',
