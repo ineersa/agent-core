@@ -364,16 +364,38 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         }
 
         $leafChange = $this->treeNavigateOrchestrator->execute($runId, $turnNo, $choice);
-        if (null !== $leafChange && $this->transientSink instanceof InMemoryRuntimeEventSink) {
-            $this->transientSink->emit(new RuntimeEvent(
-                type: RuntimeEventTypeEnum::RunLeafChanged->value,
-                runId: $runId,
-                seq: $leafChange['leaf_set_seq'],
-                payload: [
-                    'turn_no' => $leafChange['turn_no'],
-                    'leaf_set_seq' => $leafChange['leaf_set_seq'],
-                ],
-            ));
+        if ($this->transientSink instanceof InMemoryRuntimeEventSink) {
+            if (TreeFileRestoreChoiceEnum::Cancel === $choice) {
+                $this->transientSink->emit(new RuntimeEvent(
+                    type: RuntimeEventTypeEnum::StatusUpdated->value,
+                    runId: $runId,
+                    seq: 0,
+                    payload: ['status' => 'tree_navigate_cancelled'],
+                ));
+
+                return;
+            }
+            if (TreeFileRestoreChoiceEnum::UndoFileRewind === $choice) {
+                $this->transientSink->emit(new RuntimeEvent(
+                    type: RuntimeEventTypeEnum::StatusUpdated->value,
+                    runId: $runId,
+                    seq: 0,
+                    payload: ['status' => 'file_rewind_undo_ok'],
+                ));
+
+                return;
+            }
+            if (null !== $leafChange) {
+                $this->transientSink->emit(new RuntimeEvent(
+                    type: RuntimeEventTypeEnum::RunLeafChanged->value,
+                    runId: $runId,
+                    seq: $leafChange['leaf_set_seq'],
+                    payload: [
+                        'turn_no' => $leafChange['turn_no'],
+                        'leaf_set_seq' => $leafChange['leaf_set_seq'],
+                    ],
+                ));
+            }
         }
     }
 

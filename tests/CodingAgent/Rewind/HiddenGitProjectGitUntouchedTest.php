@@ -43,7 +43,7 @@ final class HiddenGitProjectGitUntouchedTest extends TestCase
         $backend = new HiddenGitSnapshotBackend($this->runner, new NullLogger(), 2_097_152);
         $scope = new RewindPathScope($this->projectDir);
         $idx = $this->projectDir.'/.hatfield/tmp/cap.index';
-        @mkdir(dirname($idx), 0777, true);
+        @mkdir(dirname($idx), 0700, true);
 
         $tree1 = $backend->captureTreeSha($hiddenGit, $this->projectDir, $idx, $scope);
         $commit1 = $backend->treeShaToCommitSha($hiddenGit, $this->projectDir, $tree1, 'checkpoint');

@@ -25,7 +25,7 @@ final class HiddenGitSnapshotBackendIntegrationTest extends TestCase
         }
 
         $this->projectDir = TestDirectoryIsolation::createProjectTempDir('rewind-git');
-        mkdir($this->projectDir.'/.git', 0777, true);
+        mkdir($this->projectDir.'/.git', 0700, true);
         file_put_contents($this->projectDir.'/tracked.txt', 'v1');
         file_put_contents($this->projectDir.'/untracked.txt', 'u1');
         $this->hiddenGit = $this->projectDir.'/.hatfield/rewind/snapshots/test/git';
@@ -42,7 +42,7 @@ final class HiddenGitSnapshotBackendIntegrationTest extends TestCase
         $backend = new HiddenGitSnapshotBackend(new GitProcessRunner(), $logger, 2_097_152);
         $scope = new RewindPathScope($this->projectDir);
         $idx = $this->projectDir.'/.hatfield/tmp/cap.index';
-        @mkdir(dirname($idx), 0777, true);
+        @mkdir(dirname($idx), 0700, true);
 
         $tree1 = $backend->captureTreeSha($this->hiddenGit, $this->projectDir, $idx, $scope);
         $commit1 = $backend->treeShaToCommitSha($this->hiddenGit, $this->projectDir, $tree1, 'c1');

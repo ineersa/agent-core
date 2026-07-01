@@ -48,6 +48,7 @@ final class TreeNavigateToTurnHandlerTest extends TestCase
         $handler($event);
 
         self::assertSame(RuntimeEventTypeEnum::StatusUpdated->value, $emitted[0]->type);
+        self::assertSame('file_rewind_undo_ok', $emitted[0]->payload['status'] ?? null);
     }
 
     private function createRewindStubNeverCalled(): ConversationRewindInterface

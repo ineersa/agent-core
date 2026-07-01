@@ -38,3 +38,11 @@ Pruned checkpoints remain visible in conversation `/tree` but restore is disable
 ## Privacy
 
 Hidden snapshots may contain **full contents** of project files captured at checkpoint time, including secrets (for example `.env` or credentials files) unless excluded via path rules or `max_file_bytes`. Configure exclusions and retention appropriately for your environment.
+
+## Storage layout
+
+- Hidden git objects live under `.hatfield/rewind/snapshots/<project-hash>/git/` (ignored by the project git via `.hatfield/.gitignore` → `rewind/`).
+- Each checkpoint commit is pinned with its own ref: `refs/hatfield/snapshots/commits/<commit-sha>` so older retained checkpoints stay reachable (not a single moving ref).
+- Retention pruning deletes hidden refs for commits no longer in the retained turn window (and drops latest undo ref only when undo metadata is gone). A best-effort `git gc` runs **only** inside the hidden repository, never in the project `.git`.
+- Orphan objects may remain briefly after ref deletion until GC; pruned turn checkpoints are unavailable in `/tree` even if blobs still exist on disk.
+

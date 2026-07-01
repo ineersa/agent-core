@@ -34,7 +34,7 @@ final readonly class SessionTreeFileRestoreProvider implements TreeFileRestorePr
                 'File rewind unavailable (git missing or disabled in settings).',
             );
 
-            return $this->withUndo($sessionId, $options);
+            return $this->withUndo($sessionId, $options, []);
         }
 
         $events = $this->eventStore->allFor($sessionId);
@@ -46,17 +46,18 @@ final readonly class SessionTreeFileRestoreProvider implements TreeFileRestorePr
             $options[] = new TreeFileRestoreOption('restore_files', 'Restore files to that point', true);
         }
 
-        return $this->withUndo($sessionId, $options);
+        return $this->withUndo($sessionId, $options, $events);
     }
 
     /**
-     * @param list<TreeFileRestoreOption> $options
+     * @param list<\Ineersa\AgentCore\Domain\Event\RunEvent> $events
+     * @param list<TreeFileRestoreOption>                    $options
      *
      * @return list<TreeFileRestoreOption>
      */
-    private function withUndo(string $sessionId, array $options): array
+    private function withUndo(string $sessionId, array $options, array $events): array
     {
-        $undo = $this->ledgerProjector->findUndoCheckpoint($this->eventStore->allFor($sessionId));
+        $undo = $this->ledgerProjector->findUndoCheckpoint($events);
         if (null === $undo) {
             $options[] = new TreeFileRestoreOption(
                 'undo_file_rewind',

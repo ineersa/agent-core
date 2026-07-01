@@ -12,8 +12,8 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
  */
 final class FileRewindLedgerProjector
 {
-    public const string EVENT_CHECKPOINT = 'file_rewind.checkpoint_recorded';
-    public const string EVENT_RESTORED = 'file_rewind.restored';
+    public const string EVENT_CHECKPOINT = RunEventTypeEnum::FileRewindCheckpointRecorded->value;
+    public const string EVENT_RESTORED = RunEventTypeEnum::FileRewindRestored->value;
 
     /** @var list<string> */
     private const RETAINED_KINDS = [

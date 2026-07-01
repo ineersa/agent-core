@@ -77,6 +77,9 @@ final class RuntimeEventTranslator
             // Drop (turn tree metadata — not user-visible)
             RunEventTypeEnum::TurnBranched->value => $this->drop(...),
             RunEventTypeEnum::LeafSet->value => $this->drop(...),
+            // File rewind metadata (not user-visible status flashes)
+            RunEventTypeEnum::FileRewindCheckpointRecorded->value => $this->drop(...),
+            RunEventTypeEnum::FileRewindRestored->value => $this->drop(...),
         ];
     }
 

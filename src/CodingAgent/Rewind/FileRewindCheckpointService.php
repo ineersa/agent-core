@@ -91,6 +91,8 @@ class FileRewindCheckpointService
                     createdAt: new \DateTimeImmutable(),
                 ));
 
+                $this->pruneRetainedRefs($this->eventStore->allFor($runId));
+
                 @unlink($tmpIndex);
             });
         } catch (\Throwable $e) {
@@ -141,6 +143,7 @@ class FileRewindCheckpointService
                 $this->backend->restoreCommitToWorktree($gitDir, $this->projectCwd, $entry->snapshotCommitSha, $scope);
             } catch (\Throwable $e) {
                 $this->appendRestoreEvent($runId, $targetTurnNo, $maxSeq + 1, $entry->snapshotCommitSha, $undoCommit, $identity->projectHash, 'failed', $e->getMessage());
+                $this->pruneRetainedRefs($this->eventStore->allFor($runId));
                 $this->logger->warning('file_rewind.restore_failed_partial', [
                     'run_id' => $runId,
                     'turn_no' => $targetTurnNo,
@@ -152,6 +155,7 @@ class FileRewindCheckpointService
             }
 
             $this->appendRestoreEvent($runId, $targetTurnNo, $maxSeq + 1, $entry->snapshotCommitSha, $undoCommit, $identity->projectHash, 'succeeded', null);
+            $this->pruneRetainedRefs($this->eventStore->allFor($runId));
             unset($this->lastTreeShaByRun[$runId.'|'.$identity->projectHash]);
         });
     }
@@ -202,5 +206,27 @@ class FileRewindCheckpointService
             payload: $payload,
             createdAt: new \DateTimeImmutable(),
         ));
+    }
+
+    /**
+     * @param list<RunEvent> $events
+     */
+    private function pruneRetainedRefs(array $events): void
+    {
+        $byTurn = $this->ledgerProjector->checkpointsByTurn($events, $this->config->maxRetainedTurns);
+        $keep = [];
+        foreach ($byTurn as $entry) {
+            if (!$entry->pruned && '' !== $entry->snapshotCommitSha) {
+                $keep[] = $entry->snapshotCommitSha;
+            }
+        }
+        $undo = $this->ledgerProjector->findUndoCheckpoint($events);
+        if (null !== $undo && '' !== $undo->snapshotCommitSha) {
+            $keep[] = $undo->snapshotCommitSha;
+        }
+
+        $identity = RewindProjectIdentity::fromProjectRoot($this->projectCwd);
+        $gitDir = $this->paths->hiddenGitDir($identity);
+        $this->backend->pruneCommitRefs($gitDir, $this->projectCwd, $keep);
     }
 }

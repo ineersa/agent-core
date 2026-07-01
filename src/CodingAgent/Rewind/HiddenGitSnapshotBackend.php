@@ -13,9 +13,10 @@ use Psr\Log\LoggerInterface;
  */
 final class HiddenGitSnapshotBackend
 {
-    private const string KEEPALIVE_REF = 'refs/hatfield/snapshots/store';
+    private const string COMMIT_REF_PREFIX = 'refs/hatfield/snapshots/commits/';
     private const int DIR_MODE = 0700;
     private const int GIT_ADD_BATCH_SIZE = 50;
+    private const int UPDATE_REF_MAX_RETRIES = 5;
 
     public function __construct(
         private readonly GitProcessRunner $git,
@@ -79,7 +80,7 @@ final class HiddenGitSnapshotBackend
         }
 
         $commit = $r->stdoutTrimmed();
-        $this->pinKeepalive($hiddenGitDir, $workTree, $commit);
+        $this->pinCommitRef($hiddenGitDir, $workTree, $commit);
 
         return $commit;
     }
@@ -132,6 +133,74 @@ final class HiddenGitSnapshotBackend
         $lines = array_filter(array_map('trim', explode("\n", $r->stdout)), static fn (string $line): bool => '' !== $line);
 
         return array_values($lines);
+    }
+
+    public function commitRefName(string $commitSha): string
+    {
+        if (!preg_match('/^[0-9a-f]{4,40}$/i', $commitSha)) {
+            throw new \InvalidArgumentException('Invalid commit sha for ref pin.');
+        }
+
+        return self::COMMIT_REF_PREFIX.strtolower($commitSha);
+    }
+
+    public function pinCommitRef(string $hiddenGitDir, string $workTree, string $commitSha): void
+    {
+        $env = $this->env($hiddenGitDir, $workTree);
+        $ref = $this->commitRefName($commitSha);
+        for ($i = 0; $i < self::UPDATE_REF_MAX_RETRIES; ++$i) {
+            $old = $this->readRefSha($hiddenGitDir, $workTree, $ref);
+            $args = ['update-ref', $ref, $commitSha];
+            if (null !== $old) {
+                $args[] = $old;
+            }
+            $r = $this->git->run($args, $env);
+            if (0 === $r->exitCode) {
+                return;
+            }
+        }
+        throw new \RuntimeException('Failed to pin commit ref after retries.');
+    }
+
+    public function commitShaReachable(string $hiddenGitDir, string $workTree, string $commitSha): bool
+    {
+        $env = $this->env($hiddenGitDir, $workTree);
+        $r = $this->git->run(['rev-parse', '--verify', $commitSha.'^{commit}'], $env);
+
+        return 0 === $r->exitCode && '' !== $r->stdoutTrimmed();
+    }
+
+    /**
+     * @param list<string> $keepCommitShas full commit SHAs to retain refs for
+     */
+    public function pruneCommitRefs(string $hiddenGitDir, string $workTree, array $keepCommitShas): void
+    {
+        $keep = [];
+        foreach ($keepCommitShas as $sha) {
+            if ('' !== $sha) {
+                $keep[strtolower($sha)] = true;
+            }
+        }
+
+        $env = $this->env($hiddenGitDir, $workTree);
+        $r = $this->git->run(['for-each-ref', '--format=%(refname)', self::COMMIT_REF_PREFIX], $env);
+        if (0 !== $r->exitCode) {
+            return;
+        }
+
+        foreach (array_filter(array_map('trim', explode("\n", $r->stdout)), static fn (string $line): bool => '' !== $line) as $ref) {
+            if ('' === $ref || !str_starts_with($ref, self::COMMIT_REF_PREFIX)) {
+                continue;
+            }
+            $sha = substr($ref, \strlen(self::COMMIT_REF_PREFIX));
+            if (isset($keep[strtolower($sha)])) {
+                continue;
+            }
+            $this->git->run(['update-ref', '-d', $ref], $env);
+        }
+
+        // Best-effort object cleanup inside hidden GIT_DIR only (never project .git).
+        $this->git->run(['gc', '--prune=now'], $env);
     }
 
     /**
@@ -207,16 +276,28 @@ final class HiddenGitSnapshotBackend
         array $env,
     ): void {
         $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($workTree, \FilesystemIterator::SKIP_DOTS),
+            new \RecursiveDirectoryIterator(
+                $workTree,
+                \FilesystemIterator::SKIP_DOTS | \FilesystemIterator::FOLLOW_SYMLINKS,
+            ),
             \RecursiveIteratorIterator::SELF_FIRST,
         );
 
         $added = [];
         foreach ($iterator as $file) {
+            if ($file->isLink()) {
+                // Never traverse symlink targets (dirs or files outside the tree).
+                continue;
+            }
             if (!$file->isFile()) {
                 continue;
             }
             $full = str_replace('\\', '/', $file->getPathname());
+            $real = realpath($full);
+            $workReal = realpath($workTree);
+            if (false === $real || false === $workReal || !str_starts_with($real.'/', $workReal.'/')) {
+                continue;
+            }
             $rel = ltrim(str_replace($workTree.'/', '', $full), '/');
             if ($scope->shouldExcludeRelativePath($rel) || !$scope->isInsideProjectRoot($rel)) {
                 continue;
@@ -245,27 +326,10 @@ final class HiddenGitSnapshotBackend
         }
     }
 
-    private function pinKeepalive(string $hiddenGitDir, string $workTree, string $commitSha): void
+    private function readRefSha(string $hiddenGitDir, string $workTree, string $ref): ?string
     {
         $env = $this->env($hiddenGitDir, $workTree);
-        for ($i = 0; $i < 5; ++$i) {
-            $old = $this->readRef($hiddenGitDir, $workTree);
-            $args = ['update-ref', self::KEEPALIVE_REF, $commitSha];
-            if (null !== $old) {
-                $args[] = $old;
-            }
-            $r = $this->git->run($args, $env);
-            if (0 === $r->exitCode) {
-                return;
-            }
-        }
-        throw new \RuntimeException('Failed to update keepalive ref after retries.');
-    }
-
-    private function readRef(string $hiddenGitDir, string $workTree): ?string
-    {
-        $env = $this->env($hiddenGitDir, $workTree);
-        $r = $this->git->run(['rev-parse', self::KEEPALIVE_REF], $env);
+        $r = $this->git->run(['rev-parse', $ref], $env);
         if (0 !== $r->exitCode) {
             return null;
         }

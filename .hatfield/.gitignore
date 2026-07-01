@@ -9,6 +9,7 @@
 
 sessions/
 tmp/
+rewind/
 cache/
 logs/
 messenger.sqlite
