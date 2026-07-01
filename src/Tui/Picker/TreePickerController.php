@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Picker;
 
+use Ineersa\CodingAgent\Runtime\Contract\TreeFileRestoreProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
 use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeNodeView;
 use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeView;
@@ -44,6 +45,7 @@ final class TreePickerController
     public function __construct(
         private readonly TurnTreeProviderInterface $treeProvider,
         private readonly TuiSessionSwitchServiceInterface $switcher,
+        private readonly ?TreeFileRestoreProviderInterface $fileRestoreProvider = null,
     ) {
     }
 
@@ -147,7 +149,10 @@ final class TreePickerController
         $switcher = $this->switcher;
         $currentLeafTurnNo = $tree->currentLeafTurnNo;
 
-        $listWidget->onSelect(static function (SelectEvent $event) use ($picker, $switcher, $currentLeafTurnNo): void {
+        $fileRestoreProvider = $this->fileRestoreProvider;
+        $sessionId = $state->sessionId;
+        $screenRef = $screen;
+        $listWidget->onSelect(static function (SelectEvent $event) use ($picker, $switcher, $currentLeafTurnNo, $fileRestoreProvider, $sessionId, $screenRef): void {
             $turnNo = (int) $event->getItem()['value'];
             $picker->closePicker();
 
@@ -156,7 +161,14 @@ final class TreePickerController
                 return;
             }
 
-            $switcher->rewindToTurn($turnNo);
+            if (null === $fileRestoreProvider) {
+                $switcher->rewindToTurn($turnNo);
+
+                return;
+            }
+
+            $options = $fileRestoreProvider->optionsForTurn($sessionId, $turnNo);
+            $picker->openFileRestoreChoice($turnNo, $options, $switcher, $screenRef);
         });
 
         // ── Escape / Ctrl+C → close without change ──
@@ -167,6 +179,66 @@ final class TreePickerController
         // ── Mount via PickerOverlay ──
         $this->overlay = new PickerOverlay();
         $this->overlay->mount($tui, $screen, $listWidget, $header);
+    }
+
+    /**
+     * @param list<\Ineersa\CodingAgent\Runtime\Contract\TreeFileRestoreOption> $options
+     */
+    public function openFileRestoreChoice(
+        int $turnNo,
+        array $options,
+        TuiSessionSwitchServiceInterface $switcher,
+        ChatScreen $screen,
+    ): void {
+        if (null === $this->tui) {
+            return;
+        }
+
+        $items = [];
+        foreach ($options as $opt) {
+            $label = $opt->label;
+            if (!$opt->enabled && null !== $opt->disabledReason) {
+                $label .= ' — '.$opt->disabledReason;
+            }
+            $items[] = ['label' => $label, 'value' => $opt->id, 'disabled' => !$opt->enabled];
+        }
+
+        $header = new TextWidget(
+            text: $screen->theme()->muted('File rewind — choose what to do with project files'),
+            truncate: true,
+        );
+
+        $kb = new Keybindings([
+            'select_up' => [Key::UP],
+            'select_down' => [Key::DOWN],
+            'select_confirm' => [Key::ENTER],
+            'select_cancel' => [Key::ESCAPE, Key::ctrl('c')],
+        ]);
+
+        $listWidget = new SelectListWidget(items: $items, maxVisible: 8, keybindings: $kb);
+        $picker = $this;
+        $listWidget->onSelect(static function (SelectEvent $event) use ($turnNo, $switcher, $screen, $picker): void {
+            $choice = (string) $event->getItem()['value'];
+            if (true === ($event->getItem()['disabled'] ?? false)) {
+                $screen->setStatus('tree', 'That option is unavailable.');
+                $screen->refresh();
+
+                return;
+            }
+            $picker->closePicker();
+            try {
+                $switcher->navigateTreeToTurn($turnNo, $choice);
+            } catch (\Throwable $e) {
+                $screen->setStatus('tree', $e->getMessage());
+            }
+            $screen->refresh();
+        });
+        $listWidget->onCancel(static function (CancelEvent $event) use ($picker): void {
+            $picker->closePicker();
+        });
+
+        $this->overlay = new PickerOverlay();
+        $this->overlay->mount($this->tui, $screen, $listWidget, $header);
     }
 
     /**

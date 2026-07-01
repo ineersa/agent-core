@@ -47,6 +47,10 @@ enum RunEventTypeEnum: string
     case TurnBranched = 'turn_branched';
     case LeafSet = 'leaf_set';
 
+    // ── File rewind (append-only canonical) ──────────────────────────────
+    case FileRewindCheckpointRecorded = 'file_rewind.checkpoint_recorded';
+    case FileRewindRestored = 'file_rewind.restored';
+
     /**
      * Whether the given event type string belongs to the ordered lifecycle stream
      * (the 10 core cases: AgentStart through AgentEnd).

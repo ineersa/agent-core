@@ -20,6 +20,7 @@ use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Mcp\McpSessionLifecycleDispatcher;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateService;
+use Ineersa\CodingAgent\Rewind\FileRewindCheckpointService;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
@@ -52,6 +53,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         private readonly EventStoreInterface $eventStore,
         private readonly RuntimeEventMapper $mapper,
         private readonly RunRewindService $runRewindService,
+        private readonly FileRewindCheckpointService $fileRewindCheckpointService,
         private readonly SystemPromptBuilder $systemPromptBuilder,
         private readonly AgentsContextDiscovery $agentsContextDiscovery,
         private readonly AgentsContextRenderer $agentsContextRenderer,
@@ -248,6 +250,8 @@ final class InProcessAgentSessionClient implements AgentSessionClient
             'answer_tool_question' => $this->handleAnswerToolQuestion($runId, $command),
             'shell_command' => $this->handleShellCommandSend($runId, $command),
             'rewind_to_turn' => $this->handleInProcessRewind($runId, $command),
+            'file_rewind_restore' => $this->handleInProcessFileRewindRestore($runId, $command),
+            'file_rewind_undo' => $this->handleInProcessFileRewindUndo($runId),
             default => throw new \InvalidArgumentException(\sprintf('Unknown UserCommand type: "%s"', $command->type)),
         };
     }

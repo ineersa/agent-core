@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
+use Ineersa\CodingAgent\Runtime\Contract\TreeFileRestoreProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\SlashCommandRegistry;
@@ -24,6 +25,7 @@ final class TreeCommandRegistrar implements TuiListenerRegistrar
         private readonly SlashCommandRegistry $commandRegistry,
         private readonly TurnTreeProviderInterface $treeProvider,
         private readonly TuiSessionSwitchServiceInterface $switcher,
+        private readonly ?TreeFileRestoreProviderInterface $fileRestoreProvider = null,
     ) {
     }
 
@@ -35,7 +37,7 @@ final class TreeCommandRegistrar implements TuiListenerRegistrar
 
         // Create picker controller with tree provider + session switch service,
         // and wire per-iteration runtime refs.
-        $picker = new TreePickerController($this->treeProvider, $this->switcher);
+        $picker = new TreePickerController($this->treeProvider, $this->switcher, $this->fileRestoreProvider);
         $picker->setRuntimeRefs($tui, $screen, $state);
 
         // Create handler

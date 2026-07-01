@@ -1410,3 +1410,15 @@ In headless/noninteractive contexts with `auto_deny_in_noninteractive: true`
 
 See [HITL and Approval Architecture](hitl-and-approvals.md) for the full
 end-to-end flow.
+
+### `rewind.file_snapshots`
+
+Hidden-git file checkpoints for `/tree` restore (SESSION-08).
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `enabled` | bool | `true` | Enable capture/restore |
+| `max_retained_turns` | int | `100` | Keep checkpoints for newest N turns |
+| `max_file_bytes` | int | `2097152` | Exclude files larger than this from snapshots |
+
+See `docs/file-rewind.md`.

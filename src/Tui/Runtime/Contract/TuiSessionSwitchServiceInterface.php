@@ -55,6 +55,11 @@ interface TuiSessionSwitchServiceInterface
     public function rewindToTurn(int $targetTurnNo): void;
 
     /**
+     * @param 'keep_files'|'restore_files'|'undo_file_rewind'|'cancel' $fileChoice
+     */
+    public function navigateTreeToTurn(int $targetTurnNo, string $fileChoice): void;
+
+    /**
      * True when a pending switch has been requested but not yet consumed.
      */
     public function hasPendingSwitch(): bool;

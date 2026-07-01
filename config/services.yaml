@@ -114,6 +114,23 @@ services:
       $denormalizer: '@Symfony\Component\Serializer\SerializerInterface'
       $cwd: '%app.cwd%'
 
+
+  Ineersa\CodingAgent\Config\FileRewindConfig:
+    factory: ['Ineersa\CodingAgent\Config\FileRewindConfig', 'fromAppConfig']
+    arguments:
+      - '@Ineersa\CodingAgent\Config\AppConfig'
+
+  Ineersa\CodingAgent\Runtime\Contract\TreeFileRestoreProviderInterface:
+    alias: Ineersa\CodingAgent\Rewind\SessionTreeFileRestoreProvider
+
+  Ineersa\CodingAgent\Rewind\HiddenGitSnapshotBackend:
+    arguments:
+      $maxFileBytes: '@=service("Ineersa\\CodingAgent\\Config\\FileRewindConfig").maxFileBytes'
+
+  Ineersa\CodingAgent\Rewind\FileRewindCheckpointService:
+    arguments:
+      $projectCwd: '@=service("Ineersa\\CodingAgent\\Config\\AppConfig").cwd'
+
   Ineersa\CodingAgent\Config\CompactionConfig:
     factory: ['Ineersa\CodingAgent\Config\CompactionConfig', 'fromAppConfig']
     arguments:

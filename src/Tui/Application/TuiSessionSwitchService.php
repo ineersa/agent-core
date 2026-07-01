@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Application;
 
+use Ineersa\CodingAgent\Rewind\FileRewindCheckpointService;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
@@ -50,6 +51,7 @@ class TuiSessionSwitchService implements TuiSessionSwitchServiceInterface
         private readonly QuestionController $questionController,
         private readonly TranscriptProjectorInterface $projector,
         private readonly LoggerInterface $logger,
+        private readonly FileRewindCheckpointService $fileRewindCheckpointService,
     ) {
     }
 
@@ -143,6 +145,39 @@ class TuiSessionSwitchService implements TuiSessionSwitchServiceInterface
     public function hasPendingSwitch(): bool
     {
         return $this->isPendingDraft || null !== $this->pendingResumeSessionId;
+    }
+
+    public function navigateTreeToTurn(int $targetTurnNo, string $fileChoice): void
+    {
+        if ('cancel' === $fileChoice) {
+            return;
+        }
+
+        if ('undo_file_rewind' === $fileChoice) {
+            $runId = (null !== $this->state && null !== $this->state->handle) ? $this->state->handle->runId : '';
+            if ('' === $runId) {
+                throw new \RuntimeException('Cannot undo file rewind: no active session.');
+            }
+            $this->fileRewindCheckpointService->undoLastRestore($runId);
+
+            return;
+        }
+
+        if ('restore_files' === $fileChoice) {
+            $runId = (null !== $this->state && null !== $this->state->handle) ? $this->state->handle->runId : '';
+            if ('' === $runId) {
+                throw new \RuntimeException('Cannot restore files: no active session.');
+            }
+            try {
+                $this->fileRewindCheckpointService->restoreForTurn($runId, $targetTurnNo);
+            } catch (\Throwable $e) {
+                throw new \RuntimeException('File restore failed: '.$e->getMessage(), previous: $e);
+            }
+        }
+
+        if ('keep_files' === $fileChoice || 'restore_files' === $fileChoice) {
+            $this->rewindToTurn($targetTurnNo);
+        }
     }
 
     public function rewindToTurn(int $targetTurnNo): void
