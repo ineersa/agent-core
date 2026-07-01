@@ -127,6 +127,13 @@ services:
     arguments:
       $maxFileBytes: '@=service("Ineersa\\CodingAgent\\Config\\FileRewindConfig").maxFileBytes'
 
+  Ineersa\CodingAgent\Rewind\ConversationRewindInterface:
+    alias: Ineersa\CodingAgent\Rewind\RunRewindServiceAdapter
+
+  Ineersa\CodingAgent\Rewind\RunRewindServiceAdapter:
+    arguments:
+      $inner: '@Ineersa\AgentCore\Application\Handler\RunRewindService'
+
   Ineersa\CodingAgent\Rewind\FileRewindCheckpointService:
     arguments:
       $projectCwd: '@=service("Ineersa\\CodingAgent\\Config\\AppConfig").cwd'

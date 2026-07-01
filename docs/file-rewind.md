@@ -33,3 +33,8 @@ Pruned checkpoints remain visible in conversation `/tree` but restore is disable
 - Paths outside project root are never restored or deleted.
 - `.git/` and `.hatfield/` runtime internals are excluded from snapshots.
 - Restore captures an undo checkpoint before mutating the worktree.
+
+
+## Privacy
+
+Hidden snapshots may contain **full contents** of project files captured at checkpoint time, including secrets (for example `.env` or credentials files) unless excluded via path rules or `max_file_bytes`. Configure exclusions and retention appropriately for your environment.

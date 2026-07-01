@@ -24,7 +24,7 @@ final readonly class RewindStoragePaths
     {
         $dir = rtrim($this->appConfig->cwd, '/').'/.hatfield/rewind/snapshots/'.$identity->projectHash.'/tmp';
         if (!is_dir($dir)) {
-            mkdir($dir, 0777, true);
+            mkdir($dir, 0700, true);
         }
 
         return str_replace('\\', '/', $dir);

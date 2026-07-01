@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Application;
 
-use Ineersa\CodingAgent\Rewind\FileRewindCheckpointService;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
@@ -51,7 +50,6 @@ class TuiSessionSwitchService implements TuiSessionSwitchServiceInterface
         private readonly QuestionController $questionController,
         private readonly TranscriptProjectorInterface $projector,
         private readonly LoggerInterface $logger,
-        private readonly FileRewindCheckpointService $fileRewindCheckpointService,
     ) {
     }
 
@@ -149,36 +147,31 @@ class TuiSessionSwitchService implements TuiSessionSwitchServiceInterface
 
     public function navigateTreeToTurn(int $targetTurnNo, string $fileChoice): void
     {
+        if (null === $this->state?->handle || null === $this->client) {
+            throw new \RuntimeException('Cannot navigate tree: no active session or run handle.');
+        }
+
+        $allowed = ['keep_files', 'restore_files', 'undo_file_rewind', 'cancel'];
+        if (!\in_array($fileChoice, $allowed, true)) {
+            throw new \InvalidArgumentException('Unknown file restore choice: '.$fileChoice);
+        }
+
+        $runId = $this->state->handle->runId;
+
         if ('cancel' === $fileChoice) {
             return;
         }
 
-        if ('undo_file_rewind' === $fileChoice) {
-            $runId = (null !== $this->state && null !== $this->state->handle) ? $this->state->handle->runId : '';
-            if ('' === $runId) {
-                throw new \RuntimeException('Cannot undo file rewind: no active session.');
-            }
-            $this->fileRewindCheckpointService->undoLastRestore($runId);
+        // Cancel active run before destructive tree navigation (matches rewind_to_turn semantics).
+        $this->cancelCurrentRun();
 
-            return;
-        }
-
-        // Synchronous in-process restore before rewind_to_turn keeps ordering in process and in-process TUI modes.
-        if ('restore_files' === $fileChoice) {
-            $runId = (null !== $this->state && null !== $this->state->handle) ? $this->state->handle->runId : '';
-            if ('' === $runId) {
-                throw new \RuntimeException('Cannot restore files: no active session.');
-            }
-            try {
-                $this->fileRewindCheckpointService->restoreForTurn($runId, $targetTurnNo);
-            } catch (\Throwable $e) {
-                throw new \RuntimeException('File restore failed: '.$e->getMessage(), previous: $e);
-            }
-        }
-
-        if ('keep_files' === $fileChoice || 'restore_files' === $fileChoice) {
-            $this->rewindToTurn($targetTurnNo);
-        }
+        $this->client->send($runId, new UserCommand(
+            type: 'tree_navigate_to_turn',
+            payload: [
+                'turn_no' => $targetTurnNo,
+                'file_choice' => $fileChoice,
+            ],
+        ));
     }
 
     public function rewindToTurn(int $targetTurnNo): void

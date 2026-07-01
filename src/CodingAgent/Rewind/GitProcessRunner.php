@@ -22,17 +22,21 @@ final class GitProcessRunner
             2 => ['pipe', 'w'],
         ];
 
-        $baseEnv = getenv();
-        $mergedEnv = array_merge(\is_array($baseEnv) ? $baseEnv : [], $env);
+        $baseEnv = \is_array(getenv()) ? getenv() : [];
+        $safeKeys = ['PATH', 'HOME', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TMPDIR', 'USER', 'LOGNAME', 'SHELL'];
         $procEnv = [];
-        foreach ($mergedEnv as $k => $v) {
-            if (!\is_string($k)) {
+        foreach ($safeKeys as $key) {
+            $v = $baseEnv[$key] ?? getenv($key);
+            if (\is_string($v) && '' !== $v) {
+                $procEnv[$key] = $v;
+            }
+        }
+        foreach ($env as $k => $v) {
+            if (!\is_string($k) || !\is_string($v)) {
                 continue;
             }
-            if (\is_string($v)) {
+            if (str_starts_with($k, 'GIT_')) {
                 $procEnv[$k] = $v;
-            } elseif (\is_int($v) || \is_float($v)) {
-                $procEnv[$k] = (string) $v;
             }
         }
 

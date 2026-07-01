@@ -9,5 +9,4 @@ enum FileRewindCheckpointKindEnum: string
     case UserBoundary = 'user_boundary';
     case AssistantBoundary = 'assistant_boundary';
     case RestoreUndo = 'restore_undo';
-    case CompactionAlias = 'compaction_alias';
 }

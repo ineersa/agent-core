@@ -101,6 +101,10 @@ final class FileRewindLedgerProjector
             if ('' === $undoSha) {
                 continue;
             }
+            $status = (string) ($event->payload['status'] ?? 'succeeded');
+            if ('succeeded' !== $status && 'failed' !== $status) {
+                continue;
+            }
             $undo = new FileRewindLedgerEntry(
                 turnNo: (int) ($event->payload['turn_no'] ?? $event->turnNo),
                 eventSeq: $event->seq,

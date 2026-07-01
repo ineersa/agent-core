@@ -567,7 +567,7 @@ projector, replays those events through it, and wholesale-replaces
 
 **No file/workspace rollback:** The rewind affects the message context only.
 It does not roll back file edits, tool side-effects, or any filesystem changes.
-SESSION-08 (exact file rewind checkpoints) will address selective file restore.
+Optional **file/workspace rollback** (SESSION-08) uses Hatfield-owned hidden git snapshots; conversation replay still comes from `events.jsonl`.
 
 **No branch_summary:** Abandoned branches do not receive an LLM-generated
 summary. The abandoned turn subtree remains browsable in `/tree` and is
@@ -606,3 +606,9 @@ reusable without destructive truncation or separate tree files.
 - [Hatfield Settings](settings.md) — configuring session path and theme
 - [TUI Architecture](tui-architecture.md) — TUI widget layout and extension system
 - [Architecture Rollout Plan](../.pi/plans/architecture_rollout_plan.md) — overall project architecture history
+
+
+### File rewind events (SESSION-08)
+
+- `file_rewind.checkpoint_recorded` — hidden-git snapshot bound to a turn (`kind`: `user_boundary`, `assistant_boundary`, or `restore_undo`).
+- `file_rewind.restored` — file restore attempt metadata (`status`: `succeeded` or `failed`, plus `undo_snapshot_commit_sha` for undo).

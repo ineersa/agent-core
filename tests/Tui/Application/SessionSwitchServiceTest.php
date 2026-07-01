@@ -9,7 +9,6 @@ use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
-use Ineersa\CodingAgent\Rewind\FileRewindCheckpointService;
 use Ineersa\Tui\Application\TuiSessionSwitchService;
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
@@ -42,14 +41,12 @@ final class SessionSwitchServiceTest extends TestCase
         ?QuestionController $controller = null,
         ?TranscriptProjectorInterface $projector = null,
         ?LoggerInterface $logger = null,
-        ?FileRewindCheckpointService $fileRewind = null,
     ): TuiSessionSwitchService {
         return new TuiSessionSwitchService(
             $coordinator ?? $this->createCoordinator(),
             $controller ?? $this->createController($coordinator ?? $this->createCoordinator()),
             $projector ?? $this->createStub(TranscriptProjectorInterface::class),
             $logger ?? $this->createStub(LoggerInterface::class),
-            $fileRewind ?? $this->createStub(FileRewindCheckpointService::class),
         );
     }
 
@@ -74,7 +71,7 @@ final class SessionSwitchServiceTest extends TestCase
         $projector = $this->createStub(TranscriptProjectorInterface::class);
         $tui = new Tui();
 
-        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, $this->createStub(LoggerInterface::class), $this->createStub(FileRewindCheckpointService::class));
+        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, $this->createStub(LoggerInterface::class));
         $service->bindForIteration($tui, $this->createStub(AgentSessionClient::class), new TuiSessionState('old', false));
 
         $service->requestResume('42');
@@ -99,7 +96,7 @@ final class SessionSwitchServiceTest extends TestCase
         $projector = $this->createStub(TranscriptProjectorInterface::class);
         $tui = new Tui();
 
-        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, $this->createStub(LoggerInterface::class), $this->createStub(FileRewindCheckpointService::class));
+        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, $this->createStub(LoggerInterface::class));
         $service->bindForIteration($tui, $this->createStub(AgentSessionClient::class), new TuiSessionState('old', false));
 
         $service->requestNewDraft();
@@ -122,7 +119,7 @@ final class SessionSwitchServiceTest extends TestCase
         $projector = $this->createStub(TranscriptProjectorInterface::class);
         $tui = new Tui();
 
-        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, $this->createStub(LoggerInterface::class), $this->createStub(FileRewindCheckpointService::class));
+        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, $this->createStub(LoggerInterface::class));
         $service->bindForIteration($tui, $this->createStub(AgentSessionClient::class), new TuiSessionState('old', false));
 
         $req = new StartRunRequest(prompt: 'from /new', runId: '');
@@ -154,7 +151,7 @@ final class SessionSwitchServiceTest extends TestCase
         $projector = $this->createStub(TranscriptProjectorInterface::class);
         $tui = new Tui();
 
-        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, $this->createStub(LoggerInterface::class), $this->createStub(FileRewindCheckpointService::class));
+        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, $this->createStub(LoggerInterface::class));
         $service->bindForIteration($tui, $this->createStub(AgentSessionClient::class), new TuiSessionState('old', false));
 
         $service->requestNewDraft();
@@ -188,7 +185,7 @@ final class SessionSwitchServiceTest extends TestCase
         $state = new TuiSessionState('old', false);
         $state->handle = new RunHandle('old-run-id', 'running');
 
-        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, $this->createStub(LoggerInterface::class), $this->createStub(FileRewindCheckpointService::class));
+        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, $this->createStub(LoggerInterface::class));
         $service->bindForIteration($tui, $client, $state);
 
         $service->requestResume('42');
@@ -208,7 +205,7 @@ final class SessionSwitchServiceTest extends TestCase
         $state = new TuiSessionState('old', false);
         // No handle — no active run
 
-        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, $this->createStub(LoggerInterface::class), $this->createStub(FileRewindCheckpointService::class));
+        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, $this->createStub(LoggerInterface::class));
         $service->bindForIteration($tui, $this->createStub(AgentSessionClient::class), $state);
 
         // Should not throw
@@ -227,7 +224,7 @@ final class SessionSwitchServiceTest extends TestCase
 
         $tui = new Tui();
 
-        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, $this->createStub(LoggerInterface::class), $this->createStub(FileRewindCheckpointService::class));
+        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, $this->createStub(LoggerInterface::class));
         $service->bindForIteration($tui, $this->createStub(AgentSessionClient::class), new TuiSessionState('old', false));
 
         $service->requestResume('42');
@@ -267,7 +264,7 @@ final class SessionSwitchServiceTest extends TestCase
         $state->handle = new RunHandle('old-run-id', 'completed');
         $state->activity = $activity;
 
-        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, $this->createStub(LoggerInterface::class), $this->createStub(FileRewindCheckpointService::class));
+        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, $this->createStub(LoggerInterface::class));
         $service->bindForIteration($tui, $client, $state);
 
         $service->requestResume('42');
@@ -294,7 +291,7 @@ final class SessionSwitchServiceTest extends TestCase
         $state->handle = new RunHandle('old-run-id', 'completed');
         $state->activity = $activity;
 
-        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, $this->createStub(LoggerInterface::class), $this->createStub(FileRewindCheckpointService::class));
+        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, $this->createStub(LoggerInterface::class));
         $service->bindForIteration($tui, $client, $state);
 
         $service->requestNewDraft();
@@ -332,7 +329,7 @@ final class SessionSwitchServiceTest extends TestCase
         $state = new TuiSessionState('old', false);
         $state->handle = new RunHandle('old-run-id', 'running');
 
-        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, $logger, $this->createStub(FileRewindCheckpointService::class));
+        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, $logger);
         $service->bindForIteration($tui, $client, $state);
 
         // Should not throw — switch must proceed
@@ -372,7 +369,7 @@ final class SessionSwitchServiceTest extends TestCase
         $state = new TuiSessionState('test', false);
         $state->handle = new RunHandle('test-run-id', 'running');
 
-        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, $this->createStub(LoggerInterface::class), $this->createStub(FileRewindCheckpointService::class));
+        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, $this->createStub(LoggerInterface::class));
         $service->bindForIteration($tui, $client, $state);
 
         $service->rewindToTurn(3);
@@ -389,79 +386,53 @@ final class SessionSwitchServiceTest extends TestCase
     }
 
 
-    public function testNavigateTreeRestoreFilesBeforeRewind(): void
+    public function testNavigateTreeSendsTreeNavigateCommandWithFileChoice(): void
     {
-        $fileRewind = $this->createMock(FileRewindCheckpointService::class);
-        $fileRewind->expects(self::once())->method('restoreForTurn')->with('test-run-id', 1);
-
         $client = $this->createMock(AgentSessionClient::class);
         $client->expects(self::once())->method('cancel')->with('test-run-id');
         $client->expects(self::once())->method('send')->with(
             'test-run-id',
             self::callback(static fn (UserCommand $cmd): bool =>
-                'rewind_to_turn' === $cmd->type && 1 === ($cmd->payload['turn_no'] ?? null)
+                'tree_navigate_to_turn' === $cmd->type
+                && 1 === ($cmd->payload['turn_no'] ?? null)
+                && 'restore_files' === ($cmd->payload['file_choice'] ?? null)
             ),
         );
 
         $state = new TuiSessionState('test', false);
         $state->handle = new RunHandle('test-run-id', 'running');
         $tui = new Tui();
-        $service = new TuiSessionSwitchService(
-            $this->createCoordinator(),
-            $this->createController($this->createCoordinator()),
-            $this->createStub(TranscriptProjectorInterface::class),
-            $this->createStub(LoggerInterface::class),
-            $fileRewind,
-        );
+        $service = $this->createService();
         $service->bindForIteration($tui, $client, $state);
         $service->navigateTreeToTurn(1, 'restore_files');
     }
 
-    public function testNavigateTreeRestoreFailureDoesNotRewind(): void
+    public function testNavigateTreeCancelDoesNotSend(): void
     {
-        $fileRewind = $this->createMock(FileRewindCheckpointService::class);
-        $fileRewind->expects(self::once())->method('restoreForTurn')->willThrowException(new \RuntimeException('restore failed'));
-
         $client = $this->createMock(AgentSessionClient::class);
         $client->expects(self::never())->method('send');
+        $client->expects(self::never())->method('cancel');
 
         $state = new TuiSessionState('test', false);
         $state->handle = new RunHandle('test-run-id', 'running');
         $tui = new Tui();
-        $service = new TuiSessionSwitchService(
-            $this->createCoordinator(),
-            $this->createController($this->createCoordinator()),
-            $this->createStub(TranscriptProjectorInterface::class),
-            $this->createStub(LoggerInterface::class),
-            $fileRewind,
-        );
+        $service = $this->createService();
         $service->bindForIteration($tui, $client, $state);
-
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('File restore failed');
-        $service->navigateTreeToTurn(1, 'restore_files');
+        $service->navigateTreeToTurn(1, 'cancel');
     }
 
-    public function testNavigateTreeUndoDoesNotRewind(): void
+    public function testNavigateTreeUnknownChoiceThrows(): void
     {
-        $fileRewind = $this->createMock(FileRewindCheckpointService::class);
-        $fileRewind->expects(self::once())->method('undoLastRestore')->with('test-run-id');
-
-        $client = $this->createMock(AgentSessionClient::class);
-        $client->expects(self::never())->method('send');
-
+        $client = $this->createStub(AgentSessionClient::class);
         $state = new TuiSessionState('test', false);
         $state->handle = new RunHandle('test-run-id', 'running');
         $tui = new Tui();
-        $service = new TuiSessionSwitchService(
-            $this->createCoordinator(),
-            $this->createController($this->createCoordinator()),
-            $this->createStub(TranscriptProjectorInterface::class),
-            $this->createStub(LoggerInterface::class),
-            $fileRewind,
-        );
+        $service = $this->createService();
         $service->bindForIteration($tui, $client, $state);
-        $service->navigateTreeToTurn(99, 'undo_file_rewind');
+
+        $this->expectException(\InvalidArgumentException::class);
+        $service->navigateTreeToTurn(1, 'bogus');
     }
+
 
 }

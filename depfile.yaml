@@ -166,6 +166,11 @@ parameters:
         - type: directory
           value: src/CodingAgent/Config/.*
 
+    - name: AppRewind
+      collectors:
+        - type: directory
+          value: src/CodingAgent/Rewind/.*
+
     - name: AppSession
       collectors:
         - type: directory
@@ -475,6 +480,12 @@ parameters:
     TuiUtility:
       - SymfonyProcess
 
+    AppRewind:
+      - AgentCore
+      - AppConfig
+      - AppRuntimeContract
+      - AppSession
+
     AppRuntimeInternals:
       - AppRuntimeContract
       - AppRuntimeProjection
@@ -484,6 +495,7 @@ parameters:
       - AppAgent
       - AppTool
       - AppPromptTemplate
+      - AppRewind
       - AgentCore
       - AppConfig
       - AppMcpBroker

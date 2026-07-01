@@ -14,6 +14,8 @@ use Psr\Log\LoggerInterface;
 final class HiddenGitSnapshotBackend
 {
     private const string KEEPALIVE_REF = 'refs/hatfield/snapshots/store';
+    private const int DIR_MODE = 0700;
+    private const int GIT_ADD_BATCH_SIZE = 50;
 
     public function __construct(
         private readonly GitProcessRunner $git,
@@ -25,7 +27,9 @@ final class HiddenGitSnapshotBackend
     public function ensureInitialized(string $hiddenGitDir, string $workTree): void
     {
         if (!is_dir($hiddenGitDir)) {
-            mkdir($hiddenGitDir, 0777, true);
+            mkdir($hiddenGitDir, self::DIR_MODE, true);
+        } else {
+            @chmod($hiddenGitDir, self::DIR_MODE);
         }
 
         $env = $this->env($hiddenGitDir, $workTree);
@@ -87,13 +91,13 @@ final class HiddenGitSnapshotBackend
         RewindPathScope $scope,
     ): void {
         $env = $this->env($hiddenGitDir, $workTree);
-        $currentTree = $this->commitTreeSha($hiddenGitDir, $workTree, $commitSha);
+        $targetTree = $this->commitTreeSha($hiddenGitDir, $workTree, $commitSha);
         $tmpIndex = $workTree.'/.hatfield/tmp/rewind-restore-'.bin2hex(random_bytes(4)).'.index';
-        @mkdir(\dirname($tmpIndex), 0777, true);
+        @mkdir(\dirname($tmpIndex), self::DIR_MODE, true);
 
         try {
             $currentIndexTree = $this->captureTreeSha($hiddenGitDir, $workTree, $tmpIndex, $scope);
-            $toDelete = $this->pathsOnlyInTree($hiddenGitDir, $workTree, $currentIndexTree, $currentTree, $scope);
+            $toDelete = $this->pathsOnlyInTree($hiddenGitDir, $workTree, $currentIndexTree, $targetTree, $scope);
             foreach ($toDelete as $rel) {
                 if (!$scope->isInsideProjectRoot($rel)) {
                     throw new \RuntimeException('Refusing to delete path outside project root: '.$rel);
@@ -106,10 +110,7 @@ final class HiddenGitSnapshotBackend
                 }
             }
 
-            $r = $this->git->run(['restore', '--source='.$commitSha, '--worktree', '--', '.'], $env);
-            if (0 !== $r->exitCode) {
-                throw new \RuntimeException('git restore failed: '.$r->stderr);
-            }
+            $this->checkoutCommitToWorktree($hiddenGitDir, $workTree, $commitSha, $scope, $env);
         } finally {
             if (is_file($tmpIndex)) {
                 unlink($tmpIndex);
@@ -131,6 +132,35 @@ final class HiddenGitSnapshotBackend
         $lines = array_filter(array_map('trim', explode("\n", $r->stdout)), static fn (string $line): bool => '' !== $line);
 
         return array_values($lines);
+    }
+
+    /**
+     * @param array<string, string> $env
+     */
+    private function checkoutCommitToWorktree(
+        string $hiddenGitDir,
+        string $workTree,
+        string $commitSha,
+        RewindPathScope $scope,
+        array $env,
+    ): void {
+        $tmpIndex = $workTree.'/.hatfield/tmp/rewind-checkout-'.bin2hex(random_bytes(4)).'.index';
+        @mkdir(\dirname($tmpIndex), self::DIR_MODE, true);
+        $checkoutEnv = $env + ['GIT_INDEX_FILE' => $tmpIndex];
+        try {
+            $r = $this->git->run(['read-tree', $commitSha], $checkoutEnv);
+            if (0 !== $r->exitCode) {
+                throw new \RuntimeException('git read-tree failed: '.$r->stderr);
+            }
+            $r = $this->git->run(['checkout-index', '-a', '-f'], $checkoutEnv);
+            if (0 !== $r->exitCode) {
+                throw new \RuntimeException('git checkout-index failed: '.$r->stderr);
+            }
+        } finally {
+            if (is_file($tmpIndex)) {
+                unlink($tmpIndex);
+            }
+        }
     }
 
     private function commitTreeSha(string $hiddenGitDir, string $workTree, string $commitSha): string
@@ -203,7 +233,7 @@ final class HiddenGitSnapshotBackend
             return;
         }
 
-        foreach (array_chunk($added, 200) as $chunk) {
+        foreach (array_chunk($added, self::GIT_ADD_BATCH_SIZE) as $chunk) {
             $args = array_merge(['add', '-f', '--'], $chunk);
             $r = $this->git->run($args, $env);
             if (0 !== $r->exitCode) {

@@ -47,6 +47,7 @@ final class FileRewindLedgerProjectorTest extends TestCase
                 'turn_no' => 2,
                 'undo_snapshot_commit_sha' => 'undo-sha',
                 'project_hash' => 'ph',
+                'status' => 'succeeded',
             ], new \DateTimeImmutable()),
         ];
 
@@ -54,6 +55,23 @@ final class FileRewindLedgerProjectorTest extends TestCase
         self::assertNotNull($undo);
         self::assertSame('undo-sha', $undo->snapshotCommitSha);
     }
+
+    public function testFindUndoFromFailedRestore(): void
+    {
+        $events = [
+            new RunEvent('r1', 1, 2, RunEventTypeEnum::FileRewindRestored->value, [
+                'turn_no' => 2,
+                'undo_snapshot_commit_sha' => 'undo-failed',
+                'project_hash' => 'ph',
+                'status' => 'failed',
+            ], new \DateTimeImmutable()),
+        ];
+
+        $undo = (new FileRewindLedgerProjector())->findUndoCheckpoint($events);
+        self::assertNotNull($undo);
+        self::assertSame('undo-failed', $undo->snapshotCommitSha);
+    }
+
     public function testUndoCheckpointIndependentOfTurnRetention(): void
     {
         $events = [];
@@ -76,6 +94,7 @@ final class FileRewindLedgerProjectorTest extends TestCase
             'turn_no' => 1,
             'undo_snapshot_commit_sha' => 'undo-old-turn',
             'project_hash' => 'ph',
+            'status' => 'succeeded',
         ], new \DateTimeImmutable());
 
         $projector = new FileRewindLedgerProjector();
@@ -88,5 +107,4 @@ final class FileRewindLedgerProjectorTest extends TestCase
         self::assertSame('undo-old-turn', $undo->snapshotCommitSha);
         self::assertFalse($undo->pruned);
     }
-
 }

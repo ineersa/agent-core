@@ -20,7 +20,8 @@ use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Mcp\McpSessionLifecycleDispatcher;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateService;
-use Ineersa\CodingAgent\Rewind\FileRewindCheckpointService;
+use Ineersa\CodingAgent\Rewind\TreeFileRestoreChoiceEnum;
+use Ineersa\CodingAgent\Rewind\TreeNavigateToTurnOrchestrator;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
@@ -53,7 +54,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         private readonly EventStoreInterface $eventStore,
         private readonly RuntimeEventMapper $mapper,
         private readonly RunRewindService $runRewindService,
-        private readonly FileRewindCheckpointService $fileRewindCheckpointService,
+        private readonly TreeNavigateToTurnOrchestrator $treeNavigateOrchestrator,
         private readonly SystemPromptBuilder $systemPromptBuilder,
         private readonly AgentsContextDiscovery $agentsContextDiscovery,
         private readonly AgentsContextRenderer $agentsContextRenderer,
@@ -250,8 +251,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
             'answer_tool_question' => $this->handleAnswerToolQuestion($runId, $command),
             'shell_command' => $this->handleShellCommandSend($runId, $command),
             'rewind_to_turn' => $this->handleInProcessRewind($runId, $command),
-            'file_rewind_restore' => $this->handleInProcessFileRewindRestore($runId, $command),
-            'file_rewind_undo' => $this->handleInProcessFileRewindUndo($runId),
+            'tree_navigate_to_turn' => $this->handleInProcessTreeNavigate($runId, $command),
             default => throw new \InvalidArgumentException(\sprintf('Unknown UserCommand type: "%s"', $command->type)),
         };
     }
@@ -352,18 +352,29 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         $this->toolQuestionStore->answer($requestId, $answer);
     }
 
-    private function handleInProcessFileRewindRestore(string $runId, UserCommand $command): void
+    private function handleInProcessTreeNavigate(string $runId, UserCommand $command): void
     {
         $turnNo = (int) ($command->payload['turn_no'] ?? 0);
         if ($turnNo < 1) {
-            throw new \InvalidArgumentException('turn_no required for file_rewind_restore');
+            throw new \InvalidArgumentException('turn_no required for tree_navigate_to_turn');
         }
-        $this->fileRewindCheckpointService->restoreForTurn($runId, $turnNo);
-    }
+        $choice = TreeFileRestoreChoiceEnum::tryFromPayload($command->payload['file_choice'] ?? null);
+        if (null === $choice) {
+            throw new \InvalidArgumentException('file_choice required for tree_navigate_to_turn');
+        }
 
-    private function handleInProcessFileRewindUndo(string $runId): void
-    {
-        $this->fileRewindCheckpointService->undoLastRestore($runId);
+        $leafChange = $this->treeNavigateOrchestrator->execute($runId, $turnNo, $choice);
+        if (null !== $leafChange && $this->transientSink instanceof InMemoryRuntimeEventSink) {
+            $this->transientSink->emit(new RuntimeEvent(
+                type: RuntimeEventTypeEnum::RunLeafChanged->value,
+                runId: $runId,
+                seq: $leafChange['leaf_set_seq'],
+                payload: [
+                    'turn_no' => $leafChange['turn_no'],
+                    'leaf_set_seq' => $leafChange['leaf_set_seq'],
+                ],
+            ));
+        }
     }
 
     private function handleInProcessRewind(string $runId, UserCommand $command): void
