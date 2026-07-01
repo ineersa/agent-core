@@ -47,6 +47,9 @@ final class TranscriptGlyphs
     public const string GLYPH_COMPACTION_STARTED = '  ◐';
     /** Compaction completed lifecycle prefix glyph (renderer-owned; projection text is glyph-free) */
     public const string GLYPH_COMPACTION_COMPLETED = '  ⧉';
+    /** Light horizontal rule character for user-turn separators */
+    public const string TURN_SEPARATOR_CHAR = '─';
+
     /** Streaming suffix appended to in-progress blocks */
     public const string STREAMING_SUFFIX = '...';
 

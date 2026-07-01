@@ -70,6 +70,41 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
     }
 
     #[Test]
+    public function testTurnSeparatorAppearsBeforeLaterUserMessage(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
+        $harness->screen()->setTranscriptBlocks([
+            new TranscriptBlock(
+                id: 'u1',
+                kind: TranscriptBlockKindEnum::UserMessage,
+                runId: self::SESSION_ID,
+                seq: 1,
+                text: 'first prompt',
+            ),
+            new TranscriptBlock(
+                id: 'a1',
+                kind: TranscriptBlockKindEnum::AssistantMessage,
+                runId: self::SESSION_ID,
+                seq: 2,
+                text: 'first response',
+            ),
+            new TranscriptBlock(
+                id: 'u2',
+                kind: TranscriptBlockKindEnum::UserMessage,
+                runId: self::SESSION_ID,
+                seq: 3,
+                text: 'second prompt',
+            ),
+        ]);
+        $harness->screen()->setWorkingVisible(false);
+
+        $text = $harness->plainScreenText();
+        $separator = str_repeat(TranscriptGlyphs::TURN_SEPARATOR_CHAR, 80);
+
+        self::assertStringContainsString($separator, $text, 'User-turn separator missing before later user message');
+        self::assertLessThan(strpos($text, 'second prompt'), strpos($text, $separator), 'Separator should appear before the later user message');
+    }
+
     public function testMultipleBlocksRenderInOrder(): void
     {
         $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);

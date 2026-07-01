@@ -64,6 +64,74 @@ final class TranscriptBlockRendererTest extends TestCase
         $this->assertStringContainsString('Hello world', $lines[0]);
     }
 
+    public function testTurnSeparatorInsertedBeforeLaterUserMessage(): void
+    {
+        $widget = new TranscriptBlockWidget();
+        $widget->setBlocks([
+            new TranscriptBlock(
+                id: 'u1',
+                kind: TranscriptBlockKindEnum::UserMessage,
+                runId: 'run-1',
+                seq: 1,
+                text: 'first turn',
+            ),
+            new TranscriptBlock(
+                id: 'a1',
+                kind: TranscriptBlockKindEnum::AssistantMessage,
+                runId: 'run-1',
+                seq: 2,
+                text: 'assistant reply',
+            ),
+            new TranscriptBlock(
+                id: 'u2',
+                kind: TranscriptBlockKindEnum::UserMessage,
+                runId: 'run-1',
+                seq: 3,
+                text: 'second turn',
+            ),
+        ]);
+
+        $lines = $widget->render($this->context);
+        $plainLines = array_map(static fn (string $line): string => preg_replace('/\x1b\[[0-9;]*m/', '', $line) ?? $line, $lines);
+
+        $expectedSeparator = str_repeat(TranscriptGlyphs::TURN_SEPARATOR_CHAR, $this->context->terminalWidth);
+        $separatorLines = array_values(array_filter(
+            $plainLines,
+            static fn (string $line): bool => $line === $expectedSeparator,
+        ));
+
+        $this->assertCount(1, $separatorLines, 'Expected exactly one user-turn separator');
+        $this->assertSame($expectedSeparator, $separatorLines[0], 'Separator should span terminal width');
+        $this->assertStringContainsString('first turn', implode("
+", $plainLines));
+        $this->assertStringContainsString('second turn', implode("
+", $plainLines));
+    }
+
+    public function testFirstUserMessageHasNoLeadingSeparator(): void
+    {
+        $widget = new TranscriptBlockWidget();
+        $widget->setBlocks([
+            new TranscriptBlock(
+                id: 'u1',
+                kind: TranscriptBlockKindEnum::UserMessage,
+                runId: 'run-1',
+                seq: 1,
+                text: 'only turn',
+            ),
+        ]);
+
+        $lines = $widget->render($this->context);
+        $plainLines = array_map(static fn (string $line): string => preg_replace('/\x1b\[[0-9;]*m/', '', $line) ?? $line, $lines);
+
+        foreach ($plainLines as $line) {
+            if ('' === $line) {
+                continue;
+            }
+            $this->assertNotSame(str_repeat(TranscriptGlyphs::TURN_SEPARATOR_CHAR, $this->context->terminalWidth), $line, 'First user turn should not be preceded by a separator');
+        }
+    }
+
     public function testSetBlocksReplacesAll(): void
     {
         $widget = new TranscriptBlockWidget();

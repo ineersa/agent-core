@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Transcript;
 
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\Tui\Theme\TuiTheme;
 use Ineersa\Tui\Widget\TuiRenderContext;
 use Ineersa\Tui\Widget\TuiWidget;
@@ -74,6 +75,7 @@ final class TranscriptBlockWidget implements TuiWidget
 
         $allLines = [];
         $blockCount = \count($this->blocks);
+        $hasRenderedVisibleBlock = false;
         for ($index = 0; $index < $blockCount; ++$index) {
             $block = $this->blocks[$index];
             $nextBlock = $this->blocks[$index + 1] ?? null;
@@ -82,6 +84,10 @@ final class TranscriptBlockWidget implements TuiWidget
             }
             if ($this->factory->shouldSuppressEmptyAssistantPlaceholder($block, $nextBlock)) {
                 continue;
+            }
+
+            if ($this->shouldInsertTurnSeparatorBefore($block, $hasRenderedVisibleBlock)) {
+                $allLines[] = $this->renderTurnSeparatorLine($context);
             }
 
             $cacheKey = $this->blockCacheKey(
@@ -94,6 +100,7 @@ final class TranscriptBlockWidget implements TuiWidget
             $cached = $this->blockRenderCache[$block->id] ?? null;
             if (null !== $cached && $cached['key'] === $cacheKey) {
                 array_push($allLines, ...$cached['lines']);
+                $hasRenderedVisibleBlock = true;
 
                 continue;
             }
@@ -104,6 +111,7 @@ final class TranscriptBlockWidget implements TuiWidget
                 'lines' => $lines,
             ];
             array_push($allLines, ...$lines);
+            $hasRenderedVisibleBlock = true;
         }
 
         return $allLines;
@@ -175,5 +183,21 @@ final class TranscriptBlockWidget implements TuiWidget
                 unset($this->blockRenderCache[$blockId]);
             }
         }
+    }
+
+    private function shouldInsertTurnSeparatorBefore(TranscriptBlock $block, bool $hasRenderedVisibleBlock): bool
+    {
+        if (!$hasRenderedVisibleBlock) {
+            return false;
+        }
+
+        return TranscriptBlockKindEnum::UserMessage === $block->kind;
+    }
+
+    private function renderTurnSeparatorLine(TuiRenderContext $context): string
+    {
+        $width = max($context->terminalWidth, 1);
+
+        return $context->theme->muted(str_repeat(TranscriptGlyphs::TURN_SEPARATOR_CHAR, $width));
     }
 }
