@@ -32,6 +32,14 @@ final readonly class TranscriptBlockFactory
         $meta = [];
         if ('' !== $style) {
             $meta['style'] = $style;
+            if ('muted' === $style) {
+                $meta['severity'] = 'muted';
+                $meta['category'] = 'lifecycle';
+            } elseif ('warning' === $style) {
+                $meta['severity'] = 'warning';
+            } elseif ('error' === $style) {
+                $meta['severity'] = 'error';
+            }
         }
 
         return $this->block(

@@ -7,6 +7,7 @@ namespace Ineersa\Tui\Tests\Transcript;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\Tui\Theme\DefaultTheme;
+use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Transcript\TranscriptBlockWidgetFactory;
 use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
@@ -766,9 +767,7 @@ final class TranscriptBlockRendererTest extends TestCase
                 'arguments' => ['path' => 'x.txt', 'patch' => $patch],
             ],
         );
-        $renderer = new TranscriptBlockRenderer(
-            factory: new TranscriptBlockWidgetFactory(),
-        );
+        $renderer = new TranscriptBlockRenderer(factory: new TranscriptBlockWidgetFactory());
         $output = implode("\n", $renderer->renderBlock($block, $context));
 
         $this->assertStringContainsString("\x1b[", $output);
@@ -1256,6 +1255,123 @@ line2"];
         $this->assertStringContainsString('Human input answered', $plain);
         $this->assertStringContainsString('Proceed?', $plain);
         $this->assertStringContainsString('→ yes', $plain);
+    }
+
+
+    public function testResumeSystemRowUsesMutedStyling(): void
+    {
+        $block = new TranscriptBlock(
+            id: 'resume-1',
+            kind: TranscriptBlockKindEnum::System,
+            runId: 'r',
+            seq: 1,
+            text: 'Resumed run abc',
+            meta: ['style' => 'muted', 'severity' => 'muted', 'category' => 'lifecycle'],
+        );
+
+        $plain = preg_replace('/\x1b\[[0-9;]*m/', '', implode("\n", $this->renderWidgetLines([$block])));
+        $this->assertStringContainsString('Resumed run abc', $plain);
+        $this->assertStringContainsString('·', $plain);
+        $this->assertStringNotContainsString('...', $plain);
+    }
+
+    public function testCompactionStartedStreamingSuffixNotDuplicatedInSourceText(): void
+    {
+        $block = new TranscriptBlock(
+            id: 'compact-1',
+            kind: TranscriptBlockKindEnum::System,
+            runId: 'r',
+            seq: 2,
+            text: '◐ Compacting conversation',
+            meta: ['lifecycle' => 'compaction_started', 'category' => 'lifecycle', 'severity' => 'info'],
+            streaming: true,
+        );
+
+        $plain = preg_replace('/\x1b\[[0-9;]*m/', '', implode("\n", $this->renderWidgetLines([$block])));
+        $this->assertStringContainsString('◐', $plain);
+        $this->assertStringContainsString('Compacting conversation', $plain);
+        $this->assertStringContainsString('...', $plain);
+        $this->assertStringNotContainsString('…...', $plain);
+    }
+
+    public function testCompactionCompletedLifecycleGlyph(): void
+    {
+        $block = new TranscriptBlock(
+            id: 'compact-done',
+            kind: TranscriptBlockKindEnum::System,
+            runId: 'r',
+            seq: 3,
+            text: '⧉ Conversation compacted.',
+            meta: ['lifecycle' => 'compaction_completed', 'category' => 'lifecycle', 'severity' => 'info'],
+        );
+
+        $plain = preg_replace('/\x1b\[[0-9;]*m/', '', implode("\n", $this->renderWidgetLines([$block])));
+        $this->assertStringContainsString('⧉', $plain);
+        $this->assertStringContainsString('Conversation compacted.', $plain);
+    }
+
+    public function testToolCallArgumentKeyValueAnsiDiffers(): void
+    {
+        $block = new TranscriptBlock(
+            id: 'tool-args',
+            kind: TranscriptBlockKindEnum::ToolCall,
+            runId: 'r',
+            seq: 4,
+            text: 'read',
+            meta: [
+                'tool_name' => 'read',
+                'arguments' => ['path' => '/tmp/x.txt', 'limit' => 10],
+            ],
+        );
+
+        $context = $this->context->withTheme(new DefaultTheme(new ThemePalette('arg-test', [
+            ThemeColorEnum::ToolTitle->value => 'green',
+            ThemeColorEnum::ToolArgumentKey->value => 'cyan',
+            ThemeColorEnum::ToolArgumentValue->value => 'yellow',
+        ])));
+        $renderer = new TranscriptBlockRenderer(factory: new TranscriptBlockWidgetFactory());
+        $raw = implode("\n", $renderer->renderBlock($block, $context));
+        $plain = preg_replace('/\x1b\[[0-9;]*m/', '', $raw);
+        $this->assertStringContainsString('path:', $plain);
+        $this->assertMatchesRegularExpression('/\x1b\[[0-9;]*m/', $raw);
+    }
+
+    public function testViewImageToolCallAndResultCompactMetadata(): void
+    {
+        $call = new TranscriptBlock(
+            id: 'vi-call',
+            kind: TranscriptBlockKindEnum::ToolCall,
+            runId: 'r',
+            seq: 5,
+            text: 'view_image',
+            meta: ['tool_name' => 'view_image', 'arguments' => ['path' => 'img.png']],
+        );
+        $result = new TranscriptBlock(
+            id: 'vi-res',
+            kind: TranscriptBlockKindEnum::ToolResult,
+            runId: 'r',
+            seq: 6,
+            text: 'view_image',
+            meta: [
+                'tool_name' => 'view_image',
+                'result' => json_encode([
+                    'type' => 'view_image',
+                    'path' => '/tmp/img.png',
+                    'media_type' => 'image/png',
+                    'width' => 100,
+                    'height' => 50,
+                    'bytes' => 1234,
+                ], JSON_THROW_ON_ERROR),
+                'is_error' => false,
+            ],
+        );
+
+        $plain = preg_replace('/\x1b\[[0-9;]*m/', '', implode("\n", $this->renderWidgetLines([$call, $result])));
+        $this->assertStringContainsString('path: img.png', $plain);
+        $this->assertStringContainsString('media: image/png', $plain);
+        $this->assertStringContainsString('size: 100x50', $plain);
+        $this->assertStringContainsString('bytes: 1234', $plain);
+        $this->assertStringNotContainsString('attachment_refs', $plain);
     }
 
     private function renderWidgetLines(array $blocks): array

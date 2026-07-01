@@ -356,6 +356,38 @@ final class TuiAutoCompactionE2eTest extends TestCase
         }
     }
 
+
+    public function testAutoCompactionLifecycleRowHasNoDuplicateEllipsis(): void
+    {
+        $pane = $this->tmux->startDetached(
+            command: $this->agentCommand(),
+            prefix: 'tui-auto-compact-ellipsis',
+            width: 120,
+            height: 60,
+            cwd: $this->testProjectDir,
+        );
+
+        try {
+            $this->tmux->waitForCaptureContains($pane, '█', 10.0);
+            $this->tmux->waitForTuiReadyAfterLogo($pane);
+            $this->tmux->sendKey($pane, 'C-u');
+            usleep(100_000);
+            $this->tmux->sendLiteral($pane, 'Respond with a paragraph about AI agents.');
+            $this->tmux->sendKey($pane, 'Enter');
+            $cap = $this->tmux->waitForCallback(
+                $pane,
+                static fn (string $cap): bool => str_contains($cap, 'Compacting conversation')
+                    || str_contains($cap, 'Conversation compacted'),
+                timeout: 20.0,
+                message: 'Compaction lifecycle row not visible',
+                history: 2000,
+            );
+            $this->assertStringNotContainsString('…...', $cap, 'Compaction progress must not show duplicate ellipsis');
+        } finally {
+            $this->tmux->killSession($pane);
+        }
+    }
+
     private function agentCommand(): string
     {
         $fixturePath = $this->projectRoot.'/tests/Tui/E2E/fixtures/tui-startup-prompt-response.json';

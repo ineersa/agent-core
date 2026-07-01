@@ -36,10 +36,11 @@ final readonly class TranscriptBlockWidgetFactory
         private readonly SubagentResultRenderer $subagentRenderer = new SubagentResultRenderer(),
         private readonly TranscriptDisplayConfig $displayConfig = new TranscriptDisplayConfig(),
         private readonly TranscriptDisplayState $displayState = new TranscriptDisplayState(),
-        private readonly ToolArgumentsFormatter $toolArgumentsFormatter = new ToolArgumentsFormatter(),
         private readonly EditToolCallDiffRenderer $editDiffRenderer = new EditToolCallDiffRenderer(),
         private readonly WriteToolCallContentRenderer $writeContentRenderer = new WriteToolCallContentRenderer(),
         private readonly TranscriptLinePreviewService $linePreviewService = new TranscriptLinePreviewService(),
+        private readonly ToolArgumentColoredFormatter $toolArgumentColoredFormatter = new ToolArgumentColoredFormatter(),
+        private readonly ViewImageTranscriptFormatter $viewImageFormatter = new ViewImageTranscriptFormatter(),
     ) {
     }
 
@@ -98,6 +99,10 @@ final readonly class TranscriptBlockWidgetFactory
         // RENDER-04: normal ToolResult → compact card (header, body preview unless error/cancel/timeout).
         if (TranscriptBlockKindEnum::ToolResult === $block->kind) {
             return $this->buildToolResultWidget($block, $theme);
+        }
+
+        if (TranscriptBlockKindEnum::System === $block->kind) {
+            return $this->buildSystemWidget($block, $theme);
         }
 
         // All remaining kinds → existing TextWidget path.
@@ -247,9 +252,13 @@ final readonly class TranscriptBlockWidgetFactory
             return $this->buildWriteToolCallWidget($block, $theme, $headerLine, $arguments);
         }
 
+        if ($this->isViewImageToolCall($block)) {
+            return $this->buildViewImageToolCallWidget($block, $theme, $headerLine, $arguments);
+        }
+
         $lines = [$headerLine];
         if ([] !== $arguments) {
-            $argLines = $this->toolArgumentsFormatter->formatLines($arguments);
+            $argLines = $this->toolArgumentColoredFormatter->formatColoredLines($arguments, $theme);
             $preview = $this->applyLinePreview($argLines, fullRender: false, lineLimit: $this->displayConfig->toolResultPreviewLines);
             foreach ($preview['lines'] as $argLine) {
                 $lines[] = '    '.$argLine;
@@ -259,7 +268,10 @@ final readonly class TranscriptBlockWidgetFactory
             }
         }
 
-        return new TextWidget($theme->color(ThemeColorEnum::ToolTitle, implode("\n", $lines)));
+        $coloredHeader = $theme->color(ThemeColorEnum::ToolTitle, $lines[0]);
+        $body = \array_slice($lines, 1);
+
+        return new TextWidget(implode("\n", array_merge([$coloredHeader], $body)));
     }
 
     /**
@@ -344,6 +356,10 @@ final readonly class TranscriptBlockWidgetFactory
 
     private function buildToolResultWidget(TranscriptBlock $block, TuiTheme $theme): TextWidget
     {
+        if ($this->isViewImageToolName($block->meta['tool_name'] ?? null)) {
+            return $this->buildViewImageToolResultWidget($block, $theme);
+        }
+
         $header = $this->toolResultHeaderLabel($block);
         $lines = [\sprintf('%s %s', TranscriptGlyphs::GLYPH_TOOL, $header)];
 
@@ -489,6 +505,93 @@ final readonly class TranscriptBlockWidgetFactory
         return $text;
     }
 
+    private function buildSystemWidget(TranscriptBlock $block, TuiTheme $theme): TextWidget
+    {
+        $prefix = $this->systemPrefixFor($block);
+        $displayText = $this->displayTextFor($block);
+        $suffix = $this->systemStreamingSuffix($block);
+        $line = \sprintf('%s %s%s', $prefix, $displayText, $suffix);
+        $color = $this->systemColorFor($block);
+
+        return new TextWidget($theme->color($color, $line));
+    }
+
+    private function systemStreamingSuffix(TranscriptBlock $block): string
+    {
+        return $block->streaming ? TranscriptGlyphs::STREAMING_SUFFIX : '';
+    }
+
+    private function systemPrefixFor(TranscriptBlock $block): string
+    {
+        $lifecycle = $block->meta['lifecycle'] ?? null;
+        if ('compaction_started' === $lifecycle) {
+            return '  ◐';
+        }
+        if ('compaction_completed' === $lifecycle) {
+            return '  ⧉';
+        }
+
+        return $this->severityPrefix($block);
+    }
+
+    private function systemColorFor(TranscriptBlock $block): ThemeColorEnum
+    {
+        if ('muted' === ($block->meta['style'] ?? null) || 'muted' === ($block->meta['severity'] ?? null)) {
+            return ThemeColorEnum::Muted;
+        }
+
+        $lifecycle = $block->meta['lifecycle'] ?? null;
+        if (\in_array($lifecycle, ['compaction_started', 'compaction_completed'], true)) {
+            return ThemeColorEnum::Working;
+        }
+
+        return $this->severityColor($block);
+    }
+
+    private function isViewImageToolCall(TranscriptBlock $block): bool
+    {
+        return $this->isViewImageToolName($block->meta['tool_name'] ?? null);
+    }
+
+    private function isViewImageToolName(mixed $toolName): bool
+    {
+        return \is_string($toolName) && 'view_image' === $toolName;
+    }
+
+    /**
+     * @param array<string, mixed> $arguments
+     */
+    private function buildViewImageToolCallWidget(TranscriptBlock $block, TuiTheme $theme, string $headerLine, array $arguments): TextWidget
+    {
+        $suffix = $block->streaming ? TranscriptGlyphs::STREAMING_SUFFIX : '';
+        $lines = [$headerLine.$suffix];
+        foreach ($this->viewImageFormatter->formatToolCallLines($arguments) as $bodyLine) {
+            $lines[] = '    '.$bodyLine;
+        }
+
+        return new TextWidget($theme->color(ThemeColorEnum::ToolTitle, implode("\n", $lines)));
+    }
+
+    private function buildViewImageToolResultWidget(TranscriptBlock $block, TuiTheme $theme): TextWidget
+    {
+        $header = \sprintf('%s %s', TranscriptGlyphs::GLYPH_TOOL, $this->toolResultHeaderLabel($block));
+        $lines = [$header];
+        $result = $block->meta['result'] ?? null;
+        $bodyLines = $this->viewImageFormatter->formatToolResultLines($result);
+        if ([] === $bodyLines && \is_string($result) && '' !== $result && !$this->toolResultIsFullRender($block)) {
+            $bodyLines = ['(image metadata)'];
+        }
+        foreach ($bodyLines as $bodyLine) {
+            $lines[] = '    '.$bodyLine;
+        }
+
+        $color = $this->toolResultIsFullRender($block) && $this->metaIsTruthy($block->meta['is_error'] ?? false)
+            ? ThemeColorEnum::Error
+            : ThemeColorEnum::ToolOutput;
+
+        return new TextWidget($theme->color($color, implode("\n", $lines)));
+    }
+
     // Glyph prefixes — TranscriptGlyphs constants are the public glyph contract for tests/assertions.
     private function prefixFor(TranscriptBlock $block): string
     {
@@ -568,9 +671,14 @@ final readonly class TranscriptBlockWidgetFactory
             ? $block->meta['severity']
             : null;
 
+        if ('muted' === ($block->meta['style'] ?? null)) {
+            return ThemeColorEnum::Muted;
+        }
+
         return match ($severity) {
             'warning' => ThemeColorEnum::Warning,
             'error' => ThemeColorEnum::Error,
+            'muted' => ThemeColorEnum::Muted,
             default => ThemeColorEnum::SystemMessage,
         };
     }
