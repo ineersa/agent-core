@@ -1,0 +1,88 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Ineersa\CodingAgent\Tests\Rewind;
+
+use Ineersa\CodingAgent\Rewind\GitProcessRunner;
+use Ineersa\CodingAgent\Rewind\HiddenGitSnapshotBackend;
+use Ineersa\CodingAgent\Rewind\RewindPathScope;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
+
+final class HiddenGitProjectGitUntouchedTest extends TestCase
+{
+    private string $projectDir;
+    private GitProcessRunner $runner;
+
+    protected function setUp(): void
+    {
+        $this->runner = new GitProcessRunner();
+        if (!$this->runner->isGitAvailable()) {
+            $this->markTestSkipped('git not available');
+        }
+
+        $this->projectDir = TestDirectoryIsolation::createProjectTempDir('rewind-real-git');
+        $this->initRealGitRepo($this->projectDir);
+    }
+
+    protected function tearDown(): void
+    {
+        TestDirectoryIsolation::removeDirectory($this->projectDir);
+    }
+
+    public function testCaptureAndRestoreLeavesProjectGitStateUntouched(): void
+    {
+        $refBefore = $this->gitInProject(['rev-parse', 'refs/heads/main']);
+        $headBefore = $this->gitInProject(['rev-parse', 'HEAD']);
+        $stagedBefore = $this->gitInProject(['diff', '--cached', '--name-only']);
+        $configBefore = (string) file_get_contents($this->projectDir.'/.git/config');
+
+        $hiddenGit = $this->projectDir.'/.hatfield/rewind/snapshots/real/git';
+        $backend = new HiddenGitSnapshotBackend($this->runner, new NullLogger(), 2_097_152);
+        $scope = new RewindPathScope($this->projectDir);
+        $idx = $this->projectDir.'/.hatfield/tmp/cap.index';
+        @mkdir(dirname($idx), 0777, true);
+
+        $tree1 = $backend->captureTreeSha($hiddenGit, $this->projectDir, $idx, $scope);
+        $commit1 = $backend->treeShaToCommitSha($hiddenGit, $this->projectDir, $tree1, 'checkpoint');
+
+        file_put_contents($this->projectDir.'/tracked.txt', "mutated\n");
+        file_put_contents($this->projectDir.'/new-only.txt', "x\n");
+
+        $backend->restoreCommitToWorktree($hiddenGit, $this->projectDir, $commit1, $scope);
+
+        self::assertSame("staged-change\n", file_get_contents($this->projectDir.'/tracked.txt'));
+        self::assertFileDoesNotExist($this->projectDir.'/new-only.txt');
+
+        self::assertSame($refBefore, $this->gitInProject(['rev-parse', 'refs/heads/main']));
+        self::assertSame($headBefore, $this->gitInProject(['rev-parse', 'HEAD']));
+        self::assertSame($stagedBefore, $this->gitInProject(['diff', '--cached', '--name-only']));
+        self::assertSame($configBefore, (string) file_get_contents($this->projectDir.'/.git/config'));
+    }
+
+    private function initRealGitRepo(string $dir): void
+    {
+        $this->runner->run(['init', '-b', 'main'], ['GIT_DIR' => $dir.'/.git', 'GIT_WORK_TREE' => $dir]);
+        $this->runner->run(['config', 'user.email', 'test@example.com'], ['GIT_DIR' => $dir.'/.git', 'GIT_WORK_TREE' => $dir]);
+        $this->runner->run(['config', 'user.name', 'Test'], ['GIT_DIR' => $dir.'/.git', 'GIT_WORK_TREE' => $dir]);
+        file_put_contents($dir.'/tracked.txt', "tracked-v1\n");
+        $this->runner->run(['add', 'tracked.txt'], ['GIT_DIR' => $dir.'/.git', 'GIT_WORK_TREE' => $dir]);
+        $this->runner->run(['commit', '-m', 'initial'], ['GIT_DIR' => $dir.'/.git', 'GIT_WORK_TREE' => $dir]);
+        // Staged change without commit
+        file_put_contents($dir.'/tracked.txt', "staged-change\n");
+        $this->runner->run(['add', 'tracked.txt'], ['GIT_DIR' => $dir.'/.git', 'GIT_WORK_TREE' => $dir]);
+        $this->runner->run(['update-ref', 'refs/heads/feature-x', 'HEAD'], ['GIT_DIR' => $dir.'/.git', 'GIT_WORK_TREE' => $dir]);
+    }
+
+    /**
+     * @param list<string> $args
+     */
+    private function gitInProject(array $args): string
+    {
+        $r = $this->runner->run($args, ['GIT_DIR' => $this->projectDir.'/.git', 'GIT_WORK_TREE' => $this->projectDir]);
+
+        return trim($r->stdout);
+    }
+}

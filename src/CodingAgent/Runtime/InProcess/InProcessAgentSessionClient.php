@@ -352,6 +352,20 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         $this->toolQuestionStore->answer($requestId, $answer);
     }
 
+    private function handleInProcessFileRewindRestore(string $runId, UserCommand $command): void
+    {
+        $turnNo = (int) ($command->payload['turn_no'] ?? 0);
+        if ($turnNo < 1) {
+            throw new \InvalidArgumentException('turn_no required for file_rewind_restore');
+        }
+        $this->fileRewindCheckpointService->restoreForTurn($runId, $turnNo);
+    }
+
+    private function handleInProcessFileRewindUndo(string $runId): void
+    {
+        $this->fileRewindCheckpointService->undoLastRestore($runId);
+    }
+
     private function handleInProcessRewind(string $runId, UserCommand $command): void
     {
         $targetTurnNo = (int) ($command->payload['turn_no'] ?? 0);

@@ -87,6 +87,9 @@ final class FileRewindLedgerProjector
         return $out;
     }
 
+    /**
+     * @param list<RunEvent> $events
+     */
     public function findUndoCheckpoint(array $events): ?FileRewindLedgerEntry
     {
         $undo = null;

@@ -387,4 +387,81 @@ final class SessionSwitchServiceTest extends TestCase
         $this->expectExceptionMessage('Cannot rewind');
         $service->rewindToTurn(1);
     }
+
+
+    public function testNavigateTreeRestoreFilesBeforeRewind(): void
+    {
+        $fileRewind = $this->createMock(FileRewindCheckpointService::class);
+        $fileRewind->expects(self::once())->method('restoreForTurn')->with('test-run-id', 1);
+
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->expects(self::once())->method('cancel')->with('test-run-id');
+        $client->expects(self::once())->method('send')->with(
+            'test-run-id',
+            self::callback(static fn (UserCommand $cmd): bool =>
+                'rewind_to_turn' === $cmd->type && 1 === ($cmd->payload['turn_no'] ?? null)
+            ),
+        );
+
+        $state = new TuiSessionState('test', false);
+        $state->handle = new RunHandle('test-run-id', 'running');
+        $tui = new Tui();
+        $service = new TuiSessionSwitchService(
+            $this->createCoordinator(),
+            $this->createController($this->createCoordinator()),
+            $this->createStub(TranscriptProjectorInterface::class),
+            $this->createStub(LoggerInterface::class),
+            $fileRewind,
+        );
+        $service->bindForIteration($tui, $client, $state);
+        $service->navigateTreeToTurn(1, 'restore_files');
+    }
+
+    public function testNavigateTreeRestoreFailureDoesNotRewind(): void
+    {
+        $fileRewind = $this->createMock(FileRewindCheckpointService::class);
+        $fileRewind->expects(self::once())->method('restoreForTurn')->willThrowException(new \RuntimeException('restore failed'));
+
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->expects(self::never())->method('send');
+
+        $state = new TuiSessionState('test', false);
+        $state->handle = new RunHandle('test-run-id', 'running');
+        $tui = new Tui();
+        $service = new TuiSessionSwitchService(
+            $this->createCoordinator(),
+            $this->createController($this->createCoordinator()),
+            $this->createStub(TranscriptProjectorInterface::class),
+            $this->createStub(LoggerInterface::class),
+            $fileRewind,
+        );
+        $service->bindForIteration($tui, $client, $state);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('File restore failed');
+        $service->navigateTreeToTurn(1, 'restore_files');
+    }
+
+    public function testNavigateTreeUndoDoesNotRewind(): void
+    {
+        $fileRewind = $this->createMock(FileRewindCheckpointService::class);
+        $fileRewind->expects(self::once())->method('undoLastRestore')->with('test-run-id');
+
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->expects(self::never())->method('send');
+
+        $state = new TuiSessionState('test', false);
+        $state->handle = new RunHandle('test-run-id', 'running');
+        $tui = new Tui();
+        $service = new TuiSessionSwitchService(
+            $this->createCoordinator(),
+            $this->createController($this->createCoordinator()),
+            $this->createStub(TranscriptProjectorInterface::class),
+            $this->createStub(LoggerInterface::class),
+            $fileRewind,
+        );
+        $service->bindForIteration($tui, $client, $state);
+        $service->navigateTreeToTurn(99, 'undo_file_rewind');
+    }
+
 }

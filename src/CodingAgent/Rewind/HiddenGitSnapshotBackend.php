@@ -34,7 +34,7 @@ final class HiddenGitSnapshotBackend
             if (0 !== $r->exitCode) {
                 throw new \RuntimeException('Hidden git init failed: '.$r->stderr);
             }
-            foreach ([['core.autocrlf', 'false'], ['core.longpaths', 'true'], ['core.symlinks', 'true']] as [$k, $v]) {
+            foreach ([['core.autocrlf', 'false'], ['core.longpaths', 'true'], ['core.symlinks', 'true'], ['user.email', 'hatfield-rewind@local'], ['user.name', 'Hatfield Rewind']] as [$k, $v]) {
                 $this->git->run(['config', $k, $v], $env);
             }
         }
@@ -117,6 +117,9 @@ final class HiddenGitSnapshotBackend
         }
     }
 
+    /**
+     * @return list<string>
+     */
     public function listTreePaths(string $hiddenGitDir, string $workTree, string $treeSha): array
     {
         $env = $this->env($hiddenGitDir, $workTree);
@@ -125,7 +128,7 @@ final class HiddenGitSnapshotBackend
             return [];
         }
 
-        $lines = array_filter(array_map('trim', explode("\n", $r->stdout)));
+        $lines = array_filter(array_map('trim', explode("\n", $r->stdout)), static fn (string $line): bool => '' !== $line);
 
         return array_values($lines);
     }
@@ -163,6 +166,9 @@ final class HiddenGitSnapshotBackend
         return $delete;
     }
 
+    /**
+     * @param array<string, string> $env
+     */
     private function stageWorktree(
         string $hiddenGitDir,
         string $workTree,
@@ -234,7 +240,9 @@ final class HiddenGitSnapshotBackend
             return null;
         }
 
-        return $r->stdoutTrimmed() ?: null;
+        $trimmed = $r->stdoutTrimmed();
+
+        return '' !== $trimmed ? $trimmed : null;
     }
 
     private function removeEmptyDirTree(string $dir, string $projectRoot): void

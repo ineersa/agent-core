@@ -22,10 +22,16 @@ final class GitProcessRunner
             2 => ['pipe', 'w'],
         ];
 
-        $mergedEnv = array_merge(false !== getenv() ? getenv() : [], $env);
+        $baseEnv = getenv();
+        $mergedEnv = array_merge(\is_array($baseEnv) ? $baseEnv : [], $env);
         $procEnv = [];
         foreach ($mergedEnv as $k => $v) {
-            if (\is_string($k) && (\is_string($v) || is_numeric($v))) {
+            if (!\is_string($k)) {
+                continue;
+            }
+            if (\is_string($v)) {
+                $procEnv[$k] = $v;
+            } elseif (\is_int($v) || \is_float($v)) {
                 $procEnv[$k] = (string) $v;
             }
         }
@@ -36,8 +42,14 @@ final class GitProcessRunner
         }
 
         fclose($pipes[0]);
-        $stdout = stream_get_contents($pipes[1]) ?: '';
-        $stderr = stream_get_contents($pipes[2]) ?: '';
+        $stdout = stream_get_contents($pipes[1]);
+        $stderr = stream_get_contents($pipes[2]);
+        if (false === $stdout) {
+            $stdout = '';
+        }
+        if (false === $stderr) {
+            $stderr = '';
+        }
         fclose($pipes[1]);
         fclose($pipes[2]);
         $exit = proc_close($process);
