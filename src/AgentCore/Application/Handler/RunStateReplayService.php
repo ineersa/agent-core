@@ -1097,7 +1097,7 @@ final readonly class RunStateReplayService
 
         // fromPayload succeeded — standard path for text-bearing messages.
         if (null !== $msg) {
-            return $msg;
+            return $this->withReplayedAssistantToolCalls($msg, $payload);
         }
 
         // Only handle assistant-role payloads where content is null/missing.
@@ -1137,6 +1137,37 @@ final readonly class RunStateReplayService
             role: 'assistant',
             content: [],
             details: $details,
+            metadata: $metadata,
+        );
+    }
+
+    /**
+     * Canonical llm_step_completed assistant payloads store tool_calls at the
+     * top level (see AgentMessageNormalizer::assistantMessagePayload()).
+     * AgentMessage::fromPayload() only reads metadata.tool_calls, so text-bearing
+     * assistant messages must copy top-level tool_calls into metadata on replay.
+     *
+     * @param array<string, mixed> $payload
+     */
+    private function withReplayedAssistantToolCalls(AgentMessage $message, array $payload): AgentMessage
+    {
+        $rawToolCalls = \is_array($payload['tool_calls'] ?? null) ? $payload['tool_calls'] : [];
+        if ([] === $rawToolCalls) {
+            return $message;
+        }
+
+        $metadata = $message->metadata;
+        $metadata['tool_calls'] = $rawToolCalls;
+
+        return new AgentMessage(
+            role: $message->role,
+            content: $message->content,
+            timestamp: $message->timestamp,
+            name: $message->name,
+            toolCallId: $message->toolCallId,
+            toolName: $message->toolName,
+            details: $message->details,
+            isError: $message->isError,
             metadata: $metadata,
         );
     }

@@ -248,6 +248,52 @@ final class RunStateReplayServiceTest extends TestCase
         $this->assertSame([], $rebuiltState->pendingToolCalls);
     }
 
+    public function testReplayAssistantTextWithTopLevelToolCallsPreservesMetadataForValidator(): void
+    {
+        $this->appendEvent(RunEventTypeEnum::RunStarted->value, 1, [
+            'step_id' => 's1',
+            'payload' => ['messages' => []],
+        ]);
+
+        $this->appendEvent(RunEventTypeEnum::LlmStepCompleted->value, 2, [
+            'step_id' => 's1',
+            'assistant_message' => [
+                'role' => 'assistant',
+                'content' => [['type' => 'text', 'text' => 'Running parallel bash.']],
+                'tool_calls' => [
+                    ['id' => 'call_00_Zm7aROqgBCMbqsuWtGpr0544', 'name' => 'bash', 'arguments' => ['command' => 'ls'], 'order_index' => 0],
+                ],
+            ],
+        ]);
+
+        $this->appendEvent(RunEventTypeEnum::MessageEnd->value, 3, [
+            'message_role' => 'tool',
+            'tool_call_id' => 'call_00_Zm7aROqgBCMbqsuWtGpr0544',
+            'message' => [
+                'role' => 'tool',
+                'content' => [['type' => 'text', 'text' => 'docs/']],
+                'tool_call_id' => 'call_00_Zm7aROqgBCMbqsuWtGpr0544',
+                'tool_name' => 'bash',
+                'is_error' => false,
+            ],
+        ]);
+
+        $state = RunState::queued($this->runId);
+        $result = $this->service->rebuildIfStale($state, $this->runId);
+
+        $this->assertTrue($result->rebuilt);
+        $messages = $result->rebuiltState->messages;
+        $this->assertCount(2, $messages);
+        $this->assertSame('assistant', $messages[0]->role);
+        $this->assertArrayHasKey('tool_calls', $messages[0]->metadata);
+        $this->assertSame('call_00_Zm7aROqgBCMbqsuWtGpr0544', $messages[0]->metadata['tool_calls'][0]['id']);
+        $this->assertSame('tool', $messages[1]->role);
+        $this->assertSame('call_00_Zm7aROqgBCMbqsuWtGpr0544', $messages[1]->toolCallId);
+
+        $validator = new \Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator();
+        $validator->validate($messages);
+    }
+
     // ── Shell-only tool execution replay ──────────────────────────────────
 
     /**
