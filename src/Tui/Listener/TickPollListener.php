@@ -15,6 +15,7 @@ use Ineersa\Tui\Question\QuestionRequest;
 use Ineersa\Tui\Question\QuestionSource;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\RuntimeEventPoller;
+use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 
 /**
@@ -35,6 +36,7 @@ final class TickPollListener implements TuiListenerRegistrar
 {
     public function __construct(
         private readonly RuntimeEventPoller $poller,
+        private readonly SubagentLiveChildViewPoller $subagentLiveChildPoller,
         private readonly QuestionCoordinator $questionCoordinator,
         private readonly QuestionController $questionController,
     ) {
@@ -48,11 +50,12 @@ final class TickPollListener implements TuiListenerRegistrar
         $screen = $context->screen;
         $questionCoordinator = $this->questionCoordinator;
         $questionController = $this->questionController;
+        $subagentLiveChildPoller = $this->subagentLiveChildPoller;
 
         // Wire the question controller with TUI runtime references
         $questionController->setRuntimeRefs($context, $screen);
 
-        $context->ticks->add(static function () use ($poller, $state, $client, $screen, $questionCoordinator, $questionController): ?bool {
+        $context->ticks->add(static function () use ($poller, $state, $client, $screen, $questionCoordinator, $questionController, $subagentLiveChildPoller): ?bool {
             $onHitl = static function (RuntimeEvent $event) use ($client, $questionCoordinator): void {
                 self::handleHumanInputRequested($event, $client, $questionCoordinator);
             };
@@ -65,6 +68,21 @@ final class TickPollListener implements TuiListenerRegistrar
                 self::handleToolTerminal($event, $questionCoordinator, $questionController);
             };
 
+            $liveActive = $state->subagentLiveView->active;
+
+            // Child-first on the shared JSONL pipe: events() re-buffers non-matching
+            // run ids; polling the child run before the parent reduces child latency.
+            if ($liveActive) {
+                $childBlocks = $subagentLiveChildPoller->poll(
+                    $state->subagentLiveView,
+                    $client,
+                );
+                // Only repaint transcript when new child blocks arrive; cached blocks stay on screen.
+                if (null !== $childBlocks) {
+                    $screen->setTranscriptBlocks($childBlocks);
+                }
+            }
+
             $changedBlocks = $poller->poll(
                 $state,
                 $client,
@@ -73,7 +91,22 @@ final class TickPollListener implements TuiListenerRegistrar
                 onToolTerminal: $onToolTerminal,
             );
 
-            if (null !== $changedBlocks) {
+            if ($liveActive) {
+                $selected = $state->subagentLiveView->selected;
+                if (null !== $selected) {
+                    $refreshed = $state->subagentLiveCatalog->findByArtifactId($selected->artifactId);
+                    if (null !== $refreshed) {
+                        $state->subagentLiveView->selected = $refreshed;
+                        if (\Ineersa\Tui\Runtime\SubagentLiveStatusEnum::WaitingHuman === $refreshed->status) {
+                            $state->subagentLiveView->childActivity = RunActivityStateEnum::WaitingHuman;
+                        } elseif ($refreshed->isRunning()) {
+                            $state->subagentLiveView->childActivity = RunActivityStateEnum::Running;
+                        } elseif (!$state->subagentLiveView->childActivity->isActive()) {
+                            $state->subagentLiveView->childActivity = RunActivityStateEnum::Completed;
+                        }
+                    }
+                }
+            } elseif (null !== $changedBlocks) {
                 $screen->setTranscriptBlocks($state->transcript);
             }
 
@@ -125,6 +158,41 @@ final class TickPollListener implements TuiListenerRegistrar
             // may call setWorkingMessage directly between tick cycles, and a
             // stale static cache would skip the authoritative tick update,
             // permanently leaving a stuck working message.
+            if ($liveActive) {
+                $parentMsg = match (true) {
+                    RunActivityStateEnum::Cancelling === $state->activity => 'Cancelling...',
+                    RunActivityStateEnum::Idle === $state->activity || $state->activity->isTerminal() => null,
+                    null === $state->handle && $state->activity->isActive() => null,
+                    default => 'Working...',
+                };
+                $childMsg = match ($state->subagentLiveView->childActivity) {
+                    RunActivityStateEnum::Cancelling => 'Child cancelling...',
+                    default => $state->subagentLiveView->childActivity->isActive()
+                        ? 'Child agent working...'
+                        : 'Child agent idle',
+                };
+                $liveWorking = null !== $parentMsg
+                    ? $parentMsg.' | '.$childMsg
+                    : $childMsg;
+                // Live-view-only cache: generic tick path avoids static last-value (see comment above).
+                if ($liveWorking !== $state->subagentLiveView->lastLiveWorkingMessage) {
+                    $state->subagentLiveView->lastLiveWorkingMessage = $liveWorking;
+                    $screen->setWorkingMessage($liveWorking);
+                }
+
+                $selected = $state->subagentLiveView->selected;
+                if (null !== $selected) {
+                    $liveStatus = \sprintf(
+                        'Live view (readonly): %s [%s] — /agents-main to return.',
+                        $selected->agentName,
+                        $selected->statusLabel(),
+                    );
+                    $screen->setStatus('agents-live', $liveStatus);
+                }
+
+                return null;
+            }
+
             $msg = match (true) {
                 RunActivityStateEnum::Cancelling === $state->activity => 'Cancelling...',
                 RunActivityStateEnum::Idle === $state->activity || $state->activity->isTerminal() => null,

@@ -310,18 +310,29 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         // Transparently restart the controller process if it died.
         $this->ensureProcessRunning();
 
-        // Drain buffered events first.
+        // Drain buffered events first, preserving events for other run IDs.
+        $deferred = [];
         while (!$this->eventBuffer->isEmpty()) {
             $event = $this->eventBuffer->dequeue();
             if ($event->runId === $runId) {
                 yield $event;
+            } else {
+                $deferred[] = $event;
             }
+        }
+
+        foreach ($deferred as $event) {
+            $this->eventBuffer->enqueue($event);
         }
 
         // Read new events from the process.
         foreach ($this->readEvents() as $event) {
             if ($event->runId === $runId) {
                 yield $event;
+            } else {
+                // Child live view polls a different runId on the same JSONL pipe.
+                // Re-buffer so the next events($parentRunId) call can consume them.
+                $this->eventBuffer->enqueue($event);
             }
         }
     }

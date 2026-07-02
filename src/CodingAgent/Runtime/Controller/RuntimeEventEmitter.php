@@ -95,6 +95,8 @@ final class RuntimeEventEmitter
         // completed runs returns 0 events) and prevents the drain loop from
         // silently dropping follow-up events.
 
+        $this->registerChildRunsFromSubagentProgress($event);
+
         $this->emitInternal($event);
     }
 
@@ -163,6 +165,7 @@ final class RuntimeEventEmitter
                         continue;
                     }
 
+                    $this->registerChildRunsFromSubagentProgress($event);
                     $this->emitInternal($event);
 
                     if ($event->seq > 0) {
@@ -211,6 +214,63 @@ final class RuntimeEventEmitter
                 // left the TUI stuck in Cancelling while backend events continued (issue #205).
             }
         }
+    }
+
+    /**
+     * Subagent live view registers child runs discovered through parent
+     * subagent_progress so their canonical events can be forwarded over JSONL.
+     */
+    private function registerChildRunsFromSubagentProgress(RuntimeEvent $event): void
+    {
+        if (!str_contains($event->type, 'tool_execution')) {
+            return;
+        }
+
+        $progress = $event->payload['subagent_progress'] ?? null;
+        if (!\is_array($progress)) {
+            return;
+        }
+
+        foreach ($this->extractChildAgentRunIdsFromProgress($progress) as $childRunId) {
+            if ('' === $childRunId || $childRunId === $event->runId) {
+                continue;
+            }
+
+            $this->runEventCursors[$childRunId] = $this->runEventCursors[$childRunId] ?? 0;
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $progress
+     *
+     * @return list<string>
+     */
+    private function extractChildAgentRunIdsFromProgress(array $progress): array
+    {
+        $mode = (string) ($progress['mode'] ?? 'single');
+        if ('parallel' === $mode) {
+            $children = $progress['children'] ?? [];
+            if (!\is_array($children)) {
+                return [];
+            }
+
+            $ids = [];
+            foreach ($children as $child) {
+                if (!\is_array($child)) {
+                    continue;
+                }
+                $id = trim((string) ($child['agent_run_id'] ?? ''));
+                if ('' !== $id) {
+                    $ids[] = $id;
+                }
+            }
+
+            return $ids;
+        }
+
+        $id = trim((string) ($progress['agent_run_id'] ?? ''));
+
+        return '' !== $id ? [$id] : [];
     }
 
     // ── Internal ────────────────────────────────────────────────────────

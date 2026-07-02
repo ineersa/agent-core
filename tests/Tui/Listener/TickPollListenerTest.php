@@ -20,8 +20,11 @@ use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\RuntimeEventPoller;
 use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
 use Ineersa\Tui\Runtime\TuiSessionState;
+use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\TuiTickDispatcher;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
 use Psr\Log\LoggerInterface;
 use Ineersa\Tui\Screen\ChatScreen;
@@ -29,6 +32,7 @@ use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Tui\Tui;
 
 /**
@@ -601,6 +605,7 @@ final class TickPollListenerTest extends TestCase
         $listenerRef = new \ReflectionClass(TickPollListener::class);
         $listener = $listenerRef->newInstanceWithoutConstructor();
         $listenerRef->getProperty('poller')->setValue($listener, $poller);
+        $listenerRef->getProperty('subagentLiveChildPoller')->setValue($listener, $this->createIsolatedSubagentLiveChildPoller());
         $listenerRef->getProperty('questionCoordinator')->setValue($listener, $coordinator);
         $listenerRef->getProperty('questionController')->setValue($listener, $controller);
 
@@ -676,6 +681,7 @@ final class TickPollListenerTest extends TestCase
         $listenerRef = new \ReflectionClass(TickPollListener::class);
         $listener = $listenerRef->newInstanceWithoutConstructor();
         $listenerRef->getProperty('poller')->setValue($listener, $poller);
+        $listenerRef->getProperty('subagentLiveChildPoller')->setValue($listener, $this->createIsolatedSubagentLiveChildPoller());
         $listenerRef->getProperty('questionCoordinator')->setValue($listener, $coordinator);
         $listenerRef->getProperty('questionController')->setValue($listener, $controller);
 
@@ -709,6 +715,14 @@ final class TickPollListenerTest extends TestCase
         self::assertFalse($coordinator->actionRequired(), 'Orphaned question must be rejected');
         self::assertFalse($controller->isOpen(), 'close() must be called after self-heal');
         self::assertFalse($controller->isAwaitingFreeForm(), 'close() must reset awaitingFreeForm after self-heal');
+    }
+
+
+    private function createIsolatedSubagentLiveChildPoller(): SubagentLiveChildViewPoller
+    {
+        return new SubagentLiveChildViewPoller(
+            new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
+        );
     }
 
 }

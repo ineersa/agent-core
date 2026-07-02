@@ -32,6 +32,12 @@ abstract class ControllerE2eTestCase extends TestCase
     protected string $runId = '';
     protected string $sessionId = '';
 
+    /**
+     * Parent/root run id for multiplexed controller stdout (child runs forwarded on same stream).
+     * Set from the first run.started seen during a collection window, or from $this->runId when known.
+     */
+    protected ?string $parentRunIdForCollection = null;
+
     // ── Overridable hooks ──
 
     /**
@@ -153,6 +159,7 @@ abstract class ControllerE2eTestCase extends TestCase
         $this->stdoutBuf = '';
         $this->stderrBuf = '';
         $this->runId = '';
+        $this->parentRunIdForCollection = null;
     }
 
     protected function tearDown(): void
@@ -441,16 +448,16 @@ abstract class ControllerE2eTestCase extends TestCase
     {
         $events = [];
         $deadline = microtime(true) + $timeout;
+        $this->parentRunIdForCollection = '' !== $this->runId ? $this->runId : null;
 
         while (microtime(true) < $deadline) {
             foreach ($this->readEvents() as $event) {
                 $events[] = $event;
+                $this->noteParentRunIdFromEvent($event);
 
                 $type = $event['type'] ?? '';
                 if ($targetType === $type
-                    || 'run.completed' === $type
-                    || 'run.failed' === $type
-                    || 'run.cancelled' === $type
+                    || $this->isParentRunTerminalEvent($event)
                 ) {
                     return $events;
                 }
@@ -485,10 +492,12 @@ abstract class ControllerE2eTestCase extends TestCase
         $events = [];
         $targetToolCallIds = [];
         $deadline = microtime(true) + $timeout;
+        $this->parentRunIdForCollection = '' !== $this->runId ? $this->runId : null;
 
         while (microtime(true) < $deadline) {
             foreach ($this->readEvents() as $event) {
                 $events[] = $event;
+                $this->noteParentRunIdFromEvent($event);
 
                 $type = $event['type'] ?? '';
                 $payload = $event['payload'] ?? [];
@@ -510,7 +519,7 @@ abstract class ControllerE2eTestCase extends TestCase
                     return $events;
                 }
 
-                if ('run.completed' === $type || 'run.failed' === $type || 'run.cancelled' === $type) {
+                if ($this->isParentRunTerminalEvent($event)) {
                     return $events;
                 }
             }
@@ -528,7 +537,52 @@ abstract class ControllerE2eTestCase extends TestCase
         return $events;
     }
 
+
+    /**
+     * @param array<string, mixed> $event
+     */
+    protected function noteParentRunIdFromEvent(array $event): void
+    {
+        if (null !== $this->parentRunIdForCollection && '' !== $this->parentRunIdForCollection) {
+            return;
+        }
+
+        if (($event['type'] ?? '') !== 'run.started') {
+            return;
+        }
+
+        $runId = (string) ($event['runId'] ?? $event['payload']['runId'] ?? '');
+        if ('' !== $runId) {
+            $this->parentRunIdForCollection = $runId;
+        }
+    }
+
+    /**
+     * Terminal lifecycle for the parent/root run under test — not forwarded child runs on the same JSONL stream.
+     *
+     * @param array<string, mixed> $event
+     */
+    protected function isParentRunTerminalEvent(array $event): bool
+    {
+        $type = (string) ($event['type'] ?? '');
+        if (!\in_array($type, ['run.completed', 'run.failed', 'run.cancelled'], true)) {
+            return false;
+        }
+
+        $eventRunId = (string) ($event['runId'] ?? $event['payload']['runId'] ?? '');
+        if ('' === $eventRunId) {
+            return true;
+        }
+
+        if (null === $this->parentRunIdForCollection || '' === $this->parentRunIdForCollection) {
+            return true;
+        }
+
+        return $eventRunId === $this->parentRunIdForCollection;
+    }
+
     protected function assertRunning(string $context): void
+
     {
         if (null !== $this->process && !$this->isRunning()) {
             self::fail(
