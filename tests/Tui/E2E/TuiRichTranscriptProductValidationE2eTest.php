@@ -16,10 +16,9 @@ use Symfony\Component\Yaml\Yaml;
  * assistant markdown, hidden thinking placeholder, tool exchange (edit diff + YAML args),
  * stable glyphs, and footer chrome. Replay-backed, no live LLM.
  *
- * Ctrl+O preview toggle is covered at the virtual/input layer in
- * {@see \Ineersa\Tui\Tests\Listener\PreviewExpansionInputListenerTest} because
- * tmux timing around idle transcript re-render is less deterministic than
- * VirtualTuiHarness::sendInput(\x0f).
+ * Ctrl+O preview expansion is proven primarily at the virtual/input layer in
+ * {@see \Ineersa\Tui\Tests\Listener\PreviewExpansionInputListenerTest} and also
+ * smoke-asserted here in tmux for end-to-end product validation.
  */
 #[Group('tui-e2e-replay')]
 final class TuiRichTranscriptProductValidationE2eTest extends TestCase
