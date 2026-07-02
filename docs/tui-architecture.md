@@ -146,6 +146,7 @@ via `/hotkeys`.
 |-----|--------|
 | Ctrl+C | Clear editor (press twice within 1.5s to exit) |
 | Ctrl+D | Exit TUI |
+| Ctrl+O | Toggle transcript preview expansion (session-only; not persisted) |
 | Ctrl+P | Cycle model |
 | Shift+Tab | Cycle reasoning level |
 
@@ -211,6 +212,7 @@ Each event has a dedicated listener class in `src/Tui/Listener/`: each implement
 
 | Event | Listener | File | Action |
 |-------|----------|------|--------|
+| `InputEvent` (priority 98) | `PreviewExpansionInputListener` | `src/Tui/Listener/PreviewExpansionInputListener.php` | Ctrl+O → toggle previewable transcript previews (session state only) |
 | `InputEvent` (priority 100) | `CtrlCInputInterceptor` | `src/Tui/Listener/CtrlCInputInterceptor.php` | Ctrl+D → stop TUI; Ctrl+C → cancel/double-press quit |
 | `SubmitEvent` | `SubmitListener` | `src/Tui/Listener/SubmitListener.php` | Append user message, start run or send follow-up, show processing indicator |
 | `CancelEvent` | `CancelListener` | `src/Tui/Listener/CancelListener.php` | ESC → cancel active run or clear editor when idle |
