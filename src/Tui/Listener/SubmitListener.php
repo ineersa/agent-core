@@ -549,6 +549,9 @@ final class SubmitListener implements TuiListenerRegistrar
                 $state->subagentLiveView->childActivity = RunActivityStateEnum::Starting;
             }
 
+            // Let TickPollListener re-apply the computed parent|child working line on the next tick.
+            $state->subagentLiveView->lastLiveWorkingMessage = null;
+
             $screen->setStatus('agents-live', $policy->dispatchConfirmationMessage($commandType, $child->agentName));
         } catch (\Throwable $e) {
             $screen->setStatus('agents-live', 'Failed to send to subagent: '.$e->getMessage());

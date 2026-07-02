@@ -62,14 +62,6 @@ final readonly class SubagentLiveInputPolicy
     }
 
     /**
-     * @return CommandParseResult&object
-     */
-    public function parse(string $submittedText): CommandParseResult
-    {
-        return $this->parser->parse($submittedText);
-    }
-
-    /**
      * Child steer vs follow_up mirrors parent {@see RunActivityStateEnum} semantics.
      *
      * Steer is non-interruptive: it is queued for the child run and applies at the

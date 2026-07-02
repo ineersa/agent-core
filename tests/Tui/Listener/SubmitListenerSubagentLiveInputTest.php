@@ -80,6 +80,7 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
         $screen = $this->dispatchSubmit('next step please');
 
         self::assertStringContainsString('Sent steer to subagent scout', $this->agentsLiveStatus($screen));
+        self::assertSame([], $this->state->transcript, 'Child-directed text must not echo into parent transcript');
     }
 
     #[Test]

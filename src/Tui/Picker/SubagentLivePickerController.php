@@ -20,7 +20,7 @@ use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
 
 /**
- * Picker for /agents-live readonly subagent live view — select a child subagent run for readonly live view.
+ * Picker for /agents-live subagent live view — select a child subagent run for interactive steering.
  */
 final class SubagentLivePickerController
 {
@@ -106,7 +106,7 @@ final class SubagentLivePickerController
 
         $theme = $screen->theme();
         $header = new TextWidget(
-            text: $theme->muted('Agents live — arrows move, Enter opens readonly view, Esc cancels'),
+            text: $theme->muted('Agents live — arrows move, Enter opens live view, Esc cancels'),
             truncate: true,
         );
 
@@ -182,10 +182,9 @@ final class SubagentLivePickerController
         }
 
         $screen->setStatus('agents-live', \sprintf(
-            'Live view (readonly): %s [%s] run %s — /agents-main to return.',
+            'Subagent live: %s [%s] — type to steer next step; /agents-main to return.',
             $child->agentName,
             $child->statusLabel(),
-            $child->agentRunId,
         ));
         $screen->setTranscriptBlocks($state->subagentLiveView->childTranscript);
         $screen->setWorkingMessage($child->isRunning() ? 'Child agent working...' : 'Child agent idle');
