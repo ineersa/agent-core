@@ -138,6 +138,10 @@ final class TuiSessionState
      */
     public TranscriptDisplayState $transcriptDisplayState;
 
+    public SubagentLiveCatalog $subagentLiveCatalog;
+
+    public SubagentLiveViewState $subagentLiveView;
+
     public function __construct(
         string $sessionId,
         bool $resuming = false,
@@ -147,6 +151,8 @@ final class TuiSessionState
         $this->usage = new UsageProjection();
         $this->transcriptDisplayConfig = new TranscriptDisplayConfig();
         $this->transcriptDisplayState = new TranscriptDisplayState();
+        $this->subagentLiveCatalog = new SubagentLiveCatalog();
+        $this->subagentLiveView = new SubagentLiveViewState();
     }
 
     /**

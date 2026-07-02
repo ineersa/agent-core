@@ -422,6 +422,21 @@ services:
   Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface:
     alias: Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector
 
+  # Isolated transcript projector for subagent readonly live view.
+  tui.subagent_live.projection_state:
+    class: Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState
+
+  tui.subagent_live.transcript_projector:
+    class: Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector
+    arguments:
+      $eventDispatcher: '@event_dispatcher'
+      $state: '@tui.subagent_live.projection_state'
+
+  Ineersa\Tui\Runtime\SubagentLiveChildViewPoller:
+    arguments:
+      $projector: '@tui.subagent_live.transcript_projector'
+
+
   Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface:
     alias: Ineersa\CodingAgent\Session\SessionTurnTreeProvider
 
