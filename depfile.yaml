@@ -351,6 +351,7 @@ parameters:
       - SymfonyConsole
 
     TuiListener:
+      - AppExtension
       - AppRuntimeContract
       - AppRuntimeProjection
       - AppSession
@@ -402,6 +403,7 @@ parameters:
 
     TuiExtension:
       - AppExtensionApi
+      - AppRuntimeContract
       - TuiLayout
       - TuiWidget
       - TuiFooter
@@ -653,6 +655,7 @@ parameters:
       - HatfieldExtTaskWorkflow
     AppExtensionBuiltin:
       - AppExtensionApi
+      - AppRuntimeContract
       - SymfonyYaml
 
     AgentCore:

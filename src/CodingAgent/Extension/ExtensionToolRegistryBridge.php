@@ -9,8 +9,10 @@ use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandRegistryInterface;
 use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
+use Ineersa\Hatfield\ExtensionApi\Command\InteractiveCommandHostInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
+use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ExtensionToolHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
@@ -41,6 +43,7 @@ final readonly class ExtensionToolRegistryBridge implements ExtensionApiInterfac
         private AppConfig $appConfig,
         private ExecInterface $execBridge,
         private CommandRegistryInterface $commandRegistry,
+        private ?InteractiveCommandHostInterface $interactiveCommandHost = null,
     ) {
     }
 
@@ -123,5 +126,15 @@ final readonly class ExtensionToolRegistryBridge implements ExtensionApiInterfac
     public function registerToolCallRewriteHook(string $toolName, ToolCallRewriteHookInterface $hook): void
     {
         $this->hookRegistry->addToolCallRewriteHook($toolName, $hook);
+    }
+
+    public function registerAfterTurnCommitHook(AfterTurnCommitHookInterface $hook): void
+    {
+        $this->hookRegistry->addAfterTurnCommitHook($hook);
+    }
+
+    public function interactiveCommandHost(): ?InteractiveCommandHostInterface
+    {
+        return $this->interactiveCommandHost;
     }
 }

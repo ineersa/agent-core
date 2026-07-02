@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Command;
 
+interface SessionAwareSlashCommandHandler
+{
+    public function setSessionId(string $sessionId): void;
+}
+
 use Ineersa\Tui\Command\Hotkey\HotkeyRegistry;
 use Ineersa\Tui\Command\Hotkey\HotkeyTableData;
 
@@ -26,6 +31,8 @@ final class SlashCommandRegistry
 {
     /** @var array<string, SlashCommandHandler> canonical name → handler */
     private array $handlers = [];
+
+    private ?string $activeSessionId = null;
 
     /** @var array<string, CommandMetadata> canonical name → metadata */
     private array $metadata = [];
@@ -124,6 +131,11 @@ final class SlashCommandRegistry
      * Step 3 allows registering a custom /help handler that overrides
      * the built-in behavior.
      */
+    public function setActiveSessionId(?string $sessionId): void
+    {
+        $this->activeSessionId = $sessionId;
+    }
+
     public function execute(SlashCommand $command): CommandResult
     {
         $canonical = $this->resolveName($command->name);
@@ -141,7 +153,12 @@ final class SlashCommandRegistry
                 $effectiveCommand = new SlashCommand($command->name, '', $command->originalText);
             }
 
-            return $this->handlers[$canonical]->handle($effectiveCommand);
+            $handler = $this->handlers[$canonical];
+            if ($handler instanceof SessionAwareSlashCommandHandler && null !== $this->activeSessionId) {
+                $handler->setSessionId($this->activeSessionId);
+            }
+
+            return $handler->handle($effectiveCommand);
         }
 
         // Built-in help (only if no custom handler registered)

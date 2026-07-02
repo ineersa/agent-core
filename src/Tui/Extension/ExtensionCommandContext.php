@@ -19,6 +19,17 @@ final class ExtensionCommandContext implements CommandContextInterface
 
     /** @var int highest-severity level seen: 0=info, 1=success, 2=warning, 3=error */
     public int $highestSeverity = 0;
+    private string $sessionId = '';
+
+    public function setSessionId(string $sessionId): void
+    {
+        $this->sessionId = $sessionId;
+    }
+
+    public function getSessionId(): string
+    {
+        return $this->sessionId;
+    }
 
     public function notify(string $message, string $level = 'info'): void
     {

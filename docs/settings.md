@@ -1418,3 +1418,10 @@ In headless/noninteractive contexts with `auto_deny_in_noninteractive: true`
 
 See [HITL and Approval Architecture](hitl-and-approvals.md) for the full
 end-to-end flow.
+
+### `extensions.settings.file_rewind`
+
+- `enabled` (default `true`)
+- `max_retained_turns` (default `100`)
+- `max_file_bytes` (default `2097152`)
+- `git_timeout_seconds` (default `30`)

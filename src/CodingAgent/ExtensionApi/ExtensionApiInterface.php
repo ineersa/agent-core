@@ -6,7 +6,9 @@ namespace Ineersa\Hatfield\ExtensionApi;
 
 use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
+use Ineersa\Hatfield\ExtensionApi\Command\InteractiveCommandHostInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
+use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookInterface;
@@ -118,4 +120,14 @@ interface ExtensionApiInterface
      * @see ToolCallRewriteHookInterface
      */
     public function registerToolCallRewriteHook(string $toolName, ToolCallRewriteHookInterface $hook): void;
+
+    /**
+     * Register a hook invoked after AgentCore commits a turn.
+     */
+    public function registerAfterTurnCommitHook(AfterTurnCommitHookInterface $hook): void;
+
+    /**
+     * Optional interactive command host (TUI). Null in headless contexts.
+     */
+    public function interactiveCommandHost(): ?InteractiveCommandHostInterface;
 }
