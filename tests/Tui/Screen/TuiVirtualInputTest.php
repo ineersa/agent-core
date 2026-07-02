@@ -121,7 +121,7 @@ final class TuiVirtualInputTest extends TestCase
             );
         }
 
-        foreach (['Ctrl+C', 'Ctrl+D', 'Shift+Enter', 'Insert newline', 'Submit prompt', 'Enter', 'Tab'] as $entry) {
+        foreach (['Ctrl+C', 'Ctrl+D', 'Ctrl+O', 'Shift+Enter', 'Insert newline', 'Submit prompt', 'Enter', 'Tab'] as $entry) {
             self::assertStringContainsString(
                 $entry,
                 $styledText,

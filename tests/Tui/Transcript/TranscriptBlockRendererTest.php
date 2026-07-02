@@ -1593,6 +1593,93 @@ final class TranscriptBlockRendererTest extends TestCase
         $this->assertStringContainsString('Installing dependencies', $plain);
     }
 
+    public function testGenericToolExchangeResultPreviewIsLimitedByDefault(): void
+    {
+        $body = implode("\n", ['task-0', 'task-1', 'task-2', 'task-3', 'task-4']);
+        $blocks = [
+            new TranscriptBlock(
+                id: 'tc-custom',
+                kind: TranscriptBlockKindEnum::ToolCall,
+                runId: 'r',
+                seq: 1,
+                text: 'task_list',
+                meta: [
+                    'tool_call_id' => 'call-task-list',
+                    'tool_name' => 'task_list',
+                    'arguments' => ['status' => 'TODO'],
+                ],
+            ),
+            new TranscriptBlock(
+                id: 'tr-custom',
+                kind: TranscriptBlockKindEnum::ToolResult,
+                runId: 'r',
+                seq: 2,
+                text: 'task_list',
+                meta: [
+                    'tool_call_id' => 'call-task-list',
+                    'tool_name' => 'task_list',
+                    'result' => $body,
+                    'is_error' => false,
+                ],
+            ),
+        ];
+
+        $plain = preg_replace('/\x1b\[[0-9;]*m/', '', implode("\n", $this->renderWidgetLines(
+            $blocks,
+            new TranscriptDisplayConfig(toolResultPreviewLines: 2),
+            new TranscriptDisplayState(previewableBlocksExpanded: false),
+        )));
+
+        $this->assertStringContainsString('task_list', $plain);
+        $this->assertStringContainsString('status: TODO', $plain);
+        $this->assertStringContainsString('task-0', $plain);
+        $this->assertStringContainsString('task-1', $plain);
+        $this->assertStringNotContainsString('task-4', $plain);
+        $this->assertStringContainsString('more line', $plain);
+    }
+
+    public function testGenericToolExchangeResultRendersFullWhenPreviewExpanded(): void
+    {
+        $body = implode("\n", ['task-0', 'task-1', 'task-2']);
+        $blocks = [
+            new TranscriptBlock(
+                id: 'tc-custom-expanded',
+                kind: TranscriptBlockKindEnum::ToolCall,
+                runId: 'r',
+                seq: 1,
+                text: 'task_list',
+                meta: [
+                    'tool_call_id' => 'call-task-list-expanded',
+                    'tool_name' => 'task_list',
+                    'arguments' => ['status' => 'TODO'],
+                ],
+            ),
+            new TranscriptBlock(
+                id: 'tr-custom-expanded',
+                kind: TranscriptBlockKindEnum::ToolResult,
+                runId: 'r',
+                seq: 2,
+                text: 'task_list',
+                meta: [
+                    'tool_call_id' => 'call-task-list-expanded',
+                    'tool_name' => 'task_list',
+                    'result' => $body,
+                    'is_error' => false,
+                ],
+            ),
+        ];
+
+        $plain = preg_replace('/\x1b\[[0-9;]*m/', '', implode("\n", $this->renderWidgetLines(
+            $blocks,
+            new TranscriptDisplayConfig(toolResultPreviewLines: 1),
+            new TranscriptDisplayState(previewableBlocksExpanded: true),
+        )));
+
+        $this->assertStringContainsString('task-0', $plain);
+        $this->assertStringContainsString('task-2', $plain);
+        $this->assertStringNotContainsString('more line', $plain);
+    }
+
     public function testToolCallWithoutMatchingResultRendersCallOnly(): void
     {
         $block = new TranscriptBlock(
@@ -1665,9 +1752,12 @@ final class TranscriptBlockRendererTest extends TestCase
         return implode("\n", $renderer->renderBlock($block, $this->context));
     }
 
-    private function renderWidgetLines(array $blocks): array
+    private function renderWidgetLines(array $blocks, ?TranscriptDisplayConfig $config = null, ?TranscriptDisplayState $state = null): array
     {
-        $widget = new TranscriptBlockWidget();
+        $widget = new TranscriptBlockWidget(
+            displayConfig: $config ?? new TranscriptDisplayConfig(),
+            displayState: $state ?? new TranscriptDisplayState(),
+        );
         $widget->setBlocks($blocks);
 
         return $widget->render($this->context);
