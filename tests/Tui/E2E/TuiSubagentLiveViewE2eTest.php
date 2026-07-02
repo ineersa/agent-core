@@ -65,6 +65,15 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
 
             $this->tmux->sendKey($pane, 'Enter');
             $this->tmux->waitForCaptureContains($pane, 'Subagent live:', 10.0, 'Interactive live view status must appear');
+            $this->tmux->waitForCaptureContains($pane, '[completed]', 10.0, 'Fixture child must show completed status in live view');
+
+            $this->tmux->sendKey($pane, 'C-u');
+            usleep(50_000);
+            $this->tmux->sendLiteral($pane, 'continue after completion');
+            $this->tmux->sendKey($pane, 'Enter');
+            $this->tmux->waitForCaptureContains($pane, '/agents-main', 10.0, 'Terminal child input must tell user to return to main agent');
+            $capAfterTerminal = $this->tmux->capturePlainWithHistory($pane, 2500);
+            self::assertStringContainsString('finished', strtolower($capAfterTerminal), 'Terminal child warning must mention finished subagent');
 
             $this->tmux->sendKey($pane, 'C-u');
             usleep(50_000);

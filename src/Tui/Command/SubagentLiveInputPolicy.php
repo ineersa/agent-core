@@ -33,6 +33,11 @@ final readonly class SubagentLiveInputPolicy
         return 'Leave subagent live view first with /agents-main before running other commands.';
     }
 
+    public function terminalChildInputBlockedMessage(): string
+    {
+        return 'This subagent has finished. Use /agents-main to continue with the main agent.';
+    }
+
     public function isAllowedSlashCommand(string $name): bool
     {
         return \in_array(strtolower($name), self::ALLOWED_SLASH_NAMES, true);

@@ -109,6 +109,77 @@ final class TickPollListenerSubagentLiveTest extends TestCase
         self::assertStringContainsString('child live', $text);
         self::assertStringNotContainsString('new parent block', $text);
     }
+    public function testCompletedCatalogChildMapsToIdleWorkingMessage(): void
+    {
+        $parentRun = 'session-200';
+        $client = $this->createStub(AgentSessionClient::class);
+
+        $parentProjector = new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState());
+        $poller = new RuntimeEventPoller(
+            new TuiRuntimeEventApplier($parentProjector),
+            new TestLogger(),
+            new RuntimeExceptionBoundary(new EventDispatcher()),
+            $this->createStub(TurnTreeProviderInterface::class),
+        );
+
+        $state = new TuiSessionState($parentRun);
+        $state->handle = null;
+        $state->lastSeq = 0;
+        $state->activity = RunActivityStateEnum::Completed;
+
+        $child = new SubagentLiveChildDTO('child-300', 'art1', 'scout', SubagentLiveStatusEnum::Running, 'task', 1);
+        $state->subagentLiveView->enter($child);
+        $state->subagentLiveView->childActivity = RunActivityStateEnum::Running;
+        $state->subagentLiveView->childTranscript = [
+            new TranscriptBlock('c1', TranscriptBlockKindEnum::Progress, 'child-300', 1, 'child live'),
+        ];
+
+        $state->subagentLiveCatalog->ingestRuntimeEvent(new RuntimeEvent(
+            'tool_execution_update',
+            $parentRun,
+            2,
+            [
+                'subagent_progress' => [
+                    'mode' => 'single',
+                    'status' => 'completed',
+                    'agent_name' => 'scout',
+                    'artifact_id' => 'art1',
+                    'agent_run_id' => 'child-300',
+                    'task_summary' => 'done',
+                ],
+            ],
+        ));
+
+        $childPoller = new SubagentLiveChildViewPoller(
+            new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
+        );
+
+        $tui = new Tui();
+        $screen = new ChatScreen(new DefaultTheme(new ThemePalette('test')), $parentRun, new PromptEditor(), new TranscriptDisplayConfig(), new TranscriptDisplayState());
+        $screen->setTranscriptBlocks($state->subagentLiveView->childTranscript);
+
+        $listenerRef = new \ReflectionClass(TickPollListener::class);
+        $listener = $listenerRef->newInstanceWithoutConstructor();
+        $listenerRef->getProperty('poller')->setValue($listener, $poller);
+        $listenerRef->getProperty('subagentLiveChildPoller')->setValue($listener, $childPoller);
+        $listenerRef->getProperty('questionCoordinator')->setValue($listener, new QuestionCoordinator());
+        $ctrlRef = new \ReflectionClass(QuestionController::class);
+        $listenerRef->getProperty('questionController')->setValue($listener, $ctrlRef->newInstanceWithoutConstructor());
+
+        $context = $this->buildTuiContext()
+            ->withTui($tui)
+            ->withClient($client)
+            ->withState($state)
+            ->withScreen($screen)
+            ->build();
+        $listener->register($context);
+        $handlerRef = new \ReflectionProperty(TuiTickDispatcher::class, 'handlers');
+        ($handlerRef->getValue($context->ticks)[0])();
+
+        self::assertSame(RunActivityStateEnum::Completed, $state->subagentLiveView->childActivity);
+        self::assertSame('Child agent idle', $state->subagentLiveView->lastLiveWorkingMessage);
+    }
+
 }
 
 final class ParentEventClient implements AgentSessionClient

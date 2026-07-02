@@ -105,6 +105,7 @@ final class SubmitListener implements TuiListenerRegistrar
                         $state,
                         $screen,
                         $client,
+                        $blockFactory,
                         $subagentLiveInputPolicy,
                         $logger,
                     );
@@ -526,12 +527,19 @@ final class SubmitListener implements TuiListenerRegistrar
         TuiSessionState $state,
         ChatScreen $screen,
         \Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient $client,
+        TranscriptBlockFactory $blockFactory,
         SubagentLiveInputPolicy $policy,
         LoggerInterface $logger,
     ): void {
         $child = $state->subagentLiveView->selected;
         if (null === $child) {
             $screen->setStatus('agents-live', 'No subagent selected for live view.');
+
+            return;
+        }
+
+        if ($child->isTerminal()) {
+            self::showLiveViewTerminalChildInput($state, $screen, $blockFactory, $policy);
 
             return;
         }
@@ -573,7 +581,23 @@ final class SubmitListener implements TuiListenerRegistrar
         SubagentLiveInputPolicy $policy,
     ): void {
         $message = $policy->blockedLeaveLiveViewMessage();
-        $state->subagentLiveView->childTranscript[] = $blockFactory->system(
+        $state->subagentLiveView->childTranscript[] = $blockFactory->error(
+            $state->sessionId,
+            $message,
+            \count($state->subagentLiveView->childTranscript) + 1,
+        );
+        $screen->setTranscriptBlocks($state->subagentLiveView->childTranscript);
+        $screen->setStatus('agents-live', $message);
+    }
+
+    private static function showLiveViewTerminalChildInput(
+        TuiSessionState $state,
+        ChatScreen $screen,
+        TranscriptBlockFactory $blockFactory,
+        SubagentLiveInputPolicy $policy,
+    ): void {
+        $message = $policy->terminalChildInputBlockedMessage();
+        $state->subagentLiveView->childTranscript[] = $blockFactory->error(
             $state->sessionId,
             $message,
             \count($state->subagentLiveView->childTranscript) + 1,

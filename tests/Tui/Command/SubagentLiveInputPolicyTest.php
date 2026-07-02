@@ -44,4 +44,11 @@ final class SubagentLiveInputPolicyTest extends TestCase
         self::assertStringContainsString('steer', $this->policy->dispatchConfirmationMessage('steer', 'scout'));
         self::assertStringContainsString('follow_up', $this->policy->dispatchConfirmationMessage('follow_up', 'scout'));
     }
+
+    #[Test]
+    public function terminalChildInputBlockedMessageMentionsAgentsMain(): void
+    {
+        self::assertStringContainsString('/agents-main', $this->policy->terminalChildInputBlockedMessage());
+        self::assertStringContainsString('finished', strtolower($this->policy->terminalChildInputBlockedMessage()));
+    }
 }

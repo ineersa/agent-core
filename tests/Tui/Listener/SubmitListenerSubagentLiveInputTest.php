@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Listener;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\Tui\Command\CommandMetadata;
@@ -84,21 +85,20 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
     }
 
     #[Test]
-    public function liveViewTerminalChildSendsFollowUpAndSetsChildStarting(): void
+    public function liveViewTerminalChildBlocksNormalTextWithoutSendingToChildOrParent(): void
     {
-        $this->state->subagentLiveView->childActivity = RunActivityStateEnum::Completed;
+        $this->enterLiveView(childRunId: 'child-run-1', childActivity: RunActivityStateEnum::Completed, status: SubagentLiveStatusEnum::Completed);
 
-        $this->client->expects($this->once())
-            ->method('send')
-            ->with(
-                'child-run-1',
-                $this->callback(static fn (UserCommand $cmd): bool => 'follow_up' === $cmd->type),
-            );
+        $this->client->expects($this->never())->method('send');
+        $this->client->expects($this->never())->method('start');
 
         $screen = $this->dispatchSubmit('continue after completion');
 
-        self::assertSame(RunActivityStateEnum::Starting, $this->state->subagentLiveView->childActivity);
-        self::assertStringContainsString('Sent follow_up to subagent scout', $this->agentsLiveStatus($screen));
+        self::assertStringContainsString('/agents-main', $this->agentsLiveStatus($screen));
+        self::assertStringContainsString('finished', strtolower($this->agentsLiveStatus($screen)));
+        self::assertNotEmpty($this->state->subagentLiveView->childTranscript);
+        self::assertSame(TranscriptBlockKindEnum::Error, $this->state->subagentLiveView->childTranscript[0]->kind);
+        self::assertSame(RunActivityStateEnum::Completed, $this->state->subagentLiveView->childActivity);
     }
 
     #[Test]
@@ -111,6 +111,12 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
             $screen = $this->dispatchSubmit($text);
             self::assertStringContainsString('/agents-main', $this->agentsLiveStatus($screen), $text);
             self::assertSame(0, $this->handlerCalls[$text] ?? 0, $text);
+            self::assertNotEmpty($this->state->subagentLiveView->childTranscript, $text);
+            self::assertSame(
+                TranscriptBlockKindEnum::Error,
+                $this->state->subagentLiveView->childTranscript[\count($this->state->subagentLiveView->childTranscript) - 1]->kind,
+                $text,
+            );
         }
     }
 
@@ -138,13 +144,16 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
         self::assertGreaterThan(0, $this->handlerCalls['/tasks'] ?? 0);
     }
 
-    private function enterLiveView(string $childRunId, RunActivityStateEnum $childActivity): void
-    {
+    private function enterLiveView(
+        string $childRunId,
+        RunActivityStateEnum $childActivity,
+        SubagentLiveStatusEnum $status = SubagentLiveStatusEnum::Running,
+    ): void {
         $child = new SubagentLiveChildDTO(
             agentRunId: $childRunId,
             artifactId: 'agent_fixture',
             agentName: 'scout',
-            status: SubagentLiveStatusEnum::Running,
+            status: $status,
             taskSummary: 'Inspect routing',
             lastActivityAtMs: 1,
         );

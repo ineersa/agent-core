@@ -76,8 +76,13 @@ final class SubagentLiveViewState
             $this->childActivity = RunActivityStateEnum::WaitingHuman;
         } elseif ($child->isRunning()) {
             $this->childActivity = RunActivityStateEnum::Running;
-        } elseif (!$this->childActivity->isActive()) {
-            $this->childActivity = RunActivityStateEnum::Completed;
+        } elseif ($child->isTerminal()) {
+            $this->childActivity = match ($child->status) {
+                SubagentLiveStatusEnum::Completed, SubagentLiveStatusEnum::Done => RunActivityStateEnum::Completed,
+                SubagentLiveStatusEnum::Failed => RunActivityStateEnum::Failed,
+                SubagentLiveStatusEnum::Cancelled => RunActivityStateEnum::Cancelled,
+                default => RunActivityStateEnum::Completed,
+            };
         }
     }
 
