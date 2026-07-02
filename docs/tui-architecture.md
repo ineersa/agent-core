@@ -286,7 +286,7 @@ Extensions interact with the TUI through explicit slots, not direct widget mutat
 | `setHeader(?TuiWidget)` | Replace header widget |
 | `setFooter(?TuiWidget)` | Replace footer bar |
 | `setEditorComponent(?TuiWidget)` | Replace prompt editor |
-| `setWidget(key, ?TuiWidget, placement)` | Add/remove above/below editor |
+| `setWidget(key, ?TuiWidget, placement, order=0)` | Add/remove above/below editor; lower `order` renders first (top of merge), higher last (editor-adjacent). Equal orders keep insertion order (stable sort). `TuiSlotRegistry::ORDER_DEFAULT` / `ORDER_PINNED_LAST` for pinning. compact-header uses `ORDER_PINNED_LAST`. |
 | `setStatus(key, ?string)` | Set/remove status panel entry |
 | `setWorkingMessage(?string)` | Override working indicator text |
 | `setWorkingVisible(bool)` | Show/hide working row |

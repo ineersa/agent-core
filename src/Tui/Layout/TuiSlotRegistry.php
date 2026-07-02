@@ -22,7 +22,13 @@ use Ineersa\Tui\Widget\WidgetPlacementEnum;
  */
 final class TuiSlotRegistry
 {
-    /** @var array<string, array{widget: TuiWidget, placement: WidgetPlacementEnum}> */
+    /** Default render order: widgets with equal order keep insertion order. */
+    public const ORDER_DEFAULT = 0;
+
+    /** Pin a widget to render LAST within its placement (adjacent to the editor for AboveEditor). */
+    public const ORDER_PINNED_LAST = \PHP_INT_MAX;
+
+    /** @var array<string, array{widget: TuiWidget, placement: WidgetPlacementEnum, order: int}> */
     private array $extensionWidgets = [];
 
     /** @var array<string, string> */
@@ -75,9 +81,13 @@ final class TuiSlotRegistry
 
     /* ───────── Extension widgets ───────── */
 
-    public function setWidget(string $key, TuiWidget $widget, WidgetPlacementEnum $placement = WidgetPlacementEnum::AboveEditor): void
-    {
-        $this->extensionWidgets[$key] = ['widget' => $widget, 'placement' => $placement];
+    public function setWidget(
+        string $key,
+        TuiWidget $widget,
+        WidgetPlacementEnum $placement = WidgetPlacementEnum::AboveEditor,
+        int $order = self::ORDER_DEFAULT,
+    ): void {
+        $this->extensionWidgets[$key] = ['widget' => $widget, 'placement' => $placement, 'order' => $order];
     }
 
     public function removeWidget(string $key): void
@@ -86,6 +96,12 @@ final class TuiSlotRegistry
     }
 
     /**
+     * Widgets for a placement, ordered by `order` ascending.
+     *
+     * Lower order renders first (top of the merged block); higher order
+     * renders last (adjacent to the editor for AboveEditor). Equal orders
+     * preserve insertion order — PHP 8.0+ usort is stable.
+     *
      * @return list<TuiWidget>
      */
     public function getWidgetsByPlacement(WidgetPlacementEnum $placement): array
@@ -93,11 +109,13 @@ final class TuiSlotRegistry
         $result = [];
         foreach ($this->extensionWidgets as $entry) {
             if ($entry['placement'] === $placement) {
-                $result[] = $entry['widget'];
+                $result[] = $entry;
             }
         }
 
-        return $result;
+        usort($result, static fn (array $a, array $b): int => $a['order'] <=> $b['order']);
+
+        return array_map(static fn (array $entry): TuiWidget => $entry['widget'], $result);
     }
 
     /* ───────── Status entries ───────── */
