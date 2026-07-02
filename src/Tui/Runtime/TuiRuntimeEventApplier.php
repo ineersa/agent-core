@@ -76,6 +76,7 @@ final readonly class TuiRuntimeEventApplier
         }
 
         $state->applyQueuedUserMessageEvent($event);
+        $state->subagentLiveCatalog->ingestRuntimeEvent($event);
         $this->projector->accept($event->toArray());
     }
 

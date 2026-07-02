@@ -1249,6 +1249,7 @@ TXT;
             $terminalStatus,
             $agentName,
             $artifactId,
+            $agentRunId,
             $taskSummary,
             $state,
             $elapsedMs,
@@ -1405,6 +1406,7 @@ TXT;
         $progress = $this->progressSnapshotBuilder->singleRunning(
             $agentName,
             $artifactId,
+            $agentRunId,
             $taskSummary,
             $state,
             $elapsedMs,

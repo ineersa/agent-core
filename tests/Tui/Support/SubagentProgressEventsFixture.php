@@ -19,12 +19,14 @@ final class SubagentProgressEventsFixture
         $now = (new \DateTimeImmutable())->format(\DATE_ATOM);
         $toolCallId = 'call_subagent_e2e_001';
         $artifactId = 'agent_e2e_progress_fixture';
+        $childRunId = $sessionId.'_child_scout_001';
 
         $progressBase = [
             'mode' => 'single',
             'status' => 'running',
             'agent_name' => 'scout',
             'artifact_id' => $artifactId,
+            'agent_run_id' => $childRunId,
             'task_summary' => 'Inspect TUI subagent rendering',
             'elapsed_ms' => 5000,
             'tool_count' => 12,

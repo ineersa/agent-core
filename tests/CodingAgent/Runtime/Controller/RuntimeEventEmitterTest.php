@@ -176,6 +176,57 @@ final class RuntimeEventEmitterTest extends TestCase
         $this->assertContains(RuntimeEventTypeEnum::ToolExecutionCompleted->value, $types);
     }
 
+
+    public function testEmitRegistersChildRunFromSubagentProgressAndDrainForwardsChildEvents(): void
+    {
+        $parentRunId = 'parent-42';
+        $childRunId = 'child-99';
+        $client = new FlakySeqDrainAgentSessionClient(
+            throwOnCall: 0,
+            eventsByCall: [
+                2 => [
+                    new RuntimeEvent(RuntimeEventTypeEnum::TurnStarted->value, $childRunId, 3, []),
+                ],
+            ],
+        );
+
+        $emitter = new RuntimeEventEmitter($client, new RuntimeExceptionBoundary(new EventDispatcher()), $this->createStub(LoggerInterface::class));
+        $emitter->openStdout();
+        $this->replaceStdoutWithMemory($emitter);
+
+        $emitter->emit(new RuntimeEvent(
+            type: RuntimeEventTypeEnum::RunStarted->value,
+            runId: $parentRunId,
+            seq: 1,
+            payload: [],
+        ));
+
+        $emitter->emit(new RuntimeEvent(
+            type: RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
+            runId: $parentRunId,
+            seq: 2,
+            payload: [
+                'tool_call_id' => 'tc',
+                'subagent_progress' => [
+                    'mode' => 'single',
+                    'agent_run_id' => $childRunId,
+                    'artifact_id' => 'a1',
+                    'agent_name' => 'scout',
+                    'status' => 'running',
+                    'task_summary' => 't',
+                ],
+            ],
+        ));
+
+        $emitter->drainRegisteredRunsOnce();
+
+        $stdout = $this->stdoutHandle($emitter);
+        rewind($stdout);
+        $raw = stream_get_contents($stdout) ?: '';
+        self::assertStringContainsString($childRunId, $raw);
+        self::assertStringContainsString('turn.started', $raw);
+    }
+
     private function createEmitter(): RuntimeEventEmitter
     {
         $boundary = new RuntimeExceptionBoundary(new EventDispatcher());
