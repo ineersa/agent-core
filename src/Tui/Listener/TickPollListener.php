@@ -183,7 +183,7 @@ final class TickPollListener implements TuiListenerRegistrar
                 $selected = $state->subagentLiveView->selected;
                 if (null !== $selected) {
                     $liveStatus = \sprintf(
-                        'Live view (readonly): %s [%s] — /agents-main to return.',
+                        'Subagent live: %s [%s] — type to steer next step; /agents-main to return.',
                         $selected->agentName,
                         $selected->statusLabel(),
                     );

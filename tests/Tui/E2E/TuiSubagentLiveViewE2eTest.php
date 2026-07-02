@@ -64,14 +64,23 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
             $this->tmux->waitForCaptureContains($pane, 'agent_e2e_progress_fixture', 10.0, 'Picker must list subagent artifact');
 
             $this->tmux->sendKey($pane, 'Enter');
-            $this->tmux->waitForCaptureContains($pane, 'Live view (readonly)', 10.0, 'Readonly live view status must appear');
+            $this->tmux->waitForCaptureContains($pane, 'Subagent live:', 10.0, 'Interactive live view status must appear');
+
+            $this->tmux->sendKey($pane, 'C-u');
+            usleep(50_000);
+            $this->tmux->sendLiteral($pane, '/new');
+            $this->tmux->sendKey($pane, 'Enter');
+            $this->tmux->waitForCaptureContains($pane, '/agents-main', 10.0, 'Blocked slash must tell user to leave live view');
+            $capAfterBlock = $this->tmux->capturePlainWithHistory($pane, 2500);
+            self::assertStringContainsString('agent_e2e_progress_fixture', $capAfterBlock, 'Must remain in live view after blocked /new');
+            self::assertStringNotContainsString('subagent scout running', $capAfterBlock, 'Must not switch back to parent transcript after blocked /new');
 
             $this->tmux->sendKey($pane, 'C-u');
             usleep(50_000);
             $this->tmux->sendLiteral($pane, '/agents-main');
             $this->tmux->sendKey($pane, 'Enter');
             $this->tmux->waitForCaptureContains($pane, 'subagent scout', 10.0, 'Parent transcript must restore after /agents-main');
-            self::assertStringNotContainsString('Live view (readonly)', $this->tmux->capturePlainWithHistory($pane, 2500));
+            self::assertStringNotContainsString('Subagent live:', $this->tmux->capturePlainWithHistory($pane, 2500));
 
             $this->tmux->sendKey($pane, 'C-d');
         } catch (\Throwable $e) {
