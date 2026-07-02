@@ -10,7 +10,6 @@ namespace Ineersa\CodingAgent\Extension\Builtin\FileRewind;
 final class FileRewindLedgerStore
 {
     public function __construct(
-        private readonly RewindStoragePaths $paths,
         private readonly string $projectCwd,
     ) {
     }

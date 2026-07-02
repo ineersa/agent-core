@@ -130,4 +130,12 @@ interface ExtensionApiInterface
      * Optional interactive command host (TUI). Null in headless contexts.
      */
     public function interactiveCommandHost(): ?InteractiveCommandHostInterface;
+
+    /**
+     * Bind file rewind preview/action handlers for TUI runtime ports.
+     */
+    public function bindFileRewindRuntime(
+        Command\FileRewindPreviewProviderInterface $previewProvider,
+        Command\FileRewindActionHandlerInterface $actionHandler,
+    ): void;
 }

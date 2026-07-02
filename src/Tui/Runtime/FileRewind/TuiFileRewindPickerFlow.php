@@ -2,19 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Extension\FileRewind;
+namespace Ineersa\Tui\Runtime\FileRewind;
 
 use Ineersa\CodingAgent\Runtime\Contract\FileRewindPickerFlowInterface;
 
-final class FileRewindPickerFlowAdapter implements FileRewindPickerFlowInterface
+final class TuiFileRewindPickerFlow implements FileRewindPickerFlowInterface
 {
-    private static ?self $instance = null;
     private ?\Closure $openCallback = null;
-
-    public static function instance(): self
-    {
-        return self::$instance ??= new self();
-    }
 
     public function setOpenCallback(\Closure $callback): void
     {

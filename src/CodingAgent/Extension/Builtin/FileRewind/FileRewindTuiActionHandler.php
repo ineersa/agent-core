@@ -5,10 +5,11 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Extension\Builtin\FileRewind;
 
 use Ineersa\CodingAgent\Runtime\Contract\ConversationRewindPortInterface;
+use Ineersa\CodingAgent\Runtime\Contract\FileRewindConversationRewindBindableInterface;
 use Ineersa\Hatfield\ExtensionApi\Command\FileRewindActionEnum;
 use Ineersa\Hatfield\ExtensionApi\Command\FileRewindActionHandlerInterface;
 
-final class FileRewindTuiActionHandler implements FileRewindActionHandlerInterface
+final class FileRewindTuiActionHandler implements FileRewindActionHandlerInterface, FileRewindConversationRewindBindableInterface
 {
     private ?ConversationRewindPortInterface $conversationRewind = null;
 
@@ -32,7 +33,11 @@ final class FileRewindTuiActionHandler implements FileRewindActionHandlerInterfa
             return;
         }
         if (FileRewindActionEnum::RestoreFilesAndConversation === $action) {
-            $this->service->restoreForTurn($sessionId, $turnNo);
+            try {
+                $this->service->restoreForTurn($sessionId, $turnNo);
+            } catch (\Throwable $e) {
+                throw $e;
+            }
             $this->requireConversation()->rewindToTurn($turnNo);
 
             return;

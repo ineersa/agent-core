@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Extension\Builtin\FileRewind;
 
-use Ineersa\CodingAgent\Extension\FileRewind\FileRewindRuntimePortsHolder;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
@@ -19,11 +18,11 @@ final class FileRewindExtension implements HatfieldExtensionInterface
         $paths = new RewindStoragePaths($cwd);
         $git = new GitProcessRunner();
         $backend = new HiddenGitSnapshotBackend($git, new NullLogger());
-        $ledger = new FileRewindLedgerStore($paths, $cwd);
+        $ledger = new FileRewindLedgerStore($cwd);
         $projector = new FileRewindLedgerProjector();
         $service = new FileRewindService($backend, $git, $paths, $ledger, $projector, $config, new NullLogger(), $cwd);
         $actionHandler = new FileRewindTuiActionHandler($service);
-        FileRewindRuntimePortsHolder::instance()->bind($service, $actionHandler);
+        $api->bindFileRewindRuntime($service, $actionHandler);
 
         $api->registerAfterTurnCommitHook(new FileRewindAfterTurnCommitHook($service, $config));
         $api->registerCommand(

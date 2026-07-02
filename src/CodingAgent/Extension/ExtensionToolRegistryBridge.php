@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Extension;
 
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Extension\FileRewind\FileRewindRuntimePorts;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandRegistryInterface;
 use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
+use Ineersa\Hatfield\ExtensionApi\Command\FileRewindActionHandlerInterface;
+use Ineersa\Hatfield\ExtensionApi\Command\FileRewindPreviewProviderInterface;
 use Ineersa\Hatfield\ExtensionApi\Command\InteractiveCommandHostInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
@@ -43,6 +46,7 @@ final readonly class ExtensionToolRegistryBridge implements ExtensionApiInterfac
         private AppConfig $appConfig,
         private ExecInterface $execBridge,
         private CommandRegistryInterface $commandRegistry,
+        private FileRewindRuntimePorts $fileRewindRuntimePorts,
         private ?InteractiveCommandHostInterface $interactiveCommandHost = null,
     ) {
     }
@@ -136,5 +140,12 @@ final readonly class ExtensionToolRegistryBridge implements ExtensionApiInterfac
     public function interactiveCommandHost(): ?InteractiveCommandHostInterface
     {
         return $this->interactiveCommandHost;
+    }
+
+    public function bindFileRewindRuntime(
+        FileRewindPreviewProviderInterface $previewProvider,
+        FileRewindActionHandlerInterface $actionHandler,
+    ): void {
+        $this->fileRewindRuntimePorts->bind($previewProvider, $actionHandler);
     }
 }

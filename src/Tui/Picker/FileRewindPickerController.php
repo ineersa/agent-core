@@ -7,10 +7,12 @@ namespace Ineersa\Tui\Picker;
 use Ineersa\CodingAgent\Runtime\Contract\FileRewindTurnActionPortInterface;
 use Ineersa\CodingAgent\Runtime\Contract\FileRewindTurnPreviewPortInterface;
 use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
+use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeView;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
+use Symfony\Component\Tui\Event\SelectionChangeEvent;
 use Symfony\Component\Tui\Input\Key;
 use Symfony\Component\Tui\Input\Keybindings;
 use Symfony\Component\Tui\Tui;
@@ -64,7 +66,7 @@ final class FileRewindPickerController
         $this->overlay = null;
     }
 
-    private function openTurnPicker($tree): void
+    private function openTurnPicker(TurnTreeView $tree): void
     {
         $tui = $this->tui;
         $screen = $this->screen;
@@ -76,10 +78,14 @@ final class FileRewindPickerController
             'select_confirm' => [Key::ENTER],
             'select_cancel' => [Key::ESCAPE, Key::ctrl('c')],
         ]);
-        $items = TreePickerController::buildItems($tree, $theme, selectedIndex: TreePickerController::initialSelectedIndex($tree));
+        $selected = TreePickerController::initialSelectedIndex($tree);
+        $items = TreePickerController::buildItems($tree, $theme, selectedIndex: $selected);
         $list = new SelectListWidget(items: $items, maxVisible: 10, keybindings: $kb);
         $picker = $this;
         $sessionId = (string) $this->sessionId;
+        $turnOrder = TreePickerController::flattenTurnOrder($tree);
+        $initialTurn = $turnOrder[$selected] ?? 0;
+        $picker->updatePreviewWidget($sessionId, $initialTurn);
         $list->onSelect(static function (SelectEvent $event) use ($picker, $sessionId): void {
             $turnNo = (int) $event->getItem()['value'];
             $picker->closePicker();
@@ -88,10 +94,40 @@ final class FileRewindPickerController
         $list->onCancel(static function (CancelEvent $event) use ($picker): void {
             $picker->closePicker();
         });
+        $list->onSelectionChange(static function (SelectionChangeEvent $event) use ($picker, $sessionId): void {
+            $picker->updatePreviewWidget($sessionId, (int) $event->getItem()['value']);
+        });
         $this->overlay = new PickerOverlay();
         $this->overlay->mount($tui, $screen, $list, $header);
         $screen->setStatus('rewind', 'Select a turn, then choose restore action');
         $screen->refresh();
+    }
+
+    private function updatePreviewWidget(string $sessionId, int $turnNo): void
+    {
+        if (null === $this->screen) {
+            return;
+        }
+        $this->screen->setStatus('rewind', $this->formatPreviewSummary($sessionId, $turnNo));
+        $this->screen->refresh();
+    }
+
+    private function formatPreviewSummary(string $sessionId, int $turnNo): string
+    {
+        if (!$this->previewPort->hasCheckpoint($sessionId, $turnNo)) {
+            return 'Turn '.$turnNo.': no file checkpoint';
+        }
+        $rows = $this->previewPort->preview($sessionId, $turnNo);
+        if ([] === $rows) {
+            return 'Turn '.$turnNo.': preview unavailable';
+        }
+        $parts = [];
+        foreach (\array_slice($rows, 0, 3) as $row) {
+            $parts[] = \sprintf('%s %s', $row['status'] ?? '?', $row['path'] ?? '');
+        }
+        $suffix = \count($rows) > 3 ? ' …' : '';
+
+        return 'Turn '.$turnNo.': '.implode('; ', $parts).$suffix;
     }
 
     private function openActionPicker(string $sessionId, int $turnNo): void

@@ -161,4 +161,8 @@ final class InMemoryExtensionApiBridge implements ExtensionApiInterface
     {
         return null;
     }
+
+    public function bindFileRewindRuntime(\Ineersa\Hatfield\ExtensionApi\Command\FileRewindPreviewProviderInterface $previewProvider, \Ineersa\Hatfield\ExtensionApi\Command\FileRewindActionHandlerInterface $actionHandler): void
+    {
+    }
 }
