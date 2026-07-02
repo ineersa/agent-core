@@ -36,7 +36,6 @@ use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use PHPUnit\Framework\TestCase;
-use Psr\Log\NullLogger;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Tui\Tui;
 
@@ -77,7 +76,6 @@ final class TickPollListenerSubagentLiveTest extends TestCase
 
         $childPoller = new SubagentLiveChildViewPoller(
             new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
-            new NullLogger(),
         );
 
         $tui = new Tui();
