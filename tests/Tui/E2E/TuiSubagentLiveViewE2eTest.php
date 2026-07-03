@@ -71,15 +71,15 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
             usleep(50_000);
             $this->tmux->sendLiteral($pane, 'continue after completion');
             $this->tmux->sendKey($pane, 'Enter');
-            $this->tmux->waitForCaptureContains($pane, '/agents-main', 10.0, 'Terminal child input must tell user to return to main agent');
+            $this->tmux->waitForCaptureContains($pane, 'has finished', 10.0, 'Terminal child input must show finished-subagent warning');
             $capAfterTerminal = $this->tmux->capturePlainWithHistory($pane, 2500);
-            self::assertStringContainsString('finished', strtolower($capAfterTerminal), 'Terminal child warning must mention finished subagent');
+            self::assertStringContainsString('has finished', strtolower($capAfterTerminal), 'Terminal child warning must mention finished subagent');
 
             $this->tmux->sendKey($pane, 'C-u');
             usleep(50_000);
             $this->tmux->sendLiteral($pane, '/new');
             $this->tmux->sendKey($pane, 'Enter');
-            $this->tmux->waitForCaptureContains($pane, '/agents-main', 10.0, 'Blocked slash must tell user to leave live view');
+            $this->tmux->waitForCaptureContains($pane, 'Leave subagent live view', 10.0, 'Blocked slash must show leave-live-view warning');
             $capAfterBlock = $this->tmux->capturePlainWithHistory($pane, 2500);
             self::assertStringContainsString('agent_e2e_progress_fixture', $capAfterBlock, 'Must remain in live view after blocked /new');
             self::assertStringNotContainsString('subagent scout running', $capAfterBlock, 'Must not switch back to parent transcript after blocked /new');
