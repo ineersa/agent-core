@@ -99,8 +99,18 @@ final class FileRewindPickerController
         $list->onCancel(static function (CancelEvent $event) use ($picker): void {
             $picker->closePicker();
         });
-        $list->onSelectionChange(static function (SelectionChangeEvent $event) use ($picker, $sessionId): void {
-            $picker->updateStatusForTurn($sessionId, (int) $event->getItem()['value']);
+        $list->onSelectionChange(static function (SelectionChangeEvent $event) use ($picker, $list, $tree, $theme, $sessionId, $turnOrder): void {
+            $turnNo = (int) $event->getItem()['value'];
+            $selectedIdx = 0;
+            foreach ($turnOrder as $i => $orderedTurnNo) {
+                if ($orderedTurnNo === $turnNo) {
+                    $selectedIdx = $i;
+                    break;
+                }
+            }
+            $list->setItems(TreePickerController::buildItems($tree, $theme, selectedIndex: $selectedIdx));
+            $list->setSelectedIndex(max(0, $selectedIdx));
+            $picker->updateStatusForTurn($sessionId, $turnNo);
         });
         $this->overlay = new PickerOverlay();
         $this->overlay->mount($tui, $screen, $list, $header);
@@ -113,8 +123,7 @@ final class FileRewindPickerController
             return;
         }
         $this->screen->setStatus('rewind', $this->formatTurnStatus($sessionId, $turnNo));
-        $this->screen->refresh();
-        $this->screen->requestRender();
+        $this->tui?->requestRender(true);
     }
 
     private function formatTurnStatus(string $sessionId, int $turnNo): string
