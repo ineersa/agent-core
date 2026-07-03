@@ -58,7 +58,11 @@ final class PickerOverlay
         // multiplexers.  When the diff cannot be handled incrementally
         // (e.g. the first changed line is outside the viewport),
         // ScreenWriter naturally falls back to fullRender on its own.
-        $tui->requestRender();
+        // Force a full clear+redraw when opening pickers. Incremental
+        // ScreenWriter updates can leave stale picker rows in the overlay
+        // slot (below editor) when the viewport dirty region does not cover
+        // prior list height — users see duplicated headers/turn rows.
+        $tui->requestRender(true);
         $this->isOpen = true;
     }
 
@@ -83,7 +87,7 @@ final class PickerOverlay
                 // Request a render so the TUI repaints without the
                 // overlay on the next tick instead of waiting for a
                 // natural tick — avoids a visible stale frame.
-                $this->screen->requestRender();
+                $this->screen->requestRender(true);
             }
         }
 

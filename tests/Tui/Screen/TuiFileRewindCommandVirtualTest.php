@@ -278,6 +278,35 @@ final class TuiFileRewindCommandVirtualTest extends TestCase
         }
     }
 
+
+    #[Test]
+    public function testRewindSlashCommandRegisteredViaExtensionManager(): void
+    {
+        $slashRegistry = new \Ineersa\Tui\Command\SlashCommandRegistry();
+        $appConfig = new \Ineersa\CodingAgent\Config\AppConfig(
+            tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'),
+            logging: new \Ineersa\CodingAgent\Config\LoggingConfig(),
+            extensions: new \Ineersa\CodingAgent\Config\ExtensionsConfig(
+                enabled: [\Ineersa\CodingAgent\Extension\Builtin\FileRewind\FileRewindExtension::class],
+                settings: ['file_rewind' => ['enabled' => true]],
+            ),
+            cwd: \Ineersa\CodingAgent\Tests\Support\ProjectDir::get(),
+        );
+        $bridge = new \Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge(
+            new \Ineersa\CodingAgent\Tool\ToolRegistry(),
+            new \Ineersa\CodingAgent\Extension\ExtensionHookRegistry(),
+            $appConfig,
+            new \Ineersa\CodingAgent\Extension\ExtensionExecBridge(),
+            new \Ineersa\Tui\Extension\TuiCommandRegistryAdapter($slashRegistry),
+            new \Ineersa\CodingAgent\Extension\FileRewind\FileRewindRuntimePorts(),
+        );
+        $diagnostics = (new \Ineersa\CodingAgent\Extension\ExtensionManager($appConfig, $bridge, new NullLogger()))->loadExtensions();
+        self::assertSame([], $diagnostics);
+        self::assertTrue($slashRegistry->has('rewind'));
+        $result = $slashRegistry->execute(new SlashCommand('rewind', '', '/rewind'), 'rewind-picker-session');
+        self::assertNotInstanceOf(NoOp::class, $result);
+    }
+
     private function sampleTree(string $runId): TurnTreeView
     {
         return new TurnTreeView(

@@ -471,6 +471,7 @@ extensions:
     enabled:
         - Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension
         - Ineersa\HatfieldExt\TaskWorkflow\TaskWorkflowExtension
+        - Ineersa\CodingAgent\Extension\Builtin\FileRewind\FileRewindExtension
         - Ineersa\HatfieldExt\CastorLlmMode\CastorLlmModeExtension
     settings:
         task_workflow:
