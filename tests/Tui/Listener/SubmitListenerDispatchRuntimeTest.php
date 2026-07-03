@@ -24,6 +24,9 @@ use Ineersa\Tui\Listener\SubmitListener;
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
+use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
+use Ineersa\Tui\Command\SubagentLiveInputPolicy;
+use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
@@ -473,6 +476,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
             blockFactory: new \Ineersa\Tui\Transcript\TranscriptBlockFactory(),
             coordinator: $this->questionCoordinator,
             questionController: $this->questionController,
+            subagentLiveInputPolicy: new SubagentLiveInputPolicy(),
             logger: $this->logger,
         );
         $listener->register($context);
