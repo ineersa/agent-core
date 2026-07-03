@@ -9,7 +9,6 @@ use Ineersa\Tui\Theme\TuiTheme;
 use Ineersa\Tui\Widget\TuiRenderContext;
 use Ineersa\Tui\Widget\TuiWidget;
 use Symfony\Component\Tui\Ansi\AnsiUtils;
-use Symfony\Component\Tui\Style\Style;
 
 /**
  * Pi-style permanent capability bar (prompts, skills, agents, mcp) above the editor merge.
@@ -40,7 +39,7 @@ final class CompactHeaderWidget implements TuiWidget
 
         if ([] !== $this->snapshot->prompts) {
             $items = array_map(
-                fn (string $name): string => $this->italicValue('/'.$name),
+                static fn (string $name): string => $theme->color(ThemeColorEnum::MarkdownLink, '/'.$name),
                 $this->snapshot->prompts,
             );
             $lines = array_merge($lines, $this->wrapLabel('prompts', $items, $width, $theme));
@@ -48,7 +47,7 @@ final class CompactHeaderWidget implements TuiWidget
 
         if ([] !== $this->snapshot->skills) {
             $items = array_map(
-                fn (string $name): string => $this->italicValue($name),
+                static fn (string $name): string => $theme->color(ThemeColorEnum::MarkdownLink, $name),
                 $this->snapshot->skills,
             );
             $lines = array_merge($lines, $this->wrapLabel('skills', $items, $width, $theme));
@@ -58,7 +57,7 @@ final class CompactHeaderWidget implements TuiWidget
             $agentNames = $this->snapshot->agentNames;
             sort($agentNames, \SORT_STRING);
             $items = array_map(
-                fn (string $name): string => $this->italicValue($name),
+                static fn (string $name): string => $theme->color(ThemeColorEnum::MarkdownLink, $name),
                 $agentNames,
             );
             $lines = array_merge($lines, $this->wrapLabel('agents', $items, $width, $theme));
@@ -71,17 +70,12 @@ final class CompactHeaderWidget implements TuiWidget
                 $countSuffix = null !== $server->toolCount
                     ? ' '.$theme->muted('('.$server->toolCount.')')
                     : '';
-                $items[] = $iconStyled.$this->italicValue($server->name).$countSuffix;
+                $items[] = $iconStyled.$theme->color(ThemeColorEnum::MarkdownLink, $server->name).$countSuffix;
             }
             $lines = array_merge($lines, $this->wrapLabel('mcp', $items, $width, $theme));
         }
 
         return $lines;
-    }
-
-    private function italicValue(string $text): string
-    {
-        return (new Style(italic: true))->apply($text);
     }
 
     private function mcpIconStyled(TuiTheme $theme, McpServerHeaderEntry $server): string
