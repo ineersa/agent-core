@@ -63,46 +63,15 @@ final class TuiFileRewindE2eTest extends TestCase
             $this->submitPrompt($pane, 'hello');
             $this->waitAssistantBlock($pane);
             $this->assertNotStuckWorking($pane);
+            $this->waitForTurnCheckpointRecorded(1);
 
-            // Simulate post-checkpoint worktree mutation (turn-1 checkpoint already captured).
+            // Simulate post-checkpoint worktree mutation after turn-1 snapshot is persisted.
             file_put_contents($this->testProjectDir.'/target.txt', "after\n");
             self::assertStringContainsString('after', (string) file_get_contents($this->testProjectDir.'/target.txt'));
-            $this->runSlashCommand($pane, '/rewind');
-            $this->tmux->waitForCallback(
-                $pane,
-                static fn (string $cap): bool => str_contains($cap, 'File rewind'),
-                timeout: 10.0,
-                message: '/rewind did not open file rewind turn picker',
-                history: 2000,
-            );
 
-            // Turn 1 is the only checkpointed turn; cursor may start on a later turn without checkpoint.
-            for ($nav = 0; $nav < 6; ++$nav) {
-                $navCapture = $this->tmux->capturePlainWithHistory($pane, 800);
-                if (str_contains($navCapture, 'rewind       Turn 1:') && !str_contains($navCapture, 'no file checkpoint')) {
-                    break;
-                }
-                $this->tmux->sendKey($pane, 'Up');
-                usleep(120_000);
-            }
-            $this->tmux->sendKey($pane, 'Enter');
-
-            $this->tmux->waitForCallback(
-                $pane,
-                static fn (string $cap): bool => str_contains($cap, 'Restore files to this turn'),
-                timeout: 10.0,
-                message: 'File rewind action menu did not appear',
-                history: 2000,
-            );
-            $this->tmux->sendKey($pane, 'Enter');
-
-            $restoreCapture = $this->tmux->waitForCallback(
-                $pane,
-                static fn (string $cap): bool => str_contains($cap, 'Action completed') || str_contains($cap, 'File rewind failed'),
-                timeout: 15.0,
-                message: 'Restore action did not complete',
-                history: 2000,
-            );
+            $this->openRewindTurnPicker($pane);
+            $this->selectRewindTurnWithCheckpoint($pane, 1);
+            $restoreCapture = $this->confirmRestoreFilesToSelectedTurn($pane);
             self::assertStringContainsString('Action completed', $restoreCapture);
             self::assertStringNotContainsString('File rewind failed', $restoreCapture);
             self::assertStringContainsString('before', (string) file_get_contents($this->testProjectDir.'/target.txt'));
@@ -188,6 +157,7 @@ final class TuiFileRewindE2eTest extends TestCase
             $this->submitPrompt($pane, 'hello');
             $this->waitAssistantBlock($pane);
             $this->assertNotStuckWorking($pane);
+            $this->waitForTurnCheckpointRecorded(1);
 
             $this->submitPrompt($pane, 'Edit target.txt');
             $this->waitAssistantBlock($pane);
@@ -199,41 +169,9 @@ final class TuiFileRewindE2eTest extends TestCase
                 'Edit tool must change target.txt from before to after',
             );
 
-            $this->runSlashCommand($pane, '/rewind');
-            $this->tmux->waitForCallback(
-                $pane,
-                static fn (string $cap): bool => str_contains($cap, 'File rewind'),
-                timeout: 10.0,
-                message: '/rewind did not open file rewind turn picker after edit tool',
-                history: 2000,
-            );
-
-            for ($nav = 0; $nav < 8; ++$nav) {
-                $navCapture = $this->tmux->capturePlainWithHistory($pane, 800);
-                if (str_contains($navCapture, 'rewind       Turn 1:') && !str_contains($navCapture, 'no file checkpoint')) {
-                    break;
-                }
-                $this->tmux->sendKey($pane, 'Up');
-                usleep(120_000);
-            }
-            $this->tmux->sendKey($pane, 'Enter');
-
-            $this->tmux->waitForCallback(
-                $pane,
-                static fn (string $cap): bool => str_contains($cap, 'Restore files to this turn'),
-                timeout: 10.0,
-                message: 'File rewind action menu did not appear after edit journey',
-                history: 2000,
-            );
-            $this->tmux->sendKey($pane, 'Enter');
-
-            $restoreCapture = $this->tmux->waitForCallback(
-                $pane,
-                static fn (string $cap): bool => str_contains($cap, 'Action completed') || str_contains($cap, 'File rewind failed'),
-                timeout: 15.0,
-                message: 'Restore after edit did not complete',
-                history: 2000,
-            );
+            $this->openRewindTurnPicker($pane);
+            $this->selectRewindTurnWithCheckpoint($pane, 1);
+            $restoreCapture = $this->confirmRestoreFilesToSelectedTurn($pane);
             self::assertStringContainsString('Action completed', $restoreCapture);
             self::assertStringNotContainsString('File rewind failed', $restoreCapture);
             self::assertStringContainsString('before', (string) file_get_contents($this->testProjectDir.'/target.txt'));
@@ -298,6 +236,101 @@ final class TuiFileRewindE2eTest extends TestCase
         }
     }
 
+
+
+    private function ledgerPath(): string
+    {
+        $real = realpath($this->testProjectDir) ?: $this->testProjectDir;
+        $hash = hash('sha256', str_replace('\\', '/', $real));
+
+        return $this->testProjectDir.'/.hatfield/rewind/snapshots/'.$hash.'/ledger.json';
+    }
+
+    private function waitForTurnCheckpointRecorded(int $turnNo, float $timeoutSeconds = 20.0): void
+    {
+        $ledgerPath = $this->ledgerPath();
+        $deadline = microtime(true) + $timeoutSeconds;
+        while (microtime(true) < $deadline) {
+            if (is_file($ledgerPath)) {
+                $decoded = json_decode((string) file_get_contents($ledgerPath), true);
+                if (is_array($decoded)) {
+                    foreach ($decoded['checkpoints'] ?? [] as $checkpoint) {
+                        if (!is_array($checkpoint)) {
+                            continue;
+                        }
+                        if ((int) ($checkpoint['turn_no'] ?? 0) === $turnNo) {
+                            return;
+                        }
+                    }
+                }
+            }
+            usleep(100_000);
+        }
+        self::fail('Timed out waiting for file rewind checkpoint for turn '.$turnNo.' at '.$ledgerPath);
+    }
+
+    private function openRewindTurnPicker(TmuxPane $pane): void
+    {
+        $this->runSlashCommand($pane, '/rewind');
+        $this->tmux->waitForCallback(
+            $pane,
+            static fn (string $cap): bool => str_contains($cap, 'File rewind'),
+            timeout: 10.0,
+            message: '/rewind did not open file rewind turn picker',
+            history: 2000,
+        );
+    }
+
+    private function selectRewindTurnWithCheckpoint(TmuxPane $pane, int $turnNo): void
+    {
+        $noCheckpoint = 'Turn '.$turnNo.': no file checkpoint';
+        $hasPreview = static fn (string $cap): bool => str_contains($cap, 'Turn '.$turnNo.':')
+            && !str_contains($cap, $noCheckpoint)
+            && (
+                str_contains($cap, 'Turn '.$turnNo.': modified')
+                || str_contains($cap, 'Turn '.$turnNo.': added')
+                || str_contains($cap, 'Turn '.$turnNo.': deleted')
+                || str_contains($cap, 'Turn '.$turnNo.': preview unavailable')
+            );
+
+        for ($nav = 0; $nav < 14; ++$nav) {
+            $cap = $this->tmux->capturePlainWithHistory($pane, 1200);
+            if ($hasPreview($cap)) {
+                break;
+            }
+            $this->tmux->sendKey($pane, 'Up');
+            usleep(150_000);
+        }
+
+        $this->tmux->waitForCallback(
+            $pane,
+            $hasPreview,
+            timeout: 8.0,
+            message: 'Did not select turn '.$turnNo.' with a file checkpoint in /rewind picker',
+            history: 2000,
+        );
+        $this->tmux->sendKey($pane, 'Enter');
+    }
+
+    private function confirmRestoreFilesToSelectedTurn(TmuxPane $pane): string
+    {
+        $this->tmux->waitForCallback(
+            $pane,
+            static fn (string $cap): bool => str_contains($cap, 'Restore files to this turn'),
+            timeout: 10.0,
+            message: 'File rewind action menu did not appear',
+            history: 2000,
+        );
+        $this->tmux->sendKey($pane, 'Enter');
+
+        return $this->tmux->waitForCallback(
+            $pane,
+            static fn (string $cap): bool => str_contains($cap, 'Action completed') || str_contains($cap, 'File rewind failed'),
+            timeout: 15.0,
+            message: 'Restore action did not complete',
+            history: 2000,
+        );
+    }
 
     private function submitPrompt(TmuxPane $pane, string $text): void
     {
