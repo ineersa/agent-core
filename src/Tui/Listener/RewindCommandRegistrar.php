@@ -6,7 +6,6 @@ namespace Ineersa\Tui\Listener;
 
 use Ineersa\CodingAgent\Extension\FileRewind\FileRewindRuntimePorts;
 use Ineersa\CodingAgent\Runtime\Contract\ConversationRewindPortInterface;
-use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Picker\FileRewindPickerController;
 use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Runtime\FileRewind\TuiFileRewindPickerFlow;
@@ -15,7 +14,6 @@ use Ineersa\Tui\Runtime\TuiRuntimeContext;
 final class RewindCommandRegistrar implements TuiListenerRegistrar
 {
     public function __construct(
-        private readonly SlashCommandRegistry $commandRegistry,
         private readonly FileRewindPickerController $picker,
         private readonly FileRewindRuntimePorts $fileRewindRuntimePorts,
         private readonly TuiFileRewindPickerFlow $pickerFlow,
@@ -26,7 +24,6 @@ final class RewindCommandRegistrar implements TuiListenerRegistrar
     public function register(TuiRuntimeContext $context): void
     {
         $this->picker->setRuntimeRefs($context->tui, $context->screen, $context->state);
-        $this->commandRegistry->setActiveSessionId($context->state->sessionId);
         $picker = $this->picker;
         $this->pickerFlow->setOpenCallback(static function (string $sessionId) use ($picker): void {
             $picker->open($sessionId);

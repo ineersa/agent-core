@@ -31,7 +31,6 @@ use Ineersa\Hatfield\ExtensionApi\Command\FileRewindPreviewProviderInterface;
 use Ineersa\Hatfield\ExtensionApi\Command\InteractiveCommandHostInterface;
 use Ineersa\Tui\Command\NoOp;
 use Ineersa\Tui\Command\SlashCommand;
-use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Extension\ExtensionSlashCommandHandler;
 use Ineersa\Tui\Extension\RewindSlashCommandDecorator;
 use Ineersa\Tui\Extension\TuiInteractiveCommandHost;
@@ -87,7 +86,6 @@ final class TuiFileRewindCommandVirtualTest extends TestCase
         $picker = new FileRewindPickerController($treeProvider, $ports, $ports);
         $pickerFlow = new TuiFileRewindPickerFlow();
         (new RewindCommandRegistrar(
-            new SlashCommandRegistry(),
             $picker,
             $ports,
             $pickerFlow,

@@ -15,6 +15,7 @@ use Ineersa\Tui\Command\DispatchShellCommand;
 use Ineersa\Tui\Command\ExitApplication;
 use Ineersa\Tui\Command\Hotkey\HotkeyBindingDTO;
 use Ineersa\Tui\Command\Hotkey\HotkeyTableData;
+use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Command\StatusUpdate;
 use Ineersa\Tui\Command\SubmissionRouter;
 use Ineersa\Tui\Command\TranscriptMessage;
@@ -50,6 +51,7 @@ final class SubmitListener implements TuiListenerRegistrar
         private readonly QuestionCoordinator $coordinator,
         private readonly QuestionController $questionController,
         private readonly LoggerInterface $logger,
+        private readonly SlashCommandRegistry $slashCommandRegistry,
     ) {
     }
 
@@ -67,13 +69,14 @@ final class SubmitListener implements TuiListenerRegistrar
         $questionController = $this->questionController;
 
         $logger = $this->logger;
+        $slashCommandRegistry = $this->slashCommandRegistry;
 
         // Wire the question controller with TUI runtime references
         $questionController->setRuntimeRefs($context, $screen);
 
         $context->tui->addListener(static function (SubmitEvent $event) use (
             $client, $sessionStore, $state, $screen, $tui, $router, $blockFactory,
-            $questionCoordinator, $questionController, $logger,
+            $questionCoordinator, $questionController, $logger, $slashCommandRegistry,
         ) {
             $text = $screen->extract();
             if ('' === $text) {
@@ -96,7 +99,7 @@ final class SubmitListener implements TuiListenerRegistrar
                 if ($commandResult instanceof DispatchShellCommand) {
                     self::handleShellCommand(
                         $commandResult, $state, $screen, $sessionStore,
-                        $blockFactory, $client, $logger,
+                        $blockFactory, $client, $logger, $slashCommandRegistry,
                     );
 
                     return;
@@ -106,7 +109,7 @@ final class SubmitListener implements TuiListenerRegistrar
                 if ($commandResult instanceof DispatchRuntime) {
                     self::dispatchToRuntime(
                         $commandResult->payload, $state, $screen,
-                        $sessionStore, $blockFactory, $client, $logger, $tui,
+                        $sessionStore, $blockFactory, $client, $logger, $tui, $slashCommandRegistry,
                     );
 
                     return;
@@ -122,7 +125,7 @@ final class SubmitListener implements TuiListenerRegistrar
             // No local echo or persistence: canonical runtime events project
             // user blocks (avoiding duplicate block IDs), and events.jsonl is
             // the single source of truth for transcript replay on resume.
-            self::dispatchToRuntime($text, $state, $screen, $sessionStore, $blockFactory, $client, $logger, $tui);
+            self::dispatchToRuntime($text, $state, $screen, $sessionStore, $blockFactory, $client, $logger, $tui, $slashCommandRegistry);
         });
     }
 
@@ -209,6 +212,7 @@ final class SubmitListener implements TuiListenerRegistrar
         \Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient $client,
         LoggerInterface $logger,
         Tui $tui,
+        SlashCommandRegistry $slashCommandRegistry,
     ): void {
         // Show immediate visual feedback (◐ Working...) before heavy
         // synchronous work (session creation, system prompt discovery,
@@ -239,6 +243,7 @@ final class SubmitListener implements TuiListenerRegistrar
                 if ('' === $state->sessionId) {
                     $state->sessionId = $sessionStore->createSession($text);
                     $screen->updateSessionId($state->sessionId);
+                    self::syncSlashCommandSessionId($state, $screen, $slashCommandRegistry);
                     $logger->info('Draft session promoted to real session', [
                         'component' => 'SubmitListener',
                         'event_type' => 'draft_promoted',
@@ -382,12 +387,14 @@ final class SubmitListener implements TuiListenerRegistrar
         TranscriptBlockFactory $blockFactory,
         \Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient $client,
         LoggerInterface $logger,
+        SlashCommandRegistry $slashCommandRegistry,
     ): void {
         try {
             // Create a session if this is the first input.
             if ('' === $state->sessionId) {
                 $state->sessionId = $sessionStore->createSession('!'.$shellCommand->command);
                 $screen->updateSessionId($state->sessionId);
+                self::syncSlashCommandSessionId($state, $screen, $slashCommandRegistry);
                 $logger->info('Draft session promoted for shell command', [
                     'component' => 'SubmitListener',
                     'event_type' => 'draft_promoted_shell',
@@ -530,5 +537,16 @@ final class SubmitListener implements TuiListenerRegistrar
         }
 
         return $result;
+    }
+
+    private static function syncSlashCommandSessionId(
+        TuiSessionState $state,
+        ChatScreen $screen,
+        SlashCommandRegistry $slashCommandRegistry,
+    ): void {
+        if ('' === $state->sessionId) {
+            return;
+        }
+        $slashCommandRegistry->setActiveSessionId($state->sessionId);
     }
 }
