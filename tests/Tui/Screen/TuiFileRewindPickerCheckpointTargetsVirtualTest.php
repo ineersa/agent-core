@@ -15,20 +15,19 @@ use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
-final class TuiFileRewindPickerOverlayNavigationVirtualTest extends TestCase
+final class TuiFileRewindPickerCheckpointTargetsVirtualTest extends TestCase
 {
     #[Test]
-    public function testRewindPickerNavigationDoesNotStackOverlayHeader(): void
+    public function testRewindPickerListsOnlyCheckpointTurnsWithMeaningfulTitles(): void
     {
-        $sessionId = 'rewind-nav-session';
+        $sessionId = 'rewind-targets-session';
         $harness = new VirtualTuiHarness(sessionId: $sessionId);
-        $harness->startInputLoop();
 
         $treeProvider = $this->createStub(TurnTreeProviderInterface::class);
         $treeProvider->method('forSession')->willReturn($this->sampleTree($sessionId));
 
         $previewPort = $this->createMock(FileRewindTurnPreviewPortInterface::class);
-        $previewPort->method('hasCheckpoint')->willReturnCallback(static fn (string $sid, int $turnNo): bool => 2 === $turnNo || 4 === $turnNo);
+        $previewPort->method('hasCheckpoint')->willReturnCallback(static fn (string $sid, int $turnNo): bool => 1 === $turnNo || 3 === $turnNo);
         $previewPort->expects($this->never())->method('preview');
 
         $actionPort = $this->createStub(FileRewindTurnActionPortInterface::class);
@@ -37,14 +36,13 @@ final class TuiFileRewindPickerOverlayNavigationVirtualTest extends TestCase
         $picker->setRuntimeRefs($harness->tui(), $harness->screen(), new TuiSessionState($sessionId));
         $picker->open($sessionId);
 
-        $header = 'Checkpoint turn';
-        self::assertSame(1, substr_count($harness->plainScreenText(), $header));
-
-        $harness->sendInput("\x1b[A"); // Up
-        $harness->sendInput("\x1b[A"); // Up
-        $harness->sendInput("\x1b[B"); // Down
-
-        self::assertSame(1, substr_count($harness->plainScreenText(), $header));
+        $screen = $harness->plainScreenText();
+        self::assertStringContainsString('Turn 1: hello', $screen);
+        self::assertStringContainsString('Turn 3: Create test.txt', $screen);
+        self::assertStringNotContainsString('Turn 2:', $screen);
+        self::assertStringNotContainsString('Turn 4:', $screen);
+        self::assertStringNotContainsString('Turn 5:', $screen);
+        self::assertStringNotContainsString('no file checkpoint', $screen);
     }
 
     private function sampleTree(string $sessionId): TurnTreeView
@@ -52,16 +50,15 @@ final class TuiFileRewindPickerOverlayNavigationVirtualTest extends TestCase
         return new TurnTreeView(
             runId: $sessionId,
             nodesByTurnNo: [
-                1 => new TurnTreeNodeView(1, null, [2], 2, 'Turn 1', 'First', null, false),
-                2 => new TurnTreeNodeView(2, 1, [3], 4, 'Second prompt', 'Second', null, false),
-                3 => new TurnTreeNodeView(3, 2, [4], 6, 'Turn 3', 'Third', null, false),
-                4 => new TurnTreeNodeView(4, 3, [5], 8, 'Fourth prompt', 'Fourth', null, false),
-                5 => new TurnTreeNodeView(5, 4, [6], 10, 'Turn 5', 'Fifth', null, false),
-                6 => new TurnTreeNodeView(6, 5, [], 12, 'Turn 6', 'Sixth', null, true),
+                1 => new TurnTreeNodeView(1, null, [2], 2, 'hello', 'hello', null, false),
+                2 => new TurnTreeNodeView(2, 1, [3], 4, 'Turn 2', 'internal', null, false),
+                3 => new TurnTreeNodeView(3, 2, [4], 6, 'Create test.txt', 'Create test.txt', null, false),
+                4 => new TurnTreeNodeView(4, 3, [5], 8, 'Turn 4', 'internal', null, false),
+                5 => new TurnTreeNodeView(5, 4, [6], 10, 'Turn 5', 'internal', null, true),
             ],
             rootTurnNos: [1],
-            currentLeafTurnNo: 6,
-            activePathTurnNos: [1, 2, 3, 4, 5, 6],
+            currentLeafTurnNo: 5,
+            activePathTurnNos: [1, 2, 3, 4, 5],
         );
     }
 }

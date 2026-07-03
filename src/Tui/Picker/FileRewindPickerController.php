@@ -7,9 +7,12 @@ namespace Ineersa\Tui\Picker;
 use Ineersa\CodingAgent\Runtime\Contract\FileRewindTurnActionPortInterface;
 use Ineersa\CodingAgent\Runtime\Contract\FileRewindTurnPreviewPortInterface;
 use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
+use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeNodeView;
 use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeView;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
+use Ineersa\Tui\Theme\ThemeColorEnum;
+use Ineersa\Tui\Theme\TuiTheme;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
 use Symfony\Component\Tui\Event\SelectionChangeEvent;
@@ -26,6 +29,7 @@ final class FileRewindPickerController
     private ?ChatScreen $screen = null;
     private ?TuiSessionState $state = null;
     private ?string $sessionId = null;
+    private ?TextWidget $headerWidget = null;
 
     public function __construct(
         private readonly TurnTreeProviderInterface $treeProvider,
@@ -51,19 +55,22 @@ final class FileRewindPickerController
             return;
         }
         $tree = $this->treeProvider->forSession($sessionId);
-        if ([] === $tree->nodesByTurnNo) {
-            $this->screen->setStatus('rewind', 'Session has no turns yet');
-            $this->screen->refresh();
+        $targets = $this->restorableTargets($sessionId, $tree);
+        if ([] === $targets) {
+            $this->screen->setStatus('rewind', 'No file rewind checkpoints are available yet.');
+            $this->tui->requestRender();
 
             return;
         }
-        $this->openTurnPicker($tree);
+        $this->openTurnPicker($targets);
     }
 
     public function closePicker(bool $requestRender = true): void
     {
         $this->overlay?->close($requestRender);
         $this->overlay = null;
+        $this->headerWidget = null;
+        $this->screen?->setStatus('rewind', null);
     }
 
     public function isOpen(): bool
@@ -71,26 +78,30 @@ final class FileRewindPickerController
         return $this->overlay?->isOpen() ?? false;
     }
 
-    private function openTurnPicker(TurnTreeView $tree): void
+    /**
+     * @param list<array{turnNo:int,title:string}> $targets
+     */
+    private function openTurnPicker(array $targets): void
     {
         $tui = $this->tui;
         $screen = $this->screen;
+        if (null === $tui || null === $screen) {
+            return;
+        }
         $theme = $screen->theme();
-        $header = new TextWidget(text: $theme->muted('File rewind — select turn (Esc to close)'), truncate: true);
+        $this->headerWidget = new TextWidget(text: $theme->muted('File rewind — select checkpoint (Esc to close)'), truncate: true);
         $kb = new Keybindings([
             'select_up' => [Key::UP],
             'select_down' => [Key::DOWN],
             'select_confirm' => [Key::ENTER],
             'select_cancel' => [Key::ESCAPE, Key::ctrl('c')],
         ]);
-        $selected = TreePickerController::initialSelectedIndex($tree);
-        $items = TreePickerController::buildItems($tree, $theme, selectedIndex: $selected);
+        $selected = max(0, \count($targets) - 1);
+        $items = $this->buildCheckpointItems($targets, $theme, $selected);
         $list = new SelectListWidget(items: $items, maxVisible: 10, keybindings: $kb);
-        $list->setSelectedIndex(max(0, $selected));
+        $list->setSelectedIndex($selected);
         $picker = $this;
         $sessionId = (string) $this->sessionId;
-        $turnOrder = TreePickerController::flattenTurnOrder($tree);
-        $initialTurn = $turnOrder[$selected] ?? 0;
         $list->onSelect(static function (SelectEvent $event) use ($picker, $sessionId): void {
             $turnNo = (int) $event->getItem()['value'];
             $picker->closePicker();
@@ -99,40 +110,83 @@ final class FileRewindPickerController
         $list->onCancel(static function (CancelEvent $event) use ($picker): void {
             $picker->closePicker();
         });
-        $list->onSelectionChange(static function (SelectionChangeEvent $event) use ($picker, $list, $tree, $theme, $sessionId, $turnOrder): void {
+        $list->onSelectionChange(static function (SelectionChangeEvent $event) use ($picker, $list, $targets, $theme): void {
             $turnNo = (int) $event->getItem()['value'];
             $selectedIdx = 0;
-            foreach ($turnOrder as $i => $orderedTurnNo) {
-                if ($orderedTurnNo === $turnNo) {
+            foreach ($targets as $i => $target) {
+                if ($target['turnNo'] === $turnNo) {
                     $selectedIdx = $i;
                     break;
                 }
             }
-            $list->setItems(TreePickerController::buildItems($tree, $theme, selectedIndex: $selectedIdx));
+            $list->setItems($picker->buildCheckpointItems($targets, $theme, $selectedIdx));
             $list->setSelectedIndex(max(0, $selectedIdx));
-            $picker->updateStatusForTurn($sessionId, $turnNo);
+            $picker->updateHeaderForTurn($turnNo, $targets[$selectedIdx]['title'] ?? ('Turn '.$turnNo));
         });
         $this->overlay = new PickerOverlay();
-        $this->overlay->mount($tui, $screen, $list, $header);
-        $picker->updateStatusForTurn($sessionId, $initialTurn);
+        $this->overlay->mount($tui, $screen, $list, $this->headerWidget);
+        $initial = $targets[$selected];
+        $this->updateHeaderForTurn($initial['turnNo'], $initial['title']);
     }
 
-    private function updateStatusForTurn(string $sessionId, int $turnNo): void
+    private function updateHeaderForTurn(int $turnNo, string $title): void
     {
-        if (null === $this->screen) {
+        if (null === $this->headerWidget || null === $this->screen) {
             return;
         }
-        $this->screen->setStatus('rewind', $this->formatTurnStatus($sessionId, $turnNo));
-        $this->tui?->requestRender(true);
+        $label = mb_strimwidth($title, 0, 60, '…');
+        $this->headerWidget->setText($this->screen->theme()->muted('Checkpoint turn '.$turnNo.': '.$label.' (Esc to close)'));
+        $this->screen->setStatus('rewind', null);
+        $this->tui?->requestRender();
     }
 
-    private function formatTurnStatus(string $sessionId, int $turnNo): string
+    /**
+     * @param list<array{turnNo:int,title:string}> $targets
+     *
+     * @return list<array{value:string,label:string}>
+     */
+    private function buildCheckpointItems(array $targets, TuiTheme $theme, int $selectedIndex): array
     {
-        if (!$this->previewPort->hasCheckpoint($sessionId, $turnNo)) {
-            return 'Turn '.$turnNo.': no file checkpoint — select a turn, then choose restore action';
+        $items = [];
+        foreach ($targets as $idx => $target) {
+            $turnNo = $target['turnNo'];
+            $title = mb_strimwidth($target['title'], 0, 60, '…');
+            $marker = $idx === $selectedIndex ? '◉ ' : '○ ';
+            $label = $marker.'Turn '.$turnNo.': '.$title;
+            if ($idx === $selectedIndex) {
+                $label = $theme->color(ThemeColorEnum::Accent, $label);
+            }
+            $items[] = ['value' => (string) $turnNo, 'label' => $label];
         }
 
-        return 'Turn '.$turnNo.': file checkpoint available — select a turn, then choose restore action';
+        return $items;
+    }
+
+    /**
+     * @return list<array{turnNo:int,title:string}>
+     */
+    private function restorableTargets(string $sessionId, TurnTreeView $tree): array
+    {
+        $targets = [];
+        foreach (TreePickerController::flattenTurnOrder($tree) as $turnNo) {
+            if (!$this->previewPort->hasCheckpoint($sessionId, $turnNo)) {
+                continue;
+            }
+            $node = $tree->nodesByTurnNo[$turnNo] ?? null;
+            if (!$node instanceof TurnTreeNodeView) {
+                continue;
+            }
+            $title = trim($node->title);
+            if ('' === $title || preg_match('/^Turn \d+$/', $title)) {
+                $title = trim($node->promptPreview);
+            }
+            if ('' === $title || preg_match('/^Turn \d+$/', $title)) {
+                continue;
+            }
+            $targets[] = ['turnNo' => $turnNo, 'title' => $title];
+        }
+
+        return $targets;
     }
 
     private function openActionPicker(string $sessionId, int $turnNo): void
@@ -140,13 +194,16 @@ final class FileRewindPickerController
         if (null === $this->tui || null === $this->screen) {
             return;
         }
+        if (!$this->previewPort->hasCheckpoint($sessionId, $turnNo)) {
+            $this->screen->setStatus('rewind', 'Selected checkpoint is no longer available.');
+            $this->tui->requestRender();
+
+            return;
+        }
         $theme = $this->screen->theme();
         $items = [
             ['value' => 'restore_files', 'label' => 'Restore files to this turn'],
             ['value' => 'restore_files_and_conversation', 'label' => 'Restore files + conversation rewind'],
-            ['value' => 'conversation_only', 'label' => 'Conversation rewind only'],
-            ['value' => 'undo_last_restore', 'label' => 'Undo last file restore'],
-            ['value' => 'cancel', 'label' => 'Cancel'],
         ];
         $kb = new Keybindings([
             'select_up' => [Key::UP],
@@ -154,24 +211,24 @@ final class FileRewindPickerController
             'select_confirm' => [Key::ENTER],
             'select_cancel' => [Key::ESCAPE, Key::ctrl('c')],
         ]);
-        $list = new SelectListWidget(items: $items, maxVisible: 8, keybindings: $kb);
-        $header = new TextWidget(text: $theme->muted('Turn '.$turnNo.' — choose action'), truncate: true);
+        $list = new SelectListWidget(items: $items, maxVisible: 4, keybindings: $kb);
+        $this->headerWidget = new TextWidget(text: $theme->muted('Turn '.$turnNo.' — choose action (Esc to close)'), truncate: true);
         $picker = $this;
         $actionPort = $this->actionPort;
         $list->onSelect(static function (SelectEvent $event) use ($picker, $sessionId, $turnNo, $actionPort): void {
             $picker->closePicker();
             try {
                 $actionPort->execute($sessionId, $turnNo, (string) $event->getItem()['value']);
-                $picker->screen?->setStatus('rewind', 'Action completed');
+                $picker->screen?->setStatus('rewind', null);
             } catch (\Throwable $e) {
                 $picker->screen?->setStatus('rewind', 'File rewind failed: '.$e->getMessage());
             }
-            $picker->screen?->refresh();
+            $picker->tui?->requestRender();
         });
         $list->onCancel(static function (CancelEvent $event) use ($picker): void {
             $picker->closePicker();
         });
         $this->overlay = new PickerOverlay();
-        $this->overlay->mount($this->tui, $this->screen, $list, $header);
+        $this->overlay->mount($this->tui, $this->screen, $list, $this->headerWidget);
     }
 }

@@ -15,38 +15,40 @@ use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
-final class TuiFileRewindPickerNoPreviewCaptureTest extends TestCase
+final class TuiFileRewindActionMenuVirtualTest extends TestCase
 {
     #[Test]
-    public function testPickerOpenNeverCallsPreviewPortPreview(): void
+    public function testActionMenuShowsOnlyTwoRestoreActions(): void
     {
-        $sessionId = 'sess-no-live-preview';
-        $previewPort = $this->createMock(FileRewindTurnPreviewPortInterface::class);
-        $previewPort->method('hasCheckpoint')->willReturn(true);
-        $previewPort->expects(self::never())->method('preview');
+        $sessionId = 'rewind-actions-session';
+        $harness = new VirtualTuiHarness(sessionId: $sessionId);
+        $harness->startInputLoop();
 
-        $actionPort = $this->createStub(FileRewindTurnActionPortInterface::class);
         $treeProvider = $this->createStub(TurnTreeProviderInterface::class);
         $treeProvider->method('forSession')->willReturn(new TurnTreeView(
             runId: $sessionId,
             nodesByTurnNo: [
-                1 => new TurnTreeNodeView(1, null, [2], 2, 'one', 'one', null, false),
-                2 => new TurnTreeNodeView(2, 1, [], 4, 'two', 'two', null, true),
+                1 => new TurnTreeNodeView(1, null, [], 2, 'hello', 'hello', null, true),
             ],
             rootTurnNos: [1],
-            currentLeafTurnNo: 2,
-            activePathTurnNos: [1, 2],
+            currentLeafTurnNo: 1,
+            activePathTurnNos: [1],
         ));
 
-        $harness = new VirtualTuiHarness(sessionId: $sessionId);
+        $previewPort = $this->createStub(FileRewindTurnPreviewPortInterface::class);
+        $previewPort->method('hasCheckpoint')->willReturn(true);
+        $actionPort = $this->createStub(FileRewindTurnActionPortInterface::class);
+
         $picker = new FileRewindPickerController($treeProvider, $previewPort, $actionPort);
         $picker->setRuntimeRefs($harness->tui(), $harness->screen(), new TuiSessionState($sessionId));
-
         $picker->open($sessionId);
-        self::assertTrue($picker->isOpen());
+        $harness->sendInput("\n");
+
         $screen = $harness->plainScreenText();
-        self::assertStringContainsString('Checkpoint turn', $screen);
-        self::assertStringContainsString('Turn 1: one', $screen);
-        self::assertStringContainsString('Turn 2: two', $screen);
+        self::assertStringContainsString('Restore files to this turn', $screen);
+        self::assertStringContainsString('Restore files + conversation rewind', $screen);
+        self::assertStringNotContainsString('Undo last file restore', $screen);
+        self::assertStringNotContainsString('Conversation rewind only', $screen);
+        self::assertStringNotContainsString('Cancel', $screen);
     }
 }

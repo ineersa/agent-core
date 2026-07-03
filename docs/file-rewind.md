@@ -24,6 +24,19 @@ File rewind is a **built-in Hatfield extension** (`FileRewindExtension`) registe
 - AgentCore event types for file rewind ledger
 - Run-lock coupled checkpoint service
 
+
+
+## UX (v1)
+
+- `/tree` stays conversation-only.
+- `/rewind` lists **file checkpoint targets only** (turns with a persisted hidden-git checkpoint and a meaningful label). Internal/tool turns without checkpoints are hidden.
+- Action menu (Enter on a checkpoint):
+  - **Restore files to this turn**
+  - **Restore files + conversation rewind** (files first; conversation rewind rolls back files if conversation rewind fails)
+- **Esc** closes pickers (cancel). There is no separate Cancel action and no **Undo last file restore** menu item in v1 (undo metadata remains internal for safety).
+- No live diff preview in the picker.
+
+
 ## Enable / settings
 
 ```yaml
