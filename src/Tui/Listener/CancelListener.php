@@ -183,6 +183,7 @@ final class CancelListener implements TuiListenerRegistrar
                     return;
                 }
 
+                SubagentLiveAttention::markActiveChildrenCancelledForParentCancel($state, $screen);
                 $state->activity = RunActivityStateEnum::Cancelling;
                 $screen->setWorkingMessage('Cancelling...');
 

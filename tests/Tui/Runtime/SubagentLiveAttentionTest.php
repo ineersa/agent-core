@@ -89,6 +89,33 @@ final class SubagentLiveAttentionTest extends TestCase
         self::assertStringContainsString('[cancelled]', (string) $this->statusText($screen, 'agents-live'));
     }
 
+
+    public function testMarkActiveChildrenCancelledForParentCancelClearsWaitingHumanOnMain(): void
+    {
+        $state = new TuiSessionState('parent-session');
+        $state->subagentLiveCatalog->ingestRuntimeEvent($this->progressEvent([
+            'mode' => 'single', 'status' => 'waiting_human', 'agent_name' => 'scout',
+            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task',
+        ]));
+
+        $screen = new ChatScreen(
+            new DefaultTheme(new ThemePalette('test')),
+            'parent-session',
+            new PromptEditor(),
+            new TranscriptDisplayConfig(),
+            new TranscriptDisplayState(),
+        );
+        $screen->setStatus('subagent_live', '⚠ Subagent scout needs your input — /agents-live');
+
+        SubagentLiveAttention::markActiveChildrenCancelledForParentCancel($state, $screen);
+
+        $child = $state->subagentLiveCatalog->findByArtifactId('agent_a');
+        self::assertNotNull($child);
+        self::assertSame(SubagentLiveStatusEnum::Cancelled, $child->status);
+        self::assertNull($state->subagentLiveCatalog->firstChildNeedingAttention());
+        self::assertNull($this->statusText($screen, 'subagent_live'));
+    }
+
     private function statusText(ChatScreen $screen, string $key): ?string
     {
         $ref = new \ReflectionClass($screen);

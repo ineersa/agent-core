@@ -67,6 +67,43 @@ final class SubagentLiveAttention
         self::refreshAttentionFooter($state, $screen);
     }
 
+    /**
+     * Parent cancel owns foreground child lifecycle: optimistically mark active/waiting
+     * catalog children cancelled so picker/footer do not stay on needs input until
+     * terminal subagent_progress arrives from the runtime.
+     */
+    public static function markActiveChildrenCancelledForParentCancel(TuiSessionState $state, ChatScreen $screen): void
+    {
+        $touched = false;
+        foreach ($state->subagentLiveCatalog->all() as $catalogChild) {
+            if (!$catalogChild->status->isActive()) {
+                continue;
+            }
+
+            $state->subagentLiveCatalog->applyChildStatus($catalogChild->artifactId, SubagentLiveStatusEnum::Cancelled);
+            $touched = true;
+        }
+
+        if (!$touched) {
+            return;
+        }
+
+        $live = $state->subagentLiveView;
+        if ($live->active && null !== $live->selected) {
+            $refreshed = $state->subagentLiveCatalog->findByArtifactId($live->selected->artifactId);
+            if (null !== $refreshed) {
+                $live->selected = $refreshed;
+            }
+            if ($live->childActivity->isActive() || RunActivityStateEnum::Cancelling === $live->childActivity) {
+                $live->childActivity = RunActivityStateEnum::Cancelling;
+            } elseif (!$refreshed?->status->isTerminal()) {
+                $live->childActivity = RunActivityStateEnum::Cancelled;
+            }
+        }
+
+        self::refreshAttentionFooter($state, $screen);
+    }
+
     public static function syncMainAttention(TuiSessionState $state, ChatScreen $screen): void
     {
         self::refreshAttentionFooter($state, $screen);

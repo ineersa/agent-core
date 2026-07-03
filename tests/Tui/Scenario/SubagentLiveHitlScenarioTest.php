@@ -137,6 +137,37 @@ final class SubagentLiveHitlScenarioTest extends TestCase
     }
 
     #[Test]
+    public function mainCancelWhileChildWaitingMarksChildCancelledAndClearsAttention(): void
+    {
+        $h = $this->newHarness();
+        $h->seedChildInCatalog(self::ARTIFACT, self::CHILD_RUN, 'waiting_human');
+        $this->assertFalse($h->state->subagentLiveView->active);
+        $h->refreshAttentionFooter();
+
+        $this->assertStringContainsString('needs your input', (string) $h->statusText('subagent_live'));
+        $this->assertStringContainsString('needs input', $h->pickerLabels()[0] ?? '');
+
+        $h->pressEsc();
+
+        $cancelOps = array_filter($h->client->ops, static fn (array $o): bool => 'cancel' === $o['op']);
+        $this->assertCount(1, $cancelOps);
+        $this->assertSame(self::PARENT_RUN, array_values($cancelOps)[0]['runId']);
+        $this->assertSame(RunActivityStateEnum::Cancelling, $h->state->activity);
+        $this->assertNull($h->statusText('subagent_live'));
+        $this->assertStringContainsString('cancelled', strtolower($h->pickerLabels()[0] ?? ''));
+        $this->assertStringNotContainsString('needs input', $h->pickerLabels()[0] ?? '');
+
+        $child = $h->state->subagentLiveCatalog->findByArtifactId(self::ARTIFACT);
+        $this->assertNotNull($child);
+        $this->assertSame(SubagentLiveStatusEnum::Cancelled, $child->status);
+        $this->assertNull($h->state->subagentLiveCatalog->firstChildNeedingAttention());
+
+        $h->ingestChildProgress(self::ARTIFACT, self::CHILD_RUN, 'waiting_human');
+        $child = $h->state->subagentLiveCatalog->findByArtifactId(self::ARTIFACT);
+        $this->assertSame(SubagentLiveStatusEnum::Cancelled, $child?->status);
+    }
+
+    #[Test]
     public function completedProgressClearsLiveWarningForSelectedChild(): void
     {
         $h = $this->newHarness();
