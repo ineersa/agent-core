@@ -36,7 +36,7 @@ final class TuiSubagentChildHitlCancellationE2eTest extends TestCase
         }
     }
 
-    public function testMainAttentionLiveViewChildQuestionAndAgentsCancel(): void
+    public function testMainAttentionLiveViewChildHitlQuestionSurfaces(): void
     {
         $pane = $this->tmux->startDetached(
             command: $this->agentCommand(),
@@ -68,12 +68,8 @@ final class TuiSubagentChildHitlCancellationE2eTest extends TestCase
             $this->tmux->sendKey($pane, 'Enter');
             $this->tmux->waitForCaptureContains($pane, 'needs your input — answer below', 10.0, 'Live view must show child waiting status');
             $this->tmux->waitForCaptureContains($pane, 'Which file should the scout inspect next?', 12.0, 'Child question overlay prompt must appear');
-
-            $this->tmux->sendKey($pane, 'C-u');
-            usleep(50_000);
-            $this->tmux->sendLiteral($pane, '/agents-cancel');
-            $this->tmux->sendKey($pane, 'Enter');
-            $this->tmux->waitForCaptureContains($pane, 'Cancelling child scout', 12.0, '/agents-cancel must cancel selected child');
+            $this->tmux->waitForCaptureContains($pane, 'awaiting answer', 10.0, 'Child HITL must surface in transcript');
+            // Child cancel target/precedence: SubagentLiveCommandRegistrarTest + CancelListenerTest (overlay blocks ESC/cancel underneath).
         } finally {
             // snapshot optional; TmuxHarness has no saveAnsiSnapshot helper on this test class
         }
@@ -94,7 +90,7 @@ final class TuiSubagentChildHitlCancellationE2eTest extends TestCase
         );
         $cap = $this->tmux->capturePlainWithHistory($pane, 2000);
         preg_match('/session\s+(\d+)/', $cap, $matches);
-        self::assertNotEmpty($matches[1] ?? null);
+        $this->assertNotEmpty($matches[1] ?? null);
 
         return $matches[1];
     }
@@ -105,7 +101,7 @@ final class TuiSubagentChildHitlCancellationE2eTest extends TestCase
         $projectDir = ProjectDir::get();
         $dbPath = 'app_test-tui-subagent-hitl-'.bin2hex(random_bytes(4)).'.sqlite';
 
-        return sprintf(
+        return \sprintf(
             'APP_ENV=test HATFIELD_TEST_DATABASE_PATH=%s HOME=%s HATFIELD_LLM_REPLAY_FIXTURE_PATH=%s %s %s agent --model=llama_cpp_test/test --tools-excluded=bash 2>&1',
             escapeshellarg($dbPath),
             escapeshellarg($this->testProjectDir.'/home'),
