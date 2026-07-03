@@ -83,4 +83,20 @@ final class SubagentLiveCatalogTest extends TestCase
             payload: ['tool_call_id' => 'tc1', 'tool_name' => 'subagent', 'delta' => '', 'subagent_progress' => $progress],
         );
     }
+
+    public function testWaitingHumanChildrenSortBeforeRunning(): void
+    {
+        $catalog = new SubagentLiveCatalog();
+        $catalog->ingestRuntimeEvent($this->progressEvent('parent-1', [
+            'mode' => 'parallel', 'status' => 'running',
+            'children' => [
+                ['agent_name' => 'scout', 'artifact_id' => 'a1', 'agent_run_id' => 'run-1', 'status' => 'running', 'task_summary' => 'One'],
+                ['agent_name' => 'worker', 'artifact_id' => 'a2', 'agent_run_id' => 'run-2', 'status' => 'waiting_human', 'task_summary' => 'Two'],
+            ],
+        ]));
+
+        $all = $catalog->all();
+        self::assertSame('a2', $all[0]->artifactId);
+        self::assertTrue($all[0]->needsAttention());
+    }
 }

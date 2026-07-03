@@ -18,6 +18,8 @@ use Ineersa\Tui\Runtime\RuntimeEventPoller;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
+use Ineersa\Tui\Runtime\TuiSessionState;
+use Ineersa\Tui\Screen\ChatScreen;
 
 /**
  * Tick listener that polls for new runtime events.
@@ -77,6 +79,15 @@ final class TickPollListener implements TuiListenerRegistrar
                 $childBlocks = $subagentLiveChildPoller->poll(
                     $state->subagentLiveView,
                     $client,
+                    onHumanInputRequested: static function (RuntimeEvent $event) use ($client, $questionCoordinator, $state): void {
+                        self::handleHumanInputRequested($event, $client, $questionCoordinator, $state);
+                    },
+                    onToolQuestionRequested: static function (RuntimeEvent $event) use ($client, $questionCoordinator, $state): void {
+                        self::handleToolQuestionRequested($event, $client, $questionCoordinator, $state);
+                    },
+                    onToolTerminal: static function (RuntimeEvent $event) use ($questionCoordinator, $questionController): void {
+                        self::handleToolTerminal($event, $questionCoordinator, $questionController);
+                    },
                 );
                 // Only repaint transcript when new child blocks arrive; cached blocks stay on screen.
                 if (null !== $childBlocks) {
@@ -143,9 +154,12 @@ final class TickPollListener implements TuiListenerRegistrar
             // awaitingFreeForm so a subsequently-queued HITL question can activate.
             // Without this, ESC during __other__ free-form typing cancels the run but
             // leaves awaitingFreeForm=true, silently suppressing the next question.
-            if (!$state->activity->isActive() && $questionCoordinator->actionRequired()) {
-                $questionCoordinator->reject();
-                $questionController->close();
+            if ($questionCoordinator->actionRequired()) {
+                $activeRequest = $questionCoordinator->activeRequest();
+                if (null !== $activeRequest && self::shouldRejectOrphanedQuestion($state, $activeRequest)) {
+                    $questionCoordinator->reject();
+                    $questionController->close();
+                }
             }
 
             // Update working status based on authoritative activity state.
@@ -172,6 +186,7 @@ final class TickPollListener implements TuiListenerRegistrar
                     default => 'Working...',
                 };
                 $childMsg = match ($state->subagentLiveView->childActivity) {
+                    RunActivityStateEnum::WaitingHuman => 'Child waiting for your input...',
                     RunActivityStateEnum::Cancelling => 'Child cancelling...',
                     default => $state->subagentLiveView->childActivity->isActive()
                         ? 'Child agent working...'
@@ -188,11 +203,13 @@ final class TickPollListener implements TuiListenerRegistrar
 
                 $selected = $state->subagentLiveView->selected;
                 if (null !== $selected) {
-                    $liveStatus = \sprintf(
-                        'Subagent live: %s [%s] — type to steer next step; /agents-main to return.',
-                        $selected->agentName,
-                        $selected->statusLabel(),
-                    );
+                    $liveStatus = $selected->needsAttention()
+                        ? \sprintf('Subagent live: %s needs your input — answer below; /agents-main to return.', $selected->agentName)
+                        : \sprintf(
+                            'Subagent live: %s [%s] — type to steer next step; /agents-main to return.',
+                            $selected->agentName,
+                            $selected->statusLabel(),
+                        );
                     $screen->setStatus('agents-live', $liveStatus);
                 }
 
@@ -207,6 +224,8 @@ final class TickPollListener implements TuiListenerRegistrar
                 null === $state->handle && $state->activity->isActive() => null,
                 default => 'Working...',
             };
+
+            self::syncSubagentAttentionStatus($state, $screen);
 
             $screen->setWorkingMessage($msg);
 
@@ -244,6 +263,7 @@ final class TickPollListener implements TuiListenerRegistrar
         RuntimeEvent $event,
         AgentSessionClient $client,
         QuestionCoordinator $questionCoordinator,
+        ?TuiSessionState $sessionState = null,
     ): void {
         $p = $event->payload;
         $questionId = (string) ($p['question_id'] ?? '');
@@ -253,7 +273,7 @@ final class TickPollListener implements TuiListenerRegistrar
             return;
         }
 
-        $requestId = 'hitl_'.$questionId;
+        $requestId = self::hitlRequestId($runId, $questionId);
 
         if ($questionCoordinator->hasRequest($requestId)) {
             return;
@@ -262,6 +282,7 @@ final class TickPollListener implements TuiListenerRegistrar
         $schema = \is_array($p['schema'] ?? null) ? $p['schema'] : ['type' => 'string'];
         $kind = self::resolveQuestionKind($p);
         $choices = self::buildChoices($p, $schema);
+        $header = self::resolveQuestionHeader($sessionState, $runId, $p, 'asks');
 
         $request = new QuestionRequest(
             requestId: $requestId,
@@ -270,7 +291,7 @@ final class TickPollListener implements TuiListenerRegistrar
             prompt: (string) ($p['prompt'] ?? 'Approval required.'),
             schema: $schema,
             choices: $choices,
-            header: $p['header'] ?? null,
+            header: $header,
             default: $p['default'] ?? null,
             allowOther: true,
             runId: $runId,
@@ -457,6 +478,10 @@ final class TickPollListener implements TuiListenerRegistrar
             return;
         }
 
+        if ($active->runId !== $event->runId) {
+            return;
+        }
+
         $questionCoordinator->cancel();
 
         // Close the visual overlay so the stale prompt is not visible.
@@ -496,6 +521,7 @@ final class TickPollListener implements TuiListenerRegistrar
         RuntimeEvent $event,
         AgentSessionClient $client,
         QuestionCoordinator $questionCoordinator,
+        ?TuiSessionState $sessionState = null,
     ): void {
         $p = $event->payload;
         $requestIdFromPayload = (string) ($p['request_id'] ?? '');
@@ -505,7 +531,7 @@ final class TickPollListener implements TuiListenerRegistrar
             return;
         }
 
-        $requestId = 'tool_'.$requestIdFromPayload;
+        $requestId = self::toolRequestId($runId, $requestIdFromPayload);
 
         if ($questionCoordinator->hasRequest($requestId)) {
             return;
@@ -522,13 +548,13 @@ final class TickPollListener implements TuiListenerRegistrar
         $isBoolean = ($schema['type'] ?? '') === 'boolean';
 
         if ($hasEnum) {
-            self::handleChoiceToolQuestion($p, $schema, $requestId, $runId, $requestIdFromPayload, $client, $questionCoordinator);
+            self::handleChoiceToolQuestion($p, $schema, $requestId, $runId, $requestIdFromPayload, $client, $questionCoordinator, $sessionState);
 
             return;
         }
 
         if ($isBoolean || 'confirm' === $kind) {
-            self::handleConfirmToolQuestion($p, $requestId, $runId, $requestIdFromPayload, $client, $questionCoordinator);
+            self::handleConfirmToolQuestion($p, $requestId, $runId, $requestIdFromPayload, $client, $questionCoordinator, $sessionState);
 
             return;
         }
@@ -536,7 +562,7 @@ final class TickPollListener implements TuiListenerRegistrar
         // Degenerate fallback: unknown non-confirm schemas degrade to the generic choice
         // overlay instead of throwing (which would drop later poll-batch events). Producers
         // should supply enum or string schemas so choices are usable; this path is best-effort.
-        self::handleChoiceToolQuestion($p, $schema, $requestId, $runId, $requestIdFromPayload, $client, $questionCoordinator);
+        self::handleChoiceToolQuestion($p, $schema, $requestId, $runId, $requestIdFromPayload, $client, $questionCoordinator, $sessionState);
     }
 
     /**
@@ -556,6 +582,7 @@ final class TickPollListener implements TuiListenerRegistrar
         string $requestIdFromPayload,
         AgentSessionClient $client,
         QuestionCoordinator $questionCoordinator,
+        ?TuiSessionState $sessionState = null,
     ): void {
         $enum = $schema['enum'] ?? [];
         $choices = array_map(
@@ -570,6 +597,7 @@ final class TickPollListener implements TuiListenerRegistrar
             prompt: (string) ($p['prompt'] ?? 'Approval required.'),
             schema: $schema,
             choices: $choices,
+            header: self::resolveQuestionHeader($sessionState, $runId, $p, 'tool question'),
             allowOther: false,
             runId: $runId,
             questionId: $requestIdFromPayload,
@@ -621,6 +649,7 @@ final class TickPollListener implements TuiListenerRegistrar
         string $requestIdFromPayload,
         AgentSessionClient $client,
         QuestionCoordinator $questionCoordinator,
+        ?TuiSessionState $sessionState = null,
     ): void {
         $request = new QuestionRequest(
             requestId: $requestId,
@@ -629,6 +658,7 @@ final class TickPollListener implements TuiListenerRegistrar
             prompt: (string) ($p['prompt'] ?? 'Confirmation required.'),
             schema: ['type' => 'boolean'],
             choices: [],
+            header: self::resolveQuestionHeader($sessionState, $runId, $p, 'approval'),
             allowOther: false,
             runId: $runId,
             questionId: $requestIdFromPayload,
@@ -662,5 +692,82 @@ final class TickPollListener implements TuiListenerRegistrar
                 ));
             },
         );
+    }
+
+    private static function hitlRequestId(string $runId, string $questionId): string
+    {
+        return 'hitl_'.substr(hash('sha256', $runId.'|'.$questionId), 0, 16);
+    }
+
+    private static function toolRequestId(string $runId, string $requestIdFromPayload): string
+    {
+        return 'tool_'.substr(hash('sha256', $runId.'|'.$requestIdFromPayload), 0, 16);
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private static function resolveQuestionHeader(?TuiSessionState $sessionState, string $runId, array $payload, string $suffix): ?string
+    {
+        if (null !== ($payload['header'] ?? null) && '' !== (string) $payload['header']) {
+            return (string) $payload['header'];
+        }
+
+        $agentName = self::resolveSubagentLabel($sessionState, $runId);
+        if (null === $agentName) {
+            return null;
+        }
+
+        return \sprintf('Subagent %s %s', $agentName, $suffix);
+    }
+
+    private static function resolveSubagentLabel(?TuiSessionState $sessionState, string $runId): ?string
+    {
+        if (null === $sessionState) {
+            return null;
+        }
+
+        $live = $sessionState->subagentLiveView;
+        if ($live->active && null !== $live->selected && $live->selected->agentRunId === $runId) {
+            return $live->selected->agentName;
+        }
+
+        foreach ($sessionState->subagentLiveCatalog->all() as $catalogChild) {
+            if ($catalogChild->agentRunId === $runId) {
+                return $catalogChild->agentName;
+            }
+        }
+
+        return null;
+    }
+
+    private static function syncSubagentAttentionStatus(TuiSessionState $state, ChatScreen $screen): void
+    {
+        $child = $state->subagentLiveCatalog->firstChildNeedingAttention();
+        if (null !== $child) {
+            $screen->setStatus(
+                'subagent_live',
+                \sprintf('⚠ Subagent %s needs your input — /agents-live', $child->agentName),
+            );
+
+            return;
+        }
+
+        $screen->setStatus('subagent_live', null);
+    }
+
+    private static function shouldRejectOrphanedQuestion(TuiSessionState $state, QuestionRequest $activeRequest): bool
+    {
+        $parentRunId = null !== $state->handle ? $state->handle->runId : $state->sessionId;
+        if ($activeRequest->runId === $parentRunId) {
+            return !$state->activity->isActive();
+        }
+
+        $live = $state->subagentLiveView;
+        if ($live->active && null !== $live->selected && $activeRequest->runId === $live->selected->agentRunId) {
+            return $live->childActivity->isTerminal();
+        }
+
+        return false;
     }
 }

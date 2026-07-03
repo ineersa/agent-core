@@ -37,9 +37,8 @@ use Symfony\Component\Uid\Uuid;
  *  5. Poll child RunState until terminal, timeout, or cancellation.
  *  6. Finalize registry, handoff, and return result text.
  *
- * Only non-interactive foreground mode is supported.
- * (WaitingHuman) is unsupported — the child is cancelled and
- * the artifact is finalized as Failed (invariant failure).
+ * Foreground subagents launch as interactive-capable child runs (session.interactive=true).
+ * WaitingHuman is supported: parent progress emits waiting_human until the child resumes or is cancelled.
  */
 final class SubagentExecutionService
 {
@@ -140,7 +139,7 @@ final class SubagentExecutionService
                 'parent_run_id' => $parentRunId,
                 'agent_name' => $agentName,
                 'artifact_id' => $artifactId,
-                'interactive' => false,
+                'interactive' => true,
             ],
             model: $definition->model,
             reasoning: $definition->thinking,
@@ -239,6 +238,15 @@ final class SubagentExecutionService
             $status = $state->status;
 
             if (RunStatus::Running === $status || RunStatus::Queued === $status || RunStatus::Compacting === $status) {
+                $entry = $this->artifactRegistry->get($parentRunId, $artifactId);
+                if (null !== $entry && AgentArtifactStatusEnum::NeedsClarification === $entry->status) {
+                    $this->artifactRegistry->update(
+                        parentRunId: $parentRunId,
+                        artifactId: $artifactId,
+                        status: AgentArtifactStatusEnum::Running,
+                    );
+                }
+
                 $signature = $this->singleProgressSignature(
                     $parentRunId,
                     $agentRunId,
@@ -267,33 +275,39 @@ final class SubagentExecutionService
                 continue;
             }
 
-            // WaitingHuman should not occur for non-interactive child runs.
             if (RunStatus::WaitingHuman === $status) {
-                $this->agentRunner->cancel($agentRunId, 'Child entered unsupported WaitingHuman state.');
-                $this->emitTerminalProgressUpdate(
-                    parentRunId: $parentRunId,
-                    agentRunId: $agentRunId,
-                    agentName: $agentName,
-                    artifactId: $artifactId,
-                    taskSummary: $task,
-                    definitionModel: $definition->model,
-                    state: $state,
-                    terminalStatus: 'failed',
-                    seq: $progressSeq,
-                    progressStartedHr: $progressStartedHr,
-                );
-                $this->advanceParentSequence($parentRunId, $progressSeq);
-                ++$progressSeq;
-                $this->finalize(
+                $this->artifactRegistry->update(
                     parentRunId: $parentRunId,
                     artifactId: $artifactId,
-                    status: AgentArtifactStatusEnum::Failed,
-                    failureReason: 'Child agent attempted unsupported human interaction or approval.',
-                    summary: 'Child run entered WaitingHuman; foreground subagents are non-interactive.',
+                    status: AgentArtifactStatusEnum::NeedsClarification,
                 );
+                $signature = $this->singleProgressSignature(
+                    $parentRunId,
+                    $agentRunId,
+                    $artifactId,
+                    $state,
+                    $definition->model,
+                );
+                if (null === $lastSingleProgressSignature || $signature !== $lastSingleProgressSignature) {
+                    $this->emitProgressUpdate(
+                        parentRunId: $parentRunId,
+                        agentRunId: $agentRunId,
+                        agentName: $agentName,
+                        artifactId: $artifactId,
+                        taskSummary: $task,
+                        definitionModel: $definition->model,
+                        state: $state,
+                        seq: $progressSeq,
+                        progressStartedHr: $progressStartedHr,
+                        progressStatus: 'waiting_human',
+                    );
+                    $this->advanceParentSequence($parentRunId, $progressSeq);
+                    ++$progressSeq;
+                    $lastSingleProgressSignature = $signature;
+                }
 
-                return \sprintf('Subagent %s failed: unsupported human interaction or approval. Artifact: %s',
-                    $agentName, $artifactId);
+                usleep(self::DEFAULT_POLL_MICROS);
+                continue;
             }
 
             // Terminal states only — emit final structured snapshot before returning.
@@ -426,7 +440,7 @@ final class SubagentExecutionService
                         'parent_run_id' => $parentRunId,
                         'agent_name' => $launch['agentName'],
                         'artifact_id' => $launch['artifactId'],
-                        'interactive' => false,
+                        'interactive' => true,
                     ],
                     model: $launch['definition']->model,
                     reasoning: $launch['definition']->thinking,
@@ -525,22 +539,27 @@ final class SubagentExecutionService
                 $activeTurns[$agentRunId] = $state->turnNo;
                 $status = $state->status;
                 if (RunStatus::Running === $status || RunStatus::Queued === $status || RunStatus::Compacting === $status) {
+                    if (AgentArtifactStatusEnum::NeedsClarification === $reports[$agentRunId]['status']) {
+                        $this->artifactRegistry->update(
+                            parentRunId: $parentRunId,
+                            artifactId: $report['artifactId'],
+                            status: AgentArtifactStatusEnum::Running,
+                        );
+                        $reports[$agentRunId]['status'] = AgentArtifactStatusEnum::Running;
+                    }
+
                     continue;
                 }
 
                 match ($status) {
                     RunStatus::WaitingHuman => (function () use ($parentRunId, $agentRunId, $report, &$reports): void {
-                        $this->agentRunner->cancel($agentRunId, 'Child entered unsupported WaitingHuman state.');
-                        $this->finalize(
+                        $this->artifactRegistry->update(
                             parentRunId: $parentRunId,
                             artifactId: $report['artifactId'],
-                            status: AgentArtifactStatusEnum::Failed,
-                            failureReason: 'Child agent attempted unsupported human interaction or approval.',
-                            summary: 'Child run entered WaitingHuman; foreground subagents are non-interactive.',
+                            status: AgentArtifactStatusEnum::NeedsClarification,
                         );
-                        $reports[$agentRunId]['terminal'] = true;
-                        $reports[$agentRunId]['status'] = AgentArtifactStatusEnum::Failed;
-                        $reports[$agentRunId]['message'] = 'Unsupported human interaction or approval.';
+                        $reports[$agentRunId]['status'] = AgentArtifactStatusEnum::NeedsClarification;
+                        $reports[$agentRunId]['message'] = 'Waiting for human input.';
                     })(),
                     RunStatus::Completed => (function () use ($parentRunId, $agentRunId, $state, $report, &$reports): void {
                         $summary = $this->extractLastMessage($state);
@@ -725,6 +744,12 @@ final class SubagentExecutionService
         foreach ($reports as $agentRunId => $report) {
             if ($report['terminal']) {
                 $parts[] = $agentRunId.':terminal:'.(null !== $report['status'] ? $report['status']->value : 'unknown');
+
+                continue;
+            }
+
+            if (AgentArtifactStatusEnum::NeedsClarification === $report['status']) {
+                $parts[] = $agentRunId.':waiting_human:'.(string) ($activeTurns[$agentRunId] ?? 0);
 
                 continue;
             }
@@ -1389,6 +1414,7 @@ TXT;
         RunState $state,
         int $seq,
         int $progressStartedHr,
+        string $progressStatus = 'running',
     ): void {
         $context = $this->contextAccessor->current();
         if (null === $context) {
@@ -1411,6 +1437,7 @@ TXT;
             $state,
             $elapsedMs,
             $enrichment,
+            $progressStatus,
         );
         $this->appendSubagentProgressEvent($parentRunId, $context, $seq, $progress);
     }

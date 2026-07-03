@@ -6,14 +6,18 @@ namespace Ineersa\Tui\Listener;
 
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\SlashCommandRegistry;
+use Ineersa\Tui\Command\SubagentLiveInputPolicy;
 use Ineersa\Tui\Picker\SubagentLivePickerController;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
+use Psr\Log\LoggerInterface;
 
 final class SubagentLiveCommandRegistrar implements TuiListenerRegistrar
 {
     public function __construct(
         private readonly SlashCommandRegistry $commandRegistry,
         private readonly SubagentLivePickerController $pickerController,
+        private readonly SubagentLiveInputPolicy $liveInputPolicy,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
@@ -28,7 +32,7 @@ final class SubagentLiveCommandRegistrar implements TuiListenerRegistrar
             $this->commandRegistry->register(
                 new CommandMetadata(
                     name: 'agents-live',
-                    description: 'Open readonly live view for a running subagent',
+                    description: 'Open interactive live view for a subagent',
                     usage: '/agents-live',
                     acceptsArguments: false,
                 ),
@@ -37,6 +41,27 @@ final class SubagentLiveCommandRegistrar implements TuiListenerRegistrar
         }
 
         $mainHandler = new AgentsMainCommandHandler($context->state, $context->screen);
+        $cancelHandler = new AgentsCancelCommandHandler(
+            $context->state,
+            $context->screen,
+            $context->client,
+            $this->liveInputPolicy,
+            $this->logger,
+        );
+        if ($this->commandRegistry->has('agents-cancel')) {
+            $this->commandRegistry->setHandler('agents-cancel', $cancelHandler);
+        } else {
+            $this->commandRegistry->register(
+                new CommandMetadata(
+                    name: 'agents-cancel',
+                    description: 'Cancel the selected subagent in live view',
+                    usage: '/agents-cancel',
+                    acceptsArguments: false,
+                ),
+                $cancelHandler,
+            );
+        }
+
         if ($this->commandRegistry->has('agents-main')) {
             $this->commandRegistry->setHandler('agents-main', $mainHandler);
         } else {

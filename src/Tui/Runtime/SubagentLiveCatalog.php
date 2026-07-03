@@ -20,7 +20,13 @@ final class SubagentLiveCatalog
     public function all(): array
     {
         $items = array_values($this->byArtifactId);
-        usort($items, static fn (SubagentLiveChildDTO $a, SubagentLiveChildDTO $b): int => $b->lastActivityAtMs <=> $a->lastActivityAtMs);
+        usort($items, static function (SubagentLiveChildDTO $a, SubagentLiveChildDTO $b): int {
+            if ($a->needsAttention() !== $b->needsAttention()) {
+                return $b->needsAttention() <=> $a->needsAttention();
+            }
+
+            return $b->lastActivityAtMs <=> $a->lastActivityAtMs;
+        });
 
         return $items;
     }

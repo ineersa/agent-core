@@ -32,6 +32,7 @@ use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Tui\Tui;
 
@@ -294,7 +295,7 @@ final class TickPollListenerTest extends TestCase
         self::assertSame('Custom Rich Header', $active->header);
         self::assertSame('default text', $active->default);
         self::assertTrue($active->allowOther, 'HITL questions must always allow free-form input');
-        self::assertSame('hitl_q_rich', $active->requestId);
+        self::assertSame('hitl_'.substr(hash('sha256', 'run-rich|q_rich'), 0, 16), $active->requestId);
         self::assertSame('q_rich', $active->questionId);
         self::assertTrue($active->transcript);
     }
@@ -722,6 +723,7 @@ final class TickPollListenerTest extends TestCase
     {
         return new SubagentLiveChildViewPoller(
             new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
+            new \Psr\Log\NullLogger(),
         );
     }
 

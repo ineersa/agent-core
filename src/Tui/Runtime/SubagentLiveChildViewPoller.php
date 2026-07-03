@@ -8,11 +8,14 @@ use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Psr\Log\LoggerInterface;
 
 /**
  * Polls a selected child run id and projects readonly live transcript blocks.
  *
- * Readonly child transcript projection only (no child HITL in Phase 1).
+ * Optional HITL callbacks mirror RuntimeEventPoller so child human_input.requested
+ * and tool_question.requested events can drive the shared QuestionCoordinator.
  */
 final class SubagentLiveChildViewPoller
 {
@@ -22,6 +25,7 @@ final class SubagentLiveChildViewPoller
 
     public function __construct(
         private readonly TranscriptProjectorInterface $projector,
+        private readonly LoggerInterface $logger,
     ) {
         $this->eventApplier = new TuiRuntimeEventApplier($this->projector);
     }
@@ -32,11 +36,18 @@ final class SubagentLiveChildViewPoller
     }
 
     /**
-     * @return list<TranscriptBlock>|null null when no new child blocks (no screen repaint)
+     * @param ?callable(RuntimeEvent): void $onHumanInputRequested
+     * @param ?callable(RuntimeEvent): void $onToolQuestionRequested
+     * @param ?callable(RuntimeEvent): void $onToolTerminal
+     *
+     * @return list<TranscriptBlock>|null
      */
     public function poll(
         SubagentLiveViewState $live,
         AgentSessionClient $client,
+        ?callable $onHumanInputRequested = null,
+        ?callable $onToolQuestionRequested = null,
+        ?callable $onToolTerminal = null,
     ): ?array {
         if (!$live->active || null === $live->selected) {
             return null;
@@ -68,6 +79,22 @@ final class SubagentLiveChildViewPoller
 
             $this->eventApplier->apply($scratch, $event);
             $changed = true;
+
+            if (null !== $onHumanInputRequested && RuntimeEventTypeEnum::HumanInputRequested->value === $event->type) {
+                $this->invokeEventCallback($onHumanInputRequested, $event, $live->selected->agentRunId, 'onHumanInputRequested');
+            }
+
+            if (null !== $onToolQuestionRequested && RuntimeEventTypeEnum::ToolQuestionRequested->value === $event->type) {
+                $this->invokeEventCallback($onToolQuestionRequested, $event, $live->selected->agentRunId, 'onToolQuestionRequested');
+            }
+
+            if (null !== $onToolTerminal && (
+                RuntimeEventTypeEnum::ToolExecutionCompleted->value === $event->type
+                || RuntimeEventTypeEnum::ToolExecutionFailed->value === $event->type
+                || RuntimeEventTypeEnum::ToolExecutionCancelled->value === $event->type
+            )) {
+                $this->invokeEventCallback($onToolTerminal, $event, $live->selected->agentRunId, 'onToolTerminal');
+            }
         }
 
         if ($changed) {
@@ -81,6 +108,27 @@ final class SubagentLiveChildViewPoller
         $live->childTranscript = $this->projector->blocks();
 
         return $live->childTranscript;
+    }
+
+    /**
+     * @param callable(RuntimeEvent): void $callback
+     */
+    private function invokeEventCallback(callable $callback, RuntimeEvent $runtimeEvent, string $childRunId, string $callbackName): void
+    {
+        try {
+            $callback($runtimeEvent);
+        } catch (\Throwable $e) {
+            $this->logger->warning('SubagentLiveChildViewPoller event callback failed', [
+                'component' => 'tui.subagent_live_child_poller',
+                'event_type' => 'subagent_live_child_poller.callback_failed',
+                'run_id' => $childRunId,
+                'callback' => $callbackName,
+                'runtime_event_type' => $runtimeEvent->type,
+                'seq' => $runtimeEvent->seq,
+                'exception_class' => $e::class,
+                'exception_message' => $e->getMessage(),
+            ]);
+        }
     }
 
     /** @return list<RuntimeEvent> */

@@ -76,6 +76,7 @@ final class TickPollListenerSubagentLiveTest extends TestCase
 
         $childPoller = new SubagentLiveChildViewPoller(
             new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
+            new \Psr\Log\NullLogger(),
         );
 
         $tui = new Tui();
@@ -152,6 +153,7 @@ final class TickPollListenerSubagentLiveTest extends TestCase
 
         $childPoller = new SubagentLiveChildViewPoller(
             new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
+            new \Psr\Log\NullLogger(),
         );
 
         $tui = new Tui();

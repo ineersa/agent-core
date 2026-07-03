@@ -376,6 +376,7 @@ class CancelListenerTest extends TestCase
             $this->logger,
             $boundary,
             $questionController,
+            new QuestionCoordinator(),
         );
         $listener->register($context);
 

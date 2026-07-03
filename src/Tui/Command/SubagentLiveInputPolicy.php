@@ -21,6 +21,7 @@ final readonly class SubagentLiveInputPolicy
         'agents-main',
         'main',
         'agents-live',
+        'agents-cancel',
     ];
 
     public function __construct(
@@ -31,6 +32,11 @@ final readonly class SubagentLiveInputPolicy
     public function blockedLeaveLiveViewMessage(): string
     {
         return 'Leave subagent live view first with /agents-main before running other commands.';
+    }
+
+    public function childCancelUnavailableMessage(): string
+    {
+        return 'No active subagent to cancel in live view. Use /agents-main to return.';
     }
 
     public function terminalChildInputBlockedMessage(): string

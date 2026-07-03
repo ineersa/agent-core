@@ -8,7 +8,9 @@ use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\Tui\Question\QuestionController;
+use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
+use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Tui\Event\CancelEvent;
@@ -34,6 +36,7 @@ final class CancelListener implements TuiListenerRegistrar
         private readonly LoggerInterface $logger,
         private readonly RuntimeExceptionBoundary $boundary,
         private readonly QuestionController $questionController,
+        private readonly QuestionCoordinator $questionCoordinator,
     ) {
     }
 
@@ -45,13 +48,55 @@ final class CancelListener implements TuiListenerRegistrar
         $logger = $this->logger;
         $boundary = $this->boundary;
         $questionController = $this->questionController;
+        $questionCoordinator = $this->questionCoordinator;
 
-        $context->tui->addListener(static function (CancelEvent $event) use ($client, $state, $screen, $logger, $boundary, $questionController): void {
+        $context->tui->addListener(static function (CancelEvent $event) use ($client, $state, $screen, $logger, $boundary, $questionController, $questionCoordinator): void {
             // Free-form typing (__other__ escape hatch): ESC returns to the
             // select list instead of cancelling the run. The user can then ESC
             // again from the list to cancel the question (→ 'Cancelled by user').
             if ($questionController->isAwaitingFreeForm()) {
                 $questionController->restoreFromFreeForm();
+
+                return;
+            }
+
+            if ($questionCoordinator->actionRequired() && $questionController->isOpen()) {
+                return;
+            }
+
+            $live = $state->subagentLiveView;
+            if ($live->active && null !== $live->selected && self::shouldCancelSelectedChild($live->selected, $live->childActivity)) {
+                $child = $live->selected;
+                $logger->info('ESC cancel child subagent requested', [
+                    'component' => 'cancel_listener',
+                    'event_type' => 'subagent_live_child_cancel_requested',
+                    'run_id' => $child->agentRunId,
+                    'artifact_id' => $child->artifactId,
+                    'agent_name' => $child->agentName,
+                ]);
+
+                try {
+                    $client->cancel($child->agentRunId);
+                } catch (\Throwable $e) {
+                    $boundary->catch($e, 'cancel_listener.child_cancel_command_failed', [
+                        'run_id' => $child->agentRunId,
+                    ]);
+
+                    $logger->error('Child cancel command failed', [
+                        'component' => 'cancel_listener',
+                        'event_type' => 'subagent_live_child_cancel_failed',
+                        'run_id' => $child->agentRunId,
+                        'artifact_id' => $child->artifactId,
+                        'exception' => $e,
+                    ]);
+                    $screen->setStatus('agents-live', 'Child cancel failed: '.$e->getMessage());
+
+                    return;
+                }
+
+                $live->childActivity = RunActivityStateEnum::Cancelling;
+                $screen->setWorkingMessage(\sprintf('Cancelling child %s...', $child->agentName));
+                $screen->setStatus('agents-live', \sprintf('Cancelling child %s (%s).', $child->agentName, $child->artifactId));
 
                 return;
             }
@@ -120,5 +165,14 @@ final class CancelListener implements TuiListenerRegistrar
             // Idle/terminal — just clear the editor
             $screen->clearEditor();
         });
+    }
+
+    private static function shouldCancelSelectedChild(
+        SubagentLiveChildDTO $child,
+        RunActivityStateEnum $childActivity,
+    ): bool {
+        return $child->isRunning()
+            || RunActivityStateEnum::Cancelling === $childActivity
+            || $childActivity->isActive();
     }
 }

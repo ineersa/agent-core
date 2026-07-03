@@ -264,34 +264,30 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         self::assertSame('Tool call failed: file not found', $entries[0]->failureReason);
     }
 
-    public function testWaitingHumanFinalizesAsFailedUnsupportedInteraction(): void
+    public function testWaitingHumanKeepsPollingUntilChildCompletes(): void
     {
         $waitingState = new RunState(
             runId: 'child-waiting',
             status: RunStatus::WaitingHuman,
             version: 2,
+            messages: [],
+        );
+        $completedState = new RunState(
+            runId: 'child-waiting',
+            status: RunStatus::Completed,
+            version: 3,
             messages: [
-                new AgentMessage(
-                    role: 'assistant',
-                    content: [
-                        ['type' => 'text', 'text' => 'Would you like me to delete Foo.php?'],
-                    ],
-                ),
+                new AgentMessage(role: 'assistant', content: [['type' => 'text', 'text' => 'Done after answer.']]),
             ],
         );
 
         $runStore = $this->createStub(RunStoreInterface::class);
-        $runStore->method('get')->willReturn($waitingState);
+        $runStore->method('get')->willReturnOnConsecutiveCalls($waitingState, $waitingState, $completedState);
 
         $parentRunStore = $this->createStub(RunStoreInterface::class);
-
         $agentRunner = $this->createMock(AgentRunnerInterface::class);
         $agentRunner->expects(self::once())->method('start');
-        $agentRunner->expects(self::once())->method('cancel')
-            ->with(
-                self::callback(fn (mixed $id): bool => \is_string($id)),
-                self::stringContains('WaitingHuman'),
-            );
+        $agentRunner->expects(self::never())->method('cancel');
 
         $def = new AgentDefinitionDTO(
             name: 'asker',
@@ -327,15 +323,12 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
         );
 
-        $result = $service->execute('parent-3', 'asker', 'Should I delete Foo.php?');
+        $result = $service->execute('parent-waiting', 'asker', 'Need clarification');
 
-        self::assertStringContainsString('unsupported human interaction', $result);
-        self::assertStringContainsString('Artifact:', $result);
-
-        // Verify artifact finalized as Failed.
-        $entries = $registry->list('parent-3');
+        self::assertStringContainsString('Done after answer', $result);
+        $entries = $registry->list('parent-waiting');
         self::assertCount(1, $entries);
-        self::assertSame(AgentArtifactStatusEnum::Failed, $entries[0]->status);
+        self::assertSame(AgentArtifactStatusEnum::Completed, $entries[0]->status);
     }
 
     public function testNestedSubagentLaunchBlockedWhenParentIsAgentChild(): void
