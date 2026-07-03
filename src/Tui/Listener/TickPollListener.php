@@ -80,10 +80,10 @@ final class TickPollListener implements TuiListenerRegistrar
                 $childBlocks = $subagentLiveChildPoller->poll(
                     $state->subagentLiveView,
                     $client,
-                    onHumanInputRequested: static function (RuntimeEvent $event) use ($client, $questionCoordinator, $state): void {
+                    onHumanInputRequested: static function (RuntimeEvent $event) use ($client, $questionCoordinator, $state, $screen): void {
                         self::handleHumanInputRequested($event, $client, $questionCoordinator, $state, $screen);
                     },
-                    onToolQuestionRequested: static function (RuntimeEvent $event) use ($client, $questionCoordinator, $state): void {
+                    onToolQuestionRequested: static function (RuntimeEvent $event) use ($client, $questionCoordinator, $state, $screen): void {
                         self::handleToolQuestionRequested($event, $client, $questionCoordinator, $state, $screen);
                     },
                     onToolTerminal: static function (RuntimeEvent $event) use ($questionCoordinator, $questionController): void {
@@ -663,6 +663,7 @@ final class TickPollListener implements TuiListenerRegistrar
         AgentSessionClient $client,
         QuestionCoordinator $questionCoordinator,
         ?TuiSessionState $sessionState = null,
+        ?ChatScreen $screen = null,
     ): void {
         $request = new QuestionRequest(
             requestId: $requestId,
@@ -682,7 +683,7 @@ final class TickPollListener implements TuiListenerRegistrar
 
         $questionCoordinator->enqueue(
             $request,
-            onAnswer: static function (mixed $answer) use ($client, $runId, $requestIdFromPayload): void {
+            onAnswer: static function (mixed $answer) use ($client, $runId, $requestIdFromPayload, $sessionState, $screen): void {
                 $boolAnswer = \is_string($answer) && 'yes' === strtolower($answer);
 
                 $client->send($runId, new UserCommand(
@@ -693,8 +694,12 @@ final class TickPollListener implements TuiListenerRegistrar
                         'kind' => 'confirm',
                     ],
                 ));
+
+                if (null !== $sessionState && null !== $screen) {
+                    SubagentLiveAttention::clearWaitingHumanForRun($sessionState, $screen, $runId);
+                }
             },
-            onCancel: static function () use ($client, $runId, $requestIdFromPayload): void {
+            onCancel: static function () use ($client, $runId, $requestIdFromPayload, $sessionState, $screen): void {
                 $client->send($runId, new UserCommand(
                     type: 'answer_tool_question',
                     payload: [
@@ -703,6 +708,10 @@ final class TickPollListener implements TuiListenerRegistrar
                         'kind' => 'confirm',
                     ],
                 ));
+
+                if (null !== $sessionState && null !== $screen) {
+                    SubagentLiveAttention::clearWaitingHumanForRun($sessionState, $screen, $runId);
+                }
             },
         );
     }

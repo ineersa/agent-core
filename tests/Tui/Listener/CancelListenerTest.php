@@ -318,6 +318,52 @@ class CancelListenerTest extends TestCase
     }
 
     #[Test]
+    public function escWithActiveTextQuestionCancelsQuestionNotChildOrParent(): void
+    {
+        $this->state->activity = RunActivityStateEnum::Running;
+        $this->state->handle = new RunHandle('parent-run-text-question');
+
+        $child = new SubagentLiveChildDTO(
+            agentRunId: 'child-run-text-question',
+            artifactId: 'agent_text_question',
+            agentName: 'scout',
+            status: SubagentLiveStatusEnum::WaitingHuman,
+            taskSummary: 'task',
+            lastActivityAtMs: 1,
+        );
+        $this->state->subagentLiveView->enter($child);
+        $this->state->subagentLiveView->childActivity = RunActivityStateEnum::WaitingHuman;
+
+        $cancelled = false;
+        $coordinator = new QuestionCoordinator();
+        $coordinator->enqueue(
+            new QuestionRequest(
+                requestId: 'child_hitl_text',
+                source: QuestionSource::AgentCore,
+                kind: QuestionKind::Text,
+                prompt: 'Which file should the scout inspect next?',
+                schema: ['type' => 'string'],
+                runId: 'child-run-text-question',
+                questionId: 'q_text',
+            ),
+            onCancel: static function () use (&$cancelled): void {
+                $cancelled = true;
+            },
+        );
+        self::assertTrue($coordinator->actionRequired());
+
+        $this->client->expects($this->never())
+            ->method('cancel');
+
+        $this->dispatchCancelEvent(questionCoordinator: $coordinator);
+
+        self::assertTrue($cancelled, 'ESC must invoke the question cancel callback for text HITL');
+        self::assertFalse($coordinator->actionRequired(), 'Text HITL should be dismissed by ESC');
+        $this->assertSame(RunActivityStateEnum::Running, $this->state->subagentLiveView->childActivity);
+        $this->assertSame(RunActivityStateEnum::Running, $this->state->activity);
+    }
+
+    #[Test]
     public function escWithOpenQuestionOverlayDoesNotCancelChildOrParent(): void
     {
         $this->state->activity = RunActivityStateEnum::Running;

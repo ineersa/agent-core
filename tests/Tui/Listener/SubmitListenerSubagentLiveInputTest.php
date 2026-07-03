@@ -19,6 +19,9 @@ use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\SubmitListener;
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
+use Ineersa\Tui\Question\QuestionKind;
+use Ineersa\Tui\Question\QuestionRequest;
+use Ineersa\Tui\Question\QuestionSource;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
 use Ineersa\Tui\Command\SubagentLiveInputPolicy;
@@ -131,6 +134,34 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
         $this->enterLiveView('child-run-1', RunActivityStateEnum::Running);
         $this->dispatchSubmit('/agents-live');
         self::assertGreaterThan(0, $this->handlerCalls['/agents-live'] ?? 0);
+    }
+
+    #[Test]
+    public function liveViewNavigationSlashBypassesActiveQuestionAnswer(): void
+    {
+        $answered = false;
+        $this->questionCoordinator->enqueue(
+            new QuestionRequest(
+                requestId: 'child_hitl_submit_bypass',
+                source: QuestionSource::AgentCore,
+                kind: QuestionKind::Text,
+                prompt: 'Which file should the scout inspect next?',
+                schema: ['type' => 'string'],
+                runId: 'child-run-1',
+                questionId: 'q_submit_bypass',
+            ),
+            onAnswer: static function (mixed $answer) use (&$answered): void {
+                $answered = true;
+            },
+        );
+
+        $this->client->expects($this->never())->method('send');
+
+        $this->dispatchSubmit('/agents-live');
+
+        self::assertGreaterThan(0, $this->handlerCalls['/agents-live'] ?? 0);
+        self::assertFalse($answered, 'Navigation slash must not be consumed as the active question answer');
+        self::assertTrue($this->questionCoordinator->actionRequired(), 'Question must remain active after navigation slash');
     }
 
     #[Test]
