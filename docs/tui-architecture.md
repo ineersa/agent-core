@@ -472,10 +472,11 @@ mutating individual widget refs.
 ### Widget tree owned by ChatScreen
 
 ```
-ChatScreen (13 widgets)
+ChatScreen (14 widgets)
   ├── topMarginWidget    (LiveTextWidget)  4 blank lines (configurable)
   ├── headerWidget       (LiveTextWidget)  ← HeaderWidget.render()
   ├── headerSeparator    (LiveTextWidget)  ─── at live terminal width
+  ├── loadedResourcesWidget (LiveTextWidget)  ← LoadedResourcesWidget (startup block)
   ├── transcriptWidget   (LiveTextWidget)  ← TranscriptWidget + entries
   ├── pendingWidget      (LiveTextWidget)  PendingMessagesWidget
   ├── workingWidget      (LiveTextWidget)  WorkingStatusWidget (via registry)
@@ -501,7 +502,7 @@ producer receives the current `RenderContext` and sizes output accordingly.
 
 | Method | Purpose |
 |--------|---------|
-| `mount(Tui): void` | Create and attach all 13 widgets to TUI |
+| `mount(Tui): void` | Create and attach all 14 widgets to TUI |
 | `setTranscriptBlocks(TranscriptBlock[]): void` | Replace transcript content |
 | `appendTranscriptBlock(TranscriptBlock): void` | Add one block to transcript |
 | `clearEditor(): void` | Reset editor to empty |

@@ -51,3 +51,4 @@ extensions:
 - Restore is not fully transactional across arbitrary failure modes.
 - Preview line counts are best-effort (status/path focused in v1).
 - Large/binary files may be skipped or summarized as unavailable.
+- Checkpoint capture/restore diagnostics rely on best-effort logging only in v1 (no structured extension logger seam yet).

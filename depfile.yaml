@@ -351,7 +351,6 @@ parameters:
       - SymfonyConsole
 
     TuiListener:
-      - AppExtension
       - AppRuntimeContract
       - AppRuntimeProjection
       - AppSession
