@@ -37,9 +37,7 @@ final class SubagentLiveAttention
             }
         }
 
-        if (!$state->subagentLiveView->active) {
-            self::syncMainAttention($state, $screen);
-        }
+        self::refreshAttentionFooter($state, $screen);
     }
 
     public static function markCancelledForRun(TuiSessionState $state, ChatScreen $screen, string $agentRunId): void
@@ -66,12 +64,20 @@ final class SubagentLiveAttention
             }
         }
 
-        if (!$state->subagentLiveView->active) {
-            self::syncMainAttention($state, $screen);
-        }
+        self::refreshAttentionFooter($state, $screen);
     }
 
     public static function syncMainAttention(TuiSessionState $state, ChatScreen $screen): void
+    {
+        self::refreshAttentionFooter($state, $screen);
+    }
+
+    /**
+     * Keeps subagent_live and agents-live footer keys aligned with the catalog,
+     * including while subagent live view is active (main-only sync previously
+     * left the warning stuck after answer/cancel/finish).
+     */
+    public static function refreshAttentionFooter(TuiSessionState $state, ChatScreen $screen): void
     {
         $child = $state->subagentLiveCatalog->firstChildNeedingAttention();
         if (null !== $child) {
@@ -79,10 +85,24 @@ final class SubagentLiveAttention
                 'subagent_live',
                 \sprintf('⚠ Subagent %s needs your input — /agents-live', $child->agentName),
             );
+        } else {
+            $screen->setStatus('subagent_live', null);
+        }
 
+        $live = $state->subagentLiveView;
+        if (!$live->active || null === $live->selected) {
             return;
         }
 
-        $screen->setStatus('subagent_live', null);
+        $refreshed = $state->subagentLiveCatalog->findByArtifactId($live->selected->artifactId) ?? $live->selected;
+        $live->selected = $refreshed;
+        $liveStatus = $refreshed->needsAttention()
+            ? \sprintf('Subagent live: %s needs your input — answer below; /agents-main to return.', $refreshed->agentName)
+            : \sprintf(
+                'Subagent live: %s [%s] — type to steer next step; /agents-main to return.',
+                $refreshed->agentName,
+                $refreshed->statusLabel(),
+            );
+        $screen->setStatus('agents-live', $liveStatus);
     }
 }

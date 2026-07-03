@@ -1263,11 +1263,26 @@ CHILD_SKILL_BODY_UNIQUE",
             timeoutSeconds: 120,
         );
 
+        $appendedEvents = [];
+        $eventStore = $this->createStub(EventStoreInterface::class);
+        $eventStore->method('append')
+            ->willReturnCallback(function (RunEvent $event) use (&$appendedEvents): void {
+                $appendedEvents[] = $event;
+            });
+        $eventStore->method('allFor')
+            ->willReturnCallback(static function (string $runId) use (&$appendedEvents): array {
+                return array_values(array_filter(
+                    $appendedEvents,
+                    static fn (RunEvent $e): bool => $e->runId === $runId,
+                ));
+            });
+
         $service = $this->makeService([
             'catalog' => new AgentDefinitionCatalog([$def]),
             'agentRunner' => $agentRunner,
             'runStore' => $runStore,
             'contextAccessor' => $contextAccessor,
+            'eventStore' => $eventStore,
         ]);
 
         try {
@@ -1289,7 +1304,12 @@ CHILD_SKILL_BODY_UNIQUE",
         self::assertStringContainsString('## Partial context', $handoff);
         self::assertStringContainsString('turn_no: 3', $handoff);
         self::assertStringContainsString('Partial scout findings before cancel.', $handoff);
-        self::assertStringContainsString('agent_retrieve', $handoff);
+        $progressEvents = array_values(array_filter(
+            $appendedEvents,
+            static fn (RunEvent $e): bool => RunEventTypeEnum::ToolExecutionUpdate->value === $e->type,
+        ));
+        self::assertCount(1, $progressEvents);
+        self::assertSame('cancelled', $progressEvents[0]->payload['subagent_progress']['status'] ?? null);
     }
 
     public function testChildRunCancelledStatusIncludesPartialContextInHandoff(): void

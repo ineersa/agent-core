@@ -124,6 +124,12 @@ final class SubagentLiveCatalog
             return;
         }
 
+        $existing = $this->byArtifactId[$artifactId] ?? null;
+        if (null !== $existing && $existing->status->isTerminal() && !$status->isTerminal()) {
+            // Stale in-flight progress rows must not downgrade terminal/cancelled catalog entries.
+            return;
+        }
+
         $this->byArtifactId[$artifactId] = new SubagentLiveChildDTO(
             agentRunId: $agentRunId,
             artifactId: $artifactId,

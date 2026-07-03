@@ -363,6 +363,68 @@ class CancelListenerTest extends TestCase
         $this->assertSame(RunActivityStateEnum::Running, $this->state->activity);
     }
 
+
+    #[Test]
+    public function escWithActiveChildConfirmQuestionCancelsQuestionNotChild(): void
+    {
+        $this->state->activity = RunActivityStateEnum::Running;
+        $this->state->handle = new RunHandle('parent-run-confirm');
+
+        $child = new SubagentLiveChildDTO(
+            agentRunId: 'child-run-confirm',
+            artifactId: 'agent_confirm',
+            agentName: 'scout',
+            status: SubagentLiveStatusEnum::WaitingHuman,
+            taskSummary: 'task',
+            lastActivityAtMs: 1,
+        );
+        $this->state->subagentLiveView->enter($child);
+        $this->state->subagentLiveView->childActivity = RunActivityStateEnum::WaitingHuman;
+        $this->state->subagentLiveCatalog->ingestRuntimeEvent(new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
+            type: \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
+            runId: 'parent-run-confirm',
+            seq: 1,
+            payload: [
+                'tool_call_id' => 'tc1',
+                'tool_name' => 'subagent',
+                'delta' => '',
+                'subagent_progress' => [
+                    'mode' => 'single',
+                    'status' => 'waiting_human',
+                    'agent_name' => 'scout',
+                    'artifact_id' => 'agent_confirm',
+                    'agent_run_id' => 'child-run-confirm',
+                    'task_summary' => 'task',
+                ],
+            ],
+        ));
+
+        $cancelled = false;
+        $coordinator = new QuestionCoordinator();
+        $coordinator->enqueue(
+            new QuestionRequest(
+                requestId: 'child_hitl_confirm',
+                source: QuestionSource::AgentCore,
+                kind: QuestionKind::Confirm,
+                prompt: 'Allow backgrounding?',
+                schema: ['type' => 'boolean'],
+                runId: 'child-run-confirm',
+                questionId: 'q_confirm',
+            ),
+            onCancel: static function () use (&$cancelled): void {
+                $cancelled = true;
+            },
+        );
+
+        $this->client->expects($this->never())->method('cancel');
+
+        $this->dispatchCancelEvent(questionCoordinator: $coordinator);
+
+        self::assertTrue($cancelled);
+        self::assertFalse($coordinator->actionRequired());
+        self::assertNull($this->state->subagentLiveCatalog->firstChildNeedingAttention());
+    }
+
     #[Test]
     public function escWithOpenQuestionOverlayDoesNotCancelChildOrParent(): void
     {

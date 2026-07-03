@@ -72,6 +72,17 @@ final class CancelListener implements TuiListenerRegistrar
                     return;
                 }
 
+                if (null !== $active) {
+                    $parentRunId = null !== $state->handle ? $state->handle->runId : $state->sessionId;
+                    if ($active->runId !== $parentRunId) {
+                        $questionCoordinator->cancel();
+                        $questionController->close();
+                        SubagentLiveAttention::clearWaitingHumanForRun($state, $screen, $active->runId);
+
+                        return;
+                    }
+                }
+
                 if ($questionController->isOpen()) {
                     return;
                 }

@@ -194,6 +194,22 @@ final class SubagentExecutionService
                     childState: $cancelState,
                 );
 
+                if (null !== $cancelState) {
+                    $this->emitTerminalProgressUpdate(
+                        parentRunId: $parentRunId,
+                        agentRunId: $agentRunId,
+                        agentName: $agentName,
+                        artifactId: $artifactId,
+                        taskSummary: $task,
+                        definitionModel: $definition->model,
+                        state: $cancelState,
+                        terminalStatus: 'cancelled',
+                        seq: $progressSeq,
+                        progressStartedHr: $progressStartedHr,
+                    );
+                    $this->advanceParentSequence($parentRunId, $progressSeq);
+                }
+
                 throw new ToolCallException($this->formatParentCancelledSingleMessage($agentName, $artifactId), retryable: false);
             }
 
@@ -499,6 +515,16 @@ final class SubagentExecutionService
                     $reports[$agentRunId]['status'] = AgentArtifactStatusEnum::Cancelled;
                     $reports[$agentRunId]['message'] = 'Cancelled by parent run.';
                 }
+
+                $this->emitParallelProgressUpdate(
+                    $parentRunId,
+                    $reports,
+                    $this->parallelActiveTurns($reports),
+                    $progressSeq,
+                    $parallelProgressStartedHr,
+                    aggregateStatus: 'cancelled',
+                );
+                $this->advanceParentSequence($parentRunId, $progressSeq);
 
                 throw new ToolCallException("Parallel subagent tool cancelled by parent run.\n\n".$this->formatParallelReport($reports), retryable: false);
             }

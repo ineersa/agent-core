@@ -89,6 +89,42 @@ final class SubagentLiveCatalogTest extends TestCase
         self::assertNull($catalog->firstChildNeedingAttention());
     }
 
+    public function testStaleWaitingHumanProgressDoesNotDowngradeCancelledCatalogEntry(): void
+    {
+        $catalog = new SubagentLiveCatalog();
+        $catalog->ingestRuntimeEvent($this->progressEvent('parent-1', [
+            'mode' => 'single', 'status' => 'cancelled', 'agent_name' => 'scout',
+            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Done',
+        ]));
+        $catalog->ingestRuntimeEvent($this->progressEvent('parent-1', [
+            'mode' => 'single', 'status' => 'waiting_human', 'agent_name' => 'scout',
+            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Stale',
+        ]));
+
+        $child = $catalog->findByArtifactId('agent_a');
+        self::assertNotNull($child);
+        self::assertSame(SubagentLiveStatusEnum::Cancelled, $child->status);
+        self::assertNull($catalog->firstChildNeedingAttention());
+    }
+
+    public function testCompletedProgressClearsNeedsAttentionAfterWaitingHuman(): void
+    {
+        $catalog = new SubagentLiveCatalog();
+        $catalog->ingestRuntimeEvent($this->progressEvent('parent-1', [
+            'mode' => 'single', 'status' => 'waiting_human', 'agent_name' => 'scout',
+            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task',
+        ]));
+        self::assertNotNull($catalog->firstChildNeedingAttention());
+
+        $catalog->ingestRuntimeEvent($this->progressEvent('parent-1', [
+            'mode' => 'single', 'status' => 'completed', 'agent_name' => 'scout',
+            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Done',
+        ]));
+
+        self::assertNull($catalog->firstChildNeedingAttention());
+        self::assertSame(SubagentLiveStatusEnum::Completed, $catalog->findByArtifactId('agent_a')?->status);
+    }
+
     /** @param array<string, mixed> $progress */
     private function progressEvent(string $runId, array $progress): RuntimeEvent
     {

@@ -202,17 +202,7 @@ final class TickPollListener implements TuiListenerRegistrar
                     $screen->setWorkingMessage($liveWorking);
                 }
 
-                $selected = $state->subagentLiveView->selected;
-                if (null !== $selected) {
-                    $liveStatus = $selected->needsAttention()
-                        ? \sprintf('Subagent live: %s needs your input — answer below; /agents-main to return.', $selected->agentName)
-                        : \sprintf(
-                            'Subagent live: %s [%s] — type to steer next step; /agents-main to return.',
-                            $selected->agentName,
-                            $selected->statusLabel(),
-                        );
-                    $screen->setStatus('agents-live', $liveStatus);
-                }
+                SubagentLiveAttention::refreshAttentionFooter($state, $screen);
 
                 return null;
             }
