@@ -16,7 +16,7 @@ use Ineersa\CodingAgent\Extension\Builtin\FileRewind\HiddenGitSnapshotBackend;
 use Ineersa\CodingAgent\Extension\Builtin\FileRewind\RewindPathScope;
 use Ineersa\CodingAgent\Extension\Builtin\FileRewind\RewindProjectIdentity;
 use Ineersa\CodingAgent\Extension\Builtin\FileRewind\RewindStoragePaths;
-use Ineersa\CodingAgent\Extension\FileRewind\FileRewindRuntimePorts;
+use Ineersa\CodingAgent\Runtime\Contract\FileRewindConversationRewindBindPortInterface;
 use Ineersa\CodingAgent\Runtime\Contract\ConversationRewindPortInterface;
 use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
 use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeNodeView;
@@ -32,7 +32,6 @@ use Ineersa\Hatfield\ExtensionApi\Command\InteractiveCommandHostInterface;
 use Ineersa\Tui\Command\NoOp;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Extension\ExtensionSlashCommandHandler;
-use Ineersa\Tui\Extension\RewindSlashCommandDecorator;
 use Ineersa\Tui\Extension\TuiInteractiveCommandHost;
 use Ineersa\Tui\Listener\RewindCommandRegistrar;
 use Ineersa\Tui\Listener\TreeCommandHandler;
@@ -80,14 +79,34 @@ final class TuiFileRewindCommandVirtualTest extends TestCase
         $action = new class implements FileRewindActionHandlerInterface {
             public function execute(string $sessionId, int $turnNo, FileRewindActionEnum $action): void {}
         };
-        $ports = new FileRewindRuntimePorts();
-        $ports->bind($preview, $action);
+        $bindPort = new class($preview, $action) implements FileRewindConversationRewindBindPortInterface {
+            public function __construct(
+                private FileRewindPreviewProviderInterface $preview,
+                private FileRewindActionHandlerInterface $action,
+            ) {}
+            public function bindConversationRewind(?ConversationRewindPortInterface $port): void {}
+        };
+        $previewPort = new class($preview) implements \Ineersa\CodingAgent\Runtime\Contract\FileRewindTurnPreviewPortInterface {
+            public function __construct(private FileRewindPreviewProviderInterface $preview) {}
+            public function hasCheckpoint(string $sessionId, int $turnNo): bool { return $this->preview->hasCheckpointForTurn($sessionId, $turnNo); }
+            public function preview(string $sessionId, int $turnNo): array {
+                $rows = [];
+                foreach ($this->preview->previewForTurn($sessionId, $turnNo) as $entry) {
+                    $rows[] = ['path' => $entry->path, 'status' => $entry->status, 'added' => $entry->addedLines, 'removed' => $entry->removedLines];
+                }
+                return $rows;
+            }
+        };
+        $actionPort = new class($action) implements \Ineersa\CodingAgent\Runtime\Contract\FileRewindTurnActionPortInterface {
+            public function __construct(private FileRewindActionHandlerInterface $action) {}
+            public function execute(string $sessionId, int $turnNo, string $action): void { $this->action->execute($sessionId, $turnNo, FileRewindActionEnum::from($action)); }
+        };
 
-        $picker = new FileRewindPickerController($treeProvider, $ports, $ports);
+        $picker = new FileRewindPickerController($treeProvider, $previewPort, $actionPort);
         $pickerFlow = new TuiFileRewindPickerFlow();
         (new RewindCommandRegistrar(
             $picker,
-            $ports,
+            $bindPort,
             $pickerFlow,
             $this->createStub(TuiSessionSwitchServiceInterface::class),
         ))->register($context);

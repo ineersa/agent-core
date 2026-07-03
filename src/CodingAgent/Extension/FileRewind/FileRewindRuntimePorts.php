@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Extension\FileRewind;
 
 use Ineersa\CodingAgent\Runtime\Contract\ConversationRewindPortInterface;
 use Ineersa\CodingAgent\Runtime\Contract\FileRewindConversationRewindBindableInterface;
+use Ineersa\CodingAgent\Runtime\Contract\FileRewindConversationRewindBindPortInterface;
 use Ineersa\CodingAgent\Runtime\Contract\FileRewindTurnActionPortInterface;
 use Ineersa\CodingAgent\Runtime\Contract\FileRewindTurnPreviewPortInterface;
 use Ineersa\Hatfield\ExtensionApi\Command\FileRewindActionEnum;
@@ -15,7 +16,7 @@ use Ineersa\Hatfield\ExtensionApi\Command\FileRewindPreviewProviderInterface;
 /**
  * App-layer bridge from runtime/TUI ports to extension-registered file rewind handlers.
  */
-final class FileRewindRuntimePorts implements FileRewindTurnPreviewPortInterface, FileRewindTurnActionPortInterface
+final class FileRewindRuntimePorts implements FileRewindTurnPreviewPortInterface, FileRewindTurnActionPortInterface, FileRewindConversationRewindBindPortInterface
 {
     private ?FileRewindPreviewProviderInterface $previewProvider = null;
     private ?FileRewindActionHandlerInterface $actionHandler = null;

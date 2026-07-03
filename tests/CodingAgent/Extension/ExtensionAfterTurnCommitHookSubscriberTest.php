@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Extension;
 
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Extension\ExtensionAfterTurnCommitHookSubscriber;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookContextDTO;
@@ -22,9 +23,27 @@ final class ExtensionAfterTurnCommitHookSubscriberTest extends TestCase
             public function __construct(private bool &$called) {}
             public function onAfterTurnCommit(AfterTurnCommitHookContextDTO $context): void { $this->called = true; }
         });
-        $subscriber = new ExtensionAfterTurnCommitHookSubscriber($registry);
+        $subscriber = new ExtensionAfterTurnCommitHookSubscriber($registry, new TestLogger());
         $ctx = new AfterTurnCommitHookContext('run-1', 2, 'running', [new AfterTurnCommitEventSummary(1, 'turn_end')], 0);
         $subscriber->handleAfterTurnCommit($ctx);
         self::assertTrue($called);
+    }
+
+    public function testHookFailureIsLoggedAndDoesNotPropagate(): void
+    {
+        $registry = new ExtensionHookRegistry();
+        $registry->addAfterTurnCommitHook(new class implements AfterTurnCommitHookInterface {
+            public function onAfterTurnCommit(AfterTurnCommitHookContextDTO $context): void
+            {
+                throw new \RuntimeException('boom');
+            }
+        });
+        $logger = new TestLogger();
+        $subscriber = new ExtensionAfterTurnCommitHookSubscriber($registry, $logger);
+        $ctx = new AfterTurnCommitHookContext('run-9', 3, 'running', [new AfterTurnCommitEventSummary(1, 'turn_end')], 0);
+        $subscriber->handleAfterTurnCommit($ctx);
+        self::assertNotEmpty($logger->records);
+        self::assertSame('warning', $logger->records[0]['level']);
+        self::assertSame('extension.after_turn_commit_hook_failed', $logger->records[0]['message']);
     }
 }

@@ -16,6 +16,7 @@ final readonly class ExtensionAfterTurnCommitHookSubscriber implements HookSubsc
 {
     public function __construct(
         private ExtensionHookRegistry $hookRegistry,
+        private \Psr\Log\LoggerInterface $logger,
     ) {
     }
 
@@ -35,8 +36,16 @@ final readonly class ExtensionAfterTurnCommitHookSubscriber implements HookSubsc
         foreach ($this->hookRegistry->afterTurnCommitHooks() as $hook) {
             try {
                 $hook->onAfterTurnCommit($dto);
-            } catch (\Throwable) {
-                // Best-effort: extension hook failures must not break commit path.
+            } catch (\Throwable $e) {
+                $this->logger->warning('extension.after_turn_commit_hook_failed', [
+                    'component' => 'extension_after_turn_hook',
+                    'event_type' => 'after_turn_commit_hook_failed',
+                    'run_id' => $context->runId,
+                    'turn_no' => $context->turnNo,
+                    'hook' => $hook::class,
+                    'exception_class' => $e::class,
+                    'exception_message' => $e->getMessage(),
+                ]);
             }
         }
 

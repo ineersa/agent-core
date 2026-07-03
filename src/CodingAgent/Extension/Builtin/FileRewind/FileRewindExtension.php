@@ -16,7 +16,7 @@ final class FileRewindExtension implements HatfieldExtensionInterface
         $config = FileRewindConfig::fromSettings($api->getSettings('file_rewind'));
         $cwd = $api->getCwd();
         $paths = new RewindStoragePaths($cwd);
-        $git = new GitProcessRunner();
+        $git = new GitProcessRunner($config->gitTimeoutSeconds);
         $backend = new HiddenGitSnapshotBackend($git, new NullLogger());
         $ledger = new FileRewindLedgerStore($cwd);
         $projector = new FileRewindLedgerProjector();

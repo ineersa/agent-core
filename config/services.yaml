@@ -199,6 +199,8 @@ services:
     alias: Ineersa\CodingAgent\Extension\FileRewind\FileRewindRuntimePorts
   Ineersa\CodingAgent\Runtime\Contract\FileRewindTurnActionPortInterface:
     alias: Ineersa\CodingAgent\Extension\FileRewind\FileRewindRuntimePorts
+  Ineersa\CodingAgent\Runtime\Contract\FileRewindConversationRewindBindPortInterface:
+    alias: Ineersa\CodingAgent\Extension\FileRewind\FileRewindRuntimePorts
   Ineersa\CodingAgent\Runtime\Contract\FileRewindPickerFlowInterface:
     alias: Ineersa\Tui\Runtime\FileRewind\TuiFileRewindPickerFlow
 

@@ -12,6 +12,7 @@ use Psr\Log\LoggerInterface;
 final class FileRewindService implements FileRewindPreviewProviderInterface
 {
     private const string BACKEND_VERSION = 'hidden-git-v1';
+    private const int PREVIEW_MAX_LCS_LINES = 8_000;
 
     /** @var array<string, string> */
     private array $lastTreeShaByRunProject = [];
@@ -92,7 +93,7 @@ final class FileRewindService implements FileRewindPreviewProviderInterface
         }
     }
 
-    public function hasCheckpointForTurn(string $runId, int $turnNo): bool
+    public function hasCheckpointForTurn(string $sessionId, int $turnNo): bool
     {
         $identity = RewindProjectIdentity::fromProjectRoot($this->projectCwd);
         $byTurn = $this->ledgerProjector->checkpointsByTurn(
@@ -104,7 +105,7 @@ final class FileRewindService implements FileRewindPreviewProviderInterface
     }
 
     /** @return list<FileRewindPreviewEntryDTO> */
-    public function previewForTurn(string $runId, int $turnNo): array
+    public function previewForTurn(string $sessionId, int $turnNo): array
     {
         if (!$this->isOperational()) {
             return [];
@@ -282,7 +283,12 @@ final class FileRewindService implements FileRewindPreviewProviderInterface
             || (null !== $targetBytes && \strlen($targetBytes) > $maxBytes)) {
             return new FileRewindPreviewEntryDTO($path, $status, 0, 0, false, true);
         }
-        [$added, $removed] = $this->countLineDiff($currentBytes ?? '', $targetBytes ?? '');
+        $currentLines = $this->splitLines($currentBytes ?? '');
+        $targetLines = $this->splitLines($targetBytes ?? '');
+        if (\count($currentLines) > self::PREVIEW_MAX_LCS_LINES || \count($targetLines) > self::PREVIEW_MAX_LCS_LINES) {
+            return new FileRewindPreviewEntryDTO($path, $status, 0, 0, false, true);
+        }
+        [$added, $removed] = $this->countLineDiff($currentLines, $targetLines);
 
         return new FileRewindPreviewEntryDTO($path, $status, $added, $removed, false, false);
     }
@@ -344,10 +350,14 @@ final class FileRewindService implements FileRewindPreviewProviderInterface
     /**
      * @return array{0: int, 1: int}
      */
-    private function countLineDiff(string $current, string $target): array
+    /**
+     * @param list<string> $currentLines
+     * @param list<string> $targetLines
+     *
+     * @return array{0: int, 1: int}
+     */
+    private function countLineDiff(array $currentLines, array $targetLines): array
     {
-        $currentLines = $this->splitLines($current);
-        $targetLines = $this->splitLines($target);
         $lcs = $this->longestCommonSubsequenceLength($currentLines, $targetLines);
         $removed = \count($currentLines) - $lcs;
         $added = \count($targetLines) - $lcs;

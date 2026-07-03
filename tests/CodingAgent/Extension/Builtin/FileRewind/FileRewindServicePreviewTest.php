@@ -86,4 +86,49 @@ final class FileRewindServicePreviewTest extends TestCase
         self::assertArrayHasKey('new.txt', $byPath);
         self::assertSame('deleted', $byPath['new.txt']->status);
     }
+
+    public function testPreviewMarksTooLargeWhenLineCountExceedsLcsCap(): void
+    {
+        $runId = 'run-lines';
+        $identity = RewindProjectIdentity::fromProjectRoot($this->projectDir);
+        $paths = new RewindStoragePaths($this->projectDir);
+        $backend = new HiddenGitSnapshotBackend($this->runner, new NullLogger());
+        $scope = new RewindPathScope($this->projectDir);
+        $gitDir = $paths->hiddenGitDir($identity);
+        $idx = $paths->tmpDir($identity).'/cap2.index';
+        @mkdir(dirname($idx), 0700, true);
+
+        file_put_contents($this->projectDir.'/many.txt', implode("\n", array_fill(0, 9000, 'x')));
+        $tree1 = $backend->captureTreeSha($gitDir, $this->projectDir, $idx, $scope);
+        $commit1 = $backend->treeShaToCommitSha($gitDir, $this->projectDir, $tree1, 't1');
+        (new FileRewindLedgerStore($this->projectDir))->appendCheckpoint($identity, [
+            'run_id' => $runId,
+            'turn_no' => 1,
+            'anchor_seq' => 1,
+            'kind' => FileRewindCheckpointKindEnum::TurnBoundary->value,
+            'project_hash' => $identity->projectHash,
+            'snapshot_commit_sha' => $commit1,
+        ]);
+
+        file_put_contents($this->projectDir.'/many.txt', implode("\n", array_fill(0, 9001, 'y')));
+
+        $service = new FileRewindService(
+            backend: $backend,
+            gitRunner: $this->runner,
+            paths: $paths,
+            ledgerStore: new FileRewindLedgerStore($this->projectDir),
+            ledgerProjector: new FileRewindLedgerProjector(),
+            config: new FileRewindConfig(enabled: true, maxRetainedTurns: 10, maxFileBytes: 50_000_000),
+            logger: new NullLogger(),
+            projectCwd: $this->projectDir,
+        );
+
+        $rows = $service->previewForTurn($runId, 1);
+        self::assertNotEmpty($rows);
+        self::assertTrue($rows[0]->tooLarge);
+        self::assertSame(0, $rows[0]->addedLines);
+        self::assertSame(0, $rows[0]->removedLines);
+    }
+
 }
+

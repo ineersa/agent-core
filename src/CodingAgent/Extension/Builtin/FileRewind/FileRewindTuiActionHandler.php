@@ -33,11 +33,7 @@ final class FileRewindTuiActionHandler implements FileRewindActionHandlerInterfa
             return;
         }
         if (FileRewindActionEnum::RestoreFilesAndConversation === $action) {
-            try {
-                $this->service->restoreForTurn($sessionId, $turnNo);
-            } catch (\Throwable $e) {
-                throw $e;
-            }
+            $this->service->restoreForTurn($sessionId, $turnNo);
             $this->requireConversation()->rewindToTurn($turnNo);
 
             return;

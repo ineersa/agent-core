@@ -53,28 +53,62 @@ final class FileRewindLedgerStore
     /** @return array<string, mixed> */
     private function readRoot(RewindProjectIdentity $identity): array
     {
-        $path = $this->ledgerPath($identity);
-        if (!is_file($path)) {
-            return [];
-        }
-        $raw = file_get_contents($path);
-        if (false === $raw || '' === trim($raw)) {
-            return [];
-        }
-        $decoded = json_decode($raw, true);
+        return $this->withLedgerLock($identity, static function (string $path): array {
+            if (!is_file($path)) {
+                return [];
+            }
+            $raw = file_get_contents($path);
+            if (false === $raw || '' === trim($raw)) {
+                return [];
+            }
+            $decoded = json_decode($raw, true);
 
-        return \is_array($decoded) ? $decoded : [];
+            return \is_array($decoded) ? $decoded : [];
+        });
     }
 
     /** @param array<string, mixed> $data */
     private function writeRoot(RewindProjectIdentity $identity, array $data): void
+    {
+        $this->withLedgerLock($identity, static function (string $path) use ($data): void {
+            $dir = \dirname($path);
+            if (!is_dir($dir)) {
+                mkdir($dir, 0700, true);
+            }
+            file_put_contents($path, json_encode($data, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES));
+        });
+    }
+
+    /**
+     * @template T
+     *
+     * @param callable(string): T $callback
+     *
+     * @return T
+     */
+    private function withLedgerLock(RewindProjectIdentity $identity, callable $callback): mixed
     {
         $path = $this->ledgerPath($identity);
         $dir = \dirname($path);
         if (!is_dir($dir)) {
             mkdir($dir, 0700, true);
         }
-        file_put_contents($path, json_encode($data, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES));
+        $handle = fopen($path, 'c+b');
+        if (false === $handle) {
+            throw new \RuntimeException('Cannot open file rewind ledger for locking.');
+        }
+        try {
+            if (!flock($handle, \LOCK_EX)) {
+                throw new \RuntimeException('Cannot acquire file rewind ledger lock.');
+            }
+            try {
+                return $callback($path);
+            } finally {
+                flock($handle, \LOCK_UN);
+            }
+        } finally {
+            fclose($handle);
+        }
     }
 
     private function ledgerPath(RewindProjectIdentity $identity): string
