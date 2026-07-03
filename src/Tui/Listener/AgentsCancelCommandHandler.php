@@ -5,6 +5,10 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Listener;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\Tui\Command\CommandResult;
+use Ineersa\Tui\Command\NoOp;
+use Ineersa\Tui\Command\SlashCommand;
+use Ineersa\Tui\Command\SlashCommandHandler;
 use Ineersa\Tui\Command\SubagentLiveInputPolicy;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
@@ -12,7 +16,7 @@ use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Psr\Log\LoggerInterface;
 
-final class AgentsCancelCommandHandler
+final class AgentsCancelCommandHandler implements SlashCommandHandler
 {
     public function __construct(
         private readonly TuiSessionState $state,
@@ -23,20 +27,20 @@ final class AgentsCancelCommandHandler
     ) {
     }
 
-    public function __invoke(): void
+    public function handle(SlashCommand $command): CommandResult
     {
         $live = $this->state->subagentLiveView;
         if (!$live->active || null === $live->selected) {
             $this->screen->setStatus('agents-live', $this->policy->childCancelUnavailableMessage());
 
-            return;
+            return new NoOp();
         }
 
         $child = $live->selected;
         if (!self::isChildCancellable($child, $live->childActivity)) {
             $this->screen->setStatus('agents-live', $this->policy->childCancelUnavailableMessage());
 
-            return;
+            return new NoOp();
         }
 
         $this->logger->info('agents-cancel child subagent requested', [
@@ -60,12 +64,14 @@ final class AgentsCancelCommandHandler
             ]);
             $this->screen->setStatus('agents-live', 'Child cancel failed: '.$e->getMessage());
 
-            return;
+            return new NoOp();
         }
 
         $live->childActivity = RunActivityStateEnum::Cancelling;
         $this->screen->setWorkingMessage(\sprintf('Cancelling child %s...', $child->agentName));
         $this->screen->setStatus('agents-live', \sprintf('Cancelling child %s (%s).', $child->agentName, $child->artifactId));
+
+        return new NoOp();
     }
 
     private static function isChildCancellable(SubagentLiveChildDTO $child, RunActivityStateEnum $childActivity): bool
