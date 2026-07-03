@@ -38,12 +38,15 @@ final class SlotBasedTuiExtensionContext implements TuiExtensionContext
         $this->registry->setEditorComponent($widget);
     }
 
-    public function setWidget(string $key, ?TuiWidget $content, WidgetPlacementEnum $placement = WidgetPlacementEnum::AboveEditor): void
+    /**
+     * @param int $order @see \Ineersa\Tui\Layout\TuiSlotRegistry::ORDER_DEFAULT
+     */
+    public function setWidget(string $key, ?TuiWidget $content, WidgetPlacementEnum $placement = WidgetPlacementEnum::AboveEditor, int $order = 0): void
     {
         if (null === $content) {
             $this->registry->removeWidget($key);
         } else {
-            $this->registry->setWidget($key, $content, $placement);
+            $this->registry->setWidget($key, $content, $placement, $order);
         }
     }
 

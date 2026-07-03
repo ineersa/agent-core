@@ -62,6 +62,18 @@ final class SlotBasedTuiExtensionContextTest extends TestCase
         self::assertCount(0, $this->registry->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor));
     }
 
+    public function testSetWidgetPassesOrder(): void
+    {
+        $first = $this->createDummyWidget();
+        $second = $this->createDummyWidget();
+
+        $this->context->setWidget('first', $first, WidgetPlacementEnum::AboveEditor, 5);
+        $this->context->setWidget('second', $second, WidgetPlacementEnum::AboveEditor, 0);
+
+        $widgets = $this->registry->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor);
+        self::assertSame([$second, $first], $widgets);
+    }
+
     public function testSetStatus(): void
     {
         $this->context->setStatus('key', 'value');
