@@ -47,8 +47,9 @@ interface TuiExtensionContext
      * @param string              $key       Unique identifier for this widget
      * @param TuiWidget|null      $content   Widget to add, or null to remove
      * @param WidgetPlacementEnum $placement Where the widget should appear
+     * @param int                 $order     Render order within the placement (lower = top of block, higher = editor-adjacent; equal orders keep insertion order). @see \Ineersa\Tui\Layout\TuiSlotRegistry::ORDER_DEFAULT
      */
-    public function setWidget(string $key, ?TuiWidget $content, WidgetPlacementEnum $placement = WidgetPlacementEnum::AboveEditor): void;
+    public function setWidget(string $key, ?TuiWidget $content, WidgetPlacementEnum $placement = WidgetPlacementEnum::AboveEditor, int $order = 0): void;
 
     /**
      * Set or remove a status text entry.
