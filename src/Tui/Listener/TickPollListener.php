@@ -767,6 +767,12 @@ final class TickPollListener implements TuiListenerRegistrar
     {
         $parentRunId = null !== $state->handle ? $state->handle->runId : $state->sessionId;
         if ($activeRequest->runId === $parentRunId) {
+            // Parent HITL can arrive after a turn completed (e.g. post-subagent ask_human).
+            // Activity must stay WaitingHuman; never treat that as an orphaned question.
+            if (RunActivityStateEnum::WaitingHuman === $state->activity) {
+                return false;
+            }
+
             return !$state->activity->isActive();
         }
 

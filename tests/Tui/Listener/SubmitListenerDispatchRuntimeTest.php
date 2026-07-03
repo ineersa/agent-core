@@ -23,6 +23,9 @@ use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\SubmitListener;
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
+use Ineersa\Tui\Question\QuestionKind;
+use Ineersa\Tui\Question\QuestionRequest;
+use Ineersa\Tui\Question\QuestionSource;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
 use Ineersa\Tui\Command\SubagentLiveInputPolicy;
@@ -435,6 +438,53 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
             );
 
         $this->dispatchSubmit('!pwd');
+    }
+
+    #[Test]
+    public function parentHumanInputAnswerRoutesToParentRunOnMainView(): void
+    {
+        $parentRunId = 'parent-session-hitl';
+        $this->state->sessionId = $parentRunId;
+        $this->state->handle = new RunHandle($parentRunId);
+        $this->state->activity = RunActivityStateEnum::WaitingHuman;
+
+        $sent = null;
+        $client = $this->client;
+        $this->client->expects($this->once())->method('send')->willReturnCallback(
+            static function (string $runId, UserCommand $cmd) use (&$sent, $parentRunId): void {
+                $sent = [$runId, $cmd];
+                self::assertSame($parentRunId, $runId);
+            },
+        );
+
+        $this->questionCoordinator->enqueue(
+            new QuestionRequest(
+                requestId: 'parent_main_hitl',
+                source: QuestionSource::AgentCore,
+                kind: QuestionKind::Text,
+                prompt: 'Which docs file would you like me to inspect and summarize?',
+                schema: ['type' => 'string'],
+                runId: $parentRunId,
+                questionId: 'q_docs_parent',
+            ),
+            onAnswer: static function (mixed $answer) use ($client, $parentRunId): void {
+                $client->send($parentRunId, new UserCommand(
+                    type: 'answer_human',
+                    payload: [
+                        'question_id' => 'q_docs_parent',
+                        'answer' => \is_scalar($answer) ? (string) $answer : 'cancel',
+                    ],
+                ));
+            },
+        );
+
+        $this->dispatchSubmit('docs/agents.md');
+
+        self::assertNotNull($sent);
+        self::assertSame('answer_human', $sent[1]->type);
+        self::assertSame('q_docs_parent', $sent[1]->payload['question_id'] ?? null);
+        self::assertSame('docs/agents.md', $sent[1]->payload['answer'] ?? null);
+        self::assertFalse($this->questionCoordinator->actionRequired());
     }
 
     // ── Helpers ─────────────────────────────────────────────────────

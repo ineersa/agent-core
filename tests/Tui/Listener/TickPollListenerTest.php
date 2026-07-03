@@ -719,6 +719,31 @@ final class TickPollListenerTest extends TestCase
     }
 
 
+    public function testParentWaitingHumanQuestionNotRejectedWhenActivityWaitingHuman(): void
+    {
+        $parentRunId = 'parent-hitl-post-subagent';
+        $coordinator = new QuestionCoordinator();
+        $coordinator->enqueue(
+            new QuestionRequest(
+                requestId: 'parent_hitl_active',
+                source: QuestionSource::AgentCore,
+                kind: QuestionKind::Text,
+                prompt: 'Which docs file would you like me to inspect and summarize?',
+                schema: ['type' => 'string'],
+                runId: $parentRunId,
+                questionId: 'q_parent_docs',
+            ),
+        );
+
+        $state = new TuiSessionState($parentRunId);
+        $state->handle = new \Ineersa\CodingAgent\Runtime\Contract\RunHandle($parentRunId);
+        $state->activity = RunActivityStateEnum::WaitingHuman;
+
+        $ref = new \ReflectionMethod(TickPollListener::class, 'shouldRejectOrphanedQuestion');
+        $reject = $ref->invoke(null, $state, $coordinator->activeRequest());
+        self::assertFalse($reject, 'Parent WaitingHuman question must not be self-healed as orphaned');
+    }
+
     private function createIsolatedSubagentLiveChildPoller(): SubagentLiveChildViewPoller
     {
         return new SubagentLiveChildViewPoller(
