@@ -8,7 +8,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 
 /**
- * POC state for readonly child live view inside the parent TUI session.
+ * State for interactive child live view inside the parent TUI session.
  *
  * Child transcript/seq cache survives {@see exit()} so main/live toggles on the
  * same child can re-show cached blocks without replaying consumed JSONL pipe events.
@@ -76,8 +76,13 @@ final class SubagentLiveViewState
             $this->childActivity = RunActivityStateEnum::WaitingHuman;
         } elseif ($child->isRunning()) {
             $this->childActivity = RunActivityStateEnum::Running;
-        } elseif (!$this->childActivity->isActive()) {
-            $this->childActivity = RunActivityStateEnum::Completed;
+        } elseif ($child->isTerminal()) {
+            $this->childActivity = match ($child->status) {
+                SubagentLiveStatusEnum::Completed, SubagentLiveStatusEnum::Done => RunActivityStateEnum::Completed,
+                SubagentLiveStatusEnum::Failed => RunActivityStateEnum::Failed,
+                SubagentLiveStatusEnum::Cancelled => RunActivityStateEnum::Cancelled,
+                default => RunActivityStateEnum::Completed,
+            };
         }
     }
 
