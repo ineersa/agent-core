@@ -34,7 +34,17 @@ final class FileRewindTuiActionHandler implements FileRewindActionHandlerInterfa
         }
         if (FileRewindActionEnum::RestoreFilesAndConversation === $action) {
             $this->service->restoreForTurn($sessionId, $turnNo);
-            $this->requireConversation()->rewindToTurn($turnNo);
+            try {
+                $this->requireConversation()->rewindToTurn($turnNo);
+            } catch (\Throwable $e) {
+                try {
+                    $this->service->executeAction($sessionId, $turnNo, FileRewindActionEnum::UndoLastRestore);
+                } catch (\Throwable $undoFailure) {
+                    throw new \RuntimeException('File restore succeeded but conversation rewind failed; automatic file undo also failed: '.$undoFailure->getMessage(), 0, $e);
+                }
+
+                throw new \RuntimeException('File restore was undone because conversation rewind failed: '.$e->getMessage(), 0, $e);
+            }
 
             return;
         }

@@ -474,6 +474,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
             coordinator: $this->questionCoordinator,
             questionController: $this->questionController,
             logger: $this->logger,
+            slashCommandRegistry: $this->registry,
         );
         $listener->register($context);
 

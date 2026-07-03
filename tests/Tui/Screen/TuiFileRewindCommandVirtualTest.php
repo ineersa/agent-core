@@ -221,6 +221,63 @@ final class TuiFileRewindCommandVirtualTest extends TestCase
         }
     }
 
+    #[Test]
+    public function testCombinedActionUndoesFilesWhenConversationRewindFailsAfterRestore(): void
+    {
+        $runner = new GitProcessRunner();
+        if (!$runner->isGitAvailable()) {
+            $this->markTestSkipped('git not available');
+        }
+        $dir = TestDirectoryIsolation::createProjectTempDir('rewind-undo-conv-fail');
+        try {
+            $order = [];
+            $service = $this->makeOperationalFileRewindService($runner, $dir);
+            $scope = new RewindPathScope($dir);
+            $identity = RewindProjectIdentity::fromProjectRoot($dir);
+            $paths = new RewindStoragePaths($dir);
+            $backend = new HiddenGitSnapshotBackend($runner, new NullLogger());
+            $gitDir = $paths->hiddenGitDir($identity);
+            $idx = $paths->tmpDir($identity).'/cap.index';
+            file_put_contents($dir.'/f.txt', "v1\n");
+            $backend->captureTreeSha($gitDir, $dir, $idx, $scope);
+            $tree1 = $backend->captureTreeSha($gitDir, $dir, $idx, $scope);
+            $commit1 = $backend->treeShaToCommitSha($gitDir, $dir, $tree1, 't1');
+            (new FileRewindLedgerStore($dir))->appendCheckpoint($identity, [
+                'run_id' => 'sess',
+                'turn_no' => 2,
+                'anchor_seq' => 1,
+                'kind' => FileRewindCheckpointKindEnum::TurnBoundary->value,
+                'project_hash' => $identity->projectHash,
+                'snapshot_commit_sha' => $commit1,
+            ]);
+            file_put_contents($dir.'/f.txt', "v2\n");
+
+            $conversation = new class($order) implements ConversationRewindPortInterface {
+                public function __construct(private array &$order) {}
+                public function rewindToTurn(int $turnNo): void
+                {
+                    $this->order[] = 'conversation:'.$turnNo;
+                    throw new \RuntimeException('conversation rewind failed');
+                }
+            };
+            $handler = new FileRewindTuiActionHandler($service);
+            $handler->bindConversationRewind($conversation);
+
+            try {
+                $handler->execute('sess', 2, FileRewindActionEnum::RestoreFilesAndConversation);
+                self::fail('Expected combined action failure');
+            } catch (\RuntimeException $e) {
+                self::assertStringContainsString('conversation rewind failed', $e->getMessage());
+                self::assertStringContainsString('undone', strtolower($e->getMessage()));
+            }
+
+            self::assertSame("v2\n", file_get_contents($dir.'/f.txt'));
+            self::assertSame(['conversation:2'], $order);
+        } finally {
+            TestDirectoryIsolation::removeDirectory($dir);
+        }
+    }
+
     private function sampleTree(string $runId): TurnTreeView
     {
         return new TurnTreeView(

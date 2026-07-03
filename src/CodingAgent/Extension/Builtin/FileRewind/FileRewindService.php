@@ -93,6 +93,7 @@ final class FileRewindService implements FileRewindPreviewProviderInterface
         }
     }
 
+    /** $sessionId reserved for ExtensionApi symmetry; ledger is keyed per project cwd. */
     public function hasCheckpointForTurn(string $sessionId, int $turnNo): bool
     {
         $identity = RewindProjectIdentity::fromProjectRoot($this->projectCwd);
