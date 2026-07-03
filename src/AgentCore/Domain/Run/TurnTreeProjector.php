@@ -359,8 +359,12 @@ final class TurnTreeProjector
      */
     private function titleForTurn(int $turnNo, int $anchorIndex, array $sortedEvents): string
     {
-        // Walk backward from the turn_advanced event to find a descriptive message.
-        for ($i = $anchorIndex - 1; $i >= 0; --$i) {
+        $parentAnchorIndex = $this->parentAnchorIndexForTurn($turnNo, $anchorIndex, $sortedEvents);
+
+        // Walk backward only within this turn's window (after parent anchor, before this anchor).
+        // Unscoped backward search duplicates the previous user prompt on paired
+        // follow_up + advance-after-tools turn_advanced rows (tool cycles).
+        for ($i = $anchorIndex - 1; $i > $parentAnchorIndex; --$i) {
             $event = $sortedEvents[$i];
             $text = $this->extractUserVisibleText($event);
 
@@ -369,20 +373,97 @@ final class TurnTreeProjector
             }
         }
 
-        // If nothing found backward, also check the first run_started for initial messages.
-        foreach ($sortedEvents as $event) {
-            if (RunEventTypeEnum::RunStarted->value === $event->type) {
-                $text = $this->extractInitialUserText($event);
-                if ('' !== $text) {
-                    return $this->truncate($text, 80);
-                }
-                break;
+        $anchorEvent = $sortedEvents[$anchorIndex] ?? null;
+        $stepId = \is_array($anchorEvent?->payload) && \is_string($anchorEvent->payload['step_id'] ?? null)
+            ? $anchorEvent->payload['step_id']
+            : '';
+        if (str_starts_with($stepId, 'advance-after-tools')) {
+            $text = $this->assistantTitleAfterAnchor($turnNo, $anchorIndex, $sortedEvents);
+            if ('' !== $text) {
+                return $this->truncate($text, 80);
             }
         }
 
-        // No user-visible text found in the event stream for this turn
-        // (e.g. old/minimal streams with bare turn_advanced anchors only).
+        // Root turn: initial user message may only exist on run_started.
+        if ($parentAnchorIndex < 0) {
+            foreach ($sortedEvents as $event) {
+                if (RunEventTypeEnum::RunStarted->value === $event->type) {
+                    $text = $this->extractInitialUserText($event);
+                    if ('' !== $text) {
+                        return $this->truncate($text, 80);
+                    }
+                    break;
+                }
+            }
+        }
+
         return "Turn {$turnNo}";
+    }
+
+    /**
+     * Index of the parent turn's turn_advanced anchor, or -1 when unknown/root.
+     *
+     * @param list<RunEvent> $sortedEvents
+     */
+    private function parentAnchorIndexForTurn(int $turnNo, int $anchorIndex, array $sortedEvents): int
+    {
+        $anchorEvent = $sortedEvents[$anchorIndex] ?? null;
+        if (null === $anchorEvent) {
+            return -1;
+        }
+
+        $parentTurnNo = \array_key_exists('parent_turn_no', $anchorEvent->payload)
+            ? (\is_int($anchorEvent->payload['parent_turn_no']) ? $anchorEvent->payload['parent_turn_no'] : null)
+            : ($turnNo > 1 ? $turnNo - 1 : null);
+
+        if (null === $parentTurnNo) {
+            return -1;
+        }
+
+        for ($i = $anchorIndex - 1; $i >= 0; --$i) {
+            $event = $sortedEvents[$i];
+            if (RunEventTypeEnum::TurnAdvanced->value !== $event->type) {
+                continue;
+            }
+            $advancedTurnNo = (int) ($event->payload['turn_no'] ?? $event->turnNo);
+            if ($advancedTurnNo === $parentTurnNo) {
+                return $i;
+            }
+        }
+
+        return -1;
+    }
+
+    /**
+     * Assistant summary for advance-after-tools turns (tool cycle completion).
+     *
+     * @param list<RunEvent> $sortedEvents
+     */
+    private function assistantTitleAfterAnchor(int $turnNo, int $anchorIndex, array $sortedEvents): string
+    {
+        $limit = \count($sortedEvents);
+        for ($i = $anchorIndex + 1; $i < $limit; ++$i) {
+            $event = $sortedEvents[$i];
+            if (RunEventTypeEnum::TurnAdvanced->value === $event->type) {
+                break;
+            }
+            if (RunEventTypeEnum::LlmStepCompleted->value !== $event->type) {
+                continue;
+            }
+            if ($event->turnNo !== $turnNo) {
+                continue;
+            }
+            $payload = $event->payload;
+            $text = \is_string($payload['text'] ?? null) && '' !== $payload['text']
+                ? $payload['text']
+                : $this->extractAssistantText($payload['assistant_message'] ?? null);
+
+            if ('' !== $text) {
+                return $text;
+            }
+        }
+
+        return '';
     }
 
     /**
