@@ -6,18 +6,14 @@ namespace Ineersa\Tui\Listener;
 
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\SlashCommandRegistry;
-use Ineersa\Tui\Command\SubagentLiveInputPolicy;
 use Ineersa\Tui\Picker\SubagentLivePickerController;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
-use Psr\Log\LoggerInterface;
 
 final class SubagentLiveCommandRegistrar implements TuiListenerRegistrar
 {
     public function __construct(
         private readonly SlashCommandRegistry $commandRegistry,
         private readonly SubagentLivePickerController $pickerController,
-        private readonly SubagentLiveInputPolicy $liveInputPolicy,
-        private readonly LoggerInterface $logger,
     ) {
     }
 

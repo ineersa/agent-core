@@ -33,7 +33,7 @@ final readonly class SubagentLiveInputPolicy
         return 'Leave subagent live view first with /agents-main before running other commands.';
     }
 
-    public function parseSubmitted(string $submittedText): NormalPromptCommand|SlashCommand|ShellCommand
+    public function parseSubmitted(string $submittedText): CommandParseResult
     {
         return $this->parser->parse($submittedText);
     }

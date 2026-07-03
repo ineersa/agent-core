@@ -64,8 +64,6 @@ final class SubagentLiveCommandRegistrarTest extends TestCase
         return new SubagentLiveCommandRegistrar(
             $registry,
             $picker,
-            new SubagentLiveInputPolicy(),
-            new NullLogger(),
         );
     }
 }
