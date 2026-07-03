@@ -30,7 +30,12 @@ enum AgentArtifactStatusEnum: string
     /**
      * Interactive foreground child is waiting for human input or approval.
      *
-     * Explicit legacy non-interactive children (session.interactive=false) still finalize WaitingHuman as Failed.
+     * Set when the child run enters WaitingHuman: parent subagent_progress emits
+     * waiting_human and SubagentExecutionService keeps polling until the child
+     * resumes or is cancelled.
+     *
+     * Explicit non-interactive children (session metadata interactive=false)
+     * do not use this status — they cancel WaitingHuman and finalize as Failed.
      */
     case NeedsClarification = 'needs_clarification';
 }

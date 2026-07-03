@@ -17,6 +17,11 @@ use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\CancelListener;
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
+use Ineersa\Tui\Question\QuestionKind;
+use Ineersa\Tui\Question\QuestionRequest;
+use Ineersa\Tui\Question\QuestionSource;
+use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
+use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
@@ -282,6 +287,82 @@ class CancelListenerTest extends TestCase
         $this->dispatchCancelEvent(captureErrorEnv: '0');
     }
 
+
+    // ── Subagent live view: ESC targets selected child ───────────
+
+    #[Test]
+    public function escInSubagentLiveViewCancelsSelectedChildNotParent(): void
+    {
+        $this->state->activity = RunActivityStateEnum::Running;
+        $this->state->handle = new RunHandle('parent-run-esc');
+
+        $child = new SubagentLiveChildDTO(
+            agentRunId: 'child-run-esc',
+            artifactId: 'agent_esc',
+            agentName: 'scout',
+            status: SubagentLiveStatusEnum::Running,
+            taskSummary: 'task',
+            lastActivityAtMs: 1,
+        );
+        $this->state->subagentLiveView->enter($child);
+        $this->state->subagentLiveView->childActivity = RunActivityStateEnum::Running;
+
+        $this->client->expects($this->once())
+            ->method('cancel')
+            ->with('child-run-esc');
+
+        $this->dispatchCancelEvent();
+
+        $this->assertSame(RunActivityStateEnum::Cancelling, $this->state->subagentLiveView->childActivity);
+        $this->assertSame(RunActivityStateEnum::Running, $this->state->activity, 'Parent activity must not transition when child ESC cancel succeeds');
+    }
+
+    #[Test]
+    public function escWithOpenQuestionOverlayDoesNotCancelChildOrParent(): void
+    {
+        $this->state->activity = RunActivityStateEnum::Running;
+        $this->state->handle = new RunHandle('parent-run-overlay');
+
+        $child = new SubagentLiveChildDTO(
+            agentRunId: 'child-run-overlay',
+            artifactId: 'agent_overlay',
+            agentName: 'scout',
+            status: SubagentLiveStatusEnum::Running,
+            taskSummary: 'task',
+            lastActivityAtMs: 1,
+        );
+        $this->state->subagentLiveView->enter($child);
+        $this->state->subagentLiveView->childActivity = RunActivityStateEnum::Running;
+
+        $this->client->expects($this->never())
+            ->method('cancel');
+
+        $coordinator = new QuestionCoordinator();
+        $coordinator->enqueue(
+            new QuestionRequest(
+                requestId: 'child_hitl_overlay',
+                source: QuestionSource::AgentCore,
+                kind: QuestionKind::Choice,
+                prompt: 'Which file should the scout inspect next?',
+                schema: ['type' => 'string', 'enum' => ['A', 'B']],
+                runId: 'child-run-overlay',
+                questionId: 'q_overlay',
+                allowOther: true,
+            ),
+        );
+        self::assertTrue($coordinator->actionRequired());
+
+        $ctrlRef = new \ReflectionClass(QuestionController::class);
+        $controller = $ctrlRef->newInstanceWithoutConstructor();
+        $ctrlRef->getProperty('isOpen')->setValue($controller, true);
+        self::assertTrue($controller->isOpen());
+
+        $this->dispatchCancelEvent(questionController: $controller, questionCoordinator: $coordinator);
+
+        $this->assertSame(RunActivityStateEnum::Running, $this->state->subagentLiveView->childActivity);
+        $this->assertSame(RunActivityStateEnum::Running, $this->state->activity);
+    }
+
     // ── Free-form typing (__other__): ESC must not cancel run ──
 
     #[Test]
@@ -339,7 +420,11 @@ class CancelListenerTest extends TestCase
      * then invoke it (without needing a real CancelEvent — the closure
      * doesn't use the $event parameter).
      */
-    private function dispatchCancelEvent(?string $captureErrorEnv = '1', ?QuestionController $questionController = null): ChatScreen
+    private function dispatchCancelEvent(
+        ?string $captureErrorEnv = '1',
+        ?QuestionController $questionController = null,
+        ?QuestionCoordinator $questionCoordinator = null,
+    ): ChatScreen
     {
         $tui = new Tui();
         $theme = new DefaultTheme(new ThemePalette('test'));
@@ -370,13 +455,14 @@ class CancelListenerTest extends TestCase
         ));
         $boundary = new RuntimeExceptionBoundary($eventDispatcher);
 
-        $questionController ??= new QuestionController(new QuestionCoordinator());
+        $questionCoordinator ??= new QuestionCoordinator();
+        $questionController ??= new QuestionController($questionCoordinator);
 
         $listener = new CancelListener(
             $this->logger,
             $boundary,
             $questionController,
-            new QuestionCoordinator(),
+            $questionCoordinator,
         );
         $listener->register($context);
 
