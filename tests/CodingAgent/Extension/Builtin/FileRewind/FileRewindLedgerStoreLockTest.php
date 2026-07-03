@@ -23,7 +23,7 @@ final class FileRewindLedgerStoreLockTest extends TestCase
         TestDirectoryIsolation::removeDirectory($this->projectDir);
     }
 
-    public function testAppendCheckpointPersistsUnderLock(): void
+    public function testSequentialAppendCheckpointPersistsToLedger(): void
     {
         $identity = RewindProjectIdentity::fromProjectRoot($this->projectDir);
         $store = new FileRewindLedgerStore($this->projectDir);

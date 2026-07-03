@@ -348,9 +348,6 @@ final class FileRewindService implements FileRewindPreviewProviderInterface
     }
 
     /**
-     * @return array{0: int, 1: int}
-     */
-    /**
      * @param list<string> $currentLines
      * @param list<string> $targetLines
      *

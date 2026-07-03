@@ -20,6 +20,7 @@ final readonly class FileRewindAfterTurnCommitHook implements AfterTurnCommitHoo
         if (!$this->config->enabled || !$this->service->isOperational()) {
             return;
         }
+        // v1: skip tool-effect commits so checkpoints align with plain assistant turns (pre-edit restore target).
         if ($this->has($context, 'run_started')
             || $this->has($context, 'tool_execution_start')
             || $this->has($context, 'tool_batch_committed')

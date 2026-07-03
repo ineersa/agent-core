@@ -14,6 +14,11 @@ final class TuiInteractiveCommandHost implements InteractiveCommandHostInterface
     {
     }
 
+    public function isFileRewindPickerAvailable(): bool
+    {
+        return $this->flow->isWired();
+    }
+
     public function openFileRewindPicker(FileRewindInteractiveRequestDTO $request): void
     {
         $this->flow->open($request->sessionId);

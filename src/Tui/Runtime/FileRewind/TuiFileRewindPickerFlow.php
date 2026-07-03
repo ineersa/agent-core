@@ -15,6 +15,11 @@ final class TuiFileRewindPickerFlow implements FileRewindPickerFlowInterface
         $this->openCallback = $callback;
     }
 
+    public function isWired(): bool
+    {
+        return null !== $this->openCallback;
+    }
+
     public function open(string $sessionId): void
     {
         if (null === $this->openCallback) {

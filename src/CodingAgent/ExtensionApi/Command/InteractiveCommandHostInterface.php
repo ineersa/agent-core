@@ -6,5 +6,7 @@ namespace Ineersa\Hatfield\ExtensionApi\Command;
 
 interface InteractiveCommandHostInterface
 {
+    public function isFileRewindPickerAvailable(): bool;
+
     public function openFileRewindPicker(FileRewindInteractiveRequestDTO $request): void;
 }

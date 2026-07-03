@@ -25,21 +25,25 @@ final class FileRewindLedgerStore
     /** @param array<string, mixed> $checkpoint */
     public function appendCheckpoint(RewindProjectIdentity $identity, array $checkpoint): void
     {
-        $data = $this->readRoot($identity);
-        $rows = \is_array($data['checkpoints'] ?? null) ? $data['checkpoints'] : [];
-        $rows[] = $checkpoint;
-        $data['checkpoints'] = $rows;
-        $this->writeRoot($identity, $data);
+        $this->mutateRoot($identity, static function (array $data) use ($checkpoint): array {
+            $rows = \is_array($data['checkpoints'] ?? null) ? $data['checkpoints'] : [];
+            $rows[] = $checkpoint;
+            $data['checkpoints'] = $rows;
+
+            return $data;
+        });
     }
 
     /** @param array<string, mixed> $restore */
     public function appendRestore(RewindProjectIdentity $identity, array $restore): void
     {
-        $data = $this->readRoot($identity);
-        $rows = \is_array($data['restores'] ?? null) ? $data['restores'] : [];
-        $rows[] = $restore;
-        $data['restores'] = $rows;
-        $this->writeRoot($identity, $data);
+        $this->mutateRoot($identity, static function (array $data) use ($restore): array {
+            $rows = \is_array($data['restores'] ?? null) ? $data['restores'] : [];
+            $rows[] = $restore;
+            $data['restores'] = $rows;
+
+            return $data;
+        });
     }
 
     /** @return list<array<string, mixed>> */
@@ -53,36 +57,27 @@ final class FileRewindLedgerStore
     /** @return array<string, mixed> */
     private function readRoot(RewindProjectIdentity $identity): array
     {
-        return $this->withLedgerLock($identity, static function (string $path): array {
-            if (!is_file($path)) {
-                return [];
-            }
-            $raw = file_get_contents($path);
-            if (false === $raw || '' === trim($raw)) {
-                return [];
-            }
-            $decoded = json_decode($raw, true);
-
-            return \is_array($decoded) ? $decoded : [];
+        return $this->withLedgerLock($identity, function (mixed $handle): array {
+            return $this->decodeLedgerFromHandle($handle);
         });
     }
 
-    /** @param array<string, mixed> $data */
-    private function writeRoot(RewindProjectIdentity $identity, array $data): void
+    /**
+     * @param callable(array<string, mixed>): array<string, mixed> $mutator
+     */
+    private function mutateRoot(RewindProjectIdentity $identity, callable $mutator): void
     {
-        $this->withLedgerLock($identity, static function (string $path) use ($data): void {
-            $dir = \dirname($path);
-            if (!is_dir($dir)) {
-                mkdir($dir, 0700, true);
-            }
-            file_put_contents($path, json_encode($data, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES));
+        $this->withLedgerLock($identity, function (mixed $handle) use ($mutator): void {
+            $data = $this->decodeLedgerFromHandle($handle);
+            $data = $mutator($data);
+            $this->writeLedgerToHandle($handle, $data);
         });
     }
 
     /**
      * @template T
      *
-     * @param callable(string): T $callback
+     * @param callable(resource): T $callback
      *
      * @return T
      */
@@ -102,13 +97,49 @@ final class FileRewindLedgerStore
                 throw new \RuntimeException('Cannot acquire file rewind ledger lock.');
             }
             try {
-                return $callback($path);
+                return $callback($handle);
             } finally {
                 flock($handle, \LOCK_UN);
             }
         } finally {
             fclose($handle);
         }
+    }
+
+    /**
+     * @param resource $handle
+     *
+     * @return array<string, mixed>
+     */
+    private function decodeLedgerFromHandle(mixed $handle): array
+    {
+        rewind($handle);
+        $raw = stream_get_contents($handle);
+        if (false === $raw || '' === trim($raw)) {
+            return [];
+        }
+        $decoded = json_decode($raw, true);
+
+        return \is_array($decoded) ? $decoded : [];
+    }
+
+    /**
+     * @param resource             $handle
+     * @param array<string, mixed> $data
+     */
+    private function writeLedgerToHandle(mixed $handle, array $data): void
+    {
+        $encoded = json_encode($data, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES);
+        if (false === $encoded) {
+            throw new \RuntimeException('Cannot encode file rewind ledger JSON.');
+        }
+        rewind($handle);
+        ftruncate($handle, 0);
+        $written = fwrite($handle, $encoded);
+        if (false === $written) {
+            throw new \RuntimeException('Cannot write file rewind ledger.');
+        }
+        fflush($handle);
     }
 
     private function ledgerPath(RewindProjectIdentity $identity): string

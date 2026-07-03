@@ -37,7 +37,7 @@ final readonly class FileRewindCommandHandler implements ExtensionCommandHandler
             return;
         }
         $host = $this->api->interactiveCommandHost();
-        if (null === $host) {
+        if (null === $host || !$host->isFileRewindPickerAvailable()) {
             $context->notify('File rewind picker requires interactive TUI mode.', 'warning');
 
             return;
