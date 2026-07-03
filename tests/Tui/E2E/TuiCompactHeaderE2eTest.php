@@ -49,11 +49,11 @@ final class TuiCompactHeaderE2eTest extends TestCase
         );
 
         $this->tmux->waitForCaptureContains($pane, '█', timeout: 15.0);
-        $this->tmux->waitForCaptureContains($pane, 'skill:e2e-compact-header', timeout: 15.0);
+        $this->tmux->waitForCaptureContains($pane, 'e2e-compact-header', timeout: 15.0);
 
         $capture = $this->tmux->capturePlain($pane);
         $this->assertStringContainsString('skills', $capture);
-        $this->assertStringContainsString('skill:e2e-compact-header', $capture);
+        $this->assertStringContainsString('e2e-compact-header', $capture);
     }
 
     private function agentCommand(bool $withPrompt = false): string

@@ -44,7 +44,8 @@ final class CompactHeaderWidgetTest extends TestCase
         self::assertStringContainsString('prompts', $plain);
         self::assertStringContainsString('│', $plain);
         self::assertStringContainsString('/review', $plain);
-        self::assertStringContainsString('skill:castor', $plain);
+        self::assertStringContainsString('castor', $plain);
+        self::assertStringNotContainsString('skill:', $plain);
         self::assertStringContainsString('agents', $plain);
         self::assertStringContainsString('scout', $plain);
         self::assertStringContainsString('worker', $plain);

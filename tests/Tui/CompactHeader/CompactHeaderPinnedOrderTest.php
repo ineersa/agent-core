@@ -39,7 +39,7 @@ final class CompactHeaderPinnedOrderTest extends TestCase
 
         $plain = $harness->plainScreenText();
         $otherPos = strpos($plain, 'OTHER-WIDGET-LINE');
-        $skillPos = strpos($plain, 'skill:pinned-skill');
+        $skillPos = strpos($plain, 'pinned-skill');
 
         self::assertNotFalse($otherPos);
         self::assertNotFalse($skillPos);

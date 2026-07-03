@@ -115,7 +115,7 @@ final class CompactHeaderRegistrarTest extends TestCase
         self::assertInstanceOf(CompactHeaderWidget::class, $widgets[0]);
 
         $harness->render();
-        self::assertStringContainsString('skill:reg-skill', $harness->plainScreenText());
+        self::assertStringContainsString('reg-skill', $harness->plainScreenText());
     }
 
     private function promptCatalog(): PromptTemplateCatalogInterface
