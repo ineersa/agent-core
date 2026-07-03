@@ -15,7 +15,6 @@ final readonly class CompactHeaderSnapshot
     public function __construct(
         public array $prompts = [],
         public array $skills = [],
-        public int $agentCount = 0,
         public array $agentNames = [],
         public array $mcpServers = [],
     ) {
@@ -25,7 +24,6 @@ final readonly class CompactHeaderSnapshot
     {
         return [] === $this->prompts
             && [] === $this->skills
-            && 0 === $this->agentCount
             && [] === $this->agentNames
             && [] === $this->mcpServers;
     }
@@ -34,7 +32,6 @@ final readonly class CompactHeaderSnapshot
     {
         if ($this->prompts !== $other->prompts
             || $this->skills !== $other->skills
-            || $this->agentCount !== $other->agentCount
             || $this->agentNames !== $other->agentNames
             || \count($this->mcpServers) !== \count($other->mcpServers)) {
             return false;

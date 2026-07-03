@@ -19,6 +19,9 @@ use Ineersa\CodingAgent\Runtime\Contract\PromptTemplateCommand;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\Skills\SkillsConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Mcp\Config\McpConfigLoader;
+use Ineersa\CodingAgent\Mcp\Config\McpConfigValidator;
+use Ineersa\CodingAgent\Mcp\Config\McpEnvInterpolator;
 use Ineersa\Tui\CompactHeader\CompactHeaderSnapshotProvider;
 use Ineersa\Tui\CompactHeader\CompactHeaderWidget;
 use Ineersa\Tui\Listener\CompactHeaderRegistrar;
@@ -67,6 +70,7 @@ final class CompactHeaderRegistrarTest extends TestCase
             $this->skillDiscovery(),
             $this->agentDiscovery(),
             $this->throwingMcpStore(),
+            $this->mcpConfigLoader(),
         );
 
         $context = $this->buildTuiContext()
@@ -94,6 +98,7 @@ final class CompactHeaderRegistrarTest extends TestCase
             $this->skillDiscovery(),
             $this->agentDiscovery(),
             $this->mcpStore(),
+            $this->mcpConfigLoader(),
         );
 
         $context = $this->buildTuiContext()
@@ -156,6 +161,16 @@ final class CompactHeaderRegistrarTest extends TestCase
         $store->method('read')->willReturn(null);
 
         return $store;
+    }
+
+    private function mcpConfigLoader(): McpConfigLoader
+    {
+        return new McpConfigLoader(
+            new SettingsPathResolver($this->tmpDir, $this->tmpDir),
+            new McpConfigValidator(),
+            new McpEnvInterpolator(),
+            $this->tmpDir,
+        );
     }
 
     private function throwingMcpStore(): McpToolCatalogStoreInterface

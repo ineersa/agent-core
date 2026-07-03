@@ -467,6 +467,8 @@ parameters:
       - AppSkills
       - AppAgent
       - AppMcpCatalog
+      - AppMcpConfig
+      - TuiTheme
       - TuiWidget
 
     TuiWidget:
@@ -606,6 +608,7 @@ parameters:
       - AppMarkdown
       - AppMcpCatalog
       - AppMcpConfig
+      - TuiTheme
       - AppSession
       - AppSkills
       - AppTool
@@ -638,12 +641,14 @@ parameters:
 
     AppMcpClient:
       - AppMcpConfig
+      - TuiTheme
       - McpSdk
 
     AppMcpMessage: ~
 
     AppMcpBroker:
       - AppMcpConfig
+      - TuiTheme
       - AppMcpClient
       - AppMcpCatalog
       - AppMcpMessage
@@ -658,6 +663,7 @@ parameters:
       - AppMcpCatalog
       - AppMcpClient
       - AppMcpConfig
+      - TuiTheme
       - SymfonyMessenger
 
     McpSdk: ~

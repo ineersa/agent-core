@@ -17,6 +17,9 @@ use Ineersa\CodingAgent\Mcp\Catalog\McpServerCatalogEntryDTO;
 use Ineersa\CodingAgent\Mcp\Catalog\McpServerCatalogStatusEnum;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogDTO;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
+use Ineersa\CodingAgent\Mcp\Config\McpConfigLoader;
+use Ineersa\CodingAgent\Mcp\Config\McpConfigValidator;
+use Ineersa\CodingAgent\Mcp\Config\McpEnvInterpolator;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateFrontmatterParser;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateLoader;
@@ -103,19 +106,18 @@ final class CompactHeaderSnapshotProviderTest extends TestCase
             ],
         ));
 
-        $snapshot = (new CompactHeaderSnapshotProvider($promptCatalog, $skillDiscovery, $agentDiscovery, $mcpStore))->build('sess-1');
+        $snapshot = (new CompactHeaderSnapshotProvider($promptCatalog, $skillDiscovery, $agentDiscovery, $mcpStore, $this->createMcpConfigLoader()))->build('sess-1');
 
         self::assertSame(['plan', 'review'], $snapshot->prompts);
         self::assertSame(['castor'], $snapshot->skills);
-        self::assertSame(1, $snapshot->agentCount);
         self::assertSame(['scout'], $snapshot->agentNames);
         self::assertCount(2, $snapshot->mcpServers);
         $byName = [];
         foreach ($snapshot->mcpServers as $entry) {
             $byName[$entry->name] = $entry;
         }
-        self::assertSame('✓', $byName['browser']->icon);
-        self::assertSame('✗', $byName['bad']->icon);
+        self::assertTrue($byName['browser']->isConnected);
+        self::assertFalse($byName['bad']->isConnected);
     }
 
 
@@ -152,7 +154,7 @@ final class CompactHeaderSnapshotProviderTest extends TestCase
             throw new \RuntimeException('unexpected');
         });
 
-        $snapshot = (new CompactHeaderSnapshotProvider($promptCatalog, $skillDiscovery, $agentDiscovery, $mcpStore))->build('');
+        $snapshot = (new CompactHeaderSnapshotProvider($promptCatalog, $skillDiscovery, $agentDiscovery, $mcpStore, $this->createMcpConfigLoader()))->build('');
 
         self::assertSame([], $snapshot->mcpServers);
     }
@@ -185,7 +187,7 @@ final class CompactHeaderSnapshotProviderTest extends TestCase
         $mcpStore = $this->createMock(McpToolCatalogStoreInterface::class);
         $mcpStore->expects(self::once())->method('read')->with('sess-nonempty')->willReturn(null);
 
-        (new CompactHeaderSnapshotProvider($promptCatalog, $skillDiscovery, $agentDiscovery, $mcpStore))->build('sess-nonempty');
+        (new CompactHeaderSnapshotProvider($promptCatalog, $skillDiscovery, $agentDiscovery, $mcpStore, $this->createMcpConfigLoader()))->build('sess-nonempty');
     }
 
     #[Test]
@@ -216,7 +218,7 @@ final class CompactHeaderSnapshotProviderTest extends TestCase
         $mcpStore = $this->createStub(McpToolCatalogStoreInterface::class);
         $mcpStore->method('read')->willReturn(null);
 
-        $snapshot = (new CompactHeaderSnapshotProvider($promptCatalog, $skillDiscovery, $agentDiscovery, $mcpStore))->build('sess-2');
+        $snapshot = (new CompactHeaderSnapshotProvider($promptCatalog, $skillDiscovery, $agentDiscovery, $mcpStore, $this->createMcpConfigLoader()))->build('sess-2');
 
         self::assertSame([], $snapshot->mcpServers);
         self::assertTrue($snapshot->isEmpty());
@@ -229,6 +231,83 @@ final class CompactHeaderSnapshotProviderTest extends TestCase
             logging: new LoggingConfig(),
             cwd: $this->tmpDir,
         );
+    }
+
+
+    private function createMcpConfigLoader(): McpConfigLoader
+    {
+        return new McpConfigLoader(
+            new SettingsPathResolver($this->tmpDir, $this->tmpDir),
+            new McpConfigValidator(),
+            new McpEnvInterpolator(),
+            $this->tmpDir,
+        );
+    }
+
+    #[Test]
+    public function mcpAvailabilityComesFromConfigLoader(): void
+    {
+        $json = <<<'JSON'
+{
+  "mcpServers": {
+    "context7": {
+      "url": "https://example.test/context7"
+    },
+    "websearch": {
+      "url": "https://example.test/websearch",
+      "availability": "specific"
+    }
+  }
+}
+JSON;
+        mkdir($this->tmpDir.'/.hatfield', 0777, true);
+        file_put_contents($this->tmpDir.'/.hatfield/mcp.json', $json);
+
+        $promptCatalog = new class implements PromptTemplateCatalogInterface {
+            public function allPromptTemplateCommands(): array
+            {
+                return [];
+            }
+        };
+
+        $skillDiscovery = new SkillDiscovery(
+            config: new SkillsConfig(noSkills: true),
+            pathResolver: new SettingsPathResolver($this->tmpDir, $this->tmpDir),
+            appConfig: $this->appConfig(),
+            extractor: new MarkdownFrontmatterExtractor(),
+            logger: new NullLogger(),
+        );
+
+        $agentDiscovery = new AgentDefinitionDiscovery(
+            agentsConfig: new AgentsConfig(enabled: false),
+            pathResolver: new SettingsPathResolver($this->tmpDir, $this->tmpDir),
+            parser: $this->agentParser(),
+            cwd: $this->tmpDir,
+        );
+
+        $mcpStore = $this->createStub(McpToolCatalogStoreInterface::class);
+        $mcpStore->method('read')->willReturn(new McpToolCatalogDTO(
+            servers: [
+                'context7' => new McpServerCatalogEntryDTO('context7', 'http', McpServerCatalogStatusEnum::CONNECTED, tools: ['a', 'b']),
+                'websearch' => new McpServerCatalogEntryDTO('websearch', 'http', McpServerCatalogStatusEnum::CONNECTED, tools: ['x']),
+            ],
+        ));
+
+        $snapshot = (new CompactHeaderSnapshotProvider(
+            $promptCatalog,
+            $skillDiscovery,
+            $agentDiscovery,
+            $mcpStore,
+            $this->createMcpConfigLoader(),
+        ))->build('sess-avail');
+
+        $byName = [];
+        foreach ($snapshot->mcpServers as $entry) {
+            $byName[$entry->name] = $entry;
+        }
+
+        self::assertTrue($byName['context7']->isGlobal);
+        self::assertFalse($byName['websearch']->isGlobal);
     }
 
     private function agentParser(): AgentDefinitionParser

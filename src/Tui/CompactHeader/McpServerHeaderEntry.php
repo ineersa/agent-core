@@ -8,17 +8,17 @@ final readonly class McpServerHeaderEntry
 {
     public function __construct(
         public string $name,
-        public string $icon,
         public ?int $toolCount,
-        public string $statusText,
+        public bool $isConnected,
+        public bool $isGlobal,
     ) {
     }
 
     public function equals(self $other): bool
     {
         return $this->name === $other->name
-            && $this->icon === $other->icon
             && $this->toolCount === $other->toolCount
-            && $this->statusText === $other->statusText;
+            && $this->isConnected === $other->isConnected
+            && $this->isGlobal === $other->isGlobal;
     }
 }

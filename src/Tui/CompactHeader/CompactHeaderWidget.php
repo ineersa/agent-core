@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\CompactHeader;
 
+use Ineersa\Tui\Theme\ThemeColorEnum;
+use Ineersa\Tui\Theme\TuiTheme;
 use Ineersa\Tui\Widget\TuiRenderContext;
 use Ineersa\Tui\Widget\TuiWidget;
 use Symfony\Component\Tui\Ansi\AnsiUtils;
@@ -15,7 +17,7 @@ final class CompactHeaderWidget implements TuiWidget
 {
     private const LABEL_WIDTH = 9;
 
-    private const AGENTS_LIVE_HINT = '/agents-live';
+    private const VALUE_START_COL = 11;
 
     private ?CompactHeaderSnapshot $snapshot = null;
 
@@ -37,24 +39,18 @@ final class CompactHeaderWidget implements TuiWidget
 
         if ([] !== $this->snapshot->prompts) {
             $items = array_map(
-                static fn (string $name): string => $theme->accent('/'.$name),
+                static fn (string $name): string => $theme->muted('/').$theme->accent($name),
                 $this->snapshot->prompts,
             );
-            $lines = array_merge($lines, $this->wrapLabel($theme->muted('prompts'), $items, $width));
+            $lines = array_merge($lines, $this->wrapLabel('prompts', $items, $width, $theme));
         }
 
         if ([] !== $this->snapshot->skills) {
             $items = array_map(
-                static fn (string $name): string => $theme->accent('skill:'.$name),
+                static fn (string $name): string => $theme->muted('skill:').$theme->accent($name),
                 $this->snapshot->skills,
             );
-            $lines = array_merge($lines, $this->wrapLabel($theme->muted('skills'), $items, $width));
-        }
-
-        if ($this->snapshot->agentCount > 0) {
-            $agentsValue = $theme->accent((string) $this->snapshot->agentCount.' available')
-                .' '.$theme->muted('•').' '.$theme->accent(self::AGENTS_LIVE_HINT);
-            $lines[] = $this->truncateLine($this->padLabel($theme->muted('agents')).$agentsValue, $width);
+            $lines = array_merge($lines, $this->wrapLabel('skills', $items, $width, $theme));
         }
 
         if ([] !== $this->snapshot->agentNames) {
@@ -64,19 +60,35 @@ final class CompactHeaderWidget implements TuiWidget
                 static fn (string $name): string => $theme->accent($name),
                 $agentNames,
             );
-            $lines = array_merge($lines, $this->wrapLabel($theme->muted('available'), $items, $width));
+            $lines = array_merge($lines, $this->wrapLabel('agents', $items, $width, $theme));
         }
 
         if ([] !== $this->snapshot->mcpServers) {
             $items = [];
             foreach ($this->snapshot->mcpServers as $server) {
-                $suffix = null !== $server->toolCount ? ' ('.$server->toolCount.')' : '';
-                $items[] = $theme->accent($server->icon.' '.$server->name.$suffix.': '.$server->statusText);
+                $iconStyled = $this->mcpIconStyled($theme, $server);
+                $countSuffix = null !== $server->toolCount
+                    ? ' '.$theme->muted('('.$server->toolCount.')')
+                    : '';
+                $items[] = $iconStyled.$theme->text($server->name).$countSuffix;
             }
-            $lines = array_merge($lines, $this->wrapLabel($theme->muted('mcp'), $items, $width));
+            $lines = array_merge($lines, $this->wrapLabel('mcp', $items, $width, $theme));
         }
 
         return $lines;
+    }
+
+    private function mcpIconStyled(TuiTheme $theme, McpServerHeaderEntry $server): string
+    {
+        if (!$server->isConnected) {
+            return $theme->error('✗').' ';
+        }
+
+        if ($server->isGlobal) {
+            return $theme->success('✓').' ';
+        }
+
+        return $theme->color(ThemeColorEnum::MarkdownLink, '◈').' ';
     }
 
     /**
@@ -84,14 +96,14 @@ final class CompactHeaderWidget implements TuiWidget
      *
      * @return list<string>
      */
-    private function wrapLabel(string $label, array $items, int $width): array
+    private function wrapLabel(string $label, array $items, int $width, TuiTheme $theme): array
     {
         if ([] === $items) {
             return [];
         }
 
-        $labelPad = $this->padLabel($label);
-        $indent = str_repeat(' ', self::LABEL_WIDTH);
+        $labelPad = $this->padLabel($theme->accent($label), $theme);
+        $indent = str_repeat(' ', self::VALUE_START_COL);
         $lines = [];
         $first = true;
         $currentLine = '';
@@ -110,7 +122,7 @@ final class CompactHeaderWidget implements TuiWidget
                 if ('' !== $currentLine) {
                     $lines[] = $this->truncateLine(($first ? $labelPad : $indent).$currentLine, $width);
                     $first = false;
-                    $prefixWidth = self::LABEL_WIDTH;
+                    $prefixWidth = self::VALUE_START_COL;
                 }
                 $currentLine = $item;
                 $currentWidth = $itemWidth;
@@ -124,11 +136,12 @@ final class CompactHeaderWidget implements TuiWidget
         return $lines;
     }
 
-    private function padLabel(string $label): string
+    private function padLabel(string $label, TuiTheme $theme): string
     {
         $pad = max(0, self::LABEL_WIDTH - AnsiUtils::visibleWidth($label));
 
-        return $label.str_repeat(' ', $pad);
+        return $label.str_repeat(' ', $pad)
+            .$theme->color(ThemeColorEnum::BorderMuted, '│').' ';
     }
 
     private function truncateLine(string $line, int $width): string
